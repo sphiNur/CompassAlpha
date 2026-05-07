@@ -138,6 +138,40 @@ export const ru = {
   'admin.action.grantRole': 'Назначить роль',
   'admin.action.permissions': 'Права',
   'admin.action.manage': 'Управление',
+  // M1.9-extra: P2 admin i18n
+  'admin.empty.adminOnly.title': 'Только для администратора',
+  'admin.empty.adminOnly.description': 'Нужно разрешение users.manage, чтобы открыть эту страницу.',
+  'admin.confirm.suspend': 'Приостановить {name}?',
+  'admin.confirm.removeFromStore':
+    'Удалить {name} из 🏪 {store}?\n\nЭто отзывает роли и переопределения, привязанные к этому магазину. Привязки к другим магазинам сохраняются.',
+  'admin.confirm.removeFromOrg':
+    'Удалить {name} из этой организации? Действие необратимо.',
+  'admin.label.thisStore': 'этот магазин',
+  'admin.label.loadingRoles': 'Загрузка ролей…',
+  'admin.label.loadingStores': 'Загрузка магазинов…',
+  'admin.field.tgUserId': 'Telegram ID *',
+  'admin.field.tgUserIdPlaceholder': 'напр. 6402913074',
+  'admin.field.displayName': 'Имя для отображения',
+  'admin.field.displayNamePlaceholder':
+    'необязательно · пользователь сможет подтвердить/изменить при первом входе',
+  'admin.field.role': 'Роль',
+  'admin.field.storesSelected': 'Магазины ({n} выбрано)',
+  'admin.field.storesPickAtLeastOne': 'Магазины * (выберите хотя бы один)',
+  'admin.invite.byTgId.title': 'Добавить по Telegram ID',
+  'admin.invite.byTgId.description':
+    'Создаёт пользователя-заглушку; профиль заполняется при первом /start бота.',
+  'admin.invite.byTgId.submit': 'Добавить в рабочее пространство',
+  'admin.invite.tgIdHint': 'Попросите пользователя написать /id боту, если он не знает свой ID.',
+  'admin.invite.noRoleYet': '— пока без роли (можно выдать позже) —',
+  'admin.invite.staffNeedStoreHint':
+    'Сотрудникам нужно быть привязанными к магазину, чтобы оформлять заказы.',
+  'admin.invite.onlyYourStoresHint':
+    'Вы можете приглашать только в магазины, которыми управляете.',
+  'admin.invite.adminBypassHint':
+    'Администраторы / супер-администраторы по умолчанию видят все магазины — привязка не нужна.',
+  'admin.banner.noStoresToInviteInto.title': 'Нет магазинов для приглашения',
+  'admin.banner.noStoresToInviteInto.body':
+    'Вы пока не управляете ни одним магазином. Попросите более высокого администратора привязать вас к магазину.',
   'admin.label.active': 'активен',
   'admin.label.paused': 'на паузе',
   'admin.label.you': 'вы',

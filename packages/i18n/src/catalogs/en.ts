@@ -173,6 +173,47 @@ export const en = {
   'admin.action.grantRole': 'Grant role',
   'admin.action.permissions': 'Permissions',
   'admin.action.manage': 'Manage',
+  // M1.9-extra (2026-05-07): P2 of the design audit — finishing the
+  // i18n sweep on AdminPage that the M1.6 pass left at "section
+  // names". This block adds the People-section action confirms,
+  // ManualInviteSheet field labels + hints, and the "Admin only"
+  // empty-state. Tier-3 admin-only screens (RoleCreate / Permissions
+  // grid / Maintenance) stay English for now — they're gated behind
+  // global-admin in the FE post-M1.9 so non-English users don't see
+  // them.
+  'admin.empty.adminOnly.title': 'Admin only',
+  'admin.empty.adminOnly.description':
+    'You need the users.manage permission to view this page.',
+  'admin.confirm.suspend': 'Suspend {name}?',
+  'admin.confirm.removeFromStore':
+    'Remove {name} from 🏪 {store}?\n\nThis revokes any role bindings + per-store permission overrides scoped to this store. Their other store assignments stay.',
+  'admin.confirm.removeFromOrg':
+    'Remove {name} from this org? This cannot be undone.',
+  'admin.label.thisStore': 'this store',
+  'admin.label.loadingRoles': 'Loading roles…',
+  'admin.label.loadingStores': 'Loading stores…',
+  'admin.field.tgUserId': 'Telegram user ID *',
+  'admin.field.tgUserIdPlaceholder': 'e.g. 6402913074',
+  'admin.field.displayName': 'Display name',
+  'admin.field.displayNamePlaceholder':
+    'optional · the user can confirm/change at first sign-in',
+  'admin.field.role': 'Role',
+  'admin.field.storesSelected': 'Stores ({n} selected)',
+  'admin.field.storesPickAtLeastOne': 'Stores * (pick at least one)',
+  'admin.invite.byTgId.title': 'Add by Telegram ID',
+  'admin.invite.byTgId.description':
+    "Auto-creates a placeholder user; their profile fills in when they /start the bot.",
+  'admin.invite.byTgId.submit': 'Add to workspace',
+  'admin.invite.tgIdHint': "Ask the user to send /id to the bot if they don't know their ID.",
+  'admin.invite.noRoleYet': '— no role yet (grant later) —',
+  'admin.invite.staffNeedStoreHint':
+    'Staff need an assigned store before they can place orders.',
+  'admin.invite.onlyYourStoresHint': 'You can only invite into stores you administer.',
+  'admin.invite.adminBypassHint':
+    'Admins / super-admins can see all stores by default — no assignment needed.',
+  'admin.banner.noStoresToInviteInto.title': 'No stores you can invite into',
+  'admin.banner.noStoresToInviteInto.body':
+    "You don't administer any store yet. Ask a higher-rank admin to add you to a store first.",
   'admin.label.active': 'active',
   'admin.label.paused': 'paused',
   'admin.label.you': 'you',

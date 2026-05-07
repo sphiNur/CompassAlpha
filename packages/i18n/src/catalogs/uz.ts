@@ -146,6 +146,42 @@ export const uz = {
   'admin.action.grantRole': "Rol berish",
   'admin.action.permissions': "Ruxsatlar",
   'admin.action.manage': "Boshqarish",
+  // M1.9-extra: P2 admin i18n
+  'admin.empty.adminOnly.title': 'Faqat administrator',
+  'admin.empty.adminOnly.description':
+    "Bu sahifani ko'rish uchun users.manage ruxsati kerak.",
+  'admin.confirm.suspend': "{name} hisobini to'xtatib turilsinmi?",
+  'admin.confirm.removeFromStore':
+    "{name} 🏪 {store} dan olib tashlansinmi?\n\nBu shu do'kondagi rol bog'lashlar va ruxsat o'zgarishlarini bekor qiladi. Boshqa do'konlardagi tayinlovlar saqlanadi.",
+  'admin.confirm.removeFromOrg':
+    "{name} bu tashkilotdan olib tashlansinmi? Bu amalni bekor qilib bo'lmaydi.",
+  'admin.label.thisStore': "bu do'kon",
+  'admin.label.loadingRoles': 'Rollar yuklanmoqda…',
+  'admin.label.loadingStores': "Do'konlar yuklanmoqda…",
+  'admin.field.tgUserId': 'Telegram foydalanuvchi ID *',
+  'admin.field.tgUserIdPlaceholder': "masalan 6402913074",
+  'admin.field.displayName': 'Ko\'rsatiladigan ism',
+  'admin.field.displayNamePlaceholder':
+    "ixtiyoriy · foydalanuvchi birinchi kirganda tasdiqlay/o'zgartiraladi",
+  'admin.field.role': 'Rol',
+  'admin.field.storesSelected': "Do'konlar ({n} tanlangan)",
+  'admin.field.storesPickAtLeastOne': "Do'konlar * (kamida bittasini tanlang)",
+  'admin.invite.byTgId.title': "Telegram ID bilan qo'shish",
+  'admin.invite.byTgId.description':
+    "Shaxsiy ma'lumotlar bot bilan /start qilingach avtomatik to'ldiriladi.",
+  'admin.invite.byTgId.submit': "Ish maydoniga qo'shish",
+  'admin.invite.tgIdHint':
+    "Foydalanuvchi o'z ID sini bilmasa, botga /id yozsin.",
+  'admin.invite.noRoleYet': "— hozircha rolsiz (keyinroq beriladi) —",
+  'admin.invite.staffNeedStoreHint':
+    "Xodimlar buyurtma berishlari uchun do'konga biriktirilishi kerak.",
+  'admin.invite.onlyYourStoresHint':
+    "Siz faqat o'zingiz boshqaradigan do'konlarga taklif qila olasiz.",
+  'admin.invite.adminBypassHint':
+    "Administratorlar / super-administratorlar barcha do'konlarni ko'radi — tayinlash shart emas.",
+  'admin.banner.noStoresToInviteInto.title': "Taklif qilish uchun do'kon yo'q",
+  'admin.banner.noStoresToInviteInto.body':
+    "Siz hali hech bir do'konni boshqarmaysiz. Yuqori darajadagi administratordan sizni do'konga biriktirishini so'rang.",
   'admin.label.active': "faol",
   'admin.label.paused': "to'xtatilgan",
   'admin.label.you': "siz",

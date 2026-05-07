@@ -183,8 +183,8 @@ export function AdminPage() {
     return (
       <div className="px-4 py-6">
         <EmptyState
-          title="Admin only"
-          description="You need the users.manage permission to view this page."
+          title={i18n.t('admin.empty.adminOnly.title')}
+          description={i18n.t('admin.empty.adminOnly.description')}
         />
       </div>
     );
@@ -764,7 +764,7 @@ function PeopleSection({
                       })
                     }
                   >
-                    Manage
+                    {i18n.t('admin.action.manage')}
                   </Button>
                   <Button
                     size="sm"
@@ -782,7 +782,7 @@ function PeopleSection({
                       })
                     }
                   >
-                    Grant role
+                    {i18n.t('admin.action.grantRole')}
                   </Button>
                   {isGlobalAdminPeople ? (
                     <Button
@@ -799,7 +799,7 @@ function PeopleSection({
                         })
                       }
                     >
-                      Permissions
+                      {i18n.t('admin.action.permissions')}
                     </Button>
                   ) : null}
                   {!isSelf && m.status === 'active' ? (
@@ -807,12 +807,14 @@ function PeopleSection({
                       size="sm"
                       variant="pearl"
                       onClick={() =>
-                        nativeConfirm(`Suspend ${m.displayName}?`, () =>
-                          setStatus.mutate({ memberId: m.memberId, status: 'suspended' }),
+                        nativeConfirm(
+                          i18n.t('admin.confirm.suspend', { name: m.displayName }),
+                          () =>
+                            setStatus.mutate({ memberId: m.memberId, status: 'suspended' }),
                         )
                       }
                     >
-                      Suspend
+                      {i18n.t('admin.action.suspend')}
                     </Button>
                   ) : null}
                   {!isSelf && m.status === 'suspended' ? (
@@ -823,7 +825,7 @@ function PeopleSection({
                         setStatus.mutate({ memberId: m.memberId, status: 'active' })
                       }
                     >
-                      Reactivate
+                      {i18n.t('admin.action.reactivate')}
                     </Button>
                   ) : null}
                   {/* D1 (2026-05-06): "Remove from this store" — only
@@ -841,9 +843,12 @@ function PeopleSection({
                         if (storeCtx.kind !== 'specific') return;
                         const storeName =
                           m.stores.find((st) => st.id === storeCtx.storeId)?.name ??
-                          'this store';
+                          i18n.t('admin.label.thisStore');
                         nativeConfirm(
-                          `Remove ${m.displayName} from 🏪 ${storeName}?\n\nThis revokes any role bindings + per-store permission overrides scoped to this store. Their other store assignments stay.`,
+                          i18n.t('admin.confirm.removeFromStore', {
+                            name: m.displayName,
+                            store: storeName,
+                          }),
                           () =>
                             detachFromStore.mutate({
                               memberId: m.memberId,
@@ -852,7 +857,7 @@ function PeopleSection({
                         );
                       }}
                     >
-                      Remove from store
+                      {i18n.t('admin.action.removeFromStore')}
                     </Button>
                   ) : null}
                   {!isSelf ? (
@@ -861,12 +866,12 @@ function PeopleSection({
                       variant="danger"
                       onClick={() =>
                         nativeConfirm(
-                          `Remove ${m.displayName} from this org? This cannot be undone.`,
+                          i18n.t('admin.confirm.removeFromOrg', { name: m.displayName }),
                           () => remove.mutate({ memberId: m.memberId }),
                         )
                       }
                     >
-                      Remove
+                      {i18n.t('admin.action.removeFromOrg')}
                     </Button>
                   ) : null}
                 </div>
@@ -1779,6 +1784,7 @@ function ManualInviteSheet({
   onSubmit: () => void;
   pending: boolean;
 }) {
+  const i18n = useI18n();
   const rolesQuery = trpc.admin.roleList.useQuery(undefined, { enabled: !!draft });
   const storesQuery = trpc.admin.storeList.useQuery(undefined, { enabled: !!draft });
   // C2 (2026-05-06): a store-scoped admin can only invite into the
@@ -1825,17 +1831,17 @@ function ManualInviteSheet({
     <Sheet
       open={!!draft}
       onOpenChange={(open) => !open && !pending && setDraft(null)}
-      title="Add by Telegram ID"
-      description="Auto-creates a placeholder user; their profile fills in when they /start the bot."
+      title={i18n.t('admin.invite.byTgId.title')}
+      description={i18n.t('admin.invite.byTgId.description')}
       footer={
         <Button block size="lg" loading={pending} disabled={!canSubmit} onClick={onSubmit}>
-          Add to workspace
+          {i18n.t('admin.invite.byTgId.submit')}
         </Button>
       }
     >
       {draft ? (
         <div className="flex flex-col gap-3 py-3">
-          <Field label="Telegram user ID *">
+          <Field label={i18n.t('admin.field.tgUserId')}>
             <Input
               value={draft.tgUserId}
               onChange={(e) =>
@@ -1843,25 +1849,25 @@ function ManualInviteSheet({
               }
               inputMode="numeric"
               maxLength={15}
-              placeholder="e.g. 6402913074"
+              placeholder={i18n.t('admin.field.tgUserIdPlaceholder')}
               autoFocus
             />
             <p className="mt-1 text-meta text-[var(--c-fg-muted)]">
-              Ask the user to send /id to the bot if they don&apos;t know their ID.
+              {i18n.t('admin.invite.tgIdHint')}
             </p>
           </Field>
-          <Field label="Display name">
+          <Field label={i18n.t('admin.field.displayName')}>
             <Input
               value={draft.displayName}
               onChange={(e) => setDraft({ ...draft, displayName: e.target.value })}
               maxLength={200}
-              placeholder="optional · the user can confirm/change at first sign-in"
+              placeholder={i18n.t('admin.field.displayNamePlaceholder')}
             />
           </Field>
-          <Field label="Role">
+          <Field label={i18n.t('admin.field.role')}>
             {rolesQuery.isLoading ? (
               <div className="flex items-center gap-2 text-body-sm text-[var(--c-fg-muted)]">
-                <Spinner size={14} /> Loading roles…
+                <Spinner size={14} /> {i18n.t('admin.label.loadingRoles')}
               </div>
             ) : (
               <select
@@ -1869,7 +1875,7 @@ function ManualInviteSheet({
                 value={draft.roleSlug}
                 onChange={(e) => setDraft({ ...draft, roleSlug: e.target.value })}
               >
-                <option value="">— no role yet (grant later) —</option>
+                <option value="">{i18n.t('admin.invite.noRoleYet')}</option>
                 {sortedRoles.map((r) => (
                   <option key={r.id} value={r.slug}>
                     {r.name}
@@ -1882,18 +1888,17 @@ function ManualInviteSheet({
             <Field
               label={
                 hasStore
-                  ? `Stores (${draft.storeIds.length} selected)`
-                  : 'Stores * (pick at least one)'
+                  ? i18n.t('admin.field.storesSelected', { n: draft.storeIds.length })
+                  : i18n.t('admin.field.storesPickAtLeastOne')
               }
             >
               {storesQuery.isLoading ? (
                 <div className="flex items-center gap-2 text-body-sm text-[var(--c-fg-muted)]">
-                  <Spinner size={14} /> Loading stores…
+                  <Spinner size={14} /> {i18n.t('admin.label.loadingStores')}
                 </div>
               ) : eligibleStores.length === 0 ? (
-                <Banner tone="warn" title="No stores you can invite into">
-                  You don't administer any store yet. Ask a higher-rank admin
-                  to add you to a store first.
+                <Banner tone="warn" title={i18n.t('admin.banner.noStoresToInviteInto.title')}>
+                  {i18n.t('admin.banner.noStoresToInviteInto.body')}
                 </Banner>
               ) : (
                 <div className="flex flex-col gap-1.5 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
@@ -1927,16 +1932,13 @@ function ManualInviteSheet({
                 </div>
               )}
               <p className="mt-1 text-meta text-[var(--c-fg-muted)]">
-                Staff need an assigned store before they can place orders.
-                {!isGlobalAdmin
-                  ? ' You can only invite into stores you administer.'
-                  : ''}
+                {i18n.t('admin.invite.staffNeedStoreHint')}
+                {!isGlobalAdmin ? ' ' + i18n.t('admin.invite.onlyYourStoresHint') : ''}
               </p>
             </Field>
           ) : (
             <p className="text-label text-[var(--c-fg-muted)]">
-              Admins / super-admins can see all stores by default — no
-              assignment needed.
+              {i18n.t('admin.invite.adminBypassHint')}
             </p>
           )}
         </div>
