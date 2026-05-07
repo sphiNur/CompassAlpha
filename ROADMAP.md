@@ -1,6 +1,113 @@
 # Roadmap — what's done, what's next
 
-> Honest status as of 2026-05-01. No vapor.
+> Honest status as of **2026-05-07** (refreshed). The original 2026-05-01
+> M1 punch list is preserved below for archaeology; everything that
+> shipped between 05-01 and 05-07 is captured in the **M1.1 – M1.9
+> changelog** at the top.
+
+## 📜 M1.1 – M1.9 changelog (2026-05-02 → 2026-05-07)
+
+These are the named milestone slices that landed AFTER the original
+2026-05-01 push. Each was either a missing-feature follow-up, an
+architecture refinement, or a pre-launch hardening pass. Inline code
+comments use the `M1.x (YYYY-MM-DD)` marker for cross-reference.
+
+### M1.1 – M1.2 (Per-store admin gates) — 2026-05-04 → 05-06
+
+- **C1 rank gate**: a manager can only grant roles below their own rank.
+  Server check in `admin.grantRole`; FE in `GrantRoleSheet`.
+- **C2 admin-of-store gate** (`getActorAdminStoreIds`): a store-scoped
+  admin can only invite / grant / assign / detach in the stores they
+  themselves administer. Org-tier roles require global admin.
+- **D1 atomic detach**: `admin.memberDetachFromStore` deletes the
+  member-store assignment + revokes store-scoped role bindings + drops
+  store-scoped permission overrides in one tx.
+- **D2 transfer wizard**: move a member between stores with optional
+  role-mirroring (M1.9 hides this UI from non-global admins).
+- **B1 / B2 admin audit**: every catalog/role/permission write fans
+  out to `domain.policy_decisions` with optional `scope_store_id` for
+  per-store filtering.
+
+### M1.3 (Lazy-load + bundle hygiene) — 2026-05-04
+
+- AdminPage code-split via `React.lazy`; main bundle drops ~160 KB.
+- Per-page route-level imports keep cold first-paint under 1 s.
+
+### M1.4 (Store-first navigation) — 2026-05-05
+
+- Admin page rebuilt around 5 sections: Organization / Stores /
+  Roles & Permissions / Catalog / Operations.
+- StoreDetailScreen with Team / Settings tabs; Org-level pseudo-store
+  for admin/super_admin without store assignments.
+- Sheet-stack BackButton counter (`useSheetCount`) so Telegram's native
+  back arrow drills out of nested sheets correctly.
+
+### M1.5 (Run preview + audit pass) — 2026-05-06
+
+- `previewCreatable` returns `perStoreDemand` + `supplierBySku`.
+- Run page gets segmented "Overall / By store / By vendor" view.
+- Vendor copy-paste template (store-major, minimal greeting).
+- Per-SKU preferred-vendor picker. Audit doc: `docs/M1.5-AUDIT.md`.
+
+### M1.6 (i18n in Admin + Settings sheet) — 2026-05-06
+
+- Admin page strings go through `i18n.t(...)` (was English-only).
+- Telegram gear button opens richer `SettingsSheet` (Profile / Language
+  / About) instead of just a language picker.
+- Run page in-flight supplier reassignment (`VendorPickerSheet`).
+
+### M1.7 (Migration consistency check + cancel-run polish) — 2026-05-07
+
+- `packages/db/src/migrate.ts` fails-fast on orphan/ghost migrations
+  before applying (closes the silent-skip class that broke 0009).
+- Run history filter chips: 已完成 / 含已取消 / 仅取消.
+- Cancel reason becomes optional with soft-encourage banner.
+- `Unapproved` event now CLEARS the claim (audit HIGH #4): chain
+  owners can undo a manager's mistaken approval without leaving the
+  order stuck on themselves.
+
+### M1.8 (Session-level "其他物品" notes) — 2026-05-07
+
+- New `SessionNoteSet` event, `SetSessionNote` command, `notes` column
+  on `read_model.order_sessions_v` (migration 0010).
+- OrderPage textarea (debounced save), ApprovalPage banner + "📝" pill
+  on the queue card, RunPage byStore + ActiveRun PerStoreView display.
+- Vendor copy-paste appends the notes block.
+- 4-language i18n + 6 new domain unit tests.
+
+### M1.9 (Pre-launch hardening) — 2026-05-07
+
+- **B1**: `manager` role gets `users.manage` (migration 0011 backfills
+  existing orgs). Per-store managers can now invite into their stores;
+  cross-store gates already in place.
+- **B2**: `previewCreatable` IN-array bind fixed (was silently
+  returning no rows; storeName showed as "—").
+- **B3**: Telegram HMAC compare hardened to `crypto.timingSafeEqual`
+  with explicit length pre-check + auth_date null-guard. New
+  `apps/api/src/__tests__/telegramAuth.test.ts` pins reject reasons.
+- **B5**: `system.log` rate-limited 60/min/IP (was unlimited).
+- **H1**: MaintenanceSection double-gated (super_admin AND
+  `VITE_ENABLE_MAINTENANCE=1`) — "Reset today" no longer a launch-day
+  footgun.
+- **H2**: RoleCreate / TransferStore / CloneRoles / MemberPermissions
+  sheet / embedded DebugPage / audit JSON viewer hidden for non-global
+  admins. Server-side gates unchanged.
+- **H3**: WorkspaceSection `futureNote` placeholder + raw `slug` field
+  removed.
+- **i18n leak sweep**: ConfirmPage chip labels (ok/short/wrong/quality),
+  RunPage delivery stage labels + Splits validation + history sheet
+  Loading/NoData, OrderPage SKU row meta + chip-bar, ApprovalPage
+  card meta + locale-aware timestamp. 535 → 544 keys × 4 langs.
+- **Projector follow-up**: `Unapproved` projector branch now mirrors
+  the M1.7 state.ts change (clear claim, not transfer).
+- **CI**: `.github/workflows/ci.yml` — type-check + unit tests + i18n
+  parity + migration-journal consistency on push/PR. Was zero CI.
+
+### Operational
+- `infra/backup/` (pg_dump nightly, 14d retention, optional S3 push,
+  `restore.sh` documented in `docs/RUNBOOK.md`).
+- `compass-worker.service` systemd unit shipped + auto-installed by
+  `scripts/deploy.ts`.
 
 ## 🟢 Operational tooling — DONE (autonomous session 2026-05-01)
 
@@ -156,7 +263,7 @@ push and are now part of the deploy contract:
 - [ ] **Sentry + structured pino**: error reporting wired to a Sentry DSN + log shipping to Loki.
 - [ ] **Backup recovery drill**: monthly cron (`infra/scripts/restore-to-staging.sh`) restores last night's `pg_basebackup` to a staging PG and runs the smoke suite.
 - [ ] **Blue-green deploy**: `compass deploy` script.
-- [ ] **CI**: lint → typecheck → unit + contract → integration → build → deploy. Currently zero CI.
+- [ ] **CI** — extend `.github/workflows/ci.yml` (M1.9 minimum-viable type-check + unit + parity gates) with: PG-backed integration tests via `services.postgres`, Playwright browser smoke against an ephemeral preview, eslint, build + deploy automation. Today CI gates types + unit + i18n parity + migration journal only.
 
 ## 🔴 Milestone 4 — Production launch (NOT STARTED)
 

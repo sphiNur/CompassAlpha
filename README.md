@@ -4,6 +4,7 @@
 > CompassBeta 的完全重写，全方位超越前代。
 
 **先读 [`ARCHITECTURE.md`](./ARCHITECTURE.md) 再看代码。** 任何与架构方案不一致的实现都需要先改架构文档。
+（架构 + 运维文档在仓库根目录的 `ARCHITECTURE.md` 和 `docs/RUNBOOK.md`。`docs/` 里还有 `EVENT_CATALOG.md` / `PERMISSION_MATRIX.md` / `API.md` / `DESIGN.md`。）
 
 ## 快速上手
 
@@ -11,6 +12,8 @@
 # 1. 准备环境（要求 Bun 1.1.38, pnpm 9.x, Postgres 16, Redis 7）
 cp .env.example .env
 docker compose -f infra/compose/docker-compose.dev.yml up -d   # 起 PG + Redis + MinIO + Otel
+# 注意：dev compose 把 PG 暴露在 5433，Redis 在 6380（避开本机已有进程）。
+# .env.example 里的 DATABASE_URL/REDIS_URL 已对应这两个端口。
 
 # 2. 安装依赖
 pnpm install
@@ -30,12 +33,16 @@ pnpm dev
 pnpm compass user grant <你的 Telegram user id> --role super_admin --org default
 ```
 
+> **Telegram 调试**：本地开发可用 `VITE_DEV_MOCK_INIT_DATA=1` 跳过 BotFather 真实签名，
+> 走 mock 用户登录。生产环境强校验 HMAC（见 `apps/api/src/services/telegramAuth.ts`，
+> 单元测试在 `apps/api/src/__tests__/telegramAuth.test.ts`）。
+
 ## 工程结构
 
 ```
 apps/
 ├── api/      Hono + tRPC + Drizzle (Bun)
-├── web/      React 18 + Vite + Tailwind v4 + TanStack Router
+├── web/      React 18 + Vite + Tailwind v3 + TanStack Router
 ├── bot/      grammY (Bun)
 └── worker/   BullMQ workers (Bun)
 
@@ -44,7 +51,7 @@ packages/
 ├── db/          Drizzle schema + RLS + 迁移 + 种子
 ├── contracts/   tRPC 路由 + Zod schema（前后端共用）
 ├── ui/          Concord 设计系统（Native / Apple 双主题）
-├── i18n/        Lingui ICU catalogs (zh, en, ru, uz)
+├── i18n/        ICU catalogs (zh, en, ru, uz) — 4 个文件，CI 校验键对齐
 ├── telemetry/   OpenTelemetry SDK + 客户端日志
 └── cli/         compass 命令行
 
@@ -52,31 +59,52 @@ infra/
 ├── docker/      Dockerfile 多阶段
 ├── caddy/       Caddyfile
 ├── compose/     docker-compose.{dev,prod}.yml
-└── grafana/     仪表盘 JSON
+├── systemd/     compass-api / compass-worker .service
+└── backup/      pg_dump 夜间备份 + 还原脚本（见 docs/RUNBOOK.md）
 
 docs/
-├── ARCHITECTURE.md
 ├── EVENT_CATALOG.md
 ├── PERMISSION_MATRIX.md
 ├── API.md
 ├── DESIGN.md
-└── RUNBOOK.md
+├── RUNBOOK.md
+└── M1.5-AUDIT.md     一次大审计的结果，可作为 audit 报告模板
 ```
 
 ## 常用命令
 
 ```bash
-pnpm dev                  # API + Web 一起跑
-pnpm dev:api              # 只跑 API
-pnpm dev:web              # 只跑 Web
-pnpm build                # 全部构建
-pnpm type-check           # tsc --noEmit
-pnpm test                 # 全部测试
-pnpm test:e2e             # Playwright E2E
-pnpm db:migrate           # drizzle-kit migrate
-pnpm db:studio            # drizzle-kit studio
-pnpm compass <command>    # CLI 入口
+pnpm dev                          # API + Web 一起跑
+pnpm dev:api                      # 只跑 API
+pnpm dev:web                      # 只跑 Web
+pnpm build                        # 全部构建
+pnpm type-check                   # tsc --noEmit（CI 跑同一个）
+pnpm test                         # 全部测试
+SKIP_PG_TESTS=1 bun test ...      # 跳过 PG-gated 集成测试（CI 模式）
+pnpm test:e2e                     # Playwright E2E
+pnpm db:migrate                   # drizzle-kit migrate
+pnpm db:studio                    # drizzle-kit studio
+pnpm compass <command>            # CLI 入口
+
+# 部署：
+bun run scripts/deploy.ts         # 一键 tar→scp→migrate→restart→smoke
+bun run scripts/deploy.ts --dry   # 只跑 smoke，不部署
 ```
+
+## 增加新功能 / 修 bug 的标准流程
+
+1. **写事件**：在 `packages/domain/src/<aggregate>/events.ts` 增加 event 类型（payload schema 是公共契约，改了要新事件类型）。
+2. **写 reducer**：在 `state.ts` 的 `apply()` 加 case，更新 in-memory 投影。
+3. **写命令**：在 `commands.ts` 的 `decide()` 加 case，做权限/校验，emit 事件。
+4. **写 projector**：在 `apps/api/src/services/<aggregate>Projection.ts` 加 case，更新读模型表。
+5. **写 migration**：`packages/db/migrations/00xx_*.sql` + `meta/_journal.json` 加同名条目（CI 会卡缺漏）。
+6. **写 tRPC**：`apps/api/src/trpc/routers/<router>.ts` 加 procedure，调 `decide` + `appendEvents` + `projectXxx`。
+7. **写 FE**：`apps/web/src/pages/...` 用 `trpc.xxx.useMutation`，乐观写缓存（参考 OrderPage.tsx 的 debounce + serialize 模板）。
+8. **写 i18n**：所有用户可见字符串走 `i18n.t(...)`。**4 个 catalog 同时加** (`en/zh/ru/uz`)。CI 卡键对齐。
+9. **测**：`packages/domain/.../*.test.ts` 加 unit；服务层 / API 层在 `apps/api/src/__tests__/` 加（PG-gated 用 `SKIP_PG_TESTS` 在 CI 跳过）。
+10. **smoke**：`scripts/smoke.ts` 是 server 端，`scripts/browser-smoke*.ts` 是浏览器端，部署脚本都会跑。
+
+> 历史决策放在仓库根的 `ARCHITECTURE.md` 第 "DR-XXX" 段；阶段性大审计放在 `docs/M1.x-AUDIT.md`。
 
 ## 核心设计原则
 
