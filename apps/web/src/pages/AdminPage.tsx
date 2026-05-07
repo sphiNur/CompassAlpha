@@ -59,6 +59,7 @@ import { ADMIN_RANK } from '@compass/contracts';
 import { PAGE_SIZE, STALE } from '../config/timings';
 import { botLink as makeBotLink, shareLink as makeShareLink } from '../lib/telegramLinks';
 import { trpc } from '../lib/trpc';
+import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
 import { useAuthStore } from '../stores/authStore';
 import { getTg, useTelegramBackButton } from '../hooks/useTelegram';
@@ -546,6 +547,7 @@ function PeopleSection({
   const membersQuery = trpc.admin.memberList.useQuery();
   const utils = trpc.useUtils();
   const toast = useToast();
+  const errToast = useErrToast();
   const i18n = useI18n();
   // M1.9: per-key allow/deny override grid is power-user surface — gate
   // the "Permissions" button to global admins only. The 4 built-in
@@ -601,21 +603,21 @@ function PeopleSection({
       void utils.admin.memberList.invalidate();
       toast.info(i18n.t('admin.toast.memberUpdated'));
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
   const remove = trpc.admin.memberRemove.useMutation({
     onSuccess: () => {
       void utils.admin.memberList.invalidate();
       toast.success(i18n.t('admin.toast.memberRemoved'));
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
   const revoke = trpc.admin.revokeRole.useMutation({
     onSuccess: () => {
       void utils.admin.memberList.invalidate();
       toast.info(i18n.t('admin.toast.roleRevoked'));
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
   // D1 (2026-05-06): one-shot detach. Server atomically deletes the
   // MSA row + revokes any store-scoped role bindings + drops store-
@@ -631,7 +633,7 @@ function PeopleSection({
         parts.push(`${data.revokedOverrides} override${data.revokedOverrides === 1 ? '' : 's'} dropped`);
       toast.info(parts.join(' · '));
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
   const invite = trpc.admin.memberInviteByTgId.useMutation({
     onSuccess: (data) => {
@@ -643,7 +645,7 @@ function PeopleSection({
       );
       setManualDraft(null);
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
 
   return (
@@ -1124,6 +1126,7 @@ function RoleCreateSheet({
 }) {
   const utils = trpc.useUtils();
   const toast = useToast();
+  const errToast = useErrToast();
   const i18n = useI18n();
   const permsQuery = trpc.admin.permissionList.useQuery(undefined, { enabled: open });
   const [slug, setSlug] = useState('');
@@ -1163,7 +1166,7 @@ function RoleCreateSheet({
       toast.success(i18n.t('admin.toast.roleCreated'));
       onClose();
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
 
   const togglePerm = (key: string) => {
@@ -1302,6 +1305,7 @@ function RolePermissionsSheet({
 }) {
   const utils = trpc.useUtils();
   const toast = useToast();
+  const errToast = useErrToast();
   const i18n = useI18n();
   const detail = trpc.admin.roleDetail.useQuery(
     { roleSlug: roleSlug ?? '' },
@@ -1339,7 +1343,7 @@ function RolePermissionsSheet({
       toast.success(i18n.t('admin.toast.roleUpdated'));
       setEditing(false);
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
   const remove = trpc.admin.roleDelete.useMutation({
     onSuccess: () => {
@@ -1347,7 +1351,7 @@ function RolePermissionsSheet({
       toast.success(i18n.t('admin.toast.roleDeleted'));
       onClose();
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
 
   const togglePerm = (key: string) => {
@@ -1957,6 +1961,7 @@ function ManageMemberSheet({
 }) {
   const utils = trpc.useUtils();
   const toast = useToast();
+  const errToast = useErrToast();
   const i18n = useI18n();
   const open = !!target;
   const storesQuery = trpc.admin.storeList.useQuery(undefined, { enabled: open });
@@ -1994,19 +1999,19 @@ function ManageMemberSheet({
       void utils.admin.memberList.invalidate();
       toast.success(i18n.t('admin.toast.memberUpdated'));
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
   const assignMut = trpc.admin.memberAssignStore.useMutation({
     onSuccess: () => {
       void utils.admin.memberStoreAssignments.invalidate();
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
   const unassignMut = trpc.admin.memberUnassignStore.useMutation({
     onSuccess: () => {
       void utils.admin.memberStoreAssignments.invalidate();
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
 
   const assignedIds = useMemo(
@@ -2192,6 +2197,7 @@ function TransferStoreSheet({
 }) {
   const utils = trpc.useUtils();
   const toast = useToast();
+  const errToast = useErrToast();
   const session = useAuthStore((s) => s.session);
   const adminStoreIds = useMemo(
     () => new Set(session?.adminStoreIds ?? []),
@@ -2232,7 +2238,7 @@ function TransferStoreSheet({
       toast.success(parts.join(' · '));
       onClose();
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
 
   return (
@@ -2366,7 +2372,7 @@ function MemberPermissionsSheet({
   onClose: () => void;
 }) {
   const utils = trpc.useUtils();
-  const toast = useToast();
+  const errToast = useErrToast();
   const session = useAuthStore((s) => s.session);
   const adminStoreIds = useMemo(
     () => new Set(session?.adminStoreIds ?? []),
@@ -2407,7 +2413,7 @@ function MemberPermissionsSheet({
         memberId: target?.memberId ?? '',
       });
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
   const revoke = trpc.admin.memberPermissionRevoke.useMutation({
     onSuccess: () => {
@@ -2415,7 +2421,7 @@ function MemberPermissionsSheet({
         memberId: target?.memberId ?? '',
       });
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
 
   /**
@@ -2769,8 +2775,9 @@ function GrantRoleSheet({
   const rolesQuery = trpc.admin.roleList.useQuery(undefined, { enabled: !!target });
   const utils = trpc.useUtils();
   const toast = useToast();
+  const errToast = useErrToast();
   const grant = trpc.admin.grantRole.useMutation({
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
 
   // Two-step state.
@@ -3093,6 +3100,7 @@ function StoresHomeSection({
   const membersQuery = trpc.admin.memberList.useQuery();
   const utils = trpc.useUtils();
   const toast = useToast();
+  const errToast = useErrToast();
   const i18n = useI18n();
   const session = useAuthStore((s) => s.session);
   const adminStoreIds = useMemo(
@@ -3116,7 +3124,7 @@ function StoresHomeSection({
       toast.success(i18n.t('admin.toast.storeCreated'));
       setCreateDraft(null);
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
 
   // Aggregate member counts per store from the cached memberList.
@@ -3390,6 +3398,7 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
   const rolesQuery = trpc.admin.roleList.useQuery();
   const utils = trpc.useUtils();
   const toast = useToast();
+  const errToast = useErrToast();
   const i18n = useI18n();
   const session = useAuthStore((s) => s.session);
   const adminStoreIds = useMemo(
@@ -3434,14 +3443,14 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
       void utils.admin.storeList.invalidate();
       toast.success(i18n.t('admin.toast.storeUpdated'));
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
   const remove = trpc.admin.storeDelete.useMutation({
     onSuccess: () => {
       void utils.admin.storeList.invalidate();
       toast.info(i18n.t('admin.toast.storeArchived'));
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
 
   const storeTierRoles = useMemo(
@@ -3638,6 +3647,7 @@ function StoreCloneRolesSheet({
 }) {
   const utils = trpc.useUtils();
   const toast = useToast();
+  const errToast = useErrToast();
   const session = useAuthStore((s) => s.session);
   const adminStoreIds = useMemo(
     () => new Set(session?.adminStoreIds ?? []),
@@ -3677,7 +3687,7 @@ function StoreCloneRolesSheet({
       toast.success(parts.join(' · '));
       onClose();
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
 
   return (
@@ -3765,6 +3775,7 @@ function CategoriesSection() {
   const categoriesQuery = trpc.admin.categoryList.useQuery();
   const utils = trpc.useUtils();
   const toast = useToast();
+  const errToast = useErrToast();
   const i18n = useI18n();
   const productName = useProductName();
   const [draft, setDraft] = useState<CategoryDraft | null>(null);
@@ -3775,7 +3786,7 @@ function CategoriesSection() {
       toast.success(i18n.t('admin.toast.categoryCreated'));
       setDraft(null);
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
   const update = trpc.admin.categoryUpdate.useMutation({
     onSuccess: () => {
@@ -3783,14 +3794,14 @@ function CategoriesSection() {
       toast.success(i18n.t('admin.toast.categoryUpdated'));
       setDraft(null);
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
   const remove = trpc.admin.categoryDelete.useMutation({
     onSuccess: () => {
       void utils.admin.categoryList.invalidate();
       toast.info(i18n.t('admin.toast.categoryArchived'));
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
 
   return (
@@ -4003,6 +4014,7 @@ function SkusSection() {
   const categoriesQuery = trpc.admin.categoryList.useQuery();
   const utils = trpc.useUtils();
   const toast = useToast();
+  const errToast = useErrToast();
   const i18n = useI18n();
   const productName = useProductName();
   const [draft, setDraft] = useState<SkuDraft | null>(null);
@@ -4013,7 +4025,7 @@ function SkusSection() {
       toast.success(i18n.t('admin.toast.skuCreated'));
       setDraft(null);
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
   const update = trpc.admin.skuUpdate.useMutation({
     onSuccess: () => {
@@ -4021,14 +4033,14 @@ function SkusSection() {
       toast.success(i18n.t('admin.toast.skuUpdated'));
       setDraft(null);
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
   const remove = trpc.admin.skuDelete.useMutation({
     onSuccess: () => {
       void utils.admin.skuList.invalidate();
       toast.info(i18n.t('admin.toast.skuArchived'));
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
 
   const categoryName = (id: string | null): string => {
@@ -4296,6 +4308,7 @@ function SuppliersSection() {
   const suppliersQuery = trpc.admin.supplierList.useQuery({ includeArchived });
   const utils = trpc.useUtils();
   const toast = useToast();
+  const errToast = useErrToast();
   const i18n = useI18n();
   const [draft, setDraft] = useState<SupplierDraft | null>(null);
 
@@ -4305,7 +4318,7 @@ function SuppliersSection() {
       toast.success(i18n.t('admin.toast.supplierCreated'));
       setDraft(null);
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
   const update = trpc.admin.supplierUpdate.useMutation({
     onSuccess: () => {
@@ -4313,14 +4326,14 @@ function SuppliersSection() {
       toast.success(i18n.t('admin.toast.supplierUpdated'));
       setDraft(null);
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
   const remove = trpc.admin.supplierDelete.useMutation({
     onSuccess: () => {
       void utils.admin.supplierList.invalidate();
       toast.info(i18n.t('admin.toast.supplierArchived'));
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
 
   return (
@@ -4726,6 +4739,7 @@ function TargetedPurgeBrowser() {
   const runsQuery = trpc.admin.runList.useQuery({ date, limit: PAGE_SIZE.list });
   const utils = trpc.useUtils();
   const toast = useToast();
+  const errToast = useErrToast();
   const i18n = useI18n();
 
   const [sessionTarget, setSessionTarget] = useState<
@@ -4752,7 +4766,7 @@ function TargetedPurgeBrowser() {
       );
     },
     onError: (err) => {
-      toast.error(err.message);
+      errToast('common.error')(err);
       setSessionTarget(null);
     },
   });
@@ -4764,7 +4778,7 @@ function TargetedPurgeBrowser() {
       void utils.admin.runList.invalidate();
       void utils.invalidate(); // also bump any open OrderPage / ApprovalPage
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
 
   const runDryRun = trpc.admin.purgeRun.useMutation({
@@ -4783,7 +4797,7 @@ function TargetedPurgeBrowser() {
       );
     },
     onError: (err) => {
-      toast.error(err.message);
+      errToast('common.error')(err);
       setRunTarget(null);
     },
   });
@@ -4795,7 +4809,7 @@ function TargetedPurgeBrowser() {
       void utils.admin.sessionList.invalidate();
       void utils.invalidate();
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
 
   return (
@@ -5388,6 +5402,7 @@ function MaintenanceSection() {
   const session = useAuthStore((s) => s.session);
   const utils = trpc.useUtils();
   const toast = useToast();
+  const errToast = useErrToast();
   const i18n = useI18n();
 
   const isSuperAdmin = session?.roleSlugs.includes('super_admin') ?? false;
@@ -5403,7 +5418,7 @@ function MaintenanceSection() {
       setDatePreview({ date: data.date, total: data.total, byTable: data.byTable });
       setDateConfirmOpen(true);
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
   const dateCommitMut = trpc.admin.purgeByDate.useMutation({
     onSuccess: (data) => {
@@ -5412,7 +5427,7 @@ function MaintenanceSection() {
       setDatePreview(null);
       void utils.invalidate();
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
 
   // ---- nuclear-purge state ----
@@ -5420,7 +5435,7 @@ function MaintenanceSection() {
   const [allOpen, setAllOpen] = useState(false);
   const slugMatches = confirmText === orgSlug;
   const allDryRun = trpc.admin.purgeAllTestData.useMutation({
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
   const allCommit = trpc.admin.purgeAllTestData.useMutation({
     onSuccess: (data) => {
@@ -5429,7 +5444,7 @@ function MaintenanceSection() {
       setConfirmText('');
       void utils.invalidate();
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
 
   if (!isSuperAdmin) {

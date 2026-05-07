@@ -289,7 +289,7 @@ export const ru = {
   'order.toast.submitted': 'Заказ отправлен ✓',
   'order.toast.submitFailedNetwork':
     'Сбой сети — заказ НЕ отправлен. Нажмите «Отправить» ещё раз.',
-  'order.toast.submitFailed': 'Не удалось отправить: {reason}',
+  'order.toast.submitFailed': 'Не удалось отправить заказ',
   'order.toast.adjustFailed': 'Не удалось сохранить — повторите',
   'order.toast.syncing': 'Синхронизация — повторите «Отправить»',
   'order.action.submitOrder': 'Отправить заказ',

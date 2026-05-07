@@ -16,6 +16,7 @@ import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton, getTg, haptic } from '../hooks/useTelegram';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { isLikelyNetworkError } from '../lib/networkError';
+import { useErrToast } from '../lib/errToast';
 import { useI18n, useProductName } from '../hooks/useI18n';
 import { formatQty, formatMoney } from '../lib/format';
 import { StoreSwitcher, useStoreContext } from '../components/StoreSwitcher';
@@ -35,6 +36,7 @@ export function OrderPage() {
   const storeCtx = useStoreContext();
   const currentStoreId = storeCtx.kind === 'specific' ? storeCtx.storeId : null;
   const toast = useToast();
+  const errToast = useErrToast();
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
 
@@ -138,7 +140,10 @@ export function OrderPage() {
         return;
       }
       // Real domain error (FORBIDDEN, BAD_REQUEST, etc.) — surface it.
-      toast.error(i18n.t('order.toast.adjustFailed'));
+      // M1.9-extra (2026-05-07): use errToast so server-side i18n keys
+      // (e.g. order.errors.cannotDraft) get translated; otherwise fall
+      // back to the generic adjust-failed copy.
+      errToast('order.toast.adjustFailed')(err);
       void utils.order.todaySession.invalidate({ storeId: vars.storeId });
     },
   });
@@ -366,11 +371,12 @@ export function OrderPage() {
       if (isLikelyNetworkError(err)) {
         toast.error(i18n.t('order.toast.submitFailedNetwork'));
       } else {
-        toast.error(
-          i18n.t('order.toast.submitFailed', {
-            reason: err.message ?? '?',
-          }),
-        );
+        // M1.9-extra (2026-05-07): was interpolating raw err.message
+        // into the toast text via {reason}, leaking i18n keys like
+        // `order.errors.cannotSubmit` to the user. errToast translates
+        // domain keys; falls back to a generic "could not submit"
+        // toast for unrecognized error shapes.
+        errToast('order.toast.submitFailed')(err);
       }
     },
   });
@@ -395,7 +401,7 @@ export function OrderPage() {
         }
         return;
       }
-      toast.error(i18n.t('order.toast.noteSaveFailed'));
+      errToast('order.toast.noteSaveFailed')(err);
     },
   });
 

@@ -263,7 +263,7 @@ export const zh = {
   'order.actions.addNote': '添加备注',
   'order.toast.submitted': '订单已提交 ✓',
   'order.toast.submitFailedNetwork': '网络抖动 — 订单未提交，请再点一次「提交」',
-  'order.toast.submitFailed': '提交失败：{reason}',
+  'order.toast.submitFailed': '提交订单失败',
   'order.toast.adjustFailed': '保存失败 — 请重试',
   'order.toast.syncing': '正在同步 — 稍等再点「提交」',
   'order.action.submitOrder': '提交订单',

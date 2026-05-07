@@ -331,7 +331,7 @@ export const en = {
   'order.toast.submitted': 'Order submitted ✓',
   'order.toast.submitFailedNetwork':
     'Network hiccup — order NOT submitted. Tap Submit again.',
-  'order.toast.submitFailed': 'Could not submit: {reason}',
+  'order.toast.submitFailed': 'Could not submit the order',
   'order.toast.adjustFailed': "Couldn't save change — please try again",
   'order.toast.syncing': 'Syncing — try Submit again in a moment',
   'order.action.submitOrder': 'Submit order',

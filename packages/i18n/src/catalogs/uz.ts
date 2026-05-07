@@ -298,7 +298,7 @@ export const uz = {
   'order.toast.submitted': 'Buyurtma yuborildi ✓',
   'order.toast.submitFailedNetwork':
     "Tarmoqda uzilish — buyurtma yuborilmadi. «Yuborish»ni qayta bosing.",
-  'order.toast.submitFailed': "Yuborib bo'lmadi: {reason}",
+  'order.toast.submitFailed': "Buyurtmani yuborib bo'lmadi",
   'order.toast.adjustFailed': "Saqlab bo'lmadi — qayta urining",
   'order.toast.syncing': "Sinxronlanmoqda — bir lahzadan so'ng qayta bosing",
   'order.action.submitOrder': 'Buyurtmani yuborish',
