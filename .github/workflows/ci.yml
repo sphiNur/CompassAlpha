@@ -1,31 +1,32 @@
-# CompassAlpha CI — minimum viable safety net (M1.9, 2026-05-07)
+# CompassAlpha CI (M1.9, 2026-05-07; expanded M1.9-extra 2026-05-07)
 #
-# Why this exists:
-#   Pre-launch the project had ZERO CI. Every test only ran when a
-#   developer typed `pnpm test` locally or via scripts/deploy.ts. Any
-#   PR could break every test and only a manual pre-deploy run would
-#   catch it. This file fixes that by gating push + PR on the same
-#   `type-check` + non-PG-gated unit tests the deploy script runs.
+# Two jobs in one file:
 #
-# What we DON'T run here (intentional):
-#   - PG-backed integration tests (full-lifecycle, store-scoped-admin):
-#     those need a real Postgres and Drizzle migrations. The deploy
-#     script runs them on the server post-migrate, where they belong.
-#     Adding a Postgres service to CI is M2 work — not blocking.
-#   - Browser smokes (browser-smoke.ts, browser-smoke-deep.ts): they
-#     hit the live Cloudflare URL with Playwright; running them on
-#     every PR would spam the prod URL and double-bill us on tunnel
-#     bandwidth. Smokes belong in `deploy.ts`, gated on a green CI
-#     run.
+#   1. unit
+#        Migration journal consistency, i18n catalog parity, workspace
+#        type-check, all unit tests EXCEPT the PG-gated integration suite.
+#        Runs on every push + PR; ~45-90s warm.
 #
-# Cache strategy:
-#   pnpm's store sits at ~/.local/share/pnpm/store; we cache it keyed
-#   on pnpm-lock.yaml. Cold runs ~3 min; warm ~45 s. Bun is installed
-#   from a stable version (matches .bun-version) and cached too.
+#   2. integration
+#        Spins up a real Postgres 16 service, applies migrations,
+#        runs the PG-gated tests (full-lifecycle, store-scoped-admin,
+#        refreshTokens service, cancel-run-cascade, rls-isolation).
+#        Runs on every push + PR; ~2-3min cold.
 #
-# Concurrency:
-#   Cancel in-progress runs on the same branch when a new commit lands.
-#   Avoids burning CI minutes on intermediate WIP pushes.
+# Why two jobs:
+#   - unit fails fast on dumb errors (missing key, type drift). Devs
+#     see red within ~60s without paying for a Postgres boot.
+#   - integration is the safety net that catches schema drift, replay
+#     defence, RLS isolation. Worth every second.
+#
+# What we DON'T run here:
+#   - Browser smokes (browser-smoke.ts, browser-smoke-deep.ts) hit the
+#     live Cloudflare URL via Playwright. Belongs in deploy.ts gated on
+#     a green CI run, not on every PR (would double-bill the tunnel
+#     and noise the prod URL).
+#
+# Concurrency: cancel in-progress runs on the same branch when a new
+# commit lands.
 
 name: CI
 
@@ -40,14 +41,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
+  # ============ Job 1: fast unit + type checks ============
+  unit:
     name: type-check + unit tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      # Skip the PG-gated integration tests — they connect to localhost
-      # PG which doesn't exist in this job. The deploy script applies
-      # the same flag for the same reason on dev machines.
+      # No Postgres in this job — skip the PG-gated tests.
       SKIP_PG_TESTS: '1'
 
     steps:
@@ -110,11 +110,78 @@ jobs:
         run: pnpm type-check
 
       - name: Unit tests (non-PG)
-        # Mirrors `scripts/deploy.ts` step 5.5 — domain + apps/api
-        # (PG-gated tests skipped via SKIP_PG_TESTS) + apps/web/src/lib.
         run: |
           bun test \
             packages/domain \
             apps/api \
             apps/web/src/lib \
             apps/web/src/hooks
+
+  # ============ Job 2: PG-backed integration tests ============
+  integration:
+    name: integration tests (Postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: compass
+          POSTGRES_PASSWORD: compass
+          POSTGRES_DB: compass_test
+        ports:
+          - 5432:5432
+        # Health check — GitHub waits for the service to be reachable
+        # before starting steps. Without this the migrate step races
+        # the postgres boot and intermittently fails.
+        options: >-
+          --health-cmd "pg_isready -U compass"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgres://compass:compass@localhost:5432/compass_test
+      # Tests + migrate read these from env. Values just need to exist
+      # and be ≥ 32 chars for the JWT layer; not used to verify real
+      # tokens here.
+      JWT_SECRET: ci-test-jwt-access-secret-aaaaaaaaaaaaaaaaaaaa
+      JWT_REFRESH_SECRET: ci-test-jwt-refresh-secret-aaaaaaaaaaaaaaaaaa
+      TELEGRAM_BOT_TOKEN: ci-stub:bot
+      # Don't skip — we WANT the PG-gated tests to run here.
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install bun (matches .bun-version)
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install workspace deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply migrations
+        # Same runner the deploy script uses. Order: PRE raw SQL →
+        # drizzle generated SQL → POST raw SQL (RLS policies). Idempotent.
+        run: pnpm --filter @compass/db migrate
+
+      - name: Integration tests
+        # SKIP_PG_TESTS unset → PG-gated tests run for real.
+        run: |
+          bun test \
+            apps/api/src/__tests__/full-lifecycle.test.ts \
+            apps/api/src/__tests__/store-scoped-admin.test.ts \
+            apps/api/src/__tests__/refreshTokens.test.ts \
+            apps/api/src/__tests__/cancel-run-cascade.test.ts \
+            apps/api/src/__tests__/rls-isolation.test.ts
