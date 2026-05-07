@@ -453,6 +453,11 @@ export function ConfirmPage() {
             : '',
         })}
         description={i18n.t('confirm.issue.describe')}
+        // M1.9-fix (2026-05-07): autofocusing the issue note input
+        // popped the iOS keyboard mid-slideUp, pushing the
+        // PhotoCapture row below the fold. Receiver who wants to
+        // attach a photo first now sees both inputs.
+        disableAutoFocus
         footer={
           // Inside Telegram, the page MainButton becomes "Save" while
           // this sheet is open — see the dispatcher above. Avoid the
@@ -493,7 +498,6 @@ export function ConfirmPage() {
             onChange={(e) => setIssueNote(e.target.value)}
             placeholder={i18n.t('confirm.issue.placeholder')}
             maxLength={500}
-            autoFocus
           />
           <PhotoCapture
             label={i18n.t('confirm.issue.photoOptional')}

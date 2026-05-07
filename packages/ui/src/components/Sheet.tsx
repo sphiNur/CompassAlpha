@@ -64,9 +64,35 @@ interface SheetProps {
   description?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
+  /**
+   * When true, suppress Radix Dialog's default behavior of focusing
+   * the first focusable child on open. The user taps an input to
+   * focus it themselves.
+   *
+   * Why: on iOS Telegram WebView, focusing an input pops the virtual
+   * keyboard instantly. If that happens DURING the slideUp animation,
+   * the WebView scroll-jumps the page and often hides the sheet's
+   * bottom Save button. Setting `disableAutoFocus` is the most
+   * pragmatic fix for sheets that have a text input as the first
+   * focusable element. (Audit M1.9, 2026-05-07.)
+   *
+   * Trade-off: keyboard-only / screen-reader users on non-Telegram
+   * envs lose the "tab lands inside the dialog" affordance. Future
+   * iteration can defer-focus with a setTimeout matching the slideUp
+   * duration; for now, opt-in per sheet is the safe default.
+   */
+  disableAutoFocus?: boolean;
 }
 
-export function Sheet({ open, onOpenChange, title, description, children, footer }: SheetProps) {
+export function Sheet({
+  open,
+  onOpenChange,
+  title,
+  description,
+  children,
+  footer,
+  disableAutoFocus = false,
+}: SheetProps) {
   // Track open-state in the global counter + wire Telegram BackButton
   // to close. Skipped when not in Telegram (web preview just ignores).
   useEffect(() => {
@@ -112,6 +138,9 @@ export function Sheet({ open, onOpenChange, title, description, children, footer
             'pb-[var(--app-safe-bottom)] outline-none',
           )}
           aria-describedby={description ? 'sheet-desc' : undefined}
+          onOpenAutoFocus={
+            disableAutoFocus ? (e) => e.preventDefault() : undefined
+          }
         >
           <SheetHeader>
             {/* Drag handle — slightly bolder + wider than the previous

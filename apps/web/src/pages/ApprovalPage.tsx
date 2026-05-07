@@ -371,6 +371,12 @@ export function ApprovalPage() {
         }}
         title={i18n.t('approval.confirm.reject.title')}
         description={i18n.t('approval.confirm.reject.body')}
+        // M1.9-fix (2026-05-07): the reason input was autoFocusing on
+        // open, which popped the iOS keyboard during the sheet slideUp
+        // animation and pushed the bottom Reject button out of view.
+        // Manager has to tap the input now, but the Reject button is
+        // visible from the start.
+        disableAutoFocus
         footer={
           <Button
             block
@@ -392,7 +398,6 @@ export function ApprovalPage() {
             onChange={(e) => setRejectReason(e.target.value)}
             placeholder={i18n.t('approval.confirm.reject.reasonPlaceholder')}
             maxLength={500}
-            autoFocus
           />
         </div>
       </Sheet>
