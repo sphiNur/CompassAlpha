@@ -47,6 +47,7 @@ export const en = {
   'common.close': 'Close',
   'common.retry': 'Retry',
   'common.loading': 'Loading…',
+  'common.noData': 'No data',
   'common.notes': 'Notes',
   'common.optional': 'Optional',
   /** Format `${count} ${i18n.t('common.itemsLabel')}` — bare noun. */
@@ -294,6 +295,13 @@ export const en = {
   'order.title': "Today's order",
   'order.empty.title': 'No items selected yet',
   'order.empty.description': 'Tap + on any product to start your draft.',
+  // M1.9-fix (2026-05-07): SKU row meta + chip-bar labels were
+  // hardcoded English. These appear on every product row of the main
+  // staff page.
+  'order.categoriesAriaLabel': 'Product categories',
+  'order.categories.all': 'All',
+  'order.suggested': 'suggested {qty}',
+  'order.totalQty': 'total {qty} {unit}',
   'order.selected': 'Selected',
   'order.review': 'Review order ({n})',
   'order.status.draft': 'Draft',
@@ -354,6 +362,8 @@ export const en = {
   'approval.tab.approved': 'Approved',
   'approval.tab.rejected': 'Rejected',
   'approval.viewItems': 'View items',
+  'approval.submittedBy': 'submitted by {name}',
+  'approval.contributorsCount': '{n, plural, =1 {1 contributor} other {{n} contributors}}',
   'approval.hideItems': 'Hide items',
   'approval.approve': 'Approve',
   'approval.reject': 'Reject',
@@ -444,6 +454,8 @@ export const en = {
   'run.label.confirmedFraction': '{done}/{total} confirmed',
   'run.label.itemsHint': '{n, plural, =1 {1 item} other {{n} items}} · {subtitle}',
   'run.label.itemsCount': '{n, plural, =1 {1 item} other {{n} items}}',
+  'run.label.skuCountAndQty': '{n, plural, =1 {1 SKU} other {{n} SKUs}} · {qty}',
+  'run.label.splitsMismatch': 'Splits: {sum} / {target}',
   // M1.9-fix (2026-05-07): delivery store-row stage labels — were
   // hardcoded English on the purchaser's main during-run view.
   'run.deliveryStage.pending': 'Not delivered',

@@ -619,9 +619,9 @@ export function OrderPage() {
           scrolls off, so the filters are always reachable while the
           user is browsing items. */}
       <div className="sticky top-0 z-[1] border-b border-[var(--c-divider)] bg-[var(--c-bg)] py-2">
-        <ChipBar ariaLabel="Product categories">
+        <ChipBar ariaLabel={i18n.t('order.categoriesAriaLabel')}>
           <Chip selected={activeCategory === null} onClick={() => setActiveCategory(null)}>
-            All
+            {i18n.t('order.categories.all')}
           </Chip>
           <DataState query={categoriesQuery}>
             {(cats) =>
@@ -723,12 +723,14 @@ export function OrderPage() {
                     </div>
                     <div className="mt-0.5 text-label leading-tight text-[var(--c-fg-muted)]">
                       {sku.unit}
-                      {sku.suggestedQty ? ` · suggested ${sku.suggestedQty}` : ''}
+                      {sku.suggestedQty
+                        ? ' · ' + i18n.t('order.suggested', { qty: sku.suggestedQty })
+                        : ''}
                       {otherContribs.length > 0 && totalQty > 0 ? (
                         <>
                           {' · '}
                           <span className="font-semibold text-[var(--c-fg)]">
-                            total {totalQty} {sku.unit}
+                            {i18n.t('order.totalQty', { qty: totalQty, unit: sku.unit })}
                           </span>
                           {' '}
                           ({otherContribs.length + (myQty > 0 ? 1 : 0)})

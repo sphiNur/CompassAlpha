@@ -509,7 +509,10 @@ export function RunPage() {
     if (purchaseDraft && purchaseFormState) {
       const submitting = purchaseItem.isPending || revisePurchase.isPending;
       const text = !purchaseFormState.splitMatches
-        ? `Splits: ${formatQty(purchaseFormState.splitTotal)} / ${formatQty(purchaseDraft.actualQty || '0')}`
+        ? i18n.t('run.label.splitsMismatch', {
+            sum: formatQty(purchaseFormState.splitTotal),
+            target: formatQty(purchaseDraft.actualQty || '0'),
+          })
         : !purchaseFormState.reasonOk
           ? i18n.t('run.errors.reviseReasonRequired')
           : purchaseDraft.isEdit
@@ -2142,6 +2145,7 @@ function PerStoreView({
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
   skusByStore: Map<string, Array<{ skuId: string; qty: string }>>;
 }) {
+  const i18n = useI18n();
   const orderedStores = useMemo(() => {
     const ids = [...skusByStore.keys()];
     ids.sort((a, b) => {
@@ -2166,7 +2170,10 @@ function PerStoreView({
                 {store?.name ?? storeId.slice(0, 8)}
               </span>
               <span className="tabular-nums">
-                {rows.length} SKU · {formatQty(String(totalQty))}
+                {i18n.t('run.label.skuCountAndQty', {
+                  n: rows.length,
+                  qty: formatQty(String(totalQty)),
+                })}
               </span>
             </div>
             {/* M1.8: surface "其他物品" note here too, since this is the
@@ -2629,7 +2636,10 @@ function PurchaseSheet({
             }
           >
             {!splitMatches
-              ? `Splits: ${formatQty(splitTotal)} / ${formatQty(draft?.actualQty || '0')}`
+              ? i18n.t('run.label.splitsMismatch', {
+                  sum: formatQty(splitTotal),
+                  target: formatQty(draft?.actualQty || '0'),
+                })
               : !reasonOk
                 ? i18n.t('run.errors.reviseReasonRequired')
                 : draft?.isEdit
@@ -3091,11 +3101,11 @@ function RunHistoryDetailSheet({
     >
       {!target ? null : detail.isLoading ? (
         <div className="py-8 text-center text-body text-[var(--c-fg-muted)]">
-          Loading…
+          {i18n.t('common.loading')}
         </div>
       ) : !breakdown ? (
         <div className="py-8 text-center text-body text-[var(--c-fg-muted)]">
-          No data
+          {i18n.t('common.noData')}
         </div>
       ) : (
         <div className="flex flex-col gap-4 py-3">

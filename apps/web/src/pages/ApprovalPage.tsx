@@ -208,18 +208,21 @@ export function ApprovalPage() {
                       <div>
                         <CardTitle>{row.storeName ?? row.storeId.slice(0, 8)}</CardTitle>
                         <CardMeta>
-                          {/* Attribution = submitter (or initiator if not yet submitted). */}
+                          {/* Attribution = submitter (or initiator if not yet submitted).
+                              M1.9-fix (2026-05-07): all 3 segments and the
+                              timestamp locale were hardcoded; non-English
+                              users saw English meta on every card. */}
                           {row.attribDisplayName
-                            ? `submitted by ${row.attribDisplayName}`
+                            ? i18n.t('approval.submittedBy', { name: row.attribDisplayName })
                             : '—'}
                           {row.contributorCount > 1
-                            ? ` · ${row.contributorCount} contributors`
+                            ? ' · ' + i18n.t('approval.contributorsCount', { n: row.contributorCount })
                             : ''}
                           {' · '}
                           {row.orderDate}
                           {row.submittedAt
                             ? ' · ' +
-                              new Date(row.submittedAt).toLocaleTimeString([], {
+                              new Date(row.submittedAt).toLocaleTimeString(i18n.locale, {
                                 hour: '2-digit',
                                 minute: '2-digit',
                               })
