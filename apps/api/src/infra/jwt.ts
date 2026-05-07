@@ -26,15 +26,34 @@ export async function verifyAccess(token: string): Promise<AccessClaims> {
   return payload as unknown as AccessClaims;
 }
 
-export async function signRefresh(userId: string, family: string): Promise<string> {
-  return await new SignJWT({ sub: userId, family })
+/**
+ * Sign a refresh token. M1.9 (2026-05-07): now carries a `jti` (the
+ * refresh_tokens row id) so the server can look up the tracked row
+ * on consume — the foundation for revocation, rotation lineage, and
+ * replay detection. Older clients with jti-less tokens are still
+ * accepted (graceful migration); see services/refreshTokens.ts.
+ */
+export async function signRefresh(
+  userId: string,
+  family: string,
+  jti: string,
+): Promise<string> {
+  return await new SignJWT({ sub: userId, family, jti })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime(REFRESH_TTL)
     .sign(refreshSecret);
 }
 
-export async function verifyRefresh(token: string): Promise<{ sub: string; family: string }> {
+export async function verifyRefresh(
+  token: string,
+): Promise<{ sub: string; family: string; jti: string | null }> {
   const { payload } = await jwtVerify(token, refreshSecret);
-  return { sub: String(payload.sub), family: String(payload.family) };
+  // jti is optional during the migration window — tokens issued
+  // before M1.9 lack it. Treated as legacy by the consume helper.
+  return {
+    sub: String(payload.sub),
+    family: String(payload.family),
+    jti: typeof payload.jti === 'string' ? payload.jti : null,
+  };
 }

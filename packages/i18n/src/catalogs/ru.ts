@@ -83,6 +83,8 @@ export const ru = {
   'auth.errors.invalidInitData':
     'Сессия Telegram недействительна — переоткройте приложение',
   'auth.errors.invalidRefresh': 'Сессия истекла — войдите снова',
+  'auth.errors.refreshReplayDetected':
+    'Обнаружена подозрительная активность — все сессии этого аккаунта прерваны. Войдите снова.',
   'auth.errors.nameLocked': 'Имя зафиксировано — изменить может только администратор',
   'auth.errors.noMembership': 'Вы не состоите ни в одной организации',
   'auth.errors.noOrg': 'Организация не найдена',

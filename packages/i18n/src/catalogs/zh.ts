@@ -76,6 +76,8 @@ export const zh = {
   'auth.errors.botTokenMissing': '机器人令牌未配置',
   'auth.errors.invalidInitData': 'Telegram 会话无效 — 请重新打开 app',
   'auth.errors.invalidRefresh': '会话已过期 — 请重新登录',
+  'auth.errors.refreshReplayDetected':
+    '检测到可疑登录活动 — 此账户所有设备已退出，请重新登录。',
   'auth.errors.nameLocked': '名字已锁定 — 仅管理员可修改',
   'auth.errors.noMembership': '您不属于任何组织',
   'auth.errors.noOrg': '组织不存在',

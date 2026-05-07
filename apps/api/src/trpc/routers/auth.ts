@@ -11,9 +11,16 @@ import {
 import { authedProcedure, publicProcedure, router } from '../trpc';
 import { verifyInitData } from '../../services/telegramAuth';
 import { checkRate } from '../../services/rateLimit';
-import { signAccess, signRefresh, verifyRefresh } from '../../infra/jwt';
+import { signAccess, verifyRefresh } from '../../infra/jwt';
+import {
+  issueRefresh,
+  consumeRefresh,
+  revokeAllForUser,
+  RefreshReplayError,
+  RefreshNotFoundError,
+} from '../../services/refreshTokens';
+import { logger } from '../../infra/log';
 import { env } from '../../env';
-import { randomUUID } from 'node:crypto';
 
 /**
  * Brute-force defence on the two public auth endpoints (added 2026-05-05).
@@ -113,14 +120,26 @@ export const authRouter = router({
 
       const session = await buildSessionPayload(ctx.db, user.id, ensuredMember.id, ensuredMember.orgId);
       const accessToken = await signAccess({ sub: user.id, org: session.member.orgId, mid: ensuredMember.id });
-      const family = randomUUID();
-      const refreshToken = await signRefresh(user.id, family);
+      // M1.9 (2026-05-07): refresh tokens are now tracked in
+      // auth.refresh_tokens with rotation lineage + replay detection.
+      // issueRefresh inserts a row keyed by the JWT's `jti`; the
+      // matching `consumeRefresh` lookup powers signOut + replay defence.
+      const issued = await issueRefresh(ctx.db, {
+        userId: user.id,
+        ip: ctx.ip,
+        userAgent: ctx.userAgent,
+      });
 
       const accessExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-      const refreshExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      const refreshExpiresAt = issued.expiresAt.toISOString();
 
       return {
-        tokens: { accessToken, refreshToken, accessExpiresAt, refreshExpiresAt },
+        tokens: {
+          accessToken,
+          refreshToken: issued.token,
+          accessExpiresAt,
+          refreshExpiresAt,
+        },
         session,
       };
     }),
@@ -212,9 +231,23 @@ export const authRouter = router({
       );
     }),
 
-  /** Sign out — currently a no-op since access tokens are stateless. Refresh
-   *  tokens get invalidated when we ship token rotation. */
-  signOut: authedProcedure.mutation(async () => ({ ok: true })),
+  /**
+   * Sign out from EVERY device. M1.9 (2026-05-07): finally does
+   * something — revokes all of the user's tracked refresh tokens.
+   * Access tokens themselves are stateless (15-min TTL) so they can
+   * still verify until expiry; the security improvement is that
+   * silent re-login via refresh is now impossible.
+   *
+   * Per-device sign-out (revoke just this family) would need the
+   * client to pass the refresh token. We deliberately default to
+   * "everywhere" because the most common signout reason is "phone
+   * stolen / left at the restaurant" — losing one device's session
+   * shouldn't leave others authenticated.
+   */
+  signOut: authedProcedure.mutation(async ({ ctx }) => {
+    const revoked = await revokeAllForUser(ctx.db, ctx.session.userId);
+    return { ok: true, revoked };
+  }),
 
   /**
    * Exchange a refresh token for a fresh access token (and optionally a
@@ -239,12 +272,57 @@ export const authRouter = router({
    */
   refresh: publicProcedure.input(RefreshInputSchema).mutation(async ({ ctx, input }) => {
     enforceRate('refresh', ctx.ip);
-    let claims: { sub: string; family: string };
+    let claims: { sub: string; family: string; jti: string | null };
     try {
       claims = await verifyRefresh(input.refreshToken);
     } catch {
       throw new TRPCError({ code: 'UNAUTHORIZED', message: 'auth.errors.invalidRefresh' });
     }
+
+    // M1.9 (2026-05-07): consume the tracked refresh token. Three
+    // outcomes:
+    //   - Tracked + active: marked revoked, we proceed to issue a
+    //     rotated successor.
+    //   - Tracked + already-revoked: REPLAY — the entire family is
+    //     nuked inside consumeRefresh and we throw 401. The legitimate
+    //     user re-logs in; the attacker (or stale device) loses
+    //     access.
+    //   - Untracked: pre-M1.9 jti-less token, OR the tracking row was
+    //     wiped (db reset, manual purge). Grandfather: issue a fresh
+    //     tracked refresh token, log a warning so we can quantify how
+    //     many users are still on legacy tokens. After ~30d (refresh
+    //     TTL) all sessions migrate naturally.
+    let parentId: string | undefined;
+    let family: string | undefined;
+    if (claims.jti) {
+      try {
+        await consumeRefresh(ctx.db, claims.jti, claims.family);
+        parentId = claims.jti;
+        family = claims.family;
+      } catch (err) {
+        if (err instanceof RefreshReplayError) {
+          throw new TRPCError({
+            code: 'UNAUTHORIZED',
+            message: 'auth.errors.refreshReplayDetected',
+          });
+        }
+        if (err instanceof RefreshNotFoundError) {
+          // Untracked OR expired-by-row. Treat the same as legacy.
+          logger.warn(
+            { sub: claims.sub, family: claims.family, jti: claims.jti },
+            'auth.refresh: jti not found in DB — grandfathering as legacy',
+          );
+        } else {
+          throw err;
+        }
+      }
+    } else {
+      logger.info(
+        { sub: claims.sub, family: claims.family },
+        'auth.refresh: legacy jti-less token — issuing tracked successor',
+      );
+    }
+
     const user = await ctx.db.query.users.findFirst({
       where: (u, { eq: eq2 }) => eq2(u.id, claims.sub),
     });
@@ -264,13 +342,25 @@ export const authRouter = router({
       org: session.member.orgId,
       mid: member.id,
     });
-    // Keep the existing refresh-token family — don't churn it on every
-    // refresh, only on full re-login. M2 will add explicit rotation.
-    const refreshToken = await signRefresh(user.id, claims.family);
+    // Issue the rotated successor. When `parentId` + `family` are set
+    // we're chaining to the consumed row; otherwise we start a fresh
+    // family (legacy-token migration path).
+    const issued = await issueRefresh(ctx.db, {
+      userId: user.id,
+      family,
+      parentId,
+      ip: ctx.ip,
+      userAgent: ctx.userAgent,
+    });
     const accessExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-    const refreshExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const refreshExpiresAt = issued.expiresAt.toISOString();
     return {
-      tokens: { accessToken, refreshToken, accessExpiresAt, refreshExpiresAt },
+      tokens: {
+        accessToken,
+        refreshToken: issued.token,
+        accessExpiresAt,
+        refreshExpiresAt,
+      },
       session,
     };
   }),

@@ -113,6 +113,8 @@ export const en = {
   'auth.errors.botTokenMissing': 'Bot token not configured',
   'auth.errors.invalidInitData': 'Telegram session is invalid — please re-open the app',
   'auth.errors.invalidRefresh': 'Session expired — please sign in again',
+  'auth.errors.refreshReplayDetected':
+    'Suspicious sign-in activity detected — all sessions for this account have been signed out. Please sign in again.',
   'auth.errors.nameLocked': 'Your name is locked — only an administrator can change it',
   'auth.errors.noMembership': 'You are not a member of any organization',
   'auth.errors.noOrg': 'Organization not found',
