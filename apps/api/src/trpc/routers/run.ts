@@ -1,0 +1,1222 @@
+/**
+ * Run router — event-sourced market run / delivery / confirm flow.
+ *
+ * Mirrors the order router pattern: load events → decide() → append → project.
+ *
+ * Run.create has an extra step: it must aggregate all approved order sessions
+ * for the date into the planned items list, and emit `AttachedToRun` events
+ * on each session stream so they transition to `in_run`.
+ */
+import { TRPCError } from '@trpc/server';
+import { desc, eq, inArray, sql } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
+import { schema as s } from '@compass/db';
+import {
+  ConfirmStoreInputSchema,
+  ConfirmStoreItemInputSchema,
+  DispatchInputSchema,
+  EjectSessionInputSchema,
+  MarkUnavailableInputSchema,
+  PurchaseItemInputSchema,
+  RevisePurchaseInputSchema,
+  RunCreateInputSchema,
+  RunPreviewInputSchema,
+  RunReasonOnlyInputSchema,
+  SimpleRunCommandSchema,
+  UndeliverStoreInputSchema,
+  UndoPurchaseInputSchema,
+  UnmarkUnavailableInputSchema,
+} from '@compass/contracts';
+import {
+  assertActorAssignedToStore,
+  effectivePermissionsForStore,
+} from '../../services/storeScope';
+import {
+  applyRun,
+  decideRun,
+  emptyRunState,
+  type RunEvent,
+  type RunState,
+} from '@compass/domain/run';
+import { decide as decideOrder, apply as applyOrder, emptyState as emptyOrderState, type OrderEvent } from '@compass/domain/order';
+import { DomainError } from '@compass/domain';
+import { authedProcedure, rethrowDomainError, router } from '../trpc';
+import { appendEvents, readStream } from '../../services/eventStore';
+import { projectRun } from '../../services/runProjection';
+import { projectOrder } from '../../services/orderProjection';
+import { hub } from '../../realtime/hub';
+import { dispatchRunEventNotifications } from '../../services/notifyForEvent';
+
+function todayStr(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export const runRouter = router({
+  /**
+   * Preview what `create` would plan for a given date.
+   *
+   * SCOPE — INTENTIONALLY org-wide, not actor-store-scoped (decision
+   * confirmed 2026-05-07, audit HIGH #6 closed as "by design"):
+   * the purchaser role in this product is org-level. One purchaser
+   * walks the bazaar in the morning and delivers to every store on
+   * their list — a chain of 5 stores with one purchaser is the
+   * common case. So the preview MUST aggregate every approved
+   * session for the date across the whole org.
+   *
+   * If you ever introduce a per-store-purchaser model, gate this
+   * with `getActorStoreIds()` like the order/confirm routers do —
+   * but DO NOT do that "defensively" without a product change. It
+   * will silently strip data the chain owner relies on.
+   *
+   * Returns three layers of aggregation so the FE can offer the user
+   * an overall / per-store / per-supplier toggle on the same payload
+   * without round-trips (M1.5, 2026-05-06):
+   *
+   *   - `plannedItems` (legacy)  — flat sum across stores, one row per
+   *                                SKU. Powers the "overall" view.
+   *   - `perStoreDemand`         — per (store, sku) sum + the store's
+   *                                display name. Powers "by store"
+   *                                view (each store's preparation
+   *                                list) and is also re-pivoted client-
+   *                                side for the per-supplier view's
+   *                                "Store A: X kg, Store B: Y kg"
+   *                                breakdown under each item.
+   *   - `supplierBySku`          — preferred supplier per SKU drawn
+   *                                from `sku_supplier_links`,
+   *                                preferring `is_preferred=true`,
+   *                                tiebreak by `last_seen_at DESC`.
+   *                                SKUs with no link land under a
+   *                                synthetic "unassigned" bucket on
+   *                                the FE.
+   */
+  previewCreatable: authedProcedure
+    .input(RunPreviewInputSchema)
+    .query(async ({ ctx, input }) => {
+      return ctx.withOrg(async (tx) => {
+        const date = input.date ?? todayStr();
+        const sessions = await tx.query.orderSessionsV.findMany({
+          where: (sess, { eq: eq2, and: and2 }) =>
+            and2(
+              eq2(sess.orgId, ctx.session!.orgId),
+              eq2(sess.status, 'approved'),
+              eq2(sess.orderDate, date),
+            ),
+        });
+        const sessionIds = sessions.map((s) => s.id);
+        if (sessionIds.length === 0) {
+          return {
+            date,
+            sessions: [],
+            plannedItems: [],
+            perStoreDemand: [],
+            supplierBySku: {} as Record<string, {
+              id: string;
+              name: string;
+              contactPhone: string | null;
+              contactTg: string | null;
+            } | null>,
+            sessionNotesByStore: {} as Record<string, string>,
+            total: 0,
+          };
+        }
+        const items = await tx.query.orderItemsV.findMany({
+          where: (it, { inArray: inArray2 }) => inArray2(it.sessionId, sessionIds),
+        });
+
+        // Build a session.id → storeId lookup so we can pivot items by
+        // store. Cheaper than re-joining at the SQL level for the small
+        // session counts (≤ a few dozen) we expect today.
+        const storeBySession = new Map<string, string>();
+        for (const sess of sessions) storeBySession.set(sess.id, sess.storeId);
+
+        const aggregated = new Map<string, number>();
+        const perStoreSkuQty = new Map<string, Map<string, number>>(); // storeId → skuId → qty
+        for (const it of items) {
+          const qty = Number(it.qty);
+          if (qty <= 0) continue;
+          aggregated.set(it.skuId, (aggregated.get(it.skuId) ?? 0) + qty);
+          const sid = storeBySession.get(it.sessionId);
+          if (!sid) continue;
+          const inner = perStoreSkuQty.get(sid) ?? new Map<string, number>();
+          inner.set(it.skuId, (inner.get(it.skuId) ?? 0) + qty);
+          perStoreSkuQty.set(sid, inner);
+        }
+
+        // Resolve store display names in one query — the FE renders
+        // "🏪 {name}" headings so we'd otherwise need session.stores
+        // (which only covers the actor's accessible stores). For an
+        // admin viewing an org-wide preview we want every involved
+        // store's name, not just theirs.
+        const involvedStoreIds = [...perStoreSkuQty.keys()];
+        // M1.9-fix (2026-05-07): drizzle's tagged template binds a JS
+        // array as a single parameter — `IN ${array}` becomes
+        // `IN ($1)` with $1 being the entire array, not an IN-list.
+        // Postgres compares the UUID column to the text representation
+        // of the array and returns no rows; storeName silently became
+        // '—' for every store on the by-store preview. Use the
+        // `inArray()` builder, which expands to a proper IN-list.
+        const storeRows = involvedStoreIds.length
+          ? await tx
+              .select({ id: s.stores.id, name: s.stores.name })
+              .from(s.stores)
+              .where(inArray(s.stores.id, involvedStoreIds))
+          : [];
+        const storeNameById = new Map(storeRows.map((r) => [r.id, r.name]));
+
+        const perStoreDemand: Array<{
+          storeId: string;
+          storeName: string;
+          skuId: string;
+          qty: string;
+        }> = [];
+        for (const [sid, inner] of perStoreSkuQty.entries()) {
+          const storeName = storeNameById.get(sid) ?? '—';
+          for (const [skuId, qty] of inner.entries()) {
+            perStoreDemand.push({
+              storeId: sid,
+              storeName,
+              skuId,
+              qty: qty.toString(),
+            });
+          }
+        }
+
+        // Resolve preferred supplier per SKU. DISTINCT ON (sku_id) +
+        // ORDER BY is_preferred DESC, last_seen_at DESC NULLS LAST
+        // gives us "the best link per SKU". Only one query for all
+        // planned SKUs.
+        const skuIds = [...aggregated.keys()];
+        const supplierBySku: Record<string, {
+          id: string;
+          name: string;
+          contactPhone: string | null;
+          contactTg: string | null;
+        } | null> = {};
+        if (skuIds.length > 0) {
+          // Drizzle ORM doesn't have a clean `distinctOn` builder; use
+          // `sql` raw for the prioritised ranking. Casting through
+          // `any` for the row shape — we know what columns we asked
+          // for.
+          // M1.7-fix (2026-05-06): require is_preferred=true. Earlier
+          // version sorted by `is_preferred DESC, last_seen_at DESC`
+          // and took DISTINCT ON, which silently returned a "best
+          // available" supplier even when ALL links for the SKU had
+          // is_preferred=false. That broke the user-clears-supplier
+          // flow: setSkuPreferredSupplier(null) wipes is_preferred to
+          // false on every link, but the preview kept showing the
+          // most-recent link as if it were still preferred.
+          //
+          // With WHERE is_preferred=true, a SKU with no preferred
+          // link returns no row → falls into the FE's "Unassigned"
+          // bucket, which matches the operator's mental model
+          // ("I cleared it, so it's gone").
+          const rows = await tx.execute<{
+            sku_id: string;
+            supplier_id: string;
+            name: string;
+            contact_phone: string | null;
+            contact_tg: string | null;
+          }>(sql`
+            SELECT DISTINCT ON (sl.sku_id)
+              sl.sku_id, sl.supplier_id,
+              sup.name, sup.contact_phone, sup.contact_tg
+            FROM inventory.sku_supplier_links sl
+            INNER JOIN inventory.suppliers sup ON sup.id = sl.supplier_id
+            WHERE sl.sku_id IN ${skuIds}
+              AND sup.is_archived = false
+              AND sl.is_preferred = true
+            ORDER BY sl.sku_id,
+                     sl.last_seen_at DESC NULLS LAST
+          `);
+          // node-postgres returns rows under `.rows` for raw SQL; the
+          // drizzle execute() result is already an array on Postgres
+          // adapters but we defensively support both shapes.
+          const list = Array.isArray(rows)
+            ? rows
+            : ((rows as { rows?: typeof rows }).rows ?? []);
+          for (const r of list) {
+            supplierBySku[r.sku_id] = {
+              id: r.supplier_id,
+              name: r.name,
+              contactPhone: r.contact_phone,
+              contactTg: r.contact_tg,
+            };
+          }
+          // SKUs with no link → null entry, so the FE can still show a
+          // bucket for them rather than dropping them silently.
+          for (const sid of skuIds) {
+            if (!(sid in supplierBySku)) supplierBySku[sid] = null;
+          }
+        }
+
+        // M1.8 (2026-05-07): bundle the session-level "其他物品" notes
+        // by store so the FE can show them inline next to that store's
+        // demand block. We keep it under the store id (not session id)
+        // because the by-store preview groups demand by store, and a
+        // store can in principle have multiple sessions per day if
+        // multiple staff drafted in parallel — concat their notes with
+        // a separator. Quick visual cue for the purchaser before they
+        // hit the market.
+        const notesByStore = new Map<string, string[]>();
+        for (const sess of sessions) {
+          const trimmed = (sess.notes ?? '').trim();
+          if (!trimmed) continue;
+          const arr = notesByStore.get(sess.storeId) ?? [];
+          arr.push(trimmed);
+          notesByStore.set(sess.storeId, arr);
+        }
+        const sessionNotesByStore: Record<string, string> = {};
+        for (const [sid, arr] of notesByStore.entries()) {
+          sessionNotesByStore[sid] = arr.join('\n\n');
+        }
+
+        return {
+          date,
+          sessions: sessions.map((s) => ({
+            id: s.id,
+            storeId: s.storeId,
+            submittedByMemberId: s.submittedByMemberId,
+            notes: s.notes,
+          })),
+          plannedItems: [...aggregated.entries()].map(([skuId, qty]) => ({
+            skuId,
+            qty: qty.toString(),
+          })),
+          perStoreDemand,
+          supplierBySku,
+          /** Per-store concatenated session notes (M1.8). Empty record
+           *  when no notes anywhere. */
+          sessionNotesByStore,
+          total: aggregated.size,
+        };
+      });
+    }),
+
+  /**
+   * Manual supplier (re-)assignment from the Run preview (M1.6 #1,
+   * 2026-05-06).
+   *
+   * Use case: the purchaser is staring at the "by supplier" preview
+   * and notices a SKU with the wrong vendor (or none). They tap the
+   * SKU, pick the right vendor from the org's supplier list, the
+   * preview re-aggregates immediately. Decisions stick across runs
+   * because we update `sku_supplier_links.is_preferred`.
+   *
+   * Idempotent on `(skuId, supplierId)`. Setting supplierId=null
+   * clears the preferred flag from every link of that SKU (preview
+   * will then show the SKU under "Unassigned vendor").
+   *
+   * Permission: `run.purchase` — anyone running a market run can
+   * keep the preference table fresh. Admins also have this perm via
+   * the manager role tier. We intentionally don't gate this on
+   * `users.manage` because the field crew is the one who learns
+   * "stall A doesn't carry tomatoes anymore" first.
+   */
+  setSkuPreferredSupplier: authedProcedure
+    .input(
+      z.object({
+        skuId: z.string().uuid(),
+        supplierId: z.string().uuid().nullable(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.session?.permissions.has('run.purchase')) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'auth.errors.missingPermission:run.purchase',
+        });
+      }
+      return ctx.withOrg(async (tx) => {
+        const orgId = ctx.session!.orgId;
+
+        // Cross-tenant guard. Both the SKU and (if given) the supplier
+        // must belong to the actor's org. Without this an actor in
+        // org A could pivot a SKU's preferred vendor to a supplier
+        // from org B by passing its UUID — leaks the supplier's
+        // existence and creates a dangling reference.
+        const sku = await tx.query.skus.findFirst({
+          where: (k, { eq: eq2, and: and2 }) =>
+            and2(eq2(k.id, input.skuId), eq2(k.orgId, orgId)),
+        });
+        if (!sku) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.skuNotFound' });
+        }
+        if (input.supplierId !== null) {
+          const sup = await tx.query.suppliers.findFirst({
+            where: (su, { eq: eq2, and: and2 }) =>
+              and2(eq2(su.id, input.supplierId!), eq2(su.orgId, orgId)),
+          });
+          if (!sup) {
+            throw new TRPCError({
+              code: 'NOT_FOUND',
+              message: 'admin.errors.supplierNotFound',
+            });
+          }
+        }
+
+        // Reset is_preferred on every existing link for this SKU.
+        // After this, ZERO links are preferred for this SKU. We then
+        // re-set just the chosen one (if any) below. Two-step keeps
+        // the invariant "at most one preferred per SKU" without
+        // needing a unique partial index.
+        await tx
+          .update(s.skuSupplierLinks)
+          .set({ isPreferred: false })
+          .where(eq(s.skuSupplierLinks.skuId, input.skuId));
+
+        if (input.supplierId !== null) {
+          // Upsert the chosen link with is_preferred=true. ON CONFLICT
+          // updates the existing row (preserves price observations);
+          // INSERT creates one if it didn't exist before.
+          await tx
+            .insert(s.skuSupplierLinks)
+            .values({
+              skuId: input.skuId,
+              supplierId: input.supplierId,
+              isPreferred: true,
+              lastSeenAt: new Date(),
+            })
+            .onConflictDoUpdate({
+              target: [s.skuSupplierLinks.skuId, s.skuSupplierLinks.supplierId],
+              set: { isPreferred: true, lastSeenAt: new Date() },
+            });
+        }
+        return { ok: true };
+      });
+    }),
+
+  /**
+   * Plan a run from approved sessions on a given date.
+   *
+   * Scope: org-wide on purpose — see `previewCreatable` doc-block
+   * for why. A run created here can include sessions from ANY store
+   * in the org, because one purchaser serves the chain.
+   */
+  create: authedProcedure.input(RunCreateInputSchema).mutation(async ({ ctx, input }) => {
+    return ctx.withOrg(async (tx) => {
+      const date = input.date ?? todayStr();
+      // Determine next runIndex for the day (re-runs produce runIndex=1, 2, ...).
+      const existing = await tx.query.marketRunsV.findMany({
+        where: (r, { eq: eq2, and: and2 }) =>
+          and2(eq2(r.orgId, ctx.session!.orgId), eq2(r.runDate, date)),
+        orderBy: (r, { desc }) => desc(r.runIndex),
+      });
+      const runIndex = existing.length === 0 ? 0 : existing[0]!.runIndex + 1;
+
+      // Verify sessions exist, are approved, and aren't already in a run.
+      const sessions = await tx.query.orderSessionsV.findMany({
+        where: (sess, { eq: eq2, and: and2, inArray: inArray2 }) =>
+          and2(eq2(sess.orgId, ctx.session!.orgId), inArray2(sess.id, input.sessionIds)),
+      });
+      if (sessions.length !== input.sessionIds.length) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'run.errors.sessionMissing' });
+      }
+      for (const sess of sessions) {
+        if (sess.status !== 'approved') {
+          throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: 'run.errors.sessionNotApproved',
+          });
+        }
+      }
+
+      // Aggregate items across sessions.
+      const items = await tx.query.orderItemsV.findMany({
+        where: (it, { inArray: inArray2 }) => inArray2(it.sessionId, input.sessionIds),
+      });
+      const aggregated = new Map<string, number>();
+      for (const it of items) {
+        const qty = Number(it.qty);
+        if (qty <= 0) continue;
+        aggregated.set(it.skuId, (aggregated.get(it.skuId) ?? 0) + qty);
+      }
+      const plannedItems = [...aggregated.entries()].map(([skuId, qty]) => ({
+        skuId,
+        qty: qty.toString(),
+      }));
+
+      const runId = randomUUID();
+      const state = emptyRunState(runId);
+      let events: RunEvent[] = [];
+      try {
+        events = decideRun(state, {
+          type: 'PlanRun',
+          orgId: ctx.session!.orgId,
+          runDate: date,
+          runIndex,
+          sessionIds: input.sessionIds,
+          plannedItems,
+          actor: {
+            userId: ctx.session!.userId,
+            memberId: ctx.session!.memberId,
+            permissions: ctx.session!.permissions,
+          },
+        });
+      } catch (err) {
+        if (err instanceof DomainError) rethrowDomainError(err);
+        throw err;
+      }
+
+      try {
+        await appendEvents(tx, {
+          streamType: 'run',
+          streamId: runId,
+          orgId: ctx.session!.orgId,
+          events: events.map((e) => ({
+            type: e.type,
+            seq: e.seq,
+            payload: e.payload,
+            actorUserId: e.actorUserId,
+            actorMemberId: e.actorMemberId,
+            occurredAt: e.occurredAt,
+          })),
+        });
+      } catch (err) {
+        if (isUniqueViolation(err)) {
+          throw new TRPCError({ code: 'CONFLICT', message: 'run.errors.alreadyPlanned' });
+        }
+        throw err;
+      }
+      await projectRun(tx, ctx.session!.orgId, events);
+
+      // Emit AttachedToRun on each session stream.
+      for (const sessionId of input.sessionIds) {
+        const orderEvents = (await readStream(tx, 'order', sessionId)) as unknown as OrderEvent[];
+        let oState = emptyOrderState(sessionId);
+        for (const e of orderEvents) oState = applyOrder(oState, e);
+        const ev = decideOrder(oState, {
+          type: 'AttachToRun',
+          runId,
+          actor: {
+            userId: ctx.session!.userId,
+            memberId: ctx.session!.memberId,
+            permissions: ctx.session!.permissions,
+            isClaimer: oState.claimedByMemberId === ctx.session!.memberId,
+          },
+        });
+        if (ev.length > 0) {
+          await appendEvents(tx, {
+            streamType: 'order',
+            streamId: sessionId,
+            orgId: ctx.session!.orgId,
+            events: ev.map((e) => ({ ...e })),
+          });
+          await projectOrder(tx, ctx.session!.orgId, ev);
+        }
+      }
+      return { runId, runIndex, lastSeq: events[events.length - 1]?.seq ?? 0 };
+    });
+  }),
+
+  list: authedProcedure.query(async ({ ctx }) => {
+    return ctx.withOrg(async (tx) => {
+      const runs = await tx
+        .select()
+        .from(s.marketRunsV)
+        .where(eq(s.marketRunsV.orgId, ctx.session!.orgId))
+        .orderBy(desc(s.marketRunsV.runDate), desc(s.marketRunsV.runIndex))
+        .limit(50);
+      return runs;
+    });
+  }),
+
+  get: authedProcedure
+    .input(SimpleRunCommandSchema.pick({ runId: true }))
+    .query(async ({ ctx, input }) => {
+      return ctx.withOrg(async (tx) => {
+        const run = await loadRun(tx, ctx.session!.orgId, input.runId);
+        const items = await tx.query.runItemsV.findMany({
+          where: (i, { eq: eq2 }) => eq2(i.runId, run.id),
+        });
+        const splits = await tx.query.runItemStoresV.findMany({
+          where: (i, { eq: eq2 }) => eq2(i.runId, run.id),
+        });
+
+        // Per-(store, sku) demand from the underlying sessions. The
+        // RunPage uses this to PRE-FILL splits when the purchaser
+        // records a buy inline — without it, the client would have to
+        // dump the entire planned qty into one store and the user would
+        // re-allocate every time. With it, "bought as planned" is one
+        // tap (just enter price). The aggregation lives here in the
+        // API rather than client-side because:
+        //   - it's pure SQL and trivially cheap (≤ tens of rows)
+        //   - centralizing the math means cancel-cascade and
+        //     re-planning paths can't drift from the client's defaults.
+        const sessionIds = (run.sessionIdsJson ?? []) as string[];
+        let perStoreDemand: Array<{ storeId: string; skuId: string; qty: string }> = [];
+        // M1.8 (2026-05-07): per-store concatenated session notes so the
+        // purchaser sees the staff's "其他物品" requests next to that
+        // store's demand block.
+        const sessionNotesByStore: Record<string, string> = {};
+        if (sessionIds.length > 0) {
+          const sessions = await tx.query.orderSessionsV.findMany({
+            where: (sess, { inArray: ia }) => ia(sess.id, sessionIds),
+            columns: { id: true, storeId: true, notes: true },
+          });
+          const sessionItems = await tx.query.orderItemsV.findMany({
+            where: (it, { inArray: ia }) => ia(it.sessionId, sessionIds),
+          });
+          const sessionStoreById = new Map<string, string>();
+          const noteAccumulator = new Map<string, string[]>();
+          for (const s of sessions) {
+            sessionStoreById.set(s.id, s.storeId);
+            const trimmed = (s.notes ?? '').trim();
+            if (trimmed) {
+              const arr = noteAccumulator.get(s.storeId) ?? [];
+              arr.push(trimmed);
+              noteAccumulator.set(s.storeId, arr);
+            }
+          }
+          for (const [sid, arr] of noteAccumulator.entries()) {
+            sessionNotesByStore[sid] = arr.join('\n\n');
+          }
+          // Aggregate qty by (storeId, skuId).
+          const acc = new Map<string, number>();
+          for (const it of sessionItems) {
+            const storeId = sessionStoreById.get(it.sessionId);
+            if (!storeId) continue;
+            const qty = Number(it.qty);
+            if (qty <= 0) continue;
+            const key = `${storeId}|${it.skuId}`;
+            acc.set(key, (acc.get(key) ?? 0) + qty);
+          }
+          for (const [key, qty] of acc) {
+            const [storeId, skuId] = key.split('|');
+            perStoreDemand.push({
+              storeId: storeId!,
+              skuId: skuId!,
+              qty: qty.toString(),
+            });
+          }
+        }
+        // Most-recent observed unit_price per SKU, across all past runs.
+        // Pre-fills the inline price input when the user records a buy
+        // — saves the typing if the market price hasn't changed since
+        // the last run. The user explicitly asked for this:
+        // "如果今天市场上价格还是一样就不用再受定改了".
+        //
+        // We use Postgres `DISTINCT ON` for an efficient one-row-per-sku
+        // pull (single index scan) instead of N round-trips.
+        const skuIds = items.map((it) => it.skuId);
+        const lastPriceBySku: Record<string, string> = {};
+        if (skuIds.length > 0) {
+          const rows = (await tx.execute(
+            sql`SELECT DISTINCT ON (sku_id) sku_id::text AS sku_id,
+                       unit_price::text AS unit_price
+                FROM inventory.price_history
+                WHERE org_id = ${ctx.session!.orgId}
+                  AND sku_id IN (${sql.raw(
+                    skuIds.map((id) => `'${id}'`).join(','),
+                  )})
+                ORDER BY sku_id, observed_at DESC`,
+          )) as unknown as Array<{ sku_id: string; unit_price: string }>;
+          for (const r of rows) {
+            lastPriceBySku[r.sku_id] = r.unit_price;
+          }
+        }
+        return { ...run, items, splits, perStoreDemand, lastPriceBySku, sessionNotesByStore };
+      });
+    }),
+
+  startPurchase: authedProcedure.input(SimpleRunCommandSchema).mutation(async ({ ctx, input }) =>
+    runSimpleCommand(ctx, input.runId, (state) =>
+      decideRun(state, { type: 'StartPurchase', actor: actorFromCtx(ctx) }),
+    ),
+  ),
+
+  purchaseItem: authedProcedure.input(PurchaseItemInputSchema).mutation(async ({ ctx, input }) =>
+    runSimpleCommand(ctx, input.runId, (state) =>
+      decideRun(state, {
+        type: 'PurchaseItem',
+        skuId: input.skuId,
+        supplierId: input.supplierId,
+        unitPrice: input.unitPrice,
+        actualQty: input.actualQty,
+        receiptPhotoUrl: input.receiptPhotoUrl,
+        storeSplits: input.storeSplits,
+        actor: actorFromCtx(ctx),
+      }),
+    ),
+  ),
+
+  markUnavailable: authedProcedure
+    .input(MarkUnavailableInputSchema)
+    .mutation(async ({ ctx, input }) =>
+      runSimpleCommand(ctx, input.runId, (state) =>
+        decideRun(state, {
+          type: 'MarkUnavailable',
+          skuId: input.skuId,
+          note: input.note,
+          actor: actorFromCtx(ctx),
+        }),
+      ),
+    ),
+
+  startDelivery: authedProcedure.input(SimpleRunCommandSchema).mutation(async ({ ctx, input }) =>
+    runSimpleCommand(ctx, input.runId, (state) =>
+      decideRun(state, { type: 'StartDelivery', actor: actorFromCtx(ctx) }),
+    ),
+  ),
+
+  deliverToStore: authedProcedure.input(DispatchInputSchema).mutation(async ({ ctx, input }) => {
+    // Purchaser delivering — they need run.purchase, NOT a store-scope
+    // assignment. (The purchaser drives the run on behalf of all stores.)
+    //
+    // Per-store override (added 2026-05-06): even though the purchaser
+    // doesn't need MSA, an admin may still have written a store-scoped
+    // deny override on `delivery.dispatch` to lock this purchaser out
+    // of one specific store's deliveries. Compute effective perms for
+    // input.storeId and pass them into actorFromCtx.
+    const effectivePerms = await ctx.withOrg((tx) =>
+      effectivePermissionsForStore(
+        tx,
+        ctx.session!.memberId,
+        input.storeId,
+        ctx.session!.permissions,
+      ),
+    );
+    return runSimpleCommand(ctx, input.runId, (state) =>
+      decideRun(state, {
+        type: 'DeliverToStore',
+        storeId: input.storeId,
+        actor: actorFromCtx(ctx, effectivePerms),
+      }),
+    );
+  }),
+
+  confirmStoreItem: authedProcedure
+    .input(ConfirmStoreItemInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      // Receiver-side confirm: only members assigned to this store may
+      // accept its incoming delivery. Same pass also computes the
+      // store-effective permissions (added 2026-05-06) so allow/deny
+      // overrides scoped to this store flow into the domain check.
+      const effectivePerms = await ctx.withOrg(async (tx) => {
+        await assertActorAssignedToStore(
+          tx,
+          ctx.session!.memberId,
+          input.storeId,
+          ctx.session!.permissions,
+        );
+        return effectivePermissionsForStore(
+          tx,
+          ctx.session!.memberId,
+          input.storeId,
+          ctx.session!.permissions,
+        );
+      });
+      return runSimpleCommand(ctx, input.runId, (state) =>
+        decideRun(state, {
+          type: 'ConfirmStoreItem',
+          storeId: input.storeId,
+          skuId: input.skuId,
+          status: input.status,
+          note: input.note,
+          photoUrl: input.photoUrl,
+          actor: actorFromCtx(ctx, effectivePerms),
+        }),
+      );
+    }),
+
+  confirmStore: authedProcedure.input(ConfirmStoreInputSchema).mutation(async ({ ctx, input }) => {
+    const effectivePerms = await ctx.withOrg(async (tx) => {
+      await assertActorAssignedToStore(
+        tx,
+        ctx.session!.memberId,
+        input.storeId,
+        ctx.session!.permissions,
+      );
+      return effectivePermissionsForStore(
+        tx,
+        ctx.session!.memberId,
+        input.storeId,
+        ctx.session!.permissions,
+      );
+    });
+    return runSimpleCommand(ctx, input.runId, (state) =>
+      decideRun(state, {
+        type: 'ConfirmStore',
+        storeId: input.storeId,
+        actor: actorFromCtx(ctx, effectivePerms),
+      }),
+    );
+  }),
+
+  /**
+   * Finish the run. Cascading effect (added 2026-05-03):
+   *
+   *   1. RunFinished on the run stream (status → finished)
+   *   2. Archived on each attached session stream (status → archived)
+   *
+   * Without step 2 the sessions stay at `in_run` forever, even though
+   * the goods have been delivered and confirmed. The order page would
+   * keep showing "submitted · in run" with no way to reach a clean
+   * "done" state, and the same SKU couldn't appear in a future run
+   * (would conflict on the in_run guard).
+   *
+   * After the cascade, the run + its sessions are visible in the
+   * RunPage history view but no longer occupy the active spots on
+   * Order / Approval / Run pages.
+   */
+  finish: authedProcedure.input(SimpleRunCommandSchema).mutation(async ({ ctx, input }) => {
+    return ctx.withOrg(async (tx) => {
+      const run = await loadRun(tx, ctx.session!.orgId, input.runId);
+      const runEvents = (await readStream(tx, 'run', run.id)) as unknown as RunEvent[];
+      let runState = emptyRunState(run.id);
+      for (const e of runEvents) runState = applyRun(runState, e);
+
+      // Step 1 — RunFinished on the run stream.
+      let finishEvents: RunEvent[] = [];
+      try {
+        finishEvents = decideRun(runState, {
+          type: 'FinishRun',
+          actor: actorFromCtx(ctx),
+        });
+      } catch (err) {
+        if (err instanceof DomainError) rethrowDomainError(err);
+        throw err;
+      }
+      if (finishEvents.length > 0) {
+        await appendEvents(tx, {
+          streamType: 'run',
+          streamId: run.id,
+          orgId: ctx.session!.orgId,
+          events: finishEvents.map((e) => ({ ...e })),
+        });
+        for (const e of finishEvents) runState = applyRun(runState, e);
+        await projectRun(tx, ctx.session!.orgId, finishEvents);
+        await dispatchRunEventNotifications(
+          tx,
+          ctx.session!.orgId,
+          ctx.session!.userId,
+          runState,
+          finishEvents,
+        );
+      }
+
+      // Step 2 — Archive every attached session.
+      const archiveFailures: Array<{ sessionId: string; reason: string }> = [];
+      for (const sessionId of runState.sessionIds) {
+        const orderEvents = (await readStream(tx, 'order', sessionId)) as unknown as OrderEvent[];
+        let oState = emptyOrderState(sessionId);
+        for (const e of orderEvents) oState = applyOrder(oState, e);
+        if (oState.status === 'archived') continue; // already archived → no-op
+
+        let ev: OrderEvent[] = [];
+        try {
+          ev = decideOrder(oState, {
+            type: 'Archive',
+            reason: 'run_finished',
+            actor: {
+              userId: ctx.session!.userId,
+              memberId: ctx.session!.memberId,
+              permissions: ctx.session!.permissions,
+              isClaimer: oState.claimedByMemberId === ctx.session!.memberId,
+            },
+          });
+        } catch (err) {
+          if (err instanceof DomainError) {
+            archiveFailures.push({ sessionId, reason: err.message });
+            ctx.log.warn(
+              { sessionId, runId: run.id, err: err.message },
+              'finish: failed to archive session — left in_run',
+            );
+            continue;
+          }
+          throw err;
+        }
+        if (ev.length > 0) {
+          await appendEvents(tx, {
+            streamType: 'order',
+            streamId: sessionId,
+            orgId: ctx.session!.orgId,
+            events: ev.map((e) => ({ ...e })),
+          });
+          await projectOrder(tx, ctx.session!.orgId, ev);
+        }
+      }
+
+      // Realtime nudge so connected order/approve clients refresh.
+      hub.publish(ctx.session!.orgId, {
+        type: 'run.changed',
+        orgId: ctx.session!.orgId,
+        runId: run.id,
+        lastSeq: runState.seq,
+      });
+      for (const sessionId of runState.sessionIds) {
+        hub.publish(ctx.session!.orgId, {
+          type: 'order.changed',
+          orgId: ctx.session!.orgId,
+          sessionId,
+          lastSeq: -1,
+        });
+      }
+
+      return { lastSeq: runState.seq, archiveFailures };
+    });
+  }),
+
+  // ---- Reversal endpoints (added 2026-05-03) ----------------------------
+  // Every "I changed my mind" path the UI needs. Each takes a non-empty
+  // reason — domain-side guard rejects whitespace-only.
+
+  /** Edit an already-purchased item (qty/price/supplier/photo/splits). */
+  revisePurchase: authedProcedure
+    .input(RevisePurchaseInputSchema)
+    .mutation(async ({ ctx, input }) =>
+      runSimpleCommand(ctx, input.runId, (state) =>
+        decideRun(state, {
+          type: 'RevisePurchase',
+          skuId: input.skuId,
+          supplierId: input.supplierId,
+          unitPrice: input.unitPrice,
+          actualQty: input.actualQty,
+          receiptPhotoUrl: input.receiptPhotoUrl,
+          storeSplits: input.storeSplits,
+          reason: input.reason,
+          actor: actorFromCtx(ctx),
+        }),
+      ),
+    ),
+
+  /** Flip an unavailable item back to pending (e.g. found another supplier). */
+  unmarkUnavailable: authedProcedure
+    .input(UnmarkUnavailableInputSchema)
+    .mutation(async ({ ctx, input }) =>
+      runSimpleCommand(ctx, input.runId, (state) =>
+        decideRun(state, {
+          type: 'UnmarkUnavailable',
+          skuId: input.skuId,
+          reason: input.reason,
+          actor: actorFromCtx(ctx),
+        }),
+      ),
+    ),
+
+  /** Revert a purchased item back to pending (mistapped row, decided
+   *  not to buy after all). Blocked once any destination store has
+   *  accepted delivery. */
+  undoPurchase: authedProcedure
+    .input(UndoPurchaseInputSchema)
+    .mutation(async ({ ctx, input }) =>
+      runSimpleCommand(ctx, input.runId, (state) =>
+        decideRun(state, {
+          type: 'UndoPurchase',
+          skuId: input.skuId,
+          reason: input.reason,
+          actor: actorFromCtx(ctx),
+        }),
+      ),
+    ),
+
+  /** Recall a delivery to a store that has not yet confirmed receipt. */
+  undeliverStore: authedProcedure
+    .input(UndeliverStoreInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const effectivePerms = await ctx.withOrg((tx) =>
+        effectivePermissionsForStore(
+          tx,
+          ctx.session!.memberId,
+          input.storeId,
+          ctx.session!.permissions,
+        ),
+      );
+      return runSimpleCommand(ctx, input.runId, (state) =>
+        decideRun(state, {
+          type: 'UndeliverStore',
+          storeId: input.storeId,
+          reason: input.reason,
+          actor: actorFromCtx(ctx, effectivePerms),
+        }),
+      );
+    }),
+
+  /** Roll the run back to `planned` (only if no item touched yet). */
+  undoStartPurchase: authedProcedure
+    .input(RunReasonOnlyInputSchema)
+    .mutation(async ({ ctx, input }) =>
+      runSimpleCommand(ctx, input.runId, (state) =>
+        decideRun(state, {
+          type: 'UndoStartPurchase',
+          reason: input.reason,
+          actor: actorFromCtx(ctx),
+        }),
+      ),
+    ),
+
+  /** Roll the run back to `purchasing` (only if no store delivered yet). */
+  undoStartDelivery: authedProcedure
+    .input(RunReasonOnlyInputSchema)
+    .mutation(async ({ ctx, input }) =>
+      runSimpleCommand(ctx, input.runId, (state) =>
+        decideRun(state, {
+          type: 'UndoStartDelivery',
+          reason: input.reason,
+          actor: actorFromCtx(ctx),
+        }),
+      ),
+    ),
+
+  /**
+   * Cancel the entire run. Cascading effect:
+   *
+   *   1. RunCancelled on the run stream (status → cancelled)
+   *   2. EjectedFromRun on EVERY attached session stream (status → approved,
+   *      runId → null) so those sessions become available for the next
+   *      run instead of being stuck at `in_run` forever.
+   *
+   * Without step 2 (the bug the user hit on 2026-05-03): cancelling a run
+   * left the user's order page showing "Submitted · in run" with no way to
+   * progress, the approval page filtered out non-submitted statuses, and
+   * the run page filtered out cancelled runs — so the order disappeared
+   * from every screen and could never be re-planned.
+   *
+   * Items already marked Purchased / Unavailable on the run stream remain
+   * in the audit log (event sourcing is append-only). Goods physically
+   * delivered before cancel stay where they are; cancelling does not undo
+   * physical reality. The receiving stores can flag any issues via the
+   * normal confirm/issue flow against the next run.
+   */
+  cancel: authedProcedure.input(RunReasonOnlyInputSchema).mutation(async ({ ctx, input }) => {
+    return ctx.withOrg(async (tx) => {
+      const run = await loadRun(tx, ctx.session!.orgId, input.runId);
+      const runEvents = (await readStream(tx, 'run', run.id)) as unknown as RunEvent[];
+      let runState = emptyRunState(run.id);
+      for (const e of runEvents) runState = applyRun(runState, e);
+
+      // Step 1 — produce RunCancelled. Domain validates permission +
+      // status guards (e.g. not already finished).
+      let cancelEvents: RunEvent[] = [];
+      try {
+        cancelEvents = decideRun(runState, {
+          type: 'CancelRun',
+          reason: input.reason,
+          actor: actorFromCtx(ctx),
+        });
+      } catch (err) {
+        if (err instanceof DomainError) rethrowDomainError(err);
+        throw err;
+      }
+      if (cancelEvents.length > 0) {
+        await appendEvents(tx, {
+          streamType: 'run',
+          streamId: run.id,
+          orgId: ctx.session!.orgId,
+          events: cancelEvents.map((e) => ({ ...e })),
+        });
+        for (const e of cancelEvents) runState = applyRun(runState, e);
+        await projectRun(tx, ctx.session!.orgId, cancelEvents);
+      }
+
+      // Step 2 — eject every attached session. Sessions that are still
+      // `in_run` get `EjectedFromRun` (status → approved). Sessions that
+      // somehow drifted out of `in_run` already (defensive) just no-op.
+      const sessionIds = runState.sessionIds;
+      const ejectionFailures: Array<{ sessionId: string; reason: string }> = [];
+      for (const sessionId of sessionIds) {
+        const orderEvents = (await readStream(tx, 'order', sessionId)) as unknown as OrderEvent[];
+        let oState = emptyOrderState(sessionId);
+        for (const e of orderEvents) oState = applyOrder(oState, e);
+
+        // Only eject if still attached to THIS run. If the session was
+        // already manually ejected earlier, skip silently.
+        if (oState.status !== 'in_run' || oState.runId !== run.id) continue;
+
+        // M1.7-fix (2026-05-07, audit CRITICAL #2): eject the session
+        // with a synthesized `run.eject_session` permission. The cancel-
+        // run authorization (run.create) already proved the actor has
+        // the right to dismantle this run — if they didn't have
+        // run.eject_session in their original permission set, the
+        // per-session EjectFromRun would silently fail and leave the
+        // run "cancelled" with N orphaned in_run sessions. Granting
+        // the perm at this synthesis layer is safe because we're
+        // already inside an authorized cancel; we're not letting the
+        // actor eject sessions outside of this cancellation.
+        const ejectPerms = new Set([
+          ...ctx.session!.permissions,
+          'run.eject_session',
+        ]);
+        let ev: OrderEvent[] = [];
+        try {
+          ev = decideOrder(oState, {
+            type: 'EjectFromRun',
+            runId: run.id,
+            reason: input.reason,
+            actor: {
+              userId: ctx.session!.userId,
+              memberId: ctx.session!.memberId,
+              permissions: ejectPerms,
+              isClaimer: oState.claimedByMemberId === ctx.session!.memberId,
+            },
+          });
+        } catch (err) {
+          // Don't let a single session's failure abort the entire cancel
+          // (which would leave the run in a half-cancelled state). Log
+          // and continue; the operator can manually re-eject if needed.
+          if (err instanceof DomainError) {
+            ejectionFailures.push({ sessionId, reason: err.message });
+            ctx.log.warn(
+              { sessionId, runId: run.id, err: err.message },
+              'cancel: failed to eject session — left in_run',
+            );
+            continue;
+          }
+          throw err;
+        }
+        if (ev.length > 0) {
+          await appendEvents(tx, {
+            streamType: 'order',
+            streamId: sessionId,
+            orgId: ctx.session!.orgId,
+            events: ev.map((e) => ({ ...e })),
+          });
+          await projectOrder(tx, ctx.session!.orgId, ev);
+        }
+      }
+
+      // Realtime ping so connected clients refresh both pages.
+      hub.publish(ctx.session!.orgId, {
+        type: 'run.changed',
+        orgId: ctx.session!.orgId,
+        runId: run.id,
+        lastSeq: runState.seq,
+      });
+      for (const sessionId of sessionIds) {
+        hub.publish(ctx.session!.orgId, {
+          type: 'order.changed',
+          orgId: ctx.session!.orgId,
+          sessionId,
+          lastSeq: -1, // we don't track per-session seq here — clients refetch
+        });
+      }
+
+      return {
+        lastSeq: runState.seq,
+        ejectedSessions: sessionIds.length - ejectionFailures.length,
+        ejectionFailures,
+      };
+    });
+  }),
+
+  ejectSession: authedProcedure.input(EjectSessionInputSchema).mutation(async ({ ctx, input }) => {
+    return ctx.withOrg(async (tx) => {
+      const runEvents = (await readStream(tx, 'run', input.runId)) as unknown as RunEvent[];
+      let runState = emptyRunState(input.runId);
+      for (const e of runEvents) runState = applyRun(runState, e);
+
+      // Check no per-session items have been touched yet.
+      const sessionItems = await tx.query.orderItemsV.findMany({
+        where: (it, { eq: eq2 }) => eq2(it.sessionId, input.sessionId),
+      });
+      for (const i of sessionItems) {
+        const runItem = runState.items.get(i.skuId);
+        if (runItem && runItem.status !== 'pending') {
+          throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: 'order.errors.cannotEject',
+          });
+        }
+      }
+
+      // Emit EjectedFromRun on the order stream.
+      const orderEvents = (await readStream(tx, 'order', input.sessionId)) as unknown as OrderEvent[];
+      let oState = emptyOrderState(input.sessionId);
+      for (const e of orderEvents) oState = applyOrder(oState, e);
+      const ev = decideOrder(oState, {
+        type: 'EjectFromRun',
+        runId: input.runId,
+        reason: input.reason,
+        actor: {
+          userId: ctx.session!.userId,
+          memberId: ctx.session!.memberId,
+          permissions: ctx.session!.permissions,
+          isClaimer: oState.claimedByMemberId === ctx.session!.memberId,
+        },
+      });
+      if (ev.length > 0) {
+        await appendEvents(tx, {
+          streamType: 'order',
+          streamId: input.sessionId,
+          orgId: ctx.session!.orgId,
+          events: ev.map((e) => ({ ...e })),
+        });
+        await projectOrder(tx, ctx.session!.orgId, ev);
+      }
+      return { lastSeq: ev[ev.length - 1]?.seq ?? oState.seq };
+    });
+  }),
+});
+
+function actorFromCtx(
+  ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
+  /**
+   * Optional override for `permissions` — used by store-keyed commands
+   * (`deliverToStore`, `confirmStore`, `confirmStoreItem`,
+   * `undeliverStore`) to inject the per-store effective set after
+   * applying allow/deny overrides for that specific store. Other run
+   * commands aggregate across stores so this stays the flat set.
+   * (Added 2026-05-06.)
+   */
+  effectivePermissions?: ReadonlySet<string>,
+) {
+  return {
+    userId: ctx.session!.userId,
+    memberId: ctx.session!.memberId,
+    permissions: effectivePermissions ?? ctx.session!.permissions,
+  };
+}
+
+async function runSimpleCommand(
+  ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
+  runId: string,
+  produce: (state: RunState) => RunEvent[],
+): Promise<{ lastSeq: number }> {
+  return ctx.withOrg(async (tx) => {
+    const run = await loadRun(tx, ctx.session!.orgId, runId);
+    const events = (await readStream(tx, 'run', run.id)) as unknown as RunEvent[];
+    let state = emptyRunState(run.id);
+    for (const e of events) state = applyRun(state, e);
+    try {
+      const out = produce(state);
+      if (out.length === 0) return { lastSeq: state.seq };
+      await appendEvents(tx, {
+        streamType: 'run',
+        streamId: run.id,
+        orgId: ctx.session!.orgId,
+        events: out.map((e) => ({ ...e })),
+      });
+      for (const e of out) state = applyRun(state, e);
+      await projectRun(tx, ctx.session!.orgId, out);
+      await dispatchRunEventNotifications(tx, ctx.session!.orgId, ctx.session!.userId, state, out);
+      hub.publish(ctx.session!.orgId, {
+        type: 'run.changed',
+        orgId: ctx.session!.orgId,
+        runId: state.streamId,
+        lastSeq: state.seq,
+      });
+      return { lastSeq: state.seq };
+    } catch (err) {
+      if (err instanceof DomainError) rethrowDomainError(err);
+      if (isUniqueViolation(err)) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'run.errors.staleSeq' });
+      }
+      throw err;
+    }
+  });
+}
+
+async function loadRun(db: import('@compass/db').DB, orgId: string, runId: string) {
+  const row = await db.query.marketRunsV.findFirst({
+    where: (r, { eq: eq2, and: and2 }) => and2(eq2(r.id, runId), eq2(r.orgId, orgId)),
+  });
+  if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'run.errors.streamMissing' });
+  return row;
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  return Boolean(
+    err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === '23505',
+  );
+}
+

@@ -1,0 +1,24 @@
+[Unit]
+Description=CompassAlpha nightly Postgres backup
+# Wait for postgres so we don't try to dump while it's still booting
+# after a server restart.
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+# Path includes /usr/bin so pg_dump + aws (if installed) resolve.
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/ubuntu/compass-alpha/infra/backup/compass-backup.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=compass-backup
+# Tighten the surface a notch — backups don't need much.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+# We need RW access to the backup dir.
+ReadWritePaths=/home/ubuntu/compass-backups
+ReadOnlyPaths=/home/ubuntu/compass-alpha

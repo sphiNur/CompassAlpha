@@ -1,0 +1,33 @@
+{
+  "name": "@compass/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/main.ts",
+    "build": "bun build src/main.ts --outdir dist --target bun --minify",
+    "start": "bun run dist/main.js",
+    "type-check": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@compass/contracts": "workspace:*",
+    "@compass/db": "workspace:*",
+    "@compass/domain": "workspace:*",
+    "@compass/i18n": "workspace:*",
+    "@hono/node-server": "^1.13.7",
+    "@hono/trpc-server": "^0.3.4",
+    "@t3-oss/env-core": "^0.11.1",
+    "@trpc/server": "^11.0.0-rc.648",
+    "drizzle-orm": "^0.36.4",
+    "hono": "^4.6.13",
+    "ioredis": "^5.4.1",
+    "jose": "^5.9.6",
+    "pino": "^9.5.0",
+    "ulid": "^2.3.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

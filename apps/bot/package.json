@@ -1,0 +1,19 @@
+{
+  "name": "@compass/bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/main.ts",
+    "build": "bun build src/main.ts --outdir dist --target bun",
+    "start": "bun run dist/main.js",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@compass/db": "workspace:*",
+    "grammy": "^1.34.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

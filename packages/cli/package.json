@@ -1,0 +1,22 @@
+{
+  "name": "@compass/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "compass": "./src/index.ts"
+  },
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@compass/db": "workspace:*",
+    "commander": "^12.1.0",
+    "drizzle-orm": "^0.36.4",
+    "kleur": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

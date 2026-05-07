@@ -1,0 +1,47 @@
+node_modules/
+dist/
+build/
+.turbo/
+.vite/
+coverage/
+*.tsbuildinfo
+
+# env
+.env
+.env.local
+.env.*.local
+
+# logs
+*.log
+backend.log*
+api.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# editor
+.vscode/
+.idea/
+*.swp
+
+# build artifacts
+out/
+.next/
+.cache/
+
+# secrets
+*.pem
+*.key
+*.crt
+
+# lingui
+**/locales/*/messages.js
+
+# test
+playwright-report/
+test-results/
+.k6/
+
+# transient prod-repair scripts (one-shot SQL we run via SSH; never commit)
+.repair-*.sql

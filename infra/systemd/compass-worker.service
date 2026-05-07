@@ -1,0 +1,22 @@
+[Unit]
+Description=CompassAlpha worker (outbox flush, periodic jobs)
+After=network-online.target postgresql.service compass-api.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/compass-alpha/apps/worker
+EnvironmentFile=/home/ubuntu/compass-alpha/.env
+Environment=PATH=/home/ubuntu/.bun/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/ubuntu/.bun/bin/bun run src/main.ts
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=65536
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=compass-worker
+
+[Install]
+WantedBy=multi-user.target

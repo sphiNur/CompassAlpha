@@ -1,0 +1,23 @@
+[Unit]
+Description=Run CompassAlpha Postgres backup nightly
+# Refuses to run while the backup is in progress (oneshot semantic).
+Requires=compass-backup.service
+
+[Timer]
+# 03:30 UTC every day. The org timezone is Asia/Tashkent (UTC+5), so
+# this fires at 08:30 local — well after the morning rush has died,
+# well before the lunch staff arrive. Sub-minute traffic at that hour.
+# We anchor explicitly to UTC because the server may run in a different
+# tz (it's currently CST = UTC+8); without the UTC suffix systemd uses
+# the system local tz and the schedule drifts away from intent.
+OnCalendar=*-*-* 03:30:00 UTC
+# If the server was off when the trigger fired, run as soon as it's
+# back. Better one stale backup than zero.
+Persistent=true
+# Stagger by up to 5 minutes so multiple servers (future) don't all
+# slam the DB at the same instant.
+RandomizedDelaySec=300
+Unit=compass-backup.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,16 @@
+{
+  "name": "@compass/i18n",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./catalogs": "./src/catalogs/index.ts"
+  },
+  "scripts": {
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@formatjs/intl": "^2.10.15"
+  }
+}

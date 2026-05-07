@@ -1,0 +1,27 @@
+{
+  "name": "@compass/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/schema/index.ts",
+    "./client": "./src/client.ts",
+    "./rls": "./src/rls.ts"
+  },
+  "scripts": {
+    "generate": "drizzle-kit generate --config drizzle.config.ts",
+    "migrate": "bun run src/migrate.ts",
+    "studio": "drizzle-kit studio --config drizzle.config.ts",
+    "seed": "bun run src/seed.ts",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.36.4",
+    "postgres": "^3.4.5",
+    "ulid": "^2.3.0"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.28.1"
+  }
+}

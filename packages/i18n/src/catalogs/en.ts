@@ -1,0 +1,677 @@
+/**
+ * English catalog — source of truth.
+ *
+ * The `CatalogKey` type is `keyof typeof en`, so every key here
+ * MUST be mirrored (with translated value) in zh.ts / ru.ts / uz.ts.
+ * Missing keys in another locale fall back through ru → en at runtime,
+ * which is acceptable for the rare key but unacceptable for the bulk.
+ *
+ * Status (2026-05-06, M1.5 audit): all 4 locales fully matched at the
+ * key level. The earlier 2026-05-05 entry that called out uz/ru being
+ * ~55% complete has been resolved — they're at parity now. Confirm +
+ * Run UI no longer leak English. New keys land here first; the audit
+ * tooling diffs catalogs to keep parity.
+ *
+ * Section order matters for git-diff readability:
+ *   1. nav         — bottom-tab labels
+ *   2. common      — generic verbs & UI tokens
+ *   3. settings    — language picker
+ *   4. auth        — sign-in, onboarding, access denial
+ *   5. auth.errors — backend tRPC error codes for auth.* router
+ *   6. admin.errors — backend codes for admin.* router
+ *   7. upload.errors
+ *   8. order.*     — OrderPage UI + ApprovalPage UI + their toasts
+ *   9. order.errors — domain command failures
+ *  10. run.*       — RunPage UI + sheets + toasts
+ *  11. run.errors  — run-domain failures
+ *  12. confirm.*   — ConfirmPage UI + toasts
+ *  13. app.theme
+ */
+export const en = {
+  // ── 1. Navigation ──────────────────────────────────────────────
+  'nav.order': 'Order',
+  'nav.approve': 'Approve',
+  'nav.run': 'Run',
+  'nav.deliver': 'Deliver',
+  'nav.confirm': 'Confirm',
+  'nav.admin': 'Admin',
+  'nav.reports': 'Reports',
+  'nav.debug': 'Debug',
+
+  // ── 2. Common ──────────────────────────────────────────────────
+  'common.cancel': 'Cancel',
+  'common.confirm': 'Confirm',
+  'common.save': 'Save',
+  'common.submit': 'Submit',
+  'common.back': 'Back',
+  'common.close': 'Close',
+  'common.retry': 'Retry',
+  'common.loading': 'Loading…',
+  'common.notes': 'Notes',
+  'common.optional': 'Optional',
+  /** Format `${count} ${i18n.t('common.itemsLabel')}` — bare noun. */
+  'common.itemsLabel': 'items',
+  /** Pre-composed phrase — `i18n.t('common.itemsCount', { n: 3 })`. */
+  'common.itemsCount': '{n} items',
+  /** "+N more" pagination footer in flat lists. */
+  'common.more': 'more',
+  'common.empty': 'Empty',
+  'common.noResults': 'No results',
+  'common.required': 'Required',
+  'common.error': 'Something went wrong',
+  'common.networkError': 'Network error — check your connection',
+
+  // ── 3. Settings ────────────────────────────────────────────────
+  'settings.language.title': 'Language',
+  'settings.language.subtitle': 'Pick the language for menus, products, and messages.',
+  'settings.language.aria': 'Change language',
+  // Settings hub (M1.6).
+  'settings.title': 'Settings',
+  'settings.profile.title': 'Profile',
+  'settings.profile.displayName': 'Display name',
+  'settings.profile.lockedHint': "Once set, only an admin can change your name. Ask them if you need to update it.",
+  'settings.profile.username': 'Telegram',
+  'settings.about.title': 'About',
+  'settings.about.workspace': 'Workspace',
+  'settings.about.role': 'Role',
+  'settings.about.build': 'Build',
+  'common.saved': 'Saved',
+
+  // Store-context picker (header pill)
+  'storeSwitcher.title': 'Store context',
+  'storeSwitcher.subtitle': 'Pick which store you are working in right now.',
+  'storeSwitcher.pickStore': 'Pick a store',
+  'storeSwitcher.allMyStores': 'All my stores',
+  'storeSwitcher.allOrgStores': 'All stores',
+  'storeSwitcher.allMyHint': 'See aggregated activity across every store you manage.',
+  'storeSwitcher.allOrgHint': 'See aggregated activity across the entire organization.',
+  'storeSwitcher.aria': 'Change store context',
+  'storeSwitcher.pickPrompt.title': 'Pick a store first',
+  'storeSwitcher.pickPrompt.body':
+    'This page needs a single store. Tap the store badge in the page header to switch.',
+
+  // ── 4. Auth (login / onboarding / access) ──────────────────────
+  'auth.signIn': 'Sign in',
+  'auth.signOut': 'Sign out',
+  'auth.shareThisId': 'Share this Telegram ID with your administrator to be granted access:',
+  'auth.noAccess.title': 'Access not granted',
+  'auth.noAccess.body':
+    'Your Telegram account is recognized but has no role in this organization yet. An administrator must grant you access.',
+  'auth.onboarding.title': 'Welcome to Compass',
+  'auth.onboarding.body':
+    'Confirm the name your colleagues will see on order cards, approval queue, and audit log. Only an administrator can change it later.',
+  'auth.onboarding.nameLabel': 'Your name',
+  'auth.onboarding.namePlaceholder': 'e.g. Alex',
+  'auth.onboarding.continue': 'Continue',
+  'auth.onboarding.failed': 'Could not save name',
+  'auth.noStore.title': 'No store assigned yet',
+  'auth.noStore.body':
+    'Your account is set up but an administrator still needs to assign you to a store. Contact your manager.',
+
+  // ── 5. Auth errors (server-thrown TRPCError messages) ──────────
+  'auth.errors.botTokenMissing': 'Bot token not configured',
+  'auth.errors.invalidInitData': 'Telegram session is invalid — please re-open the app',
+  'auth.errors.invalidRefresh': 'Session expired — please sign in again',
+  'auth.errors.nameLocked': 'Your name is locked — only an administrator can change it',
+  'auth.errors.noMembership': 'You are not a member of any organization',
+  'auth.errors.noOrg': 'Organization not found',
+  'auth.errors.required': 'Sign-in required',
+  'auth.errors.signInFailed': 'Sign in failed',
+  'auth.errors.noInitData':
+    'No Telegram initData available — open via Telegram, or set VITE_DEV_MOCK_INIT_DATA.',
+
+  // ── Admin (M1.6, 2026-05-06) ───────────────────────────────────
+  // High-traffic admin labels. The deeper admin internals (audit
+  // detail, role-permission matrix) intentionally stay in English
+  // for now — those are power-user surfaces and the translation
+  // cost is high vs payoff. Surface this set of keys covers what
+  // every admin sees on first open.
+  'admin.section.organization': 'Organization',
+  'admin.section.stores': 'Stores',
+  'admin.section.permissions': 'Roles & Permissions',
+  'admin.section.catalog': 'Catalog',
+  'admin.section.operations': 'Operations',
+  'admin.section.organizationHint': 'Org info, locale, timezone',
+  'admin.section.storesHint': 'Open a store to manage its team and settings',
+  'admin.section.permissionsHint': 'Built-in roles, ranks, permission matrix',
+  'admin.section.catalogHint': 'Categories, SKUs, suppliers',
+  'admin.section.operationsHint': 'Activity, submission history, maintenance',
+  'admin.subsection.categories': 'Categories',
+  'admin.subsection.skus': 'SKUs',
+  'admin.subsection.suppliers': 'Suppliers',
+  'admin.subsection.team': 'Team',
+  'admin.subsection.settings': 'Settings',
+  'admin.subsection.activity': 'Live activity',
+  'admin.subsection.history': 'Submission history',
+  'admin.subsection.audit': 'Admin audit',
+  'admin.subsection.priceReport': 'Price report',
+  'admin.subsection.maintenance': 'Maintenance',
+  'admin.subsection.activityHint': 'KPIs + recent audit events',
+  'admin.subsection.historyHint': 'Past 30 days of orders + outcomes',
+  'admin.subsection.auditHint': 'Catalog edits, role changes, permission overrides',
+  'admin.subsection.priceReportHint': 'Daily prices · 7d / 30d averages per SKU',
+  'admin.subsection.maintenanceHint': 'Purge test data (super_admin)',
+  'admin.subsection.categoriesHint': 'Grouping for SKUs',
+  'admin.subsection.skusHint': 'The catalog of items',
+  'admin.subsection.suppliersHint': 'Who you buy from',
+  'admin.action.newStoreBtn': '+ New store',
+  'admin.action.newCategory': '+ New category',
+  'admin.action.newSupplier': '+ New supplier',
+  'admin.action.edit': 'Edit',
+  'admin.action.save': 'Save',
+  'admin.action.archive': 'Archive',
+  'admin.action.delete': 'Delete',
+  'admin.action.cloneRoles': 'Clone roles…',
+  'admin.action.transfer': 'Transfer…',
+  'admin.action.removeFromStore': 'Remove from store',
+  'admin.action.removeFromOrg': 'Remove',
+  'admin.action.suspend': 'Suspend',
+  'admin.action.reactivate': 'Reactivate',
+  'admin.action.grantRole': 'Grant role',
+  'admin.action.permissions': 'Permissions',
+  'admin.action.manage': 'Manage',
+  'admin.label.active': 'active',
+  'admin.label.paused': 'paused',
+  'admin.label.you': 'you',
+  'admin.label.noTelegram': 'no telegram',
+  'admin.label.neverSeen': 'never seen',
+  'admin.label.signedInAs': 'Signed in as @{name}',
+  'admin.label.signedIn': 'Signed in',
+  'admin.label.viewOnly': 'view-only',
+  'admin.label.readOnly': 'read-only',
+  'admin.label.orgLevel': 'Org-level',
+  'admin.label.orgLevelHint': "Admins / super-admins not bound to any store",
+  'admin.label.noStore': 'no store · org-level',
+  'admin.label.noRoles': 'No roles',
+  'admin.label.fromRole': 'from role',
+  'admin.label.builtIn': 'built-in',
+  'admin.label.defaultRole': 'Default role',
+  'admin.label.memberCount': '{n, plural, =1 {1 member} other {{n} members}}',
+  // Workspace card labels (M1.7, audit HIGH #7).
+  'admin.workspace.name': 'Name',
+  'admin.workspace.slug': 'Org slug',
+  'admin.workspace.yourRole': 'Your role',
+  'admin.workspace.telegram': 'Telegram',
+  'admin.workspace.futureNote': 'Org settings (timezone, workflow flags) land in M2.',
+  'auth.errors.sessionStale': 'Your session is out of date — please reload',
+  'auth.errors.storeArchived': 'This store is no longer active',
+  'auth.errors.storeForbidden': 'You are not assigned to this store',
+  'auth.errors.userMissing': 'User not found',
+  'auth.errors.cannotGrantEqualOrHigher':
+    'You cannot grant a role at or above your own level',
+  'auth.errors.cannotRevokeEqualOrHigher':
+    'You cannot revoke a role at or above your own level',
+  'auth.errors.rateLimited': 'Too many attempts — please wait a minute and try again',
+  'system.errors.logRateLimited': 'Too many client log events — slow down',
+
+  // ── 6. Admin errors ────────────────────────────────────────────
+  'admin.errors.bindingNotFound': 'Role binding not found',
+  'admin.errors.cannotLeaveZeroStores':
+    'A member must remain assigned to at least one store',
+  'admin.errors.cannotRemoveLastAdmin': 'Cannot remove the last admin from the organization',
+  'admin.errors.cannotRemoveSelf': 'You cannot remove yourself',
+  'admin.errors.cannotRevokeSelfAdmin': 'You cannot revoke your own admin role',
+  'admin.errors.cannotSuspendSelf': 'You cannot suspend yourself',
+  'admin.errors.categoryNotFound': 'Category not found',
+  'admin.errors.inviteNeedsStore':
+    'A non-admin invite must include at least one store assignment',
+  'admin.errors.memberCreateFailed': 'Could not create the member record',
+  'admin.errors.memberNotFound': 'Member not found',
+  'admin.errors.orgNotFound': 'Organization not found',
+  'admin.errors.purgeConfirmMismatch': 'Confirmation text did not match — purge cancelled',
+  'admin.errors.purgeRequiresSuperAdmin': 'Only a super-admin can purge data',
+  'admin.errors.roleNotFound': 'Role not found',
+  'admin.errors.runHasForeignSessions':
+    'This run contains sessions from other stores — cannot operate on it',
+  'admin.errors.runNotFound': 'Market run not found',
+  'admin.errors.scopeStoreIdRequired':
+    'A store-scoped role must specify which store it applies to',
+  'admin.errors.sessionAttachedToRun':
+    'This session is locked into a market run and cannot be edited',
+  'admin.errors.sessionNotFound': 'Order session not found',
+  'admin.errors.skuNotFound': 'Product not found',
+  'admin.errors.storeNotFound': 'Store not found',
+  'admin.errors.supplierNotFound': 'Supplier not found',
+  'admin.errors.userCreateFailed': 'Could not create the user record',
+  'admin.errors.cannotDeleteBuiltinRole':
+    'Built-in roles cannot be deleted — they anchor the role ladder',
+  'admin.errors.roleHasBindings':
+    'This role is still assigned to members — revoke those grants first',
+  'admin.errors.permissionNotFound': 'Permission key not in the dictionary',
+  'admin.errors.notAdminOfStore':
+    "You don't administer this store — only its admin can perform this action",
+  'admin.errors.cannotInviteOrgAdminAsStoreAdmin':
+    'Only org-level admins can invite or grant org-level admin roles',
+  'admin.errors.transferSameStore':
+    'Source and destination must be different stores',
+  'admin.errors.defaultRoleMustBeStoreTier':
+    "Default role must be a store-tier role (rank below admin) — admin/super_admin can't be a per-store default",
+
+  // Admin operator-console toasts (added 2026-05-06).
+  // Each verb is a separate key because Russian has gendered endings
+  // ("магазин создан" vs "категория создана") that don't compose.
+  'admin.action.invite': '+ Invite',
+  'admin.action.newRole': '+ New role',
+  'admin.action.newSku': '+ New SKU',
+  'admin.empty.members.title': 'No members yet',
+  'admin.empty.members.description': 'Tap "+ Invite" above to add the first one.',
+  'admin.empty.noStoresInThisStore.title': 'No members in this store',
+  'admin.empty.noStoresInThisStore.description':
+    'Switch the store context in the header to see other stores, or use Invite to add someone.',
+  'admin.toast.memberUpdated': 'Member updated',
+  'admin.toast.memberRemoved': 'Member removed',
+  'admin.toast.memberAdded': 'Member added',
+  'admin.toast.userExists': 'User already in this workspace',
+  'admin.toast.roleRevoked': 'Role revoked',
+  'admin.toast.roleCreated': 'Role created',
+  'admin.toast.roleUpdated': 'Role updated',
+  'admin.toast.roleDeleted': 'Role deleted',
+  'admin.toast.linkCopied': 'Invite link copied',
+  'admin.toast.clipboardUnavailable': 'Clipboard unavailable',
+  'admin.toast.couldNotCopy': 'Could not copy',
+  'admin.toast.storeCreated': 'Store created',
+  'admin.toast.storeUpdated': 'Store updated',
+  'admin.toast.storeArchived': 'Store archived',
+  'admin.toast.categoryCreated': 'Category created',
+  'admin.toast.categoryUpdated': 'Category updated',
+  'admin.toast.categoryArchived': 'Category archived',
+  'admin.toast.skuCreated': 'SKU created',
+  'admin.toast.skuUpdated': 'SKU updated',
+  'admin.toast.skuArchived': 'SKU archived',
+  'admin.toast.supplierCreated': 'Supplier created',
+  'admin.toast.supplierUpdated': 'Supplier updated',
+  'admin.toast.supplierArchived': 'Supplier archived',
+  'admin.toast.sessionDeleted': 'Deleted session — {n} rows removed',
+  'admin.toast.runDeleted': 'Deleted run — {n} rows removed',
+  'admin.toast.dateReset': 'Reset {date}: {n} rows deleted',
+  'admin.toast.dataPurged': 'Purged {n} rows across {tables} tables',
+
+  // ── 7. Upload errors ───────────────────────────────────────────
+  'upload.errors.notConfigured': 'File uploads are not configured on this server',
+  'upload.errors.unsupportedContentType': 'This file type is not allowed',
+
+  // ── 8. Order page (UI + actions + toasts) ──────────────────────
+  'order.title': "Today's order",
+  'order.empty.title': 'No items selected yet',
+  'order.empty.description': 'Tap + on any product to start your draft.',
+  'order.selected': 'Selected',
+  'order.review': 'Review order ({n})',
+  'order.status.draft': 'Draft',
+  'order.status.submitted': 'Submitted · awaiting review',
+  'order.status.approved': 'Approved',
+  'order.status.rejected': 'Rejected — {reason}',
+  // Just the title-cased status, no body. Pair with `order.status.rejected`
+  // (which contains the reason) when both title and body are needed
+  // (e.g. ApprovalPage's reject banner).
+  'order.status.rejectedTitle': 'Rejected',
+  'order.status.rejectedNoReason': 'No reason given.',
+  'order.status.in_run': 'In market run',
+  'order.status.archived': 'Archived',
+  'order.banner.claimed': 'Under review by {who}',
+  'order.banner.editLocked': 'Editing locked while submitted',
+  'order.banner.approved.title': 'Approved · awaiting market run',
+  'order.banner.approved.body':
+    'Your manager approved this order. The purchaser will pull it into the next market run.',
+  'order.banner.inRun.title': 'In progress · purchaser is buying',
+  'order.banner.inRun.body':
+    "This order is part of an active market run. You'll get a notification when delivery arrives.",
+  'order.editedBy': 'edited by {who} · {when}',
+  'order.withdraw': 'Withdraw',
+  'order.actions.addNote': 'Add note',
+  'order.toast.submitted': 'Order submitted ✓',
+  'order.toast.submitFailedNetwork':
+    'Network hiccup — order NOT submitted. Tap Submit again.',
+  'order.toast.submitFailed': 'Could not submit: {reason}',
+  'order.toast.adjustFailed': "Couldn't save change — please try again",
+  'order.toast.syncing': 'Syncing — try Submit again in a moment',
+  'order.action.submitOrder': 'Submit order',
+  'order.action.submitting': 'Submitting…',
+  'order.review.title': 'Review your order',
+  'order.review.itemsCount': '{n, plural, one {1 item} other {{n} items}}',
+  'order.review.empty': 'Nothing selected yet.',
+  'order.review.reviewSheet.title': 'Review your order',
+  'order.review.estimatedTotal': 'Estimated total',
+  'order.review.estimateHint':
+    '~7-day avg price · {known} priced · {unknown} unknown',
+
+  // ── Session-level "其他物品" / miscellaneous note (M1.8) ──────────
+  'order.notes.label': 'Other items',
+  'order.notes.placeholder':
+    'Anything else you need that\'s not in the catalog above? e.g. fresh bread, a specific brand of olive oil…',
+  'order.notes.hint': 'Visible to your manager and the purchaser.',
+  'order.notes.saving': 'Saving…',
+  'order.notes.saved': 'Saved ✓',
+  'order.notes.badge': '📝',
+  'order.notes.hasNote': 'Has additional request',
+  'order.toast.noteSaveFailed': 'Could not save the note — try again.',
+
+  // ── ApprovalPage (the manager-side) ─────────────────────────────
+  'approval.title': 'Approval queue',
+  'approval.empty.title': 'Inbox is empty',
+  'approval.empty.body': 'New orders awaiting review will appear here.',
+  'approval.empty.tab': 'No {tab} orders',
+  'approval.tab.pending': 'Pending',
+  'approval.tab.approved': 'Approved',
+  'approval.tab.rejected': 'Rejected',
+  'approval.viewItems': 'View items',
+  'approval.hideItems': 'Hide items',
+  'approval.approve': 'Approve',
+  'approval.reject': 'Reject',
+  'approval.claim': 'Claim',
+  'approval.release': 'Release',
+  'approval.unapprove': 'Reverse approval',
+  'approval.toast.approved': 'Approved ✓',
+  'approval.toast.rejected': 'Rejected',
+  'approval.toast.claimed': 'Claimed for review',
+  'approval.toast.released': 'Released',
+  'approval.toast.unapproved': 'Approval reversed',
+  'approval.toast.approveFailed': 'Could not approve',
+  'approval.toast.rejectFailed': 'Could not reject',
+  'approval.items.loading': 'Loading items…',
+  'approval.items.failed': 'Failed to load items.',
+  'approval.confirm.reject.title': 'Reject this order?',
+  'approval.confirm.reject.body':
+    'The submitter will see your reason. They can revise and resubmit.',
+  'approval.confirm.reject.reasonPlaceholder': 'e.g. duplicate order',
+  'approval.confirm.unapprove.title': 'Reverse approval?',
+  'approval.confirm.unapprove.body':
+    'Returns this order to the queue. Only allowed before it is added to a market run.',
+  'approval.filter.allMyStores': 'All my stores',
+
+  // ── 9. Order errors ────────────────────────────────────────────
+  'order.errors.alreadyStarted': 'A session for this date already exists',
+  'order.errors.invalidDate': 'Invalid date',
+  'order.errors.skuArchived': 'This product is no longer available',
+  'order.errors.skuMissing': 'Product not found',
+  'order.errors.invalidQty': 'Invalid quantity',
+  'order.errors.qtyNegative': 'Quantity cannot be negative',
+  'order.errors.qtyNotMultipleOfStep': 'Quantity must be a multiple of {step}',
+  'order.errors.invalidStep': 'Invalid step value',
+  'order.errors.noteTooLong': 'Note is too long (max 500 characters)',
+  'order.errors.sessionNoteTooLong': 'Note is too long (max 1000 characters)',
+  'order.errors.notOwner': 'You can only edit your own draft',
+  'order.errors.notSubmittable': 'This order cannot be submitted right now',
+  'order.errors.cannotSubmit': "You don't have permission to submit",
+  'order.errors.cannotDraft': "You don't have permission to draft orders",
+  'order.errors.cannotArchive': "You don't have permission to archive",
+  'order.errors.cannotEditOthersLine': "You can't edit another person's line",
+  'order.errors.emptyOrder': 'Add at least one item before submitting',
+  'order.errors.cannotClaim': "You don't have permission to claim",
+  'order.errors.notClaimable': 'This order is not awaiting review',
+  'order.errors.alreadyClaimed': 'Already claimed by another reviewer',
+  'order.errors.notClaimer': 'Only the current claimer can release the claim',
+  'order.errors.cannotApprove': "You don't have permission to approve",
+  'order.errors.notApprovable': 'This order is not awaiting review',
+  'order.errors.claimedByOther': 'Another reviewer is currently working on this',
+  'order.errors.notRejectable': 'This order cannot be rejected right now',
+  'order.errors.rejectReasonRequired': 'Please provide a reason for rejection',
+  'order.errors.notWithdrawable': 'This order cannot be withdrawn',
+  'order.errors.cannotWithdraw': "You don't have permission to withdraw",
+  'order.errors.cannotWithdrawWhileClaimed': 'Cannot withdraw while a manager is reviewing',
+  'order.errors.cannotUnapprove': "You don't have permission to reverse approval",
+  'order.errors.notUnapprovable': 'This order is not approved',
+  'order.errors.alreadyInRun': 'Already attached to a market run',
+  'order.errors.cannotAttach': 'This order cannot be attached to a run',
+  'order.errors.cannotEject': 'This session cannot be ejected from the run',
+  'order.errors.streamMissing': 'Order session has not started',
+  'order.errors.sessionMissing': 'Order session not found',
+  'order.errors.archived': 'Order session is archived',
+  'order.errors.lockedByStatus': 'Order is locked in current status',
+  'order.errors.ownerLocked': 'Cannot edit while {status}',
+  'order.errors.notEditor': 'Only the owner or current reviewer can edit',
+  'order.errors.targetLineNotFound': 'That line was already removed',
+  'order.errors.staleSeq': 'Someone else just edited — please retry',
+
+  // ── 10. Run page (UI + sheets + toasts) ────────────────────────
+  'run.title': 'Market run',
+  'run.empty.noActive': 'No active run',
+  'run.empty.noPlannable': 'No approved sessions to plan',
+  'run.empty.noPlannableBody':
+    'Once a manager approves at least one session, you can plan a run.',
+  'run.header.runIndex': 'Market run #{n}',
+  'run.header.newRun': 'New run',
+  'run.banner.readyToStart': 'Ready to start purchasing',
+  'run.banner.readyToStartBody': 'Use the button at the bottom of the screen to advance.',
+  'run.banner.planLockWarning':
+    'Will lock {n} approved sessions into this run. They cannot be edited until the run finishes or is cancelled.',
+  'run.banner.confirmingFinish':
+    'About to finish. After this nothing in this run can be changed — including prices, deliveries, or store confirms.',
+  'run.section.items': 'Items',
+  'run.section.stores': 'Stores',
+  'run.section.readyToPlan': 'Ready to plan',
+  'run.label.sessionsCount': '{n, plural, =1 {1 session} other {{n} sessions}}',
+  'run.label.pendingFraction': '{done}/{total} pending',
+  'run.label.confirmedFraction': '{done}/{total} confirmed',
+  'run.label.itemsHint': '{n, plural, =1 {1 item} other {{n} items}} · {subtitle}',
+  'run.label.itemsCount': '{n, plural, =1 {1 item} other {{n} items}}',
+  // M1.9-fix (2026-05-07): delivery store-row stage labels — were
+  // hardcoded English on the purchaser's main during-run view.
+  'run.deliveryStage.pending': 'Not delivered',
+  'run.deliveryStage.delivered': 'Awaiting confirm',
+  'run.deliveryStage.confirmed': 'Confirmed',
+  'run.deliveryStageBadge.pending': 'pending',
+  'run.deliveryStageBadge.delivered': 'delivered',
+  'run.deliveryStageBadge.confirmed': 'confirmed',
+  'run.purchase.priceInputPlaceholder': 'price',
+  'run.view.aggregate': 'Aggregate',
+  'run.view.perStore': 'Per store',
+  // Plan-time preview views (M1.5).
+  'run.previewView.overall': 'Overall',
+  'run.previewView.byStore': 'By store',
+  'run.previewView.bySupplier': 'By vendor',
+  'run.previewSupplier.unassigned': 'Unassigned vendor',
+  'run.previewSupplier.unassignedHint':
+    'These items have no preferred vendor. Open the SKU and pick one to group them automatically.',
+  'run.previewSupplier.copyToVendor': 'Copy → send to vendor',
+  'run.previewSupplier.copied': 'Copied — paste into the vendor chat',
+  // Localized template for the copy-to-vendor message. Placeholders:
+  //   {vendorName}, {date}, {body}.  `body` is built FE-side as
+  //   "Item · qty\n  - Store: qty\n..." per item.
+  'run.previewSupplier.messageTemplate':
+    'Hi {vendorName},\n\nFor {date} please prepare the following per store:\n\n{body}\n\nThanks!',
+  'run.previewStore.copyList': 'Copy list',
+  'run.previewStore.copied': 'Copied',
+  // Manual supplier assignment from preview (M1.6 #1).
+  'run.previewSupplier.changeVendor': 'Change vendor',
+  'run.previewSupplier.pickVendorTitle': 'Pick a vendor',
+  'run.previewSupplier.pickVendorHint':
+    'Sets this item\'s preferred vendor. Sticks across runs until you change it again.',
+  'run.previewSupplier.clearVendor': '— No preferred vendor —',
+  'run.previewSupplier.assigned': 'Vendor assigned',
+  'run.previewSupplier.cleared': 'Vendor cleared',
+  'run.view.perStoreHint':
+    "Read-only — switching views never duplicates buys, it's the same data shown two ways.",
+  'run.step.plan': 'Plan',
+  'run.step.purchase': 'Purchase',
+  'run.step.deliver': 'Deliver',
+  'run.step.done': 'Done',
+  'run.action.startPurchase': 'Start purchase',
+  'run.action.startDelivery': 'Start delivery',
+  'run.action.finish': 'Finish run',
+  'run.action.cancelRun': 'Cancel run',
+  'run.action.deliver': 'Deliver',
+  'run.action.buy': 'Buy',
+  'run.action.markNa': 'N/A',
+  'run.action.editPurchase': 'Edit purchase',
+  'run.action.undoPurchase': 'Undo',
+  'run.action.unmarkUnavailable': 'Mark available again',
+  'run.action.recallDelivery': 'Recall delivery',
+  'run.action.undoStartPurchase': 'Back to plan',
+  'run.action.undoStartDelivery': 'Back to purchase',
+  'run.action.confirmDeliver': 'Confirm delivery',
+  'run.action.planRun': 'Plan run',
+  'run.action.savePurchase': 'Save purchase',
+  'run.action.recordPurchase': 'Record purchase',
+  'run.action.createNewRun': 'Create new run',
+  'run.action.markUnavailable': 'Mark unavailable',
+  'run.action.markUnavailableDesc': "Tell the team why this couldn't be bought.",
+  'run.action.unavailableReasonPlaceholder': 'Reason',
+  'run.action.actualQty': 'Actual qty ({unit})',
+  'run.action.unitPriceUzs': 'Unit price (UZS)',
+  'run.action.supplier': 'Supplier',
+  'run.action.receiptPhoto': 'Receipt photo (optional)',
+  'run.action.allocateAcrossStores': 'Allocate across stores',
+  'run.action.aggregateInfo': 'Will aggregate {n} approved sessions.',
+  'run.action.actualQtyAriaLabel': 'actual qty',
+  'run.action.unitPriceAriaLabel': 'unit price',
+  'run.action.savePurchaseAriaLabel': 'save purchase',
+  'run.main.awaitingItems': 'Process every item first',
+  'run.main.awaitingConfirms': 'Awaiting store confirmations',
+  'run.confirm.startPurchase.title': 'Start purchasing?',
+  'run.confirm.startPurchase.body':
+    'Marks this run as in-progress. You can still come back to plan if you have not recorded anything.',
+  'run.confirm.startDelivery.title': 'Start delivery?',
+  'run.confirm.startDelivery.body':
+    'Marks all items as ready to ship. You can still come back to purchase if no store has been delivered yet.',
+  'run.confirm.deliver.title': 'Mark {store} delivered?',
+  'run.confirm.deliver.body':
+    'You can recall this delivery until the store confirms receipt. After they confirm, this is final.',
+  'run.confirm.finish.title': 'Finish this run?',
+  'run.confirm.finish.body':
+    'After finishing, prices, quantities, and delivery records are locked. This cannot be undone.',
+  'run.confirm.finish.summary': '{items} items · {stores} stores · total {total} UZS',
+  'run.confirm.cancel.title': 'Cancel the entire run?',
+  'run.confirm.cancel.body':
+    'This stops the run and unlocks all sessions back to "approved". Already-recorded purchases stay in the audit log but are not delivered.',
+  'run.confirm.recall.title': 'Recall delivery to {store}?',
+  'run.confirm.recall.body':
+    'Tells the store that this delivery was a mistake. Only allowed before they confirm receipt.',
+  'run.confirm.editPurchase.title': 'Edit purchase',
+  'run.confirm.editPurchase.body':
+    'Update the recorded quantity, price, supplier, photo, or store split. The original record stays in the audit log.',
+  'run.confirm.undoPurchase.title': 'Undo this purchase?',
+  'run.confirm.undoPurchase.body':
+    'Reverts this SKU back to pending so it can be re-recorded. The original purchase record stays in the audit log. Allowed only if no store has received delivery yet.',
+  'run.confirm.unmarkUnavailable.title': 'Mark available again?',
+  'run.confirm.unmarkUnavailable.body':
+    'Puts this item back to pending so you can record a purchase. The original "unavailable" note stays in the audit log.',
+  'run.confirm.undoStartPurchase.title': 'Go back to plan?',
+  'run.confirm.undoStartPurchase.body':
+    'Reverts this run to the planning step. Only works when nothing has been bought or marked unavailable yet.',
+  'run.confirm.undoStartDelivery.title': 'Go back to purchasing?',
+  'run.confirm.undoStartDelivery.body':
+    'Reverts this run to the purchasing step. Only works before any store has been delivered to.',
+  'run.label.reasonForChange': 'Reason for change',
+  'run.label.total': 'total',
+  'run.label.reasonPlaceholder': 'e.g. price misread on the receipt',
+  'run.toast.runPlanned': 'Run planned',
+  'run.toast.couldNotPlan': 'Could not plan run',
+  'run.toast.purchaseRecorded': 'Purchase recorded',
+  'run.toast.purchaseSavedOffline': 'Saved offline — will sync when back online',
+  'run.toast.couldNotSavePurchase': 'Could not save purchase',
+  'run.toast.markedUnavailable': 'Marked unavailable',
+  'run.toast.purchaseRevised': 'Purchase updated',
+  'run.toast.unmarkedUnavailable': 'Marked available again',
+  'run.toast.purchaseUndone': 'Purchase undone — back to pending',
+  'run.toast.deliveryRecalled': 'Delivery recalled',
+  'run.toast.runCancelled': 'Run cancelled',
+  'run.toast.startPurchaseUndone': 'Back to plan',
+  'run.toast.startDeliveryUndone': 'Back to purchase',
+  'run.toast.runFinished': 'Run finished',
+  'run.toast.markIncompleteFirst': 'Mark every item as purchased or unavailable first',
+  'run.toast.storesNeedConfirm': 'Stores still need to confirm',
+  'run.history.title': 'History',
+  'run.history.subtitle': 'Past runs — tap to see details',
+  'run.history.totalLine': 'Total {total} UZS',
+  'run.history.cancelled': 'Cancelled',
+  // Filter chips on the history list (M1.7-A).
+  'run.history.filter.finished': 'Finished',
+  'run.history.filter.all': 'All',
+  'run.history.filter.cancelled': 'Cancelled only',
+  // Soft-encouraging placeholder for the cancel-run reason field.
+  // Optional input — we deliberately don't hard-require because
+  // operators sometimes cancel because they fat-fingered, and forcing
+  // a reason produces "asdf" noise that pollutes audit.
+  'run.cancel.reasonPlaceholder': 'Why are you cancelling? (optional, helps the team learn)',
+  'run.history.totalLabel': 'Total spent',
+  'run.history.itemSummary': '{bought} bought · {na} unavailable',
+  'run.history.storeSummary': '{stores} stores',
+  'run.history.itemsHeading': 'Items',
+  'run.history.storesHeading': 'Per-store breakdown',
+  'run.history.loadingDetails': 'Loading details…',
+
+  // ── 11. Run errors ─────────────────────────────────────────────
+  'run.errors.alreadyPlanned': 'Run already exists for this slot',
+  'run.errors.cannotCreate': "You don't have permission to create runs",
+  'run.errors.noSessions': 'Pick at least one approved session',
+  'run.errors.noItems': 'No items to purchase',
+  'run.errors.cannotStartPurchase': 'Cannot start purchase right now',
+  'run.errors.cannotPurchase': "You don't have permission to record purchases",
+  'run.errors.runFrozen': 'Run is frozen and cannot be modified',
+  'run.errors.itemNotInRun': 'Item not in this run',
+  'run.errors.invalidQty': 'Invalid quantity',
+  'run.errors.qtyMustBePositive': 'Quantity must be positive',
+  'run.errors.splitSumMismatch': 'Store split must sum to actual quantity',
+  'run.errors.unavailableNoteRequired': 'Please describe why the item is unavailable',
+  'run.errors.noteTooLong': 'Note is too long (max 500 characters)',
+  'run.errors.notReadyToDeliver': 'Cannot start delivery yet',
+  'run.errors.itemsPending': 'Some items are still pending',
+  'run.errors.notDelivering': 'Delivery is not in progress',
+  'run.errors.cannotDispatch': "You don't have permission to dispatch",
+  'run.errors.cannotConfirm': "You don't have permission to confirm",
+  'run.errors.confirmNoteRequiredOnIssue': 'Please describe the issue',
+  'run.errors.storeNotDelivered': 'Store has not received delivery yet',
+  'run.errors.itemConfirmMissing': 'Some items still need a decision',
+  'run.errors.cannotFinish': "You don't have permission to finish runs",
+  'run.errors.notFinishable': 'Run cannot be finished yet',
+  'run.errors.storeNotConfirmed': 'A store has not confirmed yet',
+  'run.errors.alreadyFinished': 'Run is already finished',
+  'run.errors.cannotCancel': "You don't have permission to cancel runs",
+  'run.errors.cancelReasonRequired': 'Please provide a reason',
+  'run.errors.streamMissing': 'Run does not exist',
+  'run.errors.sessionMissing': 'Order session not found',
+  'run.errors.sessionNotApproved': 'Order session is not approved',
+  'run.errors.staleSeq': 'Someone else just edited — please retry',
+  'run.errors.notPurchased': 'This item has not been purchased yet',
+  'run.errors.notRevisable': 'This item has not been purchased yet',
+  'run.errors.cannotReviseAfterDelivery': 'Cannot edit — already delivered to a store',
+  'run.errors.notUnavailable': 'This item is not marked unavailable',
+  'run.errors.alreadyConfirmed': 'Cannot recall — store has already confirmed receipt',
+  'run.errors.notPurchasing': 'Run is not in the purchasing phase',
+  'run.errors.purchaseAlreadyProgressed': 'Cannot undo — items have already been recorded',
+  'run.errors.deliveryAlreadyProgressed':
+    'Cannot undo — a store has already received delivery',
+  'run.errors.reviseReasonRequired': 'Please describe what changed',
+  'run.errors.unmarkReasonRequired': 'Please describe why this is available now',
+  'run.errors.recallReasonRequired': 'Please describe why you are recalling this',
+  'run.errors.undoReasonRequired': 'Please describe why you are reverting',
+  'run.errors.splitsMustSum': 'Splits must sum to actual qty',
+
+  // ── 12. Confirm page (delivery acceptance) ──────────────────────
+  'confirm.title': 'Confirm delivery',
+  'confirm.empty.noActive': 'No active delivery',
+  'confirm.empty.noStore': 'No store selected',
+  'confirm.empty.noItems': 'No items for this store',
+  'confirm.empty.nothingToConfirm': 'Nothing to confirm',
+  'confirm.empty.nothingDesc':
+    'A run will show up here once items are delivered to your store.',
+  'confirm.runOnDate': 'Run {date}',
+  'confirm.decided': 'Decided',
+  'confirm.deliveredItems': 'Delivered items',
+  'confirm.deliveredItemsHint': 'Tap a status for each item',
+  'confirm.confirmStore': 'Confirm store ({decided}/{total})',
+  'confirm.confirmStoreFinal': '✓ Confirmed',
+  'confirm.confirmStoreFinalBanner': 'Store confirmed ✓',
+  'confirm.confirmingHint': 'Confirming…',
+  'confirm.toast.markedOk': 'Marked OK',
+  'confirm.toast.issueNoted': 'Issue noted',
+  'confirm.toast.storeConfirmed': 'Store confirmed',
+  'confirm.toast.savedOffline': 'Saved offline — will sync when back online',
+  'confirm.issue.markAs': 'Mark as {status}',
+  'confirm.issue.describe': 'Please describe the issue so the purchaser can correct it.',
+  'confirm.issue.placeholder': "What's wrong?",
+  'confirm.issue.photoOptional': 'Photo (optional)',
+  'confirm.issue.save': 'Save',
+  // M1.9-fix (2026-05-07): the 4 receive-side decision chips. These
+  // are the most-tapped UI on the entire page; rendering raw enum
+  // values to non-English users was a launch blocker.
+  'confirm.status.ok': 'OK',
+  'confirm.status.short': 'Short qty',
+  'confirm.status.wrong': 'Wrong item',
+  'confirm.status.quality': 'Quality issue',
+
+  // ── 13. App theme ──────────────────────────────────────────────
+  'app.theme.native': 'Native',
+  'app.theme.apple': 'Apple',
+  'app.theme.dark': 'Dark',
+} as const;

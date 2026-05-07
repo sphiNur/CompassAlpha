@@ -1,0 +1,140 @@
+/**
+ * Concord design tokens.
+ *
+ * Two themes: native (Telegram-themed; honors WebApp.themeParams via JS bridge)
+ * and apple (high-contrast polished). All colors use OKLCH so the same hue
+ * looks correct on HDR + sRGB.
+ *
+ * Tokens are CSS variables; switching theme is `<html data-theme="apple">`.
+ */
+
+:root,
+:root[data-theme='native'] {
+  /* Surface */
+  --c-bg: oklch(98% 0 0);
+  --c-surface: oklch(100% 0 0);
+  --c-surface-2: oklch(95% 0.005 240);
+  --c-surface-elevated: oklch(99% 0 0);
+
+  /* Ink */
+  --c-fg: oklch(20% 0.01 240);
+  --c-fg-muted: oklch(50% 0.02 240);
+  --c-fg-subtle: oklch(65% 0.02 240);
+  --c-fg-inverse: oklch(99% 0 0);
+
+  /* Action */
+  --c-action: oklch(56% 0.18 250);
+  --c-action-hover: oklch(50% 0.18 250);
+  --c-action-fg: oklch(99% 0 0);
+
+  /* Status */
+  --c-success: oklch(58% 0.16 145);
+  --c-warning: oklch(72% 0.15 75);
+  --c-danger: oklch(58% 0.22 25);
+  --c-info: oklch(60% 0.13 240);
+
+  /* Lines */
+  --c-divider: oklch(0% 0 0 / 0.08);
+  --c-ring: oklch(56% 0.18 250);
+  --c-ring-offset: var(--c-bg);
+
+  /* Radii */
+  --r-utility: 8px;
+  --r-capsule: 12px;
+  --r-card: 16px;
+  --r-pill: 9999px;
+
+  /* Shadows */
+  --shadow-product: 0 8px 24px oklch(0% 0 0 / 0.12), 0 1px 2px oklch(0% 0 0 / 0.08);
+
+  /* Motion */
+  --t-snap: 100ms;
+  --t-quick: 180ms;
+  --t-base: 240ms;
+  --easing: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  /* Layout */
+  --app-header-h: 56px;
+  --app-subnav-h: 48px;
+  --app-nav-h: 64px;
+  /* Use the browser's native env() insets so iOS Telegram WebView's
+   * status bar / dynamic island / chrome buttons stop clipping the header. */
+  --app-safe-top: max(env(safe-area-inset-top), 16px);
+  --app-safe-bottom: max(env(safe-area-inset-bottom), 8px);
+  --app-safe-left: env(safe-area-inset-left);
+  --app-safe-right: env(safe-area-inset-right);
+  /* Telegram's Close + window-menu buttons overlay the header at left+right.
+   * 88px clears them on every iPhone size we've seen; if a future device
+   * shows a larger overlay, bump this.  */
+  --app-chrome-pad: 88px;
+
+  /* Type — system stack */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, 'Inter', 'PingFang SC',
+    'Hiragino Sans GB', sans-serif;
+  --font-mono: ui-monospace, 'JetBrains Mono', 'Menlo', 'Cascadia Mono', monospace;
+
+  /* Typography scale (M1.7-fix3, 2026-05-07).
+   * Mirrors the Tailwind fontSize tokens in apps/web/tailwind.config.js
+   * so any CSS-only stylesheet can stay in sync. Prefer the Tailwind
+   * `text-display` / `text-h2` / `text-body` etc. utilities at call
+   * sites; reach for these vars only when you must. */
+  --text-display: 28px;
+  --text-h1: 22px;
+  --text-h2: 17px;
+  --text-h3: 15px;
+  --text-body: 14px;
+  --text-body-sm: 13px;
+  --text-label: 12px;
+  --text-meta: 11px;
+  --text-tiny: 10px;
+}
+
+:root[data-theme='dark'],
+:root[data-theme='native'][data-color-scheme='dark'] {
+  --c-bg: oklch(15% 0.01 240);
+  --c-surface: oklch(20% 0.012 240);
+  --c-surface-2: oklch(24% 0.012 240);
+  --c-surface-elevated: oklch(22% 0.012 240);
+  --c-fg: oklch(96% 0 0);
+  --c-fg-muted: oklch(70% 0.02 240);
+  --c-fg-subtle: oklch(55% 0.02 240);
+  --c-fg-inverse: oklch(15% 0.01 240);
+  --c-divider: oklch(100% 0 0 / 0.1);
+}
+
+:root[data-theme='apple'] {
+  --c-bg: oklch(96.5% 0 0);
+  --c-surface: oklch(100% 0 0);
+  --c-surface-2: oklch(94% 0.003 240);
+  --c-fg: oklch(15% 0 0); /* near-black */
+  --c-fg-muted: oklch(45% 0 0);
+  --c-action: oklch(52% 0.19 255);
+  --c-action-hover: oklch(46% 0.19 255);
+  --r-utility: 8px;
+  --r-capsule: 11px;
+  --r-card: 18px;
+  --r-pill: 9999px;
+  --shadow-product: 0 16px 32px oklch(0% 0 0 / 0.14), 0 2px 4px oklch(0% 0 0 / 0.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --t-snap: 0ms;
+    --t-quick: 0ms;
+    --t-base: 0ms;
+  }
+}
+
+/* Utility class injected on every press affordance */
+.press {
+  transition: transform var(--t-snap) var(--easing);
+}
+.press:active {
+  transform: scale(0.96);
+}
+
+/* 1px hairline used by cards (avoids 0.5px sub-pixel issues on @1x) */
+.ring-hairline {
+  box-shadow: inset 0 0 0 1px var(--c-divider);
+}
