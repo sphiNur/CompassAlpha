@@ -322,9 +322,11 @@ export const runRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       if (!ctx.session?.permissions.has('run.purchase')) {
+        // M1.9-extra (P7): drop the colon-suffix; missing perm in cause.
         throw new TRPCError({
           code: 'FORBIDDEN',
-          message: 'auth.errors.missingPermission:run.purchase',
+          message: 'auth.errors.missingPermission',
+          cause: { missingPermission: 'run.purchase' },
         });
       }
       return ctx.withOrg(async (tx) => {

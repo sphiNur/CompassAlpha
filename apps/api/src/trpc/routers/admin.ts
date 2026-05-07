@@ -18,9 +18,17 @@ import { hub } from '../../realtime/hub';
 
 function requireAdmin(perms: ReadonlySet<string>): void {
   if (!perms.has('users.manage')) {
+    // M1.9-extra (P7, 2026-05-07): was
+    // 'auth.errors.missingPermission:users.manage' — the colon suffix
+    // broke the dot-camelCase contract every other key follows, so
+    // the FE errToast helper couldn't translate it cleanly. The
+    // missing perm name is implementation detail; the user-facing
+    // message is generic. The actual perm goes into TRPCError.cause
+    // for log forensics.
     throw new TRPCError({
       code: 'FORBIDDEN',
-      message: 'auth.errors.missingPermission:users.manage',
+      message: 'auth.errors.missingPermission',
+      cause: { missingPermission: 'users.manage' },
     });
   }
 }
@@ -135,9 +143,12 @@ function requireOneOf(perms: ReadonlySet<string>, keys: string[]): void {
   for (const k of keys) {
     if (perms.has(k)) return;
   }
+  // M1.9-extra (P7): same shape as requireAdmin — generic
+  // user-facing message, missing perms in cause for forensics.
   throw new TRPCError({
     code: 'FORBIDDEN',
-    message: 'auth.errors.missingPermission:' + keys.join('|'),
+    message: 'auth.errors.missingPermission',
+    cause: { missingPermissionAny: keys },
   });
 }
 

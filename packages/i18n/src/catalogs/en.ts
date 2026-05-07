@@ -115,6 +115,8 @@ export const en = {
   'auth.errors.invalidRefresh': 'Session expired — please sign in again',
   'auth.errors.refreshReplayDetected':
     'Suspicious sign-in activity detected — all sessions for this account have been signed out. Please sign in again.',
+  'auth.errors.missingPermission':
+    'You don\'t have permission to do that. Ask an admin if you think this is a mistake.',
   'auth.errors.nameLocked': 'Your name is locked — only an administrator can change it',
   'auth.errors.noMembership': 'You are not a member of any organization',
   'auth.errors.noOrg': 'Organization not found',

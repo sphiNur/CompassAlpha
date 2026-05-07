@@ -93,6 +93,8 @@ export const uz = {
   'auth.errors.invalidRefresh': "Sessiya muddati tugagan — qaytadan kiring",
   'auth.errors.refreshReplayDetected':
     "Shubhali kirish faolligi aniqlandi — bu hisobning barcha qurilmalaridan chiqarildi. Qaytadan kiring.",
+  'auth.errors.missingPermission':
+    "Bu amalga ruxsatingiz yo'q. Agar bu xato deb hisoblasangiz, administrator bilan bog'laning.",
   'auth.errors.nameLocked': "Ism qulflangan — faqat administrator o'zgartira oladi",
   'auth.errors.noMembership': "Siz hech bir tashkilotga a'zo emassiz",
   'auth.errors.noOrg': "Tashkilot topilmadi",

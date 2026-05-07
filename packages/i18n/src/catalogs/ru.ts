@@ -85,6 +85,8 @@ export const ru = {
   'auth.errors.invalidRefresh': 'Сессия истекла — войдите снова',
   'auth.errors.refreshReplayDetected':
     'Обнаружена подозрительная активность — все сессии этого аккаунта прерваны. Войдите снова.',
+  'auth.errors.missingPermission':
+    'У вас нет прав на это действие. Если считаете это ошибкой, обратитесь к администратору.',
   'auth.errors.nameLocked': 'Имя зафиксировано — изменить может только администратор',
   'auth.errors.noMembership': 'Вы не состоите ни в одной организации',
   'auth.errors.noOrg': 'Организация не найдена',

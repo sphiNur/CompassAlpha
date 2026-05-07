@@ -219,11 +219,13 @@ export async function assertHasPermissionInStore(
     )
     .limit(1);
 
-  // Explicit deny wins.
+  // Explicit deny wins. M1.9-extra (P7): bare key, missing perm in
+  // cause. The colon-suffix version broke FE i18n translation.
   if (override[0]?.effect === 'deny') {
     throw new TRPCError({
       code: 'FORBIDDEN',
-      message: `auth.errors.missingPermission:${permKey}`,
+      message: 'auth.errors.missingPermission',
+      cause: { missingPermission: permKey, deniedBy: 'override' },
     });
   }
   // Explicit store-scoped allow grants the perm even if the flat set
@@ -235,7 +237,8 @@ export async function assertHasPermissionInStore(
   if (!permissions.has(permKey)) {
     throw new TRPCError({
       code: 'FORBIDDEN',
-      message: `auth.errors.missingPermission:${permKey}`,
+      message: 'auth.errors.missingPermission',
+      cause: { missingPermission: permKey },
     });
   }
 }
