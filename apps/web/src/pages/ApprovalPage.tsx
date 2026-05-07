@@ -371,12 +371,13 @@ export function ApprovalPage() {
         }}
         title={i18n.t('approval.confirm.reject.title')}
         description={i18n.t('approval.confirm.reject.body')}
-        // M1.9-fix (2026-05-07): the reason input was autoFocusing on
-        // open, which popped the iOS keyboard during the sheet slideUp
-        // animation and pushed the bottom Reject button out of view.
-        // Manager has to tap the input now, but the Reject button is
-        // visible from the start.
-        disableAutoFocus
+        // M1.9-fix (2026-05-07): the reason input used to autoFocus on
+        // open, popping the iOS keyboard during slideUp and pushing
+        // the Reject button out of view. We DEFER the autofocus until
+        // after slideUp finishes (~240ms) so focus + keyboard arrive
+        // when the sheet is in its final position — keyboard nav and
+        // screen-reader users still get focus inside the dialog.
+        deferAutoFocusMs={280}
         footer={
           <Button
             block

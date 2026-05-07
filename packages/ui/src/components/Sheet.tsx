@@ -1,5 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { cn } from '../cn';
 
 /**
@@ -65,23 +65,31 @@ interface SheetProps {
   children: ReactNode;
   footer?: ReactNode;
   /**
-   * When true, suppress Radix Dialog's default behavior of focusing
-   * the first focusable child on open. The user taps an input to
-   * focus it themselves.
+   * Suppress Radix Dialog's default first-focusable autofocus
+   * entirely. User taps to focus.
    *
-   * Why: on iOS Telegram WebView, focusing an input pops the virtual
-   * keyboard instantly. If that happens DURING the slideUp animation,
-   * the WebView scroll-jumps the page and often hides the sheet's
-   * bottom Save button. Setting `disableAutoFocus` is the most
-   * pragmatic fix for sheets that have a text input as the first
-   * focusable element. (Audit M1.9, 2026-05-07.)
-   *
-   * Trade-off: keyboard-only / screen-reader users on non-Telegram
-   * envs lose the "tab lands inside the dialog" affordance. Future
-   * iteration can defer-focus with a setTimeout matching the slideUp
-   * duration; for now, opt-in per sheet is the safe default.
+   * Use when the sheet has multiple equal-priority interactive
+   * elements (e.g. ConfirmPage's issue sheet has a note input AND a
+   * photo button — the receiver may want either first; auto-focusing
+   * the input forces them to dismiss the keyboard to reach the photo).
    */
   disableAutoFocus?: boolean;
+
+  /**
+   * Defer Radix's autofocus by N ms after open. Pass 280 (slightly
+   * longer than slideUp's 240ms `--t-base`) so the keyboard pops
+   * AFTER the sheet has reached its final position — eliminating
+   * the iOS WebView scroll-jump that hides the bottom Save button.
+   *
+   * Use when the sheet has ONE primary input the user almost
+   * certainly wants to type into (e.g. ApprovalPage's reject-reason
+   * sheet). Better a11y than `disableAutoFocus` because focus
+   * eventually does land in the dialog for keyboard / screen-reader
+   * users on non-iOS envs.
+   *
+   * Mutually exclusive with `disableAutoFocus`; the latter wins.
+   */
+  deferAutoFocusMs?: number;
 }
 
 export function Sheet({
@@ -92,7 +100,47 @@ export function Sheet({
   children,
   footer,
   disableAutoFocus = false,
+  deferAutoFocusMs,
 }: SheetProps) {
+  const contentRef = useRef<HTMLDivElement | null>(null);
+
+  // Deferred-focus implementation: when `deferAutoFocusMs` is set, we
+  // preventDefault on Radix's onOpenAutoFocus (so it doesn't fire
+  // immediately during slideUp), then setTimeout to find the first
+  // focusable inside the dialog and focus it ourselves. After
+  // slideUp completes (240ms), the sheet is in final position; the
+  // keyboard pops without scroll-jumping the WebView.
+  useEffect(() => {
+    if (!open || disableAutoFocus || !deferAutoFocusMs) return;
+    const timer = setTimeout(() => {
+      const root = contentRef.current;
+      if (!root) return;
+      // Match Radix's "first focusable" definition: input/textarea/
+      // select/button/[tabindex]:not([tabindex="-1"]). Skip elements
+      // inside [data-radix-focus-guard] which Radix injects.
+      const candidates = root.querySelectorAll<HTMLElement>(
+        'input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      for (const el of candidates) {
+        if (el.closest('[data-radix-focus-guard]')) continue;
+        el.focus();
+        // If the focused element is a text input, move caret to end
+        // (the user is likely about to type, and a selected default
+        // value would be clobbered by their first keystroke if the
+        // input has any pre-filled content).
+        if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+          try {
+            const len = el.value.length;
+            el.setSelectionRange(len, len);
+          } catch {
+            /* setSelectionRange throws on number/email/etc inputs; ignore */
+          }
+        }
+        break;
+      }
+    }, deferAutoFocusMs);
+    return () => clearTimeout(timer);
+  }, [open, disableAutoFocus, deferAutoFocusMs]);
   // Track open-state in the global counter + wire Telegram BackButton
   // to close. Skipped when not in Telegram (web preview just ignores).
   useEffect(() => {
@@ -129,6 +177,7 @@ export function Sheet({
           )}
         />
         <Dialog.Content
+          ref={contentRef}
           className={cn(
             'fixed inset-x-0 bottom-0 z-50 flex flex-col',
             'rounded-t-[24px] bg-[var(--c-surface)] text-[var(--c-fg)]',
@@ -139,7 +188,9 @@ export function Sheet({
           )}
           aria-describedby={description ? 'sheet-desc' : undefined}
           onOpenAutoFocus={
-            disableAutoFocus ? (e) => e.preventDefault() : undefined
+            disableAutoFocus || deferAutoFocusMs
+              ? (e) => e.preventDefault()
+              : undefined
           }
         >
           <SheetHeader>
