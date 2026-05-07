@@ -20,19 +20,20 @@
 
 | Type | Payload | Notes |
 |---|---|---|
-| `DraftStarted` | `{orgId, storeId, memberId, orderDate}` | Always seq=1. Lazily created on first `AdjustItem`. |
-| `ItemAdjusted` | `{skuId, qty, prevQty}` | Idempotent: same qty as before → no event. |
-| `ItemNoteSet` | `{skuId, note: string \| null}` | |
-| `Submitted` | `{itemCount}` | Owner only. Requires ≥ 1 non-zero item. |
+| `DraftStarted` | `{orgId, storeId, initiatedByMemberId, orderDate}` | Always seq=1. Lazily created on first `AdjustItem`. M1.4 renamed `memberId` → `initiatedByMemberId`. |
+| `ItemAdjusted` | `{skuId, qty, prevQty, byMemberId, forMemberId}` | Per-(sku, contributor) row since M1.5. `byMemberId` is the actor; `forMemberId` is whose row is mutated (manager-edit-via-targetMemberId differs from `byMemberId`). |
+| `ItemNoteSet` | `{skuId, note: string \| null, byMemberId, forMemberId}` | Same actor/contributor split as `ItemAdjusted`. |
+| `SessionNoteSet` | `{note: string \| null, byMemberId}` | M1.8 — session-level "其他物品" free-text. No skuId. Locked once status leaves `draft`/`rejected`. 1000-char domain cap. |
+| `Submitted` | `{itemCount, byMemberId}` | Owner only. Requires ≥ 1 non-zero aggregate item. |
 | `Claimed` | `{byMemberId}` | Atomic: collision throws CONFLICT. |
 | `ClaimReleased` | `{byMemberId, reason: 'manual'\|'pagehide'\|'timeout'}` | Only the current claimer. |
 | `Approved` | `{byMemberId}` | Clears claim. |
 | `Rejected` | `{byMemberId, reason}` | Clears claim. Reason required. |
-| `Withdrawn` | `{byMemberId}` | Owner only. Refused if claimed. |
-| `Unapproved` | `{byMemberId, reason?}` | Refused if already in run. Auto-claims. |
+| `Withdrawn` | `{byMemberId}` | Owner OR `order.approve` (manager). Refused if claimed. |
+| `Unapproved` | `{byMemberId, reason?}` | Refused if already in run. M1.7-fix: now CLEARS the claim (was: transferred to unapprover). |
 | `AttachedToRun` | `{runId}` | |
 | `EjectedFromRun` | `{runId, byMemberId, reason?}` | Refused if anything in the run is purchased/delivered/confirmed. |
-| `Archived` | `{reason: 'eod'\|'manual'}` | Terminal — no further events. |
+| `Archived` | `{reason: 'eod'\|'manual'\|'run_finished'}` | Terminal — no further events. `run_finished` cascaded from `RunFinished` (M1.5). |
 
 ### `run` stream
 

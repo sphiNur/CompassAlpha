@@ -29,29 +29,73 @@
 | `catalog.skus` | query | authed |
 | `catalog.stores` | query | authed |
 | `catalog.suppliers` | query | authed |
+| `catalog.skuPriceStats` | query | authed | M1.5 — avg-7d / last-price per SKU for budget estimates. |
 
 ### `order.*`
 
 | Route | Type | Permission | Notes |
 |---|---|---|---|
 | `order.todaySession` | query | authed | Returns owner's session for `(storeId, date)` or null. |
+| `order.sessionDetail` | query | authed | Single-session view by id (any status). |
 | `order.pendingList` | query | `order.approve` | Approver queue. |
 | `order.adjustItem` | mutation | `order.draft` | Lazy-creates draft on first call. |
-| `order.setNote` | mutation | `order.draft` | |
+| `order.setNote` | mutation | `order.draft` | Per-line note. |
+| `order.setSessionNote` | mutation | `order.draft` | M1.8 — session-level "其他物品" free-text. |
 | `order.submit` | mutation | `order.submit` | Owner only. |
 | `order.claim` | mutation | `order.claim` | Atomic; CONFLICT if already claimed. |
 | `order.releaseClaim` | mutation | `order.claim` | Only the current claimer. |
 | `order.approve` | mutation | `order.approve` | Clears claim. |
 | `order.reject` | mutation | `order.approve` | Reason required. |
 | `order.withdraw` | mutation | owner | Refused if claimed. |
-| `order.unapprove` | mutation | `order.unapprove` | Refused if in run. |
+| `order.unapprove` | mutation | `order.unapprove` | Refused if in run. M1.7-fix: clears claim (was: transferred). |
+
+### `run.*`
+
+Mounts at `/trpc/run.*`. All authed; specific perms documented per route.
+
+| Route | Type | Permission | Notes |
+|---|---|---|---|
+| `run.list` | query | authed | Past 50 runs, newest first. |
+| `run.get` | query | authed | Full run + items + splits + per-store demand + `lastPriceBySku` + `sessionNotesByStore` (M1.8). |
+| `run.previewCreatable` | query | authed | Org-wide preview of approved sessions for `date` (default today). Returns `plannedItems`, `perStoreDemand`, `supplierBySku`, `sessionNotesByStore`. |
+| `run.create` | mutation | `run.create` | Spans approved sessions, emits `RunPlanned` + per-session `AttachedToRun`. |
+| `run.startPurchase` / `run.undoStartPurchase` | mutation | `run.purchase` | Stage transitions. |
+| `run.purchaseItem` / `run.revisePurchase` / `run.undoPurchase` | mutation | `run.purchase` | Per-SKU buy + edit + undo. |
+| `run.markUnavailable` / `run.unmarkUnavailable` | mutation | `run.purchase` | Per-SKU N/A toggle. |
+| `run.startDelivery` / `run.undoStartDelivery` | mutation | `run.purchase` | Stage transitions. |
+| `run.deliverToStore` / `run.undeliverStore` | mutation | `delivery.dispatch` | Per-store delivery + recall. |
+| `run.confirmStoreItem` / `run.confirmStore` | mutation | `delivery.confirm` | Receiver-side per-item + final store confirm. |
+| `run.finish` | mutation | `run.finish` | Cascades `Archived` to attached sessions. |
+| `run.cancel` | mutation | `run.create` | Cancels run + ejects sessions. M1.7-fix: synthesizes `run.eject_session` perm during cascade. |
+| `run.ejectSession` | mutation | `run.eject_session` | Single session eject. |
+| `run.setSkuPreferredSupplier` | mutation | `inventory.suppliers.manage` | M1.6 — per-SKU vendor pinning. |
+
+### `admin.*`
+
+All authed; broad ranks of perms (`users.manage`, `inventory.*.manage`, `org.settings.manage`).
+Per-store admin scope enforced via `getActorAdminStoreIds` (C2). Selected:
+
+- **Members**: `memberList`, `memberInviteByTgId`, `memberSetStatus`, `memberSetDisplayName`, `memberAssignStore` / `memberUnassignStore` / `memberDetachFromStore` / `memberTransferStore`, `memberRemove`, `memberPermissionsList` / `memberPermissionSet` / `memberPermissionRevoke`.
+- **Roles**: `roleList`, `roleDetail`, `roleCreate`, `roleUpdate`, `roleDelete`, `permissionList`, `grantRole`, `revokeRole`.
+- **Stores**: `storeList`, `storeCreate`, `storeUpdate`, `storeDelete`, `storeCloneRoles` (D4), `memberStoreAssignments`.
+- **Catalog**: `categoryList/Create/Update/Delete`, `skuList/Create/Update/Delete`, `supplierList/Create/Update/Delete`.
+- **Audit / overview**: `overview`, `recentEvents`, `submissionHistory`, `runList`, `sessionList`, `adminAuditList`.
+- **Maintenance** (`super_admin` + `system.test_data.purge`): `purgeByDate`, `purgeAllTestData`, `purgeRun`, `purgeSession`. M1.9: gated behind `VITE_ENABLE_MAINTENANCE` build flag.
+
+### `upload.*`
+
+| Route | Type | Auth | Notes |
+|---|---|---|---|
+| `upload.config` | query | authed | Bucket public base + max bytes. |
+| `upload.requestPresign` | mutation | authed | SigV4 PUT URL (M1, S3 / MinIO / R2 / Tencent COS). 5 min TTL. |
 
 ### `system.*`
 
 | Route | Type | Auth |
 |---|---|---|
 | `system.health` | query | public |
-| `system.log` | mutation | public | Batched client telemetry ingest. |
+| `system.appConfig` | query | public | M1.4 — Telegram bot username for invite share links. |
+| `system.log` | mutation | public | Batched client telemetry ingest. M1.9: rate-limited 60/min/IP. |
 | `system.recentLogs` | query | authed | |
 
 ## WebSocket
