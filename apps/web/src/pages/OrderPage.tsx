@@ -9,6 +9,7 @@ import {
   EmptyState,
   PageHeader,
   QtyControl,
+  SearchInput,
   Sheet,
   Textarea,
   useToast,
@@ -19,6 +20,7 @@ import { usePageMainButton, getTg, haptic } from '../hooks/useTelegram';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
+import { matchesNameLike, normalizeQuery } from '../lib/searchMatch';
 import { useI18n, useProductName } from '../hooks/useI18n';
 import { formatQty, formatMoney } from '../lib/format';
 import { StoreSwitcher, useStoreContext } from '../components/StoreSwitcher';
@@ -41,6 +43,9 @@ export function OrderPage() {
   const errToast = useErrToast();
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
+  // M1.10 (2026-05-08): cross-language SKU search. Lives above the
+  // category chip-bar; queries match across uz/ru/en/zh names + code.
+  const [searchQuery, setSearchQuery] = useState('');
 
   const categoriesQuery = trpc.catalog.categories.useQuery();
   const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: false });
@@ -409,8 +414,26 @@ export function OrderPage() {
 
   const skus = skusQuery.data ?? [];
   const filteredSkus = useMemo(
-    () => (activeCategory ? skus.filter((s) => s.categoryId === activeCategory) : skus),
-    [skus, activeCategory],
+    () => {
+      // Two filters compose: category chip + cross-language search.
+      // Apply category first (cheap object-key compare) then search
+      // (string match across 4 lang fields + code) so we walk the
+      // smaller set on the second pass.
+      let out = activeCategory
+        ? skus.filter((s) => s.categoryId === activeCategory)
+        : skus;
+      const tokens = normalizeQuery(searchQuery);
+      if (tokens) {
+        out = out.filter((s) =>
+          matchesNameLike(
+            { names: s.names as Record<string, string> | null, code: s.code },
+            tokens,
+          ),
+        );
+      }
+      return out;
+    },
+    [skus, activeCategory, searchQuery],
   );
 
   const items = sessionQuery.data?.items ?? [];
@@ -609,6 +632,21 @@ export function OrderPage() {
         </div>
       ) : null}
 
+      {/* Search bar — cross-language SKU search (M1.10, 2026-05-08).
+          Lives just above the category chip-bar; together they form
+          the "narrow the list" sticky stack. Search composes with
+          the category filter (intersection). */}
+      <div className="px-4 pb-2 pt-1">
+        <SearchInput
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          onClear={() => setSearchQuery('')}
+          placeholder={i18n.t('order.search.placeholder')}
+          clearAriaLabel={i18n.t('common.clear')}
+          aria-label={i18n.t('order.search.placeholder')}
+        />
+      </div>
+
       {/* Sticky filter chip bar. Sticks to the top once the header
           scrolls off, so the filters are always reachable while the
           user is browsing items. */}
@@ -701,6 +739,14 @@ export function OrderPage() {
       >
         {() => (
           <ul className="flex flex-col" role="list">
+            {filteredSkus.length === 0 && (searchQuery || activeCategory) ? (
+              <li className="px-4 py-8">
+                <EmptyState
+                  title={i18n.t('order.search.noMatches.title')}
+                  description={i18n.t('order.search.noMatches.description')}
+                />
+              </li>
+            ) : null}
             {filteredSkus.map((sku) => {
               const myQty = myQtyBySku.get(sku.id) ?? 0;
               const totalQty = totalQtyBySku.get(sku.id) ?? 0;

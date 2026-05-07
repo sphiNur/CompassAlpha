@@ -49,6 +49,7 @@ import {
   ListRow,
   Checkbox,
   PageHeader,
+  SearchInput,
   SectionRow,
   Select,
   Sheet,
@@ -63,6 +64,7 @@ import { PAGE_SIZE, STALE } from '../config/timings';
 import { botLink as makeBotLink, shareLink as makeShareLink } from '../lib/telegramLinks';
 import { trpc } from '../lib/trpc';
 import { useErrToast } from '../lib/errToast';
+import { matchesNameLike, matchesAnyString, normalizeQuery } from '../lib/searchMatch';
 import { formatQty, formatMoney } from '../lib/format';
 import { useAuthStore } from '../stores/authStore';
 import { getTg, useTelegramBackButton } from '../hooks/useTelegram';
@@ -651,9 +653,20 @@ function PeopleSection({
     onError: errToast('common.error'),
   });
 
+  // M1.10 (2026-05-08): people directory search by name + tg + role.
+  const [searchQuery, setSearchQuery] = useState('');
+  const tokens = useMemo(() => normalizeQuery(searchQuery), [searchQuery]);
+
   return (
     <div className="px-4 py-3">
-      <div className="mb-3 flex justify-end">
+      <div className="mb-3 flex items-center gap-2">
+        <SearchInput
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          onClear={() => setSearchQuery('')}
+          placeholder={i18n.t('admin.search.peoplePlaceholder')}
+          clearAriaLabel={i18n.t('common.clear')}
+        />
         <Button size="sm" onClick={() => setInviteOpen(true)}>
           {i18n.t('admin.action.invite')}
         </Button>
@@ -669,7 +682,22 @@ function PeopleSection({
           />
         }
       >
-        {(rows) => {
+        {(rawRows) => {
+          // Apply search across displayName + tgUsername + role slugs/names.
+          // Then the existing storeCtx-based filtering takes over below.
+          const rows = tokens
+            ? rawRows.filter((m) =>
+                matchesAnyString(
+                  [
+                    m.displayName,
+                    m.tgUsername,
+                    ...m.roles.map((r) => r.slug),
+                    ...m.roles.map((r) => r.name),
+                  ],
+                  tokens,
+                ),
+              )
+            : rawRows;
           // Filter / group by store context (added 2026-05-05).
           const renderCard = (m: (typeof rows)[number]) => {
             const isSelf = m.userId === session?.user.id;
@@ -4009,6 +4037,9 @@ function SkusSection() {
   const i18n = useI18n();
   const productName = useProductName();
   const [draft, setDraft] = useState<SkuDraft | null>(null);
+  // M1.10 (2026-05-08): cross-language SKU search.
+  const [searchQuery, setSearchQuery] = useState('');
+  const tokens = useMemo(() => normalizeQuery(searchQuery), [searchQuery]);
 
   const create = trpc.admin.skuCreate.useMutation({
     onSuccess: () => {
@@ -4070,15 +4101,41 @@ function SkusSection() {
           />
         </div>
       </div>
+      <div className="mb-3">
+        <SearchInput
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          onClear={() => setSearchQuery('')}
+          placeholder={i18n.t('admin.search.skusPlaceholder')}
+          clearAriaLabel={i18n.t('common.clear')}
+        />
+      </div>
 
       <DataState
         query={skusQuery}
         emptyWhen={(d) => d.length === 0}
-        empty={<EmptyState title="No SKUs" description="Add the items your stores order regularly." />}
+        empty={<EmptyState title={i18n.t('admin.empty.noSkus.title')} description={i18n.t('admin.empty.noSkus.description')} />}
       >
-        {(rows) => (
+        {(rows) => {
+          const filtered = tokens
+            ? rows.filter((sk) =>
+                matchesNameLike(
+                  { names: sk.names as Record<string, string> | null, code: sk.code },
+                  tokens,
+                ),
+              )
+            : rows;
+          return (
           <ul className="flex flex-col gap-2" role="list">
-            {rows.map((sk) => {
+            {filtered.length === 0 && tokens ? (
+              <li>
+                <EmptyState
+                  title={i18n.t('admin.search.noMatches.title')}
+                  description={i18n.t('admin.search.noMatches.description')}
+                />
+              </li>
+            ) : null}
+            {filtered.map((sk) => {
               const names = sk.names as Record<string, string>;
               const primary = productName({ names }) || sk.code || sk.id.slice(0, 6);
               const otherLangs = ['uz', 'ru', 'en', 'zh']
@@ -4149,7 +4206,8 @@ function SkusSection() {
               );
             })}
           </ul>
-        )}
+          );
+        }}
       </DataState>
 
       <Sheet

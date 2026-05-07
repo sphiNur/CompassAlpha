@@ -48,6 +48,7 @@ export const en = {
   'common.retry': 'Retry',
   'common.loading': 'Loading…',
   'common.noData': 'No data',
+  'common.clear': 'Clear',
   'common.notes': 'Notes',
   'common.optional': 'Optional',
   /** Format `${count} ${i18n.t('common.itemsLabel')}` — bare noun. */
@@ -218,6 +219,13 @@ export const en = {
     "You don't administer any store yet. Ask a higher-rank admin to add you to a store first.",
   'admin.label.active': 'active',
   'admin.label.showArchived': 'Show archived',
+  // M1.10: cross-language search across catalog + people directories.
+  'admin.search.skusPlaceholder': 'Search SKUs (any language or code)…',
+  'admin.search.peoplePlaceholder': 'Search by name, Telegram, or role…',
+  'admin.search.noMatches.title': 'No matches',
+  'admin.search.noMatches.description': 'Try a different word, or clear the filter.',
+  'admin.empty.noSkus.title': 'No SKUs',
+  'admin.empty.noSkus.description': 'Add the items your stores order regularly.',
   'admin.label.paused': 'paused',
   'admin.label.you': 'you',
   'admin.label.noTelegram': 'no telegram',
@@ -346,6 +354,10 @@ export const en = {
   // staff page.
   'order.categoriesAriaLabel': 'Product categories',
   'order.categories.all': 'All',
+  // M1.10 (2026-05-08): cross-language search.
+  'order.search.placeholder': 'Search products (any language)…',
+  'order.search.noMatches.title': 'No products match',
+  'order.search.noMatches.description': 'Try a different word, or clear the filter.',
   'order.suggested': 'suggested {qty}',
   'order.totalQty': 'total {qty} {unit}',
   'order.selected': 'Selected',

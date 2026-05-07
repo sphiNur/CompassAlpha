@@ -3,6 +3,8 @@ export { Button } from './components/Button';
 export type { ButtonProps } from './components/Button';
 export { Card, CardHeader, CardTitle, CardMeta } from './components/Card';
 export { Input } from './components/Input';
+export { SearchInput } from './components/SearchInput';
+export type { SearchInputProps } from './components/SearchInput';
 export { Textarea } from './components/Textarea';
 export type { TextareaProps } from './components/Textarea';
 export { Select } from './components/Select';
