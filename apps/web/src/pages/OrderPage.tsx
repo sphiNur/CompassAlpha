@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Badge,
   Banner,
   Button,
   ChipBar,
@@ -626,17 +625,18 @@ export function OrderPage() {
           </div>
         }
       />
-      {sessionStatus && sessionStatus !== 'draft' ? (
-        <div className="px-4 pb-2">
-          <Badge tone="muted">{i18n.t(('order.status.' + sessionStatus) as Parameters<typeof i18n.t>[0])}</Badge>
-        </div>
-      ) : null}
+      {/* M1.11 cleanup (2026-05-08): the standalone status Badge that
+          used to sit here was redundant with the conditional banners
+          below — they convey both the status AND the optional action.
+          Dropped to free up ~36 px of vertical chrome on every
+          non-draft view. */}
 
-      {/* Search bar — cross-language SKU search (M1.10, 2026-05-08).
-          Lives just above the category chip-bar; together they form
-          the "narrow the list" sticky stack. Search composes with
-          the category filter (intersection). */}
-      <div className="px-4 pb-2 pt-1">
+      {/* Sticky search + filter stack — search above, chip bar
+          below. M1.11: merged into a single sticky container with
+          unified padding so the two rows feel like one control
+          surface (was two separate `<div>` shells with redundant
+          border + py-X). */}
+      <div className="sticky top-0 z-[1] flex flex-col gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-2">
         <SearchInput
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
@@ -645,13 +645,7 @@ export function OrderPage() {
           clearAriaLabel={i18n.t('common.clear')}
           aria-label={i18n.t('order.search.placeholder')}
         />
-      </div>
-
-      {/* Sticky filter chip bar. Sticks to the top once the header
-          scrolls off, so the filters are always reachable while the
-          user is browsing items. */}
-      <div className="sticky top-0 z-[1] border-b border-[var(--c-divider)] bg-[var(--c-bg)] py-2">
-        <ChipBar ariaLabel={i18n.t('order.categoriesAriaLabel')}>
+        <ChipBar ariaLabel={i18n.t('order.categoriesAriaLabel')} className="-mx-4 px-4 py-0">
           <Chip selected={activeCategory === null} onClick={() => setActiveCategory(null)}>
             {i18n.t('order.categories.all')}
           </Chip>
@@ -671,64 +665,65 @@ export function OrderPage() {
         </ChipBar>
       </div>
 
-      {sessionQuery.data?.claimedByMemberId &&
-      sessionQuery.data.claimedByMemberId !== session.member.memberId ? (
-        <div className="px-4 pb-3">
-          <Banner tone="warn" title={i18n.t('order.banner.claimed', { who: 'manager' })} />
-        </div>
-      ) : null}
-
-      {sessionStatus === 'rejected' ? (
-        <div className="px-4 pb-3">
-          <Banner
-            tone="danger"
-            title={i18n.t('order.status.rejected', { reason: sessionQuery.data?.rejectReason ?? '—' })}
-            action={
-              <Button
-                size="sm"
-                variant="pearl"
-                loading={withdraw.isPending}
-                onClick={() => sessionQuery.data && withdraw.mutate({ sessionId: sessionQuery.data.id })}
-              >
-                {i18n.t('order.withdraw')}
-              </Button>
-            }
-          />
-        </div>
-      ) : null}
-
-      {sessionStatus === 'submitted' && !sessionQuery.data?.claimedByMemberId ? (
-        <div className="px-4 pb-3">
-          <Banner
-            tone="info"
-            title={i18n.t('order.status.submitted')}
-            action={
-              <Button
-                size="sm"
-                variant="pearl"
-                loading={withdraw.isPending}
-                onClick={() => sessionQuery.data && withdraw.mutate({ sessionId: sessionQuery.data.id })}
-              >
-                {i18n.t('order.withdraw')}
-              </Button>
-            }
-          />
-        </div>
-      ) : null}
-
-      {sessionStatus === 'approved' ? (
-        <div className="px-4 pb-3">
-          <Banner tone="success" title={i18n.t('order.banner.approved.title')}>
-            {i18n.t('order.banner.approved.body')}
-          </Banner>
-        </div>
-      ) : null}
-
-      {sessionStatus === 'in_run' ? (
-        <div className="px-4 pb-3">
-          <Banner tone="info" title={i18n.t('order.banner.inRun.title')}>
-            {i18n.t('order.banner.inRun.body')}
-          </Banner>
+      {/* Status banners — only render the wrapper when at least one
+          banner condition is true, so the empty-state draft view has
+          zero chrome between sticky filters and the SKU list. M1.11:
+          single section with `gap-2` replaces 4 individually-padded
+          shells. */}
+      {(sessionStatus &&
+        (sessionStatus === 'rejected' ||
+          sessionStatus === 'approved' ||
+          sessionStatus === 'in_run' ||
+          (sessionStatus === 'submitted' && !sessionQuery.data?.claimedByMemberId))) ||
+      (sessionQuery.data?.claimedByMemberId &&
+        sessionQuery.data.claimedByMemberId !== session.member.memberId) ? (
+        <div className="flex flex-col gap-2 px-4 pt-2">
+          {sessionQuery.data?.claimedByMemberId &&
+          sessionQuery.data.claimedByMemberId !== session.member.memberId ? (
+            <Banner tone="warn" title={i18n.t('order.banner.claimed', { who: 'manager' })} />
+          ) : null}
+          {sessionStatus === 'rejected' ? (
+            <Banner
+              tone="danger"
+              title={i18n.t('order.status.rejected', { reason: sessionQuery.data?.rejectReason ?? '—' })}
+              action={
+                <Button
+                  size="sm"
+                  variant="pearl"
+                  loading={withdraw.isPending}
+                  onClick={() => sessionQuery.data && withdraw.mutate({ sessionId: sessionQuery.data.id })}
+                >
+                  {i18n.t('order.withdraw')}
+                </Button>
+              }
+            />
+          ) : null}
+          {sessionStatus === 'submitted' && !sessionQuery.data?.claimedByMemberId ? (
+            <Banner
+              tone="info"
+              title={i18n.t('order.status.submitted')}
+              action={
+                <Button
+                  size="sm"
+                  variant="pearl"
+                  loading={withdraw.isPending}
+                  onClick={() => sessionQuery.data && withdraw.mutate({ sessionId: sessionQuery.data.id })}
+                >
+                  {i18n.t('order.withdraw')}
+                </Button>
+              }
+            />
+          ) : null}
+          {sessionStatus === 'approved' ? (
+            <Banner tone="success" title={i18n.t('order.banner.approved.title')}>
+              {i18n.t('order.banner.approved.body')}
+            </Banner>
+          ) : null}
+          {sessionStatus === 'in_run' ? (
+            <Banner tone="info" title={i18n.t('order.banner.inRun.title')}>
+              {i18n.t('order.banner.inRun.body')}
+            </Banner>
+          ) : null}
         </div>
       ) : null}
 
@@ -1169,19 +1164,28 @@ function SessionNotesEditor({
           }
         }}
       />
-      <div className="mt-1 flex items-center justify-between">
-        <span className="text-meta text-[var(--c-fg-muted)]">
-          {i18n.t('order.notes.hint')}
-        </span>
-        <span
-          className={
-            'text-meta tabular-nums ' +
-            (overLimit ? 'text-[var(--c-danger)]' : 'text-[var(--c-fg-muted)]')
-          }
-        >
-          {charCount}/1000
-        </span>
-      </div>
+      {/* M1.11 cleanup (2026-05-08): hint + char-counter only render
+          when there's something to say. Empty notes show just the
+          textarea + placeholder; counter appears as you approach the
+          limit; hint shows once you've started typing (so screen-reader
+          users still get the "visible to manager" context). */}
+      {(charCount > 0 || overLimit) ? (
+        <div className="mt-1 flex items-center justify-between">
+          <span className="text-meta text-[var(--c-fg-muted)]">
+            {i18n.t('order.notes.hint')}
+          </span>
+          {charCount > 800 || overLimit ? (
+            <span
+              className={
+                'text-meta tabular-nums ' +
+                (overLimit ? 'text-[var(--c-danger)]' : 'text-[var(--c-fg-muted)]')
+              }
+            >
+              {charCount}/1000
+            </span>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

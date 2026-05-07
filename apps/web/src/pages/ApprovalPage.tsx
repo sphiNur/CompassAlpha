@@ -127,22 +127,15 @@ export function ApprovalPage() {
 
   if (!session) return null;
 
-  const count = pendingQuery.data?.length ?? null;
-
-  // M1.9-extra (P4): adopted shared <PageHeader>. Subtitle pivots
-  // between empty-tab message and a cardinal "X items" count.
-  const subtitle =
-    count === null
-      ? ''
-      : count === 0
-        ? i18n.t('approval.empty.tab', { tab: i18n.t(`approval.tab.${tab}`) })
-        : i18n.t('common.itemsCount', { n: count });
-
+  // M1.11 cleanup (2026-05-08): subtitle dropped — the Tabs row
+  // immediately below + the empty-state Card (when count===0) +
+  // the Card list itself already convey "what state am I in" and
+  // "how many". The redundant "X items" line just compressed the
+  // SKU list further.
   return (
     <div className="flex flex-col">
       <PageHeader
         title={i18n.t('approval.title')}
-        subtitle={subtitle}
         actions={<StoreSwitcher />}
       />
 
@@ -227,18 +220,18 @@ export function ApprovalPage() {
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5">
-                      {/* "has notes" pill — surfaces a free-text request
-                          before the manager has to expand the card.
-                          Tone matches the highlighted block inside the
-                          expanded view so the visual cue is consistent. */}
+                      {/* M1.11 cleanup (2026-05-08): dropped the
+                          "{itemCount} · {totalQty}" Badge — the View
+                          items expansion + the inline estimate row
+                          already surface count + total. The "has
+                          notes" 📝 pill stays — it's the only signal
+                          for the free-text request before expanding. */}
                       {row.notes ? (
                         <Badge tone="warn" title={i18n.t('order.notes.hasNote')}>
                           {i18n.t('order.notes.badge')}
                         </Badge>
                       ) : null}
-                      <Badge status={row.status}>
-                        {row.itemCount} · {row.totalQty}
-                      </Badge>
+                      <Badge status={row.status} />
                     </div>
                   </CardHeader>
 
@@ -276,7 +269,7 @@ export function ApprovalPage() {
                     </div>
                   ) : null}
 
-                  <div className="flex flex-wrap items-center gap-2 px-4 pb-4 pt-3">
+                  <div className="flex flex-wrap items-center gap-2 px-4 py-3">
                     {tab === 'pending' && !row.claimedByMemberId ? (
                       <Button
                         size="sm"

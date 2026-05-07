@@ -10,11 +10,9 @@
  */
 import { useMemo, useState } from 'react';
 import {
-  Banner,
   Button,
   Card,
   CardHeader,
-  CardMeta,
   CardTitle,
   Chip,
   ChipBar,
@@ -277,25 +275,13 @@ export function ConfirmPage() {
             ? i18n.t('confirm.runOnDate', { date: activeRun.runDate })
             : i18n.t('confirm.empty.noActive')
         }
-        actions={
-          <div className="flex items-center gap-2">
-            <StoreSwitcher />
-            {activeRun && myItems.length > 0 ? (
-              <div className="text-right">
-                <div className="text-meta font-medium uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
-                  {i18n.t('confirm.decided')}
-                </div>
-                <div className="text-h1 font-semibold leading-tight tabular-nums text-[var(--c-fg)]">
-                  {decidedCount}
-                  <span className="ml-1 text-body font-normal text-[var(--c-fg-muted)]">
-                    /{myItems.length}
-                  </span>
-                </div>
-              </div>
-            ) : null}
-          </div>
-        }
+        actions={<StoreSwitcher />}
       />
+      {/* M1.11 cleanup (2026-05-08): the "Decided X/Y" 3-font-stack
+          counter that lived in the header actions is dropped — the
+          MainButton text already displays the same fraction
+          (confirm.confirmStore("{decided}/{total}")), and dropping
+          the counter saved ~64 px of header chrome. */}
       <div className="flex flex-col gap-3 px-4">
 
       {!activeRun ? (
@@ -311,9 +297,12 @@ export function ConfirmPage() {
                 <EmptyState title={i18n.t('confirm.empty.noItems')} />
               ) : (
                 <Card>
+                  {/* M1.11 cleanup: dropped the
+                      `confirm.deliveredItemsHint` CardMeta — the
+                      visible chip-bar per item makes "tap a status"
+                      self-evident. */}
                   <CardHeader>
                     <CardTitle>{i18n.t('confirm.deliveredItems')}</CardTitle>
-                    <CardMeta>{i18n.t('confirm.deliveredItemsHint')}</CardMeta>
                   </CardHeader>
                   <ul className="flex flex-col" role="list">
                     {myItems.map((it) => {
@@ -321,7 +310,7 @@ export function ConfirmPage() {
                       return (
                         <li
                           key={`${it.runId}:${it.skuId}`}
-                          className="flex flex-col gap-2 border-b border-[var(--c-divider)] px-4 py-3 last:border-b-0"
+                          className="flex flex-col gap-2 border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0"
                         >
                           <div className="flex items-baseline justify-between">
                             <span className="text-h3 font-semibold">
@@ -399,16 +388,18 @@ export function ConfirmPage() {
                       );
                     })}
                   </ul>
-                  {storeConfirmed ? (
-                    <div className="px-4 pb-4 pt-3">
-                      <Banner tone="success" title={i18n.t('confirm.confirmStoreFinalBanner')} />
-                    </div>
-                  ) : !getTg() ? (
+                  {storeConfirmed ? null : !getTg() ? (
+                    // M1.11 cleanup (2026-05-08): dropped the terminal
+                    // "Store confirmed" Banner. Three signals already
+                    // confirm success: toast.success on confirmStore
+                    // (`confirm.toast.storeConfirmed`), MainButton
+                    // flipping to its terminal label, and the chips
+                    // locking to their selected state for every item.
                     // Outside Telegram (web preview) — there's no
                     // MainButton to drive Confirm Store, so render an
                     // in-page button as a fallback. Inside Telegram
                     // the MainButton is the canonical CTA.
-                    <div className="px-4 pb-4 pt-3">
+                    <div className="px-4 py-3">
                       <Button
                         block
                         disabled={!allDecided || confirmStore.isPending}
