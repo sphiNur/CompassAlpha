@@ -139,6 +139,28 @@ if (!DRY) {
     `sudo systemctl restart compass-api compass-worker && sleep 2 && sudo systemctl is-active compass-api compass-worker`,
   );
 
+  // M1.9 (2026-05-07): is-active above only proves the process is
+  // alive — it's still possible for the worker to start, fail to
+  // connect to PG, log an error, and sit there with the unit "active"
+  // because grammY's failure path doesn't exit. Verify the worker
+  // logged its `[worker] online` banner since the restart so we
+  // know it actually entered the flush loop.
+  step('4c. verify worker startup banner (warn-only)');
+  try {
+    const journal = ssh(
+      `journalctl -u compass-worker --since '60 seconds ago' --no-pager 2>&1 | tail -20`,
+    );
+    if (journal.includes('[worker] online')) {
+      console.log('  ✓ worker logged "online" since restart');
+    } else {
+      console.log(
+        `  \x1b[33m⚠ no "[worker] online" line in last 60s — worker may have failed to connect (DB? bot token?). Tail:\x1b[0m\n${journal}`,
+      );
+    }
+  } catch (err) {
+    console.log(`  \x1b[33m⚠ couldn't read worker journal: ${(err as Error).message}\x1b[0m`);
+  }
+
   step('5. rebuild web');
   console.log(
     ssh(

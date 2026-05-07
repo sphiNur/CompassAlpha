@@ -233,12 +233,25 @@ function resolveDeepLink(path: string): string {
 }
 
 let stopped = false;
+// Heartbeat cadence — long enough to be quiet in journal at idle,
+// short enough that deploy-time smoke + on-call greps both find a
+// recent line. Independent of queue activity (the `flushed:` line
+// only logs when there's actual work).
+const HEARTBEAT_MS = 60_000;
+let lastHeartbeat = Date.now();
+
 async function loop() {
   while (!stopped) {
     try {
       const r = await processOnce();
       if (r.sent || r.deferred || r.failed) {
         console.log(`[worker] flushed: sent=${r.sent} deferred=${r.deferred} failed=${r.failed}`);
+      }
+      // Heartbeat regardless of queue activity. Lets post-deploy smoke
+      // verify the loop is alive even when the outbox is empty (M1.9).
+      if (Date.now() - lastHeartbeat >= HEARTBEAT_MS) {
+        console.log('[worker] heartbeat');
+        lastHeartbeat = Date.now();
       }
     } catch (err) {
       console.error('[worker] processOnce threw', err);
