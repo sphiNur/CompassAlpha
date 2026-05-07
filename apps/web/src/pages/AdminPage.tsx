@@ -1258,7 +1258,7 @@ function RoleCreateSheet({
             <ul className="flex flex-col gap-3">
               {grouped.map(([ns, keys]) => (
                 <li key={ns}>
-                  <div className="text-meta font-semibold uppercase tracking-[0.08em] text-[var(--c-fg-muted)]">
+                  <div className="text-meta font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
                     {ns}
                   </div>
                   <ul className="mt-1 flex flex-col gap-1">
@@ -1502,7 +1502,7 @@ function RolePermissionsSheet({
             <ul className="flex flex-col gap-3">
               {grouped.map(([ns, keys]) => (
                 <li key={ns}>
-                  <div className="text-meta font-semibold uppercase tracking-[0.08em] text-[var(--c-fg-muted)]">
+                  <div className="text-meta font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
                     {ns}
                   </div>
                   <ul className="mt-1 flex flex-col gap-1">
@@ -1609,7 +1609,7 @@ function RoleAssigneesByStore({
 
   return (
     <div className="mt-2 border-t border-[var(--c-divider)] pt-3">
-      <div className="text-meta font-semibold uppercase tracking-[0.08em] text-[var(--c-fg-muted)]">
+      <div className="text-meta font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
         Assignees · {assignees.length}
       </div>
       <div className="mt-1 flex flex-col gap-3">
@@ -1747,7 +1747,7 @@ function InviteHubSheet({
           </span>
         </button>
 
-        <div className="my-2 text-center text-meta uppercase tracking-[0.08em] text-[var(--c-fg-subtle)]">
+        <div className="my-2 text-center text-meta uppercase tracking-eyebrow text-[var(--c-fg-subtle)]">
           or
         </div>
 
@@ -2571,7 +2571,7 @@ function MemberPermissionsSheet({
           </Banner>
           {grouped.map(([ns, keys]) => (
             <div key={ns}>
-              <div className="text-meta font-semibold uppercase tracking-[0.08em] text-[var(--c-fg-muted)]">
+              <div className="text-meta font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
                 {ns}
               </div>
               <ul className="mt-1 flex flex-col gap-1">
@@ -2705,7 +2705,7 @@ function SegBtn({
 }) {
   const activeBg =
     tone === 'success'
-      ? 'bg-[var(--c-success,#16a34a)] text-white'
+      ? 'bg-[var(--c-success)] text-[var(--c-action-fg)]'
       : tone === 'danger'
         ? 'bg-[var(--c-danger)] text-white'
         : 'bg-[var(--c-action)] text-[var(--c-action-fg)]';
@@ -4677,7 +4677,7 @@ function HistorySection() {
                   </div>
                   {isOpen ? (
                     <div className="border-t border-[var(--c-divider)] px-4 py-3">
-                      <div className="text-meta font-semibold uppercase tracking-[0.08em] text-[var(--c-fg-muted)]">
+                      <div className="text-meta font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
                         Contributor breakdown
                       </div>
                       <ul className="mt-2 flex flex-col gap-1">

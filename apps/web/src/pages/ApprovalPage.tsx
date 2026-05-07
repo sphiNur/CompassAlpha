@@ -525,7 +525,7 @@ function SessionItems({
         attention. Read-only here — manager can still bounce the order
         back to draft to edit. */}
     {sessionNotes ? (
-      <div className="border-b border-[var(--c-divider)] bg-[var(--c-warn-bg,#fff8e1)] px-4 py-3">
+      <div className="border-b border-[var(--c-divider)] bg-[var(--c-warn-bg)] px-4 py-3">
         <div className="text-label font-semibold uppercase tracking-wide text-[var(--c-fg-muted)]">
           {i18n.t('order.notes.label')}
         </div>

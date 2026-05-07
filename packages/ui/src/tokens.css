@@ -33,6 +33,16 @@
   --c-danger: oklch(58% 0.22 25);
   --c-info: oklch(60% 0.13 240);
 
+  /* Status surfaces (M1.9-extra, 2026-05-07): pale tint backgrounds
+   * for inline highlighted blocks (e.g. M1.8 "其他物品" note callout
+   * in Run/Approval). Was being smuggled in via `var(--c-warn-bg,
+   * #fff8e1)` fallbacks — now a real token that participates in
+   * dark/apple themes and HDR. */
+  --c-warn-bg: oklch(96% 0.07 75);
+  --c-success-bg: oklch(95% 0.06 145);
+  --c-danger-bg: oklch(96% 0.06 25);
+  --c-info-bg: oklch(95% 0.04 240);
+
   /* Lines */
   --c-divider: oklch(0% 0 0 / 0.08);
   --c-ring: oklch(56% 0.18 250);
@@ -101,6 +111,11 @@
   --c-fg-subtle: oklch(55% 0.02 240);
   --c-fg-inverse: oklch(15% 0.01 240);
   --c-divider: oklch(100% 0 0 / 0.1);
+  /* Dim status surfaces so they read as backgrounds, not panels. */
+  --c-warn-bg: oklch(28% 0.07 75);
+  --c-success-bg: oklch(28% 0.06 145);
+  --c-danger-bg: oklch(28% 0.07 25);
+  --c-info-bg: oklch(28% 0.05 240);
 }
 
 :root[data-theme='apple'] {

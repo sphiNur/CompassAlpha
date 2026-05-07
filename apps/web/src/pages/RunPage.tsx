@@ -1920,7 +1920,7 @@ function PreviewSummaryCard({
                   needs the request right next to the SKU list, not
                   buried in a separate section. */}
               {storeNote ? (
-                <div className="mt-2 rounded-[var(--r-card)] bg-[var(--c-warn-bg,#fff8e1)] px-3 py-2 ring-hairline">
+                <div className="mt-2 rounded-[var(--r-card)] bg-[var(--c-warn-bg)] px-3 py-2 ring-hairline">
                   <div className="text-meta font-semibold uppercase tracking-wide text-[var(--c-fg-muted)]">
                     📝 {i18n.t('order.notes.label')}
                   </div>
@@ -2181,7 +2181,7 @@ function PerStoreView({
                 view the purchaser scrolls store-by-store at the
                 market. */}
             {storeNote ? (
-              <div className="mx-4 mb-2 mt-1 rounded-[var(--r-card)] bg-[var(--c-warn-bg,#fff8e1)] px-3 py-2 ring-hairline">
+              <div className="mx-4 mb-2 mt-1 rounded-[var(--r-card)] bg-[var(--c-warn-bg)] px-3 py-2 ring-hairline">
                 <div className="text-meta font-semibold uppercase tracking-wide text-[var(--c-fg-muted)]">
                   📝
                 </div>
@@ -2214,7 +2214,7 @@ function PerStoreView({
                   const status = r.runItem?.status ?? 'pending';
                   const tone =
                     status === 'purchased'
-                      ? 'text-[var(--c-success,#16a34a)]'
+                      ? 'text-[var(--c-success)]'
                       : status === 'unavailable'
                         ? 'text-[var(--c-danger)]'
                         : 'text-[var(--c-fg-muted)]';
@@ -2494,7 +2494,7 @@ function PurchaseRow({
         : null;
     return (
       <li className="flex items-center gap-2 border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0">
-        <span aria-hidden className="shrink-0 text-body text-[var(--c-success,#16a34a)]">✓</span>
+        <span aria-hidden className="shrink-0 text-body text-[var(--c-success)]">✓</span>
         <span className="shrink-0 truncate text-body font-semibold">{skuName}</span>
         <span className="min-w-0 flex-1 truncate text-label text-[var(--c-fg-muted)]">
           {formatQty(item.purchasedQty)} {unit} × {formatMoney(item.unitPrice)}
@@ -3113,7 +3113,7 @@ function RunHistoryDetailSheet({
           {/* Top summary */}
           <div className="flex items-baseline justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3">
             <div>
-              <div className="text-meta uppercase tracking-[0.08em] text-[var(--c-fg-muted)]">
+              <div className="text-meta uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
                 {i18n.t('run.history.totalLabel')}
               </div>
               <div className="font-mono text-h1 font-semibold tabular-nums">

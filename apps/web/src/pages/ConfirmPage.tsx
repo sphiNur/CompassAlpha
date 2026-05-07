@@ -287,7 +287,7 @@ export function ConfirmPage() {
             <StoreSwitcher />
             {activeRun && myItems.length > 0 ? (
               <div className="text-right">
-                <div className="text-meta font-medium uppercase tracking-[0.08em] text-[var(--c-fg-muted)]">
+                <div className="text-meta font-medium uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
                   {i18n.t('confirm.decided')}
                 </div>
                 <div className="text-h1 font-semibold leading-tight tabular-nums text-[var(--c-fg)]">

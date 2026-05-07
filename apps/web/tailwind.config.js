@@ -47,6 +47,13 @@ export default {
   theme: {
     extend: {
       fontSize: fontSizeScale,
+      letterSpacing: {
+        // M1.9-extra (2026-05-07): "eyebrow" labels — caps-set
+        // semantic markers above sections/tiles. The 0.08em spacing
+        // was repeated in 18 ad-hoc `tracking-[0.08em]` arbitrary
+        // utilities. Promoting to a token: `tracking-eyebrow`.
+        eyebrow: '0.08em',
+      },
     },
   },
   plugins: [],
