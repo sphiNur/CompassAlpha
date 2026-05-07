@@ -67,5 +67,6 @@ export {
   IconMaintenance,
   IconChevronRight,
   IconShare,
+  IconShield,
 } from './components/NavIcon';
 export { ThemeProvider, useTheme } from './theme';

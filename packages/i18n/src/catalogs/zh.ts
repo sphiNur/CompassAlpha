@@ -134,6 +134,7 @@ export const zh = {
   'admin.action.grantRole': '授予角色',
   'admin.action.permissions': '权限',
   'admin.action.manage': '管理',
+  'admin.action.moreActions': '更多',
   // M1.9-extra: P2 admin i18n 续完
   'admin.empty.adminOnly.title': '仅管理员可访问',
   'admin.empty.adminOnly.description': '需要 users.manage 权限才能访问此页面。',

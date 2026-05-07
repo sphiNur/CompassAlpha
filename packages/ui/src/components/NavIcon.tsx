@@ -151,3 +151,17 @@ export function IconShare(props: IconProps) {
     </svg>
   );
 }
+
+/**
+ * IconShield — shield outline for permissions / roles / access surfaces.
+ * Added 2026-05-08 (M1.11) so the AdminPage section list can stop reusing
+ * IconWorkspace for both Organization and Permissions (visual ambiguity).
+ */
+export function IconShield(props: IconProps) {
+  return (
+    <svg {...svgBase(props)}>
+      <path d="M12 3 5 6v6c0 4.4 3 7.7 7 9 4-1.3 7-4.6 7-9V6z" />
+      <path d="m9 12 2 2 4-4" />
+    </svg>
+  );
+}

@@ -819,7 +819,11 @@ export function RunPage() {
     : i18n.t('run.empty.noActive');
 
   return (
-    <div className="flex flex-col gap-2 py-2 pb-24">
+    /* M1.11: outer page is just `flex flex-col` + bottom safe-area for
+        the MainButton. Inner sections own their own rhythm — keeping
+        gap-2/py-2 on the outer was double-counting padding once the
+        PageHeader already brought its own. */
+    <div className="flex flex-col pb-24">
       <PageHeader
         title={
           activeRun
@@ -856,7 +860,7 @@ export function RunPage() {
           (items list = purchasing, store list = delivering). The phase
           name now lives inline in the page header subtitle. */}
 
-      <div className="flex flex-col gap-2 px-4">
+      <div className="flex flex-col gap-2 px-4 pt-2">
       {!activeRun ? (
         <DataState query={previewQuery}>
           {(p) =>
@@ -1020,12 +1024,14 @@ export function RunPage() {
         </div>
       </Sheet>
 
-      {/* Header ⋯ menu — "danger zone" actions for the entire run. */}
+      {/* Header ⋯ menu — "danger zone" actions for the entire run.
+          M1.11: dropped Sheet description ("#3 · 2026-05-08") since the
+          page header right above the trigger button already shows the
+          same run index. */}
       <Sheet
         open={headerMenuOpen}
         onOpenChange={setHeaderMenuOpen}
         title={i18n.t('run.title')}
-        description={activeRun ? `#${activeRun.runIndex + 1} · ${activeRun.runDate}` : undefined}
       >
         <div className="flex flex-col gap-2 py-3">
           {canUndoStartPurchase ? (
@@ -1387,11 +1393,10 @@ function ActiveRunPanel({
               {i18n.t('run.view.perStore')}
             </Chip>
           </ChipBar>
-          {viewMode === 'perStore' ? (
-            <p className="px-4 pt-1 text-meta text-[var(--c-fg-muted)]">
-              {i18n.t('run.view.perStoreHint')}
-            </p>
-          ) : null}
+          {/* M1.11: dropped run.view.perStoreHint — the chip labels
+              ("Aggregate" / "Per store") plus the body that swaps below
+              are already self-explanatory. The hint was a third visual
+              row competing with the chip-bar for the user's eye. */}
         </div>
       ) : null}
       {showViewToggle && viewMode === 'perStore' ? (
@@ -1521,14 +1526,10 @@ function ActiveRunPanel({
         </Card>
       ) : null}
 
-      {run.status === 'planned' ? (
-        <Banner
-          tone="info"
-          title={i18n.t('run.banner.readyToStart')}
-        >
-          {i18n.t('run.banner.readyToStartBody')}
-        </Banner>
-      ) : null}
+      {/* M1.11: dropped run.banner.readyToStart — its content
+          ("Tap Start Purchase when ready") is already conveyed by the
+          MainButton sitting at the bottom of the page in the same state.
+          The banner just took up vertical space without adding info. */}
     </div>
   );
 }
@@ -1864,6 +1865,10 @@ function PreviewSummaryCard({
       </div>
 
       {view === 'overall' ? (
+        /* M1.11: dropped the "+N more" tail row. We still slice to 8
+            so the summary card stays bounded, but the teaser line just
+            advertised content the user can't expand here — they'll see
+            the full list once the run is created. */
         <ul className="flex flex-col gap-1 px-4 py-3">
           {preview.plannedItems.slice(0, 8).map((it) => {
             const sku = skuById.get(it.skuId);
@@ -1876,11 +1881,6 @@ function PreviewSummaryCard({
               </li>
             );
           })}
-          {preview.plannedItems.length > 8 ? (
-            <li className="pt-1 text-body-sm text-[var(--c-fg-muted)]">
-              +{preview.plannedItems.length - 8} {i18n.t('common.more')}
-            </li>
-          ) : null}
         </ul>
       ) : null}
 
@@ -2181,11 +2181,12 @@ function PerStoreView({
                 view the purchaser scrolls store-by-store at the
                 market. */}
             {storeNote ? (
+              /* M1.11: dropped the emoji-only "📝" eyebrow row — it was
+                  styled like a section label but had no text, so it just
+                  wasted ~20px above the actual note. The yellow-tinted
+                  bg-warn-bg already reads as "here is a session note". */
               <div className="mx-4 mb-2 mt-1 rounded-[var(--r-card)] bg-[var(--c-warn-bg)] px-3 py-2 ring-hairline">
-                <div className="text-meta font-semibold uppercase tracking-wide text-[var(--c-fg-muted)]">
-                  📝
-                </div>
-                <div className="mt-0.5 whitespace-pre-wrap text-body-sm leading-snug text-[var(--c-fg)]">
+                <div className="whitespace-pre-wrap text-body-sm leading-snug text-[var(--c-fg)]">
                   {storeNote}
                 </div>
               </div>

@@ -176,6 +176,10 @@ export const en = {
   'admin.action.grantRole': 'Grant role',
   'admin.action.permissions': 'Permissions',
   'admin.action.manage': 'Manage',
+  // M1.11: per-member overflow ⋯ button label. Houses Permissions /
+  // Suspend / Reactivate / Remove-store / Remove-org so the inline
+  // strip stops wrapping on narrow phones.
+  'admin.action.moreActions': 'More actions',
   // M1.9-extra (2026-05-07): P2 of the design audit — finishing the
   // i18n sweep on AdminPage that the M1.6 pass left at "section
   // names". This block adds the People-section action confirms,

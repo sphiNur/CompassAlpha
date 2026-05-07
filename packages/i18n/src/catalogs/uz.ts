@@ -149,6 +149,7 @@ export const uz = {
   'admin.action.grantRole': "Rol berish",
   'admin.action.permissions': "Ruxsatlar",
   'admin.action.manage': "Boshqarish",
+  'admin.action.moreActions': "Ko'proq",
   // M1.9-extra: P2 admin i18n
   'admin.empty.adminOnly.title': 'Faqat administrator',
   'admin.empty.adminOnly.description':

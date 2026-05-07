@@ -141,6 +141,7 @@ export const ru = {
   'admin.action.grantRole': 'Назначить роль',
   'admin.action.permissions': 'Права',
   'admin.action.manage': 'Управление',
+  'admin.action.moreActions': 'Ещё',
   // M1.9-extra: P2 admin i18n
   'admin.empty.adminOnly.title': 'Только для администратора',
   'admin.empty.adminOnly.description': 'Нужно разрешение users.manage, чтобы открыть эту страницу.',

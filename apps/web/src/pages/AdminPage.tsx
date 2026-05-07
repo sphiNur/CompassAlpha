@@ -44,6 +44,7 @@ import {
   IconMaintenance,
   IconPeople,
   IconShare,
+  IconShield,
   IconWorkspace,
   Input,
   ListRow,
@@ -278,8 +279,12 @@ export function AdminPage() {
           hint={i18n.t('admin.section.storesHint')}
           onClick={() => setSection('stores')}
         />
+        {/* M1.11: Permissions had IconWorkspace, same as Organization above
+            — visually ambiguous in the section list. Switched to a new
+            shield icon (added to @compass/ui) which reads as "access /
+            roles" without overlapping the Organization or Stores rows. */}
         <SectionRow
-          icon={<IconWorkspace size={20} />}
+          icon={<IconShield size={20} />}
           label={i18n.t('admin.section.permissions')}
           hint={i18n.t('admin.section.permissionsHint')}
           onClick={() => setSection('permissions')}
@@ -602,6 +607,20 @@ function PeopleSection({
   >(null);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [manualDraft, setManualDraft] = useState<InviteDraft | null>(null);
+  // M1.11: per-member overflow menu (Permissions / Suspend / Reactivate /
+  // Remove-from-store / Remove-from-org). Demotes a 5–6-button action
+  // strip — which was wrapping onto two rows on a 390px-wide iPhone — to
+  // a single ⋯ button, opening a Sheet with the conditional rows below.
+  // Shape mirrors the member row so every conditional in the old strip
+  // still works without extra queries.
+  const [memberMenuFor, setMemberMenuFor] = useState<{
+    memberId: string;
+    userId: string;
+    displayName: string;
+    status: 'active' | 'suspended';
+    stores: Array<{ id: string; name: string }>;
+    isSelf: boolean;
+  } | null>(null);
 
   const setStatus = trpc.admin.memberSetStatus.useMutation({
     onSuccess: () => {
@@ -737,15 +756,15 @@ function PeopleSection({
                       </span>
                     ))}
                   </div>
-                ) : (
-                  <div className="px-4 pt-2 pb-1 text-meta text-[var(--c-fg-muted)]">
-                    no store · org-level
-                  </div>
-                )}
+                ) : null}
+                {/* M1.11: dropped the "no store · org-level" hint row
+                    (technical jargon) AND the "No roles" empty strip.
+                    The chip container only renders when there are
+                    actual chips to show — empty cards no longer waste
+                    a row of muted-fg label space. */}
+                {m.roles.length > 0 ? (
                 <div className="flex flex-wrap gap-1 px-4">
-                  {m.roles.length === 0 ? (
-                    <span className="text-label text-[var(--c-fg-muted)]">No roles</span>
-                  ) : (
+                  {
                     // Per-store role chips (added 2026-05-06). For
                     // scope='store' we suffix the store's name so the
                     // operator can tell "Manager of Store A" apart from
@@ -781,9 +800,16 @@ function PeopleSection({
                         </button>
                       );
                     })
-                  )}
+                  }
                 </div>
-                <div className="mt-2 flex flex-wrap gap-2 border-t border-[var(--c-divider)] px-4 py-3">
+                ) : null}
+                {/* M1.11: action row demoted from 5–6 buttons (which
+                    wrapped onto 2 lines on a 390px iPhone) to two
+                    primary inline actions + a ⋯ overflow trigger.
+                    Permissions / Suspend / Reactivate / Remove-store /
+                    Remove-org all live in the member-menu sheet at the
+                    page level (state: memberMenuFor). */}
+                <div className="mt-2 flex items-center gap-2 border-t border-[var(--c-divider)] px-4 py-3">
                   <Button
                     size="sm"
                     variant="pearl"
@@ -815,96 +841,23 @@ function PeopleSection({
                   >
                     {i18n.t('admin.action.grantRole')}
                   </Button>
-                  {isGlobalAdminPeople ? (
-                    <Button
-                      size="sm"
-                      variant="pearl"
-                      onClick={() =>
-                        setPermsFor({
-                          memberId: m.memberId,
-                          displayName: m.displayName,
-                          stores: m.stores.map((st) => ({
-                            id: st.id,
-                            name: st.name,
-                          })),
-                        })
-                      }
-                    >
-                      {i18n.t('admin.action.permissions')}
-                    </Button>
-                  ) : null}
-                  {!isSelf && m.status === 'active' ? (
-                    <Button
-                      size="sm"
-                      variant="pearl"
-                      onClick={() =>
-                        nativeConfirm(
-                          i18n.t('admin.confirm.suspend', { name: m.displayName }),
-                          () =>
-                            setStatus.mutate({ memberId: m.memberId, status: 'suspended' }),
-                        )
-                      }
-                    >
-                      {i18n.t('admin.action.suspend')}
-                    </Button>
-                  ) : null}
-                  {!isSelf && m.status === 'suspended' ? (
-                    <Button
-                      size="sm"
-                      variant="pearl"
-                      onClick={() =>
-                        setStatus.mutate({ memberId: m.memberId, status: 'active' })
-                      }
-                    >
-                      {i18n.t('admin.action.reactivate')}
-                    </Button>
-                  ) : null}
-                  {/* D1 (2026-05-06): "Remove from this store" — only
-                      visible when the StoreSwitcher is on a single
-                      store AND the member belongs to it. Distinct
-                      from the org-level Remove (red-danger) below;
-                      this one only detaches from one store. */}
-                  {!isSelf &&
-                  storeCtx.kind === 'specific' &&
-                  m.stores.some((st) => st.id === storeCtx.storeId) ? (
-                    <Button
-                      size="sm"
-                      variant="pearl"
-                      onClick={() => {
-                        if (storeCtx.kind !== 'specific') return;
-                        const storeName =
-                          m.stores.find((st) => st.id === storeCtx.storeId)?.name ??
-                          i18n.t('admin.label.thisStore');
-                        nativeConfirm(
-                          i18n.t('admin.confirm.removeFromStore', {
-                            name: m.displayName,
-                            store: storeName,
-                          }),
-                          () =>
-                            detachFromStore.mutate({
-                              memberId: m.memberId,
-                              storeId: storeCtx.storeId,
-                            }),
-                        );
-                      }}
-                    >
-                      {i18n.t('admin.action.removeFromStore')}
-                    </Button>
-                  ) : null}
-                  {!isSelf ? (
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      onClick={() =>
-                        nativeConfirm(
-                          i18n.t('admin.confirm.removeFromOrg', { name: m.displayName }),
-                          () => remove.mutate({ memberId: m.memberId }),
-                        )
-                      }
-                    >
-                      {i18n.t('admin.action.removeFromOrg')}
-                    </Button>
-                  ) : null}
+                  <Button
+                    size="sm"
+                    variant="pearl"
+                    aria-label={i18n.t('admin.action.moreActions')}
+                    onClick={() =>
+                      setMemberMenuFor({
+                        memberId: m.memberId,
+                        userId: m.userId,
+                        displayName: m.displayName,
+                        status: m.status as 'active' | 'suspended',
+                        stores: m.stores.map((st) => ({ id: st.id, name: st.name })),
+                        isSelf,
+                      })
+                    }
+                  >
+                    ⋯
+                  </Button>
                 </div>
               </Card>
             );
@@ -999,6 +952,115 @@ function PeopleSection({
       <GrantRoleSheet target={grantFor} onClose={() => setGrantFor(null)} />
       <ManageMemberSheet target={manageFor} onClose={() => setManageFor(null)} />
       <MemberPermissionsSheet target={permsFor} onClose={() => setPermsFor(null)} />
+
+      {/* M1.11: per-member overflow menu. Houses the conditional
+          actions that used to live as inline buttons in each card's
+          action strip. Visibility rules mirror the prior conditionals
+          1:1 — no behavior change, just spatial demotion. */}
+      <Sheet
+        open={memberMenuFor !== null}
+        onOpenChange={(o) => !o && setMemberMenuFor(null)}
+        title={memberMenuFor?.displayName ?? ''}
+      >
+        {memberMenuFor ? (
+          <div className="flex flex-col gap-2 py-3">
+            {isGlobalAdminPeople ? (
+              <Button
+                block
+                variant="pearl"
+                onClick={() => {
+                  const target = memberMenuFor;
+                  setMemberMenuFor(null);
+                  setPermsFor({
+                    memberId: target.memberId,
+                    displayName: target.displayName,
+                    stores: target.stores,
+                  });
+                }}
+              >
+                {i18n.t('admin.action.permissions')}
+              </Button>
+            ) : null}
+            {!memberMenuFor.isSelf && memberMenuFor.status === 'active' ? (
+              <Button
+                block
+                variant="pearl"
+                onClick={() => {
+                  const target = memberMenuFor;
+                  setMemberMenuFor(null);
+                  nativeConfirm(
+                    i18n.t('admin.confirm.suspend', { name: target.displayName }),
+                    () => setStatus.mutate({ memberId: target.memberId, status: 'suspended' }),
+                  );
+                }}
+              >
+                {i18n.t('admin.action.suspend')}
+              </Button>
+            ) : null}
+            {!memberMenuFor.isSelf && memberMenuFor.status === 'suspended' ? (
+              <Button
+                block
+                variant="pearl"
+                onClick={() => {
+                  const target = memberMenuFor;
+                  setMemberMenuFor(null);
+                  setStatus.mutate({ memberId: target.memberId, status: 'active' });
+                }}
+              >
+                {i18n.t('admin.action.reactivate')}
+              </Button>
+            ) : null}
+            {/* D1 (2026-05-06): "Remove from this store" — visible
+                only when the StoreSwitcher is on a single store AND
+                the member belongs to it. */}
+            {!memberMenuFor.isSelf &&
+            storeCtx.kind === 'specific' &&
+            memberMenuFor.stores.some((st) => st.id === storeCtx.storeId) ? (
+              <Button
+                block
+                variant="pearl"
+                onClick={() => {
+                  if (storeCtx.kind !== 'specific') return;
+                  const target = memberMenuFor;
+                  const storeName =
+                    target.stores.find((st) => st.id === storeCtx.storeId)?.name ??
+                    i18n.t('admin.label.thisStore');
+                  setMemberMenuFor(null);
+                  nativeConfirm(
+                    i18n.t('admin.confirm.removeFromStore', {
+                      name: target.displayName,
+                      store: storeName,
+                    }),
+                    () =>
+                      detachFromStore.mutate({
+                        memberId: target.memberId,
+                        storeId: storeCtx.storeId,
+                      }),
+                  );
+                }}
+              >
+                {i18n.t('admin.action.removeFromStore')}
+              </Button>
+            ) : null}
+            {!memberMenuFor.isSelf ? (
+              <Button
+                block
+                variant="danger"
+                onClick={() => {
+                  const target = memberMenuFor;
+                  setMemberMenuFor(null);
+                  nativeConfirm(
+                    i18n.t('admin.confirm.removeFromOrg', { name: target.displayName }),
+                    () => remove.mutate({ memberId: target.memberId }),
+                  );
+                }}
+              >
+                {i18n.t('admin.action.removeFromOrg')}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+      </Sheet>
       <InviteHubSheet
         open={inviteOpen}
         onClose={() => setInviteOpen(false)}
@@ -3127,11 +3189,6 @@ function StoresHomeSection({
   const toast = useToast();
   const errToast = useErrToast();
   const i18n = useI18n();
-  const session = useAuthStore((s) => s.session);
-  const adminStoreIds = useMemo(
-    () => new Set(session?.adminStoreIds ?? []),
-    [session?.adminStoreIds],
-  );
   // Lightweight create-only sheet: create flow needs name/code/address/
   // timezone but NOT default-role/archive (those land in Settings tab
   // after creation). Keeping it a sheet rather than inline because
@@ -3224,9 +3281,16 @@ function StoresHomeSection({
             ) : null}
             {rows.map((st) => {
               const count = memberCounts.byStore.get(st.id) ?? 0;
-              const canAdmin = adminStoreIds.has(st.id);
               return (
                 <li key={st.id}>
+                  {/* M1.11: Stores home tile slimmed from 3 muted-meta
+                      info rows to one. Dropped: timezone (rarely
+                      consulted from this view), default-role (lives in
+                      the store-detail page), and the "view-only" tag
+                      since the chevron action will reveal that anyway.
+                      Kept: code (the primary identifier) + member
+                      count. py-4 → py-3 to match the rest of the
+                      member-card rhythm. */}
                   <button
                     type="button"
                     onClick={() =>
@@ -3236,7 +3300,7 @@ function StoresHomeSection({
                         storeName: st.name,
                       })
                     }
-                    className="press flex w-full items-start justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-4 text-left ring-hairline"
+                    className="press flex w-full items-start justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-3 text-left ring-hairline"
                   >
                     <span className="min-w-0">
                       <span className="block text-h2 font-semibold tracking-tight text-[var(--c-fg)]">
@@ -3244,19 +3308,8 @@ function StoresHomeSection({
                       </span>
                       <span className="mt-0.5 block text-body-sm text-[var(--c-fg-muted)]">
                         {st.code ? `code ${st.code}` : 'no code'}
-                        {st.timezone ? ` · ${st.timezone}` : ''}
-                        {!canAdmin ? ' · view-only' : ''}
-                      </span>
-                      <span className="mt-1 block text-meta text-[var(--c-fg-muted)]">
+                        {' · '}
                         {count} {count === 1 ? 'member' : 'members'}
-                        {st.defaultRoleSlug ? (
-                          <>
-                            {' · default role: '}
-                            <span className="font-semibold">
-                              {st.defaultRoleName ?? st.defaultRoleSlug}
-                            </span>
-                          </>
-                        ) : null}
                       </span>
                     </span>
                     <Badge tone={st.isActive ? 'success' : 'muted'}>
