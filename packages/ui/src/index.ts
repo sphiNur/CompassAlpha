@@ -3,6 +3,14 @@ export { Button } from './components/Button';
 export type { ButtonProps } from './components/Button';
 export { Card, CardHeader, CardTitle, CardMeta } from './components/Card';
 export { Input } from './components/Input';
+export { Textarea } from './components/Textarea';
+export type { TextareaProps } from './components/Textarea';
+export { Select } from './components/Select';
+export type { SelectProps } from './components/Select';
+export { Checkbox } from './components/Checkbox';
+export type { CheckboxProps } from './components/Checkbox';
+export { Switch } from './components/Switch';
+export type { SwitchProps } from './components/Switch';
 export { Badge } from './components/Badge';
 export { QtyControl } from './components/QtyControl';
 export {

@@ -49,6 +49,7 @@ import {
   ListRow,
   PageHeader,
   SectionRow,
+  Select,
   Sheet,
   Spinner,
   Tile,
@@ -1870,8 +1871,7 @@ function ManualInviteSheet({
                 <Spinner size={14} /> {i18n.t('admin.label.loadingRoles')}
               </div>
             ) : (
-              <select
-                className="h-11 w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-h3 ring-hairline"
+              <Select
                 value={draft.roleSlug}
                 onChange={(e) => setDraft({ ...draft, roleSlug: e.target.value })}
               >
@@ -1881,7 +1881,7 @@ function ManualInviteSheet({
                     {r.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             )}
           </Field>
           {requiresStore ? (

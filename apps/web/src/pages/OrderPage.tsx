@@ -10,6 +10,7 @@ import {
   PageHeader,
   QtyControl,
   Sheet,
+  Textarea,
   useToast,
 } from '@compass/ui';
 import { trpc } from '../lib/trpc';
@@ -1088,7 +1089,7 @@ function SessionNotesEditor({
               : ''}
         </span>
       </div>
-      <textarea
+      <Textarea
         id={`session-notes-${sessionId}`}
         value={value}
         readOnly={isReadOnly}
@@ -1121,7 +1122,6 @@ function SessionNotesEditor({
             })();
           }
         }}
-        className="w-full resize-none rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 text-body leading-snug text-[var(--c-fg)] ring-hairline placeholder:text-[var(--c-fg-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--c-action)] disabled:opacity-60"
       />
       <div className="mt-1 flex items-center justify-between">
         <span className="text-meta text-[var(--c-fg-muted)]">
