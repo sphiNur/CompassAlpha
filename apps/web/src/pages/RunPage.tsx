@@ -168,7 +168,16 @@ export function RunPage() {
     onError: errToast('run.toast.couldNotPlan'),
   });
   const startPurchase = trpc.run.startPurchase.useMutation({
-    onSuccess: () => void utils.run.list.invalidate(),
+    onSuccess: () => {
+      void utils.run.list.invalidate();
+      // M1.9-fix (2026-05-07): success feedback was missing on
+      // startPurchase / startDelivery — the screen visually changed
+      // but no toast/haptic, which on slow networks looked like a
+      // double-tap had registered. Mirrors the pattern used by every
+      // other run mutation.
+      haptic('success');
+      toast.success(i18n.t('run.toast.purchaseStarted'));
+    },
     onError: errToast('common.error'),
   });
   const purchaseItem = trpc.run.purchaseItem.useMutation({
@@ -236,6 +245,8 @@ export function RunPage() {
     onSuccess: () => {
       void utils.run.list.invalidate();
       void utils.run.get.invalidate();
+      haptic('success');
+      toast.success(i18n.t('run.toast.deliveryStarted'));
     },
     onError: errToast('common.error'),
   });

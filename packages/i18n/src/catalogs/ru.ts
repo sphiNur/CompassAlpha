@@ -519,6 +519,8 @@ export const ru = {
   'run.label.total': 'итого',
   'run.label.reasonPlaceholder': 'например: ошибся при чтении чека',
   'run.toast.runPlanned': 'Закупка запланирована',
+  'run.toast.purchaseStarted': 'Начало закупки',
+  'run.toast.deliveryStarted': 'Начало доставки',
   'run.toast.couldNotPlan': 'Не удалось запланировать закупку',
   'run.toast.purchaseRecorded': 'Покупка записана',
   'run.toast.purchaseSavedOffline':

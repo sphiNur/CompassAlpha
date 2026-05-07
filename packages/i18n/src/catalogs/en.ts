@@ -567,6 +567,8 @@ export const en = {
   'run.label.total': 'total',
   'run.label.reasonPlaceholder': 'e.g. price misread on the receipt',
   'run.toast.runPlanned': 'Run planned',
+  'run.toast.purchaseStarted': 'Purchasing started',
+  'run.toast.deliveryStarted': 'Delivery started',
   'run.toast.couldNotPlan': 'Could not plan run',
   'run.toast.purchaseRecorded': 'Purchase recorded',
   'run.toast.purchaseSavedOffline': 'Saved offline — will sync when back online',

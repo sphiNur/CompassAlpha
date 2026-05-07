@@ -533,6 +533,8 @@ export const uz = {
   'run.label.total': 'jami',
   'run.label.reasonPlaceholder': "masalan: chekdagi narxni noto'g'ri o'qibman",
   'run.toast.runPlanned': "Xarid rejalashtirildi",
+  'run.toast.purchaseStarted': "Xarid boshlandi",
+  'run.toast.deliveryStarted': "Yetkazib berish boshlandi",
   'run.toast.couldNotPlan': "Xaridni rejalashtirib bo'lmadi",
   'run.toast.purchaseRecorded': "Xarid yozildi",
   'run.toast.purchaseSavedOffline':

@@ -483,6 +483,8 @@ export const zh = {
   'run.label.total': '合计',
   'run.label.reasonPlaceholder': '例如：小票上的单价看错了',
   'run.toast.runPlanned': '采购单已生成',
+  'run.toast.purchaseStarted': '开始采购',
+  'run.toast.deliveryStarted': '开始配送',
   'run.toast.couldNotPlan': '生成采购单失败',
   'run.toast.purchaseRecorded': '采购已记录',
   'run.toast.purchaseSavedOffline': '已离线保存，联网后自动同步',
