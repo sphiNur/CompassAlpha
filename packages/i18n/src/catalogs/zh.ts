@@ -162,6 +162,7 @@ export const zh = {
   'admin.banner.noStoresToInviteInto.body':
     '你还没有管理任何店铺。请先请高级管理员把你加入店铺。',
   'admin.label.active': '使用中',
+  'admin.label.showArchived': '显示已归档',
   'admin.label.paused': '已停用',
   'admin.label.you': '本人',
   'admin.label.noTelegram': '无 Telegram',

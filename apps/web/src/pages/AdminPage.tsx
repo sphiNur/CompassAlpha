@@ -47,11 +47,13 @@ import {
   IconWorkspace,
   Input,
   ListRow,
+  Checkbox,
   PageHeader,
   SectionRow,
   Select,
   Sheet,
   Spinner,
+  Switch,
   Tile,
   useSheetCount,
   useToast,
@@ -1909,9 +1911,7 @@ function ManualInviteSheet({
                         key={st.id}
                         className="press flex cursor-pointer items-center gap-2 rounded-[var(--r-utility)] px-2 py-1.5"
                       >
-                        <input
-                          type="checkbox"
-                          className="h-5 w-5"
+                        <Checkbox
                           checked={checked}
                           onChange={(e) =>
                             setDraft({
@@ -2091,9 +2091,7 @@ function ManageMemberSheet({
                           : "You don't administer this store"
                       }
                     >
-                      <input
-                        type="checkbox"
-                        className="h-5 w-5"
+                      <Checkbox
                         checked={checked}
                         disabled={pending || !editable}
                         onChange={(e) => {
@@ -2284,8 +2282,7 @@ function TransferStoreSheet({
                 admin to add you to the destination first.
               </Banner>
             ) : (
-              <select
-                className="h-11 w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-h3 ring-hairline"
+              <Select
                 value={toStoreId}
                 onChange={(e) => setToStoreId(e.target.value)}
               >
@@ -2295,7 +2292,7 @@ function TransferStoreSheet({
                     {st.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             )}
           </Field>
           <label className="press flex cursor-pointer items-start gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 ring-hairline">
@@ -2961,9 +2958,7 @@ function GrantRoleSheet({
                       key={st.id}
                       className="press flex cursor-pointer items-center gap-2 rounded-[var(--r-utility)] px-2 py-1.5"
                     >
-                      <input
-                        type="checkbox"
-                        className="h-5 w-5"
+                      <Checkbox
                         checked={checked}
                         onChange={() => toggleStore(st.id)}
                       />
@@ -3523,8 +3518,7 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
             <Spinner size={14} /> Loading roles…
           </div>
         ) : (
-          <select
-            className="h-11 w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-h3 ring-hairline disabled:opacity-60"
+          <Select
             value={draft.defaultRoleSlug}
             onChange={(e) =>
               setDraft({ ...draft, defaultRoleSlug: e.target.value })
@@ -3537,23 +3531,19 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
                 {r.name} (rank {r.rank})
               </option>
             ))}
-          </select>
+          </Select>
         )}
         <p className="mt-1 text-meta text-[var(--c-fg-muted)]">
           When set, new members invited into this store with no explicit
           role pick are auto-granted this role.
         </p>
       </Field>
-      <label className="flex items-center gap-3 text-body">
-        <input
-          type="checkbox"
-          checked={draft.isActive}
-          onChange={(e) => setDraft({ ...draft, isActive: e.target.checked })}
-          className="h-5 w-5"
-          disabled={!canAdmin}
-        />
-        Active
-      </label>
+      <Switch
+        label={i18n.t('admin.label.active')}
+        checked={draft.isActive}
+        onChange={(e) => setDraft({ ...draft, isActive: e.target.checked })}
+        disabled={!canAdmin}
+      />
 
       <div className="flex flex-wrap gap-2 border-t border-[var(--c-divider)] pt-4">
         <Button
@@ -3727,8 +3717,7 @@ function StoreCloneRolesSheet({
                 from. Ask a higher-rank admin to add you to one first.
               </Banner>
             ) : (
-              <select
-                className="h-11 w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-h3 ring-hairline"
+              <Select
                 value={sourceStoreId}
                 onChange={(e) => setSourceStoreId(e.target.value)}
               >
@@ -3738,7 +3727,7 @@ function StoreCloneRolesSheet({
                     {st.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             )}
           </Field>
           <label className="press flex cursor-pointer items-start gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 ring-hairline">
@@ -4073,14 +4062,13 @@ function SkusSection() {
         >
           + New SKU
         </Button>
-        <label className="ml-auto flex items-center gap-2 text-label text-[var(--c-fg-muted)]">
-          <input
-            type="checkbox"
+        <div className="ml-auto">
+          <Switch
+            label={i18n.t('admin.label.showArchived')}
             checked={includeArchived}
             onChange={(e) => setIncludeArchived(e.target.checked)}
           />
-          Show archived
-        </label>
+        </div>
       </div>
 
       <DataState
@@ -4254,8 +4242,7 @@ function SkusSection() {
               />
             </Field>
             <Field label="Category">
-              <select
-                className="h-11 w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-h3 ring-hairline"
+              <Select
                 value={draft.categoryId ?? ''}
                 onChange={(e) => setDraft({ ...draft, categoryId: e.target.value || null })}
               >
@@ -4268,7 +4255,7 @@ function SkusSection() {
                     </option>
                   );
                 })}
-              </select>
+              </Select>
             </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Unit *">
@@ -4356,14 +4343,13 @@ function SuppliersSection() {
         >
           + New supplier
         </Button>
-        <label className="ml-auto flex items-center gap-2 text-label text-[var(--c-fg-muted)]">
-          <input
-            type="checkbox"
+        <div className="ml-auto">
+          <Switch
+            label={i18n.t('admin.label.showArchived')}
             checked={includeArchived}
             onChange={(e) => setIncludeArchived(e.target.checked)}
           />
-          Show archived
-        </label>
+        </div>
       </div>
       <DataState
         query={suppliersQuery}
@@ -4607,8 +4593,7 @@ function HistorySection() {
   return (
     <div className="px-4 py-3">
       <div className="mb-3">
-        <select
-          className="h-10 w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 text-body ring-hairline"
+        <Select
           value={storeFilter ?? ''}
           onChange={(e) => setStoreFilter(e.target.value || null)}
         >
@@ -4618,7 +4603,7 @@ function HistorySection() {
               {st.name}
             </option>
           ))}
-        </select>
+        </Select>
       </div>
       <DataState
         query={history}

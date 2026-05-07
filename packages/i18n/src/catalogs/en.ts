@@ -217,6 +217,7 @@ export const en = {
   'admin.banner.noStoresToInviteInto.body':
     "You don't administer any store yet. Ask a higher-rank admin to add you to a store first.",
   'admin.label.active': 'active',
+  'admin.label.showArchived': 'Show archived',
   'admin.label.paused': 'paused',
   'admin.label.you': 'you',
   'admin.label.noTelegram': 'no telegram',

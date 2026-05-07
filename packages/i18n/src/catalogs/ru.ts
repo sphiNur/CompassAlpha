@@ -175,6 +175,7 @@ export const ru = {
   'admin.banner.noStoresToInviteInto.body':
     'Вы пока не управляете ни одним магазином. Попросите более высокого администратора привязать вас к магазину.',
   'admin.label.active': 'активен',
+  'admin.label.showArchived': 'Показать архивные',
   'admin.label.paused': 'на паузе',
   'admin.label.you': 'вы',
   'admin.label.noTelegram': 'без Telegram',

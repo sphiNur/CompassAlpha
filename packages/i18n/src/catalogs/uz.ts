@@ -185,6 +185,7 @@ export const uz = {
   'admin.banner.noStoresToInviteInto.body':
     "Siz hali hech bir do'konni boshqarmaysiz. Yuqori darajadagi administratordan sizni do'konga biriktirishini so'rang.",
   'admin.label.active': "faol",
+  'admin.label.showArchived': "Arxivlanganlarni ko'rsatish",
   'admin.label.paused': "to'xtatilgan",
   'admin.label.you': "siz",
   'admin.label.noTelegram': "Telegram yo'q",
