@@ -53,6 +53,7 @@ import { usePhotoUploader } from '../hooks/usePhotoUploader';
 import { StoreSwitcher } from '../components/StoreSwitcher';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { isLikelyNetworkError } from '../lib/networkError';
+import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
 
 interface PurchaseDraft {
@@ -139,24 +140,13 @@ export function RunPage() {
   });
 
   // ---- Mutations ------------------------------------------------------
-  // Helper: turn a server error into a localized toast.
-  // Server-side TRPCError throws use i18n keys like `run.errors.runFrozen`
-  // for `message`. We try to translate them; if the message isn't a known
-  // key (e.g. raw "FORBIDDEN", "fetch failed", a Postgres error string),
-  // we fall back to the caller-provided generic key. This eliminates the
-  // earlier two-line toast bug where `err.message` would surface raw
-  // server-side strings to the user (audit found 2026-05-05).
-  const errToast =
-    (fallbackKey: Parameters<typeof i18n.t>[0]) =>
-    (err: { message?: string }) => {
-      const msg = err?.message;
-      const looksLikeKey = typeof msg === 'string' && /^[a-z]+\.errors?\./.test(msg);
-      toast.error(
-        looksLikeKey
-          ? i18n.t(msg as Parameters<typeof i18n.t>[0])
-          : i18n.t(fallbackKey),
-      );
-    };
+  // M1.9 (2026-05-07): hoisted into `lib/errToast.ts` so the same
+  // translation logic doesn't live in 3 different pages with subtly
+  // different shapes. Server-side TRPCError uses i18n keys like
+  // `run.errors.runFrozen` as `message`; the helper translates them
+  // and falls back to the caller-provided key on raw / unknown
+  // strings.
+  const errToast = useErrToast();
   const create = trpc.run.create.useMutation({
     onSuccess: () => {
       void utils.run.list.invalidate();

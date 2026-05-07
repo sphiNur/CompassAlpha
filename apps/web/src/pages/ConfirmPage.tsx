@@ -32,26 +32,11 @@ import { useI18n, useProductName } from '../hooks/useI18n';
 import { usePhotoUploader } from '../hooks/usePhotoUploader';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { isLikelyNetworkError } from '../lib/networkError';
+import { useErrToast } from '../lib/errToast';
 import { formatQty } from '../lib/format';
 import { StoreSwitcher, useStoreContext } from '../components/StoreSwitcher';
 
 type DecisionStatus = 'ok' | 'short' | 'wrong' | 'quality';
-
-/**
- * M1.9-fix (2026-05-07): translate server i18n-key error strings if
- * they look like keys (`some.errors.foo`); otherwise render a generic
- * fallback. This was missing on ConfirmPage, leading to raw codes
- * like "FORBIDDEN" / "PRECONDITION_FAILED" landing in front of a
- * non-technical receiver. Mirrors the `errToast` helper in
- * ApprovalPage. TODO: hoist into `lib/` after launch.
- */
-function toErrorText(msg: string | undefined, i18n: ReturnType<typeof useI18n>): string {
-  if (typeof msg !== 'string' || !msg) return i18n.t('common.error');
-  if (/^[a-z]+\.errors?\./.test(msg)) {
-    return i18n.t(msg as Parameters<typeof i18n.t>[0]);
-  }
-  return i18n.t('common.error');
-}
 
 export function ConfirmPage() {
   const i18n = useI18n();
@@ -63,6 +48,7 @@ export function ConfirmPage() {
   const storeCtx = useStoreContext();
   const currentStoreId = storeCtx.kind === 'specific' ? storeCtx.storeId : null;
   const toast = useToast();
+  const errToast = useErrToast();
   const [issueOpen, setIssueOpen] = useState<{
     runId: string;
     skuId: string;
@@ -167,11 +153,7 @@ export function ConfirmPage() {
       } else {
         // Roll back the optimistic write since the server refused it.
         void utils.run.get.invalidate();
-        // M1.9-fix (2026-05-07): translate server i18n keys; only show
-        // raw err.message when it doesn't look like a key (was leaking
-        // strings like "FORBIDDEN" / "PRECONDITION_FAILED" to the
-        // receiver).
-        toast.error(toErrorText(err.message, i18n));
+        errToast('common.error')(err);
       }
     },
   });
@@ -186,7 +168,7 @@ export function ConfirmPage() {
         void offline.enqueue('run.confirmStore', vars);
         toast.info(i18n.t('confirm.toast.savedOffline'));
       } else {
-        toast.error(toErrorText(err.message, i18n));
+        errToast('common.error')(err);
       }
     },
   });

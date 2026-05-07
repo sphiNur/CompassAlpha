@@ -30,6 +30,7 @@ import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { useI18n, useProductName } from '../hooks/useI18n';
 import { haptic } from '../hooks/useTelegram';
+import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
 import { StoreSwitcher, useStoreContext } from '../components/StoreSwitcher';
 
@@ -71,15 +72,10 @@ export function ApprovalPage() {
   // Manager taps Approve, network fails, they feel a buzz and assume "done"
   // since the toast they're used to never appears. Bad. Now every error
   // path surfaces a toast — domain errors get the i18n'd code translated;
-  // unknown errors get a generic "something went wrong".
-  const errToast = (defaultKey: Parameters<typeof i18n.t>[0]) => (err: unknown) => {
-    haptic('error');
-    const msg = (err as { message?: string })?.message;
-    // Server-side TRPCError messages are i18n keys like 'order.errors.foo'.
-    // If recognized, translate; otherwise show our generic fallback toast.
-    const looksLikeKey = typeof msg === 'string' && /^[a-z]+\.errors?\./.test(msg);
-    toast.error(looksLikeKey ? i18n.t(msg as Parameters<typeof i18n.t>[0]) : i18n.t(defaultKey));
-  };
+  // unknown errors get a generic "something went wrong". M1.9 (2026-05-07):
+  // hoisted the regex + handler shape into `lib/errToast.ts` so the same
+  // logic lives in one place and we can't drift across pages.
+  const errToast = useErrToast();
   const claim = trpc.order.claim.useMutation({
     onSuccess: () => {
       void utils.order.pendingList.invalidate();
@@ -428,22 +424,13 @@ function SessionItems({
   const i18n = useI18n();
   const detail = trpc.order.sessionDetail.useQuery({ sessionId });
   const utils = trpc.useUtils();
-  const toast = useToast();
+  const errToast = useErrToast();
   const adjust = trpc.order.adjustItem.useMutation({
     onSuccess: () => {
       void utils.order.sessionDetail.invalidate({ sessionId });
       void utils.order.pendingList.invalidate();
     },
-    onError: (err) => {
-      // Translate domain error codes; fall back to generic.
-      const msg = err.message;
-      const looksLikeKey = typeof msg === 'string' && /^[a-z]+\.errors?\./.test(msg);
-      toast.error(
-        looksLikeKey
-          ? i18n.t(msg as Parameters<typeof i18n.t>[0])
-          : i18n.t('order.toast.adjustFailed'),
-      );
-    },
+    onError: errToast('order.toast.adjustFailed'),
   });
   // Member directory lookup so we can show who contributed each row.
   const membersQuery = trpc.admin.memberList.useQuery(undefined, {
