@@ -46,7 +46,16 @@ export function verifyInitData(initData: string, botToken: string, maxAgeSec = 8
   if (expectedBuf.length !== actualBuf.length) return { ok: false, reason: 'bad signature' };
   if (!timingSafeEqual(expectedBuf, actualBuf)) return { ok: false, reason: 'bad signature' };
 
-  const authDate = Number(params.get('auth_date'));
+  // M1.9-fix (2026-05-07): explicitly require auth_date to be PRESENT
+  // before parsing. `Number(null)` coerces to 0, which is finite, so
+  // the previous check would treat a missing auth_date as a 1970-epoch
+  // timestamp and return 'expired' instead of 'no auth_date'. Caught
+  // by the new unit test in __tests__/telegramAuth.test.ts.
+  const rawAuthDate = params.get('auth_date');
+  if (rawAuthDate == null || rawAuthDate === '') {
+    return { ok: false, reason: 'no auth_date' };
+  }
+  const authDate = Number(rawAuthDate);
   if (!Number.isFinite(authDate)) return { ok: false, reason: 'no auth_date' };
   const ageSec = Math.floor(Date.now() / 1000) - authDate;
   if (ageSec > maxAgeSec) return { ok: false, reason: 'expired' };
