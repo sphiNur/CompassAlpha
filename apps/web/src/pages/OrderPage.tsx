@@ -7,6 +7,7 @@ import {
   Chip,
   DataState,
   EmptyState,
+  PageHeader,
   QtyControl,
   Sheet,
   useToast,
@@ -555,14 +556,10 @@ export function OrderPage() {
     //   3. currentStoreId fell to null somehow — same as case 1 in practice
     return (
       <div className="flex flex-col">
-        <header className="px-4 pt-2 pb-2">
-          <div className="flex items-baseline justify-between gap-3">
-            <h1 className="text-h1 font-semibold leading-[1.15] tracking-tight text-[var(--c-fg)]">
-              {i18n.t('order.title')}
-            </h1>
-            <StoreSwitcher />
-          </div>
-        </header>
+        <PageHeader
+          title={i18n.t('order.title')}
+          actions={<StoreSwitcher />}
+        />
         {storeCtx.kind === 'none' ? (
           <EmptyState
             title={i18n.t('auth.noStore.title')}
@@ -587,25 +584,15 @@ export function OrderPage() {
 
   return (
     <div className="flex flex-col">
-      {/* Page header — title + at-a-glance summary. Tighter than before
-          so the filter chip bar + first SKU row both fit above the
-          iPhone fold. Title 22px, date 12px caption, count compressed
-          inline. Language picker moved to Telegram's gear-icon settings
-          button (wired in Shell.tsx) — was 🌐 here, made the header
-          feel cluttered. */}
-      <header className="px-4 pt-2 pb-2">
-        <div className="flex items-baseline justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-h1 font-semibold leading-[1.15] tracking-tight text-[var(--c-fg)]">
-              {i18n.t('order.title')}
-            </h1>
-            <p className="mt-0.5 text-label text-[var(--c-fg-muted)]">
-              {dateLabel}
-            </p>
-          </div>
-          {/* Right cluster: selection counter + store switcher.
-              StoreSwitcher self-hides for single-store staff. */}
-          <div className="flex shrink-0 items-center gap-2">
+      {/* Page header. M1.9-extra (P4): adopted shared <PageHeader> so
+          font + spacing match Admin / other pages. Selection counter
+          + store switcher live in the actions slot; the status badge
+          slides under the header on non-draft states. */}
+      <PageHeader
+        title={i18n.t('order.title')}
+        subtitle={dateLabel}
+        actions={
+          <div className="flex items-center gap-2">
             {selectedCount > 0 ? (
               <div className="rounded-[var(--r-pill)] bg-[var(--c-action)] px-2.5 py-1 text-body-sm font-semibold tabular-nums text-[var(--c-action-fg)]">
                 {selectedCount}
@@ -613,13 +600,13 @@ export function OrderPage() {
             ) : null}
             <StoreSwitcher />
           </div>
+        }
+      />
+      {sessionStatus && sessionStatus !== 'draft' ? (
+        <div className="px-4 pb-2">
+          <Badge tone="muted">{i18n.t(('order.status.' + sessionStatus) as Parameters<typeof i18n.t>[0])}</Badge>
         </div>
-        {sessionStatus && sessionStatus !== 'draft' ? (
-          <div className="mt-2">
-            <Badge tone="muted">{i18n.t(('order.status.' + sessionStatus) as Parameters<typeof i18n.t>[0])}</Badge>
-          </div>
-        ) : null}
-      </header>
+      ) : null}
 
       {/* Sticky filter chip bar. Sticks to the top once the header
           scrolls off, so the filters are always reachable while the

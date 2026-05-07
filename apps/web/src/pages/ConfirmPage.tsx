@@ -20,6 +20,7 @@ import {
   ChipBar,
   DataState,
   EmptyState,
+  PageHeader,
   PhotoCapture,
   Sheet,
   Input,
@@ -245,45 +246,39 @@ export function ConfirmPage() {
     //                                 needs a single store, prompt them
     //   - currentStoreId fell to null → same as 'none' for UX purposes
     return (
-      <div className="flex flex-col gap-3 px-4 py-4">
-        <header>
-          <div className="flex items-baseline justify-between gap-3">
-            <h1 className="text-h1 font-semibold leading-[1.15] tracking-tight text-[var(--c-fg)]">
-              {i18n.t('confirm.title')}
-            </h1>
-            <StoreSwitcher />
-          </div>
-        </header>
-        {storeCtx.kind === 'none' ? (
-          <EmptyState
-            title={i18n.t('auth.noStore.title')}
-            description={i18n.t('auth.noStore.body')}
-          />
-        ) : (
-          <EmptyState
-            title={i18n.t('storeSwitcher.pickPrompt.title')}
-            description={i18n.t('storeSwitcher.pickPrompt.body')}
-          />
-        )}
+      <div className="flex flex-col gap-3 pb-4">
+        <PageHeader
+          title={i18n.t('confirm.title')}
+          actions={<StoreSwitcher />}
+        />
+        <div className="px-4">
+          {storeCtx.kind === 'none' ? (
+            <EmptyState
+              title={i18n.t('auth.noStore.title')}
+              description={i18n.t('auth.noStore.body')}
+            />
+          ) : (
+            <EmptyState
+              title={i18n.t('storeSwitcher.pickPrompt.title')}
+              description={i18n.t('storeSwitcher.pickPrompt.body')}
+            />
+          )}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-3 px-4 py-4">
-      <header>
-        <div className="flex items-baseline justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-h1 font-semibold leading-[1.15] tracking-tight text-[var(--c-fg)]">
-              {i18n.t('confirm.title')}
-            </h1>
-            <p className="mt-0.5 text-body-sm text-[var(--c-fg-muted)]">
-              {activeRun
-                ? i18n.t('confirm.runOnDate', { date: activeRun.runDate })
-                : i18n.t('confirm.empty.noActive')}
-            </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
+    <div className="flex flex-col gap-3 pb-4">
+      <PageHeader
+        title={i18n.t('confirm.title')}
+        subtitle={
+          activeRun
+            ? i18n.t('confirm.runOnDate', { date: activeRun.runDate })
+            : i18n.t('confirm.empty.noActive')
+        }
+        actions={
+          <div className="flex items-center gap-2">
             <StoreSwitcher />
             {activeRun && myItems.length > 0 ? (
               <div className="text-right">
@@ -299,8 +294,9 @@ export function ConfirmPage() {
               </div>
             ) : null}
           </div>
-        </div>
-      </header>
+        }
+      />
+      <div className="flex flex-col gap-3 px-4">
 
       {!activeRun ? (
         <EmptyState
@@ -438,6 +434,7 @@ export function ConfirmPage() {
           )}
         </DataState>
       )}
+      </div>
 
       {/* Banner removed — the "Decided X/Y" counter at the top + the
           card meta "Tap a status for each item" + the disabled

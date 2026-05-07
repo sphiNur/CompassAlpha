@@ -483,6 +483,7 @@ export const en = {
     'Once a manager approves at least one session, you can plan a run.',
   'run.header.runIndex': 'Market run #{n}',
   'run.header.newRun': 'New run',
+  'run.header.moreActions': 'More actions',
   'run.banner.readyToStart': 'Ready to start purchasing',
   'run.banner.readyToStartBody': 'Use the button at the bottom of the screen to advance.',
   'run.banner.planLockWarning':

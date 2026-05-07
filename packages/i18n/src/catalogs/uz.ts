@@ -448,6 +448,7 @@ export const uz = {
     "Menejer bitta buyurtmani tasdiqlasa, xarid rejalashtirsa bo'ladi.",
   'run.header.runIndex': "Xarid #{n}",
   'run.header.newRun': "Yangi xarid",
+  'run.header.moreActions': "Boshqa amallar",
   'run.banner.readyToStart': "Xaridni boshlashga tayyor",
   'run.banner.readyToStartBody': "Pastdagi tugmadan keyingi bosqichga o'ting.",
   'run.banner.planLockWarning':

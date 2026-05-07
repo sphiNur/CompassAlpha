@@ -41,6 +41,7 @@ import {
   EmptyState,
   Input,
   NumberInput,
+  PageHeader,
   PhotoCapture,
   Sheet,
   useToast,
@@ -800,64 +801,62 @@ export function RunPage() {
 
   if (!session) return null;
 
+  // M1.9-extra (P4): adopted shared <PageHeader>. Subtitle folds in
+  // run date + phase label so the line under the title shows
+  // "2026-05-07 · Purchase" or "No active run" depending on state.
+  const runSubtitle = activeRun
+    ? `${activeRun.runDate} · ${
+        activeRun.status === 'planned'
+          ? i18n.t('run.step.plan')
+          : activeRun.status === 'purchasing'
+            ? i18n.t('run.step.purchase')
+            : activeRun.status === 'delivering'
+              ? i18n.t('run.step.deliver')
+              : activeRun.status === 'finished'
+                ? i18n.t('run.step.done')
+                : activeRun.status
+      }`
+    : i18n.t('run.empty.noActive');
+
   return (
-    <div className="flex flex-col gap-2 px-4 py-2 pb-24">
-      <header className="flex items-end justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-h1 font-semibold leading-[1.15] tracking-tight text-[var(--c-fg)]">
-            {activeRun
-              ? i18n.t('run.header.runIndex', { n: activeRun.runIndex + 1 })
-              : i18n.t('run.title')}
-          </h1>
-          <p className="mt-0.5 text-label text-[var(--c-fg-muted)]">
-            {activeRun
-              ? // Phase folded into the subtitle. Replaces the 60-px
-                // tappable-less Stepper with a single line: date · phase.
-                `${activeRun.runDate} · ${
-                  activeRun.status === 'planned'
-                    ? i18n.t('run.step.plan')
-                    : activeRun.status === 'purchasing'
-                      ? i18n.t('run.step.purchase')
-                      : activeRun.status === 'delivering'
-                        ? i18n.t('run.step.deliver')
-                        : activeRun.status === 'finished'
-                          ? i18n.t('run.step.done')
-                          : activeRun.status
-                }`
-              : i18n.t('run.empty.noActive')}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {/* Store-context picker — RunPage doesn't NEED a specific
-              store (purchaser aggregates across stores), but admins
-              flipping context need the same control here as elsewhere
-              for consistency. Self-hides for single-store staff. */}
-          <StoreSwitcher />
-          {!activeRun ? (
-            <Button
-              onClick={() => setCreateOpen(true)}
-              disabled={!previewQuery.data?.plannedItems.length}
-            >
-              {i18n.t('run.header.newRun')}
-            </Button>
-          ) : (
-            <Button
-              size="sm"
-              variant="pearl"
-              aria-label="More actions"
-              onClick={() => setHeaderMenuOpen(true)}
-            >
-              ⋯
-            </Button>
-          )}
-        </div>
-      </header>
+    <div className="flex flex-col gap-2 py-2 pb-24">
+      <PageHeader
+        title={
+          activeRun
+            ? i18n.t('run.header.runIndex', { n: activeRun.runIndex + 1 })
+            : i18n.t('run.title')
+        }
+        subtitle={runSubtitle}
+        actions={
+          <div className="flex items-center gap-2">
+            <StoreSwitcher />
+            {!activeRun ? (
+              <Button
+                onClick={() => setCreateOpen(true)}
+                disabled={!previewQuery.data?.plannedItems.length}
+              >
+                {i18n.t('run.header.newRun')}
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="pearl"
+                aria-label={i18n.t('run.header.moreActions')}
+                onClick={() => setHeaderMenuOpen(true)}
+              >
+                ⋯
+              </Button>
+            )}
+          </div>
+        }
+      />
 
       {/* Stepper removed 2026-05-04: it was 60px tall and non-tappable
           — pure information that's already implied by the body content
           (items list = purchasing, store list = delivering). The phase
           name now lives inline in the page header subtitle. */}
 
+      <div className="flex flex-col gap-2 px-4">
       {!activeRun ? (
         <DataState query={previewQuery}>
           {(p) =>
@@ -964,6 +963,7 @@ export function RunPage() {
           }
         />
       ) : null}
+      </div>
 
       {/* "Plan run" sheet — preview + lock-warning + confirm. Inside
           Telegram the MainButton drives the planRun action; outside

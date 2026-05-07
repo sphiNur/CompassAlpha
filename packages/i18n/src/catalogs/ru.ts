@@ -434,6 +434,7 @@ export const ru = {
     'Когда менеджер одобрит хотя бы один заказ, можно запланировать закупку.',
   'run.header.runIndex': 'Закупка #{n}',
   'run.header.newRun': 'Новая закупка',
+  'run.header.moreActions': 'Ещё',
   'run.banner.readyToStart': 'Готово к началу закупки',
   'run.banner.readyToStartBody': 'Используйте кнопку внизу экрана.',
   'run.banner.planLockWarning':

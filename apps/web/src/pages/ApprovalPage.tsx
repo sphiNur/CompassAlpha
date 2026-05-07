@@ -21,6 +21,7 @@ import {
   DataState,
   EmptyState,
   Input,
+  PageHeader,
   QtyControl,
   Sheet,
   Spinner,
@@ -128,25 +129,22 @@ export function ApprovalPage() {
 
   const count = pendingQuery.data?.length ?? null;
 
+  // M1.9-extra (P4): adopted shared <PageHeader>. Subtitle pivots
+  // between empty-tab message and a cardinal "X items" count.
+  const subtitle =
+    count === null
+      ? ''
+      : count === 0
+        ? i18n.t('approval.empty.tab', { tab: i18n.t(`approval.tab.${tab}`) })
+        : i18n.t('common.itemsCount', { n: count });
+
   return (
     <div className="flex flex-col">
-      <header className="px-4 pt-2 pb-2">
-        <div className="flex items-baseline justify-between gap-2">
-          <h1 className="text-h1 font-semibold leading-[1.15] tracking-tight text-[var(--c-fg)]">
-            {i18n.t('approval.title')}
-          </h1>
-          {/* Store context — drives the pendingList filter via storeCtx
-              above. Replaces the previous local chip-bar (2026-05-05). */}
-          <StoreSwitcher />
-        </div>
-        <p className="mt-0.5 text-label text-[var(--c-fg-muted)]">
-          {count === null
-            ? ''
-            : count === 0
-              ? i18n.t('approval.empty.tab', { tab: i18n.t(`approval.tab.${tab}`) })
-              : i18n.t('common.itemsCount', { n: count })}
-        </p>
-      </header>
+      <PageHeader
+        title={i18n.t('approval.title')}
+        subtitle={subtitle}
+        actions={<StoreSwitcher />}
+      />
 
       <div className="sticky top-0 z-[1] border-b border-[var(--c-divider)] bg-[var(--c-bg)] py-2">
         <ChipBar>

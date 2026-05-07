@@ -398,6 +398,7 @@ export const zh = {
   'run.empty.noPlannableBody': '管理员审核通过订单后，可生成采购单。',
   'run.header.runIndex': '第 {n} 次采购',
   'run.header.newRun': '新建采购',
+  'run.header.moreActions': '更多操作',
   'run.banner.readyToStart': '可以开始采购',
   'run.banner.readyToStartBody': '点击底部按钮进入下一步。',
   'run.banner.planLockWarning':
