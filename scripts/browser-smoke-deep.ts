@@ -453,7 +453,11 @@ async function run() {
 
     // ---- Order page interaction ----
     // BottomNav order tab is the default per Shell's first tab.
-    await page.waitForSelector('text=Today\'s Order', { timeout: 5_000 });
+    // M1.12: PageHeader was removed — wait for an OrderPage-specific
+    // affordance instead. Increment buttons exist on every SKU card,
+    // so their presence both confirms render and is robust to whatever
+    // copy lands in the sticky context strip.
+    await page.waitForSelector('button[aria-label="Increment"]', { timeout: 8_000 });
     record('OrderPage rendered', true);
 
     // Find the Apple row's "+" button — qty controls are buttons with
