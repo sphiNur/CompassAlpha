@@ -1,0 +1,120 @@
+# CompassAlpha CI — minimum viable safety net (M1.9, 2026-05-07)
+#
+# Why this exists:
+#   Pre-launch the project had ZERO CI. Every test only ran when a
+#   developer typed `pnpm test` locally or via scripts/deploy.ts. Any
+#   PR could break every test and only a manual pre-deploy run would
+#   catch it. This file fixes that by gating push + PR on the same
+#   `type-check` + non-PG-gated unit tests the deploy script runs.
+#
+# What we DON'T run here (intentional):
+#   - PG-backed integration tests (full-lifecycle, store-scoped-admin):
+#     those need a real Postgres and Drizzle migrations. The deploy
+#     script runs them on the server post-migrate, where they belong.
+#     Adding a Postgres service to CI is M2 work — not blocking.
+#   - Browser smokes (browser-smoke.ts, browser-smoke-deep.ts): they
+#     hit the live Cloudflare URL with Playwright; running them on
+#     every PR would spam the prod URL and double-bill us on tunnel
+#     bandwidth. Smokes belong in `deploy.ts`, gated on a green CI
+#     run.
+#
+# Cache strategy:
+#   pnpm's store sits at ~/.local/share/pnpm/store; we cache it keyed
+#   on pnpm-lock.yaml. Cold runs ~3 min; warm ~45 s. Bun is installed
+#   from a stable version (matches .bun-version) and cached too.
+#
+# Concurrency:
+#   Cancel in-progress runs on the same branch when a new commit lands.
+#   Avoids burning CI minutes on intermediate WIP pushes.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: type-check + unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Skip the PG-gated integration tests — they connect to localhost
+      # PG which doesn't exist in this job. The deploy script applies
+      # the same flag for the same reason on dev machines.
+      SKIP_PG_TESTS: '1'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install bun (matches .bun-version)
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install workspace deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Migration journal consistency
+        # `packages/db/src/migrate.ts` runs this check before applying
+        # migrations on the server. Hoist it to CI so a missing journal
+        # entry (the bug that broke 0009 in prod for a week) fails fast.
+        run: |
+          node -e "
+            const { readFileSync, readdirSync } = require('fs');
+            const j = JSON.parse(readFileSync('packages/db/migrations/meta/_journal.json', 'utf8'));
+            const tags = new Set(j.entries.map(e => e.tag));
+            const sqls = readdirSync('packages/db/migrations').filter(f => /^\d{4}_.*\.sql$/.test(f)).map(f => f.replace(/\.sql$/, ''));
+            const orphans = sqls.filter(t => !tags.has(t));
+            const ghosts = [...tags].filter(t => !sqls.includes(t));
+            if (orphans.length || ghosts.length) {
+              console.error('orphans:', orphans);
+              console.error('ghosts:', ghosts);
+              process.exit(1);
+            }
+            console.log('migration journal consistent:', sqls.length, 'files');
+          "
+
+      - name: i18n catalog parity
+        # Each catalog must have the same key count as en.ts. The
+        # CatalogKey type already enforces "no extra keys", but a
+        # missing key in ru/uz/zh would silently fall back to the
+        # English literal at runtime. Cheap grep-based check.
+        run: |
+          en=$(grep -cE "^  '[a-z]" packages/i18n/src/catalogs/en.ts)
+          for lang in zh ru uz; do
+            count=$(grep -cE "^  '[a-z]" packages/i18n/src/catalogs/$lang.ts)
+            if [ "$count" != "$en" ]; then
+              echo "i18n DRIFT: en has $en keys, $lang has $count"
+              exit 1
+            fi
+          done
+          echo "i18n parity: $en keys × 4 langs"
+
+      - name: Type-check
+        run: pnpm type-check
+
+      - name: Unit tests (non-PG)
+        # Mirrors `scripts/deploy.ts` step 5.5 — domain + apps/api
+        # (PG-gated tests skipped via SKIP_PG_TESTS) + apps/web/src/lib.
+        run: |
+          bun test \
+            packages/domain \
+            apps/api \
+            apps/web/src/lib \
+            apps/web/src/hooks
