@@ -6,7 +6,6 @@ import {
   Chip,
   DataState,
   EmptyState,
-  PageHeader,
   QtyControl,
   SearchInput,
   Sheet,
@@ -578,11 +577,15 @@ export function OrderPage() {
     //                                    needs a specific store, prompt them
     //   3. currentStoreId fell to null somehow — same as case 1 in practice
     return (
+      /* M1.12: PageHeader dropped — Telegram's chrome shows the bot
+          name and BottomNav highlights "Order", so the in-body title
+          was redundant. The store-picker fallback strip lets the user
+          either pick a store (admin) or learn they need an
+          assignment (non-admin). */
       <div className="flex flex-col">
-        <PageHeader
-          title={i18n.t('order.title')}
-          actions={<StoreSwitcher />}
-        />
+        <div className="flex items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-2">
+          <StoreSwitcher />
+        </div>
         {storeCtx.kind === 'none' ? (
           <EmptyState
             title={i18n.t('auth.noStore.title')}
@@ -607,36 +610,23 @@ export function OrderPage() {
 
   return (
     <div className="flex flex-col">
-      {/* Page header. M1.9-extra (P4): adopted shared <PageHeader> so
-          font + spacing match Admin / other pages. Selection counter
-          + store switcher live in the actions slot; the status badge
-          slides under the header on non-draft states. */}
-      <PageHeader
-        title={i18n.t('order.title')}
-        subtitle={dateLabel}
-        actions={
-          <div className="flex items-center gap-2">
-            {selectedCount > 0 ? (
-              <div className="rounded-[var(--r-pill)] bg-[var(--c-action)] px-2.5 py-1 text-body-sm font-semibold tabular-nums text-[var(--c-action-fg)]">
-                {selectedCount}
-              </div>
-            ) : null}
-            <StoreSwitcher />
-          </div>
-        }
-      />
-      {/* M1.11 cleanup (2026-05-08): the standalone status Badge that
-          used to sit here was redundant with the conditional banners
-          below — they convey both the status AND the optional action.
-          Dropped to free up ~36 px of vertical chrome on every
-          non-draft view. */}
-
-      {/* Sticky search + filter stack — search above, chip bar
-          below. M1.11: merged into a single sticky container with
-          unified padding so the two rows feel like one control
-          surface (was two separate `<div>` shells with redundant
-          border + py-X). */}
+      {/* M1.12: PageHeader removed entirely. Telegram's native chrome
+          (bot name + BottomNav active-tab highlight) tells the user
+          they're on Order. The sticky strip below holds the per-page
+          context [Store · selected · date] in one row, then search,
+          then filter chips — all in one cohesive sticky surface. */}
       <div className="sticky top-0 z-[1] flex flex-col gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-2">
+        <div className="flex min-h-7 items-center gap-2">
+          <StoreSwitcher />
+          <span className="ml-auto truncate text-meta text-[var(--c-fg-muted)]">
+            {dateLabel}
+          </span>
+          {selectedCount > 0 ? (
+            <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-action)] px-2 py-0.5 text-meta font-semibold tabular-nums text-[var(--c-action-fg)]">
+              {selectedCount}
+            </span>
+          ) : null}
+        </div>
         <SearchInput
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}

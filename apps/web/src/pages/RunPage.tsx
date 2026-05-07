@@ -41,7 +41,6 @@ import {
   EmptyState,
   Input,
   NumberInput,
-  PageHeader,
   PhotoCapture,
   Sheet,
   useToast,
@@ -52,6 +51,7 @@ import { usePageMainButton, haptic, getTg } from '../hooks/useTelegram';
 import { useI18n, useProductName } from '../hooks/useI18n';
 import { usePhotoUploader } from '../hooks/usePhotoUploader';
 import { StoreSwitcher } from '../components/StoreSwitcher';
+import { usePageMenu } from '../app/PageMenuContext';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
@@ -101,7 +101,6 @@ export function RunPage() {
   const [unavailableNote, setUnavailableNote] = useState('');
   const [confirmAction, setConfirmAction] = useState<ConfirmKind | null>(null);
   const [confirmReason, setConfirmReason] = useState('');
-  const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   // Drill-down for a historical run.
   const [historyDetailFor, setHistoryDetailFor] = useState<{
     runId: string;
@@ -445,7 +444,24 @@ export function RunPage() {
     visible: boolean;
     active: boolean;
   }>(() => {
-    if (!activeRun) return { text: '', onClick: () => {}, visible: false, active: false };
+    if (!activeRun) {
+      // M1.12: when there's no active run BUT planned items exist, the
+      // MainButton becomes the "+ New run" CTA. Previously this button
+      // lived in the PageHeader actions slot, which we just dropped.
+      // Routing it through Telegram's MainButton keeps the action
+      // visually consistent with every other phase transition (Start
+      // purchase / Start delivery / Finish run all already do this).
+      const plannable = previewQuery.data?.plannedItems.length ?? 0;
+      if (plannable > 0) {
+        return {
+          text: i18n.t('run.header.newRun'),
+          onClick: () => setCreateOpen(true),
+          visible: true,
+          active: true,
+        };
+      }
+      return { text: '', onClick: () => {}, visible: false, active: false };
+    }
     switch (activeRun.status) {
       case 'planned':
         return {
@@ -476,7 +492,7 @@ export function RunPage() {
       default:
         return { text: '', onClick: () => {}, visible: false, active: false };
     }
-  }, [activeRun, allItemsHandled, allStoresConfirmed, i18n]);
+  }, [activeRun, allItemsHandled, allStoresConfirmed, i18n, previewQuery.data]);
 
   /**
    * MainButton dispatch: when a sheet with a single primary action is
@@ -572,9 +588,11 @@ export function RunPage() {
     i18n,
   ]);
 
-  /** Sheets that DON'T have a single primary action (header menu,
-   *  drill-down history). MainButton hides while these are open. */
-  const multiOptionSheetOpen = headerMenuOpen || !!historyDetailFor;
+  /** Sheets that DON'T have a single primary action (drill-down
+   *  history). MainButton hides while these are open. (M1.12: the
+   *  former header ⋯ Sheet was removed; its contents migrated to the
+   *  Telegram gear via usePageMenu.) */
+  const multiOptionSheetOpen = !!historyDetailFor;
 
   // ---- Confirm-sheet wiring --------------------------------------------
   // Resets the reason input whenever the confirm switches kind (or
@@ -799,6 +817,42 @@ export function RunPage() {
     active: mainBtnActive,
   });
 
+  // M1.12: register the run's "danger zone" actions in Telegram's gear ⚙️
+  // (right of the chrome). Replaces the inline ⋯ button + headerMenuOpen
+  // Sheet that used to live in PageHeader.actions. The actions only
+  // appear when there's an active run — empty-state pages have no
+  // contextual section in the SettingsSheet.
+  usePageMenu(
+    activeRun
+      ? {
+          title: i18n.t('run.title') + ` #${activeRun.runIndex + 1}`,
+          actions: [
+            ...(canUndoStartPurchase
+              ? [
+                  {
+                    label: i18n.t('run.action.undoStartPurchase'),
+                    onClick: () => setConfirmAction('undoStartPurchase'),
+                  },
+                ]
+              : []),
+            ...(canUndoStartDelivery
+              ? [
+                  {
+                    label: i18n.t('run.action.undoStartDelivery'),
+                    onClick: () => setConfirmAction('undoStartDelivery'),
+                  },
+                ]
+              : []),
+            {
+              label: i18n.t('run.action.cancelRun'),
+              variant: 'danger' as const,
+              onClick: () => setConfirmAction('cancel'),
+            },
+          ],
+        }
+      : null,
+  );
+
   if (!session) return null;
 
   // M1.9-extra (P4): adopted shared <PageHeader>. Subtitle folds in
@@ -819,46 +873,24 @@ export function RunPage() {
     : i18n.t('run.empty.noActive');
 
   return (
-    /* M1.11: outer page is just `flex flex-col` + bottom safe-area for
-        the MainButton. Inner sections own their own rhythm — keeping
-        gap-2/py-2 on the outer was double-counting padding once the
-        PageHeader already brought its own. */
+    /* M1.12: outer page is just `flex flex-col` + bottom safe-area.
+        PageHeader removed entirely — Telegram's chrome (bot name +
+        BottomNav) is the app frame, and per-page actions ("Undo
+        start purchase", "Cancel run") now live in the gear ⚙️ on the
+        right side of Telegram's chrome (registered via usePageMenu
+        below). What remains in-body is a one-line context strip
+        showing the current store and, when a run is active, a small
+        "#3 · purchasing" tag so the user sees both store-scope and
+        run state without losing 60+ px to a redundant header bar. */
     <div className="flex flex-col pb-24">
-      <PageHeader
-        title={
-          activeRun
-            ? i18n.t('run.header.runIndex', { n: activeRun.runIndex + 1 })
-            : i18n.t('run.title')
-        }
-        subtitle={runSubtitle}
-        actions={
-          <div className="flex items-center gap-2">
-            <StoreSwitcher />
-            {!activeRun ? (
-              <Button
-                onClick={() => setCreateOpen(true)}
-                disabled={!previewQuery.data?.plannedItems.length}
-              >
-                {i18n.t('run.header.newRun')}
-              </Button>
-            ) : (
-              <Button
-                size="sm"
-                variant="pearl"
-                aria-label={i18n.t('run.header.moreActions')}
-                onClick={() => setHeaderMenuOpen(true)}
-              >
-                ⋯
-              </Button>
-            )}
-          </div>
-        }
-      />
-
-      {/* Stepper removed 2026-05-04: it was 60px tall and non-tappable
-          — pure information that's already implied by the body content
-          (items list = purchasing, store list = delivering). The phase
-          name now lives inline in the page header subtitle. */}
+      <div className="sticky top-0 z-[1] flex min-h-9 items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-1.5">
+        <StoreSwitcher />
+        {activeRun ? (
+          <span className="ml-auto truncate text-meta tabular-nums text-[var(--c-fg-muted)]">
+            #{activeRun.runIndex + 1} · {runSubtitle}
+          </span>
+        ) : null}
+      </div>
 
       <div className="flex flex-col gap-2 px-4 pt-2">
       {!activeRun ? (
@@ -1024,52 +1056,9 @@ export function RunPage() {
         </div>
       </Sheet>
 
-      {/* Header ⋯ menu — "danger zone" actions for the entire run.
-          M1.11: dropped Sheet description ("#3 · 2026-05-08") since the
-          page header right above the trigger button already shows the
-          same run index. */}
-      <Sheet
-        open={headerMenuOpen}
-        onOpenChange={setHeaderMenuOpen}
-        title={i18n.t('run.title')}
-      >
-        <div className="flex flex-col gap-2 py-3">
-          {canUndoStartPurchase ? (
-            <Button
-              block
-              variant="pearl"
-              onClick={() => {
-                setHeaderMenuOpen(false);
-                setConfirmAction('undoStartPurchase');
-              }}
-            >
-              {i18n.t('run.action.undoStartPurchase')}
-            </Button>
-          ) : null}
-          {canUndoStartDelivery ? (
-            <Button
-              block
-              variant="pearl"
-              onClick={() => {
-                setHeaderMenuOpen(false);
-                setConfirmAction('undoStartDelivery');
-              }}
-            >
-              {i18n.t('run.action.undoStartDelivery')}
-            </Button>
-          ) : null}
-          <Button
-            block
-            variant="danger"
-            onClick={() => {
-              setHeaderMenuOpen(false);
-              setConfirmAction('cancel');
-            }}
-          >
-            {i18n.t('run.action.cancelRun')}
-          </Button>
-        </div>
-      </Sheet>
+      {/* M1.12: ⋯ run-actions Sheet removed — its three buttons
+          (Undo start purchase / Undo start delivery / Cancel run)
+          now live in Telegram's gear ⚙️ via usePageMenu(). */}
 
       <PurchaseSheet
         draft={purchaseDraft}

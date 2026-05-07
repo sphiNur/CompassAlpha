@@ -49,7 +49,6 @@ import {
   Input,
   ListRow,
   Checkbox,
-  PageHeader,
   SearchInput,
   SectionRow,
   Select,
@@ -256,17 +255,12 @@ export function AdminPage() {
   }
 
   return (
+    /* M1.12: home PageHeader (workspace name + "signed in as @user")
+        removed. Telegram's chrome shows the bot name and BottomNav
+        marks the Admin tab — the org name and username already live
+        in SettingsSheet → Profile / About for users who want them. */
     <div className="flex flex-col">
-      <PageHeader
-        title={session?.member.orgName ?? 'Workspace'}
-        subtitle={
-          session?.user.tgUsername
-            ? i18n.t('admin.label.signedInAs', { name: session.user.tgUsername })
-            : i18n.t('admin.label.signedIn')
-        }
-      />
-
-      <ul className="mx-4 mt-2 mb-6 flex flex-col gap-2" role="list">
+      <ul className="mx-4 mt-3 mb-6 flex flex-col gap-2" role="list">
         <SectionRow
           icon={<IconWorkspace size={20} />}
           label={i18n.t('admin.section.organization')}

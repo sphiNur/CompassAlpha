@@ -26,6 +26,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useI18n } from '../hooks/useI18n';
 import { useTelegramSettingsButton } from '../hooks/useTelegram';
 import { SettingsSheet } from '../components/SettingsSheet';
+import { PageMenuProvider, usePageMenuRegistration } from './PageMenuContext';
 
 // Debug tab moved INTO Admin as a sub-tab. Reduces bottom-nav clutter
 // (was 6 items, now 5) and groups operator-only views together. Admins
@@ -68,8 +69,20 @@ const PAGES: Record<Tab, () => ReactNode> = {
 };
 
 export function Shell() {
+  return (
+    <PageMenuProvider>
+      <ShellInner />
+    </PageMenuProvider>
+  );
+}
+
+function ShellInner() {
   const i18n = useI18n();
   const session = useAuthStore((s) => s.session);
+  // M1.12: contextual "this page" actions live in the same gear as the
+  // global SettingsSheet. Pages register via usePageMenu(). When the
+  // sheet opens it shows the page section first, then global settings.
+  const pageMenu = usePageMenuRegistration();
 
   const visible = TABS.filter(
     (t) => !t.permission || session?.permissions.includes(t.permission),
@@ -128,7 +141,11 @@ export function Shell() {
 
   return (
     <div className="flex h-full flex-col bg-[var(--c-bg)]">
-      <SettingsSheet open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <SettingsSheet
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        pageMenu={pageMenu}
+      />
       {inTelegram ? (
         // Reserved strip lets Telegram's chrome (Close + bot title + ⋯)
         // sit on top without overlapping our content. iOS env(safe-top)

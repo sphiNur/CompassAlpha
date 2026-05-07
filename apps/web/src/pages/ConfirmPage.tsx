@@ -18,7 +18,6 @@ import {
   ChipBar,
   DataState,
   EmptyState,
-  PageHeader,
   PhotoCapture,
   Sheet,
   Input,
@@ -244,11 +243,14 @@ export function ConfirmPage() {
     //                                 needs a single store, prompt them
     //   - currentStoreId fell to null → same as 'none' for UX purposes
     return (
+      /* M1.12: PageHeader removed; Telegram chrome + BottomNav already
+          mark this as Confirm. Sticky strip only carries the
+          StoreSwitcher so the user can pick which store to confirm
+          for. */
       <div className="flex flex-col gap-3 pb-4">
-        <PageHeader
-          title={i18n.t('confirm.title')}
-          actions={<StoreSwitcher />}
-        />
+        <div className="flex items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-2">
+          <StoreSwitcher />
+        </div>
         <div className="px-4">
           {storeCtx.kind === 'none' ? (
             <EmptyState
@@ -267,21 +269,19 @@ export function ConfirmPage() {
   }
 
   return (
+    /* M1.12: PageHeader removed entirely. Sticky strip carries
+        StoreSwitcher + the run-date subtitle (when there's an active
+        run). MainButton already shows the "Decided X/Y" fraction at
+        the bottom. */
     <div className="flex flex-col gap-3 pb-4">
-      <PageHeader
-        title={i18n.t('confirm.title')}
-        subtitle={
-          activeRun
-            ? i18n.t('confirm.runOnDate', { date: activeRun.runDate })
-            : i18n.t('confirm.empty.noActive')
-        }
-        actions={<StoreSwitcher />}
-      />
-      {/* M1.11 cleanup (2026-05-08): the "Decided X/Y" 3-font-stack
-          counter that lived in the header actions is dropped — the
-          MainButton text already displays the same fraction
-          (confirm.confirmStore("{decided}/{total}")), and dropping
-          the counter saved ~64 px of header chrome. */}
+      <div className="sticky top-0 z-[1] flex min-h-7 items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-2">
+        <StoreSwitcher />
+        {activeRun ? (
+          <span className="ml-auto truncate text-meta tabular-nums text-[var(--c-fg-muted)]">
+            {i18n.t('confirm.runOnDate', { date: activeRun.runDate })}
+          </span>
+        ) : null}
+      </div>
       <div className="flex flex-col gap-3 px-4">
 
       {!activeRun ? (

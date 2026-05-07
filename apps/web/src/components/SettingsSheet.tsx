@@ -28,6 +28,7 @@ import type { Locale } from '@compass/i18n';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { useI18n } from '../hooks/useI18n';
+import type { PageMenuRegistration } from '../app/PageMenuContext';
 
 interface LangOption {
   code: Locale;
@@ -45,9 +46,17 @@ const LANGS: LangOption[] = [
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * M1.12: optional contextual section for the currently-active page
+   * (e.g., RunPage's "Undo start purchase" / "Cancel run"). Lives at
+   * the very top of the sheet so frequent users don't have to scroll
+   * past Profile + Language to reach the destructive action they
+   * came in for.
+   */
+  pageMenu?: PageMenuRegistration | null;
 }
 
-export function SettingsSheet({ open, onOpenChange }: Props) {
+export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
   const i18n = useI18n();
   const session = useAuthStore((s) => s.session);
   const patchSession = useAuthStore((s) => s.patchSession);
@@ -89,6 +98,36 @@ export function SettingsSheet({ open, onOpenChange }: Props) {
       title={i18n.t('settings.title')}
     >
       <div className="flex flex-col gap-4 py-3">
+        {/* ── Page actions (contextual, M1.12) ─────────────── */}
+        {pageMenu && pageMenu.actions.length > 0 ? (
+          <section>
+            <h3 className="mb-2 text-label font-semibold uppercase tracking-wide text-[var(--c-fg-muted)]">
+              {pageMenu.title}
+            </h3>
+            <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
+              {pageMenu.actions.map((a, i) => (
+                <Button
+                  key={`${a.label}-${i}`}
+                  block
+                  variant={a.variant ?? 'pearl'}
+                  disabled={a.disabled}
+                  onClick={() => {
+                    onOpenChange(false);
+                    a.onClick();
+                  }}
+                >
+                  <span className="flex flex-col items-start text-left">
+                    <span>{a.label}</span>
+                    {a.hint ? (
+                      <span className="mt-0.5 text-meta opacity-80">{a.hint}</span>
+                    ) : null}
+                  </span>
+                </Button>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
         {/* ── Profile ─────────────────────────────────────── */}
         <section>
           <h3 className="mb-2 text-label font-semibold uppercase tracking-wide text-[var(--c-fg-muted)]">
