@@ -628,6 +628,7 @@ export const en = {
   'run.confirm.undoStartDelivery.body':
     'Reverts this run to the purchasing step. Only works before any store has been delivered to.',
   'run.label.reasonForChange': 'Reason for change',
+  'run.label.addReasonOptional': '+ Add note (optional)',
   'run.label.total': 'total',
   'run.label.reasonPlaceholder': 'e.g. price misread on the receipt',
   'run.toast.runPlanned': 'Run planned',
@@ -650,6 +651,7 @@ export const en = {
   'run.toast.storesNeedConfirm': 'Stores still need to confirm',
   'run.history.title': 'History',
   'run.history.subtitle': 'Past runs — tap to see details',
+  'run.history.viewAllHint': 'Open Admin → Operations → Submission history for older runs',
   'run.history.totalLine': 'Total {total} UZS',
   'run.history.cancelled': 'Cancelled',
   // Filter chips on the history list (M1.7-A).

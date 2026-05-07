@@ -526,6 +526,7 @@ export const zh = {
   'run.confirm.undoStartDelivery.body':
     '把采购单退回到采购阶段。只有在尚未向任何门店送货前才可以。',
   'run.label.reasonForChange': '修改原因',
+  'run.label.addReasonOptional': '+ 添加备注（可选）',
   'run.label.total': '合计',
   'run.label.reasonPlaceholder': '例如：小票上的单价看错了',
   'run.toast.runPlanned': '采购单已生成',
@@ -548,6 +549,7 @@ export const zh = {
   'run.toast.storesNeedConfirm': '仍有门店未验收',
   'run.history.title': '历史记录',
   'run.history.subtitle': '过往的采购单 — 点击查看详情',
+  'run.history.viewAllHint': '更早的记录请到 管理 → 运营 → 提交历史',
   'run.history.totalLine': '合计 {total} UZS',
   'run.history.cancelled': '已取消',
   'run.history.filter.finished': '已完成',

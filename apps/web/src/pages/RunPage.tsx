@@ -50,7 +50,7 @@ import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton, haptic, getTg } from '../hooks/useTelegram';
 import { useI18n, useProductName } from '../hooks/useI18n';
 import { usePhotoUploader } from '../hooks/usePhotoUploader';
-import { StoreSwitcher } from '../components/StoreSwitcher';
+import { StoreSwitcher, useStoreSwitcherInteractive } from '../components/StoreSwitcher';
 import { usePageMenu } from '../app/PageMenuContext';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { isLikelyNetworkError } from '../lib/networkError';
@@ -90,6 +90,7 @@ export function RunPage() {
   const i18n = useI18n();
   const productName = useProductName();
   const session = useAuthStore((s) => s.session);
+  const storeSwitcherInteractive = useStoreSwitcherInteractive();
   const toast = useToast();
   const photoUploader = usePhotoUploader('receipt');
 
@@ -355,13 +356,6 @@ export function RunPage() {
     return true;
   }, [runDetailQuery.data]);
 
-  /** "We can still un-Start purchase" — true iff status=purchasing AND
-   *  every item is still pending. Mirrors the domain guard. */
-  const canUndoStartPurchase = useMemo(() => {
-    if (activeRun?.status !== 'purchasing') return false;
-    return (runDetailQuery.data?.items ?? []).every((i) => i.status === 'pending');
-  }, [activeRun?.status, runDetailQuery.data]);
-
   /** "We can still un-Start delivery" — true iff status=delivering AND
    *  no store has been delivered to. */
   const canUndoStartDelivery = useMemo(() => {
@@ -566,7 +560,10 @@ export function RunPage() {
         text: i18n.t('run.action.planRun'),
         onClick: () => {
           if (sessionIds.length === 0 || create.isPending) return;
-          create.mutate({ sessionIds });
+          // M1.13: collapse "+ New run" + "Start purchase" double tap
+          // into a single CTA. Server emits PlanRun + StartPurchase
+          // atomically when startImmediately is true.
+          create.mutate({ sessionIds, startImmediately: true });
         },
         active: sessionIds.length > 0 && !create.isPending,
       };
@@ -817,24 +814,18 @@ export function RunPage() {
     active: mainBtnActive,
   });
 
-  // M1.12: register the run's "danger zone" actions in Telegram's gear ⚙️
-  // (right of the chrome). Replaces the inline ⋯ button + headerMenuOpen
-  // Sheet that used to live in PageHeader.actions. The actions only
-  // appear when there's an active run — empty-state pages have no
-  // contextual section in the SettingsSheet.
+  // M1.12: register the run's "danger zone" actions in Telegram's gear ⚙️.
+  // M1.13 (2026-05-08): dropped `undoStartPurchase` from the menu — the
+  // plan/purchase phases were merged into one, so "back out of start" is
+  // now equivalent to "cancel the run" (which has no purchases yet at
+  // that point). Cancel is one tap with no required reason. Legacy runs
+  // already in `purchasing` keep their data; the FE just doesn't expose
+  // an undo path for the merged transition.
   usePageMenu(
     activeRun
       ? {
           title: i18n.t('run.title') + ` #${activeRun.runIndex + 1}`,
           actions: [
-            ...(canUndoStartPurchase
-              ? [
-                  {
-                    label: i18n.t('run.action.undoStartPurchase'),
-                    onClick: () => setConfirmAction('undoStartPurchase'),
-                  },
-                ]
-              : []),
             ...(canUndoStartDelivery
               ? [
                   {
@@ -883,14 +874,16 @@ export function RunPage() {
         "#3 · purchasing" tag so the user sees both store-scope and
         run state without losing 60+ px to a redundant header bar. */
     <div className="flex flex-col pb-24">
-      <div className="sticky top-0 z-[1] flex min-h-9 items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-1.5">
-        <StoreSwitcher />
-        {activeRun ? (
-          <span className="ml-auto truncate text-meta tabular-nums text-[var(--c-fg-muted)]">
-            #{activeRun.runIndex + 1} · {runSubtitle}
-          </span>
-        ) : null}
-      </div>
+      {storeSwitcherInteractive || activeRun ? (
+        <div className="sticky top-0 z-[1] flex min-h-9 items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-1.5">
+          {storeSwitcherInteractive ? <StoreSwitcher /> : null}
+          {activeRun ? (
+            <span className="ml-auto truncate text-meta tabular-nums text-[var(--c-fg-muted)]">
+              #{activeRun.runIndex + 1} · {runSubtitle}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="flex flex-col gap-2 px-4 pt-2">
       {!activeRun ? (
@@ -999,6 +992,25 @@ export function RunPage() {
           }
         />
       ) : null}
+
+      {/* History section — finished + cancelled runs, newest first.
+          M1.13 (2026-05-08): moved INSIDE the px-4 wrapper. Was
+          rendered outside → ended up edge-to-edge while every other
+          Card on the page was inset 16 px. Now visually flush with
+          PreviewSummaryCard / ActiveRunPanel. */}
+      <RunHistorySection
+        runs={runsQuery.data ?? []}
+        productName={productName}
+        i18n={i18n}
+        onOpen={(r) =>
+          setHistoryDetailFor({
+            runId: r.id,
+            runIndex: r.runIndex,
+            runDate: r.runDate,
+            status: r.status,
+          })
+        }
+      />
       </div>
 
       {/* "Plan run" sheet — preview + lock-warning + confirm. Inside
@@ -1020,7 +1032,7 @@ export function RunPage() {
               onClick={() => {
                 const sessionIds = previewQuery.data?.sessions.map((s) => s.id) ?? [];
                 if (sessionIds.length === 0) return;
-                create.mutate({ sessionIds });
+                create.mutate({ sessionIds, startImmediately: true });
               }}
             >
               {i18n.t('run.action.planRun')}
@@ -1149,24 +1161,6 @@ export function RunPage() {
           - Pending store rows: tap → deliver-confirm sheet
           - Delivered store rows: tap → recall-confirm sheet
           - Confirmed store rows: read-only, not tappable. */}
-
-      {/* History section — finished + cancelled runs, newest first. Tap a
-          row to drill into the full breakdown (items, prices, store splits,
-          totals). Lives at the bottom of the page so it doesn't compete
-          with the active flow at the top. */}
-      <RunHistorySection
-        runs={runsQuery.data ?? []}
-        productName={productName}
-        i18n={i18n}
-        onOpen={(r) =>
-          setHistoryDetailFor({
-            runId: r.id,
-            runIndex: r.runIndex,
-            runDate: r.runDate,
-            status: r.status,
-          })
-        }
-      />
 
       <RunHistoryDetailSheet
         target={historyDetailFor}
@@ -2783,7 +2777,23 @@ function ConfirmSheet({
   i18n: ReturnType<typeof useI18n>;
 }) {
   const reasonOk = !config?.requireReason || reason.trim().length > 0;
-  const showReasonField = !!(config && (config.requireReason || config.reasonOptional));
+  // M1.13 (2026-05-08): for soft-reason flows (cancel-run is the only
+  // current consumer), the input is hidden behind a small "Add note
+  // (optional)" toggle. Was: input always visible + autofocused →
+  // keyboard popped → user felt obligated to type "asdf" or similar
+  // noise. Now: 1-tap confirm by default, expand only if you actually
+  // have something to say. Hard `requireReason` flows still render
+  // the input unconditionally as before.
+  const [reasonExpanded, setReasonExpanded] = useState(false);
+  // Reset expanded state every time the sheet opens with a new config
+  // so a previously-expanded reason field doesn't leak across confirms.
+  useEffect(() => {
+    if (!config) setReasonExpanded(false);
+  }, [config]);
+  const isHardReason = !!config?.requireReason;
+  const isSoftReason = !!(config && !isHardReason && config.reasonOptional);
+  const showReasonField = isHardReason || (isSoftReason && reasonExpanded);
+  const showReasonToggle = isSoftReason && !reasonExpanded;
   // Inside Telegram the MainButton drives the primary action — the sheet
   // doesn't need its own confirm button. The Cancel button was also
   // dropped (2026-05-04, user feedback) because:
@@ -2796,7 +2806,9 @@ function ConfirmSheet({
   // the soft keyboard covers the backdrop, so without an explicit close
   // target they'd have to dismiss the keyboard first to tap outside.
   const inTelegram = !!getTg();
-  const showCancel = !!config?.requireReason;
+  // Show cancel button whenever a reason input is on screen (keyboard
+  // covers the backdrop dismiss target).
+  const showCancel = isHardReason || (isSoftReason && reasonExpanded);
   const showPrimary = !inTelegram;
   const hasFooter = showPrimary || showCancel;
   return (
@@ -2842,9 +2854,18 @@ function ConfirmSheet({
                 placeholder={
                   config.reasonPlaceholder ?? i18n.t('run.label.reasonPlaceholder')
                 }
-                autoFocus
+                autoFocus={isHardReason}
               />
             </label>
+          ) : null}
+          {showReasonToggle ? (
+            <button
+              type="button"
+              onClick={() => setReasonExpanded(true)}
+              className="self-start text-meta text-[var(--c-action)] active:opacity-70"
+            >
+              {i18n.t('run.label.addReasonOptional')}
+            </button>
           ) : null}
         </div>
       ) : null}
@@ -2910,15 +2931,50 @@ function RunHistorySection({
       runs.filter((r) => r.status === 'finished' || r.status === 'cancelled'),
     [runs],
   );
-  const history = useMemo(() => {
+  // M1.13 (2026-05-08): cap the inline list at 12 rows. Anything older
+  // is reachable via the "View all" link → Operations → Submission
+  // history (which already has full pagination, search, filters).
+  // Keeps RunPage's bottom from becoming an infinite scroll dump.
+  const HISTORY_INLINE_CAP = 12;
+
+  // Filter then group by yyyy-mm so the section reads as a calendar
+  // ("May 2026 · 8 runs · ₸4,250,000 / April 2026 · 12 runs · ...").
+  const groups = useMemo(() => {
     const filtered =
       filter === 'finished'
         ? allHistorical.filter((r) => r.status === 'finished')
         : filter === 'cancelled'
           ? allHistorical.filter((r) => r.status === 'cancelled')
           : allHistorical;
-    return filtered.slice(0, 30);
+    const capped = filtered.slice(0, HISTORY_INLINE_CAP);
+    const byMonth = new Map<string, RunListRow[]>();
+    for (const r of capped) {
+      // runDate is stored as "YYYY-MM-DD" — slice the year+month prefix.
+      const key = r.runDate.slice(0, 7);
+      const arr = byMonth.get(key) ?? [];
+      arr.push(r);
+      byMonth.set(key, arr);
+    }
+    return [...byMonth.entries()].map(([month, rows]) => {
+      const total = rows.reduce(
+        (sum, r) =>
+          sum + (r.status === 'finished' && r.actualTotal ? Number(r.actualTotal) : 0),
+        0,
+      );
+      return { month, rows, total };
+    });
   }, [allHistorical, filter]);
+
+  const totalShown = groups.reduce((s, g) => s + g.rows.length, 0);
+  const hasMore = (() => {
+    const filteredLen =
+      filter === 'finished'
+        ? allHistorical.filter((r) => r.status === 'finished').length
+        : filter === 'cancelled'
+          ? allHistorical.filter((r) => r.status === 'cancelled').length
+          : allHistorical.length;
+    return filteredLen > totalShown;
+  })();
 
   if (allHistorical.length === 0) return null;
 
@@ -2926,6 +2982,13 @@ function RunHistorySection({
   // see at a glance whether switching tabs would reveal anything.
   const finishedCount = allHistorical.filter((r) => r.status === 'finished').length;
   const cancelledCount = allHistorical.filter((r) => r.status === 'cancelled').length;
+
+  // Format yyyy-mm into the user's locale month-year ("May 2026" / "2026年5月").
+  const formatMonth = (key: string): string => {
+    const [y, m] = key.split('-');
+    const d = new Date(Number(y), Number(m) - 1, 1);
+    return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  };
 
   return (
     <Card>
@@ -2961,56 +3024,77 @@ function RunHistorySection({
           ))}
         </div>
       ) : null}
-      <ul className="flex flex-col" role="list">
-        {history.map((r) => {
-          const cancelled = r.status === 'cancelled';
-          return (
-            <li
-              key={r.id}
-              className="border-b border-[var(--c-divider)] last:border-b-0"
-            >
-              <button
-                type="button"
-                onClick={() => onOpen(r)}
-                className={
-                  'flex w-full items-center justify-between gap-2 px-4 py-3 text-left active:bg-[var(--c-surface-2)] ' +
-                  (cancelled ? 'opacity-60' : '')
-                }
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-h3 font-semibold tabular-nums">
-                      {r.runDate}
-                    </span>
-                    {r.runIndex > 0 ? (
-                      <span className="text-label text-[var(--c-fg-muted)]">
-                        #{r.runIndex + 1}
-                      </span>
-                    ) : null}
-                    {cancelled ? <span aria-hidden>❌</span> : null}
-                  </div>
-                  <div className="text-label text-[var(--c-fg-muted)]">
-                    {r.status === 'finished' && r.actualTotal
-                      ? i18n.t('run.history.totalLine', {
-                          total: formatMoney(r.actualTotal),
-                        })
-                      : cancelled
-                        ? // Cancel reason is in the RunCancelled event
-                          // payload but not projected to market_runs_v.
-                          // Tap-through opens the detail sheet which
-                          // hits run.get and can render the reason
-                          // there. Showing it inline would require a
-                          // schema bump we didn't take this round.
-                          i18n.t('run.history.cancelled')
-                        : ''}
-                  </div>
-                </div>
-                <Badge tone={cancelled ? 'muted' : 'success'}>{r.status}</Badge>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+      {groups.map((g) => (
+        <section key={g.month} className="border-t border-[var(--c-divider)] first:border-t-0">
+          {/* Month group header — sub-section label + per-month total
+              spend for finished runs. Helps the operator see "we spent
+              X this month" without leaving the page. */}
+          <div className="flex items-baseline justify-between gap-2 px-4 pt-3 pb-1">
+            <span className="text-label font-semibold uppercase tracking-wide text-[var(--c-fg-muted)]">
+              {formatMonth(g.month)}
+            </span>
+            {g.total > 0 ? (
+              <span className="text-meta tabular-nums text-[var(--c-fg-muted)]">
+                {formatMoney(String(g.total))}
+              </span>
+            ) : null}
+          </div>
+          <ul className="flex flex-col" role="list">
+            {g.rows.map((r) => {
+              const cancelled = r.status === 'cancelled';
+              return (
+                <li
+                  key={r.id}
+                  className="border-b border-[var(--c-divider)] last:border-b-0"
+                >
+                  <button
+                    type="button"
+                    onClick={() => onOpen(r)}
+                    className={
+                      'flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left active:bg-[var(--c-surface-2)] ' +
+                      (cancelled ? 'opacity-60' : '')
+                    }
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-body font-semibold tabular-nums">
+                          {r.runDate}
+                        </span>
+                        {r.runIndex > 0 ? (
+                          <span className="text-label text-[var(--c-fg-muted)]">
+                            #{r.runIndex + 1}
+                          </span>
+                        ) : null}
+                        {cancelled ? <span aria-hidden>❌</span> : null}
+                      </div>
+                      {r.status === 'finished' && r.actualTotal ? (
+                        <div className="text-label text-[var(--c-fg-muted)]">
+                          {i18n.t('run.history.totalLine', {
+                            total: formatMoney(r.actualTotal),
+                          })}
+                        </div>
+                      ) : cancelled ? (
+                        <div className="text-label text-[var(--c-fg-muted)]">
+                          {i18n.t('run.history.cancelled')}
+                        </div>
+                      ) : null}
+                    </div>
+                    <Badge tone={cancelled ? 'muted' : 'success'}>{r.status}</Badge>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ))}
+      {/* "View all" tail — only when truncated. Routes the user to
+          Operations → Submission history (the proper paginated view)
+          rather than dumping infinite scroll into RunPage. */}
+      {hasMore ? (
+        <div className="border-t border-[var(--c-divider)] px-4 py-2 text-center text-meta text-[var(--c-fg-muted)]">
+          {i18n.t('run.history.viewAllHint')}
+        </div>
+      ) : null}
     </Card>
   );
 }

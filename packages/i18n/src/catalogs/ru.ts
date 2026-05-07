@@ -568,6 +568,7 @@ export const ru = {
   'run.confirm.undoStartDelivery.body':
     'Возвращает закупку к этапу закупки. Возможно, только пока ни в один магазин не доставлено.',
   'run.label.reasonForChange': 'Причина изменения',
+  'run.label.addReasonOptional': '+ Добавить заметку (опционально)',
   'run.label.total': 'итого',
   'run.label.reasonPlaceholder': 'например: ошибся при чтении чека',
   'run.toast.runPlanned': 'Закупка запланирована',
@@ -592,6 +593,7 @@ export const ru = {
   'run.toast.storesNeedConfirm': 'Магазины ещё не подтвердили приёмку',
   'run.history.title': 'История',
   'run.history.subtitle': 'Прошлые закупки — нажмите для деталей',
+  'run.history.viewAllHint': 'Старые записи — в Админ → Операции → История',
   'run.history.totalLine': 'Итого {total} UZS',
   'run.history.cancelled': 'Отменена',
   'run.history.filter.finished': 'Завершённые',

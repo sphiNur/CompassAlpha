@@ -584,6 +584,7 @@ export const uz = {
   'run.confirm.undoStartDelivery.body':
     "Xaridni xarid bosqichiga qaytaradi. Faqat hech bir do'konga yetkazilmagan bo'lsa.",
   'run.label.reasonForChange': "O'zgarish sababi",
+  'run.label.addReasonOptional': "+ Izoh qo'shish (ixtiyoriy)",
   'run.label.total': 'jami',
   'run.label.reasonPlaceholder': "masalan: chekdagi narxni noto'g'ri o'qibman",
   'run.toast.runPlanned': "Xarid rejalashtirildi",
@@ -608,6 +609,7 @@ export const uz = {
   'run.toast.storesNeedConfirm': "Do'konlar hali tasdiqlamadi",
   'run.history.title': 'Tarix',
   'run.history.subtitle': "O'tgan xaridlar — batafsil ko'rish uchun bosing",
+  'run.history.viewAllHint': "Eskiroq yozuvlar — Admin → Operatsiyalar → Tarix",
   'run.history.totalLine': 'Jami {total} UZS',
   'run.history.cancelled': 'Bekor qilingan',
   'run.history.filter.finished': 'Yakunlangan',

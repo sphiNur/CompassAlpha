@@ -21,7 +21,7 @@ import { useErrToast } from '../lib/errToast';
 import { matchesNameLike, normalizeQuery } from '../lib/searchMatch';
 import { useI18n, useProductName } from '../hooks/useI18n';
 import { formatQty, formatMoney } from '../lib/format';
-import { StoreSwitcher, useStoreContext } from '../components/StoreSwitcher';
+import { StoreSwitcher, useStoreContext, useStoreSwitcherInteractive } from '../components/StoreSwitcher';
 
 export function OrderPage() {
   const i18n = useI18n();
@@ -36,6 +36,7 @@ export function OrderPage() {
   // refuse and prompt the user to pick (added 2026-05-05).
   // Language picker moved to Telegram's gear button (Shell wires it).
   const storeCtx = useStoreContext();
+  const storeSwitcherInteractive = useStoreSwitcherInteractive();
   const currentStoreId = storeCtx.kind === 'specific' ? storeCtx.storeId : null;
   const toast = useToast();
   const errToast = useErrToast();
@@ -610,23 +611,28 @@ export function OrderPage() {
 
   return (
     <div className="flex flex-col">
-      {/* M1.12: PageHeader removed entirely. Telegram's native chrome
-          (bot name + BottomNav active-tab highlight) tells the user
-          they're on Order. The sticky strip below holds the per-page
-          context [Store · selected · date] in one row, then search,
-          then filter chips — all in one cohesive sticky surface. */}
+      {/* M1.12 / M1.13: PageHeader removed; the sticky strip below
+          carries page chrome. M1.13 (2026-05-08): the [store · date ·
+          selected] row only renders for users who actually have a
+          choice to make (multi-store or admin). Single-store users
+          got nothing useful from a static "🏪 Smoke Store" pill +
+          today's date + a count that already shows in the
+          MainButton — so we hide the row entirely and let SearchInput
+          + ChipBar be the entire chrome. */}
       <div className="sticky top-0 z-[1] flex flex-col gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-2">
-        <div className="flex min-h-7 items-center gap-2">
-          <StoreSwitcher />
-          <span className="ml-auto truncate text-meta text-[var(--c-fg-muted)]">
-            {dateLabel}
-          </span>
-          {selectedCount > 0 ? (
-            <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-action)] px-2 py-0.5 text-meta font-semibold tabular-nums text-[var(--c-action-fg)]">
-              {selectedCount}
+        {storeSwitcherInteractive ? (
+          <div className="flex min-h-7 items-center gap-2">
+            <StoreSwitcher />
+            <span className="ml-auto truncate text-meta text-[var(--c-fg-muted)]">
+              {dateLabel}
             </span>
-          ) : null}
-        </div>
+            {selectedCount > 0 ? (
+              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-action)] px-2 py-0.5 text-meta font-semibold tabular-nums text-[var(--c-action-fg)]">
+                {selectedCount}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
         <SearchInput
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}

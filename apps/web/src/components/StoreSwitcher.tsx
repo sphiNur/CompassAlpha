@@ -42,6 +42,23 @@ import { useAuthStore, ALL_STORES } from '../stores/authStore';
 import type { StoreContext } from '../stores/authStore';
 import { useI18n } from '../hooks/useI18n';
 
+/**
+ * Returns true when the StoreSwitcher will render an interactive pill
+ * (i.e., the user actually has a choice to make). Single-store
+ * non-admins get a static label that consumes 32+ px of chrome for
+ * zero interaction value — pages should hide the entire sticky
+ * context strip in that case (M1.13, 2026-05-08).
+ */
+export function useStoreSwitcherInteractive(): boolean {
+  const session = useAuthStore((s) => s.session);
+  const stores = session?.stores ?? [];
+  const isAdmin = session?.permissions.includes('users.manage') ?? false;
+  if (stores.length === 0 && !isAdmin) return false;
+  // Single store, non-admin: switcher renders static. Hide.
+  if (!isAdmin && stores.length === 1) return false;
+  return true;
+}
+
 export function StoreSwitcher() {
   const i18n = useI18n();
   const session = useAuthStore((s) => s.session);

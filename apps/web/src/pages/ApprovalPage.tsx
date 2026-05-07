@@ -32,7 +32,7 @@ import { useI18n, useProductName } from '../hooks/useI18n';
 import { haptic } from '../hooks/useTelegram';
 import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
-import { StoreSwitcher, useStoreContext } from '../components/StoreSwitcher';
+import { StoreSwitcher, useStoreContext, useStoreSwitcherInteractive } from '../components/StoreSwitcher';
 
 type ApprovalTab = 'pending' | 'approved' | 'rejected';
 
@@ -51,6 +51,7 @@ export function ApprovalPage() {
   //   'all'      → no filter (server still scopes to actor's allowed set)
   //   'none'     → user has no stores; refuse to query
   const storeCtx = useStoreContext();
+  const storeSwitcherInteractive = useStoreSwitcherInteractive();
 
   const myStores = session?.stores ?? [];
 
@@ -138,9 +139,11 @@ export function ApprovalPage() {
           sticky surface as the Tabs so the user has both store-scope
           and approval-state visible in one band. */}
       <div className="sticky top-0 z-[1] flex flex-col gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] py-2">
-        <div className="flex min-h-7 items-center gap-2 px-4">
-          <StoreSwitcher />
-        </div>
+        {storeSwitcherInteractive ? (
+          <div className="flex min-h-7 items-center gap-2 px-4">
+            <StoreSwitcher />
+          </div>
+        ) : null}
         {/* M1.9-extra (P6, 2026-05-07): real <Tabs> with roving
             tabindex + ArrowLeft/ArrowRight/Home/End nav. Was
             `ChipBar`-as-tabs with role=tablist/tab on the buttons

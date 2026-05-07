@@ -455,6 +455,26 @@ export const runRouter = router({
             permissions: ctx.session!.permissions,
           },
         });
+        // M1.13 (2026-05-08): atomic plan + start. The FE collapsed
+        // the "+ New run" / "Start purchase" double-tap. Fold the
+        // PlanRun events forward, then ask the aggregate to emit
+        // StartPurchase against that fresh state. Both event sets
+        // commit in the same DB transaction below — projection lag
+        // never sees a half-state. Single-step callers (older clients
+        // and tests) still get the original two-event flow.
+        if (input.startImmediately) {
+          let folded = state;
+          for (const e of events) folded = applyRun(folded, e);
+          const startEvents = decideRun(folded, {
+            type: 'StartPurchase',
+            actor: {
+              userId: ctx.session!.userId,
+              memberId: ctx.session!.memberId,
+              permissions: ctx.session!.permissions,
+            },
+          });
+          events = events.concat(startEvents);
+        }
       } catch (err) {
         if (err instanceof DomainError) rethrowDomainError(err);
         throw err;

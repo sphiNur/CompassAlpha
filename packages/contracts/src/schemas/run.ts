@@ -24,6 +24,16 @@ export const StoreSplitSchema = z.object({
 export const RunCreateInputSchema = z.object({
   date: DateStringSchema.optional(), // defaults to today
   sessionIds: z.array(UuidSchema).min(1),
+  /**
+   * M1.13 (2026-05-08): atomically transition the new run from
+   * `planned` → `purchasing` in the same call. The FE collapsed the
+   * "+ New run" + "Start purchase" double-tap into a single CTA.
+   * Server emits PlanRun + StartPurchase events in the same
+   * transaction so projection lag never exposes a partial state.
+   * Defaults to false to preserve the original two-step API for
+   * existing tests / external callers.
+   */
+  startImmediately: z.boolean().optional(),
 });
 
 export const RunPreviewInputSchema = z.object({
