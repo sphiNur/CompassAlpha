@@ -405,6 +405,7 @@ export const en = {
   'approval.tab.approved': 'Approved',
   'approval.tab.rejected': 'Rejected',
   'approval.viewItems': 'View items',
+  'approval.tabsAriaLabel': 'Approval status filter',
   'approval.submittedBy': 'submitted by {name}',
   'approval.contributorsCount': '{n, plural, =1 {1 contributor} other {{n} contributors}}',
   'approval.hideItems': 'Hide items',

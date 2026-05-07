@@ -16,8 +16,6 @@ import {
   CardHeader,
   CardMeta,
   CardTitle,
-  Chip,
-  ChipBar,
   DataState,
   EmptyState,
   Input,
@@ -25,6 +23,8 @@ import {
   QtyControl,
   Sheet,
   Spinner,
+  Tab,
+  Tabs,
   useToast,
 } from '@compass/ui';
 import { trpc } from '../lib/trpc';
@@ -147,17 +147,19 @@ export function ApprovalPage() {
       />
 
       <div className="sticky top-0 z-[1] border-b border-[var(--c-divider)] bg-[var(--c-bg)] py-2">
-        <ChipBar>
-          <Chip selected={tab === 'pending'} onClick={() => setTab('pending')}>
-            {i18n.t('approval.tab.pending')}
-          </Chip>
-          <Chip selected={tab === 'approved'} onClick={() => setTab('approved')}>
-            {i18n.t('approval.tab.approved')}
-          </Chip>
-          <Chip selected={tab === 'rejected'} onClick={() => setTab('rejected')}>
-            {i18n.t('approval.tab.rejected')}
-          </Chip>
-        </ChipBar>
+        {/* M1.9-extra (P6, 2026-05-07): real <Tabs> with roving
+            tabindex + ArrowLeft/ArrowRight/Home/End nav. Was
+            `ChipBar`-as-tabs with role=tablist/tab on the buttons
+            but no keyboard-cycle behaviour. */}
+        <Tabs
+          value={tab}
+          onChange={(v) => setTab(v as ApprovalTab)}
+          ariaLabel={i18n.t('approval.tabsAriaLabel')}
+        >
+          <Tab value="pending">{i18n.t('approval.tab.pending')}</Tab>
+          <Tab value="approved">{i18n.t('approval.tab.approved')}</Tab>
+          <Tab value="rejected">{i18n.t('approval.tab.rejected')}</Tab>
+        </Tabs>
       </div>
 
       {myStores.length === 0 &&

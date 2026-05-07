@@ -323,6 +323,7 @@ export const zh = {
   'approval.tab.approved': '已通过',
   'approval.tab.rejected': '已拒绝',
   'approval.viewItems': '查看明细',
+  'approval.tabsAriaLabel': '审核状态筛选',
   'approval.submittedBy': '由 {name} 提交',
   'approval.contributorsCount': '{n} 位贡献者',
   'approval.hideItems': '收起',

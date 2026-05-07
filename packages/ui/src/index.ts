@@ -31,6 +31,7 @@ export { DataState } from './components/DataState';
 export { Skeleton } from './components/Skeleton';
 export { Stepper } from './components/Stepper';
 export { ChipBar, Chip } from './components/Chip';
+export { Tabs, Tab } from './components/Tabs';
 export { Avatar } from './components/Avatar';
 export { NumberInput } from './components/NumberInput';
 export type { NumberInputProps } from './components/NumberInput';

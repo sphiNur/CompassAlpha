@@ -356,6 +356,7 @@ export const ru = {
   'approval.tab.approved': 'Одобренные',
   'approval.tab.rejected': 'Отклонённые',
   'approval.viewItems': 'Показать позиции',
+  'approval.tabsAriaLabel': 'Фильтр по статусу',
   'approval.submittedBy': 'отправил(а) {name}',
   'approval.contributorsCount': '{n, plural, one {1 участник} few {{n} участника} other {{n} участников}}',
   'approval.hideItems': 'Скрыть',

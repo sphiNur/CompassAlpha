@@ -367,6 +367,7 @@ export const uz = {
   'approval.tab.approved': 'Tasdiqlangan',
   'approval.tab.rejected': 'Rad etilgan',
   'approval.viewItems': "Mahsulotlarni ko'rish",
+  'approval.tabsAriaLabel': "Tasdiqlash holati bo'yicha filtr",
   'approval.submittedBy': "{name} tomonidan yuborilgan",
   'approval.contributorsCount': "{n, plural, =1 {1 ishtirokchi} other {{n} ta ishtirokchi}}",
   'approval.hideItems': 'Yashirish',
