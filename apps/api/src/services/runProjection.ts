@@ -57,6 +57,9 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
             supplierId: e.payload.supplierId,
             unitPrice: e.payload.unitPrice,
             receiptPhotoUrl: e.payload.receiptPhotoUrl,
+            // M1.14: legacy events without paymentMethod project as
+            // 'cash' — same default the domain applyRun reducer uses.
+            paymentMethod: e.payload.paymentMethod ?? 'cash',
             updatedAt: new Date(),
           })
           .where(and(eq(s.runItemsV.runId, e.streamId), eq(s.runItemsV.skuId, e.payload.skuId)));
@@ -150,6 +153,16 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
           .set({
             status: 'finished',
             actualTotal: e.payload.totalActual,
+            // M1.14: cash / transfer breakdown. For events emitted
+            // before this field existed both values are absent — leave
+            // the columns NULL so the FE can show "legacy total,
+            // breakdown unknown" rather than a misleading 0/0 split.
+            ...(e.payload.totalCash !== undefined
+              ? { actualCashTotal: e.payload.totalCash }
+              : {}),
+            ...(e.payload.totalTransfer !== undefined
+              ? { actualTransferTotal: e.payload.totalTransfer }
+              : {}),
             finishedAt: e.occurredAt,
             lastSeq: e.seq,
             updatedAt: new Date(),
@@ -173,6 +186,13 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
             supplierId: e.payload.supplierId,
             unitPrice: e.payload.unitPrice,
             receiptPhotoUrl: e.payload.receiptPhotoUrl,
+            // M1.14: legacy revise events without paymentMethod leave
+            // the existing column value untouched (sql undefined →
+            // drizzle excludes from SET). Fresh events explicitly write
+            // the new method.
+            ...(e.payload.paymentMethod !== undefined
+              ? { paymentMethod: e.payload.paymentMethod }
+              : {}),
             updatedAt: new Date(),
           })
           .where(and(eq(s.runItemsV.runId, e.streamId), eq(s.runItemsV.skuId, e.payload.skuId)));
@@ -252,6 +272,10 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
             supplierId: null,
             unitPrice: null,
             receiptPhotoUrl: null,
+            // M1.14: reset payment_method to the column default 'cash'.
+            // (NOT NULL constraint forbids leaving it set to a stale
+            // value when the row no longer represents a purchase.)
+            paymentMethod: 'cash',
             updatedAt: new Date(),
           })
           .where(

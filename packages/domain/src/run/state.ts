@@ -2,6 +2,17 @@ import type { RunEvent } from './events';
 
 export type RunStatus = 'absent' | 'planned' | 'purchasing' | 'delivering' | 'finished' | 'cancelled';
 
+/**
+ * Payment method for a recorded purchase. M1.14 (2026-05-08).
+ * - `cash`: handed cash at the market stall / shop counter
+ * - `transfer`: bank wire / online payment to supplier
+ * A single run can mix both methods across different items (and even
+ * the same SKU revised between methods). FinishRun aggregates per-
+ * method totals so the chain owner can reconcile petty cash vs. bank
+ * statements separately.
+ */
+export type PaymentMethod = 'cash' | 'transfer';
+
 export interface RunItemState {
   skuId: string;
   plannedQty: string;
@@ -12,6 +23,10 @@ export interface RunItemState {
   unavailableNote: string | null;
   receiptPhotoUrl: string | null;
   storeSplits: Array<{ storeId: string; qty: string }>;
+  /** M1.14: payment method recorded at purchase. Null while the item
+   *  is still pending or unavailable. Defaults to `cash` when applying
+   *  pre-M1.14 events that didn't carry the field. */
+  paymentMethod: PaymentMethod | null;
 }
 
 export interface RunStoreDeliveryState {
@@ -71,6 +86,7 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
           unavailableNote: null,
           receiptPhotoUrl: null,
           storeSplits: [],
+          paymentMethod: null,
         });
       }
       return {
@@ -99,6 +115,10 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
         unitPrice: event.payload.unitPrice,
         receiptPhotoUrl: event.payload.receiptPhotoUrl,
         storeSplits: event.payload.storeSplits,
+        // M1.14: legacy events default to cash (the assumption before
+        // payment method was tracked). Forward events always carry a
+        // value, so the ?? is a one-time projection-time backfill.
+        paymentMethod: event.payload.paymentMethod ?? 'cash',
       });
       return { ...state, seq: event.seq, items };
     }
@@ -187,6 +207,9 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
         unitPrice: event.payload.unitPrice,
         receiptPhotoUrl: event.payload.receiptPhotoUrl,
         storeSplits: event.payload.storeSplits,
+        // M1.14: keep prior method when the legacy event omits it.
+        paymentMethod:
+          event.payload.paymentMethod ?? existing.paymentMethod ?? 'cash',
       });
       return { ...state, seq: event.seq, items };
     }
@@ -213,6 +236,9 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
         unitPrice: null,
         receiptPhotoUrl: null,
         storeSplits: [],
+        // M1.14: clear payment method on undo so re-purchase records a
+        // fresh choice rather than inheriting a stale one.
+        paymentMethod: null,
       });
       return { ...state, seq: event.seq, items };
     }

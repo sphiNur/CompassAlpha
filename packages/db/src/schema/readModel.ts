@@ -123,6 +123,14 @@ export const marketRunsV = readModelSchema.table(
     status: varchar('status', { length: 24 }).notNull(), // planned|purchasing|delivering|finished|cancelled
     plannedTotal: decimal('planned_total', { precision: 14, scale: 2 }),
     actualTotal: decimal('actual_total', { precision: 14, scale: 2 }),
+    /**
+     * M1.14 (2026-05-08): cash / transfer breakdown of `actualTotal`.
+     * Both nullable (NULL until FinishRun fires); writers backfill
+     * legacy rows without payment-method tracking as `actualTotal` in
+     * the cash bucket since transfers weren't recorded pre-M1.14.
+     */
+    actualCashTotal: decimal('actual_cash_total', { precision: 14, scale: 2 }),
+    actualTransferTotal: decimal('actual_transfer_total', { precision: 14, scale: 2 }),
     purchaserMemberId: uuid('purchaser_member_id'),
     sessionIdsJson: jsonb('session_ids_json').notNull().default(sql`'[]'::jsonb`),
     startedAt: timestamp('started_at', { withTimezone: true, mode: 'date' }),
@@ -156,6 +164,13 @@ export const runItemsV = readModelSchema.table(
     supplierId: uuid('supplier_id').references(() => suppliers.id, { onDelete: 'set null' }),
     unitPrice: decimal('unit_price', { precision: 14, scale: 2 }),
     status: varchar('status', { length: 24 }).notNull().default('pending'), // pending|purchased|unavailable
+    /**
+     * M1.14 (2026-05-08): per-item payment method ('cash' | 'transfer').
+     * Defaults to 'cash' so the migration can backfill existing rows
+     * without breaking NOT NULL — historically all transactions were
+     * effectively cash (transfers weren't tracked at all).
+     */
+    paymentMethod: varchar('payment_method', { length: 16 }).notNull().default('cash'),
     unavailableNote: text('unavailable_note'),
     receiptPhotoUrl: text('receipt_photo_url'),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' })

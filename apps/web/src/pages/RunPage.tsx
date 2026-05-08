@@ -69,6 +69,9 @@ interface PurchaseDraft {
   splits: Map<string, string>; // storeId -> qty
   receiptPhotoUrl: string | null;
   reason: string;
+  /** M1.14: cash | transfer. Defaults to 'cash' for new purchases (the
+   *  common case at the market). Edit pre-fills from the existing item. */
+  paymentMethod: 'cash' | 'transfer';
 }
 
 /** A pending reason-prompt confirm. The keys here are the ONLY transitions
@@ -369,12 +372,20 @@ export function RunPage() {
     const skus = items.filter((i) => i.status === 'purchased').length;
     const stores = new Set(splits.map((sp) => sp.storeId)).size;
     let total = 0;
+    let totalCash = 0;
+    let totalTransfer = 0;
     for (const it of items) {
       if (it.status === 'purchased' && it.unitPrice && it.purchasedQty) {
-        total += Number(it.unitPrice) * Number(it.purchasedQty);
+        const line = Number(it.unitPrice) * Number(it.purchasedQty);
+        total += line;
+        // M1.14: split by payment method for the in-progress summary so
+        // the FinishRun confirm dialog can preview the breakdown that
+        // the server-side aggregate is about to compute.
+        if (it.paymentMethod === 'transfer') totalTransfer += line;
+        else totalCash += line;
       }
     }
-    return { skus, stores, total };
+    return { skus, stores, total, totalCash, totalTransfer };
   }, [runDetailQuery.data]);
 
   /**
@@ -395,6 +406,7 @@ export function RunPage() {
         storeSplits: [...d.splits.entries()]
           .filter(([, q]) => Number(q) > 0)
           .map(([storeId, qty]) => ({ storeId, qty })),
+        paymentMethod: d.paymentMethod,
       };
       if (d.isEdit) {
         revisePurchase.mutate({ ...payload, reason: d.reason });
@@ -625,7 +637,18 @@ export function RunPage() {
             isPending: startDelivery.isPending,
             run: () => startDelivery.mutate({ runId }, { onSuccess: () => setConfirmAction(null) }),
           };
-        case 'finish':
+        case 'finish': {
+          // M1.14: include cash / transfer breakdown when the run mixed
+          // both methods. Single-method runs see only the lump sum.
+          const showBreakdown =
+            finishSummary.totalCash > 0 && finishSummary.totalTransfer > 0;
+          const breakdownLine = showBreakdown
+            ? '\n' +
+              i18n.t('run.confirm.finish.paymentBreakdown', {
+                cash: finishSummary.totalCash.toFixed(0),
+                transfer: finishSummary.totalTransfer.toFixed(0),
+              })
+            : '';
           return {
             title: i18n.t('run.confirm.finish.title'),
             body:
@@ -635,13 +658,15 @@ export function RunPage() {
                 items: finishSummary.skus,
                 stores: finishSummary.stores,
                 total: finishSummary.total.toFixed(0),
-              }),
+              }) +
+              breakdownLine,
             confirmLabel: i18n.t('run.action.finish'),
             danger: false,
             requireReason: false,
             isPending: finish.isPending,
             run: () => finish.mutate({ runId }, { onSuccess: () => setConfirmAction(null) }),
           };
+        }
         case 'cancel':
           // M1.7-A (2026-05-06): soft-encourage reason but don't
           // gate. The user pointed out that hard-requiring a reason
@@ -914,10 +939,13 @@ export function RunPage() {
           storeById={storeById}
           productName={productName}
           i18n={i18n}
-          onSavePurchaseInline={({ skuId, actualQty, unitPrice, storeSplits }) => {
+          onSavePurchaseInline={({ skuId, actualQty, unitPrice, storeSplits, paymentMethod }) => {
             // Direct in-page save — no sheet involved. Triggered when
             // the user blurs the price input on a row whose qty
             // matches planned. Splits come from per-store demand.
+            // M1.14: paymentMethod comes from the in-row toggle
+            // (defaults to 'cash'; user can flip to 'transfer' before
+            // saving for the relatively rare transfer items).
             purchaseItem.mutate({
               runId: activeRun.id,
               skuId,
@@ -926,6 +954,7 @@ export function RunPage() {
               actualQty,
               receiptPhotoUrl: null,
               storeSplits,
+              paymentMethod,
             });
           }}
           onMarkNa={(skuId) =>
@@ -946,6 +975,9 @@ export function RunPage() {
               splits,
               receiptPhotoUrl: item.receiptPhotoUrl ?? null,
               reason: '',
+              // M1.14: prefill from existing record so editing doesn't
+              // accidentally flip the method back to cash.
+              paymentMethod: (item.paymentMethod as 'cash' | 'transfer') ?? 'cash',
             });
           }}
           onUnmark={(skuId, skuName) =>
@@ -982,6 +1014,8 @@ export function RunPage() {
               splits,
               receiptPhotoUrl: null,
               reason: '',
+              // M1.14: cash default; user flips to transfer in the sheet.
+              paymentMethod: 'cash',
             });
           }}
           onDeliverStore={(storeId, storeName) =>
@@ -1093,6 +1127,7 @@ export function RunPage() {
             storeSplits: [...d.splits.entries()]
               .filter(([, q]) => Number(q) > 0)
               .map(([storeId, qty]) => ({ storeId, qty })),
+            paymentMethod: d.paymentMethod,
           };
           if (d.isEdit) {
             revisePurchase.mutate({ ...payload, reason: d.reason });
@@ -1186,6 +1221,10 @@ interface ActiveRun {
     unitPrice: string | null;
     supplierId?: string | null;
     receiptPhotoUrl?: string | null;
+    /** M1.14: 'cash' | 'transfer'. Optional because legacy data
+     *  pre-migration may be missing the column on rare occasions; the
+     *  inline row defaults to 'cash' when undefined. */
+    paymentMethod?: string | null;
   }>;
   splits: Array<{
     runId: string;
@@ -1260,6 +1299,7 @@ function ActiveRunPanel({
     actualQty: string;
     unitPrice: string;
     storeSplits: Array<{ storeId: string; qty: string }>;
+    paymentMethod: 'cash' | 'transfer';
   }) => void;
   onMarkNa: (skuId: string) => void;
   onEditPurchased: (item: ActiveRun['items'][number]) => void;
@@ -2269,6 +2309,7 @@ function PurchaseRow({
     actualQty: string;
     unitPrice: string;
     storeSplits: Array<{ storeId: string; qty: string }>;
+    paymentMethod: 'cash' | 'transfer';
   }) => void;
   onMarkNa: (skuId: string) => void;
   onEdit: (item: ActiveRun['items'][number]) => void;
@@ -2284,6 +2325,12 @@ function PurchaseRow({
     formatQty(item.purchasedQty ?? item.plannedQty),
   );
   const [price, setPrice] = useState<string>(item.unitPrice ?? lastPrice ?? '');
+  // M1.14: per-item payment method. Default cash (the common case at
+  // the market). User taps the chip to flip cash ↔ transfer before
+  // pressing ✓. Edit-existing uses the persisted value.
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer'>(
+    (item.paymentMethod as 'cash' | 'transfer') ?? 'cash',
+  );
   const savedRef = useRef(false);
 
   // When server data updates (e.g. ws push, edit landed), reconcile
@@ -2375,6 +2422,7 @@ function PurchaseRow({
       actualQty,
       unitPrice,
       storeSplits: splits,
+      paymentMethod,
     });
   };
 
@@ -2424,7 +2472,7 @@ function PurchaseRow({
             Total hint is inline (right of price, before ✓) so the user
             sees their math without an extra row. */}
         <div className="mt-1.5 grid items-center gap-1.5"
-             style={{ gridTemplateColumns: '4.5rem auto minmax(0,1fr) auto minmax(0,auto) auto' }}>
+             style={{ gridTemplateColumns: '4.5rem auto minmax(0,1fr) auto minmax(0,auto) auto auto' }}>
           <NumberInput
             step={step}
             value={qty}
@@ -2449,6 +2497,34 @@ function PurchaseRow({
               </>
             ) : null}
           </span>
+          {/* M1.14: payment-method toggle. Default 💵 cash; tap to
+              flip to 🏦 transfer. Sits before ✓ save so the muscle
+              memory is "set method → confirm". Tooltip on long-press
+              spells out the active label for accessibility. */}
+          <button
+            type="button"
+            onClick={() =>
+              setPaymentMethod((m) => (m === 'cash' ? 'transfer' : 'cash'))
+            }
+            aria-label={
+              paymentMethod === 'cash'
+                ? i18n.t('run.label.paymentCash')
+                : i18n.t('run.label.paymentTransfer')
+            }
+            title={
+              paymentMethod === 'cash'
+                ? i18n.t('run.label.paymentCash')
+                : i18n.t('run.label.paymentTransfer')
+            }
+            className={
+              'flex h-8 min-w-8 items-center justify-center rounded-[var(--r-pill)] px-2 text-body active:opacity-70 ' +
+              (paymentMethod === 'transfer'
+                ? 'bg-[var(--c-action)]/15 text-[var(--c-action)] ring-1 ring-[var(--c-action)]'
+                : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
+            }
+          >
+            {paymentMethod === 'cash' ? '💵' : '🏦'}
+          </button>
           <button
             type="button"
             onClick={handleSave}
@@ -2476,10 +2552,24 @@ function PurchaseRow({
       Number(item.purchasedQty) > 0 && Number(item.unitPrice) > 0
         ? formatMoney(Number(item.purchasedQty) * Number(item.unitPrice))
         : null;
+    // M1.14: show 🏦 next to transfer purchases so the purchaser can
+    // scan the run at a glance and see which items hit the bank wire.
+    // Cash is the implicit default — no icon needed (avoids visual
+    // noise on the 90%+ rows that are cash).
+    const isTransfer = item.paymentMethod === 'transfer';
     return (
       <li className="flex items-center gap-2 border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0">
         <span aria-hidden className="shrink-0 text-body text-[var(--c-success)]">✓</span>
         <span className="shrink-0 truncate text-body font-semibold">{skuName}</span>
+        {isTransfer ? (
+          <span
+            aria-label={i18n.t('run.label.paymentTransfer')}
+            title={i18n.t('run.label.paymentTransfer')}
+            className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-action)]/15 px-1.5 py-0.5 text-meta text-[var(--c-action)] ring-1 ring-[var(--c-action)]"
+          >
+            🏦
+          </span>
+        ) : null}
         <span className="min-w-0 flex-1 truncate text-label text-[var(--c-fg-muted)]">
           {formatQty(item.purchasedQty)} {unit} × {formatMoney(item.unitPrice)}
           {total ? (
@@ -2662,6 +2752,37 @@ function PurchaseSheet({
                 onChange={(e) => onChange({ ...draft, unitPrice: e.target.value })}
               />
             </label>
+          </div>
+          {/* M1.14: payment method picker. Two-segment chip group so
+              both options are always visible — radio behaviour without
+              the OS-styled radio buttons. */}
+          <div>
+            <div className="mb-1 text-label font-semibold text-[var(--c-fg-muted)]">
+              {i18n.t('run.label.paymentMethod')}
+            </div>
+            <div className="flex gap-2">
+              {(['cash', 'transfer'] as const).map((m) => {
+                const selected = draft.paymentMethod === m;
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => onChange({ ...draft, paymentMethod: m })}
+                    className={
+                      'press flex-1 rounded-[var(--r-pill)] px-3 py-2 text-body font-medium ring-hairline ' +
+                      (selected
+                        ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
+                        : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]')
+                    }
+                  >
+                    {m === 'cash' ? '💵 ' : '🏦 '}
+                    {m === 'cash'
+                      ? i18n.t('run.label.paymentCash')
+                      : i18n.t('run.label.paymentTransfer')}
+                  </button>
+                );
+              })}
+            </div>
           </div>
           {suppliers.length > 0 ? (
             <label className="block text-label font-semibold text-[var(--c-fg-muted)]">
@@ -2892,6 +3013,11 @@ interface RunListRow {
   runIndex: number;
   status: string;
   actualTotal: string | null;
+  /** M1.14: cash + transfer breakdown of actualTotal. Both NULL on
+   *  legacy finished runs that pre-date the field; FE falls back to
+   *  showing only the lump-sum total in that case. */
+  actualCashTotal?: string | null;
+  actualTransferTotal?: string | null;
   finishedAt: Date | string | null;
 }
 
@@ -3072,6 +3198,21 @@ function RunHistorySection({
                           {i18n.t('run.history.totalLine', {
                             total: formatMoney(r.actualTotal),
                           })}
+                          {/* M1.14: when this run mixed both methods,
+                              surface a tiny "💵 X · 🏦 Y" breakdown so
+                              the operator can see split at a glance.
+                              Hidden when one bucket is zero (single-
+                              method run) or both columns are NULL
+                              (legacy run pre-M1.14). */}
+                          {r.actualCashTotal != null &&
+                          r.actualTransferTotal != null &&
+                          Number(r.actualCashTotal) > 0 &&
+                          Number(r.actualTransferTotal) > 0 ? (
+                            <span className="ml-1 text-meta">
+                              {' · '}💵 {formatMoney(r.actualCashTotal)}
+                              {' · '}🏦 {formatMoney(r.actualTransferTotal)}
+                            </span>
+                          ) : null}
                         </div>
                       ) : cancelled ? (
                         <div className="text-label text-[var(--c-fg-muted)]">
@@ -3138,11 +3279,17 @@ function RunHistoryDetailSheet({
     const items = detail.data.items;
     const splits = detail.data.splits;
     let total = 0;
+    let totalCash = 0;
+    let totalTransfer = 0;
     const purchasedCount = items.filter((i) => i.status === 'purchased').length;
     const unavailableCount = items.filter((i) => i.status === 'unavailable').length;
     for (const it of items) {
       if (it.status === 'purchased' && it.unitPrice && it.purchasedQty) {
-        total += Number(it.unitPrice) * Number(it.purchasedQty);
+        const line = Number(it.unitPrice) * Number(it.purchasedQty);
+        total += line;
+        // M1.14: payment-method breakdown of historical run totals.
+        if (it.paymentMethod === 'transfer') totalTransfer += line;
+        else totalCash += line;
       }
     }
     // Per-store totals — sums each store's share at each purchase price.
@@ -3160,7 +3307,16 @@ function RunHistoryDetailSheet({
       cur.itemCount += 1;
       perStore.set(sp.storeId, cur);
     }
-    return { items, splits, total, purchasedCount, unavailableCount, perStore };
+    return {
+      items,
+      splits,
+      total,
+      totalCash,
+      totalTransfer,
+      purchasedCount,
+      unavailableCount,
+      perStore,
+    };
   }, [detail.data]);
 
   return (
@@ -3185,23 +3341,44 @@ function RunHistoryDetailSheet({
       ) : (
         <div className="flex flex-col gap-4 py-3">
           {/* Top summary */}
-          <div className="flex items-baseline justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3">
-            <div>
-              <div className="text-meta uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
-                {i18n.t('run.history.totalLabel')}
+          <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3">
+            <div className="flex items-baseline justify-between gap-3">
+              <div>
+                <div className="text-meta uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+                  {i18n.t('run.history.totalLabel')}
+                </div>
+                <div className="font-mono text-h1 font-semibold tabular-nums">
+                  {formatMoney(breakdown.total)} UZS
+                </div>
               </div>
-              <div className="font-mono text-h1 font-semibold tabular-nums">
-                {formatMoney(breakdown.total)} UZS
+              <div className="text-right text-label text-[var(--c-fg-muted)]">
+                {i18n.t('run.history.itemSummary', {
+                  bought: breakdown.purchasedCount,
+                  na: breakdown.unavailableCount,
+                })}
+                <br />
+                {i18n.t('run.history.storeSummary', { stores: breakdown.perStore.size })}
               </div>
             </div>
-            <div className="text-right text-label text-[var(--c-fg-muted)]">
-              {i18n.t('run.history.itemSummary', {
-                bought: breakdown.purchasedCount,
-                na: breakdown.unavailableCount,
-              })}
-              <br />
-              {i18n.t('run.history.storeSummary', { stores: breakdown.perStore.size })}
-            </div>
+            {/* M1.14: payment-method breakdown row. Only renders when
+                the run actually mixed both methods — pure-cash and
+                pure-transfer runs are unambiguous from the lump sum. */}
+            {breakdown.totalCash > 0 && breakdown.totalTransfer > 0 ? (
+              <div className="flex items-baseline gap-3 border-t border-[var(--c-divider)] pt-2 text-label">
+                <span className="text-[var(--c-fg-muted)]">
+                  💵 {i18n.t('run.label.paymentCash')}
+                </span>
+                <span className="font-mono tabular-nums text-[var(--c-fg)]">
+                  {formatMoney(breakdown.totalCash)}
+                </span>
+                <span className="ml-auto text-[var(--c-fg-muted)]">
+                  🏦 {i18n.t('run.label.paymentTransfer')}
+                </span>
+                <span className="font-mono tabular-nums text-[var(--c-fg)]">
+                  {formatMoney(breakdown.totalTransfer)}
+                </span>
+              </div>
+            ) : null}
           </div>
 
           {/* Per-item rows */}

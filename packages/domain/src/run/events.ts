@@ -38,6 +38,19 @@ export type RunEvent =
         actualQty: string;
         receiptPhotoUrl: string | null;
         storeSplits: Array<{ storeId: string; qty: string }>;
+        /**
+         * M1.14 (2026-05-08): per-item payment method. Same run can mix
+         * cash and transfer items — purchaser pays Apple in cash at the
+         * stall, then wires Beef to the meat supplier. The totals
+         * downstream aggregate by method (so the chain owner can
+         * reconcile separately against bank statements vs. petty cash).
+         *
+         * Optional in the type signature so legacy events that predate
+         * this field continue to apply cleanly. `applyRun` defaults
+         * missing values to `'cash'` — that's the historical assumption
+         * since the original system had no concept of transfers.
+         */
+        paymentMethod?: 'cash' | 'transfer';
       };
     })
   | (BaseEvent & {
@@ -68,7 +81,20 @@ export type RunEvent =
     })
   | (BaseEvent & {
       type: 'RunFinished';
-      payload: { totalActual: string };
+      payload: {
+        totalActual: string;
+        /**
+         * M1.14: cash / transfer breakdown of `totalActual`. Both are
+         * optional on the type so events emitted before this field
+         * existed (where everything was implicitly cash) still parse;
+         * the projection treats missing fields as "all cash".
+         * `totalCash + totalTransfer` should equal `totalActual` (modulo
+         * decimal rounding, which is why we keep `totalActual` as the
+         * canonical sum).
+         */
+        totalCash?: string;
+        totalTransfer?: string;
+      };
     })
   | (BaseEvent & {
       type: 'RunCancelled';
@@ -98,6 +124,10 @@ export type RunEvent =
         // Why we're revising — short free-text, ≤500 chars. Required so
         // an audit can answer "why did this change?" later.
         reason: string;
+        // M1.14: payment method may also be revised (e.g. operator
+        // realised they paid by transfer not cash). Optional for
+        // legacy events — applyRun defaults to 'cash'.
+        paymentMethod?: 'cash' | 'transfer';
       };
     })
   | (BaseEvent & {

@@ -43,6 +43,7 @@ function planAndPurchase(opts?: { plannedQty?: string; purchasedQty?: string; st
       actualQty: purchasedQty,
       receiptPhotoUrl: null,
       storeSplits: splits,
+      paymentMethod: 'cash',
       actor: purchaser(),
     },
   ];
@@ -111,6 +112,7 @@ describe('run.decide', () => {
         actualQty: '1',
         receiptPhotoUrl: null,
         storeSplits: [{ storeId: 's1', qty: '1' }],
+        paymentMethod: 'cash',
         actor: purchaser(),
       },
       clock,
@@ -148,6 +150,7 @@ describe('run.decide', () => {
             { storeId: 'A', qty: '2' },
             { storeId: 'B', qty: '2' },
           ], // sums to 4, not 5
+          paymentMethod: 'cash',
           actor: purchaser(),
         },
         clock,
@@ -205,6 +208,7 @@ describe('run.decide', () => {
         actualQty: '1',
         receiptPhotoUrl: null,
         storeSplits: [{ storeId: 's1', qty: '1' }],
+        paymentMethod: 'cash',
         actor: purchaser(),
       },
       clock,
@@ -338,6 +342,7 @@ describe('run.reversals', () => {
         receiptPhotoUrl: 'https://x/y',
         storeSplits: [{ storeId: 'A', qty: '5' }],
         reason: 'price misread on receipt',
+        paymentMethod: 'cash',
         actor: purchaser(),
       },
       clock,
@@ -377,6 +382,7 @@ describe('run.reversals', () => {
           receiptPhotoUrl: null,
           storeSplits: [{ storeId: 'A', qty: '4' }],
           reason: 'x',
+          paymentMethod: 'cash',
           actor: purchaser(),
         },
         clock,
@@ -403,6 +409,7 @@ describe('run.reversals', () => {
           receiptPhotoUrl: null,
           storeSplits: [{ storeId: 'A', qty: '4' }],
           reason: 'x',
+          paymentMethod: 'cash',
           actor: purchaser(),
         },
         clock,
@@ -740,6 +747,7 @@ describe('run.reversals', () => {
           receiptPhotoUrl: null,
           storeSplits: [{ storeId: 'A', qty: '4' }],
           reason: '   ',
+          paymentMethod: 'cash',
           actor: purchaser(),
         },
         clock,
@@ -758,5 +766,250 @@ describe('run.reversals', () => {
         clock,
       ),
     ).toThrow('run.errors.recallReasonRequired');
+  });
+});
+
+// ----------------------------------------------------------------------
+// M1.14 (2026-05-08): payment-method mixing on a single run.
+// Real-world driver: same market trip pays Apple in cash at the stall
+// and wires Beef to the meat supplier. RunFinished must split the
+// totals so the chain owner can reconcile petty cash vs bank wires.
+// ----------------------------------------------------------------------
+describe('run.paymentMethod', () => {
+  function planTwoSkus(): import('./state').RunState {
+    let s = emptyRunState('run-1');
+    s = decideRun(
+      s,
+      {
+        type: 'PlanRun',
+        orgId: 'org-1',
+        runDate: '2026-05-01',
+        runIndex: 0,
+        sessionIds: ['s1'],
+        plannedItems: [
+          { skuId: 'apple', qty: '3' },
+          { skuId: 'beef', qty: '2' },
+        ],
+        actor: purchaser(),
+      },
+      clock,
+    ).reduce(applyRun, s);
+    s = decideRun(s, { type: 'StartPurchase', actor: purchaser() }, clock).reduce(applyRun, s);
+    return s;
+  }
+
+  test('PurchaseItem records paymentMethod on the event payload', () => {
+    let s = planTwoSkus();
+    const evs = decideRun(
+      s,
+      {
+        type: 'PurchaseItem',
+        skuId: 'apple',
+        supplierId: null,
+        unitPrice: '1000',
+        actualQty: '3',
+        receiptPhotoUrl: null,
+        storeSplits: [{ storeId: 'A', qty: '3' }],
+        paymentMethod: 'cash',
+        actor: purchaser(),
+      },
+      clock,
+    );
+    const purchased = evs.find((e) => e.type === 'ItemPurchased');
+    expect(
+      purchased && 'payload' in purchased
+        ? (purchased.payload as { paymentMethod: string }).paymentMethod
+        : null,
+    ).toBe('cash');
+    s = evs.reduce(applyRun, s);
+    expect(s.items.get('apple')!.paymentMethod).toBe('cash');
+  });
+
+  test('FinishRun aggregates cash + transfer totals separately', () => {
+    let s = planTwoSkus();
+    s = decideRun(
+      s,
+      {
+        type: 'PurchaseItem',
+        skuId: 'apple',
+        supplierId: null,
+        unitPrice: '1000',
+        actualQty: '3',
+        receiptPhotoUrl: null,
+        storeSplits: [{ storeId: 'A', qty: '3' }],
+        paymentMethod: 'cash',
+        actor: purchaser(),
+      },
+      clock,
+    ).reduce(applyRun, s);
+    s = decideRun(
+      s,
+      {
+        type: 'PurchaseItem',
+        skuId: 'beef',
+        supplierId: null,
+        unitPrice: '50000',
+        actualQty: '2',
+        receiptPhotoUrl: null,
+        storeSplits: [{ storeId: 'A', qty: '2' }],
+        paymentMethod: 'transfer',
+        actor: purchaser(),
+      },
+      clock,
+    ).reduce(applyRun, s);
+    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
+    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
+      applyRun,
+      s,
+    );
+    s = decideRun(
+      s,
+      {
+        type: 'ConfirmStoreItem',
+        storeId: 'A',
+        skuId: 'apple',
+        status: 'ok',
+        note: null,
+        photoUrl: null,
+        actor: confirmer(),
+      },
+      clock,
+    ).reduce(applyRun, s);
+    s = decideRun(
+      s,
+      {
+        type: 'ConfirmStoreItem',
+        storeId: 'A',
+        skuId: 'beef',
+        status: 'ok',
+        note: null,
+        photoUrl: null,
+        actor: confirmer(),
+      },
+      clock,
+    ).reduce(applyRun, s);
+    s = decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock).reduce(
+      applyRun,
+      s,
+    );
+    const finishEvs = decideRun(s, { type: 'FinishRun', actor: purchaser() }, clock);
+    expect(finishEvs).toHaveLength(1);
+    const ev = finishEvs[0]!;
+    expect(ev.type).toBe('RunFinished');
+    if (ev.type !== 'RunFinished') throw new Error('unreachable');
+    // 3 × 1000 cash + 2 × 50000 transfer = 3000 + 100000 = 103000
+    expect(ev.payload.totalActual).toBe('103000.00');
+    expect(ev.payload.totalCash).toBe('3000.00');
+    expect(ev.payload.totalTransfer).toBe('100000.00');
+  });
+
+  test('legacy ItemPurchased event without paymentMethod applies as cash', () => {
+    // Simulates an event written before M1.14 — the field is just absent.
+    let s = emptyRunState('run-1');
+    s = applyRun(s, {
+      streamId: 'run-1',
+      seq: 1,
+      occurredAt: NOW,
+      actorUserId: 'u',
+      actorMemberId: 'm',
+      type: 'RunPlanned',
+      payload: {
+        orgId: 'o',
+        runDate: '2026-05-01',
+        runIndex: 0,
+        sessionIds: ['s'],
+        plannedItems: [{ skuId: 'apple', qty: '3' }],
+        purchaserMemberId: 'm',
+      },
+    });
+    s = applyRun(s, {
+      streamId: 'run-1',
+      seq: 2,
+      occurredAt: NOW,
+      actorUserId: 'u',
+      actorMemberId: 'm',
+      type: 'PurchaseStarted',
+      payload: {},
+    });
+    s = applyRun(s, {
+      streamId: 'run-1',
+      seq: 3,
+      occurredAt: NOW,
+      actorUserId: 'u',
+      actorMemberId: 'm',
+      type: 'ItemPurchased',
+      payload: {
+        skuId: 'apple',
+        supplierId: null,
+        unitPrice: '1000',
+        actualQty: '3',
+        receiptPhotoUrl: null,
+        storeSplits: [{ storeId: 'A', qty: '3' }],
+        // paymentMethod intentionally omitted (legacy event)
+      },
+    });
+    expect(s.items.get('apple')!.paymentMethod).toBe('cash');
+  });
+
+  test('RevisePurchase can flip cash → transfer (and vice versa)', () => {
+    let s = planTwoSkus();
+    s = decideRun(
+      s,
+      {
+        type: 'PurchaseItem',
+        skuId: 'apple',
+        supplierId: null,
+        unitPrice: '1000',
+        actualQty: '3',
+        receiptPhotoUrl: null,
+        storeSplits: [{ storeId: 'A', qty: '3' }],
+        paymentMethod: 'cash',
+        actor: purchaser(),
+      },
+      clock,
+    ).reduce(applyRun, s);
+    s = decideRun(
+      s,
+      {
+        type: 'RevisePurchase',
+        skuId: 'apple',
+        supplierId: null,
+        unitPrice: '1000',
+        actualQty: '3',
+        receiptPhotoUrl: null,
+        storeSplits: [{ storeId: 'A', qty: '3' }],
+        reason: 'paid by wire after all',
+        paymentMethod: 'transfer',
+        actor: purchaser(),
+      },
+      clock,
+    ).reduce(applyRun, s);
+    expect(s.items.get('apple')!.paymentMethod).toBe('transfer');
+  });
+
+  test('PurchaseUndone clears paymentMethod so re-purchase records a fresh choice', () => {
+    let s = planTwoSkus();
+    s = decideRun(
+      s,
+      {
+        type: 'PurchaseItem',
+        skuId: 'apple',
+        supplierId: null,
+        unitPrice: '1000',
+        actualQty: '3',
+        receiptPhotoUrl: null,
+        storeSplits: [{ storeId: 'A', qty: '3' }],
+        paymentMethod: 'transfer',
+        actor: purchaser(),
+      },
+      clock,
+    ).reduce(applyRun, s);
+    s = decideRun(
+      s,
+      { type: 'UndoPurchase', skuId: 'apple', reason: 'mistapped row', actor: purchaser() },
+      clock,
+    ).reduce(applyRun, s);
+    expect(s.items.get('apple')!.paymentMethod).toBeNull();
+    expect(s.items.get('apple')!.status).toBe('pending');
   });
 });

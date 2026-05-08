@@ -92,6 +92,13 @@
       "when": 1778160000000,
       "tag": "0012_rls_missing_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1778198400000,
+      "tag": "0013_payment_method",
+      "breakpoints": true
     }
   ]
 }

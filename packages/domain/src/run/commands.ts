@@ -23,6 +23,11 @@ export type RunCommand =
       actualQty: string;
       receiptPhotoUrl: string | null;
       storeSplits: Array<{ storeId: string; qty: string }>;
+      /**
+       * M1.14: 'cash' | 'transfer'. Required by the FE form (defaults
+       * to cash) so audit always knows which money path each item took.
+       */
+      paymentMethod: 'cash' | 'transfer';
       actor: ActorCtx;
     }
   | { type: 'MarkUnavailable'; skuId: string; note: string; actor: ActorCtx }
@@ -50,6 +55,10 @@ export type RunCommand =
       receiptPhotoUrl: string | null;
       storeSplits: Array<{ storeId: string; qty: string }>;
       reason: string;
+      /** M1.14: revising can also flip payment method (e.g. operator
+       *  realised they actually wired the supplier instead of paying
+       *  cash). Required so the form always submits the current choice. */
+      paymentMethod: 'cash' | 'transfer';
       actor: ActorCtx;
     }
   | { type: 'UnmarkUnavailable'; skuId: string; reason: string; actor: ActorCtx }
@@ -143,6 +152,7 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
           actualQty: command.actualQty,
           receiptPhotoUrl: command.receiptPhotoUrl,
           storeSplits: command.storeSplits,
+          paymentMethod: command.paymentMethod,
         },
       });
       return events;
@@ -300,14 +310,30 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
           throw preconditionFailed('run.errors.storeNotConfirmed', { storeId });
         }
       }
+      // M1.14: compute cash / transfer breakdown alongside the canonical
+      // total. Items with no payment method recorded (legacy data
+      // pre-M1.14) are bucketed as cash — that's the historical
+      // assumption since transfers weren't tracked at all before.
       let total = 0;
+      let totalCash = 0;
+      let totalTransfer = 0;
       for (const item of state.items.values()) {
-        if (item.status === 'purchased' && item.unitPrice && item.purchasedQty) {
-          total += Number(item.unitPrice) * Number(item.purchasedQty);
-        }
+        if (item.status !== 'purchased' || !item.unitPrice || !item.purchasedQty) continue;
+        const lineTotal = Number(item.unitPrice) * Number(item.purchasedQty);
+        total += lineTotal;
+        if (item.paymentMethod === 'transfer') totalTransfer += lineTotal;
+        else totalCash += lineTotal;
       }
       return [
-        { ...baseFor(1), type: 'RunFinished', payload: { totalActual: total.toFixed(2) } },
+        {
+          ...baseFor(1),
+          type: 'RunFinished',
+          payload: {
+            totalActual: total.toFixed(2),
+            totalCash: totalCash.toFixed(2),
+            totalTransfer: totalTransfer.toFixed(2),
+          },
+        },
       ];
     }
 
@@ -385,6 +411,7 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
             receiptPhotoUrl: command.receiptPhotoUrl,
             storeSplits: command.storeSplits,
             reason,
+            paymentMethod: command.paymentMethod,
           },
         },
       ];

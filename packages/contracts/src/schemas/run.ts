@@ -40,6 +40,15 @@ export const RunPreviewInputSchema = z.object({
   date: DateStringSchema.optional(),
 });
 
+/**
+ * M1.14 (2026-05-08): payment method per recorded purchase. Same run
+ * can mix cash and transfer items — the FinishRun event aggregates per-
+ * method totals on the read model so accounting can reconcile petty
+ * cash vs. bank statements separately.
+ */
+export const PaymentMethodSchema = z.enum(['cash', 'transfer']);
+export type PaymentMethod = z.infer<typeof PaymentMethodSchema>;
+
 export const PurchaseItemInputSchema = z.object({
   runId: UuidSchema,
   skuId: UuidSchema,
@@ -51,6 +60,7 @@ export const PurchaseItemInputSchema = z.object({
   // Accept both https URLs and data: URIs.
   receiptPhotoUrl: z.string().max(300_000).nullable(),
   storeSplits: z.array(StoreSplitSchema).min(1),
+  paymentMethod: PaymentMethodSchema,
   expectedSeq: z.number().int().optional(),
 });
 

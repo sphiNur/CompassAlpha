@@ -606,6 +606,13 @@ export const en = {
   'run.confirm.finish.body':
     'After finishing, prices, quantities, and delivery records are locked. This cannot be undone.',
   'run.confirm.finish.summary': '{items} items · {stores} stores · total {total} UZS',
+  // M1.14: payment-method labels + the optional cash/transfer breakdown
+  // line that appears in the finish-run confirm body when the run
+  // mixed both methods.
+  'run.label.paymentMethod': 'Payment method',
+  'run.label.paymentCash': 'Cash',
+  'run.label.paymentTransfer': 'Transfer',
+  'run.confirm.finish.paymentBreakdown': '💵 cash {cash} · 🏦 transfer {transfer}',
   'run.confirm.cancel.title': 'Cancel the entire run?',
   'run.confirm.cancel.body':
     'This stops the run and unlocks all sessions back to "approved". Already-recorded purchases stay in the audit log but are not delivered.',

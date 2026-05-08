@@ -546,6 +546,10 @@ export const ru = {
   'run.confirm.finish.body':
     'После завершения цены, количества и доставки фиксируются. Отменить нельзя.',
   'run.confirm.finish.summary': '{items} позиций · {stores} магазинов · итого {total} UZS',
+  'run.label.paymentMethod': 'Способ оплаты',
+  'run.label.paymentCash': 'Наличные',
+  'run.label.paymentTransfer': 'Перевод',
+  'run.confirm.finish.paymentBreakdown': '💵 наличные {cash} · 🏦 перевод {transfer}',
   'run.confirm.cancel.title': 'Отменить всю закупку?',
   'run.confirm.cancel.body':
     'Закупка останавливается, заказы возвращаются в статус «одобрено». Уже записанные покупки остаются в журнале, но не доставляются.',

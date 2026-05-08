@@ -505,6 +505,10 @@ export const zh = {
   'run.confirm.finish.title': '确认结束采购?',
   'run.confirm.finish.body': '结束后，价格、数量、配送记录全部锁死，不能再修改。',
   'run.confirm.finish.summary': '{items} 件商品 · {stores} 个门店 · 合计 {total} UZS',
+  'run.label.paymentMethod': '支付方式',
+  'run.label.paymentCash': '现金',
+  'run.label.paymentTransfer': '转账',
+  'run.confirm.finish.paymentBreakdown': '💵 现金 {cash} · 🏦 转账 {transfer}',
   'run.confirm.cancel.title': '取消整张采购单?',
   'run.confirm.cancel.body':
     '本次采购作废，所有订单退回到「已审核」状态。已记录的采购数据保留在审计日志，但不再继续配送。',

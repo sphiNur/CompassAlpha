@@ -271,6 +271,7 @@ describe('full lifecycle (PG)', () => {
       actualQty: '5',
       receiptPhotoUrl: null,
       storeSplits: [{ storeId: store.id, qty: '5' }],
+      paymentMethod: 'cash',
       actor: purchaserActor,
     });
     for (const e of purchase) rState = applyRun(rState, e);

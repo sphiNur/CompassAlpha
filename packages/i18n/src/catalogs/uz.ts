@@ -562,6 +562,10 @@ export const uz = {
     "Tugatgandan keyin narx, miqdor va yetkazish yozuvlari qulflanadi. Bekor qilib bo'lmaydi.",
   'run.confirm.finish.summary':
     "{items} ta mahsulot · {stores} ta do'kon · jami {total} UZS",
+  'run.label.paymentMethod': "To'lov usuli",
+  'run.label.paymentCash': 'Naqd',
+  'run.label.paymentTransfer': "O'tkazma",
+  'run.confirm.finish.paymentBreakdown': "💵 naqd {cash} · 🏦 o'tkazma {transfer}",
   'run.confirm.cancel.title': "Butun xaridni bekor qilamizmi?",
   'run.confirm.cancel.body':
     "Xarid to'xtaydi, buyurtmalar «tasdiqlangan»ga qaytadi. Yozilgan xaridlar auditda qoladi, ammo yetkazilmaydi.",
