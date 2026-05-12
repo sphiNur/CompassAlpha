@@ -151,6 +151,11 @@ export const en = {
   'admin.subsection.history': 'Submission history',
   'admin.subsection.audit': 'Admin audit',
   'admin.subsection.priceReport': 'Price report',
+  // M1.15: finance reconciliation reports — cash vs transfer breakdown
+  // for a date range, with three view modes (daily / by supplier /
+  // by store). Lives under Admin → Operations, gated by users.manage.
+  'admin.subsection.finance': 'Finance',
+  'admin.subsection.financeHint': 'Cash vs transfer reconciliation · daily, supplier, store',
   'admin.subsection.maintenance': 'Maintenance',
   'admin.subsection.activityHint': 'KPIs + recent audit events',
   'admin.subsection.historyHint': 'Past 30 days of orders + outcomes',
@@ -761,4 +766,32 @@ export const en = {
   'app.theme.native': 'Native',
   'app.theme.apple': 'Apple',
   'app.theme.dark': 'Dark',
+
+  // ── 14. Finance reports (M1.15, 2026-05-08) ─────────────────────
+  // The "Finance" subsection of Admin → Operations. Date-range
+  // scorecard + three view modes over the same dataset (daily, by
+  // supplier, by store). Export = clipboard TSV.
+  'finance.preset.today': 'Today',
+  'finance.preset.yesterday': 'Yesterday',
+  'finance.preset.thisMonth': 'This month',
+  'finance.preset.lastMonth': 'Last month',
+  'finance.preset.custom': 'Custom',
+  'finance.range.start': 'Start date',
+  'finance.range.end': 'End date',
+  'finance.view.daily': 'Daily',
+  'finance.view.bySupplier': 'By supplier',
+  'finance.view.byStore': 'By store',
+  'finance.label.lines': 'lines',
+  'finance.label.runs': 'runs',
+  'finance.label.total': 'Total',
+  'finance.label.noSupplier': 'no supplier',
+  'finance.empty.title': 'No purchases in this range',
+  'finance.empty.description': 'Pick a different date range, or record a run first.',
+  'finance.export.label': 'Copy as TSV',
+  'finance.export.copied': 'Report copied — paste into a spreadsheet.',
+  'finance.export.noClipboard': 'Clipboard not available — check console for TSV.',
+  // Server error key emitted when a non-admin attempts to query the
+  // finance reports.
+  'admin.errors.financeRequiresManage':
+    'Finance reports require the users.manage permission.',
 } as const;

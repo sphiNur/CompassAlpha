@@ -24,7 +24,7 @@
  *
  * Self-protection rules are server-side; the FE just gives the UI.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Avatar,
   Badge,
@@ -117,7 +117,17 @@ type AdminSection =
   | 'operations';
 
 type CatalogSub = 'categories' | 'skus' | 'suppliers';
-type OperationsSub = 'activity' | 'history' | 'maintenance' | 'adminAudit' | 'priceReport';
+type OperationsSub =
+  | 'activity'
+  | 'history'
+  | 'maintenance'
+  | 'adminAudit'
+  | 'priceReport'
+  // M1.15 (2026-05-08): finance reconciliation (cash/transfer breakdown
+  // by date range + supplier + store). Lives under Operations because
+  // it's a read-only view, not a CRUD surface — same shape as the price
+  // report next to it.
+  | 'finance';
 
 /**
  * StoreFocus tracks "am I drilled into a specific store, or browsing
@@ -249,6 +259,7 @@ export function AdminPage() {
         {section === 'operations' && opsSub === 'history' ? <HistorySection /> : null}
         {section === 'operations' && opsSub === 'adminAudit' ? <AdminAuditSection /> : null}
         {section === 'operations' && opsSub === 'priceReport' ? <PriceReportSection /> : null}
+        {section === 'operations' && opsSub === 'finance' ? <FinanceSection /> : null}
         {section === 'operations' && opsSub === 'maintenance' ? <MaintenanceSection /> : null}
       </SectionFrame>
     );
@@ -326,6 +337,8 @@ function titleForSection(
     return i18n.t('admin.subsection.audit');
   if (section === 'operations' && opsSub === 'priceReport')
     return i18n.t('admin.subsection.priceReport');
+  if (section === 'operations' && opsSub === 'finance')
+    return i18n.t('admin.subsection.finance');
   if (section === 'operations' && opsSub === 'maintenance')
     return i18n.t('admin.subsection.maintenance');
   switch (section) {
@@ -378,6 +391,15 @@ function OperationsHome({
         label={i18n.t('admin.subsection.priceReport')}
         hint={i18n.t('admin.subsection.priceReportHint')}
         onClick={() => onPick('priceReport')}
+      />
+      {/* M1.15: finance reconciliation. Bank wire vs cash spending by
+          date range / supplier / store. Lives next to Price Report
+          because both are read-only analytical views. */}
+      <SectionRow
+        icon={<IconActivity size={20} />}
+        label={i18n.t('admin.subsection.finance')}
+        hint={i18n.t('admin.subsection.financeHint')}
+        onClick={() => onPick('finance')}
       />
       {/* M1.9 (2026-05-07): Maintenance is a footgun on a live system —
           "Reset today" / "Purge ALL test data" will delete real user
@@ -5481,6 +5503,518 @@ function PriceReportSection() {
                     {arrow} {deltaLabel}
                   </Badge>
                 </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ============ Finance reconciliation (M1.15) ============
+//
+// Three views over the same data set (purchaseLines):
+//   - Daily: per-day totals (cash + transfer) for the picked range,
+//     plus an expandable per-day SKU breakdown.
+//   - By supplier: rolled up totals per supplier, with cash/transfer
+//     split. Empty supplier_id bucketed as "—".
+//   - By store: rolled up totals per destination store.
+//
+// Date picker presets: today / yesterday / this month / last month /
+// custom. The picked range is the input for ALL three tabs (they
+// share the same underlying purchaseLines query, just regrouped client
+// side). This keeps the API surface small (M1.14 + M1.15 introduced
+// only one tRPC namespace: `report`).
+//
+// Permissions: `users.manage` (Admin gate). A future M1.x can split
+// out `finance.view` for accounting-only Telegram accounts.
+
+type FinanceView = 'daily' | 'bySupplier' | 'byStore';
+type FinancePreset = 'today' | 'yesterday' | 'thisMonth' | 'lastMonth' | 'custom';
+
+function FinanceSection() {
+  const i18n = useI18n();
+  const toast = useToast();
+  const productName = useProductName();
+  const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: true });
+  const suppliersQuery = trpc.admin.supplierList.useQuery();
+  const storesQuery = trpc.catalog.stores.useQuery();
+
+  // Date range. Default to "this month" since that's the most common
+  // reconciliation cadence (monthly bank statement vs. cash drawer
+  // closing). Custom range lets the user widen / narrow on demand.
+  const today = useMemo(() => {
+    const d = new Date();
+    return d.toISOString().slice(0, 10);
+  }, []);
+
+  const [preset, setPreset] = useState<FinancePreset>('thisMonth');
+  const [startDate, setStartDate] = useState<string>(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
+  });
+  const [endDate, setEndDate] = useState<string>(today);
+
+  // Apply preset → derive [start, end]. Custom keeps whatever the user
+  // typed in the two inputs.
+  useEffect(() => {
+    if (preset === 'custom') return;
+    const d = new Date();
+    if (preset === 'today') {
+      const t = d.toISOString().slice(0, 10);
+      setStartDate(t);
+      setEndDate(t);
+    } else if (preset === 'yesterday') {
+      const y = new Date(d);
+      y.setDate(y.getDate() - 1);
+      const t = y.toISOString().slice(0, 10);
+      setStartDate(t);
+      setEndDate(t);
+    } else if (preset === 'thisMonth') {
+      setStartDate(new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10));
+      setEndDate(d.toISOString().slice(0, 10));
+    } else if (preset === 'lastMonth') {
+      const first = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+      const last = new Date(d.getFullYear(), d.getMonth(), 0);
+      setStartDate(first.toISOString().slice(0, 10));
+      setEndDate(last.toISOString().slice(0, 10));
+    }
+  }, [preset]);
+
+  const [view, setView] = useState<FinanceView>('daily');
+
+  const linesQuery = trpc.report.purchaseLines.useQuery({ startDate, endDate });
+  const totalsQuery = trpc.report.totals.useQuery({ startDate, endDate });
+
+  // Lookup tables for joining ids → display names.
+  const skuById = useMemo(() => {
+    const m = new Map<string, { names: Record<string, string>; unit: string }>();
+    for (const sku of skusQuery.data ?? []) {
+      m.set(sku.id, { names: sku.names as Record<string, string>, unit: sku.unit });
+    }
+    return m;
+  }, [skusQuery.data]);
+
+  const supplierById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of suppliersQuery.data ?? []) m.set(s.id, s.name);
+    return m;
+  }, [suppliersQuery.data]);
+
+  const storeById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of storesQuery.data ?? []) m.set(s.id, s.name);
+    return m;
+  }, [storesQuery.data]);
+
+  const lines = linesQuery.data ?? [];
+
+  // Group by ("YYYY-MM-DD"). Each day → cash sum, transfer sum, line list.
+  const dailyGroups = useMemo(() => {
+    const m = new Map<
+      string,
+      { date: string; cash: number; transfer: number; lines: typeof lines }
+    >();
+    for (const l of lines) {
+      const g = m.get(l.runDate) ?? {
+        date: l.runDate,
+        cash: 0,
+        transfer: 0,
+        lines: [] as typeof lines,
+      };
+      const lt = Number(l.lineTotal);
+      if (l.paymentMethod === 'transfer') g.transfer += lt;
+      else g.cash += lt;
+      g.lines.push(l);
+      m.set(l.runDate, g);
+    }
+    return [...m.values()].sort((a, b) => (a.date < b.date ? 1 : -1));
+  }, [lines]);
+
+  // Group by supplierId (null → '__none' sentinel).
+  const supplierGroups = useMemo(() => {
+    const m = new Map<
+      string,
+      { supplierId: string | null; cash: number; transfer: number; lines: typeof lines }
+    >();
+    for (const l of lines) {
+      const key = l.supplierId ?? '__none';
+      const g = m.get(key) ?? {
+        supplierId: l.supplierId,
+        cash: 0,
+        transfer: 0,
+        lines: [] as typeof lines,
+      };
+      const lt = Number(l.lineTotal);
+      if (l.paymentMethod === 'transfer') g.transfer += lt;
+      else g.cash += lt;
+      g.lines.push(l);
+      m.set(key, g);
+    }
+    return [...m.values()].sort((a, b) => b.cash + b.transfer - (a.cash + a.transfer));
+  }, [lines]);
+
+  // Group by storeId.
+  const storeGroups = useMemo(() => {
+    const m = new Map<
+      string,
+      { storeId: string; cash: number; transfer: number; lines: typeof lines }
+    >();
+    for (const l of lines) {
+      const g = m.get(l.storeId) ?? {
+        storeId: l.storeId,
+        cash: 0,
+        transfer: 0,
+        lines: [] as typeof lines,
+      };
+      const lt = Number(l.lineTotal);
+      if (l.paymentMethod === 'transfer') g.transfer += lt;
+      else g.cash += lt;
+      g.lines.push(l);
+      m.set(l.storeId, g);
+    }
+    return [...m.values()].sort((a, b) => b.cash + b.transfer - (a.cash + a.transfer));
+  }, [lines]);
+
+  // Expandable rows (per-day or per-supplier). Tracks which group's
+  // line list is currently open.
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  // Export as text → clipboard. Telegram WebApp can't easily download
+  // files, but every supported client can paste into a Telegram chat.
+  // The shape is human-readable + machine-parseable (TSV) so finance
+  // can drop it straight into their spreadsheet.
+  const exportText = useCallback(() => {
+    const lineHeader = 'date\trun\tsku\tstore\tsupplier\tmethod\tqty\tunit_price\ttotal';
+    const tsv = [
+      `# Finance report ${startDate} → ${endDate}`,
+      lineHeader,
+      ...lines.map((l) => {
+        const sku = skuById.get(l.skuId);
+        const skuName = sku ? productName({ names: sku.names }) : l.skuId.slice(0, 8);
+        return [
+          l.runDate,
+          `#${l.runIndex + 1}`,
+          skuName,
+          storeById.get(l.storeId) ?? l.storeId.slice(0, 8),
+          l.supplierId ? supplierById.get(l.supplierId) ?? l.supplierId.slice(0, 8) : '—',
+          l.paymentMethod,
+          l.qty,
+          l.unitPrice,
+          l.lineTotal,
+        ].join('\t');
+      }),
+    ].join('\n');
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      void navigator.clipboard.writeText(tsv);
+      toast.success(i18n.t('finance.export.copied'));
+    } else {
+      // Fallback for older WebViews — pop the text in a confirm-like
+      // sheet would be ideal, but a simple log + toast suffices for now.
+      // eslint-disable-next-line no-console
+      console.log(tsv);
+      toast.error(i18n.t('finance.export.noClipboard'));
+    }
+  }, [lines, skuById, storeById, supplierById, productName, startDate, endDate, toast, i18n]);
+
+  return (
+    <div className="px-4 py-3">
+      {/* Range picker — preset chips + two date inputs. */}
+      <div className="mb-3 flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3">
+        <div className="flex flex-wrap gap-1">
+          {(['today', 'yesterday', 'thisMonth', 'lastMonth', 'custom'] as const).map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => setPreset(p)}
+              className={
+                'press rounded-[var(--r-pill)] px-2.5 py-1 text-meta font-medium ring-hairline ' +
+                (preset === p
+                  ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
+                  : 'bg-[var(--c-surface)] text-[var(--c-fg)]')
+              }
+            >
+              {i18n.t(`finance.preset.${p}` as Parameters<typeof i18n.t>[0])}
+            </button>
+          ))}
+        </div>
+        {preset === 'custom' ? (
+          <div className="flex items-center gap-2">
+            <Input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              aria-label={i18n.t('finance.range.start')}
+            />
+            <span className="text-body text-[var(--c-fg-muted)]">—</span>
+            <Input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              aria-label={i18n.t('finance.range.end')}
+            />
+          </div>
+        ) : (
+          <div className="text-meta tabular-nums text-[var(--c-fg-muted)]">
+            {startDate} → {endDate}
+          </div>
+        )}
+      </div>
+
+      {/* Totals scorecard. */}
+      {totalsQuery.data ? (
+        <div className="mb-3 grid grid-cols-3 gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3">
+          <div>
+            <div className="text-meta uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+              💵 {i18n.t('run.label.paymentCash')}
+            </div>
+            <div className="font-mono text-h2 font-semibold tabular-nums">
+              {formatMoney(totalsQuery.data.totalCash)}
+            </div>
+            <div className="text-meta text-[var(--c-fg-muted)]">
+              {totalsQuery.data.cashLines} {i18n.t('finance.label.lines')}
+            </div>
+          </div>
+          <div>
+            <div className="text-meta uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+              🏦 {i18n.t('run.label.paymentTransfer')}
+            </div>
+            <div className="font-mono text-h2 font-semibold tabular-nums">
+              {formatMoney(totalsQuery.data.totalTransfer)}
+            </div>
+            <div className="text-meta text-[var(--c-fg-muted)]">
+              {totalsQuery.data.transferLines} {i18n.t('finance.label.lines')}
+            </div>
+          </div>
+          <div>
+            <div className="text-meta uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+              Σ {i18n.t('finance.label.total')}
+            </div>
+            <div className="font-mono text-h2 font-semibold tabular-nums">
+              {formatMoney(totalsQuery.data.total)}
+            </div>
+            <div className="text-meta text-[var(--c-fg-muted)]">
+              {totalsQuery.data.runCount} {i18n.t('finance.label.runs')}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* View switcher + export. */}
+      <div className="mb-2 flex items-center gap-1">
+        {(['daily', 'bySupplier', 'byStore'] as const).map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => {
+              setView(v);
+              setExpanded(null);
+            }}
+            className={
+              'press flex-1 rounded-[var(--r-pill)] px-2 py-1 text-meta font-medium ring-hairline ' +
+              (view === v
+                ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
+                : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]')
+            }
+          >
+            {i18n.t(`finance.view.${v}` as Parameters<typeof i18n.t>[0])}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={exportText}
+          disabled={lines.length === 0}
+          className="press shrink-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2.5 py-1 text-meta font-medium text-[var(--c-fg)] ring-hairline disabled:opacity-40"
+          aria-label={i18n.t('finance.export.label')}
+        >
+          📋 {i18n.t('finance.export.label')}
+        </button>
+      </div>
+
+      {linesQuery.isLoading ? (
+        <div className="py-6 text-center">
+          <Spinner size={16} />
+        </div>
+      ) : lines.length === 0 ? (
+        <EmptyState
+          title={i18n.t('finance.empty.title')}
+          description={i18n.t('finance.empty.description')}
+        />
+      ) : view === 'daily' ? (
+        <ul className="flex flex-col gap-1" role="list">
+          {dailyGroups.map((g) => {
+            const isOpen = expanded === g.date;
+            const mixed = g.cash > 0 && g.transfer > 0;
+            return (
+              <li
+                key={g.date}
+                className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline"
+              >
+                <button
+                  type="button"
+                  onClick={() => setExpanded(isOpen ? null : g.date)}
+                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left active:opacity-80"
+                >
+                  <span className="text-body font-semibold tabular-nums">{g.date}</span>
+                  <span className="font-mono text-body tabular-nums">
+                    {formatMoney(g.cash + g.transfer)}
+                  </span>
+                </button>
+                {mixed ? (
+                  <div className="flex items-baseline gap-3 px-3 pb-1.5 text-meta text-[var(--c-fg-muted)]">
+                    <span>💵 {formatMoney(g.cash)}</span>
+                    <span>🏦 {formatMoney(g.transfer)}</span>
+                  </div>
+                ) : null}
+                {isOpen ? (
+                  <ul className="flex flex-col border-t border-[var(--c-divider)]" role="list">
+                    {g.lines.map((l, i) => {
+                      const sku = skuById.get(l.skuId);
+                      const skuName = sku
+                        ? productName({ names: sku.names })
+                        : l.skuId.slice(0, 8);
+                      const supplier = l.supplierId
+                        ? supplierById.get(l.supplierId) ?? '—'
+                        : '—';
+                      const store = storeById.get(l.storeId) ?? l.storeId.slice(0, 8);
+                      return (
+                        <li
+                          key={`${l.runId}-${l.skuId}-${l.storeId}-${i}`}
+                          className="flex flex-col gap-0.5 border-b border-[var(--c-divider)] px-3 py-2 last:border-b-0"
+                        >
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="truncate text-body font-medium">
+                              {l.paymentMethod === 'transfer' ? '🏦 ' : '💵 '}
+                              {skuName}
+                            </span>
+                            <span className="font-mono text-body tabular-nums">
+                              {formatMoney(l.lineTotal)}
+                            </span>
+                          </div>
+                          <div className="flex items-baseline gap-2 text-meta text-[var(--c-fg-muted)]">
+                            <span>🏪 {store}</span>
+                            <span>· {supplier}</span>
+                            <span className="ml-auto font-mono tabular-nums">
+                              {l.qty} × {formatMoney(l.unitPrice)}
+                            </span>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      ) : view === 'bySupplier' ? (
+        <ul className="flex flex-col gap-1" role="list">
+          {supplierGroups.map((g) => {
+            const key = g.supplierId ?? '__none';
+            const isOpen = expanded === key;
+            const name = g.supplierId
+              ? supplierById.get(g.supplierId) ?? g.supplierId.slice(0, 8)
+              : `— ${i18n.t('finance.label.noSupplier')}`;
+            const mixed = g.cash > 0 && g.transfer > 0;
+            return (
+              <li
+                key={key}
+                className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline"
+              >
+                <button
+                  type="button"
+                  onClick={() => setExpanded(isOpen ? null : key)}
+                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left active:opacity-80"
+                >
+                  <span className="truncate text-body font-semibold">{name}</span>
+                  <span className="font-mono text-body tabular-nums">
+                    {formatMoney(g.cash + g.transfer)}
+                  </span>
+                </button>
+                {mixed ? (
+                  <div className="flex items-baseline gap-3 px-3 pb-1.5 text-meta text-[var(--c-fg-muted)]">
+                    <span>💵 {formatMoney(g.cash)}</span>
+                    <span>🏦 {formatMoney(g.transfer)}</span>
+                  </div>
+                ) : null}
+                {isOpen ? (
+                  <ul className="flex flex-col border-t border-[var(--c-divider)]" role="list">
+                    {g.lines.map((l, i) => {
+                      const sku = skuById.get(l.skuId);
+                      const skuName = sku
+                        ? productName({ names: sku.names })
+                        : l.skuId.slice(0, 8);
+                      return (
+                        <li
+                          key={`${l.runId}-${l.skuId}-${l.storeId}-${i}`}
+                          className="flex items-baseline justify-between gap-2 border-b border-[var(--c-divider)] px-3 py-1.5 text-meta last:border-b-0"
+                        >
+                          <span className="truncate">
+                            {l.runDate} · {l.paymentMethod === 'transfer' ? '🏦' : '💵'} {skuName}
+                          </span>
+                          <span className="font-mono tabular-nums">
+                            {formatMoney(l.lineTotal)}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <ul className="flex flex-col gap-1" role="list">
+          {storeGroups.map((g) => {
+            const isOpen = expanded === g.storeId;
+            const name = storeById.get(g.storeId) ?? g.storeId.slice(0, 8);
+            const mixed = g.cash > 0 && g.transfer > 0;
+            return (
+              <li
+                key={g.storeId}
+                className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline"
+              >
+                <button
+                  type="button"
+                  onClick={() => setExpanded(isOpen ? null : g.storeId)}
+                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left active:opacity-80"
+                >
+                  <span className="truncate text-body font-semibold">🏪 {name}</span>
+                  <span className="font-mono text-body tabular-nums">
+                    {formatMoney(g.cash + g.transfer)}
+                  </span>
+                </button>
+                {mixed ? (
+                  <div className="flex items-baseline gap-3 px-3 pb-1.5 text-meta text-[var(--c-fg-muted)]">
+                    <span>💵 {formatMoney(g.cash)}</span>
+                    <span>🏦 {formatMoney(g.transfer)}</span>
+                  </div>
+                ) : null}
+                {isOpen ? (
+                  <ul className="flex flex-col border-t border-[var(--c-divider)]" role="list">
+                    {g.lines.map((l, i) => {
+                      const sku = skuById.get(l.skuId);
+                      const skuName = sku
+                        ? productName({ names: sku.names })
+                        : l.skuId.slice(0, 8);
+                      return (
+                        <li
+                          key={`${l.runId}-${l.skuId}-${l.storeId}-${i}`}
+                          className="flex items-baseline justify-between gap-2 border-b border-[var(--c-divider)] px-3 py-1.5 text-meta last:border-b-0"
+                        >
+                          <span className="truncate">
+                            {l.runDate} · {l.paymentMethod === 'transfer' ? '🏦' : '💵'} {skuName}
+                          </span>
+                          <span className="font-mono tabular-nums">
+                            {formatMoney(l.lineTotal)}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : null}
               </li>
             );
           })}

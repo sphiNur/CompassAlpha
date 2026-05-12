@@ -3,6 +3,7 @@ import { adminRouter } from './routers/admin';
 import { authRouter } from './routers/auth';
 import { catalogRouter } from './routers/catalog';
 import { orderRouter } from './routers/order';
+import { reportRouter } from './routers/report';
 import { runRouter } from './routers/run';
 import { systemRouter } from './routers/system';
 import { uploadRouter } from './routers/upload';
@@ -12,6 +13,10 @@ export const appRouter = router({
   auth: authRouter,
   catalog: catalogRouter,
   order: orderRouter,
+  // M1.15: finance reconciliation reports (cash daily / transfer / by
+  // supplier). Sits next to Admin but its own router so the admin
+  // bundle doesn't grow further.
+  report: reportRouter,
   run: runRouter,
   system: systemRouter,
   upload: uploadRouter,
