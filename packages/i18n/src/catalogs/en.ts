@@ -794,4 +794,23 @@ export const en = {
   // finance reports.
   'admin.errors.financeRequiresManage':
     'Finance reports require the users.manage permission.',
+
+  // ── 15. Org financial settings (M1.17) ────────────────
+  // Currency + tax rate + price tax-inclusivity. Lives in Admin →
+  // Workspace. Foundation columns; reports / domain consumption land
+  // in M2.x.
+  'admin.workspace.currency': 'Currency',
+  'admin.workspace.taxRate': 'Tax rate',
+  'admin.workspace.taxRateHint': 'Standard VAT %. Set 0 to disable tax tracking.',
+  'admin.workspace.pricesIncludeTax': 'Prices include tax',
+  'admin.workspace.pricesIncludeTaxOn': 'Gross (price as quoted at the stall)',
+  'admin.workspace.pricesIncludeTaxOff': 'Net (tax added on top)',
+  'admin.workspace.financeRow': 'Financial settings',
+  'admin.workspace.financeRowHint': '{currency} · tax {tax}',
+  'admin.workspace.financeSheet.title': 'Financial settings',
+  'admin.workspace.financeSheet.description':
+    'Org-wide defaults — never re-denominates historical money.',
+  'admin.workspace.financeSheet.warning':
+    'Changing currency does NOT convert past purchases. Set once per org.',
+  'admin.errors.taxRateOutOfRange': 'Tax rate must be between 0 and 50.',
 } as const;

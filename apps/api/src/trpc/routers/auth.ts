@@ -629,6 +629,14 @@ async function buildSessionPayload(
       orgSlug: org.slug,
       orgName: org.name,
       status: member.status,
+      // M1.17 (2026-05-08): currency + tax exposed on session so the
+      // FE can format money + display tax info without a round-trip
+      // per page. Snapshot-from-DB at login — operators should NEVER
+      // flip currency mid-life, so this stays valid for the session
+      // lifetime.
+      currency: org.currency ?? 'UZS',
+      taxRatePct: org.taxRatePct ?? '0',
+      pricesIncludeTax: org.pricesIncludeTax ?? true,
     },
     stores: storeRows.map((st) => ({
       id: st.id,

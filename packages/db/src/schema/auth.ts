@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   bigint,
   boolean,
+  decimal,
   index,
   integer,
   jsonb,
@@ -24,6 +25,38 @@ export const organizations = authSchema.table(
     plan: varchar('plan', { length: 32 }).notNull().default('free'),
     localeDefault: varchar('locale_default', { length: 16 }).notNull().default('en'),
     timezone: varchar('timezone', { length: 64 }).notNull().default('UTC'),
+    /**
+     * M1.17 (2026-05-08) — financial foundation columns:
+     *
+     *   `currency` is the ISO-4217 code (3 letters) every money column
+     *   in this org's data is denominated in. Default 'UZS' matches
+     *   the launch market. The FE reads this from session and feeds
+     *   it to `formatMoney(value, currency)` so adding a second
+     *   tenant in KZT / RUB doesn't require code changes. Money
+     *   columns are NOT re-denominated when this changes — operators
+     *   should NEVER flip it mid-life; the column exists to scope
+     *   per-tenant defaults, not to support multi-currency books.
+     *
+     *   `taxRatePct` is the org-wide default VAT applied to purchase
+     *   prices. Default 0 (opt-in). Uzbekistan's standard VAT is 12;
+     *   most other markets sit between 5-25. SKU-level override lives
+     *   on `inventory.skus.tax_rate_pct`.
+     *
+     *   `pricesIncludeTax` declares whether unit_price values stored
+     *   in run_items already include the tax (gross) or are pre-tax
+     *   (net). Default true matches the typical "merchant quotes the
+     *   gross price at the stall" workflow. Reports use this flag to
+     *   surface the recoverable VAT slice without writing it as a
+     *   separate column (no historical-revision risk).
+     *
+     * None of these fields participate in the financial domain yet —
+     * M1.17 is foundation only. M2.x will capture tax_rate at
+     * transaction time so historical rate changes don't retroactively
+     * rewrite past purchases.
+     */
+    currency: varchar('currency', { length: 3 }).notNull().default('UZS'),
+    taxRatePct: decimal('tax_rate_pct', { precision: 5, scale: 2 }).notNull().default('0'),
+    pricesIncludeTax: boolean('prices_include_tax').notNull().default(true),
     workflow: jsonb('workflow').notNull().default(sql`'{}'::jsonb`),
     featureFlags: jsonb('feature_flags').notNull().default(sql`'{}'::jsonb`),
     createdAt: createdAt(),

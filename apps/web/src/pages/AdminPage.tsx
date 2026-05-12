@@ -484,12 +484,17 @@ function SectionFrame({
 
 function WorkspaceSection() {
   const session = useAuthStore((s) => s.session);
+  const patchSession = useAuthStore((s) => s.patchSession);
   const i18n = useI18n();
+  const toast = useToast();
+  const errToast = useErrToast();
   // Language picker moved here from OrderPage (2026-05-05). Telegram's
   // gear button in the bot's overflow menu also opens this — but on
   // the web preview where the gear isn't rendered, this row is the
   // path. Available to anyone who can reach the Admin tab.
   const [langSheetOpen, setLangSheetOpen] = useState(false);
+  // M1.17: financial settings sheet (currency + tax + tax-inclusive).
+  const [financeSheetOpen, setFinanceSheetOpen] = useState(false);
   // Map locale codes to native labels for the read-out.
   const localeLabels: Record<string, string> = {
     en: 'English',
@@ -498,6 +503,42 @@ function WorkspaceSection() {
     uz: "O'zbekcha",
   };
   const currentLocale = session?.user.locale ?? 'en';
+  const currency = session?.member.currency ?? 'UZS';
+  const taxRatePct = session?.member.taxRatePct ?? '0';
+  const pricesIncludeTax = session?.member.pricesIncludeTax ?? true;
+  const isAdmin = session?.permissions.includes('users.manage') ?? false;
+
+  // Local form draft inside the sheet so we can cancel without
+  // affecting the source of truth on the auth store.
+  const [draftCurrency, setDraftCurrency] = useState<string>(currency);
+  const [draftTax, setDraftTax] = useState<string>(taxRatePct);
+  const [draftInclTax, setDraftInclTax] = useState<boolean>(pricesIncludeTax);
+  useEffect(() => {
+    if (!financeSheetOpen) return;
+    setDraftCurrency(currency);
+    setDraftTax(taxRatePct);
+    setDraftInclTax(pricesIncludeTax);
+  }, [financeSheetOpen, currency, taxRatePct, pricesIncludeTax]);
+
+  const orgFinanceUpdate = trpc.admin.orgFinanceUpdate.useMutation({
+    onSuccess: () => {
+      if (session) {
+        patchSession({
+          ...session,
+          member: {
+            ...session.member,
+            currency: draftCurrency,
+            taxRatePct: draftTax,
+            pricesIncludeTax: draftInclTax,
+          },
+        });
+      }
+      toast.success(i18n.t('common.saved'));
+      setFinanceSheetOpen(false);
+    },
+    onError: errToast('common.error'),
+  });
+
   return (
     <div className="px-4 py-3">
       <LanguageSheet open={langSheetOpen} onOpenChange={setLangSheetOpen} />
@@ -516,18 +557,108 @@ function WorkspaceSection() {
             label={i18n.t('admin.workspace.telegram')}
             value={session?.user.tgUsername ? `@${session.user.tgUsername}` : '—'}
           />
+          {/* M1.17: read-out of the new financial trio so anyone with
+              Admin access can see the active settings at a glance. The
+              edit affordance is the ListRow below (admin-only). */}
+          <DetailRow
+            label={i18n.t('admin.workspace.currency')}
+            value={currency}
+          />
+          <DetailRow
+            label={i18n.t('admin.workspace.taxRate')}
+            value={Number(taxRatePct) > 0 ? `${taxRatePct}%` : '—'}
+          />
         </div>
       </Card>
-      <div className="mt-3">
+      <div className="mt-3 flex flex-col gap-2">
         <ListRow
           label={i18n.t('settings.language.title')}
           hint={localeLabels[currentLocale] ?? currentLocale}
           onClick={() => setLangSheetOpen(true)}
         />
+        {/* M1.17: financial settings editor (admin-only). */}
+        {isAdmin ? (
+          <ListRow
+            label={i18n.t('admin.workspace.financeRow')}
+            hint={i18n.t('admin.workspace.financeRowHint', {
+              currency,
+              tax: Number(taxRatePct) > 0 ? `${taxRatePct}%` : '0%',
+            })}
+            onClick={() => setFinanceSheetOpen(true)}
+          />
+        ) : null}
       </div>
-      {/* M1.9: removed the "futureNote" footer copy — placeholder text
-          promising future features looks unfinished to users. Will
-          surface concrete next-step entries here when they ship. */}
+
+      {/* Financial settings editor sheet. M1.17. */}
+      <Sheet
+        open={financeSheetOpen}
+        onOpenChange={(open) => !open && setFinanceSheetOpen(false)}
+        title={i18n.t('admin.workspace.financeSheet.title')}
+        description={i18n.t('admin.workspace.financeSheet.description')}
+        footer={
+          !getTg() ? (
+            <Button
+              block
+              loading={orgFinanceUpdate.isPending}
+              onClick={() =>
+                orgFinanceUpdate.mutate({
+                  currency: draftCurrency,
+                  taxRatePct: draftTax,
+                  pricesIncludeTax: draftInclTax,
+                })
+              }
+            >
+              {i18n.t('common.save')}
+            </Button>
+          ) : null
+        }
+      >
+        <div className="flex flex-col gap-3 py-3">
+          <Field label={i18n.t('admin.workspace.currency')}>
+            <select
+              className="h-11 w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-h3 ring-hairline"
+              value={draftCurrency}
+              onChange={(e) => setDraftCurrency(e.target.value)}
+            >
+              {/* Limited to four ISO codes for launch — UZS (default),
+                  RUB / KZT (neighbouring markets), USD (cross-border
+                  contracts). Free-form input is rejected server-side
+                  via /^[A-Z]{3}$/, so adding codes is one-liner. */}
+              <option value="UZS">UZS — Uzbek so&apos;m</option>
+              <option value="RUB">RUB — Russian ruble</option>
+              <option value="KZT">KZT — Kazakhstani tenge</option>
+              <option value="USD">USD — US dollar</option>
+            </select>
+          </Field>
+          <Field
+            label={i18n.t('admin.workspace.taxRate')}
+            hint={i18n.t('admin.workspace.taxRateHint')}
+          >
+            <Input
+              type="number"
+              inputMode="decimal"
+              step="0.01"
+              min="0"
+              max="50"
+              value={draftTax}
+              onChange={(e) => setDraftTax(e.target.value)}
+              placeholder="0"
+            />
+          </Field>
+          <Field label={i18n.t('admin.workspace.pricesIncludeTax')}>
+            <Switch
+              checked={draftInclTax}
+              onChange={(e) => setDraftInclTax(e.target.checked)}
+              label={
+                draftInclTax
+                  ? i18n.t('admin.workspace.pricesIncludeTaxOn')
+                  : i18n.t('admin.workspace.pricesIncludeTaxOff')
+              }
+            />
+          </Field>
+          <Banner tone="info" title={i18n.t('admin.workspace.financeSheet.warning')} />
+        </div>
+      </Sheet>
     </div>
   );
 }

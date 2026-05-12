@@ -716,4 +716,20 @@ export const ru = {
   'finance.export.copied': 'Отчёт скопирован — вставьте в таблицу.',
   'finance.export.noClipboard': 'Буфер обмена недоступен — TSV в консоли.',
   'admin.errors.financeRequiresManage': 'Финансовые отчёты требуют права users.manage.',
+
+  // ── 15. Org financial settings (M1.17) ────────────────
+  'admin.workspace.currency': 'Валюта',
+  'admin.workspace.taxRate': 'Ставка налога',
+  'admin.workspace.taxRateHint': 'Стандартный НДС %. 0 — не отслеживать.',
+  'admin.workspace.pricesIncludeTax': 'Цены с налогом',
+  'admin.workspace.pricesIncludeTaxOn': 'С НДС (как на прилавке)',
+  'admin.workspace.pricesIncludeTaxOff': 'Без НДС (добавляется)',
+  'admin.workspace.financeRow': 'Финансовые настройки',
+  'admin.workspace.financeRowHint': '{currency} · налог {tax}',
+  'admin.workspace.financeSheet.title': 'Финансовые настройки',
+  'admin.workspace.financeSheet.description':
+    'Настройки уровня организации — суммы прошлых закупок не пересчитываются.',
+  'admin.workspace.financeSheet.warning':
+    'Смена валюты НЕ переводит исторические суммы. Задаётся один раз для организации.',
+  'admin.errors.taxRateOutOfRange': 'Ставка налога должна быть от 0 до 50.',
 } as const;

@@ -24,6 +24,15 @@ export const MemberSummarySchema = z.object({
   orgSlug: z.string(),
   orgName: z.string(),
   status: z.string(),
+  /**
+   * M1.17 (2026-05-08): org-level financial settings snapshot.
+   * Optional in the schema for backward compatibility with sessions
+   * minted by older servers — the FE falls back to UZS / 0% / gross
+   * when missing.
+   */
+  currency: z.string().length(3).optional(),
+  taxRatePct: z.string().optional(),
+  pricesIncludeTax: z.boolean().optional(),
 });
 
 export const SessionSchema = z.object({

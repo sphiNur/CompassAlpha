@@ -39,16 +39,36 @@ export function formatQty(v: string | number | null | undefined): string {
 }
 
 /**
- * Money formatter — same shape as `formatQty`. Kept separate so we can
- * later add currency-symbol affordances (e.g. `${v} UZS`, locale-aware
- * symbol placement) without touching every call site. For now it's
- * just `formatOneDecimal`.
+ * Money formatter — same shape as `formatQty`. Returns the numeric
+ * value formatted with `Intl.NumberFormat` (thousand separators, max
+ * one decimal). M1.17: accepts an optional `currency` so callers
+ * fetched-from-session can suffix the right ISO code. Default 'UZS'
+ * preserves the launch tenant's behavior for every existing call
+ * site. Pass `currency=null` (or `'none'`) for bare numbers (e.g.
+ * inside a label that already says "UZS" in the i18n string).
  */
-export function formatMoney(v: string | number | null | undefined): string {
+export function formatMoney(
+  v: string | number | null | undefined,
+  currency: string | null = null,
+): string {
   if (v === null || v === undefined || v === '') return '';
   const n = typeof v === 'number' ? v : Number(v);
   if (!Number.isFinite(n)) return String(v);
-  return formatOneDecimal(n);
+  const formatted = formatOneDecimal(n);
+  if (!currency || currency === 'none') return formatted;
+  return `${formatted} ${currency}`;
+}
+
+/**
+ * M1.17: helper for components that need to suffix the right currency
+ * code in places where the i18n string doesn't already include it.
+ * Reads the active session via the auth store on the call site.
+ * Returns 'UZS' if the session hasn't loaded yet (FE-only assumption).
+ */
+export function currencyOf(
+  session: { member?: { currency?: string } } | null | undefined,
+): string {
+  return session?.member?.currency ?? 'UZS';
 }
 
 /** Internal — `Intl.NumberFormat` with min 0 / max 1 fraction digits. */

@@ -670,4 +670,18 @@ export const zh = {
   'finance.export.copied': '已复制 — 粘贴到表格软件。',
   'finance.export.noClipboard': '剪贴板不可用 — 请在控制台查看 TSV。',
   'admin.errors.financeRequiresManage': '财务报表需要 users.manage 权限。',
+
+  // ── 15. Org financial settings (M1.17) ────────────────
+  'admin.workspace.currency': '币种',
+  'admin.workspace.taxRate': '税率',
+  'admin.workspace.taxRateHint': '标准 VAT 百分比，0 表示不追踪税。',
+  'admin.workspace.pricesIncludeTax': '价格含税',
+  'admin.workspace.pricesIncludeTaxOn': '含税（市场报价）',
+  'admin.workspace.pricesIncludeTaxOff': '不含税（另加）',
+  'admin.workspace.financeRow': '财务设置',
+  'admin.workspace.financeRowHint': '{currency} · 税 {tax}',
+  'admin.workspace.financeSheet.title': '财务设置',
+  'admin.workspace.financeSheet.description': '组织级默认值 — 不会重新折算历史金额。',
+  'admin.workspace.financeSheet.warning': '修改币种不会换算过去的采购金额。每个组织只应设置一次。',
+  'admin.errors.taxRateOutOfRange': '税率应在 0–50 之间。',
 } as const;

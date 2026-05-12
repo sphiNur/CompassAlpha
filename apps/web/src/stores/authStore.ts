@@ -11,7 +11,19 @@ export interface AuthSession {
     locale: string;
     tgUsername: string | null;
   };
-  member: { memberId: string; orgId: string; orgSlug: string; orgName: string; status: string };
+  member: {
+    memberId: string;
+    orgId: string;
+    orgSlug: string;
+    orgName: string;
+    status: string;
+    /** M1.17: org-level financial settings exposed at login. The FE
+     *  uses these to format money + display tax info without round-
+     *  trip. Operators should treat as set-once per org. */
+    currency?: string;
+    taxRatePct?: string;
+    pricesIncludeTax?: boolean;
+  };
   /** Only stores this member is assigned to (admins see all org stores). */
   stores: Array<{ id: string; name: string; code: string | null; isActive: boolean }>;
   permissions: string[];

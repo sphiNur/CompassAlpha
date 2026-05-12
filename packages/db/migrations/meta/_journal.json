@@ -99,6 +99,13 @@
       "when": 1778198400000,
       "tag": "0013_payment_method",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1778204400000,
+      "tag": "0014_currency_and_tax",
+      "breakpoints": true
     }
   ]
 }

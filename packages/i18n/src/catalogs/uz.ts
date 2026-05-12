@@ -740,4 +740,20 @@ export const uz = {
   'finance.export.noClipboard': "Bufer mavjud emas — TSV konsolga chiqarildi.",
   'admin.errors.financeRequiresManage':
     'Moliyaviy hisobotlar uchun users.manage ruxsati kerak.',
+
+  // ── 15. Org financial settings (M1.17) ────────────────
+  'admin.workspace.currency': 'Valyuta',
+  'admin.workspace.taxRate': 'Soliq stavkasi',
+  'admin.workspace.taxRateHint': 'Standart QQS %. 0 = soliqsiz.',
+  'admin.workspace.pricesIncludeTax': 'Narxlar soliq bilan',
+  'admin.workspace.pricesIncludeTaxOn': "Brutto (do'kondagi narx)",
+  'admin.workspace.pricesIncludeTaxOff': "Netto (soliq alohida qo'shiladi)",
+  'admin.workspace.financeRow': 'Moliya sozlamalari',
+  'admin.workspace.financeRowHint': '{currency} · soliq {tax}',
+  'admin.workspace.financeSheet.title': 'Moliya sozlamalari',
+  'admin.workspace.financeSheet.description':
+    "Tashkilot darajasidagi standart qiymatlar — eski xaridlar hech qachon qayta hisoblanmaydi.",
+  'admin.workspace.financeSheet.warning':
+    "Valyutani o'zgartirish eski xaridlarni qayta hisoblamaydi. Tashkilot uchun bir marta belgilang.",
+  'admin.errors.taxRateOutOfRange': "Soliq stavkasi 0 dan 50 gacha bo'lishi kerak.",
 } as const;

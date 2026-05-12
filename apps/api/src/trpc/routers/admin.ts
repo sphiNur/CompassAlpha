@@ -699,6 +699,73 @@ export const adminRouter = router({
     });
   }),
 
+  // ============ ORG FINANCIAL SETTINGS (M1.17) ============
+  //
+  // Read-only `overview` already returns the org name + ID. M1.17
+  // adds an editor for the financial trio (currency, tax rate,
+  // prices_include_tax). Gated on users.manage — these are
+  // organization-wide policy levers that should never be touched by
+  // a store manager unilaterally. Effect:
+  //
+  //   - Mutating `currency` does NOT re-denominate historical money
+  //     columns. It only shifts the suffix the FE renders going
+  //     forward. Operators MUST treat this as set-once per org.
+  //   - Mutating `taxRatePct` is a forward-only display change for
+  //     reports; per-transaction tax capture (M2.x) will snapshot the
+  //     rate at purchase time, so historical edits won't retroactively
+  //     rewrite past calculations.
+  //   - Mutating `pricesIncludeTax` flips how reports interpret stored
+  //     unit prices. Operators should align this with how their
+  //     suppliers actually quote (most market stalls quote gross).
+  orgFinanceUpdate: authedProcedure
+    .input(
+      z.object({
+        currency: z
+          .string()
+          .length(3)
+          .regex(/^[A-Z]{3}$/, 'currency must be ISO-4217 (3 uppercase letters)'),
+        taxRatePct: z
+          .string()
+          .regex(/^\d{1,3}(\.\d{1,2})?$/, 'tax must be a number, max 2 decimals'),
+        pricesIncludeTax: z.boolean(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      requireAdmin(ctx.session!.permissions);
+      // Reject runaway tax rates — 50% is the legal ceiling pretty
+      // much everywhere; anything higher is almost certainly a typo.
+      // (Hungary has the world's highest standard VAT at 27%, so 50
+      // leaves headroom for special items.)
+      const taxNum = Number(input.taxRatePct);
+      if (!Number.isFinite(taxNum) || taxNum < 0 || taxNum > 50) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'admin.errors.taxRateOutOfRange',
+        });
+      }
+      return ctx.withOrg(async (tx) => {
+        const orgId = ctx.session!.orgId;
+        await tx
+          .update(s.organizations)
+          .set({
+            currency: input.currency,
+            taxRatePct: input.taxRatePct,
+            pricesIncludeTax: input.pricesIncludeTax,
+            updatedAt: new Date(),
+          })
+          .where(eq(s.organizations.id, orgId));
+        await auditAdmin(
+          tx,
+          ctx,
+          'admin.orgFinanceUpdate',
+          'organization',
+          orgId,
+          input,
+        );
+        return { ok: true as const };
+      });
+    }),
+
   // ============ MEMBERS ============
 
   memberList: authedProcedure.query(async ({ ctx }) => {

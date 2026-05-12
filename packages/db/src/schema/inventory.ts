@@ -140,6 +140,14 @@ export const skus = inventorySchema.table(
     imageUrl: text('image_url'),
     /** Suggested ordering quantity from historical data (auto-updated by worker). */
     suggestedQty: decimal('suggested_qty', { precision: 12, scale: 3 }),
+    /**
+     * M1.17: per-SKU tax rate override. NULL means "use org default
+     * (auth.organizations.tax_rate_pct)". Most SKUs leave this null;
+     * only items with a non-standard rate (e.g. exempt categories
+     * like raw produce in some jurisdictions) get a value here.
+     * Foundation only — not consumed by reports yet.
+     */
+    taxRatePct: decimal('tax_rate_pct', { precision: 5, scale: 2 }),
     sortIndex: integer('sort_index').notNull().default(0),
     isArchived: boolean('is_archived').notNull().default(false),
     createdAt: createdAt(),
