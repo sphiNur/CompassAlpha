@@ -135,7 +135,7 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
           );
         await bumpSeq(db, e.streamId, e.seq);
         break;
-      case 'StoreConfirmed':
+      case 'StoreConfirmed': {
         await db
           .update(s.runItemStoresV)
           .set({ confirmedAt: e.occurredAt, confirmedByUserId: e.payload.confirmedByUserId })
@@ -145,8 +145,54 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
               eq(s.runItemStoresV.storeId, e.payload.storeId),
             ),
           );
+        // M2.0a (2026-05-08): inventory auto-receive. When a store
+        // confirms a delivery the per-SKU splits become committed
+        // on-hand inventory. We write one ledger row per (storeId,
+        // skuId) split with the split qty as a positive delta.
+        //
+        // Idempotency: the partial unique index
+        // `inv_mov_source_unique` on (sourceType='run', sourceId=runId,
+        // storeId, skuId) means re-firing this hook (e.g. during
+        // reproject) is a no-op via ON CONFLICT DO NOTHING.
+        //
+        // Short/wrong qty adjustments (StoreItemConfirmed
+        // status='short') are NOT yet honored in the delta — the
+        // operator must adjust the split before confirming, or post
+        // a stocktake / wastage row after. Future M2.x can wire item-
+        // level confirmation status into the inventory delta.
+        const splitsForStore = await db
+          .select({
+            skuId: s.runItemStoresV.skuId,
+            qty: s.runItemStoresV.qty,
+          })
+          .from(s.runItemStoresV)
+          .where(
+            and(
+              eq(s.runItemStoresV.runId, e.streamId),
+              eq(s.runItemStoresV.storeId, e.payload.storeId),
+            ),
+          );
+        if (splitsForStore.length > 0) {
+          await db
+            .insert(s.inventoryMovements)
+            .values(
+              splitsForStore.map((sp) => ({
+                orgId,
+                storeId: e.payload.storeId,
+                skuId: sp.skuId,
+                delta: sp.qty,
+                reason: 'delivery_received' as const,
+                sourceType: 'run' as const,
+                sourceId: e.streamId,
+                actorMemberId: e.actorMemberId,
+                occurredAt: e.occurredAt,
+              })),
+            )
+            .onConflictDoNothing();
+        }
         await bumpSeq(db, e.streamId, e.seq);
         break;
+      }
       case 'RunFinished':
         await db
           .update(s.marketRunsV)

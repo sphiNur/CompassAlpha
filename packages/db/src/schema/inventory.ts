@@ -181,6 +181,85 @@ export const skuSupplierLinks = inventorySchema.table(
   }),
 );
 
+/**
+ * Inventory ledger — every quantity change for a (store, SKU) lands
+ * here as an immutable row. Current on-hand = SUM(delta) per pair.
+ * Added M2.0a (2026-05-08): the first step of the ERP shift. Unlike
+ * the Order / Run aggregates, inventory is NOT event-sourced — it
+ * doesn't have meaningful state-machine transitions to guard. Append-
+ * only ledger + view-based aggregation is the right model for a
+ * book-of-deltas like this.
+ *
+ * Movement sources:
+ *   - 'delivery_received': auto-emitted when a run's StoreConfirmed
+ *     event lands. delta = +received qty per (store, sku).
+ *   - 'stocktake': manual absolute correction — operator counts the
+ *     shelf, types the actual qty, the system writes a delta to make
+ *     SUM equal that target. Reason field captures any note.
+ *   - 'wastage': manual subtraction with an explanation (spoiled,
+ *     broken, mislabeled). delta is negative.
+ *   - 'consumption': auto-emitted from M2.0c sales when a dish
+ *     order resolves into ingredient consumption via the BOM.
+ *   - 'transfer_in' / 'transfer_out': inter-store movement
+ *     (M2.x — pairs of rows, same magnitude, opposite signs).
+ *   - 'adjustment': catch-all for cases that don't fit above.
+ *
+ * `sourceType` + `sourceId` link back to the action that caused the
+ * movement (e.g. sourceType='run', sourceId=<runId>). Lets the FE
+ * say "this +5 kg came from run #42 on 2026-05-08".
+ *
+ * NOT scoped: cost basis. Inventory tracks QUANTITY only. Money
+ * stays in run_items / run_item_stores. If COGS reporting later
+ * needs unit cost at consumption time, M2.x will snapshot it onto
+ * the movement row (FIFO vs. weighted-average is a follow-up
+ * decision for that milestone).
+ */
+export const inventoryMovements = inventorySchema.table(
+  'movements',
+  {
+    id: pkUuid(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    storeId: uuid('store_id')
+      .notNull()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+    skuId: uuid('sku_id')
+      .notNull()
+      .references(() => skus.id, { onDelete: 'cascade' }),
+    /** Signed quantity change. Positive = received, negative = consumed. */
+    delta: decimal('delta', { precision: 12, scale: 3 }).notNull(),
+    /** One of delivery_received | stocktake | wastage | consumption |
+     *  transfer_in | transfer_out | adjustment. Validated in app code;
+     *  kept as varchar for schema flexibility (no enum rebuild on add). */
+    reason: varchar('reason', { length: 32 }).notNull(),
+    /** Optional free-text note. Required when reason='wastage'. */
+    note: text('note'),
+    /** What domain entity caused this — 'run' / 'sale' / 'manual' / etc. */
+    sourceType: varchar('source_type', { length: 32 }),
+    /** ID of the entity above. Nullable for 'manual' rows. */
+    sourceId: uuid('source_id'),
+    /** Who triggered the movement (member, for audit). */
+    actorMemberId: uuid('actor_member_id'),
+    occurredAt: timestamp('occurred_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .defaultNow(),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    storeSkuIdx: index('inv_mov_store_sku_idx').on(t.storeId, t.skuId, t.occurredAt),
+    orgTimeIdx: index('inv_mov_org_time_idx').on(t.orgId, t.occurredAt),
+    sourceIdx: index('inv_mov_source_idx').on(t.sourceType, t.sourceId),
+    // Idempotency: a single (sourceType, sourceId, storeId, skuId)
+    // never produces two rows. Lets us safely re-run the auto-receive
+    // hook on StoreConfirmed without double-counting if a projection
+    // replay re-fires the event.
+    sourceUnique: uniqueIndex('inv_mov_source_unique')
+      .on(t.sourceType, t.sourceId, t.storeId, t.skuId)
+      .where(sql`source_type IS NOT NULL AND source_id IS NOT NULL`),
+  }),
+);
+
 /** Insert-only price observations. Powers trends, alerts, supplier scoring. */
 export const priceHistory = inventorySchema.table(
   'price_history',

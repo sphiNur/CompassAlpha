@@ -28,6 +28,13 @@ export const PERMISSIONS = [
   { key: 'inventory.skus.manage', description: 'Manage SKUs and categories' },
   { key: 'inventory.suppliers.manage', description: 'Manage suppliers' },
   { key: 'inventory.stores.manage', description: 'Manage stores' },
+  // M2.0a (2026-05-08): manual inventory adjustments (stocktake +
+  // wastage). Per-store scoped — a store manager has this for THEIR
+  // store(s) only; admins and super_admins get it implicitly via
+  // users.manage. Delivery-receive auto-emissions on StoreConfirmed
+  // are NOT gated by this permission — they're a side effect of the
+  // existing delivery.confirm authority.
+  { key: 'inventory.adjust', description: 'Stocktake / wastage corrections' },
 
   { key: 'users.manage', description: 'Manage members, roles, and bindings' },
   // Granular split of users.manage (added 2026-05-03). Servers
@@ -82,6 +89,8 @@ export const BUILTIN_ROLES = [
       // touching members of stores they don't manage; this perm just
       // unlocks the entry point.
       'users.manage',
+      // M2.0a (2026-05-08): manage stocktake + wastage for their stores.
+      'inventory.adjust',
     ] as readonly string[],
   },
   {

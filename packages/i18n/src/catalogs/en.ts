@@ -813,4 +813,30 @@ export const en = {
   'admin.workspace.financeSheet.warning':
     'Changing currency does NOT convert past purchases. Set once per org.',
   'admin.errors.taxRateOutOfRange': 'Tax rate must be between 0 and 50.',
+
+  // ── 16. Inventory (M2.0a) ──────────────────────────────
+  // First step of the ERP shift. Inventory tab under Admin → Stores →
+  // [store]. Drives the levels list + stocktake + wastage editor.
+  'inventory.empty.title': 'No inventory data yet',
+  'inventory.empty.description':
+    'Confirm a delivery in this store to start seeing on-hand levels here.',
+  'inventory.action.stocktake': 'Stocktake',
+  'inventory.action.wastage': 'Wastage',
+  'inventory.sheet.stocktake.title': 'Stocktake',
+  'inventory.sheet.stocktake.systemSays': 'System on-hand: {qty}',
+  'inventory.sheet.stocktake.targetLabel': 'Actual on-hand now',
+  'inventory.sheet.stocktake.targetHint':
+    'Count the shelf and type the real total. We compute the difference.',
+  'inventory.sheet.stocktake.notePlaceholder': 'optional reason for the difference',
+  'inventory.sheet.wastage.title': 'Record wastage',
+  'inventory.sheet.wastage.qtyLabel': 'Quantity lost',
+  'inventory.sheet.wastage.notePlaceholder': 'spoiled / broken / mislabeled / lost',
+  'inventory.sheet.wastage.noteHint': 'Required — wastage rows without context are useless later.',
+  'inventory.sheet.note': 'Note',
+  'inventory.toast.stocktakeSaved': 'Stocktake saved.',
+  'inventory.toast.wastageSaved': 'Wastage recorded.',
+  'inventory.errors.cannotAdjust':
+    'You need inventory.adjust to stocktake or record wastage.',
+  'inventory.errors.invalidQty': 'Quantity must be a non-negative number.',
+  'inventory.errors.wastageNeedsNote': 'Wastage requires a reason.',
 } as const;

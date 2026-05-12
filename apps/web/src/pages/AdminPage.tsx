@@ -140,7 +140,9 @@ type StoreFocus =
   | { kind: 'store'; storeId: string; storeName: string };
 
 /** Sub-tab inside a focused store. Org-level only ever shows 'team'. */
-type StoreSub = 'team' | 'settings';
+// M2.0a: add 'inventory' tab — on-hand levels + stocktake + wastage.
+// Only meaningful on real stores (not org-level pseudo-store).
+type StoreSub = 'team' | 'settings' | 'inventory';
 
 function nativeConfirm(message: string, ok: () => void): void {
   const tg = getTg();
@@ -3583,6 +3585,15 @@ function StoreDetailScreen({
             >
               Team
             </SegBtn>
+            {/* M2.0a: inventory tab — current on-hand + stocktake/
+                wastage. Only appears on real stores. */}
+            <SegBtn
+              active={effectiveSub === 'inventory'}
+              tone="muted"
+              onClick={() => onSubChange('inventory')}
+            >
+              Inventory
+            </SegBtn>
             <SegBtn
               active={effectiveSub === 'settings'}
               tone="muted"
@@ -3602,9 +3613,273 @@ function StoreDetailScreen({
           }
         />
       ) : null}
+      {effectiveSub === 'inventory' && focus.kind === 'store' ? (
+        <StoreInventoryTab storeId={focus.storeId} />
+      ) : null}
       {effectiveSub === 'settings' && focus.kind === 'store' ? (
         <StoreSettingsTab storeId={focus.storeId} />
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * StoreInventoryTab (M2.0a, 2026-05-08).
+ *
+ * Lists current on-hand per SKU at this store, sourced from the
+ * `inventory.movements` ledger via `inventory.levels(storeId)`. Two
+ * actions per row:
+ *
+ *   - Stocktake: type the count from the shelf. We compute the delta
+ *     and post a single ledger row.
+ *   - Wastage: subtract qty with a mandatory note (spoiled / broken /
+ *     mislabeled / lost).
+ *
+ * Recent-movements drill-down for "why is the on-hand X" lives on
+ * the row tap (opens a sheet listing the last 50 movements).
+ */
+function StoreInventoryTab({ storeId }: { storeId: string }) {
+  const i18n = useI18n();
+  const toast = useToast();
+  const errToast = useErrToast();
+  const productName = useProductName();
+  const levelsQuery = trpc.inventory.levels.useQuery({ storeId });
+  const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: false });
+  const utils = trpc.useUtils();
+
+  const skuById = useMemo(() => {
+    const m = new Map<
+      string,
+      { id: string; names: Record<string, string>; unit: string; step: string }
+    >();
+    for (const sku of skusQuery.data ?? []) {
+      m.set(sku.id, {
+        id: sku.id,
+        names: sku.names as Record<string, string>,
+        unit: sku.unit,
+        step: sku.step,
+      });
+    }
+    return m;
+  }, [skusQuery.data]);
+
+  type ActionMode =
+    | { kind: 'stocktake'; skuId: string; current: string }
+    | { kind: 'wastage'; skuId: string };
+
+  const [action, setAction] = useState<ActionMode | null>(null);
+  const [draftTarget, setDraftTarget] = useState('');
+  const [draftWasteQty, setDraftWasteQty] = useState('');
+  const [draftNote, setDraftNote] = useState('');
+
+  useEffect(() => {
+    if (!action) {
+      setDraftTarget('');
+      setDraftWasteQty('');
+      setDraftNote('');
+    } else if (action.kind === 'stocktake') {
+      setDraftTarget(action.current);
+    }
+  }, [action]);
+
+  const stocktake = trpc.inventory.stocktake.useMutation({
+    onSuccess: () => {
+      void utils.inventory.levels.invalidate({ storeId });
+      toast.success(i18n.t('inventory.toast.stocktakeSaved'));
+      setAction(null);
+    },
+    onError: errToast('common.error'),
+  });
+  const recordWastage = trpc.inventory.recordWastage.useMutation({
+    onSuccess: () => {
+      void utils.inventory.levels.invalidate({ storeId });
+      toast.success(i18n.t('inventory.toast.wastageSaved'));
+      setAction(null);
+    },
+    onError: errToast('common.error'),
+  });
+
+  const rows = useMemo(() => {
+    const levels = levelsQuery.data ?? [];
+    return levels.map((l) => {
+      const sku = skuById.get(l.skuId);
+      const name = sku ? productName({ names: sku.names }) : l.skuId.slice(0, 8);
+      const unit = sku?.unit ?? '';
+      const onHandNum = Number(l.onHand);
+      return {
+        skuId: l.skuId,
+        name,
+        unit,
+        onHand: l.onHand,
+        onHandNum,
+        lastMovementAt: l.lastMovementAt,
+      };
+    });
+  }, [levelsQuery.data, skuById, productName]);
+
+  return (
+    <div className="px-4 py-3">
+      {levelsQuery.isLoading ? (
+        <div className="py-6 text-center">
+          <Spinner size={16} />
+        </div>
+      ) : rows.length === 0 ? (
+        <EmptyState
+          title={i18n.t('inventory.empty.title')}
+          description={i18n.t('inventory.empty.description')}
+        />
+      ) : (
+        <ul className="flex flex-col gap-1" role="list">
+          {rows
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .map((r) => {
+              const stockedOut = r.onHandNum <= 0;
+              return (
+                <li
+                  key={r.skuId}
+                  className={
+                    'rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 ring-hairline ' +
+                    (stockedOut ? 'opacity-70' : '')
+                  }
+                >
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="truncate text-body font-semibold">{r.name}</span>
+                    <span className="font-mono text-body tabular-nums">
+                      {formatQty(r.onHand)} {r.unit}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-center gap-1 text-meta">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setAction({
+                          kind: 'stocktake',
+                          skuId: r.skuId,
+                          current: r.onHand,
+                        })
+                      }
+                      className="press rounded-[var(--r-pill)] bg-[var(--c-surface)] px-2 py-0.5 ring-hairline active:opacity-70"
+                    >
+                      {i18n.t('inventory.action.stocktake')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAction({ kind: 'wastage', skuId: r.skuId })}
+                      className="press rounded-[var(--r-pill)] bg-[var(--c-surface)] px-2 py-0.5 text-[var(--c-danger)] ring-hairline active:opacity-70"
+                    >
+                      {i18n.t('inventory.action.wastage')}
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+        </ul>
+      )}
+
+      {/* Stocktake / wastage editor sheet. */}
+      <Sheet
+        open={action !== null}
+        onOpenChange={(open) => !open && setAction(null)}
+        title={
+          action?.kind === 'stocktake'
+            ? i18n.t('inventory.sheet.stocktake.title')
+            : i18n.t('inventory.sheet.wastage.title')
+        }
+        description={
+          action ? productName({ names: skuById.get(action.skuId)?.names ?? {} }) : ''
+        }
+        footer={
+          !getTg() && action ? (
+            <Button
+              block
+              loading={stocktake.isPending || recordWastage.isPending}
+              onClick={() => {
+                if (!action) return;
+                if (action.kind === 'stocktake') {
+                  stocktake.mutate({
+                    storeId,
+                    skuId: action.skuId,
+                    target: draftTarget,
+                    note: draftNote.trim() || undefined,
+                  });
+                } else {
+                  if (!draftNote.trim()) {
+                    errToast('common.error')(new Error('inventory.errors.wastageNeedsNote'));
+                    return;
+                  }
+                  recordWastage.mutate({
+                    storeId,
+                    skuId: action.skuId,
+                    qty: draftWasteQty,
+                    note: draftNote.trim(),
+                  });
+                }
+              }}
+            >
+              {i18n.t('common.save')}
+            </Button>
+          ) : null
+        }
+      >
+        {action ? (
+          <div className="flex flex-col gap-3 py-3">
+            {action.kind === 'stocktake' ? (
+              <>
+                <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 text-meta text-[var(--c-fg-muted)]">
+                  {i18n.t('inventory.sheet.stocktake.systemSays', {
+                    qty: formatQty(action.current),
+                  })}
+                </div>
+                <Field
+                  label={i18n.t('inventory.sheet.stocktake.targetLabel')}
+                  hint={i18n.t('inventory.sheet.stocktake.targetHint')}
+                >
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    step={skuById.get(action.skuId)?.step ?? '0.1'}
+                    min="0"
+                    value={draftTarget}
+                    onChange={(e) => setDraftTarget(e.target.value)}
+                    autoFocus
+                  />
+                </Field>
+                <Field label={i18n.t('inventory.sheet.note')}>
+                  <Input
+                    value={draftNote}
+                    onChange={(e) => setDraftNote(e.target.value)}
+                    placeholder={i18n.t('inventory.sheet.stocktake.notePlaceholder')}
+                  />
+                </Field>
+              </>
+            ) : (
+              <>
+                <Field label={i18n.t('inventory.sheet.wastage.qtyLabel')}>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    step={skuById.get(action.skuId)?.step ?? '0.1'}
+                    min="0"
+                    value={draftWasteQty}
+                    onChange={(e) => setDraftWasteQty(e.target.value)}
+                    autoFocus
+                  />
+                </Field>
+                <Field
+                  label={i18n.t('inventory.sheet.note')}
+                  hint={i18n.t('inventory.sheet.wastage.noteHint')}
+                >
+                  <Input
+                    value={draftNote}
+                    onChange={(e) => setDraftNote(e.target.value)}
+                    placeholder={i18n.t('inventory.sheet.wastage.notePlaceholder')}
+                  />
+                </Field>
+              </>
+            )}
+          </div>
+        ) : null}
+      </Sheet>
     </div>
   );
 }

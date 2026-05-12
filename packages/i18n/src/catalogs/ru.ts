@@ -732,4 +732,27 @@ export const ru = {
   'admin.workspace.financeSheet.warning':
     'Смена валюты НЕ переводит исторические суммы. Задаётся один раз для организации.',
   'admin.errors.taxRateOutOfRange': 'Ставка налога должна быть от 0 до 50.',
+
+  // ── 16. Inventory (M2.0a) ──────────────────────────────
+  'inventory.empty.title': 'Нет данных по остаткам',
+  'inventory.empty.description':
+    'Подтвердите хотя бы одну доставку в этот магазин — остатки появятся здесь.',
+  'inventory.action.stocktake': 'Инвентаризация',
+  'inventory.action.wastage': 'Списание',
+  'inventory.sheet.stocktake.title': 'Инвентаризация',
+  'inventory.sheet.stocktake.systemSays': 'По системе: {qty}',
+  'inventory.sheet.stocktake.targetLabel': 'Фактический остаток сейчас',
+  'inventory.sheet.stocktake.targetHint': 'Пересчитайте полку — система вычислит разницу.',
+  'inventory.sheet.stocktake.notePlaceholder': 'причина расхождения (опционально)',
+  'inventory.sheet.wastage.title': 'Списание',
+  'inventory.sheet.wastage.qtyLabel': 'Количество к списанию',
+  'inventory.sheet.wastage.notePlaceholder': 'просрочено / разбито / маркировка / потеря',
+  'inventory.sheet.wastage.noteHint': 'Обязательно — списание без причины бесполезно для аудита.',
+  'inventory.sheet.note': 'Заметка',
+  'inventory.toast.stocktakeSaved': 'Инвентаризация сохранена.',
+  'inventory.toast.wastageSaved': 'Списание записано.',
+  'inventory.errors.cannotAdjust':
+    'Для инвентаризации / списания нужно право inventory.adjust.',
+  'inventory.errors.invalidQty': 'Количество должно быть неотрицательным.',
+  'inventory.errors.wastageNeedsNote': 'Списание требует причины.',
 } as const;

@@ -756,4 +756,29 @@ export const uz = {
   'admin.workspace.financeSheet.warning':
     "Valyutani o'zgartirish eski xaridlarni qayta hisoblamaydi. Tashkilot uchun bir marta belgilang.",
   'admin.errors.taxRateOutOfRange': "Soliq stavkasi 0 dan 50 gacha bo'lishi kerak.",
+
+  // ── 16. Inventory (M2.0a) ──────────────────────────────
+  'inventory.empty.title': "Hozircha ombor ma'lumotlari yo'q",
+  'inventory.empty.description':
+    "Bu do'konda yetkazib berishni tasdiqlang — qoldiqlar shu yerda paydo bo'ladi.",
+  'inventory.action.stocktake': "Inventarizatsiya",
+  'inventory.action.wastage': 'Yo&apos;qotish',
+  'inventory.sheet.stocktake.title': 'Inventarizatsiya',
+  'inventory.sheet.stocktake.systemSays': "Tizim bo'yicha: {qty}",
+  'inventory.sheet.stocktake.targetLabel': 'Hozirgi haqiqiy qoldiq',
+  'inventory.sheet.stocktake.targetHint':
+    'Javonni sanang — tizim farqni hisoblaydi.',
+  'inventory.sheet.stocktake.notePlaceholder': 'Farq sababi (ixtiyoriy)',
+  'inventory.sheet.wastage.title': "Yo&apos;qotishni yozish",
+  'inventory.sheet.wastage.qtyLabel': "Yo&apos;qotilgan miqdor",
+  'inventory.sheet.wastage.notePlaceholder': "buzilgan / sinilgan / yorliq / yo'qolgan",
+  'inventory.sheet.wastage.noteHint':
+    "Majburiy — sababsiz yozuv keyinroq foydasiz.",
+  'inventory.sheet.note': 'Izoh',
+  'inventory.toast.stocktakeSaved': 'Inventarizatsiya saqlandi.',
+  'inventory.toast.wastageSaved': "Yo&apos;qotish yozildi.",
+  'inventory.errors.cannotAdjust':
+    "Inventarizatsiya yoki yo'qotish uchun inventory.adjust ruxsati kerak.",
+  'inventory.errors.invalidQty': "Miqdor manfiy bo'lmasligi kerak.",
+  'inventory.errors.wastageNeedsNote': "Yo'qotish sababi kerak.",
 } as const;
