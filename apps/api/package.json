@@ -8,7 +8,8 @@
     "build": "bun build src/main.ts --outdir dist --target bun --minify",
     "start": "bun run dist/main.js",
     "type-check": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "reproject": "bun run scripts/reproject.ts"
   },
   "dependencies": {
     "@compass/contracts": "workspace:*",

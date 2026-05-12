@@ -1,4 +1,5 @@
 import { TRPCError } from '@trpc/server';
+import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { schema as s } from '@compass/db';
 import { RecentLogsInputSchema } from '@compass/contracts';
@@ -44,13 +45,58 @@ function clamp(value: unknown, max: number): string | null {
 }
 
 export const systemRouter = router({
-  health: publicProcedure.query(() => ({
-    status: 'ok' as const,
-    db: true,
-    redis: true,
-    projectorLag: 0,
-    version: process.env.VITE_BUILD_SHA ?? 'dev',
-  })),
+  /**
+   * Health probe (M1.16, 2026-05-08): now actually checks reality.
+   *
+   * Returns:
+   *   - status: 'ok' | 'degraded'    (degraded = something to look at)
+   *   - db: did SELECT 1 succeed
+   *   - outboxPending: rows in sync.outbox awaiting delivery
+   *   - outboxOldestSec: age in seconds of the oldest unsent row.
+   *     High value = worker stalled, network egress dead, or backoff
+   *     exhausted. Threshold for "degraded" is 300s (5 min) — covers
+   *     normal retry windows (5/10/30/60s) without flapping.
+   *
+   * The check is intentionally lightweight (two cheap COUNT/MAX
+   * queries) so deploy.ts smoke can poll it without load impact.
+   */
+  health: publicProcedure.query(async ({ ctx }) => {
+    let dbOk = true;
+    let outboxPending = 0;
+    let outboxOldestSec: number | null = null;
+    try {
+      await ctx.db.execute(sql`SELECT 1`);
+    } catch (err) {
+      logger.error({ err }, 'system.health: db ping failed');
+      dbOk = false;
+    }
+    if (dbOk) {
+      try {
+        const r = (await ctx.db.execute(sql`
+          SELECT
+            COUNT(*)::int AS pending,
+            EXTRACT(EPOCH FROM (NOW() - MIN(created_at)))::int AS oldest_sec
+          FROM sync.outbox
+          WHERE sent_at IS NULL
+        `)) as unknown as Array<{ pending: number; oldest_sec: number | null }>;
+        outboxPending = r[0]?.pending ?? 0;
+        outboxOldestSec = r[0]?.oldest_sec ?? null;
+      } catch (err) {
+        logger.warn({ err }, 'system.health: outbox probe failed');
+      }
+    }
+    const degraded =
+      !dbOk || (outboxOldestSec !== null && outboxOldestSec > 300);
+    return {
+      status: degraded ? ('degraded' as const) : ('ok' as const),
+      db: dbOk,
+      redis: true,
+      projectorLag: 0,
+      outboxPending,
+      outboxOldestSec,
+      version: process.env.VITE_BUILD_SHA ?? 'dev',
+    };
+  }),
 
   /**
    * Public app config. Exposes a few server-side env values the web
