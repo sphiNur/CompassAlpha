@@ -44,6 +44,18 @@ export const notifications = opsSchema.table(
   }),
 );
 
+/**
+ * @deprecated (M1.18, 2026-05-08) â€” table is defined but never written
+ * to. Admin actions land in `domain.policy_decisions` instead; client
+ * telemetry lands in `ops.client_logs`. The shape here predates the
+ * decision to use the policy-decisions row for both authz audit AND
+ * mutation audit. Drop in a future migration once we confirm no
+ * external query consumer depends on the table existing.
+ *
+ * Kept in the schema for now because dropping a table is a one-way
+ * migration; we'd rather catch the "wait, this was used by X" issue
+ * via the deprecation comment than be unable to roll back.
+ */
 export const auditLog = opsSchema.table(
   'audit_log',
   {
@@ -70,7 +82,7 @@ export const auditLog = opsSchema.table(
 );
 
 /**
- * Per-org client telemetry mirror â€?kept for offline forensics in addition to OTel.
+ * Per-org client telemetry mirror ï¿½?kept for offline forensics in addition to OTel.
  */
 export const clientLogs = opsSchema.table(
   'client_logs',

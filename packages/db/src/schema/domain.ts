@@ -55,6 +55,15 @@ export const events = domainSchema.table(
 /**
  * Optional snapshot at seq=N to avoid replaying long histories.
  * Workers periodically snapshot active streams.
+ *
+ * @deprecated (M1.18, 2026-05-08) — no worker currently writes to this
+ * table. The replay path in `pnpm reproject` ignores snapshots and
+ * folds from seq 0 every time, which is fine while streams stay short
+ * (<200 events in practice). When run streams cross ~1000 events
+ * we'll wire up a snapshotter; until then the table is structural
+ * scaffolding only. The `purge-fake-data` and rls-isolation tests
+ * still issue defensive DELETEs against it, so it stays in the
+ * schema — dropping would require updating those call sites.
  */
 export const snapshots = domainSchema.table(
   'snapshots',
