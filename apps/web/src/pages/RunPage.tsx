@@ -42,6 +42,7 @@ import {
   Input,
   NumberInput,
   PhotoCapture,
+  SectionLabel,
   Sheet,
   useToast,
 } from '@compass/ui';
@@ -640,13 +641,18 @@ export function RunPage() {
         case 'finish': {
           // M1.14: include cash / transfer breakdown when the run mixed
           // both methods. Single-method runs see only the lump sum.
+          // M2.1 (2026-05-08): route the three confirm-body numbers
+          // through formatMoney() so thousand separators + the
+          // one-decimal cap match every other money display in the
+          // app. Was `.toFixed(0)` which produced a raw integer
+          // string with no separators (e.g. "1234567").
           const showBreakdown =
             finishSummary.totalCash > 0 && finishSummary.totalTransfer > 0;
           const breakdownLine = showBreakdown
             ? '\n' +
               i18n.t('run.confirm.finish.paymentBreakdown', {
-                cash: finishSummary.totalCash.toFixed(0),
-                transfer: finishSummary.totalTransfer.toFixed(0),
+                cash: formatMoney(finishSummary.totalCash),
+                transfer: formatMoney(finishSummary.totalTransfer),
               })
             : '';
           return {
@@ -657,7 +663,7 @@ export function RunPage() {
               i18n.t('run.confirm.finish.summary', {
                 items: finishSummary.skus,
                 stores: finishSummary.stores,
-                total: finishSummary.total.toFixed(0),
+                total: formatMoney(finishSummary.total),
               }) +
               breakdownLine,
             confirmLabel: i18n.t('run.action.finish'),
@@ -1437,18 +1443,17 @@ function ActiveRunPanel({
       {(!showViewToggle || viewMode === 'aggregate') &&
       (run.status === 'planned' || run.status === 'purchasing') && run.items.length > 0 ? (
         <Card>
-          {/* Slim header — Items label + pending count on one tight line.
-              Was a CardHeader/CardTitle/CardMeta stack (3 lines, ~56px);
-              now a single 28px row that doesn't push items off-screen. */}
-          <div className="flex items-baseline justify-between gap-2 px-4 py-1.5 text-label text-[var(--c-fg-muted)]">
-            <span className="font-semibold uppercase tracking-wide">{i18n.t('run.section.items')}</span>
-            <span className="tabular-nums">
-              {i18n.t('run.label.pendingFraction', {
-                done: run.items.filter((i) => i.status === 'pending').length,
-                total: run.items.length,
-              })}
-            </span>
-          </div>
+          {/* M2.1: SectionLabel (was 3-line ad-hoc div). Same visual,
+              standardised primitive so every section eyebrow renders
+              identically across the app. */}
+          <SectionLabel
+            meta={i18n.t('run.label.pendingFraction', {
+              done: run.items.filter((i) => i.status === 'pending').length,
+              total: run.items.length,
+            })}
+          >
+            {i18n.t('run.section.items')}
+          </SectionLabel>
           <ul className="flex flex-col" role="list">
             {run.items.map((it) => {
               const sku = skuById.get(it.skuId);
@@ -1478,19 +1483,17 @@ function ActiveRunPanel({
 
       {run.status === 'delivering' && involvedStoreIds.length > 0 ? (
         <Card>
-          {/* Slim header — same density treatment as Items.
-              "Tap to deliver" hint is implicit in the badge tone, dropped. */}
-          <div className="flex items-baseline justify-between gap-2 px-4 py-1.5 text-label text-[var(--c-fg-muted)]">
-            <span className="font-semibold uppercase tracking-wide">{i18n.t('run.section.stores')}</span>
-            <span className="tabular-nums">
-              {i18n.t('run.label.confirmedFraction', {
-                done: involvedStoreIds.filter((sid) =>
-                  run.splits.filter((sp) => sp.storeId === sid).every((sp) => !!sp.confirmedAt),
-                ).length,
-                total: involvedStoreIds.length,
-              })}
-            </span>
-          </div>
+          {/* M2.1: SectionLabel (was ad-hoc eyebrow div). */}
+          <SectionLabel
+            meta={i18n.t('run.label.confirmedFraction', {
+              done: involvedStoreIds.filter((sid) =>
+                run.splits.filter((sp) => sp.storeId === sid).every((sp) => !!sp.confirmedAt),
+              ).length,
+              total: involvedStoreIds.length,
+            })}
+          >
+            {i18n.t('run.section.stores')}
+          </SectionLabel>
           <ul className="flex flex-col" role="list">
             {involvedStoreIds.map((storeId) => {
               const store = storeById.get(storeId);
@@ -1920,13 +1923,19 @@ function PreviewSummaryCard({
                 <span className="text-body font-semibold text-[var(--c-fg)]">
                   🏪 {g.storeName}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => copyToClipboard(buildStoreText(g.storeId, g.storeName, g.items), 'run.previewStore.copied')}
-                  className="press rounded-full bg-[var(--c-surface)] px-3 py-1 text-meta font-medium ring-hairline"
+                {/* M2.1: Button component (was raw <button>). */}
+                <Button
+                  variant="pearl"
+                  size="sm"
+                  onClick={() =>
+                    copyToClipboard(
+                      buildStoreText(g.storeId, g.storeName, g.items),
+                      'run.previewStore.copied',
+                    )
+                  }
                 >
                   {i18n.t('run.previewStore.copyList')}
-                </button>
+                </Button>
               </div>
               <ul className="flex flex-col gap-1">
                 {g.items.map((it) => {
@@ -1980,13 +1989,15 @@ function PreviewSummaryCard({
                   ) : null}
                 </div>
                 {b.supplierId ? (
-                  <button
-                    type="button"
-                    onClick={() => copyToClipboard(buildVendorText(b), 'run.previewSupplier.copied')}
-                    className="press shrink-0 rounded-full bg-[var(--c-action)] px-3 py-1 text-meta font-semibold text-[var(--c-action-fg)]"
+                  /* M2.1: Button component (was raw <button>). */
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      copyToClipboard(buildVendorText(b), 'run.previewSupplier.copied')
+                    }
                   >
                     {i18n.t('run.previewSupplier.copyToVendor')}
-                  </button>
+                  </Button>
                 ) : null}
               </div>
               {!b.supplierId ? (
@@ -3167,16 +3178,13 @@ function RunHistorySection({
           {/* Month group header — sub-section label + per-month total
               spend for finished runs. Helps the operator see "we spent
               X this month" without leaving the page. */}
-          <div className="flex items-baseline justify-between gap-2 px-4 pt-3 pb-1">
-            <span className="text-label font-semibold uppercase tracking-wide text-[var(--c-fg-muted)]">
-              {formatMonth(g.month)}
-            </span>
-            {g.total > 0 ? (
-              <span className="text-meta tabular-nums text-[var(--c-fg-muted)]">
-                {formatMoney(String(g.total))}
-              </span>
-            ) : null}
-          </div>
+          {/* M2.1: SectionLabel (month group header). */}
+          <SectionLabel
+            meta={g.total > 0 ? formatMoney(String(g.total)) : undefined}
+            className="pt-3 pb-1"
+          >
+            {formatMonth(g.month)}
+          </SectionLabel>
           <ul className="flex flex-col" role="list">
             {g.rows.map((r) => {
               const cancelled = r.status === 'cancelled';

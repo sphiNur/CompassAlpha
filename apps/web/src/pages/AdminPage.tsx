@@ -50,6 +50,7 @@ import {
   ListRow,
   Checkbox,
   SearchInput,
+  SectionLabel,
   SectionRow,
   Select,
   Sheet,
@@ -1499,9 +1500,10 @@ function RoleCreateSheet({
           />
         </Field>
         <div>
-          <div className="mb-2 text-label font-semibold uppercase tracking-wide text-[var(--c-fg-muted)]">
+          {/* M2.1: SectionLabel (was ad-hoc eyebrow). */}
+          <SectionLabel className="mb-2 px-0">
             Permissions ({picked.size})
-          </div>
+          </SectionLabel>
           {permsQuery.isLoading ? (
             <Spinner size={16} />
           ) : (
@@ -1737,9 +1739,10 @@ function RolePermissionsSheet({
                   />
                 </Field>
               )}
-              <div className="text-label font-semibold uppercase tracking-wide text-[var(--c-fg-muted)]">
+              {/* M2.1: SectionLabel (was ad-hoc eyebrow div). */}
+              <SectionLabel className="px-0">
                 Permissions ({picked.size})
-              </div>
+              </SectionLabel>
             </>
           ) : detail.data.description ? (
             <p className="text-body-sm text-[var(--c-fg-muted)]">{detail.data.description}</p>
@@ -4045,9 +4048,10 @@ function StoreSalesTab({ storeId }: { storeId: string }) {
       {/* Record sale form. */}
       {canRecord ? (
         <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
-          <div className="text-label font-semibold uppercase tracking-wide text-[var(--c-fg-muted)]">
+          {/* M2.1: SectionLabel (was ad-hoc eyebrow). */}
+          <SectionLabel className="px-0 py-0">
             {i18n.t('sales.form.recordTitle')}
-          </div>
+          </SectionLabel>
           {dishOptions.length === 0 ? (
             <p className="text-meta text-[var(--c-fg-muted)]">
               {i18n.t('sales.form.noDishesYet')}
@@ -4107,9 +4111,10 @@ function StoreSalesTab({ storeId }: { storeId: string }) {
 
       {/* Today's sales list. */}
       <div>
-        <div className="mb-2 text-label font-semibold uppercase tracking-wide text-[var(--c-fg-muted)]">
+        {/* M2.1: SectionLabel (was ad-hoc eyebrow). */}
+        <SectionLabel className="mb-2 px-0">
           {i18n.t('sales.list.title')}
-        </div>
+        </SectionLabel>
         {salesQuery.isLoading ? (
           <div className="py-4 text-center">
             <Spinner size={16} />
@@ -5503,15 +5508,18 @@ function DishesSection() {
     <div className="px-4 py-3">
       {/* Top bar: archive toggle + new dish. */}
       <div className="mb-3 flex items-center gap-2">
-        <button
-          type="button"
+        {/* M2.1: archive toggle now uses Button (was raw <button>).
+            Sat awkwardly next to the proper Button below — same size,
+            same shape, but different DOM. Unified to one primitive. */}
+        <Button
+          variant="pearl"
+          size="sm"
           onClick={() => setIncludeArchived((v) => !v)}
-          className="press rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2.5 py-1 text-meta text-[var(--c-fg)] ring-hairline"
         >
           {includeArchived
             ? i18n.t('dishes.action.hideArchived')
             : i18n.t('dishes.action.showArchived')}
-        </button>
+        </Button>
         {canManage ? (
           <Button size="sm" onClick={() => setDraft({ ...EMPTY_DISH })} className="ml-auto">
             {i18n.t('dishes.action.new')}
@@ -5652,19 +5660,16 @@ function DishesSection() {
               />
             </Field>
 
-            {/* Ingredients. */}
+            {/* Ingredients. M2.1: SectionLabel + add-ingredient
+                button uses Button component. */}
             <div>
-              <div className="mb-2 flex items-baseline justify-between gap-2">
-                <span className="text-label font-semibold uppercase tracking-wide text-[var(--c-fg-muted)]">
+              <div className="mb-2 flex items-baseline justify-between gap-2 px-0">
+                <SectionLabel className="px-0 py-0">
                   {i18n.t('dishes.section.ingredients')}
-                </span>
-                <button
-                  type="button"
-                  onClick={addIngredient}
-                  className="press rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2 py-0.5 text-meta ring-hairline"
-                >
+                </SectionLabel>
+                <Button variant="pearl" size="sm" onClick={addIngredient}>
                   {i18n.t('dishes.action.addIngredient')}
-                </button>
+                </Button>
               </div>
               {draft.ingredients.length === 0 ? (
                 <p className="text-meta text-[var(--c-fg-muted)]">

@@ -39,6 +39,8 @@ export { NumberInput } from './components/NumberInput';
 export type { NumberInputProps } from './components/NumberInput';
 export { PageHeader } from './components/PageHeader';
 export type { PageHeaderProps } from './components/PageHeader';
+export { SectionLabel } from './components/SectionLabel';
+export type { SectionLabelProps } from './components/SectionLabel';
 export { SectionRow, ListRow, DetailRow, Tile, Field } from './components/Rows';
 export type {
   SectionRowProps,
