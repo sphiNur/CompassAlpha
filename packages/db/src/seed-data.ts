@@ -41,6 +41,11 @@ export const PERMISSIONS = [
   // mental model: SKUs are purchasing-level, dishes are kitchen-
   // level). Admins / super_admins get it implicitly via users.manage.
   { key: 'dishes.manage', description: 'Manage dishes (menu) and recipes/BOM' },
+  // M2.0c (2026-05-08): sales recording. Per-store scoped — cashiers
+  // and shift leads need this, but only for stores they're assigned
+  // to. The `sales.record` mutation also auto-deducts ingredient
+  // inventory via the recipe BOM in the same transaction.
+  { key: 'sales.record', description: 'Record dish sales at a store' },
 
   { key: 'users.manage', description: 'Manage members, roles, and bindings' },
   // Granular split of users.manage (added 2026-05-03). Servers
@@ -102,6 +107,9 @@ export const BUILTIN_ROLES = [
       // granular roles (cook / chef-without-admin) can opt out by
       // creating a custom role.
       'dishes.manage',
+      // M2.0c (2026-05-08): managers usually open/close the till
+      // themselves; let them record sales without elevating to admin.
+      'sales.record',
     ] as readonly string[],
   },
   {
@@ -127,6 +135,10 @@ export const BUILTIN_ROLES = [
       'order.draft',
       'order.submit',
       'delivery.confirm',
+      // M2.0c (2026-05-08): staff include cashiers / shift leads
+      // who tally end-of-day sales. Per-store override can still
+      // strip this for non-cash-handling roles.
+      'sales.record',
     ] as readonly string[],
   },
 ] as const;

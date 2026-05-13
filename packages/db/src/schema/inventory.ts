@@ -268,6 +268,68 @@ export const dishIngredients = inventorySchema.table(
 );
 
 /**
+ * Sales (M2.0c, 2026-05-08) — recorded dish sales per store.
+ *
+ * One row per "we sold N portions of dish X at store Y" event. The
+ * server, in the same tx that inserts the sales row, also writes
+ * inventory.movements rows (one per ingredient in the dish's recipe)
+ * with delta = -(qty × qty_per_serving) and reason='consumption'.
+ *
+ * This closes the ERP loop: purchase → receive (M2.0a) → menu+BOM
+ * (M2.0b) → consume (M2.0c).
+ *
+ * Source linkage:
+ *   The auto-emitted movement rows carry sourceType='sale' +
+ *   sourceId=<sales.id>. The partial UNIQUE index on movements
+ *   (source_type, source_id, store_id, sku_id) guarantees that a
+ *   replay or double-fire of `sales.record` cannot double-deduct.
+ *
+ * Editing / deleting (NOT in M2.0c):
+ *   First cut is record-only. Mistakes are corrected via the
+ *   stocktake action (M2.0a). M2.x can add `sales.delete` that
+ *   soft-marks the row AND writes reversal movements with reason=
+ *   'consumption_reversed' so the audit trail stays append-only.
+ *   For now `sales.delete` doesn't exist — keep it simple.
+ *
+ * Price snapshot:
+ *   `unit_price` on the sale row is the SELLING price per serving
+ *   *at sale time*. Snapshotted (not joined from dishes.unitPrice)
+ *   so future price changes don't retroactively rewrite past
+ *   revenue. M2.x can roll these into a per-day revenue report.
+ */
+export const sales = inventorySchema.table(
+  'sales',
+  {
+    id: pkUuid(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    storeId: uuid('store_id')
+      .notNull()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+    dishId: uuid('dish_id')
+      .notNull()
+      .references(() => dishes.id, { onDelete: 'restrict' }),
+    /** Number of servings sold in this single event. > 0. */
+    qty: decimal('qty', { precision: 10, scale: 2 }).notNull(),
+    /** Selling price per serving at sale time. NULL if the dish had
+     *  no price set when sold (we still record the consumption). */
+    unitPrice: decimal('unit_price', { precision: 14, scale: 2 }),
+    /** Who logged it — for audit / shift reconciliation. */
+    recordedByMemberId: uuid('recorded_by_member_id'),
+    occurredAt: timestamp('occurred_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .defaultNow(),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    storeTimeIdx: index('sales_store_time_idx').on(t.storeId, t.occurredAt),
+    orgTimeIdx: index('sales_org_time_idx').on(t.orgId, t.occurredAt),
+    dishIdx: index('sales_dish_idx').on(t.dishId, t.occurredAt),
+  }),
+);
+
+/**
  * Inventory ledger — every quantity change for a (store, SKU) lands
  * here as an immutable row. Current on-hand = SUM(delta) per pair.
  * Added M2.0a (2026-05-08): the first step of the ERP shift. Unlike

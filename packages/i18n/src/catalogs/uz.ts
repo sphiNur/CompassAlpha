@@ -815,4 +815,25 @@ export const uz = {
   'dishes.errors.ingredientQtyMustBePositive': "Ingredient miqdori > 0 bo'lishi kerak.",
   'dishes.errors.ingredientSkuNotFound': "Retseptda noma'lum SKU.",
   'dishes.errors.notFound': "Taom topilmadi.",
+
+  // ── 18. Sales (M2.0c) ──────────────────────────────────
+  'sales.summary.today': 'Bugun',
+  'sales.summary.servings': 'porsiya',
+  'sales.summary.revenue': 'Tushum',
+  'sales.form.recordTitle': "Sotuvni yozish",
+  'sales.form.pickDish': "Taomni tanlang…",
+  'sales.form.qtyLabel': 'Porsiya',
+  'sales.form.recordBtn': 'Yozish',
+  'sales.form.noDishesYet': "Hech qanday taom yo'q. Avval Catalog → Dishes da qo'shing.",
+  'sales.form.noRecipe': "retsept yo'q",
+  'sales.list.title': "Bugungi sotuvlar",
+  'sales.empty.title': "Bugun sotuvlar yo'q",
+  'sales.empty.description': "Birinchi sotuvni yozish uchun yuqoridagi tugmani bosing.",
+  'sales.toast.recorded': "Yozildi — qoldiq yangilandi.",
+  'sales.errors.cannotRecord': "Sotuv yozish uchun shu do'konda sales.record ruxsati kerak.",
+  'sales.errors.dishNotFound': "Taom topilmadi.",
+  'sales.errors.dishArchived': "Taom arxivda. Avval tiklang.",
+  'sales.errors.storeNotFound': "Do'kon topilmadi.",
+  'sales.errors.dishHasNoRecipe':
+    "Sotuvni yozishdan oldin taom uchun retsept (BOM) belgilang.",
 } as const;

@@ -874,4 +874,30 @@ export const en = {
   'dishes.errors.ingredientQtyMustBePositive': 'Ingredient qty must be > 0.',
   'dishes.errors.ingredientSkuNotFound': 'One or more ingredients reference an unknown SKU.',
   'dishes.errors.notFound': 'Dish not found.',
+
+  // ── 18. Sales (M2.0c) ──────────────────────────────────
+  // Sales recording — closes the ERP loop. Admin → Stores →
+  // [store] → Sales. Each recorded sale auto-deducts ingredient
+  // inventory via the dish's recipe BOM (server-side, same tx).
+  'sales.summary.today': "Today",
+  'sales.summary.servings': 'servings',
+  'sales.summary.revenue': 'Revenue',
+  'sales.form.recordTitle': 'Record sale',
+  'sales.form.pickDish': 'Pick dish…',
+  'sales.form.qtyLabel': 'Servings',
+  'sales.form.recordBtn': 'Record',
+  'sales.form.noDishesYet': 'No dishes set up. Add one in Catalog → Dishes first.',
+  'sales.form.noRecipe': 'no recipe',
+  'sales.list.title': "Today's sales",
+  'sales.empty.title': 'No sales recorded today',
+  'sales.empty.description': 'Tap "Record" above to log the first sale.',
+  'sales.toast.recorded': 'Sale recorded — inventory updated.',
+  'sales.errors.cannotRecord':
+    'You need sales.record at this store to log sales.',
+  'sales.errors.dishNotFound': 'Dish not found.',
+  'sales.errors.dishArchived':
+    'This dish is archived. Unarchive it before recording sales.',
+  'sales.errors.storeNotFound': 'Store not found.',
+  'sales.errors.dishHasNoRecipe':
+    'Set a recipe (BOM) for this dish before recording sales.',
 } as const;

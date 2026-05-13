@@ -120,6 +120,13 @@
       "when": 1778214000000,
       "tag": "0016_dishes_and_recipes",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1778217600000,
+      "tag": "0017_sales",
+      "breakpoints": true
     }
   ]
 }

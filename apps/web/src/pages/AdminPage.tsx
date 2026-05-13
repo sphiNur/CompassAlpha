@@ -144,8 +144,9 @@ type StoreFocus =
 
 /** Sub-tab inside a focused store. Org-level only ever shows 'team'. */
 // M2.0a: add 'inventory' tab — on-hand levels + stocktake + wastage.
-// Only meaningful on real stores (not org-level pseudo-store).
-type StoreSub = 'team' | 'settings' | 'inventory';
+// M2.0c: add 'sales' tab — record sales (auto-deducts inventory).
+// Both only meaningful on real stores (not org-level pseudo-store).
+type StoreSub = 'team' | 'settings' | 'inventory' | 'sales';
 
 function nativeConfirm(message: string, ok: () => void): void {
   const tg = getTg();
@@ -3608,6 +3609,15 @@ function StoreDetailScreen({
             >
               Inventory
             </SegBtn>
+            {/* M2.0c: sales tab — record dish sales, auto-deduct
+                inventory via recipe BOM. */}
+            <SegBtn
+              active={effectiveSub === 'sales'}
+              tone="muted"
+              onClick={() => onSubChange('sales')}
+            >
+              Sales
+            </SegBtn>
             <SegBtn
               active={effectiveSub === 'settings'}
               tone="muted"
@@ -3629,6 +3639,9 @@ function StoreDetailScreen({
       ) : null}
       {effectiveSub === 'inventory' && focus.kind === 'store' ? (
         <StoreInventoryTab storeId={focus.storeId} />
+      ) : null}
+      {effectiveSub === 'sales' && focus.kind === 'store' ? (
+        <StoreSalesTab storeId={focus.storeId} />
       ) : null}
       {effectiveSub === 'settings' && focus.kind === 'store' ? (
         <StoreSettingsTab storeId={focus.storeId} />
@@ -3894,6 +3907,255 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
           </div>
         ) : null}
       </Sheet>
+    </div>
+  );
+}
+
+/**
+ * StoreSalesTab (M2.0c, 2026-05-08).
+ *
+ * Sales recording surface for a single store. Closes the ERP loop —
+ * each sale auto-deducts ingredient inventory via the dish's recipe
+ * BOM (server-side, same transaction). Two zones:
+ *
+ *   - Today's list (top): every sale recorded today, newest first,
+ *     showing time + dish + qty + line revenue if priced.
+ *   - "Record sale" entry (bottom): dish picker + qty input. Tap
+ *     Save → tRPC roundtrip, list refreshes.
+ *
+ * Permissions:
+ *   - `sales.record` (per-store) for the Save action. Granted by
+ *     default to manager + staff roles.
+ *   - Anyone with read access to the store can see the list.
+ */
+function StoreSalesTab({ storeId }: { storeId: string }) {
+  const i18n = useI18n();
+  const toast = useToast();
+  const errToast = useErrToast();
+  const productName = useProductName();
+  const utils = trpc.useUtils();
+  const session = useAuthStore((s) => s.session);
+  const canRecord =
+    (session?.permissions.includes('sales.record') ?? false) ||
+    (session?.permissions.includes('users.manage') ?? false);
+
+  const dishesQuery = trpc.dishes.list.useQuery({ includeArchived: false });
+  const salesQuery = trpc.sales.list.useQuery({ storeId });
+
+  const dishById = useMemo(() => {
+    const m = new Map<
+      string,
+      {
+        id: string;
+        names: Record<string, string>;
+        unitPrice: string | null;
+        ingredientCount: number;
+      }
+    >();
+    const ingCount = new Map<string, number>();
+    for (const ing of dishesQuery.data?.ingredients ?? []) {
+      ingCount.set(ing.dishId, (ingCount.get(ing.dishId) ?? 0) + 1);
+    }
+    for (const d of dishesQuery.data?.dishes ?? []) {
+      m.set(d.id, {
+        id: d.id,
+        names: d.names as Record<string, string>,
+        unitPrice: d.unitPrice,
+        ingredientCount: ingCount.get(d.id) ?? 0,
+      });
+    }
+    return m;
+  }, [dishesQuery.data]);
+
+  const [draftDishId, setDraftDishId] = useState('');
+  const [draftQty, setDraftQty] = useState('1');
+
+  const record = trpc.sales.record.useMutation({
+    onSuccess: () => {
+      void utils.sales.list.invalidate({ storeId });
+      // M2.0c: also invalidate inventory levels — consumption rows
+      // just landed in the ledger.
+      void utils.inventory.levels.invalidate({ storeId });
+      toast.success(i18n.t('sales.toast.recorded'));
+      setDraftDishId('');
+      setDraftQty('1');
+    },
+    onError: errToast('common.error'),
+  });
+
+  const sales = salesQuery.data ?? [];
+
+  // Compute today's headline (revenue + count) for the summary row.
+  const summary = useMemo(() => {
+    let count = 0;
+    let revenue = 0;
+    for (const s2 of sales) {
+      const qty = Number(s2.qty);
+      count += qty;
+      if (s2.unitPrice) revenue += qty * Number(s2.unitPrice);
+    }
+    return { count, revenue };
+  }, [sales]);
+
+  // Sort dishes alphabetically for the picker.
+  const dishOptions = useMemo(() => {
+    const list = [...dishById.values()];
+    return list.sort((a, b) =>
+      productName({ names: a.names }).localeCompare(productName({ names: b.names })),
+    );
+  }, [dishById, productName]);
+
+  return (
+    <div className="flex flex-col gap-3 px-4 py-3">
+      {/* Today summary tile. */}
+      <div className="grid grid-cols-2 gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
+        <div>
+          <div className="text-meta uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+            {i18n.t('sales.summary.today')}
+          </div>
+          <div className="font-mono text-h2 font-semibold tabular-nums">
+            {formatQty(summary.count.toString())}
+          </div>
+          <div className="text-meta text-[var(--c-fg-muted)]">
+            {i18n.t('sales.summary.servings')}
+          </div>
+        </div>
+        <div>
+          <div className="text-meta uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+            {i18n.t('sales.summary.revenue')}
+          </div>
+          <div className="font-mono text-h2 font-semibold tabular-nums">
+            {formatMoney(summary.revenue)}
+          </div>
+          <div className="text-meta text-[var(--c-fg-muted)]">
+            {session?.member.currency ?? 'UZS'}
+          </div>
+        </div>
+      </div>
+
+      {/* Record sale form. */}
+      {canRecord ? (
+        <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
+          <div className="text-label font-semibold uppercase tracking-wide text-[var(--c-fg-muted)]">
+            {i18n.t('sales.form.recordTitle')}
+          </div>
+          {dishOptions.length === 0 ? (
+            <p className="text-meta text-[var(--c-fg-muted)]">
+              {i18n.t('sales.form.noDishesYet')}
+            </p>
+          ) : (
+            <>
+              <select
+                className="h-10 w-full rounded-[var(--r-pill)] bg-[var(--c-surface)] px-3 text-body ring-hairline"
+                value={draftDishId}
+                onChange={(e) => setDraftDishId(e.target.value)}
+              >
+                <option value="">{i18n.t('sales.form.pickDish')}</option>
+                {dishOptions.map((d) => {
+                  const label = productName({ names: d.names });
+                  const suffix =
+                    d.ingredientCount === 0
+                      ? ` (${i18n.t('sales.form.noRecipe')})`
+                      : '';
+                  return (
+                    <option key={d.id} value={d.id} disabled={d.ingredientCount === 0}>
+                      {label}
+                      {suffix}
+                    </option>
+                  );
+                })}
+              </select>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  step="1"
+                  min="1"
+                  value={draftQty}
+                  onChange={(e) => setDraftQty(e.target.value)}
+                  aria-label={i18n.t('sales.form.qtyLabel')}
+                  className="flex-1"
+                />
+                <Button
+                  loading={record.isPending}
+                  disabled={!draftDishId || Number(draftQty) <= 0}
+                  onClick={() => {
+                    if (!draftDishId || Number(draftQty) <= 0) return;
+                    record.mutate({
+                      storeId,
+                      dishId: draftDishId,
+                      qty: Number(draftQty).toFixed(2),
+                    });
+                  }}
+                >
+                  {i18n.t('sales.form.recordBtn')}
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      ) : null}
+
+      {/* Today's sales list. */}
+      <div>
+        <div className="mb-2 text-label font-semibold uppercase tracking-wide text-[var(--c-fg-muted)]">
+          {i18n.t('sales.list.title')}
+        </div>
+        {salesQuery.isLoading ? (
+          <div className="py-4 text-center">
+            <Spinner size={16} />
+          </div>
+        ) : sales.length === 0 ? (
+          <EmptyState
+            title={i18n.t('sales.empty.title')}
+            description={i18n.t('sales.empty.description')}
+          />
+        ) : (
+          <ul className="flex flex-col gap-1" role="list">
+            {sales.map((sale) => {
+              const dish = dishById.get(sale.dishId);
+              const name = dish
+                ? productName({ names: dish.names })
+                : sale.dishId.slice(0, 8);
+              const time = new Date(sale.occurredAt).toLocaleTimeString(undefined, {
+                hour: '2-digit',
+                minute: '2-digit',
+              });
+              const lineTotal =
+                sale.unitPrice && Number(sale.qty) > 0
+                  ? Number(sale.qty) * Number(sale.unitPrice)
+                  : null;
+              return (
+                <li
+                  key={sale.id}
+                  className="flex items-baseline justify-between gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 ring-hairline"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-meta tabular-nums text-[var(--c-fg-muted)]">
+                        {time}
+                      </span>
+                      <span className="truncate text-body font-medium">{name}</span>
+                    </div>
+                    {lineTotal !== null ? (
+                      <div className="text-meta text-[var(--c-fg-muted)]">
+                        {formatQty(sale.qty)} × {formatMoney(sale.unitPrice)} ={' '}
+                        <span className="font-mono tabular-nums text-[var(--c-fg)]">
+                          {formatMoney(lineTotal)}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="text-meta text-[var(--c-fg-muted)]">
+                        {formatQty(sale.qty)} × —
+                      </div>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }

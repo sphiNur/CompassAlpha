@@ -7,6 +7,7 @@ import { inventoryRouter } from './routers/inventory';
 import { orderRouter } from './routers/order';
 import { reportRouter } from './routers/report';
 import { runRouter } from './routers/run';
+import { salesRouter } from './routers/sales';
 import { systemRouter } from './routers/system';
 import { uploadRouter } from './routers/upload';
 
@@ -28,6 +29,9 @@ export const appRouter = router({
   // bundle doesn't grow further.
   report: reportRouter,
   run: runRouter,
+  // M2.0c: sales recording. Closes the ERP loop by auto-deducting
+  // ingredient inventory in the same tx that logs the sale event.
+  sales: salesRouter,
   system: systemRouter,
   upload: uploadRouter,
 });
