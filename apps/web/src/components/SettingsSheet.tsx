@@ -28,6 +28,7 @@ import type { Locale } from '@compass/i18n';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { useI18n } from '../hooks/useI18n';
+import { useErrToast } from '../lib/errToast';
 import type { PageMenuRegistration } from '../app/PageMenuContext';
 
 interface LangOption {
@@ -61,6 +62,10 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
   const session = useAuthStore((s) => s.session);
   const patchSession = useAuthStore((s) => s.patchSession);
   const toast = useToast();
+  // M1.21: i18n-aware error toast so server-side error keys like
+  // `auth.errors.displayNameTaken` render translated for the user
+  // rather than dumped as the raw key string.
+  const errToast = useErrToast();
 
   // Build hash for the About row. Vite injects this at build time so
   // we can read whatever HEAD was at deploy. Falls back to a string
@@ -72,7 +77,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
     onSuccess: (next) => {
       patchSession(next as never);
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
 
   // Optional self-rename: the server `auth.completeOnboarding` is the
@@ -84,7 +89,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
       patchSession(next as never);
       toast.success(i18n.t('common.saved') as string);
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
 
   const [draftName, setDraftName] = useState<string>(() => session?.user.displayName ?? '');

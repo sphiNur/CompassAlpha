@@ -899,8 +899,11 @@ export function RunPage() {
         "#3 · purchasing" tag so the user sees both store-scope and
         run state without losing 60+ px to a redundant header bar. */
     <div className="flex flex-col pb-24">
+      {/* M1.21: unified sticky-strip rhythm — `py-2` matches Order /
+          Approve / Confirm. Was `py-1.5` (3px tighter) which read as
+          visibly cramped relative to the other tabs. */}
       {storeSwitcherInteractive || activeRun ? (
-        <div className="sticky top-0 z-[1] flex min-h-9 items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-1.5">
+        <div className="sticky top-0 z-[1] flex min-h-9 items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-2">
           {storeSwitcherInteractive ? <StoreSwitcher /> : null}
           {activeRun ? (
             <span className="ml-auto truncate text-meta tabular-nums text-[var(--c-fg-muted)]">
@@ -2079,6 +2082,10 @@ function VendorPickerSheet({
 }) {
   const utils = trpc.useUtils();
   const suppliersQuery = trpc.admin.supplierList.useQuery();
+  // M1.21: route the error toast through the i18n-aware helper. The
+  // server returns localized message keys (e.g. `run.errors.xxx`);
+  // dumping `err.message` raw shows the key string to non-EN users.
+  const errToast = useErrToast();
   const setSupplier = trpc.run.setSkuPreferredSupplier.useMutation({
     onSuccess: (_data, vars) => {
       void utils.run.previewCreatable.invalidate();
@@ -2091,7 +2098,7 @@ function VendorPickerSheet({
       );
       onClose();
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
 
   return (
@@ -2331,6 +2338,11 @@ function PurchaseRow({
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer'>(
     (item.paymentMethod as 'cash' | 'transfer') ?? 'cash',
   );
+  // M1.21: pull the org-wide currency from session so the inline
+  // suffix shows RUB / KZT / USD for non-UZS tenants. Hardcoded "UZS"
+  // pre-M1.21; harmless on the UZS launch tenant but blocked multi-
+  // tenant rollout.
+  const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   const savedRef = useRef(false);
 
   // When server data updates (e.g. ws push, edit landed), reconcile
@@ -2486,7 +2498,7 @@ function PurchaseRow({
             placeholder="price"
             aria-label="unit price"
           />
-          <span className="text-meta text-[var(--c-fg-muted)]">UZS</span>
+          <span className="text-meta text-[var(--c-fg-muted)]">{currency}</span>
           <span className="truncate text-right text-label text-[var(--c-fg-muted)]">
             {totalHint !== null ? (
               <>
@@ -3269,6 +3281,8 @@ function RunHistoryDetailSheet({
   i18n: ReturnType<typeof useI18n>;
   onClose: () => void;
 }) {
+  // M1.21: org-wide currency for the headline label.
+  const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   const detail = trpc.run.get.useQuery(
     target ? { runId: target.runId } : { runId: '' },
     { enabled: !!target },
@@ -3348,7 +3362,7 @@ function RunHistoryDetailSheet({
                   {i18n.t('run.history.totalLabel')}
                 </div>
                 <div className="font-mono text-h1 font-semibold tabular-nums">
-                  {formatMoney(breakdown.total)} UZS
+                  {formatMoney(breakdown.total)} {currency}
                 </div>
               </div>
               <div className="text-right text-label text-[var(--c-fg-muted)]">

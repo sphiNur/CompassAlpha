@@ -3423,10 +3423,13 @@ function StoresHomeSection({
                 visual instead. */}
             {memberCounts.orgLevel > 0 ? (
               <li>
+                {/* M1.21: store list row rhythm — py-3 matches member
+                    cards above. Was py-4 (16 px each side), which felt
+                    chunky relative to the rest of the admin surface. */}
                 <button
                   type="button"
                   onClick={() => onPickStore({ kind: 'org-level' })}
-                  className="press flex w-full items-start justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-4 text-left ring-hairline"
+                  className="press flex w-full items-start justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-3 text-left ring-hairline"
                 >
                   <span className="min-w-0">
                     <span className="block text-h2 font-semibold tracking-tight text-[var(--c-fg)]">

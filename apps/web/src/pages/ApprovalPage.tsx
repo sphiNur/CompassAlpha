@@ -425,6 +425,10 @@ function SessionItems({
   isClaimedByMe: boolean;
 }) {
   const i18n = useI18n();
+  // M1.21: pull org currency from session for the estimate-total
+  // suffix. Hardcoded "UZS" pre-M1.21 blocked the multi-currency
+  // foundation from M1.17.
+  const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   const detail = trpc.order.sessionDetail.useQuery({ sessionId });
   const utils = trpc.useUtils();
   const errToast = useErrToast();
@@ -541,7 +545,7 @@ function SessionItems({
           {i18n.t('order.review.estimatedTotal')}
         </span>
         <span className="font-mono text-body font-semibold tabular-nums text-[var(--c-fg)]">
-          ~{formatMoney(estimateTotal.sum)} UZS
+          ~{formatMoney(estimateTotal.sum)} {currency}
         </span>
       </div>
     ) : null}
@@ -553,7 +557,12 @@ function SessionItems({
         const sku = skuById.get(t.skuId);
         const rows = rowsBySku.get(t.skuId) ?? [];
         return (
-          <li key={t.skuId} className="border-b border-[var(--c-divider)] py-2 last:border-b-0">
+          <li key={t.skuId} className="border-b border-[var(--c-divider)] py-3 last:border-b-0">
+            {/* M1.21: tap-safe row rhythm. `py-2` here was 16 px row
+                height which is below the 44 px iOS tap target on the
+                claimed-state mode where the contributor breakdown
+                appears nested. `py-3` lands on the same rhythm as
+                Order / Confirm list rows. */}
             <div className="flex items-baseline justify-between gap-2 text-body">
               <span className="truncate font-semibold text-[var(--c-fg)]">
                 {sku ? productName(sku) : t.skuId.slice(0, 8)}

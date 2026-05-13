@@ -887,6 +887,8 @@ function ReviewList({
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
 }) {
   const i18n = useI18n();
+  // M1.21: org-wide currency for the estimate suffix.
+  const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   // Pull avg-7d price stats for the SKUs being reviewed so we can show
   // an estimated total (added 2026-05-05). The API is keyed by skuId
   // and uses 7-day mean to avoid one freak-sale day skewing tomorrow's
@@ -971,7 +973,7 @@ function ReviewList({
               {i18n.t('order.review.estimatedTotal')}
             </span>
             <span className="font-mono text-h2 font-semibold tabular-nums text-[var(--c-fg)]">
-              ~{formatMoney(estimate.total)} UZS
+              ~{formatMoney(estimate.total)} {currency}
             </span>
           </div>
           <div className="mt-1 text-meta text-[var(--c-fg-muted)]">

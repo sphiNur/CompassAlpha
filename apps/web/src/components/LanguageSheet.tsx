@@ -22,10 +22,10 @@
  */
 import { Sheet, Button } from '@compass/ui';
 import type { Locale } from '@compass/i18n';
-import { useToast } from '@compass/ui';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { useI18n } from '../hooks/useI18n';
+import { useErrToast } from '../lib/errToast';
 
 interface LangOption {
   code: Locale;
@@ -51,7 +51,8 @@ export function LanguageSheet({ open, onOpenChange }: LanguageSheetProps) {
   const i18n = useI18n();
   const session = useAuthStore((s) => s.session);
   const patchSession = useAuthStore((s) => s.patchSession);
-  const toast = useToast();
+  // M1.21: i18n-aware error toast instead of dumping raw server keys.
+  const errToast = useErrToast();
 
   const setLocale = trpc.auth.setLocale.useMutation({
     onSuccess: (next) => {
@@ -61,7 +62,7 @@ export function LanguageSheet({ open, onOpenChange }: LanguageSheetProps) {
       patchSession(next as never);
       onOpenChange(false);
     },
-    onError: (err) => toast.error(err.message),
+    onError: errToast('common.error'),
   });
 
   const current = (session?.user.locale ?? 'en') as Locale;
