@@ -2473,7 +2473,10 @@ function PurchaseRow({
             One row instead of two — meta sits on the same baseline as the
             title in muted 12px so it's scannable but not distracting. */}
         <div className="flex items-baseline gap-2">
-          <span className="shrink-0 truncate text-h3 font-semibold">{skuName}</span>
+          {/* M2.2: pending-row primary unified to text-body
+              font-semibold (was text-h3 = 15px, mismatched with the
+              same role on Order/Confirm pages). */}
+          <span className="shrink-0 truncate text-body font-semibold">{skuName}</span>
           <span className="min-w-0 flex-1 truncate text-label text-[var(--c-fg-muted)]">
             {formatQty(item.plannedQty)} {unit}
             {lastPrice ? (
@@ -3369,7 +3372,12 @@ function RunHistoryDetailSheet({
                 <div className="text-meta uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
                   {i18n.t('run.history.totalLabel')}
                 </div>
-                <div className="font-mono text-h1 font-semibold tabular-nums">
+                {/* M2.2: headline money unified to text-h2 (17 px)
+                    across pages. Was text-h1 (22 px) — only Order's
+                    estimate and Admin's sales tiles use text-h2 for
+                    the same role, so the history headline felt
+                    oversized by comparison. */}
+                <div className="font-mono text-h2 font-semibold tabular-nums">
                   {formatMoney(breakdown.total)} {currency}
                 </div>
               </div>

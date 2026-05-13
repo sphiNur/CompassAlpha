@@ -203,7 +203,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
                   }
                 >
                   <div className="min-w-0">
-                    <div className="text-h3 font-semibold">{lang.label}</div>
+                    <div className="text-body font-semibold">{lang.label}</div>
                     <div
                       className={
                         'mt-0.5 text-meta ' +

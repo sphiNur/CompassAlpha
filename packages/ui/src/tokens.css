@@ -88,7 +88,56 @@
    * Mirrors the Tailwind fontSize tokens in apps/web/tailwind.config.js
    * so any CSS-only stylesheet can stay in sync. Prefer the Tailwind
    * `text-display` / `text-h2` / `text-body` etc. utilities at call
-   * sites; reach for these vars only when you must. */
+   * sites; reach for these vars only when you must.
+   *
+   * ────────────────────────────────────────────────────────────────
+   * CANONICAL ROLE → SIZE MAPPING (M2.2, 2026-05-13)
+   * ────────────────────────────────────────────────────────────────
+   * Pages were drifting (list-row primaries used text-h3 in
+   * Order/Confirm but text-body+bold in Run/Admin, creating a
+   * 1-2px "一大一小点" mismatch). This is the agreed lookup —
+   * any new component MUST follow it. If you find yourself
+   * reaching for a different size, change the role first.
+   *
+   *   ROLE                              CLASS
+   *   ───────────────────────────────────────────────────────────
+   *   Marketing / launch screen         text-display              28px
+   *   Page title (PageHeader.title,
+   *   AuthGate, DebugPage, AdminPage)   text-h1 + font-semibold   22px
+   *   Card title (CardTitle component,
+   *   maintenance cards, sub-section
+   *   <h2> headings, store/entity name
+   *   in entity header)                 text-h2 + font-semibold   17px
+   *   Headline money (mono)             text-h2 + font-mono +
+   *                                     font-semibold + tabular   17px
+   *   Form input value (Input.tsx,
+   *   inline date pickers)              text-h3                   15px
+   *   "Named child entity" inside a
+   *   panel (role-picker not a list,
+   *   member display)                   text-h3 + font-semibold   15px
+   *   List-row primary text (each row
+   *   in OrderPage SKU list, Confirm
+   *   list, Run pending list, Admin
+   *   invite/role pickers, Store and
+   *   Language pickers)                 text-body + font-semibold 14px
+   *   Body copy, descriptions           text-body                 14px
+   *   Card description, supporting
+   *   paragraph                         text-body-sm              13px
+   *   SectionLabel (uppercase
+   *   eyebrows), form field label,
+   *   secondary meta inside a row       text-label                12px
+   *   Status meta (eyebrows on tiles,
+   *   timestamp under a row)            text-meta                 11px
+   *   Microcopy, footnote               text-tiny                 10px
+   *
+   * Weight: keep font-semibold for "primary" roles (titles +
+   * list-row primaries). Body / description / meta stay regular.
+   * Color: hierarchy is conveyed by --c-fg (primary), --c-fg-muted
+   * (secondary), --c-fg-subtle (tertiary) — NOT by extra size jumps.
+   *
+   * If a screen genuinely needs an exception, add a one-line code
+   * comment explaining the role so the next pass can audit it.
+   * ──────────────────────────────────────────────────────────── */
   --text-display: 28px;
   --text-h1: 22px;
   --text-h2: 17px;

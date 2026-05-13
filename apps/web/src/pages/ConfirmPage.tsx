@@ -316,7 +316,9 @@ export function ConfirmPage() {
                           className="flex flex-col gap-2 border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0"
                         >
                           <div className="flex items-baseline justify-between">
-                            <span className="text-h3 font-semibold">
+                            {/* M2.2: list-row primary unified to
+                                text-body font-semibold across pages. */}
+                            <span className="text-body font-semibold">
                               {sku ? productName(sku) : it.skuId.slice(0, 8)}
                             </span>
                             <span className="font-mono text-label tabular-nums text-[var(--c-fg-muted)]">

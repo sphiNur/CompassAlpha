@@ -183,7 +183,7 @@ function SwitcherRow({
         }
       >
         <div className="min-w-0">
-          <div className="truncate text-h3 font-semibold">{label}</div>
+          <div className="truncate text-body font-semibold">{label}</div>
           {hint ? (
             <div
               className={

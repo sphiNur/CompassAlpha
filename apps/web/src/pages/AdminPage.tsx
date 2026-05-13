@@ -1967,7 +1967,7 @@ function InviteHubSheet({
             <IconShare size={20} />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block text-h3 font-semibold text-[var(--c-fg)]">
+            <span className="block text-body font-semibold text-[var(--c-fg)]">
               Share via Telegram
             </span>
             <span className="mt-0.5 block text-label text-[var(--c-fg-muted)]">
@@ -1991,7 +1991,7 @@ function InviteHubSheet({
             <IconShare size={20} />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block text-h3 font-semibold text-[var(--c-fg)]">
+            <span className="block text-body font-semibold text-[var(--c-fg)]">
               Copy invite link
             </span>
             <span className="mt-0.5 block text-label text-[var(--c-fg-muted)]">
@@ -2010,7 +2010,7 @@ function InviteHubSheet({
           className="press flex items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3 text-left ring-hairline"
         >
           <span className="min-w-0 flex-1">
-            <span className="block text-h3 font-semibold text-[var(--c-fg)]">
+            <span className="block text-body font-semibold text-[var(--c-fg)]">
               Add by Telegram ID
             </span>
             <span className="mt-0.5 block text-label text-[var(--c-fg-muted)]">
@@ -3258,7 +3258,7 @@ function GrantRoleSheet({
               className="press flex items-center justify-between rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3 text-left ring-hairline"
             >
               <div>
-                <div className="text-h3 font-semibold text-[var(--c-fg)]">
+                <div className="text-body font-semibold text-[var(--c-fg)]">
                   {r.name}
                 </div>
                 <div className="mt-0.5 text-label text-[var(--c-fg-muted)]">
@@ -5779,7 +5779,7 @@ function ActivitySection() {
         )}
       </DataState>
 
-      <h2 className="mt-6 mb-2 text-h3 font-semibold text-[var(--c-fg)]">Recent events</h2>
+      <h2 className="mt-6 mb-2 text-h2 font-semibold text-[var(--c-fg)]">Recent events</h2>
       <DataState
         query={eventsQuery}
         emptyWhen={(d) => d.length === 0}
@@ -7231,7 +7231,7 @@ function MaintenanceSection() {
       <Card>
         <div className="flex flex-col gap-3 px-4 py-4">
           <div>
-            <div className="text-h3 font-semibold text-[var(--c-fg)]">
+            <div className="text-h2 font-semibold text-[var(--c-fg)]">
               Delete a specific test order or run
             </div>
             <p className="mt-0.5 text-body-sm text-[var(--c-fg-muted)]">
@@ -7250,7 +7250,7 @@ function MaintenanceSection() {
       <Card>
         <div className="flex flex-col gap-3 px-4 py-4">
           <div>
-            <div className="text-h3 font-semibold text-[var(--c-fg)]">
+            <div className="text-h2 font-semibold text-[var(--c-fg)]">
               Reset today&apos;s entire flow
             </div>
             <p className="mt-0.5 text-body-sm text-[var(--c-fg-muted)]">
@@ -7279,7 +7279,7 @@ function MaintenanceSection() {
         <Card>
           <div className="flex flex-col gap-3 px-4 py-4">
             <div>
-              <div className="text-h3 font-semibold text-[var(--c-fg)]">
+              <div className="text-h2 font-semibold text-[var(--c-fg)]">
                 Reset a specific date
               </div>
               <p className="mt-0.5 text-body-sm text-[var(--c-fg-muted)]">
@@ -7320,7 +7320,7 @@ function MaintenanceSection() {
           <Card>
             <div className="flex flex-col gap-3 px-4 py-4">
               <div>
-                <div className="text-h3 font-semibold text-[var(--c-fg)]">
+                <div className="text-h2 font-semibold text-[var(--c-fg)]">
                   Purge ALL test data
                 </div>
                 <p className="mt-0.5 text-body-sm text-[var(--c-fg-muted)]">

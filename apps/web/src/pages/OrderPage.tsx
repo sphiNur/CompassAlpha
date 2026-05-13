@@ -749,7 +749,13 @@ export function OrderPage() {
                   className="flex items-center justify-between border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0"
                 >
                   <div className="min-w-0 flex-1 pr-3">
-                    <div className="truncate text-h3 font-semibold leading-tight text-[var(--c-fg)]">
+                    {/* M2.2: list-row primary text unified to text-body
+                        font-semibold across pages. Was text-h3 (15 px)
+                        which read 1 px larger than RunPage's body (14)
+                        for the same role — the "one big, one small"
+                        feeling between Order and Run pages came from
+                        this single class. */}
+                    <div className="truncate text-body font-semibold leading-tight text-[var(--c-fg)]">
                       {productName(sku)}
                     </div>
                     <div className="mt-0.5 text-label leading-tight text-[var(--c-fg-muted)]">
@@ -993,7 +999,7 @@ function ReviewList({
                   key={r.name + i}
                   className="flex items-baseline justify-between border-b border-[var(--c-divider)] px-4 py-2.5 last:border-b-0"
                 >
-                  <span className="truncate pr-3 text-h3 text-[var(--c-fg)]">{r.name}</span>
+                  <span className="truncate pr-3 text-body text-[var(--c-fg)]">{r.name}</span>
                   <span className="shrink-0 font-mono text-body tabular-nums text-[var(--c-fg-muted)]">
                     {formatQty(r.qty)} {r.unit}
                   </span>
