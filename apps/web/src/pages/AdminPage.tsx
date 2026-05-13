@@ -457,6 +457,7 @@ function SectionFrame({
   // the section navigate up underneath the closing sheet — a hidden
   // dead-end. Sheets register their own close handler; with section
   // disabled they take over uncontested.
+  const i18n = useI18n();
   const sheetCount = useSheetCount();
   useTelegramBackButton(onBack, sheetCount === 0);
   const inTg = !!getTg();
@@ -468,7 +469,7 @@ function SectionFrame({
             type="button"
             onClick={onBack}
             className="press inline-flex h-9 items-center gap-1 rounded-[var(--r-pill)] px-3 text-body text-[var(--c-action)]"
-            aria-label="Back"
+            aria-label={i18n.t('admin.aria.back')}
           >
             <span aria-hidden className="text-h2 leading-none">‹</span>
             <span>Admin</span>
@@ -1465,7 +1466,7 @@ function RoleCreateSheet({
       }
     >
       <div className="flex flex-col gap-3 py-3">
-        <Field label="Slug *">
+        <Field label={`${i18n.t('admin.field.slug')} *`}>
           <Input
             value={slug}
             onChange={(e) => setSlug(e.target.value.toLowerCase())}
@@ -1474,7 +1475,7 @@ function RoleCreateSheet({
             autoFocus
           />
         </Field>
-        <Field label="Name *">
+        <Field label={`${i18n.t('admin.field.name')} *`}>
           <Input
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -1482,7 +1483,7 @@ function RoleCreateSheet({
             placeholder="Shift Lead"
           />
         </Field>
-        <Field label="Description">
+        <Field label={i18n.t('admin.field.description')}>
           <Input
             value={description}
             onChange={(e) => setDescription(e.target.value)}
@@ -1701,14 +1702,14 @@ function RolePermissionsSheet({
         <div className="flex flex-col gap-3 py-3">
           {editing ? (
             <>
-              <Field label="Name *">
+              <Field label={`${i18n.t('admin.field.name')} *`}>
                 <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   maxLength={100}
                 />
               </Field>
-              <Field label="Description">
+              <Field label={i18n.t('admin.field.description')}>
                 <Input
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
@@ -2285,7 +2286,7 @@ function ManageMemberSheet({
     >
       {target ? (
         <div className="flex flex-col gap-4 py-3">
-          <Field label="Display name (admin override)">
+          <Field label={i18n.t('admin.field.displayNameOverride')}>
             <div className="flex gap-2">
               <Input
                 value={name}
@@ -2310,7 +2311,7 @@ function ManageMemberSheet({
             </p>
           </Field>
 
-          <Field label="Assigned stores">
+          <Field label={i18n.t('admin.field.assignedStores')}>
             {storesQuery.isLoading || assignmentsQuery.isLoading ? (
               <div className="flex items-center gap-2 text-body-sm text-[var(--c-fg-muted)]">
                 <Spinner size={14} /> Loading…
@@ -2516,6 +2517,11 @@ function TransferStoreSheet({
     >
       {target ? (
         <div className="flex flex-col gap-3 py-3">
+          {/* M1.21-C: this TransferSheet uses From/To as spatial
+              labels (source store / destination store), not date
+              range. Leave English here until the sheet gets its
+              own dedicated i18n pass with all the other admin
+              transfer copy. */}
           <Field label="From">
             <div className="rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 py-2 text-body ring-hairline">
               🏪 {target.fromStoreName}
@@ -3162,7 +3168,7 @@ function GrantRoleSheet({
     >
       <div className="flex flex-col gap-3 py-3">
         {/* Step 1 — scope */}
-        <Field label="Scope">
+        <Field label={i18n.t('admin.field.scope')}>
           <div className="flex gap-1">
             <SegBtn
               active={scopeMode === 'store'}
@@ -3189,7 +3195,7 @@ function GrantRoleSheet({
 
         {/* Store multi-select (visible in store mode) */}
         {scopeMode === 'store' ? (
-          <Field label="Stores">
+          <Field label={i18n.t('admin.field.stores')}>
             {eligibleStores.length === 0 ? (
               <Banner tone="warn" title="No stores you can grant in">
                 You don't administer any store yet. Ask a higher-rank admin
@@ -3515,7 +3521,7 @@ function StoresHomeSection({
       >
         {createDraft ? (
           <div className="flex flex-col gap-3 py-3">
-            <Field label="Name *">
+            <Field label={`${i18n.t('admin.field.name')} *`}>
               <Input
                 value={createDraft.name}
                 onChange={(e) =>
@@ -3525,7 +3531,7 @@ function StoresHomeSection({
                 autoFocus
               />
             </Field>
-            <Field label="Code">
+            <Field label={i18n.t('admin.field.code')}>
               <Input
                 value={createDraft.code}
                 onChange={(e) =>
@@ -3535,7 +3541,7 @@ function StoresHomeSection({
                 placeholder="optional internal code"
               />
             </Field>
-            <Field label="Address">
+            <Field label={i18n.t('admin.field.address')}>
               <Input
                 value={createDraft.address}
                 onChange={(e) =>
@@ -3544,7 +3550,7 @@ function StoresHomeSection({
                 maxLength={500}
               />
             </Field>
-            <Field label="Timezone">
+            <Field label={i18n.t('admin.field.timezone')}>
               <Input
                 value={createDraft.timezone}
                 onChange={(e) =>
@@ -4260,7 +4266,7 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
 
   return (
     <div className="flex flex-col gap-4 px-4 py-3">
-      <Field label="Name *">
+      <Field label={`${i18n.t('admin.field.name')} *`}>
         <Input
           value={draft.name}
           onChange={(e) => setDraft({ ...draft, name: e.target.value })}
@@ -4268,7 +4274,7 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
           disabled={!canAdmin}
         />
       </Field>
-      <Field label="Code">
+      <Field label={i18n.t('admin.field.code')}>
         <Input
           value={draft.code}
           onChange={(e) => setDraft({ ...draft, code: e.target.value })}
@@ -4277,7 +4283,7 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
           disabled={!canAdmin}
         />
       </Field>
-      <Field label="Address">
+      <Field label={i18n.t('admin.field.address')}>
         <Input
           value={draft.address}
           onChange={(e) => setDraft({ ...draft, address: e.target.value })}
@@ -4285,7 +4291,7 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
           disabled={!canAdmin}
         />
       </Field>
-      <Field label="Timezone">
+      <Field label={i18n.t('admin.field.timezone')}>
         <Input
           value={draft.timezone}
           onChange={(e) => setDraft({ ...draft, timezone: e.target.value })}
@@ -4294,7 +4300,7 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
           disabled={!canAdmin}
         />
       </Field>
-      <Field label="Default role for new members">
+      <Field label={i18n.t('admin.field.defaultRole')}>
         {rolesQuery.isLoading ? (
           <div className="flex items-center gap-2 text-body-sm text-[var(--c-fg-muted)]">
             <Spinner size={14} /> Loading roles…
@@ -4422,6 +4428,7 @@ function StoreCloneRolesSheet({
   const utils = trpc.useUtils();
   const toast = useToast();
   const errToast = useErrToast();
+  const i18n = useI18n();
   const session = useAuthStore((s) => s.session);
   const adminStoreIds = useMemo(
     () => new Set(session?.adminStoreIds ?? []),
@@ -4492,7 +4499,7 @@ function StoreCloneRolesSheet({
     >
       {target ? (
         <div className="flex flex-col gap-3 py-3">
-          <Field label="Source store *">
+          <Field label={`${i18n.t('admin.field.sourceStore')} *`}>
             {sourceCandidates.length === 0 ? (
               <Banner tone="warn" title="No eligible source">
                 You need to administer at least one OTHER store to clone
@@ -4712,7 +4719,7 @@ function CategoriesSection() {
       >
         {draft ? (
           <div className="flex flex-col gap-3 py-3">
-            <Field label="Slug *">
+            <Field label={`${i18n.t('admin.field.slug')} *`}>
               <Input
                 value={draft.slug}
                 onChange={(e) => setDraft({ ...draft, slug: e.target.value.toLowerCase() })}
@@ -4721,7 +4728,7 @@ function CategoriesSection() {
               />
             </Field>
             {/* 4-language inputs (2026-05-05). All required by server. */}
-            <Field label="Name — O'zbek (uz) *">
+            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: "O'zbekcha" })} *`}>
               <Input
                 value={draft.nameUz}
                 onChange={(e) => setDraft({ ...draft, nameUz: e.target.value })}
@@ -4729,7 +4736,7 @@ function CategoriesSection() {
                 placeholder="Sabzavotlar"
               />
             </Field>
-            <Field label="Name — Русский (ru) *">
+            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: 'Русский' })} *`}>
               <Input
                 value={draft.nameRu}
                 onChange={(e) => setDraft({ ...draft, nameRu: e.target.value })}
@@ -4737,7 +4744,7 @@ function CategoriesSection() {
                 placeholder="Овощи"
               />
             </Field>
-            <Field label="Name — English (en) *">
+            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: 'English' })} *`}>
               <Input
                 value={draft.nameEn}
                 onChange={(e) => setDraft({ ...draft, nameEn: e.target.value })}
@@ -4745,7 +4752,7 @@ function CategoriesSection() {
                 placeholder="Vegetables"
               />
             </Field>
-            <Field label="Name — 中文 (zh) *">
+            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: '中文' })} *`}>
               <Input
                 value={draft.nameZh}
                 onChange={(e) => setDraft({ ...draft, nameZh: e.target.value })}
@@ -4753,7 +4760,7 @@ function CategoriesSection() {
                 placeholder="蔬菜"
               />
             </Field>
-            <Field label="Sort index">
+            <Field label={i18n.t('admin.field.sortIndex')}>
               <Input
                 type="number"
                 value={String(draft.sortIndex)}
@@ -5020,7 +5027,7 @@ function SkusSection() {
             {/* 4-language inputs (2026-05-05). All required by server.
                 Order is uz/ru/en/zh — uz first because that's the working
                 language in this market. */}
-            <Field label="Name — O'zbek (uz) *">
+            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: "O'zbekcha" })} *`}>
               <Input
                 value={draft.nameUz}
                 onChange={(e) => setDraft({ ...draft, nameUz: e.target.value })}
@@ -5029,7 +5036,7 @@ function SkusSection() {
                 autoFocus
               />
             </Field>
-            <Field label="Name — Русский (ru) *">
+            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: 'Русский' })} *`}>
               <Input
                 value={draft.nameRu}
                 onChange={(e) => setDraft({ ...draft, nameRu: e.target.value })}
@@ -5037,7 +5044,7 @@ function SkusSection() {
                 placeholder="Помидор"
               />
             </Field>
-            <Field label="Name — English (en) *">
+            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: 'English' })} *`}>
               <Input
                 value={draft.nameEn}
                 onChange={(e) => setDraft({ ...draft, nameEn: e.target.value })}
@@ -5045,7 +5052,7 @@ function SkusSection() {
                 placeholder="Tomato"
               />
             </Field>
-            <Field label="Name — 中文 (zh) *">
+            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: '中文' })} *`}>
               <Input
                 value={draft.nameZh}
                 onChange={(e) => setDraft({ ...draft, nameZh: e.target.value })}
@@ -5053,7 +5060,7 @@ function SkusSection() {
                 placeholder="西红柿"
               />
             </Field>
-            <Field label="Category">
+            <Field label={i18n.t('admin.field.category')}>
               <Select
                 value={draft.categoryId ?? ''}
                 onChange={(e) => setDraft({ ...draft, categoryId: e.target.value || null })}
@@ -5070,17 +5077,17 @@ function SkusSection() {
               </Select>
             </Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Unit *">
+              <Field label={`${i18n.t('admin.field.unit')} *`}>
                 <Input value={draft.unit} onChange={(e) => setDraft({ ...draft, unit: e.target.value })} maxLength={16} placeholder="kg / pcs / L" />
               </Field>
-              <Field label="Step">
+              <Field label={i18n.t('admin.field.step')}>
                 <Input value={draft.step} onChange={(e) => setDraft({ ...draft, step: e.target.value })} placeholder="0.5 / 1" />
               </Field>
             </div>
-            <Field label="Code">
+            <Field label={i18n.t('admin.field.code')}>
               <Input value={draft.code} onChange={(e) => setDraft({ ...draft, code: e.target.value })} maxLength={64} placeholder="optional" />
             </Field>
-            <Field label="Sort index">
+            <Field label={i18n.t('admin.field.sortIndex')}>
               <Input
                 type="number"
                 value={String(draft.sortIndex)}
@@ -5267,19 +5274,19 @@ function SuppliersSection() {
       >
         {draft ? (
           <div className="flex flex-col gap-3 py-3">
-            <Field label="Name *">
+            <Field label={`${i18n.t('admin.field.name')} *`}>
               <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} maxLength={200} autoFocus />
             </Field>
-            <Field label="Phone">
+            <Field label={i18n.t('admin.field.phone')}>
               <Input value={draft.contactPhone} onChange={(e) => setDraft({ ...draft, contactPhone: e.target.value })} maxLength={32} placeholder="+998 …" />
             </Field>
-            <Field label="Telegram username">
+            <Field label={i18n.t('admin.field.tgUsername')}>
               <Input value={draft.contactTg} onChange={(e) => setDraft({ ...draft, contactTg: e.target.value.replace(/^@/, '') })} maxLength={64} placeholder="username (without @)" />
             </Field>
-            <Field label="Address">
+            <Field label={i18n.t('admin.field.address')}>
               <Input value={draft.address} onChange={(e) => setDraft({ ...draft, address: e.target.value })} maxLength={500} />
             </Field>
-            <Field label="Notes">
+            <Field label={i18n.t('admin.field.notes')}>
               <Input value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} maxLength={1000} />
             </Field>
           </div>
@@ -5735,6 +5742,7 @@ function DishesSection() {
 // ============ Activity ============
 
 function ActivitySection() {
+  const i18n = useI18n();
   const overview = trpc.admin.overview.useQuery();
   const eventsQuery = trpc.admin.recentEvents.useQuery({ limit: PAGE_SIZE.feed });
   const [showDebug, setShowDebug] = useState(false);
@@ -5752,16 +5760,16 @@ function ActivitySection() {
       <DataState query={overview}>
         {(d) => (
           <div className="grid grid-cols-2 gap-3">
-            <Tile label="Members" value={d.memberCount} />
-            <Tile label="Stores" value={d.storeCount} />
-            <Tile label="Active SKUs" value={d.skuCount} />
-            <Tile label="Total runs" value={d.runCount} />
+            <Tile label={i18n.t('admin.tile.members')} value={d.memberCount} />
+            <Tile label={i18n.t('admin.tile.stores')} value={d.storeCount} />
+            <Tile label={i18n.t('admin.tile.activeSkus')} value={d.skuCount} />
+            <Tile label={i18n.t('admin.tile.totalRuns')} value={d.runCount} />
             <Tile
-              label="Pending approvals"
+              label={i18n.t('admin.tile.pendingApprovals')}
               value={d.pendingApprovals}
               accent={d.pendingApprovals > 0 ? 'warn' : 'muted'}
             />
-            <Tile label="Orders / 7 days" value={d.ordersThisWeek} />
+            <Tile label={i18n.t('admin.tile.ordersThisWeek')} value={d.ordersThisWeek} />
           </div>
         )}
       </DataState>

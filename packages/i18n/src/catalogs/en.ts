@@ -827,6 +827,45 @@ export const en = {
     'Changing currency does NOT convert past purchases. Set once per org.',
   'admin.errors.taxRateOutOfRange': 'Tax rate must be between 0 and 50.',
 
+  // ── 15a. Shared admin form labels (M1.21-C, 2026-05-08) ───────
+  // The Admin section had ~40 form labels hardcoded in English JSX
+  // (`<Field label="Slug *">`, etc.). This block centralises them so
+  // the non-EN catalogs can translate once and every form picks up
+  // the right copy. The trailing `*` for required fields stays as a
+  // literal in the JSX — it's punctuation, not language.
+  'admin.field.slug': 'Slug',
+  'admin.field.name': 'Name',
+  'admin.field.description': 'Description',
+  'admin.field.code': 'Code',
+  'admin.field.address': 'Address',
+  'admin.field.timezone': 'Timezone',
+  'admin.field.phone': 'Phone',
+  'admin.field.notes': 'Notes',
+  'admin.field.tgUsername': 'Telegram username',
+  'admin.field.scope': 'Scope',
+  'admin.field.stores': 'Stores',
+  'admin.field.assignedStores': 'Assigned stores',
+  'admin.field.displayNameOverride': 'Display name (admin override)',
+  'admin.field.dateFrom': 'From',
+  'admin.field.dateTo': 'To',
+  'admin.field.sortIndex': 'Sort index',
+  'admin.field.unit': 'Unit',
+  'admin.field.step': 'Step',
+  'admin.field.category': 'Category',
+  'admin.field.defaultRole': 'Default role for new members',
+  'admin.field.sourceStore': 'Source store',
+  // Per-locale name field used by SKU and category editors. `{locale}`
+  // is the native-name display string (Русский, 中文, etc.).
+  'admin.field.nameInLocale': 'Name — {locale}',
+  // Activity dashboard tiles.
+  'admin.tile.members': 'Members',
+  'admin.tile.stores': 'Stores',
+  'admin.tile.activeSkus': 'Active SKUs',
+  'admin.tile.totalRuns': 'Total runs',
+  'admin.tile.pendingApprovals': 'Pending approvals',
+  'admin.tile.ordersThisWeek': 'Orders / 7 days',
+  'admin.aria.back': 'Back',
+
   // ── 16. Inventory (M2.0a) ──────────────────────────────
   // First step of the ERP shift. Inventory tab under Admin → Stores →
   // [store]. Drives the levels list + stocktake + wastage editor.
