@@ -95,6 +95,62 @@ export function createApp() {
         'Permissions-Policy',
         'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
       );
+      /**
+       * M1.20 (2026-05-08, launch hardening): Content-Security-Policy.
+       *
+       * The API serves JSON for tRPC and the SPA HTML shell for the
+       * web bundle. Both want a strict CSP to prevent injected
+       * `<script>` from exfiltrating tokens or making cross-origin
+       * fetches to an attacker's server.
+       *
+       * Directives:
+       *   - default-src 'self'             same-origin assets only
+       *   - script-src 'self'              no inline scripts (the
+       *                                    Vite bundle is hashed
+       *                                    same-origin)
+       *   - style-src 'self' 'unsafe-inline'
+       *                                    Tailwind injects
+       *                                    style attributes; safe
+       *                                    because attacker can't
+       *                                    inject DOM into our SPA
+       *   - img-src 'self' data: blob: https:
+       *                                    receipt photos uploaded
+       *                                    to S3 (https), camera
+       *                                    capture (blob), inline
+       *                                    SVG icons (data)
+       *   - connect-src 'self' wss: https:
+       *                                    tRPC + WebSocket. Allow
+       *                                    https/wss broadly because
+       *                                    the Cloudflare tunnel URL
+       *                                    rotates during dev.
+       *   - frame-ancestors 'self' https://web.telegram.org https://t.me
+       *                                    only Telegram can embed
+       *                                    the Mini App
+       *   - base-uri 'self'                blocks <base href=...>
+       *                                    injection that would
+       *                                    rewrite all relative URLs
+       *   - form-action 'self'             no cross-origin form posts
+       *   - object-src 'none'              no Flash / plugin embeds
+       *
+       * `frame-ancestors` overrides the older `X-Frame-Options` —
+       * keeping both for legacy crawler compatibility but the CSP
+       * directive is the active one in modern browsers.
+       */
+      c.header(
+        'Content-Security-Policy',
+        [
+          "default-src 'self'",
+          "script-src 'self'",
+          "style-src 'self' 'unsafe-inline'",
+          "img-src 'self' data: blob: https:",
+          "font-src 'self' data:",
+          "connect-src 'self' wss: https:",
+          "frame-ancestors 'self' https://web.telegram.org https://t.me",
+          "base-uri 'self'",
+          "form-action 'self'",
+          "object-src 'none'",
+        ].join('; '),
+      );
       if (env.NODE_ENV === 'production') {
         c.header(
           'Strict-Transport-Security',

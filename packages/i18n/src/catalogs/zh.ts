@@ -34,6 +34,8 @@ export const zh = {
   'common.noResults': '没有结果',
   'common.required': '必填',
   'common.error': '出错了',
+  'common.errors.rateLimited': '请求过多 — 请稍等片刻后重试',
+  'common.errors.validation': '输入无效 — 请检查高亮的字段',
   'common.networkError': '网络错误 — 请检查连接',
 
   // ── 3. Settings ────────────────────────────────────────────────

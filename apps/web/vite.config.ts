@@ -38,7 +38,20 @@ export default defineConfig({
   build: {
     // es2020 covers iOS 14+ (Telegram WebView lags actual Safari).
     target: 'es2020',
-    sourcemap: true,
+    /**
+     * M1.20 (2026-05-08, launch hardening): NEVER ship sourcemaps to
+     * production. Before this flag, `pnpm build` emitted `*.js.map`
+     * files alongside the bundle — anyone with devtools could read
+     * the full original TypeScript, including auth flows, business
+     * logic, and any inline strings (API URL patterns, error keys).
+     * That's a security + IP leak.
+     *
+     * For dev / staging where you want decoded stack traces, set
+     * `VITE_SOURCEMAP=true` in the env before building. The
+     * `Date.now()` build SHA fallback already lets us match a
+     * server-side trace to a bundle without source maps.
+     */
+    sourcemap: process.env.VITE_SOURCEMAP === 'true',
     // No `manualChunks` — earlier split caused a circular reference
     // between tanstack/react-query and @trpc/react-query (which
     // depends on it), producing undefined module exports on iOS

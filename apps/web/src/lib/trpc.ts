@@ -114,6 +114,42 @@ async function authFetch(input: RequestInfo | URL, init: RequestInit = {}): Prom
  * the request is a single, non-batched call (proven via in-app raw
  * fetch diagnostic). Batching is a perf nicety; correctness wins.
  */
+/**
+ * M1.20 (2026-05-08): mutations that the server marks idempotent
+ * (run.create, run.purchaseItem, sales.record, order.submit, etc.)
+ * accept an `X-Idempotency-Key` header. The server caches the
+ * response for 24h keyed on (key, route, userId).
+ *
+ * Today's FE generates a fresh ULID per mutation attempt — this
+ * doesn't dedupe double-taps (each tap = new key) since react-query
+ * mutations don't auto-retry by default. The value is defense-in-
+ * depth: if a future config change enables retries, OR an external
+ * integration replays a mutation with the same key, dedupe kicks in.
+ *
+ * For offline-queue replays (useOfflineQueue), the entry's clientSeq
+ * could be used as a stable key — that's the high-value follow-up
+ * once we have a reproducer for ghost double-charges.
+ */
+const IDEMPOTENT_MUTATIONS = new Set<string>([
+  'run.create',
+  'run.purchaseItem',
+  'run.revisePurchase',
+  'run.finish',
+  'sales.record',
+  'order.submit',
+]);
+
+function genKey(): string {
+  // Lightweight ULID-like: 26 chars, lex-sortable. crypto.randomUUID
+  // is fine too but the dash format is uglier in logs.
+  const rand =
+    (typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID().replace(/-/g, '')
+      : Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
+    ).slice(0, 26);
+  return `${Date.now().toString(36)}${rand}`.slice(0, 64);
+}
+
 export function buildTrpcClient() {
   return trpc.createClient({
     links: [
@@ -122,6 +158,15 @@ export function buildTrpcClient() {
         url: `${API_URL}/trpc`,
         // Custom fetch: handles Bearer auth + transparent refresh on 401.
         fetch: authFetch,
+        // M1.20: attach X-Idempotency-Key to opted-in mutations.
+        // Queries get no header (idempotent already); non-listed
+        // mutations also get none (compatible with older server).
+        headers: ({ op }) => {
+          if (op.type === 'mutation' && IDEMPOTENT_MUTATIONS.has(op.path)) {
+            return { 'x-idempotency-key': genKey() };
+          }
+          return {};
+        },
       }),
     ],
   });

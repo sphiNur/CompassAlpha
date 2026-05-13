@@ -79,6 +79,7 @@ function buildCtx(
     traceId: `test-${Date.now()}`,
     ip: null,
     userAgent: null,
+    idempotencyKey: null,
     session,
     async withOrg(fn) {
       return withOrgContext(db, session.orgId, fn);

@@ -69,6 +69,12 @@ export const en = {
   'common.required': 'Required',
   'common.error': 'Something went wrong',
   'common.networkError': 'Network error — check your connection',
+  // M1.20 (2026-05-08): generic rate-limit error returned by the
+  // server-side mutation rate limiter when a (user, path) exceeds the
+  // 120-per-minute budget. The auth-specific equivalent stays under
+  // 'auth.errors.rateLimited' — same wording, different namespace.
+  'common.errors.rateLimited': 'Too many requests — please wait a moment and try again',
+  'common.errors.validation': 'Invalid input — check the highlighted fields',
 
   // ── 3. Settings ────────────────────────────────────────────────
   'settings.language.title': 'Language',

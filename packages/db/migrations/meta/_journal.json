@@ -127,6 +127,13 @@
       "when": 1778217600000,
       "tag": "0017_sales",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1778221200000,
+      "tag": "0018_sales_qty_precision",
+      "breakpoints": true
     }
   ]
 }

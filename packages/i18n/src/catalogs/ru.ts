@@ -34,6 +34,8 @@ export const ru = {
   'common.noResults': 'Ничего не найдено',
   'common.required': 'Обязательно',
   'common.error': 'Что-то пошло не так',
+  'common.errors.rateLimited': 'Слишком много запросов — подождите и повторите',
+  'common.errors.validation': 'Неверный ввод — проверьте отмеченные поля',
   'common.networkError': 'Ошибка сети — проверьте соединение',
 
   // ── 3. Settings ────────────────────────────────────────────────

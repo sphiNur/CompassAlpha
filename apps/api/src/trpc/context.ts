@@ -21,6 +21,11 @@ export interface RequestContext {
   traceId: string;
   ip: string | null;
   userAgent: string | null;
+  /** M1.20 (2026-05-08): client-supplied idempotency key from the
+   *  `X-Idempotency-Key` request header. Read by the `idempotent`
+   *  tRPC middleware to dedupe replay-safe mutations. Null when the
+   *  client didn't send one (legacy clients, queries, optional). */
+  idempotencyKey: string | null;
   /** Resolved when request carried a valid Bearer token. */
   session: SessionContext | null;
   /** Run a callback inside a tx with RLS org context bound. */
@@ -35,6 +40,13 @@ export async function createContext(
   const traceId = c.req.header('x-trace-id') ?? ulid();
   const ip = c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null;
   const userAgent = c.req.header('user-agent') ?? null;
+  // M1.20: read idempotency key. Clip to 128 chars to match the
+  // column width in sync.idempotency_keys; ignore empty strings so
+  // a client sending `X-Idempotency-Key: ` (no value) doesn't get
+  // dedupe behavior.
+  const rawIdem = c.req.header('x-idempotency-key');
+  const idempotencyKey =
+    rawIdem && rawIdem.trim().length > 0 ? rawIdem.trim().slice(0, 128) : null;
   const auth = c.req.header('authorization');
 
   let session: SessionContext | null = null;
@@ -55,6 +67,7 @@ export async function createContext(
     traceId,
     ip,
     userAgent,
+    idempotencyKey,
     session,
     async withOrg(fn) {
       if (!session) throw new Error('withOrg requires authenticated session');

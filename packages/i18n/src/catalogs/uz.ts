@@ -41,6 +41,8 @@ export const uz = {
   'common.noResults': 'Hech narsa topilmadi',
   'common.required': 'Majburiy',
   'common.error': "Nimadir noto'g'ri ketdi",
+  'common.errors.rateLimited': "Juda ko'p so'rov — biroz kutib qayta urining",
+  'common.errors.validation': "Noto'g'ri kiritish — belgilangan maydonlarni tekshiring",
   'common.networkError': 'Tarmoq xatosi — ulanishni tekshiring',
 
   // ── 3. Settings ────────────────────────────────────────────────

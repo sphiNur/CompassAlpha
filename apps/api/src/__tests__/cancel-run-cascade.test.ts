@@ -81,6 +81,7 @@ function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): Reques
     traceId: `test-${Date.now()}`,
     ip: null,
     userAgent: null,
+    idempotencyKey: null,
     session,
     async withOrg(fn) {
       return withOrgContext(db, session.orgId, fn);

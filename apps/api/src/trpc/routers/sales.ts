@@ -42,7 +42,7 @@ import {
   PositiveDecimalStringSchema,
   UuidSchema,
 } from '@compass/contracts';
-import { authedProcedure, router } from '../trpc';
+import { authedProcedure, idempotentMutation, router } from '../trpc';
 import { effectivePermissionsForStore } from '../../services/storeScope';
 
 function requireSalesRecord(perms: ReadonlySet<string>): void {
@@ -72,7 +72,10 @@ const ListInputSchema = z.object({
 });
 
 export const salesRouter = router({
-  record: authedProcedure
+  // M1.20: idempotent — sales.record writes a sale row AND the
+  // ingredient-deduction movements in one tx. Network retry without
+  // a key = double inventory deduction.
+  record: idempotentMutation
     .input(RecordInputSchema)
     .mutation(async ({ ctx, input }) => {
       requireSalesRecord(ctx.session!.permissions);

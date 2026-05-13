@@ -32,7 +32,7 @@ import {
   type SkuCtx,
 } from '@compass/domain/order';
 import { DomainError } from '@compass/domain';
-import { authedProcedure, rethrowDomainError, router } from '../trpc';
+import { authedProcedure, idempotentMutation, rethrowDomainError, router } from '../trpc';
 import { appendEvents, readStream } from '../../services/eventStore';
 import { projectOrder } from '../../services/orderProjection';
 import { dispatchOrderEventNotifications } from '../../services/notifyForEvent';
@@ -622,7 +622,9 @@ export const orderRouter = router({
       });
     }),
 
-  submit: authedProcedure.input(SimpleSessionCommandSchema).mutation(async ({ ctx, input }) =>
+  // M1.20: idempotent — submitting twice with the same key returns
+  // the prior result instead of double-firing the approval workflow.
+  submit: idempotentMutation.input(SimpleSessionCommandSchema).mutation(async ({ ctx, input }) =>
     runSimpleCommand(ctx, input.sessionId, (state, perms) =>
       decide(state, { type: 'Submit', actor: buildActor(ctx, state, perms) }),
     ),

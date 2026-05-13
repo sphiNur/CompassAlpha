@@ -310,8 +310,16 @@ export const sales = inventorySchema.table(
     dishId: uuid('dish_id')
       .notNull()
       .references(() => dishes.id, { onDelete: 'restrict' }),
-    /** Number of servings sold in this single event. > 0. */
-    qty: decimal('qty', { precision: 10, scale: 2 }).notNull(),
+    /**
+     * Number of servings sold in this single event. > 0.
+     *
+     * M1.20 (2026-05-08): widened from (10, 2) → (12, 3) via migration
+     * 0018 to match every other qty column in the schema. The original
+     * narrower precision silently truncated the 3rd-decimal during the
+     * BOM-multiplication step in `sales.record`, causing the sales row
+     * to disagree with the inventory.movements rows it emits.
+     */
+    qty: decimal('qty', { precision: 12, scale: 3 }).notNull(),
     /** Selling price per serving at sale time. NULL if the dish had
      *  no price set when sold (we still record the consumption). */
     unitPrice: decimal('unit_price', { precision: 14, scale: 2 }),

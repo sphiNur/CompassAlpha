@@ -41,7 +41,7 @@ import {
 } from '@compass/domain/run';
 import { decide as decideOrder, apply as applyOrder, emptyState as emptyOrderState, type OrderEvent } from '@compass/domain/order';
 import { DomainError } from '@compass/domain';
-import { authedProcedure, rethrowDomainError, router } from '../trpc';
+import { authedProcedure, idempotentMutation, rethrowDomainError, router } from '../trpc';
 import { appendEvents, readStream } from '../../services/eventStore';
 import { projectRun } from '../../services/runProjection';
 import { projectOrder } from '../../services/orderProjection';
@@ -395,7 +395,9 @@ export const runRouter = router({
    * for why. A run created here can include sessions from ANY store
    * in the org, because one purchaser serves the chain.
    */
-  create: authedProcedure.input(RunCreateInputSchema).mutation(async ({ ctx, input }) => {
+  // M1.20: idempotent — FE sends X-Idempotency-Key per logical
+  // "create run" action so network retry doesn't create two runs.
+  create: idempotentMutation.input(RunCreateInputSchema).mutation(async ({ ctx, input }) => {
     return ctx.withOrg(async (tx) => {
       const date = input.date ?? todayStr();
       // Determine next runIndex for the day (re-runs produce runIndex=1, 2, ...).
@@ -647,7 +649,9 @@ export const runRouter = router({
     ),
   ),
 
-  purchaseItem: authedProcedure.input(PurchaseItemInputSchema).mutation(async ({ ctx, input }) =>
+  // M1.20: idempotent — record-purchase replays would double-deduct
+  // inventory + double-record price history.
+  purchaseItem: idempotentMutation.input(PurchaseItemInputSchema).mutation(async ({ ctx, input }) =>
     runSimpleCommand(ctx, input.runId, (state) =>
       decideRun(state, {
         type: 'PurchaseItem',
@@ -782,7 +786,9 @@ export const runRouter = router({
    * RunPage history view but no longer occupy the active spots on
    * Order / Approval / Run pages.
    */
-  finish: authedProcedure.input(SimpleRunCommandSchema).mutation(async ({ ctx, input }) => {
+  // M1.20: idempotent — finish locks the run + writes totals; a
+  // retry must NOT compute a second total.
+  finish: idempotentMutation.input(SimpleRunCommandSchema).mutation(async ({ ctx, input }) => {
     return ctx.withOrg(async (tx) => {
       const run = await loadRun(tx, ctx.session!.orgId, input.runId);
       const runEvents = (await readStream(tx, 'run', run.id)) as unknown as RunEvent[];
@@ -885,7 +891,9 @@ export const runRouter = router({
   // reason — domain-side guard rejects whitespace-only.
 
   /** Edit an already-purchased item (qty/price/supplier/photo/splits). */
-  revisePurchase: authedProcedure
+  // M1.20: idempotent — revise rewrites unit price + splits; replay
+  // could fork the price_history table.
+  revisePurchase: idempotentMutation
     .input(RevisePurchaseInputSchema)
     .mutation(async ({ ctx, input }) =>
       runSimpleCommand(ctx, input.runId, (state) =>
