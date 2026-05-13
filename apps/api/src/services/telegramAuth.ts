@@ -57,8 +57,28 @@ export function verifyInitData(initData: string, botToken: string, maxAgeSec = 8
   }
   const authDate = Number(rawAuthDate);
   if (!Number.isFinite(authDate)) return { ok: false, reason: 'no auth_date' };
+  // M1.22 (2026-05-08, launch hardening): tolerate ±600 s of clock
+  // skew between the user's device and our server. Two real failure
+  // modes the old strict-floor check produced:
+  //   - User's iPhone clock 2 min slow → ageSec is positive but
+  //     could legitimately exceed maxAgeSec on a stale initData
+  //     by a few seconds. Strict check rejected.
+  //   - User's iPhone clock AHEAD → ageSec computes as a SMALL
+  //     NEGATIVE NUMBER (server clock is now < auth_date), which
+  //     passes `ageSec > maxAgeSec` but is logically "future date".
+  //     Should still pass since the data IS fresh, just from the
+  //     future. Old code did pass it; we make that explicit.
+  // The ±600 s window matches Telegram's own server-side tolerance
+  // for initData and Cloudflare's NTP-step thresholds. Beyond the
+  // window we reject as either expired or "too far in future".
+  const CLOCK_SKEW_TOLERANCE_SEC = 600;
   const ageSec = Math.floor(Date.now() / 1000) - authDate;
-  if (ageSec > maxAgeSec) return { ok: false, reason: 'expired' };
+  if (ageSec > maxAgeSec + CLOCK_SKEW_TOLERANCE_SEC) {
+    return { ok: false, reason: 'expired' };
+  }
+  if (ageSec < -CLOCK_SKEW_TOLERANCE_SEC) {
+    return { ok: false, reason: 'auth_date too far in future' };
+  }
 
   const userJson = params.get('user');
   if (!userJson) return { ok: false, reason: 'no user' };

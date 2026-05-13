@@ -31,6 +31,27 @@ export type RealtimeMessage =
 
 type Send = (data: string) => void;
 
+/**
+ * Per-org connection cap (M1.22, 2026-05-08, launch hardening).
+ *
+ * Without a cap, a single org could accumulate thousands of stale
+ * WebSocket sinks if clients fail to close cleanly — every broadcast
+ * then iterates the dead set, serialising the JSON payload N times.
+ * Bounding the set at 1000 covers any plausible legitimate scale (a
+ * 100-store chain × 10 active staff per store = 1000) while making
+ * a leak self-limiting.
+ *
+ * When the cap is hit, the OLDEST connection is evicted (FIFO via
+ * the Set's insertion order). This bias keeps fresh tabs working and
+ * sheds zombies first. Evicted connection's `send` is called with a
+ * sentinel close message so the FE can log and reconnect cleanly.
+ */
+const MAX_CONNECTIONS_PER_ORG = 1000;
+const EVICTION_NOTICE = JSON.stringify({
+  type: 'evicted',
+  reason: 'org connection cap reached',
+});
+
 class Hub {
   private readonly subs = new Map<string, Set<Send>>();
 
@@ -39,6 +60,19 @@ class Hub {
     if (!set) {
       set = new Set();
       this.subs.set(orgId, set);
+    }
+    // M1.22: evict the oldest connection if we'd exceed the cap.
+    // Set iteration is insertion-order in V8 / Bun, so the first
+    // entry is the oldest.
+    while (set.size >= MAX_CONNECTIONS_PER_ORG) {
+      const oldest = set.values().next().value;
+      if (!oldest) break;
+      set.delete(oldest);
+      try {
+        oldest(EVICTION_NOTICE);
+      } catch {
+        /* dead sink — already gone */
+      }
     }
     set.add(send);
     return () => {

@@ -616,6 +616,47 @@ async function run() {
         storeDetailText.split('\n').slice(0, 8).join(' / '),
       );
 
+      // M1.22: assert the new Inventory + Sales tabs render. Both are
+      // store-detail sub-tabs added by M2.0a + M2.0c.
+      record(
+        'Store detail shows Inventory tab (M2.0a)',
+        /Inventory/.test(storeDetailText),
+        storeDetailText.includes('Inventory') ? 'visible' : 'missing',
+      );
+      record(
+        'Store detail shows Sales tab (M2.0c)',
+        /Sales/.test(storeDetailText),
+        storeDetailText.includes('Sales') ? 'visible' : 'missing',
+      );
+
+      // Drill into Inventory tab and assert the empty-state copy
+      // renders. Smoke seed has no delivered runs so the list is
+      // empty — what we care about is "the tab routes don't crash."
+      const invBtn = page.locator('main button', { hasText: /^Inventory$/ }).first();
+      if (await invBtn.count() > 0) {
+        await invBtn.click();
+        await page.waitForTimeout(300);
+        const invText = await page.evaluate(() => document.body.innerText);
+        record(
+          'Inventory tab renders without JS error',
+          pageErrors.length === 0,
+          invText.split('\n').slice(0, 4).join(' / '),
+        );
+      }
+
+      // Drill into Sales tab. Sales summary tiles should render.
+      const salesBtn = page.locator('main button', { hasText: /^Sales$/ }).first();
+      if (await salesBtn.count() > 0) {
+        await salesBtn.click();
+        await page.waitForTimeout(300);
+        const salesText = await page.evaluate(() => document.body.innerText);
+        record(
+          'Sales tab renders today summary (M2.0c)',
+          /Today/i.test(salesText) || /summary/i.test(salesText),
+          salesText.split('\n').slice(0, 5).join(' / '),
+        );
+      }
+
       // Back to Admin home via two BackButton presses (store detail →
       // store list → home).
       const back1 = await page.evaluate(() => {
@@ -703,6 +744,78 @@ async function run() {
         'Maintenance section visible',
         true,
         'hidden for non-super-admin smoke user (expected)',
+      );
+    }
+
+    // M1.22: Finance report tab (M1.15). Visible on Ops sub-home
+    // alongside Maintenance / Price report. Click + check the
+    // scorecard tiles render with the cash/transfer headers.
+    // First back up to Operations sub-home if Maintenance left us
+    // elsewhere.
+    await page.evaluate(() => {
+      const w = window as unknown as { __compassBackButtonClick?: () => boolean };
+      if (typeof w.__compassBackButtonClick === 'function') w.__compassBackButtonClick();
+    });
+    await page.waitForTimeout(200);
+    const opsText = await page.evaluate(() => document.body.innerText);
+    if (/Finance/.test(opsText)) {
+      await page.click('button:has-text("Finance")');
+      await page.waitForTimeout(500);
+      const financeText = await page.evaluate(() => document.body.innerText);
+      record(
+        'Finance report tab renders scorecard (M1.15)',
+        /Cash/i.test(financeText) && /Transfer/i.test(financeText),
+        financeText.split('\n').slice(0, 6).join(' / '),
+      );
+    } else {
+      record(
+        'Finance report tab renders scorecard (M1.15)',
+        false,
+        'Finance row missing from Operations home',
+      );
+    }
+
+    // M1.22: catalog → Dishes editor (M2.0b). Navigate Admin home →
+    // Catalog → Dishes; assert the section header or empty-state
+    // renders. The smoke seed has no dishes, so the empty state
+    // ("No dishes yet") is what we expect.
+    // Back twice: Finance → Ops home → Admin home.
+    await page.evaluate(() => {
+      const w = window as unknown as { __compassBackButtonClick?: () => boolean };
+      if (typeof w.__compassBackButtonClick === 'function') w.__compassBackButtonClick();
+    });
+    await page.waitForTimeout(150);
+    await page.evaluate(() => {
+      const w = window as unknown as { __compassBackButtonClick?: () => boolean };
+      if (typeof w.__compassBackButtonClick === 'function') w.__compassBackButtonClick();
+    });
+    await page.waitForTimeout(150);
+    const adminHomeRetext = await page.evaluate(() => document.body.innerText);
+    if (/Catalog/.test(adminHomeRetext)) {
+      await page.click('main button:has-text("Catalog")');
+      await page.waitForTimeout(300);
+      const catText = await page.evaluate(() => document.body.innerText);
+      if (/Dishes/.test(catText)) {
+        await page.click('main button:has-text("Dishes")');
+        await page.waitForTimeout(400);
+        const dishesText = await page.evaluate(() => document.body.innerText);
+        record(
+          'Dishes section renders empty state (M2.0b)',
+          /No dishes yet/i.test(dishesText) || /\+ New dish/i.test(dishesText),
+          dishesText.split('\n').slice(0, 6).join(' / '),
+        );
+      } else {
+        record(
+          'Dishes section renders empty state (M2.0b)',
+          false,
+          'Dishes row missing from Catalog home',
+        );
+      }
+    } else {
+      record(
+        'Dishes section renders empty state (M2.0b)',
+        false,
+        'never returned to admin home',
       );
     }
 

@@ -20,7 +20,7 @@
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync } from 'node:fs';
-import { and, eq, isNull, lte, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { Bot, GrammyError, HttpError } from 'grammy';
 import { getDb, schema as s, closeDb } from '@compass/db';
 
@@ -98,53 +98,94 @@ interface OutboxPayload {
   extra?: Record<string, unknown>;
 }
 
+/**
+ * Drain up to 50 pending outbox rows.
+ *
+ * M1.22 (2026-05-08, launch hardening): each row gets its own
+ * `SELECT ... FOR UPDATE SKIP LOCKED` so:
+ *
+ *   1. A future second worker (we run one today, but the API can
+ *      scale) won't double-process — the row lock is exclusive
+ *      within the picking tx.
+ *   2. A crash mid-batch limits the blast radius to the ONE row
+ *      currently held. Previously the loop kept 50 rows in memory
+ *      without per-row commits, so a crash on row 23 could leave
+ *      0–22 marked sent + the rest in limbo.
+ *   3. The lock is released when the tx commits or the connection
+ *      drops; an OS-kill leaves no permanently-stuck rows.
+ *
+ * Note: the bot HTTP send happens AFTER the lock is acquired but
+ * BEFORE the tx commits. If the worker crashes between bot send and
+ * commit, the user gets a duplicate message on the next retry —
+ * acceptable for "important" notifications (at-least-once delivery)
+ * and the dedup_key on notifications already de-dupes the user-
+ * facing record.
+ */
 async function processOnce(): Promise<{ sent: number; deferred: number; failed: number }> {
-  const now = new Date();
-  const pending = await db
-    .select()
-    .from(s.outbox)
-    .where(and(isNull(s.outbox.sentAt), lte(s.outbox.nextAttemptAt, now)))
-    .limit(50);
-
   let sent = 0;
   let deferred = 0;
   let failed = 0;
 
-  for (const row of pending) {
-    if (row.channel === 'bot') {
-      // Kill-switch path — bot delivery off (e.g. egress to Telegram
-      // blocked). Mark row sent so the queue drains; record `lastError`
-      // so post-mortems show the rows weren't really delivered.
-      if (!bot) {
-        await db
+  // Loop one row at a time, each in its own tx, until SKIP LOCKED
+  // returns nothing (queue drained for this pass) or we hit 50.
+  for (let i = 0; i < 50; i++) {
+    const claimed = await db.transaction(async (tx) => {
+      // Atomic claim: pick the oldest unsent row that's due, locking
+      // it so concurrent workers skip it. Order by created_at for
+      // FIFO fairness — older notifications go out first.
+      const rows = (await tx.execute(sql`
+        SELECT id, channel, payload, retries
+        FROM sync.outbox
+        WHERE sent_at IS NULL
+          AND next_attempt_at <= NOW()
+        ORDER BY created_at
+        LIMIT 1
+        FOR UPDATE SKIP LOCKED
+      `)) as unknown as Array<{
+        id: string;
+        channel: string;
+        payload: unknown;
+        retries: number;
+      }>;
+      const row = rows[0];
+      if (!row) return null;
+
+      const now = new Date();
+
+      if (row.channel === 'bot') {
+        if (!bot) {
+          await tx
+            .update(s.outbox)
+            .set({ sentAt: now, lastError: 'bot delivery disabled' })
+            .where(eq(s.outbox.id, row.id));
+          return 'sent' as const;
+        }
+        const ok = await deliverBot(row.payload as OutboxPayload);
+        if (ok) {
+          await tx.update(s.outbox).set({ sentAt: now }).where(eq(s.outbox.id, row.id));
+          return 'sent' as const;
+        }
+        await deferOutboxTx(tx, row.id, row.retries);
+        return 'deferred' as const;
+      }
+      if (row.channel === 'webpush') {
+        await tx
           .update(s.outbox)
-          .set({ sentAt: now, lastError: 'bot delivery disabled' })
+          .set({ sentAt: now, lastError: 'webpush not implemented (M2)' })
           .where(eq(s.outbox.id, row.id));
-        sent++;
-        continue;
+        return 'failed' as const;
       }
-      const ok = await deliverBot(row.payload as OutboxPayload);
-      if (ok) {
-        await db.update(s.outbox).set({ sentAt: now }).where(eq(s.outbox.id, row.id));
-        sent++;
-      } else {
-        await deferOutbox(row.id, row.retries);
-        deferred++;
-      }
-    } else if (row.channel === 'webpush') {
-      // M2: implement WebPush delivery. Mark sent so the queue doesn't grow.
-      await db
-        .update(s.outbox)
-        .set({ sentAt: now, lastError: 'webpush not implemented (M2)' })
-        .where(eq(s.outbox.id, row.id));
-      failed++;
-    } else {
-      await db
+      await tx
         .update(s.outbox)
         .set({ sentAt: now, lastError: `unknown channel "${row.channel}"` })
         .where(eq(s.outbox.id, row.id));
-      failed++;
-    }
+      return 'failed' as const;
+    });
+
+    if (!claimed) break; // queue drained for this pass
+    if (claimed === 'sent') sent++;
+    else if (claimed === 'deferred') deferred++;
+    else failed++;
   }
   return { sent, deferred, failed };
 }
@@ -200,17 +241,28 @@ async function deliverBot(payload: OutboxPayload): Promise<boolean> {
   }
 }
 
-async function deferOutbox(id: string, currentRetries: number): Promise<void> {
+/**
+ * Tx-scoped variant — used inside processOnce's per-row transaction
+ * (M1.22). Same logic as the original; just takes a tx handle instead
+ * of using the module-level db.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+async function deferOutboxTx(
+  tx: Tx,
+  id: string,
+  currentRetries: number,
+): Promise<void> {
   const next = currentRetries + 1;
   if (next >= MAX_RETRIES) {
-    await db
+    await tx
       .update(s.outbox)
       .set({ sentAt: new Date(), lastError: `gave up after ${MAX_RETRIES} retries` })
       .where(eq(s.outbox.id, id));
     return;
   }
   const delay = BACKOFF_SECONDS[Math.min(next, BACKOFF_SECONDS.length - 1)]!;
-  await db
+  await tx
     .update(s.outbox)
     .set({
       retries: next,

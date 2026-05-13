@@ -165,4 +165,46 @@ describe('verifyInitData (Telegram WebApp)', () => {
     expect(result.ok).toBe(false);
     expect(result.reason).toBe('bad signature');
   });
+
+  // M1.22 (2026-05-08): clock-skew tolerance window (±600s).
+  // Telegram + Cloudflare both work with this tolerance because
+  // mobile devices drift; the strict pre-M1.22 check rejected
+  // initData from a user whose device clock was 90 seconds slow.
+  test('accepts initData up to 600s past maxAgeSec (slow device clock)', () => {
+    // Signed 30 seconds ago, verify with maxAge=60 → ageSec=30 fits.
+    // Push the auth_date to 500 seconds in the past with maxAge=60.
+    // ageSec=500 > maxAge=60 but < maxAge+600 so it passes.
+    const skewedAuth = Math.floor(Date.now() / 1000) - 500;
+    const initData = signInitData({
+      auth_date: skewedAuth.toString(),
+      user: SAMPLE_USER,
+    });
+    const result = verifyInitData(initData, BOT_TOKEN, 60);
+    expect(result.ok).toBe(true);
+  });
+
+  test('rejects initData clearly past maxAgeSec + tolerance', () => {
+    // 1000 seconds old, maxAge=60, tolerance=600 → 1000 > 660 = expired.
+    const oldAuth = Math.floor(Date.now() / 1000) - 1000;
+    const initData = signInitData({
+      auth_date: oldAuth.toString(),
+      user: SAMPLE_USER,
+    });
+    const result = verifyInitData(initData, BOT_TOKEN, 60);
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe('expired');
+  });
+
+  test('rejects initData with auth_date far in the future', () => {
+    // Phone clock 1 hour ahead of server: auth_date 3600 seconds
+    // in the future. > 600 tolerance → reject with explicit reason.
+    const futureAuth = Math.floor(Date.now() / 1000) + 3600;
+    const initData = signInitData({
+      auth_date: futureAuth.toString(),
+      user: SAMPLE_USER,
+    });
+    const result = verifyInitData(initData, BOT_TOKEN, 60);
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe('auth_date too far in future');
+  });
 });
