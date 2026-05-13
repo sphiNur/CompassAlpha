@@ -19,7 +19,10 @@ export function Chip({ className, selected, children, ...rest }: ChipProps) {
         // characters; Cyrillic shows each word stacked). The bar is
         // already `overflow-x-auto`, so chips should KEEP their
         // natural width and the bar pans horizontally.
-        'press inline-flex h-9 shrink-0 items-center whitespace-nowrap rounded-[var(--r-pill)] px-4 text-body font-medium',
+        // M2.4: pill text uniformly text-label (12 px) + font-medium —
+        // matches Badge + RunPage history filter chip. Was text-body (14)
+        // which created a 2 px jump against status badges in the same row.
+        'press inline-flex h-9 shrink-0 items-center whitespace-nowrap rounded-[var(--r-pill)] px-4 text-label font-medium',
         selected
           ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
           : 'bg-transparent text-[var(--c-fg-muted)] ring-hairline',

@@ -147,6 +147,28 @@
    *   indicator, etc.)                  text-tiny                 10px
    *   Tabular density / legacy          text-meta                 11px  (deprecated)
    *
+   * ────────────────────────────────────────────────────────────────
+   * PILL FAMILY (M2.4, 2026-05-14)
+   * ────────────────────────────────────────────────────────────────
+   * ALL pill-shape controls — Badge, ChipBar's Chip, Tabs' Tab,
+   * Button size="sm", and any inline rounded-[var(--r-pill)] button
+   * — render text at:
+   *
+   *     text-label + font-medium      (12 px, weight 500)
+   *
+   * This is the size set by the RunPage history filter chip
+   * ("Finished (N)") and the status Badge ("finished"). M2.4
+   * collapsed Chip/Tab from 14 → 12 and Button-sm from 13 → 12 so
+   * the entire pill family sits on the same baseline.
+   *
+   * Exceptions (keep larger):
+   *   - Button md (h-11) — primary actions: text-h3 (15)
+   *   - Button lg (h-14) — sheet-footer commits: text-h2 (17)
+   *   - Input lookalikes (rounded-pill display reading like an
+   *     <Input>) — text-h3 to match the Input component
+   *   - Single-emoji icon buttons in pill containers — size doesn't
+   *     materially affect the glyph; left untouched
+   *
    * Weight: keep font-semibold for "primary" roles (titles +
    * list-row primaries + eyebrows). Body / description / meta stay
    * regular. Color carries hierarchy:

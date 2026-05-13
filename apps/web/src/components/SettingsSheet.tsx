@@ -142,7 +142,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
             <Field label={i18n.t('settings.profile.displayName')}>
               {nameLocked ? (
                 <>
-                  <div className="rounded-[var(--r-pill)] bg-[var(--c-surface)] px-4 py-2 text-body ring-hairline">
+                  <div className="rounded-[var(--r-pill)] bg-[var(--c-surface)] px-4 py-2 text-h3 ring-hairline">
                     {session?.user.displayName ?? '—'}
                   </div>
                   <p className="mt-1 text-label text-[var(--c-fg-muted)]">
@@ -171,7 +171,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
             </Field>
             {session?.user.tgUsername ? (
               <Field label={i18n.t('settings.profile.username')}>
-                <div className="rounded-[var(--r-pill)] bg-[var(--c-surface)] px-4 py-2 text-body ring-hairline">
+                <div className="rounded-[var(--r-pill)] bg-[var(--c-surface)] px-4 py-2 text-h3 ring-hairline">
                   @{session.user.tgUsername}
                 </div>
               </Field>

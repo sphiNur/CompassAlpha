@@ -2795,7 +2795,7 @@ function PurchaseSheet({
                     type="button"
                     onClick={() => onChange({ ...draft, paymentMethod: m })}
                     className={
-                      'press flex-1 rounded-[var(--r-pill)] px-3 py-2 text-body font-medium ring-hairline ' +
+                      'press flex-1 rounded-[var(--r-pill)] px-3 py-2 text-label font-medium ring-hairline ' +
                       (selected
                         ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
                         : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]')

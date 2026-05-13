@@ -96,7 +96,9 @@ export function Tab({
       onClick={() => _onSelect?.(value)}
       onKeyDown={_onKeyDown}
       className={cn(
-        'press inline-flex h-9 shrink-0 items-center whitespace-nowrap rounded-[var(--r-pill)] px-4 text-body font-medium',
+        // M2.4: pill text uniformly text-label (12 px) + font-medium —
+        // matches Badge + Chip baseline.
+        'press inline-flex h-9 shrink-0 items-center whitespace-nowrap rounded-[var(--r-pill)] px-4 text-label font-medium',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',
         'focus-visible:ring-offset-[var(--c-bg)]',
         _selected

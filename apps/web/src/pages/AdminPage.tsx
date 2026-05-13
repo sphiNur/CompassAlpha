@@ -2526,7 +2526,7 @@ function TransferStoreSheet({
               own dedicated i18n pass with all the other admin
               transfer copy. */}
           <Field label="From">
-            <div className="rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 py-2 text-body ring-hairline">
+            <div className="rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 py-2 text-h3 ring-hairline">
               🏪 {target.fromStoreName}
             </div>
           </Field>

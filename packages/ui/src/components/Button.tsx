@@ -29,7 +29,12 @@ const button = cva(
           'bg-[var(--c-surface-2)] text-[var(--c-fg)] rounded-[var(--r-capsule)] ring-hairline',
       },
       size: {
-        sm: 'h-8 px-3 text-body-sm',
+        // M2.4: sm pill text dropped to text-label (12) to match Badge +
+        // Chip + Tab baseline. Was text-body-sm (13) which sat awkwardly
+        // between the 12 px chip and 15 px Input. The 32 px height
+        // (h-8) + 12 px text gives the same "compact secondary action"
+        // rhythm as the RunPage history filter pill.
+        sm: 'h-8 px-3 text-label',
         md: 'h-11 px-5 text-h3',
         lg: 'h-14 px-7 text-h2',
       },
