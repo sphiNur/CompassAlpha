@@ -908,7 +908,7 @@ function PeopleSection({
                     {m.stores.map((st) => (
                       <span
                         key={st.id}
-                        className="inline-flex items-center gap-1 rounded-full bg-[var(--c-surface-2)] px-2 py-0.5 text-meta text-[var(--c-fg)] ring-hairline"
+                        className="inline-flex items-center gap-1 rounded-full bg-[var(--c-surface-2)] px-2 py-0.5 text-label text-[var(--c-fg)] ring-hairline"
                       >
                         🏪 {st.name}
                       </span>
@@ -937,7 +937,7 @@ function PeopleSection({
                         <button
                           key={r.bindingId}
                           type="button"
-                          className="press inline-flex items-center gap-1 rounded-full bg-[var(--c-surface-2)] px-2 py-0.5 text-meta ring-hairline"
+                          className="press inline-flex items-center gap-1 rounded-full bg-[var(--c-surface-2)] px-2 py-0.5 text-label ring-hairline"
                           onClick={() =>
                             nativeConfirm(
                               scopedStoreName
@@ -1084,7 +1084,7 @@ function PeopleSection({
             <div className="flex flex-col gap-4">
               {orgLevel.length > 0 ? (
                 <section>
-                  <h3 className="mb-2 text-label font-semibold uppercase tracking-wide text-[var(--c-fg-muted)]">
+                  <h3 className="mb-2 text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
                     Org-level ({orgLevel.length})
                   </h3>
                   <ul className="flex flex-col gap-2" role="list">
@@ -1094,7 +1094,7 @@ function PeopleSection({
               ) : null}
               {storeSections.map(([storeId, bucket]) => (
                 <section key={storeId}>
-                  <h3 className="mb-2 text-label font-semibold uppercase tracking-wide text-[var(--c-fg-muted)]">
+                  <h3 className="mb-2 text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
                     🏪 {bucket.name} ({bucket.members.length})
                   </h3>
                   <ul className="flex flex-col gap-2" role="list">
@@ -1292,7 +1292,7 @@ function PermissionsSection({ isSuperAdmin }: { isSuperAdmin: boolean }) {
         but their name, description, and permission set are editable.
       </Banner>
       <div className="mt-3 flex items-center justify-between">
-        <span className="text-label uppercase tracking-wide text-[var(--c-fg-muted)]">
+        <span className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
           Roles
         </span>
         {isGlobalAdmin ? (
@@ -1510,13 +1510,13 @@ function RoleCreateSheet({
             <ul className="flex flex-col gap-3">
               {grouped.map(([ns, keys]) => (
                 <li key={ns}>
-                  <div className="text-meta font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+                  <div className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
                     {ns}
                   </div>
                   <ul className="mt-1 flex flex-col gap-1">
                     {keys.map((p) => (
                       <li key={p.key}>
-                        <label className="flex cursor-pointer items-start gap-2 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-2 text-body-sm active:opacity-80">
+                        <label className="flex cursor-pointer items-start gap-2 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-2 text-label active:opacity-80">
                           <input
                             type="checkbox"
                             checked={picked.has(p.key)}
@@ -1755,7 +1755,7 @@ function RolePermissionsSheet({
             <ul className="flex flex-col gap-3">
               {grouped.map(([ns, keys]) => (
                 <li key={ns}>
-                  <div className="text-meta font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+                  <div className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
                     {ns}
                   </div>
                   <ul className="mt-1 flex flex-col gap-1">
@@ -1763,7 +1763,7 @@ function RolePermissionsSheet({
                       if (editing) {
                         return (
                           <li key={p.key}>
-                            <label className="flex cursor-pointer items-start gap-2 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-2 text-body-sm active:opacity-80">
+                            <label className="flex cursor-pointer items-start gap-2 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-2 text-label active:opacity-80">
                               <input
                                 type="checkbox"
                                 checked={picked.has(p.key)}
@@ -1785,7 +1785,7 @@ function RolePermissionsSheet({
                       return (
                         <li
                           key={p.key}
-                          className="rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-1.5 font-mono text-body-sm"
+                          className="rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-1.5 font-mono text-label"
                         >
                           {p.key}
                         </li>
@@ -1862,7 +1862,7 @@ function RoleAssigneesByStore({
 
   return (
     <div className="mt-2 border-t border-[var(--c-divider)] pt-3">
-      <div className="text-meta font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+      <div className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
         Assignees · {assignees.length}
       </div>
       <div className="mt-1 flex flex-col gap-3">
@@ -1878,11 +1878,11 @@ function RoleAssigneesByStore({
                   className="flex items-center gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-1.5"
                 >
                   <Avatar src={a.avatarUrl} name={a.displayName} size={24} />
-                  <span className="text-body-sm text-[var(--c-fg)]">
+                  <span className="text-body text-[var(--c-fg)]">
                     {a.displayName}
                   </span>
                   {a.tgUsername ? (
-                    <span className="text-meta text-[var(--c-fg-muted)]">
+                    <span className="text-label text-[var(--c-fg-muted)]">
                       @{a.tgUsername}
                     </span>
                   ) : null}
@@ -2000,7 +2000,7 @@ function InviteHubSheet({
           </span>
         </button>
 
-        <div className="my-2 text-center text-meta uppercase tracking-eyebrow text-[var(--c-fg-subtle)]">
+        <div className="my-2 text-center text-label uppercase tracking-eyebrow text-[var(--c-fg-subtle)]">
           or
         </div>
 
@@ -2105,7 +2105,7 @@ function ManualInviteSheet({
               placeholder={i18n.t('admin.field.tgUserIdPlaceholder')}
               autoFocus
             />
-            <p className="mt-1 text-meta text-[var(--c-fg-muted)]">
+            <p className="mt-1 text-label text-[var(--c-fg-muted)]">
               {i18n.t('admin.invite.tgIdHint')}
             </p>
           </Field>
@@ -2174,14 +2174,14 @@ function ManualInviteSheet({
                         />
                         <span className="text-body text-[var(--c-fg)]">{st.name}</span>
                         {st.code ? (
-                          <span className="text-meta text-[var(--c-fg-muted)]">{st.code}</span>
+                          <span className="text-label text-[var(--c-fg-muted)]">{st.code}</span>
                         ) : null}
                       </label>
                     );
                   })}
                 </div>
               )}
-              <p className="mt-1 text-meta text-[var(--c-fg-muted)]">
+              <p className="mt-1 text-label text-[var(--c-fg-muted)]">
                 {i18n.t('admin.invite.staffNeedStoreHint')}
                 {!isGlobalAdmin ? ' ' + i18n.t('admin.invite.onlyYourStoresHint') : ''}
               </p>
@@ -2308,7 +2308,7 @@ function ManageMemberSheet({
                 Save
               </Button>
             </div>
-            <p className="mt-1 text-meta text-[var(--c-fg-muted)]">
+            <p className="mt-1 text-label text-[var(--c-fg-muted)]">
               The user can&apos;t change their own name after onboarding — admins can
               always override here.
             </p>
@@ -2360,7 +2360,7 @@ function ManageMemberSheet({
                       />
                       <span className="text-body text-[var(--c-fg)]">{st.name}</span>
                       {st.code ? (
-                        <span className="text-meta text-[var(--c-fg-muted)]">{st.code}</span>
+                        <span className="text-label text-[var(--c-fg-muted)]">{st.code}</span>
                       ) : null}
                       {/* D2 (2026-05-06): "Transfer..." per assigned
                           row. M1.9 (2026-05-07): gated to global admins
@@ -2369,7 +2369,7 @@ function ManageMemberSheet({
                       {checked && editable && isGlobalAdmin ? (
                         <button
                           type="button"
-                          className="ml-auto rounded-full bg-[var(--c-surface)] px-2 py-0.5 text-meta font-medium text-[var(--c-fg)] ring-hairline active:opacity-80"
+                          className="ml-auto rounded-full bg-[var(--c-surface)] px-2 py-0.5 text-label font-medium text-[var(--c-fg)] ring-hairline active:opacity-80"
                           onClick={(ev) => {
                             ev.preventDefault();
                             ev.stopPropagation();
@@ -2394,7 +2394,7 @@ function ManageMemberSheet({
                 ) : null}
               </div>
             )}
-            <p className="mt-1 text-meta text-[var(--c-fg-muted)]">
+            <p className="mt-1 text-label text-[var(--c-fg-muted)]">
               Staff can only place orders for, and confirm deliveries to, the
               stores they&apos;re assigned to. Admins always see all stores.
             </p>
@@ -2823,7 +2823,7 @@ function MemberPermissionsSheet({
           </Banner>
           {grouped.map(([ns, keys]) => (
             <div key={ns}>
-              <div className="text-meta font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+              <div className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
                 {ns}
               </div>
               <ul className="mt-1 flex flex-col gap-1">
@@ -2966,7 +2966,7 @@ function SegBtn({
       type="button"
       onClick={onClick}
       className={
-        'flex-1 rounded-[var(--r-pill)] px-2 py-1 text-meta font-medium ' +
+        'flex-1 rounded-[var(--r-pill)] px-2 py-1 text-label font-medium ' +
         (active ? activeBg : 'bg-transparent text-[var(--c-fg-muted)] ring-hairline active:opacity-70')
       }
     >
@@ -3189,7 +3189,7 @@ function GrantRoleSheet({
             </SegBtn>
           </div>
           {!canGrantGlobal ? (
-            <p className="mt-1 text-meta text-[var(--c-fg-muted)]">
+            <p className="mt-1 text-label text-[var(--c-fg-muted)]">
               Only org-level admins can grant global (org-tier) roles. You can
               still assign per-store roles in the stores you administer.
             </p>
@@ -3221,7 +3221,7 @@ function GrantRoleSheet({
                         🏪 {st.name}
                       </span>
                       {st.code ? (
-                        <span className="text-meta text-[var(--c-fg-muted)]">
+                        <span className="text-label text-[var(--c-fg-muted)]">
                           {st.code}
                         </span>
                       ) : null}
@@ -3563,7 +3563,7 @@ function StoresHomeSection({
                 placeholder="e.g. Asia/Tashkent"
               />
             </Field>
-            <p className="text-meta text-[var(--c-fg-muted)]">
+            <p className="text-label text-[var(--c-fg-muted)]">
               You can set the default role and other settings after the
               store is created — open it from the list and switch to the
               Settings tab.
@@ -3787,7 +3787,7 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
                       {formatQty(r.onHand)} {r.unit}
                     </span>
                   </div>
-                  <div className="mt-1 flex items-center gap-1 text-meta">
+                  <div className="mt-1 flex items-center gap-1 text-label">
                     <button
                       type="button"
                       onClick={() =>
@@ -3864,7 +3864,7 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
           <div className="flex flex-col gap-3 py-3">
             {action.kind === 'stocktake' ? (
               <>
-                <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 text-meta text-[var(--c-fg-muted)]">
+                <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 text-label text-[var(--c-fg-muted)]">
                   {i18n.t('inventory.sheet.stocktake.systemSays', {
                     qty: formatQty(action.current),
                   })}
@@ -4022,24 +4022,24 @@ function StoreSalesTab({ storeId }: { storeId: string }) {
       {/* Today summary tile. */}
       <div className="grid grid-cols-2 gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
         <div>
-          <div className="text-meta uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+          <div className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
             {i18n.t('sales.summary.today')}
           </div>
           <div className="font-mono text-h2 font-semibold tabular-nums">
             {formatQty(summary.count.toString())}
           </div>
-          <div className="text-meta text-[var(--c-fg-muted)]">
+          <div className="text-label text-[var(--c-fg-muted)]">
             {i18n.t('sales.summary.servings')}
           </div>
         </div>
         <div>
-          <div className="text-meta uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+          <div className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
             {i18n.t('sales.summary.revenue')}
           </div>
           <div className="font-mono text-h2 font-semibold tabular-nums">
             {formatMoney(summary.revenue)}
           </div>
-          <div className="text-meta text-[var(--c-fg-muted)]">
+          <div className="text-label text-[var(--c-fg-muted)]">
             {session?.member.currency ?? 'UZS'}
           </div>
         </div>
@@ -4053,7 +4053,7 @@ function StoreSalesTab({ storeId }: { storeId: string }) {
             {i18n.t('sales.form.recordTitle')}
           </SectionLabel>
           {dishOptions.length === 0 ? (
-            <p className="text-meta text-[var(--c-fg-muted)]">
+            <p className="text-label text-[var(--c-fg-muted)]">
               {i18n.t('sales.form.noDishesYet')}
             </p>
           ) : (
@@ -4146,20 +4146,20 @@ function StoreSalesTab({ storeId }: { storeId: string }) {
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline gap-2">
-                      <span className="text-meta tabular-nums text-[var(--c-fg-muted)]">
+                      <span className="text-label tabular-nums text-[var(--c-fg-muted)]">
                         {time}
                       </span>
                       <span className="truncate text-body font-medium">{name}</span>
                     </div>
                     {lineTotal !== null ? (
-                      <div className="text-meta text-[var(--c-fg-muted)]">
+                      <div className="text-label text-[var(--c-fg-muted)]">
                         {formatQty(sale.qty)} × {formatMoney(sale.unitPrice)} ={' '}
                         <span className="font-mono tabular-nums text-[var(--c-fg)]">
                           {formatMoney(lineTotal)}
                         </span>
                       </div>
                     ) : (
-                      <div className="text-meta text-[var(--c-fg-muted)]">
+                      <div className="text-label text-[var(--c-fg-muted)]">
                         {formatQty(sale.qty)} × —
                       </div>
                     )}
@@ -4326,7 +4326,7 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
             ))}
           </Select>
         )}
-        <p className="mt-1 text-meta text-[var(--c-fg-muted)]">
+        <p className="mt-1 text-label text-[var(--c-fg-muted)]">
           When set, new members invited into this store with no explicit
           role pick are auto-granted this role.
         </p>
@@ -5558,13 +5558,13 @@ function DishesSection() {
                     <div className="flex items-baseline gap-2">
                       <span className="truncate text-body font-semibold">{name}</span>
                       {d.code ? (
-                        <span className="text-meta text-[var(--c-fg-muted)]">{d.code}</span>
+                        <span className="text-label text-[var(--c-fg-muted)]">{d.code}</span>
                       ) : null}
                       {d.isArchived ? (
                         <Badge tone="muted">{i18n.t('common.archived')}</Badge>
                       ) : null}
                     </div>
-                    <div className="text-meta text-[var(--c-fg-muted)]">
+                    <div className="text-label text-[var(--c-fg-muted)]">
                       {ingCount === 0
                         ? i18n.t('dishes.label.noIngredients')
                         : i18n.t('dishes.label.ingredientCount', { n: ingCount })}
@@ -5573,7 +5573,7 @@ function DishesSection() {
                   </div>
                 </button>
                 {canManage ? (
-                  <div className="mt-1 flex gap-1 text-meta">
+                  <div className="mt-1 flex gap-1 text-label">
                     {d.isArchived ? (
                       <button
                         type="button"
@@ -5672,7 +5672,7 @@ function DishesSection() {
                 </Button>
               </div>
               {draft.ingredients.length === 0 ? (
-                <p className="text-meta text-[var(--c-fg-muted)]">
+                <p className="text-label text-[var(--c-fg-muted)]">
                   {i18n.t('dishes.label.noIngredientsHint')}
                 </p>
               ) : (
@@ -5708,7 +5708,7 @@ function DishesSection() {
                               setDraft({ ...draft, ingredients: next });
                             }}
                             aria-label={i18n.t('common.remove')}
-                            className="press shrink-0 rounded-[var(--r-pill)] bg-[var(--c-surface)] px-2 py-0.5 text-meta text-[var(--c-danger)] ring-hairline"
+                            className="press shrink-0 rounded-[var(--r-pill)] bg-[var(--c-surface)] px-2 py-0.5 text-label text-[var(--c-danger)] ring-hairline"
                           >
                             ×
                           </button>
@@ -5727,7 +5727,7 @@ function DishesSection() {
                             }}
                             placeholder={i18n.t('dishes.field.qtyPlaceholder')}
                           />
-                          <span className="text-meta text-[var(--c-fg-muted)]">
+                          <span className="text-label text-[var(--c-fg-muted)]">
                             {sku?.unit ?? '—'}
                           </span>
                         </div>
@@ -5800,7 +5800,7 @@ function ActivitySection() {
                     seq {e.seq}
                   </span>
                 </div>
-                <div className="flex items-baseline justify-between gap-2 text-meta text-[var(--c-fg-muted)]">
+                <div className="flex items-baseline justify-between gap-2 text-label text-[var(--c-fg-muted)]">
                   <span className="truncate">
                     {e.actor?.displayName ?? 'system'}
                     {e.actor?.tgUsername ? ` · @${e.actor.tgUsername}` : ''}
@@ -5930,14 +5930,14 @@ function HistorySection() {
                   </div>
                   {isOpen ? (
                     <div className="border-t border-[var(--c-divider)] px-4 py-3">
-                      <div className="text-meta font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+                      <div className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
                         Contributor breakdown
                       </div>
                       <ul className="mt-2 flex flex-col gap-1">
                         {r.contributors.map((c) => (
                           <li
                             key={c.memberId}
-                            className="flex items-baseline justify-between text-body-sm"
+                            className="flex items-baseline justify-between text-body"
                           >
                             <span className="truncate text-[var(--c-fg)]">
                               {c.displayName ?? c.memberId.slice(0, 6)}
@@ -6125,14 +6125,14 @@ function TargetedPurgeBrowser() {
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline gap-2">
-                        <span className="truncate text-body-sm font-semibold text-[var(--c-fg)]">
+                        <span className="truncate text-body font-semibold text-[var(--c-fg)]">
                           {label}
                         </span>
                         {sess.isMine ? (
                           <Badge tone="info">you</Badge>
                         ) : null}
                       </div>
-                      <div className="mt-0.5 text-meta text-[var(--c-fg-muted)]">
+                      <div className="mt-0.5 text-label text-[var(--c-fg-muted)]">
                         {sess.status} · {sess.itemCount} items · {sess.orderDate}
                       </div>
                     </div>
@@ -6185,14 +6185,14 @@ function TargetedPurgeBrowser() {
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline gap-2">
-                        <span className="truncate text-body-sm font-semibold text-[var(--c-fg)]">
+                        <span className="truncate text-body font-semibold text-[var(--c-fg)]">
                           {label}
                         </span>
                         {r.purchaserIsMe ? (
                           <Badge tone="info">you</Badge>
                         ) : null}
                       </div>
-                      <div className="mt-0.5 text-meta text-[var(--c-fg-muted)]">
+                      <div className="mt-0.5 text-label text-[var(--c-fg-muted)]">
                         {r.status} · {r.sessionCount} sessions
                         {r.purchaserDisplayName ? ` · by ${r.purchaserDisplayName}` : ''}
                       </div>
@@ -6318,7 +6318,7 @@ function CascadePreview({
 }) {
   return (
     <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
-      <div className="text-body-sm font-semibold text-[var(--c-fg)]">
+      <div className="text-body font-semibold text-[var(--c-fg)]">
         {total} rows would be deleted
       </div>
       <ul className="mt-2 flex flex-col gap-1">
@@ -6328,7 +6328,7 @@ function CascadePreview({
           .map(([table, n]) => (
             <li
               key={table}
-              className="flex justify-between font-mono text-meta text-[var(--c-fg-muted)]"
+              className="flex justify-between font-mono text-label text-[var(--c-fg-muted)]"
             >
               <span className="truncate">{table}</span>
               <span className="tabular-nums">{n}</span>
@@ -6466,7 +6466,7 @@ function AdminAuditSection() {
                           {obj}
                         </span>
                         {r.resourceId ? (
-                          <span className="font-mono text-meta text-[var(--c-fg-muted)]">
+                          <span className="font-mono text-label text-[var(--c-fg-muted)]">
                             {r.resourceId.slice(0, 8)}…
                           </span>
                         ) : null}
@@ -6490,10 +6490,10 @@ function AdminAuditSection() {
                           like a debugger artifact to non-tech users. */}
                       {isSuperAdmin ? (
                         <details className="mt-2">
-                          <summary className="cursor-pointer text-meta font-medium text-[var(--c-fg-muted)]">
+                          <summary className="cursor-pointer text-label font-medium text-[var(--c-fg-muted)]">
                             inputs
                           </summary>
-                          <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2 py-1 font-mono text-meta text-[var(--c-fg-muted)]">
+                          <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2 py-1 font-mono text-label text-[var(--c-fg-muted)]">
                             {JSON.stringify(r.inputs, null, 2)}
                           </pre>
                         </details>
@@ -6621,12 +6621,12 @@ function PriceReportSection() {
                   </span>
                   <span className="font-mono text-body tabular-nums text-[var(--c-fg)]">
                     {r.last !== null ? formatMoney(r.last) : '—'}{' '}
-                    <span className="text-meta font-normal text-[var(--c-fg-muted)]">
+                    <span className="text-label font-normal text-[var(--c-fg-muted)]">
                       / {r.unit}
                     </span>
                   </span>
                 </div>
-                <div className="flex flex-wrap items-baseline gap-3 text-meta text-[var(--c-fg-muted)]">
+                <div className="flex flex-wrap items-baseline gap-3 text-label text-[var(--c-fg-muted)]">
                   <span>
                     7d avg{' '}
                     <span className="font-mono tabular-nums text-[var(--c-fg)]">
@@ -6870,7 +6870,7 @@ function FinanceSection() {
               type="button"
               onClick={() => setPreset(p)}
               className={
-                'press rounded-[var(--r-pill)] px-2.5 py-1 text-meta font-medium ring-hairline ' +
+                'press rounded-[var(--r-pill)] px-2.5 py-1 text-label font-medium ring-hairline ' +
                 (preset === p
                   ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
                   : 'bg-[var(--c-surface)] text-[var(--c-fg)]')
@@ -6897,7 +6897,7 @@ function FinanceSection() {
             />
           </div>
         ) : (
-          <div className="text-meta tabular-nums text-[var(--c-fg-muted)]">
+          <div className="text-label tabular-nums text-[var(--c-fg-muted)]">
             {startDate} → {endDate}
           </div>
         )}
@@ -6907,35 +6907,35 @@ function FinanceSection() {
       {totalsQuery.data ? (
         <div className="mb-3 grid grid-cols-3 gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3">
           <div>
-            <div className="text-meta uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+            <div className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
               💵 {i18n.t('run.label.paymentCash')}
             </div>
             <div className="font-mono text-h2 font-semibold tabular-nums">
               {formatMoney(totalsQuery.data.totalCash)}
             </div>
-            <div className="text-meta text-[var(--c-fg-muted)]">
+            <div className="text-label text-[var(--c-fg-muted)]">
               {totalsQuery.data.cashLines} {i18n.t('finance.label.lines')}
             </div>
           </div>
           <div>
-            <div className="text-meta uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+            <div className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
               🏦 {i18n.t('run.label.paymentTransfer')}
             </div>
             <div className="font-mono text-h2 font-semibold tabular-nums">
               {formatMoney(totalsQuery.data.totalTransfer)}
             </div>
-            <div className="text-meta text-[var(--c-fg-muted)]">
+            <div className="text-label text-[var(--c-fg-muted)]">
               {totalsQuery.data.transferLines} {i18n.t('finance.label.lines')}
             </div>
           </div>
           <div>
-            <div className="text-meta uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+            <div className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
               Σ {i18n.t('finance.label.total')}
             </div>
             <div className="font-mono text-h2 font-semibold tabular-nums">
               {formatMoney(totalsQuery.data.total)}
             </div>
-            <div className="text-meta text-[var(--c-fg-muted)]">
+            <div className="text-label text-[var(--c-fg-muted)]">
               {totalsQuery.data.runCount} {i18n.t('finance.label.runs')}
             </div>
           </div>
@@ -6953,7 +6953,7 @@ function FinanceSection() {
               setExpanded(null);
             }}
             className={
-              'press flex-1 rounded-[var(--r-pill)] px-2 py-1 text-meta font-medium ring-hairline ' +
+              'press flex-1 rounded-[var(--r-pill)] px-2 py-1 text-label font-medium ring-hairline ' +
               (view === v
                 ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
                 : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]')
@@ -6966,7 +6966,7 @@ function FinanceSection() {
           type="button"
           onClick={exportText}
           disabled={lines.length === 0}
-          className="press shrink-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2.5 py-1 text-meta font-medium text-[var(--c-fg)] ring-hairline disabled:opacity-40"
+          className="press shrink-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2.5 py-1 text-label font-medium text-[var(--c-fg)] ring-hairline disabled:opacity-40"
           aria-label={i18n.t('finance.export.label')}
         >
           📋 {i18n.t('finance.export.label')}
@@ -7003,7 +7003,7 @@ function FinanceSection() {
                   </span>
                 </button>
                 {mixed ? (
-                  <div className="flex items-baseline gap-3 px-3 pb-1.5 text-meta text-[var(--c-fg-muted)]">
+                  <div className="flex items-baseline gap-3 px-3 pb-1.5 text-label text-[var(--c-fg-muted)]">
                     <span>💵 {formatMoney(g.cash)}</span>
                     <span>🏦 {formatMoney(g.transfer)}</span>
                   </div>
@@ -7033,7 +7033,7 @@ function FinanceSection() {
                               {formatMoney(l.lineTotal)}
                             </span>
                           </div>
-                          <div className="flex items-baseline gap-2 text-meta text-[var(--c-fg-muted)]">
+                          <div className="flex items-baseline gap-2 text-label text-[var(--c-fg-muted)]">
                             <span>🏪 {store}</span>
                             <span>· {supplier}</span>
                             <span className="ml-auto font-mono tabular-nums">
@@ -7074,7 +7074,7 @@ function FinanceSection() {
                   </span>
                 </button>
                 {mixed ? (
-                  <div className="flex items-baseline gap-3 px-3 pb-1.5 text-meta text-[var(--c-fg-muted)]">
+                  <div className="flex items-baseline gap-3 px-3 pb-1.5 text-label text-[var(--c-fg-muted)]">
                     <span>💵 {formatMoney(g.cash)}</span>
                     <span>🏦 {formatMoney(g.transfer)}</span>
                   </div>
@@ -7089,7 +7089,7 @@ function FinanceSection() {
                       return (
                         <li
                           key={`${l.runId}-${l.skuId}-${l.storeId}-${i}`}
-                          className="flex items-baseline justify-between gap-2 border-b border-[var(--c-divider)] px-3 py-1.5 text-meta last:border-b-0"
+                          className="flex items-baseline justify-between gap-2 border-b border-[var(--c-divider)] px-3 py-1.5 text-label last:border-b-0"
                         >
                           <span className="truncate">
                             {l.runDate} · {l.paymentMethod === 'transfer' ? '🏦' : '💵'} {skuName}
@@ -7128,7 +7128,7 @@ function FinanceSection() {
                   </span>
                 </button>
                 {mixed ? (
-                  <div className="flex items-baseline gap-3 px-3 pb-1.5 text-meta text-[var(--c-fg-muted)]">
+                  <div className="flex items-baseline gap-3 px-3 pb-1.5 text-label text-[var(--c-fg-muted)]">
                     <span>💵 {formatMoney(g.cash)}</span>
                     <span>🏦 {formatMoney(g.transfer)}</span>
                   </div>
@@ -7143,7 +7143,7 @@ function FinanceSection() {
                       return (
                         <li
                           key={`${l.runId}-${l.skuId}-${l.storeId}-${i}`}
-                          className="flex items-baseline justify-between gap-2 border-b border-[var(--c-divider)] px-3 py-1.5 text-meta last:border-b-0"
+                          className="flex items-baseline justify-between gap-2 border-b border-[var(--c-divider)] px-3 py-1.5 text-label last:border-b-0"
                         >
                           <span className="truncate">
                             {l.runDate} · {l.paymentMethod === 'transfer' ? '🏦' : '💵'} {skuName}
@@ -7374,7 +7374,7 @@ function MaintenanceSection() {
         <div className="flex flex-col gap-3 py-3">
           {datePreview ? (
             <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
-              <div className="text-body-sm font-semibold text-[var(--c-fg)]">
+              <div className="text-body font-semibold text-[var(--c-fg)]">
                 {datePreview.total === 0
                   ? `Nothing on ${datePreview.date} — already clean.`
                   : `${datePreview.total} rows from ${datePreview.date}`}
@@ -7387,7 +7387,7 @@ function MaintenanceSection() {
                     .map(([table, n]) => (
                       <li
                         key={table}
-                        className="flex justify-between font-mono text-meta text-[var(--c-fg-muted)]"
+                        className="flex justify-between font-mono text-label text-[var(--c-fg-muted)]"
                       >
                         <span className="truncate">{table}</span>
                         <span className="tabular-nums">{n}</span>
@@ -7424,7 +7424,7 @@ function MaintenanceSection() {
         <div className="flex flex-col gap-3 py-3">
           {allDryRun.data ? (
             <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
-              <div className="text-body-sm font-semibold text-[var(--c-fg)]">
+              <div className="text-body font-semibold text-[var(--c-fg)]">
                 {allDryRun.data.total} rows would be deleted
               </div>
               <ul className="mt-2 flex flex-col gap-1">
@@ -7434,7 +7434,7 @@ function MaintenanceSection() {
                   .map(([table, n]) => (
                     <li
                       key={table}
-                      className="flex justify-between font-mono text-meta text-[var(--c-fg-muted)]"
+                      className="flex justify-between font-mono text-label text-[var(--c-fg-muted)]"
                     >
                       <span className="truncate">{table}</span>
                       <span className="tabular-nums">{n}</span>
@@ -7442,7 +7442,7 @@ function MaintenanceSection() {
                   ))}
               </ul>
               {allDryRun.data.total === 0 ? (
-                <p className="mt-2 text-meta text-[var(--c-fg-muted)]">
+                <p className="mt-2 text-label text-[var(--c-fg-muted)]">
                   Nothing to purge — workspace is already clean.
                 </p>
               ) : null}

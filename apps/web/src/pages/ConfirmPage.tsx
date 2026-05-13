@@ -279,7 +279,7 @@ export function ConfirmPage() {
         <div className="sticky top-0 z-[1] flex min-h-7 items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-2">
           {storeSwitcherInteractive ? <StoreSwitcher /> : null}
           {activeRun ? (
-            <span className="ml-auto truncate text-meta tabular-nums text-[var(--c-fg-muted)]">
+            <span className="ml-auto truncate text-label tabular-nums text-[var(--c-fg-muted)]">
               {i18n.t('confirm.runOnDate', { date: activeRun.runDate })}
             </span>
           ) : null}

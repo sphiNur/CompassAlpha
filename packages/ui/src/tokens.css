@@ -91,13 +91,22 @@
    * sites; reach for these vars only when you must.
    *
    * ────────────────────────────────────────────────────────────────
-   * CANONICAL ROLE → SIZE MAPPING (M2.2, 2026-05-13)
+   * CANONICAL ROLE → SIZE MAPPING (M2.3, 2026-05-14)
    * ────────────────────────────────────────────────────────────────
-   * Pages were drifting (list-row primaries used text-h3 in
-   * Order/Confirm but text-body+bold in Run/Admin, creating a
-   * 1-2px "一大一小点" mismatch). This is the agreed lookup —
-   * any new component MUST follow it. If you find yourself
-   * reaching for a different size, change the role first.
+   * The original 9-step scale (28/22/17/15/14/13/12/11/10) had FOUR
+   * sizes crammed into the 11-14px secondary band, and pages used
+   * them interchangeably — that drift is what reads as "大大小小".
+   *
+   * M2.3 collapses the secondary band to TWO effective sizes:
+   *   - text-body     (14) — primary content + list-row primary
+   *   - text-body-sm  (13) — multi-line description / paragraph only
+   *   - text-label    (12) — ALL eyebrows, captions, meta, hints
+   *   - text-meta     (11) — DEPRECATED, do not use in new code
+   *
+   * The migration auto-promoted all 99 prior `text-meta` (11) uses
+   * to `text-label` (12). The 1px lift kills the eye-strain band
+   * where text-meta sat right under text-label. text-meta remains
+   * defined for legacy/print-density edge cases only.
    *
    *   ROLE                              CLASS
    *   ───────────────────────────────────────────────────────────
@@ -120,20 +129,35 @@
    *   list, Run pending list, Admin
    *   invite/role pickers, Store and
    *   Language pickers)                 text-body + font-semibold 14px
-   *   Body copy, descriptions           text-body                 14px
-   *   Card description, supporting
-   *   paragraph                         text-body-sm              13px
+   *   Body copy, summary key:value      text-body                 14px
+   *   Multi-line description /
+   *   paragraph (Card description,
+   *   Banner body, AuthGate copy,
+   *   ApprovalPage empty-state,
+   *   Toast message)                    text-body-sm              13px
    *   SectionLabel (uppercase
-   *   eyebrows), form field label,
-   *   secondary meta inside a row       text-label                12px
-   *   Status meta (eyebrows on tiles,
-   *   timestamp under a row)            text-meta                 11px
-   *   Microcopy, footnote               text-tiny                 10px
+   *   eyebrows) — MUST add the suffix
+   *   "font-semibold uppercase
+   *   tracking-eyebrow"                 text-label                12px
+   *   Form field label, secondary meta
+   *   inside a row, hint text, badge
+   *   content, status timestamps,
+   *   tabular code columns              text-label                12px
+   *   Microcopy, footnote (in-run
+   *   indicator, etc.)                  text-tiny                 10px
+   *   Tabular density / legacy          text-meta                 11px  (deprecated)
    *
    * Weight: keep font-semibold for "primary" roles (titles +
-   * list-row primaries). Body / description / meta stay regular.
-   * Color: hierarchy is conveyed by --c-fg (primary), --c-fg-muted
-   * (secondary), --c-fg-subtle (tertiary) — NOT by extra size jumps.
+   * list-row primaries + eyebrows). Body / description / meta stay
+   * regular. Color carries hierarchy:
+   *   --c-fg          primary text
+   *   --c-fg-muted    secondary
+   *   --c-fg-subtle   tertiary / placeholder
+   * Avoid jumping size to express hierarchy — use weight + color.
+   *
+   * Eyebrow tracking: ALWAYS `tracking-eyebrow` (0.08em). The old
+   * `tracking-wide` (0.025em) variant has been retired from eyebrow
+   * contexts.
    *
    * If a screen genuinely needs an exception, add a one-line code
    * comment explaining the role so the next pass can audit it.

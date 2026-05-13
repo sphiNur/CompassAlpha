@@ -527,7 +527,7 @@ function SessionItems({
         back to draft to edit. */}
     {sessionNotes ? (
       <div className="border-b border-[var(--c-divider)] bg-[var(--c-warn-bg)] px-4 py-3">
-        <div className="text-label font-semibold uppercase tracking-wide text-[var(--c-fg-muted)]">
+        <div className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
           {i18n.t('order.notes.label')}
         </div>
         <div className="mt-1 whitespace-pre-wrap text-body leading-snug text-[var(--c-fg)]">
@@ -541,7 +541,7 @@ function SessionItems({
         and are flagged. */}
     {estimateTotal.known > 0 ? (
       <div className="flex items-baseline justify-between gap-2 px-4 py-2 text-label text-[var(--c-fg-muted)]">
-        <span className="uppercase tracking-wide">
+        <span className="font-semibold uppercase tracking-eyebrow">
           {i18n.t('order.review.estimatedTotal')}
         </span>
         <span className="font-mono text-body font-semibold tabular-nums text-[var(--c-fg)]">

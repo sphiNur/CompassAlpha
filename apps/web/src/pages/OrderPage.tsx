@@ -623,11 +623,11 @@ export function OrderPage() {
         {storeSwitcherInteractive ? (
           <div className="flex min-h-7 items-center gap-2">
             <StoreSwitcher />
-            <span className="ml-auto truncate text-meta text-[var(--c-fg-muted)]">
+            <span className="ml-auto truncate text-label text-[var(--c-fg-muted)]">
               {dateLabel}
             </span>
             {selectedCount > 0 ? (
-              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-action)] px-2 py-0.5 text-meta font-semibold tabular-nums text-[var(--c-action-fg)]">
+              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-action)] px-2 py-0.5 text-label font-semibold tabular-nums text-[var(--c-action-fg)]">
                 {selectedCount}
               </span>
             ) : null}
@@ -975,14 +975,14 @@ function ReviewList({
       {estimate.known > 0 ? (
         <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 ring-hairline">
           <div className="flex items-baseline justify-between gap-2">
-            <span className="text-label uppercase tracking-wide text-[var(--c-fg-muted)]">
+            <span className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
               {i18n.t('order.review.estimatedTotal')}
             </span>
             <span className="font-mono text-h2 font-semibold tabular-nums text-[var(--c-fg)]">
               ~{formatMoney(estimate.total)} {currency}
             </span>
           </div>
-          <div className="mt-1 text-meta text-[var(--c-fg-muted)]">
+          <div className="mt-1 text-label text-[var(--c-fg-muted)]">
             {i18n.t('order.review.estimateHint', {
               known: estimate.known,
               unknown: estimate.unknown,
@@ -1126,7 +1126,7 @@ function SessionNotesEditor({
         >
           {i18n.t('order.notes.label')}
         </label>
-        <span className="text-meta text-[var(--c-fg-muted)]">
+        <span className="text-label text-[var(--c-fg-muted)]">
           {savingState === 'saving'
             ? i18n.t('order.notes.saving')
             : savingState === 'saved'
@@ -1175,13 +1175,13 @@ function SessionNotesEditor({
           users still get the "visible to manager" context). */}
       {(charCount > 0 || overLimit) ? (
         <div className="mt-1 flex items-center justify-between">
-          <span className="text-meta text-[var(--c-fg-muted)]">
+          <span className="text-label text-[var(--c-fg-muted)]">
             {i18n.t('order.notes.hint')}
           </span>
           {charCount > 800 || overLimit ? (
             <span
               className={
-                'text-meta tabular-nums ' +
+                'text-label tabular-nums ' +
                 (overLimit ? 'text-[var(--c-danger)]' : 'text-[var(--c-fg-muted)]')
               }
             >

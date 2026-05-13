@@ -88,7 +88,7 @@ export const Switch = forwardRef<HTMLInputElement, SwitchProps>(function Switch(
       <span className="flex min-w-0 flex-col">
         <span className="text-body text-[var(--c-fg)]">{label}</span>
         {hint ? (
-          <span id={hintId} className="text-meta text-[var(--c-fg-muted)]">
+          <span id={hintId} className="text-label text-[var(--c-fg-muted)]">
             {hint}
           </span>
         ) : null}

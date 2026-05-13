@@ -179,7 +179,7 @@ export function Tile({ label, value, accent = 'muted', className }: TileProps) {
         className,
       )}
     >
-      <div className="text-meta font-medium uppercase tracking-[0.08em] text-[var(--c-fg-muted)]">
+      <div className="text-label font-medium uppercase tracking-[0.08em] text-[var(--c-fg-muted)]">
         {label}
       </div>
       <div
@@ -212,7 +212,7 @@ export function Field({ label, hint, children, className }: FieldProps) {
       <span className="block text-label font-semibold text-[var(--c-fg-muted)]">{label}</span>
       <div className="mt-1">{children}</div>
       {hint ? (
-        <span className="mt-1 block text-meta text-[var(--c-fg-muted)]">{hint}</span>
+        <span className="mt-1 block text-label text-[var(--c-fg-muted)]">{hint}</span>
       ) : null}
     </label>
   );

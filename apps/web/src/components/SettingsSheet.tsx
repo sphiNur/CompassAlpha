@@ -106,7 +106,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
         {/* ── Page actions (contextual, M1.12) ─────────────── */}
         {pageMenu && pageMenu.actions.length > 0 ? (
           <section>
-            <h3 className="mb-2 text-label font-semibold uppercase tracking-wide text-[var(--c-fg-muted)]">
+            <h3 className="mb-2 text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
               {pageMenu.title}
             </h3>
             <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
@@ -124,7 +124,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
                   <span className="flex flex-col items-start text-left">
                     <span>{a.label}</span>
                     {a.hint ? (
-                      <span className="mt-0.5 text-meta opacity-80">{a.hint}</span>
+                      <span className="mt-0.5 text-label opacity-80">{a.hint}</span>
                     ) : null}
                   </span>
                 </Button>
@@ -135,7 +135,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
 
         {/* ── Profile ─────────────────────────────────────── */}
         <section>
-          <h3 className="mb-2 text-label font-semibold uppercase tracking-wide text-[var(--c-fg-muted)]">
+          <h3 className="mb-2 text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
             👤 {i18n.t('settings.profile.title')}
           </h3>
           <div className="flex flex-col gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
@@ -145,7 +145,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
                   <div className="rounded-[var(--r-pill)] bg-[var(--c-surface)] px-4 py-2 text-body ring-hairline">
                     {session?.user.displayName ?? '—'}
                   </div>
-                  <p className="mt-1 text-meta text-[var(--c-fg-muted)]">
+                  <p className="mt-1 text-label text-[var(--c-fg-muted)]">
                     {i18n.t('settings.profile.lockedHint')}
                   </p>
                 </>
@@ -181,7 +181,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
 
         {/* ── Language ────────────────────────────────────── */}
         <section>
-          <h3 className="mb-2 text-label font-semibold uppercase tracking-wide text-[var(--c-fg-muted)]">
+          <h3 className="mb-2 text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
             🌐 {i18n.t('settings.language.title')}
           </h3>
           <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
@@ -206,7 +206,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
                     <div className="text-body font-semibold">{lang.label}</div>
                     <div
                       className={
-                        'mt-0.5 text-meta ' +
+                        'mt-0.5 text-label ' +
                         (selected ? 'opacity-80' : 'text-[var(--c-fg-muted)]')
                       }
                     >
@@ -222,11 +222,11 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
 
         {/* ── About ───────────────────────────────────────── */}
         <section>
-          <h3 className="mb-2 text-label font-semibold uppercase tracking-wide text-[var(--c-fg-muted)]">
+          <h3 className="mb-2 text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
             ℹ️ {i18n.t('settings.about.title')}
           </h3>
           <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
-            <div className="flex items-baseline justify-between text-body-sm">
+            <div className="flex items-baseline justify-between text-label">
               <span className="text-[var(--c-fg-muted)]">
                 {i18n.t('settings.about.workspace')}
               </span>
@@ -235,7 +235,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
               </span>
             </div>
             {(session?.roleSlugs ?? []).length > 0 ? (
-              <div className="flex items-baseline justify-between text-body-sm">
+              <div className="flex items-baseline justify-between text-label">
                 <span className="text-[var(--c-fg-muted)]">
                   {i18n.t('settings.about.role')}
                 </span>
@@ -244,11 +244,11 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
                 </span>
               </div>
             ) : null}
-            <div className="flex items-baseline justify-between text-body-sm">
+            <div className="flex items-baseline justify-between text-label">
               <span className="text-[var(--c-fg-muted)]">
                 {i18n.t('settings.about.build')}
               </span>
-              <span className="font-mono text-meta text-[var(--c-fg-muted)]">
+              <span className="font-mono text-[var(--c-fg-muted)]">
                 {buildId}
               </span>
             </div>

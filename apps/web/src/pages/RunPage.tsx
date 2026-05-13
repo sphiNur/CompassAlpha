@@ -912,7 +912,7 @@ export function RunPage() {
         <div className="sticky top-0 z-[1] flex min-h-9 items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-2">
           {storeSwitcherInteractive ? <StoreSwitcher /> : null}
           {activeRun ? (
-            <span className="ml-auto truncate text-meta tabular-nums text-[var(--c-fg-muted)]">
+            <span className="ml-auto truncate text-label tabular-nums text-[var(--c-fg-muted)]">
               #{activeRun.runIndex + 1} · {runSubtitle}
             </span>
           ) : null}
@@ -1941,7 +1941,7 @@ function PreviewSummaryCard({
                 {g.items.map((it) => {
                   const sku = skuById.get(it.skuId);
                   return (
-                    <li key={it.skuId} className="flex justify-between text-body-sm">
+                    <li key={it.skuId} className="flex justify-between text-body">
                       <span>{sku ? productName(sku) : it.skuId.slice(0, 8)}</span>
                       <span className="font-mono tabular-nums">
                         {formatQty(it.qty)} {sku?.unit}
@@ -1956,7 +1956,7 @@ function PreviewSummaryCard({
                   buried in a separate section. */}
               {storeNote ? (
                 <div className="mt-2 rounded-[var(--r-card)] bg-[var(--c-warn-bg)] px-3 py-2 ring-hairline">
-                  <div className="text-meta font-semibold uppercase tracking-wide text-[var(--c-fg-muted)]">
+                  <div className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
                     📝 {i18n.t('order.notes.label')}
                   </div>
                   <div className="mt-0.5 whitespace-pre-wrap text-body-sm leading-snug text-[var(--c-fg)]">
@@ -1983,9 +1983,9 @@ function PreviewSummaryCard({
                     {b.supplierId ? `🛒 ${b.supplierName}` : `❓ ${b.supplierName}`}
                   </div>
                   {b.contactTg ? (
-                    <div className="text-meta text-[var(--c-fg-muted)]">@{b.contactTg}</div>
+                    <div className="text-label text-[var(--c-fg-muted)]">@{b.contactTg}</div>
                   ) : b.contactPhone ? (
-                    <div className="text-meta text-[var(--c-fg-muted)]">{b.contactPhone}</div>
+                    <div className="text-label text-[var(--c-fg-muted)]">{b.contactPhone}</div>
                   ) : null}
                 </div>
                 {b.supplierId ? (
@@ -2026,7 +2026,7 @@ function PreviewSummaryCard({
                         return (
                           <li
                             key={`${store.storeId}-${it.skuId}`}
-                            className="flex items-baseline justify-between gap-2 text-body-sm"
+                            className="flex items-baseline justify-between gap-2 text-body"
                           >
                             <button
                               type="button"
@@ -2157,9 +2157,9 @@ function VendorPickerSheet({
               <div className="min-w-0">
                 <div className="text-body font-medium">🛒 {sup.name}</div>
                 {sup.contactTg ? (
-                  <div className="mt-0.5 text-meta opacity-80">@{sup.contactTg}</div>
+                  <div className="mt-0.5 text-label opacity-80">@{sup.contactTg}</div>
                 ) : sup.contactPhone ? (
-                  <div className="mt-0.5 text-meta opacity-80">{sup.contactPhone}</div>
+                  <div className="mt-0.5 text-label opacity-80">{sup.contactPhone}</div>
                 ) : null}
               </div>
               {selected ? <span aria-hidden>✓</span> : null}
@@ -2271,7 +2271,7 @@ function PerStoreView({
                         {mark}
                       </span>
                       <span className="min-w-0 flex-1 truncate text-body">{skuName}</span>
-                      <span className="shrink-0 font-mono text-body-sm tabular-nums text-[var(--c-fg-muted)]">
+                      <span className="shrink-0 font-mono text-body tabular-nums text-[var(--c-fg-muted)]">
                         {formatQty(r.qty)} {r.sku?.unit ?? ''}
                       </span>
                     </li>
@@ -2489,7 +2489,7 @@ function PurchaseRow({
           <button
             type="button"
             onClick={() => onMarkNa(item.skuId)}
-            className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-meta text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
+            className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-label text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
           >
             {i18n.t('run.action.markNa')}
           </button>
@@ -2512,7 +2512,7 @@ function PurchaseRow({
             placeholder="price"
             aria-label="unit price"
           />
-          <span className="text-meta text-[var(--c-fg-muted)]">{currency}</span>
+          <span className="text-label text-[var(--c-fg-muted)]">{currency}</span>
           <span className="truncate text-right text-label text-[var(--c-fg-muted)]">
             {totalHint !== null ? (
               <>
@@ -2591,7 +2591,7 @@ function PurchaseRow({
           <span
             aria-label={i18n.t('run.label.paymentTransfer')}
             title={i18n.t('run.label.paymentTransfer')}
-            className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-action)]/15 px-1.5 py-0.5 text-meta text-[var(--c-action)] ring-1 ring-[var(--c-action)]"
+            className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-action)]/15 px-1.5 py-0.5 text-label text-[var(--c-action)] ring-1 ring-[var(--c-action)]"
           >
             🏦
           </span>
@@ -2609,7 +2609,7 @@ function PurchaseRow({
           type="button"
           onClick={() => onEdit(item)}
           aria-label={i18n.t('run.action.editPurchase')}
-          className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-meta text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
+          className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-label text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
         >
           {i18n.t('run.action.editPurchase')}
         </button>
@@ -2617,7 +2617,7 @@ function PurchaseRow({
           type="button"
           onClick={() => onUndoPurchase(item.skuId, skuName)}
           aria-label={i18n.t('run.action.undoPurchase')}
-          className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-meta text-[var(--c-danger)] active:bg-[var(--c-surface-2)]"
+          className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-label text-[var(--c-danger)] active:bg-[var(--c-surface-2)]"
         >
           {i18n.t('run.action.undoPurchase')}
         </button>
@@ -2636,7 +2636,7 @@ function PurchaseRow({
       <button
         type="button"
         onClick={() => onUnmark(item.skuId, skuName)}
-        className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-meta text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
+        className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-label text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
       >
         {i18n.t('run.action.unmarkUnavailable')}
       </button>
@@ -3009,7 +3009,7 @@ function ConfirmSheet({
             <button
               type="button"
               onClick={() => setReasonExpanded(true)}
-              className="self-start text-meta text-[var(--c-action)] active:opacity-70"
+              className="self-start text-label text-[var(--c-action)] active:opacity-70"
             >
               {i18n.t('run.label.addReasonOptional')}
             </button>
@@ -3165,7 +3165,7 @@ function RunHistorySection({
               type="button"
               onClick={() => setFilter(key)}
               className={
-                'press flex-1 rounded-[var(--r-pill)] px-2 py-1 text-meta font-medium ring-hairline ' +
+                'press flex-1 rounded-[var(--r-pill)] px-2 py-1 text-label font-medium ring-hairline ' +
                 (filter === key
                   ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
                   : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]')
@@ -3231,7 +3231,7 @@ function RunHistorySection({
                           r.actualTransferTotal != null &&
                           Number(r.actualCashTotal) > 0 &&
                           Number(r.actualTransferTotal) > 0 ? (
-                            <span className="ml-1 text-meta">
+                            <span className="ml-1 text-label">
                               {' · '}💵 {formatMoney(r.actualCashTotal)}
                               {' · '}🏦 {formatMoney(r.actualTransferTotal)}
                             </span>
@@ -3255,7 +3255,7 @@ function RunHistorySection({
           Operations → Submission history (the proper paginated view)
           rather than dumping infinite scroll into RunPage. */}
       {hasMore ? (
-        <div className="border-t border-[var(--c-divider)] px-4 py-2 text-center text-meta text-[var(--c-fg-muted)]">
+        <div className="border-t border-[var(--c-divider)] px-4 py-2 text-center text-label text-[var(--c-fg-muted)]">
           {i18n.t('run.history.viewAllHint')}
         </div>
       ) : null}
@@ -3369,7 +3369,7 @@ function RunHistoryDetailSheet({
           <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3">
             <div className="flex items-baseline justify-between gap-3">
               <div>
-                <div className="text-meta uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+                <div className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
                   {i18n.t('run.history.totalLabel')}
                 </div>
                 {/* M2.2: headline money unified to text-h2 (17 px)
@@ -3413,7 +3413,7 @@ function RunHistoryDetailSheet({
 
           {/* Per-item rows */}
           <div>
-            <div className="mb-2 text-label font-semibold uppercase tracking-[0.04em] text-[var(--c-fg-muted)]">
+            <div className="mb-2 text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
               {i18n.t('run.history.itemsHeading')}
             </div>
             <ul className="flex flex-col rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline">
@@ -3453,7 +3453,7 @@ function RunHistoryDetailSheet({
           {/* Per-store breakdown */}
           {breakdown.perStore.size > 0 ? (
             <div>
-              <div className="mb-2 text-label font-semibold uppercase tracking-[0.04em] text-[var(--c-fg-muted)]">
+              <div className="mb-2 text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
                 {i18n.t('run.history.storesHeading')}
               </div>
               <ul className="flex flex-col rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline">
