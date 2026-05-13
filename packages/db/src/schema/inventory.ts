@@ -182,6 +182,92 @@ export const skuSupplierLinks = inventorySchema.table(
 );
 
 /**
+ * Dishes (M2.0b, 2026-05-08) — the menu items the kitchen sells.
+ *
+ * Schema parallels `skus`:
+ *   - per-org (one menu per tenant)
+ *   - i18n names + optional code for quick reference
+ *   - sort_index for ordering on the sales-entry UI
+ *   - is_archived rather than hard-delete (sales history references)
+ *
+ * Optional `unitPrice` is the SELLING price per serving (UZS / org
+ * currency, see auth.organizations.currency). Used later by sales-
+ * recording flows to compute revenue; not strictly required for the
+ * BOM-driven consumption logic (which only needs the ingredient
+ * weights).
+ *
+ * Recipe = the rows in `dish_ingredients` linking this dish to one or
+ * more SKUs, each with a `qty_per_serving`. M2.0c will read those to
+ * write inventory.movements rows on sale.
+ */
+export const dishes = inventorySchema.table(
+  'dishes',
+  {
+    id: pkUuid(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    code: varchar('code', { length: 32 }),
+    names: jsonb('names').notNull().default(sql`'{}'::jsonb`),
+    description: jsonb('description').notNull().default(sql`'{}'::jsonb`),
+    /** Selling price per serving in the org's currency. Optional. */
+    unitPrice: decimal('unit_price', { precision: 14, scale: 2 }),
+    sortIndex: integer('sort_index').notNull().default(0),
+    isArchived: boolean('is_archived').notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    orgIdx: index('dishes_org_idx').on(t.orgId, t.isArchived),
+    orgCodeUnique: uniqueIndex('dishes_org_code_unique').on(t.orgId, t.code),
+  }),
+);
+
+/**
+ * Recipe / Bill-of-Materials rows. One row per (dish, ingredient SKU).
+ *
+ * `qtyPerServing` is in the SKU's native unit (kg / pcs / L / pack /
+ * etc.) and represents how much of that SKU one serving consumes. The
+ * decimal precision (12,4) gives 0.0001-unit resolution — enough for
+ * "5 g of salt = 0.0050 kg" type recipes without using exponent
+ * notation.
+ *
+ * Optional `note` captures cooking-context hints ("after marinating",
+ * "trim outer leaves") that don't change the math but help kitchen
+ * staff sanity-check the BOM at edit time.
+ *
+ * Primary key is (dish_id, sku_id). A dish can have at most one row
+ * per ingredient — if the same SKU appears twice in a recipe (e.g.
+ * "salt in the rub AND salt in the sauce"), the operator sums those
+ * into a single line.
+ *
+ * CASCADE on dish delete (drops the recipe with the dish);
+ * RESTRICT-equivalent on SKU delete via `set null` reference would
+ * orphan rows, so we use cascade there too — archiving a SKU that's
+ * still in a recipe should warn the operator instead, which the
+ * router enforces.
+ */
+export const dishIngredients = inventorySchema.table(
+  'dish_ingredients',
+  {
+    dishId: uuid('dish_id')
+      .notNull()
+      .references(() => dishes.id, { onDelete: 'cascade' }),
+    skuId: uuid('sku_id')
+      .notNull()
+      .references(() => skus.id, { onDelete: 'cascade' }),
+    qtyPerServing: decimal('qty_per_serving', { precision: 12, scale: 4 }).notNull(),
+    note: text('note'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.dishId, t.skuId] }),
+    skuIdx: index('dish_ing_sku_idx').on(t.skuId),
+  }),
+);
+
+/**
  * Inventory ledger — every quantity change for a (store, SKU) lands
  * here as an immutable row. Current on-hand = SUM(delta) per pair.
  * Added M2.0a (2026-05-08): the first step of the ERP shift. Unlike

@@ -113,6 +113,13 @@
       "when": 1778210400000,
       "tag": "0015_inventory_movements",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1778214000000,
+      "tag": "0016_dishes_and_recipes",
+      "breakpoints": true
     }
   ]
 }

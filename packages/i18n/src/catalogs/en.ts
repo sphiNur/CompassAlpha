@@ -41,6 +41,13 @@ export const en = {
   // ── 2. Common ──────────────────────────────────────────────────
   'common.cancel': 'Cancel',
   'common.confirm': 'Confirm',
+  // M2.0b: shared bits used by the dishes editor (and reusable
+  // anywhere a CRUD section needs them).
+  'common.archive': 'Archive',
+  'common.archived': 'archived',
+  'common.unarchive': 'Unarchive',
+  'common.name': 'Name',
+  'common.remove': 'Remove',
   'common.save': 'Save',
   'common.submit': 'Submit',
   'common.back': 'Back',
@@ -839,4 +846,32 @@ export const en = {
     'You need inventory.adjust to stocktake or record wastage.',
   'inventory.errors.invalidQty': 'Quantity must be a non-negative number.',
   'inventory.errors.wastageNeedsNote': 'Wastage requires a reason.',
+
+  // ── 17. Dishes / Recipes (M2.0b) ───────────────────────
+  // Menu items + BOM. Admin → Catalog → Dishes.
+  'admin.subsection.dishes': 'Dishes',
+  'admin.subsection.dishesHint': 'Menu items + recipe (BOM) per dish',
+  'dishes.empty.title': 'No dishes yet',
+  'dishes.empty.description': 'Add menu items here. Recipes link each dish to its ingredient SKUs.',
+  'dishes.action.new': '+ New dish',
+  'dishes.action.showArchived': 'Show archived',
+  'dishes.action.hideArchived': 'Hide archived',
+  'dishes.action.addIngredient': '+ Ingredient',
+  'dishes.label.noIngredients': 'No recipe yet',
+  'dishes.label.noIngredientsHint': 'Add ingredients so M2.0c can deduct on sales.',
+  'dishes.label.ingredientCount': '{n} ingredients',
+  'dishes.sheet.newTitle': 'New dish',
+  'dishes.sheet.editTitle': 'Edit dish',
+  'dishes.section.ingredients': 'Recipe (BOM)',
+  'dishes.field.code': 'Code',
+  'dishes.field.codeHint': 'Optional kitchen shorthand (e.g. D-12).',
+  'dishes.field.unitPrice': 'Price per serving',
+  'dishes.field.qtyPlaceholder': 'qty per serving',
+  'dishes.field.pickSku': 'Pick ingredient…',
+  'dishes.confirm.archive': 'Archive "{name}"?',
+  'dishes.errors.cannotManage': 'You need dishes.manage to edit menu items.',
+  'dishes.errors.namesRequired': 'At least one language name is required.',
+  'dishes.errors.ingredientQtyMustBePositive': 'Ingredient qty must be > 0.',
+  'dishes.errors.ingredientSkuNotFound': 'One or more ingredients reference an unknown SKU.',
+  'dishes.errors.notFound': 'Dish not found.',
 } as const;

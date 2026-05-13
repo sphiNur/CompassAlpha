@@ -18,6 +18,11 @@ export const uz = {
 
   // ── 2. Common ──────────────────────────────────────────────────
   'common.cancel': 'Bekor qilish',
+  'common.archive': 'Arxivlash',
+  'common.archived': "arxivda",
+  'common.unarchive': 'Tiklash',
+  'common.name': 'Nomi',
+  'common.remove': "O&apos;chirish",
   'common.confirm': 'Tasdiqlash',
   'common.save': 'Saqlash',
   'common.submit': 'Yuborish',
@@ -781,4 +786,33 @@ export const uz = {
     "Inventarizatsiya yoki yo'qotish uchun inventory.adjust ruxsati kerak.",
   'inventory.errors.invalidQty': "Miqdor manfiy bo'lmasligi kerak.",
   'inventory.errors.wastageNeedsNote': "Yo'qotish sababi kerak.",
+
+  // ── 17. Dishes / Recipes (M2.0b) ───────────────────────
+  'admin.subsection.dishes': 'Taomlar',
+  'admin.subsection.dishesHint': 'Menyu + har bir taom uchun retsept (BOM)',
+  'dishes.empty.title': 'Hozircha taomlar yo&apos;q',
+  'dishes.empty.description':
+    "Menyu mahsulotlarini qo'shing; retsept har bir taomni ingredient SKU bilan bog'laydi.",
+  'dishes.action.new': "+ Yangi taom",
+  'dishes.action.showArchived': "Arxivdagilarni ko'rsat",
+  'dishes.action.hideArchived': "Arxivdagilarni yashir",
+  'dishes.action.addIngredient': "+ Ingredient",
+  'dishes.label.noIngredients': "Retsept yo'q",
+  'dishes.label.noIngredientsHint':
+    "Ingredient qo'shing — sotuvda avtomatik chiqarib tashlanadi (M2.0c).",
+  'dishes.label.ingredientCount': '{n} ta ingredient',
+  'dishes.sheet.newTitle': "Yangi taom",
+  'dishes.sheet.editTitle': "Taomni tahrirlash",
+  'dishes.section.ingredients': 'Retsept (BOM)',
+  'dishes.field.code': 'Kod',
+  'dishes.field.codeHint': "Oshxona ichki kodi (masalan D-12).",
+  'dishes.field.unitPrice': 'Bir porsiya narxi',
+  'dishes.field.qtyPlaceholder': "porsiyaga miqdor",
+  'dishes.field.pickSku': "Ingredient tanlang…",
+  'dishes.confirm.archive': "{name} arxivlansinmi?",
+  'dishes.errors.cannotManage': "Menyuni tahrirlash uchun dishes.manage ruxsati kerak.",
+  'dishes.errors.namesRequired': "Kamida bitta tildagi nom kerak.",
+  'dishes.errors.ingredientQtyMustBePositive': "Ingredient miqdori > 0 bo'lishi kerak.",
+  'dishes.errors.ingredientSkuNotFound': "Retseptda noma'lum SKU.",
+  'dishes.errors.notFound': "Taom topilmadi.",
 } as const;

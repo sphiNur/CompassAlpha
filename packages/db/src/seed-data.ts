@@ -35,6 +35,12 @@ export const PERMISSIONS = [
   // are NOT gated by this permission — they're a side effect of the
   // existing delivery.confirm authority.
   { key: 'inventory.adjust', description: 'Stocktake / wastage corrections' },
+  // M2.0b (2026-05-08): menu + recipe management. Separate from
+  // inventory.skus.manage so a head chef can edit dishes + BOMs
+  // without also having authority over the SKU catalog (different
+  // mental model: SKUs are purchasing-level, dishes are kitchen-
+  // level). Admins / super_admins get it implicitly via users.manage.
+  { key: 'dishes.manage', description: 'Manage dishes (menu) and recipes/BOM' },
 
   { key: 'users.manage', description: 'Manage members, roles, and bindings' },
   // Granular split of users.manage (added 2026-05-03). Servers
@@ -91,6 +97,11 @@ export const BUILTIN_ROLES = [
       'users.manage',
       // M2.0a (2026-05-08): manage stocktake + wastage for their stores.
       'inventory.adjust',
+      // M2.0b (2026-05-08): the store manager often IS the kitchen
+      // head in small chains. Give them the BOM editor by default;
+      // granular roles (cook / chef-without-admin) can opt out by
+      // creating a custom role.
+      'dishes.manage',
     ] as readonly string[],
   },
   {
