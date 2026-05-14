@@ -858,6 +858,26 @@ export const runRouter = router({
    * After the cascade, the run + its sessions are visible in the
    * RunPage history view but no longer occupy the active spots on
    * Order / Approval / Run pages.
+   *
+   * M3.4 (2026-05-15) — ATOMICITY:
+   *   The original implementation logged + continued on a session's
+   *   Archive failure, leaving Step 1's RunFinished event committed
+   *   while one or more sessions remained `in_run`. Result: the run
+   *   showed "finished" but the session stayed pinned and couldn't
+   *   be re-used in a future run — silently wedged forever.
+   *
+   *   Now the entire cascade runs inside `ctx.withOrg` (one tx).
+   *   We collect every session's failure into `archiveFailures`;
+   *   if the list is non-empty after the loop we throw, which rolls
+   *   back BOTH the RunFinished event AND any partial session
+   *   archives. The operator gets a structured error with the full
+   *   failure list and retries after fixing the cause.
+   *
+   *   Re-running `finish` on a partially-archived state is safe
+   *   thanks to the `if (oState.status === 'archived') continue`
+   *   skip at line ~906 — already-archived sessions become no-ops.
+   *   Combined with idempotentMutation, the whole flow tolerates
+   *   network retries without producing duplicate events.
    */
   // M1.20: idempotent — finish locks the run + writes totals; a
   // retry must NOT compute a second total.
@@ -898,6 +918,12 @@ export const runRouter = router({
       }
 
       // Step 2 — Archive every attached session.
+      //
+      // M3.4: collect failures, do NOT continue silently. If any
+      // session can't be archived, the whole tx (including the
+      // RunFinished event committed in Step 1) rolls back so we
+      // never end up with run.status='finished' AND session.status
+      // ='in_run' on the same data.
       const archiveFailures: Array<{ sessionId: string; reason: string }> = [];
       for (const sessionId of runState.sessionIds) {
         const orderEvents = (await readStream(tx, 'order', sessionId)) as unknown as OrderEvent[];
@@ -922,21 +948,51 @@ export const runRouter = router({
             archiveFailures.push({ sessionId, reason: err.message });
             ctx.log.warn(
               { sessionId, runId: run.id, err: err.message },
-              'finish: failed to archive session — left in_run',
+              'finish: failed to archive session — will roll back the run-finish',
             );
             continue;
           }
           throw err;
         }
         if (ev.length > 0) {
-          await appendEvents(tx, {
-            streamType: 'order',
-            streamId: sessionId,
-            orgId: ctx.session!.orgId,
-            events: ev.map((e) => ({ ...e })),
-          });
-          await projectOrder(tx, ctx.session!.orgId, ev);
+          try {
+            await appendEvents(tx, {
+              streamType: 'order',
+              streamId: sessionId,
+              orgId: ctx.session!.orgId,
+              events: ev.map((e) => ({ ...e })),
+            });
+            await projectOrder(tx, ctx.session!.orgId, ev);
+          } catch (err) {
+            // M3.4: append/project failures count too. A seq
+            // collision or projection error here would leave the
+            // session partially advanced; record + roll back.
+            archiveFailures.push({
+              sessionId,
+              reason: err instanceof Error ? err.message : String(err),
+            });
+            ctx.log.warn(
+              { sessionId, runId: run.id, err: archiveFailures.at(-1)!.reason },
+              'finish: append/project failed for session archive — will roll back the run-finish',
+            );
+            continue;
+          }
         }
+      }
+
+      // M3.4 atomicity bar — if any session failed, abort the whole
+      // tx by throwing. ctx.withOrg's transaction roll-back undoes the
+      // Step-1 RunFinished event AND any partial archives we may have
+      // committed in this loop iteration before the failure.
+      if (archiveFailures.length > 0) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'run.errors.archiveCascadeFailed',
+          cause: {
+            runId: run.id,
+            archiveFailures,
+          },
+        });
       }
 
       // Realtime nudge so connected order/approve clients refresh.
@@ -955,7 +1011,10 @@ export const runRouter = router({
         });
       }
 
-      return { lastSeq: runState.seq, archiveFailures };
+      // archiveFailures is always empty on success (any non-empty
+       // list would have thrown above). Kept in the response shape
+       // for FE backwards compat — older clients may still read it.
+      return { lastSeq: runState.seq, archiveFailures: [] as Array<{ sessionId: string; reason: string }> };
     });
   }),
 
