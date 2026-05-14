@@ -24,6 +24,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { getDb, schema as s, withOrgContext } from '@compass/db';
 import { logger } from '../infra/log';
@@ -832,6 +833,181 @@ describe('M3.1 sales router store-scope', () => {
         // Critical: must be the store gate, NOT a downstream error.
         // If the gate didn't fire, we'd see dishNotFound or permission
         // denied — both would mean the leak still exists.
+        expect((err as Error).message).toContain('notAssignedToStore');
+      }
+      expect(threw).toBe(true);
+    },
+  );
+});
+
+// ---------- M3.2: dishes.manage demoted off store manager ----------------
+//
+// The pre-launch audit found that manager (rank 60, store-tier) had
+// `dishes.manage` in its seed permission list. dishes/recipes are
+// org-wide (the table has only org_id, not store_id) — so a Store A
+// manager editing a recipe silently changes how every OTHER store
+// deducts ingredient inventory at sale time.
+//
+// M3.2 removes the perm from the manager seed AND ships migration
+// 0020 to retroactively delete the binding for every existing org.
+// This test locks the seed state in.
+
+describe('M3.2 store manager cannot edit org-wide dishes', () => {
+  test.skipIf(!SHOULD_RUN)(
+    'a store manager does not get dishes.manage from the manager role binding',
+    async () => {
+      const fx = fix!;
+      const storeA = await makeStore(`Dish-A-${Math.random()}`);
+      const mgrUser = await makeUser('A-Manager-NoMenu');
+      const mgrMember = await makeMember(mgrUser.id);
+      await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
+      const session = await sessionFor(mgrMember, mgrUser.id);
+      // Critical: the manager's flat permission set must NOT carry
+      // dishes.manage. (Reloading with the fixture-provided perms is
+      // how loadSession works in prod.)
+      expect(session.permissions.has('dishes.manage')).toBe(false);
+      // users.manage is still there (manager invites/assigns staff for
+      // their store) — but that's the "admin override" path, not a
+      // claim to org-wide menu authority. Sanity check it's separate.
+      expect(session.permissions.has('users.manage')).toBe(true);
+    },
+  );
+});
+
+// ---------- M3.2: per-store purchaser does not see foreign demand ----------
+//
+// `run.previewCreatable` used to be org-wide regardless of the actor's
+// store binding — a purchaser bound to Store A would see Store B's
+// approved demand and could include it in their run plan. M3.2 splits
+// the perm into `run.create` (store-tier, filtered) and
+// `run.create.org` (org-tier, unfiltered).
+
+describe('M3.2 store-tier purchaser is filtered to bound stores', () => {
+  test.skipIf(!SHOULD_RUN)(
+    'purchaser bound to Store A only does not see Store B sessions in previewCreatable',
+    async () => {
+      const fx = fix!;
+      const db = getDb();
+      const storeA = await makeStore(`Run-A-${Math.random()}`);
+      const storeB = await makeStore(`Run-B-${Math.random()}`);
+
+      // Mint a `purchaser` role (rank 40) for this org with the
+      // store-tier run perms only. The fixture's seedRoles list
+      // doesn't include purchaser; create one fresh.
+      await db
+        .insert(s.permissions)
+        .values([
+          { key: 'run.create', description: 'plan run for bound stores' },
+          { key: 'run.create.org', description: 'plan run org-wide' },
+        ])
+        .onConflictDoNothing();
+      const [purchaserRole] = await db
+        .insert(s.roles)
+        .values({
+          orgId: fx.orgId,
+          slug: `purchaser-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          name: 'Purchaser',
+          rank: 40,
+          isBuiltIn: false,
+        })
+        .returning();
+      await db
+        .insert(s.rolePermissions)
+        .values({ roleId: purchaserRole!.id, permissionKey: 'run.create' });
+      // IMPORTANT: no run.create.org binding — the whole point is to
+      // verify the store-tier path filters correctly.
+
+      const buyer = await makeUser('A-Buyer');
+      const buyerMember = await makeMember(buyer.id);
+      await bindRole(buyerMember, purchaserRole!.id, {
+        type: 'store',
+        storeId: storeA.id,
+      });
+
+      const ctx = buildCtx(db, await sessionFor(buyerMember, buyer.id));
+      const caller = appRouter.createCaller(ctx);
+
+      // No approved sessions exist yet for either store — the result
+      // should still be a well-formed empty preview, NOT a leak of
+      // Store B's data. (We assert structure shape — the filter has
+      // to short-circuit before the inArray would otherwise error.)
+      const preview = await caller.run.previewCreatable({});
+      expect(Array.isArray(preview.sessions)).toBe(true);
+      // Whatever sessions come back, none can be from a store the
+      // purchaser isn't bound to. (`storeB.id` must never appear.)
+      const involvedStoreIds = new Set(
+        preview.perStoreDemand.map((d) => d.storeId),
+      );
+      expect(involvedStoreIds.has(storeB.id)).toBe(false);
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'purchaser cannot run.create with a sessionId from a foreign store',
+    async () => {
+      const fx = fix!;
+      const db = getDb();
+      const storeA = await makeStore(`RunC-A-${Math.random()}`);
+      const storeB = await makeStore(`RunC-B-${Math.random()}`);
+      await db
+        .insert(s.permissions)
+        .values({ key: 'run.create', description: 'plan run for bound stores' })
+        .onConflictDoNothing();
+      const [purchaserRole] = await db
+        .insert(s.roles)
+        .values({
+          orgId: fx.orgId,
+          slug: `purchaser2-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          name: 'Purchaser',
+          rank: 40,
+          isBuiltIn: false,
+        })
+        .returning();
+      await db
+        .insert(s.rolePermissions)
+        .values({ roleId: purchaserRole!.id, permissionKey: 'run.create' });
+
+      const buyer = await makeUser('A-Buyer2');
+      const buyerMember = await makeMember(buyer.id);
+      await bindRole(buyerMember, purchaserRole!.id, {
+        type: 'store',
+        storeId: storeA.id,
+      });
+
+      // Forge a "Store B approved session" by hand-inserting a row
+      // into read_model.order_sessions_v. This bypasses the normal
+      // approve flow but is fine for testing the run.create gate —
+      // we just need a row whose storeId is in B and status is
+      // 'approved' on today's date. The id matches stream_id by
+      // schema convention but for this test we just need a fresh
+      // uuid that the gate will see.
+      const todayIso = new Date().toISOString().slice(0, 10);
+      const foreignSessionId = randomUUID();
+      const [foreignSession] = await db
+        .insert(s.orderSessionsV)
+        .values({
+          id: foreignSessionId,
+          orgId: fx.orgId,
+          storeId: storeB.id,
+          initiatedByMemberId: fx.superAdminMemberId,
+          orderDate: todayIso,
+          status: 'approved',
+        })
+        .returning();
+
+      const ctx = buildCtx(db, await sessionFor(buyerMember, buyer.id));
+      const caller = appRouter.createCaller(ctx);
+
+      let threw = false;
+      try {
+        await caller.run.create({
+          date: todayIso,
+          sessionIds: [foreignSession!.id],
+        });
+      } catch (err) {
+        threw = true;
+        // Same precise check as the sales test: must throw the
+        // store gate, NOT some downstream domain error.
         expect((err as Error).message).toContain('notAssignedToStore');
       }
       expect(threw).toBe(true);

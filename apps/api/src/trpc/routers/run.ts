@@ -31,6 +31,7 @@ import {
 import {
   assertActorAssignedToStore,
   effectivePermissionsForStore,
+  getActorStoreIds,
 } from '../../services/storeScope';
 import {
   applyRun,
@@ -56,18 +57,28 @@ export const runRouter = router({
   /**
    * Preview what `create` would plan for a given date.
    *
-   * SCOPE — INTENTIONALLY org-wide, not actor-store-scoped (decision
-   * confirmed 2026-05-07, audit HIGH #6 closed as "by design"):
-   * the purchaser role in this product is org-level. One purchaser
-   * walks the bazaar in the morning and delivers to every store on
-   * their list — a chain of 5 stores with one purchaser is the
-   * common case. So the preview MUST aggregate every approved
-   * session for the date across the whole org.
+   * SCOPE (revised M3.2, 2026-05-15) — TWO modes:
    *
-   * If you ever introduce a per-store-purchaser model, gate this
-   * with `getActorStoreIds()` like the order/confirm routers do —
-   * but DO NOT do that "defensively" without a product change. It
-   * will silently strip data the chain owner relies on.
+   *   - ORG-WIDE: actor holds `run.create.org` OR `users.manage`
+   *     (admins, super_admins, head_purchaser custom role). Returns
+   *     every approved session for the date across the org. This is
+   *     the "one purchaser walks the bazaar for the whole chain"
+   *     path the original design assumed.
+   *
+   *   - STORE-SCOPED: every other actor (purchaser role bound to N
+   *     specific stores, store managers, etc.). Returns only sessions
+   *     in stores the actor is bound to via MSA or store-scoped role
+   *     binding. A purchaser bound to Stores A+B cannot see Store C's
+   *     demand — they have no authority to buy for C, so showing it
+   *     would leak demand data across stores.
+   *
+   * Earlier the comment here said "INTENTIONALLY org-wide" without
+   * distinguishing roles. The pre-launch architecture audit (M3.1
+   * findings) showed that purchasers are seeded as store-tier (rank
+   * 40, scope_type='store' enforced at grant time) yet the query
+   * ignored their binding. The fix introduces `run.create.org` as
+   * the explicit opt-in for org-wide visibility; anyone without it
+   * gets the per-binding view.
    *
    * Returns three layers of aggregation so the FE can offer the user
    * an overall / per-store / per-supplier toggle on the same payload
@@ -95,13 +106,39 @@ export const runRouter = router({
     .query(async ({ ctx, input }) => {
       return ctx.withOrg(async (tx) => {
         const date = input.date ?? todayStr();
+        // M3.2: org-wide visibility requires `run.create.org` (or the
+        // legacy `users.manage` super-perm). Without it, scope the
+        // query to the actor's bound stores. `getActorStoreIds`
+        // returns `null` for org-tier actors (skip filter), an
+        // explicit array for store-tier actors.
+        const allowedStoreIds = ctx.session!.permissions.has('run.create.org')
+          ? null
+          : await getActorStoreIds(
+              tx,
+              ctx.session!.memberId,
+              ctx.session!.permissions,
+            );
         const sessions = await tx.query.orderSessionsV.findMany({
-          where: (sess, { eq: eq2, and: and2 }) =>
-            and2(
+          where: (sess, { eq: eq2, and: and2, inArray: inArray2 }) => {
+            const base = [
               eq2(sess.orgId, ctx.session!.orgId),
               eq2(sess.status, 'approved'),
               eq2(sess.orderDate, date),
-            ),
+            ];
+            // null = unrestricted (org-tier actor). Empty array = actor
+            // has no stores anywhere → return zero sessions without a
+            // SQL parameter error (Drizzle's inArray on [] is a no-op
+            // that matches everything, so we must guard here).
+            if (allowedStoreIds !== null) {
+              if (allowedStoreIds.length === 0) {
+                // Sentinel that can never match — a fresh UUID.
+                base.push(eq2(sess.storeId, '00000000-0000-0000-0000-000000000000'));
+              } else {
+                base.push(inArray2(sess.storeId, allowedStoreIds));
+              }
+            }
+            return and2(...base);
+          },
         });
         const sessionIds = sessions.map((s) => s.id);
         if (sessionIds.length === 0) {
@@ -391,9 +428,20 @@ export const runRouter = router({
   /**
    * Plan a run from approved sessions on a given date.
    *
-   * Scope: org-wide on purpose — see `previewCreatable` doc-block
-   * for why. A run created here can include sessions from ANY store
-   * in the org, because one purchaser serves the chain.
+   * Scope (M3.2): two modes, mirroring `previewCreatable`:
+   *
+   *   - org-tier actor (`run.create.org` or `users.manage`):
+   *     can include sessions from ANY store in the org. This is
+   *     the head-purchaser path — one buyer walks the bazaar for
+   *     the whole chain.
+   *
+   *   - store-tier actor (purchaser bound to specific stores):
+   *     every session in `input.sessionIds` MUST belong to a store
+   *     the actor is bound to. If even one session is outside their
+   *     scope the entire create is rejected — partial runs would be
+   *     surprising. The check is precise: an attacker who guessed
+   *     a Store B session UUID gets `auth.errors.notAssignedToStore`
+   *     instead of silently slipping into the run.
    */
   // M1.20: idempotent — FE sends X-Idempotency-Key per logical
   // "create run" action so network retry doesn't create two runs.
@@ -422,6 +470,31 @@ export const runRouter = router({
             code: 'PRECONDITION_FAILED',
             message: 'run.errors.sessionNotApproved',
           });
+        }
+      }
+      // M3.2: store-scope check. Skip for org-tier actors. For
+      // everyone else, every targeted session's storeId must be in
+      // the actor's bound set. We reject the WHOLE create — partial
+      // runs would leave the FE in a weird state and the audit log
+      // would record an attempt to plan cross-store without auth.
+      if (!ctx.session!.permissions.has('run.create.org')) {
+        const allowedStoreIds = await getActorStoreIds(
+          tx,
+          ctx.session!.memberId,
+          ctx.session!.permissions,
+        );
+        // `null` from getActorStoreIds means unrestricted (admin path).
+        // We only enforce when we got a concrete list back.
+        if (allowedStoreIds !== null) {
+          const allowed = new Set(allowedStoreIds);
+          for (const sess of sessions) {
+            if (!allowed.has(sess.storeId)) {
+              throw new TRPCError({
+                code: 'FORBIDDEN',
+                message: 'auth.errors.notAssignedToStore',
+              });
+            }
+          }
         }
       }
 

@@ -11,7 +11,15 @@ export const PERMISSIONS = [
   { key: 'order.claim', description: 'Claim a submitted order for review' },
   { key: 'order.unapprove', description: 'Reverse approval (before run)' },
 
-  { key: 'run.create', description: 'Plan a market run from approved orders' },
+  // M3.2 (2026-05-15): split into two scopes.
+  // - run.create     = per-store: actor can plan a run that aggregates
+  //   only approved sessions from stores they're bound to. The
+  //   previewCreatable + create queries filter by getActorStoreIds().
+  // - run.create.org = org-wide: actor sees every approved session in
+  //   the org regardless of store binding. Held by admin/super_admin
+  //   and any custom head-purchaser role you create.
+  { key: 'run.create', description: 'Plan a market run for bound stores' },
+  { key: 'run.create.org', description: 'Plan a market run across the entire org (head purchaser)' },
   { key: 'run.purchase', description: 'Mark items purchased / unavailable' },
   { key: 'run.eject_session', description: 'Eject a session from a run' },
   { key: 'run.finish', description: 'Finish a run' },
@@ -102,11 +110,19 @@ export const BUILTIN_ROLES = [
       'users.manage',
       // M2.0a (2026-05-08): manage stocktake + wastage for their stores.
       'inventory.adjust',
-      // M2.0b (2026-05-08): the store manager often IS the kitchen
-      // head in small chains. Give them the BOM editor by default;
-      // granular roles (cook / chef-without-admin) can opt out by
-      // creating a custom role.
-      'dishes.manage',
+      // M3.2 (2026-05-15): `dishes.manage` REMOVED from store manager.
+      // The dishes/recipes catalog is org-wide — every store consumes
+      // the same recipe to auto-deduct ingredient inventory at sale
+      // time. A store manager editing a recipe silently changes how
+      // every OTHER store deducts on its next sale. That's a cross-
+      // store write the store-tier role should not own.
+      //
+      // Today the perm sits on admin + super_admin (via
+      // ALL_PERMISSION_KEYS). A dedicated `org_chef` builtin role can
+      // be added later for orgs that want a non-admin to own the menu.
+      // Existing managers in production lose this perm on the next
+      // deploy via migration 0020_role_perm_realignment.sql, which
+      // deletes the manager↔dishes.manage binding org-wide.
       // M2.0c (2026-05-08): managers usually open/close the till
       // themselves; let them record sales without elevating to admin.
       'sales.record',
