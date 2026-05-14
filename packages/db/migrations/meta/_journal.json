@@ -148,6 +148,13 @@
       "when": 1778820000000,
       "tag": "0020_role_perm_realignment",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1778830000000,
+      "tag": "0021_backfill_dishes_manage_to_admins",
+      "breakpoints": true
     }
   ]
 }

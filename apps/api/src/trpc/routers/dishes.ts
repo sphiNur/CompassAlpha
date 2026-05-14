@@ -98,7 +98,17 @@ const SetIngredientsInputSchema = z.object({
 });
 
 function requireDishesManage(perms: ReadonlySet<string>): void {
-  if (!perms.has('dishes.manage') && !perms.has('users.manage')) {
+  // M3.2 (2026-05-15): the `users.manage` fallback was DROPPED. The
+  // pre-launch audit found that manager (rank 60, store-tier) holds
+  // `users.manage` for the M1.9 "store manager invites own staff"
+  // path. With the fallback, manager could write to the org-wide
+  // dishes/recipes table via the OR even after dishes.manage was
+  // removed from their seed list — a cross-store leak (Store-A
+  // manager editing a recipe affects every store's sales auto-
+  // deduction). Migration 0021 backfills `dishes.manage` explicitly
+  // onto admin + super_admin for every existing org so admins keep
+  // their authority; manager now hits FORBIDDEN.
+  if (!perms.has('dishes.manage')) {
     throw new TRPCError({
       code: 'FORBIDDEN',
       message: 'dishes.errors.cannotManage',

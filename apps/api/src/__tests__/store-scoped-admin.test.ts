@@ -854,7 +854,7 @@ describe('M3.1 sales router store-scope', () => {
 
 describe('M3.2 store manager cannot edit org-wide dishes', () => {
   test.skipIf(!SHOULD_RUN)(
-    'a store manager does not get dishes.manage from the manager role binding',
+    'manager session does not carry dishes.manage and dishes.create throws FORBIDDEN',
     async () => {
       const fx = fix!;
       const storeA = await makeStore(`Dish-A-${Math.random()}`);
@@ -862,14 +862,35 @@ describe('M3.2 store manager cannot edit org-wide dishes', () => {
       const mgrMember = await makeMember(mgrUser.id);
       await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
       const session = await sessionFor(mgrMember, mgrUser.id);
-      // Critical: the manager's flat permission set must NOT carry
-      // dishes.manage. (Reloading with the fixture-provided perms is
-      // how loadSession works in prod.)
+
+      // (1) The manager's flat permission set must NOT carry
+      // dishes.manage — proves the seed-level demotion took.
       expect(session.permissions.has('dishes.manage')).toBe(false);
-      // users.manage is still there (manager invites/assigns staff for
-      // their store) — but that's the "admin override" path, not a
-      // claim to org-wide menu authority. Sanity check it's separate.
+
+      // (2) users.manage IS still on manager (for the M1.9 store-
+      // level invite path). This is the trap the M3.2 follow-up
+      // closes — without dropping the OR-fallback in
+      // requireDishesManage, the manager would still slip through.
       expect(session.permissions.has('users.manage')).toBe(true);
+
+      // (3) The real proof: calling dishes.create as the manager
+      // must throw FORBIDDEN with the dishes.errors.cannotManage
+      // marker. If this test ever starts succeeding it means the
+      // users.manage fallback came back; that's a regression on the
+      // org-wide write gate.
+      const ctx = buildCtx(getDb(), session);
+      const caller = appRouter.createCaller(ctx);
+      let threw = false;
+      try {
+        await caller.dishes.create({
+          names: { en: 'Forbidden Pasta' },
+          ingredients: [],
+        });
+      } catch (err) {
+        threw = true;
+        expect((err as Error).message).toContain('cannotManage');
+      }
+      expect(threw).toBe(true);
     },
   );
 });
