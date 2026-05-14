@@ -43,7 +43,10 @@ import {
   UuidSchema,
 } from '@compass/contracts';
 import { authedProcedure, idempotentMutation, router } from '../trpc';
-import { effectivePermissionsForStore } from '../../services/storeScope';
+import {
+  assertActorAssignedToStore,
+  effectivePermissionsForStore,
+} from '../../services/storeScope';
 
 function requireSalesRecord(perms: ReadonlySet<string>): void {
   if (!perms.has('sales.record') && !perms.has('users.manage')) {
@@ -79,6 +82,21 @@ export const salesRouter = router({
     .input(RecordInputSchema)
     .mutation(async ({ ctx, input }) => {
       requireSalesRecord(ctx.session!.permissions);
+      // M3.1 (2026-05-15): store-scope assertion BEFORE per-store
+      // override evaluation. The flat permission set says "this user
+      // can record sales somewhere"; we must confirm the somewhere
+      // includes input.storeId. Without this a staff at Store A could
+      // post a sale with storeId=<Store B> and the only gate would be
+      // perm presence (Store A staff has sales.record from their role
+      // globally) — Store B's inventory would silently get deducted.
+      await ctx.withOrg((tx) =>
+        assertActorAssignedToStore(
+          tx,
+          ctx.session!.memberId,
+          input.storeId,
+          ctx.session!.permissions,
+        ),
+      );
       // Per-store override: an admin may have explicitly denied this
       // actor sales.record on this specific store.
       const effective = await ctx.withOrg((tx) =>
@@ -192,6 +210,17 @@ export const salesRouter = router({
   list: authedProcedure.input(ListInputSchema).query(async ({ ctx, input }) => {
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
+      // M3.1 (2026-05-15): store-scope assertion. Without this a staff
+      // member assigned only to Store A could pass storeId=<Store B uuid>
+      // and read Store B's entire sales history (RLS only filters by
+      // org, not by store, so the leak isn't caught at the DB layer
+      // either — see migration 0014).
+      await assertActorAssignedToStore(
+        tx,
+        ctx.session!.memberId,
+        input.storeId,
+        ctx.session!.permissions,
+      );
       // Default: today (UTC start to UTC end). Refining to org TZ is
       // a follow-up — UTC is correct-enough for the first cut.
       const todayStart = new Date();

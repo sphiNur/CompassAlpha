@@ -24,6 +24,8 @@ DECLARE
     'inventory.categories',
     'inventory.skus',
     'inventory.price_history',
+    'inventory.movements',
+    'inventory.sales',
     'domain.events',
     'read_model.order_sessions_v',
     'read_model.market_runs_v',

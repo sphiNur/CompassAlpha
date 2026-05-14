@@ -733,3 +733,108 @@ describe('B2 adminAuditList', () => {
     },
   );
 });
+
+// ---------- M3.1: sales router store-scope assertion ---------------------
+//
+// Audit found sales.list took storeId as input without checking the
+// caller was assigned to that store. A staff at Store A could pass
+// storeId=<Store B> and read Store B's sales history. sales.record had
+// the same shape — perm check + per-store override, but no MSA gate, so
+// a Store A staff with `sales.record` could post deductions against
+// Store B's inventory.
+//
+// Both procedures now call assertActorAssignedToStore BEFORE doing any
+// other work; these tests lock that in.
+
+describe('M3.1 sales router store-scope', () => {
+  test.skipIf(!SHOULD_RUN)(
+    'staff assigned only to Store A cannot list Store B sales',
+    async () => {
+      const fx = fix!;
+      const storeA = await makeStore(`SalesA-${Math.random()}`);
+      const storeB = await makeStore(`SalesB-${Math.random()}`);
+      // Staff bound to Store A via a store-scoped role binding. The
+      // role itself doesn't matter for sales.list (it's authed-only);
+      // what matters is `getActorStoreIds(member, perms)` only returns
+      // [storeA.id] and `assertActorAssignedToStore(storeB)` must
+      // throw FORBIDDEN.
+      const staffUser = await makeUser('A-Staff');
+      const staffMember = await makeMember(staffUser.id);
+      await bindRole(staffMember, fx.staffRoleId, {
+        type: 'store',
+        storeId: storeA.id,
+      });
+      const ctx = buildCtx(getDb(), await sessionFor(staffMember, staffUser.id));
+      const caller = appRouter.createCaller(ctx);
+
+      // POSITIVE: their own store works.
+      const own = await caller.sales.list({ storeId: storeA.id });
+      expect(Array.isArray(own)).toBe(true);
+
+      // NEGATIVE: foreign store throws notAssignedToStore.
+      let threw = false;
+      try {
+        await caller.sales.list({ storeId: storeB.id });
+      } catch (err) {
+        threw = true;
+        expect((err as Error).message).toContain('notAssignedToStore');
+      }
+      expect(threw).toBe(true);
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'staff with sales.record on a custom role cannot post a sale into a foreign store',
+    async () => {
+      const fx = fix!;
+      const db = getDb();
+      const storeA = await makeStore(`SalesA2-${Math.random()}`);
+      const storeB = await makeStore(`SalesB2-${Math.random()}`);
+      // Make sure the sales.record perm key exists, then mint a custom
+      // role that carries it. Bind the role to Store A only.
+      await db
+        .insert(s.permissions)
+        .values({ key: 'sales.record', description: 'record sales' })
+        .onConflictDoNothing();
+      const [salesRole] = await db
+        .insert(s.roles)
+        .values({
+          orgId: fx.orgId,
+          slug: `sales-staff-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          name: 'Sales Staff',
+          rank: 15,
+          isBuiltIn: false,
+        })
+        .returning();
+      await db
+        .insert(s.rolePermissions)
+        .values({ roleId: salesRole!.id, permissionKey: 'sales.record' });
+
+      const u = await makeUser('A-Sales');
+      const m = await makeMember(u.id);
+      await bindRole(m, salesRole!.id, { type: 'store', storeId: storeA.id });
+      const ctx = buildCtx(getDb(), await sessionFor(m, u.id));
+      const caller = appRouter.createCaller(ctx);
+
+      // Use a syntactically-valid (but unused) dish UUID — the gate must
+      // fire BEFORE the dish-existence check, so the call must throw
+      // notAssignedToStore rather than dishNotFound.
+      const fakeDish = '00000000-0000-0000-0000-000000000000';
+      let threw = false;
+      try {
+        await caller.sales.record({
+          storeId: storeB.id,
+          dishId: fakeDish,
+          qty: '1',
+        });
+      } catch (err) {
+        threw = true;
+        // Critical: must be the store gate, NOT a downstream error.
+        // If the gate didn't fire, we'd see dishNotFound or permission
+        // denied — both would mean the leak still exists.
+        expect((err as Error).message).toContain('notAssignedToStore');
+      }
+      expect(threw).toBe(true);
+    },
+  );
+});
