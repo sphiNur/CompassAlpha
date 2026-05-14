@@ -34,6 +34,42 @@ function requireAdmin(perms: ReadonlySet<string>): void {
 }
 
 /**
+ * Org-tier admin gate (M3.3, 2026-05-15).
+ *
+ * `requireAdmin` accepts `users.manage`, which is the admin-tier
+ * marker for tasks that legitimately span store + org (member
+ * invitation, role granting, etc.). Manager (rank 60) holds it too
+ * since M1.9 so store managers can invite their own staff.
+ *
+ * That overload makes `users.manage` unsuitable as a gate for
+ * mutations that affect the entire org — catalog (SKU, supplier,
+ * category), role definitions, org settings, store create/delete.
+ * Manager has authority over THEIR stores, not over org-wide rows.
+ *
+ * `org.admin` is granted only to admin + super_admin (via seed +
+ * migration 0022 for existing orgs). Custom roles ranked ≥ 80 can
+ * be granted it explicitly. Manager never has it.
+ *
+ * Use this helper at every mutation that:
+ *   - writes/deletes a row outside any single store's scope
+ *   - changes the org's role catalog
+ *   - touches finance / settings that apply chain-wide
+ *
+ * Keep using `requireAdmin` for store-scoped admin work where the
+ * per-store gates (`getActorAdminStoreIds`, C2) already constrain
+ * the cross-store reach.
+ */
+function requireOrgAdmin(perms: ReadonlySet<string>): void {
+  if (!perms.has('org.admin')) {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: 'auth.errors.missingPermission',
+      cause: { missingPermission: 'org.admin' },
+    });
+  }
+}
+
+/**
  * Audit log helper for admin CRUD (added 2026-05-05).
  *
  * The order/run domains write to `domain.events` for every state change,
@@ -717,6 +753,7 @@ export const adminRouter = router({
   //   - Mutating `pricesIncludeTax` flips how reports interpret stored
   //     unit prices. Operators should align this with how their
   //     suppliers actually quote (most market stalls quote gross).
+  // M3.3: org finance settings are org-wide; only org.admin can edit.
   orgFinanceUpdate: authedProcedure
     .input(
       z.object({
@@ -731,7 +768,7 @@ export const adminRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      requireAdmin(ctx.session!.permissions);
+      requireOrgAdmin(ctx.session!.permissions);
       // Reject runaway tax rates — 50% is the legal ceiling pretty
       // much everywhere; anything higher is almost certainly a typo.
       // (Hungary has the world's highest standard VAT at 27%, so 50
@@ -1762,7 +1799,10 @@ export const adminRouter = router({
     }),
 
   memberRemove: authedProcedure.input(MemberRemoveInputSchema).mutation(async ({ ctx, input }) => {
-    requireAdmin(ctx.session!.permissions);
+    // M3.3: full member-from-org delete is org-tier — it cascade-drops
+    // every binding and assignment. Per-store removal lives in
+    // memberDetachFromStore (still requireAdmin + C2).
+    requireOrgAdmin(ctx.session!.permissions);
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
       const member = await tx.query.members.findFirst({
@@ -1969,7 +2009,8 @@ export const adminRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      requireAdmin(ctx.session!.permissions);
+      // M3.3: role catalog is org-wide; only org.admin can mint roles.
+      requireOrgAdmin(ctx.session!.permissions);
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
         const actorRank = await getActorMaxRank(tx, orgId, ctx.session!.userId);
@@ -2038,7 +2079,7 @@ export const adminRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      requireAdmin(ctx.session!.permissions);
+      requireOrgAdmin(ctx.session!.permissions);
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
         const role = await tx.query.roles.findFirst({
@@ -2103,7 +2144,7 @@ export const adminRouter = router({
   roleDelete: authedProcedure
     .input(z.object({ roleId: UuidSchema }))
     .mutation(async ({ ctx, input }) => {
-      requireAdmin(ctx.session!.permissions);
+      requireOrgAdmin(ctx.session!.permissions);
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
         const role = await tx.query.roles.findFirst({
@@ -2725,7 +2766,8 @@ export const adminRouter = router({
     }),
 
   storeCreate: authedProcedure.input(StoreCreateInputSchema).mutation(async ({ ctx, input }) => {
-    requireAdmin(ctx.session!.permissions);
+    // M3.3: creating a store is org-level (adds to the chain).
+    requireOrgAdmin(ctx.session!.permissions);
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
       const [created] = await tx
@@ -2748,6 +2790,18 @@ export const adminRouter = router({
     requireAdmin(ctx.session!.permissions);
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
+      // M3.3 (2026-05-15): per-store admin gate (C2 pattern). Before
+      // this the procedure was reachable by any actor with
+      // `users.manage`, so a manager-of-A could pass storeId=B and
+      // rename Store B. Mirrors the gate already present on
+      // memberAssignStore / memberDetachFromStore.
+      const allowed = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId);
+      if (!allowed.includes(input.storeId)) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'admin.errors.notAdminOfStore',
+        });
+      }
       const existing = await tx.query.stores.findFirst({
         where: (st, { eq: eq2, and: and2 }) =>
           and2(eq2(st.id, input.storeId), eq2(st.orgId, orgId)),
@@ -2801,7 +2855,9 @@ export const adminRouter = router({
   }),
 
   storeDelete: authedProcedure.input(StoreDeleteInputSchema).mutation(async ({ ctx, input }) => {
-    requireAdmin(ctx.session!.permissions);
+    // M3.3: deleting a store cascades through every store-scoped row
+    // for that location. Org.admin only.
+    requireOrgAdmin(ctx.session!.permissions);
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
       const existing = await tx.query.stores.findFirst({
@@ -2850,7 +2906,9 @@ export const adminRouter = router({
   storeCloneRoles: authedProcedure
     .input(StoreCloneRolesInputSchema)
     .mutation(async ({ ctx, input }) => {
-      requireAdmin(ctx.session!.permissions);
+      // M3.3: cloning role bindings across stores spans both source
+      // AND target store authority; safer to gate on org.admin.
+      requireOrgAdmin(ctx.session!.permissions);
       if (input.sourceStoreId === input.targetStoreId) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
@@ -2994,7 +3052,8 @@ export const adminRouter = router({
   }),
 
   categoryCreate: authedProcedure.input(CategoryCreateInputSchema).mutation(async ({ ctx, input }) => {
-    requireAdmin(ctx.session!.permissions);
+    // M3.3: categories are org-wide (no store_id) — org.admin only.
+    requireOrgAdmin(ctx.session!.permissions);
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
       const [created] = await tx
@@ -3013,7 +3072,7 @@ export const adminRouter = router({
   }),
 
   categoryUpdate: authedProcedure.input(CategoryUpdateInputSchema).mutation(async ({ ctx, input }) => {
-    requireAdmin(ctx.session!.permissions);
+    requireOrgAdmin(ctx.session!.permissions);
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
       const existing = await tx.query.categories.findFirst({
@@ -3036,7 +3095,7 @@ export const adminRouter = router({
   }),
 
   categoryDelete: authedProcedure.input(CategoryDeleteInputSchema).mutation(async ({ ctx, input }) => {
-    requireAdmin(ctx.session!.permissions);
+    requireOrgAdmin(ctx.session!.permissions);
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
       const existing = await tx.query.categories.findFirst({
@@ -3089,7 +3148,8 @@ export const adminRouter = router({
     }),
 
   skuCreate: authedProcedure.input(SkuCreateInputSchema).mutation(async ({ ctx, input }) => {
-    requireAdmin(ctx.session!.permissions);
+    // M3.3: SKUs are org-wide; only org.admin can mint new ones.
+    requireOrgAdmin(ctx.session!.permissions);
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
       // SECURITY (2026-05-04): verify categoryId belongs to actor's org
@@ -3123,7 +3183,7 @@ export const adminRouter = router({
   }),
 
   skuUpdate: authedProcedure.input(SkuUpdateInputSchema).mutation(async ({ ctx, input }) => {
-    requireAdmin(ctx.session!.permissions);
+    requireOrgAdmin(ctx.session!.permissions);
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
       const existing = await tx.query.skus.findFirst({
@@ -3159,7 +3219,7 @@ export const adminRouter = router({
   }),
 
   skuDelete: authedProcedure.input(SkuDeleteInputSchema).mutation(async ({ ctx, input }) => {
-    requireAdmin(ctx.session!.permissions);
+    requireOrgAdmin(ctx.session!.permissions);
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
       const existing = await tx.query.skus.findFirst({
@@ -3217,7 +3277,8 @@ export const adminRouter = router({
     }),
 
   supplierCreate: authedProcedure.input(SupplierCreateInputSchema).mutation(async ({ ctx, input }) => {
-    requireAdmin(ctx.session!.permissions);
+    // M3.3: suppliers are org-wide; only org.admin manages them.
+    requireOrgAdmin(ctx.session!.permissions);
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
       const [created] = await tx
@@ -3238,7 +3299,7 @@ export const adminRouter = router({
   }),
 
   supplierUpdate: authedProcedure.input(SupplierUpdateInputSchema).mutation(async ({ ctx, input }) => {
-    requireAdmin(ctx.session!.permissions);
+    requireOrgAdmin(ctx.session!.permissions);
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
       const existing = await tx.query.suppliers.findFirst({
@@ -3263,7 +3324,7 @@ export const adminRouter = router({
   }),
 
   supplierDelete: authedProcedure.input(SupplierDeleteInputSchema).mutation(async ({ ctx, input }) => {
-    requireAdmin(ctx.session!.permissions);
+    requireOrgAdmin(ctx.session!.permissions);
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
       const existing = await tx.query.suppliers.findFirst({

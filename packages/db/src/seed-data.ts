@@ -64,6 +64,13 @@ export const PERMISSIONS = [
   { key: 'users.revoke_role', description: 'Revoke a role from a member' },
   { key: 'users.assign_store', description: 'Assign a member to a store' },
   { key: 'org.settings.manage', description: 'Manage org-level settings' },
+  // M3.3 (2026-05-15): the true "org-tier admin" marker. Held only by
+  // admin + super_admin. `users.manage` was overloaded as both
+  // "admin authority" AND "store manager can invite own staff" since
+  // M1.9, so it couldn't be used as a gate for org-wide writes like
+  // SKU/supplier/role create. requireOrgAdmin checks THIS key
+  // instead. Manager (rank 60) never holds it.
+  { key: 'org.admin', description: 'Org-tier administrative authority (catalog, roles, org settings)' },
   { key: 'system.test_data.purge', description: 'Use the test-data purge tool' },
   { key: 'system.logs.view', description: 'View system + client logs' },
   { key: 'system.impersonate', description: 'Impersonate other users (super_admin)' },

@@ -903,6 +903,132 @@ describe('M3.2 store manager cannot edit org-wide dishes', () => {
 // the perm into `run.create` (store-tier, filtered) and
 // `run.create.org` (org-tier, unfiltered).
 
+// ---------- M3.3: org.admin marker replaces users.manage for org writes -
+//
+// `requireAdmin` checks users.manage, which manager (rank 60) also holds
+// since M1.9. That overload meant a manager could create SKUs,
+// suppliers, categories, roles, even delete stores — every org-wide
+// catalog mutation gated only on users.manage was reachable. M3.3
+// introduces a dedicated `org.admin` permission held only by
+// admin + super_admin and migrates 17 mutations to it.
+//
+// Tests pick one mutation per family (catalog SKU, role catalog, store
+// catalog, member-remove). If any of these regress to allow manager,
+// the underlying gate at that line broke.
+
+describe('M3.3 manager (rank 60) is blocked from org-wide writes', () => {
+  test.skipIf(!SHOULD_RUN)(
+    'manager cannot skuCreate (catalog write)',
+    async () => {
+      const fx = fix!;
+      const storeA = await makeStore(`OrgA-${Math.random()}`);
+      const mgrUser = await makeUser('A-Mgr-Catalog');
+      const mgrMember = await makeMember(mgrUser.id);
+      await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
+      const ctx = buildCtx(getDb(), await sessionFor(mgrMember, mgrUser.id));
+      const caller = appRouter.createCaller(ctx);
+      let threw = false;
+      try {
+        await caller.admin.skuCreate({
+          names: { en: 'Forbidden SKU', uz: '', ru: '', zh: '' },
+          unit: 'kg',
+          step: '0.1',
+          sortIndex: 999,
+        });
+      } catch (err) {
+        threw = true;
+        expect((err as Error).message).toContain('missingPermission');
+      }
+      expect(threw).toBe(true);
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'manager cannot roleCreate (role catalog write)',
+    async () => {
+      const fx = fix!;
+      const storeA = await makeStore(`OrgA-${Math.random()}`);
+      const mgrUser = await makeUser('A-Mgr-Role');
+      const mgrMember = await makeMember(mgrUser.id);
+      await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
+      const ctx = buildCtx(getDb(), await sessionFor(mgrMember, mgrUser.id));
+      const caller = appRouter.createCaller(ctx);
+      let threw = false;
+      try {
+        await caller.admin.roleCreate({
+          slug: `mgr-attempt-${Date.now()}`,
+          name: 'Manager-spawned role',
+          rank: 25,
+          permissionKeys: [],
+        });
+      } catch (err) {
+        threw = true;
+        expect((err as Error).message).toContain('missingPermission');
+      }
+      expect(threw).toBe(true);
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'manager cannot supplierCreate (org-wide supplier list)',
+    async () => {
+      const fx = fix!;
+      const storeA = await makeStore(`OrgA-${Math.random()}`);
+      const mgrUser = await makeUser('A-Mgr-Supplier');
+      const mgrMember = await makeMember(mgrUser.id);
+      await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
+      const ctx = buildCtx(getDb(), await sessionFor(mgrMember, mgrUser.id));
+      const caller = appRouter.createCaller(ctx);
+      let threw = false;
+      try {
+        await caller.admin.supplierCreate({
+          name: 'Forbidden Supplier',
+        });
+      } catch (err) {
+        threw = true;
+        expect((err as Error).message).toContain('missingPermission');
+      }
+      expect(threw).toBe(true);
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'manager-of-A cannot storeUpdate Store B (per-store admin gate)',
+    async () => {
+      const fx = fix!;
+      const storeA = await makeStore(`OrgA-${Math.random()}`);
+      const storeB = await makeStore(`OrgB-${Math.random()}`);
+      const mgrUser = await makeUser('A-Mgr-StoreEdit');
+      const mgrMember = await makeMember(mgrUser.id);
+      await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
+      const ctx = buildCtx(getDb(), await sessionFor(mgrMember, mgrUser.id));
+      const caller = appRouter.createCaller(ctx);
+
+      // Editing OWN store (A) should succeed.
+      const own = await caller.admin.storeUpdate({
+        storeId: storeA.id,
+        name: `Renamed A ${Date.now()}`,
+      });
+      expect(own.ok).toBe(true);
+
+      // Editing FOREIGN store (B) must throw notAdminOfStore — the C2
+      // gate added in M3.3 catches this; pre-M3.3 a manager-of-A could
+      // rename Store B since storeUpdate had no per-store check.
+      let threw = false;
+      try {
+        await caller.admin.storeUpdate({
+          storeId: storeB.id,
+          name: 'Hijacked B',
+        });
+      } catch (err) {
+        threw = true;
+        expect((err as Error).message).toContain('notAdminOfStore');
+      }
+      expect(threw).toBe(true);
+    },
+  );
+});
+
 describe('M3.2 store-tier purchaser is filtered to bound stores', () => {
   test.skipIf(!SHOULD_RUN)(
     'purchaser bound to Store A only does not see Store B sessions in previewCreatable',
