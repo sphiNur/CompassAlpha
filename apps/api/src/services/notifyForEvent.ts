@@ -23,14 +23,36 @@ export async function dispatchOrderEventNotifications(
   for (const e of events) {
     switch (e.type) {
       case 'Submitted': {
-        await notifyOthersWithPermission(db, orgId, 'order.approve', actorUserId, {
-          template: 'order.submitted',
-          title: 'Order submitted',
-          body: 'A staff submitted an order awaiting your review.',
-          dedupKey: `order:${state.streamId}:submitted`,
-          payload: { sessionId: state.streamId, storeId: state.storeId },
-          deepLink: '/approve',
-        });
+        // M3.6 (2026-05-15): scope the recipient set to managers of
+        // THIS order's store. Before the fix the call returned every
+        // user in the org with `order.approve`, so a manager bound
+        // to a different store would be notified about activity they
+        // had no authority over — an info leak about that store's
+        // submission rate, contributor, and SKU mix.
+        // Global bindings (admin/super_admin overseeing the chain)
+        // still receive the notification via the OR-on-global clause
+        // inside findRecipientsByPermissionInStore.
+        //
+        // OrderState.storeId is nullable in the type but a Submitted
+        // event implies it's set (you can't submit before StartDraft
+        // pinned a store). The undefined fallback degrades safely to
+        // org-wide if a malformed state ever shows up — better than
+        // silently skipping the notification entirely.
+        await notifyOthersWithPermission(
+          db,
+          orgId,
+          'order.approve',
+          actorUserId,
+          {
+            template: 'order.submitted',
+            title: 'Order submitted',
+            body: 'A staff submitted an order awaiting your review.',
+            dedupKey: `order:${state.streamId}:submitted`,
+            payload: { sessionId: state.streamId, storeId: state.storeId },
+            deepLink: '/approve',
+          },
+          { storeId: state.storeId ?? undefined },
+        );
         break;
       }
       case 'Approved': {

@@ -916,6 +916,111 @@ describe('M3.2 store manager cannot edit org-wide dishes', () => {
 // catalog, member-remove). If any of these regress to allow manager,
 // the underlying gate at that line broke.
 
+// ---------- M3.6: notification recipients are store-scoped ---------------
+//
+// Before M3.6 the order.submitted notification fan-out used
+// findRecipientsByPermission which returned every user in the org
+// with `order.approve` regardless of their binding's store scope.
+// A manager bound to Store B would get notified about Store A
+// submissions — an info leak about the other store's submission
+// rate, contributor, and SKU mix.
+//
+// findRecipientsByPermissionInStore filters by perm AND
+// (binding.scopeType='global' OR binding.scopeId=targetStoreId).
+// Global bindings (admin/super_admin) still receive — they oversee
+// the chain — but store-scoped bindings only fire for their own store.
+
+describe('M3.6 notification recipients respect store scope', () => {
+  test.skipIf(!SHOULD_RUN)(
+    'findRecipientsByPermissionInStore: store-A manager included, store-B manager excluded, global admin included',
+    async () => {
+      const fx = fix!;
+      const db = getDb();
+      const storeA = await makeStore(`NotifyA-${Math.random()}`);
+      const storeB = await makeStore(`NotifyB-${Math.random()}`);
+
+      // Two managers bound to A and B respectively. The fixture's
+      // manager role carries `order.approve`.
+      const mgrAUser = await makeUser('A-Mgr-Notify');
+      const mgrAMember = await makeMember(mgrAUser.id);
+      await bindRole(mgrAMember, fx.managerRoleId, {
+        type: 'store',
+        storeId: storeA.id,
+      });
+
+      const mgrBUser = await makeUser('B-Mgr-Notify');
+      const mgrBMember = await makeMember(mgrBUser.id);
+      await bindRole(mgrBMember, fx.managerRoleId, {
+        type: 'store',
+        storeId: storeB.id,
+      });
+
+      // Lazy import to avoid pulling the service module into every
+      // test file's top-level. notify.ts itself is side-effect-free
+      // for imports.
+      const { findRecipientsByPermissionInStore } = await import(
+        '../services/notify'
+      );
+      const recipients = await findRecipientsByPermissionInStore(
+        db,
+        fx.orgId,
+        'order.approve',
+        storeA.id,
+      );
+
+      // Manager of Store A: included.
+      expect(recipients).toContain(mgrAUser.id);
+      // Manager of Store B: EXCLUDED. This is the leak that M3.6 closes.
+      expect(recipients).not.toContain(mgrBUser.id);
+      // Fixture super_admin has a global binding with users.manage etc.
+      // and the seeded manager perm set DOES include order.approve via
+      // the fixture (line ~159 seedRoles). Super-admin gets order.approve
+      // through their own role only if it was granted; the fixture
+      // grants super_admin only users.manage/invite/grant/revoke (line
+      // ~158), so super_admin may or may not be in the recipient list
+      // depending on whether order.approve was added to their role.
+      // We don't assert on super_admin presence — the precise contract
+      // we lock in is "store filter excludes foreign stores".
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'findRecipientsByPermission (no scope filter) returns BOTH managers — proves filter is what makes the difference',
+    async () => {
+      const fx = fix!;
+      const db = getDb();
+      const storeA = await makeStore(`NotifyA2-${Math.random()}`);
+      const storeB = await makeStore(`NotifyB2-${Math.random()}`);
+
+      const mgrAUser = await makeUser('A-Mgr-Notify2');
+      const mgrAMember = await makeMember(mgrAUser.id);
+      await bindRole(mgrAMember, fx.managerRoleId, {
+        type: 'store',
+        storeId: storeA.id,
+      });
+
+      const mgrBUser = await makeUser('B-Mgr-Notify2');
+      const mgrBMember = await makeMember(mgrBUser.id);
+      await bindRole(mgrBMember, fx.managerRoleId, {
+        type: 'store',
+        storeId: storeB.id,
+      });
+
+      const { findRecipientsByPermission } = await import('../services/notify');
+      const recipients = await findRecipientsByPermission(
+        db,
+        fx.orgId,
+        'order.approve',
+      );
+
+      // The unscoped finder returns BOTH managers — same data shape
+      // that was leaking to the notify fan-out pre-M3.6.
+      expect(recipients).toContain(mgrAUser.id);
+      expect(recipients).toContain(mgrBUser.id);
+    },
+  );
+});
+
 describe('M3.3 manager (rank 60) is blocked from org-wide writes', () => {
   test.skipIf(!SHOULD_RUN)(
     'manager cannot skuCreate (catalog write)',

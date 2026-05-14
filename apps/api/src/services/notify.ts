@@ -43,6 +43,19 @@ export interface NotifyEnvelope {
 /**
  * Resolve which user IDs should be notified for the given org + permission.
  * Used to implement "notify all approvers" / "notify all purchasers" / etc.
+ *
+ * SCOPE NOTE (M3.6, 2026-05-15) — this returns every user in the org
+ * whose role carries `permissionKey`, ignoring whether the underlying
+ * member_role_binding is global or pinned to a specific store. That's
+ * correct for genuinely org-wide events (RunPlanned → all purchasers
+ * regardless of which stores they're bound to). For store-scoped
+ * events (OrderSubmitted at Store A → notify Store A's approvers,
+ * NOT Store B's), use `findRecipientsByPermissionInStore` instead.
+ *
+ * The bug this distinction closes: with no scope filter, a manager
+ * bound to Store B (rank 60, store-tier `order.approve`) would get
+ * notified about every Store A submission — info leak about another
+ * store's activity.
  */
 export async function findRecipientsByPermission(
   db: DB,
@@ -67,6 +80,61 @@ export async function findRecipientsByPermission(
     .innerJoin(s.members, eq(s.members.id, s.memberRoleBindings.memberId))
     .where(inArray(s.memberRoleBindings.roleId, roleIds));
   return [...new Set(memberRows.map((r) => r.userId))];
+}
+
+/**
+ * Like `findRecipientsByPermission` but additionally filters by the
+ * binding's store scope. Returns users whose role carries `permissionKey`
+ * AND whose binding is either:
+ *   - global (admin/super_admin reach everywhere), OR
+ *   - store-scoped with `scope_id = storeId`
+ *
+ * Mirrors the pattern already in `findStoreStaff`. Used for store-
+ * scoped notification fan-out so a manager-of-B never gets pinged
+ * about Store A's order activity.
+ */
+export async function findRecipientsByPermissionInStore(
+  db: DB,
+  orgId: string,
+  permissionKey: string,
+  storeId: string,
+): Promise<string[]> {
+  // Roles in this org that hold the permission.
+  const roleRows = await db
+    .select({ roleId: s.rolePermissions.roleId })
+    .from(s.rolePermissions)
+    .innerJoin(s.roles, eq(s.roles.id, s.rolePermissions.roleId))
+    .where(
+      and(eq(s.roles.orgId, orgId), eq(s.rolePermissions.permissionKey, permissionKey)),
+    );
+  const roleIds = [...new Set(roleRows.map((r) => r.roleId))];
+  if (roleIds.length === 0) return [];
+
+  // Bindings of those roles, scoped to global OR our storeId.
+  const bindings = await db
+    .select({
+      userId: s.members.userId,
+      scopeType: s.memberRoleBindings.scopeType,
+      scopeId: s.memberRoleBindings.scopeId,
+    })
+    .from(s.memberRoleBindings)
+    .innerJoin(s.members, eq(s.members.id, s.memberRoleBindings.memberId))
+    .where(
+      and(
+        eq(s.members.orgId, orgId),
+        inArray(s.memberRoleBindings.roleId, roleIds),
+      ),
+    );
+
+  const allowed = new Set<string>();
+  for (const r of bindings) {
+    // Global bindings reach every store (admins overseeing the chain).
+    // Store-scoped bindings reach only their target store.
+    if (r.scopeType === 'global' || r.scopeId === storeId) {
+      allowed.add(r.userId);
+    }
+  }
+  return [...allowed];
 }
 
 export async function findStoreStaff(db: DB, orgId: string, storeId: string): Promise<string[]> {
@@ -153,6 +221,12 @@ export async function dispatch(
 /**
  * Convenience: notify everyone in the org with a permission, EXCEPT
  * the actor themselves (we don't tell people about their own actions).
+ *
+ * Pass `options.storeId` to additionally constrain by the binding's
+ * store scope. Callers handling a store-scoped event (e.g., order
+ * submitted at a specific store) MUST pass storeId — otherwise the
+ * recipient set is org-wide and managers of other stores leak into
+ * the notification (M3.6 fix).
  */
 export async function notifyOthersWithPermission(
   db: DB,
@@ -160,8 +234,11 @@ export async function notifyOthersWithPermission(
   permissionKey: string,
   excludeUserId: string | null,
   envelope: NotifyEnvelope,
+  options?: { storeId?: string },
 ): Promise<void> {
-  const all = await findRecipientsByPermission(db, orgId, permissionKey);
+  const all = options?.storeId
+    ? await findRecipientsByPermissionInStore(db, orgId, permissionKey, options.storeId)
+    : await findRecipientsByPermission(db, orgId, permissionKey);
   const targets = excludeUserId ? all.filter((u) => u !== excludeUserId) : all;
   await dispatch(db, orgId, targets, envelope);
 }
