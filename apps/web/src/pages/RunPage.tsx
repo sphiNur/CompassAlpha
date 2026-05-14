@@ -51,7 +51,9 @@ import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton, haptic, getTg } from '../hooks/useTelegram';
 import { useI18n, useProductName } from '../hooks/useI18n';
 import { usePhotoUploader } from '../hooks/usePhotoUploader';
-import { StoreSwitcher, useStoreSwitcherInteractive } from '../components/StoreSwitcher';
+// M3.5: StoreSwitcher pill removed from page chrome; picker lives in
+// SettingsSheet now. RunPage still uses useStoreContext indirectly
+// through other paths if needed.
 import { usePageMenu } from '../app/PageMenuContext';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { isLikelyNetworkError } from '../lib/networkError';
@@ -94,7 +96,6 @@ export function RunPage() {
   const i18n = useI18n();
   const productName = useProductName();
   const session = useAuthStore((s) => s.session);
-  const storeSwitcherInteractive = useStoreSwitcherInteractive();
   const toast = useToast();
   const photoUploader = usePhotoUploader('receipt');
 
@@ -905,17 +906,13 @@ export function RunPage() {
         "#3 · purchasing" tag so the user sees both store-scope and
         run state without losing 60+ px to a redundant header bar. */
     <div className="flex flex-col pb-24">
-      {/* M1.21: unified sticky-strip rhythm — `py-2` matches Order /
-          Approve / Confirm. Was `py-1.5` (3px tighter) which read as
-          visibly cramped relative to the other tabs. */}
-      {storeSwitcherInteractive || activeRun ? (
+      {/* M3.5: store-switcher pill moved to SettingsSheet. Sticky strip
+         now only renders when there's an active run to label. */}
+      {activeRun ? (
         <div className="sticky top-0 z-[1] flex min-h-9 items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-2">
-          {storeSwitcherInteractive ? <StoreSwitcher /> : null}
-          {activeRun ? (
-            <span className="ml-auto truncate text-label tabular-nums text-[var(--c-fg-muted)]">
-              #{activeRun.runIndex + 1} · {runSubtitle}
-            </span>
-          ) : null}
+          <span className="ml-auto truncate text-label tabular-nums text-[var(--c-fg-muted)]">
+            #{activeRun.runIndex + 1} · {runSubtitle}
+          </span>
         </div>
       ) : null}
 

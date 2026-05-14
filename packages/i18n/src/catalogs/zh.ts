@@ -62,7 +62,7 @@ export const zh = {
   'storeSwitcher.allOrgHint': '聚合查看整个组织所有门店的动态。',
   'storeSwitcher.aria': '切换门店',
   'storeSwitcher.pickPrompt.title': '请先选择门店',
-  'storeSwitcher.pickPrompt.body': '此页面需要选定一个具体门店。点击页面顶部的门店标签切换。',
+  'storeSwitcher.pickPrompt.body': '此页面需要选定一个具体门店。请打开「设置」（齿轮图标）选择。',
 
   // ── 4. Auth ────────────────────────────────────────────────────
   'auth.signIn': '登录',

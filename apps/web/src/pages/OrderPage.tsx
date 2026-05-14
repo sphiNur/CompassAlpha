@@ -21,7 +21,7 @@ import { useErrToast } from '../lib/errToast';
 import { matchesNameLike, normalizeQuery } from '../lib/searchMatch';
 import { useI18n, useProductName } from '../hooks/useI18n';
 import { formatQty, formatMoney } from '../lib/format';
-import { StoreSwitcher, useStoreContext, useStoreSwitcherInteractive } from '../components/StoreSwitcher';
+import { useStoreContext } from '../components/StoreSwitcher';
 
 export function OrderPage() {
   const i18n = useI18n();
@@ -36,7 +36,6 @@ export function OrderPage() {
   // refuse and prompt the user to pick (added 2026-05-05).
   // Language picker moved to Telegram's gear button (Shell wires it).
   const storeCtx = useStoreContext();
-  const storeSwitcherInteractive = useStoreSwitcherInteractive();
   const currentStoreId = storeCtx.kind === 'specific' ? storeCtx.storeId : null;
   const toast = useToast();
   const errToast = useErrToast();
@@ -578,15 +577,10 @@ export function OrderPage() {
     //                                    needs a specific store, prompt them
     //   3. currentStoreId fell to null somehow — same as case 1 in practice
     return (
-      /* M1.12: PageHeader dropped — Telegram's chrome shows the bot
-          name and BottomNav highlights "Order", so the in-body title
-          was redundant. The store-picker fallback strip lets the user
-          either pick a store (admin) or learn they need an
-          assignment (non-admin). */
+      /* M3.5: the inline store-picker strip is gone — the picker now
+         lives in SettingsSheet, reachable via Telegram's gear button.
+         Empty-state copy was updated to point users at Settings. */
       <div className="flex flex-col">
-        <div className="flex items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-2">
-          <StoreSwitcher />
-        </div>
         {storeCtx.kind === 'none' ? (
           <EmptyState
             title={i18n.t('auth.noStore.title')}
@@ -611,26 +605,19 @@ export function OrderPage() {
 
   return (
     <div className="flex flex-col">
-      {/* M1.12 / M1.13: PageHeader removed; the sticky strip below
-          carries page chrome. M1.13 (2026-05-08): the [store · date ·
-          selected] row only renders for users who actually have a
-          choice to make (multi-store or admin). Single-store users
-          got nothing useful from a static "🏪 Smoke Store" pill +
-          today's date + a count that already shows in the
-          MainButton — so we hide the row entirely and let SearchInput
-          + ChipBar be the entire chrome. */}
+      {/* M3.5: the store-switcher pill moved to SettingsSheet. The
+          sticky strip now only carries the optional date + selected
+          count when there's something useful to show. SearchInput +
+          ChipBar carry the rest of the chrome. */}
       <div className="sticky top-0 z-[1] flex flex-col gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-2">
-        {storeSwitcherInteractive ? (
+        {selectedCount > 0 ? (
           <div className="flex min-h-7 items-center gap-2">
-            <StoreSwitcher />
-            <span className="ml-auto truncate text-label text-[var(--c-fg-muted)]">
+            <span className="truncate text-label text-[var(--c-fg-muted)]">
               {dateLabel}
             </span>
-            {selectedCount > 0 ? (
-              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-action)] px-2 py-0.5 text-label font-semibold tabular-nums text-[var(--c-action-fg)]">
-                {selectedCount}
-              </span>
-            ) : null}
+            <span className="ml-auto shrink-0 rounded-[var(--r-pill)] bg-[var(--c-action)] px-2 py-0.5 text-label font-semibold tabular-nums text-[var(--c-action-fg)]">
+              {selectedCount}
+            </span>
           </div>
         ) : null}
         <SearchInput

@@ -103,7 +103,7 @@ export const en = {
   'storeSwitcher.aria': 'Change store context',
   'storeSwitcher.pickPrompt.title': 'Pick a store first',
   'storeSwitcher.pickPrompt.body':
-    'This page needs a single store. Tap the store badge in the page header to switch.',
+    'This page needs a single store. Open Settings (gear icon) and pick one.',
 
   // ── 4. Auth (login / onboarding / access) ──────────────────────
   'auth.signIn': 'Sign in',

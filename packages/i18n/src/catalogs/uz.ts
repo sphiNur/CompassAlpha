@@ -73,7 +73,7 @@ export const uz = {
   'storeSwitcher.aria': "Do'konni almashtirish",
   'storeSwitcher.pickPrompt.title': "Avval do'kon tanlang",
   'storeSwitcher.pickPrompt.body':
-    "Bu sahifa bitta aniq do'kon konteksti talab qiladi. Sarlavhadagi do'kon nishoniga teging.",
+    "Bu sahifa bitta aniq do'kon konteksti talab qiladi. Sozlamalar (shesterya belgisi) orqali tanlang.",
 
   // ── 4. Auth ────────────────────────────────────────────────────
   'auth.signIn': 'Kirish',

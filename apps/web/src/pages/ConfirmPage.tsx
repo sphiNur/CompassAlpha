@@ -32,7 +32,7 @@ import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
 import { formatQty } from '../lib/format';
-import { StoreSwitcher, useStoreContext, useStoreSwitcherInteractive } from '../components/StoreSwitcher';
+import { useStoreContext } from '../components/StoreSwitcher';
 
 type DecisionStatus = 'ok' | 'short' | 'wrong' | 'quality';
 
@@ -44,7 +44,6 @@ export function ConfirmPage() {
   // store. Reading via the context helper coerces 'all' to null so the
   // pick-a-store empty-state takes over (added 2026-05-05).
   const storeCtx = useStoreContext();
-  const storeSwitcherInteractive = useStoreSwitcherInteractive();
   const currentStoreId = storeCtx.kind === 'specific' ? storeCtx.storeId : null;
   const toast = useToast();
   const errToast = useErrToast();
@@ -244,15 +243,10 @@ export function ConfirmPage() {
     //                                 needs a single store, prompt them
     //   - currentStoreId fell to null → same as 'none' for UX purposes
     return (
-      /* M1.12: PageHeader removed; Telegram chrome + BottomNav already
-          mark this as Confirm. Sticky strip only carries the
-          StoreSwitcher so the user can pick which store to confirm
-          for. */
+      /* M3.5: the inline store-picker strip is gone — the picker now
+         lives in SettingsSheet, reachable via Telegram's gear button. */
       <div className="flex flex-col gap-3 pb-4">
-        <div className="flex items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-2">
-          <StoreSwitcher />
-        </div>
-        <div className="px-4">
+        <div className="px-4 pt-3">
           {storeCtx.kind === 'none' ? (
             <EmptyState
               title={i18n.t('auth.noStore.title')}
@@ -270,19 +264,15 @@ export function ConfirmPage() {
   }
 
   return (
-    /* M1.12: PageHeader removed entirely. Sticky strip carries
-        StoreSwitcher + the run-date subtitle (when there's an active
-        run). MainButton already shows the "Decided X/Y" fraction at
-        the bottom. */
+    /* M3.5: the store-switcher pill moved to SettingsSheet. The sticky
+       strip now only carries the run-date subtitle when there's an
+       active run; without one, no chrome row. */
     <div className="flex flex-col gap-3 pb-4">
-      {storeSwitcherInteractive || activeRun ? (
+      {activeRun ? (
         <div className="sticky top-0 z-[1] flex min-h-7 items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-2">
-          {storeSwitcherInteractive ? <StoreSwitcher /> : null}
-          {activeRun ? (
-            <span className="ml-auto truncate text-label tabular-nums text-[var(--c-fg-muted)]">
-              {i18n.t('confirm.runOnDate', { date: activeRun.runDate })}
-            </span>
-          ) : null}
+          <span className="ml-auto truncate text-label tabular-nums text-[var(--c-fg-muted)]">
+            {i18n.t('confirm.runOnDate', { date: activeRun.runDate })}
+          </span>
         </div>
       ) : null}
       <div className="flex flex-col gap-3 px-4">

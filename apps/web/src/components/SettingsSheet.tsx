@@ -30,6 +30,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useI18n } from '../hooks/useI18n';
 import { useErrToast } from '../lib/errToast';
 import type { PageMenuRegistration } from '../app/PageMenuContext';
+import { StorePickerSection, useCanSeeStorePicker } from './StoreSwitcher';
 
 interface LangOption {
   code: Locale;
@@ -95,6 +96,10 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
   const [draftName, setDraftName] = useState<string>(() => session?.user.displayName ?? '');
   const nameLocked = !!session?.user.displayNameLocked;
   const nameDirty = !nameLocked && draftName.trim() !== (session?.user.displayName ?? '');
+
+  // M3.5: org.admin holders can switch store context here. Non-admins
+  // never see this section — they're bound to a single store anyway.
+  const canSeeStorePicker = useCanSeeStorePicker();
 
   return (
     <Sheet
@@ -178,6 +183,11 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
             ) : null}
           </div>
         </section>
+
+        {/* ── Store picker (M3.5, org.admin only) ──────────── */}
+        {canSeeStorePicker ? (
+          <StorePickerSection onClose={() => onOpenChange(false)} />
+        ) : null}
 
         {/* ── Language ────────────────────────────────────── */}
         <section>
