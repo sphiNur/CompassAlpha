@@ -30,6 +30,29 @@
 
 BEGIN;
 
+-- The permission key itself may be missing on pre-M2.0b orgs (the
+-- seed inserts perms only at org creation; key was added later but
+-- never backfilled). Insert it idempotently so the FK on
+-- role_permissions doesn't trip below.
+INSERT INTO auth.permissions (key, description)
+VALUES (
+  'dishes.manage',
+  'Manage dishes (menu) and recipes/BOM'
+)
+ON CONFLICT (key) DO NOTHING;
+
+-- Same backfill safety for inventory.adjust, sales.record, and
+-- run.create.org — same root cause (M2.0a/M2.0c/M3.2 added perm
+-- keys but the seed only inserts on org creation). 0020 already
+-- handles run.create.org but the others are needed because the
+-- *next* milestone will likely want explicit grants too. No-op if
+-- already present.
+INSERT INTO auth.permissions (key, description)
+VALUES
+  ('inventory.adjust', 'Stocktake / wastage corrections'),
+  ('sales.record', 'Record dish sales at a store')
+ON CONFLICT (key) DO NOTHING;
+
 -- Super_admin: every org's super_admin role gets dishes.manage.
 INSERT INTO auth.role_permissions (role_id, permission_key)
 SELECT r.id, 'dishes.manage'
