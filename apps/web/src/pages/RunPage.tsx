@@ -1953,9 +1953,9 @@ function PreviewSummaryCard({
                   buried in a separate section. */}
               {storeNote ? (
                 <div className="mt-2 rounded-[var(--r-card)] bg-[var(--c-warn-bg)] px-3 py-2 ring-hairline">
-                  <div className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+                  <SectionLabel padded={false}>
                     📝 {i18n.t('order.notes.label')}
-                  </div>
+                  </SectionLabel>
                   <div className="mt-0.5 whitespace-pre-wrap text-body-sm leading-snug text-[var(--c-fg)]">
                     {storeNote}
                   </div>
@@ -3311,9 +3311,9 @@ function RunHistoryDetailSheet({
           <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3">
             <div className="flex items-baseline justify-between gap-3">
               <div>
-                <div className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+                <SectionLabel padded={false}>
                   {i18n.t('run.history.totalLabel')}
-                </div>
+                </SectionLabel>
                 {/* M2.2: headline money unified to text-h2 (17 px)
                     across pages. Was text-h1 (22 px) — only Order's
                     estimate and Admin's sales tiles use text-h2 for
@@ -3355,9 +3355,9 @@ function RunHistoryDetailSheet({
 
           {/* Per-item rows */}
           <div>
-            <div className="mb-2 text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+            <SectionLabel padded={false} className="mb-2">
               {i18n.t('run.history.itemsHeading')}
-            </div>
+            </SectionLabel>
             <ul className="flex flex-col rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline">
               {breakdown.items.map((it) => {
                 const sku = skuById.get(it.skuId);
@@ -3395,9 +3395,9 @@ function RunHistoryDetailSheet({
           {/* Per-store breakdown */}
           {breakdown.perStore.size > 0 ? (
             <div>
-              <div className="mb-2 text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+              <SectionLabel padded={false} className="mb-2">
                 {i18n.t('run.history.storesHeading')}
-              </div>
+              </SectionLabel>
               <ul className="flex flex-col rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline">
                 {[...breakdown.perStore.values()].map((ps) => {
                   const store = storeById.get(ps.storeId);

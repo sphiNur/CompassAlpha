@@ -1084,9 +1084,9 @@ function PeopleSection({
             <div className="flex flex-col gap-4">
               {orgLevel.length > 0 ? (
                 <section>
-                  <h3 className="mb-2 text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+                  <SectionLabel as="h3" padded={false} className="mb-2">
                     Org-level ({orgLevel.length})
-                  </h3>
+                  </SectionLabel>
                   <ul className="flex flex-col gap-2" role="list">
                     {orgLevel.map(renderCard)}
                   </ul>
@@ -1094,9 +1094,9 @@ function PeopleSection({
               ) : null}
               {storeSections.map(([storeId, bucket]) => (
                 <section key={storeId}>
-                  <h3 className="mb-2 text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+                  <SectionLabel as="h3" padded={false} className="mb-2">
                     🏪 {bucket.name} ({bucket.members.length})
-                  </h3>
+                  </SectionLabel>
                   <ul className="flex flex-col gap-2" role="list">
                     {bucket.members.map(renderCard)}
                   </ul>
@@ -1292,9 +1292,9 @@ function PermissionsSection({ isSuperAdmin }: { isSuperAdmin: boolean }) {
         but their name, description, and permission set are editable.
       </Banner>
       <div className="mt-3 flex items-center justify-between">
-        <span className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+        <SectionLabel padded={false}>
           Roles
-        </span>
+        </SectionLabel>
         {isGlobalAdmin ? (
           <Button size="sm" onClick={() => setCreateOpen(true)}>
             + New role
@@ -1510,9 +1510,9 @@ function RoleCreateSheet({
             <ul className="flex flex-col gap-3">
               {grouped.map(([ns, keys]) => (
                 <li key={ns}>
-                  <div className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+                  <SectionLabel padded={false}>
                     {ns}
-                  </div>
+                  </SectionLabel>
                   <ul className="mt-1 flex flex-col gap-1">
                     {keys.map((p) => (
                       <li key={p.key}>
@@ -1755,9 +1755,9 @@ function RolePermissionsSheet({
             <ul className="flex flex-col gap-3">
               {grouped.map(([ns, keys]) => (
                 <li key={ns}>
-                  <div className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+                  <SectionLabel padded={false}>
                     {ns}
-                  </div>
+                  </SectionLabel>
                   <ul className="mt-1 flex flex-col gap-1">
                     {keys.map((p) => {
                       if (editing) {
@@ -1862,9 +1862,9 @@ function RoleAssigneesByStore({
 
   return (
     <div className="mt-2 border-t border-[var(--c-divider)] pt-3">
-      <div className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+      <SectionLabel padded={false}>
         Assignees · {assignees.length}
-      </div>
+      </SectionLabel>
       <div className="mt-1 flex flex-col gap-3">
         {grouped.map(([key, bucket]) => (
           <section key={key}>
@@ -2823,9 +2823,9 @@ function MemberPermissionsSheet({
           </Banner>
           {grouped.map(([ns, keys]) => (
             <div key={ns}>
-              <div className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+              <SectionLabel padded={false}>
                 {ns}
-              </div>
+              </SectionLabel>
               <ul className="mt-1 flex flex-col gap-1">
                 {keys.map((p) => {
                   const override = overrideByKey.get(p.key) ?? null;
@@ -4022,9 +4022,9 @@ function StoreSalesTab({ storeId }: { storeId: string }) {
       {/* Today summary tile. */}
       <div className="grid grid-cols-2 gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
         <div>
-          <div className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+          <SectionLabel padded={false}>
             {i18n.t('sales.summary.today')}
-          </div>
+          </SectionLabel>
           <div className="font-mono text-h2 font-semibold tabular-nums">
             {formatQty(summary.count.toString())}
           </div>
@@ -4033,9 +4033,9 @@ function StoreSalesTab({ storeId }: { storeId: string }) {
           </div>
         </div>
         <div>
-          <div className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+          <SectionLabel padded={false}>
             {i18n.t('sales.summary.revenue')}
-          </div>
+          </SectionLabel>
           <div className="font-mono text-h2 font-semibold tabular-nums">
             {formatMoney(summary.revenue)}
           </div>
@@ -5930,9 +5930,9 @@ function HistorySection() {
                   </div>
                   {isOpen ? (
                     <div className="border-t border-[var(--c-divider)] px-4 py-3">
-                      <div className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+                      <SectionLabel padded={false}>
                         Contributor breakdown
-                      </div>
+                      </SectionLabel>
                       <ul className="mt-2 flex flex-col gap-1">
                         {r.contributors.map((c) => (
                           <li
@@ -6907,9 +6907,9 @@ function FinanceSection() {
       {totalsQuery.data ? (
         <div className="mb-3 grid grid-cols-3 gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3">
           <div>
-            <div className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+            <SectionLabel padded={false}>
               💵 {i18n.t('run.label.paymentCash')}
-            </div>
+            </SectionLabel>
             <div className="font-mono text-h2 font-semibold tabular-nums">
               {formatMoney(totalsQuery.data.totalCash)}
             </div>
@@ -6918,9 +6918,9 @@ function FinanceSection() {
             </div>
           </div>
           <div>
-            <div className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+            <SectionLabel padded={false}>
               🏦 {i18n.t('run.label.paymentTransfer')}
-            </div>
+            </SectionLabel>
             <div className="font-mono text-h2 font-semibold tabular-nums">
               {formatMoney(totalsQuery.data.totalTransfer)}
             </div>
@@ -6929,9 +6929,9 @@ function FinanceSection() {
             </div>
           </div>
           <div>
-            <div className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+            <SectionLabel padded={false}>
               Σ {i18n.t('finance.label.total')}
-            </div>
+            </SectionLabel>
             <div className="font-mono text-h2 font-semibold tabular-nums">
               {formatMoney(totalsQuery.data.total)}
             </div>

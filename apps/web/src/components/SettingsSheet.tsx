@@ -22,7 +22,7 @@
  * Admin-of-org things stay in Admin so the mental model stays clean.
  */
 import { useState } from 'react';
-import { Sheet, Button, Field, Input } from '@compass/ui';
+import { Sheet, Button, Field, Input, SectionLabel } from '@compass/ui';
 import { useToast } from '@compass/ui';
 import type { Locale } from '@compass/i18n';
 import { trpc } from '../lib/trpc';
@@ -111,9 +111,9 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
         {/* ── Page actions (contextual, M1.12) ─────────────── */}
         {pageMenu && pageMenu.actions.length > 0 ? (
           <section>
-            <h3 className="mb-2 text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+            <SectionLabel as="h3" padded={false} className="mb-2">
               {pageMenu.title}
-            </h3>
+            </SectionLabel>
             <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
               {pageMenu.actions.map((a, i) => (
                 <Button
@@ -140,9 +140,9 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
 
         {/* ── Profile ─────────────────────────────────────── */}
         <section>
-          <h3 className="mb-2 text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+          <SectionLabel as="h3" padded={false} className="mb-2">
             👤 {i18n.t('settings.profile.title')}
-          </h3>
+          </SectionLabel>
           <div className="flex flex-col gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
             <Field label={i18n.t('settings.profile.displayName')}>
               {nameLocked ? (
@@ -191,9 +191,9 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
 
         {/* ── Language ────────────────────────────────────── */}
         <section>
-          <h3 className="mb-2 text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+          <SectionLabel as="h3" padded={false} className="mb-2">
             🌐 {i18n.t('settings.language.title')}
-          </h3>
+          </SectionLabel>
           <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
             {LANGS.map((lang) => {
               const selected = (session?.user.locale ?? 'en') === lang.code;
@@ -232,9 +232,9 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
 
         {/* ── About ───────────────────────────────────────── */}
         <section>
-          <h3 className="mb-2 text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+          <SectionLabel as="h3" padded={false} className="mb-2">
             ℹ️ {i18n.t('settings.about.title')}
-          </h3>
+          </SectionLabel>
           <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
             <div className="flex items-baseline justify-between text-label">
               <span className="text-[var(--c-fg-muted)]">

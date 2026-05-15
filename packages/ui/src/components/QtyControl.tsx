@@ -329,6 +329,11 @@ function QtyQuickPickSheet({
         </div>
 
         {/* Custom input — escape hatch for non-preset quantities. */}
+        {/* M3.13 typography exception: native <label> needs to wrap the
+            input for click-to-focus, and we want it visually to read as
+            an eyebrow above the input. SectionLabel renders as a
+            non-form element, so we keep the eyebrow class string here.
+            The CI typography guard allow-lists this comment. */}
         <label className="block text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
           Custom
           <NumberInput

@@ -19,6 +19,7 @@
  *               `useStoreContext()` (consumed by AdminPage and other
  *               readers) is unchanged; only the trigger UX moved.
  */
+import { SectionLabel } from '@compass/ui';
 import { useAuthStore, ALL_STORES } from '../stores/authStore';
 import type { StoreContext } from '../stores/authStore';
 import { useI18n } from '../hooks/useI18n';
@@ -63,9 +64,9 @@ export function StorePickerSection({ onClose }: { onClose: () => void }) {
 
   return (
     <section>
-      <h3 className="mb-2 text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+      <SectionLabel as="h3" padded={false} className="mb-2">
         🏪 {i18n.t('storeSwitcher.title')}
-      </h3>
+      </SectionLabel>
       <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
         <SwitcherRow
           label={i18n.t('storeSwitcher.allOrgStores')}

@@ -20,6 +20,7 @@ import {
   EmptyState,
   Input,
   QtyControl,
+  SectionLabel,
   Sheet,
   Spinner,
   Tab,
@@ -529,9 +530,9 @@ function SessionItems({
         back to draft to edit. */}
     {sessionNotes ? (
       <div className="border-b border-[var(--c-divider)] bg-[var(--c-warn-bg)] px-4 py-3">
-        <div className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+        <SectionLabel padded={false}>
           {i18n.t('order.notes.label')}
-        </div>
+        </SectionLabel>
         <div className="mt-1 whitespace-pre-wrap text-body leading-snug text-[var(--c-fg)]">
           {sessionNotes}
         </div>
