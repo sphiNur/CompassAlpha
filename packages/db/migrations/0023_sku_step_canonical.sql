@@ -30,13 +30,17 @@
 BEGIN;
 
 -- ── coerce legacy values ─────────────────────────────────────────
+-- inventory.skus.step is `numeric` on the server, so we compare and
+-- assign with numeric literals, not text. The contract layer (TS)
+-- shuttles the value as a string for JSON-safety, but in-DB it lives
+-- as a decimal column.
 UPDATE inventory.skus
    SET step = CASE
-     WHEN step::numeric <= 0.5 THEN '0.5'
-     ELSE '1'
+     WHEN step <= 0.5 THEN 0.5
+     ELSE 1
    END,
        updated_at = now()
- WHERE step NOT IN ('0.5', '1');
+ WHERE step NOT IN (0.5, 1);
 
 -- ── safety assertion ─────────────────────────────────────────────
 DO $$
@@ -45,7 +49,7 @@ DECLARE
 BEGIN
   SELECT count(*) INTO bad_count
     FROM inventory.skus
-    WHERE step NOT IN ('0.5', '1');
+    WHERE step NOT IN (0.5, 1);
   IF bad_count > 0 THEN
     RAISE EXCEPTION 'M3.14 backfill failed: % SKU row(s) still have non-canonical step', bad_count;
   END IF;
