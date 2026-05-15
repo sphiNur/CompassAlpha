@@ -10,7 +10,6 @@ import {
 } from '@compass/ui';
 import { OrderPage } from '../pages/OrderPage';
 import { ApprovalPage } from '../pages/ApprovalPage';
-import { RunPage } from '../pages/RunPage';
 import { ConfirmPage } from '../pages/ConfirmPage';
 // AdminPage is the heaviest screen in the bundle (~5k LoC + the role
 // editor + the audit list etc.). Most users will never open it — the
@@ -22,6 +21,16 @@ import { ConfirmPage } from '../pages/ConfirmPage';
 const importAdminPage = () =>
   import('../pages/AdminPage').then((m) => ({ default: m.AdminPage }));
 const AdminPage = lazy(importAdminPage);
+// M3.11 (2026-05-16): same treatment for RunPage. ~3.4k LoC + heavy
+// purchase / delivery / confirm sheets + history detail. The
+// `run.purchase` permission gate hides the tab from staff, cashiers,
+// receivers etc. — typical deployment has 1 purchaser per N stores,
+// so 90% of users pay for the chunk without ever opening it. Pulling
+// it behind lazy() saves ~60 kB off the initial bundle. Prefetch
+// (below) keeps the tap-to-open latency snappy for actual purchasers.
+const importRunPage = () =>
+  import('../pages/RunPage').then((m) => ({ default: m.RunPage }));
+const RunPage = lazy(importRunPage);
 import { useAuthStore } from '../stores/authStore';
 import { useI18n } from '../hooks/useI18n';
 import { useTelegramSettingsButton } from '../hooks/useTelegram';
@@ -59,7 +68,11 @@ function PageLoading() {
 const PAGES: Record<Tab, () => ReactNode> = {
   order: () => <OrderPage />,
   approve: () => <ApprovalPage />,
-  run: () => <RunPage />,
+  run: () => (
+    <Suspense fallback={<PageLoading />}>
+      <RunPage />
+    </Suspense>
+  ),
   confirm: () => <ConfirmPage />,
   admin: () => (
     <Suspense fallback={<PageLoading />}>
@@ -102,14 +115,25 @@ function ShellInner() {
   // We use requestIdleCallback when available so we don't compete with
   // first-paint work on the entry route.
   const canAdmin = !!session?.permissions.includes('users.manage');
+  // M3.11: same warmup pattern for RunPage. Trigger when the user
+  // can see the Run tab. Purchasers in production are a small share
+  // of users, so a non-purchaser saves the 60 kB of RunPage chunk
+  // entirely; purchasers get the chunk prefetched right after login.
+  const canRun = !!session?.permissions.includes('run.purchase');
   useEffect(() => {
-    if (!canAdmin) return;
-    const kick = () => { void importAdminPage(); };
+    if (!canAdmin && !canRun) return;
     type IdleCB = (cb: () => void) => number;
     const ric = (window as { requestIdleCallback?: IdleCB }).requestIdleCallback;
+    const kick = () => {
+      // Fire both prefetches if applicable. Each is a Promise we
+      // intentionally drop — React.lazy will reuse the same Promise
+      // when the user actually taps in.
+      if (canAdmin) void importAdminPage();
+      if (canRun) void importRunPage();
+    };
     if (ric) ric(kick);
     else setTimeout(kick, 0);
-  }, [canAdmin]);
+  }, [canAdmin, canRun]);
 
   const [tab, setTab] = useState<Tab>(() => (visible[0]?.key as Tab) ?? 'order');
   // App-level language picker — wired into Telegram's gear icon in
