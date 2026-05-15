@@ -1212,7 +1212,11 @@ describe('M3.3 manager (rank 60) is blocked from org-wide writes', () => {
         await caller.admin.skuCreate({
           names: { en: 'Forbidden SKU', uz: '', ru: '', zh: '' },
           unit: 'kg',
-          step: '0.1',
+          // M3.14: step restricted to '0.5' | '1'. The old '0.1' got
+          // rejected by zod BEFORE the permission check — failing the
+          // test for the wrong reason. Use a valid step so the assertion
+          // exercises the permission boundary as intended.
+          step: '0.5',
           sortIndex: 999,
         });
       } catch (err) {

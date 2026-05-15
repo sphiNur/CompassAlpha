@@ -1,12 +1,66 @@
-import { useMemo } from 'react';
-import { createI18n, detectLocale, type Locale } from '@compass/i18n';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  createI18n,
+  detectLocale,
+  isLoaded,
+  loadCatalog,
+  type Locale,
+} from '@compass/i18n';
 import { useAuthStore } from '../stores/authStore';
+
+/**
+ * Module-level "loaded locales" version counter. Incremented every
+ * time a dynamic catalog import resolves. useI18n subscribes via a
+ * useState below and re-renders so the new strings flow through.
+ *
+ * Why this instead of useSyncExternalStore: the surface is tiny
+ * (single Set of subscribers) and we want to keep @compass/i18n
+ * framework-agnostic. The hook lives in apps/web because the
+ * re-render mechanism is React-specific.
+ */
+const subs = new Set<() => void>();
+function notifyLoaded(): void {
+  for (const cb of subs) cb();
+}
+
+/**
+ * Ensure the given locale's catalog is loaded; trigger a re-render
+ * when it lands. No-op if already loaded.
+ *
+ * Until the load resolves, lookup() returns undefined for keys not
+ * in the en fallback, and `format()` falls through to the raw key.
+ * The user sees English copy for the ~1-frame load window.
+ */
+function useEnsureLocale(locale: Locale): void {
+  // Versioned re-render trigger.
+  const [, force] = useState(0);
+  useEffect(() => {
+    const sub = () => force((n) => n + 1);
+    subs.add(sub);
+    return () => {
+      subs.delete(sub);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isLoaded(locale)) return;
+    let cancelled = false;
+    void loadCatalog(locale).then(() => {
+      if (cancelled) return;
+      notifyLoaded();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [locale]);
+}
 
 export function useI18n() {
   const locale = useAuthStore((s) => s.session?.user.locale ?? null);
   const tg = (window as { Telegram?: { WebApp?: { initDataUnsafe?: { user?: { language_code?: string } } } } }).Telegram?.WebApp;
   const fallback = tg?.initDataUnsafe?.user?.language_code ?? navigator.language;
   const resolved: Locale = (locale as Locale | null) ?? detectLocale(fallback);
+  useEnsureLocale(resolved);
   return useMemo(() => createI18n(resolved), [resolved]);
 }
 

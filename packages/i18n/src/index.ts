@@ -1,18 +1,25 @@
 /**
  * Tiny ICU-aware i18n runtime.
  *
- * Catalogs are static objects — at build time we tree-shake unused locales.
- * Lookup falls back en → ru → zh → uz so missing translations degrade gracefully.
+ * Catalogs are loaded per-locale (see ./catalogs/index.ts). en is
+ * statically imported as the fallback; zh/ru/uz are dynamic imports
+ * resolved on demand (M3.14-D, 2026-05-16). Lookup walks
+ * locale → en → any-other-loaded so missing keys degrade gracefully.
  *
  * For production-grade plural/select we'd swap the body of `format()` to
  * @formatjs/intl-messageformat, but for now we keep it dependency-free
  * with a simple `{name}` interpolation and `{n, plural, ...}` cases.
  */
-import { catalogs, type Locale, type CatalogKey } from './catalogs/index';
+import { getLoadedCatalog, type Locale, type CatalogKey } from './catalogs/index';
 
-export type { Locale, CatalogKey } from './catalogs/index';
+export type { Locale, CatalogKey, CatalogModule } from './catalogs/index';
+export { loadCatalog, preloadCatalog, isLoaded, getLoadedCatalog } from './catalogs/index';
 
-const FALLBACK: Locale[] = ['en', 'ru', 'zh', 'uz'];
+// Walk order: requested locale → en (always loaded) → other-loaded
+// locales in a stable order. The "other loaded" tail is rarely hit
+// (only when the active locale's catalog is mid-load and a key is
+// missing from en — should be ~never).
+const TAIL: Locale[] = ['en', 'ru', 'zh', 'uz'];
 
 export function detectLocale(input: string | undefined | null): Locale {
   if (!input) return 'en';
@@ -26,10 +33,12 @@ export function detectLocale(input: string | undefined | null): Locale {
 
 export function lookup(key: CatalogKey, locale: Locale): string | undefined {
   const tried = new Set<Locale>();
-  for (const l of [locale, ...FALLBACK]) {
+  for (const l of [locale, ...TAIL]) {
     if (tried.has(l)) continue;
     tried.add(l);
-    const v = (catalogs as Record<Locale, Record<string, string>>)[l]?.[key];
+    const cat = getLoadedCatalog(l);
+    if (!cat) continue;
+    const v = cat[key];
     if (typeof v === 'string') return v;
   }
   return undefined;

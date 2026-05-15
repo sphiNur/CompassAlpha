@@ -84,86 +84,100 @@
     'Hiragino Sans GB', sans-serif;
   --font-mono: ui-monospace, 'JetBrains Mono', 'Menlo', 'Cascadia Mono', monospace;
 
-  /* Typography scale (M1.7-fix3, 2026-05-07).
+  /* Typography scale (M3.14, 2026-05-16 — shrink pass).
    * Mirrors the Tailwind fontSize tokens in apps/web/tailwind.config.js
    * so any CSS-only stylesheet can stay in sync. Prefer the Tailwind
    * `text-display` / `text-h2` / `text-body` etc. utilities at call
    * sites; reach for these vars only when you must.
    *
    * ────────────────────────────────────────────────────────────────
-   * CANONICAL ROLE → SIZE MAPPING (M2.3, 2026-05-14)
+   * M3.14 SHRINK (2026-05-16)
    * ────────────────────────────────────────────────────────────────
-   * The original 9-step scale (28/22/17/15/14/13/12/11/10) had FOUR
-   * sizes crammed into the 11-14px secondary band, and pages used
-   * them interchangeably — that drift is what reads as "大大小小".
+   * Field feedback: the original scale (28/22/17/15/14/13/12/11/10)
+   * was tuned for Telegram WebView at iOS default size — but Uzbek
+   * restaurants run an Android-heavy fleet where Telegram's WebView
+   * inherits the device's larger DP-to-px ratio. Result: everything
+   * read ~20% bigger than intended ("整体的字体文字都太大了").
    *
-   * M2.3 collapses the secondary band to TWO effective sizes:
-   *   - text-body     (14) — primary content + list-row primary
-   *   - text-body-sm  (13) — multi-line description / paragraph only
-   *   - text-label    (12) — ALL eyebrows, captions, meta, hints
-   *   - text-meta     (11) — DEPRECATED, do not use in new code
+   * Coordinated -1 to -4px reduction. Hierarchy preserved (every
+   * step still distinct, no collisions), all roles keep their slot:
    *
-   * The migration auto-promoted all 99 prior `text-meta` (11) uses
-   * to `text-label` (12). The 1px lift kills the eye-strain band
-   * where text-meta sat right under text-label. text-meta remains
-   * defined for legacy/print-density edge cases only.
+   *   OLD → NEW   ROLE
+   *   ───────────────────────────────────────────────────────
+   *   28  → 24    text-display  marketing / launch
+   *   22  → 19    text-h1       page title
+   *   17  → 15    text-h2       card title, section h2, headline money
+   *   15  → 14    text-h3       input value, named child entity
+   *   14  → 13    text-body     list-row primary, body copy
+   *   13  → 12    text-body-sm  description / paragraph / toast body
+   *   12  → 11    text-label    eyebrows, form labels, meta, captions
+   *   11  → 10    text-meta     DEPRECATED, legacy only
+   *   10  →  9    text-tiny     microcopy, footnote
+   *
+   * Why 24 not 22 for display: 22 would collide with the OLD h1, and
+   * call sites that use display generally do so for an "above-the-fold
+   * launch" moment where 24 still reads as oversized vs body 13. Why
+   * 19 not 18 for h1: keeps a 4px gap from h2 (15) so page titles
+   * stay clearly hierarchical; 18 vs 15 would feel too close.
+   *
+   * ────────────────────────────────────────────────────────────────
+   * CANONICAL ROLE → SIZE MAPPING (M3.14, 2026-05-16)
+   * ────────────────────────────────────────────────────────────────
    *
    *   ROLE                              CLASS
    *   ───────────────────────────────────────────────────────────
-   *   Marketing / launch screen         text-display              28px
+   *   Marketing / launch screen         text-display              24px
    *   Page title (PageHeader.title,
-   *   AuthGate, DebugPage, AdminPage)   text-h1 + font-semibold   22px
+   *   AuthGate, DebugPage, AdminPage)   text-h1 + font-semibold   19px
    *   Card title (CardTitle component,
    *   maintenance cards, sub-section
    *   <h2> headings, store/entity name
-   *   in entity header)                 text-h2 + font-semibold   17px
+   *   in entity header)                 text-h2 + font-semibold   15px
    *   Headline money (mono)             text-h2 + font-mono +
-   *                                     font-semibold + tabular   17px
+   *                                     font-semibold + tabular   15px
    *   Form input value (Input.tsx,
-   *   inline date pickers)              text-h3                   15px
+   *   inline date pickers)              text-h3                   14px
    *   "Named child entity" inside a
    *   panel (role-picker not a list,
-   *   member display)                   text-h3 + font-semibold   15px
+   *   member display)                   text-h3 + font-semibold   14px
    *   List-row primary text (each row
    *   in OrderPage SKU list, Confirm
    *   list, Run pending list, Admin
    *   invite/role pickers, Store and
-   *   Language pickers)                 text-body + font-semibold 14px
-   *   Body copy, summary key:value      text-body                 14px
+   *   Language pickers)                 text-body + font-semibold 13px
+   *   Body copy, summary key:value      text-body                 13px
    *   Multi-line description /
    *   paragraph (Card description,
    *   Banner body, AuthGate copy,
    *   ApprovalPage empty-state,
-   *   Toast message)                    text-body-sm              13px
+   *   Toast message)                    text-body-sm              12px
    *   SectionLabel (uppercase
    *   eyebrows) — MUST add the suffix
    *   "font-semibold uppercase
-   *   tracking-eyebrow"                 text-label                12px
+   *   tracking-eyebrow"                 text-label                11px
    *   Form field label, secondary meta
    *   inside a row, hint text, badge
    *   content, status timestamps,
-   *   tabular code columns              text-label                12px
+   *   tabular code columns              text-label                11px
    *   Microcopy, footnote (in-run
-   *   indicator, etc.)                  text-tiny                 10px
-   *   Tabular density / legacy          text-meta                 11px  (deprecated)
+   *   indicator, etc.)                  text-tiny                  9px
+   *   Tabular density / legacy          text-meta                 10px  (deprecated)
    *
    * ────────────────────────────────────────────────────────────────
-   * PILL FAMILY (M2.4, 2026-05-14)
+   * PILL FAMILY (M3.14, 2026-05-16)
    * ────────────────────────────────────────────────────────────────
    * ALL pill-shape controls — Badge, ChipBar's Chip, Tabs' Tab,
    * Button size="sm", and any inline rounded-[var(--r-pill)] button
    * — render text at:
    *
-   *     text-label + font-medium      (12 px, weight 500)
+   *     text-label + font-medium      (11 px, weight 500)
    *
-   * This is the size set by the RunPage history filter chip
-   * ("Finished (N)") and the status Badge ("finished"). M2.4
-   * collapsed Chip/Tab from 14 → 12 and Button-sm from 13 → 12 so
-   * the entire pill family sits on the same baseline.
+   * (Was 12px before M3.14.) The entire pill family stays on a
+   * single baseline.
    *
    * Exceptions (keep larger):
-   *   - Button md (h-11) — primary actions: text-h3 (15)
-   *   - Button lg (h-14) — sheet-footer commits: text-h2 (17)
+   *   - Button md (h-11) — primary actions: text-h3 (14)
+   *   - Button lg (h-14) — sheet-footer commits: text-h2 (15)
    *   - Input lookalikes (rounded-pill display reading like an
    *     <Input>) — text-h3 to match the Input component
    *   - Single-emoji icon buttons in pill containers — size doesn't
@@ -184,15 +198,15 @@
    * If a screen genuinely needs an exception, add a one-line code
    * comment explaining the role so the next pass can audit it.
    * ──────────────────────────────────────────────────────────── */
-  --text-display: 28px;
-  --text-h1: 22px;
-  --text-h2: 17px;
-  --text-h3: 15px;
-  --text-body: 14px;
-  --text-body-sm: 13px;
-  --text-label: 12px;
-  --text-meta: 11px;
-  --text-tiny: 10px;
+  --text-display: 24px;
+  --text-h1: 19px;
+  --text-h2: 15px;
+  --text-h3: 14px;
+  --text-body: 13px;
+  --text-body-sm: 12px;
+  --text-label: 11px;
+  --text-meta: 10px;
+  --text-tiny: 9px;
 }
 
 :root[data-theme='dark'],

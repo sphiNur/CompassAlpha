@@ -34,6 +34,7 @@ import {
   CardHeader,
   CardMeta,
   CardTitle,
+  cn,
   DataState,
   DetailRow,
   EmptyState,
@@ -4789,8 +4790,27 @@ interface SkuDraft {
   nameEn: string;
   nameZh: string;
   unit: string;
-  step: string;
+  /** M3.14: only '0.5' or '1' — see SkuStepSchema in @compass/contracts. */
+  step: '0.5' | '1';
   sortIndex: number;
+}
+
+/**
+ * Snap a legacy step value onto the M3.14 {'0.5', '1'} grid.
+ *
+ * Existing SKUs may have step=0.25 / 0.1 / 5 / 50 / 100 from before the
+ * restriction landed. When the operator opens one in the edit sheet,
+ * we have to show SOMETHING in the new 2-option segmented control. The
+ * server-side migration will eventually coerce these rows too, but the
+ * UI shouldn't blow up if it sees a legacy value mid-flight.
+ *
+ * Rule: <= 0.5 → '0.5' (weigh-and-pay band), > 0.5 → '1' (countable).
+ */
+function snapStepToCanonical(step: string): '0.5' | '1' {
+  if (step === '0.5' || step === '1') return step;
+  const n = Number(step);
+  if (!Number.isFinite(n)) return '1';
+  return n <= 0.5 ? '0.5' : '1';
 }
 
 function SkusSection() {
@@ -4939,7 +4959,11 @@ function SkusSection() {
                           nameEn: names.en ?? '',
                           nameZh: names.zh ?? '',
                           unit: sk.unit,
-                          step: sk.step,
+                          // M3.14: snap legacy values onto the new {0.5, 1}
+                          // grid so the segmented control has a valid
+                          // initial selection. Round half-up so 0.25/0.1
+                          // → 0.5 and 5/50/100 → 1.
+                          step: snapStepToCanonical(sk.step),
                           sortIndex: sk.sortIndex,
                         })
                       }
@@ -5085,8 +5109,31 @@ function SkusSection() {
               <Field label={`${i18n.t('admin.field.unit')} *`}>
                 <Input value={draft.unit} onChange={(e) => setDraft({ ...draft, unit: e.target.value })} maxLength={16} placeholder="kg / pcs / L" />
               </Field>
+              {/* M3.14 (2026-05-16): step is a 2-option segmented control,
+                  not a free-form field. 0.5 = weigh-and-pay (kg/L), 1 =
+                  countable (pcs/pair/bunch). The schema rejects anything
+                  else, so we never want the form to ACCEPT anything else. */}
               <Field label={i18n.t('admin.field.step')}>
-                <Input value={draft.step} onChange={(e) => setDraft({ ...draft, step: e.target.value })} placeholder="0.5 / 1" />
+                <div className="flex h-11 rounded-[var(--r-utility)] ring-hairline overflow-hidden">
+                  {(['0.5', '1'] as const).map((opt) => {
+                    const active = draft.step === opt;
+                    return (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => setDraft({ ...draft, step: opt })}
+                        className={cn(
+                          'press flex-1 text-h3 tabular-nums',
+                          active
+                            ? 'bg-[var(--c-action)] text-[var(--c-action-fg)] font-semibold'
+                            : 'bg-[var(--c-surface)] text-[var(--c-fg-muted)]',
+                        )}
+                      >
+                        {opt}
+                      </button>
+                    );
+                  })}
+                </div>
               </Field>
             </div>
             <Field label={i18n.t('admin.field.code')}>

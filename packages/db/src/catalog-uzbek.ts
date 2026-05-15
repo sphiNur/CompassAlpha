@@ -55,7 +55,20 @@ export interface CatalogSku {
   /** Optional purchase notes (e.g. "按包,通常 10 支"). */
   description?: { zh?: string; en?: string; ru?: string; uz?: string };
   unit: 'kg' | 'g' | 'L' | 'ml' | 'pcs' | 'pack' | 'pair' | 'bunch' | 'roll';
-  step: string;
+  /**
+   * UX granularity for +/- buttons. M3.14 (2026-05-16) restricts this
+   * to exactly '0.5' or '1'. The original catalog had 0.25 / 5 / 50 /
+   * 100 sprinkled in but those rendered as 0.25-kg increments in the
+   * UI that the procurer couldn't relate to real-world packaging.
+   *
+   * Mapping rule (applied in this file 2026-05-16):
+   *   - kg/L weigh-and-pay: '0.5'  (was 0.25 → 0.5; was 5 → 1)
+   *   - g spice/packaged:   '1'    (was 50 / 100 → 1, since the unit
+   *                                 stays g; ordering 50g packets just
+   *                                 means submitting qty=50)
+   *   - pcs / pair / bunch: '1'
+   */
+  step: '0.5' | '1';
   sortIndex: number;
 }
 
@@ -192,7 +205,7 @@ export const SKUS: CatalogSku[] = [
   sk({
     catSlug: 'produce', code: 'PRD_CHERRI',
     names: { zh: '圣女果', en: 'Cherry Tomato', ru: 'Черри', uz: 'Cherri' },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'produce', code: 'PRD_BODRING',
@@ -251,7 +264,7 @@ export const SKUS: CatalogSku[] = [
     },
     aliases: { zh: ['尖椒', '东干尖椒'] },
     description: { zh: '辣度比普通甜椒高,做凉菜或炒菜用' },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'produce', code: 'PRD_KARAM',
@@ -283,7 +296,7 @@ export const SKUS: CatalogSku[] = [
   sk({
     catSlug: 'produce', code: 'PRD_LOLO_ROSO',
     names: { zh: '紫叶生菜', en: 'Lollo Rosso', ru: 'Лоло Россо', uz: 'Lolo roso' },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'produce', code: 'PRD_RUKOLA',
@@ -324,13 +337,13 @@ export const SKUS: CatalogSku[] = [
   sk({
     catSlug: 'produce', code: 'PRD_CHESNOK',
     names: { zh: '大蒜', en: 'Garlic', ru: 'Чеснок', uz: 'Chesnok' },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'produce', code: 'PRD_IMBIR',
     names: { zh: '生姜', en: 'Ginger', ru: 'Имбирь', uz: 'Imbir' },
     aliases: { zh: ['姜'] },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'produce', code: 'PRD_LAVLAGI',
@@ -341,7 +354,7 @@ export const SKUS: CatalogSku[] = [
     catSlug: 'produce', code: 'PRD_REDISKA',
     names: { zh: '小红萝卜', en: 'Radish', ru: 'Редис', uz: 'Rediska' },
     aliases: { zh: ['樱桃萝卜'] },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'produce', code: 'PRD_SELDR',
@@ -379,13 +392,13 @@ export const SKUS: CatalogSku[] = [
     catSlug: 'produce', code: 'PRD_SHAMPINYON',
     names: { zh: '口蘑', en: 'Champignon Mushroom', ru: 'Шампиньоны', uz: 'Shanpinyon' },
     aliases: { zh: ['蘑菇', '白蘑菇'] },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'produce', code: 'PRD_TOK_BARGI',
     names: { zh: '葡萄叶', en: 'Grape Leaves', ru: 'Виноградные листья', uz: 'Tok bargi' },
     description: { zh: '做 dolma 用' },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'produce', code: 'PRD_BROKOLI',
@@ -431,7 +444,7 @@ export const SKUS: CatalogSku[] = [
   sk({
     catSlug: 'produce', code: 'PRD_LIMON',
     names: { zh: '柠檬', en: 'Lemon', ru: 'Лимон', uz: 'Limon' },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'produce', code: 'PRD_APELSIN',
@@ -441,12 +454,12 @@ export const SKUS: CatalogSku[] = [
   sk({
     catSlug: 'produce', code: 'PRD_KIVI',
     names: { zh: '猕猴桃', en: 'Kiwi', ru: 'Киви', uz: 'Kivi' },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'produce', code: 'PRD_QULUPNAY',
     names: { zh: '草莓', en: 'Strawberry', ru: 'Клубника', uz: 'Qulupnay' },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
 
   // --- 2. Meat & Poultry ---
@@ -505,7 +518,7 @@ export const SKUS: CatalogSku[] = [
     catSlug: 'meat', code: 'MEAT_QAZI',
     names: { zh: '马肉香肠', en: 'Qazi (Horse Sausage)', ru: 'Казы', uz: 'Qazi' },
     description: { zh: '传统乌兹别克熏马肉肠' },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'meat', code: 'MEAT_BUTUN_TOVUQ',
@@ -541,7 +554,7 @@ export const SKUS: CatalogSku[] = [
   sk({
     catSlug: 'meat', code: 'MEAT_DUMBA',
     names: { zh: '羊尾油', en: 'Lamb Tail Fat', ru: 'Курдюк', uz: 'Dumba' },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'meat', code: 'MEAT_QOY_CHARVI',
@@ -552,12 +565,12 @@ export const SKUS: CatalogSku[] = [
       uz: 'Qoy charvi',
     },
     description: { zh: '内脏脂肪膜,做 dolma/烤包用' },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'meat', code: 'MEAT_KOLBASA',
     names: { zh: '香肠(片装)', en: 'Sausage (Sliced)', ru: 'Колбаса (нарезка)', uz: 'Kolbasa' },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'meat', code: 'MEAT_VARYONNIY',
@@ -567,7 +580,7 @@ export const SKUS: CatalogSku[] = [
       ru: 'Варёно-копчёная колбаса',
       uz: 'Varyonniy',
     },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'meat', code: 'MEAT_KAPCHONNIY',
@@ -577,7 +590,7 @@ export const SKUS: CatalogSku[] = [
       ru: 'Копчёная колбаса',
       uz: 'Kapchonniy',
     },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'meat', code: 'MEAT_SASISKA_PACK',
@@ -635,17 +648,17 @@ export const SKUS: CatalogSku[] = [
       ru: 'Каймак',
       uz: 'Qaymoq',
     },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'dairy', code: 'DAIRY_SARIYOG',
     names: { zh: '黄油', en: 'Butter', ru: 'Сливочное масло', uz: "Sariyog'" },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'dairy', code: 'DAIRY_KREM_CHIZ',
     names: { zh: '奶油芝士', en: 'Cream Cheese', ru: 'Крем-чиз', uz: 'Krem chiz' },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'dairy', code: 'DAIRY_TVORIG',
@@ -655,27 +668,27 @@ export const SKUS: CatalogSku[] = [
   sk({
     catSlug: 'dairy', code: 'DAIRY_SIR_PARMEZAN',
     names: { zh: '帕尔马奶酪', en: 'Parmesan', ru: 'Пармезан', uz: 'Sir parmezan' },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'dairy', code: 'DAIRY_SIR_CHEDDAR',
     names: { zh: '切达奶酪', en: 'Cheddar', ru: 'Чеддер', uz: 'Sir cheddar' },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'dairy', code: 'DAIRY_MOTSARELLA',
     names: { zh: '马苏里拉', en: 'Mozzarella', ru: 'Моцарелла', uz: 'Motsarella' },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'dairy', code: 'DAIRY_FETAKSA',
     names: { zh: '菲达奶酪', en: 'Feta', ru: 'Фета', uz: 'Fetaksa' },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'dairy', code: 'DAIRY_BRINZA',
     names: { zh: '布林扎奶酪', en: 'Brynza', ru: 'Брынза', uz: 'Brinza' },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'dairy', code: 'DAIRY_CHIZBURGER_SIR',
@@ -693,7 +706,7 @@ export const SKUS: CatalogSku[] = [
     catSlug: 'dry-goods', code: 'DRY_GURUCH',
     names: { zh: '大米', en: 'Rice', ru: 'Рис', uz: 'Guruch' },
     description: { zh: '常见品种 Ilxom / Alanga 等。生产建议拆分,价格差异大' },
-    unit: 'kg', step: '5',
+    unit: 'kg', step: '1',
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_JAYDARI_UN',
@@ -703,7 +716,7 @@ export const SKUS: CatalogSku[] = [
       ru: 'Деревенская мука',
       uz: 'Jaydari un',
     },
-    unit: 'kg', step: '5',
+    unit: 'kg', step: '1',
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_JOXORI_UNI',
@@ -728,7 +741,7 @@ export const SKUS: CatalogSku[] = [
   sk({
     catSlug: 'dry-goods', code: 'DRY_ZVYOZDOCHKA',
     names: { zh: '八角', en: 'Star Anise', ru: 'Бадьян', uz: 'Zvyozdochka' },
-    unit: 'g', step: '50',
+    unit: 'g', step: '1',
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_SEDANA',
@@ -740,7 +753,7 @@ export const SKUS: CatalogSku[] = [
     },
     aliases: { zh: ['黑芝麻调料'] },
     description: { zh: '撒在馕饼表面' },
-    unit: 'g', step: '50',
+    unit: 'g', step: '1',
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_MOSH',
@@ -790,7 +803,7 @@ export const SKUS: CatalogSku[] = [
   sk({
     catSlug: 'dry-goods', code: 'DRY_NOVOT',
     names: { zh: '结晶冰糖', en: 'Rock Sugar (Nabat)', ru: 'Набат', uz: 'Novot' },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_ASAL',
@@ -805,7 +818,7 @@ export const SKUS: CatalogSku[] = [
   sk({
     catSlug: 'dry-goods', code: 'DRY_DROJA',
     names: { zh: '酵母', en: 'Yeast', ru: 'Дрожжи', uz: 'Droja' },
-    unit: 'g', step: '100',
+    unit: 'g', step: '1',
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_KRAXMAL',
@@ -815,7 +828,7 @@ export const SKUS: CatalogSku[] = [
   sk({
     catSlug: 'dry-goods', code: 'DRY_KUNJUT',
     names: { zh: '芝麻', en: 'Sesame Seeds', ru: 'Кунжут', uz: 'Kunjut' },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_YOG',
@@ -891,17 +904,17 @@ export const SKUS: CatalogSku[] = [
       ru: 'Наршараб',
       uz: 'Narsharab',
     },
-    unit: 'L', step: '0.25',
+    unit: 'L', step: '0.5',
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_ZIRA',
     names: { zh: '孜然', en: 'Cumin', ru: 'Зира', uz: 'Zira' },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_MURUCH',
     names: { zh: '胡椒粉', en: 'Black Pepper Ground', ru: 'Молотый перец', uz: 'Muruch' },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_KASHNICH_URUGI',
@@ -911,32 +924,32 @@ export const SKUS: CatalogSku[] = [
       ru: 'Семена кориандра',
       uz: "Kashnich urug'i",
     },
-    unit: 'g', step: '100',
+    unit: 'g', step: '1',
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_ARPABODIYON',
     names: { zh: '茴香', en: 'Fennel', ru: 'Фенхель', uz: 'Arpabodiyon' },
-    unit: 'g', step: '50',
+    unit: 'g', step: '1',
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_LAVR_BARGI',
     names: { zh: '月桂叶', en: 'Bay Leaves', ru: 'Лавровый лист', uz: 'Lavr bargi' },
-    unit: 'g', step: '50',
+    unit: 'g', step: '1',
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_KORITSA',
     names: { zh: '肉桂', en: 'Cinnamon', ru: 'Корица', uz: 'Koritsa' },
-    unit: 'g', step: '50',
+    unit: 'g', step: '1',
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_SUMOK',
     names: { zh: '漆树粉', en: 'Sumac', ru: 'Сумах', uz: 'Sumok' },
-    unit: 'g', step: '100',
+    unit: 'g', step: '1',
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_KARKADE',
     names: { zh: '洛神花', en: 'Hibiscus (Karkade)', ru: 'Каркаде', uz: 'Karkade' },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_TURK_KOFESI',
@@ -946,7 +959,7 @@ export const SKUS: CatalogSku[] = [
       ru: 'Турецкий кофе',
       uz: 'Turk kofesi',
     },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_TUNES_KANSERVA',
@@ -971,7 +984,7 @@ export const SKUS: CatalogSku[] = [
       ru: 'Кедровые орехи',
       uz: 'Kedroviy orex',
     },
-    unit: 'kg', step: '0.25',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_MAYIZ_REGULAR',

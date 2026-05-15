@@ -235,9 +235,22 @@ export function QtyControl({
 
 /**
  * Built-in quick-pick sheet that opens when the value display is
- * tapped (M3.12-D). Two paths in:
+ * tapped (M3.12-D, M3.14-C).
+ *
+ * Paths in:
  *   1. Tap a preset chip → onPick(value) → sheet closes
- *   2. Type into the custom input → tap Set → onPick(value) → close
+ *   2. Type into the custom input → confirm via Telegram MainButton
+ *      (or fallback in-sheet Set button outside Telegram) → onPick →
+ *      close
+ *
+ * M3.14-C (2026-05-16): the in-sheet Set button is replaced by
+ * Telegram's MainButton when the WebApp SDK is present. The user
+ * called this out — "set quantity 页面不需要单独的set按钮，只需要将
+ * telegram的主按钮合理的利用". The MainButton labels itself "Set N kg"
+ * mirroring the previous button's text, toggles active/inactive with
+ * the draft-differs predicate, and gets save/restored against the
+ * parent page's MainButton state so closing the sheet hands the
+ * button back to the page (Submit / Confirm / etc.) untouched.
  *
  * Presets default to a step-aware ladder (defaultPresets below), but
  * the caller can override via QtyControl.pickPresets when a SKU has
@@ -281,6 +294,23 @@ function QtyQuickPickSheet({
   }, [draft, min, max, step]);
   const draftDiffers = sanitizedDraft !== null && sanitizedDraft !== current;
 
+  const setLabel =
+    'Set ' +
+    (sanitizedDraft !== null ? formatQty(sanitizedDraft, step) : '—') +
+    (unit ? ' ' + unit : '');
+
+  // M3.14-C: drive Telegram's MainButton from inside the sheet when
+  // the SDK is present. Falls back to the in-sheet <Button> below if
+  // we're outside Telegram (web preview, jest, storybook).
+  const hasTelegramMainButton = useTelegramMainButton({
+    open,
+    text: setLabel,
+    active: draftDiffers,
+    onClick: () => {
+      if (sanitizedDraft !== null) onPick(sanitizedDraft);
+    },
+  });
+
   return (
     <Sheet
       open={open}
@@ -288,18 +318,24 @@ function QtyQuickPickSheet({
       title={title ?? 'Set quantity'}
       description={unit ? `Unit: ${unit}` : undefined}
       footer={
-        <SheetFooter>
-          <Button
-            block
-            disabled={!draftDiffers}
-            onClick={() => {
-              if (sanitizedDraft !== null) onPick(sanitizedDraft);
-            }}
-          >
-            Set {sanitizedDraft !== null ? formatQty(sanitizedDraft, step) : '—'}
-            {unit ? ' ' + unit : ''}
-          </Button>
-        </SheetFooter>
+        // When Telegram is driving the MainButton, the in-sheet footer
+        // is empty — the system button at the bottom of the WebApp
+        // viewport is the confirmation affordance. Outside Telegram
+        // (preview / desktop), keep the fallback button visible so the
+        // sheet remains usable.
+        hasTelegramMainButton ? null : (
+          <SheetFooter>
+            <Button
+              block
+              disabled={!draftDiffers}
+              onClick={() => {
+                if (sanitizedDraft !== null) onPick(sanitizedDraft);
+              }}
+            >
+              {setLabel}
+            </Button>
+          </SheetFooter>
+        )
       }
     >
       <div className="flex flex-col gap-3 py-3">
@@ -349,6 +385,122 @@ function QtyQuickPickSheet({
       </div>
     </Sheet>
   );
+}
+
+// ──────────────────────────────────────────────────────────────────
+// Telegram MainButton override (M3.14-C, 2026-05-16)
+// ──────────────────────────────────────────────────────────────────
+//
+// Hook the sheet uses to temporarily commandeer Telegram's MainButton
+// while it's open. Three-step lifecycle:
+//
+//   1. On open: snapshot the live button (text, isVisible, isActive),
+//      bind our click handler, override text, ensure visible, set
+//      active state.
+//   2. While open: update text + active state as the draft changes.
+//      We do NOT touch visibility on this path — the override stays
+//      on for the duration of the sheet.
+//   3. On close: deregister click handler, restore the snapshot
+//      (setText back, hide if it was hidden, restore active state).
+//      Importantly this keeps the parent page's `usePageMainButton`
+//      hook in a consistent state — the parent's `lastTextRef` etc.
+//      reflected whatever the live state was before we entered, and
+//      we leave the live state matching that.
+//
+// Returns `true` if the sheet is inside Telegram and the MainButton
+// is driving the confirm action (so the caller should hide the
+// in-sheet fallback button). Returns `false` outside Telegram —
+// caller renders the in-sheet button as before.
+//
+// The hook is self-contained in @compass/ui because Sheet already
+// lazily reaches into `window.Telegram?.WebApp?.BackButton` with the
+// same defensive optionality. Keeping MainButton wiring in the same
+// place means the QtyControl works in any host (apps/web today,
+// future admin tool, future kitchen display) without re-implementing
+// the dance.
+type TgMainButton = {
+  text?: string;
+  isVisible?: boolean;
+  isActive?: boolean;
+  setText: (s: string) => void;
+  show: () => void;
+  hide: () => void;
+  enable: () => void;
+  disable: () => void;
+  onClick: (cb: () => void) => void;
+  offClick: (cb: () => void) => void;
+};
+
+function getMainButton(): TgMainButton | null {
+  if (typeof window === 'undefined') return null;
+  const w = window as { Telegram?: { WebApp?: { MainButton?: TgMainButton } } };
+  return w.Telegram?.WebApp?.MainButton ?? null;
+}
+
+function useTelegramMainButton({
+  open,
+  text,
+  active,
+  onClick,
+}: {
+  open: boolean;
+  text: string;
+  active: boolean;
+  onClick: () => void;
+}): boolean {
+  // Keep the latest click handler behind a ref so we can bind ONCE
+  // per open-cycle without re-registering every render. Re-registering
+  // produces a brief visible blip on iOS Telegram.
+  const onClickRef = useRef(onClick);
+  onClickRef.current = onClick;
+  // Snapshot of pre-override state, restored on close.
+  const snapshotRef = useRef<{ text: string; visible: boolean; active: boolean } | null>(null);
+
+  const driving = open && !!getMainButton();
+
+  // Open/close lifecycle. Take/release the MainButton in lockstep with
+  // `open`. Active-state and text changes ride on the separate effect
+  // below so they don't trigger a snapshot reset mid-sheet.
+  useEffect(() => {
+    const mb = getMainButton();
+    if (!open || !mb) return;
+
+    snapshotRef.current = {
+      text: mb.text ?? '',
+      visible: !!mb.isVisible,
+      active: !!mb.isActive,
+    };
+
+    const handler = () => onClickRef.current();
+    mb.onClick(handler);
+    mb.show();
+
+    return () => {
+      mb.offClick(handler);
+      const snap = snapshotRef.current;
+      if (snap) {
+        // Restore text first so the brief "between" frame on iOS
+        // doesn't flash our override.
+        mb.setText(snap.text || '');
+        if (!snap.visible) mb.hide();
+        if (snap.active) mb.enable();
+        else mb.disable();
+      }
+      snapshotRef.current = null;
+    };
+  }, [open]);
+
+  // Text + active updates while open. Skipped outside Telegram.
+  useEffect(() => {
+    if (!open) return;
+    const mb = getMainButton();
+    if (!mb) return;
+    mb.setText(text);
+    if (active) mb.enable();
+    else mb.disable();
+  }, [open, text, active]);
+
+  return driving;
 }
 
 /**

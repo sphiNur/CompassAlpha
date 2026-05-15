@@ -450,13 +450,20 @@ const NamesSchema = z
   })
   .strict();
 
-// step accepts decimals 0.001 — 999.999 but EXCLUDES zero. The previous
-// regex `^\d+(\.\d{1,3})?$` matched '0', '0.0', '0.000' which would
-// produce divide-by-zero in the qty step rounding logic.
-const StepSchema = z
-  .string()
-  .regex(/^\d+(\.\d{1,3})?$/, 'invalid step')
-  .refine((s) => Number(s) > 0, 'step must be > 0');
+// M3.14 (2026-05-16): step is restricted to exactly '0.5' or '1'.
+//
+// Earlier the schema accepted any positive decimal — but field
+// operators ended up with SKU rows that stepped by 0.25, 0.1, 5,
+// 50, 100 etc., depending on whoever filled the form. The QtyControl
+// UI then rendered "0.25" / "0.5" / "0.75" increments that the
+// procurer had no way to relate to real-world packaging. Snapping
+// to 0.5 (kg/L, "weigh-and-pay" goods) or 1 (pcs/pair, countable
+// goods) makes the +/- buttons readable at a glance.
+//
+// Migration: catalog-uzbek.ts seed and the prod data backfill both
+// coerce existing rows; this schema is the gate that keeps future
+// writes clean.
+const StepSchema = z.enum(['0.5', '1']);
 
 const StoreCreateInputSchema = z.object({
   name: z.string().min(1).max(200),
