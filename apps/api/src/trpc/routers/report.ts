@@ -19,6 +19,15 @@
  *     A finer-grained `finance.view` permission is a follow-up if/when
  *     the finance team gets separate Telegram accounts.
  *
+ *   - SCOPE (M3.7, 2026-05-15): TWO modes mirroring run.previewCreatable.
+ *     `org.admin` holders (super_admin, admin, future org_chef) see
+ *     ALL stores' purchase lines. Store-tier users with `users.manage`
+ *     (e.g. manager-of-A) get filtered by their bound stores —
+ *     getActorStoreIds returns only the stores they admin and the
+ *     query intersects with that list. Earlier this gate was just
+ *     "has users.manage" → any user with that perm saw the entire
+ *     org's finance, including stores they had no authority over.
+ *
  * Why server-side, not client-side aggregation:
  *
  *   The raw rows live behind RLS — we MUST go through the API so the
@@ -32,6 +41,7 @@ import { z } from 'zod';
 import { DateStringSchema, UuidSchema } from '@compass/contracts';
 import { authedProcedure, router } from '../trpc';
 import { TRPCError } from '@trpc/server';
+import { getActorStoreIds } from '../../services/storeScope';
 
 const PurchaseLinesInputSchema = z.object({
   /** Inclusive start date (YYYY-MM-DD), matched against market_runs_v.runDate. */
@@ -67,6 +77,41 @@ export const reportRouter = router({
       }
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
+        // M3.7: store-scope filter. Skip for org.admin holders (they
+        // can see the entire chain's finance). For store-tier users
+        // with `users.manage` (manager-of-A etc.), compute their
+        // bound stores and intersect with the query. If the user
+        // explicitly passed input.storeId AND it's outside their set,
+        // throw notAssignedToStore so they get a clear error
+        // (consistent with sales.list M3.1 behaviour).
+        const allowedStoreIds = ctx.session!.permissions.has('org.admin')
+          ? null
+          : await getActorStoreIds(
+              tx,
+              ctx.session!.memberId,
+              ctx.session!.permissions,
+            );
+        if (allowedStoreIds !== null && input.storeId !== undefined) {
+          if (!allowedStoreIds.includes(input.storeId)) {
+            throw new TRPCError({
+              code: 'FORBIDDEN',
+              message: 'auth.errors.notAssignedToStore',
+            });
+          }
+        }
+        // Sentinel UUID for the "user has zero stores" case so the
+        // SQL IN-list never matches anything (an empty IN-list is a
+        // PG syntax error). For users with stores, the IN-list is
+        // straightforward.
+        const allowedSql =
+          allowedStoreIds === null
+            ? sql``
+            : allowedStoreIds.length === 0
+              ? sql`AND ris.store_id = '00000000-0000-0000-0000-000000000000'::uuid`
+              : sql`AND ris.store_id IN (${sql.join(
+                  allowedStoreIds.map((id) => sql`${id}::uuid`),
+                  sql`, `,
+                )})`;
         // Pull every per-store split for purchased rows in the date
         // window. We join through run → run_item → run_item_stores so
         // each output row already has the store-scoped qty (the only
@@ -94,6 +139,7 @@ export const reportRouter = router({
             AND mr.status IN ('purchasing', 'delivering', 'finished')
             ${input.storeId ? sql`AND ris.store_id = ${input.storeId}` : sql``}
             ${input.paymentMethod ? sql`AND ri.payment_method = ${input.paymentMethod}` : sql``}
+            ${allowedSql}
           ORDER BY mr.run_date DESC, mr.run_index DESC, ri.sku_id
         `)) as unknown as Array<{
           run_id: string;
@@ -143,6 +189,31 @@ export const reportRouter = router({
       }
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
+        // M3.7: same store-scope split as purchaseLines (above).
+        const allowedStoreIds = ctx.session!.permissions.has('org.admin')
+          ? null
+          : await getActorStoreIds(
+              tx,
+              ctx.session!.memberId,
+              ctx.session!.permissions,
+            );
+        if (allowedStoreIds !== null && input.storeId !== undefined) {
+          if (!allowedStoreIds.includes(input.storeId)) {
+            throw new TRPCError({
+              code: 'FORBIDDEN',
+              message: 'auth.errors.notAssignedToStore',
+            });
+          }
+        }
+        const allowedSql =
+          allowedStoreIds === null
+            ? sql``
+            : allowedStoreIds.length === 0
+              ? sql`AND ris.store_id = '00000000-0000-0000-0000-000000000000'::uuid`
+              : sql`AND ris.store_id IN (${sql.join(
+                  allowedStoreIds.map((id) => sql`${id}::uuid`),
+                  sql`, `,
+                )})`;
         const rows = (await tx.execute(sql`
           SELECT
             ri.payment_method AS payment_method,
@@ -160,6 +231,7 @@ export const reportRouter = router({
             AND ri.status = 'purchased'
             AND mr.status IN ('purchasing', 'delivering', 'finished')
             ${input.storeId ? sql`AND ris.store_id = ${input.storeId}` : sql``}
+            ${allowedSql}
           GROUP BY ri.payment_method
         `)) as unknown as Array<{
           payment_method: string;

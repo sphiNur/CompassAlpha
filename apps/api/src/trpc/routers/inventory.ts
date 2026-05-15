@@ -45,7 +45,10 @@ import {
   UuidSchema,
 } from '@compass/contracts';
 import { authedProcedure, router } from '../trpc';
-import { effectivePermissionsForStore } from '../../services/storeScope';
+import {
+  assertActorAssignedToStore,
+  effectivePermissionsForStore,
+} from '../../services/storeScope';
 
 function requireInventoryAdjust(perms: ReadonlySet<string>): void {
   if (!perms.has('inventory.adjust') && !perms.has('users.manage')) {
@@ -87,6 +90,17 @@ export const inventoryRouter = router({
    */
   levels: authedProcedure.input(ListInputSchema).query(async ({ ctx, input }) => {
     return ctx.withOrg(async (tx) => {
+      // M3.7 (2026-05-15): store-scope assertion. Pre-fix, this query
+      // took input.storeId and returned on-hand for any guessed UUID
+      // — a Store A cashier could read Store B's stock levels. Mirrors
+      // the sales.list / sales.record gates from M3.1. Admins (with
+      // `users.manage`) bypass via the helper.
+      await assertActorAssignedToStore(
+        tx,
+        ctx.session!.memberId,
+        input.storeId,
+        ctx.session!.permissions,
+      );
       const orgId = ctx.session!.orgId;
       const rows = (await tx.execute(sql`
         SELECT
@@ -123,6 +137,15 @@ export const inventoryRouter = router({
     .input(z.object({ storeId: UuidSchema, skuId: UuidSchema }))
     .query(async ({ ctx, input }) => {
       return ctx.withOrg(async (tx) => {
+        // M3.7: same gate as inventory.levels — without it, an actor
+        // bound to Store A could read movement history for Store B
+        // by passing its UUID.
+        await assertActorAssignedToStore(
+          tx,
+          ctx.session!.memberId,
+          input.storeId,
+          ctx.session!.permissions,
+        );
         const orgId = ctx.session!.orgId;
         const rows = await tx
           .select({
@@ -158,6 +181,21 @@ export const inventoryRouter = router({
     .input(StocktakeInputSchema)
     .mutation(async ({ ctx, input }) => {
       requireInventoryAdjust(ctx.session!.permissions);
+      // M3.7 (2026-05-15): store-scope assertion. The flat permission
+      // check only says "this user can adjust inventory somewhere".
+      // Without the assertion below, a manager-of-A with
+      // `inventory.adjust` could call stocktake({storeId: <Store B>})
+      // and post a delta to Store B's ledger. The effective-perm
+      // override check below isn't enough — it composes the perm set
+      // with per-store overrides but doesn't enforce store binding.
+      await ctx.withOrg((tx) =>
+        assertActorAssignedToStore(
+          tx,
+          ctx.session!.memberId,
+          input.storeId,
+          ctx.session!.permissions,
+        ),
+      );
       // Per-store override check: an admin may have denied the actor
       // `inventory.adjust` specifically for this store.
       const effective = await ctx.withOrg((tx) =>
@@ -224,6 +262,15 @@ export const inventoryRouter = router({
     .input(WastageInputSchema)
     .mutation(async ({ ctx, input }) => {
       requireInventoryAdjust(ctx.session!.permissions);
+      // M3.7: same gate as stocktake (above).
+      await ctx.withOrg((tx) =>
+        assertActorAssignedToStore(
+          tx,
+          ctx.session!.memberId,
+          input.storeId,
+          ctx.session!.permissions,
+        ),
+      );
       const effective = await ctx.withOrg((tx) =>
         effectivePermissionsForStore(
           tx,

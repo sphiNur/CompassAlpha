@@ -916,6 +916,181 @@ describe('M3.2 store manager cannot edit org-wide dishes', () => {
 // catalog, member-remove). If any of these regress to allow manager,
 // the underlying gate at that line broke.
 
+// ---------- M3.7: inventory + finance reports cannot leak cross-store ---
+//
+// Audit found two procedures that took an input.storeId but never
+// verified the actor was bound to that store:
+//   - inventory.levels: read on-hand stock
+//   - inventory.recentMovements: read movement history
+//   - inventory.stocktake / recordWastage: write to inventory ledger
+//     (had perm check + effective-perm override but no MSA gate)
+//   - report.purchaseLines / totals: finance roll-ups gated on
+//     users.manage; manager-of-A could read Store B's finance because
+//     users.manage doesn't imply per-store scope
+//
+// All five procedures now go through assertActorAssignedToStore OR a
+// getActorStoreIds intersect (for the org-tier-vs-store-tier split
+// on finance reports).
+
+describe('M3.7 inventory cannot be read for a foreign store', () => {
+  test.skipIf(!SHOULD_RUN)(
+    'staff bound to Store A cannot inventory.levels(storeId=B)',
+    async () => {
+      const fx = fix!;
+      const storeA = await makeStore(`InvA-${Math.random()}`);
+      const storeB = await makeStore(`InvB-${Math.random()}`);
+      const staffUser = await makeUser('A-Staff-Inv');
+      const staffMember = await makeMember(staffUser.id);
+      await bindRole(staffMember, fx.staffRoleId, {
+        type: 'store',
+        storeId: storeA.id,
+      });
+      const ctx = buildCtx(getDb(), await sessionFor(staffMember, staffUser.id));
+      const caller = appRouter.createCaller(ctx);
+
+      // OWN store: passes (returns whatever inventory is there).
+      const own = await caller.inventory.levels({ storeId: storeA.id });
+      expect(Array.isArray(own)).toBe(true);
+
+      // FOREIGN store: must throw notAssignedToStore. Pre-M3.7 this
+      // returned Store B's full on-hand list.
+      let threw = false;
+      try {
+        await caller.inventory.levels({ storeId: storeB.id });
+      } catch (err) {
+        threw = true;
+        expect((err as Error).message).toContain('notAssignedToStore');
+      }
+      expect(threw).toBe(true);
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'manager bound to Store A cannot inventory.stocktake(storeId=B)',
+    async () => {
+      // The manager seed in this fixture doesn't include
+      // inventory.adjust (the real seed adds it in M2.0a; the test
+      // fixture is leaner). Grant it via the role_permissions table
+      // to exercise the path. The gate must fire BEFORE the perm
+      // check — order matters because we want the FORBIDDEN to be
+      // notAssignedToStore, not cannotAdjust.
+      const fx = fix!;
+      const db = getDb();
+      await db
+        .insert(s.permissions)
+        .values({ key: 'inventory.adjust', description: 'inventory adjust' })
+        .onConflictDoNothing();
+      await db
+        .insert(s.rolePermissions)
+        .values({ roleId: fx.managerRoleId, permissionKey: 'inventory.adjust' })
+        .onConflictDoNothing();
+      const storeA = await makeStore(`StockA-${Math.random()}`);
+      const storeB = await makeStore(`StockB-${Math.random()}`);
+      const mgrUser = await makeUser('A-Mgr-Stocktake');
+      const mgrMember = await makeMember(mgrUser.id);
+      await bindRole(mgrMember, fx.managerRoleId, {
+        type: 'store',
+        storeId: storeA.id,
+      });
+      const ctx = buildCtx(db, await sessionFor(mgrMember, mgrUser.id));
+      const caller = appRouter.createCaller(ctx);
+
+      // Real SKU UUID doesn't need to exist — the store-gate fires
+      // before the SKU is looked up by the stocktake handler.
+      const fakeSku = '00000000-0000-0000-0000-000000000000';
+      let threw = false;
+      try {
+        await caller.inventory.stocktake({
+          storeId: storeB.id,
+          skuId: fakeSku,
+          target: '0',
+        });
+      } catch (err) {
+        threw = true;
+        expect((err as Error).message).toContain('notAssignedToStore');
+      }
+      expect(threw).toBe(true);
+    },
+  );
+});
+
+describe('M3.7 finance reports filter by actor bindings unless org.admin', () => {
+  test.skipIf(!SHOULD_RUN)(
+    'manager-of-A passing storeId=B to report.purchaseLines throws notAssignedToStore',
+    async () => {
+      const fx = fix!;
+      const db = getDb();
+      const storeA = await makeStore(`FinA-${Math.random()}`);
+      const storeB = await makeStore(`FinB-${Math.random()}`);
+      const mgrUser = await makeUser('A-Mgr-Finance');
+      const mgrMember = await makeMember(mgrUser.id);
+      await bindRole(mgrMember, fx.managerRoleId, {
+        type: 'store',
+        storeId: storeA.id,
+      });
+      // Manager seed already carries users.manage (line 159 in this
+      // fixture), so the requireAdmin-style gate at the top of
+      // report.purchaseLines passes — what kicks in next is the
+      // M3.7 store-scope filter.
+      const ctx = buildCtx(db, await sessionFor(mgrMember, mgrUser.id));
+      const caller = appRouter.createCaller(ctx);
+
+      let threw = false;
+      try {
+        await caller.report.purchaseLines({
+          startDate: '2026-01-01',
+          endDate: '2026-12-31',
+          storeId: storeB.id,
+        });
+      } catch (err) {
+        threw = true;
+        expect((err as Error).message).toContain('notAssignedToStore');
+      }
+      expect(threw).toBe(true);
+
+      // Sanity: passing OWN storeId returns a well-formed list (likely
+      // empty, but no throw).
+      const own = await caller.report.purchaseLines({
+        startDate: '2026-01-01',
+        endDate: '2026-12-31',
+        storeId: storeA.id,
+      });
+      expect(Array.isArray(own)).toBe(true);
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'manager-of-A calling report.purchaseLines without storeId is auto-filtered to bound stores',
+    async () => {
+      const fx = fix!;
+      const db = getDb();
+      const storeA = await makeStore(`FinA2-${Math.random()}`);
+      const storeB = await makeStore(`FinB2-${Math.random()}`);
+      const mgrUser = await makeUser('A-Mgr-Finance2');
+      const mgrMember = await makeMember(mgrUser.id);
+      await bindRole(mgrMember, fx.managerRoleId, {
+        type: 'store',
+        storeId: storeA.id,
+      });
+      const ctx = buildCtx(db, await sessionFor(mgrMember, mgrUser.id));
+      const caller = appRouter.createCaller(ctx);
+
+      // No storeId in the query → server-side allowedStoreIds filter
+      // kicks in. Manager only bound to A, so any returned rows must
+      // have storeId === storeA.id. Pre-M3.7 the result would include
+      // every store's purchases org-wide.
+      const lines = await caller.report.purchaseLines({
+        startDate: '2026-01-01',
+        endDate: '2026-12-31',
+      });
+      for (const row of lines) {
+        expect(row.storeId).toBe(storeA.id);
+        expect(row.storeId).not.toBe(storeB.id);
+      }
+    },
+  );
+});
+
 // ---------- M3.6: notification recipients are store-scoped ---------------
 //
 // Before M3.6 the order.submitted notification fan-out used
