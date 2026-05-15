@@ -354,6 +354,15 @@ export function ApprovalPage() {
       <Sheet
         open={!!rejectFor}
         onOpenChange={(open) => {
+          // M3.10: block dismiss while the reject mutation is in flight.
+          // Pre-M3.10 a swipe-down here wiped both rejectFor and
+          // rejectReason in local state; if the mutation then failed,
+          // the operator saw an error toast but their typed reason was
+          // gone and they had to re-author it. Now the sheet stays
+          // pinned until the mutation settles — onSuccess naturally
+          // closes via setRejectFor(null), onError leaves the sheet
+          // open with the reason intact for a quick retry.
+          if (!open && reject.isPending) return;
           if (!open) {
             setRejectFor(null);
             setRejectReason('');

@@ -2958,7 +2958,16 @@ function ConfirmSheet({
   return (
     <Sheet
       open={!!config}
-      onOpenChange={(open) => !open && onCancel()}
+      onOpenChange={(open) => {
+        // M3.10: block dismiss while the wrapped mutation is in flight.
+        // Without this the operator could swipe-down (or tap-outside)
+        // mid-mutation, the local reason text would clear on cancel,
+        // and a subsequent failure would arrive as an error toast with
+        // no way to retry without re-typing the reason. The sheet
+        // naturally closes via the mutation's onSuccess callback.
+        if (!open && config?.isPending) return;
+        if (!open) onCancel();
+      }}
       title={config?.title ?? ''}
       footer={
         hasFooter ? (

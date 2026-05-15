@@ -429,7 +429,17 @@ export function ConfirmPage() {
 
       <Sheet
         open={!!issueOpen}
-        onOpenChange={(open) => !open && setIssueOpen(null)}
+        onOpenChange={(open) => {
+          // M3.10: pin the sheet open while a confirm mutation is in
+          // flight. The receiver may have typed an issue note + attached
+          // a photo; if the network is slow and they swipe-down, the
+          // local state (issueOpen / issueNote / issuePhoto) clears and
+          // a subsequent failure produces an error toast with all that
+          // work lost. Mutation success closes the sheet naturally via
+          // confirmItem.onSuccess setIssueOpen(null).
+          if (!open && confirmItem.isPending) return;
+          if (!open) setIssueOpen(null);
+        }}
         title={i18n.t('confirm.issue.markAs', {
           status: issueOpen
             ? i18n.t(('confirm.status.' + issueOpen.status) as Parameters<typeof i18n.t>[0])

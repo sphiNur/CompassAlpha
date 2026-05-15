@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Banner,
   Button,
@@ -629,7 +629,21 @@ export function OrderPage() {
           aria-label={i18n.t('order.search.placeholder')}
         />
         <ChipBar ariaLabel={i18n.t('order.categoriesAriaLabel')} className="-mx-4 px-4 py-0">
-          <Chip selected={activeCategory === null} onClick={() => setActiveCategory(null)}>
+          <Chip
+            selected={activeCategory === null}
+            onClick={() => {
+              // M3.10 (2026-05-16): tapping "All" after a category
+              // filter previously left any active search query in
+              // place. If the user had typed "tomato" while looking
+              // at Fruits and then tapped All to "reset", the search
+              // still filtered the (now-broader) list and they often
+              // saw an empty result with no obvious way to clear.
+              // Clearing search alongside the category reset matches
+              // the natural "show me everything" intent.
+              setActiveCategory(null);
+              setSearchQuery('');
+            }}
+          >
             {i18n.t('order.categories.all')}
           </Chip>
           <DataState query={categoriesQuery}>
@@ -725,58 +739,23 @@ export function OrderPage() {
                 />
               </li>
             ) : null}
-            {filteredSkus.map((sku) => {
-              const myQty = myQtyBySku.get(sku.id) ?? 0;
-              const totalQty = totalQtyBySku.get(sku.id) ?? 0;
-              const contributors = contributorsBySku.get(sku.id) ?? [];
-              const otherContribs = contributors.filter((c) => c.memberId !== myMemberId);
-              return (
-                <li
-                  key={sku.id}
-                  className="flex items-center justify-between border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0"
-                >
-                  <div className="min-w-0 flex-1 pr-3">
-                    {/* M2.2: list-row primary text unified to text-body
-                        font-semibold across pages. Was text-h3 (15 px)
-                        which read 1 px larger than RunPage's body (14)
-                        for the same role — the "one big, one small"
-                        feeling between Order and Run pages came from
-                        this single class. */}
-                    <div className="truncate text-body font-semibold leading-tight text-[var(--c-fg)]">
-                      {productName(sku)}
-                    </div>
-                    <div className="mt-0.5 text-label leading-tight text-[var(--c-fg-muted)]">
-                      {sku.unit}
-                      {sku.suggestedQty
-                        ? ' · ' + i18n.t('order.suggested', { qty: sku.suggestedQty })
-                        : ''}
-                      {otherContribs.length > 0 && totalQty > 0 ? (
-                        <>
-                          {' · '}
-                          <span className="font-semibold text-[var(--c-fg)]">
-                            {i18n.t('order.totalQty', { qty: totalQty, unit: sku.unit })}
-                          </span>
-                          {' '}
-                          ({otherContribs.length + (myQty > 0 ? 1 : 0)})
-                        </>
-                      ) : null}
-                    </div>
-                  </div>
-                  <QtyControl
-                    value={myQty}
-                    step={Number(sku.step)}
-                    unit={sku.unit}
-                    disabled={isReadOnly}
-                    onChange={(next) => {
-                      // Goes through the debounced + serialized path
-                      // (handleQtyChange). The +/- ONLY edits MY
-                      // contribution row.
-                      handleQtyChange(currentStoreId, sku.id, String(next));
-                    }}
-                  />
-                </li>
-              );
-            })}
+            {filteredSkus.map((sku) => (
+              <SkuRow
+                key={sku.id}
+                sku={sku}
+                myQty={myQtyBySku.get(sku.id) ?? 0}
+                totalQty={totalQtyBySku.get(sku.id) ?? 0}
+                otherContribCount={
+                  (contributorsBySku.get(sku.id) ?? [])
+                    .filter((c) => c.memberId !== myMemberId).length
+                }
+                isReadOnly={isReadOnly}
+                storeId={currentStoreId}
+                productName={productName}
+                i18n={i18n}
+                onQtyChange={handleQtyChange}
+              />
+            ))}
           </ul>
         )}
       </DataState>
@@ -864,6 +843,92 @@ export function OrderPage() {
     </div>
   );
 }
+
+/**
+ * Memoized SKU row (M3.10, 2026-05-16).
+ *
+ * Previously the SKU list was inline `filteredSkus.map(sku => <li>…</li>)`
+ * inside OrderPage. Tapping +/- on any one row updated the tRPC cache
+ * via `utils.order.todaySession.setData`, which triggered a parent
+ * re-render — which then re-rendered ALL 187 rows in production
+ * (~2-3 ms each on slow iOS WebView = 400-500 ms of work for a single
+ * tap).
+ *
+ * Pulling the row into `React.memo` short-circuits all unaffected
+ * rows. The memo compares props shallowly; only the one row whose
+ * `myQty` / `totalQty` / `otherContribCount` changed re-renders. Other
+ * rows skip render entirely when the parent re-renders for unrelated
+ * reasons (search input typing, banner state change, etc.).
+ *
+ * Stability requirements for the props (so memo isn't busted):
+ *   - `productName`: useProductName() now memoizes by locale (M3.10
+ *     hook fix) so its reference is stable across renders.
+ *   - `onQtyChange`: already useCallback'd at handleQtyChange.
+ *   - `i18n`: useI18n() returns a useMemo'd object per locale.
+ *   - Other props are primitives or stable references.
+ */
+type SkuRowSku = {
+  id: string;
+  names: Record<string, string>;
+  unit: string;
+  step: string;
+  suggestedQty?: string | number | null;
+};
+
+const SkuRow = memo(function SkuRow({
+  sku,
+  myQty,
+  totalQty,
+  otherContribCount,
+  isReadOnly,
+  storeId,
+  productName,
+  i18n,
+  onQtyChange,
+}: {
+  sku: SkuRowSku;
+  myQty: number;
+  totalQty: number;
+  otherContribCount: number;
+  isReadOnly: boolean;
+  storeId: string;
+  productName: (item: { names: Record<string, string> | null | undefined }) => string;
+  i18n: ReturnType<typeof useI18n>;
+  onQtyChange: (storeId: string, skuId: string, qty: string) => void;
+}) {
+  return (
+    <li className="flex items-center justify-between border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0">
+      <div className="min-w-0 flex-1 pr-3">
+        <div className="truncate text-body font-semibold leading-tight text-[var(--c-fg)]">
+          {productName(sku)}
+        </div>
+        <div className="mt-0.5 text-label leading-tight text-[var(--c-fg-muted)]">
+          {sku.unit}
+          {sku.suggestedQty
+            ? ' · ' + i18n.t('order.suggested', { qty: sku.suggestedQty })
+            : ''}
+          {otherContribCount > 0 && totalQty > 0 ? (
+            <>
+              {' · '}
+              <span className="font-semibold text-[var(--c-fg)]">
+                {i18n.t('order.totalQty', { qty: totalQty, unit: sku.unit })}
+              </span>
+              {' '}
+              ({otherContribCount + (myQty > 0 ? 1 : 0)})
+            </>
+          ) : null}
+        </div>
+      </div>
+      <QtyControl
+        value={myQty}
+        step={Number(sku.step)}
+        unit={sku.unit}
+        disabled={isReadOnly}
+        onChange={(next) => onQtyChange(storeId, sku.id, String(next))}
+      />
+    </li>
+  );
+});
 
 interface ReviewTotal {
   skuId: string;

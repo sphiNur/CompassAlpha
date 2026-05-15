@@ -63,7 +63,18 @@ export function App() {
               if (code === 'UNAUTHORIZED' || code === 'FORBIDDEN') return false;
               return failureCount < 2;
             },
-            refetchOnWindowFocus: 'always',
+            // M3.10 (2026-05-16): was `'always'` which refetched every
+            // active query on every tab/focus switch. Inside Telegram
+            // WebView a user toggling back from the Settings sheet or
+            // a sub-page would burst 4–6 parallel refetches —
+            // ~30 kB of JSON per round-trip for noOp queries that were
+            // already fresh. The real-time hub (useRealtime hook)
+            // already invalidates the right queries on every domain
+            // event with a 400ms coalesce window, so window-focus
+            // refetches were redundant. Setting to false trades the
+            // belt-and-suspenders refetch for less bandwidth + fewer
+            // re-render bursts during normal tab switching.
+            refetchOnWindowFocus: false,
           },
           mutations: {
             retry: false,
