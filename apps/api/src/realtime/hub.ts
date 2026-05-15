@@ -108,6 +108,35 @@ class Hub {
   orgCount(): number {
     return this.subs.size;
   }
+
+  /**
+   * Broadcast an app-level keepalive to every connected sink across
+   * every org (M3.8, 2026-05-15). Called on a fixed interval from
+   * main.ts so idle WebSockets keep flowing bytes through edge
+   * proxies (Cloudflare, nginx) that otherwise close connections
+   * after ~60s of silence.
+   *
+   * Bun's ServerWebSocket.send is sync + non-blocking. A dead sink
+   * just throws inside the inner try; we swallow because the close()
+   * handler will run shortly after on the same socket and clean the
+   * Set entry. No per-org overhead when an org has no subs.
+   */
+  pingAll(): number {
+    if (this.subs.size === 0) return 0;
+    const payload = JSON.stringify({ type: 'ping', t: Date.now() });
+    let pinged = 0;
+    for (const set of this.subs.values()) {
+      for (const send of set) {
+        try {
+          send(payload);
+          pinged++;
+        } catch {
+          /* dead sink — will be cleaned up by the close handler */
+        }
+      }
+    }
+    return pinged;
+  }
 }
 
 export const hub = new Hub();

@@ -231,7 +231,7 @@ async function run() {
     }),
   );
   await context.route('**/trpc/system.health*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: { status: 'ok', db: true, redis: true, projectorLag: 0, version: 'smoke' } } }) }),
+    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: { status: 'ok', db: true, projectorLag: 0, version: 'smoke' } } }) }),
   );
   await context.route('**/trpc/system.recentLogs*', async (r) =>
     r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: [] } }) }),

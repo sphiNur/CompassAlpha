@@ -87,10 +87,16 @@ export const systemRouter = router({
     }
     const degraded =
       !dbOk || (outboxOldestSec !== null && outboxOldestSec > 300);
+    // M3.8 (2026-05-15): `redis` was previously a hardcoded `true` in
+    // the response, but no Redis client is ever instantiated in the
+    // codebase. ioredis is in package.json + REDIS_URL is reserved in
+    // env.ts as future-proofing (hub.ts comments mention M2 swapping
+    // to Redis pub/sub), but until that lands we don't pretend the
+    // field is meaningful. Dropped to stop misleading the
+    // DebugPage / monitoring dashboards.
     return {
       status: degraded ? ('degraded' as const) : ('ok' as const),
       db: dbOk,
-      redis: true,
       projectorLag: 0,
       outboxPending,
       outboxOldestSec,

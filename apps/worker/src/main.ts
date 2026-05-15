@@ -292,6 +292,29 @@ let stopped = false;
 const HEARTBEAT_MS = 60_000;
 let lastHeartbeat = Date.now();
 
+// M3.8 (2026-05-15): idempotency_keys cleanup cadence — once an hour.
+// The idempotency middleware caches a 24h TTL response per (key,
+// route, user). The table grows linearly with mutation volume and
+// has no cleanup elsewhere, so without this it would silently bloat
+// over months (a busy chain at 10k mutations / day = 240k rows after
+// the first month, fine; 2.4 M after a year, still fine; but the
+// expires_at index would carry stale rows forever). Cleaning hourly
+// keeps the working set at roughly 24h × mutation-rate.
+const IDEMPOTENCY_CLEANUP_MS = 60 * 60 * 1000;
+let lastIdempotencyCleanup = Date.now();
+
+async function cleanupIdempotencyKeys(): Promise<number> {
+  // Delete every row whose expires_at is in the past. The index
+  // idem_expires_idx makes this O(matches) not O(table). The DELETE
+  // returns deleted rows so we can log a one-line summary.
+  const r = (await db.execute(sql`
+    DELETE FROM sync.idempotency_keys
+    WHERE expires_at < NOW()
+    RETURNING key
+  `)) as unknown as Array<{ key: string }>;
+  return r.length;
+}
+
 async function loop() {
   while (!stopped) {
     try {
@@ -304,6 +327,20 @@ async function loop() {
       if (Date.now() - lastHeartbeat >= HEARTBEAT_MS) {
         console.log('[worker] heartbeat');
         lastHeartbeat = Date.now();
+      }
+      // Idempotency keys cleanup. Hourly cadence; failure logs but
+      // doesn't break the outer loop — next attempt picks up rows
+      // that were not deleted on the prior failure.
+      if (Date.now() - lastIdempotencyCleanup >= IDEMPOTENCY_CLEANUP_MS) {
+        try {
+          const deleted = await cleanupIdempotencyKeys();
+          if (deleted > 0) {
+            console.log(`[worker] idempotency cleanup: ${deleted} expired keys deleted`);
+          }
+        } catch (err) {
+          console.error('[worker] idempotency cleanup failed', err);
+        }
+        lastIdempotencyCleanup = Date.now();
       }
     } catch (err) {
       console.error('[worker] processOnce threw', err);

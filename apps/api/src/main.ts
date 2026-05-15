@@ -104,11 +104,21 @@ async function main() {
     },
   });
 
-  // Periodic ping so idle connections don't get dropped by edge proxies.
+  // Periodic ping so idle connections don't get dropped by edge proxies
+  // (Cloudflare / nginx will close idle WebSockets after ~60s).
+  // M3.8 (2026-05-15): previously empty body — was a known gap from the
+  // hub's initial design where there was no broadcast-all primitive.
+  // hub.pingAll() now sends a `{type:'ping', t}` frame to every sink
+  // across every org. 25s cadence keeps the connection well below
+  // typical proxy idle timeouts. The hub returns the count for the
+  // optional debug log, useful when chasing reconnect storms.
   const pingInterval = setInterval(() => {
-    if (hub.size() === 0) return;
-    // We don't have a "broadcast to all orgs" method; iterate by sending
-    // a ping into each known channel.
+    const total = hub.size();
+    if (total === 0) return;
+    const pinged = hub.pingAll();
+    // Logging at debug-level avoids noise on healthy clusters. Bump
+    // to info if you need to verify the path in production.
+    logger.debug({ pinged, totalSubs: total }, 'ws pingAll');
   }, 25_000);
   pingInterval.unref?.();
 

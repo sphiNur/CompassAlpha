@@ -177,8 +177,6 @@ export function DebugPage() {
                 <dd>{health.data.status}</dd>
                 <dt className="text-[var(--c-fg-muted)]">db</dt>
                 <dd>{String(health.data.db)}</dd>
-                <dt className="text-[var(--c-fg-muted)]">redis</dt>
-                <dd>{String(health.data.redis)}</dd>
                 <dt className="text-[var(--c-fg-muted)]">projector lag</dt>
                 <dd>{health.data.projectorLag}</dd>
                 <dt className="text-[var(--c-fg-muted)]">version</dt>
