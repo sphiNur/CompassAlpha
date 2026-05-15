@@ -564,10 +564,7 @@ export const zh = {
   'run.history.subtitle': '过往的采购单 — 点击查看详情',
   'run.history.viewAllHint': '更早的记录请到 管理 → 运营 → 提交历史',
   'run.history.totalLine': '合计 {total} UZS',
-  'run.history.cancelled': '已取消',
-  'run.history.filter.finished': '已完成',
-  'run.history.filter.all': '含已取消',
-  'run.history.filter.cancelled': '仅取消',
+  // M3.9: 已取消 run 不再显示在采购页历史里，移除 4 个 key.
   'run.cancel.reasonPlaceholder': '为什么取消?(可选,有助团队复盘)',
   'run.history.totalLabel': '总花费',
   'run.history.itemSummary': '已购 {bought} · 缺货 {na}',

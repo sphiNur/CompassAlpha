@@ -195,7 +195,12 @@ const idempotencyMiddleware = t.middleware(async (opts) => {
       and2(eq2(k.key, key), eq2(k.route, opts.path), eq2(k.userId, userId), gt2(k.expiresAt, now)),
   });
   if (existing && existing.response !== null && existing.response !== undefined) {
-    logger.info(
+    // M3.9: demoted from info → debug. Cache hits are the GOOD path
+    // — they mean idempotency is working. Logging every hit at info
+    // level fills the journal with non-actionable lines. Failed
+    // writes (next catch block) still log at warn since those are
+    // real anomalies operators should see.
+    logger.debug(
       { path: opts.path, userId, key },
       'idempotency cache hit — returning prior response',
     );

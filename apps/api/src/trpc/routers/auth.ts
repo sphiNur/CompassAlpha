@@ -317,7 +317,12 @@ export const authRouter = router({
         }
       }
     } else {
-      logger.info(
+      // M3.9: demoted from info → debug. Legacy-token refresh is the
+      // EXPECTED path during the rollout window after we added jti
+      // tracking; logging at info clutters the journal with one line
+      // per refresh for users on the older bundle. The interesting
+      // case (replay-detected) still logs at warn above.
+      logger.debug(
         { sub: claims.sub, family: claims.family },
         'auth.refresh: legacy jti-less token — issuing tracked successor',
       );

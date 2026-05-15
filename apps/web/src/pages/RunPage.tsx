@@ -3044,9 +3044,6 @@ interface RunListRow {
   finishedAt: Date | string | null;
 }
 
-type HistoryFilter = 'finished' | 'all' | 'cancelled';
-const RUN_HISTORY_FILTER_KEY = 'compass.runHistory.filter';
-
 function RunHistorySection({
   runs,
   i18n,
@@ -3057,27 +3054,16 @@ function RunHistorySection({
   i18n: ReturnType<typeof useI18n>;
   onOpen: (r: RunListRow) => void;
 }) {
-  // M1.7-A (2026-05-06): default to "finished only". The user's
-  // mental model is "history = completed business outcomes;
-  // cancelled = oops, didn't happen." If we lump them together,
-  // a few cancellations in a row drown out real results.
-  // Audit trail for cancels lives in `policy_decisions` (Operations
-  // → Admin audit), not here.
-  const [filter, setFilter] = useState<HistoryFilter>(() => {
-    if (typeof window === 'undefined') return 'finished';
-    const v = window.localStorage.getItem(RUN_HISTORY_FILTER_KEY);
-    return v === 'all' || v === 'cancelled' ? v : 'finished';
-  });
-  useEffect(() => {
-    if (typeof window !== 'undefined')
-      window.localStorage.setItem(RUN_HISTORY_FILTER_KEY, filter);
-  }, [filter]);
-
-  // Only terminal states show up in history (active runs are
-  // rendered above by ActiveRunPanel).
+  // M3.9 (2026-05-16): cancelled runs are hidden from this list
+  // entirely. The earlier UX had a 3-tab filter (finished / all /
+  // cancelled) but the user's mental model is "history = completed
+  // outcomes; a cancelled run didn't happen — please erase it."
+  // Cancellations stay in the event log + read model so admins can
+  // dig them up via Operations → Submission history if forensics
+  // are ever needed; here they just vanish. No localStorage state,
+  // no filter chip toolbar, no count badges.
   const allHistorical = useMemo(
-    () =>
-      runs.filter((r) => r.status === 'finished' || r.status === 'cancelled'),
+    () => runs.filter((r) => r.status === 'finished'),
     [runs],
   );
   // M1.13 (2026-05-08): cap the inline list at 12 rows. Anything older
@@ -3086,16 +3072,10 @@ function RunHistorySection({
   // Keeps RunPage's bottom from becoming an infinite scroll dump.
   const HISTORY_INLINE_CAP = 12;
 
-  // Filter then group by yyyy-mm so the section reads as a calendar
+  // Group by yyyy-mm so the section reads as a calendar
   // ("May 2026 · 8 runs · ₸4,250,000 / April 2026 · 12 runs · ...").
   const groups = useMemo(() => {
-    const filtered =
-      filter === 'finished'
-        ? allHistorical.filter((r) => r.status === 'finished')
-        : filter === 'cancelled'
-          ? allHistorical.filter((r) => r.status === 'cancelled')
-          : allHistorical;
-    const capped = filtered.slice(0, HISTORY_INLINE_CAP);
+    const capped = allHistorical.slice(0, HISTORY_INLINE_CAP);
     const byMonth = new Map<string, RunListRow[]>();
     for (const r of capped) {
       // runDate is stored as "YYYY-MM-DD" — slice the year+month prefix.
@@ -3107,30 +3087,17 @@ function RunHistorySection({
     return [...byMonth.entries()].map(([month, rows]) => {
       const total = rows.reduce(
         (sum, r) =>
-          sum + (r.status === 'finished' && r.actualTotal ? Number(r.actualTotal) : 0),
+          sum + (r.actualTotal ? Number(r.actualTotal) : 0),
         0,
       );
       return { month, rows, total };
     });
-  }, [allHistorical, filter]);
+  }, [allHistorical]);
 
   const totalShown = groups.reduce((s, g) => s + g.rows.length, 0);
-  const hasMore = (() => {
-    const filteredLen =
-      filter === 'finished'
-        ? allHistorical.filter((r) => r.status === 'finished').length
-        : filter === 'cancelled'
-          ? allHistorical.filter((r) => r.status === 'cancelled').length
-          : allHistorical.length;
-    return filteredLen > totalShown;
-  })();
+  const hasMore = allHistorical.length > totalShown;
 
   if (allHistorical.length === 0) return null;
-
-  // Counts so the chip labels can show "(N)" — helps the operator
-  // see at a glance whether switching tabs would reveal anything.
-  const finishedCount = allHistorical.filter((r) => r.status === 'finished').length;
-  const cancelledCount = allHistorical.filter((r) => r.status === 'cancelled').length;
 
   // Format yyyy-mm into the user's locale month-year ("May 2026" / "2026年5月").
   const formatMonth = (key: string): string => {
@@ -3145,34 +3112,8 @@ function RunHistorySection({
         <CardTitle>{i18n.t('run.history.title')}</CardTitle>
         <CardMeta>{i18n.t('run.history.subtitle')}</CardMeta>
       </CardHeader>
-      {/* Filter chips — only render when there's actually a choice
-          to make (i.e. some cancelled runs exist). For pure-finished
-          history we keep the toolbar invisible to reduce noise. */}
-      {cancelledCount > 0 ? (
-        <div className="flex gap-1 px-4 pt-1 pb-2">
-          {(
-            [
-              ['finished', i18n.t('run.history.filter.finished'), finishedCount],
-              ['all', i18n.t('run.history.filter.all'), allHistorical.length],
-              ['cancelled', i18n.t('run.history.filter.cancelled'), cancelledCount],
-            ] as const
-          ).map(([key, label, count]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setFilter(key)}
-              className={
-                'press flex-1 rounded-[var(--r-pill)] px-2 py-1 text-label font-medium ring-hairline ' +
-                (filter === key
-                  ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                  : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]')
-              }
-            >
-              {label} ({count})
-            </button>
-          ))}
-        </div>
-      ) : null}
+      {/* M3.9: filter chip toolbar removed — cancelled runs no
+         longer surface here, so there's nothing to toggle. */}
       {groups.map((g) => (
         <section key={g.month} className="border-t border-[var(--c-divider)] first:border-t-0">
           {/* Month group header — sub-section label + per-month total
@@ -3186,65 +3127,60 @@ function RunHistorySection({
             {formatMonth(g.month)}
           </SectionLabel>
           <ul className="flex flex-col" role="list">
-            {g.rows.map((r) => {
-              const cancelled = r.status === 'cancelled';
-              return (
-                <li
-                  key={r.id}
-                  className="border-b border-[var(--c-divider)] last:border-b-0"
+            {/* M3.9: cancelled-row branches dropped — `allHistorical`
+               above filters to status==='finished' only, so the dead
+               code that used to render the ❌ badge + cancelled-reason
+               line is gone. If forensics ever needs to surface
+               cancelled runs back here, both the FE filter and the
+               row branches need restoring together. */}
+            {g.rows.map((r) => (
+              <li
+                key={r.id}
+                className="border-b border-[var(--c-divider)] last:border-b-0"
+              >
+                <button
+                  type="button"
+                  onClick={() => onOpen(r)}
+                  className="flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left active:bg-[var(--c-surface-2)]"
                 >
-                  <button
-                    type="button"
-                    onClick={() => onOpen(r)}
-                    className={
-                      'flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left active:bg-[var(--c-surface-2)] ' +
-                      (cancelled ? 'opacity-60' : '')
-                    }
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-body font-semibold tabular-nums">
-                          {r.runDate}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-body font-semibold tabular-nums">
+                        {r.runDate}
+                      </span>
+                      {r.runIndex > 0 ? (
+                        <span className="text-label text-[var(--c-fg-muted)]">
+                          #{r.runIndex + 1}
                         </span>
-                        {r.runIndex > 0 ? (
-                          <span className="text-label text-[var(--c-fg-muted)]">
-                            #{r.runIndex + 1}
-                          </span>
-                        ) : null}
-                        {cancelled ? <span aria-hidden>❌</span> : null}
-                      </div>
-                      {r.status === 'finished' && r.actualTotal ? (
-                        <div className="text-label text-[var(--c-fg-muted)]">
-                          {i18n.t('run.history.totalLine', {
-                            total: formatMoney(r.actualTotal),
-                          })}
-                          {/* M1.14: when this run mixed both methods,
-                              surface a tiny "💵 X · 🏦 Y" breakdown so
-                              the operator can see split at a glance.
-                              Hidden when one bucket is zero (single-
-                              method run) or both columns are NULL
-                              (legacy run pre-M1.14). */}
-                          {r.actualCashTotal != null &&
-                          r.actualTransferTotal != null &&
-                          Number(r.actualCashTotal) > 0 &&
-                          Number(r.actualTransferTotal) > 0 ? (
-                            <span className="ml-1 text-label">
-                              {' · '}💵 {formatMoney(r.actualCashTotal)}
-                              {' · '}🏦 {formatMoney(r.actualTransferTotal)}
-                            </span>
-                          ) : null}
-                        </div>
-                      ) : cancelled ? (
-                        <div className="text-label text-[var(--c-fg-muted)]">
-                          {i18n.t('run.history.cancelled')}
-                        </div>
                       ) : null}
                     </div>
-                    <Badge tone={cancelled ? 'muted' : 'success'}>{r.status}</Badge>
-                  </button>
-                </li>
-              );
-            })}
+                    {r.actualTotal ? (
+                      <div className="text-label text-[var(--c-fg-muted)]">
+                        {i18n.t('run.history.totalLine', {
+                          total: formatMoney(r.actualTotal),
+                        })}
+                        {/* M1.14: when this run mixed both methods,
+                            surface a tiny "💵 X · 🏦 Y" breakdown so
+                            the operator can see split at a glance.
+                            Hidden when one bucket is zero (single-
+                            method run) or both columns are NULL
+                            (legacy run pre-M1.14). */}
+                        {r.actualCashTotal != null &&
+                        r.actualTransferTotal != null &&
+                        Number(r.actualCashTotal) > 0 &&
+                        Number(r.actualTransferTotal) > 0 ? (
+                          <span className="ml-1 text-label">
+                            {' · '}💵 {formatMoney(r.actualCashTotal)}
+                            {' · '}🏦 {formatMoney(r.actualTransferTotal)}
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                  <Badge tone="success">{r.status}</Badge>
+                </button>
+              </li>
+            ))}
           </ul>
         </section>
       ))}

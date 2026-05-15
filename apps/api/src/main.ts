@@ -74,7 +74,12 @@ async function main() {
     websocket: {
       open(ws: ServerWebSocket<WSData>) {
         ws.data.unsub = hub.subscribe(ws.data.orgId, (data) => ws.send(data));
-        logger.info(
+        // M3.9: demoted from info → debug. Active deploys see dozens of
+        // WS open/close events per minute as clients reconnect; at info
+        // level they dominate journalctl and hide real signals. The
+        // info we log here (orgId/userId/subs count) is recoverable
+        // from connection metrics if needed.
+        logger.debug(
           { orgId: ws.data.orgId, userId: ws.data.userId, subs: hub.size(ws.data.orgId) },
           'ws open',
         );
@@ -92,7 +97,7 @@ async function main() {
       },
       close(ws: ServerWebSocket<WSData>) {
         ws.data.unsub();
-        logger.info(
+        logger.debug(
           { orgId: ws.data.orgId, userId: ws.data.userId, subs: hub.size(ws.data.orgId) },
           'ws close',
         );

@@ -608,10 +608,7 @@ export const ru = {
   'run.history.subtitle': 'Прошлые закупки — нажмите для деталей',
   'run.history.viewAllHint': 'Старые записи — в Админ → Операции → История',
   'run.history.totalLine': 'Итого {total} UZS',
-  'run.history.cancelled': 'Отменена',
-  'run.history.filter.finished': 'Завершённые',
-  'run.history.filter.all': 'С отменёнными',
-  'run.history.filter.cancelled': 'Только отменённые',
+  // M3.9: отменённые run больше не показываются в истории — 4 ключа удалены.
   'run.cancel.reasonPlaceholder': 'Почему отменяете? (опционально — поможет команде разобраться)',
   'run.history.totalLabel': 'Всего потрачено',
   'run.history.itemSummary': 'куплено {bought} · нет {na}',

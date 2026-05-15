@@ -678,11 +678,9 @@ export const en = {
   'run.history.subtitle': 'Past runs — tap to see details',
   'run.history.viewAllHint': 'Open Admin → Operations → Submission history for older runs',
   'run.history.totalLine': 'Total {total} UZS',
-  'run.history.cancelled': 'Cancelled',
-  // Filter chips on the history list (M1.7-A).
-  'run.history.filter.finished': 'Finished',
-  'run.history.filter.all': 'All',
-  'run.history.filter.cancelled': 'Cancelled only',
+  // M3.9: filter chip toolbar + cancelled-row label dropped — cancelled
+  // runs no longer surface in RunPage history. Keys removed:
+  //   run.history.cancelled, run.history.filter.{finished,all,cancelled}.
   // Soft-encouraging placeholder for the cancel-run reason field.
   // Optional input — we deliberately don't hard-require because
   // operators sometimes cancel because they fat-fingered, and forcing
