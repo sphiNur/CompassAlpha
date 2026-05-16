@@ -123,10 +123,17 @@ export function QtyControl({
   };
 
   const isSmall = size === 'sm';
+  // M3.15 (2026-05-16): slim the +/- buttons. The 44 px (md) baseline
+  // visually outweighed the bottom nav's 22 px icons + 10 px labels,
+  // which the user explicitly likes. New defaults:
+  //   - md → h-9 (36 px) ·  text-body  · still hits iOS touch target
+  //     when the row itself is tappable (it is — the SKU rows below
+  //     wrap the whole row in a press handler).
+  //   - sm → h-7 (28 px) · text-label · for dense lists (ApprovalPage).
   const tone = (active: boolean) =>
     cn(
       'press inline-flex items-center justify-center rounded-full shrink-0',
-      isSmall ? 'h-8 w-8 text-body' : 'h-11 w-11',
+      isSmall ? 'h-7 w-7 text-label' : 'h-9 w-9 text-body',
       'bg-[var(--c-surface-2)] ring-hairline text-[var(--c-fg)]',
       active && 'bg-[var(--c-action)] text-[var(--c-action-fg)]',
       disabled && 'opacity-40 pointer-events-none',
@@ -166,20 +173,24 @@ export function QtyControl({
           <span aria-hidden>−</span>
         </button>
 
-        {/* M3.12-C: fixed width so the +/- buttons never shift as the
-            value text grows. Tabular-nums already keeps each digit at
-            the same advance width; the unit suffix is what pushed the
-            buttons before. `w-20` (80px) fits up to 4 integer digits
-            + 1 decimal + 2-char unit at text-h2; w-16 at text-body for
-            the compact variant. Overflow stays inside the box. */}
+        {/* M3.12-C / M3.15 (2026-05-16): fixed width so the +/- buttons
+            never shift as the value text grows. Tabular-nums already
+            keeps each digit at the same advance width; the unit suffix
+            is what pushed the buttons before. Width tuned per size so
+            "9999 kg" still fits inside.
+            M3.15 shrinks middle font to match the +/- baseline:
+              md → text-h3 (was text-h2) — sits with the new 36 px button
+              sm → text-body-sm (was text-body) — sits with the 28 px button
+            The middle text is no longer the "biggest thing in the row";
+            it now reads as a peer of the surrounding row primary text. */}
         <button
           type="button"
           aria-label={`Quantity ${display}${unit ? ' ' + unit : ''} — tap to pick`}
           onClick={openQuickPick}
           disabled={disabled}
           className={cn(
-            'press flex h-11 items-center justify-center font-semibold tabular-nums',
-            isSmall ? 'h-8 w-16 px-1 text-body' : 'w-20 px-1 text-h2',
+            'press flex items-center justify-center font-semibold tabular-nums',
+            isSmall ? 'h-7 w-14 px-1 text-body-sm' : 'h-9 w-16 px-1 text-h3',
             'overflow-hidden whitespace-nowrap',
             showZero && 'text-[var(--c-fg-subtle)] font-normal',
             disabled && 'opacity-40 pointer-events-none',
@@ -189,7 +200,7 @@ export function QtyControl({
             <>
               <span>{display}</span>
               {unit ? (
-                <span className="ml-1 text-label text-[var(--c-fg-muted)]">{unit}</span>
+                <span className="ml-0.5 text-label text-[var(--c-fg-muted)]">{unit}</span>
               ) : null}
             </>
           )}

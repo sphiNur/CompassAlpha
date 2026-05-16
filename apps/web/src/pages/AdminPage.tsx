@@ -5112,9 +5112,10 @@ function SkusSection() {
               {/* M3.14 (2026-05-16): step is a 2-option segmented control,
                   not a free-form field. 0.5 = weigh-and-pay (kg/L), 1 =
                   countable (pcs/pair/bunch). The schema rejects anything
-                  else, so we never want the form to ACCEPT anything else. */}
+                  else, so we never want the form to ACCEPT anything else.
+                  M3.15: h-11 → h-10 to match the new Input baseline. */}
               <Field label={i18n.t('admin.field.step')}>
-                <div className="flex h-11 rounded-[var(--r-utility)] ring-hairline overflow-hidden">
+                <div className="flex h-10 rounded-[var(--r-utility)] ring-hairline overflow-hidden">
                   {(['0.5', '1'] as const).map((opt) => {
                     const active = draft.step === opt;
                     return (

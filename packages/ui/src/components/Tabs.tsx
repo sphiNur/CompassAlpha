@@ -96,9 +96,12 @@ export function Tab({
       onClick={() => _onSelect?.(value)}
       onKeyDown={_onKeyDown}
       className={cn(
-        // M2.4: pill text uniformly text-label (12 px) + font-medium —
-        // matches Badge + Chip baseline.
-        'press inline-flex h-9 shrink-0 items-center whitespace-nowrap rounded-[var(--r-pill)] px-4 text-label font-medium',
+        // M2.4: pill text uniformly text-label (11 px after M3.14) +
+        // font-medium — matches Badge + Chip baseline.
+        // M3.15 (2026-05-16): h-9 (36) → h-8 (32) so the page-top
+        // segmented control matches the bottom-nav rhythm. Px-4 → px-3
+        // so the chip width tracks its content tighter.
+        'press inline-flex h-8 shrink-0 items-center whitespace-nowrap rounded-[var(--r-pill)] px-3 text-label font-medium',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',
         'focus-visible:ring-offset-[var(--c-bg)]',
         _selected
@@ -160,7 +163,7 @@ export function Tabs({ value, onChange, ariaLabel, children, className }: TabsPr
       role="tablist"
       aria-label={ariaLabel}
       style={{ overscrollBehaviorX: 'contain' }}
-      className={cn('flex gap-2 overflow-x-auto px-4 py-2 scrollbar-hide', className)}
+      className={cn('flex gap-1.5 overflow-x-auto px-4 py-1.5 scrollbar-hide', className)}
     >
       {tabs.map((child) =>
         cloneElement(child, {

@@ -2028,7 +2028,13 @@ function PreviewSummaryCard({
                             <button
                               type="button"
                               onClick={() => setVendorPickerFor(it.skuId)}
-                              className="press min-w-0 flex-1 text-left text-[var(--c-fg)] underline decoration-dotted decoration-[var(--c-fg-muted)] underline-offset-2"
+                              // M3.15 (2026-05-16): drop the dotted
+                              // underline. On dark theme it read as
+                              // "broken link" rather than "tap to change
+                              // vendor"; the row tap area is the
+                              // affordance, and a long-press hint can
+                              // be added later if discovery is an issue.
+                              className="press min-w-0 flex-1 text-left text-[var(--c-fg)]"
                               title={i18n.t('run.previewSupplier.changeVendor')}
                             >
                               {sku ? productName(sku) : it.skuId.slice(0, 8)}

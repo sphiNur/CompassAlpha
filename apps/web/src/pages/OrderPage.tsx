@@ -892,8 +892,12 @@ const SkuRow = memo(function SkuRow({
   i18n: ReturnType<typeof useI18n>;
   onQtyChange: (storeId: string, skuId: string, qty: string) => void;
 }) {
+  // M3.15 (2026-05-16): py-2 → py-1.5 to tighten the SKU row. With
+  // the new QtyControl baseline (h-9 = 36 px), the row sits at ~52 px
+  // instead of the old ~72 px — matches the bottom-nav rhythm. One
+  // more SKU visible per viewport on a 5.5" screen.
   return (
-    <li className="flex items-center justify-between border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0">
+    <li className="flex items-center justify-between border-b border-[var(--c-divider)] px-4 py-1.5 last:border-b-0">
       <div className="min-w-0 flex-1 pr-3">
         <div className="truncate text-body font-semibold leading-tight text-[var(--c-fg)]">
           {productName(sku)}

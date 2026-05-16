@@ -238,7 +238,10 @@ export function SheetFooter({ children, className }: { children: ReactNode; clas
   return (
     <div
       className={cn(
-        'sticky bottom-0 mt-auto bg-[var(--c-surface)] px-4 pb-4 pt-3',
+        // M3.15 (2026-05-16): pt-3 / pb-4 → pt-2 / pb-3. The footer
+        // CTA inside now reads as a peer of the bottom nav rather than
+        // a separate "primary CTA bar" with its own breathing room.
+        'sticky bottom-0 mt-auto bg-[var(--c-surface)] px-4 pb-3 pt-2',
         'border-t border-[var(--c-divider)]',
         className,
       )}

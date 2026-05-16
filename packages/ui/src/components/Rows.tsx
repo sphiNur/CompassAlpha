@@ -38,7 +38,7 @@ export function SectionRow({
       <button
         type="button"
         onClick={onClick}
-        className="press flex w-full items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-3 text-left ring-hairline"
+        className="press flex w-full items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-2.5 text-left ring-hairline"
       >
         <span className={cn('shrink-0', iconColor)}>{icon}</span>
         <span className="min-w-0 flex-1">
@@ -103,7 +103,7 @@ export function ListRow({
         type="button"
         onClick={onClick}
         className={cn(
-          'press flex w-full items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-3 text-left ring-hairline',
+          'press flex w-full items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-2.5 text-left ring-hairline',
           className,
         )}
       >
@@ -114,7 +114,7 @@ export function ListRow({
   return (
     <div
       className={cn(
-        'flex w-full items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-3 ring-hairline',
+        'flex w-full items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-2.5 ring-hairline',
         className,
       )}
     >

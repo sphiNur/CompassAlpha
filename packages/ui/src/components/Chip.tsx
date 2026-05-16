@@ -19,10 +19,12 @@ export function Chip({ className, selected, children, ...rest }: ChipProps) {
         // characters; Cyrillic shows each word stacked). The bar is
         // already `overflow-x-auto`, so chips should KEEP their
         // natural width and the bar pans horizontally.
-        // M2.4: pill text uniformly text-label (12 px) + font-medium —
-        // matches Badge + RunPage history filter chip. Was text-body (14)
-        // which created a 2 px jump against status badges in the same row.
-        'press inline-flex h-9 shrink-0 items-center whitespace-nowrap rounded-[var(--r-pill)] px-4 text-label font-medium',
+        // M2.4: pill text uniformly text-label (11 px after M3.14) +
+        // font-medium — matches Badge + RunPage history filter chip.
+        // M3.15 (2026-05-16): h-9 → h-8 (32 px), px-4 → px-3. Matches
+        // the bottom-nav rhythm and lets more chips fit on screen
+        // before the horizontal scroll kicks in.
+        'press inline-flex h-8 shrink-0 items-center whitespace-nowrap rounded-[var(--r-pill)] px-3 text-label font-medium',
         selected
           ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
           : 'bg-transparent text-[var(--c-fg-muted)] ring-hairline',
@@ -50,7 +52,7 @@ export function ChipBar({ children, className, ariaLabel }: ChipBarProps) {
       // bouncing the parent page on iOS — without it, a fast horizontal
       // chip-pan can briefly disable the page's vertical scroll.
       style={{ overscrollBehaviorX: 'contain' }}
-      className={cn('flex gap-2 overflow-x-auto px-4 py-2 scrollbar-hide', className)}
+      className={cn('flex gap-1.5 overflow-x-auto px-4 py-1.5 scrollbar-hide', className)}
     >
       {children}
     </div>

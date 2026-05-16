@@ -29,14 +29,19 @@ const button = cva(
           'bg-[var(--c-surface-2)] text-[var(--c-fg)] rounded-[var(--r-capsule)] ring-hairline',
       },
       size: {
-        // M2.4: sm pill text dropped to text-label (12) to match Badge +
-        // Chip + Tab baseline. Was text-body-sm (13) which sat awkwardly
-        // between the 12 px chip and 15 px Input. The 32 px height
-        // (h-8) + 12 px text gives the same "compact secondary action"
-        // rhythm as the RunPage history filter pill.
+        // M2.4 (text), M3.15 (heights, 2026-05-16):
+        //   - sm: h-8 (32) + text-label (11) — compact secondary actions.
+        //   - md: h-10 (40, was 44) + text-h3 (14) — default form / inline
+        //     actions. -4 px brings the row rhythm closer to the bottom
+        //     nav (icons + label = ~36 px tall).
+        //   - lg: h-13 (52, was 56) + text-h3 (14, was text-h2 / 15) —
+        //     sheet-footer commits + page-bottom CTAs. Big enough to
+        //     anchor the action without towering over the 64 px nav.
         sm: 'h-8 px-3 text-label',
-        md: 'h-11 px-5 text-h3',
-        lg: 'h-14 px-7 text-h2',
+        md: 'h-10 px-5 text-h3',
+        // h-[52px] — Tailwind's scale jumps 12→14 (48→56), and we want
+        // exactly the middle.
+        lg: 'h-[52px] px-7 text-h3',
       },
       block: {
         true: 'w-full',

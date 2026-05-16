@@ -53,12 +53,14 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
         type="search"
         value={value}
         onChange={onChange}
-        // pl-9 leaves room for the icon; pr-9 leaves room for the
-        // clear button. h-10 (40px) is one notch under Input's h-11
-        // — search bars are denser and often live in scroll-row
-        // headers where every px matters.
+        // M3.15 (2026-05-16): h-10 (40 px) → h-9 (36 px), text-body
+        // (13 px) → text-body-sm (12 px). Search lives at the top of
+        // OrderPage / AdminPage SKU lists; on a 5–6" Android screen
+        // the original 40 px input ate 7% of the viewport before the
+        // first row appeared. The 4 px lift gets one extra row on
+        // screen and matches the bottom-nav rhythm the user wants.
         className={cn(
-          'h-10 w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] pl-9 pr-9 text-body',
+          'h-9 w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] pl-9 pr-9 text-body-sm',
           'text-[var(--c-fg)] placeholder:text-[var(--c-fg-subtle)]',
           'outline-none ring-hairline',
           'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',
