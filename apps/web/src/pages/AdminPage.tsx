@@ -34,7 +34,6 @@ import {
   CardHeader,
   CardMeta,
   CardTitle,
-  cn,
   DataState,
   DetailRow,
   EmptyState,
@@ -53,6 +52,7 @@ import {
   SearchInput,
   SectionLabel,
   SectionRow,
+  Segmented,
   Select,
   Sheet,
   Spinner,
@@ -912,16 +912,16 @@ function PeopleSection({
                 </CardHeader>
                 {/* Store-affiliation chips (added 2026-05-05). Empty
                     array is rendered as "no store" hint so admins can
-                    spot org-level members at a glance. */}
+                    spot org-level members at a glance.
+                    M3.17 (2026-05-16): inline pill spans → <Badge>.
+                    Same visual rhythm as the "active" status badge in
+                    the header above. */}
                 {m.stores.length > 0 ? (
                   <div className="flex flex-wrap gap-1 px-4 pt-2 pb-1">
                     {m.stores.map((st) => (
-                      <span
-                        key={st.id}
-                        className="inline-flex items-center gap-1 rounded-full bg-[var(--c-surface-2)] px-2 py-0.5 text-label text-[var(--c-fg)] ring-hairline"
-                      >
+                      <Badge key={st.id} tone="info">
                         🏪 {st.name}
-                      </span>
+                      </Badge>
                     ))}
                   </div>
                 ) : null}
@@ -2860,29 +2860,29 @@ function MemberPermissionsSheet({
                           <Badge tone="muted">from role</Badge>
                         ) : null}
                       </div>
-                      <div className="flex gap-1">
-                        <SegBtn
-                          active={mode === 'role'}
-                          tone="muted"
-                          onClick={() => handleSet(p.key, 'role')}
-                        >
-                          From role
-                        </SegBtn>
-                        <SegBtn
-                          active={mode === 'allow'}
-                          tone="success"
-                          onClick={() => handleSet(p.key, 'allow')}
-                        >
-                          Allow
-                        </SegBtn>
-                        <SegBtn
-                          active={mode === 'deny'}
-                          tone="danger"
-                          onClick={() => handleSet(p.key, 'deny')}
-                        >
-                          Deny
-                        </SegBtn>
-                      </div>
+                      {/* M3.17 (2026-05-16): migrated from local SegBtn
+                          to the shared <Segmented> primitive. Per-option
+                          activeBg drives the allow=green / deny=red /
+                          inherit=action coloring that the old SegBtn
+                          baked in via a `tone` prop. */}
+                      <Segmented<'role' | 'allow' | 'deny'>
+                        size="sm"
+                        value={mode}
+                        options={[
+                          { value: 'role', label: 'From role' },
+                          {
+                            value: 'allow',
+                            label: 'Allow',
+                            activeBg: 'bg-[var(--c-success)]',
+                          },
+                          {
+                            value: 'deny',
+                            label: 'Deny',
+                            activeBg: 'bg-[var(--c-danger)]',
+                          },
+                        ]}
+                        onChange={(next) => handleSet(p.key, next)}
+                      />
                     </li>
                   );
                 })}
@@ -2950,40 +2950,9 @@ function ScopeTab({
   );
 }
 
-/**
- * Segmented button for the per-permission allow/deny/role toggle.
- * Compact, ~28px tall — three of them line up under each row.
- */
-function SegBtn({
-  active,
-  tone,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  tone: 'muted' | 'success' | 'danger';
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  const activeBg =
-    tone === 'success'
-      ? 'bg-[var(--c-success)] text-[var(--c-action-fg)]'
-      : tone === 'danger'
-        ? 'bg-[var(--c-danger)] text-white'
-        : 'bg-[var(--c-action)] text-[var(--c-action-fg)]';
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={
-        'flex-1 rounded-[var(--r-pill)] px-2 py-1 text-label font-medium ' +
-        (active ? activeBg : 'bg-transparent text-[var(--c-fg-muted)] ring-hairline active:opacity-70')
-      }
-    >
-      {children}
-    </button>
-  );
-}
+// M3.17 (2026-05-16): the local SegBtn helper was retired — both
+// callers (Permissions matrix + Grant Role scope) now use the shared
+// <Segmented> primitive from @compass/ui.
 
 // ADMIN_RANK is imported from `@compass/contracts` (see top of file).
 // Single source of truth for the org-tier threshold — the M1.5 audit
@@ -3181,23 +3150,25 @@ function GrantRoleSheet({
     >
       <div className="flex flex-col gap-3 py-3">
         {/* Step 1 — scope */}
+        {/* M3.17 (2026-05-16): SegBtn → Segmented. The "Globally" option
+            is greyed-out via the disabled prop when the actor isn't an
+            org-admin; the click handler short-circuits. */}
         <Field label={i18n.t('admin.field.scope')}>
-          <div className="flex gap-1">
-            <SegBtn
-              active={scopeMode === 'store'}
-              tone="muted"
-              onClick={() => setScopeMode('store')}
-            >
-              In specific store(s)
-            </SegBtn>
-            <SegBtn
-              active={scopeMode === 'global'}
-              tone="muted"
-              onClick={() => canGrantGlobal && setScopeMode('global')}
-            >
-              {canGrantGlobal ? 'Globally' : 'Globally (org-admin only)'}
-            </SegBtn>
-          </div>
+          <Segmented<'store' | 'global'>
+            value={scopeMode}
+            options={[
+              { value: 'store', label: 'In specific store(s)' },
+              {
+                value: 'global',
+                label: canGrantGlobal ? 'Globally' : 'Globally (org-admin only)',
+              },
+            ]}
+            onChange={(next) => {
+              if (next === 'global' && !canGrantGlobal) return;
+              setScopeMode(next);
+            }}
+            ariaLabel={i18n.t('admin.field.scope')}
+          />
           {!canGrantGlobal ? (
             <p className="mt-1 text-label text-[var(--c-fg-muted)]">
               Only org-level admins can grant global (org-tier) roles. You can
@@ -3445,16 +3416,19 @@ function StoresHomeSection({
                 {/* M1.21: store list row rhythm — py-3 matches member
                     cards above. Was py-4 (16 px each side), which felt
                     chunky relative to the rest of the admin surface. */}
+                {/* M3.17: title text-h2 → text-h3 + font-semibold to
+                    match the rest of the app's list-row primary text
+                    rhythm. Was the only place admin shouted at h2. */}
                 <button
                   type="button"
                   onClick={() => onPickStore({ kind: 'org-level' })}
                   className="press flex w-full items-start justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-2.5 text-left ring-hairline"
                 >
                   <span className="min-w-0">
-                    <span className="block text-h2 font-semibold tracking-tight text-[var(--c-fg)]">
+                    <span className="block text-h3 font-semibold tracking-tight text-[var(--c-fg)]">
                       🌐 Org-level
                     </span>
-                    <span className="mt-0.5 block text-body-sm text-[var(--c-fg-muted)]">
+                    <span className="mt-0.5 block text-label text-[var(--c-fg-muted)]">
                       Admins / super-admins not bound to any store
                     </span>
                   </span>
@@ -3489,10 +3463,10 @@ function StoresHomeSection({
                     className="press flex w-full items-start justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-2.5 text-left ring-hairline"
                   >
                     <span className="min-w-0">
-                      <span className="block text-h2 font-semibold tracking-tight text-[var(--c-fg)]">
+                      <span className="block text-h3 font-semibold tracking-tight text-[var(--c-fg)]">
                         🏪 {st.name}
                       </span>
-                      <span className="mt-0.5 block text-body-sm text-[var(--c-fg-muted)]">
+                      <span className="mt-0.5 block text-label text-[var(--c-fg-muted)]">
                         {st.code ? `code ${st.code}` : 'no code'}
                         {' · '}
                         {count} {count === 1 ? 'member' : 'members'}
@@ -3613,41 +3587,22 @@ function StoreDetailScreen({
   return (
     <div className="flex flex-col">
       {!isOrgLevel ? (
+        // M3.17 (2026-05-16): Team / Inventory / Sales / Settings tabs
+        // migrated from local SegBtn → shared <Segmented>. M2.0a +
+        // M2.0c notes preserved: Inventory shows on-hand + stocktake,
+        // Sales records dish sales (auto-deducts via recipe BOM).
         <div className="px-4 pb-1 pt-1">
-          <div className="flex gap-1">
-            <SegBtn
-              active={effectiveSub === 'team'}
-              tone="muted"
-              onClick={() => onSubChange('team')}
-            >
-              Team
-            </SegBtn>
-            {/* M2.0a: inventory tab — current on-hand + stocktake/
-                wastage. Only appears on real stores. */}
-            <SegBtn
-              active={effectiveSub === 'inventory'}
-              tone="muted"
-              onClick={() => onSubChange('inventory')}
-            >
-              Inventory
-            </SegBtn>
-            {/* M2.0c: sales tab — record dish sales, auto-deduct
-                inventory via recipe BOM. */}
-            <SegBtn
-              active={effectiveSub === 'sales'}
-              tone="muted"
-              onClick={() => onSubChange('sales')}
-            >
-              Sales
-            </SegBtn>
-            <SegBtn
-              active={effectiveSub === 'settings'}
-              tone="muted"
-              onClick={() => onSubChange('settings')}
-            >
-              Settings
-            </SegBtn>
-          </div>
+          <Segmented<StoreSub>
+            value={effectiveSub}
+            options={[
+              { value: 'team', label: 'Team' },
+              { value: 'inventory', label: 'Inventory' },
+              { value: 'sales', label: 'Sales' },
+              { value: 'settings', label: 'Settings' },
+            ]}
+            onChange={onSubChange}
+            ariaLabel="Store section"
+          />
         </div>
       ) : null}
       {effectiveSub === 'team' ? (
@@ -3797,9 +3752,16 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
                       {formatQty(r.onHand)} {r.unit}
                     </span>
                   </div>
-                  <div className="mt-1 flex items-center gap-1 text-label">
-                    <button
-                      type="button"
+                  {/* M3.17 (2026-05-16): inline pill buttons → Button
+                      size="sm" with pearl + danger-ghost variants.
+                      Stocktake is a neutral edit; wastage is a real
+                      reduce-stock action so the danger-ghost tone is
+                      appropriate (red text, no fill — same level as
+                      Archive elsewhere). */}
+                  <div className="mt-1 flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="pearl"
                       onClick={() =>
                         setAction({
                           kind: 'stocktake',
@@ -3807,17 +3769,16 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
                           current: r.onHand,
                         })
                       }
-                      className="press rounded-[var(--r-pill)] bg-[var(--c-surface)] px-2 py-0.5 ring-hairline active:opacity-70"
                     >
                       {i18n.t('inventory.action.stocktake')}
-                    </button>
-                    <button
-                      type="button"
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="danger-ghost"
                       onClick={() => setAction({ kind: 'wastage', skuId: r.skuId })}
-                      className="press rounded-[var(--r-pill)] bg-[var(--c-surface)] px-2 py-0.5 text-[var(--c-danger)] ring-hairline active:opacity-70"
                     >
                       {i18n.t('inventory.action.wastage')}
-                    </button>
+                    </Button>
                   </div>
                 </li>
               );
@@ -5121,29 +5082,19 @@ function SkusSection() {
               {/* M3.14 (2026-05-16): step is a 2-option segmented control,
                   not a free-form field. 0.5 = weigh-and-pay (kg/L), 1 =
                   countable (pcs/pair/bunch). The schema rejects anything
-                  else, so we never want the form to ACCEPT anything else.
-                  M3.15: h-11 → h-10 to match the new Input baseline. */}
+                  else.
+                  M3.17 (2026-05-16): migrated to the shared <Segmented>
+                  primitive — was the third inline copy of the pattern. */}
               <Field label={i18n.t('admin.field.step')}>
-                <div className="flex h-10 rounded-[var(--r-utility)] ring-hairline overflow-hidden">
-                  {(['0.5', '1'] as const).map((opt) => {
-                    const active = draft.step === opt;
-                    return (
-                      <button
-                        key={opt}
-                        type="button"
-                        onClick={() => setDraft({ ...draft, step: opt })}
-                        className={cn(
-                          'press flex-1 text-h3 tabular-nums',
-                          active
-                            ? 'bg-[var(--c-action)] text-[var(--c-action-fg)] font-semibold'
-                            : 'bg-[var(--c-surface)] text-[var(--c-fg-muted)]',
-                        )}
-                      >
-                        {opt}
-                      </button>
-                    );
-                  })}
-                </div>
+                <Segmented<'0.5' | '1'>
+                  value={draft.step}
+                  options={[
+                    { value: '0.5', label: '0.5' },
+                    { value: '1', label: '1' },
+                  ]}
+                  onChange={(next) => setDraft({ ...draft, step: next })}
+                  ariaLabel={i18n.t('admin.field.step')}
+                />
               </Field>
             </div>
             <Field label={i18n.t('admin.field.code')}>
@@ -5629,29 +5580,32 @@ function DishesSection() {
                     </div>
                   </div>
                 </button>
+                {/* M3.17 (2026-05-16): inline archive/unarchive pills →
+                    Button size="sm". Archive uses danger-ghost (consistent
+                    with the Category / SKU / Supplier archive rows). */}
                 {canManage ? (
-                  <div className="mt-1 flex gap-1 text-label">
+                  <div className="mt-1 flex gap-2">
                     {d.isArchived ? (
-                      <button
-                        type="button"
+                      <Button
+                        size="sm"
+                        variant="pearl"
                         onClick={() => unarchive.mutate({ dishId: d.id })}
-                        className="press rounded-[var(--r-pill)] bg-[var(--c-surface)] px-2 py-0.5 ring-hairline"
                       >
                         {i18n.t('common.unarchive')}
-                      </button>
+                      </Button>
                     ) : (
-                      <button
-                        type="button"
+                      <Button
+                        size="sm"
+                        variant="danger-ghost"
                         onClick={() =>
                           nativeConfirm(
                             i18n.t('dishes.confirm.archive', { name }),
                             () => archive.mutate({ dishId: d.id }),
                           )
                         }
-                        className="press rounded-[var(--r-pill)] bg-[var(--c-surface)] px-2 py-0.5 text-[var(--c-fg-muted)] ring-hairline"
                       >
                         {i18n.t('common.archive')}
-                      </button>
+                      </Button>
                     )}
                   </div>
                 ) : null}
@@ -6164,9 +6118,10 @@ function TargetedPurgeBrowser() {
           query={sessionsQuery}
           emptyWhen={(d) => d.length === 0}
           empty={
-            <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3 text-body-sm text-[var(--c-fg-muted)] ring-hairline">
-              No order sessions on {date}.
-            </div>
+            <EmptyState
+              title="No order sessions"
+              description={`Nothing was submitted on ${date}.`}
+            />
           }
         >
           {(rows) => (
@@ -6226,9 +6181,10 @@ function TargetedPurgeBrowser() {
           query={runsQuery}
           emptyWhen={(d) => d.length === 0}
           empty={
-            <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3 text-body-sm text-[var(--c-fg-muted)] ring-hairline">
-              No market runs on {date}.
-            </div>
+            <EmptyState
+              title="No market runs"
+              description={`No purchasing runs on ${date}.`}
+            />
           }
         >
           {(rows) => (
@@ -6527,11 +6483,12 @@ function AdminAuditSection() {
                             {r.resourceId.slice(0, 8)}…
                           </span>
                         ) : null}
-                        {/* B2: store-scope chip per row */}
+                        {/* B2: store-scope chip per row.
+                            M3.17 (2026-05-16): inline span → <Badge>. */}
                         {r.scopeStoreId ? (
-                          <span className="rounded-full bg-[var(--c-surface-2)] px-2 py-0.5 text-tiny text-[var(--c-fg-muted)] ring-hairline">
+                          <Badge tone="muted">
                             🏪 {storeNameById.get(r.scopeStoreId) ?? r.scopeStoreId.slice(0, 8)}
-                          </span>
+                          </Badge>
                         ) : null}
                       </div>
                       <div className="mt-1 text-label text-[var(--c-fg-muted)]">
@@ -6918,25 +6875,22 @@ function FinanceSection() {
 
   return (
     <div className="px-4 py-3">
-      {/* Range picker — preset chips + two date inputs. */}
+      {/* Range picker — preset segmented control + two date inputs.
+          M3.17 (2026-05-16): preset chips migrated to shared <Segmented>. */}
       <div className="mb-3 flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3">
-        <div className="flex flex-wrap gap-1">
-          {(['today', 'yesterday', 'thisMonth', 'lastMonth', 'custom'] as const).map((p) => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => setPreset(p)}
-              className={
-                'press rounded-[var(--r-pill)] px-2.5 py-1 text-label font-medium ring-hairline ' +
-                (preset === p
-                  ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                  : 'bg-[var(--c-surface)] text-[var(--c-fg)]')
-              }
-            >
-              {i18n.t(`finance.preset.${p}` as Parameters<typeof i18n.t>[0])}
-            </button>
-          ))}
-        </div>
+        <Segmented<'today' | 'yesterday' | 'thisMonth' | 'lastMonth' | 'custom'>
+          value={preset}
+          equalWidth={false}
+          options={[
+            { value: 'today', label: i18n.t('finance.preset.today') },
+            { value: 'yesterday', label: i18n.t('finance.preset.yesterday') },
+            { value: 'thisMonth', label: i18n.t('finance.preset.thisMonth') },
+            { value: 'lastMonth', label: i18n.t('finance.preset.lastMonth') },
+            { value: 'custom', label: i18n.t('finance.preset.custom') },
+          ]}
+          onChange={setPreset}
+          ariaLabel={i18n.t('finance.range.start')}
+        />
         {preset === 'custom' ? (
           <div className="flex items-center gap-2">
             <Input
@@ -6999,35 +6953,33 @@ function FinanceSection() {
         </div>
       ) : null}
 
-      {/* View switcher + export. */}
-      <div className="mb-2 flex items-center gap-1">
-        {(['daily', 'bySupplier', 'byStore'] as const).map((v) => (
-          <button
-            key={v}
-            type="button"
-            onClick={() => {
-              setView(v);
-              setExpanded(null);
-            }}
-            className={
-              'press flex-1 rounded-[var(--r-pill)] px-2 py-1 text-label font-medium ring-hairline ' +
-              (view === v
-                ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]')
-            }
-          >
-            {i18n.t(`finance.view.${v}` as Parameters<typeof i18n.t>[0])}
-          </button>
-        ))}
-        <button
-          type="button"
+      {/* View switcher + export.
+          M3.17 (2026-05-16): view toggle migrated to <Segmented>; the
+          export button is a real <Button> at sm/pearl. */}
+      <div className="mb-2 flex items-center gap-2">
+        <Segmented<'daily' | 'bySupplier' | 'byStore'>
+          value={view}
+          options={[
+            { value: 'daily', label: i18n.t('finance.view.daily') },
+            { value: 'bySupplier', label: i18n.t('finance.view.bySupplier') },
+            { value: 'byStore', label: i18n.t('finance.view.byStore') },
+          ]}
+          onChange={(next) => {
+            setView(next);
+            setExpanded(null);
+          }}
+          className="flex-1"
+          ariaLabel={i18n.t('finance.view.daily')}
+        />
+        <Button
+          size="sm"
+          variant="pearl"
           onClick={exportText}
           disabled={lines.length === 0}
-          className="press shrink-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2.5 py-1 text-label font-medium text-[var(--c-fg)] ring-hairline disabled:opacity-40"
           aria-label={i18n.t('finance.export.label')}
         >
           📋 {i18n.t('finance.export.label')}
-        </button>
+        </Button>
       </div>
 
       {linesQuery.isLoading ? (

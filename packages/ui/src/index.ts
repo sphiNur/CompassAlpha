@@ -34,6 +34,8 @@ export { Skeleton } from './components/Skeleton';
 export { Stepper } from './components/Stepper';
 export { ChipBar, Chip } from './components/Chip';
 export { Tabs, Tab } from './components/Tabs';
+export { Segmented } from './components/Segmented';
+export type { SegmentedProps, SegmentedOption } from './components/Segmented';
 export { Avatar } from './components/Avatar';
 export { NumberInput } from './components/NumberInput';
 export type { NumberInputProps } from './components/NumberInput';
