@@ -23,8 +23,18 @@ const button = cva(
           'bg-transparent text-[var(--c-action)] rounded-[var(--r-pill)]',
         utility:
           'bg-[var(--c-fg)] text-[var(--c-fg-inverse)] rounded-[var(--r-utility)]',
+        // Filled red — for irreversible PRIMARY destructive actions
+        // (delete account, drop org). Heavy by design.
         danger:
           'bg-[var(--c-danger)] text-[var(--c-fg-inverse)] rounded-[var(--r-pill)]',
+        // M3.16 (2026-05-16): "soft danger" — transparent with red
+        // text + red hairline. Right tone for SECONDARY destructive
+        // operations (archive a category, archive a SKU) where the
+        // PRIMARY action sitting next to it is "Edit". Filled-danger
+        // was outweighing Edit in admin lists and pulling the user's
+        // eye to the dangerous button.
+        'danger-ghost':
+          'bg-transparent text-[var(--c-danger)] rounded-[var(--r-pill)] ring-1 ring-[var(--c-danger)]/40',
         pearl:
           'bg-[var(--c-surface-2)] text-[var(--c-fg)] rounded-[var(--r-capsule)] ring-hairline',
       },

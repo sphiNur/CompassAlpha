@@ -1,0 +1,140 @@
+/**
+ * Navigation state — bottom tab + admin drill-down. Persisted to
+ * localStorage so a hard refresh / Telegram WebApp reopen returns
+ * the user to the exact view they left.
+ *
+ * Added M3.16 (2026-05-16): the app previously held tab state in
+ * useState inside Shell.tsx and AdminPage.tsx. Reload → app
+ * remounted → state defaulted to "first visible tab" / admin home,
+ * which felt jarring when the operator had drilled five levels deep
+ * into a store's Team tab.
+ *
+ * Design:
+ *   - One Zustand slice with `persist` (same middleware authStore
+ *     uses) keyed under 'compass.nav.v1'.
+ *   - Tab + admin drill-down are co-located so a single tab switch
+ *     can also clear nested state when appropriate (we keep nested
+ *     state on tab switch because switching away → back is common,
+ *     but the back-button drill-up clears as before).
+ *   - Stale-tab guard: if the persisted tab is no longer in `visible`
+ *     (user lost a permission), fall back to the first visible one.
+ *
+ * NOT persisted (intentionally):
+ *   - Sheet open/close state. Sheets are transient; refreshing in
+ *     the middle of a Sheet should bring the user back to the
+ *     underlying page, not re-open a stale modal.
+ *   - Form drafts. Those are owned by the page component and reset
+ *     on remount (which is the right behavior — typing into a half-
+ *     finished form after a hard reload shouldn't quietly resume).
+ */
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+
+export type Tab = 'order' | 'approve' | 'run' | 'confirm' | 'admin';
+
+// Mirror of AdminPage's local types. Kept inline so this file has no
+// dependency on AdminPage.tsx (which is a lazy-loaded chunk).
+export type AdminSection =
+  | 'home'
+  | 'organization'
+  | 'stores'
+  | 'permissions'
+  | 'catalog'
+  | 'operations';
+export type CatalogSub = 'categories' | 'skus' | 'suppliers' | 'dishes' | null;
+export type OperationsSub =
+  | 'activity'
+  | 'history'
+  | 'maintenance'
+  | 'adminAudit'
+  | 'priceReport'
+  | 'finance'
+  | null;
+/**
+ * StoreFocus tracks "am I drilled into a specific store, or browsing
+ * the list?". JSON-safe.
+ */
+export type StoreFocus =
+  | null
+  | { kind: 'org-level' }
+  | { kind: 'store'; storeId: string; storeName: string };
+export type StoreSub = 'team' | 'settings' | 'inventory' | 'sales';
+
+export interface NavState {
+  tab: Tab;
+  adminSection: AdminSection;
+  catalogSub: CatalogSub;
+  opsSub: OperationsSub;
+  storeFocus: StoreFocus;
+  storeSub: StoreSub;
+
+  setTab: (tab: Tab) => void;
+  setAdminSection: (s: AdminSection) => void;
+  setCatalogSub: (s: CatalogSub) => void;
+  setOpsSub: (s: OperationsSub) => void;
+  setStoreFocus: (f: StoreFocus) => void;
+  setStoreSub: (s: StoreSub) => void;
+
+  /**
+   * Reset the admin drill-down to home. Used by the SectionFrame
+   * back button when popping back to the section list.
+   */
+  resetAdminDrillDown: () => void;
+}
+
+const DEFAULTS = {
+  tab: 'order' as Tab,
+  adminSection: 'home' as AdminSection,
+  catalogSub: null as CatalogSub,
+  opsSub: null as OperationsSub,
+  storeFocus: null as StoreFocus,
+  storeSub: 'team' as StoreSub,
+};
+
+export const useNavStore = create<NavState>()(
+  persist(
+    (set) => ({
+      ...DEFAULTS,
+      setTab: (tab) => set({ tab }),
+      setAdminSection: (adminSection) => set({ adminSection }),
+      setCatalogSub: (catalogSub) => set({ catalogSub }),
+      setOpsSub: (opsSub) => set({ opsSub }),
+      setStoreFocus: (storeFocus) => set({ storeFocus }),
+      setStoreSub: (storeSub) => set({ storeSub }),
+      resetAdminDrillDown: () =>
+        set({
+          adminSection: 'home',
+          catalogSub: null,
+          opsSub: null,
+          storeFocus: null,
+          storeSub: 'team',
+        }),
+    }),
+    {
+      // v1: tab + admin drill-down. Bump if the shape changes.
+      name: 'compass.nav.v1',
+      // Persist only the data — re-derive the actions on rehydrate.
+      partialize: (s) => ({
+        tab: s.tab,
+        adminSection: s.adminSection,
+        catalogSub: s.catalogSub,
+        opsSub: s.opsSub,
+        storeFocus: s.storeFocus,
+        storeSub: s.storeSub,
+      }),
+    },
+  ),
+);
+
+/**
+ * Resolve a persisted tab against the set of currently-visible tabs.
+ * If the user lost a permission since last session, fall back to the
+ * first visible tab so we don't render a blank page.
+ */
+export function resolveVisibleTab(
+  persisted: Tab,
+  visibleKeys: readonly Tab[],
+): Tab {
+  if (visibleKeys.includes(persisted)) return persisted;
+  return visibleKeys[0] ?? 'order';
+}

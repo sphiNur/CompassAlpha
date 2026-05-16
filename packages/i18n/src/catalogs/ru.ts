@@ -370,6 +370,13 @@ export const ru = {
   'order.notes.hasNote': 'Есть дополнительная просьба',
   'order.toast.noteSaveFailed': 'Не удалось сохранить заметку — попробуйте ещё раз.',
 
+  // M3.16-C: structured extras editor
+  'order.extras.label': 'Прочие позиции',
+  'order.extras.add': '+ Добавить',
+  'order.extras.namePlaceholder': 'Название позиции',
+  'order.extras.remove': 'Удалить',
+  'order.toast.extrasSaveFailed': 'Не удалось сохранить — попробуйте снова.',
+
   // ── ApprovalPage ────────────────────────────────────────────────
   'approval.title': 'Очередь согласования',
   'approval.empty.title': 'Входящих нет',

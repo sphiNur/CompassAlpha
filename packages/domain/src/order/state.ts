@@ -13,7 +13,7 @@
  *   "you can only edit lines you authored" by default, with a store-
  *   manager override.
  */
-import type { OrderEvent } from './events';
+import type { OrderEvent, SessionExtraItem } from './events';
 
 export type OrderStatus =
   | 'absent' // stream hasn't started yet
@@ -67,10 +67,16 @@ export interface OrderState {
   runId: string | null;
   /**
    * Session-level free-text "其他物品" note (M1.8, 2026-05-07).
-   * Staff use this for items not in the catalog. null/empty when
-   * nothing has been written. Last-write-wins on re-set.
+   * SUPERSEDED M3.16-C by `extras` (structured list). Kept for
+   * back-compat reads of pre-M3.16 sessions.
    */
   notes: string | null;
+  /**
+   * Structured "其他物品" line list (M3.16-C, 2026-05-16). Empty
+   * array when nothing has been added. Last-write-wins on the
+   * whole array — one SessionExtrasSet event replaces it atomically.
+   */
+  extras: SessionExtraItem[];
 }
 
 export function emptyState(streamId: string): OrderState {
@@ -92,6 +98,7 @@ export function emptyState(streamId: string): OrderState {
     rejectReason: null,
     runId: null,
     notes: null,
+    extras: [],
   };
 }
 
@@ -178,6 +185,18 @@ export function apply(state: OrderState, event: OrderEvent): OrderState {
         notes: event.payload.note && event.payload.note.trim()
           ? event.payload.note.trim()
           : null,
+      };
+    case 'SessionExtrasSet':
+      // M3.16-C (2026-05-16): structured "其他物品" array. Atomic
+      // replacement — the payload IS the new list, even if the
+      // operator only added one row. The reducer trusts the command
+      // layer to have validated each row's shape; we just shallow-
+      // copy so downstream mutations don't accidentally alias the
+      // payload reference.
+      return {
+        ...state,
+        seq: event.seq,
+        extras: event.payload.extras.map((e) => ({ ...e })),
       };
     case 'Submitted':
       return {

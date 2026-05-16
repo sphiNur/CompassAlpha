@@ -8,15 +8,17 @@
  * that pure logic touches the DB and the network.
  */
 import { TRPCError } from '@trpc/server';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { schema as s } from '@compass/db';
 import {
   AdjustItemInputSchema,
+  ExtrasSuggestionsInputSchema,
   PendingListInputSchema,
   RejectInputSchema,
   SessionDetailInputSchema,
   SetNoteInputSchema,
+  SetSessionExtrasInputSchema,
   SetSessionNoteInputSchema,
   SimpleSessionCommandSchema,
   TodaySessionInputSchema,
@@ -141,8 +143,21 @@ export const orderRouter = router({
         rejectReason: session.rejectReason,
         runId: session.runId,
         lastSeq: session.lastSeq,
-        /** Session-level free-text "其他物品" note (M1.8). */
+        /** Session-level free-text "其他物品" note (M1.8). Deprecated
+         *  M3.16-C; superseded by `extras`. Still surfaced for any
+         *  pre-M3.16 sessions whose notes haven't been migrated. */
         notes: session.notes,
+        /**
+         * Structured "其他物品" line items (M3.16-C, 2026-05-16).
+         * Array of { name, qty, unit, note? }. Empty when nothing
+         * has been added.
+         */
+        extras: (session.extrasJson ?? []) as Array<{
+          name: string;
+          qty: string;
+          unit: string;
+          note?: string;
+        }>,
         /** Aggregate qty per SKU (sum across contributors). */
         totals: [...totalBySku.entries()].map(([skuId, qty]) => ({
           skuId,
@@ -204,7 +219,15 @@ export const orderRouter = router({
           rejectReason: session.rejectReason,
           runId: session.runId,
           lastSeq: session.lastSeq,
+          /** Session-level free-text note (M1.8, deprecated M3.16-C). */
           notes: session.notes,
+          /** Structured "其他物品" line items (M3.16-C). */
+          extras: (session.extrasJson ?? []) as Array<{
+            name: string;
+            qty: string;
+            unit: string;
+            note?: string;
+          }>,
           totals: [...totalBySku.entries()].map(([skuId, qty]) => ({
             skuId,
             qty: qty.toFixed(3).replace(/\.?0+$/, ''),
@@ -619,6 +642,102 @@ export const orderRouter = router({
         } catch (err) {
           rethrowDomainError(err);
         }
+      });
+    }),
+
+  /**
+   * Replace the session's structured "其他物品" extras list. M3.16-C
+   * (2026-05-16). Sibling of setSessionNote — same edit gate, same
+   * realtime fanout. Atomic: the payload IS the new list.
+   */
+  setSessionExtras: authedProcedure
+    .input(SetSessionExtrasInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      return ctx.withOrg(async (tx) => {
+        const session = await loadSession(tx, ctx.session!.orgId, input.sessionId);
+        await assertActorAssignedToStore(
+          tx,
+          ctx.session!.memberId,
+          session.storeId,
+          ctx.session!.permissions,
+        );
+        const effectivePerms = await effectivePermissionsForStore(
+          tx,
+          ctx.session!.memberId,
+          session.storeId,
+          ctx.session!.permissions,
+        );
+        const events = (await readStream(tx, 'order', session.id)) as unknown as OrderEvent[];
+        let state = emptyState(session.id);
+        for (const e of events) state = apply(state, e);
+        try {
+          const out = decide(state, {
+            type: 'SetSessionExtras',
+            extras: input.extras,
+            actor: buildActor(ctx, state, effectivePerms),
+          });
+          if (out.length === 0) return { lastSeq: state.seq };
+          await appendEvents(tx, {
+            streamType: 'order',
+            streamId: session.id,
+            orgId: ctx.session!.orgId,
+            events: out.map((e) => ({ ...e })),
+          });
+          for (const e of out) state = apply(state, e);
+          await projectOrder(tx, ctx.session!.orgId, out);
+          hub.publish(ctx.session!.orgId, {
+            type: 'order.changed',
+            orgId: ctx.session!.orgId,
+            sessionId: state.streamId,
+            lastSeq: state.seq,
+          });
+          return { lastSeq: state.seq };
+        } catch (err) {
+          rethrowDomainError(err);
+        }
+      });
+    }),
+
+  /**
+   * Autocomplete suggestions for the "其他物品" name field. Returns up
+   * to 20 distinct names this store has used in the last 30 days,
+   * ordered by frequency. Powers the OrderPage ExtrasEditor's name
+   * dropdown.
+   *
+   * Scope: PER STORE — a chain spans multiple stores but each kitchen
+   * has its own quirks (Tashkent's "辣椒粉" ≠ Seoul's). Cross-store
+   * suggestions would leak operational habits between locations.
+   */
+  extrasSuggestions: authedProcedure
+    .input(ExtrasSuggestionsInputSchema)
+    .query(async ({ ctx, input }) => {
+      return ctx.withOrg(async (tx) => {
+        await assertActorAssignedToStore(
+          tx,
+          ctx.session!.memberId,
+          input.storeId,
+          ctx.session!.permissions,
+        );
+        // jsonb_array_elements unpacks the extras_json array per
+        // session, then we GROUP BY the name. The 30-day window
+        // mirrors the historical price report; long enough to cover
+        // seasonal items, short enough that stale typos drop off.
+        type Row = { name: string; cnt: number };
+        const search = (input.search ?? '').trim().toLowerCase();
+        const rows = await tx.execute<Row>(sql`
+          SELECT lower(elem->>'name') AS name, count(*)::int AS cnt
+          FROM read_model.order_sessions_v s
+          CROSS JOIN LATERAL jsonb_array_elements(s.extras_json) AS elem
+          WHERE s.org_id = ${ctx.session!.orgId}::uuid
+            AND s.store_id = ${input.storeId}::uuid
+            AND s.order_date >= (current_date - interval '30 days')
+            AND elem->>'name' IS NOT NULL
+            ${search ? sql`AND lower(elem->>'name') LIKE ${'%' + search + '%'}` : sql``}
+          GROUP BY lower(elem->>'name')
+          ORDER BY cnt DESC, name ASC
+          LIMIT 20
+        `);
+        return rows.map((r) => ({ name: r.name, count: r.cnt }));
       });
     }),
 

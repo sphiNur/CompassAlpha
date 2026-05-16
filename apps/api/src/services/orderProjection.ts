@@ -100,6 +100,21 @@ export async function projectOrder(db: DB, orgId: string, events: OrderEvent[]):
           })
           .where(eq(s.orderSessionsV.id, e.streamId));
         break;
+      case 'SessionExtrasSet':
+        // M3.16-C (2026-05-16): structured "其他物品" array. The
+        // command layer has already validated each row; we just
+        // serialize the payload into the jsonb column. JSON.stringify
+        // works because the array is plain { name, qty, unit, note? }
+        // objects — no Date / Map / Set values.
+        await db
+          .update(s.orderSessionsV)
+          .set({
+            extrasJson: e.payload.extras,
+            lastSeq: e.seq,
+            updatedAt: new Date(),
+          })
+          .where(eq(s.orderSessionsV.id, e.streamId));
+        break;
       case 'Submitted':
         await db
           .update(s.orderSessionsV)

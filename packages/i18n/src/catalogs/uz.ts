@@ -381,6 +381,13 @@ export const uz = {
   'order.notes.hasNote': "Qo'shimcha so'rov bor",
   'order.toast.noteSaveFailed': "Izohni saqlab bo'lmadi — qaytadan urinib ko'ring.",
 
+  // M3.16-C: structured extras editor
+  'order.extras.label': 'Boshqa narsalar',
+  'order.extras.add': '+ Qoʻshish',
+  'order.extras.namePlaceholder': 'Mahsulot nomi',
+  'order.extras.remove': 'Oʻchirish',
+  'order.toast.extrasSaveFailed': 'Saqlash imkonsiz boʻldi — qayta urinib koʻring.',
+
   // ── ApprovalPage ────────────────────────────────────────────────
   'approval.title': 'Tasdiqlash navbati',
   'approval.empty.title': "Kiruvchi qutisi bo'sh",

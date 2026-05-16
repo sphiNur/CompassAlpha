@@ -83,6 +83,35 @@ export const SetSessionNoteInputSchema = z.object({
   expectedSeq: z.number().int().optional(),
 });
 
+/**
+ * One row in the structured "其他物品" list (M3.16-C, 2026-05-16).
+ *
+ * Field-by-field validation mirrors the domain-layer checks in
+ * decide() so the API rejects bad shapes BEFORE we load the event
+ * stream — saving a round-trip on the common case (manager typos a
+ * decimal, FE didn't catch it).
+ */
+export const SessionExtraItemSchema = z.object({
+  name: z.string().min(1).max(200),
+  qty: z.string().regex(/^\d+(\.\d{1,3})?$/, 'invalid qty'),
+  unit: z.string().min(1).max(16),
+  note: z.string().max(200).optional(),
+});
+
+export const SetSessionExtrasInputSchema = z.object({
+  sessionId: UuidSchema,
+  /** Max 50 rows per session — same hard cap the domain enforces. */
+  extras: z.array(SessionExtraItemSchema).max(50),
+  expectedSeq: z.number().int().optional(),
+});
+
+/** Query input — list of recently-used extra names for autocomplete. */
+export const ExtrasSuggestionsInputSchema = z.object({
+  storeId: UuidSchema,
+  /** Optional prefix for type-ahead. Empty = top-N most-used. */
+  search: z.string().max(100).optional(),
+});
+
 export const SimpleSessionCommandSchema = z.object({
   sessionId: UuidSchema,
   expectedSeq: z.number().int().optional(),

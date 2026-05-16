@@ -18,6 +18,7 @@ export type OrderEventType =
   | 'ItemAdjusted'
   | 'ItemNoteSet'
   | 'SessionNoteSet'
+  | 'SessionExtrasSet'
   | 'Submitted'
   | 'Claimed'
   | 'ClaimReleased'
@@ -28,6 +29,25 @@ export type OrderEventType =
   | 'AttachedToRun'
   | 'EjectedFromRun'
   | 'Archived';
+
+/**
+ * Structured "其他物品" line (M3.16-C, 2026-05-16). Replaces the
+ * free-text `notes` blob. Each row is one off-catalog item the
+ * store needs the runner to source.
+ *
+ * Wire format: JSON-safe. `qty` is decimal-as-string to match how
+ * SKU qty is serialised everywhere else in the system.
+ */
+export interface SessionExtraItem {
+  /** Free-text product name in any language (e.g. "辣椒粉"). 1..200 chars. */
+  name: string;
+  /** Decimal qty as string (e.g. "0.5", "10"). Must parse to > 0. */
+  qty: string;
+  /** Unit (e.g. "kg", "包", "瓶"). 1..16 chars. */
+  unit: string;
+  /** Optional per-row note (e.g. "大包装优先"). ≤200 chars. */
+  note?: string;
+}
 
 interface BaseEvent {
   /** Stream id — also the session id. */
@@ -90,6 +110,22 @@ export type SessionNoteSetEvent = BaseEvent & {
   payload: { note: string | null; byMemberId: string };
 };
 
+/**
+ * Session-level structured extras list (M3.16-C, 2026-05-16).
+ * Successor to SessionNoteSet — the staff member maintains a list of
+ * { name, qty, unit, note? } rows for items not in the SKU catalog.
+ *
+ * Atomic replacement: payload contains the FULL list. Adding,
+ * removing, and editing a row all produce a single SessionExtrasSet
+ * event with the new full list. Same edit gate as SessionNoteSet
+ * (owner during draft/rejected, claimer during submitted review;
+ * locked once approved/in_run/archived).
+ */
+export type SessionExtrasSetEvent = BaseEvent & {
+  type: 'SessionExtrasSet';
+  payload: { extras: SessionExtraItem[]; byMemberId: string };
+};
+
 export type SubmittedEvent = BaseEvent & {
   type: 'Submitted';
   payload: { itemCount: number; byMemberId: string };
@@ -149,6 +185,7 @@ export type OrderEvent =
   | ItemAdjustedEvent
   | ItemNoteSetEvent
   | SessionNoteSetEvent
+  | SessionExtrasSetEvent
   | SubmittedEvent
   | ClaimedEvent
   | ClaimReleasedEvent
@@ -167,6 +204,7 @@ export function isOrderEvent(e: { type: string }): e is OrderEvent {
     'ItemAdjusted',
     'ItemNoteSet',
     'SessionNoteSet',
+    'SessionExtrasSet',
     'Submitted',
     'Claimed',
     'ClaimReleased',

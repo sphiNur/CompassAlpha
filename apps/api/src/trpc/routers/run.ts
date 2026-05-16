@@ -289,23 +289,37 @@ export const runRouter = router({
 
         // M1.8 (2026-05-07): bundle the session-level "其他物品" notes
         // by store so the FE can show them inline next to that store's
-        // demand block. We keep it under the store id (not session id)
-        // because the by-store preview groups demand by store, and a
-        // store can in principle have multiple sessions per day if
-        // multiple staff drafted in parallel — concat their notes with
-        // a separator. Quick visual cue for the purchaser before they
-        // hit the market.
+        // demand block. Per-store concat with separators for legibility.
+        //
+        // M3.16-C (2026-05-16): also bundle structured `extras`. Both
+        // surfaces are emitted so the FE can render whichever the user
+        // typed (pre-M3.16 sessions = notes string, new sessions =
+        // extras array). Eventually `notes` drops once no live sessions
+        // carry the legacy text.
+        type ExtraItem = { name: string; qty: string; unit: string; note?: string };
         const notesByStore = new Map<string, string[]>();
+        const extrasByStore = new Map<string, ExtraItem[]>();
         for (const sess of sessions) {
           const trimmed = (sess.notes ?? '').trim();
-          if (!trimmed) continue;
-          const arr = notesByStore.get(sess.storeId) ?? [];
-          arr.push(trimmed);
-          notesByStore.set(sess.storeId, arr);
+          if (trimmed) {
+            const arr = notesByStore.get(sess.storeId) ?? [];
+            arr.push(trimmed);
+            notesByStore.set(sess.storeId, arr);
+          }
+          const extras = (sess.extrasJson ?? []) as ExtraItem[];
+          if (extras.length > 0) {
+            const arr = extrasByStore.get(sess.storeId) ?? [];
+            arr.push(...extras);
+            extrasByStore.set(sess.storeId, arr);
+          }
         }
         const sessionNotesByStore: Record<string, string> = {};
         for (const [sid, arr] of notesByStore.entries()) {
           sessionNotesByStore[sid] = arr.join('\n\n');
+        }
+        const sessionExtrasByStore: Record<string, ExtraItem[]> = {};
+        for (const [sid, arr] of extrasByStore.entries()) {
+          sessionExtrasByStore[sid] = arr;
         }
 
         return {
@@ -315,6 +329,7 @@ export const runRouter = router({
             storeId: s.storeId,
             submittedByMemberId: s.submittedByMemberId,
             notes: s.notes,
+            extras: (s.extrasJson ?? []) as ExtraItem[],
           })),
           plannedItems: [...aggregated.entries()].map(([skuId, qty]) => ({
             skuId,
@@ -322,9 +337,12 @@ export const runRouter = router({
           })),
           perStoreDemand,
           supplierBySku,
-          /** Per-store concatenated session notes (M1.8). Empty record
-           *  when no notes anywhere. */
+          /** Per-store concatenated session notes (M1.8, legacy). Empty
+           *  record when no notes anywhere. */
           sessionNotesByStore,
+          /** Per-store structured extras (M3.16-C). Empty record when
+           *  no extras anywhere. */
+          sessionExtrasByStore,
           total: aggregated.size,
         };
       });
@@ -644,18 +662,23 @@ export const runRouter = router({
         let perStoreDemand: Array<{ storeId: string; skuId: string; qty: string }> = [];
         // M1.8 (2026-05-07): per-store concatenated session notes so the
         // purchaser sees the staff's "其他物品" requests next to that
-        // store's demand block.
+        // store's demand block. M3.16-C extends this with per-store
+        // structured extras (name + qty + unit + note?) emitted as the
+        // M3.16+ replacement for free-text notes.
+        type ExtraItem = { name: string; qty: string; unit: string; note?: string };
         const sessionNotesByStore: Record<string, string> = {};
+        const sessionExtrasByStore: Record<string, ExtraItem[]> = {};
         if (sessionIds.length > 0) {
           const sessions = await tx.query.orderSessionsV.findMany({
             where: (sess, { inArray: ia }) => ia(sess.id, sessionIds),
-            columns: { id: true, storeId: true, notes: true },
+            columns: { id: true, storeId: true, notes: true, extrasJson: true },
           });
           const sessionItems = await tx.query.orderItemsV.findMany({
             where: (it, { inArray: ia }) => ia(it.sessionId, sessionIds),
           });
           const sessionStoreById = new Map<string, string>();
           const noteAccumulator = new Map<string, string[]>();
+          const extrasAccumulator = new Map<string, ExtraItem[]>();
           for (const s of sessions) {
             sessionStoreById.set(s.id, s.storeId);
             const trimmed = (s.notes ?? '').trim();
@@ -664,9 +687,18 @@ export const runRouter = router({
               arr.push(trimmed);
               noteAccumulator.set(s.storeId, arr);
             }
+            const extras = (s.extrasJson ?? []) as ExtraItem[];
+            if (extras.length > 0) {
+              const arr = extrasAccumulator.get(s.storeId) ?? [];
+              arr.push(...extras);
+              extrasAccumulator.set(s.storeId, arr);
+            }
           }
           for (const [sid, arr] of noteAccumulator.entries()) {
             sessionNotesByStore[sid] = arr.join('\n\n');
+          }
+          for (const [sid, arr] of extrasAccumulator.entries()) {
+            sessionExtrasByStore[sid] = arr;
           }
           // Aggregate qty by (storeId, skuId).
           const acc = new Map<string, number>();
@@ -712,7 +744,15 @@ export const runRouter = router({
             lastPriceBySku[r.sku_id] = r.unit_price;
           }
         }
-        return { ...run, items, splits, perStoreDemand, lastPriceBySku, sessionNotesByStore };
+        return {
+          ...run,
+          items,
+          splits,
+          perStoreDemand,
+          lastPriceBySku,
+          sessionNotesByStore,
+          sessionExtrasByStore,
+        };
       });
     }),
 

@@ -69,6 +69,7 @@ import { useErrToast } from '../lib/errToast';
 import { matchesNameLike, matchesAnyString, normalizeQuery } from '../lib/searchMatch';
 import { formatQty, formatMoney } from '../lib/format';
 import { useAuthStore } from '../stores/authStore';
+import { useNavStore } from '../stores/navStore';
 import { getTg, useTelegramBackButton } from '../hooks/useTelegram';
 import { useI18n, useProductName } from '../hooks/useI18n';
 import { useStoreContext } from '../components/StoreSwitcher';
@@ -173,16 +174,26 @@ function nativeConfirm(message: string, ok: () => void): void {
 
 export function AdminPage() {
   const session = useAuthStore((s) => s.session);
-  const [section, setSection] = useState<AdminSection>('home');
-  const [catalogSub, setCatalogSub] = useState<CatalogSub | null>(null);
-  const [opsSub, setOpsSub] = useState<OperationsSub | null>(null);
+  // M3.16-B (2026-05-16): drill-down state migrated from useState to
+  // navStore (persisted). Reload now restores the exact admin view —
+  // e.g. /admin → Stores → Eden Magic City → Team comes back intact
+  // instead of resetting to the admin home menu.
+  const section = useNavStore((s) => s.adminSection);
+  const setSection = useNavStore((s) => s.setAdminSection);
+  const catalogSub = useNavStore((s) => s.catalogSub);
+  const setCatalogSub = useNavStore((s) => s.setCatalogSub);
+  const opsSub = useNavStore((s) => s.opsSub);
+  const setOpsSub = useNavStore((s) => s.setOpsSub);
   // M1.4 (2026-05-06): "Stores" section drives everything member-related.
   // `storeFocus` is null when browsing the store list; non-null when
   // drilled into a specific store (or the org-level pseudo-store).
   // `storeSub` selects between Team / Settings tabs inside a focused
   // store. Org-level only ever has 'team' (no settings).
-  const [storeFocus, setStoreFocus] = useState<StoreFocus>(null);
-  const [storeSub, setStoreSub] = useState<StoreSub>('team');
+  const storeFocus = useNavStore((s) => s.storeFocus);
+  const setStoreFocus = useNavStore((s) => s.setStoreFocus);
+  const storeSub = useNavStore((s) => s.storeSub);
+  const setStoreSub = useNavStore((s) => s.setStoreSub);
+  const resetAdminDrillDown = useNavStore((s) => s.resetAdminDrillDown);
 
   const isAdmin = session?.permissions.includes('users.manage') ?? false;
   const isSuperAdmin = session?.roleSlugs.includes('super_admin') ?? false;
@@ -227,11 +238,9 @@ export function AdminPage() {
           } else if (section === 'operations' && opsSub) {
             setOpsSub(null);
           } else {
-            setSection('home');
-            setCatalogSub(null);
-            setOpsSub(null);
-            setStoreFocus(null);
-            setStoreSub('team');
+            // M3.16-B: bundle the home-pop into a single store action
+            // so it's one persisted write instead of five.
+            resetAdminDrillDown();
           }
         }}
       >
@@ -968,7 +977,7 @@ function PeopleSection({
                     Permissions / Suspend / Reactivate / Remove-store /
                     Remove-org all live in the member-menu sheet at the
                     page level (state: memberMenuFor). */}
-                <div className="mt-2 flex items-center gap-2 border-t border-[var(--c-divider)] px-4 py-3">
+                <div className="mt-2 flex items-center gap-2 border-t border-[var(--c-divider)] px-4 py-2">
                   <Button
                     size="sm"
                     variant="pearl"
@@ -1962,7 +1971,7 @@ function InviteHubSheet({
           type="button"
           onClick={handleShare}
           disabled={!botUsername}
-          className="press flex items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3 text-left ring-hairline disabled:opacity-50"
+          className="press flex items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 text-left ring-hairline disabled:opacity-50"
         >
           <span className="text-[var(--c-action)]">
             <IconShare size={20} />
@@ -1986,7 +1995,7 @@ function InviteHubSheet({
           type="button"
           onClick={handleCopy}
           disabled={!botUsername}
-          className="press flex items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3 text-left ring-hairline disabled:opacity-50"
+          className="press flex items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 text-left ring-hairline disabled:opacity-50"
         >
           <span className="text-[var(--c-action)]">
             <IconShare size={20} />
@@ -2008,7 +2017,7 @@ function InviteHubSheet({
         <button
           type="button"
           onClick={onPickManual}
-          className="press flex items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3 text-left ring-hairline"
+          className="press flex items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 text-left ring-hairline"
         >
           <span className="min-w-0 flex-1">
             <span className="block text-body font-semibold text-[var(--c-fg)]">
@@ -3256,7 +3265,7 @@ function GrantRoleSheet({
               type="button"
               disabled={grant.isPending}
               onClick={() => handlePick(r.slug)}
-              className="press flex items-center justify-between rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3 text-left ring-hairline"
+              className="press flex items-center justify-between rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 text-left ring-hairline"
             >
               <div>
                 <div className="text-body font-semibold text-[var(--c-fg)]">
@@ -3439,7 +3448,7 @@ function StoresHomeSection({
                 <button
                   type="button"
                   onClick={() => onPickStore({ kind: 'org-level' })}
-                  className="press flex w-full items-start justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-3 text-left ring-hairline"
+                  className="press flex w-full items-start justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-2.5 text-left ring-hairline"
                 >
                   <span className="min-w-0">
                     <span className="block text-h2 font-semibold tracking-tight text-[var(--c-fg)]">
@@ -3477,7 +3486,7 @@ function StoresHomeSection({
                         storeName: st.name,
                       })
                     }
-                    className="press flex w-full items-start justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-3 text-left ring-hairline"
+                    className="press flex w-full items-start justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-2.5 text-left ring-hairline"
                   >
                     <span className="min-w-0">
                       <span className="block text-h2 font-semibold tracking-tight text-[var(--c-fg)]">
@@ -4372,7 +4381,7 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
         ) : null}
         {canAdmin ? (
           <Button
-            variant="danger"
+            variant="danger-ghost"
             onClick={() =>
               nativeConfirm(`Archive "${store.name}"?`, () =>
                 remove.mutate({ storeId }),
@@ -4641,7 +4650,7 @@ function CategoriesSection() {
                     </div>
                     {c.isArchived ? <Badge tone="muted">archived</Badge> : null}
                   </CardHeader>
-                  <div className="flex gap-2 border-t border-[var(--c-divider)] px-4 py-3">
+                  <div className="flex gap-2 border-t border-[var(--c-divider)] px-4 py-2">
                     <Button
                       size="sm"
                       variant="pearl"
@@ -4662,7 +4671,7 @@ function CategoriesSection() {
                     {!c.isArchived ? (
                       <Button
                         size="sm"
-                        variant="danger"
+                        variant="danger-ghost"
                         onClick={() =>
                           nativeConfirm(
                             `Archive category "${productName({ names }) || c.slug}"?`,
@@ -4945,7 +4954,7 @@ function SkusSection() {
                     </div>
                     {sk.isArchived ? <Badge tone="muted">archived</Badge> : null}
                   </CardHeader>
-                  <div className="flex gap-2 border-t border-[var(--c-divider)] px-4 py-3">
+                  <div className="flex gap-2 border-t border-[var(--c-divider)] px-4 py-2">
                     <Button
                       size="sm"
                       variant="pearl"
@@ -4973,7 +4982,7 @@ function SkusSection() {
                     {!sk.isArchived ? (
                       <Button
                         size="sm"
-                        variant="danger"
+                        variant="danger-ghost"
                         onClick={() =>
                           nativeConfirm(`Archive SKU "${primary}"?`, () =>
                             remove.mutate({ skuId: sk.id }),
@@ -5243,7 +5252,7 @@ function SuppliersSection() {
                   </div>
                   {sp.isArchived ? <Badge tone="muted">archived</Badge> : null}
                 </CardHeader>
-                <div className="flex gap-2 border-t border-[var(--c-divider)] px-4 py-3">
+                <div className="flex gap-2 border-t border-[var(--c-divider)] px-4 py-2">
                   <Button
                     size="sm"
                     variant="pearl"
@@ -5264,7 +5273,7 @@ function SuppliersSection() {
                   {!sp.isArchived ? (
                     <Button
                       size="sm"
-                      variant="danger"
+                      variant="danger-ghost"
                       onClick={() =>
                         nativeConfirm(`Archive supplier "${sp.name}"?`, () =>
                           remove.mutate({ supplierId: sp.id }),
@@ -5977,7 +5986,7 @@ function HistorySection() {
                     ) : null}
                   </div>
                   {isOpen ? (
-                    <div className="border-t border-[var(--c-divider)] px-4 py-3">
+                    <div className="border-t border-[var(--c-divider)] px-4 py-2">
                       <SectionLabel padded={false}>
                         Contributor breakdown
                       </SectionLabel>

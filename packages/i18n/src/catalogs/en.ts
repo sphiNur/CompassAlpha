@@ -433,6 +433,13 @@ export const en = {
   'order.notes.hasNote': 'Has additional request',
   'order.toast.noteSaveFailed': 'Could not save the note — try again.',
 
+  // ── M3.16-C: structured "Other items" (extras) editor ───────────
+  'order.extras.label': 'Other items',
+  'order.extras.add': '+ Add item',
+  'order.extras.namePlaceholder': 'Item name',
+  'order.extras.remove': 'Remove',
+  'order.toast.extrasSaveFailed': 'Could not save the extra items — try again.',
+
   // ── ApprovalPage (the manager-side) ─────────────────────────────
   'approval.title': 'Approval queue',
   'approval.empty.title': 'Inbox is empty',

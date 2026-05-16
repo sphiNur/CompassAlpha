@@ -337,6 +337,13 @@ export const zh = {
   'order.notes.hasNote': '有额外需求',
   'order.toast.noteSaveFailed': '备注未能保存，请再试一次。',
 
+  // M3.16-C: structured extras editor
+  'order.extras.label': '其他物品',
+  'order.extras.add': '+ 新增条目',
+  'order.extras.namePlaceholder': '物品名称',
+  'order.extras.remove': '删除',
+  'order.toast.extrasSaveFailed': '无法保存其他物品，请重试。',
+
   // ── ApprovalPage ────────────────────────────────────────────────
   'approval.title': '审核队列',
   'approval.empty.title': '收件箱为空',

@@ -49,12 +49,22 @@ export const orderSessionsV = readModelSchema.table(
     rejectReason: text('reject_reason'),
     runId: uuid('run_id'),
     /**
-     * Free-text "其他物品" note (M1.8, 2026-05-07). Last-write-wins;
-     * only the session owner can edit (same gate as line items). Null
-     * when nothing has been written. Length cap enforced in the
-     * domain layer (1000 chars).
+     * Free-text "其他物品" note (M1.8, 2026-05-07).
+     *
+     * M3.16-C (2026-05-16): superseded by `extrasJson` below. The
+     * column is retained for backwards-compat reads of pre-M3.16
+     * sessions; new writes go through extrasJson and downstream
+     * pages render the structured list. Drop once no live sessions
+     * have a non-null `notes` value.
      */
     notes: text('notes'),
+    /**
+     * Structured "其他物品" line items (M3.16-C, 2026-05-16). Array
+     * of { name, qty, unit, note? } objects. Default '[]'::jsonb.
+     * Last-write-wins on the whole array — there is no per-item
+     * event; SessionExtrasSet overwrites the list atomically.
+     */
+    extrasJson: jsonb('extras_json').notNull().default(sql`'[]'::jsonb`),
     totalsJson: jsonb('totals_json').notNull().default(sql`'{}'::jsonb`),
     lastSeq: bigint('last_seq', { mode: 'number' }).notNull().default(0),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' })

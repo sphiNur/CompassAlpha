@@ -4,12 +4,15 @@ import {
   Button,
   ChipBar,
   Chip,
+  cn,
   DataState,
   EmptyState,
+  Input,
+  NumberInput,
   QtyControl,
   SearchInput,
+  SectionLabel,
   Sheet,
-  Textarea,
   useToast,
 } from '@compass/ui';
 import { trpc } from '../lib/trpc';
@@ -308,6 +311,8 @@ export function OrderPage() {
             runId: null,
             lastSeq: 0,
             notes: null,
+            // M3.16-C: new sessions start with no structured extras.
+            extras: [],
             totals: recomputeTotals(items),
             items,
           };
@@ -390,15 +395,14 @@ export function OrderPage() {
   });
 
   /**
-   * Session-level "其他物品" free-text note (M1.8, 2026-05-07).
-   * Debounced save matching the line-item adjust pattern. The user
-   * types continuously; we save 600ms after the last keystroke.
+   * Session-level "其他物品" structured extras (M3.16-C, 2026-05-16).
+   * Successor to setSessionNote — sends the WHOLE updated list every
+   * time. ExtrasEditor below does the local accumulation; this just
+   * persists the snapshot.
    */
-  const setSessionNote = trpc.order.setSessionNote.useMutation({
+  const setSessionExtras = trpc.order.setSessionExtras.useMutation({
     retry: false,
     onError: (err) => {
-      // Stale-seq retries handle themselves on next refetch — only
-      // surface "real" errors to the user.
       const code = (err as { data?: { code?: string } }).data?.code;
       if (code === 'CONFLICT') {
         if (currentStoreId) {
@@ -406,7 +410,7 @@ export function OrderPage() {
         }
         return;
       }
-      errToast('order.toast.noteSaveFailed')(err);
+      errToast('order.toast.extrasSaveFailed')(err);
     },
   });
 
@@ -756,31 +760,32 @@ export function OrderPage() {
         )}
       </DataState>
 
-      {/* Session-level "其他物品" free-text note (M1.8). Sits at the
-          bottom of the SKU list so it's the last thing the staff sees
-          before reviewing — natural placement for "and one more thing
-          that's not in the catalog". Hidden once the session leaves
-          draft (the value is shown read-only on ApprovalPage / RunPage).
-          We render it only when a session row exists; before the user
-          adds their first item there's no stream yet, and writing a
-          note alone wouldn't carry meaning. */}
+      {/* Session-level "其他物品" structured extras (M3.16-C,
+          2026-05-16). Replaces the M1.8 free-text textarea with a
+          structured list of {name, qty, unit, note?} rows. Sits at
+          the bottom of the SKU list so it's the last thing the staff
+          sees before reviewing — natural placement for "and these
+          items aren't in the catalog". Read-only once the session
+          leaves draft (shown read-only on Approval / Run pages).
+          We render it only when a session row exists; before the
+          user adds their first item there's no stream yet, and
+          adding an extra alone wouldn't carry meaning. */}
       {sessionQuery.data?.id && sessionQuery.data.id !== 'optimistic' ? (
-        <SessionNotesEditor
+        <SessionExtrasEditor
           sessionId={sessionQuery.data.id}
           storeId={currentStoreId ?? ''}
-          initialValue={sessionQuery.data.notes ?? ''}
+          initialValue={sessionQuery.data.extras ?? []}
           isReadOnly={isReadOnly}
-          onSave={async (value) => {
-            const trimmed = value.trim();
-            await setSessionNote.mutateAsync({
+          onSave={async (extras) => {
+            await setSessionExtras.mutateAsync({
               sessionId: sessionQuery.data!.id,
-              note: trimmed.length === 0 ? null : trimmed,
+              extras,
             });
-            // Optimistically write the cache so the textarea doesn't
-            // flicker on next refetch.
+            // Optimistic cache write so the editor doesn't flicker
+            // on next refetch.
             utils.order.todaySession.setData(
               { storeId: currentStoreId ?? '' },
-              (old) => (old ? { ...old, notes: trimmed.length === 0 ? null : trimmed } : old),
+              (old) => (old ? { ...old, extras } : old),
             );
           }}
         />
@@ -1072,62 +1077,70 @@ function ReviewList({
 }
 
 /**
- * Session-level free-text "其他物品" textarea (M1.8, 2026-05-07).
+ * Session-level structured "其他物品" extras editor (M3.16-C,
+ * 2026-05-16). Replaces SessionNotesEditor / the free-text textarea.
+ *
+ * Data shape: each extra is { name, qty, unit, note? }. The editor
+ * holds the full list locally, mutates it on each row edit, and fires
+ * a single setSessionExtras mutation 700 ms after the last keystroke
+ * (or immediately on row add / remove). The mutation always sends the
+ * WHOLE list — atomic-replace semantics match the domain event.
  *
  * Why a separate component:
- *   - It owns its own controlled state so the user's typing doesn't
- *     wait on the round-trip to the server.
- *   - The debounce timer + dirty flag are local; lifting them up would
- *     pollute OrderPage with another ref + effect.
- *   - It stays mounted across refetches; we only adopt the server value
- *     into the local state when our local copy is "clean" (matches what
- *     we last submitted), so a parallel writer (rare — same store, same
- *     staff, two tabs) can't clobber what the user is typing right now.
+ *   - Local rows array means typing doesn't wait for the server.
+ *   - Suggestion query is per-row but identical per editor mount;
+ *     the dropdown state is scoped inside the row component.
+ *   - Stays mounted across refetches; adopts the server array into
+ *     local state only when local is clean.
  *
- * UX: 600ms debounce. Auto-grows up to ~6 lines, then scrolls. 1000-char
- * cap matches domain enforcement; we soft-truncate at the textarea level
- * so the user sees the limit before the server rejects. Read-only once
- * the session is submitted/approved/etc — manager sees the value on
- * ApprovalPage instead.
+ * Read-only mode: collapses each row to a one-line "name · qty unit"
+ * read. Hidden entirely when no extras (read-only + empty list).
  */
-function SessionNotesEditor({
+interface ExtraDraft {
+  name: string;
+  qty: string;
+  unit: string;
+  note?: string;
+}
+
+function SessionExtrasEditor({
   sessionId,
+  storeId,
   initialValue,
   isReadOnly,
   onSave,
 }: {
   sessionId: string;
   storeId: string;
-  initialValue: string;
+  initialValue: ExtraDraft[];
   isReadOnly: boolean;
-  onSave: (value: string) => Promise<void>;
+  onSave: (extras: ExtraDraft[]) => Promise<void>;
 }) {
   const i18n = useI18n();
-  const [value, setValue] = useState(initialValue);
-  // The last value we saved to the server (or accepted from the server
-  // because our local was clean). Used as the dirty-check baseline so
-  // we don't fire a save for the no-op case where the parent prop
-  // changed but the user value also matches it.
-  const lastSavedRef = useRef(initialValue);
+  const [rows, setRows] = useState<ExtraDraft[]>(() =>
+    initialValue.map((r) => ({ ...r })),
+  );
+  const lastSavedRef = useRef<string>(JSON.stringify(initialValue));
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [savingState, setSavingState] = useState<'idle' | 'saving' | 'saved'>('idle');
 
-  // Adopt server value when local is clean. Skip when the user is in
-  // the middle of an edit (value !== lastSavedRef.current) — their
-  // typing wins until the debounce fires.
+  // Adopt server array when local is clean. Compare via JSON string
+  // (cheap; arrays are short ≤50 rows). If our local copy doesn't
+  // match what we last saved, the user is mid-edit — let them win.
   useEffect(() => {
-    if (value === lastSavedRef.current) {
-      lastSavedRef.current = initialValue;
-      setValue(initialValue);
+    const serverJson = JSON.stringify(initialValue);
+    if (JSON.stringify(rows) === lastSavedRef.current) {
+      lastSavedRef.current = serverJson;
+      setRows(initialValue.map((r) => ({ ...r })));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialValue]);
+  }, [JSON.stringify(initialValue)]);
 
-  // Reset when sessionId changes (e.g. switching stores → different
-  // session entirely; we should not carry typing state across).
+  // Reset on session swap (different store → different session).
   useEffect(() => {
-    lastSavedRef.current = initialValue;
-    setValue(initialValue);
+    const next = initialValue.map((r) => ({ ...r }));
+    lastSavedRef.current = JSON.stringify(next);
+    setRows(next);
     setSavingState('idle');
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
@@ -1136,54 +1149,100 @@ function SessionNotesEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
+  // Sanitize for the wire: drop empty-name rows, trim, coerce qty to
+  // a valid decimal-as-string (or '1' fallback). The server enforces
+  // the same rules; we just don't want to fire a guaranteed-reject
+  // request for in-progress UI state.
+  const sanitize = useCallback((draft: ExtraDraft[]): ExtraDraft[] => {
+    const out: ExtraDraft[] = [];
+    for (const r of draft) {
+      const name = r.name.trim();
+      const unit = r.unit.trim();
+      const qty = r.qty.trim();
+      if (!name || !unit) continue;
+      if (!/^\d+(\.\d{1,3})?$/.test(qty) || Number(qty) <= 0) continue;
+      const note = r.note?.trim();
+      out.push({
+        name,
+        qty,
+        unit,
+        ...(note ? { note } : {}),
+      });
+    }
+    return out;
+  }, []);
+
   const scheduleSave = useCallback(
-    (next: string) => {
+    (next: ExtraDraft[], { immediate = false } = {}) => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(async () => {
-        debounceRef.current = null;
-        if (next === lastSavedRef.current) return;
+      const fire = async () => {
+        const cleaned = sanitize(next);
+        const cleanedJson = JSON.stringify(cleaned);
+        if (cleanedJson === lastSavedRef.current) return;
         setSavingState('saving');
         try {
-          await onSave(next);
-          lastSavedRef.current = next;
+          await onSave(cleaned);
+          lastSavedRef.current = cleanedJson;
           setSavingState('saved');
-          // Clear the "saved" indicator after a moment so it doesn't
-          // linger and look like a permanent UI element.
           setTimeout(() => setSavingState('idle'), 1500);
         } catch {
           setSavingState('idle');
-          // The mutation hook surfaces the toast; we don't.
         }
-      }, 600);
+      };
+      if (immediate) {
+        void fire();
+      } else {
+        debounceRef.current = setTimeout(() => {
+          debounceRef.current = null;
+          void fire();
+        }, 700);
+      }
     },
-    [onSave],
+    [onSave, sanitize],
   );
 
-  // Force-flush on unmount so a quick "type then close" doesn't lose
-  // the trailing edit.
-  useEffect(() => {
-    return () => {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-        debounceRef.current = null;
-      }
-    };
-  }, []);
+  useEffect(
+    () => () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    },
+    [],
+  );
 
-  if (isReadOnly && !value.trim()) return null;
+  // Read-only and nothing to show → render nothing (avoids an empty
+  // section under a submitted/approved session).
+  const cleanedView = sanitize(rows);
+  if (isReadOnly && cleanedView.length === 0) return null;
 
-  const charCount = value.length;
-  const overLimit = charCount > 1000;
+  const updateRow = (idx: number, patch: Partial<ExtraDraft>) => {
+    setRows((prev) => {
+      const next = prev.map((r, i) => (i === idx ? { ...r, ...patch } : r));
+      scheduleSave(next);
+      return next;
+    });
+  };
+  const removeRow = (idx: number) => {
+    setRows((prev) => {
+      const next = prev.filter((_, i) => i !== idx);
+      scheduleSave(next, { immediate: true });
+      return next;
+    });
+  };
+  const addRow = () => {
+    setRows((prev) => {
+      if (prev.length >= 50) return prev;
+      const next = [...prev, { name: '', qty: '1', unit: 'kg' }];
+      // Don't fire save immediately — name is empty, sanitize drops
+      // it. The save fires when the user types into the name field.
+      return next;
+    });
+  };
 
   return (
-    <div className="px-4 py-3">
-      <div className="flex items-baseline justify-between gap-2 pb-1.5">
-        <label
-          htmlFor={`session-notes-${sessionId}`}
-          className="text-label font-semibold text-[var(--c-fg)]"
-        >
-          {i18n.t('order.notes.label')}
-        </label>
+    <section className="mt-2 px-4 pb-4 pt-1">
+      <div className="mb-1.5 flex items-baseline justify-between gap-2">
+        <SectionLabel padded={false}>
+          {i18n.t('order.extras.label')}
+        </SectionLabel>
         <span className="text-label text-[var(--c-fg-muted)]">
           {savingState === 'saving'
             ? i18n.t('order.notes.saving')
@@ -1192,62 +1251,153 @@ function SessionNotesEditor({
               : ''}
         </span>
       </div>
-      <Textarea
-        id={`session-notes-${sessionId}`}
-        value={value}
-        readOnly={isReadOnly}
-        rows={3}
-        maxLength={1000}
-        placeholder={i18n.t('order.notes.placeholder')}
-        onChange={(e) => {
-          const next = e.target.value;
-          setValue(next);
-          if (!isReadOnly) scheduleSave(next);
-        }}
-        onBlur={() => {
-          // Force-flush on blur so the user doesn't have to wait the
-          // full debounce window when they tap away.
-          if (debounceRef.current) {
-            clearTimeout(debounceRef.current);
-            debounceRef.current = null;
-          }
-          if (!isReadOnly && value !== lastSavedRef.current) {
-            void (async () => {
-              setSavingState('saving');
-              try {
-                await onSave(value);
-                lastSavedRef.current = value;
-                setSavingState('saved');
-                setTimeout(() => setSavingState('idle'), 1500);
-              } catch {
-                setSavingState('idle');
-              }
-            })();
-          }
-        }}
-      />
-      {/* M1.11 cleanup (2026-05-08): hint + char-counter only render
-          when there's something to say. Empty notes show just the
-          textarea + placeholder; counter appears as you approach the
-          limit; hint shows once you've started typing (so screen-reader
-          users still get the "visible to manager" context). */}
-      {(charCount > 0 || overLimit) ? (
-        <div className="mt-1 flex items-center justify-between">
-          <span className="text-label text-[var(--c-fg-muted)]">
-            {i18n.t('order.notes.hint')}
-          </span>
-          {charCount > 800 || overLimit ? (
-            <span
-              className={
-                'text-label tabular-nums ' +
-                (overLimit ? 'text-[var(--c-danger)]' : 'text-[var(--c-fg-muted)]')
-              }
+
+      {isReadOnly ? (
+        <ul className="flex flex-col gap-1 rounded-[var(--r-card)] bg-[var(--c-surface)] px-3 py-2 ring-hairline">
+          {cleanedView.map((r, i) => (
+            <li
+              key={`${r.name}-${i}`}
+              className="flex items-baseline justify-between gap-2 text-body"
             >
-              {charCount}/1000
-            </span>
+              <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">{r.name}</span>
+              <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
+                {r.qty} {r.unit}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          {rows.map((row, idx) => (
+            <ExtraRowEditor
+              key={idx}
+              row={row}
+              storeId={storeId}
+              onChange={(patch) => updateRow(idx, patch)}
+              onRemove={() => removeRow(idx)}
+            />
+          ))}
+          <Button
+            size="sm"
+            variant="pearl"
+            onClick={addRow}
+            disabled={rows.length >= 50}
+            className="self-start"
+          >
+            {i18n.t('order.extras.add')}
+          </Button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * One row of the SessionExtrasEditor: name (with autocomplete), qty,
+ * unit, remove. The autocomplete query fires on focus + as the user
+ * types (debounced via react-query's natural caching — same key →
+ * cached result for ~30s).
+ */
+function ExtraRowEditor({
+  row,
+  storeId,
+  onChange,
+  onRemove,
+}: {
+  row: ExtraDraft;
+  storeId: string;
+  onChange: (patch: Partial<ExtraDraft>) => void;
+  onRemove: () => void;
+}) {
+  const i18n = useI18n();
+  const [focusing, setFocusing] = useState(false);
+  // Suggestions query — fetches up to 20 distinct names this store
+  // has used in the last 30 days. Enabled only while the name input
+  // is focused so we don't fan out 5 simultaneous queries for 5
+  // rows on every editor mount.
+  const suggestionsQuery = trpc.order.extrasSuggestions.useQuery(
+    { storeId, search: row.name },
+    { enabled: focusing && storeId.length > 0, staleTime: 30_000 },
+  );
+  const suggestions = (suggestionsQuery.data ?? []).filter(
+    (s) => s.name.length > 0 && s.name !== row.name.trim().toLowerCase(),
+  );
+
+  return (
+    <div className="rounded-[var(--r-card)] bg-[var(--c-surface)] p-2 ring-hairline">
+      <div className="flex items-center gap-2">
+        <div className="relative min-w-0 flex-1">
+          <Input
+            value={row.name}
+            placeholder={i18n.t('order.extras.namePlaceholder')}
+            maxLength={200}
+            onChange={(e) => onChange({ name: e.target.value })}
+            onFocus={() => setFocusing(true)}
+            // Delay onBlur so the suggestion dropdown's click can
+            // register before this fires and hides it.
+            onBlur={() => setTimeout(() => setFocusing(false), 120)}
+          />
+          {focusing && suggestions.length > 0 ? (
+            <ul
+              role="listbox"
+              className="absolute left-0 right-0 top-full z-10 mt-1 max-h-48 overflow-y-auto rounded-[var(--r-card)] bg-[var(--c-surface-elevated)] py-1 shadow-product ring-hairline"
+            >
+              {suggestions.slice(0, 6).map((s) => (
+                <li key={s.name}>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      // mousedown fires BEFORE blur — onClick would
+                      // miss because blur hides the dropdown first.
+                      e.preventDefault();
+                      onChange({ name: s.name });
+                      setFocusing(false);
+                    }}
+                    className="press flex w-full items-baseline justify-between gap-2 px-3 py-1.5 text-left text-body hover:bg-[var(--c-surface-2)]"
+                  >
+                    <span className="text-[var(--c-fg)]">{s.name}</span>
+                    <span className="text-label text-[var(--c-fg-muted)]">
+                      ×{s.count}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
           ) : null}
         </div>
-      ) : null}
+        <NumberInput
+          value={row.qty}
+          inputMode="decimal"
+          className="w-16 text-center"
+          onChange={(e) => onChange({ qty: e.target.value })}
+        />
+        <Input
+          value={row.unit}
+          placeholder="kg"
+          maxLength={16}
+          className="w-16 text-center"
+          onChange={(e) => onChange({ unit: e.target.value })}
+        />
+        <button
+          type="button"
+          aria-label={i18n.t('order.extras.remove')}
+          onClick={onRemove}
+          className={cn(
+            'press inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full',
+            'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)] ring-hairline',
+            'hover:text-[var(--c-danger)]',
+          )}
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+            <path
+              d="M3.5 3.5l7 7M10.5 3.5l-7 7"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+      </div>
     </div>
   );
 }

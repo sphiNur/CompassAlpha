@@ -32,6 +32,7 @@ const importRunPage = () =>
   import('../pages/RunPage').then((m) => ({ default: m.RunPage }));
 const RunPage = lazy(importRunPage);
 import { useAuthStore } from '../stores/authStore';
+import { useNavStore, resolveVisibleTab } from '../stores/navStore';
 import { useI18n } from '../hooks/useI18n';
 import { useTelegramSettingsButton } from '../hooks/useTelegram';
 import { SettingsSheet } from '../components/SettingsSheet';
@@ -135,7 +136,21 @@ function ShellInner() {
     else setTimeout(kick, 0);
   }, [canAdmin, canRun]);
 
-  const [tab, setTab] = useState<Tab>(() => (visible[0]?.key as Tab) ?? 'order');
+  // M3.16-B (2026-05-16): tab state lives in navStore (persisted to
+  // localStorage). On hydration, resolve the persisted tab against
+  // the currently-visible tab set so a lost permission doesn't strand
+  // the user on a blank page.
+  const persistedTab = useNavStore((s) => s.tab);
+  const setPersistedTab = useNavStore((s) => s.setTab);
+  const visibleKeys = visible.map((t) => t.key as Tab);
+  const tab = resolveVisibleTab(persistedTab, visibleKeys);
+  const setTab = setPersistedTab;
+  // If the resolved tab differs from what's persisted (permission
+  // lost since last session), write the corrected value back so we
+  // don't keep re-resolving on every render.
+  useEffect(() => {
+    if (tab !== persistedTab) setPersistedTab(tab);
+  }, [tab, persistedTab, setPersistedTab]);
   // App-level language picker — wired into Telegram's gear icon in
   // the bot's `⋯` overflow menu (added 2026-05-05). Available on every
   // page for every user without consuming layout space. The Admin →

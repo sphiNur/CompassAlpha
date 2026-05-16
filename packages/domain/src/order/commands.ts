@@ -9,7 +9,7 @@
 import { conflict, forbidden, preconditionFailed, validation } from '../shared/errors';
 import type { Clock } from '../shared/clock';
 import { systemClock } from '../shared/clock';
-import type { OrderEvent } from './events';
+import type { OrderEvent, SessionExtraItem } from './events';
 import type { OrderState } from './state';
 import { itemKey } from './state';
 
@@ -35,6 +35,12 @@ export type OrderCommand =
     }
   | { type: 'SetNote'; skuId: string; note: string | null; actor: ActorCtx; targetMemberId?: string }
   | { type: 'SetSessionNote'; note: string | null; actor: ActorCtx }
+  /**
+   * M3.16-C (2026-05-16): atomic replace of the session's structured
+   * "其他物品" list. Payload contains the full new list; an empty
+   * array clears all extras. Same edit gate as SetSessionNote.
+   */
+  | { type: 'SetSessionExtras'; extras: SessionExtraItem[]; actor: ActorCtx }
   | { type: 'Submit'; actor: ActorCtx }
   | { type: 'Claim'; actor: ActorCtx }
   | { type: 'ReleaseClaim'; actor: ActorCtx; reason: 'manual' | 'pagehide' | 'timeout' }
@@ -210,6 +216,51 @@ export function decide(
           type: 'SessionNoteSet',
           payload: {
             note,
+            byMemberId: command.actor.memberId,
+          },
+        },
+      ];
+    }
+
+    case 'SetSessionExtras': {
+      // M3.16-C (2026-05-16): structured "其他物品" list. Same edit
+      // gate + locking rules as SetSessionNote. The whole list is
+      // replaced atomically; the command layer is responsible for
+      // shape validation (UI sends a clean array — the server-side
+      // zod schema in the tRPC router enforces it before reaching
+      // decide()), and this branch handles the domain checks:
+      //   - max 50 extras per session (hard cap)
+      //   - each name 1..200 chars after trim
+      //   - each qty must parse > 0
+      //   - each unit 1..16 chars after trim
+      //   - each optional note ≤200 chars
+      assertActiveStream(state);
+      assertCanEditSession(state, command.actor);
+      if (command.extras.length > 50) {
+        throw validation('order.errors.tooManyExtras');
+      }
+      const normalised: SessionExtraItem[] = [];
+      for (const raw of command.extras) {
+        const name = (raw.name ?? '').trim();
+        const unit = (raw.unit ?? '').trim();
+        const qty = (raw.qty ?? '').trim();
+        if (!name || name.length > 200) throw validation('order.errors.invalidExtraName');
+        if (!unit || unit.length > 16) throw validation('order.errors.invalidExtraUnit');
+        if (!/^\d+(\.\d{1,3})?$/.test(qty) || Number(qty) <= 0) {
+          throw validation('order.errors.invalidExtraQty');
+        }
+        const note = raw.note?.trim() || undefined;
+        if (note && note.length > 200) throw validation('order.errors.extraNoteTooLong');
+        normalised.push({ name, qty, unit, ...(note ? { note } : {}) });
+      }
+      // Idempotent — re-setting an identical list is a no-op.
+      if (extrasEqual(state.extras, normalised)) return [];
+      return [
+        {
+          ...baseFor(1, 'SessionExtrasSet'),
+          type: 'SessionExtrasSet',
+          payload: {
+            extras: normalised,
             byMemberId: command.actor.memberId,
           },
         },
@@ -539,4 +590,22 @@ function isMultipleOf(value: number, step: number): boolean {
   if (step <= 0) return true;
   const ratio = value / step;
   return Math.abs(ratio - Math.round(ratio)) < STEP_TOLERANCE;
+}
+
+/**
+ * Deep equality check for two SessionExtraItem lists. Used to make
+ * SetSessionExtras idempotent — re-issuing the same list after a
+ * round-trip retry shouldn't emit a duplicate event.
+ */
+function extrasEqual(a: SessionExtraItem[], b: SessionExtraItem[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const ai = a[i]!;
+    const bi = b[i]!;
+    if (ai.name !== bi.name) return false;
+    if (ai.unit !== bi.unit) return false;
+    if (!sameDecimal(ai.qty, bi.qty)) return false;
+    if ((ai.note ?? '') !== (bi.note ?? '')) return false;
+  }
+  return true;
 }

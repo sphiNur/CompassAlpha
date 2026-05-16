@@ -19,7 +19,11 @@ export function Banner({ className, tone = 'info', title, action, children, ...r
   return (
     <div
       role="status"
-      className={cn('flex items-start gap-3 rounded-[var(--r-card)] px-4 py-3', TONE[tone], className)}
+      // M3.16 (2026-05-16): py-3 → py-2.5. Most banners (the "How
+      // permissions work" explainer on Roles, the "已通过·等待采购"
+      // success on Order, etc.) sit above content lists and were
+      // eating ~7% of viewport on a 5.5" device.
+      className={cn('flex items-start gap-3 rounded-[var(--r-card)] px-4 py-2.5', TONE[tone], className)}
       {...rest}
     >
       <div className="flex-1">

@@ -520,16 +520,38 @@ function SessionItems({
   }
 
   const sessionNotes = detail.data?.notes ?? null;
+  const sessionExtras = detail.data?.extras ?? [];
 
   return (
     <div className="border-t border-[var(--c-divider)]">
-    {/* Session-level "其他物品" note (M1.8). Shown right at the top
-        so the manager can't miss requests for items outside the
-        catalog before deciding to approve. Yellow highlight to call
-        attention. Read-only here — manager can still bounce the order
-        back to draft to edit. */}
+    {/* Session-level "其他物品" requests. M1.8 carried free-text in
+        `notes`; M3.16-C ships a structured list in `extras`. Both
+        surfaces render side-by-side here (legacy notes from pre-M3.16
+        sessions + new extras from M3.16+ sessions) so the manager
+        sees everything the store asked for in one place. Yellow tint
+        because these are off-catalog and need extra scrutiny. */}
+    {sessionExtras.length > 0 ? (
+      <div className="border-b border-[var(--c-divider)] bg-[var(--c-warn-bg)] px-4 py-2.5">
+        <SectionLabel padded={false}>
+          {i18n.t('order.extras.label')}
+        </SectionLabel>
+        <ul className="mt-1 flex flex-col gap-0.5">
+          {sessionExtras.map((e, idx) => (
+            <li
+              key={`${e.name}-${idx}`}
+              className="flex items-baseline justify-between gap-2 text-body"
+            >
+              <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">{e.name}</span>
+              <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
+                {e.qty} {e.unit}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    ) : null}
     {sessionNotes ? (
-      <div className="border-b border-[var(--c-divider)] bg-[var(--c-warn-bg)] px-4 py-3">
+      <div className="border-b border-[var(--c-divider)] bg-[var(--c-warn-bg)] px-4 py-2.5">
         <SectionLabel padded={false}>
           {i18n.t('order.notes.label')}
         </SectionLabel>

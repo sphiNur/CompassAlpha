@@ -1242,8 +1242,13 @@ interface ActiveRun {
   }>;
   perStoreDemand?: Array<{ storeId: string; skuId: string; qty: string }>;
   lastPriceBySku?: Record<string, string>;
-  /** M1.8: per-store concatenated session notes ("其他物品"). */
+  /** M1.8: per-store concatenated session notes ("其他物品", legacy). */
   sessionNotesByStore?: Record<string, string>;
+  /** M3.16-C: per-store structured extras ("其他物品" rows). */
+  sessionExtrasByStore?: Record<
+    string,
+    Array<{ name: string; qty: string; unit: string; note?: string }>
+  >;
 }
 
 // formatQty / formatMoney are imported from `../lib/format` —
@@ -1670,8 +1675,13 @@ function PreviewSummaryCard({
       contactPhone: string | null;
       contactTg: string | null;
     } | null>;
-    /** M1.8: per-store concatenated session notes ("其他物品"). */
+    /** M1.8: per-store concatenated session notes ("其他物品", legacy). */
     sessionNotesByStore?: Record<string, string>;
+    /** M3.16-C: per-store structured extras. */
+    sessionExtrasByStore?: Record<
+      string,
+      Array<{ name: string; qty: string; unit: string; note?: string }>
+    >;
   };
   skuById: Map<
     string,
@@ -1788,12 +1798,24 @@ function PreviewSummaryCard({
       const name = sku ? productName(sku) : it.skuId.slice(0, 8);
       lines.push(`• ${name}: ${formatQty(it.qty)} ${sku?.unit ?? ''}`);
     }
-    // M1.8: append the staff's "其他物品" note so the purchaser sees
-    // it on the same copy-paste they ship to the chat group.
+    // M1.8 / M3.16-C: append the staff's "其他物品" requests so the
+    // purchaser sees them on the same copy-paste they ship to the
+    // chat group. Structured extras (M3.16-C+) listed line-by-line;
+    // legacy free-text notes (pre-M3.16) appended after.
+    const extras = preview.sessionExtrasByStore?.[storeId] ?? [];
+    if (extras.length > 0) {
+      lines.push('');
+      lines.push(`📝 ${i18n.t('order.extras.label')}:`);
+      for (const ex of extras) {
+        lines.push(`  ${ex.name} ${ex.qty} ${ex.unit}`.trim());
+      }
+    }
     const note = preview.sessionNotesByStore?.[storeId];
     if (note && note.trim()) {
-      lines.push('');
-      lines.push(`📝 ${i18n.t('order.notes.label')}:`);
+      if (extras.length === 0) {
+        lines.push('');
+        lines.push(`📝 ${i18n.t('order.notes.label')}:`);
+      }
       lines.push(note.trim());
     }
     return lines.join('\n');
@@ -1914,6 +1936,7 @@ function PreviewSummaryCard({
         <div className="flex flex-col gap-3 px-4 py-3">
           {byStore.map((g) => {
             const storeNote = preview.sessionNotesByStore?.[g.storeId]?.trim();
+            const storeExtras = preview.sessionExtrasByStore?.[g.storeId] ?? [];
             return (
             <section key={g.storeId} className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3">
               <div className="mb-2 flex items-baseline justify-between gap-2">
@@ -1947,18 +1970,39 @@ function PreviewSummaryCard({
                   );
                 })}
               </ul>
-              {/* M1.8: surface the staff's "其他物品" note inline. The
-                  purchaser scrolls the by-store view at the market and
-                  needs the request right next to the SKU list, not
-                  buried in a separate section. */}
-              {storeNote ? (
+              {/* M1.8 / M3.16-C: surface the staff's "其他物品" requests
+                  inline. M3.16-C structured extras render as one row
+                  per item; legacy free-text notes (pre-M3.16) appended
+                  underneath in italic. The purchaser scrolls the by-
+                  store view at the market and needs requests right
+                  next to the SKU list. */}
+              {storeExtras.length > 0 || storeNote ? (
                 <div className="mt-2 rounded-[var(--r-card)] bg-[var(--c-warn-bg)] px-3 py-2 ring-hairline">
                   <SectionLabel padded={false}>
-                    📝 {i18n.t('order.notes.label')}
+                    📝 {i18n.t('order.extras.label')}
                   </SectionLabel>
-                  <div className="mt-0.5 whitespace-pre-wrap text-body-sm leading-snug text-[var(--c-fg)]">
-                    {storeNote}
-                  </div>
+                  {storeExtras.length > 0 ? (
+                    <ul className="mt-0.5 flex flex-col gap-0.5">
+                      {storeExtras.map((e, idx) => (
+                        <li
+                          key={`${e.name}-${idx}`}
+                          className="flex items-baseline justify-between gap-2 text-body-sm"
+                        >
+                          <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">
+                            {e.name}
+                          </span>
+                          <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
+                            {e.qty} {e.unit}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {storeNote ? (
+                    <div className="mt-1 whitespace-pre-wrap text-body-sm italic leading-snug text-[var(--c-fg-muted)]">
+                      {storeNote}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </section>

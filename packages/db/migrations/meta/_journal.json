@@ -169,6 +169,13 @@
       "when": 1778926400000,
       "tag": "0023_sku_step_canonical",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1778929600000,
+      "tag": "0024_session_extras",
+      "breakpoints": true
     }
   ]
 }

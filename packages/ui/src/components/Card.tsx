@@ -21,7 +21,12 @@ export function Card({ className, interactive, as: As = 'div', ...rest }: CardPr
 
 export function CardHeader({ className, children }: { className?: string; children: ReactNode }) {
   return (
-    <header className={cn('flex items-start justify-between gap-3 px-4 pt-4', className)}>
+    // M3.16 (2026-05-16): pt-4 → pt-3. Combined with the M3.15 row-padding
+    // cuts, admin Cards (Categories, Stores, Members) now read at the
+    // same density as the bottom nav. The header still has no bottom
+    // padding because consumers either follow it with a button row
+    // (which carries its own py-2) or end the card right after.
+    <header className={cn('flex items-start justify-between gap-3 px-4 pt-3', className)}>
       {children}
     </header>
   );
