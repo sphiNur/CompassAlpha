@@ -13,9 +13,14 @@ import { Shell } from './Shell';
 import { ErrorBoundary } from './ErrorBoundary';
 
 const isBrowser = typeof window !== 'undefined';
-if (isBrowser && !(window as { __compassLoggerBooted?: boolean }).__compassLoggerBooted) {
+// Local-scope augmentation: `__compassLoggerBooted` is a private
+// idempotency flag set once per page lifetime to prevent duplicate
+// logger init when HMR re-runs this module.
+interface CompassWindow extends Window { __compassLoggerBooted?: boolean }
+const compassWindow = isBrowser ? (window as CompassWindow) : null;
+if (compassWindow && !compassWindow.__compassLoggerBooted) {
   initLogger({ appVersion: import.meta.env.VITE_BUILD_SHA ?? 'dev' });
-  (window as { __compassLoggerBooted?: boolean }).__compassLoggerBooted = true;
+  compassWindow.__compassLoggerBooted = true;
 
   window.addEventListener('error', (e) => {
     try {

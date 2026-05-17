@@ -6865,10 +6865,10 @@ function FinanceSection() {
       void navigator.clipboard.writeText(tsv);
       toast.success(i18n.t('finance.export.copied'));
     } else {
-      // Fallback for older WebViews — pop the text in a confirm-like
-      // sheet would be ideal, but a simple log + toast suffices for now.
-      // eslint-disable-next-line no-console
-      console.log(tsv);
+      // Fallback for older WebViews — clipboard API unavailable. We
+      // surface a user-facing error toast; the TSV is dropped (the
+      // earlier console.log was deleted as part of the production
+      // hardening pass — privacy + CSP cleanliness).
       toast.error(i18n.t('finance.export.noClipboard'));
     }
   }, [lines, skuById, storeById, supplierById, productName, startDate, endDate, toast, i18n]);

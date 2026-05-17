@@ -37,6 +37,10 @@ pnpm compass user grant <你的 Telegram user id> --role super_admin --org defau
 > 走 mock 用户登录。生产环境强校验 HMAC（见 `apps/api/src/services/telegramAuth.ts`，
 > 单元测试在 `apps/api/src/__tests__/telegramAuth.test.ts`）。
 
+> **Bot 通知通道**：生产服务器到 `api.telegram.org` 出口被阻断时，部署 Cloudflare
+> Worker 中继并设 `TG_RELAY_URL` + `COMPASS_RELAY_KEY` + `BOT_DELIVERY_ENABLED=true`。
+> 详见 [`infra/cloudflare/README.md`](./infra/cloudflare/README.md)。
+
 ## 工程结构
 
 ```

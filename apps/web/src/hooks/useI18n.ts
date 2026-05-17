@@ -57,8 +57,9 @@ function useEnsureLocale(locale: Locale): void {
 
 export function useI18n() {
   const locale = useAuthStore((s) => s.session?.user.locale ?? null);
-  const tg = (window as { Telegram?: { WebApp?: { initDataUnsafe?: { user?: { language_code?: string } } } } }).Telegram?.WebApp;
-  const fallback = tg?.initDataUnsafe?.user?.language_code ?? navigator.language;
+  // M3.18: window.Telegram is globally typed via src/types/telegram.d.ts.
+  const fallback =
+    window.Telegram?.WebApp?.initDataUnsafe?.user?.language_code ?? navigator.language;
   const resolved: Locale = (locale as Locale | null) ?? detectLocale(fallback);
   useEnsureLocale(resolved);
   return useMemo(() => createI18n(resolved), [resolved]);

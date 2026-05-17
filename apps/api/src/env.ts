@@ -38,6 +38,11 @@ export const env = createEnv({
     JWT_REFRESH_SECRET: z.string().min(32),
     TELEGRAM_BOT_TOKEN: z.string().optional(),
     TELEGRAM_BOT_USERNAME: z.string().optional(),
+    // Cloudflare Worker relay for outbound Bot API calls — used when the
+    // host network blocks api.telegram.org. See infra/cloudflare/README.md.
+    TG_RELAY_URL: z.string().url().optional(),
+    COMPASS_RELAY_KEY: z.string().min(32).optional(),
+    BOT_DELIVERY_ENABLED: z.enum(['true', 'false']).optional(),
     FRONTEND_URL: z.string().url().default('http://localhost:5173'),
     S3_ENDPOINT: z.string().url().optional(),
     S3_BUCKET: z.string().optional(),

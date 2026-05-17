@@ -1,36 +1,58 @@
-# Caddy edge — auto-TLS, reverse proxy.
-# Replace `compass.example.com` with your domain. Comment/uncomment for dev.
+# CompassAlpha — Caddy edge config
+#
+# Auto-TLS via Let's Encrypt + reverse-proxy to the api container.
+#
+# Domain is injected from the environment so the same Caddyfile works
+# across staging / production. Set DOMAIN in your compose env or
+# systemd EnvironmentFile, e.g. DOMAIN=compass.example.com.
+#
+# M3.18 (launch hardening 2026-05-16):
+#   - replaced literal `compass.example.com` with `{$DOMAIN}` envvar.
+#   - replaced the malformed `handle_path /*` (semantics: strip the
+#     whole path) with plain `handle` blocks.
+#   - aligned Permissions-Policy with the API's CSP (added payment,
+#     usb — kept camera/microphone disabled because PhotoCapture
+#     uses <input type="file"> not getUserMedia).
+#
+# The SPA HTML is served by the api process itself (Hono's serveStatic
+# now reads apps/web/dist), so we don't need a file_server here.
+# If you want Caddy to short-circuit static assets, mount the web/dist
+# volume into the caddy container and add:
+#     handle /assets/* { file_server { root /srv/web } }
+# above the catch-all `handle` block.
 
 {
-  email ops@compass.example.com
+  email ops@{$DOMAIN:compass.example.com}
   servers {
     protocols h1 h2 h3
   }
 }
 
-compass.example.com {
+{$DOMAIN:compass.example.com} {
   encode zstd gzip
   log {
     output stdout
     format json
   }
 
-  # Static SPA
-  handle_path /* {
-    @api path /trpc/* /health/* /ws
-    handle @api {
-      reverse_proxy api:3000 {
-        header_up X-Real-IP {remote_host}
-        header_up X-Forwarded-Proto {scheme}
-        transport http {
-          read_timeout 60s
-          write_timeout 60s
-        }
+  # API + WebSocket + health probes — reverse-proxy to api:3000.
+  @api path /trpc/* /health/* /ws
+  handle @api {
+    reverse_proxy api:3000 {
+      header_up X-Real-IP {remote_host}
+      header_up X-Forwarded-Proto {scheme}
+      transport http {
+        read_timeout 60s
+        write_timeout 60s
       }
     }
-    handle {
-      reverse_proxy api:3000
-    }
+  }
+
+  # Everything else = SPA (also served by api:3000 via Hono's
+  # serveStatic + SPA fallback). The api process handles unknown
+  # paths by returning index.html.
+  handle {
+    reverse_proxy api:3000
   }
 
   header {
@@ -38,6 +60,9 @@ compass.example.com {
     X-Content-Type-Options "nosniff"
     X-Frame-Options "SAMEORIGIN"
     Referrer-Policy "strict-origin-when-cross-origin"
-    Permissions-Policy "camera=(), microphone=(), geolocation=()"
+    # Mirror apps/api/src/app.ts's Permissions-Policy exactly so
+    # responses from Caddy's own pages (e.g. error pages) carry the
+    # same posture as proxied responses.
+    Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
   }
 }

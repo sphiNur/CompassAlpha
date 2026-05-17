@@ -1,0 +1,56 @@
+# Dependabot configuration (M3.18, launch hardening 2026-05-16).
+#
+# Purpose:
+#   - Weekly PRs for outdated runtime + dev dependencies.
+#   - Monthly PRs for GitHub Actions versions.
+#
+# Grouping rules:
+#   - @tanstack/* — TanStack family (react-query etc.) ships in lock-step.
+#   - @trpc/*     — tRPC client + server + react-query bindings must rev together.
+#   - @types/*    — type-only updates rarely break runtime; bulk them.
+#   - drizzle-*   — drizzle-orm + drizzle-kit are paired.
+#   - radix-ui    — Radix primitives version together.
+#
+# Anything outside these groups gets an individual PR so non-trivial
+# upgrades land with a focused diff.
+
+version: 2
+updates:
+  - package-ecosystem: npm   # pnpm uses the npm registry
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '08:00'
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    groups:
+      tanstack:
+        patterns:
+          - '@tanstack/*'
+      trpc:
+        patterns:
+          - '@trpc/*'
+      types:
+        patterns:
+          - '@types/*'
+      drizzle:
+        patterns:
+          - 'drizzle-*'
+      radix-ui:
+        patterns:
+          - '@radix-ui/*'
+    ignore:
+      # Pin Bun via .bun-version — Dependabot doesn't manage that file.
+      - dependency-name: '@types/bun'
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - ci

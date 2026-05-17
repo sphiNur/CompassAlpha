@@ -2,9 +2,9 @@
  * Worker — periodic + queue-driven jobs.
  *
  * Currently runs:
- *   - outbox.flush — every 5 s, drains sync.outbox via grammY (bot).
- *                    Marks rows sent_at = now() on success, bumps retries +
- *                    nextAttemptAt exponentially on failure.
+ *   - outbox.flush — every 5 s, drains sync.outbox via either a Cloudflare
+ *                    Worker relay or direct grammY. See bot dispatch block
+ *                    below for transport selection.
  *
  * Future (M2/M3):
  *   - supplier.rescore           every 5 m
@@ -14,7 +14,10 @@
  *
  * Config via env (loaded server-side from compass-alpha/.env):
  *   DATABASE_URL          required
- *   TELEGRAM_BOT_TOKEN    optional; if missing, bot dispatch logs and skips
+ *   TELEGRAM_BOT_TOKEN    optional; needed only for direct grammY transport
+ *   TG_RELAY_URL          optional; CF Worker relay URL (see infra/cloudflare/)
+ *   COMPASS_RELAY_KEY     optional; shared secret matching the relay
+ *   BOT_DELIVERY_ENABLED  optional override; see bot dispatch block
  *   FRONTEND_URL          optional; used as base for deep-link buttons
  */
 import { dirname, resolve } from 'node:path';
@@ -53,37 +56,68 @@ const MAX_RETRIES = 8;
 const BACKOFF_SECONDS = [5, 10, 30, 60, 300, 900, 3600, 10_800];
 
 const db = getDb(process.env.DATABASE_URL);
-const botToken = process.env.TELEGRAM_BOT_TOKEN;
-/**
- * Kill-switch added 2026-05-05.
- *
- * The production server cannot reach api.telegram.org from its egress
- * (regional network policy — `curl -v https://api.telegram.org` times
- * out). Without this switch, the worker would retry every 5 s and the
- * journal would fill with `Network request for 'sendMessage' failed!`.
- *
- * **Default flipped to `false` for M0** — bot rows get marked sent with
- * a `lastError: 'bot delivery disabled'` note so the queue drains and
- * the log is quiet. To re-enable (M2, after we ship a SOCKS proxy or
- * move the bot to a host that can reach Telegram), set
- * `BOT_DELIVERY_ENABLED=true` in the server `.env`.
- *
- * This is the SAFE default for any deploy where Telegram reachability
- * isn't proven — operators don't get notifications, but the system
- * stays healthy. Mini App in-product UX is unaffected (it doesn't
- * depend on outbound bot messages).
- */
-const botDeliveryEnabled =
-  (process.env.BOT_DELIVERY_ENABLED ?? 'false').toLowerCase() === 'true';
-const bot = botToken && botDeliveryEnabled ? new Bot(botToken) : null;
 
-if (!bot) {
-  if (!botToken) {
-    console.warn('[worker] TELEGRAM_BOT_TOKEN missing — bot dispatch will be a no-op.');
-  } else if (!botDeliveryEnabled) {
-    console.warn(
-      '[worker] BOT_DELIVERY_ENABLED=false — outbox bot rows will be marked sent without delivery.',
-    );
+/**
+ * Bot dispatch — two transports, configured by env.
+ *
+ * Origin of this complexity: the production server cannot reach
+ * api.telegram.org from its egress (regional network policy —
+ * `curl -v https://api.telegram.org` times out). Direct grammY would
+ * retry every 5 s and flood the journal with timeouts (incident
+ * 2026-05-05). So we added a Cloudflare Worker relay that runs on
+ * Cloudflare's edge and forwards to Telegram (see
+ * `infra/cloudflare/tg-relay.js`).
+ *
+ * Transport selection:
+ *   1. Relay path — set both `TG_RELAY_URL` and `COMPASS_RELAY_KEY`.
+ *      Used in production (blocked egress). Default-on when both
+ *      vars are set.
+ *   2. Direct grammY — set only `TELEGRAM_BOT_TOKEN`. Used where the
+ *      host can reach api.telegram.org. Default-off; operator must
+ *      set `BOT_DELIVERY_ENABLED=true` to affirm reachability.
+ *
+ * `BOT_DELIVERY_ENABLED=false` explicitly disables either transport
+ * (dev / test envs). Bot outbox rows get marked sent with a note so
+ * the queue drains and the log stays quiet.
+ *
+ * Mini App in-product UX is unaffected when delivery is off — operators
+ * just don't get Telegram pushes.
+ */
+const relayUrl = process.env.TG_RELAY_URL;
+const relayKey = process.env.COMPASS_RELAY_KEY;
+const relayConfigured = !!(relayUrl && relayKey);
+const botToken = process.env.TELEGRAM_BOT_TOKEN;
+
+const explicitDeliveryToggle = process.env.BOT_DELIVERY_ENABLED?.toLowerCase();
+const botDeliveryEnabled =
+  explicitDeliveryToggle === undefined ? relayConfigured : explicitDeliveryToggle === 'true';
+
+// grammY only when no relay is configured — relay path uses plain fetch.
+const bot =
+  botDeliveryEnabled && !relayConfigured && botToken ? new Bot(botToken) : null;
+
+if (!botDeliveryEnabled) {
+  console.warn(
+    '[worker] bot delivery disabled — outbox bot rows will be marked sent without delivery.',
+  );
+} else if (relayConfigured) {
+  console.log(`[worker] bot delivery via CF Worker relay (${relayUrl})`);
+} else if (bot) {
+  console.log('[worker] bot delivery via direct grammY (api.telegram.org)');
+} else {
+  console.warn(
+    '[worker] BOT_DELIVERY_ENABLED=true but no transport configured ' +
+      '(need either TG_RELAY_URL+COMPASS_RELAY_KEY or TELEGRAM_BOT_TOKEN). ' +
+      'Outbox bot rows will be marked sent without delivery.',
+  );
+}
+
+class RelayError extends Error {
+  constructor(
+    public errorCode: number,
+    public description: string,
+  ) {
+    super(`relay ${errorCode}: ${description}`);
   }
 }
 
@@ -153,7 +187,8 @@ async function processOnce(): Promise<{ sent: number; deferred: number; failed: 
       const now = new Date();
 
       if (row.channel === 'bot') {
-        if (!bot) {
+        const canDeliver = botDeliveryEnabled && (relayConfigured || !!bot);
+        if (!canDeliver) {
           await tx
             .update(s.outbox)
             .set({ sentAt: now, lastError: 'bot delivery disabled' })
@@ -191,7 +226,7 @@ async function processOnce(): Promise<{ sent: number; deferred: number; failed: 
 }
 
 async function deliverBot(payload: OutboxPayload): Promise<boolean> {
-  if (!bot) return false;
+  if (!botDeliveryEnabled) return false;
   const user = await db.query.users.findFirst({
     where: (u, { eq: eq2 }) => eq2(u.id, payload.recipientUserId),
   });
@@ -200,33 +235,49 @@ async function deliverBot(payload: OutboxPayload): Promise<boolean> {
     return true; // mark sent — without a TG id we can never deliver, don't loop.
   }
 
+  const chatId = Number(user.tgUserId);
   const text = payload.body
     ? `*${escapeMd(payload.title)}*\n${escapeMd(payload.body)}`
     : `*${escapeMd(payload.title)}*`;
+  const opts: Record<string, unknown> = {
+    parse_mode: 'MarkdownV2',
+    ...(payload.deepLink
+      ? {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                {
+                  text: 'Open Compass',
+                  web_app: { url: resolveDeepLink(payload.deepLink) },
+                },
+              ],
+            ],
+          },
+        }
+      : {}),
+  };
 
   try {
-    await bot.api.sendMessage(Number(user.tgUserId), text, {
-      parse_mode: 'MarkdownV2',
-      ...(payload.deepLink
-        ? {
-            reply_markup: {
-              inline_keyboard: [
-                [
-                  {
-                    text: 'Open Compass',
-                    web_app: { url: resolveDeepLink(payload.deepLink) },
-                  },
-                ],
-              ],
-            },
-          }
-        : {}),
-    });
+    if (relayConfigured) {
+      await sendViaRelay(chatId, text, opts);
+    } else if (bot) {
+      await bot.api.sendMessage(chatId, text, opts);
+    } else {
+      return false;
+    }
     return true;
   } catch (err) {
+    // Permanent errors (user blocked bot, invalid id, bad request) → mark
+    // sent so we don't retry endlessly. Anything else is transient.
+    if (err instanceof RelayError) {
+      if (err.errorCode === 403 || err.errorCode === 400) {
+        console.warn('[worker] permanent relay error', err.errorCode, err.description);
+        return true;
+      }
+      console.warn('[worker] transient relay error', err.message);
+      return false;
+    }
     if (err instanceof GrammyError) {
-      // Permanent errors (user blocked bot, invalid id) → mark sent so we
-      // don't retry endlessly.
       if (err.error_code === 403 || err.error_code === 400) {
         console.warn('[worker] permanent bot error', err.error_code, err.description);
         return true;
@@ -238,6 +289,55 @@ async function deliverBot(payload: OutboxPayload): Promise<boolean> {
       console.error('[worker] unknown bot error', err);
     }
     return false;
+  }
+}
+
+/**
+ * Forward a sendMessage call through the Cloudflare Worker relay.
+ *
+ * The relay's contract: POST `{ method, params }` with the shared-secret
+ * header; the relay returns the Bot API JSON verbatim. We unwrap that
+ * and translate failure modes into RelayError so deliverBot can decide
+ * permanent vs transient.
+ */
+async function sendViaRelay(
+  chatId: number,
+  text: string,
+  opts: Record<string, unknown>,
+): Promise<void> {
+  const res = await fetch(relayUrl!, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-compass-key': relayKey!,
+    },
+    body: JSON.stringify({
+      method: 'sendMessage',
+      params: { chat_id: chatId, text, ...opts },
+    }),
+  });
+
+  type RelayBody = { ok?: boolean; error_code?: number; description?: string };
+  let body: RelayBody | null = null;
+  try {
+    body = (await res.json()) as RelayBody;
+  } catch {
+    // Response wasn't JSON — caller treats as transient.
+    throw new RelayError(res.status, `non-json relay response (http ${res.status})`);
+  }
+
+  // 5xx from CF / Telegram → transient.
+  if (res.status >= 500) {
+    throw new RelayError(res.status, body?.description ?? `http ${res.status}`);
+  }
+  // 4xx from the relay itself (forbidden, bad method) → treat as transient
+  // unless it matches a known permanent Bot API code.
+  if (!res.ok) {
+    throw new RelayError(res.status, body?.description ?? `http ${res.status}`);
+  }
+  // Bot API said no.
+  if (body?.ok === false) {
+    throw new RelayError(body.error_code ?? 0, body.description ?? 'unknown bot api error');
   }
 }
 

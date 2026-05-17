@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-interface TelegramMainButton {
+export interface TelegramMainButton {
   text: string;
   isVisible: boolean;
   isActive: boolean;
@@ -14,7 +14,7 @@ interface TelegramMainButton {
   setParams(params: { text?: string; color?: string; text_color?: string; is_visible?: boolean; is_active?: boolean }): void;
 }
 
-interface TelegramBackButton {
+export interface TelegramBackButton {
   isVisible: boolean;
   show(): void;
   hide(): void;
@@ -29,7 +29,7 @@ interface TelegramBackButton {
  * Per Telegram docs the button is one-per-WebApp; show/hide controls
  * its visibility globally, onClick fires for any tap.
  */
-interface TelegramSettingsButton {
+export interface TelegramSettingsButton {
   isVisible: boolean;
   show(): void;
   hide(): void;
@@ -60,9 +60,21 @@ interface TelegramWebApp {
   openLink(url: string, options?: { try_instant_view?: boolean }): void;
 }
 
+/**
+ * Read window.Telegram.WebApp with safe optional chaining.
+ *
+ * M3.18 (2026-05-16): the `(window as { Telegram?: ... })` cast was
+ * duplicated across main.tsx / App.tsx / Shell.tsx / theme.tsx. The
+ * global `Window.Telegram` augmentation now lives in src/types/
+ * telegram.d.ts so callers can write `window.Telegram?.WebApp`
+ * directly. This function remains the canonical accessor inside
+ * the SDK wrapper module.
+ */
 export function getTg(): TelegramWebApp | null {
   if (typeof window === 'undefined') return null;
-  return (window as { Telegram?: { WebApp?: TelegramWebApp } }).Telegram?.WebApp ?? null;
+  // Cast to local TelegramWebApp (richer than the d.ts mirror that
+  // is intentionally minimal to avoid runtime imports).
+  return (window.Telegram?.WebApp as TelegramWebApp | undefined) ?? null;
 }
 
 /**

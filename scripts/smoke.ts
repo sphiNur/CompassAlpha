@@ -2,8 +2,12 @@
  * Smoke harness — run after every deploy to catch breakage before users do.
  *
  * Usage:
- *   bun run scripts/smoke.ts                                 # default: prod URL
- *   COMPASS_BASE=http://localhost bun run scripts/smoke.ts   # local
+ *   COMPASS_BASE=https://<your-tunnel>.trycloudflare.com bun run scripts/smoke.ts
+ *   COMPASS_BASE=http://localhost:3000               bun run scripts/smoke.ts
+ *
+ * COMPASS_BASE is required. A hardcoded default used to exist but went
+ * stale every time cloudflared re-rolled the quick-tunnel URL, masking
+ * real failures by checking a dead host (P0-4, 2026-05-17).
  *
  * Coverage:
  *   - Static SPA: GET /, /assets/<hashed>.js + .css all 200, html references match dist
@@ -16,7 +20,17 @@
  * Exit code 0 = all green. Non-zero = at least one check failed; the
  * report shows exactly which.
  */
-const BASE = (Bun.env.COMPASS_BASE ?? 'https://franchise-cheese-pound-mills.trycloudflare.com').replace(/\/$/, '');
+const rawBase = Bun.env.COMPASS_BASE;
+if (!rawBase) {
+  console.error(
+    '\x1b[31m✖ COMPASS_BASE is required.\x1b[0m\n' +
+      '  Set it to the URL you want to smoke, e.g.:\n' +
+      '    export COMPASS_BASE=https://<your-tunnel>.trycloudflare.com\n' +
+      '    export COMPASS_BASE=http://localhost:3000',
+  );
+  process.exit(2);
+}
+const BASE = rawBase.replace(/\/$/, '');
 
 interface Check {
   name: string;

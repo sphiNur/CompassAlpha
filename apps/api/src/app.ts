@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { serveStatic } from 'hono/bun';
 import { trpcServer } from '@hono/trpc-server';
 import { sql } from 'drizzle-orm';
 import { getDb } from '@compass/db';
@@ -140,7 +141,13 @@ export function createApp() {
         'Content-Security-Policy',
         [
           "default-src 'self'",
-          "script-src 'self'",
+          // M3.18 (launch hardening): allow the Telegram WebApp SDK
+          // (https://telegram.org/js/telegram-web-app.js) loaded from
+          // index.html. The SDK is the only external script we run.
+          // Inline scripts and inline event handlers were eliminated
+          // in the same milestone (boot guard externalized to
+          // /boot-guard.js) so we DO NOT need 'unsafe-inline'.
+          "script-src 'self' https://telegram.org",
           "style-src 'self' 'unsafe-inline'",
           "img-src 'self' data: blob: https:",
           "font-src 'self' data:",
@@ -166,13 +173,18 @@ export function createApp() {
       origin: (origin) => {
         if (!origin) return env.FRONTEND_URL;
         if (origin === env.FRONTEND_URL) return origin;
-        // Telegram WebView + Cloudflare tunnels
+        // Telegram WebView origins — production + first-party only.
         if (
           origin === 'https://web.telegram.org' ||
           origin.endsWith('.telegram.org') ||
-          origin === 'https://t.me' ||
-          origin.endsWith('.trycloudflare.com')
+          origin === 'https://t.me'
         ) {
+          return origin;
+        }
+        // Cloudflare quick-tunnels are a dev/staging convenience —
+        // NEVER trust them in production (any developer can spin one
+        // up and forge our Origin). M3.18 hardening, 2026-05-16.
+        if (env.NODE_ENV !== 'production' && origin.endsWith('.trycloudflare.com')) {
           return origin;
         }
         if (env.NODE_ENV !== 'production' && /^https?:\/\/(localhost|127\.0\.0\.1)/.test(origin)) {
@@ -266,8 +278,49 @@ export function createApp() {
     }),
   );
 
-  // Static SPA fallback (only in prod, where we serve dist/web from same process).
-  // Wired via Caddy in dev; here we just 404 unknown paths.
+  /**
+   * SPA static serving (M3.18, launch hardening 2026-05-16).
+   *
+   * Earlier comment promised "serve dist/web from same process" but
+   * the implementation was missing — every path under / fell into
+   * notFound() and returned JSON, leaving the SPA inaccessible.
+   *
+   * Resolution: serve apps/web/dist as static assets, then for any
+   * GET that doesn't match a real file, return index.html so the
+   * SPA's client-side router can take over (deep-linked URLs like
+   * /order, /admin, /run all work on a hard refresh).
+   *
+   * The path resolution tolerates two layouts:
+   *   - bun-built monorepo: apps/api/dist/main.js + apps/web/dist/
+   *   - dev: apps/api/src/main.ts run with apps/web at sibling
+   *
+   * If neither path exists (e.g., api running standalone in CI), we
+   * skip and let notFound() handle it — the existing dev workflow
+   * where Vite serves :5173 separately keeps working.
+   */
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  const webDistCandidates = [
+    join(__dirname, '..', '..', 'web', 'dist'),
+    join(__dirname, '..', '..', '..', 'apps', 'web', 'dist'),
+  ];
+  const webDist = webDistCandidates.find((p) => existsSync(join(p, 'index.html')));
+  if (webDist) {
+    logger.info({ webDist }, 'SPA static serving enabled');
+    // 1) Real files (assets/*.js, build-id.txt, favicon, /boot-guard.js, /boot.css)
+    app.use('/*', serveStatic({ root: webDist }));
+    // 2) SPA fallback — any unmatched GET returns index.html so the
+    //    React router takes over. tRPC + /health/* are already mounted
+    //    above so they short-circuit before reaching here.
+    app.get('*', serveStatic({ path: join(webDist, 'index.html') }));
+  } else {
+    logger.warn(
+      { tried: webDistCandidates },
+      'apps/web/dist not found; SPA serving disabled (dev workflow uses Vite on :5173)',
+    );
+  }
+
+  // Last-resort notFound — only hit when SPA serving is disabled
+  // (CI / dev without built web) or for paths /trpc/* didn't claim.
   app.notFound((c) => c.json({ code: 'NOT_FOUND', i18nKey: 'common.notFound' }, 404));
 
   app.onError((err, c) => {

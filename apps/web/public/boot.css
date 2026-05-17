@@ -1,0 +1,106 @@
+/* Pre-React shell styles. Loaded as an external stylesheet so the
+   strict CSP (no inline scripts; styles still allow 'unsafe-inline'
+   for Tailwind/Radix runtime styles) keeps inline <style> out of
+   index.html. The .ready class is added by main.tsx on successful
+   mount, hiding the splash. */
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: #f5f5f7;
+  color: #1d1d1f;
+  -webkit-font-smoothing: antialiased;
+}
+@media (prefers-color-scheme: dark) {
+  body {
+    background: #1c1c1e;
+    color: #f5f5f7;
+  }
+}
+#boot-splash {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  text-align: center;
+  padding: 24px;
+  transition: opacity 200ms ease;
+}
+.ready #boot-splash {
+  opacity: 0;
+  pointer-events: none;
+}
+#boot-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: boot-spin 900ms linear infinite;
+  opacity: 0.5;
+}
+@keyframes boot-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.boot-title {
+  font-size: 17px;
+  font-weight: 600;
+}
+.boot-subtitle {
+  font-size: 13px;
+  opacity: 0.55;
+}
+#boot-error {
+  display: none;
+  max-width: 480px;
+  padding: 16px 20px;
+  background: rgba(255, 59, 48, 0.08);
+  color: #d70015;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: left;
+  word-break: break-word;
+}
+#boot-error.show {
+  display: block;
+}
+#boot-error pre {
+  margin: 8px 0 0;
+  font-size: 11px;
+  max-height: 30vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.boot-actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.boot-btn {
+  appearance: none;
+  padding: 10px 20px;
+  border-radius: 9999px;
+  background: #0066cc;
+  color: white;
+  border: 0;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.boot-btn-secondary {
+  background: transparent;
+  color: inherit;
+  border: 1px solid currentColor;
+}

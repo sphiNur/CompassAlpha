@@ -85,7 +85,12 @@ export function AuthGate({ children }: AuthGateProps) {
     if (accessToken) return; // there's a token, let auth.me decide its fate first
     const tg = getTg();
     const initData = tg?.initData;
-    const mock = import.meta.env.VITE_DEV_MOCK_INIT_DATA;
+    // M3.18 (launch hardening): only honor the dev-mock initData in
+    // a dev build. `import.meta.env.DEV` is statically replaced by
+    // `false` in production, so Rollup tree-shakes the entire mock
+    // branch out — the production bundle does not contain the env
+    // var name. See vite.config.ts for the build-time hard guard.
+    const mock = import.meta.env.DEV ? import.meta.env.VITE_DEV_MOCK_INIT_DATA : null;
     const data = initData || mock;
     if (!data) return;
     loginAttempted.current = true;
@@ -114,7 +119,10 @@ export function AuthGate({ children }: AuthGateProps) {
           onClick={() => {
             loginAttempted.current = true;
             meUnauthorized.current = false;
-            const data = getTg()?.initData ?? import.meta.env.VITE_DEV_MOCK_INIT_DATA ?? '';
+            // M3.18: same DEV-only guard as the auto-login path above.
+            // Production builds never read VITE_DEV_MOCK_INIT_DATA.
+            const mock = import.meta.env.DEV ? import.meta.env.VITE_DEV_MOCK_INIT_DATA : null;
+            const data = getTg()?.initData ?? mock ?? '';
             if (!data) {
               setError(i18n.t('auth.errors.noInitData'));
               return;

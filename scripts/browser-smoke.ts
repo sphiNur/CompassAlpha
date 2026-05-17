@@ -15,14 +15,21 @@
  *      renders without unhandled JS errors.
  *
  * Usage:
- *   bun run scripts/browser-smoke.ts                                # default URL
- *   COMPASS_BASE=http://localhost bun run scripts/browser-smoke.ts  # local
+ *   COMPASS_BASE=https://<your-tunnel>.trycloudflare.com bun run scripts/browser-smoke.ts
+ *   COMPASS_BASE=http://localhost:3000                   bun run scripts/browser-smoke.ts
+ *
+ * COMPASS_BASE is required (P0-4, 2026-05-17 — stale-default footgun removed).
  */
 import { chromium, type ConsoleMessage, type Page } from 'playwright';
 
 // Use process.env (works under both Bun and Node) so this can run via
 // `node --experimental-strip-types ...` or `bun run ...` interchangeably.
-const BASE = (process.env.COMPASS_BASE ?? 'https://franchise-cheese-pound-mills.trycloudflare.com').replace(/\/$/, '');
+const rawBase = process.env.COMPASS_BASE;
+if (!rawBase) {
+  console.error('✖ COMPASS_BASE is required (e.g. https://<tunnel>.trycloudflare.com or http://localhost:3000)');
+  process.exit(2);
+}
+const BASE = rawBase.replace(/\/$/, '');
 const HEADLESS = process.env.HEADLESS !== '0';
 
 interface Check {

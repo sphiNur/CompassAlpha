@@ -175,8 +175,8 @@ function ShellInner() {
   // The earlier 80px reserved strip was empirically too much: on iPhone 14+
   // it produced a ~140 px black band before the first content row. A small
   // 12 px floor avoids hairline-tight content while letting env() do its job.
-  const inTelegram =
-    typeof window !== 'undefined' && !!(window as { Telegram?: unknown }).Telegram;
+  // M3.18: window.Telegram is globally typed via src/types/telegram.d.ts.
+  const inTelegram = typeof window !== 'undefined' && !!window.Telegram;
 
   return (
     <div className="flex h-full flex-col bg-[var(--c-bg)]">

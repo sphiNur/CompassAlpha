@@ -21,9 +21,9 @@ if (splash) splash.remove();
 // one on the first hook call — at the cost of one extra fetch.
 //
 // en is statically imported and always available — no preload needed.
-const tg = (window as { Telegram?: { WebApp?: { initDataUnsafe?: { user?: { language_code?: string } } } } }).Telegram?.WebApp;
+// M3.18: window.Telegram is now globally typed via src/types/telegram.d.ts.
 const bootGuess = detectLocale(
-  tg?.initDataUnsafe?.user?.language_code ?? navigator.language,
+  window.Telegram?.WebApp?.initDataUnsafe?.user?.language_code ?? navigator.language,
 );
 if (bootGuess !== 'en') preloadCatalog(bootGuess);
 

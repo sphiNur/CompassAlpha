@@ -24,7 +24,15 @@
  */
 import { chromium, type ConsoleMessage } from 'playwright';
 
-const BASE = (process.env.COMPASS_BASE ?? 'https://franchise-cheese-pound-mills.trycloudflare.com').replace(/\/$/, '');
+// COMPASS_BASE is required. The previous hardcoded default pointed at a
+// stale .trycloudflare.com URL that masked real failures whenever the
+// quick-tunnel rotated (P0-4, 2026-05-17).
+const rawBase = process.env.COMPASS_BASE;
+if (!rawBase) {
+  console.error('✖ COMPASS_BASE is required (e.g. https://<tunnel>.trycloudflare.com or http://localhost:3000)');
+  process.exit(2);
+}
+const BASE = rawBase.replace(/\/$/, '');
 const HEADLESS = process.env.HEADLESS !== '0';
 
 interface Check {

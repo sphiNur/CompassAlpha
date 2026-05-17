@@ -1,0 +1,40 @@
+[Unit]
+Description=CompassAlpha API (Hono + tRPC on Bun)
+Documentation=https://github.com/<org>/CompassAlpha
+After=network-online.target postgresql.service
+Wants=network-online.target
+# Soft requirement: api can start without redis; if redis is down,
+# rate limiting falls back to its in-memory store and bot delivery
+# queues retry. Hard-binding here would create a startup race.
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/compass-alpha/apps/api
+EnvironmentFile=/home/ubuntu/compass-alpha/.env
+Environment=PATH=/home/ubuntu/.bun/bin:/usr/local/bin:/usr/bin:/bin
+Environment=NODE_ENV=production
+ExecStart=/home/ubuntu/.bun/bin/bun run src/main.ts
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=65536
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=compass-api
+
+# Hardening — same posture as compass-backup.service. Comment out any
+# line that conflicts with a future feature (e.g. NoNewPrivileges=true
+# would block sudo from within the api process; the api never escalates,
+# so this is safe).
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+# Allow writes to /home/ubuntu/compass-alpha (the deploy target) and
+# nothing else under /home. Tighten further if logs / dist move.
+ReadWritePaths=/home/ubuntu/compass-alpha
+
+[Install]
+WantedBy=multi-user.target

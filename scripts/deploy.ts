@@ -40,8 +40,32 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = dirname(__dirname);                          // .../CompassAlpha
 const PARENT = dirname(ROOT);                             // .../gemini
-const KEY = join(PARENT, 'TgBotGemini.pem');
-const HOST = 'ubuntu@129.204.59.183';
+
+/**
+ * Deploy target (M3.18, launch hardening 2026-05-16).
+ *
+ * Previously HOST + KEY were hard-coded — the production IP entered
+ * version control, and the SSH key was assumed to sit one dir up
+ * from the repo. Both were findings in the launch audit. Now both
+ * read from env, with a fallback to `~/.ssh/compass_alpha.pem`
+ * (the recommended canonical location for the deploy key).
+ *
+ * Set these in your shell profile:
+ *   export COMPASS_DEPLOY_HOST=ubuntu@compass-pro.com
+ *   export COMPASS_DEPLOY_KEY=$HOME/.ssh/compass_alpha.pem
+ */
+const HOST = process.env.COMPASS_DEPLOY_HOST;
+if (!HOST) {
+  console.error(
+    'COMPASS_DEPLOY_HOST is not set.\n' +
+      '  Set: export COMPASS_DEPLOY_HOST=ubuntu@<host-or-ip>\n' +
+      '  Example: export COMPASS_DEPLOY_HOST=ubuntu@compass-pro.com',
+  );
+  process.exit(2);
+}
+const KEY =
+  process.env.COMPASS_DEPLOY_KEY ??
+  join(process.env.USERPROFILE ?? process.env.HOME ?? '', '.ssh', 'compass_alpha.pem');
 const TARBALL = join(PARENT, 'compass-alpha-deploy.tar.gz');
 // MSYS2 tar on Windows sees `C:` and thinks it's a remote host. Use a
 // relative path from PARENT to keep tar happy.
@@ -125,14 +149,62 @@ if (!DRY) {
     process.exit(1);
   }
 
-  step('4a. install/refresh systemd unit for compass-worker (idempotent)');
+  step('4a. install/refresh systemd units (api + worker, idempotent)');
+  // M3.18 (2026-05-16): compass-api.service now ships in the repo too;
+  // earlier it was hand-edited on the server and absent from version
+  // control, leaving the unit at risk of drift on a host rebuild.
   ssh(
     [
+      'sudo cp /home/ubuntu/compass-alpha/infra/systemd/compass-api.service /etc/systemd/system/compass-api.service',
       'sudo cp /home/ubuntu/compass-alpha/infra/systemd/compass-worker.service /etc/systemd/system/compass-worker.service',
       'sudo systemctl daemon-reload',
-      'sudo systemctl enable compass-worker.service',
+      'sudo systemctl enable compass-api.service compass-worker.service',
     ].join(' && '),
   );
+
+  step('4a-pre. verify no dev auth bypass in server .env (P0-3 defense in depth)');
+  // The vite.config.ts + AuthGate.tsx already prevent the mock initData
+  // from reaching production code paths, but we belt-and-braces here:
+  // refuse to deploy if the server's .env carries the dev override.
+  const envBypass = ssh(
+    `grep -E '^VITE_DEV_MOCK_INIT_DATA=.+' /home/ubuntu/compass-alpha/.env 2>/dev/null || echo __CLEAN__`,
+  );
+  if (!envBypass.includes('__CLEAN__')) {
+    console.error(
+      '\x1b[31m✖ Server .env has VITE_DEV_MOCK_INIT_DATA set — aborting deploy.\x1b[0m',
+    );
+    console.error('  Offending line: ' + envBypass.trim());
+    console.error('  Unset it on the server before deploying.');
+    process.exit(1);
+  }
+
+  step('4a-pg. verify PG role "compass" does not BYPASSRLS (defense in depth)');
+  // RLS policies are useless if the connecting role bypasses them.
+  // psql is available on the server; reads DATABASE_URL from .env.
+  try {
+    const out = ssh(
+      [
+        'set -e',
+        'cd /home/ubuntu/compass-alpha',
+        'DATABASE_URL=$(grep -E "^DATABASE_URL=" .env | head -1 | cut -d= -f2- | sed \'s/^"\\(.*\\)"$/\\1/\')',
+        `psql "$DATABASE_URL" -tAc "SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user"`,
+      ].join(' && '),
+    );
+    if (out.trim() !== 'f') {
+      console.error(
+        `\x1b[31m✖ DB role bypasses RLS (got: ${out.trim()}) — RLS is ineffective.\x1b[0m`,
+      );
+      console.error(
+        '  Run on the DB host as a superuser: ALTER ROLE compass NOBYPASSRLS;',
+      );
+      process.exit(1);
+    }
+    console.log('  ✓ DB role does not bypass RLS');
+  } catch (err) {
+    console.log(
+      `  \x1b[33m⚠ couldn't verify BYPASSRLS (psql failed): ${(err as Error).message}\x1b[0m`,
+    );
+  }
 
   step('4b. restart api + worker');
   ssh(
