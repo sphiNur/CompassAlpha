@@ -43,6 +43,12 @@ export const orderSessionsV = readModelSchema.table(
     submittedByMemberId: uuid('submitted_by_member_id'),
     claimedByMemberId: uuid('claimed_by_member_id'),
     claimedAt: timestamp('claimed_at', { withTimezone: true, mode: 'date' }),
+    /** Last force-released claimer (M3.22, 2026-05-18). Set when a
+     *  ClaimReleased event lands with reason='override' or 'timeout',
+     *  recording who was sitting on the order before they got bumped.
+     *  Cleared on a clean self-release or any terminal status change
+     *  so the banner only shows "X → Y" while the handoff is recent. */
+    previousClaimerMemberId: uuid('previous_claimer_member_id'),
     submittedAt: timestamp('submitted_at', { withTimezone: true, mode: 'date' }),
     decidedAt: timestamp('decided_at', { withTimezone: true, mode: 'date' }),
     decidedByMemberId: uuid('decided_by_member_id'),

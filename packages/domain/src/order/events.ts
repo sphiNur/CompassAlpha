@@ -138,14 +138,18 @@ export type ClaimedEvent = BaseEvent & {
 
 export type ClaimReleasedEvent = BaseEvent & {
   type: 'ClaimReleased';
-  /** `override` is emitted when an actor other than the current claimer
-   *  releases the claim — requires `order.approve` and is the escape
-   *  valve for a stale claim that's blocking the queue. The audit log
-   *  records `byMemberId` (the overrider) for traceability. */
-  payload: {
-    byMemberId: string;
-    reason: 'manual' | 'pagehide' | 'timeout' | 'override';
-  };
+  /** Discriminated by `reason`:
+   *  - `manual` / `pagehide` — emitted by the claimer themselves (self-release).
+   *  - `override` — emitted by another approver taking over a stale claim
+   *    (escape valve added 2026-05-18). `byMemberId` records the overrider.
+   *  - `timeout` — emitted by the worker's `releaseStaleClaims` task when
+   *    a claim sits idle past `CLAIM_TIMEOUT_MINUTES` (M3.20, 2026-05-18).
+   *    No human actor → `byMemberId: null`.
+   *  The audit UI groups override/timeout as "interventions" and surfaces
+   *  them with a different tone (see AdminPage's audit viewer). */
+  payload:
+    | { byMemberId: string; reason: 'manual' | 'pagehide' | 'override' }
+    | { byMemberId: null; reason: 'timeout' };
 };
 
 export type ApprovedEvent = BaseEvent & {

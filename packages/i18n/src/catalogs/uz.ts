@@ -344,6 +344,7 @@ export const uz = {
   'order.status.in_run': 'Xaridda',
   'order.status.archived': 'Arxiv',
   'order.banner.claimed': "{who} ko'rib chiqmoqda",
+  'order.banner.claimedAfterHandoff': "{who} ko'rib chiqmoqda ({prev} dan qabul qilgan)",
   'order.banner.editLocked': "Yuborilgan, tahrirlash mumkin emas",
   'order.banner.approved.title': 'Tasdiqlangan · xarid kutilmoqda',
   'order.banner.approved.body':

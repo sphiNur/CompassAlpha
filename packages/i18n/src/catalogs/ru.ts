@@ -333,6 +333,7 @@ export const ru = {
   'order.status.in_run': 'В закупке',
   'order.status.archived': 'В архиве',
   'order.banner.claimed': 'Проверяет {who}',
+  'order.banner.claimedAfterHandoff': 'Проверяет {who} (принял от {prev})',
   'order.banner.editLocked': 'Редактирование заблокировано',
   'order.banner.approved.title': 'Одобрено · ждёт закупки',
   'order.banner.approved.body':

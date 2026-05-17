@@ -176,6 +176,13 @@
       "when": 1778929600000,
       "tag": "0024_session_extras",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1779100800000,
+      "tag": "0025_session_previous_claimer",
+      "breakpoints": true
     }
   ]
 }

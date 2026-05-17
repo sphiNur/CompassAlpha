@@ -7,7 +7,7 @@
  * application-critical (UI reads from it within the same request) — keeping
  * it inline avoids the "I just submitted but the list is stale" UX bug.
  */
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
 import type { OrderEvent } from '@compass/domain/order';
@@ -138,13 +138,34 @@ export async function projectOrder(db: DB, orgId: string, events: OrderEvent[]):
           })
           .where(eq(s.orderSessionsV.id, e.streamId));
         break;
-      case 'ClaimReleased':
+      case 'ClaimReleased': {
+        // M3.22 (2026-05-18): on override or timeout release, snapshot
+        // the currently-claimed member into previous_claimer_member_id
+        // so the next reviewer's banner can show "X → Y". On a clean
+        // self-release (manual / pagehide), clear the marker — no
+        // handoff happened. The `claimed_by_member_id` reference in
+        // the SET is evaluated against the OLD row per SQL UPDATE
+        // semantics, so we can null and snapshot in one statement.
+        const remembersOverride =
+          e.payload.reason === 'override' || e.payload.reason === 'timeout';
         await db
           .update(s.orderSessionsV)
-          .set({ claimedByMemberId: null, claimedAt: null, lastSeq: e.seq, updatedAt: new Date() })
+          .set({
+            claimedByMemberId: null,
+            claimedAt: null,
+            previousClaimerMemberId: remembersOverride
+              ? sql`claimed_by_member_id`
+              : null,
+            lastSeq: e.seq,
+            updatedAt: new Date(),
+          })
           .where(eq(s.orderSessionsV.id, e.streamId));
         break;
+      }
       case 'Approved':
+        // Clear the previous-claimer marker at every terminal state
+        // change (approved/rejected/withdrawn) so a re-submitted
+        // session starts fresh in M3.22's banner UX.
         await db
           .update(s.orderSessionsV)
           .set({
@@ -153,6 +174,7 @@ export async function projectOrder(db: DB, orgId: string, events: OrderEvent[]):
             decidedByMemberId: e.payload.byMemberId,
             claimedByMemberId: null,
             claimedAt: null,
+            previousClaimerMemberId: null,
             rejectReason: null,
             lastSeq: e.seq,
             updatedAt: new Date(),
@@ -169,6 +191,7 @@ export async function projectOrder(db: DB, orgId: string, events: OrderEvent[]):
             rejectReason: e.payload.reason,
             claimedByMemberId: null,
             claimedAt: null,
+            previousClaimerMemberId: null,
             lastSeq: e.seq,
             updatedAt: new Date(),
           })
@@ -184,6 +207,7 @@ export async function projectOrder(db: DB, orgId: string, events: OrderEvent[]):
             decidedAt: null,
             decidedByMemberId: null,
             rejectReason: null,
+            previousClaimerMemberId: null,
             lastSeq: e.seq,
             updatedAt: new Date(),
           })

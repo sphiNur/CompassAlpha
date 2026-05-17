@@ -5798,35 +5798,72 @@ function ActivitySection() {
       >
         {(rows) => (
           <ul className="flex flex-col gap-1.5" role="list">
-            {rows.map((e) => (
-              <li
-                key={e.id}
-                className="flex flex-col gap-0.5 rounded-[var(--r-card)] bg-[var(--c-surface)] px-3 py-2 ring-hairline"
-              >
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="font-mono text-label font-semibold text-[var(--c-fg)]">
-                    {e.streamType}.{e.type}
-                  </span>
-                  <span className="font-mono text-tiny text-[var(--c-fg-muted)]">
-                    seq {e.seq}
-                  </span>
-                </div>
-                <div className="flex items-baseline justify-between gap-2 text-label text-[var(--c-fg-muted)]">
-                  <span className="truncate">
-                    {e.actor?.displayName ?? 'system'}
-                    {e.actor?.tgUsername ? ` · @${e.actor.tgUsername}` : ''}
-                  </span>
-                  <span className="font-mono text-tiny">
-                    {new Date(e.occurredAt).toLocaleString([], {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </span>
-                </div>
-              </li>
-            ))}
+            {rows.map((e) => {
+              // M3.21 (2026-05-18): surface ClaimReleased.reason inline
+              // so admins can spot non-routine releases (override / timeout)
+              // at a glance. Override = somebody took over another
+              // approver's claim; timeout = the worker swept an idle
+              // claim. Both warrant a heads-up tint; manual / pagehide
+              // are routine, no decoration.
+              const claimReason =
+                e.type === 'ClaimReleased'
+                  ? (e.payload as { reason?: string } | null)?.reason
+                  : undefined;
+              const isIntervention =
+                claimReason === 'override' || claimReason === 'timeout';
+              const rowBg = isIntervention
+                ? 'bg-[oklch(97%_0.07_75)] ring-[oklch(35%_0.16_75)]/20'
+                : 'bg-[var(--c-surface)] ring-hairline';
+              return (
+                <li
+                  key={e.id}
+                  className={`flex flex-col gap-0.5 rounded-[var(--r-card)] px-3 py-2 ring-hairline ${rowBg}`}
+                >
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span
+                      className="font-mono text-label font-semibold text-[var(--c-fg)]"
+                      title={
+                        claimReason === 'override'
+                          ? 'Another approver took over this claim — see banner on ApprovalPage'
+                          : claimReason === 'timeout'
+                            ? 'Worker released this claim after the idle threshold (CLAIM_TIMEOUT_MINUTES)'
+                            : undefined
+                      }
+                    >
+                      {e.streamType}.{e.type}
+                      {claimReason ? (
+                        <span
+                          className={
+                            isIntervention
+                              ? 'ml-1.5 text-tiny font-medium uppercase tracking-wider text-[oklch(35%_0.16_75)]'
+                              : 'ml-1.5 text-tiny font-medium uppercase tracking-wider text-[var(--c-fg-muted)]'
+                          }
+                        >
+                          · {claimReason}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="font-mono text-tiny text-[var(--c-fg-muted)]">
+                      seq {e.seq}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline justify-between gap-2 text-label text-[var(--c-fg-muted)]">
+                    <span className="truncate">
+                      {e.actor?.displayName ?? 'system'}
+                      {e.actor?.tgUsername ? ` · @${e.actor.tgUsername}` : ''}
+                    </span>
+                    <span className="font-mono text-tiny">
+                      {new Date(e.occurredAt).toLocaleString([], {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
       </DataState>

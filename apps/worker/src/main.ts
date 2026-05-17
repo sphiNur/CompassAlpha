@@ -20,6 +20,7 @@
  *   BOT_DELIVERY_ENABLED  optional override; see bot dispatch block
  *   FRONTEND_URL          optional; used as base for deep-link buttons
  */
+import { randomUUID } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync } from 'node:fs';
@@ -403,6 +404,140 @@ let lastHeartbeat = Date.now();
 const IDEMPOTENCY_CLEANUP_MS = 60 * 60 * 1000;
 let lastIdempotencyCleanup = Date.now();
 
+// M3.20 (2026-05-18): claim-timeout cadence + threshold. The take-over
+// button (M3.19) needs a human watching the queue. This task is the
+// system-level safety net for unattended deployments — if a claimer
+// goes idle, the order returns to the queue automatically so the
+// next approver can pick it up without manual intervention.
+//
+//   CLAIM_TIMEOUT_MINUTES         — how long a claim sits before
+//                                   counting as stale (default 30)
+//   CLAIM_TIMEOUT_SCAN_MINUTES    — how often this worker scans
+//                                   for stale claims (default 5)
+//
+// Set CLAIM_TIMEOUT_MINUTES=0 to disable the auto-release task.
+const CLAIM_TIMEOUT_MINUTES = parseInt(process.env.CLAIM_TIMEOUT_MINUTES ?? '30', 10);
+const CLAIM_TIMEOUT_SCAN_MS =
+  parseInt(process.env.CLAIM_TIMEOUT_SCAN_MINUTES ?? '5', 10) * 60_000;
+let lastClaimTimeoutScan = Date.now();
+
+if (CLAIM_TIMEOUT_MINUTES > 0) {
+  console.log(
+    `[worker] claim auto-release: scan every ${CLAIM_TIMEOUT_SCAN_MS / 60_000}m, ` +
+      `release after ${CLAIM_TIMEOUT_MINUTES}m idle`,
+  );
+} else {
+  console.warn('[worker] claim auto-release disabled (CLAIM_TIMEOUT_MINUTES=0)');
+}
+
+/**
+ * Find sessions whose claim has sat idle past CLAIM_TIMEOUT_MINUTES and
+ * release them by appending a `ClaimReleased{reason:'timeout'}` event +
+ * updating the read model. Each release runs in its own tx with FOR UPDATE
+ * so a concurrent approve/reject/manual-release races cleanly: only one
+ * winner inserts seq=N+1; the other tx sees an updated last_seq and skips.
+ *
+ * No human actor → event payload has `byMemberId: null`. The audit log
+ * groups these with override releases under "interventions" (M3.21).
+ */
+async function releaseStaleClaims(): Promise<number> {
+  if (CLAIM_TIMEOUT_MINUTES <= 0) return 0;
+
+  // Candidate set first — cheap scan, no locks.
+  const candidates = (await db.execute(sql`
+    SELECT id, org_id, last_seq, claimed_by_member_id, claimed_at
+    FROM read_model.order_sessions_v
+    WHERE status = 'submitted'
+      AND claimed_by_member_id IS NOT NULL
+      AND claimed_at < NOW() - (${CLAIM_TIMEOUT_MINUTES}::int * interval '1 minute')
+    ORDER BY claimed_at
+    LIMIT 100
+  `)) as unknown as Array<{
+    id: string;
+    org_id: string;
+    last_seq: number;
+    claimed_by_member_id: string;
+    claimed_at: Date;
+  }>;
+  if (candidates.length === 0) return 0;
+
+  let released = 0;
+  for (const row of candidates) {
+    try {
+      const ok = await db.transaction(async (tx) => {
+        // Re-check under row lock — another tx may have already
+        // approved / rejected / manually released between our SELECT
+        // and now. If so, just skip.
+        const fresh = (await tx.execute(sql`
+          SELECT last_seq, claimed_by_member_id, claimed_at, status
+          FROM read_model.order_sessions_v
+          WHERE id = ${row.id}
+          FOR UPDATE
+        `)) as unknown as Array<{
+          last_seq: number;
+          claimed_by_member_id: string | null;
+          claimed_at: Date | null;
+          status: string;
+        }>;
+        const cur = fresh[0];
+        if (!cur) return false;
+        if (
+          cur.status !== 'submitted' ||
+          cur.claimed_by_member_id === null ||
+          cur.claimed_at === null ||
+          cur.claimed_at.getTime() >= Date.now() - CLAIM_TIMEOUT_MINUTES * 60_000
+        ) {
+          return false;
+        }
+        const newSeq = cur.last_seq + 1;
+        const occurredAt = new Date();
+        // Append the timeout event. Schema invariant: (stream_id, seq)
+        // is uniqueIndex'd so a racing append would error out here —
+        // we let the tx fail and move on rather than retrying.
+        await tx.insert(s.events).values({
+          id: randomUUID(),
+          orgId: row.org_id,
+          streamType: 'order',
+          streamId: row.id,
+          seq: newSeq,
+          type: 'ClaimReleased',
+          payload: { byMemberId: null, reason: 'timeout' },
+          actorId: null,
+          occurredAt,
+          correlationId: null,
+          causationId: null,
+          idempotencyKey: null,
+        });
+        // Mirror the projector's ClaimReleased branch (M3.22): snapshot
+        // the timed-out claimer into previous_claimer_member_id so the
+        // next reviewer's banner shows "X → Y".
+        await tx
+          .update(s.orderSessionsV)
+          .set({
+            claimedByMemberId: null,
+            claimedAt: null,
+            previousClaimerMemberId: cur.claimed_by_member_id,
+            lastSeq: newSeq,
+            updatedAt: occurredAt,
+          })
+          .where(eq(s.orderSessionsV.id, row.id));
+        return true;
+      });
+      if (ok) {
+        released++;
+        console.log(
+          `[worker] claim timeout released: session=${row.id} prevClaimer=${row.claimed_by_member_id} idleFor=${Math.round((Date.now() - row.claimed_at.getTime()) / 60_000)}m`,
+        );
+      }
+    } catch (err) {
+      // Lost a race with a concurrent approval / manual release / another
+      // worker — projection is still consistent, just log and continue.
+      console.error('[worker] release-stale-claim failed for', row.id, err);
+    }
+  }
+  return released;
+}
+
 async function cleanupIdempotencyKeys(): Promise<number> {
   // Delete every row whose expires_at is in the past. The index
   // idem_expires_idx makes this O(matches) not O(table). The DELETE
@@ -441,6 +576,21 @@ async function loop() {
           console.error('[worker] idempotency cleanup failed', err);
         }
         lastIdempotencyCleanup = Date.now();
+      }
+      // M3.20: claim-timeout sweep — see releaseStaleClaims() above.
+      if (
+        CLAIM_TIMEOUT_MINUTES > 0 &&
+        Date.now() - lastClaimTimeoutScan >= CLAIM_TIMEOUT_SCAN_MS
+      ) {
+        try {
+          const released = await releaseStaleClaims();
+          if (released > 0) {
+            console.log(`[worker] claim timeout sweep: ${released} stale claim(s) released`);
+          }
+        } catch (err) {
+          console.error('[worker] claim timeout sweep failed', err);
+        }
+        lastClaimTimeoutScan = Date.now();
       }
     } catch (err) {
       console.error('[worker] processOnce threw', err);

@@ -396,6 +396,7 @@ export const en = {
   'order.status.in_run': 'In market run',
   'order.status.archived': 'Archived',
   'order.banner.claimed': 'Under review by {who}',
+  'order.banner.claimedAfterHandoff': 'Under review by {who} (took over from {prev})',
   'order.banner.editLocked': 'Editing locked while submitted',
   'order.banner.approved.title': 'Approved · awaiting market run',
   'order.banner.approved.body':

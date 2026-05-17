@@ -43,7 +43,7 @@ export type OrderCommand =
   | { type: 'SetSessionExtras'; extras: SessionExtraItem[]; actor: ActorCtx }
   | { type: 'Submit'; actor: ActorCtx }
   | { type: 'Claim'; actor: ActorCtx }
-  | { type: 'ReleaseClaim'; actor: ActorCtx; reason: 'manual' | 'pagehide' | 'timeout' }
+  | { type: 'ReleaseClaim'; actor: ActorCtx; reason: 'manual' | 'pagehide' }
   | { type: 'Approve'; actor: ActorCtx }
   | { type: 'Reject'; actor: ActorCtx; reason: string }
   | { type: 'Withdraw'; actor: ActorCtx }

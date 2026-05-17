@@ -304,6 +304,7 @@ export const zh = {
   'order.status.in_run': '采购中',
   'order.status.archived': '已归档',
   'order.banner.claimed': '正在由 {who} 审核',
+  'order.banner.claimedAfterHandoff': '正在由 {who} 审核(接手自 {prev})',
   'order.banner.editLocked': '提交后已锁定，无法编辑',
   'order.banner.approved.title': '已通过 · 等待采购',
   'order.banner.approved.body': '您的管理员已审核通过,采购员会在下一次采购单中处理。',

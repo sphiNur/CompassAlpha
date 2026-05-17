@@ -258,9 +258,25 @@ export function ApprovalPage() {
                           claimer's member row was archived. */}
                       <Banner
                         tone="warn"
-                        title={i18n.t('order.banner.claimed', {
-                          who: row.claimedByDisplayName ?? i18n.t('approval.unknownReviewer'),
-                        })}
+                        title={
+                          row.previousClaimerDisplayName
+                            ? // M3.22 (2026-05-18): when a previous claimer
+                              // got force-released (override / timeout) and
+                              // someone else picked up the order, show the
+                              // handoff so the next approver knows this is
+                              // not a first-time claim.
+                              i18n.t('order.banner.claimedAfterHandoff', {
+                                who:
+                                  row.claimedByDisplayName ??
+                                  i18n.t('approval.unknownReviewer'),
+                                prev: row.previousClaimerDisplayName,
+                              })
+                            : i18n.t('order.banner.claimed', {
+                                who:
+                                  row.claimedByDisplayName ??
+                                  i18n.t('approval.unknownReviewer'),
+                              })
+                        }
                         action={
                           // Take-over escape valve: anyone with `order.approve`
                           // on this store can release another approver's stale

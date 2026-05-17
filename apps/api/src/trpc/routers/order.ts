@@ -198,20 +198,29 @@ export const orderRouter = router({
         const items = await tx.query.orderItemsV.findMany({
           where: (it, { eq: eq2 }) => eq2(it.sessionId, session.id),
         });
-        // Resolve the current claimer's display info so the detail view
-        // can mirror pendingList's "Under review by <name>" banner.
+        // Resolve current + previous claimer display info so the detail
+        // view can mirror pendingList's "Under review by X" (and
+        // "previously by Y" after a takeover handoff) banners.
+        const claimerIds = [session.claimedByMemberId, session.previousClaimerMemberId].filter(
+          Boolean,
+        ) as string[];
+        const claimerRows = claimerIds.length
+          ? await tx
+              .select({
+                memberId: s.members.id,
+                displayName: s.users.displayName,
+                avatarUrl: s.users.avatarUrl,
+              })
+              .from(s.members)
+              .innerJoin(s.users, eq(s.users.id, s.members.userId))
+              .where(inArray(s.members.id, claimerIds))
+          : [];
+        const claimerById = new Map(claimerRows.map((r) => [r.memberId, r]));
         const claimer = session.claimedByMemberId
-          ? (
-              await tx
-                .select({
-                  displayName: s.users.displayName,
-                  avatarUrl: s.users.avatarUrl,
-                })
-                .from(s.members)
-                .innerJoin(s.users, eq(s.users.id, s.members.userId))
-                .where(eq(s.members.id, session.claimedByMemberId))
-                .limit(1)
-            )[0] ?? null
+          ? claimerById.get(session.claimedByMemberId) ?? null
+          : null;
+        const prevClaimer = session.previousClaimerMemberId
+          ? claimerById.get(session.previousClaimerMemberId) ?? null
           : null;
         // Same shape as todaySession: per-(sku, contributor) rows + sku totals.
         const totalBySku = new Map<string, number>();
@@ -229,6 +238,7 @@ export const orderRouter = router({
           claimedByMemberId: session.claimedByMemberId,
           claimedByDisplayName: claimer?.displayName ?? null,
           claimedByAvatarUrl: claimer?.avatarUrl ?? null,
+          previousClaimerDisplayName: prevClaimer?.displayName ?? null,
           claimedAt: session.claimedAt?.toISOString() ?? null,
           submittedAt: session.submittedAt?.toISOString() ?? null,
           decidedAt: session.decidedAt?.toISOString() ?? null,
@@ -319,13 +329,16 @@ export const orderRouter = router({
       // finalized the order), fall back to the initiator (first to add a
       // line) if not yet submitted. Also include any current claimer so
       // the FE can render "Under review by <name>" instead of a UUID or
-      // the literal string "reviewer" (bug fixed 2026-05-18).
+      // the literal string "reviewer" (bug fixed 2026-05-18). M3.22
+      // adds previousClaimer too — so the banner can render
+      // "X → Y" after an override or timeout handoff.
       const memberIds = [
         ...new Set(
           sessions
             .flatMap((x) => [
               x.submittedByMemberId ?? x.initiatedByMemberId,
               x.claimedByMemberId,
+              x.previousClaimerMemberId,
             ])
             .filter(Boolean) as string[],
         ),
@@ -400,6 +413,9 @@ export const orderRouter = router({
         const claimer = sess.claimedByMemberId
           ? memberById.get(sess.claimedByMemberId)
           : null;
+        const prevClaimer = sess.previousClaimerMemberId
+          ? memberById.get(sess.previousClaimerMemberId)
+          : null;
         return {
           ...sess,
           claimedAt: sess.claimedAt?.toISOString() ?? null,
@@ -415,6 +431,10 @@ export const orderRouter = router({
            *  be null if the claimer's member row was archived). */
           claimedByDisplayName: claimer?.displayName ?? null,
           claimedByAvatarUrl: claimer?.avatarUrl ?? null,
+          /** Last force-released claimer (M3.22). Set after override or
+           *  timeout release; cleared on clean self-release / terminal
+           *  state change. */
+          previousClaimerDisplayName: prevClaimer?.displayName ?? null,
           itemCount: agg.itemCount,
           totalQty: agg.totalQty.toFixed(3).replace(/\.?0+$/, ''),
           contributorCount: agg.contributors.size,
