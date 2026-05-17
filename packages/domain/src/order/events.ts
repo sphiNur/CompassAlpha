@@ -138,7 +138,14 @@ export type ClaimedEvent = BaseEvent & {
 
 export type ClaimReleasedEvent = BaseEvent & {
   type: 'ClaimReleased';
-  payload: { byMemberId: string; reason: 'manual' | 'pagehide' | 'timeout' };
+  /** `override` is emitted when an actor other than the current claimer
+   *  releases the claim — requires `order.approve` and is the escape
+   *  valve for a stale claim that's blocking the queue. The audit log
+   *  records `byMemberId` (the overrider) for traceability. */
+  payload: {
+    byMemberId: string;
+    reason: 'manual' | 'pagehide' | 'timeout' | 'override';
+  };
 };
 
 export type ApprovedEvent = BaseEvent & {

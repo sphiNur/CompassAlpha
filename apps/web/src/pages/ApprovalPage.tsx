@@ -30,12 +30,26 @@ import {
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { useI18n, useProductName } from '../hooks/useI18n';
-import { haptic } from '../hooks/useTelegram';
+import { getTg, haptic } from '../hooks/useTelegram';
 import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
 import { useStoreContext } from '../components/StoreSwitcher';
 
 type ApprovalTab = 'pending' | 'approved' | 'rejected';
+
+/** Telegram-native confirm with a web fallback. Mirrors AdminPage's helper
+ *  — iOS Telegram renders `\n\n` literally, so collapse newlines for tg. */
+function confirmAction(message: string, ok: () => void): void {
+  const tg = getTg();
+  if (tg) {
+    const oneLine = message.replace(/\s*\n\s*\n\s*/g, ' — ').replace(/\n/g, ' ');
+    tg.showConfirm(oneLine, (yes: boolean) => {
+      if (yes) ok();
+    });
+  } else if (confirm(message)) {
+    ok();
+  }
+}
 
 export function ApprovalPage() {
   const i18n = useI18n();
@@ -235,9 +249,46 @@ export function ApprovalPage() {
 
                   {isClaimedByOther ? (
                     <div className="px-4 pt-2">
+                      {/* Before 2026-05-18: this banner hardcoded `who: 'reviewer'`
+                          so every claimed-by-other row read literally
+                          "Under review by reviewer" — nobody could tell
+                          WHO was sitting on it. The backend now ships
+                          `claimedByDisplayName` (see order.pendingList).
+                          Fallback to a generic label only when the
+                          claimer's member row was archived. */}
                       <Banner
                         tone="warn"
-                        title={i18n.t('order.banner.claimed', { who: 'reviewer' })}
+                        title={i18n.t('order.banner.claimed', {
+                          who: row.claimedByDisplayName ?? i18n.t('approval.unknownReviewer'),
+                        })}
+                        action={
+                          // Take-over escape valve: anyone with `order.approve`
+                          // on this store can release another approver's stale
+                          // claim. Server validates the same permission and
+                          // records `ClaimReleased{reason:'override'}` for
+                          // audit (commands.ts 2026-05-18). Self-release stays
+                          // on the in-row "Release" button below.
+                          session.permissions.includes('order.approve') ? (
+                            <Button
+                              size="sm"
+                              variant="pearl"
+                              loading={
+                                releaseClaim.isPending &&
+                                releaseClaim.variables?.sessionId === row.id
+                              }
+                              onClick={() =>
+                                confirmAction(
+                                  i18n.t('approval.confirmTakeover', {
+                                    who: row.claimedByDisplayName ?? i18n.t('approval.unknownReviewer'),
+                                  }),
+                                  () => releaseClaim.mutate({ sessionId: row.id }),
+                                )
+                              }
+                            >
+                              {i18n.t('approval.takeOver')}
+                            </Button>
+                          ) : undefined
+                        }
                       />
                     </div>
                   ) : null}

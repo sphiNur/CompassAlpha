@@ -274,6 +274,93 @@ describe('order.decide (per-contributor lines)', () => {
     );
   });
 
+  test('release-claim by another approver succeeds and records override', () => {
+    // 2026-05-18 escape valve: manager A claims, manager B (also has
+    // order.approve) takes over because A went idle. Event records B as
+    // byMemberId with reason='override' for audit. Without this, A's
+    // stale claim would freeze the order indefinitely.
+    let state = startedDraft();
+    state = decide(
+      state,
+      { type: 'AdjustItem', skuId: 's', qty: '1', sku: sku('s'), actor: staff() },
+      { clock },
+    ).reduce(apply, state);
+    state = decide(state, { type: 'Submit', actor: staff() }, { clock }).reduce(apply, state);
+    const mgrA = manager(['order.claim', 'order.approve'], 'mem-mgrA');
+    state = decide(state, { type: 'Claim', actor: mgrA }, { clock }).reduce(apply, state);
+    expect(state.claimedByMemberId).toBe('mem-mgrA');
+
+    const mgrB = manager(['order.claim', 'order.approve'], 'mem-mgrB');
+    const events = decide(
+      state,
+      { type: 'ReleaseClaim', reason: 'manual', actor: mgrB },
+      { clock },
+    );
+    expect(events).toHaveLength(1);
+    const ev = events[0]!;
+    expect(ev.type).toBe('ClaimReleased');
+    if (ev.type === 'ClaimReleased') {
+      expect(ev.payload.byMemberId).toBe('mem-mgrB');
+      expect(ev.payload.reason).toBe('override');
+    }
+    state = events.reduce(apply, state);
+    expect(state.claimedByMemberId).toBeNull();
+    expect(state.status).toBe('submitted'); // queue is unstuck, still awaits decision
+  });
+
+  test('release-claim by non-approver fails (claim-only role cannot force-release)', () => {
+    let state = startedDraft();
+    state = decide(
+      state,
+      { type: 'AdjustItem', skuId: 's', qty: '1', sku: sku('s'), actor: staff() },
+      { clock },
+    ).reduce(apply, state);
+    state = decide(state, { type: 'Submit', actor: staff() }, { clock }).reduce(apply, state);
+    state = decide(
+      state,
+      { type: 'Claim', actor: manager(['order.claim', 'order.approve'], 'mem-mgrA') },
+      { clock },
+    ).reduce(apply, state);
+
+    // mem-mgrC has order.claim but NOT order.approve — must not be able
+    // to force-release somebody else's claim.
+    const mgrC: ActorCtx = {
+      userId: 'user-mgrC',
+      memberId: 'mem-mgrC',
+      permissions: new Set(['order.claim']),
+      isClaimer: false,
+    };
+    expect(() =>
+      decide(state, { type: 'ReleaseClaim', reason: 'manual', actor: mgrC }, { clock }),
+    ).toThrow('order.errors.notClaimer');
+  });
+
+  test('release-claim by the claimer themselves keeps the original reason', () => {
+    // Self-release path preserves command.reason — we want pagehide /
+    // timeout / manual to round-trip through the event so downstream
+    // consumers (audit views, analytics) can distinguish them.
+    let state = startedDraft();
+    state = decide(
+      state,
+      { type: 'AdjustItem', skuId: 's', qty: '1', sku: sku('s'), actor: staff() },
+      { clock },
+    ).reduce(apply, state);
+    state = decide(state, { type: 'Submit', actor: staff() }, { clock }).reduce(apply, state);
+    const mgr = manager(['order.claim', 'order.approve'], 'mem-mgrA');
+    state = decide(state, { type: 'Claim', actor: mgr }, { clock }).reduce(apply, state);
+    const events = decide(
+      state,
+      { type: 'ReleaseClaim', reason: 'pagehide', actor: mgr },
+      { clock },
+    );
+    expect(events).toHaveLength(1);
+    const ev = events[0]!;
+    if (ev.type === 'ClaimReleased') {
+      expect(ev.payload.byMemberId).toBe('mem-mgrA');
+      expect(ev.payload.reason).toBe('pagehide');
+    }
+  });
+
   test('reject requires non-empty reason', () => {
     let state = startedDraft();
     state = decide(

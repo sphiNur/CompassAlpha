@@ -318,14 +318,23 @@ export function decide(
     case 'ReleaseClaim': {
       assertActiveStream(state);
       if (!state.claimedByMemberId) return [];
-      if (state.claimedByMemberId !== command.actor.memberId) {
+      const isSelf = state.claimedByMemberId === command.actor.memberId;
+      // Escape valve: another approver with `order.approve` can release
+      // a stale claim that's blocking the queue. Without this an idle
+      // claimer freezes the order indefinitely (the original audit
+      // bug 2026-05-18). The event records `byMemberId` (the overrider)
+      // + reason='override' so contested releases are traceable.
+      if (!isSelf && !command.actor.permissions.has('order.approve')) {
         throw forbidden('order.errors.notClaimer');
       }
       return [
         {
           ...baseFor(1, 'ClaimReleased'),
           type: 'ClaimReleased',
-          payload: { byMemberId: command.actor.memberId, reason: command.reason },
+          payload: {
+            byMemberId: command.actor.memberId,
+            reason: isSelf ? command.reason : 'override',
+          },
         },
       ];
     }

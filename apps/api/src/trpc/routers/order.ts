@@ -198,6 +198,21 @@ export const orderRouter = router({
         const items = await tx.query.orderItemsV.findMany({
           where: (it, { eq: eq2 }) => eq2(it.sessionId, session.id),
         });
+        // Resolve the current claimer's display info so the detail view
+        // can mirror pendingList's "Under review by <name>" banner.
+        const claimer = session.claimedByMemberId
+          ? (
+              await tx
+                .select({
+                  displayName: s.users.displayName,
+                  avatarUrl: s.users.avatarUrl,
+                })
+                .from(s.members)
+                .innerJoin(s.users, eq(s.users.id, s.members.userId))
+                .where(eq(s.members.id, session.claimedByMemberId))
+                .limit(1)
+            )[0] ?? null
+          : null;
         // Same shape as todaySession: per-(sku, contributor) rows + sku totals.
         const totalBySku = new Map<string, number>();
         for (const it of items) {
@@ -212,6 +227,8 @@ export const orderRouter = router({
           orderDate: session.orderDate,
           status: session.status,
           claimedByMemberId: session.claimedByMemberId,
+          claimedByDisplayName: claimer?.displayName ?? null,
+          claimedByAvatarUrl: claimer?.avatarUrl ?? null,
           claimedAt: session.claimedAt?.toISOString() ?? null,
           submittedAt: session.submittedAt?.toISOString() ?? null,
           decidedAt: session.decidedAt?.toISOString() ?? null,
@@ -300,11 +317,16 @@ export const orderRouter = router({
       const storeIds = [...new Set(sessions.map((x) => x.storeId))];
       // Display attribution: prefer the submitter (the person who actually
       // finalized the order), fall back to the initiator (first to add a
-      // line) if not yet submitted.
+      // line) if not yet submitted. Also include any current claimer so
+      // the FE can render "Under review by <name>" instead of a UUID or
+      // the literal string "reviewer" (bug fixed 2026-05-18).
       const memberIds = [
         ...new Set(
           sessions
-            .map((x) => x.submittedByMemberId ?? x.initiatedByMemberId)
+            .flatMap((x) => [
+              x.submittedByMemberId ?? x.initiatedByMemberId,
+              x.claimedByMemberId,
+            ])
             .filter(Boolean) as string[],
         ),
       ];
@@ -375,6 +397,9 @@ export const orderRouter = router({
         const store = storeById.get(sess.storeId);
         const attribMemberId = sess.submittedByMemberId ?? sess.initiatedByMemberId;
         const member = attribMemberId ? memberById.get(attribMemberId) : null;
+        const claimer = sess.claimedByMemberId
+          ? memberById.get(sess.claimedByMemberId)
+          : null;
         return {
           ...sess,
           claimedAt: sess.claimedAt?.toISOString() ?? null,
@@ -386,6 +411,10 @@ export const orderRouter = router({
           /** "Submitted by" name (or initiator if not yet submitted). */
           attribDisplayName: member?.displayName ?? null,
           attribAvatarUrl: member?.avatarUrl ?? null,
+          /** Current claimer display info (null when not claimed; may also
+           *  be null if the claimer's member row was archived). */
+          claimedByDisplayName: claimer?.displayName ?? null,
+          claimedByAvatarUrl: claimer?.avatarUrl ?? null,
           itemCount: agg.itemCount,
           totalQty: agg.totalQty.toFixed(3).replace(/\.?0+$/, ''),
           contributorCount: agg.contributors.size,
