@@ -1,4 +1,4 @@
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
 
@@ -42,12 +42,27 @@ export default defineConfig(({ mode }) => {
    *      Rollup tree-shakes the branch entirely in production.
    *   3. deploy.ts: grep the server's .env before each deploy.
    */
-  if (mode === 'production' && process.env.VITE_DEV_MOCK_INIT_DATA) {
-    throw new Error(
-      'BUILD ABORT: VITE_DEV_MOCK_INIT_DATA is set during a production build. ' +
-        'This would bake a dev-only auth bypass into the bundle. ' +
-        'Unset it before running `pnpm build`.',
-    );
+  if (mode === 'production') {
+    // M3.25 (2026-05-18 incident #2): the original guard only read
+    // `process.env.VITE_DEV_MOCK_INIT_DATA`. Vite's actual env loader
+    // (which is what bakes values into the bundle) ALSO consults the
+    // .env / .env.production / .env.local files via loadEnv, and
+    // those values do NOT round-trip into process.env. So a dev's
+    // apps/web/.env carrying the mock initData blob slipped past the
+    // guard and shipped to production — twice in one day. Now we
+    // call loadEnv ourselves with the same prefix Vite uses for
+    // client values and refuse to build if it surfaces the bypass.
+    const fileEnv = loadEnv(mode, process.cwd(), 'VITE_');
+    const fromProcess = process.env.VITE_DEV_MOCK_INIT_DATA;
+    const fromFile = fileEnv.VITE_DEV_MOCK_INIT_DATA;
+    if (fromProcess || fromFile) {
+      throw new Error(
+        'BUILD ABORT: VITE_DEV_MOCK_INIT_DATA is set during a production build. ' +
+          'This would bake a dev-only auth bypass into the bundle. ' +
+          `Source: ${fromProcess ? 'process.env' : ''}${fromProcess && fromFile ? ' + ' : ''}${fromFile ? '.env file in ' + process.cwd() : ''}. ` +
+          'Unset it before running `pnpm build`.',
+      );
+    }
   }
   return {
     /**

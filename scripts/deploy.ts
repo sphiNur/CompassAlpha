@@ -103,7 +103,21 @@ if (!DRY) {
     '--exclude=CompassAlpha/apps/*/dist',
     '--exclude=CompassAlpha/apps/*/.turbo',
     '--exclude=CompassAlpha/.turbo',
+    // M3.25 (2026-05-18 incident #2): all .env files MUST stay
+    // server-side. The previous version excluded only the monorepo-
+    // root .env. apps/web/.env on the dev box carried the Vite
+    // VITE_DEV_MOCK_INIT_DATA + VITE_API_URL=http://localhost:3000,
+    // and every deploy tar'd it up and overwrote the server's
+    // production-safe copy — baking a dev auth bypass + a broken
+    // API URL into every prod bundle until manually re-fixed.
+    // Server keeps its own .env files; dev box's stay out of the
+    // tarball entirely.
     '--exclude=CompassAlpha/.env',
+    '--exclude=CompassAlpha/.env.*',
+    '--exclude=CompassAlpha/apps/*/.env',
+    '--exclude=CompassAlpha/apps/*/.env.*',
+    '--exclude=CompassAlpha/packages/*/.env',
+    '--exclude=CompassAlpha/packages/*/.env.*',
     '--exclude=CompassAlpha/*.log',
     '--exclude=CompassAlpha/test-results',
     '--exclude=*.pem',
@@ -162,19 +176,25 @@ if (!DRY) {
     ].join(' && '),
   );
 
-  step('4a-pre. verify no dev auth bypass in server .env (P0-3 defense in depth)');
+  step('4a-pre. verify no dev auth bypass in any server .env (P0-3 defense in depth)');
   // The vite.config.ts + AuthGate.tsx already prevent the mock initData
   // from reaching production code paths, but we belt-and-braces here:
-  // refuse to deploy if the server's .env carries the dev override.
+  // refuse to deploy if any server-side .env file (root, apps/web, etc.)
+  // carries the dev override. M3.25 (2026-05-18 incident #2) extended
+  // this from a single-file grep to cover apps/*/env.
   const envBypass = ssh(
-    `grep -E '^VITE_DEV_MOCK_INIT_DATA=.+' /home/ubuntu/compass-alpha/.env 2>/dev/null || echo __CLEAN__`,
+    `grep -lE '^VITE_DEV_MOCK_INIT_DATA=.+' \
+      /home/ubuntu/compass-alpha/.env \
+      /home/ubuntu/compass-alpha/apps/*/.env \
+      /home/ubuntu/compass-alpha/packages/*/.env \
+      2>/dev/null || echo __CLEAN__`,
   );
   if (!envBypass.includes('__CLEAN__')) {
     console.error(
-      '\x1b[31m✖ Server .env has VITE_DEV_MOCK_INIT_DATA set — aborting deploy.\x1b[0m',
+      '\x1b[31m✖ Server .env file(s) carry VITE_DEV_MOCK_INIT_DATA — aborting deploy.\x1b[0m',
     );
-    console.error('  Offending line: ' + envBypass.trim());
-    console.error('  Unset it on the server before deploying.');
+    console.error('  Offending file(s): ' + envBypass.trim().replace(/\n/g, ', '));
+    console.error('  Unset on the server before deploying.');
     process.exit(1);
   }
 
