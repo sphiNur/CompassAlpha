@@ -522,6 +522,11 @@ export const zh = {
   'run.action.unavailableReasonPlaceholder': '原因',
   'run.action.actualQty': '实际数量（{unit}）',
   'run.action.unitPriceUzs': '单价（UZS）',
+  // M3.36 (2026-05-19): 千位输入模式 — 让采购员输入 147.5 而不是 147500.
+  // 默认开启 (UZS 单租户主要面值在 2-15 万范围); localStorage 持久化.
+  'run.action.unitPriceUzsThousands': '单价（千 UZS）',
+  'run.label.thousandsToggle': '×千',
+  'run.label.thousandsToggleAria': '按千位输入价格 (×1000)',
   'run.action.supplier': '供应商',
   'run.action.receiptPhoto': '收据照片（可选）',
   'run.action.allocateAcrossStores': '按门店分配',

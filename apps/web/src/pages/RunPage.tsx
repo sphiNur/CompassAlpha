@@ -60,6 +60,39 @@ import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
 
+/**
+ * Convert a raw UZS price string to its thousands-mode display form.
+ * "147500" → "147.5" when in thousands mode; pass-through otherwise.
+ * Used at every input boundary so the stored / network-sent value
+ * stays in raw UZS and only the visible string is divided. Returns
+ * the input unchanged on empty / NaN so intermediate typing states
+ * ("147.") don't get clobbered.
+ *
+ * M3.36 (2026-05-19): UZS prices typically run 20–150k; typing the
+ * trailing "000" on every row was the operator's #1 friction
+ * complaint mid-purchase. The `.toFixed(3)` clamp keeps results
+ * within the contract's `^\d+(\.\d{1,3})?$` regex — without it,
+ * float drift (e.g. 147.555 × 1000 = 147555.00000000003) would let
+ * the server reject otherwise-valid inputs.
+ */
+function toDisplayPrice(rawStr: string, inThousands: boolean): string {
+  if (!inThousands || !rawStr) return rawStr;
+  const n = Number(rawStr);
+  if (!Number.isFinite(n)) return rawStr;
+  return String(Number((n / 1000).toFixed(3)));
+}
+
+/** Inverse of toDisplayPrice — used when committing back to the
+ *  domain (purchaseItem / revisePurchase always speak raw UZS).
+ *  The .toFixed(3) avoids the float-drift "147.555 * 1000 =
+ *  147555.00000000003" trap that would fail server validation. */
+function fromDisplayPrice(displayStr: string, inThousands: boolean): string {
+  if (!inThousands || !displayStr) return displayStr;
+  const n = Number(displayStr);
+  if (!Number.isFinite(n)) return displayStr;
+  return String(Number((n * 1000).toFixed(3)));
+}
+
 interface PurchaseDraft {
   /** When set, this is an EDIT of an existing purchase. The submit button
    *  switches to revisePurchase and the reason field becomes required. */
@@ -101,6 +134,31 @@ export function RunPage() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [purchaseDraft, setPurchaseDraft] = useState<PurchaseDraft | null>(null);
+  // M3.36 (2026-05-19): page-level "thousands input" toggle.
+  // Default ON — UZS pricing is the launch tenant's currency and
+  // operators consistently type 5-6 digit prices. Persist per-user
+  // via localStorage so the preference survives page navigation.
+  const [priceInThousands, setPriceInThousandsState] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('compass.run.priceInThousands');
+      if (saved === '0') return false;
+      if (saved === '1') return true;
+    } catch {
+      /* localStorage disabled / quota — non-fatal */
+    }
+    return true;
+  });
+  const togglePriceInThousands = useCallback(() => {
+    setPriceInThousandsState((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('compass.run.priceInThousands', next ? '1' : '0');
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
   const [unavailableFor, setUnavailableFor] = useState<{ runId: string; skuId: string } | null>(
     null,
   );
@@ -932,6 +990,27 @@ export function RunPage() {
          now only renders when there's an active run to label. */}
       {activeRun ? (
         <div className="sticky top-0 z-[1] flex min-h-9 items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-2">
+          {/* M3.36 (2026-05-19): "×1000" toggle. Visible during the
+              two stages where price actually gets typed — planned (an
+              advanced edit can still pop) and purchasing. Hidden in
+              delivering / finished where the toggle would be a
+              no-op (no price inputs anywhere). */}
+          {activeRun.status === 'planned' || activeRun.status === 'purchasing' ? (
+            <button
+              type="button"
+              onClick={togglePriceInThousands}
+              title={i18n.t('run.label.thousandsToggleAria')}
+              aria-pressed={priceInThousands}
+              className={
+                'shrink-0 rounded-[var(--r-pill)] px-2 py-0.5 text-label font-mono tabular-nums active:opacity-70 ' +
+                (priceInThousands
+                  ? 'bg-[var(--c-action)]/15 text-[var(--c-action)] ring-1 ring-[var(--c-action)]'
+                  : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
+              }
+            >
+              {i18n.t('run.label.thousandsToggle')}
+            </button>
+          ) : null}
           <span className="ml-auto truncate text-label tabular-nums text-[var(--c-fg-muted)]">
             #{activeRun.runIndex + 1} · {runSubtitle}
           </span>
@@ -1041,6 +1120,7 @@ export function RunPage() {
           storeById={storeById}
           productName={productName}
           i18n={i18n}
+          priceInThousands={priceInThousands}
           onSavePurchaseInline={({ skuId, actualQty, unitPrice, storeSplits, paymentMethod }) => {
             // Direct in-page save — no sheet involved. Triggered when
             // the user blurs the price input on a row whose qty
@@ -1216,6 +1296,7 @@ export function RunPage() {
         productName={productName}
         photoUploader={photoUploader}
         i18n={i18n}
+        priceInThousands={priceInThousands}
         onCancel={() => setPurchaseDraft(null)}
         onChange={setPurchaseDraft}
         onSubmit={(d) => {
@@ -1391,6 +1472,7 @@ function ActiveRunPanel({
   storeById,
   productName,
   i18n,
+  priceInThousands,
   onSavePurchaseInline,
   onMarkNa,
   onEditPurchased,
@@ -1408,6 +1490,10 @@ function ActiveRunPanel({
   storeById: Map<string, { id: string; name: string; code: string | null }>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
   i18n: ReturnType<typeof useI18n>;
+  /** M3.36: when true, inline price input + sheet input display `value/1000`
+   *  and parse back to raw UZS on save. Page-level toggle in the
+   *  sticky header. */
+  priceInThousands: boolean;
   onSavePurchaseInline: (payload: {
     skuId: string;
     actualQty: string;
@@ -1584,6 +1670,9 @@ function ActiveRunPanel({
           storeById={storeById}
           productName={productName}
           i18n={i18n}
+          onOpenAdvancedPurchase={onOpenAdvancedPurchase}
+          onEditPurchased={onEditPurchased}
+          onUnmark={onUnmark}
         />
       ) : null}
       {(!showViewToggle ||
@@ -1617,6 +1706,7 @@ function ActiveRunPanel({
                   demand={demandBySku.get(it.skuId) ?? []}
                   lastPrice={run.lastPriceBySku?.[it.skuId] ?? null}
                   i18n={i18n}
+                  priceInThousands={priceInThousands}
                   onSave={onSavePurchaseInline}
                   onMarkNa={onMarkNa}
                   onEdit={onEditPurchased}
@@ -2591,6 +2681,9 @@ function PerVendorView({
   storeById,
   productName,
   i18n,
+  onOpenAdvancedPurchase,
+  onEditPurchased,
+  onUnmark,
 }: {
   run: ActiveRun;
   skuById: Map<
@@ -2600,6 +2693,15 @@ function PerVendorView({
   storeById: Map<string, { id: string; name: string; code: string | null }>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
   i18n: ReturnType<typeof useI18n>;
+  /** M3.36 #1 (2026-05-19): make rows tappable. Pending → open the
+   *  advanced PurchaseSheet for price entry (matches the aggregate
+   *  view's "qty mismatch → sheet" fallback). Purchased → open the
+   *  edit-revise variant. Unavailable → confirm "mark available
+   *  again". Was read-only before — the user reported that switching
+   *  to perVendor at the bazaar locked them out of recording prices. */
+  onOpenAdvancedPurchase: (item: ActiveRun['items'][number]) => void;
+  onEditPurchased: (item: ActiveRun['items'][number]) => void;
+  onUnmark: (skuId: string, skuName: string) => void;
 }) {
   // Bucket run.items by their preferred supplier (id) or '__unassigned__'.
   const buckets = useMemo(() => {
@@ -2670,18 +2772,50 @@ function PerVendorView({
                         : 'text-[var(--c-fg-muted)]';
                   const mark =
                     r.status === 'purchased' ? '✓' : r.status === 'unavailable' ? '✗' : '·';
-                  return (
-                    <li
-                      key={r.skuId}
-                      className="flex items-center gap-2 border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0"
-                    >
+                  // M3.36 #1: lookup the full runItem so we can route
+                  // taps into onOpenAdvancedPurchase / onEditPurchased.
+                  // `r` here is the bucket subset; run.items is the
+                  // source of truth for unitPrice / paymentMethod /
+                  // supplierId fields the sheet needs.
+                  const runItem = run.items.find((it) => it.skuId === r.skuId);
+                  const handleClick = () => {
+                    if (!runItem) return;
+                    if (r.status === 'pending') onOpenAdvancedPurchase(runItem);
+                    else if (r.status === 'purchased') onEditPurchased(runItem);
+                    else if (r.status === 'unavailable') onUnmark(r.skuId, skuName);
+                  };
+                  // Only show prices in purchasing — planned has none yet.
+                  const showPurchased =
+                    r.status === 'purchased' && runItem?.unitPrice && runItem?.purchasedQty;
+                  const inner = (
+                    <>
                       <span aria-hidden className={`shrink-0 text-body ${tone}`}>
                         {mark}
                       </span>
                       <span className="min-w-0 flex-1 truncate text-body">{skuName}</span>
                       <span className="shrink-0 font-mono text-body tabular-nums text-[var(--c-fg-muted)]">
-                        {formatQty(r.plannedQty)} {r.sku?.unit ?? ''}
+                        {showPurchased
+                          ? `${formatQty(runItem!.purchasedQty)} ${r.sku?.unit ?? ''}`
+                          : `${formatQty(r.plannedQty)} ${r.sku?.unit ?? ''}`}
                       </span>
+                    </>
+                  );
+                  return (
+                    <li
+                      key={r.skuId}
+                      className="border-b border-[var(--c-divider)] last:border-b-0"
+                    >
+                      {runItem ? (
+                        <button
+                          type="button"
+                          onClick={handleClick}
+                          className="flex w-full items-center gap-2 px-4 py-2 text-left active:bg-[var(--c-surface-2)]"
+                        >
+                          {inner}
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-2 px-4 py-2">{inner}</div>
+                      )}
                     </li>
                   );
                 })}
@@ -2807,6 +2941,7 @@ function PurchaseRow({
   demand,
   lastPrice,
   i18n,
+  priceInThousands,
   onSave,
   onMarkNa,
   onEdit,
@@ -2821,6 +2956,9 @@ function PurchaseRow({
   demand: Array<{ storeId: string; qty: string }>;
   lastPrice: string | null;
   i18n: ReturnType<typeof useI18n>;
+  /** M3.36: when true, the price input shows raw UZS / 1000. Save still
+   *  emits raw UZS. */
+  priceInThousands: boolean;
   onSave: (payload: {
     skuId: string;
     actualQty: string;
@@ -2841,7 +2979,12 @@ function PurchaseRow({
   const [qty, setQty] = useState<string>(
     formatQty(item.purchasedQty ?? item.plannedQty),
   );
-  const [price, setPrice] = useState<string>(item.unitPrice ?? lastPrice ?? '');
+  // M3.36: `price` holds the DISPLAYED value (divided by 1000 when in
+  // thousands mode). Stays as the user typed it through intermediate
+  // states like "147." — the raw conversion only happens at save.
+  const [price, setPrice] = useState<string>(
+    toDisplayPrice(item.unitPrice ?? lastPrice ?? '', priceInThousands),
+  );
   // M1.14: per-item payment method. Default cash (the common case at
   // the market). User taps the chip to flip cash ↔ transfer before
   // pressing ✓. Edit-existing uses the persisted value.
@@ -2861,9 +3004,27 @@ function PurchaseRow({
   useEffect(() => {
     if (item.status === 'pending') return;
     setQty(formatQty(item.purchasedQty ?? item.plannedQty));
-    setPrice(item.unitPrice ?? lastPrice ?? '');
+    setPrice(toDisplayPrice(item.unitPrice ?? lastPrice ?? '', priceInThousands));
     savedRef.current = false;
-  }, [item.status, item.purchasedQty, item.unitPrice, item.plannedQty, lastPrice]);
+  }, [item.status, item.purchasedQty, item.unitPrice, item.plannedQty, lastPrice, priceInThousands]);
+
+  // M3.36: when the page-level toggle flips while a row is mid-edit
+  // (pending), rescale the displayed price so the same underlying
+  // UZS value rides through the mode change. Without this, flipping
+  // mid-typing would silently mis-scale the next save (e.g. user
+  // typed 147500 in raw mode, toggles K mode → handleSave would
+  // re-multiply ×1000 → 147,500,000).
+  const prevThousandsRef = useRef(priceInThousands);
+  useEffect(() => {
+    if (prevThousandsRef.current === priceInThousands) return;
+    setPrice((p) => {
+      if (!p) return p;
+      const n = Number(p);
+      if (!Number.isFinite(n)) return p;
+      return priceInThousands ? String(n / 1000) : String(n * 1000);
+    });
+    prevThousandsRef.current = priceInThousands;
+  }, [priceInThousands]);
 
   /**
    * Mis-tap protection: previously this fired automatically on input
@@ -2927,9 +3088,9 @@ function PurchaseRow({
     if (item.status !== 'pending') return;
     if (savedRef.current) return;
     const actualQty = qty.trim();
-    const unitPrice = price.trim();
+    const displayPrice = price.trim();
     if (!actualQty || Number(actualQty) <= 0) return;
-    if (!unitPrice || Number(unitPrice) <= 0) return;
+    if (!displayPrice || Number(displayPrice) <= 0) return;
 
     const splits = computeProportionalSplits(actualQty);
     if (!splits || splits.length === 0) {
@@ -2942,22 +3103,26 @@ function PurchaseRow({
     onSave({
       skuId: item.skuId,
       actualQty,
-      unitPrice,
+      // M3.36: convert display → raw UZS at the network boundary.
+      unitPrice: fromDisplayPrice(displayPrice, priceInThousands),
       storeSplits: splits,
       paymentMethod,
     });
   };
 
   // Live "total = qty × price" hint shown below the inputs. Helps the
-  // user sanity-check before tapping Save.
+  // user sanity-check before tapping Save. M3.36: in thousands mode the
+  // displayed `price` is divided by 1000, so multiply back so the
+  // total reflects the actual UZS the operator will pay.
   const totalHint = useMemo(() => {
     const q = Number(qty);
     const p = Number(price);
     if (!Number.isFinite(q) || !Number.isFinite(p) || q <= 0 || p <= 0) {
       return null;
     }
-    return Math.round(q * p);
-  }, [qty, price]);
+    const effectiveP = priceInThousands ? p * 1000 : p;
+    return Math.round(q * effectiveP);
+  }, [qty, price, priceInThousands]);
 
   const canSave =
     item.status === 'pending' &&
@@ -2981,7 +3146,19 @@ function PurchaseRow({
             {lastPrice ? (
               <>
                 {' · '}
-                <span className="font-mono tabular-nums">{formatMoney(lastPrice)}</span>
+                {/* M3.36: in thousands mode the lastPrice hint is shown
+                   as the same scale the user is typing — so a row that
+                   says "K·UZS" with input "147.5" lines up with a hint
+                   "147.5K" rather than "147,500". Tooltip preserves the
+                   raw UZS for a long-press inspection. */}
+                <span
+                  className="font-mono tabular-nums"
+                  title={priceInThousands ? `${formatMoney(lastPrice)} ${currency}` : undefined}
+                >
+                  {priceInThousands
+                    ? `${formatMoney(Number(lastPrice) / 1000)}K`
+                    : formatMoney(lastPrice)}
+                </span>
               </>
             ) : null}
           </span>
@@ -3011,7 +3188,9 @@ function PurchaseRow({
             placeholder="price"
             aria-label="unit price"
           />
-          <span className="text-label text-[var(--c-fg-muted)]">{currency}</span>
+          <span className="text-label text-[var(--c-fg-muted)]">
+            {priceInThousands ? `K·${currency}` : currency}
+          </span>
           <span className="truncate text-right text-label text-[var(--c-fg-muted)]">
             {totalHint !== null ? (
               <>
@@ -3096,7 +3275,13 @@ function PurchaseRow({
           </span>
         ) : null}
         <span className="min-w-0 flex-1 truncate text-label text-[var(--c-fg-muted)]">
-          {formatQty(item.purchasedQty)} {unit} × {formatMoney(item.unitPrice)}
+          {formatQty(item.purchasedQty)} {unit} ×{' '}
+          {/* M3.36: render persisted unitPrice in the same scale the
+             user is currently working in — keeps the displayed math
+             visually consistent with what they typed. */}
+          {priceInThousands && item.unitPrice
+            ? `${formatMoney(Number(item.unitPrice) / 1000)}K`
+            : formatMoney(item.unitPrice)}
           {total ? (
             <>
               {' = '}
@@ -3154,6 +3339,9 @@ interface PurchaseSheetProps {
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
   photoUploader: import('@compass/ui').PhotoUploader | undefined;
   i18n: ReturnType<typeof useI18n>;
+  /** M3.36: when true, display + accept price in thousands. Draft
+   *  always stores raw UZS — only the visible input value is divided. */
+  priceInThousands: boolean;
   onCancel: () => void;
   onChange: (d: PurchaseDraft | null) => void;
   onSubmit: (d: PurchaseDraft) => void;
@@ -3168,6 +3356,7 @@ function PurchaseSheet({
   productName,
   photoUploader,
   i18n,
+  priceInThousands,
   onCancel,
   onChange,
   onSubmit,
@@ -3176,6 +3365,23 @@ function PurchaseSheet({
   const toast = useToast();
   const sku = draft ? skuById.get(draft.skuId) : null;
   const candidateStores = useMemo(() => [...storeById.values()], [storeById]);
+
+  // M3.36: local display state for the price input. Decoupled from
+  // draft.unitPrice (which always holds raw UZS) so intermediate
+  // typing states like "147." don't get round-tripped through
+  // String(Number()) and lose the trailing decimal. Resynced when
+  // the sheet opens on a different row or the mode flips.
+  const [priceInput, setPriceInput] = useState<string>('');
+  useEffect(() => {
+    if (!draft) {
+      setPriceInput('');
+      return;
+    }
+    setPriceInput(toDisplayPrice(draft.unitPrice, priceInThousands));
+    // Intentionally exclude draft.unitPrice — we only want to resync on
+    // row open / mode flip, not on every keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft?.skuId, draft?.isEdit, priceInThousands]);
 
   // If exactly one store has a value, mirror actualQty into it on change.
   useEffect(() => {
@@ -3268,13 +3474,25 @@ function PurchaseSheet({
               />
             </label>
             <label className="block text-label font-semibold text-[var(--c-fg-muted)]">
-              {i18n.t('run.action.unitPriceUzs')}
+              {priceInThousands
+                ? i18n.t('run.action.unitPriceUzsThousands')
+                : i18n.t('run.action.unitPriceUzs')}
               <Input
                 className="mt-1"
                 type="number"
                 inputMode="decimal"
-                value={draft.unitPrice}
-                onChange={(e) => onChange({ ...draft, unitPrice: e.target.value })}
+                value={priceInput}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setPriceInput(v);
+                  // M3.36: draft always stores raw UZS — multiply
+                  // back when committing. The display state is the
+                  // source of truth for what's shown.
+                  onChange({
+                    ...draft,
+                    unitPrice: fromDisplayPrice(v, priceInThousands),
+                  });
+                }}
               />
             </label>
           </div>

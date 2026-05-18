@@ -562,6 +562,11 @@ export const ru = {
   'run.action.unavailableReasonPlaceholder': 'Причина',
   'run.action.actualQty': 'Фактическое кол-во ({unit})',
   'run.action.unitPriceUzs': 'Цена за единицу (UZS)',
+  // M3.36 (2026-05-19): режим тысяч — покупатель вводит 147.5
+  // вместо 147500. Включён по умолчанию для тенанта UZS.
+  'run.action.unitPriceUzsThousands': 'Цена за единицу (×1000 UZS)',
+  'run.label.thousandsToggle': '×1000',
+  'run.label.thousandsToggleAria': 'Вводить цены в тысячах (×1000)',
   'run.action.supplier': 'Поставщик',
   'run.action.receiptPhoto': 'Фото чека (необязательно)',
   'run.action.allocateAcrossStores': 'Распределить по магазинам',

@@ -633,6 +633,15 @@ export const en = {
   'run.action.unavailableReasonPlaceholder': 'Reason',
   'run.action.actualQty': 'Actual qty ({unit})',
   'run.action.unitPriceUzs': 'Unit price (UZS)',
+  // M3.36 (2026-05-19): "thousands mode" lets purchasers type 147.5
+  // instead of 147500 — UZS prices live in the 20-150k range so
+  // typing the trailing 000s on every line is busywork. Page-level
+  // toggle persists in localStorage; default ON for the UZS launch
+  // tenant. Math + persisted values stay in raw UZS — only the
+  // input/display is divided.
+  'run.action.unitPriceUzsThousands': 'Unit price (×1000 UZS)',
+  'run.label.thousandsToggle': '×1000',
+  'run.label.thousandsToggleAria': 'Type prices in thousands (×1000)',
   'run.action.supplier': 'Supplier',
   'run.action.receiptPhoto': 'Receipt photo (optional)',
   'run.action.allocateAcrossStores': 'Allocate across stores',
