@@ -950,7 +950,45 @@ export function RunPage() {
         </DataState>
       ) : null}
 
-      {activeRun && runDetailQuery.data ? (
+      {/* M3.30 (2026-05-18): for an EXISTING run that's back in `planned`
+          status (either freshly created or reverted via "Back to plan",
+          M3.29), render the same preview-style summary the no-run-yet
+          path uses — three-way view toggle, by-store / by-vendor copy
+          buttons, no per-row edit affordances. Recording purchases
+          resumes once the user taps the MainButton "Start purchase".
+          Adapts run.detail's shape into PreviewSummaryCard's expected
+          prop: planned-qty from items, store names looked up via
+          storeById, supplierBySku straight from run.get (added M3.27). */}
+      {activeRun && runDetailQuery.data && activeRun.status === 'planned' ? (
+        <PreviewSummaryCard
+          preview={{
+            date: runDetailQuery.data.runDate,
+            sessions: ((runDetailQuery.data.sessionIdsJson as string[] | null) ?? []).map(
+              (id) => ({ id, storeId: '' }),
+            ),
+            plannedItems: runDetailQuery.data.items.map((it) => ({
+              skuId: it.skuId,
+              qty: it.plannedQty,
+            })),
+            perStoreDemand: (runDetailQuery.data.perStoreDemand ?? []).map((d) => ({
+              storeId: d.storeId,
+              storeName:
+                storeById.get(d.storeId)?.name ?? d.storeId.slice(0, 8),
+              skuId: d.skuId,
+              qty: d.qty,
+            })),
+            supplierBySku: runDetailQuery.data.supplierBySku ?? {},
+            sessionNotesByStore: runDetailQuery.data.sessionNotesByStore,
+            sessionExtrasByStore: runDetailQuery.data.sessionExtrasByStore,
+          }}
+          skuById={skuById}
+          productName={productName}
+          i18n={i18n}
+          toast={toast}
+        />
+      ) : null}
+
+      {activeRun && runDetailQuery.data && activeRun.status !== 'planned' ? (
         <ActiveRunPanel
           run={runDetailQuery.data}
           skuById={skuById}

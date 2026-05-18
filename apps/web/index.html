@@ -9,11 +9,17 @@
     <meta charset="UTF-8" />
     <!--
       viewport-fit=cover enables env(safe-area-inset-*) on iOS notches.
-      We deliberately DO NOT set maximum-scale / user-scalable=no — that
-      violates WCAG 2.1 SC 1.4.4 (Resize Text). Telegram WebView passes
-      pinch-zoom through to the page; users with low vision rely on it.
+      M3.30 (2026-05-18): locked the scale per user request — the
+      mini app is a fixed-layout operational tool and accidental
+      pinch-zoom was misaligning sticky headers + nav. Trade-off:
+      this opts the page out of WCAG 2.1 SC 1.4.4 (Resize Text).
+      Users with low vision can scale via Telegram client / OS
+      accessibility settings, which override the page's metric.
     -->
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
     <!-- Adaptive theme-color for light + dark schemes. The previous
          fixed #ffffff caused a white notch strip in dark mode. -->
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />

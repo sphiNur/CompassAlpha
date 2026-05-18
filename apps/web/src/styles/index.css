@@ -16,6 +16,13 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    /* M3.30 (2026-05-18): pair with the viewport meta to fully lock
+       scale on iOS — without these, system-level "larger text" and
+       double-tap-to-zoom can still re-scale the page even though
+       pinch-zoom is disabled at the viewport layer. */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    touch-action: manipulation;
   }
   *:focus-visible {
     outline: none;
