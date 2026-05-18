@@ -368,6 +368,11 @@ export function RunPage() {
     return (runDetailQuery.data?.splits ?? []).every((sp) => !sp.deliveredAt);
   }, [activeRun?.status, runDetailQuery.data]);
 
+  /** M3.29 (2026-05-18): re-exposed. Lifted the "no items touched"
+   *  gate (commands.ts:503); purchases survive the revert and the
+   *  user can step back to planned to modify the run mid-purchase. */
+  const canUndoStartPurchase = activeRun?.status === 'purchasing';
+
   const finishSummary = useMemo(() => {
     const items = runDetailQuery.data?.items ?? [];
     const splits = runDetailQuery.data?.splits ?? [];
@@ -847,17 +852,24 @@ export function RunPage() {
   });
 
   // M1.12: register the run's "danger zone" actions in Telegram's gear ⚙️.
-  // M1.13 (2026-05-08): dropped `undoStartPurchase` from the menu — the
-  // plan/purchase phases were merged into one, so "back out of start" is
-  // now equivalent to "cancel the run" (which has no purchases yet at
-  // that point). Cancel is one tap with no required reason. Legacy runs
-  // already in `purchasing` keep their data; the FE just doesn't expose
-  // an undo path for the merged transition.
+  // M3.29 (2026-05-18): re-added `undoStartPurchase` after the gate
+  // lift. The M1.13 removal assumed plan/purchase had merged and any
+  // undo was equivalent to cancel — now that purchases survive the
+  // revert, "Back to plan" is a real, non-destructive option that
+  // belongs in the menu alongside the delivery undo.
   usePageMenu(
     activeRun
       ? {
           title: i18n.t('run.title') + ` #${activeRun.runIndex + 1}`,
           actions: [
+            ...(canUndoStartPurchase
+              ? [
+                  {
+                    label: i18n.t('run.action.undoStartPurchase'),
+                    onClick: () => setConfirmAction('undoStartPurchase'),
+                  },
+                ]
+              : []),
             ...(canUndoStartDelivery
               ? [
                   {

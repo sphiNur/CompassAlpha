@@ -545,7 +545,7 @@ export const zh = {
     '把该商品恢复为待采购，这样可以再次记录采购。原「缺货」备注会保留在审计日志。',
   'run.confirm.undoStartPurchase.title': '回到计划阶段?',
   'run.confirm.undoStartPurchase.body':
-    '把采购单退回到计划阶段。只有在尚未购买或标记缺货任何一件商品时才可以这样做。',
+    '把采购单退回到计划阶段。已记录的购买不会丢失 — 再次开始采购时仍标记为 ✓。',
   'run.confirm.undoStartDelivery.title': '回到采购阶段?',
   'run.confirm.undoStartDelivery.body':
     '把采购单退回到采购阶段。只有在尚未向任何门店送货前才可以。',

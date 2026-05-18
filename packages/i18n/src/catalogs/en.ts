@@ -659,7 +659,7 @@ export const en = {
     'Puts this item back to pending so you can record a purchase. The original "unavailable" note stays in the audit log.',
   'run.confirm.undoStartPurchase.title': 'Go back to plan?',
   'run.confirm.undoStartPurchase.body':
-    'Reverts this run to the planning step. Only works when nothing has been bought or marked unavailable yet.',
+    'Switches this run back to the planning step. Purchases you have already recorded are kept — they stay marked ✓ when you start purchasing again.',
   'run.confirm.undoStartDelivery.title': 'Go back to purchasing?',
   'run.confirm.undoStartDelivery.body':
     'Reverts this run to the purchasing step. Only works before any store has been delivered to.',

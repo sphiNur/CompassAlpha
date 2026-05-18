@@ -508,14 +508,14 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
       if (state.status !== 'purchasing') {
         throw preconditionFailed('run.errors.notPurchasing', { status: state.status });
       }
-      // Allowed only if NOTHING real has happened yet — every item must
-      // still be pending. If anyone has bought or marked anything we
-      // refuse the undo (use revise / unmark first).
-      for (const item of state.items.values()) {
-        if (item.status !== 'pending') {
-          throw preconditionFailed('run.errors.purchaseAlreadyProgressed');
-        }
-      }
+      // M3.29 (2026-05-18): previously this command was gated on every
+      // item still being `pending` — any single purchase/unavailable
+      // mark blocked the revert. User feedback: "I want to step back
+      // to plan to modify the run without losing the buys I already
+      // recorded". The PurchaseStartUndone reducer + projector only
+      // touch `status` + `started_at` (state.ts:260, runProjection.ts:377);
+      // item-level purchase data already round-trips cleanly. Lifting
+      // the gate exposes that already-correct behavior.
       const reason = command.reason.trim();
       if (!reason) throw validation('run.errors.undoReasonRequired');
       if (reason.length > 500) throw validation('run.errors.noteTooLong');

@@ -603,7 +603,7 @@ export const uz = {
     "Mahsulotni «kutilmoqda»ga qaytaradi va xaridni yozish mumkin bo'ladi. Asl «yo'q» eslatmasi auditda qoladi.",
   'run.confirm.undoStartPurchase.title': "Rejaga qaytamizmi?",
   'run.confirm.undoStartPurchase.body':
-    "Xaridni rejalashtirish bosqichiga qaytaradi. Faqat hech narsa olinmagan va «yo'q» deb belgilanmagan bo'lsa.",
+    "Xaridni rejalashtirish bosqichiga qaytaradi. Yozib qo'yilgan xaridlar saqlanadi — xaridni qayta boshlasangiz ham ✓ bo'lib turaveradi.",
   'run.confirm.undoStartDelivery.title': "Xaridga qaytamizmi?",
   'run.confirm.undoStartDelivery.body':
     "Xaridni xarid bosqichiga qaytaradi. Faqat hech bir do'konga yetkazilmagan bo'lsa.",

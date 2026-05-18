@@ -538,11 +538,37 @@ describe('run.reversals', () => {
     expect(s.status).toBe('planned');
   });
 
-  test('UndoStartPurchase blocked once any item has been touched', () => {
-    const s = planAndPurchase();
-    expect(() =>
-      decideRun(s, { type: 'UndoStartPurchase', reason: 'x', actor: purchaser() }, clock),
-    ).toThrow('run.errors.purchaseAlreadyProgressed');
+  test('UndoStartPurchase preserves item-level purchase state when reverting (M3.29)', () => {
+    // After M3.29 the "all items pending" gate was lifted — the user
+    // can step back to planning to modify the run without losing what
+    // they've already bought. The reducer only flips run.status; item
+    // rows (purchasedQty, unitPrice, supplierId, status) stay put,
+    // so re-StartPurchase shows them as already ✓.
+    let s = planAndPurchase();
+    expect(s.status).toBe('purchasing');
+    const purchasedBefore = s.items.get('sku-1')!;
+    expect(purchasedBefore.status).toBe('purchased');
+    expect(purchasedBefore.purchasedQty).toBe('4');
+
+    s = decideRun(
+      s,
+      { type: 'UndoStartPurchase', reason: 'need to add another session', actor: purchaser() },
+      clock,
+    ).reduce(applyRun, s);
+
+    expect(s.status).toBe('planned');
+    const after = s.items.get('sku-1')!;
+    expect(after.status).toBe('purchased');
+    expect(after.purchasedQty).toBe('4');
+    expect(after.unitPrice).toBe('12000');
+    expect(after.supplierId).toBe('sup-1');
+
+    // Restarting purchase should be a no-op for the already-purchased
+    // item: it stays ✓, and the purchaser only sees pending rows left
+    // to handle.
+    s = decideRun(s, { type: 'StartPurchase', actor: purchaser() }, clock).reduce(applyRun, s);
+    expect(s.status).toBe('purchasing');
+    expect(s.items.get('sku-1')!.status).toBe('purchased');
   });
 
   test('UndoStartDelivery reverts to purchasing when no store has been delivered to', () => {
