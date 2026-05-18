@@ -105,7 +105,16 @@ export const runRouter = router({
     .input(RunPreviewInputSchema)
     .query(async ({ ctx, input }) => {
       return ctx.withOrg(async (tx) => {
-        const date = input.date ?? todayStr();
+        // M3.24-fix (2026-05-18): when caller omits `date`, return EVERY
+        // approved session that hasn't been attached to a run yet —
+        // regardless of order_date. Old behavior was "default to today
+        // (UTC)", which left approved-yesterday sessions invisible to
+        // the purchaser once the server's UTC date rolled over (the
+        // known org-tz issue order.ts:48 calls out). Explicit `date`
+        // arg still narrows to that day. status='approved' already
+        // implies run_id IS NULL because the projector clears run_id
+        // only on Approved → in_run / archived transitions.
+        const date = input.date ?? null;
         // M3.2: org-wide visibility requires `run.create.org` (or the
         // legacy `users.manage` super-perm). Without it, scope the
         // query to the actor's bound stores. `getActorStoreIds`
@@ -123,8 +132,8 @@ export const runRouter = router({
             const base = [
               eq2(sess.orgId, ctx.session!.orgId),
               eq2(sess.status, 'approved'),
-              eq2(sess.orderDate, date),
             ];
+            if (date !== null) base.push(eq2(sess.orderDate, date));
             // null = unrestricted (org-tier actor). Empty array = actor
             // has no stores anywhere → return zero sessions without a
             // SQL parameter error (Drizzle's inArray on [] is a no-op
@@ -327,6 +336,7 @@ export const runRouter = router({
           sessions: sessions.map((s) => ({
             id: s.id,
             storeId: s.storeId,
+            orderDate: s.orderDate,
             submittedByMemberId: s.submittedByMemberId,
             notes: s.notes,
             extras: (s.extrasJson ?? []) as ExtraItem[],

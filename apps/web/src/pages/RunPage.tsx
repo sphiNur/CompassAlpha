@@ -1660,8 +1660,11 @@ function PreviewSummaryCard({
   toast,
 }: {
   preview: {
-    date: string;
-    sessions: ReadonlyArray<{ id: string; storeId: string }>;
+    // M3.24 (2026-05-18): nullable when the caller didn't ask for a
+    // specific date — preview then spans every approved-not-in-run
+    // session regardless of order_date.
+    date: string | null;
+    sessions: ReadonlyArray<{ id: string; storeId: string; orderDate?: string }>;
     plannedItems: ReadonlyArray<{ skuId: string; qty: string }>;
     perStoreDemand: ReadonlyArray<{
       storeId: string;
