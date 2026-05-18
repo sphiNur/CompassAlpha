@@ -112,12 +112,35 @@ export type CanonicalUnit = z.infer<typeof CanonicalUnitSchema>;
  * stream — saving a round-trip on the common case (manager typos a
  * decimal, FE didn't catch it).
  */
+/**
+ * M3.37 (2026-05-19, Wave2 #5): purchaser-side outcome on a single
+ * extra row. Stored on the row itself so the read shape stays flat
+ * for FE consumers. Optional + 'pending' default for legacy rows
+ * written before M3.37.
+ */
+export const ExtraStatusSchema = z.enum(['pending', 'bought', 'unavailable']);
+export type ExtraStatus = z.infer<typeof ExtraStatusSchema>;
+
 export const SessionExtraItemSchema = z.object({
   name: z.string().min(1).max(200),
   qty: z.string().regex(/^\d+(\.\d{1,3})?$/, 'invalid qty'),
   // M3.34: tightened from free-text to canonical enum.
   unit: CanonicalUnitSchema,
   note: z.string().max(200).optional(),
+  // M3.37: optional purchase outcome. Absent reads as 'pending'.
+  status: ExtraStatusSchema.optional(),
+});
+
+/**
+ * Input for MarkExtraStatus — M3.37 (2026-05-19, Wave2 #5). Bound by
+ * sessionId + extraIndex; status is the new outcome. The session must
+ * be `in_run` (server enforces); actor must hold `run.purchase`.
+ */
+export const MarkExtraStatusInputSchema = z.object({
+  sessionId: UuidSchema,
+  extraIndex: z.number().int().min(0).max(49),
+  status: ExtraStatusSchema,
+  expectedSeq: z.number().int().optional(),
 });
 
 export const SetSessionExtrasInputSchema = z.object({

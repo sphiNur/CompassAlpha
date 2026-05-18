@@ -115,6 +115,25 @@ export async function projectOrder(db: DB, orgId: string, events: OrderEvent[]):
           })
           .where(eq(s.orderSessionsV.id, e.streamId));
         break;
+      case 'ExtraStatusSet': {
+        // M3.37 (2026-05-19, Wave2 #5): mutate one element of the
+        // extras_json array in place. jsonb_set with the index path
+        // keeps the rest of the array untouched — no read-modify-write
+        // race window vs. the full-array overwrite SessionExtrasSet
+        // does (the two events can't actually race in practice since
+        // SetSessionExtras is locked once submitted, but jsonb_set is
+        // the safer pattern for a single-row mutation regardless).
+        const idx = e.payload.extraIndex;
+        await db
+          .update(s.orderSessionsV)
+          .set({
+            extrasJson: sql`jsonb_set(${s.orderSessionsV.extrasJson}, ${'{' + idx + ',status}'}, ${JSON.stringify(e.payload.status)}::jsonb, true)`,
+            lastSeq: e.seq,
+            updatedAt: new Date(),
+          })
+          .where(eq(s.orderSessionsV.id, e.streamId));
+        break;
+      }
       case 'Submitted':
         await db
           .update(s.orderSessionsV)

@@ -372,6 +372,21 @@ export function RunPage() {
     },
     onError: errToast('common.error'),
   });
+  // M3.37 (2026-05-19, Wave2 #5): purchaser cycles an extra row's
+  // outcome (pending → bought → unavailable → pending). One mutation
+  // call per tap — the row is small, payload tiny, and the realtime
+  // run.changed pubsub feeds a coarse refetch so the new status lands
+  // before the next user input even on slow networks. No offline
+  // queue: an unmarked extra is functionally identical to "pending",
+  // so re-queueing on flaky reconnects would create more confusion
+  // than it would resolve.
+  const markExtraStatus = trpc.order.markExtraStatus.useMutation({
+    onSuccess: () => {
+      void utils.run.get.invalidate();
+      haptic('success');
+    },
+    onError: errToast('common.error'),
+  });
 
   // ---- Derived state --------------------------------------------------
   const skuById = useMemo(() => {
@@ -1206,6 +1221,9 @@ export function RunPage() {
           onRecallStore={(storeId, storeName) =>
             setConfirmAction({ kind: 'recallDelivery', storeId, storeName })
           }
+          onMarkExtraStatus={(sessionId, extraIndex, status) =>
+            markExtraStatus.mutate({ sessionId, extraIndex, status })
+          }
         />
       ) : null}
 
@@ -1421,10 +1439,20 @@ interface ActiveRun {
   lastPriceBySku?: Record<string, string>;
   /** M1.8: per-store concatenated session notes ("其他物品", legacy). */
   sessionNotesByStore?: Record<string, string>;
-  /** M3.16-C: per-store structured extras ("其他物品" rows). */
+  /** M3.16-C: per-store structured extras ("其他物品" rows).
+   *  M3.37: each row now also carries `sessionId` + `idx` + optional
+   *  `status` so the FE can route taps into `order.markExtraStatus`. */
   sessionExtrasByStore?: Record<
     string,
-    Array<{ name: string; qty: string; unit: string; note?: string }>
+    Array<{
+      name: string;
+      qty: string;
+      unit: string;
+      note?: string;
+      status?: 'pending' | 'bought' | 'unavailable';
+      sessionId?: string;
+      idx?: number;
+    }>
   >;
   /** M3.27: preferred-supplier per SKU (mirrors preview.supplierBySku),
    *  powers the active-run "by vendor" view. Null entries = SKUs
@@ -1481,6 +1509,7 @@ function ActiveRunPanel({
   onOpenAdvancedPurchase,
   onDeliverStore,
   onRecallStore,
+  onMarkExtraStatus,
 }: {
   run: ActiveRun;
   skuById: Map<
@@ -1508,6 +1537,12 @@ function ActiveRunPanel({
   onOpenAdvancedPurchase: (item: ActiveRun['items'][number]) => void;
   onDeliverStore: (storeId: string, storeName: string) => void;
   onRecallStore: (storeId: string, storeName: string) => void;
+  /** M3.37 (Wave2 #5): mark a single "其他物品" row's outcome. */
+  onMarkExtraStatus: (
+    sessionId: string,
+    extraIndex: number,
+    status: 'pending' | 'bought' | 'unavailable',
+  ) => void;
 }) {
   const involvedStoreIds = useMemo(() => {
     const ids = new Set<string>();
@@ -1673,6 +1708,7 @@ function ActiveRunPanel({
           onOpenAdvancedPurchase={onOpenAdvancedPurchase}
           onEditPurchased={onEditPurchased}
           onUnmark={onUnmark}
+          onMarkExtraStatus={onMarkExtraStatus}
         />
       ) : null}
       {(!showViewToggle ||
@@ -1736,6 +1772,8 @@ function ActiveRunPanel({
           sessionNotesByStore={run.sessionNotesByStore}
           storeById={storeById}
           i18n={i18n}
+          editable={run.status === 'purchasing'}
+          onMarkExtraStatus={onMarkExtraStatus}
         />
       ) : null}
 
@@ -2684,6 +2722,7 @@ function PerVendorView({
   onOpenAdvancedPurchase,
   onEditPurchased,
   onUnmark,
+  onMarkExtraStatus,
 }: {
   run: ActiveRun;
   skuById: Map<
@@ -2702,6 +2741,12 @@ function PerVendorView({
   onOpenAdvancedPurchase: (item: ActiveRun['items'][number]) => void;
   onEditPurchased: (item: ActiveRun['items'][number]) => void;
   onUnmark: (skuId: string, skuName: string) => void;
+  /** M3.37 (Wave2 #5): tap-to-cycle extras status. */
+  onMarkExtraStatus: (
+    sessionId: string,
+    extraIndex: number,
+    status: 'pending' | 'bought' | 'unavailable',
+  ) => void;
 }) {
   // Bucket run.items by their preferred supplier (id) or '__unassigned__'.
   const buckets = useMemo(() => {
@@ -2835,6 +2880,8 @@ function PerVendorView({
         sessionNotesByStore={run.sessionNotesByStore}
         storeById={storeById}
         i18n={i18n}
+        editable={run.status === 'purchasing'}
+        onMarkExtraStatus={onMarkExtraStatus}
       />
     </div>
   );
@@ -2852,14 +2899,32 @@ function RunExtrasCard({
   sessionNotesByStore,
   storeById,
   i18n,
+  editable = false,
+  onMarkExtraStatus,
 }: {
   sessionExtrasByStore?: Record<
     string,
-    Array<{ name: string; qty: string; unit: string; note?: string }>
+    Array<{
+      name: string;
+      qty: string;
+      unit: string;
+      note?: string;
+      status?: 'pending' | 'bought' | 'unavailable';
+      sessionId?: string;
+      idx?: number;
+    }>
   >;
   sessionNotesByStore?: Record<string, string>;
   storeById: Map<string, { id: string; name: string; code: string | null }>;
   i18n: ReturnType<typeof useI18n>;
+  /** M3.37 (Wave2 #5): when true, tap a row to cycle pending → bought
+   *  → unavailable → pending. Only true during run.status='purchasing'. */
+  editable?: boolean;
+  onMarkExtraStatus?: (
+    sessionId: string,
+    extraIndex: number,
+    status: 'pending' | 'bought' | 'unavailable',
+  ) => void;
 }) {
   const resolveStoreName = (id: string) => storeById.get(id)?.name ?? id.slice(0, 8);
   const storeIds = [
@@ -2873,6 +2938,36 @@ function RunExtrasCard({
     return extras.length > 0 || note.length > 0;
   });
   if (storeIds.length === 0) return null;
+  // M3.37: small lookup for the visual + accessible label per status.
+  const statusVisual = (
+    status: 'pending' | 'bought' | 'unavailable',
+  ): { mark: string; tone: string; label: string } => {
+    switch (status) {
+      case 'bought':
+        return {
+          mark: '✓',
+          tone: 'text-[var(--c-success)]',
+          label: i18n.t('run.extras.status.bought'),
+        };
+      case 'unavailable':
+        return {
+          mark: '✗',
+          tone: 'text-[var(--c-danger)]',
+          label: i18n.t('run.extras.status.unavailable'),
+        };
+      default:
+        return {
+          mark: '·',
+          tone: 'text-[var(--c-fg-muted)]',
+          label: i18n.t('run.extras.status.pending'),
+        };
+    }
+  };
+  const cycle = (
+    s: 'pending' | 'bought' | 'unavailable',
+  ): 'pending' | 'bought' | 'unavailable' =>
+    s === 'pending' ? 'bought' : s === 'bought' ? 'unavailable' : 'pending';
+
   return (
     <Card>
       <SectionLabel meta="">📝 {i18n.t('order.extras.label')}</SectionLabel>
@@ -2887,22 +2982,52 @@ function RunExtrasCard({
               </div>
               {extras.length > 0 ? (
                 <ul className="flex flex-col gap-0.5">
-                  {extras.map((e, idx) => (
-                    <li
-                      key={`${e.name}-${idx}`}
-                      className="flex items-baseline justify-between gap-2 text-body-sm"
-                    >
-                      <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">
-                        {e.name}
-                        {e.note ? (
-                          <span className="ml-1 text-[var(--c-fg-muted)]">· {e.note}</span>
-                        ) : null}
-                      </span>
-                      <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
-                        {e.qty} {e.unit}
-                      </span>
-                    </li>
-                  ))}
+                  {extras.map((e, idx) => {
+                    const status = e.status ?? 'pending';
+                    const v = statusVisual(status);
+                    const hasAddress =
+                      typeof e.sessionId === 'string' && typeof e.idx === 'number';
+                    const canTap = editable && !!onMarkExtraStatus && hasAddress;
+                    const inner = (
+                      <>
+                        <span aria-hidden className={`shrink-0 text-body ${v.tone}`}>
+                          {v.mark}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">
+                          {e.name}
+                          {e.note ? (
+                            <span className="ml-1 text-[var(--c-fg-muted)]">
+                              · {e.note}
+                            </span>
+                          ) : null}
+                        </span>
+                        <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
+                          {e.qty} {e.unit}
+                        </span>
+                      </>
+                    );
+                    return (
+                      <li
+                        key={`${e.sessionId ?? storeId}-${e.idx ?? idx}-${e.name}`}
+                        className="text-body-sm"
+                      >
+                        {canTap ? (
+                          <button
+                            type="button"
+                            title={i18n.t('run.extras.status.cycleHint', { current: v.label })}
+                            onClick={() =>
+                              onMarkExtraStatus!(e.sessionId!, e.idx!, cycle(status))
+                            }
+                            className="-mx-2 flex w-[calc(100%+1rem)] items-baseline gap-2 rounded-md px-2 py-0.5 text-left active:bg-[var(--c-surface-2)]"
+                          >
+                            {inner}
+                          </button>
+                        ) : (
+                          <div className="flex items-baseline gap-2 py-0.5">{inner}</div>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               ) : null}
               {note ? (

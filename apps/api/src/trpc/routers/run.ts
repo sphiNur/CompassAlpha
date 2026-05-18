@@ -306,7 +306,20 @@ export const runRouter = router({
         // typed (pre-M3.16 sessions = notes string, new sessions =
         // extras array). Eventually `notes` drops once no live sessions
         // carry the legacy text.
-        type ExtraItem = { name: string; qty: string; unit: string; note?: string };
+        //
+        // M3.37 (2026-05-19, Wave2 #5): each extra now carries
+        // `sessionId` + `idx` + optional `status` so the FE can route
+        // a tap into the `order.markExtraStatus` mutation. Without
+        // sessionId/idx the flattened per-store list was unaddressable.
+        type ExtraItem = {
+          name: string;
+          qty: string;
+          unit: string;
+          note?: string;
+          status?: 'pending' | 'bought' | 'unavailable';
+          sessionId: string;
+          idx: number;
+        };
         const notesByStore = new Map<string, string[]>();
         const extrasByStore = new Map<string, ExtraItem[]>();
         for (const sess of sessions) {
@@ -316,10 +329,19 @@ export const runRouter = router({
             arr.push(trimmed);
             notesByStore.set(sess.storeId, arr);
           }
-          const extras = (sess.extrasJson ?? []) as ExtraItem[];
-          if (extras.length > 0) {
+          const sessionExtras = (sess.extrasJson ?? []) as Array<{
+            name: string;
+            qty: string;
+            unit: string;
+            note?: string;
+            status?: 'pending' | 'bought' | 'unavailable';
+          }>;
+          if (sessionExtras.length > 0) {
             const arr = extrasByStore.get(sess.storeId) ?? [];
-            arr.push(...extras);
+            for (let i = 0; i < sessionExtras.length; i++) {
+              const ex = sessionExtras[i]!;
+              arr.push({ ...ex, sessionId: sess.id, idx: i });
+            }
             extrasByStore.set(sess.storeId, arr);
           }
         }
@@ -886,7 +908,19 @@ export const runRouter = router({
         // store's demand block. M3.16-C extends this with per-store
         // structured extras (name + qty + unit + note?) emitted as the
         // M3.16+ replacement for free-text notes.
-        type ExtraItem = { name: string; qty: string; unit: string; note?: string };
+        // M3.37 (2026-05-19, Wave2 #5): each extra carries sessionId +
+        // idx + status so the FE can route taps into the
+        // `order.markExtraStatus` mutation. Same enrichment as the
+        // run.previewCreatable path above — kept in sync manually.
+        type ExtraItem = {
+          name: string;
+          qty: string;
+          unit: string;
+          note?: string;
+          status?: 'pending' | 'bought' | 'unavailable';
+          sessionId: string;
+          idx: number;
+        };
         const sessionNotesByStore: Record<string, string> = {};
         const sessionExtrasByStore: Record<string, ExtraItem[]> = {};
         if (sessionIds.length > 0) {
@@ -908,10 +942,19 @@ export const runRouter = router({
               arr.push(trimmed);
               noteAccumulator.set(s.storeId, arr);
             }
-            const extras = (s.extrasJson ?? []) as ExtraItem[];
-            if (extras.length > 0) {
+            const sessionExtras = (s.extrasJson ?? []) as Array<{
+              name: string;
+              qty: string;
+              unit: string;
+              note?: string;
+              status?: 'pending' | 'bought' | 'unavailable';
+            }>;
+            if (sessionExtras.length > 0) {
               const arr = extrasAccumulator.get(s.storeId) ?? [];
-              arr.push(...extras);
+              for (let i = 0; i < sessionExtras.length; i++) {
+                const ex = sessionExtras[i]!;
+                arr.push({ ...ex, sessionId: s.id, idx: i });
+              }
               extrasAccumulator.set(s.storeId, arr);
             }
           }

@@ -349,6 +349,11 @@ export const zh = {
 
   // M3.16-C: structured extras editor
   'order.extras.label': '其他物品',
+  // M3.37 (2026-05-19, Wave2 #5): 采购员点击其他物品行切换状态.
+  'run.extras.status.pending': '未购买',
+  'run.extras.status.bought': '已购买',
+  'run.extras.status.unavailable': '没买到',
+  'run.extras.status.cycleHint': '点击切换状态 · 当前：{current}',
   'order.extras.add': '+ 新增条目',
   'order.extras.namePlaceholder': '物品名称',
   'order.extras.remove': '删除',
@@ -410,6 +415,10 @@ export const zh = {
   'order.errors.cannotEditOthersLine': '不能修改他人下的条目',
   'order.errors.emptyOrder': '请至少添加一项再提交',
   'order.errors.cannotClaim': '无审核认领权限',
+  // M3.37 (2026-05-19, Wave2 #5)
+  'order.errors.cannotMarkExtra': '仅采购员可以标记其他物品',
+  'order.errors.extraStatusOnlyDuringRun': '只能在采购阶段标记其他物品',
+  'order.errors.extraIndexOutOfRange': '未找到对应的其他物品行',
   'order.errors.notClaimable': '订单未在等待审核',
   'order.errors.alreadyClaimed': '已被其他审核员认领',
   'order.errors.notClaimer': '只有认领人或其他审批人可以释放',

@@ -382,6 +382,12 @@ export const ru = {
 
   // M3.16-C: structured extras editor
   'order.extras.label': 'Прочие позиции',
+  // M3.37 (2026-05-19, Wave2 #5): покупатель меняет статус прочей
+  // позиции тапом.
+  'run.extras.status.pending': 'Ещё не куплено',
+  'run.extras.status.bought': 'Куплено',
+  'run.extras.status.unavailable': 'Не нашли',
+  'run.extras.status.cycleHint': 'Тап для смены · сейчас: {current}',
   'order.extras.add': '+ Добавить',
   'order.extras.namePlaceholder': 'Название позиции',
   'order.extras.remove': 'Удалить',
@@ -445,6 +451,10 @@ export const ru = {
   'order.errors.cannotEditOthersLine': 'Нельзя редактировать чужую строку',
   'order.errors.emptyOrder': 'Добавьте хотя бы одну позицию',
   'order.errors.cannotClaim': 'Нет прав на захват',
+  // M3.37 (2026-05-19, Wave2 #5)
+  'order.errors.cannotMarkExtra': 'Отмечать прочие позиции может только покупатель',
+  'order.errors.extraStatusOnlyDuringRun': 'Прочие позиции можно отмечать только во время закупки',
+  'order.errors.extraIndexOutOfRange': 'Строка прочей позиции не найдена',
   'order.errors.notClaimable': 'Заказ не на проверке',
   'order.errors.alreadyClaimed': 'Уже взят другим проверяющим',
   'order.errors.notClaimer': 'Снять может только проверяющий или другой одобряющий',

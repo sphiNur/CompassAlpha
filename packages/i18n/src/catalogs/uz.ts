@@ -393,6 +393,12 @@ export const uz = {
 
   // M3.16-C: structured extras editor
   'order.extras.label': 'Boshqa narsalar',
+  // M3.37 (2026-05-19, Wave2 #5): xaridor "boshqa narsa" qatori
+  // statusini bosish orqali o'zgartiradi.
+  'run.extras.status.pending': "Hali olinmagan",
+  'run.extras.status.bought': 'Olindi',
+  'run.extras.status.unavailable': 'Topilmadi',
+  'run.extras.status.cycleHint': "Bosing · hozir: {current}",
   'order.extras.add': '+ Qoʻshish',
   'order.extras.namePlaceholder': 'Mahsulot nomi',
   'order.extras.remove': 'Oʻchirish',
@@ -457,6 +463,10 @@ export const uz = {
     "Boshqa odamning qatorini tahrirlab bo'lmaydi",
   'order.errors.emptyOrder': 'Yuborishdan oldin kamida bitta mahsulot qo‘shing',
   'order.errors.cannotClaim': "Tekshirishni olish huquqingiz yo'q",
+  // M3.37 (2026-05-19, Wave2 #5)
+  'order.errors.cannotMarkExtra': "Boshqa narsalarni faqat xaridor belgilashi mumkin",
+  'order.errors.extraStatusOnlyDuringRun': "Boshqa narsalar faqat xarid bosqichida belgilanadi",
+  'order.errors.extraIndexOutOfRange': "Boshqa narsa qatori topilmadi",
   'order.errors.notClaimable': 'Buyurtma tekshiruv navbatida emas',
   'order.errors.alreadyClaimed': 'Boshqa tekshiruvchi olib qo‘ygan',
   'order.errors.notClaimer': 'Olishni faqat tekshiruvchi yoki boshqa tasdiqlovchi qo‘yib yuborishi mumkin',

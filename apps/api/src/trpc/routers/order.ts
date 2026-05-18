@@ -14,6 +14,7 @@ import { schema as s } from '@compass/db';
 import {
   AdjustItemInputSchema,
   ExtrasSuggestionsInputSchema,
+  MarkExtraStatusInputSchema,
   PendingListInputSchema,
   RejectInputSchema,
   SessionDetailInputSchema,
@@ -794,6 +795,84 @@ export const orderRouter = router({
             sessionId: state.streamId,
             lastSeq: state.seq,
           });
+          return { lastSeq: state.seq };
+        } catch (err) {
+          rethrowDomainError(err);
+        }
+      });
+    }),
+
+  /**
+   * Purchaser updates one extra row's outcome during a run.
+   * M3.37 (2026-05-19, Wave2 #5). Mirrors `setSessionExtras` plumbing
+   * (load events → decide → append → project → fanout) but mutates
+   * a single index in the session's extras array instead of replacing
+   * the whole list.
+   *
+   * Authorization: domain layer enforces `run.purchase` and session
+   * status `in_run`. We still run the store-scope assertion so a
+   * member can't reach into another store's session.
+   */
+  markExtraStatus: authedProcedure
+    .input(MarkExtraStatusInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      return ctx.withOrg(async (tx) => {
+        const session = await loadSession(tx, ctx.session!.orgId, input.sessionId);
+        await assertActorAssignedToStore(
+          tx,
+          ctx.session!.memberId,
+          session.storeId,
+          ctx.session!.permissions,
+        );
+        const effectivePerms = await effectivePermissionsForStore(
+          tx,
+          ctx.session!.memberId,
+          session.storeId,
+          ctx.session!.permissions,
+        );
+        const events = (await readStream(tx, 'order', session.id)) as unknown as OrderEvent[];
+        let state = emptyState(session.id);
+        for (const e of events) state = apply(state, e);
+        try {
+          const out = decide(state, {
+            type: 'MarkExtraStatus',
+            extraIndex: input.extraIndex,
+            status: input.status,
+            actor: buildActor(ctx, state, effectivePerms),
+          });
+          if (out.length === 0) return { lastSeq: state.seq };
+          await appendEvents(tx, {
+            streamType: 'order',
+            streamId: session.id,
+            orgId: ctx.session!.orgId,
+            events: out.map((e) => ({ ...e })),
+          });
+          for (const e of out) state = apply(state, e);
+          await projectOrder(tx, ctx.session!.orgId, out);
+          // No bot/email notification — the staff don't need a ping
+          // for each extra mark; they can pull when curious. The WS
+          // pubsub does drive realtime updates on any open run pages.
+          hub.publish(ctx.session!.orgId, {
+            type: 'order.changed',
+            orgId: ctx.session!.orgId,
+            sessionId: state.streamId,
+            lastSeq: state.seq,
+          });
+          // Bump the run subscribers too — RunExtrasCard is rendered
+          // on RunPage which subscribes to run.changed; without this
+          // the inline status mark would only update on the next 6s
+          // poll. The run id is on the session (in_run state). The
+          // session seq doubles as a freshness hint; the FE handler
+          // doesn't compare seq numbers, just invalidates the `run`
+          // tRPC family.
+          if (state.runId) {
+            hub.publish(ctx.session!.orgId, {
+              type: 'run.changed',
+              orgId: ctx.session!.orgId,
+              runId: state.runId,
+              lastSeq: state.seq,
+            });
+          }
           return { lastSeq: state.seq };
         } catch (err) {
           rethrowDomainError(err);

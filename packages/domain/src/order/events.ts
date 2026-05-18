@@ -19,6 +19,7 @@ export type OrderEventType =
   | 'ItemNoteSet'
   | 'SessionNoteSet'
   | 'SessionExtrasSet'
+  | 'ExtraStatusSet'
   | 'Submitted'
   | 'Claimed'
   | 'ClaimReleased'
@@ -47,6 +48,16 @@ export interface SessionExtraItem {
   unit: string;
   /** Optional per-row note (e.g. "大包装优先"). ≤200 chars. */
   note?: string;
+  /**
+   * Purchase outcome — M3.37 (2026-05-19, Wave2 #5). Set by the purchaser
+   * via MarkExtraStatus once the session is in_run. `undefined` (or
+   * absent on the wire) reads as 'pending' downstream — same default for
+   * legacy rows written before this field existed. SetSessionExtras
+   * always re-creates the array, so status is wiped on staff-side edits;
+   * but those only happen while the session is draft, well before any
+   * status would have been set.
+   */
+  status?: 'pending' | 'bought' | 'unavailable';
 }
 
 interface BaseEvent {
@@ -126,6 +137,25 @@ export type SessionExtrasSetEvent = BaseEvent & {
   payload: { extras: SessionExtraItem[]; byMemberId: string };
 };
 
+/**
+ * Purchaser marks a single extra row's outcome — M3.37 (2026-05-19,
+ * Wave2 #5). Decoupled from SessionExtrasSet because that's a draft-
+ * time atomic-replace command; status is set DURING a run by the
+ * purchaser without rewriting the original list. The reducer mutates
+ * the row in place at `extraIndex`.
+ *
+ * `byMemberId` is the purchaser (carries `run.purchase`); ActorMember
+ * is also set on the BaseEvent header.
+ */
+export type ExtraStatusSetEvent = BaseEvent & {
+  type: 'ExtraStatusSet';
+  payload: {
+    extraIndex: number;
+    status: 'pending' | 'bought' | 'unavailable';
+    byMemberId: string;
+  };
+};
+
 export type SubmittedEvent = BaseEvent & {
   type: 'Submitted';
   payload: { itemCount: number; byMemberId: string };
@@ -197,6 +227,7 @@ export type OrderEvent =
   | ItemNoteSetEvent
   | SessionNoteSetEvent
   | SessionExtrasSetEvent
+  | ExtraStatusSetEvent
   | SubmittedEvent
   | ClaimedEvent
   | ClaimReleasedEvent
@@ -216,6 +247,7 @@ export function isOrderEvent(e: { type: string }): e is OrderEvent {
     'ItemNoteSet',
     'SessionNoteSet',
     'SessionExtrasSet',
+    'ExtraStatusSet',
     'Submitted',
     'Claimed',
     'ClaimReleased',

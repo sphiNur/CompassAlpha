@@ -447,6 +447,13 @@ export const en = {
 
   // ── M3.16-C: structured "Other items" (extras) editor ───────────
   'order.extras.label': 'Other items',
+  // M3.37 (2026-05-19, Wave2 #5): per-row outcome the purchaser sets
+  // by tapping an extras row during the purchasing phase. Default
+  // 'pending' for any row without an explicit mark.
+  'run.extras.status.pending': 'Not yet bought',
+  'run.extras.status.bought': 'Bought',
+  'run.extras.status.unavailable': 'Not available',
+  'run.extras.status.cycleHint': 'Tap to mark · current: {current}',
   'order.extras.add': '+ Add item',
   'order.extras.namePlaceholder': 'Item name',
   'order.extras.remove': 'Remove',
@@ -510,6 +517,10 @@ export const en = {
   'order.errors.cannotEditOthersLine': "You can't edit another person's line",
   'order.errors.emptyOrder': 'Add at least one item before submitting',
   'order.errors.cannotClaim': "You don't have permission to claim",
+  // M3.37 (2026-05-19, Wave2 #5): MarkExtraStatus guard rails.
+  'order.errors.cannotMarkExtra': "Only purchasers can mark extras",
+  'order.errors.extraStatusOnlyDuringRun': "Extras can only be marked once the run starts",
+  'order.errors.extraIndexOutOfRange': 'Extra row not found',
   'order.errors.notClaimable': 'This order is not awaiting review',
   'order.errors.alreadyClaimed': 'Already claimed by another reviewer',
   'order.errors.notClaimer': 'Only the claimer or another approver can release this claim',

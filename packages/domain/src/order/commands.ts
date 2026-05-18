@@ -41,6 +41,18 @@ export type OrderCommand =
    * array clears all extras. Same edit gate as SetSessionNote.
    */
   | { type: 'SetSessionExtras'; extras: SessionExtraItem[]; actor: ActorCtx }
+  /**
+   * M3.37 (2026-05-19, Wave2 #5): purchaser marks one "其他物品" row as
+   * bought/unavailable/pending during a run. The session must be
+   * in_run (= attached to an active run); the actor must hold
+   * `run.purchase`. Index addresses the row in `state.extras`.
+   */
+  | {
+      type: 'MarkExtraStatus';
+      extraIndex: number;
+      status: 'pending' | 'bought' | 'unavailable';
+      actor: ActorCtx;
+    }
   | { type: 'Submit'; actor: ActorCtx }
   | { type: 'Claim'; actor: ActorCtx }
   | { type: 'ReleaseClaim'; actor: ActorCtx; reason: 'manual' | 'pagehide' }
@@ -261,6 +273,49 @@ export function decide(
           type: 'SessionExtrasSet',
           payload: {
             extras: normalised,
+            byMemberId: command.actor.memberId,
+          },
+        },
+      ];
+    }
+
+    case 'MarkExtraStatus': {
+      // M3.37 (2026-05-19, Wave2 #5): purchaser updates one extra
+      // row's outcome. Bound to the purchasing run lifecycle —
+      // session must be `in_run` (attached to an active run, not yet
+      // archived) and actor must have `run.purchase`. Out-of-range
+      // index throws so a malformed FE call surfaces as a clear
+      // validation error rather than a silent reducer no-op.
+      assertActiveStream(state);
+      if (!command.actor.permissions.has('run.purchase')) {
+        throw forbidden('order.errors.cannotMarkExtra');
+      }
+      if (state.status !== 'in_run') {
+        throw preconditionFailed('order.errors.extraStatusOnlyDuringRun', {
+          status: state.status,
+        });
+      }
+      if (
+        !Number.isInteger(command.extraIndex) ||
+        command.extraIndex < 0 ||
+        command.extraIndex >= state.extras.length
+      ) {
+        throw validation('order.errors.extraIndexOutOfRange', {
+          extraIndex: command.extraIndex,
+          extrasLen: state.extras.length,
+        });
+      }
+      const cur = state.extras[command.extraIndex]!;
+      const prev = cur.status ?? 'pending';
+      // Idempotent — re-setting same status is a no-op.
+      if (prev === command.status) return [];
+      return [
+        {
+          ...baseFor(1, 'ExtraStatusSet'),
+          type: 'ExtraStatusSet',
+          payload: {
+            extraIndex: command.extraIndex,
+            status: command.status,
             byMemberId: command.actor.memberId,
           },
         },

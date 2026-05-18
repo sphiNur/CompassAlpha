@@ -198,6 +198,22 @@ export function apply(state: OrderState, event: OrderEvent): OrderState {
         seq: event.seq,
         extras: event.payload.extras.map((e) => ({ ...e })),
       };
+    case 'ExtraStatusSet': {
+      // M3.37 (2026-05-19, Wave2 #5): purchaser marks one extra row's
+      // outcome during the run. The reducer mutates that single index
+      // in place; out-of-range indices are silently no-op (command
+      // layer should have validated, but defensive against a stale
+      // event landing after the array shrank — extremely unlikely
+      // given SetSessionExtras is locked once submitted).
+      const idx = event.payload.extraIndex;
+      if (idx < 0 || idx >= state.extras.length) {
+        return { ...state, seq: event.seq };
+      }
+      const nextExtras = state.extras.slice();
+      const cur = nextExtras[idx]!;
+      nextExtras[idx] = { ...cur, status: event.payload.status };
+      return { ...state, seq: event.seq, extras: nextExtras };
+    }
     case 'Submitted':
       return {
         ...state,
