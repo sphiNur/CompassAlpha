@@ -1848,6 +1848,27 @@ function PreviewSummaryCard({
    *     牛肉 7kg
    *     番茄 5kg
    */
+  /**
+   * Build "all vendors at once" copy-paste text (M3.26, 2026-05-18).
+   *
+   * User feedback: walking the bazaar with N WeChat chats open is a
+   * pain. They wanted a single paste they can drop into a notebook /
+   * note app and tick off as they go. Format mirrors per-vendor:
+   * vendor header → store-major lines, separated by blank lines.
+   * The unassigned bucket gets its own block at the end so items
+   * without a fixed stall don't disappear.
+   */
+  const buildAllVendorsText = (): string => {
+    const blocks: string[] = [];
+    for (const b of bySupplier) {
+      const body = buildVendorText(b);
+      if (!body) continue;
+      const header = b.supplierId ? `🛒 ${b.supplierName}` : `❓ ${b.supplierName}`;
+      blocks.push(`${header}\n${body}`);
+    }
+    return blocks.join('\n\n');
+  };
+
   const buildVendorText = (b: (typeof bySupplier)[number]): string => {
     // Pivot from SKU-grouped (`b.items[].perStore[]`) to store-grouped.
     type StoreLine = { skuId: string; qty: string };
@@ -2016,6 +2037,23 @@ function PreviewSummaryCard({
 
       {view === 'bySupplier' ? (
         <div className="flex flex-col gap-3 px-4 py-3">
+          {/* M3.26 (2026-05-18): top-of-list "copy everything" button so
+              the purchaser can paste one block into a notebook and walk
+              the bazaar. Hidden when there's nothing to copy (no rows
+              with qty > 0 in any bucket). */}
+          {bySupplier.length > 0 ? (
+            <div className="flex justify-end">
+              <Button
+                variant="pearl"
+                size="sm"
+                onClick={() =>
+                  copyToClipboard(buildAllVendorsText(), 'run.previewSupplier.copied')
+                }
+              >
+                {i18n.t('run.previewSupplier.copyAll')}
+              </Button>
+            </div>
+          ) : null}
           {bySupplier.map((b) => (
             <section
               key={b.supplierId ?? '__unassigned__'}
@@ -2032,17 +2070,20 @@ function PreviewSummaryCard({
                     <div className="text-label text-[var(--c-fg-muted)]">{b.contactPhone}</div>
                   ) : null}
                 </div>
-                {b.supplierId ? (
-                  /* M2.1: Button component (was raw <button>). */
-                  <Button
-                    size="sm"
-                    onClick={() =>
-                      copyToClipboard(buildVendorText(b), 'run.previewSupplier.copied')
-                    }
-                  >
-                    {i18n.t('run.previewSupplier.copyToVendor')}
-                  </Button>
-                ) : null}
+                {/* M3.26 (2026-05-18): copy button is now visible for the
+                    unassigned bucket too — items to buy individually
+                    deserve their own paste — and switched to the same
+                    pearl style + "Copy list" label as the by-store
+                    view per the user's UX preference. */}
+                <Button
+                  variant="pearl"
+                  size="sm"
+                  onClick={() =>
+                    copyToClipboard(buildVendorText(b), 'run.previewSupplier.copied')
+                  }
+                >
+                  {i18n.t('run.previewStore.copyList')}
+                </Button>
               </div>
               {!b.supplierId ? (
                 <p className="mb-2 text-label text-[var(--c-fg-muted)]">

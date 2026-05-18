@@ -464,7 +464,7 @@ export const zh = {
   'run.previewView.bySupplier': '按摊位',
   'run.previewSupplier.unassigned': '未指定摊位',
   'run.previewSupplier.unassignedHint': '这些商品还没有指定固定摊位。打开商品编辑选一个,采购清单就会自动按摊位分组。',
-  'run.previewSupplier.copyToVendor': '复制 → 发给摊位',
+  'run.previewSupplier.copyAll': '全部复制',
   'run.previewSupplier.copied': '已复制 — 粘贴到摊位的聊天',
   'run.previewSupplier.messageTemplate':
     '你好 {vendorName},\n\n{date} 请按以下门店分别准备:\n\n{body}\n\n谢谢!',

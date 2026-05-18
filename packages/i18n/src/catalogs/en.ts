@@ -567,7 +567,7 @@ export const en = {
   'run.previewSupplier.unassigned': 'Unassigned vendor',
   'run.previewSupplier.unassignedHint':
     'These items have no preferred vendor. Open the SKU and pick one to group them automatically.',
-  'run.previewSupplier.copyToVendor': 'Copy → send to vendor',
+  'run.previewSupplier.copyAll': 'Copy all stalls',
   'run.previewSupplier.copied': 'Copied — paste into the vendor chat',
   // Localized template for the copy-to-vendor message. Placeholders:
   //   {vendorName}, {date}, {body}.  `body` is built FE-side as

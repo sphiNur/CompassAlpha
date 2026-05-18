@@ -515,7 +515,7 @@ export const uz = {
   'run.previewSupplier.unassigned': "Sotuvchi tanlanmagan",
   'run.previewSupplier.unassignedHint':
     "Bu mahsulotlar uchun doimiy sotuvchi belgilanmagan. Mahsulot kartasini oching va birini tanlang — ro'yxat avtomatik guruhlanadi.",
-  'run.previewSupplier.copyToVendor': "Nusxa olish → sotuvchiga yuborish",
+  'run.previewSupplier.copyAll': "Hammasini nusxalash",
   'run.previewSupplier.copied': "Nusxa olindi — sotuvchining chatiga joylashtiring",
   'run.previewSupplier.messageTemplate':
     "Salom {vendorName}!\n\n{date} uchun har bir do'konga quyidagicha tayyorlashingizni so'rayman:\n\n{body}\n\nRahmat!",

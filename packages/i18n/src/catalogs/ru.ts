@@ -501,7 +501,7 @@ export const ru = {
   'run.previewSupplier.unassigned': 'Поставщик не указан',
   'run.previewSupplier.unassignedHint':
     'Для этих товаров не выбран постоянный поставщик. Откройте карточку товара и укажите его — список будет группироваться автоматически.',
-  'run.previewSupplier.copyToVendor': 'Скопировать → отправить поставщику',
+  'run.previewSupplier.copyAll': 'Скопировать всё',
   'run.previewSupplier.copied': 'Скопировано — вставьте в чат поставщика',
   'run.previewSupplier.messageTemplate':
     'Здравствуйте, {vendorName}!\n\nНа {date} просим подготовить по магазинам:\n\n{body}\n\nСпасибо!',
