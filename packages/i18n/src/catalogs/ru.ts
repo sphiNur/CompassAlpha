@@ -572,6 +572,12 @@ export const ru = {
   'run.action.unavailableReasonPlaceholder': 'Причина',
   'run.action.actualQty': 'Фактическое кол-во ({unit})',
   'run.action.unitPriceUzs': 'Цена за единицу (UZS)',
+  // C.2 (M3.38, 2026-05-19): баннер захвата закупки.
+  'run.banner.claimed': 'Закупкой занимается {who}',
+  'run.banner.claimedAfterHandoff': '{prev} → {who} теперь ведёт эту закупку',
+  'run.action.takeOver': 'Перехватить',
+  'run.errors.claimedByOther': 'Закупку уже взял другой покупатель',
+  'run.errors.notClaimable': 'Закупку нельзя захватить в текущем статусе',
   // M3.36 (2026-05-19): режим тысяч — покупатель вводит 147.5
   // вместо 147500. Включён по умолчанию для тенанта UZS.
   'run.action.unitPriceUzsThousands': 'Цена за единицу (×1000 UZS)',

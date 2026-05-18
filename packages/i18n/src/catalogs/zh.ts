@@ -531,6 +531,12 @@ export const zh = {
   'run.action.unavailableReasonPlaceholder': '原因',
   'run.action.actualQty': '实际数量（{unit}）',
   'run.action.unitPriceUzs': '单价（UZS）',
+  // C.2 (M3.38, 2026-05-19): 采购单认领 banner 文案.
+  'run.banner.claimed': '采购单正由 {who} 处理',
+  'run.banner.claimedAfterHandoff': '{prev} → {who} 接手了这张采购单',
+  'run.action.takeOver': '接管',
+  'run.errors.claimedByOther': '采购单已被其他采购员认领',
+  'run.errors.notClaimable': '当前状态不允许认领采购单',
   // M3.36 (2026-05-19): 千位输入模式 — 让采购员输入 147.5 而不是 147500.
   // 默认开启 (UZS 单租户主要面值在 2-15 万范围); localStorage 持久化.
   'run.action.unitPriceUzsThousands': '单价（千 UZS）',

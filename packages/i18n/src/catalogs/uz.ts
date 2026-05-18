@@ -586,6 +586,12 @@ export const uz = {
   'run.action.unavailableReasonPlaceholder': 'Sabab',
   'run.action.actualQty': 'Haqiqiy miqdor ({unit})',
   'run.action.unitPriceUzs': 'Birlik narxi (UZS)',
+  // C.2 (M3.38, 2026-05-19): xaridni qo'lga olish banneri.
+  'run.banner.claimed': "Xaridni hozir {who} olib bormoqda",
+  'run.banner.claimedAfterHandoff': "{prev} → {who} xaridni qabul qildi",
+  'run.action.takeOver': "Qo'lga olish",
+  'run.errors.claimedByOther': "Xarid boshqa xaridor tomonidan olingan",
+  'run.errors.notClaimable': "Xaridni hozirgi holatda olib bo'lmaydi",
   // M3.36 (2026-05-19): minglik rejim — 147500 o'rniga 147.5 yozish.
   // UZS tenant uchun standart yoqilgan.
   'run.action.unitPriceUzsThousands': 'Birlik narxi (×1000 UZS)',

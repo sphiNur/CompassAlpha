@@ -387,6 +387,29 @@ export function RunPage() {
     },
     onError: errToast('common.error'),
   });
+  // C.2 (M3.38, 2026-05-19): run-level claim mutations. Auto-claim on
+  // RunPage mount (purchasing/delivering only); auto-release on
+  // visibilitychange (best-effort, worker sweep is the safety net).
+  // Take-over button on the "claimed by other" banner sends
+  // releaseClaim — the server detects cross-claim and re-tags the
+  // event with reason='override'.
+  const claimRun = trpc.run.claim.useMutation({
+    onSuccess: () => {
+      void utils.run.get.invalidate();
+    },
+    // Silent on most errors — auto-claim races (another purchaser
+    // grabbed it ~10ms after we mounted) shouldn't toast. Conflict
+    // errors are expected during the race window.
+    onError: () => {
+      void utils.run.get.invalidate();
+    },
+  });
+  const releaseRunClaim = trpc.run.releaseClaim.useMutation({
+    onSuccess: () => {
+      void utils.run.get.invalidate();
+    },
+    onError: errToast('common.error'),
+  });
 
   // ---- Derived state --------------------------------------------------
   const skuById = useMemo(() => {
@@ -455,6 +478,58 @@ export function RunPage() {
    *  gate (commands.ts:503); purchases survive the revert and the
    *  user can step back to planned to modify the run mid-purchase. */
   const canUndoStartPurchase = activeRun?.status === 'purchasing';
+
+  // C.2 (M3.38, 2026-05-19): run claim signals.
+  const myMemberId = session?.member.memberId ?? null;
+  const runClaimedByMemberId = runDetailQuery.data?.claimedByMemberId ?? null;
+  const isClaimedByMe = !!myMemberId && runClaimedByMemberId === myMemberId;
+  const isClaimedByOther =
+    !!runClaimedByMemberId && runClaimedByMemberId !== myMemberId;
+  const claimedByDisplayName = runDetailQuery.data?.claimedByDisplayName ?? null;
+  const previousClaimerDisplayName =
+    runDetailQuery.data?.previousClaimerDisplayName ?? null;
+  // Auto-claim on mount when status is in the claim window AND no one
+  // currently holds the claim. The dependency array intentionally
+  // EXCLUDES claimRun (stable mutation ref) — adding it would re-fire
+  // every render. We do include `runClaimedByMemberId` so the effect
+  // re-evaluates when another user releases.
+  useEffect(() => {
+    if (!activeRun || !myMemberId) return;
+    if (activeRun.status !== 'purchasing' && activeRun.status !== 'delivering') {
+      return;
+    }
+    // Wait until the query has resolved so we don't claim based on
+    // stale undefined state.
+    if (!runDetailQuery.data) return;
+    if (runClaimedByMemberId) return; // already held (by me or by other)
+    if (claimRun.isPending) return;
+    claimRun.mutate({ runId: activeRun.id });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    activeRun?.id,
+    activeRun?.status,
+    myMemberId,
+    runClaimedByMemberId,
+    runDetailQuery.data,
+  ]);
+  // Auto-release on page hide. Best-effort fire-and-forget; the
+  // worker timeout sweep handles cases where this never fires
+  // (force-close, network gone, etc.). Only releases if WE hold the
+  // claim — visibility events fire for any user, not just claimers.
+  useEffect(() => {
+    if (!activeRun || !isClaimedByMe) return;
+    const handle = () => {
+      if (document.visibilityState !== 'hidden') return;
+      // Don't await — we may have ~100ms before the tab is killed.
+      releaseRunClaim.mutate({
+        runId: activeRun.id,
+        reason: 'pagehide',
+      });
+    };
+    document.addEventListener('visibilitychange', handle);
+    return () => document.removeEventListener('visibilitychange', handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRun?.id, isClaimedByMe]);
 
   const finishSummary = useMemo(() => {
     const items = runDetailQuery.data?.items ?? [];
@@ -1029,6 +1104,42 @@ export function RunPage() {
           <span className="ml-auto truncate text-label tabular-nums text-[var(--c-fg-muted)]">
             #{activeRun.runIndex + 1} · {runSubtitle}
           </span>
+        </div>
+      ) : null}
+
+      {/* C.2 (M3.38, 2026-05-19): "claimed by other" banner with
+          take-over button. Take-over re-tags releaseClaim with
+          reason='override' (server-side detection), the auto-claim
+          useEffect then re-grabs the claim under our memberId once
+          the WS invalidate lands. Two API roundtrips visible to the
+          user as a single tap. */}
+      {activeRun && isClaimedByOther ? (
+        <div className="px-4 pt-2">
+          <Banner
+            tone="warn"
+            title={
+              previousClaimerDisplayName
+                ? i18n.t('run.banner.claimedAfterHandoff', {
+                    who: claimedByDisplayName ?? '…',
+                    prev: previousClaimerDisplayName,
+                  })
+                : i18n.t('run.banner.claimed', {
+                    who: claimedByDisplayName ?? '…',
+                  })
+            }
+            action={
+              <Button
+                variant="pearl"
+                size="sm"
+                loading={releaseRunClaim.isPending}
+                onClick={() =>
+                  releaseRunClaim.mutate({ runId: activeRun.id, reason: 'manual' })
+                }
+              >
+                {i18n.t('run.action.takeOver')}
+              </Button>
+            }
+          />
         </div>
       ) : null}
 

@@ -156,6 +156,15 @@ export const marketRunsV = readModelSchema.table(
     sessionIdsJson: jsonb('session_ids_json').notNull().default(sql`'[]'::jsonb`),
     startedAt: timestamp('started_at', { withTimezone: true, mode: 'date' }),
     finishedAt: timestamp('finished_at', { withTimezone: true, mode: 'date' }),
+    /**
+     * Run-level claim — C.2 (M3.38, 2026-05-19). Mirrors the
+     * order-session claim shape from M3.19 + M3.22. Set on RunClaimed,
+     * cleared on RunClaimReleased / RunFinished / RunCancelled.
+     */
+    claimedByMemberId: uuid('claimed_by_member_id'),
+    claimedAt: timestamp('claimed_at', { withTimezone: true, mode: 'date' }),
+    /** Snapshot of last forcibly-released claimer (override / timeout). */
+    previousClaimerMemberId: uuid('previous_claimer_member_id'),
     lastSeq: bigint('last_seq', { mode: 'number' }).notNull().default(0),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' })
       .notNull()
@@ -168,6 +177,10 @@ export const marketRunsV = readModelSchema.table(
       t.runIndex,
     ),
     orgStatusIdx: index('mrv_org_status_idx').on(t.orgId, t.status, t.runDate),
+    /** Partial index for the worker's stale-claim sweep. */
+    claimedIdx: index('mrv_claimed_idx')
+      .on(t.claimedAt)
+      .where(sql`claimed_by_member_id IS NOT NULL`),
   }),
 );
 

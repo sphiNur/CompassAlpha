@@ -538,6 +538,102 @@ async function releaseStaleClaims(): Promise<number> {
   return released;
 }
 
+/**
+ * Sister of `releaseStaleClaims`: same CLAIM_TIMEOUT_MINUTES knob,
+ * applied to `read_model.market_runs_v` for the C.2 (M3.38, 2026-05-19)
+ * run-level claim. Mirrors the order sweep shape exactly — the
+ * differences are the table, the event stream type ('run'), and the
+ * status filter (runs are claimable in planned/purchasing/delivering;
+ * finished/cancelled aren't candidates anyway because the projection
+ * NULLs out claim columns at those terminal transitions).
+ */
+async function releaseStaleRunClaims(): Promise<number> {
+  if (CLAIM_TIMEOUT_MINUTES <= 0) return 0;
+  const candidates = (await db.execute(sql`
+    SELECT id, org_id, last_seq, claimed_by_member_id, claimed_at
+    FROM read_model.market_runs_v
+    WHERE status IN ('planned', 'purchasing', 'delivering')
+      AND claimed_by_member_id IS NOT NULL
+      AND claimed_at < NOW() - (${CLAIM_TIMEOUT_MINUTES}::int * interval '1 minute')
+    ORDER BY claimed_at
+    LIMIT 100
+  `)) as unknown as Array<{
+    id: string;
+    org_id: string;
+    last_seq: number;
+    claimed_by_member_id: string;
+    claimed_at: Date;
+  }>;
+  if (candidates.length === 0) return 0;
+
+  let released = 0;
+  for (const row of candidates) {
+    try {
+      const ok = await db.transaction(async (tx) => {
+        const fresh = (await tx.execute(sql`
+          SELECT last_seq, claimed_by_member_id, claimed_at, status
+          FROM read_model.market_runs_v
+          WHERE id = ${row.id}
+          FOR UPDATE
+        `)) as unknown as Array<{
+          last_seq: number;
+          claimed_by_member_id: string | null;
+          claimed_at: Date | null;
+          status: string;
+        }>;
+        const cur = fresh[0];
+        if (!cur) return false;
+        if (
+          (cur.status !== 'planned' &&
+            cur.status !== 'purchasing' &&
+            cur.status !== 'delivering') ||
+          cur.claimed_by_member_id === null ||
+          cur.claimed_at === null ||
+          cur.claimed_at.getTime() >= Date.now() - CLAIM_TIMEOUT_MINUTES * 60_000
+        ) {
+          return false;
+        }
+        const newSeq = cur.last_seq + 1;
+        const occurredAt = new Date();
+        await tx.insert(s.events).values({
+          id: randomUUID(),
+          orgId: row.org_id,
+          streamType: 'run',
+          streamId: row.id,
+          seq: newSeq,
+          type: 'RunClaimReleased',
+          payload: { byMemberId: null, reason: 'timeout' },
+          actorId: null,
+          occurredAt,
+          correlationId: null,
+          causationId: null,
+          idempotencyKey: null,
+        });
+        await tx
+          .update(s.marketRunsV)
+          .set({
+            claimedByMemberId: null,
+            claimedAt: null,
+            previousClaimerMemberId: cur.claimed_by_member_id,
+            lastSeq: newSeq,
+            updatedAt: occurredAt,
+          })
+          .where(eq(s.marketRunsV.id, row.id));
+        return true;
+      });
+      if (ok) {
+        released++;
+        console.log(
+          `[worker] run claim timeout released: run=${row.id} prevClaimer=${row.claimed_by_member_id} idleFor=${Math.round((Date.now() - row.claimed_at.getTime()) / 60_000)}m`,
+        );
+      }
+    } catch (err) {
+      console.error('[worker] release-stale-run-claim failed for', row.id, err);
+    }
+  }
+  return released;
+}
+
 async function cleanupIdempotencyKeys(): Promise<number> {
   // Delete every row whose expires_at is in the past. The index
   // idem_expires_idx makes this O(matches) not O(table). The DELETE
@@ -578,17 +674,31 @@ async function loop() {
         lastIdempotencyCleanup = Date.now();
       }
       // M3.20: claim-timeout sweep — see releaseStaleClaims() above.
+      // C.2 (M3.38): same cadence now also sweeps run-level claims via
+      // releaseStaleRunClaims. Both share CLAIM_TIMEOUT_MINUTES.
       if (
         CLAIM_TIMEOUT_MINUTES > 0 &&
         Date.now() - lastClaimTimeoutScan >= CLAIM_TIMEOUT_SCAN_MS
       ) {
         try {
-          const released = await releaseStaleClaims();
-          if (released > 0) {
-            console.log(`[worker] claim timeout sweep: ${released} stale claim(s) released`);
+          const releasedOrders = await releaseStaleClaims();
+          if (releasedOrders > 0) {
+            console.log(
+              `[worker] order claim timeout sweep: ${releasedOrders} stale claim(s) released`,
+            );
           }
         } catch (err) {
-          console.error('[worker] claim timeout sweep failed', err);
+          console.error('[worker] order claim timeout sweep failed', err);
+        }
+        try {
+          const releasedRuns = await releaseStaleRunClaims();
+          if (releasedRuns > 0) {
+            console.log(
+              `[worker] run claim timeout sweep: ${releasedRuns} stale claim(s) released`,
+            );
+          }
+        } catch (err) {
+          console.error('[worker] run claim timeout sweep failed', err);
         }
         lastClaimTimeoutScan = Date.now();
       }

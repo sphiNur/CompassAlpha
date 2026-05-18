@@ -50,6 +50,21 @@ export interface RunState {
   items: Map<string, RunItemState>;
   stores: Map<string, RunStoreDeliveryState>;
   finishedAt: Date | null;
+  /**
+   * Run-level claim — C.2 (M3.38, 2026-05-19). Holds the purchaser who
+   * has the run "open" right now. Null when unclaimed (the default for
+   * a fresh run, and after self/timeout release). Mutations during
+   * planned/purchasing/delivering require either no claim or claim
+   * ownership.
+   */
+  claimedByMemberId: string | null;
+  claimedAt: Date | null;
+  /**
+   * Snapshot of the last forcibly-released claimer (override or
+   * timeout). Lets the take-over banner show "原 X → 现 Y". Cleared
+   * on manual self-release / pagehide / terminal status transitions.
+   */
+  previousClaimerMemberId: string | null;
 }
 
 export function emptyRunState(streamId: string): RunState {
@@ -65,6 +80,9 @@ export function emptyRunState(streamId: string): RunState {
     items: new Map(),
     stores: new Map(),
     finishedAt: null,
+    claimedByMemberId: null,
+    claimedAt: null,
+    previousClaimerMemberId: null,
   };
 }
 
@@ -187,9 +205,27 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
       return { ...state, seq: event.seq, stores };
     }
     case 'RunFinished':
-      return { ...state, seq: event.seq, status: 'finished', finishedAt: event.occurredAt };
+      // C.2 (M3.38): terminal — drop the claim so the audit trail
+      // doesn't leave a stale "claimed by X" snapshot on a finished
+      // run. Same for cancelled below.
+      return {
+        ...state,
+        seq: event.seq,
+        status: 'finished',
+        finishedAt: event.occurredAt,
+        claimedByMemberId: null,
+        claimedAt: null,
+        previousClaimerMemberId: null,
+      };
     case 'RunCancelled':
-      return { ...state, seq: event.seq, status: 'cancelled' };
+      return {
+        ...state,
+        seq: event.seq,
+        status: 'cancelled',
+        claimedByMemberId: null,
+        claimedAt: null,
+        previousClaimerMemberId: null,
+      };
 
     // ---- Reversal events (added 2026-05-03) -----------------------------
     case 'PurchaseRevised': {
@@ -261,6 +297,34 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
       return { ...state, seq: event.seq, status: 'planned' };
     case 'DeliveryStartUndone':
       return { ...state, seq: event.seq, status: 'purchasing' };
+    case 'RunClaimed':
+      // C.2 (M3.38): the take-over button also writes RunClaimed —
+      // payload.byMemberId is the new claimer, the prior claimer was
+      // released by an immediately-preceding RunClaimReleased event
+      // (which already cleared claimedByMemberId and set
+      // previousClaimerMemberId via the projection). So this reducer
+      // just sets the new owner and timestamp.
+      return {
+        ...state,
+        seq: event.seq,
+        claimedByMemberId: event.payload.byMemberId,
+        claimedAt: event.occurredAt,
+      };
+    case 'RunClaimReleased': {
+      // C.2 (M3.38): snapshot the prior claimer when the release was
+      // FORCED (override / timeout) so the next purchaser's banner
+      // can render "X → Y". Self-releases (manual/pagehide) clear
+      // the snapshot so the next claim has a clean slate.
+      const remembersOverride =
+        event.payload.reason === 'override' || event.payload.reason === 'timeout';
+      return {
+        ...state,
+        seq: event.seq,
+        claimedByMemberId: null,
+        claimedAt: null,
+        previousClaimerMemberId: remembersOverride ? state.claimedByMemberId : null,
+      };
+    }
     case 'SessionsAttachedToRun': {
       // M3.31 A.2 (2026-05-18): merge additional demand into the run.
       // Existing items grow in plannedQty; new SKUs get fresh pending

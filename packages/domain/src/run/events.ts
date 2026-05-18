@@ -182,4 +182,29 @@ export type RunEvent =
         sessionIds: string[];
         addedPlannedItems: Array<{ skuId: string; qty: string }>;
       };
+    })
+  // ---- Run-level claim (C.2, M3.38, 2026-05-19) -----------------------
+  // Mirrors the order-session claim (M3.19 + M3.22). A run can be
+  // claimed by exactly one purchaser at a time during the planned →
+  // purchasing → delivering window. The FE auto-claims on page mount
+  // and releases on page-hide; the worker auto-releases stale claims
+  // after CLAIM_TIMEOUT_MINUTES. Every mutating command checks claim
+  // ownership and rejects cross-claim writes.
+  | (BaseEvent & {
+      type: 'RunClaimed';
+      payload: { byMemberId: string };
+    })
+  | (BaseEvent & {
+      type: 'RunClaimReleased';
+      /** Discriminated by `reason`:
+       *  - `manual` / `pagehide` — self-release by the claimer.
+       *  - `override` — another purchaser forced a take-over via the
+       *    banner button. `byMemberId` is the overrider.
+       *  - `timeout` — worker's stale-claim sweep released after idle.
+       *    `byMemberId` is null (no human actor).
+       *  Projection snapshots `previousClaimerMemberId` on override /
+       *  timeout so the next purchaser's banner can show "X → Y". */
+      payload:
+        | { byMemberId: string; reason: 'manual' | 'pagehide' | 'override' }
+        | { byMemberId: null; reason: 'timeout' };
     });

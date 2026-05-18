@@ -1056,6 +1056,33 @@ export const runRouter = router({
             lastPriceBySku[r.sku_id] = r.unit_price;
           }
         }
+        // C.2 (M3.38, 2026-05-19): resolve display names for the
+        // claim banner. Same shape as the order side's
+        // claimedByDisplayName / previousClaimerDisplayName. Loaded in
+        // one IN query so single-actor runs don't double-query the
+        // members table.
+        const claimerIds = new Set<string>();
+        if (run.claimedByMemberId) claimerIds.add(run.claimedByMemberId);
+        if (run.previousClaimerMemberId) claimerIds.add(run.previousClaimerMemberId);
+        let claimedByDisplayName: string | null = null;
+        let previousClaimerDisplayName: string | null = null;
+        if (claimerIds.size > 0) {
+          const rows = await tx
+            .select({
+              memberId: s.members.id,
+              displayName: s.users.displayName,
+            })
+            .from(s.members)
+            .innerJoin(s.users, eq(s.users.id, s.members.userId))
+            .where(inArray(s.members.id, [...claimerIds]));
+          const byId = new Map(rows.map((r) => [r.memberId, r.displayName]));
+          if (run.claimedByMemberId) {
+            claimedByDisplayName = byId.get(run.claimedByMemberId) ?? null;
+          }
+          if (run.previousClaimerMemberId) {
+            previousClaimerDisplayName = byId.get(run.previousClaimerMemberId) ?? null;
+          }
+        }
         return {
           ...run,
           items,
@@ -1065,9 +1092,53 @@ export const runRouter = router({
           sessionNotesByStore,
           sessionExtrasByStore,
           supplierBySku,
+          // C.2: claim display fields. The raw memberId columns are
+          // already in `...run` (drizzle spreads the row); these are
+          // the resolved names for the banner.
+          claimedByDisplayName,
+          previousClaimerDisplayName,
+          claimedAt: run.claimedAt?.toISOString() ?? null,
         };
       });
     }),
+
+  /**
+   * C.2 (M3.38, 2026-05-19): claim a run so other purchasers can't
+   * mutate it concurrently. Mirrors `order.claim`. The FE calls this
+   * on RunPage mount when status ∈ {purchasing, delivering}. The
+   * domain layer's `assertClaimOwnership` is what actually enforces
+   * the lock; this endpoint just announces "I'm taking it".
+   */
+  claim: authedProcedure
+    .input(SimpleRunCommandSchema)
+    .mutation(async ({ ctx, input }) =>
+      runSimpleCommand(ctx, input.runId, (state) =>
+        decideRun(state, { type: 'ClaimRun', actor: actorFromCtx(ctx) }),
+      ),
+    ),
+
+  /**
+   * C.2 (M3.38, 2026-05-19): release a run claim. Reason 'manual' for
+   * the explicit Release button; 'pagehide' for the FE's
+   * visibilitychange auto-release. Override path: when the caller is
+   * NOT the current claimer, the domain layer re-tags the emitted
+   * event with reason 'override' (the take-over button uses this).
+   */
+  releaseClaim: authedProcedure
+    .input(
+      SimpleRunCommandSchema.extend({
+        reason: z.enum(['manual', 'pagehide']).default('manual'),
+      }),
+    )
+    .mutation(async ({ ctx, input }) =>
+      runSimpleCommand(ctx, input.runId, (state) =>
+        decideRun(state, {
+          type: 'ReleaseRunClaim',
+          reason: input.reason,
+          actor: actorFromCtx(ctx),
+        }),
+      ),
+    ),
 
   startPurchase: authedProcedure.input(SimpleRunCommandSchema).mutation(async ({ ctx, input }) =>
     runSimpleCommand(ctx, input.runId, (state) =>

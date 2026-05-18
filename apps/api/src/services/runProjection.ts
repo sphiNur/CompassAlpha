@@ -210,6 +210,12 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
               ? { actualTransferTotal: e.payload.totalTransfer }
               : {}),
             finishedAt: e.occurredAt,
+            // C.2 (M3.38): terminal — clear claim so the read model
+            // doesn't keep showing a stale "claimed by X" on a closed
+            // run. The reducer does the same in state.ts.
+            claimedByMemberId: null,
+            claimedAt: null,
+            previousClaimerMemberId: null,
             lastSeq: e.seq,
             updatedAt: new Date(),
           })
@@ -218,9 +224,54 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
       case 'RunCancelled':
         await db
           .update(s.marketRunsV)
-          .set({ status: 'cancelled', lastSeq: e.seq, updatedAt: new Date() })
+          .set({
+            status: 'cancelled',
+            claimedByMemberId: null,
+            claimedAt: null,
+            previousClaimerMemberId: null,
+            lastSeq: e.seq,
+            updatedAt: new Date(),
+          })
           .where(eq(s.marketRunsV.id, e.streamId));
         break;
+      case 'RunClaimed':
+        // C.2 (M3.38): claim grab. The reducer mirrors this exactly —
+        // sets claimer + ts. We don't clear previousClaimerMemberId
+        // here so the next reviewer's banner can still show "X → Y"
+        // even after the new claim lands (cleared only on
+        // self-release / pagehide / terminal).
+        await db
+          .update(s.marketRunsV)
+          .set({
+            claimedByMemberId: e.payload.byMemberId,
+            claimedAt: e.occurredAt,
+            lastSeq: e.seq,
+            updatedAt: new Date(),
+          })
+          .where(eq(s.marketRunsV.id, e.streamId));
+        break;
+      case 'RunClaimReleased': {
+        // C.2 (M3.38): mirror of OrderProjection's ClaimReleased path —
+        // forced releases (override / timeout) snapshot the prior
+        // claimer into previous_claimer_member_id for the next
+        // purchaser's banner. Self-releases (manual / pagehide) clear
+        // both columns so the next claim starts fresh.
+        const remembersOverride =
+          e.payload.reason === 'override' || e.payload.reason === 'timeout';
+        await db
+          .update(s.marketRunsV)
+          .set({
+            claimedByMemberId: null,
+            claimedAt: null,
+            previousClaimerMemberId: remembersOverride
+              ? sql`claimed_by_member_id`
+              : null,
+            lastSeq: e.seq,
+            updatedAt: new Date(),
+          })
+          .where(eq(s.marketRunsV.id, e.streamId));
+        break;
+      }
 
       // ---- Reversal events (added 2026-05-03) ---------------------------
       case 'PurchaseRevised': {

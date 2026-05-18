@@ -75,6 +75,18 @@ export type RunCommand =
       sessionIds: string[];
       addedPlannedItems: Array<{ skuId: string; qty: string }>;
       actor: ActorCtx;
+    }
+  // ---- Run-level claim (C.2, M3.38, 2026-05-19) -----------------------
+  | { type: 'ClaimRun'; actor: ActorCtx }
+  | {
+      type: 'ReleaseRunClaim';
+      actor: ActorCtx;
+      /** Self-releases pass 'manual' or 'pagehide'. The override path
+       *  is a separate FE action — same command, the domain detects
+       *  `actor.memberId !== state.claimedByMemberId` and re-tags the
+       *  emitted event with `reason: 'override'`. Timeout releases are
+       *  emitted directly by the worker, never via this command. */
+      reason: 'manual' | 'pagehide';
     };
 
 export interface ActorCtx {
@@ -134,6 +146,7 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
       if (!command.actor.permissions.has('run.purchase')) {
         throw forbidden('run.errors.cannotPurchase');
       }
+      assertClaimOwnership(state, command.actor);
       if (state.status !== 'planned') {
         throw preconditionFailed('run.errors.cannotStartPurchase', { status: state.status });
       }
@@ -144,6 +157,7 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
       if (!command.actor.permissions.has('run.purchase')) {
         throw forbidden('run.errors.cannotPurchase');
       }
+      assertClaimOwnership(state, command.actor);
       // M3.33 (2026-05-18, Wave1 #12): block PurchaseItem in `delivering`
       // status too — before this fix the dispatcher could start delivery
       // while the purchaser kept recording buys, producing split rows
@@ -186,6 +200,7 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
       if (!command.actor.permissions.has('run.purchase')) {
         throw forbidden('run.errors.cannotPurchase');
       }
+      assertClaimOwnership(state, command.actor);
       const note = command.note.trim();
       if (!note) throw validation('run.errors.unavailableNoteRequired');
       if (note.length > 500) throw validation('run.errors.noteTooLong');
@@ -202,6 +217,10 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
 
     case 'StartDelivery': {
       assertActive(state);
+      // C.2 (M3.38): StartDelivery is the purchaser's "I'm done buying"
+      // transition. Gate it with claim ownership so a second purchaser
+      // doesn't flip the run forward while the first is still recording.
+      assertClaimOwnership(state, command.actor);
       if (state.status !== 'purchasing') {
         throw preconditionFailed('run.errors.notReadyToDeliver', { status: state.status });
       }
@@ -319,6 +338,7 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
       if (!command.actor.permissions.has('run.finish')) {
         throw forbidden('run.errors.cannotFinish');
       }
+      assertClaimOwnership(state, command.actor);
       if (state.status !== 'delivering') {
         throw preconditionFailed('run.errors.notFinishable', { status: state.status });
       }
@@ -388,6 +408,7 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
       if (!command.actor.permissions.has('run.purchase')) {
         throw forbidden('run.errors.cannotPurchase');
       }
+      assertClaimOwnership(state, command.actor);
       if (state.status === 'finished' || state.status === 'cancelled') {
         throw preconditionFailed('run.errors.runFrozen', { status: state.status });
       }
@@ -445,6 +466,7 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
       if (!command.actor.permissions.has('run.purchase')) {
         throw forbidden('run.errors.cannotPurchase');
       }
+      assertClaimOwnership(state, command.actor);
       if (state.status === 'finished' || state.status === 'cancelled') {
         throw preconditionFailed('run.errors.runFrozen', { status: state.status });
       }
@@ -481,6 +503,7 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
       if (!command.actor.permissions.has('run.purchase')) {
         throw forbidden('run.errors.cannotPurchase');
       }
+      assertClaimOwnership(state, command.actor);
       if (state.status === 'finished' || state.status === 'cancelled') {
         throw preconditionFailed('run.errors.runFrozen', { status: state.status });
       }
@@ -567,6 +590,7 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
       if (!command.actor.permissions.has('run.purchase')) {
         throw forbidden('run.errors.cannotPurchase');
       }
+      assertClaimOwnership(state, command.actor);
       if (state.status !== 'purchasing') {
         throw preconditionFailed('run.errors.notPurchasing', { status: state.status });
       }
@@ -589,6 +613,7 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
       if (!command.actor.permissions.has('delivery.dispatch')) {
         throw forbidden('run.errors.cannotDispatch');
       }
+      assertClaimOwnership(state, command.actor);
       if (state.status !== 'delivering') {
         throw preconditionFailed('run.errors.notDelivering', { status: state.status });
       }
@@ -604,6 +629,63 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
       return [{ ...baseFor(1), type: 'DeliveryStartUndone', payload: { reason } }];
     }
 
+    case 'ClaimRun': {
+      // C.2 (M3.38): a purchaser claims the run so other purchasers
+      // can't write conflicting events. Allowed during the active
+      // window (planned/purchasing/delivering). Terminal states have
+      // no claim concept.
+      assertActive(state);
+      if (!command.actor.permissions.has('run.purchase')) {
+        throw forbidden('run.errors.cannotPurchase');
+      }
+      if (
+        state.status !== 'planned' &&
+        state.status !== 'purchasing' &&
+        state.status !== 'delivering'
+      ) {
+        throw preconditionFailed('run.errors.notClaimable', { status: state.status });
+      }
+      if (state.claimedByMemberId === command.actor.memberId) {
+        return []; // already mine — idempotent
+      }
+      if (state.claimedByMemberId) {
+        throw conflict('run.errors.claimedByOther', {
+          claimedBy: state.claimedByMemberId,
+        });
+      }
+      return [
+        {
+          ...baseFor(1),
+          type: 'RunClaimed',
+          payload: { byMemberId: command.actor.memberId },
+        },
+      ];
+    }
+
+    case 'ReleaseRunClaim': {
+      // C.2 (M3.38): release the claim. Self-releases pass through
+      // with the supplied reason. If the actor is NOT the claimer,
+      // this is a take-over — same command but re-tagged as
+      // 'override'. Override requires `run.purchase` (same gate as
+      // claim) so we don't need a separate permission check.
+      assertActive(state);
+      if (!state.claimedByMemberId) return [];
+      const isSelf = state.claimedByMemberId === command.actor.memberId;
+      if (!isSelf && !command.actor.permissions.has('run.purchase')) {
+        throw forbidden('run.errors.cannotPurchase');
+      }
+      return [
+        {
+          ...baseFor(1),
+          type: 'RunClaimReleased',
+          payload: {
+            byMemberId: command.actor.memberId,
+            reason: isSelf ? command.reason : 'override',
+          },
+        },
+      ];
+    }
+
     default: {
       const _x: never = command;
       void _x;
@@ -614,6 +696,25 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
 
 function assertActive(state: RunState): void {
   if (state.status === 'absent') throw preconditionFailed('run.errors.streamMissing');
+}
+
+/**
+ * Claim-ownership gate — C.2 (M3.38, 2026-05-19). Mutating commands
+ * must be invoked by the current claimer (or with no claim set yet).
+ * Mirrors the order-side check at packages/domain/src/order/commands.ts.
+ *
+ * Unclaimed runs accept writes from any permitted member — the FE
+ * auto-claims on page mount so by the time a mutation reaches the
+ * server the claim is usually set. The defensive fallback (allow
+ * when null) keeps single-purchaser flows zero-friction; the lock
+ * activates the moment two purchasers exist on the same run.
+ */
+function assertClaimOwnership(state: RunState, actor: ActorCtx): void {
+  if (state.claimedByMemberId && state.claimedByMemberId !== actor.memberId) {
+    throw conflict('run.errors.claimedByOther', {
+      claimedBy: state.claimedByMemberId,
+    });
+  }
 }
 
 function num(s: string, errorKey: string): number {

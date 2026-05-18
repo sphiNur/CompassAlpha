@@ -644,6 +644,13 @@ export const en = {
   'run.action.unavailableReasonPlaceholder': 'Reason',
   'run.action.actualQty': 'Actual qty ({unit})',
   'run.action.unitPriceUzs': 'Unit price (UZS)',
+  // C.2 (M3.38, 2026-05-19): run-level claim banner copy. Mirrors the
+  // order-side equivalents at order.banner.claimed / .claimedAfterHandoff.
+  'run.banner.claimed': 'This run is being handled by {who}',
+  'run.banner.claimedAfterHandoff': '{prev} → {who} is now handling this run',
+  'run.action.takeOver': 'Take over',
+  'run.errors.claimedByOther': 'This run is claimed by another purchaser',
+  'run.errors.notClaimable': 'This run cannot be claimed in its current status',
   // M3.36 (2026-05-19): "thousands mode" lets purchasers type 147.5
   // instead of 147500 — UZS prices live in the 20-150k range so
   // typing the trailing 000s on every line is busywork. Page-level
