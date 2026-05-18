@@ -22,7 +22,25 @@ import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
 import { matchesNameLike, normalizeQuery } from '../lib/searchMatch';
-import { useI18n, useProductName } from '../hooks/useI18n';
+import { useI18n, useProductName, useUnitLabel } from '../hooks/useI18n';
+
+// M3.34 (2026-05-19): canonical units for the extras editor's unit
+// dropdown — kept in sync with CanonicalUnitSchema in
+// @compass/contracts. STEP map drives NumberInput's decimal vs
+// integer granularity per unit; UNIT_IS_INTEGER drives inputMode.
+const CANONICAL_UNITS = ['kg', 'g', 'L', 'ml', 'pcs', 'pack', 'pair', 'bunch', 'roll'] as const;
+const UNIT_STEP: Record<string, string> = {
+  kg: '0.1',
+  L: '0.1',
+  g: '10',
+  ml: '10',
+  pcs: '1',
+  pack: '1',
+  pair: '1',
+  bunch: '1',
+  roll: '1',
+};
+const UNIT_IS_INTEGER = new Set(['pcs', 'pack', 'pair', 'bunch', 'roll']);
 import { formatQty, formatMoney } from '../lib/format';
 import { useStoreContext } from '../components/StoreSwitcher';
 
@@ -774,7 +792,18 @@ export function OrderPage() {
         <SessionExtrasEditor
           sessionId={sessionQuery.data.id}
           storeId={currentStoreId ?? ''}
-          initialValue={sessionQuery.data.extras ?? []}
+          // M3.34 (2026-05-19): coerce server-side extras into the
+          // canonical-unit shape. Rows submitted pre-M3.34 may carry
+          // free-text like "kgs" or "公斤" — map to 'kg' so the
+          // dropdown can render them and re-saving lands a canonical
+          // value. Anything we can't match falls back to 'kg' (the
+          // most-common SKU unit) which the user can then change.
+          initialValue={(sessionQuery.data.extras ?? []).map((r) => ({
+            ...r,
+            unit: (CANONICAL_UNITS as readonly string[]).includes(r.unit)
+              ? (r.unit as (typeof CANONICAL_UNITS)[number])
+              : 'kg',
+          }))}
           isReadOnly={isReadOnly}
           onSave={async (extras) => {
             await setSessionExtras.mutateAsync({
@@ -1099,7 +1128,11 @@ function ReviewList({
 interface ExtraDraft {
   name: string;
   qty: string;
-  unit: string;
+  // M3.34: tightened from `string` to the canonical unit set so
+  // tRPC's input schema validation (CanonicalUnitSchema) matches the
+  // local shape — extras coming back from server may carry pre-M3.34
+  // free-text units, the editor coerces to 'kg' on render if so.
+  unit: (typeof CANONICAL_UNITS)[number];
   note?: string;
 }
 
@@ -1117,6 +1150,7 @@ function SessionExtrasEditor({
   onSave: (extras: ExtraDraft[]) => Promise<void>;
 }) {
   const i18n = useI18n();
+  const unitLabel = useUnitLabel();
   const [rows, setRows] = useState<ExtraDraft[]>(() =>
     initialValue.map((r) => ({ ...r })),
   );
@@ -1157,9 +1191,13 @@ function SessionExtrasEditor({
     const out: ExtraDraft[] = [];
     for (const r of draft) {
       const name = r.name.trim();
-      const unit = r.unit.trim();
+      // M3.34: unit is already type-constrained to the canonical enum;
+      // no trim needed for the value (whitespace can't enter through
+      // the <select>), but we still validate presence in case of a
+      // pre-M3.34 cache write that smuggled in a stale free-text.
+      const unit = r.unit;
       const qty = r.qty.trim();
-      if (!name || !unit) continue;
+      if (!name || !(CANONICAL_UNITS as readonly string[]).includes(unit)) continue;
       if (!/^\d+(\.\d{1,3})?$/.test(qty) || Number(qty) <= 0) continue;
       const note = r.note?.trim();
       out.push({
@@ -1230,7 +1268,7 @@ function SessionExtrasEditor({
   const addRow = () => {
     setRows((prev) => {
       if (prev.length >= 50) return prev;
-      const next = [...prev, { name: '', qty: '1', unit: 'kg' }];
+      const next: ExtraDraft[] = [...prev, { name: '', qty: '1', unit: 'kg' as const }];
       // Don't fire save immediately — name is empty, sanitize drops
       // it. The save fires when the user types into the name field.
       return next;
@@ -1261,7 +1299,7 @@ function SessionExtrasEditor({
             >
               <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">{r.name}</span>
               <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
-                {r.qty} {r.unit}
+                {r.qty} {unitLabel(r.unit)}
               </span>
             </li>
           ))}
@@ -1310,6 +1348,7 @@ function ExtraRowEditor({
   onRemove: () => void;
 }) {
   const i18n = useI18n();
+  const unitLabel = useUnitLabel();
   const [focusing, setFocusing] = useState(false);
   // Suggestions query — fetches up to 20 distinct names this store
   // has used in the last 30 days. Enabled only while the name input
@@ -1367,17 +1406,34 @@ function ExtraRowEditor({
         </div>
         <NumberInput
           value={row.qty}
-          inputMode="decimal"
+          // M3.34 (2026-05-19): step + inputMode track the unit so a
+          // pcs/bunch row gives an integer keypad while a kg/L row
+          // allows decimals. Prevents accidental decimal-in-pcs typos
+          // (e.g. "1.5 个 of 鸡蛋" doesn't make sense).
+          inputMode={UNIT_IS_INTEGER.has(row.unit) ? 'numeric' : 'decimal'}
+          step={UNIT_STEP[row.unit] ?? '0.1'}
+          min="0"
           className="w-16 text-center"
           onChange={(e) => onChange({ qty: e.target.value })}
         />
-        <Input
+        <select
           value={row.unit}
-          placeholder="kg"
-          maxLength={16}
-          className="w-16 text-center"
-          onChange={(e) => onChange({ unit: e.target.value })}
-        />
+          // M3.34: constrained to canonical units (CanonicalUnitSchema).
+          // Free-text caused "kg"/"kgs"/"公斤" drift that broke
+          // aggregation + i18n. Labels go through useUnitLabel so the
+          // visible option text matches the rest of the UI in the
+          // user's locale.
+          onChange={(e) =>
+            onChange({ unit: e.target.value as (typeof CANONICAL_UNITS)[number] })
+          }
+          className="h-9 w-20 rounded-[var(--r-input)] bg-[var(--c-surface)] px-2 text-center text-body text-[var(--c-fg)] ring-hairline focus:outline-none focus:ring-2 focus:ring-[var(--c-action)]"
+        >
+          {CANONICAL_UNITS.map((u) => (
+            <option key={u} value={u}>
+              {unitLabel(u)}
+            </option>
+          ))}
+        </select>
         <button
           type="button"
           aria-label={i18n.t('order.extras.remove')}

@@ -490,21 +490,50 @@ export const orderRouter = router({
       //                    `assertCanEditSession` then verifies the
       //                    actor is the claimer of that session.
       const ownerForLookup = input.targetMemberId ?? ctx.session!.memberId;
-      // M3.32 (2026-05-18): only an OPEN DRAFT is a candidate for
-      // adjust. Multi-batch-per-day (migration 0026) means submitted /
-      // approved / etc. rows can coexist with a fresh draft — without
-      // this status filter, findFirst could surface a stale submitted
-      // session and the next AdjustItem would fail status guards.
-      let session = await tx.query.orderSessionsV.findFirst({
-        where: (sess, { eq: eq2, and: and2 }) =>
-          and2(
-            eq2(sess.orgId, ctx.session!.orgId),
-            eq2(sess.storeId, input.storeId),
-            eq2(sess.orderDate, date),
-            eq2(sess.initiatedByMemberId, ownerForLookup),
-            eq2(sess.status, 'draft'),
-          ),
-      });
+      // M3.34-fix (2026-05-19): the M3.32 status='draft' filter broke
+      // the manager-in-place-edit flow (M1.x). When an approver claims
+      // a SUBMITTED session and adjusts a row, this lookup returns
+      // null (session is 'submitted' not 'draft') → sessionMissing
+      // toast.
+      //
+      // Split by intent:
+      //   - Self-edit (no targetMemberId, or === me): find MY draft.
+      //     Multi-batch (M3.32) means there can be a submitted row
+      //     coexisting with a fresh draft; the status filter still
+      //     applies so we lazy-create a new draft instead of resuming
+      //     an old submitted one.
+      //   - Manager-edit (targetMemberId !== me): edit the target's
+      //     SUBMITTED session in place. domain.assertCanEditSession
+      //     re-checks claimer / status, so we don't filter by status
+      //     here — we just need to find the right (member, store, date)
+      //     row. If the staff has multiple sessions, pick the most
+      //     recent submitted (or draft) since that's what the manager
+      //     just claimed.
+      const isManagerEdit =
+        input.targetMemberId !== undefined &&
+        input.targetMemberId !== ctx.session!.memberId;
+      let session = isManagerEdit
+        ? await tx.query.orderSessionsV.findFirst({
+            where: (sess, { eq: eq2, and: and2, inArray: inArray2 }) =>
+              and2(
+                eq2(sess.orgId, ctx.session!.orgId),
+                eq2(sess.storeId, input.storeId),
+                eq2(sess.orderDate, date),
+                eq2(sess.initiatedByMemberId, ownerForLookup),
+                inArray2(sess.status, ['submitted', 'draft']),
+              ),
+            orderBy: (sess, { desc }) => desc(sess.updatedAt),
+          })
+        : await tx.query.orderSessionsV.findFirst({
+            where: (sess, { eq: eq2, and: and2 }) =>
+              and2(
+                eq2(sess.orgId, ctx.session!.orgId),
+                eq2(sess.storeId, input.storeId),
+                eq2(sess.orderDate, date),
+                eq2(sess.initiatedByMemberId, ownerForLookup),
+                eq2(sess.status, 'draft'),
+              ),
+          });
 
       let state: OrderState;
       let streamId: string;

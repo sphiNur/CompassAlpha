@@ -65,6 +65,17 @@ export const en = {
   /** "+N more" pagination footer in flat lists. */
   'common.more': 'more',
   'common.empty': 'Empty',
+  // M3.34 (2026-05-19): canonical unit strings. SKU.unit stores one of
+  // these; UI looks up via `useUnitLabel(unit)`.
+  'unit.kg': 'kg',
+  'unit.g': 'g',
+  'unit.l': 'L',
+  'unit.ml': 'mL',
+  'unit.pcs': 'pcs',
+  'unit.pack': 'pack',
+  'unit.pair': 'pair',
+  'unit.bunch': 'bunch',
+  'unit.roll': 'roll',
   'common.noResults': 'No results',
   'common.required': 'Required',
   'common.error': 'Something went wrong',

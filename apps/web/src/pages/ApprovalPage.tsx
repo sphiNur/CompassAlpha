@@ -29,7 +29,7 @@ import {
 } from '@compass/ui';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
-import { useI18n, useProductName } from '../hooks/useI18n';
+import { useI18n, useProductName, useUnitLabel } from '../hooks/useI18n';
 import { getTg, haptic } from '../hooks/useTelegram';
 import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
@@ -495,6 +495,7 @@ function SessionItems({
   isClaimedByMe: boolean;
 }) {
   const i18n = useI18n();
+  const unitLabel = useUnitLabel();
   // M1.21: pull org currency from session for the estimate-total
   // suffix. Hardcoded "UZS" pre-M1.21 blocked the multi-currency
   // foundation from M1.17.
@@ -610,7 +611,7 @@ function SessionItems({
             >
               <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">{e.name}</span>
               <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
-                {e.qty} {e.unit}
+                {e.qty} {unitLabel(e.unit)}
               </span>
             </li>
           ))}
@@ -648,24 +649,47 @@ function SessionItems({
       {totals.map((t) => {
         const sku = skuById.get(t.skuId);
         const rows = rowsBySku.get(t.skuId) ?? [];
+        // M3.34 (2026-05-19, Q4 cleanup): collapse the contributor
+        // breakdown when there's only ONE contributor. The submitter's
+        // name is already in the order card header; repeating it on
+        // every SKU row was redundant and ate screen space. For a
+        // single-contributor session in claimed mode, the QtyControl
+        // moves up onto the SKU header itself in place of the static
+        // qty span.
+        const isSingleContributor = rows.length === 1;
+        const singleRow = isSingleContributor ? rows[0]! : null;
         return (
           <li key={t.skuId} className="border-b border-[var(--c-divider)] py-3 last:border-b-0">
-            {/* M1.21: tap-safe row rhythm. `py-2` here was 16 px row
-                height which is below the 44 px iOS tap target on the
-                claimed-state mode where the contributor breakdown
-                appears nested. `py-3` lands on the same rhythm as
-                Order / Confirm list rows. */}
-            <div className="flex items-baseline justify-between gap-2 text-body">
-              <span className="truncate font-semibold text-[var(--c-fg)]">
+            <div className="flex items-center justify-between gap-2 text-body">
+              <span className="min-w-0 flex-1 truncate font-semibold text-[var(--c-fg)]">
                 {sku ? productName(sku) : t.skuId.slice(0, 8)}
               </span>
-              <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg)]">
-                {formatQty(t.qty)} {sku?.unit ?? ''}
-              </span>
+              {isClaimedByMe && isSingleContributor && sku && singleRow ? (
+                <QtyControl
+                  size="sm"
+                  value={Number(singleRow.qty)}
+                  step={Number(sku.step ?? '1')}
+                  unit={unitLabel(sku.unit)}
+                  disabled={adjust.isPending}
+                  onChange={(next) =>
+                    adjust.mutate({
+                      storeId,
+                      skuId: t.skuId,
+                      qty: String(next),
+                      targetMemberId: singleRow.contributorMemberId,
+                    })
+                  }
+                />
+              ) : (
+                <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg)]">
+                  {formatQty(t.qty)} {unitLabel(sku?.unit ?? '')}
+                </span>
+              )}
             </div>
-            {/* Contributor breakdown: only show when there are 2+ contributors,
-                OR the manager has claimed (so they can edit in-place). */}
-            {(rows.length > 1 || isClaimedByMe) ? (
+            {/* Per-contributor breakdown only when 2+ contributors —
+                whether or not claimed. Hiding for single-contributor
+                avoids the noisy repeated submitter name. */}
+            {rows.length > 1 ? (
               <ul className="mt-1 flex flex-col gap-1 pl-3" role="list">
                 {rows.map((r) => (
                   <li
@@ -681,7 +705,7 @@ function SessionItems({
                         size="sm"
                         value={Number(r.qty)}
                         step={Number(sku.step ?? '1')}
-                        unit={sku.unit}
+                        unit={unitLabel(sku.unit)}
                         disabled={adjust.isPending}
                         onChange={(next) =>
                           adjust.mutate({
@@ -694,7 +718,7 @@ function SessionItems({
                       />
                     ) : (
                       <span className="shrink-0 font-mono tabular-nums">
-                        {formatQty(r.qty)} {sku?.unit ?? ''}
+                        {formatQty(r.qty)} {unitLabel(sku?.unit ?? '')}
                       </span>
                     )}
                   </li>

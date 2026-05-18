@@ -65,6 +65,34 @@ export function useI18n() {
   return useMemo(() => createI18n(resolved), [resolved]);
 }
 
+/**
+ * Hook for localized unit labels (M3.34, 2026-05-19).
+ *
+ * Backend stores unit as a short canonical string per the SKU schema
+ * (kg / g / L / ml / pcs / pack / pair / bunch / roll). The user
+ * pointed out that "kg" / "pcs" / "bunch" displayed verbatim doesn't
+ * read like the rest of a Chinese/Russian/Uzbek UI. This hook returns
+ * a `(unit) => label` function that maps the canonical string to its
+ * localized form via i18n key `unit.<canonical>`. Falls back to the
+ * raw unit string if a key is missing or the unit is empty (extras
+ * may carry exotic free-text units pre-M3.34).
+ */
+export function useUnitLabel() {
+  const i18n = useI18n();
+  return useMemo(() => {
+    return (unit: string | null | undefined): string => {
+      if (!unit) return '';
+      const canonical = unit.toLowerCase();
+      // i18n.t falls back to the key itself when missing; we want to
+      // fall back to the original unit string (with original case)
+      // so SKU-level lowercase fix doesn't hide non-canonical units.
+      const key = ('unit.' + canonical) as Parameters<typeof i18n.t>[0];
+      const localized = i18n.t(key);
+      return localized === key ? unit : localized;
+    };
+  }, [i18n]);
+}
+
 export function useProductName() {
   const i18n = useI18n();
   // M3.10 (2026-05-16): memoize the callback by locale so passing

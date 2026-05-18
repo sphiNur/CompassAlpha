@@ -84,6 +84,27 @@ export const SetSessionNoteInputSchema = z.object({
 });
 
 /**
+ * Canonical SKU units (M3.34, 2026-05-19). Same set the SKU schema
+ * documents at packages/db/src/schema/inventory.ts. Extras now share
+ * this enum so the FE dropdown and DB SKU.unit stay in sync — before
+ * M3.34 the unit field was free-text and users typed "kg." "kgs" "公
+ * 斤" inconsistently, breaking aggregation and i18n. The i18n labels
+ * live at `unit.*` in each catalog.
+ */
+export const CanonicalUnitSchema = z.enum([
+  'kg',
+  'g',
+  'L',
+  'ml',
+  'pcs',
+  'pack',
+  'pair',
+  'bunch',
+  'roll',
+]);
+export type CanonicalUnit = z.infer<typeof CanonicalUnitSchema>;
+
+/**
  * One row in the structured "其他物品" list (M3.16-C, 2026-05-16).
  *
  * Field-by-field validation mirrors the domain-layer checks in
@@ -94,7 +115,8 @@ export const SetSessionNoteInputSchema = z.object({
 export const SessionExtraItemSchema = z.object({
   name: z.string().min(1).max(200),
   qty: z.string().regex(/^\d+(\.\d{1,3})?$/, 'invalid qty'),
-  unit: z.string().min(1).max(16),
+  // M3.34: tightened from free-text to canonical enum.
+  unit: CanonicalUnitSchema,
   note: z.string().max(200).optional(),
 });
 
