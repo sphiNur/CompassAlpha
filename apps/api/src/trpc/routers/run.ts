@@ -20,6 +20,7 @@ import {
   MarkUnavailableInputSchema,
   PurchaseItemInputSchema,
   RevisePurchaseInputSchema,
+  RunAttachSessionsInputSchema,
   RunCreateInputSchema,
   RunPreviewInputSchema,
   RunReasonOnlyInputSchema,
@@ -633,6 +634,156 @@ export const runRouter = router({
       return { runId, runIndex, lastSeq: events[events.length - 1]?.seq ?? 0 };
     });
   }),
+
+  /**
+   * M3.31 A.2 (2026-05-18): attach additional approved sessions to a
+   * live run. Allowed while the run is `planned` or `purchasing`.
+   *
+   * The mutation mirrors `create` in shape — aggregate the new sessions'
+   * orderItemsV rows into a delta, emit `SessionsAttachedToRun` on the
+   * run stream, then `AttachedToRun` on each session stream so the
+   * session transitions from `approved` to `in_run` and stops appearing
+   * in `previewCreatable`. Store-scope guard runs on every new session
+   * (same as `create`) — a store-tier purchaser can only attach
+   * sessions from stores they're bound to.
+   */
+  attachSessions: idempotentMutation
+    .input(RunAttachSessionsInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      return ctx.withOrg(async (tx) => {
+        const run = await loadRun(tx, ctx.session!.orgId, input.runId);
+        if (run.status !== 'planned' && run.status !== 'purchasing') {
+          throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: 'run.errors.cannotAttachInStatus',
+          });
+        }
+        const alreadyIn = new Set((run.sessionIdsJson ?? []) as string[]);
+        const dedupedNewIds = input.sessionIds.filter((id) => !alreadyIn.has(id));
+        if (dedupedNewIds.length === 0) {
+          throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: 'run.errors.allSessionsAlreadyInRun',
+          });
+        }
+        const sessions = await tx.query.orderSessionsV.findMany({
+          where: (sess, { eq: eq2, and: and2, inArray: inArray2 }) =>
+            and2(eq2(sess.orgId, ctx.session!.orgId), inArray2(sess.id, dedupedNewIds)),
+        });
+        if (sessions.length !== dedupedNewIds.length) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'run.errors.sessionMissing' });
+        }
+        for (const sess of sessions) {
+          if (sess.status !== 'approved') {
+            throw new TRPCError({
+              code: 'PRECONDITION_FAILED',
+              message: 'run.errors.sessionNotApproved',
+            });
+          }
+        }
+        // Store-scope: same gate as create. Org-tier (`run.create.org`)
+        // bypasses; store-tier purchasers can only attach from their
+        // bound stores.
+        if (!ctx.session!.permissions.has('run.create.org')) {
+          const allowedStoreIds = await getActorStoreIds(
+            tx,
+            ctx.session!.memberId,
+            ctx.session!.permissions,
+          );
+          if (allowedStoreIds !== null) {
+            const allowed = new Set(allowedStoreIds);
+            for (const sess of sessions) {
+              if (!allowed.has(sess.storeId)) {
+                throw new TRPCError({
+                  code: 'FORBIDDEN',
+                  message: 'auth.errors.notAssignedToStore',
+                });
+              }
+            }
+          }
+        }
+
+        // Aggregate items across the new sessions only — these become
+        // the delta. The run state reducer merges them on top of
+        // whatever's already planned.
+        const items = await tx.query.orderItemsV.findMany({
+          where: (it, { inArray: inArray2 }) => inArray2(it.sessionId, dedupedNewIds),
+        });
+        const aggregated = new Map<string, number>();
+        for (const it of items) {
+          const qty = Number(it.qty);
+          if (qty <= 0) continue;
+          aggregated.set(it.skuId, (aggregated.get(it.skuId) ?? 0) + qty);
+        }
+        const addedPlannedItems = [...aggregated.entries()].map(([skuId, qty]) => ({
+          skuId,
+          qty: qty.toString(),
+        }));
+
+        // Replay the run aggregate, then decide AttachSessions.
+        const runEvents = (await readStream(tx, 'run', run.id)) as unknown as RunEvent[];
+        let runState = emptyRunState(run.id);
+        for (const e of runEvents) runState = applyRun(runState, e);
+        let producedEvents: RunEvent[];
+        try {
+          producedEvents = decideRun(runState, {
+            type: 'AttachSessions',
+            sessionIds: dedupedNewIds,
+            addedPlannedItems,
+            actor: actorFromCtx(ctx),
+          });
+        } catch (err) {
+          if (err instanceof DomainError) rethrowDomainError(err);
+          throw err;
+        }
+        await appendEvents(tx, {
+          streamType: 'run',
+          streamId: run.id,
+          orgId: ctx.session!.orgId,
+          events: producedEvents.map((e) => ({
+            type: e.type,
+            seq: e.seq,
+            payload: e.payload,
+            actorUserId: e.actorUserId,
+            actorMemberId: e.actorMemberId,
+            occurredAt: e.occurredAt,
+          })),
+        });
+        await projectRun(tx, ctx.session!.orgId, producedEvents);
+
+        // Move each attached session's stream from approved → in_run.
+        for (const sessionId of dedupedNewIds) {
+          const orderEvents = (await readStream(tx, 'order', sessionId)) as unknown as OrderEvent[];
+          let oState = emptyOrderState(sessionId);
+          for (const e of orderEvents) oState = applyOrder(oState, e);
+          const ev = decideOrder(oState, {
+            type: 'AttachToRun',
+            runId: run.id,
+            actor: {
+              userId: ctx.session!.userId,
+              memberId: ctx.session!.memberId,
+              permissions: ctx.session!.permissions,
+              isClaimer: oState.claimedByMemberId === ctx.session!.memberId,
+            },
+          });
+          if (ev.length > 0) {
+            await appendEvents(tx, {
+              streamType: 'order',
+              streamId: sessionId,
+              orgId: ctx.session!.orgId,
+              events: ev.map((e) => ({ ...e })),
+            });
+            await projectOrder(tx, ctx.session!.orgId, ev);
+          }
+        }
+
+        return {
+          runId: run.id,
+          attached: dedupedNewIds,
+          lastSeq: producedEvents[producedEvents.length - 1]?.seq ?? runState.seq,
+        };
+      });
+    }),
 
   list: authedProcedure.query(async ({ ctx }) => {
     return ctx.withOrg(async (tx) => {

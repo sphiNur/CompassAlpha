@@ -163,6 +163,16 @@ export function RunPage() {
     },
     onError: errToast('run.toast.couldNotPlan'),
   });
+  const attachSessions = trpc.run.attachSessions.useMutation({
+    onSuccess: () => {
+      void utils.run.get.invalidate();
+      void utils.run.previewCreatable.invalidate();
+      void utils.run.list.invalidate();
+      haptic('success');
+      toast.success(i18n.t('run.toast.sessionsAttached'));
+    },
+    onError: errToast('run.toast.couldNotAttach'),
+  });
   const startPurchase = trpc.run.startPurchase.useMutation({
     onSuccess: () => {
       void utils.run.list.invalidate();
@@ -928,6 +938,42 @@ export function RunPage() {
         </div>
       ) : null}
 
+      {/* M3.31 A.2 (2026-05-18): when the run is still mutable
+          (planned/purchasing) and new approved sessions have appeared
+          since the run was created, prompt the purchaser to attach
+          them. Mirrors the "what should I add" reality of midday top-
+          ups — the staff submitted late, the approver waved it
+          through, the purchaser is already at the bazaar. The button
+          merges every available session in one call; the mutation's
+          domain layer guards against duplicates. */}
+      {activeRun &&
+      (activeRun.status === 'planned' || activeRun.status === 'purchasing') &&
+      previewQuery.data?.sessions.length ? (
+        <div className="px-4 pt-2">
+          <Banner
+            tone="info"
+            title={i18n.t('run.attach.banner.title', {
+              n: previewQuery.data.sessions.length,
+            })}
+            action={
+              <Button
+                variant="pearl"
+                size="sm"
+                loading={attachSessions.isPending}
+                onClick={() =>
+                  attachSessions.mutate({
+                    runId: activeRun.id,
+                    sessionIds: previewQuery.data!.sessions.map((s) => s.id),
+                  })
+                }
+              >
+                {i18n.t('run.action.attachSessions')}
+              </Button>
+            }
+          />
+        </div>
+      ) : null}
+
       <div className="flex flex-col gap-2 px-4 pt-2">
       {!activeRun ? (
         <DataState query={previewQuery}>
@@ -1535,6 +1581,7 @@ function ActiveRunPanel({
         <PerVendorView
           run={run}
           skuById={skuById}
+          storeById={storeById}
           productName={productName}
           i18n={i18n}
         />
@@ -1581,6 +1628,25 @@ function ActiveRunPanel({
             })}
           </ul>
         </Card>
+      ) : null}
+
+      {/* M3.31 (2026-05-18, A.1): "其他物品" footer for the aggregate edit
+          surface too. Until this fix, staff-typed extras (structured
+          M3.16-C entries) disappeared from the purchaser's view the
+          moment a run started — they only existed in the preview
+          UI. Now they sit right under the per-SKU list so the
+          purchaser sees them while recording buys. */}
+      {(!showViewToggle ||
+        viewMode === 'aggregate' ||
+        (viewMode === 'perStore' && !showPerStore) ||
+        (viewMode === 'perVendor' && !showPerVendor)) &&
+      (run.status === 'planned' || run.status === 'purchasing') ? (
+        <RunExtrasCard
+          sessionExtrasByStore={run.sessionExtrasByStore}
+          sessionNotesByStore={run.sessionNotesByStore}
+          storeById={storeById}
+          i18n={i18n}
+        />
       ) : null}
 
       {run.status === 'delivering' && involvedStoreIds.length > 0 ? (
@@ -2409,20 +2475,49 @@ function PerStoreView({
                 })}
               </span>
             </div>
-            {/* M1.8: surface "其他物品" note here too, since this is the
-                view the purchaser scrolls store-by-store at the
-                market. */}
-            {storeNote ? (
-              /* M1.11: dropped the emoji-only "📝" eyebrow row — it was
-                  styled like a section label but had no text, so it just
-                  wasted ~20px above the actual note. The yellow-tinted
-                  bg-warn-bg already reads as "here is a session note". */
-              <div className="mx-4 mb-2 mt-1 rounded-[var(--r-card)] bg-[var(--c-warn-bg)] px-3 py-2 ring-hairline">
-                <div className="whitespace-pre-wrap text-body-sm leading-snug text-[var(--c-fg)]">
-                  {storeNote}
+            {/* M3.31 (2026-05-18, A.1): "其他物品" surfaces here in three
+                forms — M3.16-C structured extras (one row per item) +
+                M1.8 legacy free-text note + the section eyebrow. Until
+                this fix, the active-run views only rendered the legacy
+                storeNote; the structured extras (the format staff have
+                actually been using since M3.16-C) silently disappeared
+                between approval and the purchaser's screen. */}
+            {(() => {
+              const extras = run.sessionExtrasByStore?.[storeId] ?? [];
+              if (extras.length === 0 && !storeNote) return null;
+              return (
+                <div className="mx-4 mb-2 mt-1 rounded-[var(--r-card)] bg-[var(--c-warn-bg)] px-3 py-2 ring-hairline">
+                  <SectionLabel padded={false}>
+                    📝 {i18n.t('order.extras.label')}
+                  </SectionLabel>
+                  {extras.length > 0 ? (
+                    <ul className="mt-0.5 flex flex-col gap-0.5">
+                      {extras.map((e, idx) => (
+                        <li
+                          key={`${e.name}-${idx}`}
+                          className="flex items-baseline justify-between gap-2 text-body-sm"
+                        >
+                          <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">
+                            {e.name}
+                            {e.note ? (
+                              <span className="ml-1 text-[var(--c-fg-muted)]">· {e.note}</span>
+                            ) : null}
+                          </span>
+                          <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
+                            {e.qty} {e.unit}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {storeNote ? (
+                    <div className="mt-1 whitespace-pre-wrap text-body-sm italic leading-snug text-[var(--c-fg-muted)]">
+                      {storeNote}
+                    </div>
+                  ) : null}
                 </div>
-              </div>
-            ) : null}
+              );
+            })()}
             <ul className="flex flex-col" role="list">
               {rows
                 .map((r) => ({
@@ -2493,6 +2588,7 @@ function PerStoreView({
 function PerVendorView({
   run,
   skuById,
+  storeById,
   productName,
   i18n,
 }: {
@@ -2501,6 +2597,7 @@ function PerVendorView({
     string,
     { id: string; names: Record<string, string>; unit: string; step: string }
   >;
+  storeById: Map<string, { id: string; name: string; code: string | null }>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
   i18n: ReturnType<typeof useI18n>;
 }) {
@@ -2592,7 +2689,98 @@ function PerVendorView({
           </Card>
         );
       })}
+      {/* M3.31 (2026-05-18, A.1): extras footer. "其他物品" rows don't
+          carry a supplier link, so they naturally fall outside the
+          per-vendor buckets above. Render them in one card at the
+          bottom, grouped by store so the purchaser knows which store
+          asked for each one-off pickup. Without this section the
+          per-vendor view was structurally hiding all extras even
+          though run.get already ships them. */}
+      <RunExtrasCard
+        sessionExtrasByStore={run.sessionExtrasByStore}
+        sessionNotesByStore={run.sessionNotesByStore}
+        storeById={storeById}
+        i18n={i18n}
+      />
     </div>
+  );
+}
+
+/**
+ * Shared "其他物品" footer card used by the active-run by-vendor view
+ * and (in M3.31) the aggregate edit list. Renders each store's
+ * structured extras + legacy free-text note inside a single yellow-
+ * tinted block. Returns null when there are no extras and no notes
+ * anywhere — keeps the perVendor/aggregate trailing margin clean.
+ */
+function RunExtrasCard({
+  sessionExtrasByStore,
+  sessionNotesByStore,
+  storeById,
+  i18n,
+}: {
+  sessionExtrasByStore?: Record<
+    string,
+    Array<{ name: string; qty: string; unit: string; note?: string }>
+  >;
+  sessionNotesByStore?: Record<string, string>;
+  storeById: Map<string, { id: string; name: string; code: string | null }>;
+  i18n: ReturnType<typeof useI18n>;
+}) {
+  const resolveStoreName = (id: string) => storeById.get(id)?.name ?? id.slice(0, 8);
+  const storeIds = [
+    ...new Set([
+      ...Object.keys(sessionExtrasByStore ?? {}),
+      ...Object.keys(sessionNotesByStore ?? {}),
+    ]),
+  ].filter((id) => {
+    const extras = sessionExtrasByStore?.[id] ?? [];
+    const note = (sessionNotesByStore?.[id] ?? '').trim();
+    return extras.length > 0 || note.length > 0;
+  });
+  if (storeIds.length === 0) return null;
+  return (
+    <Card>
+      <SectionLabel meta="">📝 {i18n.t('order.extras.label')}</SectionLabel>
+      <div className="flex flex-col gap-3 px-4 pb-3">
+        {storeIds.map((storeId) => {
+          const extras = sessionExtrasByStore?.[storeId] ?? [];
+          const note = (sessionNotesByStore?.[storeId] ?? '').trim();
+          return (
+            <div key={storeId}>
+              <div className="mb-1 text-label font-semibold text-[var(--c-fg-muted)]">
+                🏪 {resolveStoreName(storeId)}
+              </div>
+              {extras.length > 0 ? (
+                <ul className="flex flex-col gap-0.5">
+                  {extras.map((e, idx) => (
+                    <li
+                      key={`${e.name}-${idx}`}
+                      className="flex items-baseline justify-between gap-2 text-body-sm"
+                    >
+                      <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">
+                        {e.name}
+                        {e.note ? (
+                          <span className="ml-1 text-[var(--c-fg-muted)]">· {e.note}</span>
+                        ) : null}
+                      </span>
+                      <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
+                        {e.qty} {e.unit}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {note ? (
+                <div className="mt-1 whitespace-pre-wrap text-body-sm italic leading-snug text-[var(--c-fg-muted)]">
+                  {note}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </Card>
   );
 }
 

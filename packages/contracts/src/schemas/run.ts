@@ -41,6 +41,18 @@ export const RunPreviewInputSchema = z.object({
 });
 
 /**
+ * M3.31 A.2 (2026-05-18): attach more approved sessions to an existing
+ * live run. Allowed in planned/purchasing only — see commands.ts. The
+ * API aggregates the new sessions' demand into addedPlannedItems and
+ * emits SessionsAttachedToRun on the run stream + AttachedToRun on
+ * each new session stream (mirroring run.create's two-stream pattern).
+ */
+export const RunAttachSessionsInputSchema = z.object({
+  runId: UuidSchema,
+  sessionIds: z.array(UuidSchema).min(1),
+});
+
+/**
  * M1.14 (2026-05-08): payment method per recorded purchase. Same run
  * can mix cash and transfer items — the FinishRun event aggregates per-
  * method totals on the read model so accounting can reconcile petty

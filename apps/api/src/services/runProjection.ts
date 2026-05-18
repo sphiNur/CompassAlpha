@@ -387,6 +387,53 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
           .set({ status: 'purchasing', lastSeq: e.seq, updatedAt: new Date() })
           .where(eq(s.marketRunsV.id, e.streamId));
         break;
+
+      case 'SessionsAttachedToRun': {
+        // M3.31 A.2 (2026-05-18). Two reads then writes:
+        //   1. Append the new session_ids to market_runs_v.session_ids_json
+        //      so subsequent run.get calls + projector replays see the
+        //      complete session list.
+        //   2. For each added planned item, UPSERT into run_items_v.
+        //      Existing rows (SKU already in run) accumulate plannedQty
+        //      additively; brand-new SKUs insert as pending.
+        const current = await db
+          .select({ sessionIdsJson: s.marketRunsV.sessionIdsJson })
+          .from(s.marketRunsV)
+          .where(eq(s.marketRunsV.id, e.streamId))
+          .limit(1);
+        const existingIds = (current[0]?.sessionIdsJson as unknown as string[] | null) ?? [];
+        const merged = [...existingIds, ...e.payload.sessionIds];
+        await db
+          .update(s.marketRunsV)
+          .set({
+            sessionIdsJson: merged as unknown as Record<string, unknown>,
+            lastSeq: e.seq,
+            updatedAt: new Date(),
+          })
+          .where(eq(s.marketRunsV.id, e.streamId));
+
+        for (const added of e.payload.addedPlannedItems) {
+          await db
+            .insert(s.runItemsV)
+            .values({
+              runId: e.streamId,
+              skuId: added.skuId,
+              plannedQty: added.qty,
+              status: 'pending' as const,
+            })
+            .onConflictDoUpdate({
+              target: [s.runItemsV.runId, s.runItemsV.skuId],
+              // Sum existing.planned_qty + delta. We can do it via SQL
+              // expression so the read-then-write race against a
+              // concurrent purchase doesn't lose data.
+              set: {
+                plannedQty: sql`${s.runItemsV.plannedQty} + ${added.qty}::numeric`,
+                updatedAt: new Date(),
+              },
+            });
+        }
+        break;
+      }
     }
   }
 }

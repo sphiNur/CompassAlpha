@@ -538,6 +538,127 @@ describe('run.reversals', () => {
     expect(s.status).toBe('planned');
   });
 
+  test('AttachSessions adds new SKUs and accumulates existing plannedQty (M3.31)', () => {
+    // Existing run with sku-1 planned 4kg; attach a session whose
+    // demand is sku-1 +2 and sku-2 +3. Expect plannedQty(sku-1)=6,
+    // pending row created for sku-2, sessionIds extended.
+    let state = emptyRunState('run-1');
+    state = decideRun(
+      state,
+      {
+        type: 'PlanRun',
+        orgId: 'org-1',
+        runDate: '2026-05-01',
+        runIndex: 0,
+        sessionIds: ['sess-A'],
+        plannedItems: [{ skuId: 'sku-1', qty: '4' }],
+        actor: purchaser(),
+      },
+      clock,
+    ).reduce(applyRun, state);
+    expect(state.sessionIds).toEqual(['sess-A']);
+    expect(state.items.get('sku-1')?.plannedQty).toBe('4');
+
+    state = decideRun(
+      state,
+      {
+        type: 'AttachSessions',
+        sessionIds: ['sess-B'],
+        addedPlannedItems: [
+          { skuId: 'sku-1', qty: '2' },
+          { skuId: 'sku-2', qty: '3' },
+        ],
+        actor: purchaser(),
+      },
+      clock,
+    ).reduce(applyRun, state);
+
+    expect(state.sessionIds).toEqual(['sess-A', 'sess-B']);
+    expect(state.items.get('sku-1')?.plannedQty).toBe('6');
+    expect(state.items.get('sku-2')?.plannedQty).toBe('3');
+    expect(state.items.get('sku-2')?.status).toBe('pending');
+  });
+
+  test('AttachSessions during purchasing keeps purchased items intact', () => {
+    // Plan + start + purchase sku-1 (4kg) → status=purchasing, sku-1=purchased.
+    // Attach session adding sku-1 +2 and sku-2 +5. sku-1 plannedQty
+    // grows to 6 but status stays 'purchased' and purchasedQty=4 is
+    // unchanged. sku-2 enters as pending.
+    let state = planAndPurchase();
+    expect(state.status).toBe('purchasing');
+    expect(state.items.get('sku-1')?.status).toBe('purchased');
+
+    state = decideRun(
+      state,
+      {
+        type: 'AttachSessions',
+        sessionIds: ['sess-late'],
+        addedPlannedItems: [
+          { skuId: 'sku-1', qty: '2' },
+          { skuId: 'sku-2', qty: '5' },
+        ],
+        actor: purchaser(),
+      },
+      clock,
+    ).reduce(applyRun, state);
+
+    const sku1 = state.items.get('sku-1')!;
+    expect(sku1.plannedQty).toBe('6');
+    expect(sku1.purchasedQty).toBe('4');
+    expect(sku1.status).toBe('purchased');
+    expect(state.items.get('sku-2')?.status).toBe('pending');
+  });
+
+  test('AttachSessions rejects duplicate session ids', () => {
+    let state = emptyRunState('run-1');
+    state = decideRun(
+      state,
+      {
+        type: 'PlanRun',
+        orgId: 'org-1',
+        runDate: '2026-05-01',
+        runIndex: 0,
+        sessionIds: ['sess-A'],
+        plannedItems: [{ skuId: 'sku-1', qty: '4' }],
+        actor: purchaser(),
+      },
+      clock,
+    ).reduce(applyRun, state);
+    expect(() =>
+      decideRun(
+        state,
+        {
+          type: 'AttachSessions',
+          sessionIds: ['sess-A'],
+          addedPlannedItems: [{ skuId: 'sku-1', qty: '2' }],
+          actor: purchaser(),
+        },
+        clock,
+      ),
+    ).toThrow('run.errors.sessionAlreadyInRun');
+  });
+
+  test('AttachSessions blocked once delivering', () => {
+    let state = planAndPurchase();
+    state = decideRun(state, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(
+      applyRun,
+      state,
+    );
+    expect(state.status).toBe('delivering');
+    expect(() =>
+      decideRun(
+        state,
+        {
+          type: 'AttachSessions',
+          sessionIds: ['sess-late'],
+          addedPlannedItems: [{ skuId: 'sku-2', qty: '1' }],
+          actor: purchaser(),
+        },
+        clock,
+      ),
+    ).toThrow('run.errors.cannotAttachInStatus');
+  });
+
   test('UndoStartPurchase preserves item-level purchase state when reverting (M3.29)', () => {
     // After M3.29 the "all items pending" gate was lifted — the user
     // can step back to planning to modify the run without losing what

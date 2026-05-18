@@ -261,6 +261,41 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
       return { ...state, seq: event.seq, status: 'planned' };
     case 'DeliveryStartUndone':
       return { ...state, seq: event.seq, status: 'purchasing' };
+    case 'SessionsAttachedToRun': {
+      // M3.31 A.2 (2026-05-18): merge additional demand into the run.
+      // Existing items grow in plannedQty; new SKUs get fresh pending
+      // rows. NEVER touch purchasedQty / status / unitPrice — those
+      // belong to the buyer's decisions. Numeric add as JS number is
+      // fine here: qty strings flow from the run.create aggregation
+      // which already does this kind of accumulation.
+      const items = new Map(state.items);
+      for (const p of event.payload.addedPlannedItems) {
+        const existing = items.get(p.skuId);
+        if (existing) {
+          const merged = (Number(existing.plannedQty) + Number(p.qty)).toString();
+          items.set(p.skuId, { ...existing, plannedQty: merged });
+        } else {
+          items.set(p.skuId, {
+            skuId: p.skuId,
+            plannedQty: p.qty,
+            purchasedQty: null,
+            supplierId: null,
+            unitPrice: null,
+            status: 'pending',
+            unavailableNote: null,
+            receiptPhotoUrl: null,
+            storeSplits: [],
+            paymentMethod: null,
+          });
+        }
+      }
+      return {
+        ...state,
+        seq: event.seq,
+        sessionIds: [...state.sessionIds, ...event.payload.sessionIds],
+        items,
+      };
+    }
 
     default: {
       const _x: never = event;

@@ -65,7 +65,17 @@ export type RunCommand =
   | { type: 'UndoPurchase'; skuId: string; reason?: string; actor: ActorCtx }
   | { type: 'UndeliverStore'; storeId: string; reason: string; actor: ActorCtx }
   | { type: 'UndoStartPurchase'; reason: string; actor: ActorCtx }
-  | { type: 'UndoStartDelivery'; reason: string; actor: ActorCtx };
+  | { type: 'UndoStartDelivery'; reason: string; actor: ActorCtx }
+  | {
+      // M3.31 A.2 (2026-05-18): attach approved sessions to a live run.
+      // `addedPlannedItems` is the pre-aggregated qty delta the API
+      // layer produced from the new sessions' orderItemsV rows; the
+      // domain trusts it (same trust we extend to RunPlanned).
+      type: 'AttachSessions';
+      sessionIds: string[];
+      addedPlannedItems: Array<{ skuId: string; qty: string }>;
+      actor: ActorCtx;
+    };
 
 export interface ActorCtx {
   userId: string;
@@ -497,6 +507,45 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
       if (reason.length > 500) throw validation('run.errors.noteTooLong');
       return [
         { ...baseFor(1), type: 'StoreDeliveryUndone', payload: { storeId: command.storeId, reason } },
+      ];
+    }
+
+    case 'AttachSessions': {
+      assertActive(state);
+      if (
+        !command.actor.permissions.has('run.create') &&
+        !command.actor.permissions.has('run.create.org')
+      ) {
+        throw forbidden('run.errors.cannotPlan');
+      }
+      if (state.status !== 'planned' && state.status !== 'purchasing') {
+        throw preconditionFailed('run.errors.cannotAttachInStatus', {
+          status: state.status,
+        });
+      }
+      if (command.sessionIds.length === 0) {
+        throw validation('run.errors.noSessionsToAttach');
+      }
+      // Reject sessions already in this run — duplicate attach would
+      // double-count their demand. The API layer already filters,
+      // but this is the defense-in-depth.
+      const existing = new Set(state.sessionIds);
+      for (const sid of command.sessionIds) {
+        if (existing.has(sid)) {
+          throw preconditionFailed('run.errors.sessionAlreadyInRun', {
+            sessionId: sid,
+          });
+        }
+      }
+      return [
+        {
+          ...baseFor(1),
+          type: 'SessionsAttachedToRun',
+          payload: {
+            sessionIds: command.sessionIds,
+            addedPlannedItems: command.addedPlannedItems,
+          },
+        },
       ];
     }
 

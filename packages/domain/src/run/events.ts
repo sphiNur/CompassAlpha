@@ -165,4 +165,21 @@ export type RunEvent =
       // been emitted. Run goes back to `purchasing`.
       type: 'DeliveryStartUndone';
       payload: { reason: string };
+    })
+  // ---- Mid-run additions (M3.31 A.2, 2026-05-18) -----------------------
+  | (BaseEvent & {
+      // Attaches additional approved order sessions to an existing run.
+      // Allowed in `planned` and `purchasing` (NOT once delivering — by
+      // that point splits are baked into store delivery plans and adding
+      // demand mid-stream would be opaque).
+      //
+      // `addedPlannedItems` is the AGGREGATED qty delta the projector
+      // applies on top of existing plannedQty. SKUs already present in
+      // the run grow; new SKUs get fresh pending rows. Purchased rows
+      // keep their purchasedQty/unitPrice; only plannedQty changes.
+      type: 'SessionsAttachedToRun';
+      payload: {
+        sessionIds: string[];
+        addedPlannedItems: Array<{ skuId: string; qty: string }>;
+      };
     });
