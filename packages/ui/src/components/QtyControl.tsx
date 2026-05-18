@@ -88,7 +88,18 @@ export function QtyControl({
 
   const adjust = useCallback(
     (direction: 1 | -1) => {
-      const next = clamp(roundToStep(value + direction * step, step), min, max);
+      // M3.35 (2026-05-19): previously this rounded `value + step` to a
+      // multiple of step. That meant a row already at 0.5 with step=1
+      // jumped to 2 on tap-+ (Math.round(1.5)=2), not 1.5 — and the
+      // display showed "1" via the lossy formatter below. Net effect:
+      // staff submitted 0.5 kg, approver opened in claim mode and saw
+      // "1 kg" without touching anything.
+      //
+      // Honest behavior: add `step` to the current value, trim float
+      // drift to 3 decimals (matches DB precision), clamp to [min,max].
+      // Off-step values stay off-step — the data is the data.
+      const raw = value + direction * step;
+      const next = clamp(Number(raw.toFixed(3)), min, max);
       if (next !== value) onChange(next);
     },
     [max, min, onChange, step, value],
@@ -537,7 +548,12 @@ function roundToStep(v: number, step: number): number {
   return Number((ratio * step).toFixed(3));
 }
 
-function formatQty(v: number, step: number): string {
-  if (step >= 1) return String(Math.round(v));
+function formatQty(v: number, _step: number): string {
+  // M3.35 (2026-05-19): display the actual value, not a step-snapped
+  // version. Previously `step >= 1` forced Math.round which turned a
+  // legitimate 0.5 kg into "1 kg" on screen — divergent from server
+  // truth. Trim to 3 decimals (DB precision), Number() strips trailing
+  // zeros so whole-step values still read as "3" rather than "3.000".
+  // `step` kept in signature so callers don't have to change.
   return String(Number(v.toFixed(3)));
 }
