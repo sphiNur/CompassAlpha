@@ -76,9 +76,51 @@ export async function dispatchOrderEventNotifications(
         });
         break;
       }
-      // Order events without notifications:
+      case 'Unapproved': {
+        // M3.33 (2026-05-18, Wave1 #10): previously silent. Owner saw
+        // their order revert from approved → submitted without a ping.
+        await notifyOwner(db, orgId, state, actorUserId, {
+          template: 'order.unapproved',
+          title: 'Order returned for review',
+          body:
+            e.payload.reason ||
+            'An approver reopened your order for review.',
+          dedupKey: `order:${state.streamId}:unapproved`,
+          deepLink: '/order',
+          payload: { reason: e.payload.reason },
+        });
+        break;
+      }
+      case 'Withdrawn': {
+        // M3.33: managers can override-withdraw a submitted order
+        // (commands.ts:393 `order.approve` branch). When that happens
+        // the owner needs to know their order is back to draft. Skipped
+        // when the actor IS the submitter (self-withdraw — they did it).
+        await notifyOwner(db, orgId, state, actorUserId, {
+          template: 'order.withdrawn',
+          title: 'Order returned to draft',
+          body: 'A manager pulled your submitted order back to draft.',
+          dedupKey: `order:${state.streamId}:withdrawn:${e.seq}`,
+          deepLink: '/order',
+        });
+        break;
+      }
+      case 'AttachedToRun': {
+        // M3.33: tell the submitter their order is now in a market run.
+        // Closes the "I submitted, waited, then never heard back" gap.
+        await notifyOwner(db, orgId, state, actorUserId, {
+          template: 'order.attachedToRun',
+          title: 'Order moved to a market run',
+          body: 'Your order is now being purchased.',
+          dedupKey: `order:${state.streamId}:attachedToRun:${e.payload.runId}`,
+          deepLink: '/order',
+          payload: { runId: e.payload.runId },
+        });
+        break;
+      }
+      // Order events still without notifications:
       //   DraftStarted, ItemAdjusted, ItemNoteSet, Claimed, ClaimReleased,
-      //   Withdrawn, Unapproved, AttachedToRun, EjectedFromRun, Archived
+      //   EjectedFromRun, Archived
       default:
         break;
     }
@@ -136,15 +178,86 @@ export async function dispatchRunEventNotifications(
             });
           }
         }
+        // M3.33 (2026-05-18, Wave1 #10): also notify the involved store
+        // staff that the run is closed — useful audit signal ("today's
+        // procurement done, no more arrivals coming") and matches the
+        // operator's mental model of finish = "everything that was
+        // going to arrive has arrived".
+        await notifyInvolvedStoreStaff(db, orgId, state, actorUserId, {
+          template: 'run.finishedStore',
+          title: 'Run finished',
+          body: 'Today\'s market run is closed — no further deliveries from this run.',
+          dedupKey: `run:${state.streamId}:finished:storeStaff`,
+          payload: { runId: state.streamId },
+          deepLink: '/confirm',
+        });
         break;
       }
-      // Run events without notifications:
+      case 'RunCancelled': {
+        // M3.33: cancellation flipped silent before — store staff who
+        // got a "delivery arrived" ping moments earlier had no clue
+        // the whole run was scrapped, and might confirm receipt
+        // against a cancelled run. Notify everyone touched by the run.
+        await notifyInvolvedStoreStaff(db, orgId, state, actorUserId, {
+          template: 'run.cancelled',
+          title: 'Run cancelled',
+          body:
+            e.payload.reason ??
+            'The market run was cancelled. Pending arrivals will not happen.',
+          dedupKey: `run:${state.streamId}:cancelled`,
+          payload: { runId: state.streamId, reason: e.payload.reason },
+          deepLink: '/run',
+        });
+        break;
+      }
+      // Run events still without notifications:
       //   PurchaseStarted, ItemPurchased, ItemUnavailable, DeliveryStarted,
-      //   StoreItemConfirmed, StoreConfirmed, RunCancelled
+      //   StoreItemConfirmed, StoreConfirmed
       default:
         break;
     }
   }
+}
+
+/**
+ * Fan out a notification to every store staff member touched by a run
+ * (across all sessions in the run's session list). Used by run-level
+ * lifecycle events (RunCancelled, RunFinished) where the store-staff
+ * who got the "delivery arrived" ping need a matching closing event.
+ *
+ * Skips the actor — the person who ran the command doesn't need to be
+ * told their own action just happened.
+ */
+async function notifyInvolvedStoreStaff(
+  db: DB,
+  orgId: string,
+  state: RunState,
+  actorUserId: string,
+  envelope: {
+    template: string;
+    title: string;
+    body: string;
+    dedupKey: string;
+    deepLink?: string;
+    payload?: Record<string, unknown>;
+  },
+): Promise<void> {
+  if (state.sessionIds.length === 0) return;
+  const sessions = await db.query.orderSessionsV.findMany({
+    where: (sess, { inArray }) => inArray(sess.id, state.sessionIds),
+    columns: { storeId: true },
+  });
+  const storeIds = [...new Set(sessions.map((s) => s.storeId))];
+  if (storeIds.length === 0) return;
+  const allUserIds = new Set<string>();
+  for (const storeId of storeIds) {
+    const recipients = await findStoreStaff(db, orgId, storeId);
+    for (const u of recipients) {
+      if (u !== actorUserId) allUserIds.add(u);
+    }
+  }
+  if (allUserIds.size === 0) return;
+  await dispatch(db, orgId, [...allUserIds], envelope);
 }
 
 /**

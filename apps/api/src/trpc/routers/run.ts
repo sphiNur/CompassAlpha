@@ -787,13 +787,47 @@ export const runRouter = router({
 
   list: authedProcedure.query(async ({ ctx }) => {
     return ctx.withOrg(async (tx) => {
+      // M3.33 (2026-05-18, Wave1 #2): store-scope filter. Org-tier
+      // (run.create.org / users.manage) sees every run in the org.
+      // Store-tier actors only see runs that touch a store they're
+      // bound to. Without this, a single-store manager could enumerate
+      // every other store's run-level metadata (runDate, sessionIds,
+      // purchaser, totals).
+      const allowedStoreIds = ctx.session!.permissions.has('run.create.org')
+        ? null
+        : await getActorStoreIds(
+            tx,
+            ctx.session!.memberId,
+            ctx.session!.permissions,
+          );
       const runs = await tx
         .select()
         .from(s.marketRunsV)
         .where(eq(s.marketRunsV.orgId, ctx.session!.orgId))
         .orderBy(desc(s.marketRunsV.runDate), desc(s.marketRunsV.runIndex))
         .limit(50);
-      return runs;
+      if (allowedStoreIds === null) return runs;
+      if (allowedStoreIds.length === 0) return [];
+      // Resolve every involved storeId in one shot — cheap join on a
+      // bounded result set. Filter runs whose sessions touch any
+      // allowed store.
+      const allSessionIds = [
+        ...new Set(runs.flatMap((r) => (r.sessionIdsJson as unknown as string[]) ?? [])),
+      ];
+      if (allSessionIds.length === 0) return [];
+      const sessionStoreRows = await tx.query.orderSessionsV.findMany({
+        where: (sess, { inArray }) => inArray(sess.id, allSessionIds),
+        columns: { id: true, storeId: true },
+      });
+      const sessionStore = new Map(sessionStoreRows.map((r) => [r.id, r.storeId]));
+      const allowed = new Set(allowedStoreIds);
+      return runs.filter((r) => {
+        const ids = (r.sessionIdsJson as unknown as string[]) ?? [];
+        return ids.some((sid) => {
+          const storeId = sessionStore.get(sid);
+          return storeId !== undefined && allowed.has(storeId);
+        });
+      });
     });
   }),
 
@@ -802,6 +836,32 @@ export const runRouter = router({
     .query(async ({ ctx, input }) => {
       return ctx.withOrg(async (tx) => {
         const run = await loadRun(tx, ctx.session!.orgId, input.runId);
+
+        // M3.33 (2026-05-18, Wave1 #2): store-scope check. Org-tier
+        // bypasses; store-tier actors can only read runs whose sessions
+        // touch at least one store they're bound to. Without this,
+        // anyone with a runId could read its full demand + extras
+        // (cross-store information leak — paired with the same fix
+        // on run.list).
+        if (!ctx.session!.permissions.has('run.create.org')) {
+          const allowedStoreIds = await getActorStoreIds(
+            tx,
+            ctx.session!.memberId,
+            ctx.session!.permissions,
+          );
+          if (allowedStoreIds !== null) {
+            const involvedStoreIds = await runInvolvedStoreIds(tx, run);
+            const allowed = new Set(allowedStoreIds);
+            const overlap = involvedStoreIds.some((sid) => allowed.has(sid));
+            if (!overlap) {
+              throw new TRPCError({
+                code: 'NOT_FOUND',
+                message: 'run.errors.notVisible',
+              });
+            }
+          }
+        }
+
         const items = await tx.query.runItemsV.findMany({
           where: (i, { eq: eq2 }) => eq2(i.runId, run.id),
         });
@@ -1515,6 +1575,25 @@ export const runRouter = router({
 
   ejectSession: authedProcedure.input(EjectSessionInputSchema).mutation(async ({ ctx, input }) => {
     return ctx.withOrg(async (tx) => {
+      // M3.33 (2026-05-18, Wave1 #3): scope check. Without this, any
+      // actor with run.eject_session could pop another store's
+      // session out of a run regardless of their store binding.
+      // Match the gate already on runSimpleCommand-driven actions.
+      const session = await tx.query.orderSessionsV.findFirst({
+        where: (sess, { eq: eq2, and: and2 }) =>
+          and2(eq2(sess.id, input.sessionId), eq2(sess.orgId, ctx.session!.orgId)),
+        columns: { storeId: true },
+      });
+      if (!session) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'order.errors.sessionMissing' });
+      }
+      await assertActorAssignedToStore(
+        tx,
+        ctx.session!.memberId,
+        session.storeId,
+        ctx.session!.permissions,
+      );
+
       const runEvents = (await readStream(tx, 'run', input.runId)) as unknown as RunEvent[];
       let runState = emptyRunState(input.runId);
       for (const e of runEvents) runState = applyRun(runState, e);
@@ -1626,6 +1705,29 @@ async function loadRun(db: import('@compass/db').DB, orgId: string, runId: strin
   });
   if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'run.errors.streamMissing' });
   return row;
+}
+
+/**
+ * Resolve every storeId touched by a run's sessions (DISTINCT). Used by
+ * run.get / run.list / ejectSession store-scope checks (M3.33 Wave1 #2+#3).
+ * The session_ids_json column is the source of truth; sessions can be
+ * eject-removed but we deliberately do NOT drop them from the JSON
+ * (sessionIds remains the historical attachment ledger). For scope
+ * checking we treat both still-attached and historically-attached
+ * sessions as "involved" — eject doesn't revoke the operator's right
+ * to see what they previously planned for.
+ */
+async function runInvolvedStoreIds(
+  db: import('@compass/db').DB,
+  run: { sessionIdsJson: unknown },
+): Promise<string[]> {
+  const sessionIds = (run.sessionIdsJson as unknown as string[] | null) ?? [];
+  if (sessionIds.length === 0) return [];
+  const rows = await db.query.orderSessionsV.findMany({
+    where: (sess, { inArray }) => inArray(sess.id, sessionIds),
+    columns: { storeId: true },
+  });
+  return [...new Set(rows.map((r) => r.storeId))];
 }
 
 function isUniqueViolation(err: unknown): boolean {

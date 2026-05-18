@@ -538,6 +538,54 @@ describe('run.reversals', () => {
     expect(s.status).toBe('planned');
   });
 
+  test('StartPurchase without run.purchase permission throws (M3.33 #11)', () => {
+    let s = emptyRunState('r1');
+    s = decideRun(
+      s,
+      {
+        type: 'PlanRun',
+        orgId: 'o',
+        runDate: '2026-05-01',
+        runIndex: 0,
+        sessionIds: ['s'],
+        plannedItems: [{ skuId: 'k', qty: '1' }],
+        actor: purchaser(),
+      },
+      clock,
+    ).reduce(applyRun, s);
+    const noPurchasePerm: ActorCtx = {
+      userId: 'u-x',
+      memberId: 'm-x',
+      permissions: new Set(['run.create']),
+    };
+    expect(() =>
+      decideRun(s, { type: 'StartPurchase', actor: noPurchasePerm }, clock),
+    ).toThrow('run.errors.cannotPurchase');
+  });
+
+  test('PurchaseItem blocked when run.status === delivering (M3.33 #12)', () => {
+    let s = planAndPurchase();
+    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
+    expect(s.status).toBe('delivering');
+    expect(() =>
+      decideRun(
+        s,
+        {
+          type: 'PurchaseItem',
+          skuId: 'sku-1',
+          supplierId: 'sup-1',
+          unitPrice: '5000',
+          actualQty: '2',
+          receiptPhotoUrl: null,
+          storeSplits: [{ storeId: 'A', qty: '2' }],
+          paymentMethod: 'cash',
+          actor: purchaser(),
+        },
+        clock,
+      ),
+    ).toThrow('run.errors.runFrozen');
+  });
+
   test('AttachSessions adds new SKUs and accumulates existing plannedQty (M3.31)', () => {
     // Existing run with sku-1 planned 4kg; attach a session whose
     // demand is sku-1 +2 and sku-2 +3. Expect plannedQty(sku-1)=6,

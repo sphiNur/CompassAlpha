@@ -209,6 +209,26 @@ describe('order.decide (per-contributor lines)', () => {
     );
   });
 
+  test('Submit allowed when only extras present (no SKU rows) — M3.33 #6', () => {
+    // Extras-only order: every line item is a "其他物品" entry, no
+    // catalog SKU has been added. Before M3.33 this threw
+    // 'emptyOrder'. Now the order can be submitted just on extras.
+    const memA = staff(['order.draft', 'order.submit'], 'mem-A');
+    let state = startedDraft('sess-1', memA);
+    state = decide(
+      state,
+      {
+        type: 'SetSessionExtras',
+        extras: [{ name: '辣椒粉', qty: '200', unit: 'g' }],
+        actor: memA,
+      },
+      { clock },
+    ).reduce(apply, state);
+    const events = decide(state, { type: 'Submit', actor: memA }, { clock });
+    expect(events).toHaveLength(1);
+    expect(events[0]!.type).toBe('Submitted');
+  });
+
   test('non-owner cannot submit even with order.submit perm', () => {
     // 0005 gate. Mode B keeps sessions private — only the owner can
     // submit. memberB has the perm but doesn't own this session.

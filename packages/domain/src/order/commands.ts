@@ -281,8 +281,17 @@ export function decide(
       if (state.status !== 'draft' && state.status !== 'rejected') {
         throw preconditionFailed('order.errors.notSubmittable', { status: state.status });
       }
+      // M3.33 (2026-05-18, Wave1 #6): an order with zero SKU rows but
+      // non-empty `其他物品` extras is a legitimate submission — the
+      // staff member is asking the purchaser to grab a one-off item
+      // that hasn't been promoted to a catalog SKU yet. Before this
+      // fix, submitting an extras-only batch threw `emptyOrder` and
+      // the staff had to fake-add a SKU just to get past the gate.
       const itemCount = countNonZero(state);
-      if (itemCount === 0) throw validation('order.errors.emptyOrder');
+      const hasExtras = state.extras.length > 0;
+      if (itemCount === 0 && !hasExtras) {
+        throw validation('order.errors.emptyOrder');
+      }
       return [
         {
           ...baseFor(1, 'Submitted'),

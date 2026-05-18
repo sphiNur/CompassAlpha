@@ -614,6 +614,19 @@ export const orderRouter = router({
       }
 
       await projectOrder(tx, ctx.session!.orgId, collected);
+      // M3.33 (2026-05-18, Wave1 #9): publish order.changed so other
+      // tabs / contributors editing the same session refetch. Until
+      // this fix, adjustItem was the only mutation path that skipped
+      // the realtime fanout — concurrent +/- by two staff on the same
+      // store session would stay invisible to each other until manual
+      // refetch. runSimpleCommand already publishes on every other
+      // order mutation (submit/claim/approve/reject/withdraw/etc).
+      hub.publish(ctx.session!.orgId, {
+        type: 'order.changed',
+        orgId: ctx.session!.orgId,
+        sessionId: streamId,
+        lastSeq: state.seq,
+      });
       return { sessionId: streamId, lastSeq: state.seq, applied: collected.map((e) => e.type) };
     });
   }),

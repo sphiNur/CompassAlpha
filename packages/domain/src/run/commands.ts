@@ -127,6 +127,13 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
 
     case 'StartPurchase':
       assertActive(state);
+      // M3.33 (2026-05-18, Wave1 #11): perm check was missing — any
+      // authed member able to reach this stream could transition the
+      // run into purchasing. Now matches the perm gate on every other
+      // purchaser action (PurchaseItem, MarkUnavailable, etc).
+      if (!command.actor.permissions.has('run.purchase')) {
+        throw forbidden('run.errors.cannotPurchase');
+      }
       if (state.status !== 'planned') {
         throw preconditionFailed('run.errors.cannotStartPurchase', { status: state.status });
       }
@@ -137,7 +144,13 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
       if (!command.actor.permissions.has('run.purchase')) {
         throw forbidden('run.errors.cannotPurchase');
       }
-      if (state.status === 'finished' || state.status === 'cancelled') {
+      // M3.33 (2026-05-18, Wave1 #12): block PurchaseItem in `delivering`
+      // status too — before this fix the dispatcher could start delivery
+      // while the purchaser kept recording buys, producing split rows
+      // the dispatcher had no awareness of. `planned` is still allowed
+      // because the command auto-emits PurchaseStarted (atomic first
+      // buy on a fresh run).
+      if (state.status !== 'planned' && state.status !== 'purchasing') {
         throw preconditionFailed('run.errors.runFrozen', { status: state.status });
       }
       const item = state.items.get(command.skuId);
