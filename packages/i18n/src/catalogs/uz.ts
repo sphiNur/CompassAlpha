@@ -508,7 +508,6 @@ export const uz = {
   'run.deliveryStageBadge.delivered': 'yetkazildi',
   'run.deliveryStageBadge.confirmed': 'tasdiqlandi',
   'run.purchase.priceInputPlaceholder': 'narx',
-  'run.view.aggregate': 'Mahsulot bo‘yicha',
   'run.previewView.overall': 'Umumiy',
   'run.previewView.byStore': "Do'kon bo'yicha",
   'run.previewView.bySupplier': "Sotuvchi bo'yicha",

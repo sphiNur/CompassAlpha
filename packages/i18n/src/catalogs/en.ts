@@ -558,7 +558,6 @@ export const en = {
   'run.deliveryStageBadge.delivered': 'delivered',
   'run.deliveryStageBadge.confirmed': 'confirmed',
   'run.purchase.priceInputPlaceholder': 'price',
-  'run.view.aggregate': 'Aggregate',
   'run.view.perStore': 'Per store',
   'run.view.perVendor': 'Per vendor',
   // Plan-time preview views (M1.5).

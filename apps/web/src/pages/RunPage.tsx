@@ -1436,22 +1436,25 @@ function ActiveRunPanel({
 
   return (
     <div className="flex flex-col gap-2">
-      {/* View-mode toggle — shown when the run spans either multiple
-          stores OR multiple vendor buckets. Single-everything runs
-          short-circuit to aggregate. M3.27 added the by-vendor chip. */}
+      {/* View-mode toggle — M3.28 (2026-05-18): dropped the "Aggregate"
+          chip per user feedback. The aggregate view is the editing
+          surface where price/qty get recorded; it's not a "view" the
+          user thinks about toggling INTO. They wanted just two view
+          chips ("by store", "by vendor") that they can toggle ON to
+          see the run grouped, and toggle OFF to return to the
+          edit-able aggregate. Tapping a selected chip deselects it.
+          Shown only when the run actually spans multiple stores OR
+          multiple vendor buckets — a single-store / single-vendor run
+          short-circuits straight to aggregate. */}
       {showViewToggle ? (
         <div className="border-b border-[var(--c-divider)] bg-[var(--c-bg)] py-1">
           <ChipBar ariaLabel="Run view mode">
-            <Chip
-              selected={viewMode === 'aggregate'}
-              onClick={() => setViewModePersist('aggregate')}
-            >
-              {i18n.t('run.view.aggregate')}
-            </Chip>
             {showPerStore ? (
               <Chip
                 selected={viewMode === 'perStore'}
-                onClick={() => setViewModePersist('perStore')}
+                onClick={() =>
+                  setViewModePersist(viewMode === 'perStore' ? 'aggregate' : 'perStore')
+                }
               >
                 {i18n.t('run.view.perStore')}
               </Chip>
@@ -1459,7 +1462,9 @@ function ActiveRunPanel({
             {showPerVendor ? (
               <Chip
                 selected={viewMode === 'perVendor'}
-                onClick={() => setViewModePersist('perVendor')}
+                onClick={() =>
+                  setViewModePersist(viewMode === 'perVendor' ? 'aggregate' : 'perVendor')
+                }
               >
                 {i18n.t('run.view.perVendor')}
               </Chip>

@@ -494,7 +494,6 @@ export const ru = {
   'run.deliveryStageBadge.delivered': 'доставлено',
   'run.deliveryStageBadge.confirmed': 'подтв.',
   'run.purchase.priceInputPlaceholder': 'цена',
-  'run.view.aggregate': 'По товарам',
   'run.previewView.overall': 'Сводно',
   'run.previewView.byStore': 'По магазинам',
   'run.previewView.bySupplier': 'По поставщикам',

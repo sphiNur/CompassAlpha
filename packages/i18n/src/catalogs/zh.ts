@@ -458,7 +458,6 @@ export const zh = {
   'run.deliveryStageBadge.delivered': '已送达',
   'run.deliveryStageBadge.confirmed': '已确认',
   'run.purchase.priceInputPlaceholder': '价格',
-  'run.view.aggregate': '按物品',
   'run.previewView.overall': '整体',
   'run.previewView.byStore': '按店铺',
   'run.previewView.bySupplier': '按摊位',
