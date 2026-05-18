@@ -1,4 +1,4 @@
-import { eq, and, gte, sql } from 'drizzle-orm';
+import { eq, and, gte, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { schema as s } from '@compass/db';
 import { SkuListInputSchema } from '@compass/contracts';
@@ -114,8 +114,15 @@ export const catalogRouter = router({
             and(
               eq(s.priceHistory.orgId, orgId),
               gte(s.priceHistory.observedAt, since30),
+              // M3.23-fix (2026-05-18): was `sql\`... = ANY(${arr})\`` — Drizzle's
+              // tagged template binds a JS array as a single parameter, but PG
+              // expects an actual array type on the right of ANY(). Result:
+              // `op ANY/ALL (array) requires array on right side` (500). Same
+              // failure mode that run.ts hit in M1.9; the fix is the same —
+              // use `inArray()` which expands to `IN ($1, $2, ...)` with one
+              // bound parameter per element.
               input?.skuIds && input.skuIds.length > 0
-                ? sql`${s.priceHistory.skuId} = ANY(${input.skuIds})`
+                ? inArray(s.priceHistory.skuId, input.skuIds)
                 : undefined,
             ),
           )
