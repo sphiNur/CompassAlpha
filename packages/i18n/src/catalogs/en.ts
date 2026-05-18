@@ -560,6 +560,7 @@ export const en = {
   'run.purchase.priceInputPlaceholder': 'price',
   'run.view.aggregate': 'Aggregate',
   'run.view.perStore': 'Per store',
+  'run.view.perVendor': 'Per vendor',
   // Plan-time preview views (M1.5).
   'run.previewView.overall': 'Overall',
   'run.previewView.byStore': 'By store',

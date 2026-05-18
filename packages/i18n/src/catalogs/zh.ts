@@ -477,6 +477,7 @@ export const zh = {
   'run.previewSupplier.assigned': '摊位已设置',
   'run.previewSupplier.cleared': '已清除摊位',
   'run.view.perStore': '按门店',
+  'run.view.perVendor': '按摊位',
   'run.view.perStoreHint': '只读视图 — 切换视图不会重复采购,这是同一份数据的两种展示。',
   'run.step.plan': '计划',
   'run.step.purchase': '采购',

@@ -729,6 +729,54 @@ export const runRouter = router({
             });
           }
         }
+
+        // M3.27 (2026-05-18): preferred-supplier mapping for the
+        // active-run "by vendor" view. Mirrors previewCreatable's
+        // logic verbatim (preview/active should always agree on which
+        // stall an item is routed to). Only one DISTINCT ON query
+        // for all SKUs in the run.
+        const runSkuIds = items.map((it) => it.skuId);
+        const supplierBySku: Record<string, {
+          id: string;
+          name: string;
+          contactPhone: string | null;
+          contactTg: string | null;
+        } | null> = {};
+        if (runSkuIds.length > 0) {
+          const rows = await tx.execute<{
+            sku_id: string;
+            supplier_id: string;
+            name: string;
+            contact_phone: string | null;
+            contact_tg: string | null;
+          }>(sql`
+            SELECT DISTINCT ON (sl.sku_id)
+              sl.sku_id, sl.supplier_id,
+              sup.name, sup.contact_phone, sup.contact_tg
+            FROM inventory.sku_supplier_links sl
+            INNER JOIN inventory.suppliers sup ON sup.id = sl.supplier_id
+            WHERE sl.sku_id IN ${runSkuIds}
+              AND sup.is_archived = false
+              AND sl.is_preferred = true
+            ORDER BY sl.sku_id,
+                     sl.last_seen_at DESC NULLS LAST
+          `);
+          const list = Array.isArray(rows)
+            ? rows
+            : ((rows as { rows?: typeof rows }).rows ?? []);
+          for (const r of list) {
+            supplierBySku[r.sku_id] = {
+              id: r.supplier_id,
+              name: r.name,
+              contactPhone: r.contact_phone,
+              contactTg: r.contact_tg,
+            };
+          }
+          for (const sid of runSkuIds) {
+            if (!(sid in supplierBySku)) supplierBySku[sid] = null;
+          }
+        }
+
         // Most-recent observed unit_price per SKU, across all past runs.
         // Pre-fills the inline price input when the user records a buy
         // — saves the typing if the market price hasn't changed since
@@ -762,6 +810,7 @@ export const runRouter = router({
           lastPriceBySku,
           sessionNotesByStore,
           sessionExtrasByStore,
+          supplierBySku,
         };
       });
     }),

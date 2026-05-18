@@ -529,6 +529,7 @@ export const uz = {
   'run.previewSupplier.assigned': "Sotuvchi belgilandi",
   'run.previewSupplier.cleared': "Sotuvchi olib tashlandi",
   'run.view.perStore': "Do'kon bo'yicha",
+  'run.view.perVendor': "Sotuvchi bo'yicha",
   'run.view.perStoreHint':
     "Faqat o'qish uchun — ko'rinishni almashtirish takroriy xaridga olib kelmaydi, bu bir xil ma'lumotning ikki ko'rinishi.",
   'run.step.plan': 'Reja',

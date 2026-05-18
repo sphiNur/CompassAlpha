@@ -1249,6 +1249,13 @@ interface ActiveRun {
     string,
     Array<{ name: string; qty: string; unit: string; note?: string }>
   >;
+  /** M3.27: preferred-supplier per SKU (mirrors preview.supplierBySku),
+   *  powers the active-run "by vendor" view. Null entries = SKUs
+   *  with no preferred link — bucketed under "unassigned" in the FE. */
+  supplierBySku?: Record<
+    string,
+    { id: string; name: string; contactPhone: string | null; contactTg: string | null } | null
+  >;
 }
 
 // formatQty / formatMoney are imported from `../lib/format` —
@@ -1376,15 +1383,19 @@ function ActiveRunPanel({
    * Toggle hidden when the run only spans 1 store (per-store view
    * would be a single card with the same content as aggregate).
    */
-  const [viewMode, setViewMode] = useState<'aggregate' | 'perStore'>(() => {
+  // M3.27 (2026-05-18): third view mode — "perVendor". Same persistence
+  // key; old values 'aggregate'|'perStore' continue to round-trip.
+  type ViewMode = 'aggregate' | 'perStore' | 'perVendor';
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
     try {
       const saved = localStorage.getItem('compass.run.viewMode');
-      return saved === 'perStore' ? 'perStore' : 'aggregate';
+      if (saved === 'perStore' || saved === 'perVendor') return saved;
+      return 'aggregate';
     } catch {
       return 'aggregate';
     }
   });
-  const setViewModePersist = (mode: 'aggregate' | 'perStore') => {
+  const setViewModePersist = (mode: ViewMode) => {
     setViewMode(mode);
     try {
       localStorage.setItem('compass.run.viewMode', mode);
@@ -1403,14 +1414,31 @@ function ActiveRunPanel({
     }
     return [...ids];
   }, [run.perStoreDemand, run.splits]);
+  // Distinct suppliers (including unassigned bucket) across the run's
+  // SKUs — gates whether the vendor toggle is worth showing.
+  const distinctSupplierCount = useMemo(() => {
+    if (!run.supplierBySku) return 0;
+    const ids = new Set<string>();
+    for (const it of run.items) {
+      ids.add(run.supplierBySku[it.skuId]?.id ?? '__unassigned__');
+    }
+    return ids.size;
+  }, [run.items, run.supplierBySku]);
+  // M3.27 (2026-05-18): showing perStore needs ≥2 stores; showing
+  // perVendor needs ≥2 supplier buckets (including unassigned). The
+  // toggle itself shows when either condition holds — even if only
+  // one of the two extra views would be useful, the user can pick.
+  const showPerStore = demandStoreIds.length >= 2;
+  const showPerVendor = distinctSupplierCount >= 2;
   const showViewToggle =
     (run.status === 'planned' || run.status === 'purchasing') &&
-    demandStoreIds.length >= 2;
+    (showPerStore || showPerVendor);
 
   return (
     <div className="flex flex-col gap-2">
-      {/* View-mode toggle — only shown when the run actually spans
-          multiple stores. Single-store runs short-circuit to aggregate. */}
+      {/* View-mode toggle — shown when the run spans either multiple
+          stores OR multiple vendor buckets. Single-everything runs
+          short-circuit to aggregate. M3.27 added the by-vendor chip. */}
       {showViewToggle ? (
         <div className="border-b border-[var(--c-divider)] bg-[var(--c-bg)] py-1">
           <ChipBar ariaLabel="Run view mode">
@@ -1420,20 +1448,26 @@ function ActiveRunPanel({
             >
               {i18n.t('run.view.aggregate')}
             </Chip>
-            <Chip
-              selected={viewMode === 'perStore'}
-              onClick={() => setViewModePersist('perStore')}
-            >
-              {i18n.t('run.view.perStore')}
-            </Chip>
+            {showPerStore ? (
+              <Chip
+                selected={viewMode === 'perStore'}
+                onClick={() => setViewModePersist('perStore')}
+              >
+                {i18n.t('run.view.perStore')}
+              </Chip>
+            ) : null}
+            {showPerVendor ? (
+              <Chip
+                selected={viewMode === 'perVendor'}
+                onClick={() => setViewModePersist('perVendor')}
+              >
+                {i18n.t('run.view.perVendor')}
+              </Chip>
+            ) : null}
           </ChipBar>
-          {/* M1.11: dropped run.view.perStoreHint — the chip labels
-              ("Aggregate" / "Per store") plus the body that swaps below
-              are already self-explanatory. The hint was a third visual
-              row competing with the chip-bar for the user's eye. */}
         </div>
       ) : null}
-      {showViewToggle && viewMode === 'perStore' ? (
+      {showViewToggle && viewMode === 'perStore' && showPerStore ? (
         <PerStoreView
           run={run}
           storeById={storeById}
@@ -1442,7 +1476,18 @@ function ActiveRunPanel({
           skusByStore={skusByStore}
         />
       ) : null}
-      {(!showViewToggle || viewMode === 'aggregate') &&
+      {showViewToggle && viewMode === 'perVendor' && showPerVendor ? (
+        <PerVendorView
+          run={run}
+          skuById={skuById}
+          productName={productName}
+          i18n={i18n}
+        />
+      ) : null}
+      {(!showViewToggle ||
+        viewMode === 'aggregate' ||
+        (viewMode === 'perStore' && !showPerStore) ||
+        (viewMode === 'perVendor' && !showPerVendor)) &&
       (run.status === 'planned' || run.status === 'purchasing') && run.items.length > 0 ? (
         <Card>
           {/* M2.1: SectionLabel (was 3-line ad-hoc div). Same visual,
@@ -2364,6 +2409,126 @@ function PerStoreView({
                       <span className="min-w-0 flex-1 truncate text-body">{skuName}</span>
                       <span className="shrink-0 font-mono text-body tabular-nums text-[var(--c-fg-muted)]">
                         {formatQty(r.qty)} {r.sku?.unit ?? ''}
+                      </span>
+                    </li>
+                  );
+                })}
+            </ul>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Per-vendor read-only view for an ACTIVE run (M3.27, 2026-05-18).
+ *
+ * Mirrors `PerStoreView`'s look-and-feel but groups by the preferred
+ * supplier resolved server-side (`run.supplierBySku`). SKUs with no
+ * preferred link land in an "Unassigned" bucket so single-buy items
+ * stay visible. Rows show the same status mark (·/✓/✗) the per-store
+ * view uses, so the purchaser can see at a glance which stalls still
+ * have outstanding work.
+ *
+ * Read-only: actual purchase recording happens in the aggregate view.
+ * Switching to per-vendor at the bazaar is for "what do I still need
+ * from stall X" planning, not for editing.
+ */
+function PerVendorView({
+  run,
+  skuById,
+  productName,
+  i18n,
+}: {
+  run: ActiveRun;
+  skuById: Map<
+    string,
+    { id: string; names: Record<string, string>; unit: string; step: string }
+  >;
+  productName: (item: { names: Record<string, string> | null | undefined }) => string;
+  i18n: ReturnType<typeof useI18n>;
+}) {
+  // Bucket run.items by their preferred supplier (id) or '__unassigned__'.
+  const buckets = useMemo(() => {
+    type Bucket = {
+      supplierId: string | null;
+      supplierName: string;
+      items: Array<{ skuId: string; plannedQty: string; status: string }>;
+    };
+    const m = new Map<string, Bucket>();
+    for (const it of run.items) {
+      const sup = run.supplierBySku?.[it.skuId] ?? null;
+      const key = sup?.id ?? '__unassigned__';
+      const bucket = m.get(key) ?? {
+        supplierId: sup?.id ?? null,
+        supplierName: sup?.name ?? i18n.t('run.previewSupplier.unassigned'),
+        items: [],
+      };
+      bucket.items.push({
+        skuId: it.skuId,
+        plannedQty: it.plannedQty,
+        status: it.status,
+      });
+      m.set(key, bucket);
+    }
+    // Real vendors first (alphabetical), unassigned last.
+    return [...m.values()].sort((a, b) => {
+      if (a.supplierId && !b.supplierId) return -1;
+      if (!a.supplierId && b.supplierId) return 1;
+      return a.supplierName.localeCompare(b.supplierName);
+    });
+  }, [run.items, run.supplierBySku, i18n]);
+
+  return (
+    <div className="flex flex-col gap-2">
+      {buckets.map((b) => {
+        const totalQty = b.items.reduce((s, r) => s + Number(r.plannedQty || 0), 0);
+        return (
+          <Card key={b.supplierId ?? '__unassigned__'}>
+            <div className="flex items-baseline justify-between gap-2 px-4 py-1.5 text-label text-[var(--c-fg-muted)]">
+              <span className="truncate text-body font-semibold text-[var(--c-fg)]">
+                {b.supplierId ? `🛒 ${b.supplierName}` : `❓ ${b.supplierName}`}
+              </span>
+              <span className="tabular-nums">
+                {i18n.t('run.label.skuCountAndQty', {
+                  n: b.items.length,
+                  qty: formatQty(String(totalQty)),
+                })}
+              </span>
+            </div>
+            <ul className="flex flex-col" role="list">
+              {b.items
+                .map((r) => ({ ...r, sku: skuById.get(r.skuId) }))
+                .sort((a, c) => {
+                  const ai = a.sku ? 0 : 1;
+                  const bi = c.sku ? 0 : 1;
+                  if (ai !== bi) return ai - bi;
+                  const an = a.sku ? productName(a.sku) : a.skuId;
+                  const bn = c.sku ? productName(c.sku) : c.skuId;
+                  return an.localeCompare(bn);
+                })
+                .map((r) => {
+                  const skuName = r.sku ? productName(r.sku) : r.skuId.slice(0, 8);
+                  const tone =
+                    r.status === 'purchased'
+                      ? 'text-[var(--c-success)]'
+                      : r.status === 'unavailable'
+                        ? 'text-[var(--c-danger)]'
+                        : 'text-[var(--c-fg-muted)]';
+                  const mark =
+                    r.status === 'purchased' ? '✓' : r.status === 'unavailable' ? '✗' : '·';
+                  return (
+                    <li
+                      key={r.skuId}
+                      className="flex items-center gap-2 border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0"
+                    >
+                      <span aria-hidden className={`shrink-0 text-body ${tone}`}>
+                        {mark}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-body">{skuName}</span>
+                      <span className="shrink-0 font-mono text-body tabular-nums text-[var(--c-fg-muted)]">
+                        {formatQty(r.plannedQty)} {r.sku?.unit ?? ''}
                       </span>
                     </li>
                   );

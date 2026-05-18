@@ -515,6 +515,7 @@ export const ru = {
   'run.previewSupplier.assigned': 'Поставщик назначен',
   'run.previewSupplier.cleared': 'Поставщик снят',
   'run.view.perStore': 'По магазинам',
+  'run.view.perVendor': 'По поставщикам',
   'run.view.perStoreHint':
     'Только просмотр — переключение видов не создаёт повторных покупок, это одни и те же данные.',
   'run.step.plan': 'План',
