@@ -78,14 +78,19 @@ export const orderSessionsV = readModelSchema.table(
       .defaultNow(),
   },
   (t) => ({
-    /** Per-(org, store, member, date) — restored 0005 (2026-05-04) so
-     *  each staff drafts + submits their own private order. */
-    orgStoreMemberDateUnique: uniqueIndex('osv_org_store_member_date_unique').on(
-      t.orgId,
-      t.storeId,
-      t.initiatedByMemberId,
-      t.orderDate,
-    ),
+    /** M3.32 (2026-05-18): the historical unique was unconditional —
+     *  one row per (member, store, date) across ALL statuses. Migration
+     *  0026 rewrites it to be partial: at most one ROW IN DRAFT STATUS
+     *  per (member, store, date). Once the staff submits, the row's
+     *  status moves off 'draft', so a brand-new draft for the same
+     *  (member, store, date) can be created — enabling the multi-
+     *  batch-per-day workflow the user asked for in the architectural
+     *  review (Q3). Submitted/approved/rejected/in_run rows accumulate
+     *  unbounded; run.previewCreatable aggregates whatever's approved.
+     */
+    orgStoreMemberDateDraftUnique: uniqueIndex('osv_org_store_member_date_draft_unique')
+      .on(t.orgId, t.storeId, t.initiatedByMemberId, t.orderDate)
+      .where(sql`status = 'draft'`),
     orgStatusDateIdx: index('osv_org_status_date_idx').on(t.orgId, t.status, t.orderDate),
     runIdx: index('osv_run_idx').on(t.runId),
   }),

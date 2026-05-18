@@ -104,8 +104,13 @@ export const orderRouter = router({
       const date = input.date ?? todayInOrgTz();
       // 0005 (2026-05-04): per-member sessions. Each staff sees ONLY
       // their own draft for this (store, date) — never another staff's.
-      // The unique index now keys on initiated_by_member_id, so multiple
-      // sessions can co-exist; this query picks the requesting user's.
+      // M3.32 (2026-05-18): multi-batch-per-day support (migration 0026)
+      // means a (member, store, date) can carry multiple session rows
+      // — at most one in 'draft' status, plus N already-submitted /
+      // approved / etc. This query returns the OPEN draft if one
+      // exists; if the user has already submitted everything for
+      // today, returns null and the FE shows an empty-state with a
+      // "start a new batch" affordance.
       const session = await tx.query.orderSessionsV.findFirst({
         where: (sess, { eq: eq2, and: and2 }) =>
           and2(
@@ -113,6 +118,7 @@ export const orderRouter = router({
             eq2(sess.storeId, input.storeId),
             eq2(sess.orderDate, date),
             eq2(sess.initiatedByMemberId, ctx.session!.memberId),
+            eq2(sess.status, 'draft'),
           ),
       });
       if (!session) return null;
@@ -484,6 +490,11 @@ export const orderRouter = router({
       //                    `assertCanEditSession` then verifies the
       //                    actor is the claimer of that session.
       const ownerForLookup = input.targetMemberId ?? ctx.session!.memberId;
+      // M3.32 (2026-05-18): only an OPEN DRAFT is a candidate for
+      // adjust. Multi-batch-per-day (migration 0026) means submitted /
+      // approved / etc. rows can coexist with a fresh draft — without
+      // this status filter, findFirst could surface a stale submitted
+      // session and the next AdjustItem would fail status guards.
       let session = await tx.query.orderSessionsV.findFirst({
         where: (sess, { eq: eq2, and: and2 }) =>
           and2(
@@ -491,6 +502,7 @@ export const orderRouter = router({
             eq2(sess.storeId, input.storeId),
             eq2(sess.orderDate, date),
             eq2(sess.initiatedByMemberId, ownerForLookup),
+            eq2(sess.status, 'draft'),
           ),
       });
 

@@ -183,6 +183,13 @@
       "when": 1779100800000,
       "tag": "0025_session_previous_claimer",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1779180000000,
+      "tag": "0026_order_session_partial_unique",
+      "breakpoints": true
     }
   ]
 }
