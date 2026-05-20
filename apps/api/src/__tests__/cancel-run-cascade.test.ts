@@ -150,6 +150,7 @@ let fix: Fixture | null = null;
     userId: cancellerUser!.id,
     memberId: cancellerMember!.id,
     orgId: org!.id,
+    orgTimezone: 'UTC',
     permissions: new Set(['run.create']),
     roleSlugs: new Set(['canceller']),
   };

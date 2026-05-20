@@ -13,6 +13,7 @@ import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { schema as s } from '@compass/db';
 import { ADMIN_RANK, GrantRoleInputSchema, UuidSchema } from '@compass/contracts';
+import { dateInTz, todayInTz } from '@compass/domain';
 import { authedProcedure, router } from '../trpc';
 import { hub } from '../../realtime/hub';
 
@@ -4095,10 +4096,16 @@ export const adminRouter = router({
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
         const limit = input?.limit ?? 50;
+        // D.1 (M3.39, 2026-05-20): default date range is "today and the
+        // previous 30 days", both expressed in the ORG's timezone. The
+        // previous UTC-based default could put `toDate` one day behind
+        // the user's local calendar for any UZ-tenant request between
+        // 00:00 and 05:00 UTC.
+        const tz = ctx.session!.orgTimezone;
         const sevenDaysOrFrom =
           input?.fromDate ??
-          new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-        const toDate = input?.toDate ?? new Date().toISOString().slice(0, 10);
+          dateInTz(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), tz);
+        const toDate = input?.toDate ?? todayInTz(tz);
 
         // Only sessions that progressed past draft are "submissions".
         // We use a raw query so we can express the date range + status

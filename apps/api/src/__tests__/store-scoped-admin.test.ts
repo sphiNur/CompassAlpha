@@ -207,6 +207,7 @@ beforeAll(async () => {
     userId: superUser!.id,
     memberId: superMember!.id,
     orgId: org.id,
+    orgTimezone: 'UTC',
     permissions: new Set(seedRoles.find((r) => r.slug === 'super_admin')!.perms),
     roleSlugs: new Set(['super_admin']),
   };
@@ -278,6 +279,7 @@ async function sessionFor(memberId: string, userId: string): Promise<SessionCont
     userId,
     memberId,
     orgId: fix.orgId,
+    orgTimezone: 'UTC',
     permissions: new Set(),
     roleSlugs: new Set(),
   };

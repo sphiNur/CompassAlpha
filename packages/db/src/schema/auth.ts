@@ -24,7 +24,15 @@ export const organizations = authSchema.table(
     name: varchar('name', { length: 200 }).notNull(),
     plan: varchar('plan', { length: 32 }).notNull().default('free'),
     localeDefault: varchar('locale_default', { length: 16 }).notNull().default('en'),
-    timezone: varchar('timezone', { length: 64 }).notNull().default('UTC'),
+    /**
+     * IANA timezone (e.g. 'Asia/Tashkent', 'Europe/Moscow'). Drives the
+     * "today's date" key used to bucket orders / runs / daily reports.
+     * Default 'Asia/Tashkent' as of D.1 (M3.39, 2026-05-20) — the
+     * launch tenant lives in UZ; the prior 'UTC' default silently
+     * rolled the day boundary at 5am local. Migration 0028 backfilled
+     * existing UTC-defaulted rows.
+     */
+    timezone: varchar('timezone', { length: 64 }).notNull().default('Asia/Tashkent'),
     /**
      * M1.17 (2026-05-08) — financial foundation columns:
      *

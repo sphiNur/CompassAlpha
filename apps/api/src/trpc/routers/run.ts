@@ -49,9 +49,16 @@ import { projectRun } from '../../services/runProjection';
 import { projectOrder } from '../../services/orderProjection';
 import { hub } from '../../realtime/hub';
 import { dispatchRunEventNotifications } from '../../services/notifyForEvent';
+import { todayInTz } from '@compass/domain';
 
-function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
+/**
+ * Today as YYYY-MM-DD in the session's ORG timezone. D.1 (M3.39,
+ * 2026-05-20) — was UTC-only, which caused new runs created between
+ * 00:00 and (org-offset) UTC to land under yesterday's runDate key
+ * for UZ tenants. Same helper shape as order.ts:todayInOrgTz.
+ */
+function todayStr(ctx: { session: { orgTimezone: string } | null }): string {
+  return todayInTz(ctx.session?.orgTimezone ?? 'UTC');
 }
 
 export const runRouter = router({
@@ -498,7 +505,7 @@ export const runRouter = router({
   // "create run" action so network retry doesn't create two runs.
   create: idempotentMutation.input(RunCreateInputSchema).mutation(async ({ ctx, input }) => {
     return ctx.withOrg(async (tx) => {
-      const date = input.date ?? todayStr();
+      const date = input.date ?? todayStr(ctx);
       // Determine next runIndex for the day (re-runs produce runIndex=1, 2, ...).
       const existing = await tx.query.marketRunsV.findMany({
         where: (r, { eq: eq2, and: and2 }) =>

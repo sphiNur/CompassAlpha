@@ -10,6 +10,15 @@ export interface SessionContext {
   userId: string;
   memberId: string;
   orgId: string;
+  /**
+   * IANA timezone for the org — D.1 (M3.39, 2026-05-20). Drives "today's
+   * date" calculations in order.todaySession / run.create / submit
+   * defaults. Loaded alongside member/permissions so every router can
+   * resolve the right day boundary without a per-request roundtrip.
+   * Defaults to 'UTC' if the org row is missing (defensive only — the
+   * column is NOT NULL with a default, so this branch is unreachable).
+   */
+  orgTimezone: string;
   permissions: ReadonlySet<string>;
   roleSlugs: ReadonlySet<string>;
 }
@@ -101,10 +110,21 @@ export async function loadSession(
       })
     : [];
 
+  // D.1 (M3.39, 2026-05-20): pull the org's timezone alongside the
+  // member/perms lookup so routers can resolve "today" correctly. The
+  // organizations row is cached at the db driver level for this
+  // request; a single round-trip in addition to the member fetch.
+  const org = await db.query.organizations.findFirst({
+    where: (o, { eq: eq2 }) => eq2(o.id, orgId),
+    columns: { timezone: true },
+  });
+  const orgTimezone = org?.timezone ?? 'UTC';
+
   return {
     userId,
     memberId,
     orgId,
+    orgTimezone,
     roleSlugs: new Set(bindings.map((b) => b.role.slug)),
     permissions: new Set(perms.map((p) => p.permissionKey)),
   };

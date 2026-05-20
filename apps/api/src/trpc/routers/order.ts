@@ -45,11 +45,17 @@ import {
   getActorStoreIds,
 } from '../../services/storeScope';
 import { hub } from '../../realtime/hub';
+import { todayInTz } from '@compass/domain';
 
-function todayInOrgTz(): string {
-  // For M0 we accept the server's UTC date. Org-local date support comes
-  // when we wire org.timezone into req ctx (M1).
-  return new Date().toISOString().slice(0, 10);
+/**
+ * Today's date as YYYY-MM-DD in the SESSION'S ORG timezone.
+ * D.1 (M3.39, 2026-05-20) — replaced the M0 UTC-only stub that was
+ * silently rolling the day boundary at 5am Tashkent local. The session
+ * carries `orgTimezone` (populated in context.ts:loadSession from
+ * organizations.timezone, default 'Asia/Tashkent' post migration 0028).
+ */
+function todayInOrgTz(ctx: { session: { orgTimezone: string } | null }): string {
+  return todayInTz(ctx.session?.orgTimezone ?? 'UTC');
 }
 
 function buildActor(
@@ -102,7 +108,7 @@ export const orderRouter = router({
         ctx.session!.permissions,
       );
 
-      const date = input.date ?? todayInOrgTz();
+      const date = input.date ?? todayInOrgTz(ctx);
       // 0005 (2026-05-04): per-member sessions. Each staff sees ONLY
       // their own draft for this (store, date) — never another staff's.
       // M3.32 (2026-05-18): multi-batch-per-day support (migration 0026)
@@ -452,7 +458,7 @@ export const orderRouter = router({
 
   /** Adjust an item qty. Lazy-creates a draft if none exists for today. */
   adjustItem: authedProcedure.input(AdjustItemInputSchema).mutation(async ({ ctx, input }) => {
-    const date = input.date ?? todayInOrgTz();
+    const date = input.date ?? todayInOrgTz(ctx);
     return ctx.withOrg(async (tx) => {
       // Verify store ownership.
       const store = await tx.query.stores.findFirst({
@@ -904,15 +910,20 @@ export const orderRouter = router({
         // session, then we GROUP BY the name. The 30-day window
         // mirrors the historical price report; long enough to cover
         // seasonal items, short enough that stale typos drop off.
+        // D.1 (M3.39, 2026-05-20): the cutoff is now org-tz-aware —
+        // previously `current_date` here resolved to UTC midnight,
+        // dropping rows from the user's calendar yesterday whenever
+        // the API was hit between 00:00 and (org-offset) UTC.
         type Row = { name: string; cnt: number };
         const search = (input.search ?? '').trim().toLowerCase();
+        const today = todayInOrgTz(ctx);
         const rows = await tx.execute<Row>(sql`
           SELECT lower(elem->>'name') AS name, count(*)::int AS cnt
           FROM read_model.order_sessions_v s
           CROSS JOIN LATERAL jsonb_array_elements(s.extras_json) AS elem
           WHERE s.org_id = ${ctx.session!.orgId}::uuid
             AND s.store_id = ${input.storeId}::uuid
-            AND s.order_date >= (current_date - interval '30 days')
+            AND s.order_date >= (${today}::date - interval '30 days')
             AND elem->>'name' IS NOT NULL
             ${search ? sql`AND lower(elem->>'name') LIKE ${'%' + search + '%'}` : sql``}
           GROUP BY lower(elem->>'name')
