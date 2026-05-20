@@ -356,11 +356,27 @@ export function RunPage() {
     onError: errToast('common.error'),
   });
   const cancelRun = trpc.run.cancel.useMutation({
-    onSuccess: () => {
+    onSuccess: (result) => {
       void utils.run.list.invalidate();
       void utils.run.get.invalidate();
-      haptic('success');
-      toast.success(i18n.t('run.toast.runCancelled'));
+      // Wave2 #15 (M3.40, 2026-05-20): the server returns
+      // `ejectionFailures: [{ sessionId, reason }]` for any session
+      // that couldn't be released cleanly during the cancel cascade.
+      // Pre-M3.40 the FE silently showed a success toast and the
+      // operator never learned about the orphaned sessions. Now: if
+      // anything failed, show a warning. The worker's repair sweep
+      // will pick those up within the next CLAIM_TIMEOUT_SCAN_MS, so
+      // we tell the operator "they'll be auto-released shortly".
+      const failures = result?.ejectionFailures?.length ?? 0;
+      if (failures > 0) {
+        haptic('warning');
+        toast.info(
+          i18n.t('run.toast.runCancelledWithOrphans', { n: failures }),
+        );
+      } else {
+        haptic('success');
+        toast.success(i18n.t('run.toast.runCancelled'));
+      }
     },
     onError: errToast('common.error'),
   });

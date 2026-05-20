@@ -509,11 +509,34 @@ export function decide(
 
     case 'EjectFromRun': {
       assertActiveStream(state);
-      if (state.status !== 'in_run' || state.runId !== command.runId) {
-        throw preconditionFailed('order.errors.cannotEject', { status: state.status });
-      }
       if (!command.actor.permissions.has('run.eject_session')) {
         throw forbidden('order.errors.cannotEject');
+      }
+      // Wave2 #15 (M3.40, 2026-05-20): make ejection IDEMPOTENT and
+      // SOFTLY NO-OP when the session has already drifted out of the
+      // expected (in_run + matching runId) state. Previously this
+      // threw preconditionFailed, which was the original "cancel-run
+      // leaves orphans" failure mode: the run.cancel cascade tried to
+      // eject every attached session, and any single mismatch threw
+      // a DomainError that the cascade's catch swallowed silently,
+      // leaving the session stuck in `in_run`.
+      //
+      // Behavior matrix:
+      //   - status='in_run' AND runId === command.runId  → emit event (the
+      //     normal success path).
+      //   - status='approved' / runId=null               → idempotent no-op
+      //     (caller already got what it wanted from a prior run).
+      //   - status='in_run' but runId !== command.runId  → no-op (the
+      //     session has been re-attached to a different run; ejecting
+      //     against the OLD runId would be a lie).
+      //   - any other status (draft/submitted/rejected/archived)       → no-op
+      //     (caller is racing against another workflow; not our job to
+      //     destabilize it).
+      // The repair worker (Wave2 #15 part B) sweeps for stuck sessions
+      // and emits a fresh EjectFromRun targeted at the CURRENT runId,
+      // so misalignments self-heal.
+      if (state.status !== 'in_run' || state.runId !== command.runId) {
+        return [];
       }
       return [
         {

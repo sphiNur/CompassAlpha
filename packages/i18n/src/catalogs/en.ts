@@ -727,6 +727,12 @@ export const en = {
   'run.toast.purchaseUndone': 'Purchase undone — back to pending',
   'run.toast.deliveryRecalled': 'Delivery recalled',
   'run.toast.runCancelled': 'Run cancelled',
+  // Wave2 #15 (M3.40, 2026-05-20): shown when run.cancel completes but
+  // one or more sessions failed to eject cleanly. The repair worker
+  // sweep picks them up within ~5 min so the operator doesn't need
+  // to act — just informational.
+  'run.toast.runCancelledWithOrphans':
+    'Run cancelled — {n} session(s) will auto-release shortly',
   'run.toast.startPurchaseUndone': 'Back to plan',
   'run.toast.startDeliveryUndone': 'Back to purchase',
   'run.toast.runFinished': 'Run finished',

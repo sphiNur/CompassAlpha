@@ -648,6 +648,9 @@ export const ru = {
   'run.toast.purchaseUndone': 'Покупка отменена — возвращено в ожидание',
   'run.toast.deliveryRecalled': 'Доставка отозвана',
   'run.toast.runCancelled': 'Закупка отменена',
+  // Wave2 #15 (M3.40, 2026-05-20)
+  'run.toast.runCancelledWithOrphans':
+    'Закупка отменена — {n} заказ(ов) будут освобождены автоматически',
   'run.toast.startPurchaseUndone': 'Назад к плану',
   'run.toast.startDeliveryUndone': 'Назад к закупке',
   'run.toast.runFinished': 'Закупка завершена',

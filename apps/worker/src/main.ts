@@ -634,6 +634,114 @@ async function releaseStaleRunClaims(): Promise<number> {
   return released;
 }
 
+/**
+ * Wave2 #15 (M3.40, 2026-05-20): repair orphaned sessions left in
+ * `in_run` whose parent run is `cancelled` or `finished`. The
+ * run.cancel cascade and run.finish cascade both eject sessions
+ * inline, but a single-session decideOrder failure in those loops
+ * historically left orphans behind. M3.40 also loosened
+ * EjectFromRun's preconditions to make those failures vanish — this
+ * sweep catches any drift from BEFORE that fix shipped, plus
+ * defense against future regression.
+ *
+ * Idempotent. Emits `EjectedFromRun{reason:'repair'}` so audit can
+ * distinguish post-hoc repairs from in-cascade ejects. byMemberId is
+ * null since there's no human actor (mirrors the timeout-release
+ * pattern in releaseStaleClaims).
+ */
+async function repairOrphanedSessions(): Promise<number> {
+  // Cheap candidate scan — joins sessions to their run row and filters
+  // to the orphan condition. 100-row cap keeps any single sweep bounded.
+  const candidates = (await db.execute(sql`
+    SELECT
+      sess.id AS session_id,
+      sess.org_id,
+      sess.last_seq,
+      sess.run_id
+    FROM read_model.order_sessions_v sess
+    JOIN read_model.market_runs_v run
+      ON run.id = sess.run_id
+    WHERE sess.status = 'in_run'
+      AND run.status IN ('cancelled', 'finished')
+    ORDER BY sess.updated_at
+    LIMIT 100
+  `)) as unknown as Array<{
+    session_id: string;
+    org_id: string;
+    last_seq: number;
+    run_id: string;
+  }>;
+  if (candidates.length === 0) return 0;
+
+  let repaired = 0;
+  for (const row of candidates) {
+    try {
+      const ok = await db.transaction(async (tx) => {
+        // Re-check under row lock — another tx may have ejected this
+        // session between our SELECT and now (e.g. a follow-up manual
+        // cancel run cascade ran).
+        const fresh = (await tx.execute(sql`
+          SELECT last_seq, status, run_id
+          FROM read_model.order_sessions_v
+          WHERE id = ${row.session_id}
+          FOR UPDATE
+        `)) as unknown as Array<{
+          last_seq: number;
+          status: string;
+          run_id: string | null;
+        }>;
+        const cur = fresh[0];
+        if (!cur || cur.status !== 'in_run' || !cur.run_id) return false;
+
+        const newSeq = cur.last_seq + 1;
+        const occurredAt = new Date();
+        // Append the repair event directly. Skipping decideOrder()
+        // here is intentional — the domain layer would re-validate
+        // a permission set that doesn't exist in the worker context
+        // (no actor). The projector below mirrors the apply() +
+        // EjectedFromRun branch of orderProjection.ts.
+        await tx.insert(s.events).values({
+          id: randomUUID(),
+          orgId: row.org_id,
+          streamType: 'order',
+          streamId: row.session_id,
+          seq: newSeq,
+          type: 'EjectedFromRun',
+          payload: {
+            runId: cur.run_id,
+            byMemberId: null,
+            reason: 'repair',
+          },
+          actorId: null,
+          occurredAt,
+          correlationId: null,
+          causationId: null,
+          idempotencyKey: null,
+        });
+        await tx
+          .update(s.orderSessionsV)
+          .set({
+            status: 'approved',
+            runId: null,
+            lastSeq: newSeq,
+            updatedAt: occurredAt,
+          })
+          .where(eq(s.orderSessionsV.id, row.session_id));
+        return true;
+      });
+      if (ok) {
+        repaired++;
+        console.log(
+          `[worker] orphaned session repaired: session=${row.session_id} fromRun=${row.run_id}`,
+        );
+      }
+    } catch (err) {
+      console.error('[worker] repair-orphaned-session failed for', row.session_id, err);
+    }
+  }
+  return repaired;
+}
+
 async function cleanupIdempotencyKeys(): Promise<number> {
   // Delete every row whose expires_at is in the past. The index
   // idem_expires_idx makes this O(matches) not O(table). The DELETE
@@ -699,6 +807,20 @@ async function loop() {
           }
         } catch (err) {
           console.error('[worker] run claim timeout sweep failed', err);
+        }
+        // Wave2 #15 (M3.40, 2026-05-20): orphaned-session repair. Same
+        // cadence as the claim sweep — cheap query, bounded result,
+        // very low expected match rate (only catches drift from before
+        // the EjectFromRun loosening shipped, or future regressions).
+        try {
+          const repaired = await repairOrphanedSessions();
+          if (repaired > 0) {
+            console.log(
+              `[worker] orphaned-session repair: ${repaired} session(s) ejected from cancelled/finished runs`,
+            );
+          }
+        } catch (err) {
+          console.error('[worker] orphaned-session repair failed', err);
         }
         lastClaimTimeoutScan = Date.now();
       }

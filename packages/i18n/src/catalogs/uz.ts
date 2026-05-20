@@ -663,6 +663,9 @@ export const uz = {
   'run.toast.purchaseUndone': "Xarid bekor qilindi — kutishga qaytdi",
   'run.toast.deliveryRecalled': "Yetkazish qaytarildi",
   'run.toast.runCancelled': "Xarid bekor qilindi",
+  // Wave2 #15 (M3.40, 2026-05-20)
+  'run.toast.runCancelledWithOrphans':
+    "Xarid bekor qilindi — {n} ta buyurtma avtomatik chiqariladi",
   'run.toast.startPurchaseUndone': "Rejaga qaytdi",
   'run.toast.startDeliveryUndone': "Xaridga qaytdi",
   'run.toast.runFinished': "Xarid tugadi",

@@ -603,6 +603,9 @@ export const zh = {
   'run.toast.purchaseUndone': '已撤销采购，恢复为待采购',
   'run.toast.deliveryRecalled': '已撤回配送',
   'run.toast.runCancelled': '已取消整张采购单',
+  // Wave2 #15 (M3.40, 2026-05-20)
+  'run.toast.runCancelledWithOrphans':
+    '已取消采购单 — 还有 {n} 个订单会被后台自动释放',
   'run.toast.startPurchaseUndone': '已回到计划阶段',
   'run.toast.startDeliveryUndone': '已回到采购阶段',
   'run.toast.runFinished': '采购已结束',
