@@ -1996,6 +1996,11 @@ function ActiveRunPanel({
           storeById={storeById}
           productName={productName}
           i18n={i18n}
+          priceInThousands={priceInThousands}
+          demandBySku={demandBySku}
+          onSavePurchaseInline={onSavePurchaseInline}
+          onMarkNa={onMarkNa}
+          onUndoPurchase={onUndoPurchase}
           onOpenAdvancedPurchase={onOpenAdvancedPurchase}
           onEditPurchased={onEditPurchased}
           onUnmark={onUnmark}
@@ -3010,6 +3015,11 @@ function PerVendorView({
   storeById,
   productName,
   i18n,
+  priceInThousands,
+  demandBySku,
+  onSavePurchaseInline,
+  onMarkNa,
+  onUndoPurchase,
   onOpenAdvancedPurchase,
   onEditPurchased,
   onUnmark,
@@ -3023,12 +3033,24 @@ function PerVendorView({
   storeById: Map<string, { id: string; name: string; code: string | null }>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
   i18n: ReturnType<typeof useI18n>;
-  /** M3.36 #1 (2026-05-19): make rows tappable. Pending → open the
-   *  advanced PurchaseSheet for price entry (matches the aggregate
-   *  view's "qty mismatch → sheet" fallback). Purchased → open the
-   *  edit-revise variant. Unavailable → confirm "mark available
-   *  again". Was read-only before — the user reported that switching
-   *  to perVendor at the bazaar locked them out of recording prices. */
+  /** M3.43 (2026-05-22): per-vendor view now reuses the SAME inline
+   *  PurchaseRow component the aggregate view uses, so the purchaser
+   *  can type qty + price + ✓ Save directly inside the vendor card —
+   *  no more sheet-roundtrip per row. The original M3.36 tap-row →
+   *  sheet pattern is preserved as the FALLBACK for rows whose qty
+   *  diverges from the planned demand (handled by PurchaseRow
+   *  internally via onOpenAdvanced). */
+  priceInThousands: boolean;
+  demandBySku: Map<string, Array<{ storeId: string; qty: string }>>;
+  onSavePurchaseInline: (payload: {
+    skuId: string;
+    actualQty: string;
+    unitPrice: string;
+    storeSplits: Array<{ storeId: string; qty: string }>;
+    paymentMethod: 'cash' | 'transfer';
+  }) => void;
+  onMarkNa: (skuId: string) => void;
+  onUndoPurchase: (skuId: string, skuName: string) => void;
   onOpenAdvancedPurchase: (item: ActiveRun['items'][number]) => void;
   onEditPurchased: (item: ActiveRun['items'][number]) => void;
   onUnmark: (skuId: string, skuName: string) => void;
@@ -3091,6 +3113,20 @@ function PerVendorView({
               {b.items
                 .map((r) => ({ ...r, sku: skuById.get(r.skuId) }))
                 .sort((a, c) => {
+                  // M3.43: keep pending rows on top so the purchaser
+                  // sees what's left to buy at this stall before the
+                  // already-resolved (purchased / N/A) rows below. The
+                  // aggregate view sorts by sortIndex; here the stall
+                  // grouping makes "still TODO at this stall" the
+                  // more useful first-line ordering.
+                  const order: Record<string, number> = {
+                    pending: 0,
+                    purchased: 1,
+                    unavailable: 2,
+                  };
+                  const oa = order[a.status] ?? 3;
+                  const ob = order[c.status] ?? 3;
+                  if (oa !== ob) return oa - ob;
                   const ai = a.sku ? 0 : 1;
                   const bi = c.sku ? 0 : 1;
                   if (ai !== bi) return ai - bi;
@@ -3100,59 +3136,49 @@ function PerVendorView({
                 })
                 .map((r) => {
                   const skuName = r.sku ? productName(r.sku) : r.skuId.slice(0, 8);
-                  const tone =
-                    r.status === 'purchased'
-                      ? 'text-[var(--c-success)]'
-                      : r.status === 'unavailable'
-                        ? 'text-[var(--c-danger)]'
-                        : 'text-[var(--c-fg-muted)]';
-                  const mark =
-                    r.status === 'purchased' ? '✓' : r.status === 'unavailable' ? '✗' : '·';
-                  // M3.36 #1: lookup the full runItem so we can route
-                  // taps into onOpenAdvancedPurchase / onEditPurchased.
-                  // `r` here is the bucket subset; run.items is the
-                  // source of truth for unitPrice / paymentMethod /
-                  // supplierId fields the sheet needs.
+                  // M3.43 (2026-05-22): reuse PurchaseRow inline so the
+                  // purchaser can record qty+price+✓ at the stall without
+                  // a sheet roundtrip. PurchaseRow handles all three row
+                  // states (pending input, purchased read-only with edit,
+                  // unavailable with unmark) and the auto-split logic
+                  // against `demand`. Per-vendor view now lives up to its
+                  // original purpose: standing at stall X, see everything
+                  // I'm buying here, type prices in one go.
                   const runItem = run.items.find((it) => it.skuId === r.skuId);
-                  const handleClick = () => {
-                    if (!runItem) return;
-                    if (r.status === 'pending') onOpenAdvancedPurchase(runItem);
-                    else if (r.status === 'purchased') onEditPurchased(runItem);
-                    else if (r.status === 'unavailable') onUnmark(r.skuId, skuName);
-                  };
-                  // Only show prices in purchasing — planned has none yet.
-                  const showPurchased =
-                    r.status === 'purchased' && runItem?.unitPrice && runItem?.purchasedQty;
-                  const inner = (
-                    <>
-                      <span aria-hidden className={`shrink-0 text-body ${tone}`}>
-                        {mark}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-body">{skuName}</span>
-                      <span className="shrink-0 font-mono text-body tabular-nums text-[var(--c-fg-muted)]">
-                        {showPurchased
-                          ? `${formatQty(runItem!.purchasedQty)} ${r.sku?.unit ?? ''}`
-                          : `${formatQty(r.plannedQty)} ${r.sku?.unit ?? ''}`}
-                      </span>
-                    </>
-                  );
+                  if (!runItem) {
+                    // Defensive — the bucket was derived from run.items;
+                    // if lookup fails, render a read-only stub instead
+                    // of crashing.
+                    return (
+                      <li
+                        key={r.skuId}
+                        className="flex items-center gap-2 border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0"
+                      >
+                        <span className="min-w-0 flex-1 truncate text-body">{skuName}</span>
+                        <span className="shrink-0 font-mono text-body tabular-nums text-[var(--c-fg-muted)]">
+                          {formatQty(r.plannedQty)} {r.sku?.unit ?? ''}
+                        </span>
+                      </li>
+                    );
+                  }
                   return (
-                    <li
+                    <PurchaseRow
                       key={r.skuId}
-                      className="border-b border-[var(--c-divider)] last:border-b-0"
-                    >
-                      {runItem ? (
-                        <button
-                          type="button"
-                          onClick={handleClick}
-                          className="flex w-full items-center gap-2 px-4 py-2 text-left active:bg-[var(--c-surface-2)]"
-                        >
-                          {inner}
-                        </button>
-                      ) : (
-                        <div className="flex items-center gap-2 px-4 py-2">{inner}</div>
-                      )}
-                    </li>
+                      item={runItem}
+                      skuName={skuName}
+                      unit={r.sku?.unit ?? ''}
+                      step={r.sku?.step ?? '0.1'}
+                      demand={demandBySku.get(r.skuId) ?? []}
+                      lastPrice={run.lastPriceBySku?.[r.skuId] ?? null}
+                      i18n={i18n}
+                      priceInThousands={priceInThousands}
+                      onSave={onSavePurchaseInline}
+                      onMarkNa={onMarkNa}
+                      onEdit={onEditPurchased}
+                      onUnmark={onUnmark}
+                      onUndoPurchase={onUndoPurchase}
+                      onOpenAdvanced={onOpenAdvancedPurchase}
+                    />
                   );
                 })}
             </ul>
