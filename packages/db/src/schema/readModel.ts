@@ -253,3 +253,50 @@ export const runItemStoresV = readModelSchema.table(
     storeIdx: index('risv_store_idx').on(t.storeId, t.deliveredAt),
   }),
 );
+
+/**
+ * M3.44 (2026-05-22): off-catalog expense recorded by the purchaser.
+ * Free-text label + amount + store split + payment method. Distinct
+ * from run_items_v — no SKU foreign key, no delivery/confirmation
+ * lifecycle, no price_history side effect.
+ *
+ * Soft-delete: `removed_at` is set when the purchaser removes the
+ * row pre-finish. The Add event stays in the log for audit; the
+ * row stays in the read-model so admin reports can still see "X
+ * added Y, then removed Z minutes later".
+ */
+export const runExpensesV = readModelSchema.table(
+  'run_expenses_v',
+  {
+    id: uuid('id').primaryKey(),
+    runId: uuid('run_id')
+      .notNull()
+      .references(() => marketRunsV.id, { onDelete: 'cascade' }),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    /** Free-text identity; 1..200 chars after trim. */
+    label: varchar('label', { length: 200 }).notNull(),
+    /** Optional hint like "trip", "pack". Null for lump-sum. */
+    unitHint: varchar('unit_hint', { length: 32 }),
+    qty: decimal('qty', { precision: 12, scale: 3 }).notNull().default('1'),
+    unitPrice: decimal('unit_price', { precision: 14, scale: 2 }).notNull(),
+    /** [{ storeId, qty }] — sum equals qty. JSONB so reports can
+     *  jsonb_array_elements without a join. */
+    storeSplitsJson: jsonb('store_splits_json').notNull(),
+    paymentMethod: varchar('payment_method', { length: 16 }).notNull().default('cash'),
+    receiptPhotoUrl: text('receipt_photo_url'),
+    reason: varchar('reason', { length: 500 }).notNull(),
+    addedByMemberId: uuid('added_by_member_id').notNull(),
+    addedAt: timestamp('added_at', { withTimezone: true, mode: 'date' }).notNull(),
+    /** Soft-delete columns (RunExpenseRemoved event). NULL until removed. */
+    removedAt: timestamp('removed_at', { withTimezone: true, mode: 'date' }),
+    removedByMemberId: uuid('removed_by_member_id'),
+    removeReason: varchar('remove_reason', { length: 500 }),
+  },
+  (t) => ({
+    runIdx: index('rev_run_idx').on(t.runId, t.addedAt),
+    /** Active expenses only — drives the FE's per-run query. */
+    activeIdx: index('rev_active_idx').on(t.runId).where(sql`removed_at IS NULL`),
+  }),
+);

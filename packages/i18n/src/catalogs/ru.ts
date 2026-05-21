@@ -597,6 +597,37 @@ export const ru = {
     'Эта SKU уже в закупке — отредактируйте существующую строку',
   'run.errors.storeNotInRun': 'Этот магазин не входит в текущую закупку',
   'run.errors.addReasonRequired': 'Укажите причину добавления',
+  // M3.44 (2026-05-22): расходы вне каталога
+  'run.action.addItem.modeSku': 'SKU',
+  'run.action.addItem.modeExpense': 'Вне каталога',
+  'run.action.addExpense.title': 'Добавить позицию вне каталога или расход',
+  'run.action.addExpense.subtitle':
+    'Грузчик · такси · бонус от поставщика · разовая покупка без SKU',
+  'run.action.addExpense.labelInput': 'Название',
+  'run.action.addExpense.labelPlaceholder':
+    'напр. Грузчик / Салфетки / Такси обратно',
+  'run.action.addExpense.unitHint': 'Единица (необязательно)',
+  'run.action.addExpense.unitHintPlaceholder': 'напр. поездка / упаковка / —',
+  'run.action.addExpense.targetStores': 'Какие магазины платят?',
+  'run.action.addExpense.splitHint': 'выбрано {n} · авто-деление поровну',
+  'run.action.addExpense.resplitEvenly': 'Разделить поровну',
+  'run.action.addExpense.receiptOptional': 'Чек (необязательно)',
+  'run.action.addExpense.receiptRequired':
+    'Чек ОБЯЗАТЕЛЕН (сумма больше {threshold} UZS)',
+  'run.action.addExpense.needReceipt': 'Нужно фото чека',
+  'run.action.addExpense.save': 'Сохранить расход',
+  'run.action.removeExpense': 'Удалить расход',
+  'run.section.expenses': 'Вне каталога и расходы',
+  'run.toast.expenseAdded': 'Расход добавлен',
+  'run.toast.expenseRemoved': 'Расход удалён',
+  'run.toast.couldNotAddExpense': 'Не удалось сохранить расход',
+  'run.confirm.finish.expenses':
+    '🧾 {n} поз. вне каталога / расходов · {total} UZS',
+  'run.errors.expenseLabelRequired': 'Укажите название',
+  'run.errors.expenseLabelTooLong': 'Название слишком длинное (макс 200)',
+  'run.errors.expenseReasonRequired': 'Укажите причину',
+  'run.errors.expenseReceiptRequired':
+    'Для суммы больше {threshold} UZS требуется фото чека',
   // C.2 (M3.38, 2026-05-19): баннер захвата закупки.
   'run.banner.claimed': 'Закупкой занимается {who}',
   'run.banner.claimedAfterHandoff': '{prev} → {who} теперь ведёт эту закупку',

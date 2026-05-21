@@ -14,12 +14,14 @@ import { z } from 'zod';
 import { schema as s } from '@compass/db';
 import {
   AddPurchaserItemInputSchema,
+  AddRunExpenseInputSchema,
   ConfirmStoreInputSchema,
   ConfirmStoreItemInputSchema,
   DispatchInputSchema,
   EjectSessionInputSchema,
   MarkUnavailableInputSchema,
   PurchaseItemInputSchema,
+  RemoveRunExpenseInputSchema,
   RevisePurchaseInputSchema,
   RunAttachSessionsInputSchema,
   RunCreateInputSchema,
@@ -1091,6 +1093,18 @@ export const runRouter = router({
             previousClaimerDisplayName = byId.get(run.previousClaimerMemberId) ?? null;
           }
         }
+        // M3.44 (2026-05-22): active expenses for this run. Only the
+        // non-removed ones make it into the FE payload — the
+        // `removed_at IS NULL` filter is partial-indexed
+        // (rev_active_idx) so this is a cheap lookup. Admin reports
+        // pull the full table (including removed rows) via a separate
+        // query.
+        const expenses = await tx.query.runExpensesV.findMany({
+          where: (e, { eq: eq2, and: and2, isNull }) =>
+            and2(eq2(e.runId, run.id), isNull(e.removedAt)),
+          orderBy: (e, { asc }) => asc(e.addedAt),
+        });
+
         return {
           ...run,
           items,
@@ -1100,6 +1114,25 @@ export const runRouter = router({
           sessionNotesByStore,
           sessionExtrasByStore,
           supplierBySku,
+          // M3.44: off-catalog expenses (purchaser-recorded). FE
+          // renders these in an "Off-catalog / Expenses" card and
+          // sums them into the finish-summary breakdown.
+          expenses: expenses.map((e) => ({
+            id: e.id,
+            label: e.label,
+            unitHint: e.unitHint,
+            qty: e.qty,
+            unitPrice: e.unitPrice,
+            storeSplits: e.storeSplitsJson as Array<{
+              storeId: string;
+              qty: string;
+            }>,
+            paymentMethod: e.paymentMethod,
+            receiptPhotoUrl: e.receiptPhotoUrl,
+            reason: e.reason,
+            addedByMemberId: e.addedByMemberId,
+            addedAt: e.addedAt.toISOString(),
+          })),
           // C.2: claim display fields. The raw memberId columns are
           // already in `...run` (drizzle spreads the row); these are
           // the resolved names for the banner.
@@ -1200,6 +1233,58 @@ export const runRouter = router({
           receiptPhotoUrl: input.receiptPhotoUrl,
           storeSplits: input.storeSplits,
           paymentMethod: input.paymentMethod,
+          reason: input.reason,
+          actor: actorFromCtx(ctx),
+        }),
+      ),
+    ),
+
+  /**
+   * M3.44 (2026-05-22): off-catalog expense — free-text item OR shared
+   * cost (porter, taxi, parking). `expenseId` is CLIENT-generated so
+   * the FE owns the id before save (no roundtrip to learn it) AND
+   * replays of the same X-Idempotency-Key short-circuit cleanly.
+   *
+   * The domain layer enforces:
+   *   - claim ownership (C.2)
+   *   - actor has `run.purchase`
+   *   - status NOT in {finished, cancelled}
+   *   - all storeSplits within run scope
+   *   - receipt photo when total > 200,000 UZS
+   */
+  addExpense: idempotentMutation
+    .input(AddRunExpenseInputSchema)
+    .mutation(async ({ ctx, input }) =>
+      runSimpleCommand(ctx, input.runId, (state) =>
+        decideRun(state, {
+          type: 'AddRunExpense',
+          expenseId: input.expenseId,
+          label: input.label,
+          ...(input.unitHint !== undefined ? { unitHint: input.unitHint } : {}),
+          qty: input.qty,
+          unitPrice: input.unitPrice,
+          storeSplits: input.storeSplits,
+          paymentMethod: input.paymentMethod,
+          receiptPhotoUrl: input.receiptPhotoUrl,
+          reason: input.reason,
+          actor: actorFromCtx(ctx),
+        }),
+      ),
+    ),
+
+  /**
+   * M3.44: soft-delete an expense before the run is finished. The
+   * RunExpenseAdded event stays in the log; the read-model row gets
+   * removed_at/removed_by_member_id/remove_reason filled in so admin
+   * reports can show the full add → remove story.
+   */
+  removeExpense: authedProcedure
+    .input(RemoveRunExpenseInputSchema)
+    .mutation(async ({ ctx, input }) =>
+      runSimpleCommand(ctx, input.runId, (state) =>
+        decideRun(state, {
+          type: 'RemoveRunExpense',
+          expenseId: input.expenseId,
           reason: input.reason,
           actor: actorFromCtx(ctx),
         }),

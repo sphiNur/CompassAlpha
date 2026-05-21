@@ -96,6 +96,39 @@ export const AddPurchaserItemInputSchema = z.object({
   expectedSeq: z.number().int().optional(),
 });
 
+/**
+ * M3.44 (2026-05-22): off-catalog expense — free-text item OR shared
+ * cost (porter, taxi, parking). Distinct from AddPurchaserItem because
+ * there's no SKU foreign key. `expenseId` is CLIENT-generated so the
+ * FE knows it before save (no roundtrip) and the same logical add
+ * replays idempotently.
+ *
+ * Receipt photo is mandatory at the server when qty*unitPrice exceeds
+ * a fixed threshold (200,000 UZS — see commands.ts:RECEIPT_THRESHOLD);
+ * the FE shows the upload affordance from `receiptOptional` value
+ * onwards so the user is never surprised at submit.
+ */
+export const AddRunExpenseInputSchema = z.object({
+  runId: UuidSchema,
+  expenseId: UuidSchema,
+  label: z.string().trim().min(1).max(200),
+  unitHint: z.string().trim().max(32).optional(),
+  qty: PositiveDecimalStringSchema,
+  unitPrice: PositiveDecimalStringSchema,
+  storeSplits: z.array(StoreSplitSchema).min(1),
+  paymentMethod: PaymentMethodSchema,
+  receiptPhotoUrl: z.string().max(300_000).nullable(),
+  reason: z.string().trim().min(1).max(500),
+  expectedSeq: z.number().int().optional(),
+});
+
+export const RemoveRunExpenseInputSchema = z.object({
+  runId: UuidSchema,
+  expenseId: UuidSchema,
+  reason: z.string().trim().max(500).optional().default(''),
+  expectedSeq: z.number().int().optional(),
+});
+
 export const MarkUnavailableInputSchema = z.object({
   runId: UuidSchema,
   skuId: UuidSchema,

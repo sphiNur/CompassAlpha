@@ -222,6 +222,53 @@ export type RunEvent =
         byMemberId: string;
       };
     })
+  // ---- Off-catalog expenses (M3.44, 2026-05-22) -----------------------
+  // The purchaser records something that isn't in the SKU catalog — a
+  // one-off item ("a bag of napkins from the bazaar"), a shared cost
+  // ("porter fee"), a vendor surcharge, a taxi back to the storehouse.
+  // Distinct from PurchaserItemAdded (M3.41) because there's no SKU
+  // foreign key: free-text `label` + optional `unitHint` carry the
+  // identity. Different report aggregation too — these never write to
+  // price_history (they're singletons, no meaningful price trend).
+  //
+  // expenseId is CLIENT-generated (FE picks a UUID before submitting)
+  // so the same logical addition replays idempotently and the FE knows
+  // the id without waiting for a roundtrip. Subsequent
+  // RunExpenseRemoved references the same id.
+  | (BaseEvent & {
+      type: 'RunExpenseAdded';
+      payload: {
+        expenseId: string;
+        /** Free-text identity, 1..200 chars after trim. */
+        label: string;
+        /** Optional unit hint ("trip", "pack", null for lump-sum). */
+        unitHint: string | null;
+        /** Defaults to "1" for lump-sum expenses. */
+        qty: string;
+        /** unitPrice * qty = total. For lump-sums qty=1 and unitPrice=total. */
+        unitPrice: string;
+        /** How the cost is allocated across the run's stores. Sum == qty. */
+        storeSplits: Array<{ storeId: string; qty: string }>;
+        paymentMethod: 'cash' | 'transfer';
+        receiptPhotoUrl: string | null;
+        /** Free-text — why this was added. ≤500. */
+        reason: string;
+        byMemberId: string;
+      };
+    })
+  | (BaseEvent & {
+      // Soft-delete an expense before the run is finished. The
+      // RunExpenseAdded event stays in the log — this is a NEW event
+      // that flips the read-model row's removed_at. Audit query can
+      // still see "X added 50k UZS porter fee, then removed it 3 min
+      // later with reason='wrong store'".
+      type: 'RunExpenseRemoved';
+      payload: {
+        expenseId: string;
+        reason: string;
+        byMemberId: string;
+      };
+    })
   // ---- Run-level claim (C.2, M3.38, 2026-05-19) -----------------------
   // Mirrors the order-session claim (M3.19 + M3.22). A run can be
   // claimed by exactly one purchaser at a time during the planned →

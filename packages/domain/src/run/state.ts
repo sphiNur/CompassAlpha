@@ -40,6 +40,27 @@ export interface RunItemState {
   addedByPurchaser?: boolean;
 }
 
+/**
+ * M3.44 (2026-05-22): off-catalog expense recorded by the purchaser.
+ * Different from RunItemState — no SKU foreign key, no delivery /
+ * confirmation lifecycle, no price_history side effect. Free-text
+ * label is the identity; expenseId is client-generated for
+ * idempotency.
+ */
+export interface RunExpense {
+  id: string;
+  label: string;
+  unitHint: string | null;
+  qty: string;
+  unitPrice: string;
+  storeSplits: Array<{ storeId: string; qty: string }>;
+  paymentMethod: PaymentMethod;
+  receiptPhotoUrl: string | null;
+  reason: string;
+  addedByMemberId: string;
+  addedAt: Date;
+}
+
 export interface RunStoreDeliveryState {
   storeId: string;
   deliveredAt: Date | null;
@@ -60,6 +81,13 @@ export interface RunState {
   purchaserMemberId: string | null;
   items: Map<string, RunItemState>;
   stores: Map<string, RunStoreDeliveryState>;
+  /**
+   * M3.44 (2026-05-22): off-catalog expenses added by the purchaser
+   * (free-text label / porter fee / one-off items). Insertion order
+   * preserved; soft-removed entries are dropped from this array (the
+   * RunExpenseRemoved event triggers the splice).
+   */
+  expenses: RunExpense[];
   finishedAt: Date | null;
   /**
    * Run-level claim — C.2 (M3.38, 2026-05-19). Holds the purchaser who
@@ -90,6 +118,7 @@ export function emptyRunState(streamId: string): RunState {
     purchaserMemberId: null,
     items: new Map(),
     stores: new Map(),
+    expenses: [],
     finishedAt: null,
     claimedByMemberId: null,
     claimedAt: null,
@@ -331,6 +360,43 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
       return { ...state, seq: event.seq, status: 'planned' };
     case 'DeliveryStartUndone':
       return { ...state, seq: event.seq, status: 'purchasing' };
+    case 'RunExpenseAdded': {
+      // M3.44 (2026-05-22): off-catalog expense. Append-only; the row
+      // is removed via a follow-up RunExpenseRemoved event (soft-delete
+      // semantics inside the state — the original Added event stays
+      // in the log for audit). Idempotent if the same expenseId
+      // already exists (e.g. replay of a stalled mutation).
+      if (state.expenses.some((e) => e.id === event.payload.expenseId)) {
+        return { ...state, seq: event.seq };
+      }
+      const newExpense: RunExpense = {
+        id: event.payload.expenseId,
+        label: event.payload.label,
+        unitHint: event.payload.unitHint,
+        qty: event.payload.qty,
+        unitPrice: event.payload.unitPrice,
+        storeSplits: event.payload.storeSplits,
+        paymentMethod: event.payload.paymentMethod,
+        receiptPhotoUrl: event.payload.receiptPhotoUrl,
+        reason: event.payload.reason,
+        addedByMemberId: event.payload.byMemberId,
+        addedAt: event.occurredAt,
+      };
+      return {
+        ...state,
+        seq: event.seq,
+        expenses: [...state.expenses, newExpense],
+      };
+    }
+    case 'RunExpenseRemoved': {
+      // Soft-delete in state (dropped from the array). The audit log
+      // still has both the Added and Removed events for forensics.
+      return {
+        ...state,
+        seq: event.seq,
+        expenses: state.expenses.filter((e) => e.id !== event.payload.expenseId),
+      };
+    }
     case 'RunClaimed':
       // C.2 (M3.38): the take-over button also writes RunClaimed —
       // payload.byMemberId is the new claimer, the prior claimer was

@@ -611,6 +611,38 @@ export const uz = {
     "Bu SKU xaridda allaqachon bor — mavjud qatorni tahrirlang",
   'run.errors.storeNotInRun': "Bu do'kon hozirgi xaridda ishtirok etmaydi",
   'run.errors.addReasonRequired': "Qo'shish sababini ko'rsating",
+  // M3.44 (2026-05-22): katalogdan tashqari xarajatlar
+  'run.action.addItem.modeSku': 'SKU',
+  'run.action.addItem.modeExpense': 'Katalogdan tashqari',
+  'run.action.addExpense.title': "Katalogdan tashqari yoki xarajat qo'shish",
+  'run.action.addExpense.subtitle':
+    'Yuk tashuvchi · taksi · sotuvchi bonusi · katalogdan tashqari xarid',
+  'run.action.addExpense.labelInput': 'Nomi',
+  'run.action.addExpense.labelPlaceholder':
+    'masalan: Yuk tashuvchi / Sochiq / Qaytish taksi',
+  'run.action.addExpense.unitHint': 'Birlik (ixtiyoriy)',
+  'run.action.addExpense.unitHintPlaceholder': "masalan: safar / qadoq / —",
+  'run.action.addExpense.targetStores': "Qaysi do'konlar to'laydi?",
+  'run.action.addExpense.splitHint':
+    "{n} ta tanlandi · avtomatik teng taqsimlanadi",
+  'run.action.addExpense.resplitEvenly': 'Qayta teng taqsimlash',
+  'run.action.addExpense.receiptOptional': 'Chek (ixtiyoriy)',
+  'run.action.addExpense.receiptRequired':
+    "Chek MAJBURIY ({threshold} UZS dan ko'p)",
+  'run.action.addExpense.needReceipt': 'Chek surati kerak',
+  'run.action.addExpense.save': 'Xarajatni saqlash',
+  'run.action.removeExpense': "Xarajatni o'chirish",
+  'run.section.expenses': 'Katalogdan tashqari va xarajatlar',
+  'run.toast.expenseAdded': "Xarajat qo'shildi",
+  'run.toast.expenseRemoved': "Xarajat o'chirildi",
+  'run.toast.couldNotAddExpense': "Xarajatni saqlab bo'lmadi",
+  'run.confirm.finish.expenses':
+    "🧾 {n} ta katalogdan tashqari / xarajat · {total} UZS",
+  'run.errors.expenseLabelRequired': 'Nomini kiriting',
+  'run.errors.expenseLabelTooLong': "Nom juda uzun (200 dan ko'p emas)",
+  'run.errors.expenseReasonRequired': 'Sababni kiriting',
+  'run.errors.expenseReceiptRequired':
+    "{threshold} UZS dan ko'p summa uchun chek surati kerak",
   // C.2 (M3.38, 2026-05-19): xaridni qo'lga olish banneri.
   'run.banner.claimed': "Xaridni hozir {who} olib bormoqda",
   'run.banner.claimedAfterHandoff': "{prev} → {who} xaridni qabul qildi",

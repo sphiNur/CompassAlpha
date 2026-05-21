@@ -150,6 +150,47 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
           .where(and(eq(s.runItemsV.runId, e.streamId), eq(s.runItemsV.skuId, e.payload.skuId)));
         await bumpSeq(db, e.streamId, e.seq);
         break;
+      case 'RunExpenseAdded': {
+        // M3.44 (2026-05-22): insert a row into run_expenses_v. The
+        // domain layer guards against duplicate expenseId, but the
+        // projector also uses ON CONFLICT DO NOTHING so a defensive
+        // replay never crashes.
+        await db
+          .insert(s.runExpensesV)
+          .values({
+            id: e.payload.expenseId,
+            runId: e.streamId,
+            orgId,
+            label: e.payload.label,
+            unitHint: e.payload.unitHint,
+            qty: e.payload.qty,
+            unitPrice: e.payload.unitPrice,
+            storeSplitsJson: e.payload.storeSplits as unknown as Record<string, unknown>,
+            paymentMethod: e.payload.paymentMethod,
+            receiptPhotoUrl: e.payload.receiptPhotoUrl,
+            reason: e.payload.reason,
+            addedByMemberId: e.payload.byMemberId,
+            addedAt: e.occurredAt,
+          })
+          .onConflictDoNothing();
+        await bumpSeq(db, e.streamId, e.seq);
+        break;
+      }
+      case 'RunExpenseRemoved': {
+        // M3.44: soft-delete — fill removed_at + actor + reason. The
+        // row stays so admin reports can show "added then removed".
+        // The FE filters by `removed_at IS NULL` for the active list.
+        await db
+          .update(s.runExpensesV)
+          .set({
+            removedAt: e.occurredAt,
+            removedByMemberId: e.payload.byMemberId,
+            removeReason: e.payload.reason,
+          })
+          .where(eq(s.runExpensesV.id, e.payload.expenseId));
+        await bumpSeq(db, e.streamId, e.seq);
+        break;
+      }
       case 'DeliveryStarted':
         await db
           .update(s.marketRunsV)

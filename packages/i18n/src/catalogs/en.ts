@@ -667,6 +667,36 @@ export const en = {
     'This SKU is already in the run — use Edit on the existing row',
   'run.errors.storeNotInRun': 'That store is not part of this run',
   'run.errors.addReasonRequired': 'Reason is required for purchaser additions',
+  // M3.44 (2026-05-22): off-catalog expenses (porter / taxi / one-off items)
+  'run.action.addItem.modeSku': 'SKU item',
+  'run.action.addItem.modeExpense': 'Off-catalog',
+  'run.action.addExpense.title': 'Add off-catalog item or expense',
+  'run.action.addExpense.subtitle':
+    'Porter fee · taxi · vendor freebie · one-off purchase that has no SKU',
+  'run.action.addExpense.labelInput': 'What is it?',
+  'run.action.addExpense.labelPlaceholder': 'e.g. Porter / Napkins / Taxi back',
+  'run.action.addExpense.unitHint': 'Unit (optional)',
+  'run.action.addExpense.unitHintPlaceholder': 'e.g. trip / pack / —',
+  'run.action.addExpense.targetStores': 'Which store(s) pay?',
+  'run.action.addExpense.splitHint': '{n} selected · auto-split evenly',
+  'run.action.addExpense.resplitEvenly': 'Re-split evenly',
+  'run.action.addExpense.receiptOptional': 'Receipt (optional)',
+  'run.action.addExpense.receiptRequired':
+    'Receipt REQUIRED (amount above {threshold} UZS)',
+  'run.action.addExpense.needReceipt': 'Receipt photo required',
+  'run.action.addExpense.save': 'Save expense',
+  'run.action.removeExpense': 'Remove expense',
+  'run.section.expenses': 'Off-catalog & expenses',
+  'run.toast.expenseAdded': 'Expense recorded',
+  'run.toast.expenseRemoved': 'Expense removed',
+  'run.toast.couldNotAddExpense': 'Could not save the expense',
+  'run.confirm.finish.expenses':
+    '🧾 {n} off-catalog item(s) / expense(s) · {total} UZS',
+  'run.errors.expenseLabelRequired': 'A description is required',
+  'run.errors.expenseLabelTooLong': 'Description too long (200 max)',
+  'run.errors.expenseReasonRequired': 'Reason is required',
+  'run.errors.expenseReceiptRequired':
+    'Receipt photo required for amounts above {threshold} UZS',
   // C.2 (M3.38, 2026-05-19): run-level claim banner copy. Mirrors the
   // order-side equivalents at order.banner.claimed / .claimedAfterHandoff.
   'run.banner.claimed': 'This run is being handled by {who}',

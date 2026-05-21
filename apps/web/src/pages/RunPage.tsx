@@ -94,17 +94,38 @@ function fromDisplayPrice(displayStr: string, inThousands: boolean): string {
 }
 
 /**
- * M3.41 (2026-05-21): draft state for the "+ add item" sheet. Captures
- * everything needed for the `run.addPurchaserItem` mutation: a freshly-
- * picked SKU, qty + price, multi-store split, payment method, and a
- * mandatory free-text reason explaining why the SKU wasn't in the
- * original order. `null` skuId is allowed in the draft so the user can
- * open the sheet, search, then commit a selection.
+ * M3.41 + M3.44 (2026-05-21 / 2026-05-22): draft state for the "+ add"
+ * sheet. Dual-mode:
+ *   - `mode: 'sku'`   → AddPurchaserItem mutation (target an existing
+ *     SKU, single-store v1, requires supplierId/skuId).
+ *   - `mode: 'expense'` → AddRunExpense mutation (free-text label,
+ *     multi-store auto-split, target porter/taxi/off-catalog buys).
+ *
+ * Both modes share the qty/price/split/payment/reason fields so the
+ * sheet can switch modes without losing what the user has typed. The
+ * mode-specific fields (skuId/supplierId vs expenseId/label/unitHint)
+ * stay populated either way; the renderer + submit handler only
+ * reads the ones relevant to the active mode.
+ *
+ * expenseId is pre-generated when the sheet opens so the FE owns the
+ * id from the start — enables an instant local "saved!" indicator
+ * without a roundtrip, and the same id replays idempotently if the
+ * mutation retries.
  */
 interface AddItemDraft {
+  mode: 'sku' | 'expense';
   runId: string;
-  /** Selected SKU id; null until the user picks one. */
+  /** SKU mode — selected SKU id; null until the user picks one. */
   skuId: string | null;
+  /** SKU mode — preferred supplier on the SKU (optional override). */
+  supplierId: string | null;
+  /** Expense mode — pre-generated UUID. */
+  expenseId: string;
+  /** Expense mode — free-text identity. */
+  label: string;
+  /** Expense mode — optional unit hint ("trip", "pack", null). */
+  unitHint: string;
+  // Shared across both modes
   actualQty: string;
   unitPrice: string;
   /** storeId → qty. Only stores in the run's existing scope are valid. */
@@ -112,7 +133,6 @@ interface AddItemDraft {
   paymentMethod: 'cash' | 'transfer';
   receiptPhotoUrl: string | null;
   reason: string;
-  supplierId: string | null;
 }
 
 interface PurchaseDraft {
@@ -238,6 +258,14 @@ export function RunPage() {
       void utils.run.get.invalidate();
       void utils.run.list.invalidate();
     },
+    // M3.44 (2026-05-22): off-catalog expenses. Same retry pattern.
+    'run.addExpense': async (entry) => {
+      await utils.client.run.addExpense.mutate(
+        entry.input as Parameters<typeof utils.client.run.addExpense.mutate>[0],
+      );
+      void utils.run.get.invalidate();
+      void utils.run.list.invalidate();
+    },
   });
 
   // ---- Mutations ------------------------------------------------------
@@ -302,6 +330,35 @@ export function RunPage() {
         errToast('run.toast.couldNotAddItem')(err);
       }
     },
+  });
+  // M3.44 (2026-05-22): off-catalog expense add + remove. Same
+  // optimistic + offline-queue pattern as the SKU-item path so the
+  // bazaar UX is consistent across modes.
+  const addExpense = trpc.run.addExpense.useMutation({
+    onSuccess: () => {
+      void utils.run.get.invalidate();
+      void utils.run.list.invalidate();
+      setAddItemDraft(null);
+      haptic('success');
+      toast.success(i18n.t('run.toast.expenseAdded'));
+    },
+    onError: (err, vars) => {
+      if (isLikelyNetworkError(err)) {
+        void offline.enqueue('run.addExpense', vars);
+        setAddItemDraft(null);
+        toast.info(i18n.t('run.toast.purchaseSavedOffline'));
+      } else {
+        errToast('run.toast.couldNotAddExpense')(err);
+      }
+    },
+  });
+  const removeExpense = trpc.run.removeExpense.useMutation({
+    onSuccess: () => {
+      void utils.run.get.invalidate();
+      haptic('success');
+      toast.info(i18n.t('run.toast.expenseRemoved'));
+    },
+    onError: errToast('common.error'),
   });
   const purchaseItem = trpc.run.purchaseItem.useMutation({
     onSuccess: () => {
@@ -636,7 +693,32 @@ export function RunPage() {
         }
       }
     }
-    return { skus, stores, total, totalCash, totalTransfer, addedSkus, addedTotal };
+    // M3.44 (2026-05-22): off-catalog expenses roll into the grand
+    // total and the cash/transfer breakdown the same way SKU buys do.
+    // Counted separately for the "Off-catalog / expenses" line in the
+    // finish confirm body so the manager can read them as their own
+    // bucket.
+    let expensesCount = 0;
+    let expensesTotal = 0;
+    for (const ex of runDetailQuery.data?.expenses ?? []) {
+      const line = Number(ex.qty) * Number(ex.unitPrice);
+      expensesCount += 1;
+      expensesTotal += line;
+      total += line;
+      if (ex.paymentMethod === 'transfer') totalTransfer += line;
+      else totalCash += line;
+    }
+    return {
+      skus,
+      stores,
+      total,
+      totalCash,
+      totalTransfer,
+      addedSkus,
+      addedTotal,
+      expensesCount,
+      expensesTotal,
+    };
   }, [runDetailQuery.data]);
 
   /**
@@ -919,6 +1001,17 @@ export function RunPage() {
                   total: formatMoney(finishSummary.addedTotal),
                 })
               : '';
+          // M3.44 (2026-05-22): off-catalog expenses line. Skipped
+          // when there are none to keep the common-case confirm
+          // body concise.
+          const expensesLine =
+            finishSummary.expensesCount > 0
+              ? '\n' +
+                i18n.t('run.confirm.finish.expenses', {
+                  n: finishSummary.expensesCount,
+                  total: formatMoney(finishSummary.expensesTotal),
+                })
+              : '';
           return {
             title: i18n.t('run.confirm.finish.title'),
             body:
@@ -930,7 +1023,8 @@ export function RunPage() {
                 total: formatMoney(finishSummary.total),
               }) +
               breakdownLine +
-              addedLine,
+              addedLine +
+              expensesLine,
             confirmLabel: i18n.t('run.action.finish'),
             danger: false,
             requireReason: false,
@@ -1213,15 +1307,25 @@ export function RunPage() {
               type="button"
               onClick={() =>
                 setAddItemDraft({
+                  mode: 'sku',
                   runId: activeRun.id,
                   skuId: null,
+                  supplierId: null,
+                  // M3.44: pre-generate expense UUID even when opening
+                  // in SKU mode so a mid-flow tab switch to expense
+                  // mode already has the id ready (idempotency).
+                  expenseId:
+                    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+                      ? crypto.randomUUID()
+                      : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                  label: '',
+                  unitHint: '',
                   actualQty: '',
                   unitPrice: '',
                   splits: new Map(),
                   paymentMethod: 'cash',
                   receiptPhotoUrl: null,
                   reason: '',
-                  supplierId: null,
                 })
               }
               title={i18n.t('run.action.addItem.title')}
@@ -1464,6 +1568,13 @@ export function RunPage() {
           onMarkExtraStatus={(sessionId, extraIndex, status) =>
             markExtraStatus.mutate({ sessionId, extraIndex, status })
           }
+          onRemoveExpense={(expenseId) =>
+            removeExpense.mutate({
+              runId: activeRun.id,
+              expenseId,
+              reason: '',
+            })
+          }
         />
       ) : null}
 
@@ -1603,27 +1714,46 @@ export function RunPage() {
         skus={skusQuery.data ?? []}
         storeById={storeById}
         productName={productName}
+        photoUploader={photoUploader}
         i18n={i18n}
         priceInThousands={priceInThousands}
         onCancel={() => setAddItemDraft(null)}
         onChange={setAddItemDraft}
         onSubmit={(d) => {
-          if (!d.skuId) return;
-          addPurchaserItem.mutate({
-            runId: d.runId,
-            skuId: d.skuId,
-            supplierId: d.supplierId,
-            unitPrice: d.unitPrice,
-            actualQty: d.actualQty,
-            receiptPhotoUrl: d.receiptPhotoUrl,
-            storeSplits: [...d.splits.entries()]
-              .filter(([, q]) => Number(q) > 0)
-              .map(([storeId, qty]) => ({ storeId, qty })),
-            paymentMethod: d.paymentMethod,
-            reason: d.reason.trim(),
-          });
+          const storeSplits = [...d.splits.entries()]
+            .filter(([, q]) => Number(q) > 0)
+            .map(([storeId, qty]) => ({ storeId, qty }));
+          if (d.mode === 'sku') {
+            if (!d.skuId) return;
+            addPurchaserItem.mutate({
+              runId: d.runId,
+              skuId: d.skuId,
+              supplierId: d.supplierId,
+              unitPrice: d.unitPrice,
+              actualQty: d.actualQty,
+              receiptPhotoUrl: d.receiptPhotoUrl,
+              storeSplits,
+              paymentMethod: d.paymentMethod,
+              reason: d.reason.trim(),
+            });
+          } else {
+            // M3.44: expense mode → run.addExpense
+            if (!d.label.trim()) return;
+            addExpense.mutate({
+              runId: d.runId,
+              expenseId: d.expenseId,
+              label: d.label.trim(),
+              ...(d.unitHint.trim() ? { unitHint: d.unitHint.trim() } : {}),
+              qty: d.actualQty,
+              unitPrice: d.unitPrice,
+              storeSplits,
+              paymentMethod: d.paymentMethod,
+              receiptPhotoUrl: d.receiptPhotoUrl,
+              reason: d.reason.trim(),
+            });
+          }
         }}
-        submitting={addPurchaserItem.isPending}
+        submitting={addPurchaserItem.isPending || addExpense.isPending}
       />
 
       {/* Mark-unavailable sheet — primary action handled by MainButton
@@ -1745,6 +1875,20 @@ interface ActiveRun {
       idx?: number;
     }>
   >;
+  /** M3.44 (2026-05-22): active (non-removed) off-catalog expenses. */
+  expenses?: Array<{
+    id: string;
+    label: string;
+    unitHint: string | null;
+    qty: string;
+    unitPrice: string;
+    storeSplits: Array<{ storeId: string; qty: string }>;
+    paymentMethod: string;
+    receiptPhotoUrl: string | null;
+    reason: string;
+    addedByMemberId: string;
+    addedAt: string;
+  }>;
   /** M3.27: preferred-supplier per SKU (mirrors preview.supplierBySku),
    *  powers the active-run "by vendor" view. Null entries = SKUs
    *  with no preferred link — bucketed under "unassigned" in the FE. */
@@ -1801,6 +1945,7 @@ function ActiveRunPanel({
   onDeliverStore,
   onRecallStore,
   onMarkExtraStatus,
+  onRemoveExpense,
 }: {
   run: ActiveRun;
   skuById: Map<
@@ -1834,6 +1979,8 @@ function ActiveRunPanel({
     extraIndex: number,
     status: 'pending' | 'bought' | 'unavailable',
   ) => void;
+  /** M3.44: remove an off-catalog expense (purchasing phase only). */
+  onRemoveExpense: (expenseId: string, label: string) => void;
 }) {
   const involvedStoreIds = useMemo(() => {
     const ids = new Set<string>();
@@ -2070,6 +2217,26 @@ function ActiveRunPanel({
           i18n={i18n}
           editable={run.status === 'purchasing'}
           onMarkExtraStatus={onMarkExtraStatus}
+        />
+      ) : null}
+
+      {/* M3.44 (2026-05-22): off-catalog expenses card. Rendered in
+          aggregate / perVendor view BELOW the items + extras
+          sections. Always visible (read-only in non-purchasing
+          phases) so the manager can see "what off-plan was spent"
+          from any page state. */}
+      {(!showViewToggle ||
+        viewMode === 'aggregate' ||
+        (viewMode === 'perStore' && !showPerStore) ||
+        (viewMode === 'perVendor' && !showPerVendor)) &&
+      (run.expenses?.length ?? 0) > 0 ? (
+        <ExpensesCard
+          expenses={run.expenses}
+          storeById={storeById}
+          i18n={i18n}
+          priceInThousands={priceInThousands}
+          editable={run.status === 'purchasing'}
+          onRemove={onRemoveExpense}
         />
       ) : null}
 
@@ -3361,6 +3528,120 @@ function RunExtrasCard({
 }
 
 /**
+ * M3.44 (2026-05-22): off-catalog expenses card. Renders below the SKU
+ * items list (in aggregate / perVendor view) so the purchaser sees
+ * EVERYTHING they bought / spent against this run in one continuous
+ * scroll. Each row carries a delete (✗) affordance so a typo'd
+ * expense can be retracted before finish — the server emits a
+ * RunExpenseRemoved event and the read-model row is soft-deleted
+ * (admin reports can still see the add → remove timeline).
+ *
+ * Display per row:
+ *   {label} · {qty} {unitHint} × {unitPrice} = {total} · 💵/🏦 · [✗ del?]
+ *
+ * The card's section header summarizes total expense count + sum so
+ * the manager glancing at the run page has the off-plan number front
+ * and center, no need to hunt through individual rows.
+ */
+function ExpensesCard({
+  expenses,
+  storeById,
+  i18n,
+  priceInThousands,
+  editable,
+  onRemove,
+}: {
+  expenses: ActiveRun['expenses'];
+  storeById: Map<string, { id: string; name: string; code: string | null }>;
+  i18n: ReturnType<typeof useI18n>;
+  priceInThousands: boolean;
+  /** When true (status='purchasing' + claim is mine), show the ✗ delete
+   *  button on each row. Read-only otherwise. */
+  editable: boolean;
+  onRemove: (expenseId: string, label: string) => void;
+}) {
+  const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
+  const list = expenses ?? [];
+  if (list.length === 0) return null;
+  const grandTotal = list.reduce(
+    (s, e) => s + Number(e.qty) * Number(e.unitPrice),
+    0,
+  );
+  return (
+    <Card>
+      <SectionLabel meta={`${list.length} · ${formatMoney(grandTotal)} ${currency}`}>
+        🧾 {i18n.t('run.section.expenses')}
+      </SectionLabel>
+      <ul className="flex flex-col" role="list">
+        {list.map((e) => {
+          const total = Number(e.qty) * Number(e.unitPrice);
+          const isTransfer = e.paymentMethod === 'transfer';
+          // Show the store names this expense was allocated to,
+          // helpful for the "shared porter" / "split between 3 stores"
+          // narrative. Falls back to short id slice if a store row
+          // was archived after the expense landed.
+          const storeNames = e.storeSplits
+            .map((sp) => storeById.get(sp.storeId)?.name ?? sp.storeId.slice(0, 8))
+            .join(' · ');
+          const unitPriceDisplay = priceInThousands
+            ? `${formatMoney(Number(e.unitPrice) / 1000)}K`
+            : formatMoney(e.unitPrice);
+          return (
+            <li
+              key={e.id}
+              className="border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0"
+            >
+              <div className="flex items-baseline gap-2">
+                <span className="shrink-0 truncate text-body font-semibold">
+                  {e.label}
+                </span>
+                {isTransfer ? (
+                  <span
+                    aria-label={i18n.t('run.label.paymentTransfer')}
+                    title={i18n.t('run.label.paymentTransfer')}
+                    className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-action)]/15 px-1.5 py-0.5 text-label text-[var(--c-action)] ring-1 ring-[var(--c-action)]"
+                  >
+                    🏦
+                  </span>
+                ) : null}
+                <span className="min-w-0 flex-1 truncate text-label text-[var(--c-fg-muted)]">
+                  {storeNames}
+                </span>
+                {editable ? (
+                  <button
+                    type="button"
+                    onClick={() => onRemove(e.id, e.label)}
+                    aria-label={i18n.t('run.action.removeExpense')}
+                    className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-label text-[var(--c-danger)] active:bg-[var(--c-surface-2)]"
+                  >
+                    ✗
+                  </button>
+                ) : null}
+              </div>
+              <div className="mt-0.5 text-label text-[var(--c-fg-muted)]">
+                <span className="font-mono tabular-nums">
+                  {formatQty(e.qty)} {e.unitHint ?? ''} × {unitPriceDisplay}
+                </span>
+                {' = '}
+                <span className="font-mono font-semibold tabular-nums text-[var(--c-fg)]">
+                  {formatMoney(total)} {currency}
+                </span>
+                {e.reason ? (
+                  <>
+                    {' · '}
+                    <span className="italic">{e.reason}</span>
+                  </>
+                ) : null}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
+  );
+}
+
+/**
  * One row of the purchasing list. Holds its OWN qty/price input state
  * (not in the parent) so typing one row doesn't re-render the whole list.
  *
@@ -4091,6 +4372,7 @@ function AddItemSheet({
   skus,
   storeById,
   productName,
+  photoUploader,
   i18n,
   priceInThousands,
   onCancel,
@@ -4112,6 +4394,9 @@ function AddItemSheet({
   }>;
   storeById: Map<string, { id: string; name: string; code: string | null }>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
+  /** M3.44: PhotoUploader for receipt capture. SKU mode doesn't use it
+   *  today; expense mode requires it when total > 200,000 UZS. */
+  photoUploader: import('@compass/ui').PhotoUploader | undefined;
   i18n: ReturnType<typeof useI18n>;
   priceInThousands: boolean;
   onCancel: () => void;
@@ -4132,7 +4417,7 @@ function AddItemSheet({
     }
     setPriceInput(toDisplayPrice(draft.unitPrice, priceInThousands));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft?.runId, draft?.skuId, priceInThousands]);
+  }, [draft?.runId, draft?.skuId, draft?.mode, priceInThousands]);
 
   // Filter the SKU list: exclude already-in-run, archived, and (if a
   // search is typed) anything that doesn't substring-match in zh / en /
@@ -4178,25 +4463,82 @@ function AddItemSheet({
     return Math.round(q * effectiveP);
   }, [draft, priceInput, priceInThousands]);
 
+  // M3.44: receipt threshold for expense mode — server-side enforces
+  // the same 200,000 UZS line. The FE pre-validates so Save is
+  // disabled rather than letting the user submit and bounce.
+  const RECEIPT_THRESHOLD = 200_000;
+  const total = useMemo(() => {
+    if (!draft) return 0;
+    const q = Number(draft.actualQty);
+    const p = Number(draft.unitPrice);
+    if (!Number.isFinite(q) || !Number.isFinite(p) || q <= 0 || p <= 0) return 0;
+    return q * p;
+  }, [draft?.actualQty, draft?.unitPrice]);
+  const receiptRequired =
+    draft?.mode === 'expense' && total > RECEIPT_THRESHOLD;
+  const receiptOk = !receiptRequired || !!draft?.receiptPhotoUrl;
+
+  // Mode-aware split-sum check: in expense mode the split is multi-
+  // store auto-divided, so the sum may drift by 1 UZS due to integer
+  // rounding. Tolerate that small delta; the domain layer uses the
+  // same TOLERANCE constant.
+  const splitTotal = useMemo(() => {
+    if (!draft) return 0;
+    let s = 0;
+    for (const v of draft.splits.values()) s += Number(v) || 0;
+    return s;
+  }, [draft]);
+  const splitMatches = !!draft && Math.abs(splitTotal - Number(draft.actualQty || 0)) < 0.001;
+
   const canSubmit = !!(
     draft &&
-    draft.skuId &&
+    (draft.mode === 'sku' ? draft.skuId : draft.label.trim().length > 0) &&
     Number(draft.actualQty) > 0 &&
     Number(draft.unitPrice) > 0 &&
     draft.splits.size > 0 &&
+    splitMatches &&
     draft.reason.trim().length > 0 &&
+    receiptOk &&
     !submitting
   );
+
+  // M3.44: helper — auto-split actualQty evenly across selected stores,
+  // rounded to integers, remainder to the last store. Matches the
+  // domain TOLERANCE check. E.g. 70k / 3 = 23k, 23k, 24k.
+  const evenSplit = (storeIds: string[], qtyStr: string) => {
+    const next = new Map<string, string>();
+    const q = Number(qtyStr);
+    if (!Number.isFinite(q) || q <= 0 || storeIds.length === 0) return next;
+    if (storeIds.length === 1) {
+      next.set(storeIds[0]!, qtyStr);
+      return next;
+    }
+    const base = Math.floor(q / storeIds.length);
+    let allocated = 0;
+    for (let i = 0; i < storeIds.length - 1; i++) {
+      next.set(storeIds[i]!, String(base));
+      allocated += base;
+    }
+    // Last store absorbs the remainder so the sum matches actualQty exactly.
+    next.set(storeIds[storeIds.length - 1]!, String(q - allocated));
+    return next;
+  };
 
   return (
     <Sheet
       open={!!draft}
       onOpenChange={(open) => !open && onCancel()}
-      title={i18n.t('run.action.addItem.title')}
+      title={
+        draft?.mode === 'expense'
+          ? i18n.t('run.action.addExpense.title')
+          : i18n.t('run.action.addItem.title')
+      }
       description={
-        selectedSku
+        draft?.mode === 'sku' && selectedSku
           ? productName(selectedSku)
-          : i18n.t('run.action.addItem.subtitle')
+          : draft?.mode === 'expense'
+            ? i18n.t('run.action.addExpense.subtitle')
+            : i18n.t('run.action.addItem.subtitle')
       }
       footer={
         <Button
@@ -4205,72 +4547,141 @@ function AddItemSheet({
           disabled={!canSubmit}
           onClick={() => draft && canSubmit && onSubmit(draft)}
         >
-          {i18n.t('run.action.addItem.save')}
+          {receiptRequired && !draft?.receiptPhotoUrl
+            ? i18n.t('run.action.addExpense.needReceipt')
+            : draft?.mode === 'expense'
+              ? i18n.t('run.action.addExpense.save')
+              : i18n.t('run.action.addItem.save')}
         </Button>
       }
     >
       {draft ? (
         <div className="flex flex-col gap-3 py-3">
-          {/* 1) SKU picker — either search-and-select or show the chosen one. */}
-          {selectedSku ? (
-            <div className="flex items-center justify-between rounded-md bg-[var(--c-surface-2)] px-3 py-2">
-              <div className="min-w-0">
-                <div className="truncate text-body font-semibold">
-                  {productName(selectedSku)}
+          {/* M3.44: mode tabs at the top. Tapping switches the form
+              shape; the shared fields (qty / price / payment / reason)
+              stay populated so a mistaken-mode tap doesn't wipe what
+              the user typed. */}
+          <div className="flex gap-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] p-1">
+            {(['sku', 'expense'] as const).map((m) => {
+              const selected = draft.mode === m;
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => {
+                    if (draft.mode === m) return;
+                    // Mode switch: clear identity-specific fields
+                    // (skuId / label) and reset splits because the
+                    // store-selection UI is different across modes.
+                    onChange({
+                      ...draft,
+                      mode: m,
+                      skuId: m === 'sku' ? null : draft.skuId,
+                      label: m === 'expense' ? '' : draft.label,
+                      splits: new Map(),
+                    });
+                  }}
+                  className={
+                    'flex-1 rounded-[var(--r-pill)] px-3 py-1.5 text-label font-medium ' +
+                    (selected
+                      ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
+                      : 'text-[var(--c-fg-muted)]')
+                  }
+                >
+                  {m === 'sku'
+                    ? i18n.t('run.action.addItem.modeSku')
+                    : i18n.t('run.action.addItem.modeExpense')}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* 1) Identity section — mode-specific. */}
+          {draft.mode === 'sku' ? (
+            selectedSku ? (
+              <div className="flex items-center justify-between rounded-md bg-[var(--c-surface-2)] px-3 py-2">
+                <div className="min-w-0">
+                  <div className="truncate text-body font-semibold">
+                    {productName(selectedSku)}
+                  </div>
+                  <div className="text-label text-[var(--c-fg-muted)]">
+                    {selectedSku.unit}
+                  </div>
                 </div>
-                <div className="text-label text-[var(--c-fg-muted)]">
-                  {selectedSku.unit}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => onChange({ ...draft, skuId: null })}
+                  className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-label text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
+                >
+                  {i18n.t('run.action.addItem.changeSku')}
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => onChange({ ...draft, skuId: null })}
-                className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-label text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
-              >
-                {i18n.t('run.action.addItem.changeSku')}
-              </button>
-            </div>
-          ) : (
-            <>
-              <Input
-                type="search"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={i18n.t('run.action.addItem.searchPlaceholder')}
-                autoFocus
-              />
-              <ul className="flex max-h-72 flex-col overflow-y-auto rounded-md border border-[var(--c-divider)]">
-                {filteredSkus.length === 0 ? (
-                  <li className="px-3 py-2 text-body-sm text-[var(--c-fg-muted)]">
-                    {i18n.t('run.action.addItem.noMatch')}
-                  </li>
-                ) : (
-                  filteredSkus.map((sku) => (
-                    <li
-                      key={sku.id}
-                      className="border-b border-[var(--c-divider)] last:border-b-0"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => onChange({ ...draft, skuId: sku.id })}
-                        className="flex w-full items-baseline justify-between gap-2 px-3 py-2 text-left active:bg-[var(--c-surface-2)]"
-                      >
-                        <span className="min-w-0 truncate text-body">
-                          {productName(sku)}
-                        </span>
-                        <span className="shrink-0 text-label text-[var(--c-fg-muted)]">
-                          {sku.unit}
-                        </span>
-                      </button>
+            ) : (
+              <>
+                <Input
+                  type="search"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={i18n.t('run.action.addItem.searchPlaceholder')}
+                  autoFocus
+                />
+                <ul className="flex max-h-72 flex-col overflow-y-auto rounded-md border border-[var(--c-divider)]">
+                  {filteredSkus.length === 0 ? (
+                    <li className="px-3 py-2 text-body-sm text-[var(--c-fg-muted)]">
+                      {i18n.t('run.action.addItem.noMatch')}
                     </li>
-                  ))
-                )}
-              </ul>
+                  ) : (
+                    filteredSkus.map((sku) => (
+                      <li
+                        key={sku.id}
+                        className="border-b border-[var(--c-divider)] last:border-b-0"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => onChange({ ...draft, skuId: sku.id })}
+                          className="flex w-full items-baseline justify-between gap-2 px-3 py-2 text-left active:bg-[var(--c-surface-2)]"
+                        >
+                          <span className="min-w-0 truncate text-body">
+                            {productName(sku)}
+                          </span>
+                          <span className="shrink-0 text-label text-[var(--c-fg-muted)]">
+                            {sku.unit}
+                          </span>
+                        </button>
+                      </li>
+                    ))
+                  )}
+                </ul>
+              </>
+            )
+          ) : (
+            // M3.44: expense mode — free-text label + optional unit hint.
+            <>
+              <label className="block text-label font-semibold text-[var(--c-fg-muted)]">
+                {i18n.t('run.action.addExpense.labelInput')}
+                <Input
+                  className="mt-1"
+                  value={draft.label}
+                  onChange={(e) => onChange({ ...draft, label: e.target.value })}
+                  placeholder={i18n.t('run.action.addExpense.labelPlaceholder')}
+                  autoFocus
+                />
+              </label>
+              <label className="block text-label font-semibold text-[var(--c-fg-muted)]">
+                {i18n.t('run.action.addExpense.unitHint')}
+                <Input
+                  className="mt-1"
+                  value={draft.unitHint}
+                  onChange={(e) => onChange({ ...draft, unitHint: e.target.value })}
+                  placeholder={i18n.t('run.action.addExpense.unitHintPlaceholder')}
+                />
+              </label>
             </>
           )}
 
-          {/* 2) Store dropdown (single-store v1). */}
-          {selectedSku ? (
+          {/* 2) Store selection — SKU mode is single-store dropdown,
+                 expense mode is multi-store chips with auto-even-split. */}
+          {draft.mode === 'sku' && selectedSku ? (
             <label className="block text-label font-semibold text-[var(--c-fg-muted)]">
               {i18n.t('run.action.addItem.targetStore')}
               <select
@@ -4295,25 +4706,105 @@ function AddItemSheet({
               </select>
             </label>
           ) : null}
+          {draft.mode === 'expense' && draft.label.trim() ? (
+            <div>
+              <div className="mb-1 flex items-baseline justify-between gap-2">
+                <span className="text-label font-semibold text-[var(--c-fg-muted)]">
+                  {i18n.t('run.action.addExpense.targetStores')}
+                </span>
+                <span className="text-label text-[var(--c-fg-muted)]">
+                  {i18n.t('run.action.addExpense.splitHint', {
+                    n: draft.splits.size,
+                  })}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {storeChoices.map((st) => {
+                  const selected = draft.splits.has(st.id);
+                  return (
+                    <button
+                      key={st.id}
+                      type="button"
+                      onClick={() => {
+                        const nextIds = selected
+                          ? [...draft.splits.keys()].filter((id) => id !== st.id)
+                          : [...draft.splits.keys(), st.id];
+                        onChange({
+                          ...draft,
+                          splits: evenSplit(nextIds, draft.actualQty),
+                        });
+                      }}
+                      className={
+                        'rounded-[var(--r-pill)] px-3 py-1 text-label font-medium ' +
+                        (selected
+                          ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
+                          : 'bg-[var(--c-surface-2)] text-[var(--c-fg)] ring-hairline')
+                      }
+                    >
+                      {st.name}
+                      {selected && draft.splits.size > 1 ? (
+                        <span className="ml-1 font-mono tabular-nums opacity-80">
+                          {draft.splits.get(st.id) ?? '0'}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+              {draft.splits.size > 1 ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onChange({
+                      ...draft,
+                      splits: evenSplit([...draft.splits.keys()], draft.actualQty),
+                    })
+                  }
+                  className="mt-2 text-label text-[var(--c-action)] active:opacity-70"
+                >
+                  {i18n.t('run.action.addExpense.resplitEvenly')}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
 
-          {/* 3) Qty + price + payment. */}
-          {selectedSku && selectedStoreId ? (
+          {/* 3) Qty + price + payment + reason + (expense) photo. */}
+          {(draft.mode === 'sku' && selectedSku && selectedStoreId) ||
+          (draft.mode === 'expense' &&
+            draft.label.trim() &&
+            draft.splits.size > 0) ? (
             <>
               <div className="grid grid-cols-2 gap-3">
                 <label className="block text-label font-semibold text-[var(--c-fg-muted)]">
-                  {i18n.t('run.action.actualQty', { unit: selectedSku.unit })}
+                  {i18n.t('run.action.actualQty', {
+                    unit:
+                      draft.mode === 'sku'
+                        ? selectedSku?.unit ?? ''
+                        : draft.unitHint.trim() || '',
+                  })}
                   <Input
                     className="mt-1"
                     type="number"
                     inputMode="decimal"
-                    step={selectedSku.step ?? '1'}
+                    step={draft.mode === 'sku' ? (selectedSku?.step ?? '1') : '1'}
                     value={draft.actualQty}
                     onChange={(e) => {
                       const qty = e.target.value;
-                      const next = new Map(draft.splits);
-                      // Single-store v1: the lone store gets the full qty.
-                      const [sid] = [...next.keys()];
-                      if (sid) next.set(sid, qty);
+                      // M3.44: in expense mode multi-store, re-divide
+                      // the new qty across the SAME stores via
+                      // evenSplit (integer rounding, last absorbs
+                      // remainder). SKU mode is single-store, so the
+                      // lone store gets the full qty.
+                      const storeIds = [...draft.splits.keys()];
+                      const next =
+                        draft.mode === 'expense' && storeIds.length > 1
+                          ? evenSplit(storeIds, qty)
+                          : (() => {
+                              const m = new Map(draft.splits);
+                              const [sid] = storeIds;
+                              if (sid) m.set(sid, qty);
+                              return m;
+                            })();
                       onChange({ ...draft, actualQty: qty, splits: next });
                     }}
                   />
@@ -4389,6 +4880,34 @@ function AddItemSheet({
                   placeholder={i18n.t('run.action.addItem.reasonPlaceholder')}
                 />
               </label>
+
+              {/* M3.44 (2026-05-22): receipt photo. Only shown in
+                  expense mode. Mandatory + visually flagged when the
+                  total crosses 200,000 UZS — the FE label switches to
+                  the "required above threshold" copy so the operator
+                  knows BEFORE submitting. */}
+              {draft.mode === 'expense' ? (
+                <div>
+                  <div className="mb-1 text-label font-semibold text-[var(--c-fg-muted)]">
+                    {receiptRequired
+                      ? i18n.t('run.action.addExpense.receiptRequired', {
+                          threshold: formatMoney(RECEIPT_THRESHOLD),
+                        })
+                      : i18n.t('run.action.addExpense.receiptOptional')}
+                  </div>
+                  <PhotoCapture
+                    label={i18n.t('run.action.receiptPhoto')}
+                    value={draft.receiptPhotoUrl}
+                    onCapture={(url) =>
+                      onChange({ ...draft, receiptPhotoUrl: url })
+                    }
+                    onClear={() =>
+                      onChange({ ...draft, receiptPhotoUrl: null })
+                    }
+                    uploader={photoUploader}
+                  />
+                </div>
+              ) : null}
             </>
           ) : null}
         </div>

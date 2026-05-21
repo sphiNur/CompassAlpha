@@ -95,6 +95,34 @@ export type RunCommand =
       reason: string;
       actor: ActorCtx;
     }
+  // ---- Off-catalog expenses (M3.44, 2026-05-22) ----------------------
+  | {
+      /**
+       * Purchaser records something not in the SKU catalog — a one-off
+       * item ("a bag of napkins") OR a shared cost ("porter fee",
+       * "taxi back"). Free-text label is the identity. expenseId is
+       * client-generated so the FE knows it before save (no roundtrip)
+       * AND the same logical add replays idempotently.
+       */
+      type: 'AddRunExpense';
+      expenseId: string;
+      label: string;
+      unitHint?: string;
+      qty: string;
+      unitPrice: string;
+      storeSplits: Array<{ storeId: string; qty: string }>;
+      paymentMethod: 'cash' | 'transfer';
+      receiptPhotoUrl: string | null;
+      reason: string;
+      actor: ActorCtx;
+    }
+  | {
+      /** Purchaser deletes an expense before the run is finished. */
+      type: 'RemoveRunExpense';
+      expenseId: string;
+      reason: string;
+      actor: ActorCtx;
+    }
   // ---- Run-level claim (C.2, M3.38, 2026-05-19) -----------------------
   | { type: 'ClaimRun'; actor: ActorCtx }
   | {
@@ -307,6 +335,119 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
         },
       });
       return events;
+    }
+
+    case 'AddRunExpense': {
+      // M3.44 (2026-05-22): purchaser records an off-catalog expense.
+      // Different lifecycle from PurchaseItem / AddPurchaserItem —
+      // expenses aren't bound to a SKU, don't enter the planned-vs-
+      // bought ledger, and never write to price_history. They also
+      // ride through delivering (no per-store delivery/confirmation),
+      // so the phase gate is wider: anything pre-terminal.
+      assertActive(state);
+      if (!command.actor.permissions.has('run.purchase')) {
+        throw forbidden('run.errors.cannotPurchase');
+      }
+      assertClaimOwnership(state, command.actor);
+      if (state.status === 'finished' || state.status === 'cancelled') {
+        throw preconditionFailed('run.errors.runFrozen', { status: state.status });
+      }
+      // Idempotent — replay of same expenseId is a no-op (the reducer
+      // also detects this defensively but we short-circuit to avoid
+      // writing a duplicate event).
+      if (state.expenses.some((e) => e.id === command.expenseId)) {
+        return [];
+      }
+      const label = command.label.trim();
+      if (!label) throw validation('run.errors.expenseLabelRequired');
+      if (label.length > 200) throw validation('run.errors.expenseLabelTooLong');
+      const reason = command.reason.trim();
+      if (!reason) throw validation('run.errors.expenseReasonRequired');
+      if (reason.length > 500) throw validation('run.errors.noteTooLong');
+      const qty = num(command.qty, 'run.errors.invalidQty');
+      if (qty <= 0) throw validation('run.errors.qtyMustBePositive');
+      const price = num(command.unitPrice, 'run.errors.invalidQty');
+      if (price <= 0) throw validation('run.errors.qtyMustBePositive');
+      const splitSum = command.storeSplits.reduce(
+        (s, x) => s + num(x.qty, 'run.errors.invalidQty'),
+        0,
+      );
+      if (Math.abs(splitSum - qty) > TOLERANCE) {
+        throw validation('run.errors.splitSumMismatch', { actual: qty, splitSum });
+      }
+      // Store-scope: every split storeId must already be part of this
+      // run. Mirrors AddPurchaserItem's same guard.
+      const involvedStores = new Set<string>();
+      for (const it of state.items.values()) {
+        for (const sp of it.storeSplits) involvedStores.add(sp.storeId);
+      }
+      for (const st of state.stores.keys()) involvedStores.add(st);
+      if (involvedStores.size > 0) {
+        for (const sp of command.storeSplits) {
+          if (!involvedStores.has(sp.storeId)) {
+            throw preconditionFailed('run.errors.storeNotInRun', {
+              storeId: sp.storeId,
+            });
+          }
+        }
+      }
+      // Receipt-photo threshold: >200,000 UZS requires a photo. The
+      // total is qty × unitPrice; the FE shows an upload affordance
+      // and prompts when the amount crosses the line. Server still
+      // enforces in case the FE was bypassed.
+      const total = qty * price;
+      const RECEIPT_THRESHOLD = 200_000;
+      if (total > RECEIPT_THRESHOLD && !command.receiptPhotoUrl) {
+        throw validation('run.errors.expenseReceiptRequired', {
+          threshold: RECEIPT_THRESHOLD,
+          total,
+        });
+      }
+      return [
+        {
+          ...baseFor(1),
+          type: 'RunExpenseAdded',
+          payload: {
+            expenseId: command.expenseId,
+            label,
+            unitHint: command.unitHint?.trim() || null,
+            qty: command.qty,
+            unitPrice: command.unitPrice,
+            storeSplits: command.storeSplits,
+            paymentMethod: command.paymentMethod,
+            receiptPhotoUrl: command.receiptPhotoUrl,
+            reason,
+            byMemberId: command.actor.memberId,
+          },
+        },
+      ];
+    }
+
+    case 'RemoveRunExpense': {
+      assertActive(state);
+      if (!command.actor.permissions.has('run.purchase')) {
+        throw forbidden('run.errors.cannotPurchase');
+      }
+      assertClaimOwnership(state, command.actor);
+      if (state.status === 'finished' || state.status === 'cancelled') {
+        throw preconditionFailed('run.errors.runFrozen', { status: state.status });
+      }
+      // Idempotent — removing what's already gone is a no-op.
+      const target = state.expenses.find((e) => e.id === command.expenseId);
+      if (!target) return [];
+      const reason = command.reason.trim();
+      if (reason.length > 500) throw validation('run.errors.noteTooLong');
+      return [
+        {
+          ...baseFor(1),
+          type: 'RunExpenseRemoved',
+          payload: {
+            expenseId: command.expenseId,
+            reason,
+            byMemberId: command.actor.memberId,
+          },
+        },
+      ];
     }
 
     case 'MarkUnavailable': {
