@@ -586,6 +586,31 @@ export const uz = {
   'run.action.unavailableReasonPlaceholder': 'Sabab',
   'run.action.actualQty': 'Haqiqiy miqdor ({unit})',
   'run.action.unitPriceUzs': 'Birlik narxi (UZS)',
+  // M3.41 (2026-05-21): xaridor xarid o'rtasida yangi mahsulot qo'shadi
+  'run.action.addItem.button': "+ Qo'shish",
+  'run.action.addItem.title': "Xarid o'rtasida mahsulot qo'shish",
+  'run.action.addItem.subtitle':
+    'Asl buyurtmada bo‘lmagan SKU uchun xarid yozuvini kiriting',
+  'run.action.addItem.searchPlaceholder': 'SKU qidirish…',
+  'run.action.addItem.noMatch':
+    "Mos SKU topilmadi. Xaridda mavjud bo'lganlar yashirilgan.",
+  'run.action.addItem.changeSku': "O'zgartirish",
+  'run.action.addItem.targetStore': 'Qaysi do‘konga?',
+  'run.action.addItem.pickStore': "— Do'kon tanlang —",
+  'run.action.addItem.totalHint': "Qator bo'yicha jami",
+  'run.action.addItem.reasonLabel': "Nima uchun qo'shilyapti?",
+  'run.action.addItem.reasonPlaceholder':
+    "masalan: Oshpaz qo'ng'iroq qildi / Bozorda chegirma / Sotuvchi bonusi",
+  'run.action.addItem.save': 'Saqlash',
+  'run.label.addedByPurchaser': "Xaridor xarid davomida qo'shgan",
+  'run.confirm.finish.addedByPurchaser':
+    "➕ Buyurtmadan tashqari {n} pozitsiya qo'shildi · {total} UZS",
+  'run.toast.itemAdded': "Pozitsiya qo'shildi",
+  'run.toast.couldNotAddItem': "Pozitsiyani qo'shib bo'lmadi",
+  'run.errors.alreadyInRun':
+    "Bu SKU xaridda allaqachon bor — mavjud qatorni tahrirlang",
+  'run.errors.storeNotInRun': "Bu do'kon hozirgi xaridda ishtirok etmaydi",
+  'run.errors.addReasonRequired': "Qo'shish sababini ko'rsating",
   // C.2 (M3.38, 2026-05-19): xaridni qo'lga olish banneri.
   'run.banner.claimed': "Xaridni hozir {who} olib bormoqda",
   'run.banner.claimedAfterHandoff': "{prev} → {who} xaridni qabul qildi",

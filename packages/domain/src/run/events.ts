@@ -183,6 +183,45 @@ export type RunEvent =
         addedPlannedItems: Array<{ skuId: string; qty: string }>;
       };
     })
+  // ---- Purchaser-initiated additions (M3.41, 2026-05-21) ---------------
+  | (BaseEvent & {
+      /**
+       * Mid-run addition: the purchaser bought a SKU that was NOT part of
+       * the originally-aggregated demand. Different stream-of-evidence
+       * than ItemPurchased — the reducer creates a brand-new RunItemState
+       * with `addedByPurchaser=true` so reports can separate "what was
+       * asked for" from "what was bought beyond the ask".
+       *
+       * Off-catalog items DON'T use this — there's a separate informational
+       * "其他物品" flow on the session side (M3.16-C / M3.37). This event
+       * always references an existing SKU id.
+       *
+       * Guards (enforced in commands.ts):
+       *   - status ∈ {planned, purchasing}
+       *   - actor has run.purchase
+       *   - claim ownership (C.2)
+       *   - SKU not already in state.items (use RevisePurchase to grow
+       *     an existing row instead)
+       *   - all storeSplits.storeId already involved in the run (no
+       *     surprise-attach of new stores; that path is AttachSessions)
+       *   - splitSum === actualQty within TOLERANCE
+       *   - reason is required (auditable explanation of why it wasn't
+       *     in the original order)
+       */
+      type: 'PurchaserItemAdded';
+      payload: {
+        skuId: string;
+        supplierId: string | null;
+        unitPrice: string;
+        actualQty: string;
+        receiptPhotoUrl: string | null;
+        storeSplits: Array<{ storeId: string; qty: string }>;
+        paymentMethod: 'cash' | 'transfer';
+        /** Free-text — why this SKU wasn't on the original order. ≤500. */
+        reason: string;
+        byMemberId: string;
+      };
+    })
   // ---- Run-level claim (C.2, M3.38, 2026-05-19) -----------------------
   // Mirrors the order-session claim (M3.19 + M3.22). A run can be
   // claimed by exactly one purchaser at a time during the planned →

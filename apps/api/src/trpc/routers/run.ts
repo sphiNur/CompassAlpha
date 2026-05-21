@@ -13,6 +13,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { schema as s } from '@compass/db';
 import {
+  AddPurchaserItemInputSchema,
   ConfirmStoreInputSchema,
   ConfirmStoreItemInputSchema,
   DispatchInputSchema,
@@ -1170,6 +1171,40 @@ export const runRouter = router({
       }),
     ),
   ),
+
+  /**
+   * M3.41 (2026-05-21): purchaser-initiated mid-run addition. Records
+   * a purchase for a SKU that wasn't in the original aggregated demand
+   * — used for impromptu bazaar buys, chef-call-in top-ups, etc.
+   * The domain layer enforces that the SKU isn't already in the run
+   * (use RevisePurchase to grow an existing row), that every storeId
+   * in the splits is already part of the run's store scope (use
+   * AttachSessions to bring in a new store), and that `reason` is
+   * non-empty so audit can answer "why was this added?". The
+   * resulting row carries `addedByPurchaser=true` so finish summary
+   * + reports surface it separately from the planned ask.
+   *
+   * Idempotent: replays of the same X-Idempotency-Key short-circuit
+   * back to the prior result.
+   */
+  addPurchaserItem: idempotentMutation
+    .input(AddPurchaserItemInputSchema)
+    .mutation(async ({ ctx, input }) =>
+      runSimpleCommand(ctx, input.runId, (state) =>
+        decideRun(state, {
+          type: 'AddPurchaserItem',
+          skuId: input.skuId,
+          supplierId: input.supplierId,
+          unitPrice: input.unitPrice,
+          actualQty: input.actualQty,
+          receiptPhotoUrl: input.receiptPhotoUrl,
+          storeSplits: input.storeSplits,
+          paymentMethod: input.paymentMethod,
+          reason: input.reason,
+          actor: actorFromCtx(ctx),
+        }),
+      ),
+    ),
 
   markUnavailable: authedProcedure
     .input(MarkUnavailableInputSchema)

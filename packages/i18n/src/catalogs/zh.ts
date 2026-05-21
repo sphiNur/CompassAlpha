@@ -531,6 +531,29 @@ export const zh = {
   'run.action.unavailableReasonPlaceholder': '原因',
   'run.action.actualQty': '实际数量（{unit}）',
   'run.action.unitPriceUzs': '单价（UZS）',
+  // M3.41 (2026-05-21): 采购员中途自主新增
+  'run.action.addItem.button': '+ 新增',
+  'run.action.addItem.title': '采购中新增物品',
+  'run.action.addItem.subtitle': '为原订单里没有的 SKU 记录一笔购买',
+  'run.action.addItem.searchPlaceholder': '搜索 SKU…',
+  'run.action.addItem.noMatch': '没有匹配的 SKU。已在本次采购中的 SKU 已隐藏。',
+  'run.action.addItem.changeSku': '更换',
+  'run.action.addItem.targetStore': '送给哪个店铺?',
+  'run.action.addItem.pickStore': '— 选择店铺 —',
+  'run.action.addItem.totalHint': '小计',
+  'run.action.addItem.reasonLabel': '为什么要加这一项?',
+  'run.action.addItem.reasonPlaceholder':
+    '例如:厨师电话嘱咐 / 摊位特价 / 摊主搭赠',
+  'run.action.addItem.save': '保存新增',
+  'run.label.addedByPurchaser': '采购员中途新增',
+  'run.confirm.finish.addedByPurchaser':
+    '➕ 新增 {n} 件超出原订单 · 共 {total} UZS',
+  'run.toast.itemAdded': '已加入本次采购',
+  'run.toast.couldNotAddItem': '加入失败',
+  'run.errors.alreadyInRun':
+    '此 SKU 已在采购单中 — 修改原有行而不是新增',
+  'run.errors.storeNotInRun': '该店铺不在本次采购的范围里',
+  'run.errors.addReasonRequired': '中途新增必须填写原因',
   // C.2 (M3.38, 2026-05-19): 采购单认领 banner 文案.
   'run.banner.claimed': '采购单正由 {who} 处理',
   'run.banner.claimedAfterHandoff': '{prev} → {who} 接手了这张采购单',

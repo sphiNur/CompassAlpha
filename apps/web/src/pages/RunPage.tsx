@@ -93,6 +93,28 @@ function fromDisplayPrice(displayStr: string, inThousands: boolean): string {
   return String(Number((n * 1000).toFixed(3)));
 }
 
+/**
+ * M3.41 (2026-05-21): draft state for the "+ add item" sheet. Captures
+ * everything needed for the `run.addPurchaserItem` mutation: a freshly-
+ * picked SKU, qty + price, multi-store split, payment method, and a
+ * mandatory free-text reason explaining why the SKU wasn't in the
+ * original order. `null` skuId is allowed in the draft so the user can
+ * open the sheet, search, then commit a selection.
+ */
+interface AddItemDraft {
+  runId: string;
+  /** Selected SKU id; null until the user picks one. */
+  skuId: string | null;
+  actualQty: string;
+  unitPrice: string;
+  /** storeId → qty. Only stores in the run's existing scope are valid. */
+  splits: Map<string, string>;
+  paymentMethod: 'cash' | 'transfer';
+  receiptPhotoUrl: string | null;
+  reason: string;
+  supplierId: string | null;
+}
+
 interface PurchaseDraft {
   /** When set, this is an EDIT of an existing purchase. The submit button
    *  switches to revisePurchase and the reason field becomes required. */
@@ -134,6 +156,12 @@ export function RunPage() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [purchaseDraft, setPurchaseDraft] = useState<PurchaseDraft | null>(null);
+  // M3.41 (2026-05-21): purchaser-initiated mid-run additions. Distinct
+  // from `purchaseDraft` because the workflow is different — picking a
+  // SKU that's NOT in the run (vs. recording a buy for a planned row),
+  // requiring a free-text reason for audit, and submitting via the new
+  // `run.addPurchaserItem` mutation instead of purchaseItem/revisePurchase.
+  const [addItemDraft, setAddItemDraft] = useState<AddItemDraft | null>(null);
   // M3.36 (2026-05-19): page-level "thousands input" toggle.
   // Default ON — UZS pricing is the launch tenant's currency and
   // operators consistently type 5-6 digit prices. Persist per-user
@@ -201,6 +229,15 @@ export function RunPage() {
       void utils.run.get.invalidate();
       void utils.run.list.invalidate();
     },
+    // M3.41 (2026-05-21): purchaser-added items survive flaky bazaar
+    // LTE just like regular purchases.
+    'run.addPurchaserItem': async (entry) => {
+      await utils.client.run.addPurchaserItem.mutate(
+        entry.input as Parameters<typeof utils.client.run.addPurchaserItem.mutate>[0],
+      );
+      void utils.run.get.invalidate();
+      void utils.run.list.invalidate();
+    },
   });
 
   // ---- Mutations ------------------------------------------------------
@@ -243,6 +280,28 @@ export function RunPage() {
       toast.success(i18n.t('run.toast.purchaseStarted'));
     },
     onError: errToast('common.error'),
+  });
+  // M3.41 (2026-05-21): mid-run addition. Mirrors purchaseItem's
+  // success/offline-queue pattern so the bazaar UX (flaky LTE) survives
+  // a network drop mid-add. Idempotent at the API layer via
+  // X-Idempotency-Key so replays don't double-buy.
+  const addPurchaserItem = trpc.run.addPurchaserItem.useMutation({
+    onSuccess: () => {
+      void utils.run.get.invalidate();
+      void utils.run.list.invalidate();
+      setAddItemDraft(null);
+      haptic('success');
+      toast.success(i18n.t('run.toast.itemAdded'));
+    },
+    onError: (err, vars) => {
+      if (isLikelyNetworkError(err)) {
+        void offline.enqueue('run.addPurchaserItem', vars);
+        setAddItemDraft(null);
+        toast.info(i18n.t('run.toast.purchaseSavedOffline'));
+      } else {
+        errToast('run.toast.couldNotAddItem')(err);
+      }
+    },
   });
   const purchaseItem = trpc.run.purchaseItem.useMutation({
     onSuccess: () => {
@@ -555,6 +614,13 @@ export function RunPage() {
     let total = 0;
     let totalCash = 0;
     let totalTransfer = 0;
+    // M3.41 (2026-05-21): track purchaser-added rows separately so the
+    // finish confirm sheet can call out "Z items added beyond the
+    // original order, total W UZS". The manager reviewing the run sees
+    // this at a glance — no hunting through audit logs to spot
+    // off-plan spending.
+    let addedSkus = 0;
+    let addedTotal = 0;
     for (const it of items) {
       if (it.status === 'purchased' && it.unitPrice && it.purchasedQty) {
         const line = Number(it.unitPrice) * Number(it.purchasedQty);
@@ -564,9 +630,13 @@ export function RunPage() {
         // the server-side aggregate is about to compute.
         if (it.paymentMethod === 'transfer') totalTransfer += line;
         else totalCash += line;
+        if (it.addedByPurchaser) {
+          addedSkus += 1;
+          addedTotal += line;
+        }
       }
     }
-    return { skus, stores, total, totalCash, totalTransfer };
+    return { skus, stores, total, totalCash, totalTransfer, addedSkus, addedTotal };
   }, [runDetailQuery.data]);
 
   /**
@@ -835,6 +905,20 @@ export function RunPage() {
                 transfer: formatMoney(finishSummary.totalTransfer),
               })
             : '';
+          // M3.41 (2026-05-21): when the purchaser added items mid-run,
+          // call them out separately in the finish body so the manager
+          // can see "X items added beyond the original order, total Y"
+          // at the same glance as the canonical total. The line is
+          // omitted when nothing was added (the normal case) to avoid
+          // cluttering 90% of finishes with a zeroed-out row.
+          const addedLine =
+            finishSummary.addedSkus > 0
+              ? '\n' +
+                i18n.t('run.confirm.finish.addedByPurchaser', {
+                  n: finishSummary.addedSkus,
+                  total: formatMoney(finishSummary.addedTotal),
+                })
+              : '';
           return {
             title: i18n.t('run.confirm.finish.title'),
             body:
@@ -845,7 +929,8 @@ export function RunPage() {
                 stores: finishSummary.stores,
                 total: formatMoney(finishSummary.total),
               }) +
-              breakdownLine,
+              breakdownLine +
+              addedLine,
             confirmLabel: i18n.t('run.action.finish'),
             danger: false,
             requireReason: false,
@@ -1115,6 +1200,34 @@ export function RunPage() {
               }
             >
               {i18n.t('run.label.thousandsToggle')}
+            </button>
+          ) : null}
+          {/* M3.41 (2026-05-21): "+ add item" — only shown during
+              purchasing AND when I hold the run claim (C.2 gate). The
+              domain layer enforces the same constraints; gating the UI
+              hides the affordance to avoid a confusing tap-then-fail.
+              The button opens AddItemSheet which collects SKU + qty +
+              price + store split + reason. */}
+          {activeRun.status === 'purchasing' && isClaimedByMe ? (
+            <button
+              type="button"
+              onClick={() =>
+                setAddItemDraft({
+                  runId: activeRun.id,
+                  skuId: null,
+                  actualQty: '',
+                  unitPrice: '',
+                  splits: new Map(),
+                  paymentMethod: 'cash',
+                  receiptPhotoUrl: null,
+                  reason: '',
+                  supplierId: null,
+                })
+              }
+              title={i18n.t('run.action.addItem.title')}
+              className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-action)] px-2.5 py-0.5 text-label font-semibold text-[var(--c-action-fg)] active:opacity-70"
+            >
+              {i18n.t('run.action.addItem.button')}
             </button>
           ) : null}
           <span className="ml-auto truncate text-label tabular-nums text-[var(--c-fg-muted)]">
@@ -1466,6 +1579,53 @@ export function RunPage() {
         submitting={purchaseItem.isPending || revisePurchase.isPending}
       />
 
+      {/* M3.41 (2026-05-21): mid-run "+ add item" sheet. SKU search +
+          single-store selection + qty/price + payment + reason.
+          Multi-store split deferred to v2 — single-store covers the
+          90% case (chef-call-in, impromptu buy for a specific
+          store). storeChoices is constrained to stores already in
+          the run's scope (matches the domain layer's storeNotInRun
+          guard). */}
+      <AddItemSheet
+        draft={addItemDraft}
+        runItems={runDetailQuery.data?.items ?? []}
+        runStoreIds={(() => {
+          const ids = new Set<string>();
+          for (const it of runDetailQuery.data?.items ?? []) {
+            for (const sp of runDetailQuery.data?.splits ?? []) {
+              if (sp.skuId === it.skuId) ids.add(sp.storeId);
+            }
+          }
+          for (const d of runDetailQuery.data?.perStoreDemand ?? []) ids.add(d.storeId);
+          for (const sp of runDetailQuery.data?.splits ?? []) ids.add(sp.storeId);
+          return [...ids];
+        })()}
+        skus={skusQuery.data ?? []}
+        storeById={storeById}
+        productName={productName}
+        i18n={i18n}
+        priceInThousands={priceInThousands}
+        onCancel={() => setAddItemDraft(null)}
+        onChange={setAddItemDraft}
+        onSubmit={(d) => {
+          if (!d.skuId) return;
+          addPurchaserItem.mutate({
+            runId: d.runId,
+            skuId: d.skuId,
+            supplierId: d.supplierId,
+            unitPrice: d.unitPrice,
+            actualQty: d.actualQty,
+            receiptPhotoUrl: d.receiptPhotoUrl,
+            storeSplits: [...d.splits.entries()]
+              .filter(([, q]) => Number(q) > 0)
+              .map(([storeId, qty]) => ({ storeId, qty })),
+            paymentMethod: d.paymentMethod,
+            reason: d.reason.trim(),
+          });
+        }}
+        submitting={addPurchaserItem.isPending}
+      />
+
       {/* Mark-unavailable sheet — primary action handled by MainButton
           inside Telegram. Footer button only outside Telegram. */}
       <Sheet
@@ -1553,6 +1713,10 @@ interface ActiveRun {
      *  pre-migration may be missing the column on rare occasions; the
      *  inline row defaults to 'cash' when undefined. */
     paymentMethod?: string | null;
+    /** M3.41 (2026-05-21): true when this row was added mid-run by the
+     *  purchaser via AddPurchaserItem. Drives the "+" badge on the row
+     *  and the breakdown in finish summary. Default false. */
+    addedByPurchaser?: boolean;
   }>;
   splits: Array<{
     runId: string;
@@ -3513,10 +3677,24 @@ function PurchaseRow({
     // Cash is the implicit default — no icon needed (avoids visual
     // noise on the 90%+ rows that are cash).
     const isTransfer = item.paymentMethod === 'transfer';
+    const isAdded = item.addedByPurchaser === true;
     return (
       <li className="flex items-center gap-2 border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0">
         <span aria-hidden className="shrink-0 text-body text-[var(--c-success)]">✓</span>
         <span className="shrink-0 truncate text-body font-semibold">{skuName}</span>
+        {isAdded ? (
+          // M3.41 (2026-05-21): "+" badge marks rows the purchaser added
+          // mid-run. The +ring outline disambiguates from the 🏦 transfer
+          // pill (which uses the same action accent). Tooltip carries
+          // the localized "added by purchaser" label.
+          <span
+            aria-label={i18n.t('run.label.addedByPurchaser')}
+            title={i18n.t('run.label.addedByPurchaser')}
+            className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warning)]/15 px-1.5 py-0.5 text-label text-[var(--c-warning)] ring-1 ring-[var(--c-warning)]"
+          >
+            +
+          </span>
+        ) : null}
         {isTransfer ? (
           <span
             aria-label={i18n.t('run.label.paymentTransfer')}
@@ -3847,6 +4025,345 @@ function PurchaseSheet({
                 placeholder={i18n.t('run.label.reasonPlaceholder')}
               />
             </label>
+          ) : null}
+        </div>
+      ) : null}
+    </Sheet>
+  );
+}
+
+/**
+ * M3.41 (2026-05-21): mid-run "+ add item" sheet. Lets the purchaser
+ * record a buy for a SKU that wasn't on the original aggregated order
+ * (impromptu bazaar pickup, chef-call-in top-up, vendor freebie, …).
+ *
+ * Workflow inside the sheet:
+ *   1. Search the SKU catalog. Tap a result → that SKU is selected.
+ *   2. Pick the destination store (chips of stores already in the
+ *      run — server rejects stores not in scope, the chip filter
+ *      mirrors that constraint).
+ *   3. Enter qty + price (price input respects the K-thousands toggle
+ *      from page level). Live total hint below.
+ *   4. Type a reason (required — audit log answers "why was this
+ *      added beyond the original order?").
+ *   5. Save → server emits PurchaserItemAdded → row appears in the
+ *      run with the "+" badge.
+ *
+ * Constraints handled by this UI (server enforces too):
+ *   - SKU not already in the run (filtered out of the search list).
+ *   - Destination store must already be in the run's scope.
+ *   - reason is non-empty before Save is enabled.
+ *
+ * Multi-store split deferred to v2: v1 is single-store. Most impromptu
+ * additions are "give me X for store A specifically" — multi-store
+ * adds for the same SKU can be done by re-opening the sheet.
+ */
+function AddItemSheet({
+  draft,
+  runItems,
+  runStoreIds,
+  skus,
+  storeById,
+  productName,
+  i18n,
+  priceInThousands,
+  onCancel,
+  onChange,
+  onSubmit,
+  submitting,
+}: {
+  draft: AddItemDraft | null;
+  /** Already-in-run items (so we can exclude them from the SKU picker). */
+  runItems: Array<{ skuId: string }>;
+  /** Stores already involved in this run — only these are eligible. */
+  runStoreIds: string[];
+  skus: Array<{
+    id: string;
+    names: Record<string, string>;
+    unit: string;
+    step: string;
+    isArchived: boolean;
+  }>;
+  storeById: Map<string, { id: string; name: string; code: string | null }>;
+  productName: (item: { names: Record<string, string> | null | undefined }) => string;
+  i18n: ReturnType<typeof useI18n>;
+  priceInThousands: boolean;
+  onCancel: () => void;
+  onChange: (d: AddItemDraft | null) => void;
+  onSubmit: (d: AddItemDraft) => void;
+  submitting: boolean;
+}) {
+  const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
+  const [search, setSearch] = useState('');
+  const [priceInput, setPriceInput] = useState('');
+
+  // Reset local input states when the sheet opens/closes for a new draft.
+  useEffect(() => {
+    if (!draft) {
+      setSearch('');
+      setPriceInput('');
+      return;
+    }
+    setPriceInput(toDisplayPrice(draft.unitPrice, priceInThousands));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft?.runId, draft?.skuId, priceInThousands]);
+
+  // Filter the SKU list: exclude already-in-run, archived, and (if a
+  // search is typed) anything that doesn't substring-match in zh / en /
+  // ru / uz. Cap displayed list at 20 to keep the picker scrollable
+  // without pagination.
+  const inRunSet = useMemo(() => new Set(runItems.map((it) => it.skuId)), [runItems]);
+  const filteredSkus = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return skus
+      .filter((sku) => !sku.isArchived && !inRunSet.has(sku.id))
+      .filter((sku) => {
+        if (!q) return true;
+        const names = sku.names ?? {};
+        return Object.values(names).some(
+          (v) => typeof v === 'string' && v.toLowerCase().includes(q),
+        );
+      })
+      .slice(0, 20);
+  }, [skus, inRunSet, search]);
+
+  const selectedSku = useMemo(
+    () => (draft?.skuId ? skus.find((s) => s.id === draft.skuId) : null),
+    [draft?.skuId, skus],
+  );
+
+  // Single-store v1: dropdown of run-involved stores. v2 can swap in a
+  // multi-select chip row that drives `splits` Map directly.
+  const storeChoices = useMemo(
+    () =>
+      runStoreIds
+        .map((id) => storeById.get(id))
+        .filter((s): s is { id: string; name: string; code: string | null } => !!s),
+    [runStoreIds, storeById],
+  );
+  const selectedStoreId = draft && draft.splits.size === 1 ? [...draft.splits.keys()][0]! : '';
+
+  const totalHint = useMemo(() => {
+    if (!draft) return null;
+    const q = Number(draft.actualQty);
+    const p = Number(priceInput);
+    if (!Number.isFinite(q) || !Number.isFinite(p) || q <= 0 || p <= 0) return null;
+    const effectiveP = priceInThousands ? p * 1000 : p;
+    return Math.round(q * effectiveP);
+  }, [draft, priceInput, priceInThousands]);
+
+  const canSubmit = !!(
+    draft &&
+    draft.skuId &&
+    Number(draft.actualQty) > 0 &&
+    Number(draft.unitPrice) > 0 &&
+    draft.splits.size > 0 &&
+    draft.reason.trim().length > 0 &&
+    !submitting
+  );
+
+  return (
+    <Sheet
+      open={!!draft}
+      onOpenChange={(open) => !open && onCancel()}
+      title={i18n.t('run.action.addItem.title')}
+      description={
+        selectedSku
+          ? productName(selectedSku)
+          : i18n.t('run.action.addItem.subtitle')
+      }
+      footer={
+        <Button
+          block
+          loading={submitting}
+          disabled={!canSubmit}
+          onClick={() => draft && canSubmit && onSubmit(draft)}
+        >
+          {i18n.t('run.action.addItem.save')}
+        </Button>
+      }
+    >
+      {draft ? (
+        <div className="flex flex-col gap-3 py-3">
+          {/* 1) SKU picker — either search-and-select or show the chosen one. */}
+          {selectedSku ? (
+            <div className="flex items-center justify-between rounded-md bg-[var(--c-surface-2)] px-3 py-2">
+              <div className="min-w-0">
+                <div className="truncate text-body font-semibold">
+                  {productName(selectedSku)}
+                </div>
+                <div className="text-label text-[var(--c-fg-muted)]">
+                  {selectedSku.unit}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => onChange({ ...draft, skuId: null })}
+                className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-label text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
+              >
+                {i18n.t('run.action.addItem.changeSku')}
+              </button>
+            </div>
+          ) : (
+            <>
+              <Input
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder={i18n.t('run.action.addItem.searchPlaceholder')}
+                autoFocus
+              />
+              <ul className="flex max-h-72 flex-col overflow-y-auto rounded-md border border-[var(--c-divider)]">
+                {filteredSkus.length === 0 ? (
+                  <li className="px-3 py-2 text-body-sm text-[var(--c-fg-muted)]">
+                    {i18n.t('run.action.addItem.noMatch')}
+                  </li>
+                ) : (
+                  filteredSkus.map((sku) => (
+                    <li
+                      key={sku.id}
+                      className="border-b border-[var(--c-divider)] last:border-b-0"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => onChange({ ...draft, skuId: sku.id })}
+                        className="flex w-full items-baseline justify-between gap-2 px-3 py-2 text-left active:bg-[var(--c-surface-2)]"
+                      >
+                        <span className="min-w-0 truncate text-body">
+                          {productName(sku)}
+                        </span>
+                        <span className="shrink-0 text-label text-[var(--c-fg-muted)]">
+                          {sku.unit}
+                        </span>
+                      </button>
+                    </li>
+                  ))
+                )}
+              </ul>
+            </>
+          )}
+
+          {/* 2) Store dropdown (single-store v1). */}
+          {selectedSku ? (
+            <label className="block text-label font-semibold text-[var(--c-fg-muted)]">
+              {i18n.t('run.action.addItem.targetStore')}
+              <select
+                className="mt-1 h-11 w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-h3 ring-hairline"
+                value={selectedStoreId}
+                onChange={(e) => {
+                  const next = new Map<string, string>();
+                  if (e.target.value && draft.actualQty) {
+                    next.set(e.target.value, draft.actualQty);
+                  } else if (e.target.value) {
+                    next.set(e.target.value, '');
+                  }
+                  onChange({ ...draft, splits: next });
+                }}
+              >
+                <option value="">{i18n.t('run.action.addItem.pickStore')}</option>
+                {storeChoices.map((st) => (
+                  <option key={st.id} value={st.id}>
+                    {st.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+
+          {/* 3) Qty + price + payment. */}
+          {selectedSku && selectedStoreId ? (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block text-label font-semibold text-[var(--c-fg-muted)]">
+                  {i18n.t('run.action.actualQty', { unit: selectedSku.unit })}
+                  <Input
+                    className="mt-1"
+                    type="number"
+                    inputMode="decimal"
+                    step={selectedSku.step ?? '1'}
+                    value={draft.actualQty}
+                    onChange={(e) => {
+                      const qty = e.target.value;
+                      const next = new Map(draft.splits);
+                      // Single-store v1: the lone store gets the full qty.
+                      const [sid] = [...next.keys()];
+                      if (sid) next.set(sid, qty);
+                      onChange({ ...draft, actualQty: qty, splits: next });
+                    }}
+                  />
+                </label>
+                <label className="block text-label font-semibold text-[var(--c-fg-muted)]">
+                  {priceInThousands
+                    ? i18n.t('run.action.unitPriceUzsThousands')
+                    : i18n.t('run.action.unitPriceUzs')}
+                  <Input
+                    className="mt-1"
+                    type="number"
+                    inputMode="decimal"
+                    value={priceInput}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setPriceInput(v);
+                      onChange({
+                        ...draft,
+                        unitPrice: fromDisplayPrice(v, priceInThousands),
+                      });
+                    }}
+                  />
+                </label>
+              </div>
+              {totalHint !== null ? (
+                <div className="text-label text-[var(--c-fg-muted)]">
+                  {i18n.t('run.action.addItem.totalHint')}:{' '}
+                  <span className="font-mono font-semibold tabular-nums text-[var(--c-fg)]">
+                    {formatMoney(totalHint)} {currency}
+                  </span>
+                </div>
+              ) : null}
+
+              {/* Payment method chips — mirror PurchaseSheet's shape. */}
+              <div>
+                <div className="mb-1 text-label font-semibold text-[var(--c-fg-muted)]">
+                  {i18n.t('run.label.paymentMethod')}
+                </div>
+                <div className="flex gap-2">
+                  {(['cash', 'transfer'] as const).map((m) => {
+                    const selected = draft.paymentMethod === m;
+                    return (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => onChange({ ...draft, paymentMethod: m })}
+                        className={
+                          'press flex-1 rounded-[var(--r-pill)] px-3 py-2 text-label font-medium ring-hairline ' +
+                          (selected
+                            ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
+                            : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]')
+                        }
+                      >
+                        {m === 'cash' ? '💵 ' : '🏦 '}
+                        {m === 'cash'
+                          ? i18n.t('run.label.paymentCash')
+                          : i18n.t('run.label.paymentTransfer')}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Reason (required) — the audit gate. The placeholder
+                  cues the operator on what's expected (vendor freebie,
+                  chef call-in, market deal). */}
+              <label className="block text-label font-semibold text-[var(--c-fg-muted)]">
+                {i18n.t('run.action.addItem.reasonLabel')}
+                <Input
+                  className="mt-1"
+                  value={draft.reason}
+                  onChange={(e) => onChange({ ...draft, reason: e.target.value })}
+                  placeholder={i18n.t('run.action.addItem.reasonPlaceholder')}
+                />
+              </label>
+            </>
           ) : null}
         </div>
       ) : null}

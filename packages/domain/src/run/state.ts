@@ -27,6 +27,17 @@ export interface RunItemState {
    *  is still pending or unavailable. Defaults to `cash` when applying
    *  pre-M1.14 events that didn't carry the field. */
   paymentMethod: PaymentMethod | null;
+  /**
+   * M3.41 (2026-05-21): true when the purchaser added this row mid-run
+   * (PurchaserItemAdded event) — i.e. the SKU was NOT in the original
+   * aggregated demand. Reports / finish summary distinguish these from
+   * planned items so the manager can see "ordered" vs "added beyond
+   * the ask". False / undefined for rows that came from RunPlanned or
+   * SessionsAttachedToRun. The reason for the addition lives only in
+   * the event log (not denormalized into state) to keep the row shape
+   * small — audit lookup walks the event stream when needed.
+   */
+  addedByPurchaser?: boolean;
 }
 
 export interface RunStoreDeliveryState {
@@ -137,6 +148,29 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
         // payment method was tracked). Forward events always carry a
         // value, so the ?? is a one-time projection-time backfill.
         paymentMethod: event.payload.paymentMethod ?? 'cash',
+      });
+      return { ...state, seq: event.seq, items };
+    }
+    case 'PurchaserItemAdded': {
+      // M3.41 (2026-05-21): purchaser added a SKU mid-run. Create a fresh
+      // RunItemState marked `addedByPurchaser=true`. plannedQty=actualQty
+      // because the "plan" for an added item IS what was bought — there's
+      // no prior aggregated demand to compare against. The shape mirrors
+      // ItemPurchased's outcome so downstream UI / reports treat it as a
+      // purchased row, just with the extra flag set.
+      const items = new Map(state.items);
+      items.set(event.payload.skuId, {
+        skuId: event.payload.skuId,
+        plannedQty: event.payload.actualQty,
+        purchasedQty: event.payload.actualQty,
+        supplierId: event.payload.supplierId,
+        unitPrice: event.payload.unitPrice,
+        status: 'purchased',
+        unavailableNote: null,
+        receiptPhotoUrl: event.payload.receiptPhotoUrl,
+        storeSplits: event.payload.storeSplits,
+        paymentMethod: event.payload.paymentMethod,
+        addedByPurchaser: true,
       });
       return { ...state, seq: event.seq, items };
     }

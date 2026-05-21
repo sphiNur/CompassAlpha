@@ -76,6 +76,25 @@ export type RunCommand =
       addedPlannedItems: Array<{ skuId: string; qty: string }>;
       actor: ActorCtx;
     }
+  | {
+      /**
+       * M3.41 (2026-05-21): purchaser adds a SKU mid-run that was NOT in
+       * the original aggregated demand. Distinct from PurchaseItem (which
+       * targets a pre-planned row) so the audit log + reports can
+       * separate "what was asked for" from "what was bought beyond
+       * the ask". See the matching event in events.ts.
+       */
+      type: 'AddPurchaserItem';
+      skuId: string;
+      supplierId: string | null;
+      unitPrice: string;
+      actualQty: string;
+      receiptPhotoUrl: string | null;
+      storeSplits: Array<{ storeId: string; qty: string }>;
+      paymentMethod: 'cash' | 'transfer';
+      reason: string;
+      actor: ActorCtx;
+    }
   // ---- Run-level claim (C.2, M3.38, 2026-05-19) -----------------------
   | { type: 'ClaimRun'; actor: ActorCtx }
   | {
@@ -190,6 +209,101 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
           receiptPhotoUrl: command.receiptPhotoUrl,
           storeSplits: command.storeSplits,
           paymentMethod: command.paymentMethod,
+        },
+      });
+      return events;
+    }
+
+    case 'AddPurchaserItem': {
+      // M3.41 (2026-05-21): purchaser-initiated mid-run addition.
+      // Distinct from PurchaseItem (which targets a pre-planned row)
+      // so reports can call out "X items added beyond the original
+      // order, total Y" — see the rationale block at the event type
+      // in events.ts.
+      assertActive(state);
+      if (!command.actor.permissions.has('run.purchase')) {
+        throw forbidden('run.errors.cannotPurchase');
+      }
+      assertClaimOwnership(state, command.actor);
+      // Same phase gate as PurchaseItem — adding mid-delivering would
+      // race the store-split bake-in. After delivering, the operator
+      // can still RevisePurchase existing rows, but creating new ones
+      // is closed.
+      if (state.status !== 'planned' && state.status !== 'purchasing') {
+        throw preconditionFailed('run.errors.runFrozen', { status: state.status });
+      }
+      // No double-counting: if the SKU is already in the run (planned
+      // or already-bought), force the operator down the existing
+      // PurchaseItem / RevisePurchase path. Cleaner audit + no
+      // ambiguity about whether the SKU was "ordered" or "added".
+      if (state.items.has(command.skuId)) {
+        throw preconditionFailed('run.errors.alreadyInRun', {
+          skuId: command.skuId,
+        });
+      }
+      const reason = command.reason.trim();
+      if (!reason) throw validation('run.errors.addReasonRequired');
+      if (reason.length > 500) throw validation('run.errors.noteTooLong');
+
+      const actual = num(command.actualQty, 'run.errors.invalidQty');
+      if (actual <= 0) throw validation('run.errors.qtyMustBePositive');
+      const price = num(command.unitPrice, 'run.errors.invalidQty');
+      if (price <= 0) throw validation('run.errors.qtyMustBePositive');
+
+      const splitSum = command.storeSplits.reduce(
+        (s, x) => s + num(x.qty, 'run.errors.invalidQty'),
+        0,
+      );
+      if (Math.abs(splitSum - actual) > TOLERANCE) {
+        throw validation('run.errors.splitSumMismatch', { actual, splitSum });
+      }
+
+      // Store-scope guard: every split's storeId must already be part
+      // of THIS run's demand. Stretching the run to a brand-new store
+      // mid-stream would require restructuring delivery splits — that
+      // path is AttachSessions, not AddPurchaserItem. The set of
+      // "involved stores" is derived from the existing items'
+      // storeSplits AND the run-level stores map (so a run with only
+      // pending items still has its store scope known).
+      const involvedStores = new Set<string>();
+      for (const it of state.items.values()) {
+        for (const sp of it.storeSplits) involvedStores.add(sp.storeId);
+      }
+      for (const st of state.stores.keys()) involvedStores.add(st);
+      // If the items + stores maps are both empty (theoretical), fall
+      // back to letting any storeId through — but PlanRun guards
+      // against empty items, so this branch should be unreachable in
+      // practice.
+      if (involvedStores.size > 0) {
+        for (const sp of command.storeSplits) {
+          if (!involvedStores.has(sp.storeId)) {
+            throw preconditionFailed('run.errors.storeNotInRun', {
+              storeId: sp.storeId,
+            });
+          }
+        }
+      }
+
+      // Atomic emit: if the run is still in `planned`, also flip it to
+      // `purchasing` (same auto-start convention PurchaseItem uses for
+      // the "first buy on a fresh run" path).
+      const events: RunEvent[] = [];
+      if (state.status === 'planned') {
+        events.push({ ...baseFor(events.length + 1), type: 'PurchaseStarted', payload: {} });
+      }
+      events.push({
+        ...baseFor(events.length + 1),
+        type: 'PurchaserItemAdded',
+        payload: {
+          skuId: command.skuId,
+          supplierId: command.supplierId,
+          unitPrice: command.unitPrice,
+          actualQty: command.actualQty,
+          receiptPhotoUrl: command.receiptPhotoUrl,
+          storeSplits: command.storeSplits,
+          paymentMethod: command.paymentMethod,
+          reason,
+          byMemberId: command.actor.memberId,
         },
       });
       return events;

@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   bigint,
+  boolean,
   date,
   decimal,
   index,
@@ -207,6 +208,15 @@ export const runItemsV = readModelSchema.table(
     paymentMethod: varchar('payment_method', { length: 16 }).notNull().default('cash'),
     unavailableNote: text('unavailable_note'),
     receiptPhotoUrl: text('receipt_photo_url'),
+    /**
+     * M3.41 (2026-05-21): true when the purchaser added this row
+     * mid-run (PurchaserItemAdded event) rather than the row coming
+     * from the original aggregated demand. Lets finish-summary and
+     * audit reports separate "ordered" vs "added beyond the ask".
+     * Default false matches the legacy data — every pre-M3.41 row
+     * came from RunPlanned or SessionsAttachedToRun.
+     */
+    addedByPurchaser: boolean('added_by_purchaser').notNull().default(false),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .defaultNow(),

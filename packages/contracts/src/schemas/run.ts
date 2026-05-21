@@ -76,6 +76,26 @@ export const PurchaseItemInputSchema = z.object({
   expectedSeq: z.number().int().optional(),
 });
 
+/**
+ * M3.41 (2026-05-21): purchaser-initiated mid-run addition. Same shape
+ * as PurchaseItem but adds a required `reason` (audit string explaining
+ * why the SKU wasn't on the original order) and the server-side
+ * domain layer rejects skuId that's already in the run. See the
+ * matching command in packages/domain/src/run/commands.ts.
+ */
+export const AddPurchaserItemInputSchema = z.object({
+  runId: UuidSchema,
+  skuId: UuidSchema,
+  supplierId: UuidSchema.nullable(),
+  unitPrice: PositiveDecimalStringSchema,
+  actualQty: PositiveDecimalStringSchema,
+  receiptPhotoUrl: z.string().max(300_000).nullable(),
+  storeSplits: z.array(StoreSplitSchema).min(1),
+  paymentMethod: PaymentMethodSchema,
+  reason: z.string().trim().min(1).max(500),
+  expectedSeq: z.number().int().optional(),
+});
+
 export const MarkUnavailableInputSchema = z.object({
   runId: UuidSchema,
   skuId: UuidSchema,

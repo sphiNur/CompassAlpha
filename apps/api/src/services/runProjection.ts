@@ -93,6 +93,56 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
         await bumpSeq(db, e.streamId, e.seq);
         break;
       }
+      case 'PurchaserItemAdded': {
+        // M3.41 (2026-05-21): purchaser added a SKU mid-run. INSERT (not
+        // UPDATE) a fresh run_items_v row — the domain layer guaranteed
+        // this skuId wasn't in the run before this event. Marks
+        // added_by_purchaser=true so reports can call out "ordered vs
+        // added beyond the ask". Otherwise the shape matches
+        // ItemPurchased's outcome: status=purchased, plannedQty=actualQty
+        // (no prior plan), storeSplits projected to run_item_stores_v,
+        // price_history row appended for analytics.
+        await db
+          .insert(s.runItemsV)
+          .values({
+            runId: e.streamId,
+            skuId: e.payload.skuId,
+            plannedQty: e.payload.actualQty,
+            purchasedQty: e.payload.actualQty,
+            supplierId: e.payload.supplierId,
+            unitPrice: e.payload.unitPrice,
+            status: 'purchased',
+            paymentMethod: e.payload.paymentMethod,
+            receiptPhotoUrl: e.payload.receiptPhotoUrl,
+            addedByPurchaser: true,
+          })
+          .onConflictDoNothing();
+        for (const split of e.payload.storeSplits) {
+          await db
+            .insert(s.runItemStoresV)
+            .values({
+              runId: e.streamId,
+              skuId: e.payload.skuId,
+              storeId: split.storeId,
+              qty: split.qty,
+            })
+            .onConflictDoUpdate({
+              target: [s.runItemStoresV.runId, s.runItemStoresV.skuId, s.runItemStoresV.storeId],
+              set: { qty: split.qty },
+            });
+        }
+        await db.insert(s.priceHistory).values({
+          orgId,
+          skuId: e.payload.skuId,
+          supplierId: e.payload.supplierId,
+          runId: e.streamId,
+          unitPrice: e.payload.unitPrice,
+          qty: e.payload.actualQty,
+          observedAt: e.occurredAt,
+        });
+        await bumpSeq(db, e.streamId, e.seq);
+        break;
+      }
       case 'ItemUnavailable':
         await db
           .update(s.runItemsV)

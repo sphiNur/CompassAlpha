@@ -572,6 +572,31 @@ export const ru = {
   'run.action.unavailableReasonPlaceholder': 'Причина',
   'run.action.actualQty': 'Фактическое кол-во ({unit})',
   'run.action.unitPriceUzs': 'Цена за единицу (UZS)',
+  // M3.41 (2026-05-21): покупатель добавляет позицию по ходу закупки
+  'run.action.addItem.button': '+ Добавить',
+  'run.action.addItem.title': 'Добавить позицию в закупку',
+  'run.action.addItem.subtitle':
+    'Записать покупку SKU, которой не было в исходном заказе',
+  'run.action.addItem.searchPlaceholder': 'Поиск SKU…',
+  'run.action.addItem.noMatch':
+    'Совпадений нет. Позиции, уже включённые в закупку, скрыты.',
+  'run.action.addItem.changeSku': 'Сменить',
+  'run.action.addItem.targetStore': 'В какой магазин?',
+  'run.action.addItem.pickStore': '— Выберите магазин —',
+  'run.action.addItem.totalHint': 'Итого по строке',
+  'run.action.addItem.reasonLabel': 'Почему добавляете?',
+  'run.action.addItem.reasonPlaceholder':
+    'напр. Звонок повара / Акция на рынке / Бонус от поставщика',
+  'run.action.addItem.save': 'Сохранить',
+  'run.label.addedByPurchaser': 'Добавлено покупателем по ходу',
+  'run.confirm.finish.addedByPurchaser':
+    '➕ Добавлено сверх заказа: {n} поз. · {total} UZS',
+  'run.toast.itemAdded': 'Позиция добавлена',
+  'run.toast.couldNotAddItem': 'Не удалось добавить позицию',
+  'run.errors.alreadyInRun':
+    'Эта SKU уже в закупке — отредактируйте существующую строку',
+  'run.errors.storeNotInRun': 'Этот магазин не входит в текущую закупку',
+  'run.errors.addReasonRequired': 'Укажите причину добавления',
   // C.2 (M3.38, 2026-05-19): баннер захвата закупки.
   'run.banner.claimed': 'Закупкой занимается {who}',
   'run.banner.claimedAfterHandoff': '{prev} → {who} теперь ведёт эту закупку',

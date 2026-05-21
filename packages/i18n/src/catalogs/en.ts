@@ -644,6 +644,29 @@ export const en = {
   'run.action.unavailableReasonPlaceholder': 'Reason',
   'run.action.actualQty': 'Actual qty ({unit})',
   'run.action.unitPriceUzs': 'Unit price (UZS)',
+  // M3.41 (2026-05-21): purchaser-initiated mid-run additions.
+  'run.action.addItem.button': '+ Add',
+  'run.action.addItem.title': 'Add item mid-run',
+  'run.action.addItem.subtitle': 'Record a buy for a SKU that was not in the original order',
+  'run.action.addItem.searchPlaceholder': 'Search SKU…',
+  'run.action.addItem.noMatch': 'No matching SKU. Items already in this run are hidden.',
+  'run.action.addItem.changeSku': 'Change',
+  'run.action.addItem.targetStore': 'For which store?',
+  'run.action.addItem.pickStore': '— Pick a store —',
+  'run.action.addItem.totalHint': 'Line total',
+  'run.action.addItem.reasonLabel': 'Why was this added?',
+  'run.action.addItem.reasonPlaceholder':
+    'e.g. Chef call-in / Market deal / Vendor freebie',
+  'run.action.addItem.save': 'Save addition',
+  'run.label.addedByPurchaser': 'Added by purchaser mid-run',
+  'run.confirm.finish.addedByPurchaser':
+    '➕ {n} item(s) added beyond original order · {total} UZS',
+  'run.toast.itemAdded': 'Item added to the run',
+  'run.toast.couldNotAddItem': 'Could not add the item',
+  'run.errors.alreadyInRun':
+    'This SKU is already in the run — use Edit on the existing row',
+  'run.errors.storeNotInRun': 'That store is not part of this run',
+  'run.errors.addReasonRequired': 'Reason is required for purchaser additions',
   // C.2 (M3.38, 2026-05-19): run-level claim banner copy. Mirrors the
   // order-side equivalents at order.banner.claimed / .claimedAfterHandoff.
   'run.banner.claimed': 'This run is being handled by {who}',
