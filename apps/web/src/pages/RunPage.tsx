@@ -49,7 +49,7 @@ import {
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton, haptic, getTg } from '../hooks/useTelegram';
-import { useI18n, useProductName } from '../hooks/useI18n';
+import { useI18n, useProductName, useVendorName } from '../hooks/useI18n';
 import { usePhotoUploader } from '../hooks/usePhotoUploader';
 // M3.5: StoreSwitcher pill removed from page chrome; picker lives in
 // SettingsSheet now. RunPage still uses useStoreContext indirectly
@@ -170,6 +170,12 @@ type ConfirmKind =
 export function RunPage() {
   const i18n = useI18n();
   const productName = useProductName();
+  // M3.45 (2026-05-22): vendor-language variant for per-vendor copy
+  // templates. Returns ONLY the secondary locale's name (so the text
+  // pasted into the vendor's chat is clean Uzbek, no parenthetical
+  // Chinese noise). Falls back to primary locale when no secondary
+  // is set.
+  const vendorName = useVendorName();
   const session = useAuthStore((s) => s.session);
   const toast = useToast();
   const photoUploader = usePhotoUploader('receipt');
@@ -1426,6 +1432,7 @@ export function RunPage() {
                 preview={p}
                 skuById={skuById}
                 productName={productName}
+                vendorName={vendorName}
                 i18n={i18n}
                 toast={toast}
               />
@@ -1467,6 +1474,7 @@ export function RunPage() {
           }}
           skuById={skuById}
           productName={productName}
+          vendorName={vendorName}
           i18n={i18n}
           toast={toast}
         />
@@ -2413,6 +2421,7 @@ function PreviewSummaryCard({
   preview,
   skuById,
   productName,
+  vendorName,
   i18n,
   toast,
 }: {
@@ -2448,6 +2457,11 @@ function PreviewSummaryCard({
     { id: string; names: Record<string, string>; unit: string; step: string }
   >;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
+  /** M3.45 (2026-05-22): used inside the copy templates so the text
+   *  sent to vendors is in the secondary locale only (no Chinese
+   *  noise when the vendor only reads Uzbek). Falls back to the
+   *  primary locale name when the user hasn't opted into bilingual. */
+  vendorName: (item: { names: Record<string, string> | null | undefined }) => string;
   i18n: ReturnType<typeof useI18n>;
   toast: ReturnType<typeof useToast>;
 }) {
@@ -2555,7 +2569,10 @@ function PreviewSummaryCard({
     const lines = [`🏪 ${storeName}`, ''];
     for (const it of items) {
       const sku = skuById.get(it.skuId);
-      const name = sku ? productName(sku) : it.skuId.slice(0, 8);
+      // M3.45 (2026-05-22): use vendorName not productName so the
+      // pasted text reads cleanly in the vendor's language (no
+      // parenthetical primary-locale noise).
+      const name = sku ? vendorName(sku) : it.skuId.slice(0, 8);
       lines.push(`• ${name}: ${formatQty(it.qty)} ${sku?.unit ?? ''}`);
     }
     // M1.8 / M3.16-C: append the staff's "其他物品" requests so the
@@ -2650,7 +2667,8 @@ function PreviewSummaryCard({
       const lines = [`${store.name}:`];
       for (const line of store.lines) {
         const sku = skuById.get(line.skuId);
-        const name = sku ? productName(sku) : line.skuId.slice(0, 8);
+        // M3.45: vendor-language copy
+        const name = sku ? vendorName(sku) : line.skuId.slice(0, 8);
         // No bullet, no spaces around the unit — the user wants
         // "牛肉 8kg" form, not "• 牛肉 (8 kg)".
         lines.push(`${name} ${formatQty(line.qty)}${sku?.unit ?? ''}`);

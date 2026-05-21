@@ -93,29 +93,81 @@ export function useUnitLabel() {
   }, [i18n]);
 }
 
+/**
+ * Pick the best available name from a multi-locale SKU, with a
+ * documented fallback chain. Pure — no React state involved — so it
+ * can be reused by the bilingual hook below + by tests.
+ */
+function pickName(
+  names: Record<string, string> | null | undefined,
+  locale: string,
+): string {
+  const n = names ?? {};
+  return (
+    n[locale] ??
+    n.en ??
+    n.ru ??
+    n.zh ??
+    n.uz ??
+    Object.values(n)[0] ??
+    '—'
+  );
+}
+
 export function useProductName() {
   const i18n = useI18n();
+  // M3.45 (2026-05-22): bilingual display. When the user has set a
+  // secondary locale (Settings → "市场摊位语言"), product names
+  // render as "Primary (Secondary)" so a Chinese-speaking operator
+  // can cross-reference what they're looking at against what the
+  // Uzbek-speaking vendor will see in the copy-paste message. Null
+  // secondaryLocale (default) keeps the legacy single-language
+  // behavior — invisible to users who don't opt in.
+  //
+  // The dedup guard (primary === secondary) covers two cases:
+  //   1. User chose the same locale for primary + secondary (no-op).
+  //   2. The SKU's secondary-locale name is identical to the primary
+  //      (e.g. a SKU only typed in English).
+  const secondaryLocale = useAuthStore((s) => s.session?.user.secondaryLocale ?? null);
   // M3.10 (2026-05-16): memoize the callback by locale so passing
   // `productName` as a prop into a React.memo-wrapped row component
-  // doesn't bust referential equality on every parent render. The
-  // returned function depends only on i18n.locale; if the user
-  // doesn't switch locale mid-session it's the same reference for
-  // the lifetime of the component, and React.memo can short-circuit
-  // 187 SKU rows down to just the one whose qty actually changed.
+  // doesn't bust referential equality on every parent render.
   return useMemo(
     () =>
       (item: { names: Record<string, string> | null | undefined }): string => {
-        const names = item.names ?? {};
-        return (
-          names[i18n.locale] ??
-          names.en ??
-          names.ru ??
-          names.zh ??
-          names.uz ??
-          Object.values(names)[0] ??
-          '—'
-        );
+        const primary = pickName(item.names, i18n.locale);
+        if (!secondaryLocale || secondaryLocale === i18n.locale) return primary;
+        const secondary = pickName(item.names, secondaryLocale);
+        if (!secondary || secondary === primary) return primary;
+        return `${primary} (${secondary})`;
       },
-    [i18n.locale],
+    [i18n.locale, secondaryLocale],
+  );
+}
+
+/**
+ * M3.45 (2026-05-22): returns ONLY the secondary-locale name (no
+ * parenthetical, no primary). Used by per-vendor copy templates —
+ * when the operator pastes the list into the vendor's chat the
+ * message should be pure Uzbek (or whatever secondary is), no
+ * Chinese noise the vendor can't read.
+ *
+ * Falls back to the primary locale name when secondaryLocale is
+ * null OR matches primary (so the copy still works for users who
+ * haven't opted into bilingual mode).
+ */
+export function useVendorName() {
+  const i18n = useI18n();
+  const secondaryLocale = useAuthStore((s) => s.session?.user.secondaryLocale ?? null);
+  return useMemo(
+    () =>
+      (item: { names: Record<string, string> | null | undefined }): string => {
+        const effective =
+          secondaryLocale && secondaryLocale !== i18n.locale
+            ? secondaryLocale
+            : i18n.locale;
+        return pickName(item.names, effective);
+      },
+    [i18n.locale, secondaryLocale],
   );
 }

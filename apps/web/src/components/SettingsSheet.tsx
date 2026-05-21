@@ -80,6 +80,15 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
     },
     onError: errToast('common.error'),
   });
+  // M3.45 (2026-05-22): secondary display language. Drives bilingual
+  // product names + vendor-language copy templates. See useProductName
+  // / useVendorName in hooks/useI18n.ts for the rendering side.
+  const setSecondaryLocale = trpc.auth.setSecondaryLocale.useMutation({
+    onSuccess: (next) => {
+      patchSession(next as never);
+    },
+    onError: errToast('common.error'),
+  });
 
   // Optional self-rename: the server `auth.completeOnboarding` is the
   // sanctioned path and only works when the name isn't already locked.
@@ -227,6 +236,95 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
                 </button>
               );
             })}
+          </div>
+        </section>
+
+        {/* ── M3.45: Vendor display language ──────────────── */}
+        {/* "Show product names with parenthetical secondary-locale
+            translation, and use that locale exclusively when copying
+            the per-vendor purchase list" — the workflow gap a Chinese-
+            speaking operator hit when sending Uzbek-speaking vendors
+            their daily prep list. Picker accepts 4 locale codes + an
+            explicit "off" option (null in the DB). */}
+        <section>
+          <SectionLabel as="h3" padded={false} className="mb-2">
+            🏪 {i18n.t('settings.secondaryLanguage.title')}
+          </SectionLabel>
+          <div className="mb-2 text-label text-[var(--c-fg-muted)]">
+            {i18n.t('settings.secondaryLanguage.hint')}
+          </div>
+          <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
+            {/* "Off" row first — explicit opt-out is clearer than a
+                tiny "clear" button hidden somewhere. */}
+            {(() => {
+              const selected = session?.user.secondaryLocale == null;
+              return (
+                <button
+                  type="button"
+                  disabled={setSecondaryLocale.isPending}
+                  onClick={() => {
+                    if (!selected)
+                      setSecondaryLocale.mutate({ secondaryLocale: null });
+                  }}
+                  className={
+                    'flex items-center justify-between gap-3 rounded-[var(--r-card)] px-4 py-3 text-left ' +
+                    (selected
+                      ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
+                      : 'bg-[var(--c-surface)] text-[var(--c-fg)] active:opacity-80')
+                  }
+                >
+                  <div className="min-w-0">
+                    <div className="text-body font-semibold">
+                      {i18n.t('settings.secondaryLanguage.off')}
+                    </div>
+                    <div
+                      className={
+                        'mt-0.5 text-label ' +
+                        (selected ? 'opacity-80' : 'text-[var(--c-fg-muted)]')
+                      }
+                    >
+                      {i18n.t('settings.secondaryLanguage.offHint')}
+                    </div>
+                  </div>
+                  {selected ? <span aria-hidden>✓</span> : null}
+                </button>
+              );
+            })()}
+            {LANGS.filter((l) => l.code !== (session?.user.locale ?? 'en')).map(
+              (lang) => {
+                const selected = session?.user.secondaryLocale === lang.code;
+                return (
+                  <button
+                    key={lang.code}
+                    type="button"
+                    disabled={setSecondaryLocale.isPending}
+                    onClick={() => {
+                      if (!selected)
+                        setSecondaryLocale.mutate({ secondaryLocale: lang.code });
+                    }}
+                    className={
+                      'flex items-center justify-between gap-3 rounded-[var(--r-card)] px-4 py-3 text-left ' +
+                      (selected
+                        ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
+                        : 'bg-[var(--c-surface)] text-[var(--c-fg)] active:opacity-80')
+                    }
+                  >
+                    <div className="min-w-0">
+                      <div className="text-body font-semibold">{lang.label}</div>
+                      <div
+                        className={
+                          'mt-0.5 text-label ' +
+                          (selected ? 'opacity-80' : 'text-[var(--c-fg-muted)]')
+                        }
+                      >
+                        {lang.region}
+                      </div>
+                    </div>
+                    {selected ? <span aria-hidden>✓</span> : null}
+                  </button>
+                );
+              },
+            )}
           </div>
         </section>
 

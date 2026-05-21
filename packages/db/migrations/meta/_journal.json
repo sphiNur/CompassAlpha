@@ -218,6 +218,13 @@
       "when": 1779508800000,
       "tag": "0030_run_expenses",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1779595200000,
+      "tag": "0031_user_secondary_locale",
+      "breakpoints": true
     }
   ]
 }

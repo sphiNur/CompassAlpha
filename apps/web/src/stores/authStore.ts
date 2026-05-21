@@ -9,6 +9,13 @@ export interface AuthSession {
     displayNameLocked: boolean;
     avatarUrl: string | null;
     locale: string;
+    /**
+     * M3.45 (2026-05-22): secondary display language for the bilingual
+     * product-name workflow. Null when the user hasn't opted in. When
+     * set, UI shows "Primary (Secondary)" and per-vendor copy
+     * templates use the secondary locale exclusively.
+     */
+    secondaryLocale: string | null;
     tgUsername: string | null;
   };
   member: {

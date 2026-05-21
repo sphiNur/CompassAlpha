@@ -49,6 +49,12 @@ export const ru = {
 
   // ── 3. Settings ────────────────────────────────────────────────
   'settings.language.title': 'Язык',
+  // M3.45 (2026-05-22): язык для рынка/поставщиков
+  'settings.secondaryLanguage.title': 'Язык для поставщиков',
+  'settings.secondaryLanguage.hint':
+    'Когда задан — названия продуктов отображаются на двух языках, а текст для копирования по поставщикам только на языке поставщика. Полезно, если вы читаете по-китайски, а торговцы на рынке только по-узбекски.',
+  'settings.secondaryLanguage.off': 'Выключено',
+  'settings.secondaryLanguage.offHint': 'Один язык (по умолчанию)',
   'settings.language.subtitle': 'Выберите язык меню, товаров и сообщений.',
   'settings.language.aria': 'Сменить язык',
   'settings.title': 'Настройки',

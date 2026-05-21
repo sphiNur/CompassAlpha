@@ -89,6 +89,12 @@ export const en = {
 
   // ── 3. Settings ────────────────────────────────────────────────
   'settings.language.title': 'Language',
+  // M3.45 (2026-05-22): secondary display language
+  'settings.secondaryLanguage.title': 'Vendor display language',
+  'settings.secondaryLanguage.hint':
+    "When set, product names show both languages and the per-vendor copy uses the vendor's language only — useful when you read Chinese but the bazaar vendors only know Uzbek.",
+  'settings.secondaryLanguage.off': 'Off',
+  'settings.secondaryLanguage.offHint': 'Single-language display (default)',
   'settings.language.subtitle': 'Pick the language for menus, products, and messages.',
   'settings.language.aria': 'Change language',
   // Settings hub (M1.6).

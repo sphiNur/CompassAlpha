@@ -49,6 +49,12 @@ export const zh = {
 
   // ── 3. Settings ────────────────────────────────────────────────
   'settings.language.title': '语言',
+  // M3.45 (2026-05-22): 摊位语言(双语显示)
+  'settings.secondaryLanguage.title': '市场摊位语言',
+  'settings.secondaryLanguage.hint':
+    '设置后,商品名后会带括号显示第二语言,按摊位复制时直接用对方能看懂的语言 — 解决"我会中文,但摊主只会乌兹别克语"的问题。',
+  'settings.secondaryLanguage.off': '关闭',
+  'settings.secondaryLanguage.offHint': '只显示主要语言(默认)',
   'settings.language.subtitle': '选择菜单、商品和提示信息的显示语言。',
   'settings.language.aria': '切换语言',
   'settings.title': '设置',

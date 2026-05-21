@@ -232,6 +232,36 @@ export const authRouter = router({
     }),
 
   /**
+   * M3.45 (2026-05-22): set the user's secondary display language. When
+   * set, product names in the UI render as "Primary (Secondary)" and
+   * per-vendor copy templates use the secondary locale exclusively (so
+   * a Chinese-speaking purchaser can paste a Uzbek list straight into
+   * the vendor's chat). Passing `null` clears it (single-language UI,
+   * the default).
+   *
+   * Same enum as setLocale — anything outside the 4-locale contract
+   * gets rejected at the input boundary.
+   */
+  setSecondaryLocale: authedProcedure
+    .input(
+      z.object({
+        secondaryLocale: z.enum(['en', 'zh', 'ru', 'uz']).nullable(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      await ctx.db
+        .update(s.users)
+        .set({ secondaryLocale: input.secondaryLocale, updatedAt: new Date() })
+        .where(eq(s.users.id, ctx.session.userId));
+      return buildSessionPayload(
+        ctx.db,
+        ctx.session.userId,
+        ctx.session.memberId,
+        ctx.session.orgId,
+      );
+    }),
+
+  /**
    * Sign out from EVERY device. M1.9 (2026-05-07): finally does
    * something — revokes all of the user's tracked refresh tokens.
    * Access tokens themselves are stateless (15-min TTL) so they can
@@ -626,6 +656,13 @@ async function buildSessionPayload(
       displayNameLocked: user.displayNameLocked,
       avatarUrl: user.avatarUrl,
       locale: (user.locale ?? 'en') as Session['user']['locale'],
+      // M3.45 (2026-05-22): bilingual display preference. Null when
+      // unset (default — single-language UI). Otherwise one of the
+      // 4-locale enum, drives product-name rendering and per-vendor
+      // copy-template language.
+      secondaryLocale: (user.secondaryLocale ?? null) as
+        | Session['user']['locale']
+        | null,
       tgUsername: user.tgUsername,
     },
     member: {

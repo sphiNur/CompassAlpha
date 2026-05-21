@@ -56,6 +56,12 @@ export const uz = {
 
   // ── 3. Settings ────────────────────────────────────────────────
   'settings.language.title': 'Til',
+  // M3.45 (2026-05-22): bozor sotuvchilari uchun til
+  'settings.secondaryLanguage.title': "Bozor sotuvchisi tili",
+  'settings.secondaryLanguage.hint':
+    "Yoqilganda mahsulot nomlari ikki tilda ko'rsatiladi, sotuvchiga ro'yxat nusxa olishda esa faqat uning tilida bo'ladi — siz xitoycha o'qiysiz, sotuvchi faqat o'zbekchani biladi degan vaziyatda foydali.",
+  'settings.secondaryLanguage.off': "O'chirilgan",
+  'settings.secondaryLanguage.offHint': "Bir tilli (sukut bo'yicha)",
   'settings.language.subtitle': 'Menyu, mahsulot va xabarlar uchun tilni tanlang.',
   'settings.language.aria': 'Tilni almashtirish',
   'settings.title': 'Sozlamalar',

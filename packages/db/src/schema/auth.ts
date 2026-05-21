@@ -87,6 +87,26 @@ export const users = authSchema.table(
     displayName: varchar('display_name', { length: 200 }).notNull(),
     avatarUrl: text('avatar_url'),
     locale: varchar('locale', { length: 16 }),
+    /**
+     * M3.45 (2026-05-22): secondary display language for the "I read
+     * Chinese but vendors at the market only know Uzbek" workflow.
+     *
+     * When set:
+     *   - Product names in the UI render as "Primary (Secondary)" so the
+     *     operator can cross-reference what they're looking at against
+     *     what they'll show the vendor.
+     *   - Per-vendor copy templates use the secondary language EXCLUSIVELY
+     *     (vendor opens the chat and sees Uzbek, not Chinese with
+     *     parenthetical Uzbek noise).
+     *
+     * NULL means "no secondary" — single-language behavior, the M3.45
+     * change is invisible to users who don't opt in.
+     *
+     * Stored on `users` (not `members`) because it's a personal display
+     * preference that follows the human across whichever org they're
+     * signed into — same rationale as the existing `locale` column.
+     */
+    secondaryLocale: varchar('secondary_locale', { length: 16 }),
     /** True once the user has confirmed their displayName via the
      *  onboarding flow. After that, only an admin (`users.manage`) can
      *  change it — the user themselves cannot. False for fresh sign-ups

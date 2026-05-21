@@ -43,6 +43,14 @@ export const SessionSchema = z.object({
     displayNameLocked: z.boolean(),
     avatarUrl: z.string().nullable(),
     locale: LocaleSchema,
+    /**
+     * M3.45 (2026-05-22): secondary display language. When non-null,
+     * the UI shows product names as "Primary (Secondary)" and the
+     * per-vendor copy templates use the secondary locale exclusively
+     * (so a Chinese-speaking purchaser can paste a Uzbek list straight
+     * to the vendor chat). Null = single-language default behavior.
+     */
+    secondaryLocale: LocaleSchema.nullable(),
     tgUsername: z.string().nullable(),
   }),
   member: MemberSummarySchema,
