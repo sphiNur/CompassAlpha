@@ -269,7 +269,14 @@ export function ConfirmPage() {
        active run; without one, no chrome row. */
     <div className="flex flex-col gap-3 pb-4">
       {activeRun ? (
-        <div className="sticky top-0 z-[1] flex min-h-7 items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-2">
+        <div
+          className="sticky top-0 z-[1] flex min-h-7 items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] py-2"
+          style={{
+            // M3.46 (2026-05-22): clear Telegram's overlay chrome buttons.
+            paddingLeft: 'max(16px, var(--app-chrome-pad-left, 16px))',
+            paddingRight: 'max(16px, var(--app-chrome-pad-right, 16px))',
+          }}
+        >
           <span className="ml-auto truncate text-label tabular-nums text-[var(--c-fg-muted)]">
             {i18n.t('confirm.runOnDate', { date: activeRun.runDate })}
           </span>

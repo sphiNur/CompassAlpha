@@ -637,7 +637,14 @@ export function OrderPage() {
             (top-right pill + MainButton) was visual stutter.
           The sticky strip now carries only the SearchInput + category
           ChipBar — the actual filters the user interacts with. */}
-      <div className="sticky top-0 z-[1] flex flex-col gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-2">
+      <div
+        className="sticky top-0 z-[1] flex flex-col gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] py-2"
+        style={{
+          // M3.46 (2026-05-22): clear Telegram's overlay chrome buttons.
+          paddingLeft: 'max(16px, var(--app-chrome-pad-left, 16px))',
+          paddingRight: 'max(16px, var(--app-chrome-pad-right, 16px))',
+        }}
+      >
         <SearchInput
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}

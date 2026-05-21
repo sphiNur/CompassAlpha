@@ -197,35 +197,71 @@ function ShellInner() {
     const tg = window.Telegram?.WebApp;
     if (!tg) return;
     const apply = () => {
-      const content = tg.contentSafeAreaInset?.top;
-      if (typeof content === 'number' && content > 0) {
+      const platform = tg.platform ?? 'unknown';
+      // --- Vertical chrome reserve ---
+      const contentTop = tg.contentSafeAreaInset?.top;
+      if (typeof contentTop === 'number' && contentTop > 0) {
         // contentSafeAreaInset already includes the chrome row, so
         // this is the total offset our content needs to clear.
         document.documentElement.style.setProperty(
           '--app-chrome-reserve',
-          `${content}px`,
+          `${contentTop}px`,
         );
-        return;
+      } else {
+        const safeTop = tg.safeAreaInset?.top;
+        // Empirical chrome-row heights from devtools inspection on each
+        // platform. Android Telegram's row is ~56 px; iOS Telegram's is
+        // ~36 px (it draws over the status bar). tdesktop runs in a
+        // standalone window and the WebView starts at 0 with no chrome.
+        const chromeRow =
+          platform === 'android' ? 56 : platform === 'tdesktop' ? 0 : 36;
+        if (typeof safeTop === 'number') {
+          document.documentElement.style.setProperty(
+            '--app-chrome-reserve',
+            `${safeTop + chromeRow}px`,
+          );
+        } else {
+          // No SDK telemetry. Fall back to env() (handled in the CSS
+          // var default below) — leaves the var unset.
+          document.documentElement.style.removeProperty('--app-chrome-reserve');
+        }
       }
-      const safe = tg.safeAreaInset?.top;
-      const platform = tg.platform ?? 'unknown';
-      // Empirical chrome-row heights from devtools inspection on each
-      // platform. Android Telegram's row is ~56 px; iOS Telegram's is
-      // ~36 px (it draws over the status bar). tdesktop runs in a
-      // standalone window and the WebView starts at 0 with no chrome.
-      const chromeRow =
-        platform === 'android' ? 56 : platform === 'tdesktop' ? 0 : 36;
-      if (typeof safe === 'number') {
-        document.documentElement.style.setProperty(
-          '--app-chrome-reserve',
-          `${safe + chromeRow}px`,
-        );
-        return;
-      }
-      // No SDK telemetry. Fall back to env() (handled in the CSS
-      // var default below) — leaves the var unset so the rule's
-      // fallback `calc(var(--app-safe-top) + 36px)` takes over.
-      document.documentElement.style.removeProperty('--app-chrome-reserve');
+      // --- Horizontal chrome pad (M3.46, 2026-05-22) ---
+      // Telegram renders a Close button at top-LEFT and a ⋯ overflow
+      // menu at top-RIGHT. With M3.42 our content sits BELOW the
+      // chrome row vertically, but the chrome buttons stay anchored
+      // in place over their slots — and sticky page headers that
+      // put content at the left/right edge still got hidden by them.
+      //
+      // contentSafeAreaInset.left/right gives the precise overlay
+      // widths on TG 8.0+ clients; fall back to platform-empirical
+      // defaults otherwise. The values land on
+      // `--app-chrome-pad-left` / `--app-chrome-pad-right` so any
+      // sticky strip can opt in via padding.
+      const contentLeft = tg.contentSafeAreaInset?.left;
+      const contentRight = tg.contentSafeAreaInset?.right;
+      // Empirical: Android Close button ~56px, ⋯ overflow + menu ~96px.
+      // iOS slightly smaller — but 56/96 over-pads safely; under-pads
+      // are the visible bug, over-pads just shrink the title area.
+      // tdesktop: no chrome — 0.
+      const defaultLeft =
+        platform === 'tdesktop' ? 0 : platform === 'android' ? 56 : 56;
+      const defaultRight =
+        platform === 'tdesktop' ? 0 : platform === 'android' ? 96 : 96;
+      const padLeft =
+        typeof contentLeft === 'number' && contentLeft > 0 ? contentLeft : defaultLeft;
+      const padRight =
+        typeof contentRight === 'number' && contentRight > 0
+          ? contentRight
+          : defaultRight;
+      document.documentElement.style.setProperty(
+        '--app-chrome-pad-left',
+        `${padLeft}px`,
+      );
+      document.documentElement.style.setProperty(
+        '--app-chrome-pad-right',
+        `${padRight}px`,
+      );
     };
     apply();
     // Newer Telegram clients fire these events when the user changes

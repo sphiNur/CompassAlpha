@@ -1280,7 +1280,17 @@ export function RunPage() {
       {/* M3.5: store-switcher pill moved to SettingsSheet. Sticky strip
          now only renders when there's an active run to label. */}
       {activeRun ? (
-        <div className="sticky top-0 z-[1] flex min-h-9 items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-2">
+        <div
+          className="sticky top-0 z-[1] flex min-h-9 items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] py-2"
+          style={{
+            // M3.46 (2026-05-22): clear Telegram's overlay chrome
+            // (Close at left, ⋯ at right). Vars set by Shell.tsx's
+            // chrome detection; default to 16px so non-Telegram /
+            // web-preview keeps the legacy px-4 look.
+            paddingLeft: 'max(16px, var(--app-chrome-pad-left, 16px))',
+            paddingRight: 'max(16px, var(--app-chrome-pad-right, 16px))',
+          }}
+        >
           {/* M3.36 (2026-05-19): "×1000" toggle. Visible during the
               two stages where price actually gets typed — planned (an
               advanced edit can still pop) and purchasing. Hidden in

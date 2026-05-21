@@ -150,7 +150,14 @@ export function ApprovalPage() {
     <div className="flex flex-col">
       {/* M3.5: store-switcher pill moved to SettingsSheet. The sticky
          band now only carries the approval-state Tabs. */}
-      <div className="sticky top-0 z-[1] flex flex-col gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] py-2">
+      <div
+        className="sticky top-0 z-[1] flex flex-col gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] py-2"
+        style={{
+          // M3.46 (2026-05-22): clear Telegram's overlay chrome buttons.
+          paddingLeft: 'max(16px, var(--app-chrome-pad-left, 16px))',
+          paddingRight: 'max(16px, var(--app-chrome-pad-right, 16px))',
+        }}
+      >
 
         {/* M1.9-extra (P6, 2026-05-07): real <Tabs> with roving
             tabindex + ArrowLeft/ArrowRight/Home/End nav. Was
