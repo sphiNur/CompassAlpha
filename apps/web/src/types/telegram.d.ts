@@ -59,6 +59,13 @@ declare global {
     offClick(cb: () => void): void;
   }
 
+  interface TelegramSafeAreaInset {
+    top: number;
+    bottom: number;
+    left: number;
+    right: number;
+  }
+
   interface TelegramWebAppGlobal {
     initData: string;
     initDataUnsafe: {
@@ -72,6 +79,31 @@ declare global {
     themeParams: Record<string, string>;
     colorScheme: 'light' | 'dark';
     viewportHeight: number;
+    /**
+     * M3.42 (2026-05-22): viewport height when settled (not mid-resize).
+     * Used as a stable measure for layout calculations.
+     */
+    viewportStableHeight?: number;
+    /**
+     * M3.42: platform string from Telegram. Known values: 'android',
+     * 'ios', 'tdesktop', 'macos', 'unknown', 'unigram', 'weba'.
+     * Drives the Android-specific chrome-reserve override since
+     * `env(safe-area-inset-top)` returns 0 on Android Telegram WebView.
+     */
+    platform?: string;
+    /**
+     * M3.42: Telegram WebApp 8.0+ device safe-area inset (status bar /
+     * notch). Available on newer clients; may be undefined on
+     * older versions — code MUST fall back to env() / platform default.
+     */
+    safeAreaInset?: TelegramSafeAreaInset;
+    /**
+     * M3.42: Telegram WebApp 8.0+ "content" safe-area inset (includes
+     * Telegram's own chrome — close button + bot title row). When
+     * available this is THE most accurate value to push our page
+     * content below; we layer it on top of safeAreaInset.top.
+     */
+    contentSafeAreaInset?: TelegramSafeAreaInset;
     isExpanded: boolean;
     expand(): void;
     ready(): void;

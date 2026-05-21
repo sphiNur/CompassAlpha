@@ -178,6 +178,73 @@ function ShellInner() {
   // M3.18: window.Telegram is globally typed via src/types/telegram.d.ts.
   const inTelegram = typeof window !== 'undefined' && !!window.Telegram;
 
+  // M3.42 (2026-05-22): Android Telegram WebView doesn't expose
+  // `env(safe-area-inset-top)` (returns 0), so the 36-px chrome reserve
+  // fell short of Telegram's Close + bot title row (~56-64 px on
+  // Android) and our sticky page header rendered behind it. Read the
+  // accurate value from the SDK when available:
+  //   1. WebApp.contentSafeAreaInset.top  (TG 8.0+) — gold standard,
+  //      includes both device safe-area AND Telegram's own chrome row
+  //   2. WebApp.safeAreaInset.top         (TG 8.0+) + a platform-aware
+  //      chrome-row addition
+  //   3. fallback to env() + the historical 36-px addition (iOS path)
+  // Result is written to the CSS variable `--app-chrome-reserve` and
+  // read by the reserved strip below. Listens for safeAreaChanged /
+  // contentSafeAreaChanged so we re-measure when the user rotates or
+  // pulls Telegram's keyboard.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const tg = window.Telegram?.WebApp;
+    if (!tg) return;
+    const apply = () => {
+      const content = tg.contentSafeAreaInset?.top;
+      if (typeof content === 'number' && content > 0) {
+        // contentSafeAreaInset already includes the chrome row, so
+        // this is the total offset our content needs to clear.
+        document.documentElement.style.setProperty(
+          '--app-chrome-reserve',
+          `${content}px`,
+        );
+        return;
+      }
+      const safe = tg.safeAreaInset?.top;
+      const platform = tg.platform ?? 'unknown';
+      // Empirical chrome-row heights from devtools inspection on each
+      // platform. Android Telegram's row is ~56 px; iOS Telegram's is
+      // ~36 px (it draws over the status bar). tdesktop runs in a
+      // standalone window and the WebView starts at 0 with no chrome.
+      const chromeRow =
+        platform === 'android' ? 56 : platform === 'tdesktop' ? 0 : 36;
+      if (typeof safe === 'number') {
+        document.documentElement.style.setProperty(
+          '--app-chrome-reserve',
+          `${safe + chromeRow}px`,
+        );
+        return;
+      }
+      // No SDK telemetry. Fall back to env() (handled in the CSS
+      // var default below) — leaves the var unset so the rule's
+      // fallback `calc(var(--app-safe-top) + 36px)` takes over.
+      document.documentElement.style.removeProperty('--app-chrome-reserve');
+    };
+    apply();
+    // Newer Telegram clients fire these events when the user changes
+    // orientation, the keyboard opens, or pulls down the chrome.
+    const onEvent = tg.onEvent;
+    const offEvent = tg.offEvent;
+    if (onEvent && offEvent) {
+      onEvent('safeAreaChanged', apply);
+      onEvent('contentSafeAreaChanged', apply);
+      onEvent('viewportChanged', apply);
+      return () => {
+        offEvent('safeAreaChanged', apply);
+        offEvent('contentSafeAreaChanged', apply);
+        offEvent('viewportChanged', apply);
+      };
+    }
+    return;
+  }, []);
+
   return (
     <div className="flex h-full flex-col bg-[var(--c-bg)]">
       <SettingsSheet
@@ -187,16 +254,24 @@ function ShellInner() {
       />
       {inTelegram ? (
         // Reserved strip lets Telegram's chrome (Close + bot title + ⋯)
-        // sit on top without overlapping our content. iOS env(safe-top)
-        // already covers the dynamic island; we add ~36 px for the chrome
-        // row itself. Tested values: 80 was too much (produced a ~140 px
-        // black band before the first content), 24 clipped page titles
-        // on devices without a notch. 36 is the sweet spot.
+        // sit on top without overlapping our content.
+        //
+        // M3.42 (2026-05-22): height is `--app-chrome-reserve` (set by
+        // the useEffect above from Telegram WebApp's contentSafeAreaInset
+        // / safeAreaInset / platform), with the legacy
+        // `calc(--app-safe-top + 36px)` rule as the fallback when the
+        // SDK doesn't expose anything (older Telegram clients, web
+        // preview wrapped in fake WebApp).
+        //
+        // iOS env(safe-top) already covers the dynamic island; we add
+        // ~36 px for the chrome row itself. On Android the SDK reports
+        // a ~56 px row, which the variable now picks up correctly.
         <div
           aria-hidden
           style={{
             flexShrink: 0,
-            height: 'calc(var(--app-safe-top) + 36px)',
+            height:
+              'var(--app-chrome-reserve, calc(var(--app-safe-top) + 36px))',
             background: 'var(--c-bg)',
           }}
         />
