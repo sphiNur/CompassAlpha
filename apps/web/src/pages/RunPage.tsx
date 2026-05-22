@@ -2206,6 +2206,13 @@ function ActiveRunPanel({
             {run.items.map((it) => {
               const sku = skuById.get(it.skuId);
               const skuName = sku ? productName(sku) : it.skuId.slice(0, 8);
+              // M3.52: pluck this SKU's recorded splits for the
+              // per-store breakdown chips shown under purchased rows.
+              // Pending rows fall back to planned demand inside the
+              // row component — so we pass both regardless of status.
+              const actualSplits = run.splits
+                .filter((sp) => sp.skuId === it.skuId)
+                .map((sp) => ({ storeId: sp.storeId, qty: sp.qty }));
               return (
                 <PurchaseRow
                   key={it.skuId}
@@ -2214,6 +2221,8 @@ function ActiveRunPanel({
                   unit={sku?.unit ?? ''}
                   step={sku?.step ?? '0.1'}
                   demand={demandBySku.get(it.skuId) ?? []}
+                  storeById={storeById}
+                  actualSplits={actualSplits}
                   lastPrice={run.lastPriceBySku?.[it.skuId] ?? null}
                   i18n={i18n}
                   priceInThousands={priceInThousands}
@@ -3377,6 +3386,15 @@ function PerVendorView({
                       </li>
                     );
                   }
+                  // M3.52: same as the aggregate view — pass the
+                  // per-SKU recorded splits so PurchaseRow can render
+                  // the per-store chips. Critical here because the
+                  // per-vendor view is where the purchaser actually
+                  // stands at the stall counting items into bags;
+                  // they need the per-store qty in front of them.
+                  const actualSplits = run.splits
+                    .filter((sp) => sp.skuId === r.skuId)
+                    .map((sp) => ({ storeId: sp.storeId, qty: sp.qty }));
                   return (
                     <PurchaseRow
                       key={r.skuId}
@@ -3385,6 +3403,8 @@ function PerVendorView({
                       unit={r.sku?.unit ?? ''}
                       step={r.sku?.step ?? '0.1'}
                       demand={demandBySku.get(r.skuId) ?? []}
+                      storeById={storeById}
+                      actualSplits={actualSplits}
                       lastPrice={run.lastPriceBySku?.[r.skuId] ?? null}
                       i18n={i18n}
                       priceInThousands={priceInThousands}
@@ -3711,6 +3731,8 @@ function PurchaseRow({
   unit,
   step,
   demand,
+  storeById,
+  actualSplits,
   lastPrice,
   i18n,
   priceInThousands,
@@ -3726,6 +3748,23 @@ function PurchaseRow({
   unit: string;
   step: string;
   demand: Array<{ storeId: string; qty: string }>;
+  /**
+   * M3.52 (2026-05-23): resolves storeId → store name for the per-store
+   * breakdown line shown under the SKU title. Without this the
+   * purchaser at the stall couldn't see how to bag the bought items
+   * across multiple stores ("店A 2kg · 店B 3kg") — they only saw
+   * the aggregate qty.
+   */
+  storeById: Map<string, { id: string; name: string; code: string | null }>;
+  /**
+   * M3.52: post-purchase per-store actual allocation (from
+   * run.splits filtered to this skuId). For pending rows it's empty
+   * and we fall back to `demand` (the planned breakdown). For
+   * purchased rows it shows what was actually allocated — usually
+   * matches the proportional split of `demand` * actualQty/plannedQty
+   * but the advanced sheet can override.
+   */
+  actualSplits: Array<{ storeId: string; qty: string }>;
   lastPrice: string | null;
   i18n: ReturnType<typeof useI18n>;
   /** M3.36: when true, the price input shows raw UZS / 1000. Save still
@@ -3902,6 +3941,53 @@ function PurchaseRow({
     Number(qty) > 0 &&
     Number(price) > 0;
 
+  /**
+   * M3.52 (2026-05-23): per-store demand breakdown chip row.
+   *
+   * The pain point — user-reported: when a run covers ≥2 stores and
+   * one SKU has demand from multiple stores, the row collapses
+   * everything into one aggregate qty (e.g. "5kg apples"). At the
+   * stall the purchaser couldn't tell that this is "store-A 2kg +
+   * store-B 3kg", so they had no way to bag the buy by destination
+   * without going back to the per-store view and cross-referencing.
+   *
+   * Fix: render a row of compact chips ([店A 2 kg] [店B 3 kg]) right
+   * under the SKU title — visible on EVERY multi-store row, both
+   * pending (planned demand) and purchased (actual recorded splits).
+   * Single-store rows hide the line (the aggregate qty already tells
+   * the whole story; chips would be visual noise on every row of a
+   * single-store run).
+   *
+   * Source of truth:
+   *   - pending  → `demand` (run.perStoreDemand for this skuId)
+   *   - purchased → `actualSplits` (run.splits filtered to this
+   *     skuId, post-allocation; usually mirrors demand × actualQty/
+   *     plannedQty but the advanced sheet can override per-store).
+   *   - unavailable → omitted (no actual buy + the unavailability
+   *     applies to all stores uniformly; chips would imply otherwise).
+   */
+  const breakdown = item.status === 'pending' ? demand : actualSplits;
+  const showBreakdown = breakdown.length > 1;
+  const breakdownChips = showBreakdown ? (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {breakdown.map((d) => {
+        const storeName =
+          storeById.get(d.storeId)?.name ?? d.storeId.slice(0, 8);
+        return (
+          <span
+            key={d.storeId}
+            className="inline-flex items-center gap-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-1.5 py-0.5 text-label ring-1 ring-[var(--c-divider)]"
+          >
+            <span className="font-medium text-[var(--c-fg)]">{storeName}</span>
+            <span className="font-mono tabular-nums text-[var(--c-fg-muted)]">
+              {formatQty(d.qty)} {unit}
+            </span>
+          </span>
+        );
+      })}
+    </div>
+  ) : null;
+
   if (item.status === 'pending') {
     return (
       <li className="border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0">
@@ -3942,6 +4028,13 @@ function PurchaseRow({
             {i18n.t('run.action.markNa')}
           </button>
         </div>
+        {/* M3.52: per-store demand breakdown chips. Render only when
+            multi-store; positioned BETWEEN the title row and the
+            qty/price input row so the purchaser sees per-store
+            allocation BEFORE typing the actual qty (they may want to
+            confirm with each store's manager that the planned split
+            still applies if the qty diverges). */}
+        {showBreakdown ? <div className="mt-1">{breakdownChips}</div> : null}
         {/* Line 2: qty × price = total ✓ — everything on one line.
             Total hint is inline (right of price, before ✓) so the user
             sees their math without an extra row. */}
@@ -4035,62 +4128,71 @@ function PurchaseRow({
     const isTransfer = item.paymentMethod === 'transfer';
     const isAdded = item.addedByPurchaser === true;
     return (
-      <li className="flex items-center gap-2 border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0">
-        <span aria-hidden className="shrink-0 text-body text-[var(--c-success)]">✓</span>
-        <span className="shrink-0 truncate text-body font-semibold">{skuName}</span>
-        {isAdded ? (
-          // M3.41 (2026-05-21): "+" badge marks rows the purchaser added
-          // mid-run. The +ring outline disambiguates from the 🏦 transfer
-          // pill (which uses the same action accent). Tooltip carries
-          // the localized "added by purchaser" label.
-          <span
-            aria-label={i18n.t('run.label.addedByPurchaser')}
-            title={i18n.t('run.label.addedByPurchaser')}
-            className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warning)]/15 px-1.5 py-0.5 text-label text-[var(--c-warning)] ring-1 ring-[var(--c-warning)]"
-          >
-            +
-          </span>
-        ) : null}
-        {isTransfer ? (
-          <span
-            aria-label={i18n.t('run.label.paymentTransfer')}
-            title={i18n.t('run.label.paymentTransfer')}
-            className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-action)]/15 px-1.5 py-0.5 text-label text-[var(--c-action)] ring-1 ring-[var(--c-action)]"
-          >
-            🏦
-          </span>
-        ) : null}
-        <span className="min-w-0 flex-1 truncate text-label text-[var(--c-fg-muted)]">
-          {formatQty(item.purchasedQty)} {unit} ×{' '}
-          {/* M3.36: render persisted unitPrice in the same scale the
-             user is currently working in — keeps the displayed math
-             visually consistent with what they typed. */}
-          {priceInThousands && item.unitPrice
-            ? `${formatMoney(Number(item.unitPrice) / 1000)}K`
-            : formatMoney(item.unitPrice)}
-          {total ? (
-            <>
-              {' = '}
-              <span className="font-mono font-semibold tabular-nums text-[var(--c-fg)]">{total}</span>
-            </>
+      <li className="border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0">
+        <div className="flex items-center gap-2">
+          <span aria-hidden className="shrink-0 text-body text-[var(--c-success)]">✓</span>
+          <span className="shrink-0 truncate text-body font-semibold">{skuName}</span>
+          {isAdded ? (
+            // M3.41 (2026-05-21): "+" badge marks rows the purchaser added
+            // mid-run. The +ring outline disambiguates from the 🏦 transfer
+            // pill (which uses the same action accent). Tooltip carries
+            // the localized "added by purchaser" label.
+            <span
+              aria-label={i18n.t('run.label.addedByPurchaser')}
+              title={i18n.t('run.label.addedByPurchaser')}
+              className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warning)]/15 px-1.5 py-0.5 text-label text-[var(--c-warning)] ring-1 ring-[var(--c-warning)]"
+            >
+              +
+            </span>
           ) : null}
-        </span>
-        <button
-          type="button"
-          onClick={() => onEdit(item)}
-          aria-label={i18n.t('run.action.editPurchase')}
-          className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-label text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
-        >
-          {i18n.t('run.action.editPurchase')}
-        </button>
-        <button
-          type="button"
-          onClick={() => onUndoPurchase(item.skuId, skuName)}
-          aria-label={i18n.t('run.action.undoPurchase')}
-          className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-label text-[var(--c-danger)] active:bg-[var(--c-surface-2)]"
-        >
-          {i18n.t('run.action.undoPurchase')}
-        </button>
+          {isTransfer ? (
+            <span
+              aria-label={i18n.t('run.label.paymentTransfer')}
+              title={i18n.t('run.label.paymentTransfer')}
+              className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-action)]/15 px-1.5 py-0.5 text-label text-[var(--c-action)] ring-1 ring-[var(--c-action)]"
+            >
+              🏦
+            </span>
+          ) : null}
+          <span className="min-w-0 flex-1 truncate text-label text-[var(--c-fg-muted)]">
+            {formatQty(item.purchasedQty)} {unit} ×{' '}
+            {/* M3.36: render persisted unitPrice in the same scale the
+               user is currently working in — keeps the displayed math
+               visually consistent with what they typed. */}
+            {priceInThousands && item.unitPrice
+              ? `${formatMoney(Number(item.unitPrice) / 1000)}K`
+              : formatMoney(item.unitPrice)}
+            {total ? (
+              <>
+                {' = '}
+                <span className="font-mono font-semibold tabular-nums text-[var(--c-fg)]">{total}</span>
+              </>
+            ) : null}
+          </span>
+          <button
+            type="button"
+            onClick={() => onEdit(item)}
+            aria-label={i18n.t('run.action.editPurchase')}
+            className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-label text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
+          >
+            {i18n.t('run.action.editPurchase')}
+          </button>
+          <button
+            type="button"
+            onClick={() => onUndoPurchase(item.skuId, skuName)}
+            aria-label={i18n.t('run.action.undoPurchase')}
+            className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-label text-[var(--c-danger)] active:bg-[var(--c-surface-2)]"
+          >
+            {i18n.t('run.action.undoPurchase')}
+          </button>
+        </div>
+        {/* M3.52: per-store ACTUAL allocation chips. Sits below the
+            aggregate qty/price/total row so the purchaser can — at
+            a glance — see how many kg/pcs to bag for each store.
+            Shows the post-purchase splits (run.splits filtered to
+            this skuId), which may differ from planned demand when
+            the actual qty bought diverged from planned. */}
+        {showBreakdown ? <div className="mt-1">{breakdownChips}</div> : null}
       </li>
     );
   }
