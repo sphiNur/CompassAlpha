@@ -4552,10 +4552,27 @@ function AddItemSheet({
   // M3.44: helper — auto-split actualQty evenly across selected stores,
   // rounded to integers, remainder to the last store. Matches the
   // domain TOLERANCE check. E.g. 70k / 3 = 23k, 23k, 24k.
+  //
+  // M3.51 (2026-05-23): when qty hasn't been entered yet, STILL register
+  // every selected store in the map (with empty values). Without this,
+  // tapping a store chip before typing qty produced an empty map (Number('')
+  // is 0 → the early-return below fired) → splits.size stayed 0 → the
+  // qty input row was gated on splits.size > 0, so it never appeared → user
+  // got stuck unable to add a single-store expense (or multi-store
+  // expense from a fresh sheet). The "stub" entries get overwritten by
+  // the qty input's onChange handler the moment the user types.
   const evenSplit = (storeIds: string[], qtyStr: string) => {
     const next = new Map<string, string>();
+    if (storeIds.length === 0) return next;
     const q = Number(qtyStr);
-    if (!Number.isFinite(q) || q <= 0 || storeIds.length === 0) return next;
+    if (!Number.isFinite(q) || q <= 0) {
+      // No qty yet — register each selected store with an empty
+      // value. canSubmit still gates on Number(actualQty) > 0 +
+      // splitMatches, so the user can't accidentally submit a $0
+      // expense via this branch.
+      for (const id of storeIds) next.set(id, '');
+      return next;
+    }
     if (storeIds.length === 1) {
       next.set(storeIds[0]!, qtyStr);
       return next;
