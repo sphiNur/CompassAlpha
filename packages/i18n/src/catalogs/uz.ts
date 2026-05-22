@@ -45,7 +45,7 @@ export const uz = {
   'unit.pcs': 'dona',
   'unit.pack': 'pachka',
   'unit.pair': 'juft',
-  'unit.bunch': "bog'lam",
+  'unit.bunch': 'bog',
   'unit.roll': 'rulon',
   'common.noResults': 'Hech narsa topilmadi',
   'common.required': 'Majburiy',
