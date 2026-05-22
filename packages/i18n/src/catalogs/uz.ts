@@ -644,6 +644,7 @@ export const uz = {
   'run.toast.couldNotAddExpense': "Xarajatni saqlab bo'lmadi",
   'run.confirm.finish.expenses':
     "🧾 {n} ta katalogdan tashqari / xarajat · {total} UZS",
+  'run.confirm.finish.perStoreHeading': "Do'kon bo'yicha hisob:",
   'run.errors.expenseLabelRequired': 'Nomini kiriting',
   'run.errors.expenseLabelTooLong': "Nom juda uzun (200 dan ko'p emas)",
   'run.errors.expenseReasonRequired': 'Sababni kiriting',

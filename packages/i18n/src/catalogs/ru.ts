@@ -629,6 +629,7 @@ export const ru = {
   'run.toast.couldNotAddExpense': 'Не удалось сохранить расход',
   'run.confirm.finish.expenses':
     '🧾 {n} поз. вне каталога / расходов · {total} UZS',
+  'run.confirm.finish.perStoreHeading': 'Расчёт по магазинам:',
   'run.errors.expenseLabelRequired': 'Укажите название',
   'run.errors.expenseLabelTooLong': 'Название слишком длинное (макс 200)',
   'run.errors.expenseReasonRequired': 'Укажите причину',

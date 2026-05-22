@@ -698,6 +698,7 @@ export const en = {
   'run.toast.couldNotAddExpense': 'Could not save the expense',
   'run.confirm.finish.expenses':
     '🧾 {n} off-catalog item(s) / expense(s) · {total} UZS',
+  'run.confirm.finish.perStoreHeading': 'Per-store settlement:',
   'run.errors.expenseLabelRequired': 'A description is required',
   'run.errors.expenseLabelTooLong': 'Description too long (200 max)',
   'run.errors.expenseReasonRequired': 'Reason is required',

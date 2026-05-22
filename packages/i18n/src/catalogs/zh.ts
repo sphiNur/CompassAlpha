@@ -583,6 +583,7 @@ export const zh = {
   'run.toast.expenseRemoved': '开销已删除',
   'run.toast.couldNotAddExpense': '保存开销失败',
   'run.confirm.finish.expenses': '🧾 目录外 / 开销 {n} 笔 · 合计 {total} UZS',
+  'run.confirm.finish.perStoreHeading': '按门店分账：',
   'run.errors.expenseLabelRequired': '名称必填',
   'run.errors.expenseLabelTooLong': '名称过长(最多 200 字符)',
   'run.errors.expenseReasonRequired': '原因必填',

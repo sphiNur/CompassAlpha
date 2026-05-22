@@ -682,6 +682,7 @@ export function RunPage() {
   const finishSummary = useMemo(() => {
     const items = runDetailQuery.data?.items ?? [];
     const splits = runDetailQuery.data?.splits ?? [];
+    const expenses = runDetailQuery.data?.expenses ?? [];
     const skus = items.filter((i) => i.status === 'purchased').length;
     const stores = new Set(splits.map((sp) => sp.storeId)).size;
     let total = 0;
@@ -716,7 +717,7 @@ export function RunPage() {
     // bucket.
     let expensesCount = 0;
     let expensesTotal = 0;
-    for (const ex of runDetailQuery.data?.expenses ?? []) {
+    for (const ex of expenses) {
       const line = Number(ex.qty) * Number(ex.unitPrice);
       expensesCount += 1;
       expensesTotal += line;
@@ -724,6 +725,45 @@ export function RunPage() {
       if (ex.paymentMethod === 'transfer') totalTransfer += line;
       else totalCash += line;
     }
+    /**
+     * M3.52 (2026-05-23): per-store settlement preview shown in the
+     * finish-confirm sheet. The user asked that the post-purchase
+     * settlement strictly segregate each store's bill so the manager
+     * can read it without mentally untangling cross-store totals.
+     * Same shape as the history-sheet breakdown (SKU lines + expense
+     * splits, never mixing across stores).
+     */
+    const byStore = new Map<
+      string,
+      { storeId: string; total: number; cash: number; transfer: number }
+    >();
+    const ensureStore = (storeId: string) => {
+      let cur = byStore.get(storeId);
+      if (!cur) {
+        cur = { storeId, total: 0, cash: 0, transfer: 0 };
+        byStore.set(storeId, cur);
+      }
+      return cur;
+    };
+    for (const sp of splits) {
+      const item = items.find((i) => i.skuId === sp.skuId);
+      if (!item || item.status !== 'purchased' || !item.unitPrice) continue;
+      const subtotal = Number(item.unitPrice) * Number(sp.qty);
+      const cur = ensureStore(sp.storeId);
+      cur.total += subtotal;
+      if (item.paymentMethod === 'transfer') cur.transfer += subtotal;
+      else cur.cash += subtotal;
+    }
+    for (const ex of expenses) {
+      for (const ss of ex.storeSplits) {
+        const subtotal = Number(ss.qty) * Number(ex.unitPrice);
+        const cur = ensureStore(ss.storeId);
+        cur.total += subtotal;
+        if (ex.paymentMethod === 'transfer') cur.transfer += subtotal;
+        else cur.cash += subtotal;
+      }
+    }
+    const byStoreList = [...byStore.values()].sort((a, b) => b.total - a.total);
     return {
       skus,
       stores,
@@ -734,6 +774,7 @@ export function RunPage() {
       addedTotal,
       expensesCount,
       expensesTotal,
+      byStore: byStoreList,
     };
   }, [runDetailQuery.data]);
 
@@ -1028,6 +1069,35 @@ export function RunPage() {
                   total: formatMoney(finishSummary.expensesTotal),
                 })
               : '';
+          /**
+           * M3.52 (2026-05-23): per-store settlement list. Shown only
+           * for multi-store runs (single-store: the headline total
+           * already says everything). The manager sees "店A 100,000
+           * · 💵 60,000 · 🏦 40,000" before tapping Finish, so they
+           * can confirm each store's bill at a glance and pivot to
+           * cash-vs-transfer if the run mixed methods.
+           *
+           * Strictly per-store: each line is one store's own slice
+           * (SKU lines + expense splits attributed via storeSplits),
+           * never aggregated across stores.
+           */
+          const perStoreLines =
+            finishSummary.byStore.length > 1
+              ? '\n\n' +
+                i18n.t('run.confirm.finish.perStoreHeading') +
+                '\n' +
+                finishSummary.byStore
+                  .map((ps) => {
+                    const storeName =
+                      storeById.get(ps.storeId)?.name ?? ps.storeId.slice(0, 8);
+                    const mixed = ps.cash > 0 && ps.transfer > 0;
+                    const tail = mixed
+                      ? ` · 💵 ${formatMoney(ps.cash)} · 🏦 ${formatMoney(ps.transfer)}`
+                      : '';
+                    return `${storeName}: ${formatMoney(ps.total)}${tail}`;
+                  })
+                  .join('\n')
+              : '';
           return {
             title: i18n.t('run.confirm.finish.title'),
             body:
@@ -1040,7 +1110,8 @@ export function RunPage() {
               }) +
               breakdownLine +
               addedLine +
-              expensesLine,
+              expensesLine +
+              perStoreLines,
             confirmLabel: i18n.t('run.action.finish'),
             danger: false,
             requireReason: false,
@@ -1170,6 +1241,7 @@ export function RunPage() {
     finishSummary,
     activeRun,
     i18n,
+    storeById,
     startPurchase,
     startDelivery,
     finish,
@@ -5479,6 +5551,7 @@ function RunHistoryDetailSheet({
     if (!detail.data) return null;
     const items = detail.data.items;
     const splits = detail.data.splits;
+    const expenses = detail.data.expenses ?? [];
     let total = 0;
     let totalCash = 0;
     let totalTransfer = 0;
@@ -5493,24 +5566,85 @@ function RunHistoryDetailSheet({
         else totalCash += line;
       }
     }
-    // Per-store totals — sums each store's share at each purchase price.
-    const perStore = new Map<string, { storeId: string; total: number; itemCount: number }>();
+    // M3.44: off-catalog expenses contribute to the run total + the
+    // payment-method breakdown the same way SKU buys do.
+    for (const ex of expenses) {
+      const line = Number(ex.qty) * Number(ex.unitPrice);
+      total += line;
+      if (ex.paymentMethod === 'transfer') totalTransfer += line;
+      else totalCash += line;
+    }
+    /**
+     * M3.52 (2026-05-23): per-store settlement — strictly each store's
+     * own slice, NEVER mixed across stores. The user's pain point:
+     * "采购完成后的结算也记得严格按照每家店的清单来结算，别相互混淆了"
+     * — after finish, the manager must see X for store-A and Y for
+     * store-B without any cross-contamination.
+     *
+     * Each store row aggregates:
+     *   - SKU lines: their split of `unitPrice × splits.qty` for every
+     *     purchased item, broken into cash/transfer by the item's
+     *     payment method.
+     *   - Expenses: their slice of `unitPrice × storeSplits.qty` for
+     *     every off-catalog expense, payment-method tracked too.
+     *
+     * `itemCount` counts UNIQUE skuIds that touched this store (was
+     * "split rows" before, which double-counted when the run had
+     * multiple delivery cycles in legacy data).
+     */
+    const perStore = new Map<
+      string,
+      {
+        storeId: string;
+        total: number;
+        cash: number;
+        transfer: number;
+        skuIds: Set<string>;
+        expensesTotal: number;
+        expensesCount: number;
+      }
+    >();
+    const ensureStore = (storeId: string) => {
+      let cur = perStore.get(storeId);
+      if (!cur) {
+        cur = {
+          storeId,
+          total: 0,
+          cash: 0,
+          transfer: 0,
+          skuIds: new Set<string>(),
+          expensesTotal: 0,
+          expensesCount: 0,
+        };
+        perStore.set(storeId, cur);
+      }
+      return cur;
+    };
     for (const sp of splits) {
       const item = items.find((i) => i.skuId === sp.skuId);
       if (!item || item.status !== 'purchased' || !item.unitPrice) continue;
       const subtotal = Number(item.unitPrice) * Number(sp.qty);
-      const cur = perStore.get(sp.storeId) ?? {
-        storeId: sp.storeId,
-        total: 0,
-        itemCount: 0,
-      };
+      const cur = ensureStore(sp.storeId);
       cur.total += subtotal;
-      cur.itemCount += 1;
-      perStore.set(sp.storeId, cur);
+      if (item.paymentMethod === 'transfer') cur.transfer += subtotal;
+      else cur.cash += subtotal;
+      cur.skuIds.add(sp.skuId);
+    }
+    for (const ex of expenses) {
+      for (const ss of ex.storeSplits) {
+        const subtotal = Number(ss.qty) * Number(ex.unitPrice);
+        const cur = ensureStore(ss.storeId);
+        cur.total += subtotal;
+        cur.expensesTotal += subtotal;
+        cur.expensesCount += 1;
+        if (ex.paymentMethod === 'transfer') cur.transfer += subtotal;
+        else cur.cash += subtotal;
+      }
     }
     return {
       items,
       splits,
+      expenses,
       total,
       totalCash,
       totalTransfer,
@@ -5587,7 +5721,13 @@ function RunHistoryDetailSheet({
             ) : null}
           </div>
 
-          {/* Per-item rows */}
+          {/* Per-item rows.
+              M3.52 (2026-05-23): each purchased row now also surfaces
+              the per-store qty split as compact chips, matching the
+              in-run PurchaseRow view. Without this the history sheet
+              showed "5kg apples" with no way to see the 2kg-for-A
+              + 3kg-for-B breakdown — managers couldn't reconcile
+              the per-store totals against individual line items. */}
           <div>
             <SectionLabel padded={false} className="mb-2">
               {i18n.t('run.history.itemsHeading')}
@@ -5600,6 +5740,10 @@ function RunHistoryDetailSheet({
                   it.status === 'purchased' && it.unitPrice && it.purchasedQty
                     ? Number(it.unitPrice) * Number(it.purchasedQty)
                     : 0;
+                const perStoreSplits = breakdown.splits.filter(
+                  (sp) => sp.skuId === it.skuId,
+                );
+                const isMulti = breakdown.perStore.size > 1;
                 return (
                   <li
                     key={it.skuId}
@@ -5620,40 +5764,96 @@ function RunHistoryDetailSheet({
                         ? `${formatQty(it.purchasedQty)} ${sku?.unit ?? ''} × ${formatMoney(it.unitPrice)}`
                         : it.unavailableNote ?? ''}
                     </div>
+                    {/* M3.52: per-store chips on history rows. Same
+                       visual pattern as the in-run PurchaseRow chips. */}
+                    {isMulti && it.status === 'purchased' && perStoreSplits.length > 0 ? (
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                        {perStoreSplits.map((sp) => {
+                          const storeName =
+                            storeById.get(sp.storeId)?.name ?? sp.storeId.slice(0, 8);
+                          return (
+                            <span
+                              key={sp.storeId}
+                              className="inline-flex items-center gap-1 rounded-[var(--r-pill)] bg-[var(--c-bg)] px-1.5 py-0.5 text-label ring-1 ring-[var(--c-divider)]"
+                            >
+                              <span className="font-medium text-[var(--c-fg)]">
+                                {storeName}
+                              </span>
+                              <span className="font-mono tabular-nums text-[var(--c-fg-muted)]">
+                                {formatQty(sp.qty)} {sku?.unit ?? ''}
+                              </span>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    ) : null}
                   </li>
                 );
               })}
             </ul>
           </div>
 
-          {/* Per-store breakdown */}
+          {/* Per-store breakdown — settlement view.
+              M3.52 (2026-05-23): each row is one store's strict slice
+              of the run cost (SKU lines + expense splits, never
+              mixing). Shows item count, cash/transfer split when
+              mixed, and any off-catalog expenses attributed to the
+              store. This is the manager's source of truth for
+              reconciling who owes what after the run finishes. */}
           {breakdown.perStore.size > 0 ? (
             <div>
               <SectionLabel padded={false} className="mb-2">
                 {i18n.t('run.history.storesHeading')}
               </SectionLabel>
               <ul className="flex flex-col rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline">
-                {[...breakdown.perStore.values()].map((ps) => {
-                  const store = storeById.get(ps.storeId);
-                  return (
-                    <li
-                      key={ps.storeId}
-                      className="flex items-baseline justify-between border-b border-[var(--c-divider)] px-4 py-3 last:border-b-0"
-                    >
-                      <div>
-                        <div className="text-body font-semibold">
-                          {store?.name ?? ps.storeId.slice(0, 8)}
+                {[...breakdown.perStore.values()]
+                  .sort((a, b) => b.total - a.total)
+                  .map((ps) => {
+                    const store = storeById.get(ps.storeId);
+                    const mixed = ps.cash > 0 && ps.transfer > 0;
+                    return (
+                      <li
+                        key={ps.storeId}
+                        className="flex flex-col gap-1 border-b border-[var(--c-divider)] px-4 py-3 last:border-b-0"
+                      >
+                        <div className="flex items-baseline justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-body font-semibold">
+                              {store?.name ?? ps.storeId.slice(0, 8)}
+                            </div>
+                            <div className="text-label text-[var(--c-fg-muted)]">
+                              {/* M3.52 i18n fix: was hardcoded "items"
+                                 string; now uses the localized plural
+                                 key shared with the rest of the app.
+                                 Counts UNIQUE SKUs delivered to this
+                                 store, not split rows. */}
+                              {i18n.t('run.label.itemsCount', {
+                                n: ps.skuIds.size,
+                              })}
+                              {ps.expensesCount > 0 ? (
+                                <>
+                                  {' · '}
+                                  {i18n.t('run.confirm.finish.expenses', {
+                                    n: ps.expensesCount,
+                                    total: formatMoney(ps.expensesTotal),
+                                  })}
+                                </>
+                              ) : null}
+                            </div>
+                          </div>
+                          <span className="font-mono text-body font-semibold tabular-nums">
+                            {formatMoney(ps.total)}
+                          </span>
                         </div>
-                        <div className="text-label text-[var(--c-fg-muted)]">
-                          {ps.itemCount} items
-                        </div>
-                      </div>
-                      <span className="font-mono text-body font-semibold tabular-nums">
-                        {formatMoney(ps.total)}
-                      </span>
-                    </li>
-                  );
-                })}
+                        {mixed ? (
+                          <div className="flex items-baseline gap-3 text-label text-[var(--c-fg-muted)]">
+                            <span>💵 {formatMoney(ps.cash)}</span>
+                            <span>🏦 {formatMoney(ps.transfer)}</span>
+                          </div>
+                        ) : null}
+                      </li>
+                    );
+                  })}
               </ul>
             </div>
           ) : null}
