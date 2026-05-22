@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export interface TelegramMainButton {
   text: string;
@@ -183,95 +183,79 @@ export function useTelegramSettingsButton(
 }
 
 /**
- * Drive Telegram's MainButton from React without the flicker that the
- * naive useEffect approach produced.
+ * Page-primary-action state — M3.49 (2026-05-23).
  *
- * The bug we used to have: every dependency change re-ran the effect,
- * the cleanup called `button.hide()`, and the re-run called
- * `button.show()` again. iOS Telegram animates show/hide with a brief
- * slide — so on every qty +/- tap (which changes `text`), the user
- * saw the button "pop out" and slide back in. Looked broken.
+ * Was: drove Telegram's native MainButton via tg.MainButton.show()/
+ * setText()/onClick(). That button lives BELOW the WebView, which
+ * meant our bottom nav shifted up whenever a primary action was
+ * present. The user wanted the bottom nav to stay anchored to the
+ * screen bottom at ALL times — non-negotiable.
  *
- * Fix: separate the bind-once side-effects (onClick handler, mount/
- * unmount) from the per-render updates (text, active, visible). We
- * only call setText when the text actually changed; show/hide only
- * when visibility actually flipped; enable/disable only on edge.
- * Click handler is bound ONCE to a ref-tracked callback so the
- * onClick identity stays stable across renders.
+ * Now: usePageMainButton writes to a module-level store, and Shell.tsx
+ * renders <PageMainButton /> as an in-DOM sticky bar ABOVE the nav.
+ * Telegram's native MainButton stays permanently hidden (one
+ * tg.MainButton.hide() in Shell on mount). The nav is now the last
+ * flex child in Shell, so it owns the bottom edge regardless of
+ * whether a primary action is showing.
+ *
+ * Trade-offs accepted:
+ *   - Loses Telegram's native MainButton look. We render a styled
+ *     button with the same action accent color, sized comparably.
+ *   - Need to call haptic() manually on tap (existing call sites
+ *     already do so on success — no behavior loss).
+ *   - Button + nav now share thumb-reach space. Mitigated by the
+ *     ~8px gap + bg-color contrast.
  */
+interface PageMainButtonState {
+  text: string;
+  onClick: () => void;
+  visible: boolean;
+  active: boolean;
+}
+
+let _pageMainButton: PageMainButtonState | null = null;
+const _pageMainButtonListeners = new Set<() => void>();
+
+function _setPageMainButton(s: PageMainButtonState | null): void {
+  _pageMainButton = s;
+  _pageMainButtonListeners.forEach((l) => l());
+}
+
+/**
+ * Subscribe React to the page-main-button state. Used by the
+ * <PageMainButton /> component in Shell.tsx.
+ */
+export function usePageMainButtonState(): PageMainButtonState | null {
+  const [, force] = useState(0);
+  useEffect(() => {
+    const sub = () => force((n) => n + 1);
+    _pageMainButtonListeners.add(sub);
+    return () => {
+      _pageMainButtonListeners.delete(sub);
+    };
+  }, []);
+  return _pageMainButton;
+}
+
 export function usePageMainButton(
   text: string,
   onClick: () => void,
   opts?: { visible?: boolean; active?: boolean },
 ): void {
+  // Keep the click callback in a ref so re-renders don't republish
+  // state — we only republish when text/visible/active actually flip.
   const onClickRef = useRef(onClick);
   onClickRef.current = onClick;
-  const lastTextRef = useRef<string | null>(null);
-  const lastVisibleRef = useRef<boolean | null>(null);
-  const lastActiveRef = useRef<boolean | null>(null);
-
-  // Bind the click handler ONCE. The actual callback lives behind a
-  // ref so React state changes don't require re-binding (which would
-  // cause Telegram to deregister + reregister the listener — itself
-  // sometimes a visible blip on iOS).
+  const safeText = (text ?? '').trim();
+  const wantVisible = opts?.visible !== false && !!safeText;
+  const wantActive = opts?.active !== false;
   useEffect(() => {
-    const tg = getTg();
-    if (!tg) return;
-    const handler = () => onClickRef.current();
-    tg.MainButton.onClick(handler);
-    return () => {
-      tg.MainButton.offClick(handler);
-    };
-  }, []);
-
-  // Per-render updates. ONLY call the imperative API methods when the
-  // value actually changes. Telegram's setText / show / hide each
-  // trigger a native UI update on iOS; calling them on every React
-  // render produces visible animation jitter even when nothing changed.
-  useEffect(() => {
-    const tg = getTg();
-    if (!tg) return;
-    const button = tg.MainButton;
-    const wantVisible = opts?.visible !== false;
-    const wantActive = opts?.active !== false;
-    const safeText = (text ?? '').trim();
-
-    // Empty text → hide. Telegram throws WebAppBottomButtonParamInvalid
-    // if you try to setText('') on a visible button.
-    if (!wantVisible || !safeText) {
-      if (lastVisibleRef.current !== false) {
-        button.hide();
-        lastVisibleRef.current = false;
-      }
-      return;
-    }
-
-    if (lastTextRef.current !== safeText) {
-      button.setText(safeText);
-      lastTextRef.current = safeText;
-    }
-    if (lastActiveRef.current !== wantActive) {
-      if (wantActive) button.enable();
-      else button.disable();
-      lastActiveRef.current = wantActive;
-    }
-    if (lastVisibleRef.current !== true) {
-      button.show();
-      lastVisibleRef.current = true;
-    }
-  }, [text, opts?.visible, opts?.active]);
-
-  // Only hide on UNMOUNT, not on every dep change. The previous code's
-  // cleanup ran on every text change because it lived on the same
-  // effect. Splitting these out fixes the flicker.
-  useEffect(() => {
-    return () => {
-      const tg = getTg();
-      if (!tg) return;
-      tg.MainButton.hide();
-      lastVisibleRef.current = false;
-      lastTextRef.current = null;
-      lastActiveRef.current = null;
-    };
-  }, []);
+    _setPageMainButton({
+      text: safeText,
+      onClick: () => onClickRef.current(),
+      visible: wantVisible,
+      active: wantActive,
+    });
+    return () => _setPageMainButton(null);
+  }, [safeText, wantVisible, wantActive]);
 }

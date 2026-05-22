@@ -857,22 +857,23 @@ export function OrderPage() {
           dateLabel + ' · ' + i18n.t('order.review.itemsCount', { n: selectedCount })
         }
         footer={
-          !getTg() ? (
-            <Button
-              block
-              size="lg"
-              loading={submit.isPending}
-              disabled={selectedCount === 0}
-              onClick={() => {
-                if (!sessionQuery.data) return;
-                void handleSubmit();
-              }}
-            >
-              {submit.isPending
-                ? i18n.t('order.action.submitting')
-                : i18n.t('order.action.submitOrder')}
-            </Button>
-          ) : null
+          // M3.49: in-page PageMainButton sits behind any open sheet —
+          // we must render the sheet's own footer button so the user
+          // has something to tap.
+          <Button
+            block
+            size="lg"
+            loading={submit.isPending}
+            disabled={selectedCount === 0}
+            onClick={() => {
+              if (!sessionQuery.data) return;
+              void handleSubmit();
+            }}
+          >
+            {submit.isPending
+              ? i18n.t('order.action.submitting')
+              : i18n.t('order.action.submitOrder')}
+          </Button>
         }
       >
         <ReviewList totals={totals} skus={skus} productName={productName} />

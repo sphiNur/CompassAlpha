@@ -617,21 +617,21 @@ function WorkspaceSection() {
         title={i18n.t('admin.workspace.financeSheet.title')}
         description={i18n.t('admin.workspace.financeSheet.description')}
         footer={
-          !getTg() ? (
-            <Button
-              block
-              loading={orgFinanceUpdate.isPending}
-              onClick={() =>
-                orgFinanceUpdate.mutate({
-                  currency: draftCurrency,
-                  taxRatePct: draftTax,
-                  pricesIncludeTax: draftInclTax,
-                })
-              }
-            >
-              {i18n.t('common.save')}
-            </Button>
-          ) : null
+          // M3.49: sheets always render their own footer button — the
+          // in-page PageMainButton is behind any open sheet.
+          <Button
+            block
+            loading={orgFinanceUpdate.isPending}
+            onClick={() =>
+              orgFinanceUpdate.mutate({
+                currency: draftCurrency,
+                taxRatePct: draftTax,
+                pricesIncludeTax: draftInclTax,
+              })
+            }
+          >
+            {i18n.t('common.save')}
+          </Button>
         }
       >
         <div className="flex flex-col gap-3 py-3">

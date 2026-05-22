@@ -48,7 +48,7 @@ import {
 } from '@compass/ui';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
-import { usePageMainButton, haptic, getTg } from '../hooks/useTelegram';
+import { usePageMainButton, haptic } from '../hooks/useTelegram';
 import {
   useI18n,
   useProductName,
@@ -1639,20 +1639,22 @@ export function RunPage() {
           n: previewQuery.data?.sessions.length ?? 0,
         })}
         footer={
-          !getTg() ? (
-            <Button
-              block
-              loading={create.isPending}
-              disabled={!previewQuery.data?.sessions.length}
-              onClick={() => {
-                const sessionIds = previewQuery.data?.sessions.map((s) => s.id) ?? [];
-                if (sessionIds.length === 0) return;
-                create.mutate({ sessionIds, startImmediately: true });
-              }}
-            >
-              {i18n.t('run.action.planRun')}
-            </Button>
-          ) : null
+          // M3.49 (2026-05-23): dropped the `!getTg()` check — the
+          // in-page PageMainButton is hidden behind any open sheet
+          // (Radix Dialog z-50), so we MUST render the sheet's own
+          // footer button regardless of Telegram presence.
+          <Button
+            block
+            loading={create.isPending}
+            disabled={!previewQuery.data?.sessions.length}
+            onClick={() => {
+              const sessionIds = previewQuery.data?.sessions.map((s) => s.id) ?? [];
+              if (sessionIds.length === 0) return;
+              create.mutate({ sessionIds, startImmediately: true });
+            }}
+          >
+            {i18n.t('run.action.planRun')}
+          </Button>
         }
       >
         <div className="flex flex-col gap-3 py-2">
@@ -1794,24 +1796,23 @@ export function RunPage() {
         title={i18n.t('run.action.markUnavailable')}
         description={i18n.t('run.action.markUnavailableDesc')}
         footer={
-          !getTg() ? (
-            <Button
-              block
-              variant="danger"
-              disabled={!unavailableNote.trim()}
-              loading={markUnavailable.isPending}
-              onClick={() => {
-                if (!unavailableFor) return;
-                markUnavailable.mutate({
-                  runId: unavailableFor.runId,
-                  skuId: unavailableFor.skuId,
-                  note: unavailableNote.trim(),
-                });
-              }}
-            >
-              {i18n.t('run.action.markNa')}
-            </Button>
-          ) : null
+          // M3.49: see RunPage's plan-run sheet for the rationale.
+          <Button
+            block
+            variant="danger"
+            disabled={!unavailableNote.trim()}
+            loading={markUnavailable.isPending}
+            onClick={() => {
+              if (!unavailableFor) return;
+              markUnavailable.mutate({
+                runId: unavailableFor.runId,
+                skuId: unavailableFor.skuId,
+                note: unavailableNote.trim(),
+              });
+            }}
+          >
+            {i18n.t('run.action.markNa')}
+          </Button>
         }
       >
         <div className="py-3">
@@ -4199,10 +4200,9 @@ function PurchaseSheet({
     reasonOk
   );
 
-  // Inside Telegram, the parent's MainButton drives Save. We hide the
-  // sheet's footer button so the user sees only ONE primary action.
-  // Outside Telegram (e.g. web preview) we keep it.
-  const inTelegram = !!getTg();
+  // M3.49 (2026-05-23): the sheet's own footer button is now ALWAYS
+  // rendered — the in-page PageMainButton is hidden behind the sheet
+  // when one opens, so each sheet must own its primary CTA.
   return (
     <Sheet
       open={!!draft}
@@ -4214,30 +4214,29 @@ function PurchaseSheet({
       }
       description={sku ? productName(sku) : ''}
       footer={
-        !inTelegram ? (
-          <Button
-            block
-            loading={submitting}
-            disabled={!canSubmit}
-            onClick={() =>
-              draft &&
-              (canSubmit
-                ? onSubmit(draft)
-                : toast.error(i18n.t('run.errors.splitsMustSum')))
-            }
-          >
-            {!splitMatches
-              ? i18n.t('run.label.splitsMismatch', {
-                  sum: formatQty(splitTotal),
-                  target: formatQty(draft?.actualQty || '0'),
-                })
-              : !reasonOk
-                ? i18n.t('run.errors.reviseReasonRequired')
-                : draft?.isEdit
-                  ? i18n.t('run.action.editPurchase')
-                  : i18n.t('run.action.savePurchase')}
-          </Button>
-        ) : null
+        // M3.49: see Shell's PageMainButton — sheet footers always render now.
+        <Button
+          block
+          loading={submitting}
+          disabled={!canSubmit}
+          onClick={() =>
+            draft &&
+            (canSubmit
+              ? onSubmit(draft)
+              : toast.error(i18n.t('run.errors.splitsMustSum')))
+          }
+        >
+          {!splitMatches
+            ? i18n.t('run.label.splitsMismatch', {
+                sum: formatQty(splitTotal),
+                target: formatQty(draft?.actualQty || '0'),
+              })
+            : !reasonOk
+              ? i18n.t('run.errors.reviseReasonRequired')
+              : draft?.isEdit
+                ? i18n.t('run.action.editPurchase')
+                : i18n.t('run.action.savePurchase')}
+        </Button>
       }
     >
       {draft ? (
@@ -5031,11 +5030,12 @@ function ConfirmSheet({
   // We DO keep the Cancel button when the user has to type a reason —
   // the soft keyboard covers the backdrop, so without an explicit close
   // target they'd have to dismiss the keyboard first to tap outside.
-  const inTelegram = !!getTg();
-  // Show cancel button whenever a reason input is on screen (keyboard
-  // covers the backdrop dismiss target).
+  // M3.49 (2026-05-23): the in-page PageMainButton sits behind any
+  // open sheet — so we always show the confirm sheet's own primary
+  // button now, regardless of Telegram presence. Was `!inTelegram`
+  // (Telegram MainButton was the canonical CTA), no longer correct.
   const showCancel = isHardReason || (isSoftReason && reasonExpanded);
-  const showPrimary = !inTelegram;
+  const showPrimary = true;
   const hasFooter = showPrimary || showCancel;
   return (
     <Sheet

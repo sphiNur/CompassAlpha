@@ -34,7 +34,7 @@ const RunPage = lazy(importRunPage);
 import { useAuthStore } from '../stores/authStore';
 import { useNavStore, resolveVisibleTab } from '../stores/navStore';
 import { useI18n } from '../hooks/useI18n';
-import { useTelegramSettingsButton } from '../hooks/useTelegram';
+import { useTelegramSettingsButton, usePageMainButtonState } from '../hooks/useTelegram';
 import { SettingsSheet } from '../components/SettingsSheet';
 import { PageMenuProvider, usePageMenuRegistration } from './PageMenuContext';
 
@@ -355,6 +355,16 @@ function ShellInner() {
         {PAGES[tab]()}
       </main>
 
+      {/* M3.49 (2026-05-23): in-page primary action button. Telegram's
+          native MainButton lives BELOW the WebView, so it pushed the
+          bottom nav up whenever a page set a primary action. The
+          user explicitly requested the bottom nav stay anchored at
+          all times. This in-DOM button sits ABOVE the nav, so when
+          it appears/disappears the NAV doesn't move — only the
+          page-content area shrinks/grows. Driven by the same
+          usePageMainButton hook every page already uses. */}
+      <PageMainButton />
+
       <nav
         className="grid border-t border-[var(--c-divider)] bg-[var(--c-surface)]"
         style={{
@@ -392,6 +402,59 @@ function ShellInner() {
           );
         })}
       </nav>
+    </div>
+  );
+}
+
+/**
+ * In-DOM page primary action button (M3.49, 2026-05-23). Reads from the
+ * module-level store written by usePageMainButton(). Renders nothing
+ * when no page has registered an action — the nav rises against the
+ * page content. When a page sets one, a sticky bar appears ABOVE the
+ * nav with the action's text + click handler.
+ *
+ * Telegram's native MainButton is kept permanently hidden (effect
+ * below) so the two don't compete for the bottom-of-screen slot.
+ */
+function PageMainButton() {
+  const state = usePageMainButtonState();
+  // Permanently hide Telegram's native MainButton — we render our
+  // own in-DOM equivalent above the bottom nav. The hide() call is
+  // idempotent on the SDK side.
+  useEffect(() => {
+    const tg = typeof window !== 'undefined' ? window.Telegram?.WebApp : null;
+    if (!tg) return;
+    tg.MainButton.hide();
+  }, [state?.visible]);
+
+  if (!state || !state.visible) return null;
+  return (
+    <div
+      className="border-t border-[var(--c-divider)] bg-[var(--c-surface)]"
+      style={{
+        // Match the chrome horizontal pad so the button doesn't sit
+        // beneath the Telegram overflow icons (it shouldn't on the
+        // bottom edge, but defensive symmetry with the top sticky
+        // headers — see M3.46).
+        paddingLeft: 'max(16px, var(--app-safe-left, 16px))',
+        paddingRight: 'max(16px, var(--app-safe-right, 16px))',
+        paddingTop: 8,
+        paddingBottom: 8,
+      }}
+    >
+      <button
+        type="button"
+        disabled={!state.active}
+        onClick={state.onClick}
+        className={
+          'flex h-12 w-full items-center justify-center rounded-[var(--r-pill)] text-h3 font-semibold ' +
+          (state.active
+            ? 'bg-[var(--c-action)] text-[var(--c-action-fg)] active:opacity-80'
+            : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
+        }
+      >
+        {state.text}
+      </button>
     </div>
   );
 }

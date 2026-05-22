@@ -25,7 +25,7 @@ import {
 } from '@compass/ui';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
-import { usePageMainButton, haptic, getTg } from '../hooks/useTelegram';
+import { usePageMainButton, haptic } from '../hooks/useTelegram';
 import { useI18n, useProductName } from '../hooks/useI18n';
 import { usePhotoUploader } from '../hooks/usePhotoUploader';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
@@ -390,17 +390,14 @@ export function ConfirmPage() {
                       );
                     })}
                   </ul>
-                  {storeConfirmed ? null : !getTg() ? (
-                    // M1.11 cleanup (2026-05-08): dropped the terminal
-                    // "Store confirmed" Banner. Three signals already
-                    // confirm success: toast.success on confirmStore
-                    // (`confirm.toast.storeConfirmed`), MainButton
-                    // flipping to its terminal label, and the chips
-                    // locking to their selected state for every item.
-                    // Outside Telegram (web preview) — there's no
-                    // MainButton to drive Confirm Store, so render an
-                    // in-page button as a fallback. Inside Telegram
-                    // the MainButton is the canonical CTA.
+                  {storeConfirmed ? null : (
+                    // M3.49 (2026-05-23): dropped the `!getTg()` check.
+                    // The in-page PageMainButton in Shell now drives
+                    // the canonical CTA, but this inline button is the
+                    // fallback when no sheet is involved and the user
+                    // wants a visible CTA inline (e.g., per-store
+                    // section). Both render — the inline button is
+                    // contextually clearer here.
                     <div className="px-4 py-3">
                       <Button
                         block
@@ -420,7 +417,7 @@ export function ConfirmPage() {
                         })}
                       </Button>
                     </div>
-                  ) : null}
+                  )}
                 </Card>
               )}
             </>
@@ -459,37 +456,35 @@ export function ConfirmPage() {
         // attach a photo first now sees both inputs.
         disableAutoFocus
         footer={
-          // Inside Telegram, the page MainButton becomes "Save" while
-          // this sheet is open — see the dispatcher above. Avoid the
-          // duplicate-button look the user reported.
-          !getTg() ? (
-            <Button
-              block
-              disabled={!issueNote.trim() || confirmItem.isPending}
-              loading={confirmItem.isPending}
-              onClick={() => {
-                if (!issueOpen || confirmItem.isPending) return;
-                writeOptimisticItemConfirm(
-                  issueOpen.runId,
-                  issueOpen.skuId,
-                  issueOpen.storeId,
-                  issueOpen.status,
-                  issueNote.trim(),
-                  issuePhoto,
-                );
-                confirmItem.mutate({
-                  runId: issueOpen.runId,
-                  skuId: issueOpen.skuId,
-                  storeId: issueOpen.storeId,
-                  status: issueOpen.status,
-                  note: issueNote.trim(),
-                  photoUrl: issuePhoto,
-                });
-              }}
-            >
-              {i18n.t('confirm.issue.save')}
-            </Button>
-          ) : null
+          // M3.49 (2026-05-23): dropped !getTg() — the in-page
+          // PageMainButton sits behind any open sheet, so we
+          // ALWAYS render the sheet's own footer button now.
+          <Button
+            block
+            disabled={!issueNote.trim() || confirmItem.isPending}
+            loading={confirmItem.isPending}
+            onClick={() => {
+              if (!issueOpen || confirmItem.isPending) return;
+              writeOptimisticItemConfirm(
+                issueOpen.runId,
+                issueOpen.skuId,
+                issueOpen.storeId,
+                issueOpen.status,
+                issueNote.trim(),
+                issuePhoto,
+              );
+              confirmItem.mutate({
+                runId: issueOpen.runId,
+                skuId: issueOpen.skuId,
+                storeId: issueOpen.storeId,
+                status: issueOpen.status,
+                note: issueNote.trim(),
+                photoUrl: issuePhoto,
+              });
+            }}
+          >
+            {i18n.t('confirm.issue.save')}
+          </Button>
         }
       >
         <div className="flex flex-col gap-3 py-3">
