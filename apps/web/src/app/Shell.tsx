@@ -35,6 +35,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useNavStore, resolveVisibleTab } from '../stores/navStore';
 import { useI18n } from '../hooks/useI18n';
 import { useTelegramSettingsButton, usePageMainButtonState } from '../hooks/useTelegram';
+import { useAppMutating } from '../hooks/useAppMutating';
 import { SettingsSheet } from '../components/SettingsSheet';
 import { PageMenuProvider, usePageMenuRegistration } from './PageMenuContext';
 
@@ -365,44 +366,84 @@ function ShellInner() {
           usePageMainButton hook every page already uses. */}
       <PageMainButton />
 
-      <nav
-        className="grid border-t border-[var(--c-divider)] bg-[var(--c-surface)]"
-        style={{
-          gridTemplateColumns: `repeat(${visible.length}, minmax(0, 1fr))`,
-          paddingBottom: 'var(--app-safe-bottom)',
-          height: 'calc(var(--app-nav-h) + var(--app-safe-bottom))',
-        }}
-        aria-label="Primary"
-      >
-        {visible.map((t) => {
-          const active = tab === t.key;
-          const Icon = t.Icon;
-          return (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setTab(t.key as Tab)}
-              aria-current={active ? 'page' : undefined}
+      <BottomNav
+        visible={visible}
+        tab={tab}
+        setTab={(k) => setTab(k as Tab)}
+        i18n={i18n}
+      />
+    </div>
+  );
+}
+
+/**
+ * M3.50 (2026-05-23): bottom nav extracted so it can call
+ * useAppMutating() and disable tab switching while a mutation is in
+ * flight. Without this, the user could tap Save (mutation started)
+ * → tap a different tab mid-flight → land on a page that didn't see
+ * the save result, racing the cache invalidation. Now: nav goes
+ * grey + non-interactive until the mutation settles.
+ *
+ * Cosmetic: faded opacity rather than removed-from-screen, so the
+ * user still has spatial context of where the nav is. Mirrors the
+ * existing disabled-button look used everywhere else in the app.
+ */
+function BottomNav({
+  visible,
+  tab,
+  setTab,
+  i18n,
+}: {
+  visible: Array<{ key: Tab; permission: string | null; labelKey: string; Icon: IconComponent }>;
+  tab: Tab;
+  setTab: (k: Tab) => void;
+  i18n: ReturnType<typeof useI18n>;
+}) {
+  const busy = useAppMutating();
+  return (
+    <nav
+      className="grid border-t border-[var(--c-divider)] bg-[var(--c-surface)]"
+      style={{
+        gridTemplateColumns: `repeat(${visible.length}, minmax(0, 1fr))`,
+        paddingBottom: 'var(--app-safe-bottom)',
+        height: 'calc(var(--app-nav-h) + var(--app-safe-bottom))',
+        // M3.50: block tab switches during in-flight mutations.
+        pointerEvents: busy ? 'none' : undefined,
+        opacity: busy ? 0.5 : undefined,
+        transition: 'opacity 120ms ease',
+      }}
+      aria-label="Primary"
+      aria-busy={busy || undefined}
+    >
+      {visible.map((t) => {
+        const active = tab === t.key;
+        const Icon = t.Icon;
+        return (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setTab(t.key as Tab)}
+            aria-current={active ? 'page' : undefined}
+            disabled={busy}
+            className={
+              'press flex flex-col items-center justify-center gap-1 ' +
+              (active ? 'text-[var(--c-action)]' : 'text-[var(--c-fg-muted)]')
+            }
+          >
+            <Icon size={22} />
+            <span
               className={
-                'press flex flex-col items-center justify-center gap-1 ' +
-                (active ? 'text-[var(--c-action)]' : 'text-[var(--c-fg-muted)]')
+                active
+                  ? 'text-tiny font-semibold leading-none'
+                  : 'text-tiny leading-none'
               }
             >
-              <Icon size={22} />
-              <span
-                className={
-                  active
-                    ? 'text-tiny font-semibold leading-none'
-                    : 'text-tiny leading-none'
-                }
-              >
-                {i18n.t(t.labelKey as Parameters<typeof i18n.t>[0])}
-              </span>
-            </button>
-          );
-        })}
-      </nav>
-    </div>
+              {i18n.t(t.labelKey as Parameters<typeof i18n.t>[0])}
+            </span>
+          </button>
+        );
+      })}
+    </nav>
   );
 }
 
@@ -418,6 +459,12 @@ function ShellInner() {
  */
 function PageMainButton() {
   const state = usePageMainButtonState();
+  // M3.50: also guard against re-tap during any in-flight mutation
+  // (not just the one this button started). Without this guard, the
+  // user could tap Save, then while it's processing tap a
+  // sibling-screen's main button (e.g. switch tab → submit there)
+  // and create a race.
+  const busy = useAppMutating();
   // Permanently hide Telegram's native MainButton — we render our
   // own in-DOM equivalent above the bottom nav. The hide() call is
   // idempotent on the SDK side.
@@ -428,6 +475,7 @@ function PageMainButton() {
   }, [state?.visible]);
 
   if (!state || !state.visible) return null;
+  const interactable = state.active && !busy;
   return (
     <div
       className="border-t border-[var(--c-divider)] bg-[var(--c-surface)]"
@@ -444,11 +492,12 @@ function PageMainButton() {
     >
       <button
         type="button"
-        disabled={!state.active}
+        disabled={!interactable}
         onClick={state.onClick}
+        aria-busy={busy || undefined}
         className={
           'flex h-12 w-full items-center justify-center rounded-[var(--r-pill)] text-h3 font-semibold ' +
-          (state.active
+          (interactable
             ? 'bg-[var(--c-action)] text-[var(--c-action-fg)] active:opacity-80'
             : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
         }
