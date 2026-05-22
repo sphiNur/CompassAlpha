@@ -2223,6 +2223,7 @@ function ActiveRunPanel({
                   demand={demandBySku.get(it.skuId) ?? []}
                   storeById={storeById}
                   actualSplits={actualSplits}
+                  isMultiStoreRun={demandStoreIds.length > 1}
                   lastPrice={run.lastPriceBySku?.[it.skuId] ?? null}
                   i18n={i18n}
                   priceInThousands={priceInThousands}
@@ -3286,6 +3287,20 @@ function PerVendorView({
     status: 'pending' | 'bought' | 'unavailable',
   ) => void;
 }) {
+  // M3.52: run-level multi-store flag. PurchaseRow uses this to decide
+  // whether to render per-store chips on EVERY row of the run (true
+  // when the run spans ≥2 stores) — without this single-store-demand
+  // rows in a multi-store run had no store label and looked ambiguous.
+  // Falls back to splits for legacy runs missing perStoreDemand.
+  const isMultiStoreRun = useMemo(() => {
+    const ids = new Set<string>();
+    for (const d of run.perStoreDemand ?? []) ids.add(d.storeId);
+    if (ids.size === 0) {
+      for (const sp of run.splits) ids.add(sp.storeId);
+    }
+    return ids.size > 1;
+  }, [run.perStoreDemand, run.splits]);
+
   // Bucket run.items by their preferred supplier (id) or '__unassigned__'.
   const buckets = useMemo(() => {
     type Bucket = {
@@ -3405,6 +3420,7 @@ function PerVendorView({
                       demand={demandBySku.get(r.skuId) ?? []}
                       storeById={storeById}
                       actualSplits={actualSplits}
+                      isMultiStoreRun={isMultiStoreRun}
                       lastPrice={run.lastPriceBySku?.[r.skuId] ?? null}
                       i18n={i18n}
                       priceInThousands={priceInThousands}
@@ -3733,6 +3749,7 @@ function PurchaseRow({
   demand,
   storeById,
   actualSplits,
+  isMultiStoreRun,
   lastPrice,
   i18n,
   priceInThousands,
@@ -3765,6 +3782,17 @@ function PurchaseRow({
    * but the advanced sheet can override.
    */
   actualSplits: Array<{ storeId: string; qty: string }>;
+  /**
+   * M3.52 (2026-05-23 fix): true when the run spans ≥2 stores. We
+   * show the per-store chip on EVERY row of a multi-store run, even
+   * when that row's demand is only from a single store. Without this,
+   * rows where only Store-A wants the SKU stayed unlabeled and the
+   * purchaser couldn't tell — at the stall — that this item is just
+   * for Store-A (and not, say, for Store-B which is the other half of
+   * the run). The chip line is suppressed only for single-store runs
+   * where the aggregate qty already tells the whole story.
+   */
+  isMultiStoreRun: boolean;
   lastPrice: string | null;
   i18n: ReturnType<typeof useI18n>;
   /** M3.36: when true, the price input shows raw UZS / 1000. Save still
@@ -3944,19 +3972,24 @@ function PurchaseRow({
   /**
    * M3.52 (2026-05-23): per-store demand breakdown chip row.
    *
-   * The pain point — user-reported: when a run covers ≥2 stores and
-   * one SKU has demand from multiple stores, the row collapses
-   * everything into one aggregate qty (e.g. "5kg apples"). At the
-   * stall the purchaser couldn't tell that this is "store-A 2kg +
-   * store-B 3kg", so they had no way to bag the buy by destination
-   * without going back to the per-store view and cross-referencing.
+   * The pain point — user-reported in two passes:
    *
-   * Fix: render a row of compact chips ([店A 2 kg] [店B 3 kg]) right
-   * under the SKU title — visible on EVERY multi-store row, both
-   * pending (planned demand) and purchased (actual recorded splits).
-   * Single-store rows hide the line (the aggregate qty already tells
-   * the whole story; chips would be visual noise on every row of a
-   * single-store run).
+   *   Pass 1: "When a run has ≥2 stores, a row with demand from
+   *   multiple stores collapsed into one aggregate qty (e.g. '5kg
+   *   apples'). At the stall the purchaser couldn't tell that this
+   *   is 'store-A 2kg + store-B 3kg'."
+   *
+   *   Pass 2 (this revision): "Multi-store rows are now labeled, but
+   *   the rows where ONLY ONE store wants the SKU aren't labeled
+   *   either — those still look ambiguous." Correct: in a multi-
+   *   store run, a single-store-demand row of "5kg apples" tells
+   *   the purchaser nothing about which store it belongs to.
+   *
+   * Fix: render a row of compact chips ([店A 2 kg] / [店A 2 kg] [店B 3 kg])
+   * right under the SKU title for EVERY row of a multi-store run,
+   * whether the demand spans one or many stores. Suppress only when
+   * the entire run is single-store (the run-level "which store?" is
+   * obvious without the chips).
    *
    * Source of truth:
    *   - pending  → `demand` (run.perStoreDemand for this skuId)
@@ -3967,7 +4000,7 @@ function PurchaseRow({
    *     applies to all stores uniformly; chips would imply otherwise).
    */
   const breakdown = item.status === 'pending' ? demand : actualSplits;
-  const showBreakdown = breakdown.length > 1;
+  const showBreakdown = isMultiStoreRun && breakdown.length >= 1;
   const breakdownChips = showBreakdown ? (
     <div className="flex flex-wrap items-center gap-1.5">
       {breakdown.map((d) => {
