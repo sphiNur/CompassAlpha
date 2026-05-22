@@ -198,27 +198,37 @@ function ShellInner() {
     if (!tg) return;
     const apply = () => {
       const platform = tg.platform ?? 'unknown';
+      // M3.47 (2026-05-22): even when the SDK reports a number,
+      // floor it at the platform-empirical chrome-row value.
+      // contentSafeAreaInset.top has been observed to UNDER-report
+      // on iOS Telegram when the floating Close button extends
+      // beyond the standard chrome row. Without the floor, page
+      // content (e.g. PreviewSummaryCard's "可以生成采购单"
+      // CardHeader title) lands behind the close button.
+      const chromeRowFloor =
+        platform === 'android' ? 56 : platform === 'tdesktop' ? 0 : 64;
       // --- Vertical chrome reserve ---
       const contentTop = tg.contentSafeAreaInset?.top;
       if (typeof contentTop === 'number' && contentTop > 0) {
-        // contentSafeAreaInset already includes the chrome row, so
-        // this is the total offset our content needs to clear.
+        const safeTop = tg.safeAreaInset?.top ?? 0;
+        const minReserve = safeTop + chromeRowFloor;
+        const reserve = Math.max(contentTop, minReserve);
         document.documentElement.style.setProperty(
           '--app-chrome-reserve',
-          `${contentTop}px`,
+          `${reserve}px`,
         );
       } else {
         const safeTop = tg.safeAreaInset?.top;
-        // Empirical chrome-row heights from devtools inspection on each
-        // platform. Android Telegram's row is ~56 px; iOS Telegram's is
-        // ~36 px (it draws over the status bar). tdesktop runs in a
-        // standalone window and the WebView starts at 0 with no chrome.
-        const chromeRow =
-          platform === 'android' ? 56 : platform === 'tdesktop' ? 0 : 36;
+        // chromeRowFloor (declared above) carries the empirical
+        // values: Android 56 / iOS 64 / tdesktop 0. iOS bumped from
+        // M3.42's 36 to 64 because the close button is a floating
+        // overlay that extends beyond the standard chrome row, and
+        // the old 36-px reserve let the first-card header land
+        // behind it.
         if (typeof safeTop === 'number') {
           document.documentElement.style.setProperty(
             '--app-chrome-reserve',
-            `${safeTop + chromeRow}px`,
+            `${safeTop + chromeRowFloor}px`,
           );
         } else {
           // No SDK telemetry. Fall back to env() (handled in the CSS
