@@ -49,7 +49,12 @@ import {
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton, haptic, getTg } from '../hooks/useTelegram';
-import { useI18n, useProductName, useVendorName } from '../hooks/useI18n';
+import {
+  useI18n,
+  useProductName,
+  useVendorName,
+  useVendorUnitLabel,
+} from '../hooks/useI18n';
 import { usePhotoUploader } from '../hooks/usePhotoUploader';
 // M3.5: StoreSwitcher pill removed from page chrome; picker lives in
 // SettingsSheet now. RunPage still uses useStoreContext indirectly
@@ -176,6 +181,11 @@ export function RunPage() {
   // Chinese noise). Falls back to primary locale when no secondary
   // is set.
   const vendorName = useVendorName();
+  // M3.48 (2026-05-23): unit-label resolver for the SAME copy templates.
+  // Without this, copy emitted raw canonical units ("bunch", "kg") even
+  // when the user's primary locale was Chinese — bug the user reported
+  // when "把" showed as "bunch" in the pasted text.
+  const vendorUnitLabel = useVendorUnitLabel();
   const session = useAuthStore((s) => s.session);
   const toast = useToast();
   const photoUploader = usePhotoUploader('receipt');
@@ -1443,6 +1453,7 @@ export function RunPage() {
                 skuById={skuById}
                 productName={productName}
                 vendorName={vendorName}
+                vendorUnitLabel={vendorUnitLabel}
                 i18n={i18n}
                 toast={toast}
               />
@@ -1485,6 +1496,7 @@ export function RunPage() {
           skuById={skuById}
           productName={productName}
           vendorName={vendorName}
+          vendorUnitLabel={vendorUnitLabel}
           i18n={i18n}
           toast={toast}
         />
@@ -2432,6 +2444,7 @@ function PreviewSummaryCard({
   skuById,
   productName,
   vendorName,
+  vendorUnitLabel,
   i18n,
   toast,
 }: {
@@ -2472,6 +2485,10 @@ function PreviewSummaryCard({
    *  noise when the vendor only reads Uzbek). Falls back to the
    *  primary locale name when the user hasn't opted into bilingual. */
   vendorName: (item: { names: Record<string, string> | null | undefined }) => string;
+  /** M3.48 (2026-05-23): unit-label resolver for the copy templates
+   *  so "bunch" → "把" / "bog'lam" instead of leaking the canonical
+   *  storage value. Mirrors vendorName's locale resolution. */
+  vendorUnitLabel: (unit: string | null | undefined) => string;
   i18n: ReturnType<typeof useI18n>;
   toast: ReturnType<typeof useToast>;
 }) {
@@ -2583,7 +2600,9 @@ function PreviewSummaryCard({
       // pasted text reads cleanly in the vendor's language (no
       // parenthetical primary-locale noise).
       const name = sku ? vendorName(sku) : it.skuId.slice(0, 8);
-      lines.push(`• ${name}: ${formatQty(it.qty)} ${sku?.unit ?? ''}`);
+      // M3.48 (2026-05-23): localized unit — was raw `sku.unit`
+      // (canonical "bunch" / "kg" / …) leaking into pasted text.
+      lines.push(`• ${name}: ${formatQty(it.qty)} ${vendorUnitLabel(sku?.unit)}`);
     }
     // M1.8 / M3.16-C: append the staff's "其他物品" requests so the
     // purchaser sees them on the same copy-paste they ship to the
@@ -2681,7 +2700,8 @@ function PreviewSummaryCard({
         const name = sku ? vendorName(sku) : line.skuId.slice(0, 8);
         // No bullet, no spaces around the unit — the user wants
         // "牛肉 8kg" form, not "• 牛肉 (8 kg)".
-        lines.push(`${name} ${formatQty(line.qty)}${sku?.unit ?? ''}`);
+        // M3.48 (2026-05-23): localized unit (was raw canonical).
+        lines.push(`${name} ${formatQty(line.qty)}${vendorUnitLabel(sku?.unit)}`);
       }
       blocks.push(lines.join('\n'));
     }

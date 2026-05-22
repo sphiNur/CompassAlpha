@@ -8,6 +8,11 @@ import {
 } from '@compass/i18n';
 import { useAuthStore } from '../stores/authStore';
 
+const VALID_LOCALES = ['en', 'zh', 'ru', 'uz'] as const;
+function asLocale(v: string | null | undefined): Locale | null {
+  return v && (VALID_LOCALES as readonly string[]).includes(v) ? (v as Locale) : null;
+}
+
 /**
  * Module-level "loaded locales" version counter. Incremented every
  * time a dynamic catalog import resolves. useI18n subscribes via a
@@ -170,4 +175,41 @@ export function useVendorName() {
       },
     [i18n.locale, secondaryLocale],
   );
+}
+
+/**
+ * Vendor-locale unit-label resolver — companion to useVendorName.
+ * Returns the SKU's canonical unit (kg / bunch / pcs / …) localized
+ * to the SECONDARY locale when set, else the primary locale.
+ *
+ * Why this exists: the copy-list templates were emitting the RAW
+ * canonical unit ("bunch") because they read `sku.unit` directly —
+ * which is the storage value, never the display value. Chinese users
+ * saw "bunch" instead of "把"; once vendor-language is on, the same
+ * leak would show "kg" instead of "kg" (fine for kg, but "bunch" → "bog'lam"
+ * was the real ask).
+ *
+ * Ensures the secondary catalog is loaded so the lookup hits without
+ * a first-paint delay.
+ */
+export function useVendorUnitLabel() {
+  const i18n = useI18n();
+  const rawSecondary = useAuthStore((s) => s.session?.user.secondaryLocale ?? null);
+  const secondaryLocale = asLocale(rawSecondary);
+  // Pre-load secondary catalog. If null, ensure primary (no-op).
+  useEnsureLocale(secondaryLocale ?? i18n.locale);
+  return useMemo(() => {
+    const effective: Locale =
+      secondaryLocale && secondaryLocale !== i18n.locale
+        ? secondaryLocale
+        : i18n.locale;
+    const t = effective === i18n.locale ? i18n.t : createI18n(effective).t;
+    return (unit: string | null | undefined): string => {
+      if (!unit) return '';
+      const canonical = unit.toLowerCase();
+      const key = ('unit.' + canonical) as Parameters<typeof t>[0];
+      const localized = t(key);
+      return localized === key ? unit : localized;
+    };
+  }, [i18n, secondaryLocale]);
 }
