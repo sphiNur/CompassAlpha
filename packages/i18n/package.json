@@ -11,6 +11,6 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@formatjs/intl": "^2.10.15"
+    "@formatjs/intl": "^4.1.12"
   }
 }
