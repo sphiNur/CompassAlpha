@@ -545,6 +545,9 @@ export const zh = {
   'run.action.addItem.noMatch': '没有匹配的 SKU。已在本次采购中的 SKU 已隐藏。',
   'run.action.addItem.changeSku': '更换',
   'run.action.addItem.targetStore': '送给哪个店铺?',
+  'run.action.addItem.crossStoreHint':
+    '该商品已在采购中（{stores}）。此处可为其他店追加，将合并到现有行；下拉框已自动过滤掉冲突的店。',
+  'run.action.addItem.defaultCrossStoreReason': '其他店追加需求',
   'run.action.addItem.pickStore': '— 选择店铺 —',
   'run.action.addItem.totalHint': '小计',
   'run.action.addItem.reasonLabel': '为什么要加这一项?',

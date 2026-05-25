@@ -588,6 +588,9 @@ export const ru = {
     'Совпадений нет. Позиции, уже включённые в закупку, скрыты.',
   'run.action.addItem.changeSku': 'Сменить',
   'run.action.addItem.targetStore': 'В какой магазин?',
+  'run.action.addItem.crossStoreHint':
+    'Этот товар уже закупается для: {stores}. Добавление здесь объединяется с существующей строкой; конфликтующие магазины скрыты в списке.',
+  'run.action.addItem.defaultCrossStoreReason': 'Дополнительный спрос магазина',
   'run.action.addItem.pickStore': '— Выберите магазин —',
   'run.action.addItem.totalHint': 'Итого по строке',
   'run.action.addItem.reasonLabel': 'Почему добавляете?',

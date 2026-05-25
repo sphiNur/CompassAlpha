@@ -602,6 +602,9 @@ export const uz = {
     "Mos SKU topilmadi. Xaridda mavjud bo'lganlar yashirilgan.",
   'run.action.addItem.changeSku': "O'zgartirish",
   'run.action.addItem.targetStore': 'Qaysi do‘konga?',
+  'run.action.addItem.crossStoreHint':
+    "Bu mahsulot {stores} uchun allaqachon xarid qilinmoqda. Bu yerda qo'shish mavjud qatorga birlashtiriladi; nizoli do'konlar ro'yxatdan yashirilgan.",
+  'run.action.addItem.defaultCrossStoreReason': "Boshqa do'konning qo'shimcha talabi",
   'run.action.addItem.pickStore': "— Do'kon tanlang —",
   'run.action.addItem.totalHint': "Qator bo'yicha jami",
   'run.action.addItem.reasonLabel': "Nima uchun qo'shilyapti?",

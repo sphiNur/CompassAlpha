@@ -938,28 +938,45 @@ const SkuRow = memo(function SkuRow({
   // the new QtyControl baseline (h-9 = 36 px), the row sits at ~52 px
   // instead of the old ~72 px — matches the bottom-nav rhythm. One
   // more SKU visible per viewport on a 5.5" screen.
+  //
+  // M3.55 (2026-05-23): user-requested tweaks for the order surface:
+  //   - bumped SKU name from text-body (13 px) → text-h2 (15 px) so
+  //     the primary content scans easier on phone screens.
+  //   - dropped the redundant `{sku.unit}` caption that used to lead
+  //     the secondary line. The unit is already shown inside the
+  //     QtyControl pill on the right ("3 kg") so duplicating it here
+  //     stole vertical real estate without adding info.
+  //   - the secondary line now hides entirely when there's no
+  //     suggested qty AND no cross-staff contribution count — most
+  //     rows on a fresh order are exactly that case, so the row
+  //     collapses to a single line.
+  const hasSecondaryLine =
+    !!sku.suggestedQty || (otherContribCount > 0 && totalQty > 0);
   return (
     <li className="flex items-center justify-between border-b border-[var(--c-divider)] px-4 py-1.5 last:border-b-0">
       <div className="min-w-0 flex-1 pr-3">
-        <div className="truncate text-body font-semibold leading-tight text-[var(--c-fg)]">
+        <div className="truncate text-h2 font-semibold leading-tight text-[var(--c-fg)]">
           {productName(sku)}
         </div>
-        <div className="mt-0.5 text-label leading-tight text-[var(--c-fg-muted)]">
-          {sku.unit}
-          {sku.suggestedQty
-            ? ' · ' + i18n.t('order.suggested', { qty: sku.suggestedQty })
-            : ''}
-          {otherContribCount > 0 && totalQty > 0 ? (
-            <>
-              {' · '}
-              <span className="font-semibold text-[var(--c-fg)]">
-                {i18n.t('order.totalQty', { qty: totalQty, unit: sku.unit })}
-              </span>
-              {' '}
-              ({otherContribCount + (myQty > 0 ? 1 : 0)})
-            </>
-          ) : null}
-        </div>
+        {hasSecondaryLine ? (
+          <div className="mt-0.5 text-label leading-tight text-[var(--c-fg-muted)]">
+            {sku.suggestedQty
+              ? i18n.t('order.suggested', { qty: sku.suggestedQty })
+              : null}
+            {sku.suggestedQty && otherContribCount > 0 && totalQty > 0
+              ? ' · '
+              : null}
+            {otherContribCount > 0 && totalQty > 0 ? (
+              <>
+                <span className="font-semibold text-[var(--c-fg)]">
+                  {i18n.t('order.totalQty', { qty: totalQty, unit: sku.unit })}
+                </span>
+                {' '}
+                ({otherContribCount + (myQty > 0 ? 1 : 0)})
+              </>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       <QtyControl
         value={myQty}
@@ -967,6 +984,12 @@ const SkuRow = memo(function SkuRow({
         unit={sku.unit}
         disabled={isReadOnly}
         onChange={(next) => onQtyChange(storeId, sku.id, String(next))}
+        // M3.55 (2026-05-23): show the SKU name in the qty quick-pick
+        // sheet title. Without this the popup was a context-less "Set
+        // quantity" — when the user mis-tapped a row, they couldn't
+        // tell they'd opened the wrong SKU's picker. Now the title
+        // reads e.g. "玉米淀粉" so a wrong row is obvious instantly.
+        pickTitle={productName(sku)}
       />
     </li>
   );

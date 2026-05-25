@@ -1803,7 +1803,6 @@ export function RunPage() {
           guard). */}
       <AddItemSheet
         draft={addItemDraft}
-        runItems={runDetailQuery.data?.items ?? []}
         runStoreIds={(() => {
           const ids = new Set<string>();
           for (const it of runDetailQuery.data?.items ?? []) {
@@ -1814,6 +1813,26 @@ export function RunPage() {
           for (const d of runDetailQuery.data?.perStoreDemand ?? []) ids.add(d.storeId);
           for (const sp of runDetailQuery.data?.splits ?? []) ids.add(sp.storeId);
           return [...ids];
+        })()}
+        existingStoreIdsBySku={(() => {
+          // M3.54 (2026-05-23): for each SKU in the run, which stores
+          // already have demand. AddItemSheet uses this to (1) still
+          // SHOW in-run SKUs as long as some store hasn't claimed them
+          // yet, (2) restrict the store dropdown to non-conflicting
+          // stores, (3) print the "augmenting existing item" hint.
+          const m = new Map<string, { storeIds: Set<string>; status: string }>();
+          for (const it of runDetailQuery.data?.items ?? []) {
+            m.set(it.skuId, { storeIds: new Set<string>(), status: it.status });
+          }
+          for (const sp of runDetailQuery.data?.splits ?? []) {
+            const e = m.get(sp.skuId);
+            if (e) e.storeIds.add(sp.storeId);
+          }
+          for (const d of runDetailQuery.data?.perStoreDemand ?? []) {
+            const e = m.get(d.skuId);
+            if (e) e.storeIds.add(d.storeId);
+          }
+          return m;
         })()}
         skus={skusQuery.data ?? []}
         storeById={storeById}
@@ -1829,6 +1848,75 @@ export function RunPage() {
             .map(([storeId, qty]) => ({ storeId, qty }));
           if (d.mode === 'sku') {
             if (!d.skuId) return;
+            // M3.54: detect cross-store augmentation case. If the SKU
+            // is already in this run for OTHER stores (no overlap with
+            // the new storeSplits — sheet's store-picker filter
+            // already enforced that), route the submit through the
+            // right existing-item mutation:
+            //   - pending  → purchaseItem, merging existing demand
+            //     splits with the new store split(s). The whole item
+            //     gets marked purchased at the typed unitPrice (the
+            //     purchaser is at the stall buying it now anyway).
+            //   - purchased → revisePurchase, merging actual splits
+            //     with the new store split(s). Reason gets reused
+            //     from the sheet's reason field.
+            //   - unavailable → blocked at the picker stage (SKU is
+            //     filtered out), so this branch shouldn't fire.
+            // Falls back to addPurchaserItem when the SKU is truly
+            // new to the run (the only path that creates a fresh
+            // purchaser-added row).
+            const existingItem = runDetailQuery.data?.items.find(
+              (it) => it.skuId === d.skuId,
+            );
+            const existingSplits = (runDetailQuery.data?.splits ?? []).filter(
+              (sp) => sp.skuId === d.skuId,
+            );
+            if (existingItem) {
+              const combinedSplits = [
+                ...existingSplits.map((sp) => ({
+                  storeId: sp.storeId,
+                  qty: sp.qty,
+                })),
+                ...storeSplits,
+              ];
+              const combinedQty = combinedSplits
+                .reduce((s, sp) => s + Number(sp.qty), 0)
+                .toString();
+              if (existingItem.status === 'pending') {
+                purchaseItem.mutate({
+                  runId: d.runId,
+                  skuId: d.skuId,
+                  supplierId: d.supplierId,
+                  unitPrice: d.unitPrice,
+                  actualQty: combinedQty,
+                  receiptPhotoUrl: d.receiptPhotoUrl,
+                  storeSplits: combinedSplits,
+                  paymentMethod: d.paymentMethod,
+                });
+                setAddItemDraft(null);
+                return;
+              }
+              if (existingItem.status === 'purchased') {
+                revisePurchase.mutate({
+                  runId: d.runId,
+                  skuId: d.skuId,
+                  supplierId: d.supplierId,
+                  unitPrice: d.unitPrice,
+                  actualQty: combinedQty,
+                  receiptPhotoUrl: d.receiptPhotoUrl,
+                  storeSplits: combinedSplits,
+                  paymentMethod: d.paymentMethod,
+                  reason:
+                    d.reason.trim() ||
+                    i18n.t('run.action.addItem.defaultCrossStoreReason'),
+                });
+                setAddItemDraft(null);
+                return;
+              }
+              // unavailable — should be unreachable (filtered out
+              // in the picker). Fall through and let the backend
+              // 400 just in case the data races.
+            }
             addPurchaserItem.mutate({
               runId: d.runId,
               skuId: d.skuId,
@@ -1857,7 +1945,12 @@ export function RunPage() {
             });
           }
         }}
-        submitting={addPurchaserItem.isPending || addExpense.isPending}
+        submitting={
+          addPurchaserItem.isPending ||
+          addExpense.isPending ||
+          purchaseItem.isPending ||
+          revisePurchase.isPending
+        }
       />
 
       {/* Mark-unavailable sheet — primary action handled by MainButton
@@ -4621,8 +4714,8 @@ function PurchaseSheet({
  */
 function AddItemSheet({
   draft,
-  runItems,
   runStoreIds,
+  existingStoreIdsBySku,
   skus,
   storeById,
   productName,
@@ -4635,10 +4728,25 @@ function AddItemSheet({
   submitting,
 }: {
   draft: AddItemDraft | null;
-  /** Already-in-run items (so we can exclude them from the SKU picker). */
-  runItems: Array<{ skuId: string }>;
   /** Stores already involved in this run — only these are eligible. */
   runStoreIds: string[];
+  /**
+   * M3.54 (2026-05-23): for each SKU already in the run, which storeIds
+   * have demand AND the item's current status. Drives:
+   *   - the SKU picker filter (an in-run SKU is shown iff at least one
+   *     run-store still has NO demand for it — i.e., "room" to add)
+   *   - the store dropdown filter when an in-run SKU is selected
+   *     (those stores are hidden — they'd be a true conflict)
+   *   - the "augment existing item" hint that warns the user the
+   *     additional demand will route through purchaseItem/revisePurchase
+   *     instead of creating a fresh added-by-purchaser row.
+   *
+   * Without this, the previous code blocked the SKU outright, so a
+   * scenario like "A ordered H, B suddenly needs H" left the
+   * purchaser unable to add for B at all — see the user-reported
+   * cross-store interference bug.
+   */
+  existingStoreIdsBySku: Map<string, { storeIds: Set<string>; status: string }>;
   skus: Array<{
     id: string;
     names: Record<string, string>;
@@ -4673,15 +4781,29 @@ function AddItemSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft?.runId, draft?.skuId, draft?.mode, priceInThousands]);
 
-  // Filter the SKU list: exclude already-in-run, archived, and (if a
-  // search is typed) anything that doesn't substring-match in zh / en /
-  // ru / uz. Cap displayed list at 20 to keep the picker scrollable
-  // without pagination.
-  const inRunSet = useMemo(() => new Set(runItems.map((it) => it.skuId)), [runItems]);
+  // Filter the SKU list: skip archived + apply substring search.
+  // M3.54 (2026-05-23): no longer hard-excludes in-run SKUs. A SKU is
+  // hidden ONLY when EVERY run store already has demand for it (no
+  // room left to add anyone). The "A ordered H, B needs H now"
+  // scenario keeps H visible because B has no demand for H yet.
   const filteredSkus = useMemo(() => {
     const q = search.trim().toLowerCase();
     return skus
-      .filter((sku) => !sku.isArchived && !inRunSet.has(sku.id))
+      .filter((sku) => {
+        if (sku.isArchived) return false;
+        const existing = existingStoreIdsBySku.get(sku.id);
+        if (existing) {
+          // Hide only when every run-store is already claimed for this
+          // SKU. If any store has no demand, the row stays clickable.
+          const stillRoom = runStoreIds.some((id) => !existing.storeIds.has(id));
+          if (!stillRoom) return false;
+          // Hide unavailable items too — N/A is a run-wide signal, not
+          // a per-store one; the purchaser can't override "can't get it
+          // anywhere" by re-adding for a different store.
+          if (existing.status === 'unavailable') return false;
+        }
+        return true;
+      })
       .filter((sku) => {
         if (!q) return true;
         const names = sku.names ?? {};
@@ -4690,22 +4812,32 @@ function AddItemSheet({
         );
       })
       .slice(0, 20);
-  }, [skus, inRunSet, search]);
+  }, [skus, existingStoreIdsBySku, runStoreIds, search]);
 
   const selectedSku = useMemo(
     () => (draft?.skuId ? skus.find((s) => s.id === draft.skuId) : null),
     [draft?.skuId, skus],
   );
 
+  // M3.54: existing storeIds for the picked SKU (if any). Drives the
+  // store-picker filter + the "augmenting existing item" banner copy.
+  const selectedSkuExisting = useMemo(() => {
+    if (!draft?.skuId) return null;
+    return existingStoreIdsBySku.get(draft.skuId) ?? null;
+  }, [draft?.skuId, existingStoreIdsBySku]);
+
   // Single-store v1: dropdown of run-involved stores. v2 can swap in a
   // multi-select chip row that drives `splits` Map directly.
-  const storeChoices = useMemo(
-    () =>
-      runStoreIds
-        .map((id) => storeById.get(id))
-        .filter((s): s is { id: string; name: string; code: string | null } => !!s),
-    [runStoreIds, storeById],
-  );
+  // M3.54: when the picked SKU is already in run for some stores, hide
+  // those stores from the dropdown — they'd be a true (storeId, skuId)
+  // duplicate, which the domain layer rightly rejects.
+  const storeChoices = useMemo(() => {
+    const all = runStoreIds
+      .map((id) => storeById.get(id))
+      .filter((s): s is { id: string; name: string; code: string | null } => !!s);
+    if (!selectedSkuExisting) return all;
+    return all.filter((s) => !selectedSkuExisting.storeIds.has(s.id));
+  }, [runStoreIds, storeById, selectedSkuExisting]);
   const selectedStoreId = draft && draft.splits.size === 1 ? [...draft.splits.keys()][0]! : '';
 
   const totalHint = useMemo(() => {
@@ -4950,6 +5082,22 @@ function AddItemSheet({
             </>
           )}
 
+          {/* M3.54 (2026-05-23): cross-store augmentation hint. Renders
+              when the picked SKU is already in this run for some other
+              stores — explains that the new demand will be merged into
+              the existing row (purchaseItem / revisePurchase under the
+              hood) so the manager doesn't see "duplicate apple line".
+              Lists the stores that already have demand so the user
+              knows which stores aren't available in the dropdown. */}
+          {draft.mode === 'sku' && selectedSku && selectedSkuExisting ? (
+            <div className="rounded-md bg-[var(--c-warning)]/10 px-3 py-2 text-label text-[var(--c-fg)] ring-1 ring-[var(--c-warning)]">
+              {i18n.t('run.action.addItem.crossStoreHint', {
+                stores: [...selectedSkuExisting.storeIds]
+                  .map((id) => storeById.get(id)?.name ?? id.slice(0, 8))
+                  .join(', '),
+              })}
+            </div>
+          ) : null}
           {/* 2) Store selection — SKU mode is single-store dropdown,
                  expense mode is multi-store chips with auto-even-split. */}
           {draft.mode === 'sku' && selectedSku ? (

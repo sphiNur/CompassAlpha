@@ -658,6 +658,9 @@ export const en = {
   'run.action.addItem.noMatch': 'No matching SKU. Items already in this run are hidden.',
   'run.action.addItem.changeSku': 'Change',
   'run.action.addItem.targetStore': 'For which store?',
+  'run.action.addItem.crossStoreHint':
+    'This item is already being purchased for {stores}. Adding here merges into the existing row; conflicting stores are hidden from the dropdown.',
+  'run.action.addItem.defaultCrossStoreReason': 'Additional store demand',
   'run.action.addItem.pickStore': '— Pick a store —',
   'run.action.addItem.totalHint': 'Line total',
   'run.action.addItem.reasonLabel': 'Why was this added?',
