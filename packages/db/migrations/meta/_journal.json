@@ -225,6 +225,13 @@
       "when": 1779595200000,
       "tag": "0031_user_secondary_locale",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1779840000000,
+      "tag": "0032_expense_templates",
+      "breakpoints": true
     }
   ]
 }
