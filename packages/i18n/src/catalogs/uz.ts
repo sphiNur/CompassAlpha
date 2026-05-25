@@ -938,6 +938,32 @@ export const uz = {
 
   // ── 17. Dishes / Recipes (M2.0b) ───────────────────────
   'admin.subsection.dishes': 'Taomlar',
+  'admin.subsection.expenseTemplates': 'Xarajat shablonlari',
+  'admin.subsection.expenseTemplatesHint':
+    "Har bir yangi xaridga avtomatik qo'shiladigan doimiy xarajatlar",
+  'admin.action.newExpenseTemplate': "+ Yangi shablon",
+  'admin.action.unarchive': "Arxivdan chiqarish",
+  'admin.label.archived': "Arxivda",
+  'admin.expenseTemplates.intro':
+    "Bu xarajatlar har bir yangi xaridga avtomatik qo'shiladi. Agar muayyan xaridda bu xarajat bo'lmasa, xaridor uni o'sha xariddan o'chirishi yoki o'zgartirishi mumkin.",
+  'admin.expenseTemplates.empty.title': "Hali shablon yo'q",
+  'admin.expenseTemplates.empty.body':
+    "Hammol, taksi, mashina to'xtatish kabi doimiy xarajatlarni qo'shing — har bir yangi xaridda avtomatik tushib qoladi.",
+  'admin.expenseTemplates.labelPlaceholder': "Hammol / Taksi / Mashina to'xtash joyi…",
+  'admin.expenseTemplates.unitHintPlaceholder': "qatnov, dona, yaxlit…",
+  'admin.field.label': "Nomi",
+  'admin.field.unitHint': "Birlik izohi",
+  'admin.field.defaultQty': "Standart miqdor",
+  'admin.field.defaultUnitPrice': "Standart narx",
+  'admin.field.defaultPaymentMethod': "Standart to'lov",
+  'admin.sheet.newExpenseTemplate': "Yangi xarajat shabloni",
+  'admin.sheet.editExpenseTemplate': "Shablonni tahrirlash",
+  'admin.confirm.archiveExpenseTemplate':
+    "«{label}» shablonini arxivlaysizmi? Keyingi xaridlar uni qoldirib ketadi.",
+  'admin.toast.expenseTemplateCreated': "Shablon qo'shildi",
+  'admin.toast.expenseTemplateUpdated': "Shablon yangilandi",
+  'admin.toast.expenseTemplateArchived': "Shablon arxivga olindi",
+  'admin.errors.expenseTemplateNotFound': "Shablon topilmadi",
   'admin.subsection.dishesHint': 'Menyu + har bir taom uchun retsept (BOM)',
   'dishes.empty.title': 'Hozircha taomlar yo&apos;q',
   'dishes.empty.description':

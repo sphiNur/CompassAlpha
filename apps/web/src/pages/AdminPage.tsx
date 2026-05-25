@@ -122,7 +122,12 @@ type AdminSection =
 // M2.0b: new 'dishes' sub-section for menu items + recipe (BOM) editor.
 // Lives next to SKUs because both are catalog data, but a separate
 // route keeps the SKU list from getting cluttered.
-type CatalogSub = 'categories' | 'skus' | 'suppliers' | 'dishes';
+type CatalogSub =
+  | 'categories'
+  | 'skus'
+  | 'suppliers'
+  | 'dishes'
+  | 'expenseTemplates';
 type OperationsSub =
   | 'activity'
   | 'history'
@@ -270,6 +275,9 @@ export function AdminPage() {
         {section === 'catalog' && catalogSub === 'skus' ? <SkusSection /> : null}
         {section === 'catalog' && catalogSub === 'suppliers' ? <SuppliersSection /> : null}
         {section === 'catalog' && catalogSub === 'dishes' ? <DishesSection /> : null}
+        {section === 'catalog' && catalogSub === 'expenseTemplates' ? (
+          <ExpenseTemplatesSection />
+        ) : null}
         {section === 'operations' && !opsSub ? (
           <OperationsHome onPick={(s) => setOpsSub(s)} isSuperAdmin={isSuperAdmin} />
         ) : null}
@@ -349,6 +357,8 @@ function titleForSection(
     return i18n.t('admin.subsection.suppliers');
   if (section === 'catalog' && catalogSub === 'dishes')
     return i18n.t('admin.subsection.dishes');
+  if (section === 'catalog' && catalogSub === 'expenseTemplates')
+    return i18n.t('admin.subsection.expenseTemplates');
   if (section === 'operations' && opsSub === 'activity')
     return i18n.t('admin.subsection.activity');
   if (section === 'operations' && opsSub === 'history')
@@ -3290,6 +3300,14 @@ function CatalogHome({ onPick }: { onPick: (s: CatalogSub) => void }) {
         hint={i18n.t('admin.subsection.dishesHint')}
         onClick={() => onPick('dishes')}
       />
+      {/* M3.57 (2026-05-23): recurring expense templates. Admin sets
+          once; every new run auto-attaches them so the purchaser
+          doesn't have to re-type porter/taxi/parking on every run. */}
+      <ListRow
+        label={i18n.t('admin.subsection.expenseTemplates')}
+        hint={i18n.t('admin.subsection.expenseTemplatesHint')}
+        onClick={() => onPick('expenseTemplates')}
+      />
     </ul>
   );
 }
@@ -5301,6 +5319,326 @@ function SuppliersSection() {
             </Field>
             <Field label={i18n.t('admin.field.notes')}>
               <Input value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} maxLength={1000} />
+            </Field>
+          </div>
+        ) : null}
+      </Sheet>
+    </div>
+  );
+}
+
+// ============ Expense Templates (M3.57) ============
+//
+// Org-level recurring off-catalog expenses (porter / 装卸费, taxi,
+// parking). Admin defines them once; every new run picks them up via
+// the auto-attach loop in run.create — the purchaser sees them as
+// expense rows on the run page and just confirms or corrects.
+//
+// CRUD only (no audit timeline, no soft-delete UI niceties — kept
+// simple for v1). Mutations require org.admin; reads are open to
+// users.manage so store-tier admins can audit the configured list.
+
+interface ExpenseTemplateDraft {
+  templateId?: string;
+  label: string;
+  unitHint: string;
+  defaultQty: string;
+  defaultUnitPrice: string;
+  defaultPaymentMethod: 'cash' | 'transfer';
+  sortIndex: number;
+  isArchived: boolean;
+}
+
+function ExpenseTemplatesSection() {
+  const i18n = useI18n();
+  const [includeArchived, setIncludeArchived] = useState(false);
+  const templatesQuery = trpc.admin.expenseTemplateList.useQuery({
+    includeArchived,
+  });
+  const utils = trpc.useUtils();
+  const toast = useToast();
+  const errToast = useErrToast();
+  const [draft, setDraft] = useState<ExpenseTemplateDraft | null>(null);
+
+  const create = trpc.admin.expenseTemplateCreate.useMutation({
+    onSuccess: () => {
+      void utils.admin.expenseTemplateList.invalidate();
+      toast.success(i18n.t('admin.toast.expenseTemplateCreated'));
+      setDraft(null);
+    },
+    onError: errToast('common.error'),
+  });
+  const update = trpc.admin.expenseTemplateUpdate.useMutation({
+    onSuccess: () => {
+      void utils.admin.expenseTemplateList.invalidate();
+      toast.success(i18n.t('admin.toast.expenseTemplateUpdated'));
+      setDraft(null);
+    },
+    onError: errToast('common.error'),
+  });
+  const remove = trpc.admin.expenseTemplateDelete.useMutation({
+    onSuccess: () => {
+      void utils.admin.expenseTemplateList.invalidate();
+      toast.info(i18n.t('admin.toast.expenseTemplateArchived'));
+    },
+    onError: errToast('common.error'),
+  });
+
+  const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
+
+  return (
+    <div className="px-4 py-3">
+      <div className="mb-3 flex items-center gap-2">
+        <Button
+          size="sm"
+          onClick={() =>
+            setDraft({
+              label: '',
+              unitHint: '',
+              defaultQty: '1',
+              defaultUnitPrice: '',
+              defaultPaymentMethod: 'cash',
+              sortIndex: 0,
+              isArchived: false,
+            })
+          }
+        >
+          {i18n.t('admin.action.newExpenseTemplate')}
+        </Button>
+        <div className="ml-auto">
+          <Switch
+            label={i18n.t('admin.label.showArchived')}
+            checked={includeArchived}
+            onChange={(e) => setIncludeArchived(e.target.checked)}
+          />
+        </div>
+      </div>
+      <p className="mb-3 text-label text-[var(--c-fg-muted)]">
+        {i18n.t('admin.expenseTemplates.intro')}
+      </p>
+      <DataState
+        query={templatesQuery}
+        emptyWhen={(d) => d.length === 0}
+        empty={
+          <EmptyState
+            title={i18n.t('admin.expenseTemplates.empty.title')}
+            description={i18n.t('admin.expenseTemplates.empty.body')}
+          />
+        }
+      >
+        {(rows) => (
+          <ul className="flex flex-col gap-2" role="list">
+            {rows.map((tpl) => {
+              const lineTotal =
+                Number(tpl.defaultQty) * Number(tpl.defaultUnitPrice);
+              return (
+                <Card key={tpl.id}>
+                  <CardHeader>
+                    <div className="min-w-0">
+                      <CardTitle>{tpl.label}</CardTitle>
+                      <CardMeta>
+                        {tpl.unitHint ? `${tpl.unitHint} · ` : ''}
+                        {/* default qty × unit price, with the
+                           payment-method emoji so the manager can
+                           scan the list and spot the transfer-only
+                           rows at a glance. */}
+                        {formatQty(tpl.defaultQty)}{' '}
+                        × {formatMoney(tpl.defaultUnitPrice)} {currency}
+                        {' = '}
+                        <span className="font-semibold text-[var(--c-fg)]">
+                          {formatMoney(lineTotal)} {currency}
+                        </span>
+                        {' · '}
+                        {tpl.defaultPaymentMethod === 'transfer'
+                          ? `🏦 ${i18n.t('run.label.paymentTransfer')}`
+                          : `💵 ${i18n.t('run.label.paymentCash')}`}
+                      </CardMeta>
+                    </div>
+                    {tpl.isArchived ? (
+                      <Badge tone="muted">{i18n.t('admin.label.archived')}</Badge>
+                    ) : null}
+                  </CardHeader>
+                  <div className="flex gap-2 border-t border-[var(--c-divider)] px-4 py-2">
+                    <Button
+                      size="sm"
+                      variant="pearl"
+                      onClick={() =>
+                        setDraft({
+                          templateId: tpl.id,
+                          label: tpl.label,
+                          unitHint: tpl.unitHint ?? '',
+                          defaultQty: tpl.defaultQty,
+                          defaultUnitPrice: tpl.defaultUnitPrice,
+                          defaultPaymentMethod: tpl.defaultPaymentMethod as
+                            | 'cash'
+                            | 'transfer',
+                          sortIndex: tpl.sortIndex,
+                          isArchived: tpl.isArchived,
+                        })
+                      }
+                    >
+                      {i18n.t('admin.action.edit')}
+                    </Button>
+                    {!tpl.isArchived ? (
+                      <Button
+                        size="sm"
+                        variant="danger-ghost"
+                        onClick={() =>
+                          nativeConfirm(
+                            i18n.t('admin.confirm.archiveExpenseTemplate', {
+                              label: tpl.label,
+                            }),
+                            () => remove.mutate({ templateId: tpl.id }),
+                          )
+                        }
+                      >
+                        {i18n.t('admin.action.archive')}
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="pearl"
+                        onClick={() =>
+                          update.mutate({
+                            templateId: tpl.id,
+                            isArchived: false,
+                          })
+                        }
+                      >
+                        {i18n.t('admin.action.unarchive')}
+                      </Button>
+                    )}
+                  </div>
+                </Card>
+              );
+            })}
+          </ul>
+        )}
+      </DataState>
+
+      <Sheet
+        open={!!draft}
+        onOpenChange={(open) => !open && setDraft(null)}
+        title={
+          draft?.templateId
+            ? i18n.t('admin.sheet.editExpenseTemplate')
+            : i18n.t('admin.sheet.newExpenseTemplate')
+        }
+        footer={
+          <Button
+            block
+            loading={create.isPending || update.isPending}
+            disabled={
+              !draft?.label.trim() ||
+              !draft.defaultQty ||
+              Number(draft.defaultQty) <= 0 ||
+              !draft.defaultUnitPrice ||
+              Number(draft.defaultUnitPrice) <= 0
+            }
+            onClick={() => {
+              if (!draft) return;
+              if (draft.templateId) {
+                update.mutate({
+                  templateId: draft.templateId,
+                  label: draft.label.trim(),
+                  unitHint: draft.unitHint.trim() || null,
+                  defaultQty: draft.defaultQty,
+                  defaultUnitPrice: draft.defaultUnitPrice,
+                  defaultPaymentMethod: draft.defaultPaymentMethod,
+                  sortIndex: draft.sortIndex,
+                  isArchived: draft.isArchived,
+                });
+              } else {
+                create.mutate({
+                  label: draft.label.trim(),
+                  unitHint: draft.unitHint.trim() || null,
+                  defaultQty: draft.defaultQty,
+                  defaultUnitPrice: draft.defaultUnitPrice,
+                  defaultPaymentMethod: draft.defaultPaymentMethod,
+                  sortIndex: draft.sortIndex,
+                });
+              }
+            }}
+          >
+            {i18n.t('common.save')}
+          </Button>
+        }
+      >
+        {draft ? (
+          <div className="flex flex-col gap-3 py-3">
+            <Field label={`${i18n.t('admin.field.label')} *`}>
+              <Input
+                value={draft.label}
+                onChange={(e) => setDraft({ ...draft, label: e.target.value })}
+                maxLength={200}
+                placeholder={i18n.t('admin.expenseTemplates.labelPlaceholder')}
+                autoFocus
+              />
+            </Field>
+            <Field label={i18n.t('admin.field.unitHint')}>
+              <Input
+                value={draft.unitHint}
+                onChange={(e) => setDraft({ ...draft, unitHint: e.target.value })}
+                maxLength={32}
+                placeholder={i18n.t('admin.expenseTemplates.unitHintPlaceholder')}
+              />
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label={`${i18n.t('admin.field.defaultQty')} *`}>
+                <Input
+                  value={draft.defaultQty}
+                  onChange={(e) =>
+                    setDraft({ ...draft, defaultQty: e.target.value })
+                  }
+                  inputMode="decimal"
+                  placeholder="1"
+                />
+              </Field>
+              <Field label={`${i18n.t('admin.field.defaultUnitPrice')} *`}>
+                <Input
+                  value={draft.defaultUnitPrice}
+                  onChange={(e) =>
+                    setDraft({ ...draft, defaultUnitPrice: e.target.value })
+                  }
+                  inputMode="decimal"
+                  placeholder="50000"
+                />
+              </Field>
+            </div>
+            <Field label={i18n.t('admin.field.defaultPaymentMethod')}>
+              <div className="flex gap-2">
+                {(['cash', 'transfer'] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() =>
+                      setDraft({ ...draft, defaultPaymentMethod: m })
+                    }
+                    className={
+                      'flex-1 rounded-[var(--r-pill)] px-3 py-2 text-label font-medium ring-hairline ' +
+                      (draft.defaultPaymentMethod === m
+                        ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
+                        : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
+                    }
+                  >
+                    {m === 'cash'
+                      ? `💵 ${i18n.t('run.label.paymentCash')}`
+                      : `🏦 ${i18n.t('run.label.paymentTransfer')}`}
+                  </button>
+                ))}
+              </div>
+            </Field>
+            <Field label={i18n.t('admin.field.sortIndex')}>
+              <Input
+                value={String(draft.sortIndex)}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    sortIndex: Number(e.target.value) || 0,
+                  })
+                }
+                inputMode="numeric"
+              />
             </Field>
           </div>
         ) : null}

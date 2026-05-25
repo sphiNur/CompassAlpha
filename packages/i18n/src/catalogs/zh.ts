@@ -855,6 +855,32 @@ export const zh = {
 
   // ── 17. Dishes / Recipes (M2.0b) ───────────────────────
   'admin.subsection.dishes': '菜品',
+  'admin.subsection.expenseTemplates': '开销模板',
+  'admin.subsection.expenseTemplatesHint':
+    '每次新建采购时自动加入的常用开销',
+  'admin.action.newExpenseTemplate': '+ 新模板',
+  'admin.action.unarchive': '取消归档',
+  'admin.label.archived': '已归档',
+  'admin.expenseTemplates.intro':
+    '每次新建采购单时，这些开销会自动加入。如果某次采购不发生此项费用，采购员可在该采购单中删除或修改。',
+  'admin.expenseTemplates.empty.title': '还没有模板',
+  'admin.expenseTemplates.empty.body':
+    '把每次采购都会有的开销（装卸费、的士费、停车费等）加在这里，新建采购时会自动带入。',
+  'admin.expenseTemplates.labelPlaceholder': '装卸费 / 的士 / 停车…',
+  'admin.expenseTemplates.unitHintPlaceholder': '次、份、一笔…',
+  'admin.field.label': '名称',
+  'admin.field.unitHint': '单位说明',
+  'admin.field.defaultQty': '默认数量',
+  'admin.field.defaultUnitPrice': '默认单价',
+  'admin.field.defaultPaymentMethod': '默认付款方式',
+  'admin.sheet.newExpenseTemplate': '新建开销模板',
+  'admin.sheet.editExpenseTemplate': '编辑模板',
+  'admin.confirm.archiveExpenseTemplate':
+    '归档模板"{label}"？以后的采购将不再自动带入此项。',
+  'admin.toast.expenseTemplateCreated': '模板已添加',
+  'admin.toast.expenseTemplateUpdated': '模板已更新',
+  'admin.toast.expenseTemplateArchived': '模板已归档',
+  'admin.errors.expenseTemplateNotFound': '模板未找到',
   'admin.subsection.dishesHint': '菜单项 + 每道菜的配方（BOM）',
   'dishes.empty.title': '暂无菜品',
   'dishes.empty.description': '在此添加菜单项；配方把每道菜和它的食材 SKU 关联。',

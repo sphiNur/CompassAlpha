@@ -160,6 +160,61 @@ export const skus = inventorySchema.table(
   }),
 );
 
+/**
+ * Org-level expense templates (M3.57, 2026-05-23).
+ *
+ * Each row is a recurring off-catalog expense the chain incurs on
+ * every run (e.g., porter / 装卸费, taxi, parking). Admin maintains
+ * the list; `run.create` reads it and auto-emits one
+ * `RunExpenseAdded` event per non-archived template so the
+ * purchaser starts every new run with the standard charges already
+ * staged — they just confirm or correct, no manual re-entry.
+ *
+ * Distinct from `run_expenses_v` (the per-run rows): templates are
+ * the BLUEPRINT, expenses_v rows are the INSTANCES. Once attached,
+ * an expense lives entirely on the run — editing a template later
+ * does not retroactively rewrite past runs. Archiving a template
+ * only stops it from being auto-attached to FUTURE runs.
+ *
+ * default_unit_price is mandatory (> 0). For variable-amount
+ * expenses (taxi varies day to day) set a typical amount as the
+ * default; the purchaser revises at run time if it diverges.
+ */
+export const expenseTemplates = inventorySchema.table(
+  'expense_templates',
+  {
+    id: pkUuid(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    label: varchar('label', { length: 200 }).notNull(),
+    /** Optional unit hint ("trip", "次"). Carried onto the expense row. */
+    unitHint: varchar('unit_hint', { length: 32 }),
+    defaultQty: decimal('default_qty', { precision: 12, scale: 3 })
+      .notNull()
+      .default('1'),
+    defaultUnitPrice: decimal('default_unit_price', {
+      precision: 14,
+      scale: 2,
+    }).notNull(),
+    /** 'cash' | 'transfer'. CHECK constraint in migration. */
+    defaultPaymentMethod: varchar('default_payment_method', { length: 16 })
+      .notNull()
+      .default('cash'),
+    sortIndex: integer('sort_index').notNull().default(0),
+    isArchived: boolean('is_archived').notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    orgActiveIdx: index('expense_templates_org_active_idx').on(
+      t.orgId,
+      t.sortIndex,
+      t.createdAt,
+    ),
+  }),
+);
+
 /** Default supplier(s) for a SKU + last-seen prices. */
 export const skuSupplierLinks = inventorySchema.table(
   'sku_supplier_links',

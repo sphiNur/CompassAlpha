@@ -208,7 +208,7 @@ function requireOneOf(perms: ReadonlySet<string>, keys: string[]): void {
  */
 function broadcastCatalog(
   orgId: string,
-  entity: 'store' | 'sku' | 'supplier' | 'category',
+  entity: 'store' | 'sku' | 'supplier' | 'category' | 'expenseTemplate',
 ): void {
   hub.publish(orgId, { type: 'catalog.changed', orgId, entity });
 }
@@ -544,6 +544,38 @@ const SupplierUpdateInputSchema = z.object({
 
 const SupplierDeleteInputSchema = z.object({
   supplierId: UuidSchema,
+});
+
+// M3.57 (2026-05-23): expense-template CRUD schemas. Same shape as
+// the inventory.expense_templates row except `id` is server-generated
+// on create. `defaultUnitPrice` must be > 0 because the auto-attach
+// loop calls AddRunExpense which uses the existing
+// PositiveDecimalString check — a zero default would fail validation
+// at run-create time and break the whole transaction.
+const DecimalStr = z.string().regex(/^\d+(\.\d+)?$/);
+const PositiveDecimalStr = z.string().regex(/^(?!0+(\.0+)?$)\d+(\.\d+)?$/);
+const ExpenseTemplateCreateInputSchema = z.object({
+  label: z.string().trim().min(1).max(200),
+  unitHint: z.string().trim().max(32).optional().nullable(),
+  defaultQty: DecimalStr.default('1'),
+  defaultUnitPrice: PositiveDecimalStr,
+  defaultPaymentMethod: z.enum(['cash', 'transfer']).default('cash'),
+  sortIndex: z.number().int().default(0),
+});
+
+const ExpenseTemplateUpdateInputSchema = z.object({
+  templateId: UuidSchema,
+  label: z.string().trim().min(1).max(200).optional(),
+  unitHint: z.string().trim().max(32).optional().nullable(),
+  defaultQty: DecimalStr.optional(),
+  defaultUnitPrice: PositiveDecimalStr.optional(),
+  defaultPaymentMethod: z.enum(['cash', 'transfer']).optional(),
+  sortIndex: z.number().int().optional(),
+  isArchived: z.boolean().optional(),
+});
+
+const ExpenseTemplateDeleteInputSchema = z.object({
+  templateId: UuidSchema,
 });
 
 const CategoryCreateInputSchema = z.object({
@@ -3351,6 +3383,156 @@ export const adminRouter = router({
       return { ok: true };
     });
   }),
+
+  // ============ EXPENSE TEMPLATES (M3.57) ============
+  // Org-level recurring expenses (porter / taxi / parking / etc.). The
+  // admin maintains the list; every new run picks them up via
+  // run.create's auto-attach loop. Templates are CRUD-managed (not
+  // event-sourced) because they describe SHAPE not HISTORY — editing
+  // one doesn't replay through past runs. Mutations require org.admin
+  // (chain-wide setting); reads only need users.manage (so store-tier
+  // admins can audit the configured list).
+
+  expenseTemplateList: authedProcedure
+    .input(z.object({ includeArchived: z.boolean().default(false) }).optional())
+    .query(async ({ ctx, input }) => {
+      requireAdmin(ctx.session!.permissions);
+      return ctx.withOrg(async (tx) => {
+        const orgId = ctx.session!.orgId;
+        const includeArchived = input?.includeArchived ?? false;
+        return tx
+          .select({
+            id: s.expenseTemplates.id,
+            label: s.expenseTemplates.label,
+            unitHint: s.expenseTemplates.unitHint,
+            defaultQty: s.expenseTemplates.defaultQty,
+            defaultUnitPrice: s.expenseTemplates.defaultUnitPrice,
+            defaultPaymentMethod: s.expenseTemplates.defaultPaymentMethod,
+            sortIndex: s.expenseTemplates.sortIndex,
+            isArchived: s.expenseTemplates.isArchived,
+          })
+          .from(s.expenseTemplates)
+          .where(
+            includeArchived
+              ? eq(s.expenseTemplates.orgId, orgId)
+              : and(
+                  eq(s.expenseTemplates.orgId, orgId),
+                  eq(s.expenseTemplates.isArchived, false),
+                ),
+          )
+          .orderBy(s.expenseTemplates.sortIndex, s.expenseTemplates.createdAt);
+      });
+    }),
+
+  expenseTemplateCreate: authedProcedure
+    .input(ExpenseTemplateCreateInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      requireOrgAdmin(ctx.session!.permissions);
+      return ctx.withOrg(async (tx) => {
+        const orgId = ctx.session!.orgId;
+        const [created] = await tx
+          .insert(s.expenseTemplates)
+          .values({
+            orgId,
+            label: input.label,
+            unitHint: input.unitHint ?? null,
+            defaultQty: input.defaultQty,
+            defaultUnitPrice: input.defaultUnitPrice,
+            defaultPaymentMethod: input.defaultPaymentMethod,
+            sortIndex: input.sortIndex,
+          })
+          .returning();
+        await auditAdmin(
+          tx,
+          ctx,
+          'admin.expenseTemplate.create',
+          'expenseTemplate',
+          created!.id,
+          input,
+        );
+        broadcastCatalog(orgId, 'expenseTemplate');
+        return { id: created!.id };
+      });
+    }),
+
+  expenseTemplateUpdate: authedProcedure
+    .input(ExpenseTemplateUpdateInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      requireOrgAdmin(ctx.session!.permissions);
+      return ctx.withOrg(async (tx) => {
+        const orgId = ctx.session!.orgId;
+        const existing = await tx.query.expenseTemplates.findFirst({
+          where: (et, { eq: eq2, and: and2 }) =>
+            and2(eq2(et.id, input.templateId), eq2(et.orgId, orgId)),
+        });
+        if (!existing) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'admin.errors.expenseTemplateNotFound',
+          });
+        }
+        const patch: Record<string, unknown> = { updatedAt: new Date() };
+        if (input.label !== undefined) patch.label = input.label;
+        if (input.unitHint !== undefined) patch.unitHint = input.unitHint;
+        if (input.defaultQty !== undefined) patch.defaultQty = input.defaultQty;
+        if (input.defaultUnitPrice !== undefined)
+          patch.defaultUnitPrice = input.defaultUnitPrice;
+        if (input.defaultPaymentMethod !== undefined)
+          patch.defaultPaymentMethod = input.defaultPaymentMethod;
+        if (input.sortIndex !== undefined) patch.sortIndex = input.sortIndex;
+        if (input.isArchived !== undefined) patch.isArchived = input.isArchived;
+        await tx
+          .update(s.expenseTemplates)
+          .set(patch)
+          .where(eq(s.expenseTemplates.id, input.templateId));
+        await auditAdmin(
+          tx,
+          ctx,
+          'admin.expenseTemplate.update',
+          'expenseTemplate',
+          input.templateId,
+          input,
+        );
+        broadcastCatalog(orgId, 'expenseTemplate');
+        return { ok: true };
+      });
+    }),
+
+  expenseTemplateDelete: authedProcedure
+    .input(ExpenseTemplateDeleteInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      requireOrgAdmin(ctx.session!.permissions);
+      return ctx.withOrg(async (tx) => {
+        const orgId = ctx.session!.orgId;
+        const existing = await tx.query.expenseTemplates.findFirst({
+          where: (et, { eq: eq2, and: and2 }) =>
+            and2(eq2(et.id, input.templateId), eq2(et.orgId, orgId)),
+        });
+        if (!existing) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'admin.errors.expenseTemplateNotFound',
+          });
+        }
+        // Soft-delete to keep old runs' "auto-attached from template X"
+        // audit trail intact. Archived templates skip the auto-attach
+        // loop in run.create.
+        await tx
+          .update(s.expenseTemplates)
+          .set({ isArchived: true, updatedAt: new Date() })
+          .where(eq(s.expenseTemplates.id, input.templateId));
+        await auditAdmin(
+          tx,
+          ctx,
+          'admin.expenseTemplate.delete',
+          'expenseTemplate',
+          input.templateId,
+          input,
+        );
+        broadcastCatalog(orgId, 'expenseTemplate');
+        return { ok: true };
+      });
+    }),
 
   // ============ AUDIT (recent domain events) ============
 

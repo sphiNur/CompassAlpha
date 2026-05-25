@@ -912,6 +912,32 @@ export const ru = {
 
   // ── 17. Dishes / Recipes (M2.0b) ───────────────────────
   'admin.subsection.dishes': 'Блюда',
+  'admin.subsection.expenseTemplates': 'Шаблоны расходов',
+  'admin.subsection.expenseTemplatesHint':
+    'Регулярные расходы, автоматически добавляемые в каждую новую закупку',
+  'admin.action.newExpenseTemplate': '+ Новый шаблон',
+  'admin.action.unarchive': 'Восстановить',
+  'admin.label.archived': 'В архиве',
+  'admin.expenseTemplates.intro':
+    'Эти расходы автоматически добавляются в каждую новую закупку. Закупщик может удалить или изменить их, если в конкретной поездке расход не возник.',
+  'admin.expenseTemplates.empty.title': 'Шаблонов пока нет',
+  'admin.expenseTemplates.empty.body':
+    'Добавьте регулярные расходы (грузчик, такси, парковка), чтобы они автоматически попадали в каждую новую закупку.',
+  'admin.expenseTemplates.labelPlaceholder': 'Грузчик / Такси / Парковка…',
+  'admin.expenseTemplates.unitHintPlaceholder': 'поездка, штука, разово…',
+  'admin.field.label': 'Название',
+  'admin.field.unitHint': 'Подсказка единицы',
+  'admin.field.defaultQty': 'Кол-во по умолч.',
+  'admin.field.defaultUnitPrice': 'Цена по умолч.',
+  'admin.field.defaultPaymentMethod': 'Оплата по умолч.',
+  'admin.sheet.newExpenseTemplate': 'Новый шаблон расхода',
+  'admin.sheet.editExpenseTemplate': 'Изменить шаблон',
+  'admin.confirm.archiveExpenseTemplate':
+    'Архивировать шаблон «{label}»? Будущие закупки пропустят его.',
+  'admin.toast.expenseTemplateCreated': 'Шаблон добавлен',
+  'admin.toast.expenseTemplateUpdated': 'Шаблон обновлён',
+  'admin.toast.expenseTemplateArchived': 'Шаблон в архиве',
+  'admin.errors.expenseTemplateNotFound': 'Шаблон не найден',
   'admin.subsection.dishesHint': 'Меню + рецепт (BOM) для каждого блюда',
   'dishes.empty.title': 'Пока нет блюд',
   'dishes.empty.description': 'Добавьте блюда меню; рецепт связывает каждое блюдо с ингредиентами SKU.',

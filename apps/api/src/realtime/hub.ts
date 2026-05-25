@@ -22,9 +22,13 @@ export type RealtimeMessage =
   // because catalog/people pages re-fetch quickly and the broadcast
   // payload here is a "something changed" hint, not a delta.
   //
-  //   catalog.changed: stores, skus, suppliers, categories
+  //   catalog.changed: stores, skus, suppliers, categories, expenseTemplates
   //   people.changed:  members, role bindings, store assignments
-  | { type: 'catalog.changed'; orgId: string; entity: 'store' | 'sku' | 'supplier' | 'category' }
+  | {
+      type: 'catalog.changed';
+      orgId: string;
+      entity: 'store' | 'sku' | 'supplier' | 'category' | 'expenseTemplate';
+    }
   | { type: 'people.changed'; orgId: string }
   | { type: 'notification'; orgId: string; userId: string; title: string; body?: string }
   | { type: 'ping'; t: number };

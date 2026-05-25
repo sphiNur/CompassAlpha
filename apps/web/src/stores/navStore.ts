@@ -41,7 +41,13 @@ export type AdminSection =
   | 'permissions'
   | 'catalog'
   | 'operations';
-export type CatalogSub = 'categories' | 'skus' | 'suppliers' | 'dishes' | null;
+export type CatalogSub =
+  | 'categories'
+  | 'skus'
+  | 'suppliers'
+  | 'dishes'
+  | 'expenseTemplates'
+  | null;
 export type OperationsSub =
   | 'activity'
   | 'history'

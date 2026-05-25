@@ -23,6 +23,7 @@ DECLARE
     'inventory.suppliers',
     'inventory.categories',
     'inventory.skus',
+    'inventory.expense_templates',
     'inventory.price_history',
     'inventory.movements',
     'inventory.sales',

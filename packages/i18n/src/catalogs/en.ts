@@ -1021,6 +1021,36 @@ export const en = {
   // Menu items + BOM. Admin → Catalog → Dishes.
   'admin.subsection.dishes': 'Dishes',
   'admin.subsection.dishesHint': 'Menu items + recipe (BOM) per dish',
+  // ── 17b. Expense Templates (M3.57) ─────────────────────
+  // Recurring off-catalog expenses (porter, taxi, parking) that
+  // every new run auto-includes so the purchaser doesn't have to
+  // re-type the same lines on every market trip.
+  'admin.subsection.expenseTemplates': 'Expense templates',
+  'admin.subsection.expenseTemplatesHint':
+    'Recurring expenses auto-attached to every new run',
+  'admin.action.newExpenseTemplate': '+ New template',
+  'admin.action.unarchive': 'Unarchive',
+  'admin.label.archived': 'Archived',
+  'admin.expenseTemplates.intro':
+    'Every new run auto-includes these expenses. The purchaser can still remove or edit them per-run if a particular trip doesn’t incur the charge.',
+  'admin.expenseTemplates.empty.title': 'No templates yet',
+  'admin.expenseTemplates.empty.body':
+    'Add recurring expenses like porter fees, taxi, or parking so every run starts with them already attached.',
+  'admin.expenseTemplates.labelPlaceholder': 'Porter / Taxi / Parking…',
+  'admin.expenseTemplates.unitHintPlaceholder': 'trip, pack, lump-sum…',
+  'admin.field.label': 'Name',
+  'admin.field.unitHint': 'Unit hint',
+  'admin.field.defaultQty': 'Default qty',
+  'admin.field.defaultUnitPrice': 'Default unit price',
+  'admin.field.defaultPaymentMethod': 'Default payment',
+  'admin.sheet.newExpenseTemplate': 'New expense template',
+  'admin.sheet.editExpenseTemplate': 'Edit template',
+  'admin.confirm.archiveExpenseTemplate':
+    'Archive template "{label}"? Future runs will skip this template.',
+  'admin.toast.expenseTemplateCreated': 'Template added',
+  'admin.toast.expenseTemplateUpdated': 'Template updated',
+  'admin.toast.expenseTemplateArchived': 'Template archived',
+  'admin.errors.expenseTemplateNotFound': 'Template not found',
   'dishes.empty.title': 'No dishes yet',
   'dishes.empty.description': 'Add menu items here. Recipes link each dish to its ingredient SKUs.',
   'dishes.action.new': '+ New dish',
