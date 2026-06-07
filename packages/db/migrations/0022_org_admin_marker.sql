@@ -53,15 +53,25 @@ ON CONFLICT DO NOTHING;
 -- ── safety assertion ─────────────────────────────────────────────
 DO $$
 DECLARE
+  super_roles int;
   super_count int;
+  admin_roles int;
   admin_count int;
   mgr_count int;
 BEGIN
+  SELECT count(*)
+    INTO super_roles
+    FROM auth.roles r
+    WHERE r.slug = 'super_admin';
   SELECT count(*)
     INTO super_count
     FROM auth.role_permissions rp
     JOIN auth.roles r ON r.id = rp.role_id
     WHERE rp.permission_key = 'org.admin' AND r.slug = 'super_admin';
+  SELECT count(*)
+    INTO admin_roles
+    FROM auth.roles r
+    WHERE r.slug = 'admin';
   SELECT count(*)
     INTO admin_count
     FROM auth.role_permissions rp
@@ -74,10 +84,10 @@ BEGIN
     FROM auth.role_permissions rp
     JOIN auth.roles r ON r.id = rp.role_id
     WHERE rp.permission_key = 'org.admin' AND r.slug = 'manager';
-  IF super_count = 0 THEN
+  IF super_roles > 0 AND super_count = 0 THEN
     RAISE EXCEPTION 'M3.3 backfill failed: no super_admin role has org.admin';
   END IF;
-  IF admin_count = 0 THEN
+  IF admin_roles > 0 AND admin_count = 0 THEN
     RAISE EXCEPTION 'M3.3 backfill failed: no admin role has org.admin';
   END IF;
   IF mgr_count > 0 THEN

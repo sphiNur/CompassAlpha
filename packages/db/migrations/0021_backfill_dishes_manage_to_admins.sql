@@ -73,23 +73,33 @@ ON CONFLICT DO NOTHING;
 -- from locking out real admins.
 DO $$
 DECLARE
+  super_roles int;
   super_count int;
+  admin_roles int;
   admin_count int;
 BEGIN
+  SELECT count(*)
+    INTO super_roles
+    FROM auth.roles r
+    WHERE r.slug = 'super_admin';
   SELECT count(*)
     INTO super_count
     FROM auth.role_permissions rp
     JOIN auth.roles r ON r.id = rp.role_id
     WHERE rp.permission_key = 'dishes.manage' AND r.slug = 'super_admin';
   SELECT count(*)
+    INTO admin_roles
+    FROM auth.roles r
+    WHERE r.slug = 'admin';
+  SELECT count(*)
     INTO admin_count
     FROM auth.role_permissions rp
     JOIN auth.roles r ON r.id = rp.role_id
     WHERE rp.permission_key = 'dishes.manage' AND r.slug = 'admin';
-  IF super_count = 0 THEN
+  IF super_roles > 0 AND super_count = 0 THEN
     RAISE EXCEPTION 'M3.2 backfill failed: no super_admin role has dishes.manage';
   END IF;
-  IF admin_count = 0 THEN
+  IF admin_roles > 0 AND admin_count = 0 THEN
     RAISE EXCEPTION 'M3.2 backfill failed: no admin role has dishes.manage';
   END IF;
 END $$;
