@@ -959,28 +959,110 @@ export const runRouter = router({
         .where(eq(s.marketRunsV.orgId, ctx.session!.orgId))
         .orderBy(desc(s.marketRunsV.runDate), desc(s.marketRunsV.runIndex))
         .limit(50);
-      if (allowedStoreIds === null) return runs;
-      if (allowedStoreIds.length === 0) return [];
-      // Resolve every involved storeId in one shot — cheap join on a
+      let visibleRuns = runs;
+      if (allowedStoreIds !== null && allowedStoreIds.length === 0) return [];
+      // Resolve every involved storeId in one shot; cheap join on a
       // bounded result set. Filter runs whose sessions touch any
       // allowed store.
       const allSessionIds = [
         ...new Set(runs.flatMap((r) => (r.sessionIdsJson as unknown as string[]) ?? [])),
       ];
-      if (allSessionIds.length === 0) return [];
-      const sessionStoreRows = await tx.query.orderSessionsV.findMany({
-        where: (sess, { inArray }) => inArray(sess.id, allSessionIds),
-        columns: { id: true, storeId: true },
-      });
-      const sessionStore = new Map(sessionStoreRows.map((r) => [r.id, r.storeId]));
-      const allowed = new Set(allowedStoreIds);
-      return runs.filter((r) => {
-        const ids = (r.sessionIdsJson as unknown as string[]) ?? [];
-        return ids.some((sid) => {
-          const storeId = sessionStore.get(sid);
-          return storeId !== undefined && allowed.has(storeId);
+      const allowedStoreSet = allowedStoreIds === null ? null : new Set(allowedStoreIds);
+      if (allowedStoreSet) {
+        if (allSessionIds.length === 0) return [];
+        const sessionStoreRows = await tx.query.orderSessionsV.findMany({
+          where: (sess, { inArray }) => inArray(sess.id, allSessionIds),
+          columns: { id: true, storeId: true },
         });
-      });
+        const sessionStore = new Map(sessionStoreRows.map((r) => [r.id, r.storeId]));
+        visibleRuns = runs.filter((r) => {
+          const ids = (r.sessionIdsJson as unknown as string[]) ?? [];
+          return ids.some((sid) => {
+            const storeId = sessionStore.get(sid);
+            return storeId !== undefined && allowedStoreSet.has(storeId);
+          });
+        });
+      }
+      if (visibleRuns.length === 0) return [];
+
+      type MutableStoreTotal = {
+        storeId: string;
+        total: number;
+        cash: number;
+        transfer: number;
+        skuIds: Set<string>;
+      };
+      const totalsByRun = new Map<string, Map<string, MutableStoreTotal>>();
+      const ensureStoreTotal = (runId: string, storeId: string): MutableStoreTotal | null => {
+        if (allowedStoreSet && !allowedStoreSet.has(storeId)) return null;
+        let runTotals = totalsByRun.get(runId);
+        if (!runTotals) {
+          runTotals = new Map<string, MutableStoreTotal>();
+          totalsByRun.set(runId, runTotals);
+        }
+        let cur = runTotals.get(storeId);
+        if (!cur) {
+          cur = {
+            storeId,
+            total: 0,
+            cash: 0,
+            transfer: 0,
+            skuIds: new Set<string>(),
+          };
+          runTotals.set(storeId, cur);
+        }
+        return cur;
+      };
+      const visibleRunIds = visibleRuns.map((r) => r.id);
+
+      const splitRows = await tx
+        .select({
+          runId: s.runItemStoresV.runId,
+          storeId: s.runItemStoresV.storeId,
+          skuId: s.runItemStoresV.skuId,
+          qty: s.runItemStoresV.qty,
+          unitPrice: s.runItemsV.unitPrice,
+          paymentMethod: s.runItemsV.paymentMethod,
+        })
+        .from(s.runItemStoresV)
+        .innerJoin(
+          s.runItemsV,
+          and(
+            eq(s.runItemsV.runId, s.runItemStoresV.runId),
+            eq(s.runItemsV.skuId, s.runItemStoresV.skuId),
+          ),
+        )
+        .where(
+          and(
+            inArray(s.runItemStoresV.runId, visibleRunIds),
+            eq(s.runItemsV.status, 'purchased'),
+          ),
+        );
+      for (const row of splitRows) {
+        if (!row.unitPrice) continue;
+        const subtotal = Number(row.qty) * Number(row.unitPrice);
+        if (!Number.isFinite(subtotal)) continue;
+        const cur = ensureStoreTotal(row.runId, row.storeId);
+        if (!cur) continue;
+        cur.total += subtotal;
+        if (row.paymentMethod === 'transfer') cur.transfer += subtotal;
+        else cur.cash += subtotal;
+        cur.skuIds.add(row.skuId);
+      }
+
+      const moneyString = (n: number) => (Math.round(n * 100) / 100).toString();
+      return visibleRuns.map((run) => ({
+        ...run,
+        storeTotals: [...(totalsByRun.get(run.id)?.values() ?? [])]
+          .sort((a, b) => b.total - a.total)
+          .map((total) => ({
+            storeId: total.storeId,
+            total: moneyString(total.total),
+            cash: moneyString(total.cash),
+            transfer: moneyString(total.transfer),
+            itemCount: total.skuIds.size,
+          })),
+      }));
     });
   }),
 
@@ -2097,4 +2179,3 @@ function isUniqueViolation(err: unknown): boolean {
     err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === '23505',
   );
 }
-

@@ -88,10 +88,14 @@ function ssh(cmd: string): string {
   return runCapture(`ssh -i "${KEY}" -o StrictHostKeyChecking=no ${HOST} ${JSON.stringify(cmd)}`);
 }
 
+const releaseSha = runCapture('git rev-parse --short=12 HEAD').trim();
+
 if (!existsSync(KEY)) {
   console.error(`SSH key not found at ${KEY}`);
   process.exit(2);
 }
+
+console.log(`Release sha: ${releaseSha}`);
 
 if (!DRY) {
   step('1. Tar local source');
@@ -259,7 +263,7 @@ if (!DRY) {
       [
         'export PATH=$HOME/.bun/bin:$PATH',
         'cd /home/ubuntu/compass-alpha/apps/web',
-        'pnpm exec vite build 2>&1 | tail -10',
+        `VITE_BUILD_SHA=${JSON.stringify(releaseSha)} pnpm exec vite build 2>&1 | tail -10`,
       ].join(' && '),
     ),
   );

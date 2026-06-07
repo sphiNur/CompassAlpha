@@ -805,6 +805,7 @@ export const en = {
   'run.history.subtitle': 'Past runs — tap to see details',
   'run.history.viewAllHint': 'Open Admin → Operations → Submission history for older runs',
   'run.history.totalLine': 'Total {total} UZS',
+  'run.history.allStores': 'All stores',
   // M3.9: filter chip toolbar + cancelled-row label dropped — cancelled
   // runs no longer surface in RunPage history. Keys removed:
   //   run.history.cancelled, run.history.filter.{finished,all,cancelled}.

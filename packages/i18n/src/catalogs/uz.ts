@@ -743,6 +743,7 @@ export const uz = {
   'run.history.subtitle': "O'tgan xaridlar — batafsil ko'rish uchun bosing",
   'run.history.viewAllHint': "Eskiroq yozuvlar — Admin → Operatsiyalar → Tarix",
   'run.history.totalLine': 'Jami {total} UZS',
+  'run.history.allStores': "Barcha do'konlar",
   // M3.9: bekor qilingan run endi tarixda ko'rinmaydi — 4 kalit olib tashlandi.
   'run.cancel.reasonPlaceholder': "Nega bekor qilyapsiz? (ixtiyoriy — jamoaga tahlil qilishga yordam beradi)",
   'run.history.totalLabel': 'Jami sarflangan',

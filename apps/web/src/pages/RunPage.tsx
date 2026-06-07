@@ -1688,6 +1688,7 @@ export function RunPage() {
       <RunHistorySection
         runs={runsQuery.data ?? []}
         productName={productName}
+        storeById={storeById}
         i18n={i18n}
         onOpen={(r) =>
           setHistoryDetailFor({
@@ -5505,15 +5506,26 @@ interface RunListRow {
   actualCashTotal?: string | null;
   actualTransferTotal?: string | null;
   finishedAt: Date | string | null;
+  storeTotals?: RunListStoreTotal[];
+}
+
+interface RunListStoreTotal {
+  storeId: string;
+  total: string;
+  cash: string;
+  transfer: string;
+  itemCount: number;
 }
 
 function RunHistorySection({
   runs,
+  storeById,
   i18n,
   onOpen,
 }: {
   runs: RunListRow[];
   productName: ReturnType<typeof useProductName>;
+  storeById: Map<string, { id: string; name: string; code: string | null }>;
   i18n: ReturnType<typeof useI18n>;
   onOpen: (r: RunListRow) => void;
 }) {
@@ -5596,7 +5608,9 @@ function RunHistorySection({
                line is gone. If forensics ever needs to surface
                cancelled runs back here, both the FE filter and the
                row branches need restoring together. */}
-            {g.rows.map((r) => (
+            {g.rows.map((r) => {
+              const storeTotals = (r.storeTotals ?? []).filter((st) => Number(st.total) > 0);
+              return (
               <li
                 key={r.id}
                 className="border-b border-[var(--c-divider)] last:border-b-0"
@@ -5639,11 +5653,33 @@ function RunHistorySection({
                         ) : null}
                       </div>
                     ) : null}
+                    {storeTotals.length > 1 ? (
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                        {storeTotals.map((st) => {
+                          const storeName =
+                            storeById.get(st.storeId)?.name ?? st.storeId.slice(0, 8);
+                          return (
+                            <span
+                              key={st.storeId}
+                              className="inline-flex max-w-full items-center gap-1.5 rounded-[var(--r-pill)] bg-[var(--c-bg)] px-1.5 py-0.5 text-label ring-1 ring-[var(--c-divider)]"
+                            >
+                              <span className="max-w-[8rem] truncate font-medium text-[var(--c-fg)]">
+                                {storeName}
+                              </span>
+                              <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
+                                {formatMoney(st.total)}
+                              </span>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    ) : null}
                   </div>
                   <Badge tone="success">{r.status}</Badge>
                 </button>
               </li>
-            ))}
+              );
+            })}
           </ul>
         </section>
       ))}
@@ -5694,11 +5730,17 @@ function RunHistoryDetailSheet({
     target ? { runId: target.runId } : { runId: '' },
     { enabled: !!target },
   );
+  const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSelectedStoreId(null);
+  }, [target?.runId]);
 
   const breakdown = useMemo(() => {
     if (!detail.data) return null;
     const items = detail.data.items;
     const splits = detail.data.splits;
+    const perStoreDemand = detail.data.perStoreDemand ?? [];
     const expenses = detail.data.expenses ?? [];
     let total = 0;
     let totalCash = 0;
@@ -5792,6 +5834,7 @@ function RunHistoryDetailSheet({
     return {
       items,
       splits,
+      perStoreDemand,
       expenses,
       total,
       totalCash,
@@ -5801,6 +5844,85 @@ function RunHistoryDetailSheet({
       perStore,
     };
   }, [detail.data]);
+
+  const storeOptions = useMemo(() => {
+    if (!breakdown) return [];
+    return [...breakdown.perStore.values()].sort((a, b) => b.total - a.total);
+  }, [breakdown]);
+
+  const activeStoreId =
+    selectedStoreId && breakdown?.perStore.has(selectedStoreId) ? selectedStoreId : null;
+  const activeStoreTotal =
+    activeStoreId && breakdown ? breakdown.perStore.get(activeStoreId) ?? null : null;
+
+  type HistoryBreakdown = NonNullable<typeof breakdown>;
+  type HistoryItem = HistoryBreakdown['items'][number];
+  type HistorySplit = HistoryBreakdown['splits'][number];
+  type VisibleHistoryRow = {
+    item: HistoryItem;
+    qty: string | null;
+    lineTotal: number;
+    perStoreSplits: HistorySplit[];
+  };
+
+  const visibleHistoryRows = useMemo<VisibleHistoryRow[]>(() => {
+    if (!breakdown) return [];
+    if (!activeStoreId) {
+      return breakdown.items.map((item) => ({
+        item,
+        qty: item.purchasedQty,
+        lineTotal:
+          item.status === 'purchased' && item.unitPrice && item.purchasedQty
+            ? Number(item.unitPrice) * Number(item.purchasedQty)
+            : 0,
+        perStoreSplits: breakdown.splits.filter((sp) => sp.skuId === item.skuId),
+      }));
+    }
+
+    const demandBySku = new Map(
+      breakdown.perStoreDemand
+        .filter((d) => d.storeId === activeStoreId)
+        .map((d) => [d.skuId, d.qty] as const),
+    );
+    return breakdown.items.flatMap<VisibleHistoryRow>((item) => {
+      if (item.status === 'purchased') {
+        const split = breakdown.splits.find(
+          (sp) => sp.storeId === activeStoreId && sp.skuId === item.skuId,
+        );
+        if (!split) return [];
+        return [
+          {
+            item,
+            qty: split.qty,
+            lineTotal: item.unitPrice ? Number(item.unitPrice) * Number(split.qty) : 0,
+            perStoreSplits: [split],
+          },
+        ];
+      }
+      if (item.status === 'unavailable' && demandBySku.has(item.skuId)) {
+        return [
+          {
+            item,
+            qty: demandBySku.get(item.skuId) ?? null,
+            lineTotal: 0,
+            perStoreSplits: [],
+          },
+        ];
+      }
+      return [];
+    });
+  }, [activeStoreId, breakdown]);
+
+  const visiblePurchasedCount = activeStoreId
+    ? visibleHistoryRows.filter((row) => row.item.status === 'purchased').length
+    : breakdown?.purchasedCount ?? 0;
+  const visibleUnavailableCount = activeStoreId
+    ? visibleHistoryRows.filter((row) => row.item.status === 'unavailable').length
+    : breakdown?.unavailableCount ?? 0;
+  const headlineTotal = activeStoreTotal?.total ?? breakdown?.total ?? 0;
+  const headlineCash = activeStoreTotal?.cash ?? breakdown?.totalCash ?? 0;
+  const headlineTransfer = activeStoreTotal?.transfer ?? breakdown?.totalTransfer ?? 0;
+  const headlineStoreCount = activeStoreId ? 1 : breakdown?.perStore.size ?? 0;
 
   return (
     <Sheet
@@ -5836,38 +5958,77 @@ function RunHistoryDetailSheet({
                     the same role, so the history headline felt
                     oversized by comparison. */}
                 <div className="font-mono text-h2 font-semibold tabular-nums">
-                  {formatMoney(breakdown.total)} {currency}
+                  {formatMoney(headlineTotal)} {currency}
                 </div>
               </div>
               <div className="text-right text-label text-[var(--c-fg-muted)]">
                 {i18n.t('run.history.itemSummary', {
-                  bought: breakdown.purchasedCount,
-                  na: breakdown.unavailableCount,
+                  bought: visiblePurchasedCount,
+                  na: visibleUnavailableCount,
                 })}
                 <br />
-                {i18n.t('run.history.storeSummary', { stores: breakdown.perStore.size })}
+                {i18n.t('run.history.storeSummary', { stores: headlineStoreCount })}
               </div>
             </div>
             {/* M1.14: payment-method breakdown row. Only renders when
                 the run actually mixed both methods — pure-cash and
                 pure-transfer runs are unambiguous from the lump sum. */}
-            {breakdown.totalCash > 0 && breakdown.totalTransfer > 0 ? (
+            {headlineCash > 0 && headlineTransfer > 0 ? (
               <div className="flex items-baseline gap-3 border-t border-[var(--c-divider)] pt-2 text-label">
                 <span className="text-[var(--c-fg-muted)]">
                   💵 {i18n.t('run.label.paymentCash')}
                 </span>
                 <span className="font-mono tabular-nums text-[var(--c-fg)]">
-                  {formatMoney(breakdown.totalCash)}
+                  {formatMoney(headlineCash)}
                 </span>
                 <span className="ml-auto text-[var(--c-fg-muted)]">
                   🏦 {i18n.t('run.label.paymentTransfer')}
                 </span>
                 <span className="font-mono tabular-nums text-[var(--c-fg)]">
-                  {formatMoney(breakdown.totalTransfer)}
+                  {formatMoney(headlineTransfer)}
                 </span>
               </div>
             ) : null}
           </div>
+
+          {storeOptions.length > 1 ? (
+            <div className="flex gap-1 overflow-x-auto rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-1 ring-hairline">
+              <button
+                type="button"
+                aria-pressed={!activeStoreId}
+                onClick={() => setSelectedStoreId(null)}
+                className={
+                  !activeStoreId
+                    ? 'shrink-0 rounded-[var(--r-pill)] bg-[var(--c-bg)] px-3 py-1.5 text-label font-medium text-[var(--c-fg)] shadow-sm'
+                    : 'shrink-0 rounded-[var(--r-pill)] px-3 py-1.5 text-label font-medium text-[var(--c-fg-muted)]'
+                }
+              >
+                {i18n.t('run.history.allStores')}
+              </button>
+              {storeOptions.map((storeTotal) => {
+                const storeName =
+                  storeById.get(storeTotal.storeId)?.name ?? storeTotal.storeId.slice(0, 8);
+                const selected = activeStoreId === storeTotal.storeId;
+                return (
+                  <button
+                    key={storeTotal.storeId}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => setSelectedStoreId(storeTotal.storeId)}
+                    className={
+                      selected
+                        ? 'shrink-0 rounded-[var(--r-pill)] bg-[var(--c-bg)] px-3 py-1.5 text-label font-medium text-[var(--c-fg)] shadow-sm'
+                        : 'shrink-0 rounded-[var(--r-pill)] px-3 py-1.5 text-label font-medium text-[var(--c-fg-muted)]'
+                    }
+                  >
+                    <span className="inline-block max-w-[9rem] truncate align-bottom">
+                      {storeName}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
 
           {/* Per-item rows.
               M3.52 (2026-05-23): each purchased row now also surfaces
@@ -5881,17 +6042,18 @@ function RunHistoryDetailSheet({
               {i18n.t('run.history.itemsHeading')}
             </SectionLabel>
             <ul className="flex flex-col rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline">
-              {breakdown.items.map((it) => {
+              {visibleHistoryRows.length === 0 ? (
+                <li className="px-4 py-3 text-center text-label text-[var(--c-fg-muted)]">
+                  {i18n.t('common.noData')}
+                </li>
+              ) : null}
+              {visibleHistoryRows.map((row) => {
+                const it = row.item;
                 const sku = skuById.get(it.skuId);
                 const skuName = sku ? productName(sku) : it.skuId.slice(0, 8);
-                const lineTotal =
-                  it.status === 'purchased' && it.unitPrice && it.purchasedQty
-                    ? Number(it.unitPrice) * Number(it.purchasedQty)
-                    : 0;
-                const perStoreSplits = breakdown.splits.filter(
-                  (sp) => sp.skuId === it.skuId,
-                );
-                const isMulti = breakdown.perStore.size > 1;
+                const lineTotal = row.lineTotal;
+                const perStoreSplits = row.perStoreSplits;
+                const isMulti = !activeStoreId && breakdown.perStore.size > 1;
                 return (
                   <li
                     key={it.skuId}
@@ -5908,9 +6070,17 @@ function RunHistoryDetailSheet({
                       )}
                     </div>
                     <div className="text-label text-[var(--c-fg-muted)]">
-                      {it.status === 'purchased'
-                        ? `${formatQty(it.purchasedQty)} ${sku?.unit ?? ''} × ${formatMoney(it.unitPrice)}`
-                        : it.unavailableNote ?? ''}
+                      {activeStoreId ? (
+                        it.status === 'purchased'
+                          ? `${formatQty(row.qty)} ${sku?.unit ?? ''} x ${formatMoney(it.unitPrice)}`
+                          : it.unavailableNote ?? ''
+                      ) : (
+                        <>
+                          {it.status === 'purchased'
+                            ? `${formatQty(it.purchasedQty)} ${sku?.unit ?? ''} × ${formatMoney(it.unitPrice)}`
+                            : it.unavailableNote ?? ''}
+                        </>
+                      )}
                     </div>
                     {/* M3.52: per-store chips on history rows. Same
                        visual pattern as the in-run PurchaseRow chips. */}
@@ -5955,6 +6125,7 @@ function RunHistoryDetailSheet({
               </SectionLabel>
               <ul className="flex flex-col rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline">
                 {[...breakdown.perStore.values()]
+                  .filter((ps) => !activeStoreId || ps.storeId === activeStoreId)
                   .sort((a, b) => b.total - a.total)
                   .map((ps) => {
                     const store = storeById.get(ps.storeId);
