@@ -35,12 +35,13 @@ export async function assertActorAssignedToStore(
   memberId: string,
   storeId: string,
   permissions: ReadonlySet<string>,
+  opts: { bypassUsersManage?: boolean } = {},
 ): Promise<void> {
   // Admins / super_admins bypass — they need to be able to fix orders
   // for any store when staff escalate an issue.
-  if (permissions.has('users.manage')) return;
+  if (opts.bypassUsersManage !== false && permissions.has('users.manage')) return;
 
-  const allowed = await getActorStoreIds(db, memberId, permissions);
+  const allowed = await getActorStoreIds(db, memberId, permissions, opts);
   if (allowed === null) return; // unrestricted (admin path; defensive)
   if (allowed.includes(storeId)) return;
 

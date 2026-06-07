@@ -100,6 +100,7 @@ export const inventoryRouter = router({
         ctx.session!.memberId,
         input.storeId,
         ctx.session!.permissions,
+        { bypassUsersManage: ctx.session!.permissions.has('org.admin') },
       );
       const orgId = ctx.session!.orgId;
       const rows = (await tx.execute(sql`
@@ -145,6 +146,7 @@ export const inventoryRouter = router({
           ctx.session!.memberId,
           input.storeId,
           ctx.session!.permissions,
+          { bypassUsersManage: ctx.session!.permissions.has('org.admin') },
         );
         const orgId = ctx.session!.orgId;
         const rows = await tx
@@ -194,6 +196,7 @@ export const inventoryRouter = router({
           ctx.session!.memberId,
           input.storeId,
           ctx.session!.permissions,
+          { bypassUsersManage: ctx.session!.permissions.has('org.admin') },
         ),
       );
       // Per-store override check: an admin may have denied the actor
@@ -269,6 +272,7 @@ export const inventoryRouter = router({
           ctx.session!.memberId,
           input.storeId,
           ctx.session!.permissions,
+          { bypassUsersManage: ctx.session!.permissions.has('org.admin') },
         ),
       );
       const effective = await ctx.withOrg((tx) =>
