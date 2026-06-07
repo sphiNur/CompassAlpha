@@ -52,6 +52,12 @@
 
 BEGIN;
 
+-- 0032 runs before sql/900_rls_policies.sql in a fresh database,
+-- so this migration must not assume the post-migration helper exists.
+CREATE OR REPLACE FUNCTION app_current_org() RETURNS uuid AS $$
+  SELECT NULLIF(current_setting('app.current_org_id', true), '')::uuid
+$$ LANGUAGE SQL STABLE;
+
 CREATE TABLE IF NOT EXISTS inventory.expense_templates (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id uuid NOT NULL REFERENCES auth.organizations(id) ON DELETE CASCADE,

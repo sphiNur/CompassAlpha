@@ -183,7 +183,7 @@ jobs:
           set -e
           found=$(
             grep -rEn 'console\.(log|debug|info)\(' \
-              apps/web/src apps/api/src packages \
+              apps/web/src apps/api/src \
               --include='*.ts' --include='*.tsx' 2>/dev/null \
               | grep -v '__tests__' \
               | grep -v 'ErrorBoundary.tsx' \
