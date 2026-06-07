@@ -49,6 +49,9 @@ jobs:
     env:
       # No Postgres in this job — skip the PG-gated tests.
       SKIP_PG_TESTS: '1'
+      DATABASE_URL: postgres://compass:compass@localhost:5432/compass_test
+      JWT_SECRET: ci-test-jwt-access-secret-aaaaaaaaaaaaaaaaaaaa
+      JWT_REFRESH_SECRET: ci-test-jwt-refresh-secret-aaaaaaaaaaaaaaaaaa
 
     steps:
       - uses: actions/checkout@v4

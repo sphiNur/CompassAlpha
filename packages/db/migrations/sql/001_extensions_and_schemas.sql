@@ -10,6 +10,12 @@ CREATE SCHEMA IF NOT EXISTS read_model;
 CREATE SCHEMA IF NOT EXISTS ops;
 CREATE SCHEMA IF NOT EXISTS sync;
 
+-- Helper referenced by several generated migrations before the
+-- post-migration RLS policy script runs.
+CREATE OR REPLACE FUNCTION app_current_org() RETURNS uuid AS $$
+  SELECT NULLIF(current_setting('app.current_org_id', true), '')::uuid
+$$ LANGUAGE SQL STABLE;
+
 -- Default GUC for RLS — empty string means "no org context, deny everything".
 DO $$ BEGIN
   PERFORM set_config('app.current_org_id', '', false);
