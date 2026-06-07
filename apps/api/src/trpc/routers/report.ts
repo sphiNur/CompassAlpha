@@ -90,6 +90,7 @@ export const reportRouter = router({
               tx,
               ctx.session!.memberId,
               ctx.session!.permissions,
+              { bypassUsersManage: false },
             );
         if (allowedStoreIds !== null && input.storeId !== undefined) {
           if (!allowedStoreIds.includes(input.storeId)) {
@@ -196,6 +197,7 @@ export const reportRouter = router({
               tx,
               ctx.session!.memberId,
               ctx.session!.permissions,
+              { bypassUsersManage: false },
             );
         if (allowedStoreIds !== null && input.storeId !== undefined) {
           if (!allowedStoreIds.includes(input.storeId)) {
@@ -255,4 +257,3 @@ export const reportRouter = router({
       });
     }),
 });
-

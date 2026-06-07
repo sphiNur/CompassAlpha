@@ -157,8 +157,8 @@ beforeAll(async () => {
   const seedRoles = [
     { slug: 'super_admin', name: 'Super Admin', rank: 100, perms: ['users.manage', 'users.invite', 'users.grant_role', 'users.revoke_role', 'org.admin'] },
     { slug: 'admin',       name: 'Admin',       rank: 80,  perms: ['users.manage', 'users.invite', 'users.grant_role', 'users.revoke_role', 'org.admin'] },
-    { slug: 'manager',     name: 'Manager',     rank: 30,  perms: ['order.approve', 'users.invite'] },
-    { slug: 'staff',       name: 'Staff',       rank: 10,  perms: ['order.draft'] },
+    { slug: 'manager',     name: 'Manager',     rank: 60,  perms: ['order.draft', 'order.submit', 'order.approve', 'order.claim', 'order.unapprove', 'reports.view', 'prices.view', 'users.manage', 'inventory.adjust', 'sales.record'] },
+    { slug: 'staff',       name: 'Staff',       rank: 20,  perms: ['order.draft', 'order.submit', 'delivery.confirm', 'sales.record'] },
   ];
   const roleIdBySlug: Record<string, string> = {};
   for (const r of seedRoles) {
@@ -1212,7 +1212,7 @@ describe('M3.3 manager (rank 60) is blocked from org-wide writes', () => {
       let threw = false;
       try {
         await caller.admin.skuCreate({
-          names: { en: 'Forbidden SKU', uz: '', ru: '', zh: '' },
+          names: { en: 'Forbidden SKU', uz: 'Forbidden SKU', ru: 'Forbidden SKU', zh: 'Forbidden SKU' },
           unit: 'kg',
           // M3.14: step restricted to '0.5' | '1'. The old '0.1' got
           // rejected by zod BEFORE the permission check — failing the

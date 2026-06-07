@@ -270,7 +270,35 @@ jobs:
         # drizzle generated SQL → POST raw SQL (RLS policies). Idempotent.
         run: pnpm --filter @compass/db migrate
 
+      - name: Create non-owner test role
+        # The service POSTGRES_USER owns the schema and is a superuser,
+        # so it bypasses RLS even when tables FORCE ROW LEVEL SECURITY.
+        # Integration tests use this non-owner, non-BYPASSRLS role to
+        # exercise the same policy path as the application user.
+        run: |
+          pnpm --filter @compass/db exec bun - <<'EOF'
+          import postgres from 'postgres';
+
+          const db = postgres(process.env.DATABASE_URL, { max: 1, prepare: false });
+          await db.unsafe(`
+            DO $$
+            BEGIN
+              CREATE ROLE compass_ci_app LOGIN PASSWORD 'compass_ci_app' NOSUPERUSER NOBYPASSRLS;
+            EXCEPTION WHEN duplicate_object THEN
+              ALTER ROLE compass_ci_app WITH LOGIN PASSWORD 'compass_ci_app' NOSUPERUSER NOBYPASSRLS;
+            END $$;
+
+            GRANT USAGE ON SCHEMA auth, inventory, domain, read_model, ops, sync, public TO compass_ci_app;
+            GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA auth, inventory, domain, read_model, ops, sync TO compass_ci_app;
+            GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA auth, inventory, domain, read_model, ops, sync TO compass_ci_app;
+            GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA auth, inventory, domain, read_model, ops, sync, public TO compass_ci_app;
+          `);
+          await db.end({ timeout: 5 });
+          EOF
+
       - name: Integration tests
+        env:
+          DATABASE_URL: postgres://compass_ci_app:compass_ci_app@localhost:5432/compass_test
         # SKIP_PG_TESTS unset → PG-gated tests run for real.
         run: |
           bun test \

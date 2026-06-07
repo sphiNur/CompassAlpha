@@ -78,8 +78,9 @@ export async function getActorStoreIds(
   db: DB,
   memberId: string,
   permissions: ReadonlySet<string>,
+  opts: { bypassUsersManage?: boolean } = {},
 ): Promise<string[] | null> {
-  if (permissions.has('users.manage')) return null;
+  if (opts.bypassUsersManage !== false && permissions.has('users.manage')) return null;
 
   const [msaRows, roleScopeRows] = await Promise.all([
     db
