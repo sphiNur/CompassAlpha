@@ -8,6 +8,7 @@ $$ LANGUAGE SQL STABLE;
 
 -- Org self-row policy.
 ALTER TABLE auth.organizations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE auth.organizations FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS org_self ON auth.organizations;
 CREATE POLICY org_self ON auth.organizations
   USING (id = app_current_org() OR app_current_org() IS NULL);
@@ -39,6 +40,7 @@ DECLARE
 BEGIN
   FOREACH t IN ARRAY org_tables LOOP
     EXECUTE format('ALTER TABLE %s ENABLE ROW LEVEL SECURITY', t);
+    EXECUTE format('ALTER TABLE %s FORCE ROW LEVEL SECURITY', t);
     EXECUTE format('DROP POLICY IF EXISTS org_isolation ON %s', t);
     EXECUTE format(
       'CREATE POLICY org_isolation ON %s USING (org_id = app_current_org() OR app_current_org() IS NULL)',
@@ -51,6 +53,7 @@ END $$;
 -- They piggy-back via FK lookup so the policy still enforces tenant boundary.
 
 ALTER TABLE auth.role_permissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE auth.role_permissions FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS org_isolation ON auth.role_permissions;
 CREATE POLICY org_isolation ON auth.role_permissions
   USING (
@@ -63,6 +66,7 @@ CREATE POLICY org_isolation ON auth.role_permissions
 
 -- member_role_bindings has no org_id; piggy-back via the role's org_id.
 ALTER TABLE auth.member_role_bindings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE auth.member_role_bindings FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS org_isolation ON auth.member_role_bindings;
 CREATE POLICY org_isolation ON auth.member_role_bindings
   USING (
@@ -74,6 +78,7 @@ CREATE POLICY org_isolation ON auth.member_role_bindings
   );
 
 ALTER TABLE inventory.store_supplier_prefs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE inventory.store_supplier_prefs FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS org_isolation ON inventory.store_supplier_prefs;
 CREATE POLICY org_isolation ON inventory.store_supplier_prefs
   USING (
@@ -85,6 +90,7 @@ CREATE POLICY org_isolation ON inventory.store_supplier_prefs
   );
 
 ALTER TABLE inventory.sku_supplier_links ENABLE ROW LEVEL SECURITY;
+ALTER TABLE inventory.sku_supplier_links FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS org_isolation ON inventory.sku_supplier_links;
 CREATE POLICY org_isolation ON inventory.sku_supplier_links
   USING (
@@ -96,6 +102,7 @@ CREATE POLICY org_isolation ON inventory.sku_supplier_links
   );
 
 ALTER TABLE read_model.order_items_v ENABLE ROW LEVEL SECURITY;
+ALTER TABLE read_model.order_items_v FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS org_isolation ON read_model.order_items_v;
 CREATE POLICY org_isolation ON read_model.order_items_v
   USING (
@@ -107,6 +114,7 @@ CREATE POLICY org_isolation ON read_model.order_items_v
   );
 
 ALTER TABLE read_model.run_items_v ENABLE ROW LEVEL SECURITY;
+ALTER TABLE read_model.run_items_v FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS org_isolation ON read_model.run_items_v;
 CREATE POLICY org_isolation ON read_model.run_items_v
   USING (
@@ -118,6 +126,7 @@ CREATE POLICY org_isolation ON read_model.run_items_v
   );
 
 ALTER TABLE read_model.run_item_stores_v ENABLE ROW LEVEL SECURITY;
+ALTER TABLE read_model.run_item_stores_v FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS org_isolation ON read_model.run_item_stores_v;
 CREATE POLICY org_isolation ON read_model.run_item_stores_v
   USING (
@@ -135,6 +144,7 @@ CREATE POLICY org_isolation ON read_model.run_item_stores_v
 -- equivalent for orgs that were already provisioned before this fix.
 
 ALTER TABLE auth.member_store_assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE auth.member_store_assignments FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS org_isolation ON auth.member_store_assignments;
 CREATE POLICY org_isolation ON auth.member_store_assignments
   USING (
@@ -147,6 +157,7 @@ CREATE POLICY org_isolation ON auth.member_store_assignments
   );
 
 ALTER TABLE auth.member_permission_overrides ENABLE ROW LEVEL SECURITY;
+ALTER TABLE auth.member_permission_overrides FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS org_isolation ON auth.member_permission_overrides;
 CREATE POLICY org_isolation ON auth.member_permission_overrides
   USING (
@@ -159,6 +170,7 @@ CREATE POLICY org_isolation ON auth.member_permission_overrides
   );
 
 ALTER TABLE domain.policy_decisions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE domain.policy_decisions FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS org_isolation ON domain.policy_decisions;
 CREATE POLICY org_isolation ON domain.policy_decisions
   USING (
@@ -167,6 +179,7 @@ CREATE POLICY org_isolation ON domain.policy_decisions
   );
 
 ALTER TABLE domain.snapshots ENABLE ROW LEVEL SECURITY;
+ALTER TABLE domain.snapshots FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS org_isolation ON domain.snapshots;
 CREATE POLICY org_isolation ON domain.snapshots
   USING (

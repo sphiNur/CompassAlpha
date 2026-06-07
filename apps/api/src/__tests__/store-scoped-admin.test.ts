@@ -155,8 +155,8 @@ beforeAll(async () => {
   //    org-agnostic — fresh orgs need their roles inserted explicitly.
   //    We mirror packages/db seed-data.ts ranks.
   const seedRoles = [
-    { slug: 'super_admin', name: 'Super Admin', rank: 100, perms: ['users.manage', 'users.invite', 'users.grant_role', 'users.revoke_role'] },
-    { slug: 'admin',       name: 'Admin',       rank: 80,  perms: ['users.manage', 'users.invite', 'users.grant_role', 'users.revoke_role'] },
+    { slug: 'super_admin', name: 'Super Admin', rank: 100, perms: ['users.manage', 'users.invite', 'users.grant_role', 'users.revoke_role', 'org.admin'] },
+    { slug: 'admin',       name: 'Admin',       rank: 80,  perms: ['users.manage', 'users.invite', 'users.grant_role', 'users.revoke_role', 'org.admin'] },
     { slug: 'manager',     name: 'Manager',     rank: 30,  perms: ['order.approve', 'users.invite'] },
     { slug: 'staff',       name: 'Staff',       rank: 10,  perms: ['order.draft'] },
   ];
