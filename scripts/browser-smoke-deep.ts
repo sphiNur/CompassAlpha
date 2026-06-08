@@ -500,31 +500,31 @@ async function run() {
     );
 
     // ---- Approve tab ----
-    // New submission flow (post review-sheet redesign):
-    //   1. First MainButton click → opens the Review sheet.
-    //   2. The sheet has NO internal buttons (in Telegram). Submission
-    //      happens by tapping the MainButton AGAIN — its text has
-    //      changed from "Review Order (N)" to "Submit order".
-    //   3. Mutation fires; sheet auto-closes onSuccess.
-    const click = async (): Promise<boolean> => {
-      return page.evaluate(() => {
+    // Submission flow:
+    //   1. Main action "Review order (N)" opens the Review sheet.
+    //   2. Main action / sheet footer "Submit order" fires submit.
+    // The app now renders an in-DOM PageMainButton above the nav, while
+    // older builds used Telegram's native MainButton. Smoke supports both.
+    const clickMainAction = async (label: string): Promise<boolean> => {
+      const nativeClicked = await page.evaluate(() => {
         const w = window as unknown as { __compassMainButtonClick?: () => boolean };
         return typeof w.__compassMainButtonClick === 'function' ? w.__compassMainButtonClick() : false;
       });
+      if (nativeClicked) return true;
+
+      const button = page.locator('button', { hasText: label }).last();
+      if ((await button.count()) === 0) return false;
+      await button.click();
+      return true;
     };
-    const opened = await click();
-    if (!opened) {
-      const reviewBtn = await page.$('button:has-text("Review Order")');
-      if (reviewBtn) await reviewBtn.click();
-    }
+    await clickMainAction('Review order');
     await page.waitForTimeout(400);
     const sheetText = await page.evaluate(() => {
       const dlg = document.querySelector('[role="dialog"]');
       return dlg?.textContent ?? '';
     });
     record('Review sheet opens with selected items', /Apple/.test(sheetText));
-    // Second MainButton click → actually submit.
-    await click();
+    await clickMainAction('Submit order');
     await page.waitForTimeout(700);
     record('Order submitted after second MainButton click', mockSession?.status === 'submitted');
 
