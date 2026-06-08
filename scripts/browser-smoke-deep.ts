@@ -551,17 +551,33 @@ async function run() {
 
     // ---- Run tab ----
     await page.click('nav[aria-label="Primary"] button:has-text("Run")');
-    await page.waitForTimeout(400);
+    const runLoaded = await page
+      .waitForFunction(
+        () =>
+          /No approved sessions to plan/.test(document.body.innerText) ||
+          /No active run/.test(document.body.innerText),
+        { timeout: 8_000 },
+      )
+      .then(() => true)
+      .catch(() => false);
     const runText = await page.evaluate(() => document.body.innerText);
     record(
       'RunPage renders empty state when no approved sessions',
-      /No approved sessions to plan/.test(runText) || /No active run/.test(runText),
+      runLoaded &&
+        (/No approved sessions to plan/.test(runText) || /No active run/.test(runText)),
       runText.split('\n').slice(0, 3).join(' / '),
     );
 
     // ---- Confirm tab ----
     await page.click('nav[aria-label="Primary"] button:has-text("Confirm")');
-    await page.waitForTimeout(400);
+    await page
+      .waitForFunction(
+        () =>
+          /Nothing to confirm/.test(document.body.innerText) ||
+          /No active delivery/.test(document.body.innerText),
+        { timeout: 8_000 },
+      )
+      .catch(() => { /* record() below captures the rendered text */ });
     const confirmText = await page.evaluate(() => document.body.innerText);
     record(
       'ConfirmPage shows nothing-to-confirm empty state',
@@ -576,11 +592,23 @@ async function run() {
     // (Stores moved out), Operations. People management lives inside
     // Stores → <store> → Team.
     await page.click('nav[aria-label="Primary"] button:has-text("Admin")');
-    await page.waitForTimeout(400);
+    const adminHomeLoaded = await page
+      .waitForFunction(
+        () =>
+          /Organization/.test(document.body.innerText) &&
+          /Stores/.test(document.body.innerText) &&
+          /Roles & Permissions/.test(document.body.innerText) &&
+          /Catalog/.test(document.body.innerText) &&
+          /Operations/.test(document.body.innerText),
+        { timeout: 8_000 },
+      )
+      .then(() => true)
+      .catch(() => false);
     const adminText = await page.evaluate(() => document.body.innerText);
     record(
       'AdminPage shows the 5 store-first top-level sections',
-      /Organization/.test(adminText) &&
+      adminHomeLoaded &&
+        /Organization/.test(adminText) &&
         /Stores/.test(adminText) &&
         /Roles & Permissions/.test(adminText) &&
         /Catalog/.test(adminText) &&
