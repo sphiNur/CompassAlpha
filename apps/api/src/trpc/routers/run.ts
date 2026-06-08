@@ -65,6 +65,37 @@ function todayStr(ctx: { session: { orgTimezone: string } | null }): string {
 }
 
 export const runRouter = router({
+  expenseTemplates: authedProcedure.query(async ({ ctx }) => {
+    const perms = ctx.session!.permissions;
+    if (!perms.has('run.purchase') && !perms.has('users.manage') && !perms.has('org.admin')) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'auth.errors.missingPermission',
+        cause: { missingPermission: 'run.purchase' },
+      });
+    }
+    return ctx.withOrg(async (tx) =>
+      tx
+        .select({
+          id: s.expenseTemplates.id,
+          label: s.expenseTemplates.label,
+          unitHint: s.expenseTemplates.unitHint,
+          defaultQty: s.expenseTemplates.defaultQty,
+          defaultUnitPrice: s.expenseTemplates.defaultUnitPrice,
+          defaultPaymentMethod: s.expenseTemplates.defaultPaymentMethod,
+          sortIndex: s.expenseTemplates.sortIndex,
+        })
+        .from(s.expenseTemplates)
+        .where(
+          and(
+            eq(s.expenseTemplates.orgId, ctx.session!.orgId),
+            eq(s.expenseTemplates.isArchived, false),
+          ),
+        )
+        .orderBy(s.expenseTemplates.sortIndex, s.expenseTemplates.createdAt),
+    );
+  }),
+
   /**
    * Preview what `create` would plan for a given date.
    *
@@ -616,126 +647,9 @@ export const runRouter = router({
         throw err;
       }
 
-      /**
-       * M3.57 (2026-05-23): auto-attach org-level expense templates.
-       *
-       * Every new run picks up the chain's standard off-catalog charges
-       * (porter / 装卸费, taxi, parking, etc.) without the purchaser
-       * having to re-type them. The admin maintains the list in
-       * `inventory.expense_templates`; this loop reads non-archived
-       * rows and emits one `RunExpenseAdded` event per template, with
-       * an even-split allocation across the run's stores.
-       *
-       * Hand-crafted (NOT routed through decideRun(AddRunExpense)):
-       *   - The run.create actor needs `run.create` but not necessarily
-       *     `run.purchase` — the latter would be required by the
-       *     domain command's normal guard. The auto-attach is a
-       *     SYSTEM action tied to the lifecycle of run creation, not a
-       *     user action, so it bypasses the per-user perm gate.
-       *   - The events still carry the actor's memberId for audit
-       *     ("X created the run, which auto-attached Y templates").
-       *
-       * Failure semantics: a template with malformed data (e.g. zero
-       * default_unit_price slipped past the admin form) silently
-       * skips that template. The run still creates with the others
-       * attached. Logged via console.warn for ops visibility.
-       *
-       * Ordering: templates are read by (sort_index ASC, created_at
-       * ASC) so the resulting expenses[] order is admin-deterministic
-       * — the manager sees the same order they configured.
-       */
-      try {
-        const runStoreIds = [...new Set(sessions.map((sess) => sess.storeId))];
-        const templates = await tx
-          .select({
-            id: s.expenseTemplates.id,
-            label: s.expenseTemplates.label,
-            unitHint: s.expenseTemplates.unitHint,
-            defaultQty: s.expenseTemplates.defaultQty,
-            defaultUnitPrice: s.expenseTemplates.defaultUnitPrice,
-            defaultPaymentMethod: s.expenseTemplates.defaultPaymentMethod,
-          })
-          .from(s.expenseTemplates)
-          .where(
-            and(
-              eq(s.expenseTemplates.orgId, ctx.session!.orgId),
-              eq(s.expenseTemplates.isArchived, false),
-            ),
-          )
-          .orderBy(s.expenseTemplates.sortIndex, s.expenseTemplates.createdAt);
-        for (const tpl of templates) {
-          const qty = Number(tpl.defaultQty);
-          const unitPrice = Number(tpl.defaultUnitPrice);
-          if (!Number.isFinite(qty) || qty <= 0) {
-            console.warn(
-              `[M3.57] skip auto-attach template ${tpl.id}: invalid qty ${tpl.defaultQty}`,
-            );
-            continue;
-          }
-          if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
-            console.warn(
-              `[M3.57] skip auto-attach template ${tpl.id}: invalid unitPrice ${tpl.defaultUnitPrice}`,
-            );
-            continue;
-          }
-          if (runStoreIds.length === 0) {
-            console.warn(
-              `[M3.57] skip auto-attach template ${tpl.id}: run has no stores`,
-            );
-            continue;
-          }
-          // Even-split qty across the run's stores. Last store absorbs
-          // float rounding so Σ splits === qty bit-exactly (the same
-          // discipline AddRunExpense uses for manual splits — keeps
-          // the projected `store_splits_json` consistent with the
-          // event payload across both code paths).
-          const storeSplits: Array<{ storeId: string; qty: string }> = [];
-          if (runStoreIds.length === 1) {
-            storeSplits.push({ storeId: runStoreIds[0]!, qty: tpl.defaultQty });
-          } else {
-            const base = qty / runStoreIds.length;
-            let allocated = 0;
-            for (let i = 0; i < runStoreIds.length - 1; i++) {
-              const part = Number(base.toFixed(3));
-              storeSplits.push({ storeId: runStoreIds[i]!, qty: part.toString() });
-              allocated += part;
-            }
-            const last = Number((qty - allocated).toFixed(3));
-            storeSplits.push({
-              storeId: runStoreIds[runStoreIds.length - 1]!,
-              qty: last.toString(),
-            });
-          }
-          const expenseId = randomUUID();
-          events.push({
-            streamId: runId,
-            seq: events.length + 1,
-            occurredAt: new Date(),
-            actorUserId: ctx.session!.userId,
-            actorMemberId: ctx.session!.memberId,
-            type: 'RunExpenseAdded',
-            payload: {
-              expenseId,
-              label: tpl.label,
-              unitHint: tpl.unitHint ?? null,
-              qty: tpl.defaultQty,
-              unitPrice: tpl.defaultUnitPrice,
-              storeSplits,
-              paymentMethod: tpl.defaultPaymentMethod as 'cash' | 'transfer',
-              receiptPhotoUrl: null,
-              // Tagged so admin reports can pivot "auto-attached vs
-              // manually-added" expenses. Surfaced verbatim in the
-              // audit log; not user-facing copy.
-              reason: `auto-template:${tpl.id}`,
-              byMemberId: ctx.session!.memberId,
-            },
-          });
-        }
-      } catch (err) {
-        // M3.57: a template-loop failure must NOT block the run create.
-        // The user can still add expenses manually. Log for ops.
-        console.warn('[M3.57] expense-template auto-attach failed:', err);
-      }
+      // 2026-06-08: templates are manual shortcuts, not automatic
+      // daily costs. Real extra expenses vary by business date and
+      // store, so a new run must not silently inherit template rows.
 
       try {
         await appendEvents(tx, {

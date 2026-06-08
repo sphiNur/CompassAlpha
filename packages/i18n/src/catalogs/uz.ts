@@ -603,7 +603,7 @@ export const uz = {
   'run.action.addItem.changeSku': "O'zgartirish",
   'run.action.addItem.targetStore': 'Qaysi do‘konga?',
   'run.action.addItem.crossStoreHint':
-    "Bu mahsulot {stores} uchun allaqachon xarid qilinmoqda. Bu yerda qo'shish mavjud qatorga birlashtiriladi; nizoli do'konlar ro'yxatdan yashirilgan.",
+    "Bu mahsulot {stores} uchun xaridda allaqachon bor. Do'kon narxi boshqacha bo'lsa, alohida xarajat sifatida saqlang; faqat bir xil partiya va narxda qatorga qo'shing.",
   'run.action.addItem.defaultCrossStoreReason': "Boshqa do'konning qo'shimcha talabi",
   'run.action.addItem.pickStore': "— Do'kon tanlang —",
   'run.action.addItem.totalHint': "Qator bo'yicha jami",
@@ -941,15 +941,15 @@ export const uz = {
   'admin.subsection.dishes': 'Taomlar',
   'admin.subsection.expenseTemplates': 'Xarajat shablonlari',
   'admin.subsection.expenseTemplatesHint':
-    "Har bir yangi xaridga avtomatik qo'shiladigan doimiy xarajatlar",
+    "Kunlik do'kon xarajatlari uchun tezkor shablonlar",
   'admin.action.newExpenseTemplate': "+ Yangi shablon",
   'admin.action.unarchive': "Arxivdan chiqarish",
   'admin.label.archived': "Arxivda",
   'admin.expenseTemplates.intro':
-    "Bu xarajatlar har bir yangi xaridga avtomatik qo'shiladi. Agar muayyan xaridda bu xarajat bo'lmasa, xaridor uni o'sha xariddan o'chirishi yoki o'zgartirishi mumkin.",
+    "Shablonlar faqat xarid sahifasidagi xarajat formasini tez to'ldiradi. Xaridor har bir haqiqiy kunlik xarajat uchun sana, do'kon, summa, chek va sababni baribir tanlaydi.",
   'admin.expenseTemplates.empty.title': "Hali shablon yo'q",
   'admin.expenseTemplates.empty.body':
-    "Hammol, taksi, mashina to'xtatish kabi doimiy xarajatlarni qo'shing — har bir yangi xaridda avtomatik tushib qoladi.",
+    "Hammol, taksi yoki mashina to'xtash joyi kabi nomlarni qo'shing, shunda kunlik do'kon xarajatlarini avtomatik yaratmasdan tezroq kiritish mumkin.",
   'admin.expenseTemplates.labelPlaceholder': "Hammol / Taksi / Mashina to'xtash joyi…",
   'admin.expenseTemplates.unitHintPlaceholder': "qatnov, dona, yaxlit…",
   'admin.field.label': "Nomi",
@@ -1012,4 +1012,15 @@ export const uz = {
   'sales.errors.storeNotFound': "Do'kon topilmadi.",
   'sales.errors.dishHasNoRecipe':
     "Sotuvni yozishdan oldin taom uchun retsept (BOM) belgilang.",
+  'run.action.addItem.storeAlreadyHasSkuShort': 'bor',
+  'run.action.addItem.costModeTitle': 'Bir xil mahsulot narxi',
+  'run.action.addItem.costModeMerge': 'Qatorga qoʻshish',
+  'run.action.addItem.costModeSeparate': "Do'kon xarajati",
+  'run.action.addItem.storeAlreadyHasSkuHint':
+    "Bu do'konda bu SKU allaqachon bor, shuning uchun yozuv eski narxni almashtirmasdan alohida do'kon xarajati sifatida saqlanadi.",
+  'run.action.addItem.separatePriceHint':
+    "Agar shu SKU boshqa vaqtda, boshqa yetkazib beruvchidan yoki boshqa narxda olingan bo'lsa, tanlangan do'kon uchun alohida xarajat sifatida saqlang.",
+  'run.action.addItem.mergePriceHint':
+    "Mavjud xarid qatoriga qo'shiladi va SKU bitta umumiy birlik narxi bilan qayta hisoblanadi.",
+  'run.action.addExpense.templates': 'Xarajat shablonlari',
 } as const;

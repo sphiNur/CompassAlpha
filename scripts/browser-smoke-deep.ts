@@ -314,6 +314,9 @@ async function run() {
   await context.route('**/trpc/run.list*', async (r) =>
     r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk([]) }),
   );
+  await context.route('**/trpc/run.expenseTemplates*', async (r) =>
+    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk([]) }),
+  );
   await context.route('**/trpc/run.previewCreatable*', async (r) =>
     r.fulfill({
       status: 200,

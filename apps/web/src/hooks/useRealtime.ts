@@ -22,6 +22,8 @@ const RECONNECT_MAX_MS = 30_000;
 // refetch per tap → the qty visually flickers between optimistic and
 // server values mid-stream.
 const INVALIDATE_DEBOUNCE_MS = 400;
+const MUTATION_QUIET_RETRY_MS = 250;
+const MUTATION_QUIET_MAX_WAIT_MS = 2_500;
 
 interface RealtimeMessage {
   type:
@@ -70,11 +72,22 @@ export function useRealtime(): void {
     // Debounced invalidate so a burst of N ws events for the same query
     // key collapses into ONE refetch after the burst settles.
     const pendingInvalidates = new Map<string, ReturnType<typeof setTimeout>>();
-    const debouncedInvalidate = (queryKey: QueryKey) => {
+    const debouncedInvalidate = (queryKey: QueryKey, startedAt = Date.now()) => {
       const id = JSON.stringify(queryKey);
       const existing = pendingInvalidates.get(id);
       if (existing) clearTimeout(existing);
       const t = setTimeout(() => {
+        const waitForLocalWrites =
+          queryClient.isMutating() > 0 &&
+          Date.now() - startedAt < MUTATION_QUIET_MAX_WAIT_MS;
+        if (waitForLocalWrites) {
+          const retry = setTimeout(() => {
+            pendingInvalidates.delete(id);
+            debouncedInvalidate(queryKey, startedAt);
+          }, MUTATION_QUIET_RETRY_MS);
+          pendingInvalidates.set(id, retry);
+          return;
+        }
         pendingInvalidates.delete(id);
         void queryClient.invalidateQueries({ queryKey });
       }, INVALIDATE_DEBOUNCE_MS);

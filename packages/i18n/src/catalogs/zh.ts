@@ -546,7 +546,7 @@ export const zh = {
   'run.action.addItem.changeSku': '更换',
   'run.action.addItem.targetStore': '送给哪个店铺?',
   'run.action.addItem.crossStoreHint':
-    '该商品已在采购中（{stores}）。此处可为其他店追加，将合并到现有行；下拉框已自动过滤掉冲突的店。',
+    '该商品已在本次采购中（{stores}）。如果是不同店铺价格，请按独立成本记录；只有同一批次同一单价时才合并到原行。',
   'run.action.addItem.defaultCrossStoreReason': '其他店追加需求',
   'run.action.addItem.pickStore': '— 选择店铺 —',
   'run.action.addItem.totalHint': '小计',
@@ -858,15 +858,15 @@ export const zh = {
   'admin.subsection.dishes': '菜品',
   'admin.subsection.expenseTemplates': '开销模板',
   'admin.subsection.expenseTemplatesHint':
-    '每次新建采购时自动加入的常用开销',
+    '每日门店开销的快捷填充模板',
   'admin.action.newExpenseTemplate': '+ 新模板',
   'admin.action.unarchive': '取消归档',
   'admin.label.archived': '已归档',
   'admin.expenseTemplates.intro':
-    '每次新建采购单时，这些开销会自动加入。如果某次采购不发生此项费用，采购员可在该采购单中删除或修改。',
+    '模板只用于采购页快速填表，不会自动生成实际费用。采购员仍需每天按店铺选择金额、付款方式、凭证和原因。',
   'admin.expenseTemplates.empty.title': '还没有模板',
   'admin.expenseTemplates.empty.body':
-    '把每次采购都会有的开销（装卸费、的士费、停车费等）加在这里，新建采购时会自动带入。',
+    '把常见名称（装卸费、的士费、停车费等）加在这里，采购员每天录入门店额外开销时可以快速套用。',
   'admin.expenseTemplates.labelPlaceholder': '装卸费 / 的士 / 停车…',
   'admin.expenseTemplates.unitHintPlaceholder': '次、份、一笔…',
   'admin.field.label': '名称',
@@ -926,4 +926,15 @@ export const zh = {
   'sales.errors.dishArchived': '该菜品已归档，请先取消归档再录入销售。',
   'sales.errors.storeNotFound': '门店未找到。',
   'sales.errors.dishHasNoRecipe': '请先为该菜品设置配方（BOM）后再记录销售。',
+  'run.action.addItem.storeAlreadyHasSkuShort': '已有',
+  'run.action.addItem.costModeTitle': '同商品价格处理',
+  'run.action.addItem.costModeMerge': '合并到原行',
+  'run.action.addItem.costModeSeparate': '独立成本',
+  'run.action.addItem.storeAlreadyHasSkuHint':
+    '该店已经有这个 SKU，本次会按该店铺的独立成本记录，避免覆盖原价格。',
+  'run.action.addItem.separatePriceHint':
+    '保存为所选店铺的独立成本，适合不同供应商、不同时间或不同价格的同商品采购。',
+  'run.action.addItem.mergePriceHint':
+    '合并到现有采购行，会使用同一个单价重新计算该 SKU 的总成本。',
+  'run.action.addExpense.templates': '开销模板快捷填充',
 } as const;

@@ -5329,10 +5329,10 @@ function SuppliersSection() {
 
 // ============ Expense Templates (M3.57) ============
 //
-// Org-level recurring off-catalog expenses (porter / 装卸费, taxi,
-// parking). Admin defines them once; every new run picks them up via
-// the auto-attach loop in run.create — the purchaser sees them as
-// expense rows on the run page and just confirms or corrects.
+// Org-level shortcuts for off-catalog expenses (porter / 装卸费, taxi,
+// parking). Admin defines them once; the run page uses them to prefill
+// a manual expense form so each business day + store records only the
+// costs that actually happened.
 //
 // CRUD only (no audit timeline, no soft-delete UI niceties — kept
 // simple for v1). Mutations require org.admin; reads are open to

@@ -589,7 +589,7 @@ export const ru = {
   'run.action.addItem.changeSku': 'Сменить',
   'run.action.addItem.targetStore': 'В какой магазин?',
   'run.action.addItem.crossStoreHint':
-    'Этот товар уже закупается для: {stores}. Добавление здесь объединяется с существующей строкой; конфликтующие магазины скрыты в списке.',
+    'Этот товар уже есть в закупке для: {stores}. Если цена для магазина отличается, сохраните отдельный расход; объединяйте только для той же партии и цены.',
   'run.action.addItem.defaultCrossStoreReason': 'Дополнительный спрос магазина',
   'run.action.addItem.pickStore': '— Выберите магазин —',
   'run.action.addItem.totalHint': 'Итого по строке',
@@ -915,15 +915,15 @@ export const ru = {
   'admin.subsection.dishes': 'Блюда',
   'admin.subsection.expenseTemplates': 'Шаблоны расходов',
   'admin.subsection.expenseTemplatesHint':
-    'Регулярные расходы, автоматически добавляемые в каждую новую закупку',
+    'Быстрые шаблоны для ежедневных расходов магазинов',
   'admin.action.newExpenseTemplate': '+ Новый шаблон',
   'admin.action.unarchive': 'Восстановить',
   'admin.label.archived': 'В архиве',
   'admin.expenseTemplates.intro':
-    'Эти расходы автоматически добавляются в каждую новую закупку. Закупщик может удалить или изменить их, если в конкретной поездке расход не возник.',
+    'Шаблоны только заполняют форму расхода на странице закупки. Закупщик всё равно выбирает дату, магазин, сумму, чек и причину для каждого фактического расхода.',
   'admin.expenseTemplates.empty.title': 'Шаблонов пока нет',
   'admin.expenseTemplates.empty.body':
-    'Добавьте регулярные расходы (грузчик, такси, парковка), чтобы они автоматически попадали в каждую новую закупку.',
+    'Добавьте частые названия вроде грузчика, такси или парковки, чтобы быстрее вводить ежедневные расходы магазинов без автоматического создания затрат.',
   'admin.expenseTemplates.labelPlaceholder': 'Грузчик / Такси / Парковка…',
   'admin.expenseTemplates.unitHintPlaceholder': 'поездка, штука, разово…',
   'admin.field.label': 'Название',
@@ -983,4 +983,15 @@ export const ru = {
   'sales.errors.dishArchived': 'Блюдо в архиве. Восстановите его перед записью.',
   'sales.errors.storeNotFound': 'Магазин не найден.',
   'sales.errors.dishHasNoRecipe': 'Сначала задайте рецепт (BOM) для этого блюда.',
+  'run.action.addItem.storeAlreadyHasSkuShort': 'уже есть',
+  'run.action.addItem.costModeTitle': 'Цена того же товара',
+  'run.action.addItem.costModeMerge': 'Объединить',
+  'run.action.addItem.costModeSeparate': 'Расход магазина',
+  'run.action.addItem.storeAlreadyHasSkuHint':
+    'В этом магазине уже есть этот SKU, поэтому запись сохранится как отдельный расход магазина и не перезапишет прежнюю цену.',
+  'run.action.addItem.separatePriceHint':
+    'Сохранить как отдельный расход выбранного магазина, если тот же SKU куплен у другого поставщика, в другое время или по другой цене.',
+  'run.action.addItem.mergePriceHint':
+    'Объединить с существующей строкой закупки и пересчитать SKU с одной общей ценой.',
+  'run.action.addExpense.templates': 'Шаблоны расходов',
 } as const;

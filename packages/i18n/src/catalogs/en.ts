@@ -659,7 +659,7 @@ export const en = {
   'run.action.addItem.changeSku': 'Change',
   'run.action.addItem.targetStore': 'For which store?',
   'run.action.addItem.crossStoreHint':
-    'This item is already being purchased for {stores}. Adding here merges into the existing row; conflicting stores are hidden from the dropdown.',
+    'This item is already in the run for {stores}. Use independent cost for a different store price, or merge only when it is the same batch and unit price.',
   'run.action.addItem.defaultCrossStoreReason': 'Additional store demand',
   'run.action.addItem.pickStore': '— Pick a store —',
   'run.action.addItem.totalHint': 'Line total',
@@ -1028,15 +1028,15 @@ export const en = {
   // re-type the same lines on every market trip.
   'admin.subsection.expenseTemplates': 'Expense templates',
   'admin.subsection.expenseTemplatesHint':
-    'Recurring expenses auto-attached to every new run',
+    'Manual shortcuts for daily store expenses',
   'admin.action.newExpenseTemplate': '+ New template',
   'admin.action.unarchive': 'Unarchive',
   'admin.label.archived': 'Archived',
   'admin.expenseTemplates.intro':
-    'Every new run auto-includes these expenses. The purchaser can still remove or edit them per-run if a particular trip doesn’t incur the charge.',
+    'Templates only prefill the purchase page expense form. Purchasers still choose the business date, store, amount, receipt, and reason for each real daily expense.',
   'admin.expenseTemplates.empty.title': 'No templates yet',
   'admin.expenseTemplates.empty.body':
-    'Add recurring expenses like porter fees, taxi, or parking so every run starts with them already attached.',
+    'Add common labels like porter fees, taxi, or parking so purchasers can fill daily store expenses faster without auto-creating costs.',
   'admin.expenseTemplates.labelPlaceholder': 'Porter / Taxi / Parking…',
   'admin.expenseTemplates.unitHintPlaceholder': 'trip, pack, lump-sum…',
   'admin.field.label': 'Name',
@@ -1101,4 +1101,15 @@ export const en = {
   'sales.errors.storeNotFound': 'Store not found.',
   'sales.errors.dishHasNoRecipe':
     'Set a recipe (BOM) for this dish before recording sales.',
+  'run.action.addItem.storeAlreadyHasSkuShort': 'already added',
+  'run.action.addItem.costModeTitle': 'Same item price handling',
+  'run.action.addItem.costModeMerge': 'Merge row',
+  'run.action.addItem.costModeSeparate': 'Store cost',
+  'run.action.addItem.storeAlreadyHasSkuHint':
+    'This store already has this SKU, so this save will be recorded as a store-level cost instead of overwriting the original price.',
+  'run.action.addItem.separatePriceHint':
+    'Record this as an independent cost for the selected store, useful when the same SKU is bought at a different time, supplier, or price.',
+  'run.action.addItem.mergePriceHint':
+    'Merge into the existing purchase row and recalculate this SKU with one shared unit price.',
+  'run.action.addExpense.templates': 'Expense template shortcuts',
 } as const;

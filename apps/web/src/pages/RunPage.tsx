@@ -124,6 +124,8 @@ interface AddItemDraft {
   skuId: string | null;
   /** SKU mode — preferred supplier on the SKU (optional override). */
   supplierId: string | null;
+  /** Existing SKU mode: merge into the run row or record a store-level cost. */
+  skuCostMode: 'merge' | 'separateExpense';
   /** Expense mode — pre-generated UUID. */
   expenseId: string;
   /** Expense mode — free-text identity. */
@@ -242,8 +244,24 @@ export function RunPage() {
   const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: false });
   const storesQuery = trpc.catalog.stores.useQuery();
   const suppliersQuery = trpc.catalog.suppliers.useQuery();
+  const expenseTemplatesQuery = trpc.run.expenseTemplates.useQuery(undefined, {
+    enabled:
+      !!session &&
+      (session.permissions.includes('run.purchase') ||
+        session.permissions.includes('users.manage') ||
+        session.permissions.includes('org.admin')),
+  });
 
   const utils = trpc.useUtils();
+  const invalidateRunQuietly = useCallback(
+    (includeList = false) => {
+      setTimeout(() => {
+        void utils.run.get.invalidate();
+        if (includeList) void utils.run.list.invalidate();
+      }, 650);
+    },
+    [utils],
+  );
   const offline = useOfflineQueue({
     'run.purchaseItem': async (entry) => {
       await utils.client.run.purchaseItem.mutate(
@@ -331,8 +349,7 @@ export function RunPage() {
   // X-Idempotency-Key so replays don't double-buy.
   const addPurchaserItem = trpc.run.addPurchaserItem.useMutation({
     onSuccess: () => {
-      void utils.run.get.invalidate();
-      void utils.run.list.invalidate();
+      invalidateRunQuietly(true);
       setAddItemDraft(null);
       haptic('success');
       toast.success(i18n.t('run.toast.itemAdded'));
@@ -352,8 +369,7 @@ export function RunPage() {
   // bazaar UX is consistent across modes.
   const addExpense = trpc.run.addExpense.useMutation({
     onSuccess: () => {
-      void utils.run.get.invalidate();
-      void utils.run.list.invalidate();
+      invalidateRunQuietly(true);
       setAddItemDraft(null);
       haptic('success');
       toast.success(i18n.t('run.toast.expenseAdded'));
@@ -370,7 +386,7 @@ export function RunPage() {
   });
   const removeExpense = trpc.run.removeExpense.useMutation({
     onSuccess: () => {
-      void utils.run.get.invalidate();
+      invalidateRunQuietly();
       haptic('success');
       toast.info(i18n.t('run.toast.expenseRemoved'));
     },
@@ -378,8 +394,7 @@ export function RunPage() {
   });
   const purchaseItem = trpc.run.purchaseItem.useMutation({
     onSuccess: () => {
-      void utils.run.get.invalidate();
-      void utils.run.list.invalidate();
+      invalidateRunQuietly(true);
       setPurchaseDraft(null);
       haptic('success');
       toast.success(i18n.t('run.toast.purchaseRecorded'));
@@ -396,7 +411,7 @@ export function RunPage() {
   });
   const revisePurchase = trpc.run.revisePurchase.useMutation({
     onSuccess: () => {
-      void utils.run.get.invalidate();
+      invalidateRunQuietly();
       setPurchaseDraft(null);
       haptic('success');
       toast.success(i18n.t('run.toast.purchaseRevised'));
@@ -1409,6 +1424,7 @@ export function RunPage() {
                   runId: activeRun.id,
                   skuId: null,
                   supplierId: null,
+                  skuCostMode: 'merge',
                   // M3.44: pre-generate expense UUID even when opening
                   // in SKU mode so a mid-flow tab switch to expense
                   // mode already has the id ready (idempotency).
@@ -1836,6 +1852,7 @@ export function RunPage() {
           return m;
         })()}
         skus={skusQuery.data ?? []}
+        expenseTemplates={expenseTemplatesQuery.data ?? []}
         storeById={storeById}
         productName={productName}
         photoUploader={photoUploader}
@@ -1872,6 +1889,29 @@ export function RunPage() {
             const existingSplits = (runDetailQuery.data?.splits ?? []).filter(
               (sp) => sp.skuId === d.skuId,
             );
+            const existingStoreIds = new Set(existingSplits.map((sp) => sp.storeId));
+            const overlapsExistingStore = storeSplits.some((sp) =>
+              existingStoreIds.has(sp.storeId),
+            );
+            if (
+              existingItem &&
+              (d.skuCostMode === 'separateExpense' || overlapsExistingStore)
+            ) {
+              const sku = skusQuery.data?.find((s) => s.id === d.skuId) ?? null;
+              addExpense.mutate({
+                runId: d.runId,
+                expenseId: d.expenseId,
+                label: sku ? productName(sku) : d.skuId.slice(0, 8),
+                ...(sku?.unit ? { unitHint: sku.unit } : {}),
+                qty: d.actualQty,
+                unitPrice: d.unitPrice,
+                storeSplits,
+                paymentMethod: d.paymentMethod,
+                receiptPhotoUrl: d.receiptPhotoUrl,
+                reason: d.reason.trim(),
+              });
+              return;
+            }
             if (existingItem) {
               const combinedSplits = [
                 ...existingSplits.map((sp) => ({
@@ -4718,6 +4758,7 @@ function AddItemSheet({
   runStoreIds,
   existingStoreIdsBySku,
   skus,
+  expenseTemplates,
   storeById,
   productName,
   photoUploader,
@@ -4755,6 +4796,14 @@ function AddItemSheet({
     step: string;
     isArchived: boolean;
   }>;
+  expenseTemplates: Array<{
+    id: string;
+    label: string;
+    unitHint: string | null;
+    defaultQty: string;
+    defaultUnitPrice: string;
+    defaultPaymentMethod: string;
+  }>;
   storeById: Map<string, { id: string; name: string; code: string | null }>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
   /** M3.44: PhotoUploader for receipt capture. SKU mode doesn't use it
@@ -4782,11 +4831,9 @@ function AddItemSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft?.runId, draft?.skuId, draft?.mode, priceInThousands]);
 
-  // Filter the SKU list: skip archived + apply substring search.
-  // M3.54 (2026-05-23): no longer hard-excludes in-run SKUs. A SKU is
-  // hidden ONLY when EVERY run store already has demand for it (no
-  // room left to add anyone). The "A ordered H, B needs H now"
-  // scenario keeps H visible because B has no demand for H yet.
+  // Filter the SKU list: archived and unavailable-in-run SKUs stay out,
+  // but purchasable existing SKUs remain selectable. Duplicate store/SKU
+  // entries are recorded as store-scoped expenses so prices can differ.
   const filteredSkus = useMemo(() => {
     const q = search.trim().toLowerCase();
     return skus
@@ -4794,13 +4841,8 @@ function AddItemSheet({
         if (sku.isArchived) return false;
         const existing = existingStoreIdsBySku.get(sku.id);
         if (existing) {
-          // Hide only when every run-store is already claimed for this
-          // SKU. If any store has no demand, the row stays clickable.
-          const stillRoom = runStoreIds.some((id) => !existing.storeIds.has(id));
-          if (!stillRoom) return false;
-          // Hide unavailable items too — N/A is a run-wide signal, not
-          // a per-store one; the purchaser can't override "can't get it
-          // anywhere" by re-adding for a different store.
+          // N/A is a run-wide signal; the purchaser can't override it by
+          // re-adding the same SKU as a different store expense.
           if (existing.status === 'unavailable') return false;
         }
         return true;
@@ -4813,33 +4855,36 @@ function AddItemSheet({
         );
       })
       .slice(0, 20);
-  }, [skus, existingStoreIdsBySku, runStoreIds, search]);
+  }, [skus, existingStoreIdsBySku, search]);
 
   const selectedSku = useMemo(
     () => (draft?.skuId ? skus.find((s) => s.id === draft.skuId) : null),
     [draft?.skuId, skus],
   );
 
-  // M3.54: existing storeIds for the picked SKU (if any). Drives the
-  // store-picker filter + the "augmenting existing item" banner copy.
+  // Existing storeIds for the picked SKU (if any). Drives cost-mode hints
+  // and marks store choices that should be recorded as independent costs.
   const selectedSkuExisting = useMemo(() => {
     if (!draft?.skuId) return null;
     return existingStoreIdsBySku.get(draft.skuId) ?? null;
   }, [draft?.skuId, existingStoreIdsBySku]);
 
-  // Single-store v1: dropdown of run-involved stores. v2 can swap in a
-  // multi-select chip row that drives `splits` Map directly.
-  // M3.54: when the picked SKU is already in run for some stores, hide
-  // those stores from the dropdown — they'd be a true (storeId, skuId)
-  // duplicate, which the domain layer rightly rejects.
+  // Single-store v1: dropdown of run-involved stores. Existing store/SKU
+  // combinations remain visible; selecting one routes the entry to an
+  // expense row so the original purchase item is not rewritten.
   const storeChoices = useMemo(() => {
     const all = runStoreIds
       .map((id) => storeById.get(id))
       .filter((s): s is { id: string; name: string; code: string | null } => !!s);
-    if (!selectedSkuExisting) return all;
-    return all.filter((s) => !selectedSkuExisting.storeIds.has(s.id));
-  }, [runStoreIds, storeById, selectedSkuExisting]);
+    return all;
+  }, [runStoreIds, storeById]);
   const selectedStoreId = draft && draft.splits.size === 1 ? [...draft.splits.keys()][0]! : '';
+  const selectedStoreAlreadyHasSku =
+    !!selectedStoreId && !!selectedSkuExisting?.storeIds.has(selectedStoreId);
+  const skuRecordsAsExpense =
+    draft?.mode === 'sku' &&
+    !!selectedSkuExisting &&
+    (draft.skuCostMode === 'separateExpense' || selectedStoreAlreadyHasSku);
 
   const totalHint = useMemo(() => {
     if (!draft) return null;
@@ -4862,7 +4907,7 @@ function AddItemSheet({
     return q * p;
   }, [draft?.actualQty, draft?.unitPrice]);
   const receiptRequired =
-    draft?.mode === 'expense' && total > RECEIPT_THRESHOLD;
+    (draft?.mode === 'expense' || skuRecordsAsExpense) && total > RECEIPT_THRESHOLD;
   const receiptOk = !receiptRequired || !!draft?.receiptPhotoUrl;
 
   // Mode-aware split-sum check: in expense mode the split is multi-
@@ -4981,6 +5026,7 @@ function AddItemSheet({
                       ...draft,
                       mode: m,
                       skuId: m === 'sku' ? null : draft.skuId,
+                      skuCostMode: 'merge',
                       label: m === 'expense' ? '' : draft.label,
                       splits: new Map(),
                     });
@@ -5014,7 +5060,9 @@ function AddItemSheet({
                 </div>
                 <button
                   type="button"
-                  onClick={() => onChange({ ...draft, skuId: null })}
+                  onClick={() =>
+                    onChange({ ...draft, skuId: null, skuCostMode: 'merge' })
+                  }
                   className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-label text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
                 >
                   {i18n.t('run.action.addItem.changeSku')}
@@ -5042,7 +5090,15 @@ function AddItemSheet({
                       >
                         <button
                           type="button"
-                          onClick={() => onChange({ ...draft, skuId: sku.id })}
+                          onClick={() =>
+                            onChange({
+                              ...draft,
+                              skuId: sku.id,
+                              skuCostMode: existingStoreIdsBySku.has(sku.id)
+                                ? 'separateExpense'
+                                : 'merge',
+                            })
+                          }
                           className="flex w-full items-baseline justify-between gap-2 px-3 py-2 text-left active:bg-[var(--c-surface-2)]"
                         >
                           <span className="min-w-0 truncate text-body">
@@ -5080,6 +5136,44 @@ function AddItemSheet({
                   placeholder={i18n.t('run.action.addExpense.unitHintPlaceholder')}
                 />
               </label>
+              {expenseTemplates.length > 0 ? (
+                <div>
+                  <div className="mb-1 text-label font-semibold text-[var(--c-fg-muted)]">
+                    {i18n.t('run.action.addExpense.templates')}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {expenseTemplates.map((tpl) => (
+                      <button
+                        key={tpl.id}
+                        type="button"
+                        onClick={() => {
+                          setPriceInput(
+                            toDisplayPrice(tpl.defaultUnitPrice, priceInThousands),
+                          );
+                          onChange({
+                            ...draft,
+                            label: tpl.label,
+                            unitHint: tpl.unitHint ?? '',
+                            actualQty: tpl.defaultQty,
+                            unitPrice: tpl.defaultUnitPrice,
+                            paymentMethod:
+                              tpl.defaultPaymentMethod === 'transfer'
+                                ? 'transfer'
+                                : 'cash',
+                            splits:
+                              draft.splits.size > 0
+                                ? evenSplit([...draft.splits.keys()], tpl.defaultQty)
+                                : draft.splits,
+                          });
+                        }}
+                        className="rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-1 text-label font-medium text-[var(--c-fg)] ring-hairline active:opacity-70"
+                      >
+                        {tpl.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </>
           )}
 
@@ -5101,6 +5195,49 @@ function AddItemSheet({
           ) : null}
           {/* 2) Store selection — SKU mode is single-store dropdown,
                  expense mode is multi-store chips with auto-even-split. */}
+          {draft.mode === 'sku' && selectedSku && selectedSkuExisting ? (
+            <div className="rounded-md bg-[var(--c-surface-2)] p-2">
+              <div className="mb-1 text-label font-semibold text-[var(--c-fg-muted)]">
+                {i18n.t('run.action.addItem.costModeTitle')}
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  disabled={selectedStoreAlreadyHasSku}
+                  onClick={() => onChange({ ...draft, skuCostMode: 'merge' })}
+                  className={
+                    'rounded-[var(--r-pill)] px-3 py-1.5 text-label font-medium ring-hairline disabled:opacity-40 ' +
+                    (!skuRecordsAsExpense
+                      ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
+                      : 'bg-[var(--c-bg)] text-[var(--c-fg-muted)]')
+                  }
+                >
+                  {i18n.t('run.action.addItem.costModeMerge')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onChange({ ...draft, skuCostMode: 'separateExpense' })
+                  }
+                  className={
+                    'rounded-[var(--r-pill)] px-3 py-1.5 text-label font-medium ring-hairline ' +
+                    (skuRecordsAsExpense
+                      ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
+                      : 'bg-[var(--c-bg)] text-[var(--c-fg-muted)]')
+                  }
+                >
+                  {i18n.t('run.action.addItem.costModeSeparate')}
+                </button>
+              </div>
+              <p className="mt-1 text-label leading-snug text-[var(--c-fg-muted)]">
+                {selectedStoreAlreadyHasSku
+                  ? i18n.t('run.action.addItem.storeAlreadyHasSkuHint')
+                  : skuRecordsAsExpense
+                    ? i18n.t('run.action.addItem.separatePriceHint')
+                    : i18n.t('run.action.addItem.mergePriceHint')}
+              </p>
+            </div>
+          ) : null}
           {draft.mode === 'sku' && selectedSku ? (
             <label className="block text-label font-semibold text-[var(--c-fg-muted)]">
               {i18n.t('run.action.addItem.targetStore')}
@@ -5114,13 +5251,22 @@ function AddItemSheet({
                   } else if (e.target.value) {
                     next.set(e.target.value, '');
                   }
-                  onChange({ ...draft, splits: next });
+                  onChange({
+                    ...draft,
+                    splits: next,
+                    skuCostMode: selectedSkuExisting?.storeIds.has(e.target.value)
+                      ? 'separateExpense'
+                      : draft.skuCostMode,
+                  });
                 }}
               >
                 <option value="">{i18n.t('run.action.addItem.pickStore')}</option>
                 {storeChoices.map((st) => (
                   <option key={st.id} value={st.id}>
                     {st.name}
+                    {selectedSkuExisting?.storeIds.has(st.id)
+                      ? ` (${i18n.t('run.action.addItem.storeAlreadyHasSkuShort')})`
+                      : ''}
                   </option>
                 ))}
               </select>
@@ -5306,7 +5452,7 @@ function AddItemSheet({
                   total crosses 200,000 UZS — the FE label switches to
                   the "required above threshold" copy so the operator
                   knows BEFORE submitting. */}
-              {draft.mode === 'expense' ? (
+              {draft.mode === 'expense' || skuRecordsAsExpense ? (
                 <div>
                   <div className="mb-1 text-label font-semibold text-[var(--c-fg-muted)]">
                     {receiptRequired
