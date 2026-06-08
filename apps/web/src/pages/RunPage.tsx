@@ -194,6 +194,7 @@ export function RunPage() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [purchaseDraft, setPurchaseDraft] = useState<PurchaseDraft | null>(null);
+  const [inlineSavingSkuId, setInlineSavingSkuId] = useState<string | null>(null);
   // M3.41 (2026-05-21): purchaser-initiated mid-run additions. Distinct
   // from `purchaseDraft` because the workflow is different — picking a
   // SKU that's NOT in the run (vs. recording a buy for a planned row),
@@ -400,6 +401,7 @@ export function RunPage() {
       toast.success(i18n.t('run.toast.purchaseRecorded'));
     },
     onError: (err, vars) => {
+      setInlineSavingSkuId((cur) => (cur === vars.skuId ? null : cur));
       if (isLikelyNetworkError(err)) {
         void offline.enqueue('run.purchaseItem', vars);
         setPurchaseDraft(null);
@@ -420,7 +422,7 @@ export function RunPage() {
   });
   const markUnavailable = trpc.run.markUnavailable.useMutation({
     onSuccess: () => {
-      void utils.run.get.invalidate();
+      invalidateRunQuietly();
       setUnavailableFor(null);
       setUnavailableNote('');
       toast.info(i18n.t('run.toast.markedUnavailable'));
@@ -438,7 +440,7 @@ export function RunPage() {
   });
   const unmarkUnavailable = trpc.run.unmarkUnavailable.useMutation({
     onSuccess: () => {
-      void utils.run.get.invalidate();
+      invalidateRunQuietly();
       haptic('success');
       toast.success(i18n.t('run.toast.unmarkedUnavailable'));
     },
@@ -446,7 +448,7 @@ export function RunPage() {
   });
   const undoPurchase = trpc.run.undoPurchase.useMutation({
     onSuccess: () => {
-      void utils.run.get.invalidate();
+      invalidateRunQuietly();
       haptic('success');
       toast.success(i18n.t('run.toast.purchaseUndone'));
     },
@@ -454,8 +456,7 @@ export function RunPage() {
   });
   const startDelivery = trpc.run.startDelivery.useMutation({
     onSuccess: () => {
-      void utils.run.list.invalidate();
-      void utils.run.get.invalidate();
+      invalidateRunQuietly(true);
       haptic('success');
       toast.success(i18n.t('run.toast.deliveryStarted'));
     },
@@ -463,8 +464,7 @@ export function RunPage() {
   });
   const deliverToStore = trpc.run.deliverToStore.useMutation({
     onSuccess: () => {
-      void utils.run.list.invalidate();
-      void utils.run.get.invalidate();
+      invalidateRunQuietly(true);
     },
     onError: (err, vars) => {
       if (isLikelyNetworkError(err)) {
@@ -477,8 +477,7 @@ export function RunPage() {
   });
   const undeliverStore = trpc.run.undeliverStore.useMutation({
     onSuccess: () => {
-      void utils.run.get.invalidate();
-      void utils.run.list.invalidate();
+      invalidateRunQuietly(true);
       haptic('success');
       toast.success(i18n.t('run.toast.deliveryRecalled'));
     },
@@ -486,8 +485,7 @@ export function RunPage() {
   });
   const undoStartPurchase = trpc.run.undoStartPurchase.useMutation({
     onSuccess: () => {
-      void utils.run.get.invalidate();
-      void utils.run.list.invalidate();
+      invalidateRunQuietly(true);
       haptic('success');
       toast.success(i18n.t('run.toast.startPurchaseUndone'));
     },
@@ -495,8 +493,7 @@ export function RunPage() {
   });
   const undoStartDelivery = trpc.run.undoStartDelivery.useMutation({
     onSuccess: () => {
-      void utils.run.get.invalidate();
-      void utils.run.list.invalidate();
+      invalidateRunQuietly(true);
       haptic('success');
       toast.success(i18n.t('run.toast.startDeliveryUndone'));
     },
@@ -545,7 +542,7 @@ export function RunPage() {
   // than it would resolve.
   const markExtraStatus = trpc.order.markExtraStatus.useMutation({
     onSuccess: () => {
-      void utils.run.get.invalidate();
+      invalidateRunQuietly();
       haptic('success');
     },
     onError: errToast('common.error'),
@@ -607,6 +604,20 @@ export function RunPage() {
     activeRun ? { runId: activeRun.id } : { runId: '' },
     { enabled: !!activeRun, refetchInterval: activeRun ? 6_000 : false },
   );
+
+  useEffect(() => {
+    if (!inlineSavingSkuId) return;
+    const item = runDetailQuery.data?.items.find((it) => it.skuId === inlineSavingSkuId);
+    if (!item || item.status !== 'pending') {
+      setInlineSavingSkuId(null);
+      return;
+    }
+    if (purchaseItem.isPending) return;
+    const t = setTimeout(() => {
+      setInlineSavingSkuId((cur) => (cur === inlineSavingSkuId ? null : cur));
+    }, 5_000);
+    return () => clearTimeout(t);
+  }, [inlineSavingSkuId, purchaseItem.isPending, runDetailQuery.data?.items]);
 
   const allItemsHandled = useMemo(() => {
     const items = runDetailQuery.data?.items ?? [];
@@ -1598,6 +1609,7 @@ export function RunPage() {
           productName={productName}
           i18n={i18n}
           priceInThousands={priceInThousands}
+          savingSkuId={inlineSavingSkuId}
           onSavePurchaseInline={({ skuId, actualQty, unitPrice, storeSplits, paymentMethod }) => {
             // Direct in-page save — no sheet involved. Triggered when
             // the user blurs the price input on a row whose qty
@@ -1605,6 +1617,7 @@ export function RunPage() {
             // M1.14: paymentMethod comes from the in-row toggle
             // (defaults to 'cash'; user can flip to 'transfer' before
             // saving for the relatively rare transfer items).
+            setInlineSavingSkuId(skuId);
             purchaseItem.mutate({
               runId: activeRun.id,
               skuId,
@@ -2173,6 +2186,7 @@ function ActiveRunPanel({
   productName,
   i18n,
   priceInThousands,
+  savingSkuId,
   onSavePurchaseInline,
   onMarkNa,
   onEditPurchased,
@@ -2196,6 +2210,7 @@ function ActiveRunPanel({
    *  and parse back to raw UZS on save. Page-level toggle in the
    *  sticky header. */
   priceInThousands: boolean;
+  savingSkuId: string | null;
   onSavePurchaseInline: (payload: {
     skuId: string;
     actualQty: string;
@@ -2381,6 +2396,7 @@ function ActiveRunPanel({
           productName={productName}
           i18n={i18n}
           priceInThousands={priceInThousands}
+          savingSkuId={savingSkuId}
           demandBySku={demandBySku}
           onSavePurchaseInline={onSavePurchaseInline}
           onMarkNa={onMarkNa}
@@ -2433,6 +2449,7 @@ function ActiveRunPanel({
                   lastPrice={run.lastPriceBySku?.[it.skuId] ?? null}
                   i18n={i18n}
                   priceInThousands={priceInThousands}
+                  saving={savingSkuId === it.skuId}
                   onSave={onSavePurchaseInline}
                   onMarkNa={onMarkNa}
                   onEdit={onEditPurchased}
@@ -3448,6 +3465,7 @@ function PerVendorView({
   productName,
   i18n,
   priceInThousands,
+  savingSkuId,
   demandBySku,
   onSavePurchaseInline,
   onMarkNa,
@@ -3465,6 +3483,7 @@ function PerVendorView({
   storeById: Map<string, { id: string; name: string; code: string | null }>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
   i18n: ReturnType<typeof useI18n>;
+  savingSkuId: string | null;
   /** M3.43 (2026-05-22): per-vendor view now reuses the SAME inline
    *  PurchaseRow component the aggregate view uses, so the purchaser
    *  can type qty + price + ✓ Save directly inside the vendor card —
@@ -3630,6 +3649,7 @@ function PerVendorView({
                       lastPrice={run.lastPriceBySku?.[r.skuId] ?? null}
                       i18n={i18n}
                       priceInThousands={priceInThousands}
+                      saving={savingSkuId === r.skuId}
                       onSave={onSavePurchaseInline}
                       onMarkNa={onMarkNa}
                       onEdit={onEditPurchased}
@@ -3959,6 +3979,7 @@ function PurchaseRow({
   lastPrice,
   i18n,
   priceInThousands,
+  saving,
   onSave,
   onMarkNa,
   onEdit,
@@ -4004,6 +4025,7 @@ function PurchaseRow({
   /** M3.36: when true, the price input shows raw UZS / 1000. Save still
    *  emits raw UZS. */
   priceInThousands: boolean;
+  saving: boolean;
   onSave: (payload: {
     skuId: string;
     actualQty: string;
@@ -4041,7 +4063,6 @@ function PurchaseRow({
   // pre-M1.21; harmless on the UZS launch tenant but blocked multi-
   // tenant rollout.
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
-  const savedRef = useRef(false);
 
   // When server data updates (e.g. ws push, edit landed), reconcile
   // the local input values UNLESS the user is mid-edit (the row is
@@ -4050,7 +4071,6 @@ function PurchaseRow({
     if (item.status === 'pending') return;
     setQty(formatQty(item.purchasedQty ?? item.plannedQty));
     setPrice(toDisplayPrice(item.unitPrice ?? lastPrice ?? '', priceInThousands));
-    savedRef.current = false;
   }, [item.status, item.purchasedQty, item.unitPrice, item.plannedQty, lastPrice, priceInThousands]);
 
   // M3.36: when the page-level toggle flips while a row is mid-edit
@@ -4131,7 +4151,7 @@ function PurchaseRow({
 
   const handleSave = () => {
     if (item.status !== 'pending') return;
-    if (savedRef.current) return;
+    if (saving) return;
     const actualQty = qty.trim();
     const displayPrice = price.trim();
     if (!actualQty || Number(actualQty) <= 0) return;
@@ -4144,7 +4164,6 @@ function PurchaseRow({
       onOpenAdvanced(item);
       return;
     }
-    savedRef.current = true;
     onSave({
       skuId: item.skuId,
       actualQty,
@@ -4171,7 +4190,7 @@ function PurchaseRow({
 
   const canSave =
     item.status === 'pending' &&
-    !savedRef.current &&
+    !saving &&
     Number(qty) > 0 &&
     Number(price) > 0;
 
@@ -4337,6 +4356,7 @@ function PurchaseRow({
             type="button"
             onClick={handleSave}
             disabled={!canSave}
+            aria-busy={saving || undefined}
             aria-label="save purchase"
             className={
               'flex h-8 min-w-8 items-center justify-center rounded-[var(--r-pill)] px-2.5 text-body font-semibold ' +
