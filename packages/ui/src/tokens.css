@@ -67,6 +67,9 @@
   --app-header-h: 56px;
   --app-subnav-h: 48px;
   --app-nav-h: 64px;
+  --app-viewport-h: 100dvh;
+  --app-inline-x: clamp(12px, 4vw, 20px);
+  --app-sheet-max-w: 640px;
   /* Use the browser's native env() insets so iOS Telegram WebView's
    * status bar / dynamic island / chrome buttons stop clipping the header. */
   --app-safe-top: max(env(safe-area-inset-top), 16px);

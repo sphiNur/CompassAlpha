@@ -18,9 +18,14 @@ export interface PageHeaderProps {
  */
 export function PageHeader({ title, subtitle, actions, className }: PageHeaderProps) {
   return (
-    <header className={cn('flex items-end justify-between gap-3 px-4 pb-2 pt-2', className)}>
-      <div className="min-w-0">
-        <h1 className="truncate text-h1 font-semibold leading-[1.15] tracking-tight text-[var(--c-fg)]">
+    <header
+      className={cn(
+        'flex flex-wrap items-start justify-between gap-x-3 gap-y-2 px-[var(--app-inline-x)] pb-2 pt-2',
+        className,
+      )}
+    >
+      <div className="min-w-0 flex-1 basis-[14rem]">
+        <h1 className="truncate text-h1 font-semibold leading-[1.15] text-[var(--c-fg)]">
           {title}
         </h1>
         {subtitle ? (
@@ -29,7 +34,7 @@ export function PageHeader({ title, subtitle, actions, className }: PageHeaderPr
           </p>
         ) : null}
       </div>
-      {actions ? <div className="shrink-0">{actions}</div> : null}
+      {actions ? <div className="flex max-w-full shrink-0 items-center gap-2">{actions}</div> : null}
     </header>
   );
 }

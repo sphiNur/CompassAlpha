@@ -1,8 +1,10 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { and, eq, gt, isNull, or } from 'drizzle-orm';
-import { schema as s } from '@compass/db';
+import { schema as s, type DB } from '@compass/db';
 import {
+  NonTelegramLoginInputSchema,
   TelegramLoginInputSchema,
   RefreshInputSchema,
   CompleteOnboardingInputSchema,
@@ -54,7 +56,140 @@ function enforceRate(scope: string, ip: string | null): void {
 
 type Session = z.infer<typeof SessionShape>;
 
+function releaseChannel(): 'development' | 'staging' | 'production' {
+  return env.COMPASS_RELEASE_CHANNEL ?? (env.NODE_ENV === 'production' ? 'production' : 'development');
+}
+
+function parseNonTelegramUsers(): Map<string, string> {
+  const raw = env.NON_TELEGRAM_LOGIN_USERS;
+  const users = new Map<string, string>();
+  if (!raw) return users;
+
+  for (const entry of raw.split(/[,\n;]/)) {
+    const trimmed = entry.trim();
+    if (!trimmed) continue;
+    const separator = trimmed.indexOf(':');
+    if (separator < 1) continue;
+
+    const tgUserId = trimmed.slice(0, separator).trim();
+    const accessCode = trimmed.slice(separator + 1).trim();
+    if (!/^\d{4,20}$/.test(tgUserId)) continue;
+    if (accessCode.length < 16) continue;
+    users.set(tgUserId, accessCode);
+  }
+  return users;
+}
+
+function isNonTelegramLoginAvailable(): boolean {
+  if (env.NON_TELEGRAM_LOGIN_ENABLED !== 'true') return false;
+  if (releaseChannel() === 'production') return false;
+  return parseNonTelegramUsers().size > 0;
+}
+
+function digestSecret(value: string): Buffer {
+  return createHash('sha256').update(value, 'utf8').digest();
+}
+
+function secretsMatch(provided: string, expected: string): boolean {
+  return timingSafeEqual(digestSecret(provided), digestSecret(expected));
+}
+
+function isAllowedNonTelegramUser(tgUserId: string, accessCode: string): boolean {
+  if (!isNonTelegramLoginAvailable()) return false;
+  const expected = parseNonTelegramUsers().get(tgUserId);
+  if (!expected) return false;
+  return secretsMatch(accessCode.trim(), expected);
+}
+
+async function issueLoginResult(
+  db: DB,
+  userId: string,
+  memberId: string,
+  orgId: string,
+  ip: string | null,
+  userAgent: string | null,
+) {
+  const session = await buildSessionPayload(db, userId, memberId, orgId);
+  const accessToken = await signAccess({ sub: userId, org: session.member.orgId, mid: memberId });
+  const issued = await issueRefresh(db, {
+    userId,
+    ip,
+    userAgent,
+  });
+
+  return {
+    tokens: {
+      accessToken,
+      refreshToken: issued.token,
+      accessExpiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+      refreshExpiresAt: issued.expiresAt.toISOString(),
+    },
+    session,
+  };
+}
+
 export const authRouter = router({
+  nonTelegramStatus: publicProcedure.query(() => ({
+    enabled: isNonTelegramLoginAvailable(),
+  })),
+
+  /**
+   * Browser-only login for remote development/staging UI checks.
+   *
+   * This deliberately does NOT create users. The requested Telegram ID
+   * must already exist in auth.users and be explicitly listed in
+   * NON_TELEGRAM_LOGIN_USERS with its own access code.
+   */
+  nonTelegramLogin: publicProcedure
+    .input(NonTelegramLoginInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      enforceRate('nonTelegramLogin', ctx.ip);
+      if (!isNonTelegramLoginAvailable()) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'auth.errors.nonTelegramLoginDisabled',
+        });
+      }
+      if (!isAllowedNonTelegramUser(input.tgUserId, input.accessCode)) {
+        logger.warn(
+          { tgUserId: input.tgUserId, ip: ctx.ip },
+          'auth.nonTelegramLogin rejected',
+        );
+        throw new TRPCError({
+          code: 'UNAUTHORIZED',
+          message: 'auth.errors.invalidNonTelegramLogin',
+        });
+      }
+
+      const user = await ctx.db.query.users.findFirst({
+        where: (u, { eq: eq2 }) => eq2(u.tgUserId, BigInt(input.tgUserId)),
+      });
+      if (!user) {
+        throw new TRPCError({
+          code: 'UNAUTHORIZED',
+          message: 'auth.errors.invalidNonTelegramLogin',
+        });
+      }
+
+      const member = await ctx.db.query.members.findFirst({
+        where: (m, { eq: eq2, and: and2 }) =>
+          and2(eq2(m.userId, user.id), eq2(m.status, 'active')),
+      });
+      if (!member) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'auth.errors.noMembership' });
+      }
+
+      await ctx.db
+        .update(s.users)
+        .set({
+          locale: input.locale ?? user.locale ?? 'en',
+          lastSeenAt: new Date(),
+        })
+        .where(eq(s.users.id, user.id));
+
+      return issueLoginResult(ctx.db, user.id, member.id, member.orgId, ctx.ip, ctx.userAgent);
+    }),
+
   /** Login via Telegram Mini App initData. */
   telegramLogin: publicProcedure
     .input(TelegramLoginInputSchema)
@@ -118,30 +253,16 @@ export const authRouter = router({
       }
       const ensuredMember = member ?? (await ctx.db.query.members.findFirst({ where: (m, { eq: eq2 }) => eq2(m.userId, user!.id) }))!;
 
-      const session = await buildSessionPayload(ctx.db, user.id, ensuredMember.id, ensuredMember.orgId);
-      const accessToken = await signAccess({ sub: user.id, org: session.member.orgId, mid: ensuredMember.id });
-      // M1.9 (2026-05-07): refresh tokens are now tracked in
-      // auth.refresh_tokens with rotation lineage + replay detection.
-      // issueRefresh inserts a row keyed by the JWT's `jti`; the
-      // matching `consumeRefresh` lookup powers signOut + replay defence.
-      const issued = await issueRefresh(ctx.db, {
-        userId: user.id,
-        ip: ctx.ip,
-        userAgent: ctx.userAgent,
-      });
-
-      const accessExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-      const refreshExpiresAt = issued.expiresAt.toISOString();
-
-      return {
-        tokens: {
-          accessToken,
-          refreshToken: issued.token,
-          accessExpiresAt,
-          refreshExpiresAt,
-        },
-        session,
-      };
+      // M1.9 (2026-05-07): refresh tokens are tracked in auth.refresh_tokens
+      // with rotation lineage + replay detection.
+      return issueLoginResult(
+        ctx.db,
+        user.id,
+        ensuredMember.id,
+        ensuredMember.orgId,
+        ctx.ip,
+        ctx.userAgent,
+      );
     }),
 
   /** Get current session — used by AuthGate. */
@@ -402,7 +523,7 @@ export const authRouter = router({
 });
 
 async function buildSessionPayload(
-  db: NonNullable<Parameters<typeof signAccess>[0]> extends never ? never : import('@compass/db').DB,
+  db: DB,
   userId: string,
   memberId: string,
   orgId: string,

@@ -498,7 +498,7 @@ function SectionFrame({
         </header>
       )}
       <div className="px-4 pb-2 pt-3">
-        <h1 className="text-h1 font-semibold leading-[1.15] tracking-tight text-[var(--c-fg)]">
+        <h1 className="text-h1 font-semibold leading-[1.15] text-[var(--c-fg)]">
           {title}
         </h1>
       </div>
@@ -3443,7 +3443,7 @@ function StoresHomeSection({
                   className="press flex w-full items-start justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-2.5 text-left ring-hairline"
                 >
                   <span className="min-w-0">
-                    <span className="block text-h3 font-semibold tracking-tight text-[var(--c-fg)]">
+                    <span className="block text-h3 font-semibold text-[var(--c-fg)]">
                       🌐 Org-level
                     </span>
                     <span className="mt-0.5 block text-label text-[var(--c-fg-muted)]">
@@ -3481,7 +3481,7 @@ function StoresHomeSection({
                     className="press flex w-full items-start justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-2.5 text-left ring-hairline"
                   >
                     <span className="min-w-0">
-                      <span className="block text-h3 font-semibold tracking-tight text-[var(--c-fg)]">
+                      <span className="block text-h3 font-semibold text-[var(--c-fg)]">
                         🏪 {st.name}
                       </span>
                       <span className="mt-0.5 block text-label text-[var(--c-fg-muted)]">

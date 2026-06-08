@@ -43,6 +43,7 @@ interface TelegramWebApp {
   themeParams: Record<string, string>;
   colorScheme: 'light' | 'dark';
   viewportHeight: number;
+  viewportStableHeight?: number;
   isExpanded: boolean;
   expand(): void;
   ready(): void;
@@ -58,6 +59,8 @@ interface TelegramWebApp {
   setBackgroundColor(color: string): void;
   openTelegramLink(url: string): void;
   openLink(url: string, options?: { try_instant_view?: boolean }): void;
+  onEvent?: (name: string, cb: () => void) => void;
+  offEvent?: (name: string, cb: () => void) => void;
 }
 
 /**
@@ -106,13 +109,39 @@ export function haptic(intent: HapticIntent = 'light'): void {
 export function useTelegramInit(): void {
   useEffect(() => {
     const tg = getTg();
-    if (!tg) return;
-    tg.ready();
-    tg.expand();
-    // Safe-area insets are set in tokens.css via CSS env() with sensible
-    // floors. The earlier JS shim that looked at a non-existent
-    // `--telegram-safe-top` always resolved to 0, making iOS Telegram
-    // clip our sticky header. Removed.
+    const applyViewportHeight = () => {
+      const sdkHeight =
+        typeof tg?.viewportStableHeight === 'number' && tg.viewportStableHeight > 0
+          ? tg.viewportStableHeight
+          : typeof tg?.viewportHeight === 'number' && tg.viewportHeight > 0
+            ? tg.viewportHeight
+            : null;
+      const browserHeight =
+        typeof window.visualViewport?.height === 'number'
+          ? window.visualViewport.height
+          : window.innerHeight;
+      const next = Math.max(320, Math.round(sdkHeight ?? browserHeight));
+      document.documentElement.style.setProperty('--app-viewport-h', `${next}px`);
+    };
+
+    tg?.ready();
+    tg?.expand();
+    applyViewportHeight();
+
+    window.addEventListener('resize', applyViewportHeight);
+    window.visualViewport?.addEventListener('resize', applyViewportHeight);
+    if (tg?.onEvent && tg.offEvent) {
+      tg.onEvent('viewportChanged', applyViewportHeight);
+      return () => {
+        window.removeEventListener('resize', applyViewportHeight);
+        window.visualViewport?.removeEventListener('resize', applyViewportHeight);
+        tg.offEvent?.('viewportChanged', applyViewportHeight);
+      };
+    }
+    return () => {
+      window.removeEventListener('resize', applyViewportHeight);
+      window.visualViewport?.removeEventListener('resize', applyViewportHeight);
+    };
   }, []);
 }
 

@@ -30,6 +30,7 @@ import { existsSync, readFileSync } from 'node:fs';
 export const env = createEnv({
   server: {
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    COMPASS_RELEASE_CHANNEL: z.enum(['development', 'staging', 'production']).optional(),
     PORT: z.coerce.number().int().default(3000),
     HOST: z.string().default('0.0.0.0'),
     DATABASE_URL: z.string().url(),
@@ -38,6 +39,8 @@ export const env = createEnv({
     JWT_REFRESH_SECRET: z.string().min(32),
     TELEGRAM_BOT_TOKEN: z.string().optional(),
     TELEGRAM_BOT_USERNAME: z.string().optional(),
+    NON_TELEGRAM_LOGIN_ENABLED: z.enum(['true', 'false']).optional(),
+    NON_TELEGRAM_LOGIN_USERS: z.string().optional(),
     // Cloudflare Worker relay for outbound Bot API calls — used when the
     // host network blocks api.telegram.org. See infra/cloudflare/README.md.
     TG_RELAY_URL: z.string().url().optional(),

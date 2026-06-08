@@ -61,7 +61,7 @@ const TABS: Array<{ key: Tab; permission: string | null; labelKey: string; Icon:
 // crammed under the header.
 function PageLoading() {
   return (
-    <div className="flex h-[80vh] items-center justify-center">
+    <div className="flex min-h-[min(80dvh,calc(var(--app-viewport-h)-var(--app-nav-h)))] items-center justify-center">
       <Spinner size={20} />
     </div>
   );
@@ -293,7 +293,10 @@ function ShellInner() {
   }, []);
 
   return (
-    <div className="flex h-full flex-col bg-[var(--c-bg)]">
+    <div
+      className="flex min-h-0 flex-col bg-[var(--c-bg)]"
+      style={{ height: 'var(--app-viewport-h, 100dvh)' }}
+    >
       <SettingsSheet
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
@@ -332,7 +335,7 @@ function ShellInner() {
             height: 'calc(var(--app-header-h) + var(--app-safe-top))',
           }}
         >
-          <span className="text-h3 font-semibold tracking-tight">Compass</span>
+          <span className="text-h3 font-semibold">Compass</span>
           <span className="text-label text-[var(--c-fg-muted)]">
             {session?.member.orgName}
           </span>
@@ -340,7 +343,7 @@ function ShellInner() {
       )}
 
       <main
-        className="flex-1 overflow-y-auto"
+        className="min-h-0 flex-1 overflow-y-auto"
         // Native iOS momentum scrolling. Without this, scroll inside
         // the WebView feels stuttery and stops abruptly when you lift
         // your finger — Telegram's WebView doesn't enable this by
@@ -402,7 +405,7 @@ function BottomNav({
   const busy = useAppMutating();
   return (
     <nav
-      className="grid border-t border-[var(--c-divider)] bg-[var(--c-surface)]"
+      className="grid shrink-0 border-t border-[var(--c-divider)] bg-[var(--c-surface)]"
       style={{
         gridTemplateColumns: `repeat(${visible.length}, minmax(0, 1fr))`,
         paddingBottom: 'var(--app-safe-bottom)',
@@ -426,16 +429,16 @@ function BottomNav({
             aria-current={active ? 'page' : undefined}
             disabled={busy}
             className={
-              'press flex flex-col items-center justify-center gap-1 ' +
+              'press flex min-w-0 flex-col items-center justify-center gap-1 px-1 ' +
               (active ? 'text-[var(--c-action)]' : 'text-[var(--c-fg-muted)]')
             }
           >
-            <Icon size={22} />
+            <Icon size={visible.length >= 5 ? 21 : 22} />
             <span
               className={
                 active
-                  ? 'text-tiny font-semibold leading-none'
-                  : 'text-tiny leading-none'
+                  ? 'max-w-full truncate text-tiny font-semibold leading-none'
+                  : 'max-w-full truncate text-tiny leading-none'
               }
             >
               {i18n.t(t.labelKey as Parameters<typeof i18n.t>[0])}
@@ -478,7 +481,7 @@ function PageMainButton() {
   const interactable = state.active && !busy;
   return (
     <div
-      className="border-t border-[var(--c-divider)] bg-[var(--c-surface)]"
+      className="shrink-0 border-t border-[var(--c-divider)] bg-[var(--c-surface)]"
       style={{
         // Match the chrome horizontal pad so the button doesn't sit
         // beneath the Telegram overflow icons (it shouldn't on the
@@ -496,15 +499,14 @@ function PageMainButton() {
         onClick={state.onClick}
         aria-busy={busy || undefined}
         className={
-          'flex h-12 w-full items-center justify-center rounded-[var(--r-pill)] text-h3 font-semibold ' +
+          'flex h-12 w-full min-w-0 items-center justify-center rounded-[var(--r-pill)] px-4 text-h3 font-semibold ' +
           (interactable
             ? 'bg-[var(--c-action)] text-[var(--c-action-fg)] active:opacity-80'
             : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
         }
       >
-        {state.text}
+        <span className="min-w-0 truncate">{state.text}</span>
       </button>
     </div>
   );
 }
-

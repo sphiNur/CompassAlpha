@@ -7,7 +7,12 @@
   html,
   body,
   #root {
-    height: 100%;
+    height: var(--app-viewport-h, 100dvh);
+    min-height: var(--app-viewport-h, 100dvh);
+  }
+  html {
+    overflow: hidden;
+    background: var(--c-bg);
   }
   body {
     margin: 0;
@@ -23,6 +28,21 @@
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
     touch-action: manipulation;
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+    overflow: hidden;
+  }
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+  img,
+  svg,
+  video,
+  canvas {
+    max-width: 100%;
   }
   *:focus-visible {
     outline: none;

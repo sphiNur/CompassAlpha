@@ -102,7 +102,7 @@ export function DebugPage() {
   return (
     <div className="flex flex-col gap-3 px-4 py-4 pb-24">
       <header>
-        <h1 className="text-h1 font-semibold leading-[1.15] tracking-tight text-[var(--c-fg)]">
+        <h1 className="text-h1 font-semibold leading-[1.15] text-[var(--c-fg)]">
           Debug console
         </h1>
         <p className="mt-0.5 font-mono text-label text-[var(--c-fg-muted)]">

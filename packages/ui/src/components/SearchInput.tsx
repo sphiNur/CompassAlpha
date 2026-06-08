@@ -32,7 +32,7 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
 ) {
   const hasValue = typeof value === 'string' && value.length > 0;
   return (
-    <div role="search" className={cn('relative', className)}>
+    <div role="search" className={cn('relative min-w-0', className)}>
       {/* Leading magnifier — pure decoration, no interaction. */}
       <span
         aria-hidden
@@ -60,7 +60,7 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
         // first row appeared. The 4 px lift gets one extra row on
         // screen and matches the bottom-nav rhythm the user wants.
         className={cn(
-          'h-9 w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] pl-9 pr-9 text-body-sm',
+          'h-9 w-full min-w-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] pl-9 pr-10 text-body-sm',
           'text-[var(--c-fg)] placeholder:text-[var(--c-fg-subtle)]',
           'outline-none ring-hairline',
           'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',
@@ -99,7 +99,7 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
             }
           }}
           className={cn(
-            'absolute inset-y-0 right-2 flex items-center justify-center w-6',
+            'absolute inset-y-0 right-1 flex w-8 items-center justify-center',
             'text-[var(--c-fg-muted)] hover:text-[var(--c-fg)]',
             'focus-visible:outline-none focus-visible:rounded-full',
             'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)]',

@@ -42,7 +42,7 @@ export function SectionRow({
       >
         <span className={cn('shrink-0', iconColor)}>{icon}</span>
         <span className="min-w-0 flex-1">
-          <span className="block text-h3 font-semibold text-[var(--c-fg)]">{label}</span>
+          <span className="block truncate text-h3 font-semibold text-[var(--c-fg)]">{label}</span>
           {hint ? (
             <span className="mt-0.5 block text-label text-[var(--c-fg-muted)]">{hint}</span>
           ) : null}
@@ -84,7 +84,7 @@ export function ListRow({
     <>
       {icon ? <span className="shrink-0 text-[var(--c-action)]">{icon}</span> : null}
       <span className="min-w-0 flex-1">
-        <span className="block text-h3 font-semibold text-[var(--c-fg)]">{label}</span>
+        <span className="block truncate text-h3 font-semibold text-[var(--c-fg)]">{label}</span>
         {hint ? (
           <span className="mt-0.5 block truncate text-label text-[var(--c-fg-muted)]">{hint}</span>
         ) : null}
@@ -137,8 +137,8 @@ export interface DetailRowProps {
 
 export function DetailRow({ label, value, mono, className }: DetailRowProps) {
   return (
-    <div className={cn('flex items-baseline justify-between gap-3', className)}>
-      <span className="text-body-sm text-[var(--c-fg-muted)]">{label}</span>
+    <div className={cn('flex min-w-0 items-baseline justify-between gap-3', className)}>
+      <span className="min-w-0 text-body-sm text-[var(--c-fg-muted)]">{label}</span>
       <span
         className={cn(
           'min-w-0 truncate text-right text-body text-[var(--c-fg)]',

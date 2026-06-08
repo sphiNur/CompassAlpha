@@ -40,7 +40,7 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(
         className={cn(
           hSize,
           w,
-          'rounded-[var(--r-pill)] border border-[var(--c-divider)]',
+          'min-w-0 rounded-[var(--r-pill)] border border-[var(--c-divider)]',
           'bg-[var(--c-surface-2)] px-3 text-h3 tabular-nums outline-none',
           'focus:border-[var(--c-action)]',
           rest.disabled ? 'opacity-50' : '',

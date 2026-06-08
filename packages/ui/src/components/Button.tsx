@@ -1,4 +1,4 @@
-import { forwardRef } from 'react';
+import { forwardRef, isValidElement } from 'react';
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '../cn';
@@ -6,7 +6,7 @@ import { Spinner } from './Spinner';
 
 const button = cva(
   [
-    'press inline-flex items-center justify-center gap-2 font-medium select-none',
+    'press inline-flex min-w-0 max-w-full items-center justify-center gap-2 overflow-hidden font-medium select-none',
     'whitespace-nowrap outline-none transition-[background,color,box-shadow]',
     'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',
     'focus-visible:ring-offset-[var(--c-ring-offset)]',
@@ -74,6 +74,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   { className, variant, size, block, loading, leadingIcon, trailingIcon, children, disabled, ...rest },
   ref,
 ) {
+  const childIsPlain = typeof children === 'string' || typeof children === 'number';
   return (
     <button
       ref={ref}
@@ -84,7 +85,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       {...rest}
     >
       {loading ? <Spinner size={16} /> : leadingIcon}
-      <span>{children}</span>
+      <span className={childIsPlain || !isValidElement(children) ? 'min-w-0 truncate' : 'min-w-0'}>
+        {children}
+      </span>
       {trailingIcon}
     </button>
   );

@@ -32,6 +32,8 @@ export function AuthGate({ children }: AuthGateProps) {
   const clear = useAuthStore((s) => s.clear);
   const i18n = useI18n();
   const [error, setError] = useState<string | null>(null);
+  const [browserTgUserId, setBrowserTgUserId] = useState('');
+  const [browserAccessCode, setBrowserAccessCode] = useState('');
   /** True once we've issued a telegramLogin call this mount cycle. */
   const loginAttempted = useRef(false);
   /** True once `auth.me` failed with UNAUTHORIZED — don't auto-login again. */
@@ -40,6 +42,11 @@ export function AuthGate({ children }: AuthGateProps) {
   const me = trpc.auth.me.useQuery(undefined, {
     enabled: !!accessToken,
     retry: false,
+  });
+  const nonTelegramStatus = trpc.auth.nonTelegramStatus.useQuery(undefined, {
+    enabled: !session,
+    retry: false,
+    staleTime: 60_000,
   });
 
   // If existing token is bad: drop it, but DON'T auto-relogin (user must click).
@@ -75,6 +82,20 @@ export function AuthGate({ children }: AuthGateProps) {
       setError(err.message);
     },
   });
+  const nonTelegramLogin = trpc.auth.nonTelegramLogin.useMutation({
+    onSuccess(data) {
+      setSession({
+        accessToken: data.tokens.accessToken,
+        refreshToken: data.tokens.refreshToken,
+        session: data.session,
+      });
+      meUnauthorized.current = false;
+      setError(null);
+    },
+    onError(err) {
+      setError(nonTelegramErrorMessage(err.message));
+    },
+  });
 
   // Auto-login exactly once per mount, gated by ref so UNAUTHORIZED on me
   // can't restart the cycle.
@@ -106,9 +127,11 @@ export function AuthGate({ children }: AuthGateProps) {
   }
 
   if (!session) {
+    const hasTelegramInitData = Boolean(getTg()?.initData);
+    const showBrowserLogin = Boolean(nonTelegramStatus.data?.enabled && !hasTelegramInitData);
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
-        <h1 className="text-display font-semibold tracking-tight">Compass</h1>
+        <h1 className="text-display font-semibold">Compass</h1>
         <p className="text-body text-[var(--c-fg-muted)]">{i18n.t('auth.shareThisId')}</p>
         {error ? (
           <Banner tone="danger" title={i18n.t('auth.errors.signInFailed')}>
@@ -132,6 +155,61 @@ export function AuthGate({ children }: AuthGateProps) {
         >
           {i18n.t('auth.signIn')}
         </Button>
+        {showBrowserLogin ? (
+          <form
+            className="mt-2 flex w-full max-w-sm flex-col gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] p-4 text-left ring-hairline"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setError(null);
+              nonTelegramLogin.mutate({
+                tgUserId: browserTgUserId.trim(),
+                accessCode: browserAccessCode,
+                locale: i18n.locale,
+              });
+            }}
+          >
+            <div className="text-center">
+              <div className="text-h3 font-semibold text-[var(--c-fg)]">
+                开发/测试浏览器登录
+              </div>
+              <p className="mt-1 text-body-sm text-[var(--c-fg-muted)]">
+                仅限服务端白名单人员，正式发布环境不可用。
+              </p>
+            </div>
+            <label className="block">
+              <span className="mb-1 block text-label font-semibold text-[var(--c-fg-muted)]">
+                Telegram ID
+              </span>
+              <Input
+                inputMode="numeric"
+                autoComplete="username"
+                value={browserTgUserId}
+                onChange={(e) => setBrowserTgUserId(e.target.value)}
+                placeholder="例如 6402913074"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-label font-semibold text-[var(--c-fg-muted)]">
+                访问码
+              </span>
+              <Input
+                type="password"
+                autoComplete="current-password"
+                value={browserAccessCode}
+                onChange={(e) => setBrowserAccessCode(e.target.value)}
+                placeholder="由管理员提供"
+              />
+            </label>
+            <Button
+              block
+              type="submit"
+              loading={nonTelegramLogin.isPending}
+              disabled={!browserTgUserId.trim() || !browserAccessCode}
+            >
+              进入测试环境
+            </Button>
+          </form>
+        ) : null}
       </div>
     );
   }
@@ -156,6 +234,19 @@ export function AuthGate({ children }: AuthGateProps) {
     return <NoAccessScreen />;
   }
   return <>{children}</>;
+}
+
+function nonTelegramErrorMessage(message: string): string {
+  switch (message) {
+    case 'auth.errors.nonTelegramLoginDisabled':
+      return '非 Telegram 测试登录未开启。';
+    case 'auth.errors.invalidNonTelegramLogin':
+      return 'Telegram ID 或访问码无效，或该用户不在允许名单中。';
+    case 'auth.errors.noMembership':
+      return '该用户没有可用的组织成员身份。';
+    default:
+      return message;
+  }
 }
 
 /**
@@ -191,7 +282,7 @@ function OnboardingScreen() {
   return (
     <div className="flex h-full flex-col px-6 pt-12 pb-8">
       <div className="flex-1 flex flex-col justify-center gap-4">
-        <h1 className="text-h1 font-semibold leading-tight tracking-tight text-[var(--c-fg)]">
+        <h1 className="text-h1 font-semibold leading-tight text-[var(--c-fg)]">
           {i18n.t('auth.onboarding.title')}
         </h1>
         <p className="text-body leading-relaxed text-[var(--c-fg-muted)]">
@@ -248,7 +339,7 @@ function NoAccessScreen() {
   const tgUserId = tg?.initDataUnsafe?.user?.id;
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
-      <h1 className="text-h1 font-semibold tracking-tight">{i18n.t('auth.noAccess.title')}</h1>
+      <h1 className="text-h1 font-semibold">{i18n.t('auth.noAccess.title')}</h1>
       <p className="text-body text-[var(--c-fg-muted)]">{i18n.t('auth.noAccess.body')}</p>
       <p className="text-body-sm text-[var(--c-fg-muted)]">{i18n.t('auth.shareThisId')}</p>
       {tgUserId ? (

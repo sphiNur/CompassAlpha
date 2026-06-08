@@ -10,7 +10,7 @@ export function Card({ className, interactive, as: As = 'div', ...rest }: CardPr
   return (
     <As
       className={cn(
-        'rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline',
+        'min-w-0 rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline',
         interactive && 'press cursor-pointer',
         className,
       )}
@@ -34,7 +34,7 @@ export function CardHeader({ className, children }: { className?: string; childr
 
 export function CardTitle({ className, children }: { className?: string; children: ReactNode }) {
   return (
-    <h3 className={cn('text-h2 font-semibold tracking-tight text-[var(--c-fg)]', className)}>
+    <h3 className={cn('text-h2 font-semibold text-[var(--c-fg)]', className)}>
       {children}
     </h3>
   );

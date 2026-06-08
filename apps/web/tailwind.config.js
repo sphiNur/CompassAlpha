@@ -30,8 +30,8 @@
  */
 const fontSizeScale = {
   // Headings — bake weight + tracking (the whole semantic).
-  display: ['24px', { lineHeight: '1.15', letterSpacing: '-0.01em', fontWeight: '600' }],
-  h1: ['19px', { lineHeight: '1.2', letterSpacing: '-0.01em', fontWeight: '600' }],
+  display: ['24px', { lineHeight: '1.15', letterSpacing: '0', fontWeight: '600' }],
+  h1: ['19px', { lineHeight: '1.2', letterSpacing: '0', fontWeight: '600' }],
   h2: ['15px', { lineHeight: '1.25', fontWeight: '600' }],
   // Body and below — size + line-height only. Caller decides weight.
   h3: ['14px', { lineHeight: '1.3' }],

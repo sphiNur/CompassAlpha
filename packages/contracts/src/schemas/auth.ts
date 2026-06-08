@@ -7,6 +7,12 @@ export const TelegramLoginInputSchema = z.object({
   locale: LocaleSchema.optional(),
 });
 
+export const NonTelegramLoginInputSchema = z.object({
+  tgUserId: z.string().regex(/^\d{4,20}$/),
+  accessCode: z.string().min(1).max(256),
+  locale: LocaleSchema.optional(),
+});
+
 export const RefreshInputSchema = z.object({
   refreshToken: z.string().min(20).max(200),
 });

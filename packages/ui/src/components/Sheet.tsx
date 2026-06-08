@@ -179,13 +179,16 @@ export function Sheet({
         <Dialog.Content
           ref={contentRef}
           className={cn(
-            'fixed inset-x-0 bottom-0 z-50 flex flex-col',
+            'fixed inset-x-0 bottom-0 z-50 mx-auto flex w-full max-w-[var(--app-sheet-max-w)] flex-col',
             'rounded-t-[24px] bg-[var(--c-surface)] text-[var(--c-fg)]',
             'data-[state=open]:animate-[slideUp_var(--t-base)_var(--easing)]',
             'data-[state=closed]:animate-[slideDown_var(--t-quick)_var(--easing)]',
-            'max-h-[calc(90dvh-var(--app-safe-top))]',
-            'pb-[var(--app-safe-bottom)] outline-none',
+            'pb-[var(--app-safe-bottom)] outline-none shadow-[var(--shadow-product)] ring-hairline',
           )}
+          style={{
+            maxHeight:
+              'min(calc(90dvh - var(--app-safe-top)), calc(var(--app-viewport-h) - var(--app-safe-top) - 8px))',
+          }}
           aria-describedby={description ? 'sheet-desc' : undefined}
           onOpenAutoFocus={
             disableAutoFocus || deferAutoFocusMs
@@ -223,12 +226,18 @@ export function Sheet({
 }
 
 export function SheetHeader({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn('px-4 pt-3 pb-2', className)}>{children}</div>;
+  return <div className={cn('px-[var(--app-inline-x)] pt-3 pb-2', className)}>{children}</div>;
 }
 
 export function SheetBody({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={cn('flex-1 overflow-y-auto px-4 pb-4', className)} data-scroll-locked>
+    <div
+      className={cn(
+        'min-h-0 flex-1 overflow-y-auto overscroll-contain px-[var(--app-inline-x)] pb-4',
+        className,
+      )}
+      data-scroll-locked
+    >
       {children}
     </div>
   );
@@ -242,6 +251,7 @@ export function SheetFooter({ children, className }: { children: ReactNode; clas
         // CTA inside now reads as a peer of the bottom nav rather than
         // a separate "primary CTA bar" with its own breathing room.
         'sticky bottom-0 mt-auto bg-[var(--c-surface)] px-4 pb-3 pt-2',
+        'px-[var(--app-inline-x)]',
         'border-t border-[var(--c-divider)]',
         className,
       )}
