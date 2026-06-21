@@ -4,6 +4,13 @@ import { systemClock } from '../shared/clock';
 import type { RunEvent } from './events';
 import type { RunState } from './state';
 
+type StoreSplitCommand = {
+  storeId: string;
+  qty: string;
+  unitPrice?: string;
+  paymentMethod?: 'cash' | 'transfer';
+};
+
 export type RunCommand =
   | {
       type: 'PlanRun';
@@ -22,7 +29,7 @@ export type RunCommand =
       unitPrice: string;
       actualQty: string;
       receiptPhotoUrl: string | null;
-      storeSplits: Array<{ storeId: string; qty: string }>;
+      storeSplits: StoreSplitCommand[];
       /**
        * M1.14: 'cash' | 'transfer'. Required by the FE form (defaults
        * to cash) so audit always knows which money path each item took.
@@ -53,7 +60,7 @@ export type RunCommand =
       unitPrice: string;
       actualQty: string;
       receiptPhotoUrl: string | null;
-      storeSplits: Array<{ storeId: string; qty: string }>;
+      storeSplits: StoreSplitCommand[];
       reason: string;
       /** M1.14: revising can also flip payment method (e.g. operator
        *  realised they actually wired the supplier instead of paying
@@ -90,7 +97,7 @@ export type RunCommand =
       unitPrice: string;
       actualQty: string;
       receiptPhotoUrl: string | null;
-      storeSplits: Array<{ storeId: string; qty: string }>;
+      storeSplits: StoreSplitCommand[];
       paymentMethod: 'cash' | 'transfer';
       reason: string;
       actor: ActorCtx;
@@ -222,6 +229,7 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
       if (Math.abs(splitSum - actual) > TOLERANCE) {
         throw validation('run.errors.splitSumMismatch', { actual, splitSum });
       }
+      assertSplitOverrides(command.storeSplits);
       const events: RunEvent[] = [];
       if (state.status === 'planned') {
         events.push({ ...baseFor(events.length + 1), type: 'PurchaseStarted', payload: {} });
@@ -285,6 +293,7 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
       if (Math.abs(splitSum - actual) > TOLERANCE) {
         throw validation('run.errors.splitSumMismatch', { actual, splitSum });
       }
+      assertSplitOverrides(command.storeSplits);
 
       // Store-scope guard: every split's storeId must already be part
       // of THIS run's demand. Stretching the run to a brand-new store
@@ -574,18 +583,28 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
           if (split.storeId === command.storeId) expected.add(item.skuId);
         }
       }
+      const events: RunEvent[] = [];
       for (const skuId of expected) {
         if (!store.itemConfirms.has(skuId)) {
-          throw preconditionFailed('run.errors.itemConfirmMissing', { skuId });
+          events.push({
+            ...baseFor(events.length + 1),
+            type: 'StoreItemConfirmed',
+            payload: {
+              storeId: command.storeId,
+              skuId,
+              status: 'ok',
+              note: null,
+              photoUrl: null,
+            },
+          });
         }
       }
-      return [
-        {
-          ...baseFor(1),
-          type: 'StoreConfirmed',
-          payload: { storeId: command.storeId, confirmedByUserId: command.actor.userId },
-        },
-      ];
+      events.push({
+        ...baseFor(events.length + 1),
+        type: 'StoreConfirmed',
+        payload: { storeId: command.storeId, confirmedByUserId: command.actor.userId },
+      });
+      return events;
     }
 
     case 'FinishRun': {
@@ -617,10 +636,25 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
       let totalTransfer = 0;
       for (const item of state.items.values()) {
         if (item.status !== 'purchased' || !item.unitPrice || !item.purchasedQty) continue;
-        const lineTotal = Number(item.unitPrice) * Number(item.purchasedQty);
-        total += lineTotal;
-        if (item.paymentMethod === 'transfer') totalTransfer += lineTotal;
-        else totalCash += lineTotal;
+        const hasSplitOverrides = item.storeSplits.some(
+          (split) => split.unitPrice !== undefined || split.paymentMethod !== undefined,
+        );
+        if (hasSplitOverrides) {
+          for (const split of item.storeSplits) {
+            const lineTotal = Number(split.unitPrice ?? item.unitPrice) * Number(split.qty);
+            total += lineTotal;
+            if ((split.paymentMethod ?? item.paymentMethod) === 'transfer') {
+              totalTransfer += lineTotal;
+            } else {
+              totalCash += lineTotal;
+            }
+          }
+        } else {
+          const lineTotal = Number(item.unitPrice) * Number(item.purchasedQty);
+          total += lineTotal;
+          if (item.paymentMethod === 'transfer') totalTransfer += lineTotal;
+          else totalCash += lineTotal;
+        }
       }
       return [
         {
@@ -695,6 +729,7 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
       if (Math.abs(splitSum - actual) > TOLERANCE) {
         throw validation('run.errors.splitSumMismatch', { actual, splitSum });
       }
+      assertSplitOverrides(command.storeSplits);
       const reason = command.reason.trim();
       if (!reason) throw validation('run.errors.reviseReasonRequired');
       if (reason.length > 500) throw validation('run.errors.noteTooLong');
@@ -969,6 +1004,15 @@ function assertClaimOwnership(state: RunState, actor: ActorCtx): void {
     throw conflict('run.errors.claimedByOther', {
       claimedBy: state.claimedByMemberId,
     });
+  }
+}
+
+function assertSplitOverrides(splits: StoreSplitCommand[]): void {
+  for (const split of splits) {
+    if (split.unitPrice !== undefined) {
+      const price = num(split.unitPrice, 'run.errors.invalidQty');
+      if (price <= 0) throw validation('run.errors.qtyMustBePositive');
+    }
   }
 }
 

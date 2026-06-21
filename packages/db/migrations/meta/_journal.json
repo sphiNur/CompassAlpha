@@ -232,6 +232,13 @@
       "when": 1779840000000,
       "tag": "0032_expense_templates",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1779926400000,
+      "tag": "0033_run_store_split_price_payment",
+      "breakpoints": true
     }
   ]
 }

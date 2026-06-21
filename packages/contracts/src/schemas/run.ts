@@ -14,11 +14,27 @@ export const RunStatusSchema = z.enum([
   'cancelled',
 ]);
 
+/**
+ * M1.14 (2026-05-08): payment method per recorded purchase. Same run
+ * can mix cash and transfer items — the FinishRun event aggregates per-
+ * method totals on the read model so accounting can reconcile petty
+ * cash vs. bank statements separately.
+ */
+export const PaymentMethodSchema = z.enum(['cash', 'transfer']);
+export type PaymentMethod = z.infer<typeof PaymentMethodSchema>;
+
 export const StoreSplitSchema = z.object({
   storeId: UuidSchema,
   // Per-store qty must be > 0 — a 0-qty split is meaningless and causes
   // sum-mismatch downstream. Domain enforces too (defense-in-depth).
   qty: PositiveDecimalStringSchema,
+  /**
+   * Optional per-store override for cases where the same SKU is bought
+   * for different stores at different prices or payment paths. When
+   * omitted, the item-level unitPrice/paymentMethod is used.
+   */
+  unitPrice: PositiveDecimalStringSchema.optional(),
+  paymentMethod: PaymentMethodSchema.optional(),
 });
 
 export const RunCreateInputSchema = z.object({
@@ -51,15 +67,6 @@ export const RunAttachSessionsInputSchema = z.object({
   runId: UuidSchema,
   sessionIds: z.array(UuidSchema).min(1),
 });
-
-/**
- * M1.14 (2026-05-08): payment method per recorded purchase. Same run
- * can mix cash and transfer items — the FinishRun event aggregates per-
- * method totals on the read model so accounting can reconcile petty
- * cash vs. bank statements separately.
- */
-export const PaymentMethodSchema = z.enum(['cash', 'transfer']);
-export type PaymentMethod = z.infer<typeof PaymentMethodSchema>;
 
 export const PurchaseItemInputSchema = z.object({
   runId: UuidSchema,

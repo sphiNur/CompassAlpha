@@ -118,7 +118,7 @@ export const orderRouter = router({
       // exists; if the user has already submitted everything for
       // today, returns null and the FE shows an empty-state with a
       // "start a new batch" affordance.
-      const session = await tx.query.orderSessionsV.findFirst({
+      let session = await tx.query.orderSessionsV.findFirst({
         where: (sess, { eq: eq2, and: and2 }) =>
           and2(
             eq2(sess.orgId, ctx.session!.orgId),
@@ -128,6 +128,20 @@ export const orderRouter = router({
             eq2(sess.status, 'draft'),
           ),
       });
+      if (!session) {
+        session = await tx.query.orderSessionsV.findFirst({
+          where: (sess, { eq: eq2, and: and2, isNull, inArray: inArray2 }) =>
+            and2(
+              eq2(sess.orgId, ctx.session!.orgId),
+              eq2(sess.storeId, input.storeId),
+              eq2(sess.orderDate, date),
+              eq2(sess.initiatedByMemberId, ctx.session!.memberId),
+              inArray2(sess.status, ['submitted', 'approved', 'in_run']),
+              isNull(sess.claimedByMemberId),
+            ),
+          orderBy: (sess, { desc: desc2 }) => desc2(sess.submittedAt),
+        });
+      }
       if (!session) return null;
       const items = await tx.query.orderItemsV.findMany({
         where: (it, { eq: eq2 }) => eq2(it.sessionId, session.id),

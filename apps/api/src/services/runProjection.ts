@@ -72,22 +72,20 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
               skuId: e.payload.skuId,
               storeId: split.storeId,
               qty: split.qty,
+              unitPrice: split.unitPrice ?? null,
+              paymentMethod: split.paymentMethod ?? null,
             })
             .onConflictDoUpdate({
               target: [s.runItemStoresV.runId, s.runItemStoresV.skuId, s.runItemStoresV.storeId],
-              set: { qty: split.qty },
+              set: {
+                qty: split.qty,
+                unitPrice: split.unitPrice ?? null,
+                paymentMethod: split.paymentMethod ?? null,
+              },
             });
         }
         // Append a price_history row for analytics — runs in same tx so RLS context applies.
-        await db.insert(s.priceHistory).values({
-          orgId,
-          skuId: e.payload.skuId,
-          supplierId: e.payload.supplierId,
-          runId: e.streamId,
-          unitPrice: e.payload.unitPrice,
-          qty: e.payload.actualQty,
-          observedAt: e.occurredAt,
-        });
+        await insertPriceObservations(db, orgId, e);
         // Suppress unused-var warning if sql tag isn't used elsewhere in this file.
         void sql;
         await bumpSeq(db, e.streamId, e.seq);
@@ -125,21 +123,19 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
               skuId: e.payload.skuId,
               storeId: split.storeId,
               qty: split.qty,
+              unitPrice: split.unitPrice ?? null,
+              paymentMethod: split.paymentMethod ?? null,
             })
             .onConflictDoUpdate({
               target: [s.runItemStoresV.runId, s.runItemStoresV.skuId, s.runItemStoresV.storeId],
-              set: { qty: split.qty },
+              set: {
+                qty: split.qty,
+                unitPrice: split.unitPrice ?? null,
+                paymentMethod: split.paymentMethod ?? null,
+              },
             });
         }
-        await db.insert(s.priceHistory).values({
-          orgId,
-          skuId: e.payload.skuId,
-          supplierId: e.payload.supplierId,
-          runId: e.streamId,
-          unitPrice: e.payload.unitPrice,
-          qty: e.payload.actualQty,
-          observedAt: e.occurredAt,
-        });
+        await insertPriceObservations(db, orgId, e);
         await bumpSeq(db, e.streamId, e.seq);
         break;
       }
@@ -423,10 +419,16 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
               skuId: e.payload.skuId,
               storeId: split.storeId,
               qty: split.qty,
+              unitPrice: split.unitPrice ?? null,
+              paymentMethod: split.paymentMethod ?? null,
             })
             .onConflictDoUpdate({
               target: [s.runItemStoresV.runId, s.runItemStoresV.skuId, s.runItemStoresV.storeId],
-              set: { qty: split.qty },
+              set: {
+                qty: split.qty,
+                unitPrice: split.unitPrice ?? null,
+                paymentMethod: split.paymentMethod ?? null,
+              },
             });
         }
         // New price_history row — analytics treats each observation as a
@@ -434,15 +436,7 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
         // "what was first recorded" audit; the new row is the latest
         // truth. (Per-row reason isn't stored on price_history; it's in
         // the event log as PurchaseRevised.payload.reason.)
-        await db.insert(s.priceHistory).values({
-          orgId,
-          skuId: e.payload.skuId,
-          supplierId: e.payload.supplierId,
-          runId: e.streamId,
-          unitPrice: e.payload.unitPrice,
-          qty: e.payload.actualQty,
-          observedAt: e.occurredAt,
-        });
+        await insertPriceObservations(db, orgId, e);
         await bumpSeq(db, e.streamId, e.seq);
         break;
       }
@@ -585,4 +579,38 @@ async function bumpSeq(db: DB, streamId: string, seq: number): Promise<void> {
     .update(s.marketRunsV)
     .set({ lastSeq: seq, updatedAt: new Date() })
     .where(eq(s.marketRunsV.id, streamId));
+}
+
+async function insertPriceObservations(
+  db: DB,
+  orgId: string,
+  e: Extract<RunEvent, { type: 'ItemPurchased' | 'PurchaserItemAdded' | 'PurchaseRevised' }>,
+): Promise<void> {
+  const hasSplitOverrides = e.payload.storeSplits.some(
+    (split) => split.unitPrice !== undefined || split.paymentMethod !== undefined,
+  );
+  if (!hasSplitOverrides) {
+    await db.insert(s.priceHistory).values({
+      orgId,
+      skuId: e.payload.skuId,
+      supplierId: e.payload.supplierId,
+      runId: e.streamId,
+      unitPrice: e.payload.unitPrice,
+      qty: e.payload.actualQty,
+      observedAt: e.occurredAt,
+    });
+    return;
+  }
+  await db.insert(s.priceHistory).values(
+    e.payload.storeSplits.map((split) => ({
+      orgId,
+      skuId: e.payload.skuId,
+      supplierId: e.payload.supplierId,
+      storeId: split.storeId,
+      runId: e.streamId,
+      unitPrice: split.unitPrice ?? e.payload.unitPrice,
+      qty: split.qty,
+      observedAt: e.occurredAt,
+    })),
+  );
 }

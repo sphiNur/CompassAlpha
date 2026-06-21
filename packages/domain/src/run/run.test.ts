@@ -18,7 +18,16 @@ const confirmer = (): ActorCtx => ({
   permissions: new Set(['delivery.confirm']),
 });
 
-function planAndPurchase(opts?: { plannedQty?: string; purchasedQty?: string; storeSplits?: Array<{ storeId: string; qty: string }> }) {
+function planAndPurchase(opts?: {
+  plannedQty?: string;
+  purchasedQty?: string;
+  storeSplits?: Array<{
+    storeId: string;
+    qty: string;
+    unitPrice?: string;
+    paymentMethod?: 'cash' | 'transfer';
+  }>;
+}) {
   const plannedQty = opts?.plannedQty ?? '4';
   const purchasedQty = opts?.purchasedQty ?? '4';
   const splits = opts?.storeSplits ?? [{ storeId: 'A', qty: purchasedQty }];
@@ -872,6 +881,21 @@ describe('run.reversals', () => {
     expect(dup).toEqual([]);
   });
 
+  test('ConfirmStore defaults missing item confirms to ok', () => {
+    let s = planAndPurchase();
+    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
+    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
+      applyRun,
+      s,
+    );
+    const evs = decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock);
+    expect(evs.map((e) => e.type)).toEqual(['StoreItemConfirmed', 'StoreConfirmed']);
+    const confirm = evs[0]!;
+    expect(confirm.type).toBe('StoreItemConfirmed');
+    if (confirm.type !== 'StoreItemConfirmed') throw new Error('unreachable');
+    expect(confirm.payload.status).toBe('ok');
+  });
+
   test('UndoPurchase reverts a purchased item back to pending', () => {
     let s = planAndPurchase();
     expect(s.items.get('sku-1')!.status).toBe('purchased');
@@ -1096,6 +1120,41 @@ describe('run.paymentMethod', () => {
     expect(ev.payload.totalActual).toBe('103000.00');
     expect(ev.payload.totalCash).toBe('3000.00');
     expect(ev.payload.totalTransfer).toBe('100000.00');
+  });
+
+  test('FinishRun aggregates per-store price and payment overrides', () => {
+    let s = planAndPurchase({
+      plannedQty: '3',
+      purchasedQty: '3',
+      storeSplits: [
+        { storeId: 'A', qty: '1', unitPrice: '1000', paymentMethod: 'cash' },
+        { storeId: 'B', qty: '2', unitPrice: '1200', paymentMethod: 'transfer' },
+      ],
+    });
+    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
+    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
+      applyRun,
+      s,
+    );
+    s = decideRun(s, { type: 'DeliverToStore', storeId: 'B', actor: purchaser() }, clock).reduce(
+      applyRun,
+      s,
+    );
+    s = decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock).reduce(
+      applyRun,
+      s,
+    );
+    s = decideRun(s, { type: 'ConfirmStore', storeId: 'B', actor: confirmer() }, clock).reduce(
+      applyRun,
+      s,
+    );
+    const finishEvs = decideRun(s, { type: 'FinishRun', actor: purchaser() }, clock);
+    const ev = finishEvs[0]!;
+    expect(ev.type).toBe('RunFinished');
+    if (ev.type !== 'RunFinished') throw new Error('unreachable');
+    expect(ev.payload.totalActual).toBe('3400.00');
+    expect(ev.payload.totalCash).toBe('1000.00');
+    expect(ev.payload.totalTransfer).toBe('2400.00');
   });
 
   test('legacy ItemPurchased event without paymentMethod applies as cash', () => {

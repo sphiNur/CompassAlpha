@@ -1,4 +1,4 @@
-import type { RunEvent } from './events';
+import type { RunEvent, StoreSplitPayload } from './events';
 
 export type RunStatus = 'absent' | 'planned' | 'purchasing' | 'delivering' | 'finished' | 'cancelled';
 
@@ -22,7 +22,7 @@ export interface RunItemState {
   status: 'pending' | 'purchased' | 'unavailable';
   unavailableNote: string | null;
   receiptPhotoUrl: string | null;
-  storeSplits: Array<{ storeId: string; qty: string }>;
+  storeSplits: StoreSplitPayload[];
   /** M1.14: payment method recorded at purchase. Null while the item
    *  is still pending or unavailable. Defaults to `cash` when applying
    *  pre-M1.14 events that didn't carry the field. */

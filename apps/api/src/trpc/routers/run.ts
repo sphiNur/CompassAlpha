@@ -203,7 +203,16 @@ export const runRouter = router({
               name: string;
               contactPhone: string | null;
               contactTg: string | null;
+              defaultPrice: string | null;
+              lastSeenPrice: string | null;
+              estimatedUnitPrice: string | null;
             } | null>,
+            perStoreBudgets: [] as Array<{
+              storeId: string;
+              storeName: string;
+              estimatedTotal: string;
+              unknownPriceCount: number;
+            }>,
             sessionNotesByStore: {} as Record<string, string>,
             total: 0,
           };
@@ -280,6 +289,9 @@ export const runRouter = router({
           name: string;
           contactPhone: string | null;
           contactTg: string | null;
+          defaultPrice: string | null;
+          lastSeenPrice: string | null;
+          estimatedUnitPrice: string | null;
         } | null> = {};
         if (skuIds.length > 0) {
           // Drizzle ORM doesn't have a clean `distinctOn` builder; use
@@ -305,10 +317,14 @@ export const runRouter = router({
             name: string;
             contact_phone: string | null;
             contact_tg: string | null;
+            default_price: string | null;
+            last_seen_price: string | null;
           }>(sql`
             SELECT DISTINCT ON (sl.sku_id)
               sl.sku_id, sl.supplier_id,
-              sup.name, sup.contact_phone, sup.contact_tg
+              sup.name, sup.contact_phone, sup.contact_tg,
+              sl.default_price::text AS default_price,
+              sl.last_seen_price::text AS last_seen_price
             FROM inventory.sku_supplier_links sl
             INNER JOIN inventory.suppliers sup ON sup.id = sl.supplier_id
             WHERE sl.sku_id IN ${skuIds}
@@ -329,6 +345,9 @@ export const runRouter = router({
               name: r.name,
               contactPhone: r.contact_phone,
               contactTg: r.contact_tg,
+              defaultPrice: r.default_price,
+              lastSeenPrice: r.last_seen_price,
+              estimatedUnitPrice: r.default_price ?? r.last_seen_price,
             };
           }
           // SKUs with no link → null entry, so the FE can still show a
@@ -395,6 +414,25 @@ export const runRouter = router({
           sessionExtrasByStore[sid] = arr;
         }
 
+        const perStoreBudgets = involvedStoreIds.map((storeId) => {
+          let estimatedTotal = 0;
+          let unknownPriceCount = 0;
+          for (const [skuId, qty] of perStoreSkuQty.get(storeId)?.entries() ?? []) {
+            const estimatedUnitPrice = supplierBySku[skuId]?.estimatedUnitPrice ?? null;
+            if (!estimatedUnitPrice) {
+              unknownPriceCount += 1;
+              continue;
+            }
+            estimatedTotal += Number(qty) * Number(estimatedUnitPrice);
+          }
+          return {
+            storeId,
+            storeName: storeNameById.get(storeId) ?? '—',
+            estimatedTotal: estimatedTotal.toFixed(2),
+            unknownPriceCount,
+          };
+        });
+
         return {
           date,
           sessions: sessions.map((s) => ({
@@ -411,6 +449,7 @@ export const runRouter = router({
           })),
           perStoreDemand,
           supplierBySku,
+          perStoreBudgets,
           /** Per-store concatenated session notes (M1.8, legacy). Empty
            *  record when no notes anywhere. */
           sessionNotesByStore,
@@ -935,8 +974,10 @@ export const runRouter = router({
           storeId: s.runItemStoresV.storeId,
           skuId: s.runItemStoresV.skuId,
           qty: s.runItemStoresV.qty,
-          unitPrice: s.runItemsV.unitPrice,
-          paymentMethod: s.runItemsV.paymentMethod,
+          itemUnitPrice: s.runItemsV.unitPrice,
+          itemPaymentMethod: s.runItemsV.paymentMethod,
+          splitUnitPrice: s.runItemStoresV.unitPrice,
+          splitPaymentMethod: s.runItemStoresV.paymentMethod,
         })
         .from(s.runItemStoresV)
         .innerJoin(
@@ -953,13 +994,14 @@ export const runRouter = router({
           ),
         );
       for (const row of splitRows) {
-        if (!row.unitPrice) continue;
-        const subtotal = Number(row.qty) * Number(row.unitPrice);
+        const unitPrice = row.splitUnitPrice ?? row.itemUnitPrice;
+        if (!unitPrice) continue;
+        const subtotal = Number(row.qty) * Number(unitPrice);
         if (!Number.isFinite(subtotal)) continue;
         const cur = ensureStoreTotal(row.runId, row.storeId);
         if (!cur) continue;
         cur.total += subtotal;
-        if (row.paymentMethod === 'transfer') cur.transfer += subtotal;
+        if ((row.splitPaymentMethod ?? row.itemPaymentMethod) === 'transfer') cur.transfer += subtotal;
         else cur.cash += subtotal;
         cur.skuIds.add(row.skuId);
       }

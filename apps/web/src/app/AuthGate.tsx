@@ -49,12 +49,16 @@ export function AuthGate({ children }: AuthGateProps) {
     staleTime: 60_000,
   });
 
-  // If existing token is bad: drop it, but DON'T auto-relogin (user must click).
+  // If an existing token is bad, drop it. In Telegram Mini App we can
+  // immediately re-login from initData; outside Telegram, keep the
+  // manual sign-in fallback.
   useEffect(() => {
     if (!me.isError) return;
     const code = (me.error as { data?: { code?: string } } | undefined)?.data?.code;
     if (code === 'UNAUTHORIZED' || code === 'FORBIDDEN') {
-      meUnauthorized.current = true;
+      const hasTelegramInitData = Boolean(getTg()?.initData);
+      meUnauthorized.current = !hasTelegramInitData;
+      if (hasTelegramInitData) loginAttempted.current = false;
       clear();
     }
   }, [me.isError, me.error, clear]);
@@ -102,7 +106,7 @@ export function AuthGate({ children }: AuthGateProps) {
   useEffect(() => {
     if (session) return;
     if (loginAttempted.current) return;
-    if (meUnauthorized.current) return;
+    if (meUnauthorized.current && !getTg()?.initData) return;
     if (accessToken) return; // there's a token, let auth.me decide its fate first
     const tg = getTg();
     const initData = tg?.initData;
@@ -118,7 +122,13 @@ export function AuthGate({ children }: AuthGateProps) {
     login.mutate({ initData: data });
   }, [session, accessToken, login]);
 
-  if (login.isPending || (me.isLoading && !!accessToken)) {
+  const autoLoginData = getTg()?.initData ?? (import.meta.env.DEV ? import.meta.env.VITE_DEV_MOCK_INIT_DATA : null);
+
+  if (
+    login.isPending ||
+    (me.isLoading && !!accessToken) ||
+    (!session && !!autoLoginData && !error && !login.isError)
+  ) {
     return (
       <div className="flex h-full items-center justify-center text-[var(--c-fg-muted)]">
         <Spinner size={32} />

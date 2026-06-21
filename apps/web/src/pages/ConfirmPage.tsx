@@ -174,8 +174,8 @@ export function ConfirmPage() {
   const myItems = (detailQuery.data?.splits ?? []).filter(
     (sp) => sp.storeId === currentStoreId,
   );
-  const allDecided = myItems.length > 0 && myItems.every((s) => !!s.confirmStatus);
-  const decidedCount = myItems.filter((s) => !!s.confirmStatus).length;
+  const allDecided = myItems.length > 0;
+  const decidedCount = myItems.length;
   /** True once the store-level confirmation has actually landed. The
    *  Confirm Store button must hide AFTER this, otherwise repeated taps
    *  used to fire repeated `confirmStore.mutate` calls — the user
@@ -307,6 +307,7 @@ export function ConfirmPage() {
                   <ul className="flex flex-col" role="list">
                     {myItems.map((it) => {
                       const sku = skuById.get(it.skuId);
+                      const effectiveStatus = (it.confirmStatus ?? 'ok') as DecisionStatus;
                       return (
                         <li
                           key={`${it.runId}:${it.skuId}`}
@@ -327,7 +328,7 @@ export function ConfirmPage() {
                               <Chip
                                 key={s}
                                 aria-label={i18n.t(('confirm.status.' + s) as Parameters<typeof i18n.t>[0])}
-                                selected={it.confirmStatus === s}
+                                selected={effectiveStatus === s}
                                 onClick={() => {
                                   // Block any further taps once the
                                   // store side has been finalized.
@@ -339,7 +340,7 @@ export function ConfirmPage() {
                                   // Block double-tap on the SAME chip —
                                   // the domain will return [] but we
                                   // save the round-trip entirely.
-                                  if (it.confirmStatus === s) return;
+                                  if (effectiveStatus === s) return;
                                   haptic('light');
                                   if (s === 'ok') {
                                     // Optimistic: paint the selection

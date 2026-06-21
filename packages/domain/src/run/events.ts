@@ -13,6 +13,13 @@ interface BaseEvent {
   causationId?: string | undefined;
 }
 
+export type StoreSplitPayload = {
+  storeId: string;
+  qty: string;
+  unitPrice?: string;
+  paymentMethod?: 'cash' | 'transfer';
+};
+
 export type RunEvent =
   | (BaseEvent & {
       type: 'RunPlanned';
@@ -37,7 +44,7 @@ export type RunEvent =
         unitPrice: string;
         actualQty: string;
         receiptPhotoUrl: string | null;
-        storeSplits: Array<{ storeId: string; qty: string }>;
+        storeSplits: StoreSplitPayload[];
         /**
          * M1.14 (2026-05-08): per-item payment method. Same run can mix
          * cash and transfer items — purchaser pays Apple in cash at the
@@ -120,7 +127,7 @@ export type RunEvent =
         unitPrice: string;
         actualQty: string;
         receiptPhotoUrl: string | null;
-        storeSplits: Array<{ storeId: string; qty: string }>;
+        storeSplits: StoreSplitPayload[];
         // Why we're revising — short free-text, ≤500 chars. Required so
         // an audit can answer "why did this change?" later.
         reason: string;
@@ -215,7 +222,7 @@ export type RunEvent =
         unitPrice: string;
         actualQty: string;
         receiptPhotoUrl: string | null;
-        storeSplits: Array<{ storeId: string; qty: string }>;
+        storeSplits: StoreSplitPayload[];
         paymentMethod: 'cash' | 'transfer';
         /** Free-text — why this SKU wasn't on the original order. ≤500. */
         reason: string;

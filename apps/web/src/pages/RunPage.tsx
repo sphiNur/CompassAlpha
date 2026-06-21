@@ -98,6 +98,29 @@ function fromDisplayPrice(displayStr: string, inThousands: boolean): string {
   return String(Number((n * 1000).toFixed(3)));
 }
 
+function splitUnitPrice(
+  split: { unitPrice?: string | null },
+  item: { unitPrice?: string | null },
+): string | null {
+  return split.unitPrice ?? item.unitPrice ?? null;
+}
+
+function splitPaymentMethod(
+  split: { paymentMethod?: string | null },
+  item: { paymentMethod?: string | null },
+): string {
+  return split.paymentMethod ?? item.paymentMethod ?? 'cash';
+}
+
+function splitSubtotal(
+  split: { qty: string; unitPrice?: string | null },
+  item: { unitPrice?: string | null },
+): number {
+  const unitPrice = splitUnitPrice(split, item);
+  if (!unitPrice) return 0;
+  return Number(split.qty) * Number(unitPrice);
+}
+
 /**
  * M3.41 + M3.44 (2026-05-21 / 2026-05-22): draft state for the "+ add"
  * sheet. Dual-mode:
@@ -137,6 +160,9 @@ interface AddItemDraft {
   unitPrice: string;
   /** storeId → qty. Only stores in the run's existing scope are valid. */
   splits: Map<string, string>;
+  splitPrices: Map<string, string>;
+  splitPaymentMethods: Map<string, 'cash' | 'transfer'>;
+  perStorePricing: boolean;
   paymentMethod: 'cash' | 'transfer';
   receiptPhotoUrl: string | null;
   reason: string;
@@ -152,6 +178,9 @@ interface PurchaseDraft {
   actualQty: string;
   supplierId: string | null;
   splits: Map<string, string>; // storeId -> qty
+  splitPrices: Map<string, string>;
+  splitPaymentMethods: Map<string, 'cash' | 'transfer'>;
+  perStorePricing: boolean;
   receiptPhotoUrl: string | null;
   reason: string;
   /** M1.14: cash | transfer. Defaults to 'cash' for new purchases (the
@@ -243,6 +272,7 @@ export function RunPage() {
   const previewQuery = trpc.run.previewCreatable.useQuery({});
   const runsQuery = trpc.run.list.useQuery();
   const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: false });
+  const categoriesQuery = trpc.catalog.categories.useQuery();
   const storesQuery = trpc.catalog.stores.useQuery();
   const suppliersQuery = trpc.catalog.suppliers.useQuery();
   const expenseTemplatesQuery = trpc.run.expenseTemplates.useQuery(undefined, {
@@ -575,7 +605,7 @@ export function RunPage() {
   const skuById = useMemo(() => {
     const m = new Map<
       string,
-      { id: string; names: Record<string, string>; unit: string; step: string }
+      { id: string; names: Record<string, string>; unit: string; step: string; categoryId: string | null }
     >();
     for (const sku of skusQuery.data ?? []) {
       m.set(sku.id, {
@@ -583,10 +613,19 @@ export function RunPage() {
         names: sku.names as Record<string, string>,
         unit: sku.unit,
         step: sku.step,
+        categoryId: sku.categoryId ?? null,
       });
     }
     return m;
   }, [skusQuery.data]);
+
+  const categoryById = useMemo(() => {
+    const m = new Map<string, { id: string; names: Record<string, string> }>();
+    for (const category of categoriesQuery.data ?? []) {
+      m.set(category.id, { id: category.id, names: category.names as Record<string, string> });
+    }
+    return m;
+  }, [categoriesQuery.data]);
 
   const storeById = useMemo(() => {
     const m = new Map<string, { id: string; name: string; code: string | null }>();
@@ -723,13 +762,22 @@ export function RunPage() {
     let addedTotal = 0;
     for (const it of items) {
       if (it.status === 'purchased' && it.unitPrice && it.purchasedQty) {
-        const line = Number(it.unitPrice) * Number(it.purchasedQty);
+        const itemSplits = splits.filter((sp) => sp.skuId === it.skuId);
+        const hasSplitOverrides = itemSplits.some((sp) => sp.unitPrice || sp.paymentMethod);
+        let line = 0;
+        if (hasSplitOverrides) {
+          for (const sp of itemSplits) {
+            const subtotal = splitSubtotal(sp, it);
+            line += subtotal;
+            if (splitPaymentMethod(sp, it) === 'transfer') totalTransfer += subtotal;
+            else totalCash += subtotal;
+          }
+        } else {
+          line = Number(it.unitPrice) * Number(it.purchasedQty);
+          if (it.paymentMethod === 'transfer') totalTransfer += line;
+          else totalCash += line;
+        }
         total += line;
-        // M1.14: split by payment method for the in-progress summary so
-        // the FinishRun confirm dialog can preview the breakdown that
-        // the server-side aggregate is about to compute.
-        if (it.paymentMethod === 'transfer') totalTransfer += line;
-        else totalCash += line;
         if (it.addedByPurchaser) {
           addedSkus += 1;
           addedTotal += line;
@@ -774,10 +822,10 @@ export function RunPage() {
     for (const sp of splits) {
       const item = items.find((i) => i.skuId === sp.skuId);
       if (!item || item.status !== 'purchased' || !item.unitPrice) continue;
-      const subtotal = Number(item.unitPrice) * Number(sp.qty);
+      const subtotal = splitSubtotal(sp, item);
       const cur = ensureStore(sp.storeId);
       cur.total += subtotal;
-      if (item.paymentMethod === 'transfer') cur.transfer += subtotal;
+      if (splitPaymentMethod(sp, item) === 'transfer') cur.transfer += subtotal;
       else cur.cash += subtotal;
     }
     for (const ex of expenses) {
@@ -821,7 +869,16 @@ export function RunPage() {
         receiptPhotoUrl: d.receiptPhotoUrl,
         storeSplits: [...d.splits.entries()]
           .filter(([, q]) => Number(q) > 0)
-          .map(([storeId, qty]) => ({ storeId, qty })),
+          .map(([storeId, qty]) => ({
+            storeId,
+            qty,
+            ...(d.perStorePricing
+              ? {
+                  unitPrice: d.splitPrices.get(storeId) || d.unitPrice,
+                  paymentMethod: d.splitPaymentMethods.get(storeId) ?? d.paymentMethod,
+                }
+              : {}),
+          })),
         paymentMethod: d.paymentMethod,
       };
       if (d.isEdit) {
@@ -845,11 +902,17 @@ export function RunPage() {
     const splitMatches =
       Math.abs(splitTotal - Number(purchaseDraft.actualQty || 0)) < 0.001;
     const reasonOk = !purchaseDraft.isEdit || purchaseDraft.reason.trim().length > 0;
+    const splitPricesOk =
+      !purchaseDraft.perStorePricing ||
+      [...purchaseDraft.splits.entries()]
+        .filter(([, qty]) => Number(qty) > 0)
+        .every(([storeId]) => Number(purchaseDraft.splitPrices.get(storeId) || purchaseDraft.unitPrice) > 0);
     const canSubmit = !!(
       Number(purchaseDraft.actualQty) > 0 &&
       Number(purchaseDraft.unitPrice) > 0 &&
       splitMatches &&
-      reasonOk
+      reasonOk &&
+      splitPricesOk
     );
     return { splitTotal, splitMatches, reasonOk, canSubmit };
   }, [purchaseDraft]);
@@ -1448,6 +1511,9 @@ export function RunPage() {
                   actualQty: '',
                   unitPrice: '',
                   splits: new Map(),
+                  splitPrices: new Map(),
+                  splitPaymentMethods: new Map(),
+                  perStorePricing: false,
                   paymentMethod: 'cash',
                   receiptPhotoUrl: null,
                   reason: '',
@@ -1605,6 +1671,7 @@ export function RunPage() {
         <ActiveRunPanel
           run={runDetailQuery.data}
           skuById={skuById}
+          categoryById={categoryById}
           storeById={storeById}
           productName={productName}
           i18n={i18n}
@@ -1634,8 +1701,21 @@ export function RunPage() {
           }
           onEditPurchased={(item) => {
             const splits = new Map<string, string>();
+            const splitPrices = new Map<string, string>();
+            const splitPaymentMethods = new Map<string, 'cash' | 'transfer'>();
+            let perStorePricing = false;
             for (const sp of runDetailQuery.data!.splits) {
-              if (sp.skuId === item.skuId) splits.set(sp.storeId, sp.qty);
+              if (sp.skuId === item.skuId) {
+                splits.set(sp.storeId, sp.qty);
+                if (sp.unitPrice) {
+                  splitPrices.set(sp.storeId, sp.unitPrice);
+                  perStorePricing = true;
+                }
+                if (sp.paymentMethod) {
+                  splitPaymentMethods.set(sp.storeId, sp.paymentMethod as 'cash' | 'transfer');
+                  perStorePricing = true;
+                }
+              }
             }
             setPurchaseDraft({
               isEdit: true,
@@ -1645,6 +1725,9 @@ export function RunPage() {
               actualQty: item.purchasedQty ?? '',
               supplierId: item.supplierId ?? null,
               splits,
+              splitPrices,
+              splitPaymentMethods,
+              perStorePricing,
               receiptPhotoUrl: item.receiptPhotoUrl ?? null,
               reason: '',
               // M1.14: prefill from existing record so editing doesn't
@@ -1684,6 +1767,9 @@ export function RunPage() {
               actualQty: item.plannedQty,
               supplierId: null,
               splits,
+              splitPrices: new Map(),
+              splitPaymentMethods: new Map(),
+              perStorePricing: false,
               receiptPhotoUrl: null,
               reason: '',
               // M1.14: cash default; user flips to transfer in the sheet.
@@ -1812,7 +1898,16 @@ export function RunPage() {
             receiptPhotoUrl: d.receiptPhotoUrl,
             storeSplits: [...d.splits.entries()]
               .filter(([, q]) => Number(q) > 0)
-              .map(([storeId, qty]) => ({ storeId, qty })),
+              .map(([storeId, qty]) => ({
+                storeId,
+                qty,
+                ...(d.perStorePricing
+                  ? {
+                      unitPrice: d.splitPrices.get(storeId) || d.unitPrice,
+                      paymentMethod: d.splitPaymentMethods.get(storeId) ?? d.paymentMethod,
+                    }
+                  : {}),
+              })),
             paymentMethod: d.paymentMethod,
           };
           if (d.isEdit) {
@@ -2103,6 +2198,8 @@ interface ActiveRun {
     skuId: string;
     storeId: string;
     qty: string;
+    unitPrice?: string | null;
+    paymentMethod?: string | null;
     deliveredAt: Date | string | null;
     confirmedAt: Date | string | null;
   }>;
@@ -2132,7 +2229,12 @@ interface ActiveRun {
     unitHint: string | null;
     qty: string;
     unitPrice: string;
-    storeSplits: Array<{ storeId: string; qty: string }>;
+    storeSplits: Array<{
+      storeId: string;
+      qty: string;
+      unitPrice?: string;
+      paymentMethod?: 'cash' | 'transfer';
+    }>;
     paymentMethod: string;
     receiptPhotoUrl: string | null;
     reason: string;
@@ -2144,7 +2246,15 @@ interface ActiveRun {
    *  with no preferred link — bucketed under "unassigned" in the FE. */
   supplierBySku?: Record<
     string,
-    { id: string; name: string; contactPhone: string | null; contactTg: string | null } | null
+    {
+      id: string;
+      name: string;
+      contactPhone: string | null;
+      contactTg: string | null;
+      defaultPrice?: string | null;
+      lastSeenPrice?: string | null;
+      estimatedUnitPrice?: string | null;
+    } | null
   >;
 }
 
@@ -2182,6 +2292,7 @@ interface ActiveRun {
 function ActiveRunPanel({
   run,
   skuById,
+  categoryById,
   storeById,
   productName,
   i18n,
@@ -2201,8 +2312,9 @@ function ActiveRunPanel({
   run: ActiveRun;
   skuById: Map<
     string,
-    { id: string; names: Record<string, string>; unit: string; step: string }
+    { id: string; names: Record<string, string>; unit: string; step: string; categoryId?: string | null }
   >;
+  categoryById: Map<string, { id: string; names: Record<string, string> }>;
   storeById: Map<string, { id: string; name: string; code: string | null }>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
   i18n: ReturnType<typeof useI18n>;
@@ -2215,7 +2327,12 @@ function ActiveRunPanel({
     skuId: string;
     actualQty: string;
     unitPrice: string;
-    storeSplits: Array<{ storeId: string; qty: string }>;
+    storeSplits: Array<{
+      storeId: string;
+      qty: string;
+      unitPrice?: string;
+      paymentMethod?: 'cash' | 'transfer';
+    }>;
     paymentMethod: 'cash' | 'transfer';
   }) => void;
   onMarkNa: (skuId: string) => void;
@@ -2292,11 +2409,11 @@ function ActiveRunPanel({
    */
   // M3.27 (2026-05-18): third view mode — "perVendor". Same persistence
   // key; old values 'aggregate'|'perStore' continue to round-trip.
-  type ViewMode = 'aggregate' | 'perStore' | 'perVendor';
+  type ViewMode = 'aggregate' | 'perStore' | 'perVendor' | 'perCategory';
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     try {
       const saved = localStorage.getItem('compass.run.viewMode');
-      if (saved === 'perStore' || saved === 'perVendor') return saved;
+      if (saved === 'perStore' || saved === 'perVendor' || saved === 'perCategory') return saved;
       return 'aggregate';
     } catch {
       return 'aggregate';
@@ -2331,15 +2448,23 @@ function ActiveRunPanel({
     }
     return ids.size;
   }, [run.items, run.supplierBySku]);
+  const distinctCategoryCount = useMemo(() => {
+    const ids = new Set<string>();
+    for (const it of run.items) {
+      ids.add(skuById.get(it.skuId)?.categoryId ?? '__uncategorized__');
+    }
+    return ids.size;
+  }, [run.items, skuById]);
   // M3.27 (2026-05-18): showing perStore needs ≥2 stores; showing
   // perVendor needs ≥2 supplier buckets (including unassigned). The
   // toggle itself shows when either condition holds — even if only
   // one of the two extra views would be useful, the user can pick.
   const showPerStore = demandStoreIds.length >= 2;
   const showPerVendor = distinctSupplierCount >= 2;
+  const showPerCategory = distinctCategoryCount >= 2;
   const showViewToggle =
     (run.status === 'planned' || run.status === 'purchasing') &&
-    (showPerStore || showPerVendor);
+    (showPerStore || showPerVendor || showPerCategory);
 
   return (
     <div className="flex flex-col gap-2">
@@ -2376,6 +2501,16 @@ function ActiveRunPanel({
                 {i18n.t('run.view.perVendor')}
               </Chip>
             ) : null}
+            {showPerCategory ? (
+              <Chip
+                selected={viewMode === 'perCategory'}
+                onClick={() =>
+                  setViewModePersist(viewMode === 'perCategory' ? 'aggregate' : 'perCategory')
+                }
+              >
+                按类型
+              </Chip>
+            ) : null}
           </ChipBar>
         </div>
       ) : null}
@@ -2407,10 +2542,30 @@ function ActiveRunPanel({
           onMarkExtraStatus={onMarkExtraStatus}
         />
       ) : null}
+      {showViewToggle && viewMode === 'perCategory' && showPerCategory ? (
+        <PerCategoryView
+          run={run}
+          skuById={skuById}
+          categoryById={categoryById}
+          storeById={storeById}
+          productName={productName}
+          i18n={i18n}
+          priceInThousands={priceInThousands}
+          savingSkuId={savingSkuId}
+          demandBySku={demandBySku}
+          onSavePurchaseInline={onSavePurchaseInline}
+          onMarkNa={onMarkNa}
+          onUndoPurchase={onUndoPurchase}
+          onOpenAdvancedPurchase={onOpenAdvancedPurchase}
+          onEditPurchased={onEditPurchased}
+          onUnmark={onUnmark}
+        />
+      ) : null}
       {(!showViewToggle ||
         viewMode === 'aggregate' ||
         (viewMode === 'perStore' && !showPerStore) ||
-        (viewMode === 'perVendor' && !showPerVendor)) &&
+        (viewMode === 'perVendor' && !showPerVendor) ||
+        (viewMode === 'perCategory' && !showPerCategory)) &&
       (run.status === 'planned' || run.status === 'purchasing') && run.items.length > 0 ? (
         <Card>
           {/* M2.1: SectionLabel (was 3-line ad-hoc div). Same visual,
@@ -2434,7 +2589,12 @@ function ActiveRunPanel({
               // row component — so we pass both regardless of status.
               const actualSplits = run.splits
                 .filter((sp) => sp.skuId === it.skuId)
-                .map((sp) => ({ storeId: sp.storeId, qty: sp.qty }));
+                .map((sp) => ({
+                  storeId: sp.storeId,
+                  qty: sp.qty,
+                  unitPrice: sp.unitPrice,
+                  paymentMethod: sp.paymentMethod,
+                }));
               return (
                 <PurchaseRow
                   key={it.skuId}
@@ -2472,7 +2632,8 @@ function ActiveRunPanel({
       {(!showViewToggle ||
         viewMode === 'aggregate' ||
         (viewMode === 'perStore' && !showPerStore) ||
-        (viewMode === 'perVendor' && !showPerVendor)) &&
+        (viewMode === 'perVendor' && !showPerVendor) ||
+        (viewMode === 'perCategory' && !showPerCategory)) &&
       (run.status === 'planned' || run.status === 'purchasing') ? (
         <RunExtrasCard
           sessionExtrasByStore={run.sessionExtrasByStore}
@@ -2492,7 +2653,8 @@ function ActiveRunPanel({
       {(!showViewToggle ||
         viewMode === 'aggregate' ||
         (viewMode === 'perStore' && !showPerStore) ||
-        (viewMode === 'perVendor' && !showPerVendor)) &&
+        (viewMode === 'perVendor' && !showPerVendor) ||
+        (viewMode === 'perCategory' && !showPerCategory)) &&
       (run.expenses?.length ?? 0) > 0 ? (
         <ExpensesCard
           expenses={run.expenses}
@@ -2700,7 +2862,16 @@ function PreviewSummaryCard({
       name: string;
       contactPhone: string | null;
       contactTg: string | null;
+      defaultPrice?: string | null;
+      lastSeenPrice?: string | null;
+      estimatedUnitPrice?: string | null;
     } | null>;
+    perStoreBudgets?: ReadonlyArray<{
+      storeId: string;
+      storeName: string;
+      estimatedTotal: string;
+      unknownPriceCount: number;
+    }>;
     /** M1.8: per-store concatenated session notes ("其他物品", legacy). */
     sessionNotesByStore?: Record<string, string>;
     /** M3.16-C: per-store structured extras. */
@@ -2711,7 +2882,7 @@ function PreviewSummaryCard({
   };
   skuById: Map<
     string,
-    { id: string; names: Record<string, string>; unit: string; step: string }
+    { id: string; names: Record<string, string>; unit: string; step: string; categoryId?: string | null }
   >;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
   /** M3.45 (2026-05-22): used inside the copy templates so the text
@@ -2733,6 +2904,7 @@ function PreviewSummaryCard({
   });
   // M1.6 #1: when set, the VendorPickerSheet is open for this skuId.
   const [vendorPickerFor, setVendorPickerFor] = useState<string | null>(null);
+  const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   useEffect(() => {
     if (typeof window !== 'undefined')
       window.localStorage.setItem(PREVIEW_VIEW_STORAGE_KEY, view);
@@ -2974,6 +3146,29 @@ function PreviewSummaryCard({
           </button>
         ))}
       </div>
+
+      {preview.perStoreBudgets?.length ? (
+        <div className="border-t border-[var(--c-divider)] px-4 py-2">
+          <div className="mb-1 text-label font-semibold text-[var(--c-fg-muted)]">
+            分店预算
+          </div>
+          <div className="flex flex-col gap-1">
+            {preview.perStoreBudgets.map((b) => (
+              <div key={b.storeId} className="flex items-baseline gap-2 text-body-sm">
+                <span className="min-w-0 flex-1 truncate">{b.storeName}</span>
+                {b.unknownPriceCount > 0 ? (
+                  <span className="shrink-0 text-label text-[var(--c-warning)]">
+                    {b.unknownPriceCount} 个无参考价
+                  </span>
+                ) : null}
+                <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg)]">
+                  {formatMoney(b.estimatedTotal)} {currency}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {view === 'overall' ? (
         /* M1.11: dropped the "+N more" tail row. We still slice to 8
@@ -3312,7 +3507,7 @@ function PerStoreView({
   storeById: Map<string, { id: string; name: string; code: string | null }>;
   skuById: Map<
     string,
-    { id: string; names: Record<string, string>; unit: string; step: string }
+    { id: string; names: Record<string, string>; unit: string; step: string; categoryId?: string | null }
   >;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
   skusByStore: Map<string, Array<{ skuId: string; qty: string }>>;
@@ -3478,7 +3673,7 @@ function PerVendorView({
   run: ActiveRun;
   skuById: Map<
     string,
-    { id: string; names: Record<string, string>; unit: string; step: string }
+    { id: string; names: Record<string, string>; unit: string; step: string; categoryId?: string | null }
   >;
   storeById: Map<string, { id: string; name: string; code: string | null }>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
@@ -3497,7 +3692,12 @@ function PerVendorView({
     skuId: string;
     actualQty: string;
     unitPrice: string;
-    storeSplits: Array<{ storeId: string; qty: string }>;
+    storeSplits: Array<{
+      storeId: string;
+      qty: string;
+      unitPrice?: string;
+      paymentMethod?: 'cash' | 'transfer';
+    }>;
     paymentMethod: 'cash' | 'transfer';
   }) => void;
   onMarkNa: (skuId: string) => void;
@@ -3634,7 +3834,12 @@ function PerVendorView({
                   // they need the per-store qty in front of them.
                   const actualSplits = run.splits
                     .filter((sp) => sp.skuId === r.skuId)
-                    .map((sp) => ({ storeId: sp.storeId, qty: sp.qty }));
+                    .map((sp) => ({
+                      storeId: sp.storeId,
+                      qty: sp.qty,
+                      unitPrice: sp.unitPrice,
+                      paymentMethod: sp.paymentMethod,
+                    }));
                   return (
                     <PurchaseRow
                       key={r.skuId}
@@ -3952,6 +4157,137 @@ function ExpensesCard({
   );
 }
 
+function PerCategoryView({
+  run,
+  skuById,
+  categoryById,
+  storeById,
+  productName,
+  i18n,
+  priceInThousands,
+  savingSkuId,
+  demandBySku,
+  onSavePurchaseInline,
+  onMarkNa,
+  onUndoPurchase,
+  onOpenAdvancedPurchase,
+  onEditPurchased,
+  onUnmark,
+}: {
+  run: ActiveRun;
+  skuById: Map<
+    string,
+    { id: string; names: Record<string, string>; unit: string; step: string; categoryId?: string | null }
+  >;
+  categoryById: Map<string, { id: string; names: Record<string, string> }>;
+  storeById: Map<string, { id: string; name: string; code: string | null }>;
+  productName: (item: { names: Record<string, string> | null | undefined }) => string;
+  i18n: ReturnType<typeof useI18n>;
+  priceInThousands: boolean;
+  savingSkuId: string | null;
+  demandBySku: Map<string, Array<{ storeId: string; qty: string }>>;
+  onSavePurchaseInline: (payload: {
+    skuId: string;
+    actualQty: string;
+    unitPrice: string;
+    storeSplits: Array<{
+      storeId: string;
+      qty: string;
+      unitPrice?: string;
+      paymentMethod?: 'cash' | 'transfer';
+    }>;
+    paymentMethod: 'cash' | 'transfer';
+  }) => void;
+  onMarkNa: (skuId: string) => void;
+  onEditPurchased: (item: ActiveRun['items'][number]) => void;
+  onUnmark: (skuId: string, skuName: string) => void;
+  onUndoPurchase: (skuId: string, skuName: string) => void;
+  onOpenAdvancedPurchase: (item: ActiveRun['items'][number]) => void;
+}) {
+  const demandStoreIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const d of run.perStoreDemand ?? []) ids.add(d.storeId);
+    if (ids.size === 0) for (const sp of run.splits) ids.add(sp.storeId);
+    return [...ids];
+  }, [run.perStoreDemand, run.splits]);
+  const groups = useMemo(() => {
+    const byCategory = new Map<string, ActiveRun['items']>();
+    for (const item of run.items) {
+      const sku = skuById.get(item.skuId);
+      const categoryId = sku?.categoryId ?? '__uncategorized__';
+      const arr = byCategory.get(categoryId) ?? [];
+      arr.push(item);
+      byCategory.set(categoryId, arr);
+    }
+    return [...byCategory.entries()]
+      .map(([categoryId, items]) => ({
+        categoryId,
+        name:
+          categoryId === '__uncategorized__'
+            ? '未分类'
+            : productName(categoryById.get(categoryId) ?? { names: { zh: categoryId.slice(0, 8) } }),
+        items,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [categoryById, productName, run.items, skuById]);
+
+  return (
+    <div className="flex flex-col gap-2">
+      {groups.map((group) => (
+        <details
+          key={group.categoryId}
+          open
+          className="overflow-hidden rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline"
+        >
+          <summary className="cursor-pointer list-none px-4 py-2 text-body font-semibold">
+            {group.name}
+            <span className="ml-2 text-label font-normal text-[var(--c-fg-muted)]">
+              {group.items.length}
+            </span>
+          </summary>
+          <ul className="flex flex-col" role="list">
+            {group.items.map((item) => {
+              const sku = skuById.get(item.skuId);
+              const skuName = sku ? productName(sku) : item.skuId.slice(0, 8);
+              const actualSplits = run.splits
+                .filter((sp) => sp.skuId === item.skuId)
+                .map((sp) => ({
+                  storeId: sp.storeId,
+                  qty: sp.qty,
+                  unitPrice: sp.unitPrice,
+                  paymentMethod: sp.paymentMethod,
+                }));
+              return (
+                <PurchaseRow
+                  key={item.skuId}
+                  item={item}
+                  skuName={skuName}
+                  unit={sku?.unit ?? ''}
+                  step={sku?.step ?? '0.1'}
+                  demand={demandBySku.get(item.skuId) ?? []}
+                  storeById={storeById}
+                  actualSplits={actualSplits}
+                  isMultiStoreRun={demandStoreIds.length > 1}
+                  lastPrice={run.lastPriceBySku?.[item.skuId] ?? null}
+                  i18n={i18n}
+                  priceInThousands={priceInThousands}
+                  saving={savingSkuId === item.skuId}
+                  onSave={onSavePurchaseInline}
+                  onMarkNa={onMarkNa}
+                  onEdit={onEditPurchased}
+                  onUnmark={onUnmark}
+                  onUndoPurchase={onUndoPurchase}
+                  onOpenAdvanced={onOpenAdvancedPurchase}
+                />
+              );
+            })}
+          </ul>
+        </details>
+      ))}
+    </div>
+  );
+}
+
 /**
  * One row of the purchasing list. Holds its OWN qty/price input state
  * (not in the parent) so typing one row doesn't re-render the whole list.
@@ -4008,7 +4344,12 @@ function PurchaseRow({
    * matches the proportional split of `demand` * actualQty/plannedQty
    * but the advanced sheet can override.
    */
-  actualSplits: Array<{ storeId: string; qty: string }>;
+  actualSplits: Array<{
+    storeId: string;
+    qty: string;
+    unitPrice?: string | null;
+    paymentMethod?: string | null;
+  }>;
   /**
    * M3.52 (2026-05-23 fix): true when the run spans ≥2 stores. We
    * show the per-store chip on EVERY row of a multi-store run, even
@@ -4030,7 +4371,12 @@ function PurchaseRow({
     skuId: string;
     actualQty: string;
     unitPrice: string;
-    storeSplits: Array<{ storeId: string; qty: string }>;
+    storeSplits: Array<{
+      storeId: string;
+      qty: string;
+      unitPrice?: string;
+      paymentMethod?: 'cash' | 'transfer';
+    }>;
     paymentMethod: 'cash' | 'transfer';
   }) => void;
   onMarkNa: (skuId: string) => void;
@@ -4231,6 +4577,12 @@ function PurchaseRow({
       {breakdown.map((d) => {
         const storeName =
           storeById.get(d.storeId)?.name ?? d.storeId.slice(0, 8);
+        const splitMeta = d as { unitPrice?: string | null; paymentMethod?: string | null };
+        const overridePrice =
+          splitMeta.unitPrice && splitMeta.unitPrice !== item.unitPrice
+            ? toDisplayPrice(splitMeta.unitPrice, priceInThousands)
+            : null;
+        const method = splitMeta.paymentMethod ?? null;
         return (
           <span
             key={d.storeId}
@@ -4240,6 +4592,16 @@ function PurchaseRow({
             <span className="font-mono tabular-nums text-[var(--c-fg-muted)]">
               {formatQty(d.qty)} {unit}
             </span>
+            {overridePrice ? (
+              <span className="font-mono tabular-nums text-[var(--c-fg-muted)]">
+                @{overridePrice}{priceInThousands ? 'K' : ''}
+              </span>
+            ) : null}
+            {method === 'transfer' ? (
+              <span className="text-[var(--c-action)]">
+                {i18n.t('run.label.paymentTransfer')}
+              </span>
+            ) : null}
           </span>
         );
       })}
@@ -4479,7 +4841,7 @@ interface PurchaseSheetProps {
   draft: PurchaseDraft | null;
   skuById: Map<
     string,
-    { id: string; names: Record<string, string>; unit: string; step: string }
+    { id: string; names: Record<string, string>; unit: string; step: string; categoryId?: string | null }
   >;
   storeById: Map<string, { id: string; name: string; code: string | null }>;
   suppliers: Array<{ id: string; name: string }>;
@@ -4553,12 +4915,18 @@ function PurchaseSheet({
 
   const splitMatches = draft && Math.abs(splitTotal - Number(draft.actualQty || 0)) < 0.001;
   const reasonOk = !draft?.isEdit || draft.reason.trim().length > 0;
+  const splitPricesOk =
+    !draft?.perStorePricing ||
+    [...draft.splits.entries()]
+      .filter(([, qty]) => Number(qty) > 0)
+      .every(([storeId]) => Number(draft.splitPrices.get(storeId) || draft.unitPrice) > 0);
   const canSubmit = !!(
     draft &&
     Number(draft.actualQty) > 0 &&
     Number(draft.unitPrice) > 0 &&
     splitMatches &&
-    reasonOk
+    reasonOk &&
+    splitPricesOk
   );
 
   // M3.49 (2026-05-23): the sheet's own footer button is now ALWAYS
@@ -4672,6 +5040,32 @@ function PurchaseSheet({
               })}
             </div>
           </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (!draft.perStorePricing) {
+                const splitPrices = new Map(draft.splitPrices);
+                const splitPaymentMethods = new Map(draft.splitPaymentMethods);
+                for (const storeId of draft.splits.keys()) {
+                  if (!splitPrices.has(storeId)) splitPrices.set(storeId, draft.unitPrice);
+                  if (!splitPaymentMethods.has(storeId)) {
+                    splitPaymentMethods.set(storeId, draft.paymentMethod);
+                  }
+                }
+                onChange({
+                  ...draft,
+                  splitPrices,
+                  splitPaymentMethods,
+                  perStorePricing: true,
+                });
+              } else {
+                onChange({ ...draft, perStorePricing: false });
+              }
+            }}
+            className="press rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-2 text-label font-semibold text-[var(--c-fg)] ring-hairline"
+          >
+            {draft.perStorePricing ? '统一价格/付款' : '按店铺单独价格/付款'}
+          </button>
           {suppliers.length > 0 ? (
             <label className="block text-label font-semibold text-[var(--c-fg-muted)]">
               {i18n.t('run.action.supplier')}
@@ -4710,24 +5104,74 @@ function PurchaseSheet({
               </span>
             </div>
             <ul className="flex flex-col gap-2">
-              {candidateStores.map((store) => (
-                <li key={store.id} className="flex items-center gap-2">
-                  <span className="flex-1 truncate text-body">{store.name}</span>
-                  <Input
-                    type="number"
-                    inputMode="decimal"
-                    step={sku?.step ?? '1'}
-                    value={draft.splits.get(store.id) ?? ''}
-                    onChange={(e) => {
-                      const next = new Map(draft.splits);
-                      if (e.target.value === '') next.delete(store.id);
-                      else next.set(store.id, e.target.value);
-                      onChange({ ...draft, splits: next });
-                    }}
-                    className="w-24 text-right"
-                  />
-                </li>
-              ))}
+              {candidateStores.map((store) => {
+                const splitQty = draft.splits.get(store.id) ?? '';
+                return (
+                  <li key={store.id} className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
+                    <div className="flex items-center gap-2">
+                      <span className="flex-1 truncate text-body">{store.name}</span>
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        step={sku?.step ?? '1'}
+                        value={splitQty}
+                        onChange={(e) => {
+                          const next = new Map(draft.splits);
+                          if (e.target.value === '') next.delete(store.id);
+                          else next.set(store.id, e.target.value);
+                          onChange({ ...draft, splits: next });
+                        }}
+                        className="w-24 text-right"
+                      />
+                    </div>
+                    {draft.perStorePricing && Number(splitQty) > 0 ? (
+                      <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
+                        <Input
+                          type="number"
+                          inputMode="decimal"
+                          value={toDisplayPrice(
+                            draft.splitPrices.get(store.id) ?? draft.unitPrice,
+                            priceInThousands,
+                          )}
+                          onChange={(e) => {
+                            const next = new Map(draft.splitPrices);
+                            next.set(store.id, fromDisplayPrice(e.target.value, priceInThousands));
+                            onChange({ ...draft, splitPrices: next });
+                          }}
+                          className="text-right"
+                        />
+                        <div className="flex rounded-[var(--r-pill)] bg-[var(--c-surface)] p-1 ring-hairline">
+                          {(['cash', 'transfer'] as const).map((method) => {
+                            const selected =
+                              (draft.splitPaymentMethods.get(store.id) ?? draft.paymentMethod) === method;
+                            return (
+                              <button
+                                key={method}
+                                type="button"
+                                onClick={() => {
+                                  const next = new Map(draft.splitPaymentMethods);
+                                  next.set(store.id, method);
+                                  onChange({ ...draft, splitPaymentMethods: next });
+                                }}
+                                className={
+                                  'rounded-[var(--r-pill)] px-2 py-1 text-label font-semibold ' +
+                                  (selected
+                                    ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
+                                    : 'text-[var(--c-fg-muted)]')
+                                }
+                              >
+                                {method === 'cash'
+                                  ? i18n.t('run.label.paymentCash')
+                                  : i18n.t('run.label.paymentTransfer')}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
             </ul>
           </div>
           {draft.isEdit ? (
@@ -5049,6 +5493,9 @@ function AddItemSheet({
                       skuCostMode: 'merge',
                       label: m === 'expense' ? '' : draft.label,
                       splits: new Map(),
+                      splitPrices: new Map(),
+                      splitPaymentMethods: new Map(),
+                      perStorePricing: false,
                     });
                   }}
                   className={
@@ -5883,7 +6330,7 @@ function RunHistoryDetailSheet({
   target: { runId: string; runIndex: number; runDate: string; status: string } | null;
   skuById: Map<
     string,
-    { id: string; names: Record<string, string>; unit: string; step: string }
+    { id: string; names: Record<string, string>; unit: string; step: string; categoryId?: string | null }
   >;
   storeById: Map<string, { id: string; name: string; code: string | null }>;
   productName: ReturnType<typeof useProductName>;
@@ -5915,11 +6362,22 @@ function RunHistoryDetailSheet({
     const unavailableCount = items.filter((i) => i.status === 'unavailable').length;
     for (const it of items) {
       if (it.status === 'purchased' && it.unitPrice && it.purchasedQty) {
-        const line = Number(it.unitPrice) * Number(it.purchasedQty);
+        const itemSplits = splits.filter((sp) => sp.skuId === it.skuId);
+        const hasSplitOverrides = itemSplits.some((sp) => sp.unitPrice || sp.paymentMethod);
+        let line = 0;
+        if (hasSplitOverrides) {
+          for (const sp of itemSplits) {
+            const subtotal = splitSubtotal(sp, it);
+            line += subtotal;
+            if (splitPaymentMethod(sp, it) === 'transfer') totalTransfer += subtotal;
+            else totalCash += subtotal;
+          }
+        } else {
+          line = Number(it.unitPrice) * Number(it.purchasedQty);
+          if (it.paymentMethod === 'transfer') totalTransfer += line;
+          else totalCash += line;
+        }
         total += line;
-        // M1.14: payment-method breakdown of historical run totals.
-        if (it.paymentMethod === 'transfer') totalTransfer += line;
-        else totalCash += line;
       }
     }
     // M3.44: off-catalog expenses contribute to the run total + the
@@ -5979,10 +6437,10 @@ function RunHistoryDetailSheet({
     for (const sp of splits) {
       const item = items.find((i) => i.skuId === sp.skuId);
       if (!item || item.status !== 'purchased' || !item.unitPrice) continue;
-      const subtotal = Number(item.unitPrice) * Number(sp.qty);
+      const subtotal = splitSubtotal(sp, item);
       const cur = ensureStore(sp.storeId);
       cur.total += subtotal;
-      if (item.paymentMethod === 'transfer') cur.transfer += subtotal;
+      if (splitPaymentMethod(sp, item) === 'transfer') cur.transfer += subtotal;
       else cur.cash += subtotal;
       cur.skuIds.add(sp.skuId);
     }
@@ -6039,7 +6497,10 @@ function RunHistoryDetailSheet({
         qty: item.purchasedQty,
         lineTotal:
           item.status === 'purchased' && item.unitPrice && item.purchasedQty
-            ? Number(item.unitPrice) * Number(item.purchasedQty)
+            ? breakdown.splits
+                .filter((sp) => sp.skuId === item.skuId)
+                .reduce((sum, sp) => sum + splitSubtotal(sp, item), 0) ||
+              Number(item.unitPrice) * Number(item.purchasedQty)
             : 0,
         perStoreSplits: breakdown.splits.filter((sp) => sp.skuId === item.skuId),
       }));
@@ -6060,7 +6521,7 @@ function RunHistoryDetailSheet({
           {
             item,
             qty: split.qty,
-            lineTotal: item.unitPrice ? Number(item.unitPrice) * Number(split.qty) : 0,
+            lineTotal: splitSubtotal(split, item),
             perStoreSplits: [split],
           },
         ];

@@ -240,6 +240,13 @@ export const runItemStoresV = readModelSchema.table(
       .notNull()
       .references(() => stores.id, { onDelete: 'cascade' }),
     qty: decimal('qty', { precision: 12, scale: 3 }).notNull(),
+    /**
+     * Optional per-store price/payment override (M3.58). Null means
+     * inherit run_items_v.unit_price/payment_method, preserving legacy
+     * rows where one SKU purchase had a single price and payment path.
+     */
+    unitPrice: decimal('unit_price', { precision: 14, scale: 2 }),
+    paymentMethod: varchar('payment_method', { length: 16 }),
     deliveredAt: timestamp('delivered_at', { withTimezone: true, mode: 'date' }),
     deliveredByUserId: uuid('delivered_by_user_id').references(() => users.id),
     confirmedAt: timestamp('confirmed_at', { withTimezone: true, mode: 'date' }),
