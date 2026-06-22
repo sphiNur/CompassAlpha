@@ -33,7 +33,6 @@ import {
   Button,
   Card,
   CardHeader,
-  CardMeta,
   CardTitle,
   Chip,
   ChipBar,
@@ -155,6 +154,8 @@ interface AddItemDraft {
   label: string;
   /** Expense mode — optional unit hint ("trip", "pack", null). */
   unitHint: string;
+  /** Shared costs are evenly allocated; store costs belong to one branch. */
+  expenseScope: 'shared' | 'store';
   // Shared across both modes
   actualQty: string;
   unitPrice: string;
@@ -268,9 +269,14 @@ export function RunPage() {
     runDate: string;
     status: string;
   } | null>(null);
+  const [historyPageOpen, setHistoryPageOpen] = useState(false);
 
   const previewQuery = trpc.run.previewCreatable.useQuery({});
   const runsQuery = trpc.run.list.useQuery();
+  const fullHistoryQuery = trpc.run.history.useQuery(
+    { limit: 500 },
+    { enabled: historyPageOpen },
+  );
   const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: false });
   const categoriesQuery = trpc.catalog.categories.useQuery();
   const storesQuery = trpc.catalog.stores.useQuery();
@@ -695,6 +701,7 @@ export function RunPage() {
   // C.2 (M3.38, 2026-05-19): run claim signals.
   const myMemberId = session?.member.memberId ?? null;
   const runClaimedByMemberId = runDetailQuery.data?.claimedByMemberId ?? null;
+  const collaborationEnabled = true;
   const isClaimedByMe = !!myMemberId && runClaimedByMemberId === myMemberId;
   const isClaimedByOther =
     !!runClaimedByMemberId && runClaimedByMemberId !== myMemberId;
@@ -708,6 +715,7 @@ export function RunPage() {
   // re-evaluates when another user releases.
   useEffect(() => {
     if (!activeRun || !myMemberId) return;
+    if (collaborationEnabled) return;
     if (activeRun.status !== 'purchasing' && activeRun.status !== 'delivering') {
       return;
     }
@@ -724,13 +732,14 @@ export function RunPage() {
     myMemberId,
     runClaimedByMemberId,
     runDetailQuery.data,
+    collaborationEnabled,
   ]);
   // Auto-release on page hide. Best-effort fire-and-forget; the
   // worker timeout sweep handles cases where this never fires
   // (force-close, network gone, etc.). Only releases if WE hold the
   // claim — visibility events fire for any user, not just claimers.
   useEffect(() => {
-    if (!activeRun || !isClaimedByMe) return;
+    if (!activeRun || !isClaimedByMe || collaborationEnabled) return;
     const handle = () => {
       if (document.visibilityState !== 'hidden') return;
       // Don't await — we may have ~100ms before the tab is killed.
@@ -742,7 +751,7 @@ export function RunPage() {
     document.addEventListener('visibilitychange', handle);
     return () => document.removeEventListener('visibilitychange', handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeRun?.id, isClaimedByMe]);
+  }, [activeRun?.id, collaborationEnabled, isClaimedByMe]);
 
   const finishSummary = useMemo(() => {
     const items = runDetailQuery.data?.items ?? [];
@@ -1437,6 +1446,20 @@ export function RunPage() {
       }`
     : i18n.t('run.empty.noActive');
 
+  if (historyPageOpen) {
+    return (
+      <RunHistoryPage
+        runs={fullHistoryQuery.data ?? []}
+        loading={fullHistoryQuery.isLoading}
+        storeById={storeById}
+        skuById={skuById}
+        productName={productName}
+        i18n={i18n}
+        onBack={() => setHistoryPageOpen(false)}
+      />
+    );
+  }
+
   return (
     /* M1.12: outer page is just `flex flex-col` + bottom safe-area.
         PageHeader removed entirely — Telegram's chrome (bot name +
@@ -1489,7 +1512,7 @@ export function RunPage() {
               hides the affordance to avoid a confusing tap-then-fail.
               The button opens AddItemSheet which collects SKU + qty +
               price + store split + reason. */}
-          {activeRun.status === 'purchasing' && isClaimedByMe ? (
+          {activeRun.status === 'purchasing' && (isClaimedByMe || collaborationEnabled) ? (
             <button
               type="button"
               onClick={() =>
@@ -1508,6 +1531,7 @@ export function RunPage() {
                       : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
                   label: '',
                   unitHint: '',
+                  expenseScope: 'shared',
                   actualQty: '',
                   unitPrice: '',
                   splits: new Map(),
@@ -1537,7 +1561,7 @@ export function RunPage() {
           useEffect then re-grabs the claim under our memberId once
           the WS invalidate lands. Two API roundtrips visible to the
           user as a single tap. */}
-      {activeRun && isClaimedByOther ? (
+      {activeRun && !collaborationEnabled && isClaimedByOther ? (
         <div className="px-4 pt-2">
           <Banner
             tone="warn"
@@ -1792,6 +1816,31 @@ export function RunPage() {
               reason: '',
             })
           }
+          onOpenExpense={() =>
+            setAddItemDraft({
+              mode: 'expense',
+              runId: activeRun.id,
+              skuId: null,
+              supplierId: null,
+              skuCostMode: 'merge',
+              expenseId:
+                typeof crypto !== 'undefined' && 'randomUUID' in crypto
+                  ? crypto.randomUUID()
+                  : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+              label: '',
+              unitHint: '',
+              expenseScope: 'shared',
+              actualQty: '1',
+              unitPrice: '',
+              splits: new Map(),
+              splitPrices: new Map(),
+              splitPaymentMethods: new Map(),
+              perStorePricing: false,
+              paymentMethod: 'cash',
+              receiptPhotoUrl: null,
+              reason: '',
+            })
+          }
         />
       ) : null}
 
@@ -1805,6 +1854,7 @@ export function RunPage() {
         productName={productName}
         storeById={storeById}
         i18n={i18n}
+        onOpenAll={() => setHistoryPageOpen(true)}
         onOpen={(r) =>
           setHistoryDetailFor({
             runId: r.id,
@@ -2308,6 +2358,7 @@ function ActiveRunPanel({
   onRecallStore,
   onMarkExtraStatus,
   onRemoveExpense,
+  onOpenExpense,
 }: {
   run: ActiveRun;
   skuById: Map<
@@ -2350,6 +2401,7 @@ function ActiveRunPanel({
   ) => void;
   /** M3.44: remove an off-catalog expense (purchasing phase only). */
   onRemoveExpense: (expenseId: string, label: string) => void;
+  onOpenExpense: () => void;
 }) {
   const involvedStoreIds = useMemo(() => {
     const ids = new Set<string>();
@@ -2655,7 +2707,7 @@ function ActiveRunPanel({
         (viewMode === 'perStore' && !showPerStore) ||
         (viewMode === 'perVendor' && !showPerVendor) ||
         (viewMode === 'perCategory' && !showPerCategory)) &&
-      (run.expenses?.length ?? 0) > 0 ? (
+      (run.status === 'purchasing' || (run.expenses?.length ?? 0) > 0) ? (
         <ExpensesCard
           expenses={run.expenses}
           storeById={storeById}
@@ -2663,6 +2715,7 @@ function ActiveRunPanel({
           priceInThousands={priceInThousands}
           editable={run.status === 'purchasing'}
           onRemove={onRemoveExpense}
+          onOpenExpense={onOpenExpense}
         />
       ) : null}
 
@@ -4066,6 +4119,7 @@ function ExpensesCard({
   priceInThousands,
   editable,
   onRemove,
+  onOpenExpense,
 }: {
   expenses: ActiveRun['expenses'];
   storeById: Map<string, { id: string; name: string; code: string | null }>;
@@ -4075,10 +4129,10 @@ function ExpensesCard({
    *  button on each row. Read-only otherwise. */
   editable: boolean;
   onRemove: (expenseId: string, label: string) => void;
+  onOpenExpense: () => void;
 }) {
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   const list = expenses ?? [];
-  if (list.length === 0) return null;
   const grandTotal = list.reduce(
     (s, e) => s + Number(e.qty) * Number(e.unitPrice),
     0,
@@ -4088,6 +4142,22 @@ function ExpensesCard({
       <SectionLabel meta={`${list.length} · ${formatMoney(grandTotal)} ${currency}`}>
         🧾 {i18n.t('run.section.expenses')}
       </SectionLabel>
+      {editable ? (
+        <div className="flex justify-end px-4 pb-2">
+          <button
+            type="button"
+            onClick={onOpenExpense}
+            className="rounded-[var(--r-pill)] bg-[var(--c-action)] px-2.5 py-1 text-label font-semibold text-[var(--c-action-fg)] active:opacity-70"
+          >
+            {i18n.t('run.action.addExpense.button')}
+          </button>
+        </div>
+      ) : null}
+      {list.length === 0 ? (
+        <div className="px-4 pb-3 text-body-sm text-[var(--c-fg-muted)]">
+          {i18n.t('run.action.addExpense.scopeSharedHint')}
+        </div>
+      ) : null}
       <ul className="flex flex-col" role="list">
         {list.map((e) => {
           const total = Number(e.qty) * Number(e.unitPrice);
@@ -4110,6 +4180,13 @@ function ExpensesCard({
               <div className="flex items-baseline gap-2">
                 <span className="shrink-0 truncate text-body font-semibold">
                   {e.label}
+                </span>
+                <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-1.5 py-0.5 text-label text-[var(--c-fg-muted)] ring-hairline">
+                  {i18n.t(
+                    e.storeSplits.length > 1
+                      ? 'run.section.sharedExpenses'
+                      : 'run.section.storeExpenses',
+                  )}
                 </span>
                 {isTransfer ? (
                   <span
@@ -5283,6 +5360,7 @@ function AddItemSheet({
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   const [search, setSearch] = useState('');
   const [priceInput, setPriceInput] = useState('');
+  const initializedExpenseScopeRef = useRef<string | null>(null);
 
   // Reset local input states when the sheet opens/closes for a new draft.
   useEffect(() => {
@@ -5436,6 +5514,29 @@ function AddItemSheet({
     next.set(storeIds[storeIds.length - 1]!, String(q - allocated));
     return next;
   };
+
+  // A new expense begins as a shared daily cost. Initialise its store split
+  // once, but leave deliberate later chip edits alone.
+  useEffect(() => {
+    if (
+      !draft ||
+      draft.mode !== 'expense' ||
+      draft.expenseScope !== 'shared' ||
+      draft.splits.size > 0 ||
+      storeChoices.length === 0 ||
+      initializedExpenseScopeRef.current === draft.expenseId
+    ) {
+      return;
+    }
+    initializedExpenseScopeRef.current = draft.expenseId;
+    onChange({
+      ...draft,
+      splits: evenSplit(
+        storeChoices.map((store) => store.id),
+        draft.actualQty,
+      ),
+    });
+  }, [draft, onChange, storeChoices]);
 
   return (
     <Sheet
@@ -5741,9 +5842,52 @@ function AddItemSheet({
           ) : null}
           {draft.mode === 'expense' && draft.label.trim() ? (
             <div>
+              <div className="mb-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
+                <div className="mb-1 text-label font-semibold text-[var(--c-fg-muted)]">
+                  {i18n.t('run.action.addExpense.scopeTitle')}
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {(['shared', 'store'] as const).map((scope) => {
+                    const selected = draft.expenseScope === scope;
+                    return (
+                      <button
+                        key={scope}
+                        type="button"
+                        onClick={() =>
+                          onChange({
+                            ...draft,
+                            expenseScope: scope,
+                            splits:
+                              scope === 'shared'
+                                ? evenSplit(storeChoices.map((store) => store.id), draft.actualQty)
+                                : new Map(),
+                          })
+                        }
+                        className={
+                          'rounded-[var(--r-pill)] px-3 py-1.5 text-label font-medium ring-hairline ' +
+                          (selected
+                            ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
+                            : 'bg-[var(--c-bg)] text-[var(--c-fg-muted)]')
+                        }
+                      >
+                        {scope === 'shared'
+                          ? i18n.t('run.action.addExpense.scopeShared')
+                          : i18n.t('run.action.addExpense.scopeStore')}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-1 text-label leading-snug text-[var(--c-fg-muted)]">
+                  {draft.expenseScope === 'shared'
+                    ? i18n.t('run.action.addExpense.scopeSharedHint')
+                    : i18n.t('run.action.addExpense.scopeStoreHint')}
+                </p>
+              </div>
               <div className="mb-1 flex items-baseline justify-between gap-2">
                 <span className="text-label font-semibold text-[var(--c-fg-muted)]">
-                  {i18n.t('run.action.addExpense.targetStores')}
+                  {draft.expenseScope === 'shared'
+                    ? i18n.t('run.action.addExpense.targetStores')
+                    : i18n.t('run.action.addItem.targetStore')}
                 </span>
                 <span className="text-label text-[var(--c-fg-muted)]">
                   {i18n.t('run.action.addExpense.splitHint', {
@@ -5759,9 +5903,12 @@ function AddItemSheet({
                       key={st.id}
                       type="button"
                       onClick={() => {
-                        const nextIds = selected
-                          ? [...draft.splits.keys()].filter((id) => id !== st.id)
-                          : [...draft.splits.keys(), st.id];
+                        const nextIds =
+                          draft.expenseScope === 'store'
+                            ? [st.id]
+                            : selected
+                              ? [...draft.splits.keys()].filter((id) => id !== st.id)
+                              : [...draft.splits.keys(), st.id];
                         onChange({
                           ...draft,
                           splits: evenSplit(nextIds, draft.actualQty),
@@ -6134,12 +6281,14 @@ function RunHistorySection({
   runs,
   storeById,
   i18n,
+  onOpenAll,
   onOpen,
 }: {
   runs: RunListRow[];
   productName: ReturnType<typeof useProductName>;
   storeById: Map<string, { id: string; name: string; code: string | null }>;
   i18n: ReturnType<typeof useI18n>;
+  onOpenAll: () => void;
   onOpen: (r: RunListRow) => void;
 }) {
   // M3.9 (2026-05-16): cancelled runs are hidden from this list
@@ -6198,7 +6347,13 @@ function RunHistorySection({
     <Card>
       <CardHeader>
         <CardTitle>{i18n.t('run.history.title')}</CardTitle>
-        <CardMeta>{i18n.t('run.history.subtitle')}</CardMeta>
+        <button
+          type="button"
+          onClick={onOpenAll}
+          className="shrink-0 text-label font-semibold text-[var(--c-action)] active:opacity-70"
+        >
+          {i18n.t('run.history.viewAll')}
+        </button>
       </CardHeader>
       {/* M3.9: filter chip toolbar removed — cancelled runs no
          longer surface here, so there's nothing to toggle. */}
@@ -6305,6 +6460,107 @@ function RunHistorySection({
         </div>
       ) : null}
     </Card>
+  );
+}
+
+function RunHistoryPage({
+  runs,
+  loading,
+  storeById,
+  skuById,
+  productName,
+  i18n,
+  onBack,
+}: {
+  runs: RunListRow[];
+  loading: boolean;
+  storeById: Map<string, { id: string; name: string; code: string | null }>;
+  skuById: Map<
+    string,
+    { id: string; names: Record<string, string>; unit: string; step: string; categoryId?: string | null }
+  >;
+  productName: ReturnType<typeof useProductName>;
+  i18n: ReturnType<typeof useI18n>;
+  onBack: () => void;
+}) {
+  const [detailFor, setDetailFor] = useState<{
+    runId: string;
+    runIndex: number;
+    runDate: string;
+    status: string;
+  } | null>(null);
+  const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
+  const total = runs.reduce((sum, run) => sum + Number(run.actualTotal ?? 0), 0);
+
+  return (
+    <div className="flex flex-col gap-3 px-4 pb-24 pt-3">
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onBack}
+          className="rounded-[var(--r-pill)] px-2 py-1 text-label font-semibold text-[var(--c-action)] active:bg-[var(--c-surface-2)]"
+        >
+          {i18n.t('common.back')}
+        </button>
+        <h1 className="text-h2 font-semibold text-[var(--c-fg)]">{i18n.t('run.history.title')}</h1>
+      </div>
+      <Card>
+        <SectionLabel meta={`${runs.length} · ${formatMoney(total)} ${currency}`}>
+          {i18n.t('run.history.title')}
+        </SectionLabel>
+        {loading ? (
+          <div className="px-4 py-6 text-center text-body-sm text-[var(--c-fg-muted)]">
+            {i18n.t('common.loading')}
+          </div>
+        ) : runs.length === 0 ? (
+          <div className="px-4 py-6 text-center text-body-sm text-[var(--c-fg-muted)]">
+            {i18n.t('run.history.subtitle')}
+          </div>
+        ) : (
+          <ul className="flex flex-col" role="list">
+            {runs.map((run) => (
+              <li key={run.id} className="border-b border-[var(--c-divider)] last:border-b-0">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setDetailFor({
+                      runId: run.id,
+                      runIndex: run.runIndex,
+                      runDate: run.runDate,
+                      status: run.status,
+                    })
+                  }
+                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left active:bg-[var(--c-surface-2)]"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="text-body font-semibold tabular-nums">
+                      {run.runDate}
+                      {run.runIndex > 0 ? ` #${run.runIndex + 1}` : ''}
+                    </div>
+                    <div className="mt-0.5 text-label text-[var(--c-fg-muted)]">
+                      {run.actualTotal
+                        ? i18n.t('run.history.totalLine', {
+                            total: formatMoney(run.actualTotal),
+                          })
+                        : '—'}
+                    </div>
+                  </div>
+                  <Badge tone="success">{run.status}</Badge>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+      <RunHistoryDetailSheet
+        target={detailFor}
+        skuById={skuById}
+        storeById={storeById}
+        productName={productName}
+        i18n={i18n}
+        onClose={() => setDetailFor(null)}
+      />
+    </div>
   );
 }
 

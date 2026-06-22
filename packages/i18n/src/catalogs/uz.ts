@@ -1023,4 +1023,13 @@ export const uz = {
   'run.action.addItem.mergePriceHint':
     "Mavjud xarid qatoriga qo'shiladi va SKU bitta umumiy birlik narxi bilan qayta hisoblanadi.",
   'run.action.addExpense.templates': 'Xarajat shablonlari',
+  'run.action.addExpense.scopeTitle': 'Xarajat turi',
+  'run.action.addExpense.scopeShared': 'Umumiy xarajat',
+  'run.action.addExpense.scopeStore': 'Do\'kon xarajati',
+  'run.action.addExpense.scopeSharedHint': 'Ushbu xariddagi barcha do\'konlar o\'rtasida teng taqsimlanadi.',
+  'run.action.addExpense.scopeStoreHint': 'Butun summa tanlangan do\'konga yoziladi.',
+  'run.action.addExpense.button': '+ Xarajat',
+  'run.section.sharedExpenses': 'Umumiy xarajatlar',
+  'run.section.storeExpenses': 'Do\'kon xarajatlari',
+  'run.history.viewAll': 'Barcha tarix',
 } as const;

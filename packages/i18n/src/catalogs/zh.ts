@@ -937,4 +937,13 @@ export const zh = {
   'run.action.addItem.mergePriceHint':
     '合并到现有采购行，会使用同一个单价重新计算该 SKU 的总成本。',
   'run.action.addExpense.templates': '开销模板快捷填充',
+  'run.action.addExpense.scopeTitle': '开销范围',
+  'run.action.addExpense.scopeShared': '集体开销',
+  'run.action.addExpense.scopeStore': '单店开销',
+  'run.action.addExpense.scopeSharedHint': '在本次采购的所有店铺之间平均分摊。',
+  'run.action.addExpense.scopeStoreHint': '全部记到所选店铺。',
+  'run.action.addExpense.button': '+ 开销',
+  'run.section.sharedExpenses': '集体开销',
+  'run.section.storeExpenses': '分店开销',
+  'run.history.viewAll': '全部历史',
 } as const;

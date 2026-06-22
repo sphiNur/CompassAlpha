@@ -207,6 +207,7 @@ export const runRouter = router({
               lastSeenPrice: string | null;
               estimatedUnitPrice: string | null;
             } | null>,
+            lastPurchasePriceBySku: {} as Record<string, string>,
             perStoreBudgets: [] as Array<{
               storeId: string;
               storeName: string;
@@ -293,6 +294,12 @@ export const runRouter = router({
           lastSeenPrice: string | null;
           estimatedUnitPrice: string | null;
         } | null> = {};
+        // Budgeting must not depend on a SKU having a preferred supplier.
+        // The most recent real purchase is the best reference price for a
+        // purchaser deciding today's branch budget, regardless of where it
+        // was bought. Preferred-supplier defaults remain useful for vendor
+        // grouping, but must not turn a priced SKU into “unknown price”.
+        const lastPurchasePriceBySku: Record<string, string> = {};
         if (skuIds.length > 0) {
           // Drizzle ORM doesn't have a clean `distinctOn` builder; use
           // `sql` raw for the prioritised ranking. Casting through
@@ -354,6 +361,25 @@ export const runRouter = router({
           // bucket for them rather than dropping them silently.
           for (const sid of skuIds) {
             if (!(sid in supplierBySku)) supplierBySku[sid] = null;
+          }
+
+          const priceRows = await tx.execute<{
+            sku_id: string;
+            unit_price: string;
+          }>(sql`
+            SELECT DISTINCT ON (ph.sku_id)
+              ph.sku_id::text AS sku_id,
+              ph.unit_price::text AS unit_price
+            FROM inventory.price_history ph
+            WHERE ph.org_id = ${ctx.session!.orgId}
+              AND ph.sku_id IN (${sql.raw(skuIds.map((id) => `'${id}'`).join(','))})
+            ORDER BY ph.sku_id, ph.observed_at DESC, ph.created_at DESC
+          `);
+          const prices = Array.isArray(priceRows)
+            ? priceRows
+            : ((priceRows as { rows?: typeof priceRows }).rows ?? []);
+          for (const price of prices) {
+            lastPurchasePriceBySku[price.sku_id] = price.unit_price;
           }
         }
 
@@ -418,7 +444,10 @@ export const runRouter = router({
           let estimatedTotal = 0;
           let unknownPriceCount = 0;
           for (const [skuId, qty] of perStoreSkuQty.get(storeId)?.entries() ?? []) {
-            const estimatedUnitPrice = supplierBySku[skuId]?.estimatedUnitPrice ?? null;
+            const estimatedUnitPrice =
+              lastPurchasePriceBySku[skuId] ??
+              supplierBySku[skuId]?.estimatedUnitPrice ??
+              null;
             if (!estimatedUnitPrice) {
               unknownPriceCount += 1;
               continue;
@@ -449,6 +478,7 @@ export const runRouter = router({
           })),
           perStoreDemand,
           supplierBySku,
+          lastPurchasePriceBySku,
           perStoreBudgets,
           /** Per-store concatenated session notes (M1.8, legacy). Empty
            *  record when no notes anywhere. */
@@ -1021,6 +1051,53 @@ export const runRouter = router({
       }));
     });
   }),
+
+  /**
+   * Complete finished-run history for the purchaser-facing history page.
+   * `list` deliberately stays compact for the live procurement screen;
+   * this endpoint is independently bounded and only returns finished runs
+   * so several months of records do not turn the active page into an
+   * endless scroll.
+   */
+  history: authedProcedure
+    .input(z.object({ limit: z.number().int().min(25).max(1000).default(100) }).optional())
+    .query(async ({ ctx, input }) =>
+      ctx.withOrg(async (tx) => {
+        const allowedStoreIds = ctx.session!.permissions.has('run.create.org')
+          ? null
+          : await getActorStoreIds(tx, ctx.session!.memberId, ctx.session!.permissions);
+        if (allowedStoreIds !== null && allowedStoreIds.length === 0) return [];
+
+        const runs = await tx
+          .select()
+          .from(s.marketRunsV)
+          .where(
+            and(
+              eq(s.marketRunsV.orgId, ctx.session!.orgId),
+              eq(s.marketRunsV.status, 'finished'),
+            ),
+          )
+          .orderBy(desc(s.marketRunsV.runDate), desc(s.marketRunsV.runIndex))
+          .limit(input?.limit ?? 100);
+
+        if (allowedStoreIds === null || runs.length === 0) return runs;
+        const allSessionIds = [
+          ...new Set(runs.flatMap((run) => (run.sessionIdsJson as string[] | null) ?? [])),
+        ];
+        if (allSessionIds.length === 0) return [];
+        const sessionRows = await tx.query.orderSessionsV.findMany({
+          where: (session, { inArray }) => inArray(session.id, allSessionIds),
+          columns: { id: true, storeId: true },
+        });
+        const storeBySession = new Map(sessionRows.map((session) => [session.id, session.storeId]));
+        const allowed = new Set(allowedStoreIds);
+        return runs.filter((run) =>
+          ((run.sessionIdsJson as string[] | null) ?? []).some((sessionId) =>
+            allowed.has(storeBySession.get(sessionId) ?? ''),
+          ),
+        );
+      }),
+    ),
 
   get: authedProcedure
     .input(SimpleRunCommandSchema.pick({ runId: true }))

@@ -989,22 +989,14 @@ function assertActive(state: RunState): void {
 }
 
 /**
- * Claim-ownership gate — C.2 (M3.38, 2026-05-19). Mutating commands
- * must be invoked by the current claimer (or with no claim set yet).
- * Mirrors the order-side check at packages/domain/src/order/commands.ts.
- *
- * Unclaimed runs accept writes from any permitted member — the FE
- * auto-claims on page mount so by the time a mutation reaches the
- * server the claim is usually set. The defensive fallback (allow
- * when null) keeps single-purchaser flows zero-friction; the lock
- * activates the moment two purchasers exist on the same run.
+ * Runs are intentionally collaborative. Concurrent purchasers can record
+ * independent rows or expenses; event-stream serialization protects the
+ * ledger from stale writes and each event still records its actor.
  */
-function assertClaimOwnership(state: RunState, actor: ActorCtx): void {
-  if (state.claimedByMemberId && state.claimedByMemberId !== actor.memberId) {
-    throw conflict('run.errors.claimedByOther', {
-      claimedBy: state.claimedByMemberId,
-    });
-  }
+function assertClaimOwnership(_state: RunState, _actor: ActorCtx): void {
+  // Runs are collaborative: separate purchasers may record separate
+  // SKU rows or expenses concurrently. Event-stream serialization and
+  // per-event actor auditing still protect the ledger from stale writes.
 }
 
 function assertSplitOverrides(splits: StoreSplitCommand[]): void {

@@ -167,6 +167,55 @@ describe('run.decide', () => {
     ).toThrow('run.errors.splitSumMismatch');
   });
 
+  test('allows a second purchaser to record a buy while another purchaser has claimed the run', () => {
+    let state = emptyRunState('r1');
+    state = decideRun(
+      state,
+      {
+        type: 'PlanRun',
+        orgId: 'o',
+        runDate: '2026-05-01',
+        runIndex: 0,
+        sessionIds: ['s'],
+        plannedItems: [{ skuId: 'k', qty: '1' }],
+        actor: purchaser(),
+      },
+      clock,
+    ).reduce(applyRun, state);
+    state = decideRun(state, { type: 'StartPurchase', actor: purchaser() }, clock).reduce(
+      applyRun,
+      state,
+    );
+    state = decideRun(state, { type: 'ClaimRun', actor: purchaser() }, clock).reduce(
+      applyRun,
+      state,
+    );
+
+    const secondPurchaser: ActorCtx = {
+      userId: 'u2',
+      memberId: 'm2',
+      permissions: new Set(['run.purchase']),
+    };
+    const events = decideRun(
+      state,
+      {
+        type: 'PurchaseItem',
+        skuId: 'k',
+        supplierId: null,
+        unitPrice: '100',
+        actualQty: '1',
+        receiptPhotoUrl: null,
+        storeSplits: [{ storeId: 's1', qty: '1' }],
+        paymentMethod: 'cash',
+        actor: secondPurchaser,
+      },
+      clock,
+    );
+
+    expect(events.map((event) => event.type)).toEqual(['ItemPurchased']);
+    expect(events[0]!.actorMemberId).toBe('m2');
+  });
+
   test('MarkUnavailable requires non-empty note', () => {
     let s = emptyRunState('r1');
     s = decideRun(

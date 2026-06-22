@@ -10,6 +10,20 @@ interface AuthGateProps {
   children: ReactNode;
 }
 
+// A browser-development login already persists its refresh token. Remembering
+// only the non-secret Telegram ID keeps the rare re-authentication path short
+// without putting the access code in local storage or the client bundle.
+const DEV_BROWSER_TG_USER_ID_KEY = 'compass.devBrowserTgUserId';
+
+function initialDevBrowserTgUserId(): string {
+  if (!import.meta.env.DEV || typeof window === 'undefined') return '';
+  try {
+    return window.localStorage.getItem(DEV_BROWSER_TG_USER_ID_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
 /**
  * AuthGate strategy (M1 hardened):
  *
@@ -32,7 +46,7 @@ export function AuthGate({ children }: AuthGateProps) {
   const clear = useAuthStore((s) => s.clear);
   const i18n = useI18n();
   const [error, setError] = useState<string | null>(null);
-  const [browserTgUserId, setBrowserTgUserId] = useState('');
+  const [browserTgUserId, setBrowserTgUserId] = useState(initialDevBrowserTgUserId);
   const [browserAccessCode, setBrowserAccessCode] = useState('');
   /** True once we've issued a telegramLogin call this mount cycle. */
   const loginAttempted = useRef(false);
@@ -93,6 +107,13 @@ export function AuthGate({ children }: AuthGateProps) {
         refreshToken: data.tokens.refreshToken,
         session: data.session,
       });
+      if (import.meta.env.DEV && browserTgUserId.trim()) {
+        try {
+          window.localStorage.setItem(DEV_BROWSER_TG_USER_ID_KEY, browserTgUserId.trim());
+        } catch {
+          /* localStorage unavailable; the login session still works */
+        }
+      }
       meUnauthorized.current = false;
       setError(null);
     },
@@ -148,23 +169,25 @@ export function AuthGate({ children }: AuthGateProps) {
             {error}
           </Banner>
         ) : null}
-        <Button
-          onClick={() => {
-            loginAttempted.current = true;
-            meUnauthorized.current = false;
-            // M3.18: same DEV-only guard as the auto-login path above.
-            // Production builds never read VITE_DEV_MOCK_INIT_DATA.
-            const mock = import.meta.env.DEV ? import.meta.env.VITE_DEV_MOCK_INIT_DATA : null;
-            const data = getTg()?.initData ?? mock ?? '';
-            if (!data) {
-              setError(i18n.t('auth.errors.noInitData'));
-              return;
-            }
-            login.mutate({ initData: data });
-          }}
-        >
-          {i18n.t('auth.signIn')}
-        </Button>
+        {!showBrowserLogin ? (
+          <Button
+            onClick={() => {
+              loginAttempted.current = true;
+              meUnauthorized.current = false;
+              // M3.18: same DEV-only guard as the auto-login path above.
+              // Production builds never read VITE_DEV_MOCK_INIT_DATA.
+              const mock = import.meta.env.DEV ? import.meta.env.VITE_DEV_MOCK_INIT_DATA : null;
+              const data = getTg()?.initData ?? mock ?? '';
+              if (!data) {
+                setError(i18n.t('auth.errors.noInitData'));
+                return;
+              }
+              login.mutate({ initData: data });
+            }}
+          >
+            {i18n.t('auth.signIn')}
+          </Button>
+        ) : null}
         {showBrowserLogin ? (
           <form
             className="mt-2 flex w-full max-w-sm flex-col gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] p-4 text-left ring-hairline"
@@ -195,6 +218,7 @@ export function AuthGate({ children }: AuthGateProps) {
                 autoComplete="username"
                 value={browserTgUserId}
                 onChange={(e) => setBrowserTgUserId(e.target.value)}
+                autoFocus={!browserTgUserId}
                 placeholder="例如 6402913074"
               />
             </label>
@@ -207,6 +231,7 @@ export function AuthGate({ children }: AuthGateProps) {
                 autoComplete="current-password"
                 value={browserAccessCode}
                 onChange={(e) => setBrowserAccessCode(e.target.value)}
+                autoFocus={!!browserTgUserId}
                 placeholder="由管理员提供"
               />
             </label>

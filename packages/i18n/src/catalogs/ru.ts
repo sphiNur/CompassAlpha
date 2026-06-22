@@ -994,4 +994,13 @@ export const ru = {
   'run.action.addItem.mergePriceHint':
     'Объединить с существующей строкой закупки и пересчитать SKU с одной общей ценой.',
   'run.action.addExpense.templates': 'Шаблоны расходов',
+  'run.action.addExpense.scopeTitle': 'Тип расхода',
+  'run.action.addExpense.scopeShared': 'Общий расход',
+  'run.action.addExpense.scopeStore': 'Расход точки',
+  'run.action.addExpense.scopeSharedHint': 'Равномерно распределяется между всеми точками этой закупки.',
+  'run.action.addExpense.scopeStoreHint': 'Вся сумма записывается на выбранную точку.',
+  'run.action.addExpense.button': '+ Расход',
+  'run.section.sharedExpenses': 'Общие расходы',
+  'run.section.storeExpenses': 'Расходы точек',
+  'run.history.viewAll': 'Вся история',
 } as const;

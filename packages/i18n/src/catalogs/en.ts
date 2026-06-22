@@ -1112,4 +1112,13 @@ export const en = {
   'run.action.addItem.mergePriceHint':
     'Merge into the existing purchase row and recalculate this SKU with one shared unit price.',
   'run.action.addExpense.templates': 'Expense template shortcuts',
+  'run.action.addExpense.scopeTitle': 'Expense scope',
+  'run.action.addExpense.scopeShared': 'Shared expense',
+  'run.action.addExpense.scopeStore': 'Store expense',
+  'run.action.addExpense.scopeSharedHint': 'Split evenly across every store in this run.',
+  'run.action.addExpense.scopeStoreHint': 'Charge the full expense to one selected store.',
+  'run.action.addExpense.button': '+ Expense',
+  'run.section.sharedExpenses': 'Shared expenses',
+  'run.section.storeExpenses': 'Store expenses',
+  'run.history.viewAll': 'All history',
 } as const;

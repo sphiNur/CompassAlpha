@@ -11,7 +11,7 @@ import {
   type SessionSchema as SessionShape,
 } from '@compass/contracts';
 import { authedProcedure, publicProcedure, router } from '../trpc';
-import { verifyInitData } from '../../services/telegramAuth';
+import { verifyInitData, type TelegramUser } from '../../services/telegramAuth';
 import { checkRate } from '../../services/rateLimit';
 import { signAccess, verifyRefresh } from '../../infra/jwt';
 import {
@@ -84,6 +84,64 @@ function isNonTelegramLoginAvailable(): boolean {
   if (env.NON_TELEGRAM_LOGIN_ENABLED !== 'true') return false;
   if (releaseChannel() === 'production') return false;
   return parseNonTelegramUsers().size > 0;
+}
+
+const DEV_MOCK_INIT_DATA = '1';
+const DEV_MOCK_TG_USER: TelegramUser = {
+  id: 9_000_000_001,
+  first_name: 'Local Developer',
+  username: 'compass_local_dev',
+  language_code: 'en',
+};
+
+/**
+ * Browser automation needs a real authenticated session so it can exercise
+ * the same tRPC, permission, and realtime paths as Telegram. This route is
+ * intentionally narrower than the diagnostic browser login above:
+ *
+ * - only the literal local mock initData value is accepted;
+ * - the server must opt in with DEV_MOCK_LOGIN_ENABLED=true;
+ * - both NODE_ENV and release channel must be development;
+ * - production release builds cannot carry VITE_DEV_MOCK_INIT_DATA.
+ *
+ * The identity is created and elevated only in the local seeded database.
+ * It is never available to staging or production data.
+ */
+function isDevMockLoginAvailable(): boolean {
+  return (
+    env.DEV_MOCK_LOGIN_ENABLED === 'true' &&
+    env.NODE_ENV === 'development' &&
+    releaseChannel() === 'development'
+  );
+}
+
+async function ensureDevMockAdminAccess(db: DB, memberId: string, orgId: string): Promise<void> {
+  const role = await db.query.roles.findFirst({
+    where: (r, { and: and2, eq: eq2 }) =>
+      and2(eq2(r.orgId, orgId), eq2(r.slug, 'super_admin')),
+  });
+  if (!role) {
+    throw new TRPCError({
+      code: 'PRECONDITION_FAILED',
+      message: 'auth.errors.devMockSeedRequired',
+    });
+  }
+  const binding = await db.query.memberRoleBindings.findFirst({
+    where: (b, { and: and2, eq: eq2, isNull: isNull2 }) =>
+      and2(
+        eq2(b.memberId, memberId),
+        eq2(b.roleId, role.id),
+        eq2(b.scopeType, 'global'),
+        isNull2(b.scopeId),
+      ),
+  });
+  if (!binding) {
+    await db.insert(s.memberRoleBindings).values({
+      memberId,
+      roleId: role.id,
+      scopeType: 'global',
+    });
+  }
 }
 
 function digestSecret(value: string): Buffer {
@@ -195,14 +253,20 @@ export const authRouter = router({
     .input(TelegramLoginInputSchema)
     .mutation(async ({ ctx, input }) => {
       enforceRate('login', ctx.ip);
-      if (!env.TELEGRAM_BOT_TOKEN) {
-        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'auth.errors.botTokenMissing' });
+      const isDevMock = input.initData === DEV_MOCK_INIT_DATA && isDevMockLoginAvailable();
+      let tg: TelegramUser;
+      if (isDevMock) {
+        tg = DEV_MOCK_TG_USER;
+      } else {
+        if (!env.TELEGRAM_BOT_TOKEN) {
+          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'auth.errors.botTokenMissing' });
+        }
+        const result = verifyInitData(input.initData, env.TELEGRAM_BOT_TOKEN);
+        if (!result.ok || !result.user) {
+          throw new TRPCError({ code: 'UNAUTHORIZED', message: 'auth.errors.invalidInitData' });
+        }
+        tg = result.user;
       }
-      const result = verifyInitData(input.initData, env.TELEGRAM_BOT_TOKEN);
-      if (!result.ok || !result.user) {
-        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'auth.errors.invalidInitData' });
-      }
-      const tg = result.user;
 
       // Upsert user.
       let user = await ctx.db.query.users.findFirst({
@@ -217,6 +281,10 @@ export const authRouter = router({
             displayName: [tg.first_name, tg.last_name].filter(Boolean).join(' ') || tg.username || `user-${tg.id}`,
             avatarUrl: tg.photo_url ?? null,
             locale: input.locale ?? tg.language_code ?? 'en',
+            // A local mock is not a person who needs onboarding. Marking it
+            // locked avoids creating an otherwise invisible first-run form
+            // in browser automation.
+            displayNameLocked: isDevMock,
           })
           .returning();
         user = created;
@@ -252,6 +320,9 @@ export const authRouter = router({
         if (!created) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
       }
       const ensuredMember = member ?? (await ctx.db.query.members.findFirst({ where: (m, { eq: eq2 }) => eq2(m.userId, user!.id) }))!;
+      if (isDevMock) {
+        await ensureDevMockAdminAccess(ctx.db, ensuredMember.id, ensuredMember.orgId);
+      }
 
       // M1.9 (2026-05-07): refresh tokens are tracked in auth.refresh_tokens
       // with rotation lineage + replay detection.
