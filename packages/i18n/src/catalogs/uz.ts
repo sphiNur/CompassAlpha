@@ -1032,4 +1032,6 @@ export const uz = {
   'run.section.sharedExpenses': 'Umumiy xarajatlar',
   'run.section.storeExpenses': 'Do\'kon xarajatlari',
   'run.history.viewAll': 'Barcha tarix',
+  'run.history.storePurchases': 'Do\'konlarning shu kundagi xaridlari',
+  'run.history.storeItemsHeading': '{store}ning shu kundagi xaridlari',
 } as const;

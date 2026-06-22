@@ -263,12 +263,7 @@ export function RunPage() {
   const [confirmAction, setConfirmAction] = useState<ConfirmKind | null>(null);
   const [confirmReason, setConfirmReason] = useState('');
   // Drill-down for a historical run.
-  const [historyDetailFor, setHistoryDetailFor] = useState<{
-    runId: string;
-    runIndex: number;
-    runDate: string;
-    status: string;
-  } | null>(null);
+  const [historyDetailFor, setHistoryDetailFor] = useState<HistoryDetailTarget | null>(null);
   const [historyPageOpen, setHistoryPageOpen] = useState(false);
 
   const previewQuery = trpc.run.previewCreatable.useQuery({});
@@ -6277,6 +6272,16 @@ interface RunListStoreTotal {
   itemCount: number;
 }
 
+interface HistoryDetailTarget {
+  runId: string;
+  runIndex: number;
+  runDate: string;
+  status: string;
+  /** When a user opens a store from the history list, land directly on
+   * that branch's daily purchase list instead of the combined run. */
+  initialStoreId?: string | null;
+}
+
 function RunHistorySection({
   runs,
   storeById,
@@ -6483,12 +6488,7 @@ function RunHistoryPage({
   i18n: ReturnType<typeof useI18n>;
   onBack: () => void;
 }) {
-  const [detailFor, setDetailFor] = useState<{
-    runId: string;
-    runIndex: number;
-    runDate: string;
-    status: string;
-  } | null>(null);
+  const [detailFor, setDetailFor] = useState<HistoryDetailTarget | null>(null);
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   const total = runs.reduce((sum, run) => sum + Number(run.actualTotal ?? 0), 0);
 
@@ -6547,6 +6547,45 @@ function RunHistoryPage({
                   </div>
                   <Badge tone="success">{run.status}</Badge>
                 </button>
+                {(run.storeTotals?.length ?? 0) > 0 ? (
+                  <div className="border-t border-[var(--c-divider)] px-4 py-2.5">
+                    <div className="mb-1.5 text-label font-semibold text-[var(--c-fg-muted)]">
+                      {i18n.t('run.history.storePurchases')}
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      {run.storeTotals!.map((storeTotal) => {
+                        const storeName =
+                          storeById.get(storeTotal.storeId)?.name ?? storeTotal.storeId.slice(0, 8);
+                        return (
+                          <button
+                            key={storeTotal.storeId}
+                            type="button"
+                            onClick={() =>
+                              setDetailFor({
+                                runId: run.id,
+                                runIndex: run.runIndex,
+                                runDate: run.runDate,
+                                status: run.status,
+                                initialStoreId: storeTotal.storeId,
+                              })
+                            }
+                            className="flex min-h-10 w-full items-center justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 text-left ring-hairline active:bg-[var(--c-bg)]"
+                          >
+                            <span className="min-w-0 flex-1 truncate text-body-sm font-medium">
+                              {storeName}
+                            </span>
+                            <span className="shrink-0 text-label text-[var(--c-fg-muted)]">
+                              {i18n.t('run.label.itemsCount', { n: storeTotal.itemCount })}
+                            </span>
+                            <span className="shrink-0 font-mono text-label font-semibold tabular-nums">
+                              {formatMoney(storeTotal.total)}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
               </li>
             ))}
           </ul>
@@ -6583,7 +6622,7 @@ function RunHistoryDetailSheet({
   i18n,
   onClose,
 }: {
-  target: { runId: string; runIndex: number; runDate: string; status: string } | null;
+  target: HistoryDetailTarget | null;
   skuById: Map<
     string,
     { id: string; names: Record<string, string>; unit: string; step: string; categoryId?: string | null }
@@ -6602,8 +6641,8 @@ function RunHistoryDetailSheet({
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
 
   useEffect(() => {
-    setSelectedStoreId(null);
-  }, [target?.runId]);
+    setSelectedStoreId(target?.initialStoreId ?? null);
+  }, [target?.initialStoreId, target?.runId]);
 
   const breakdown = useMemo(() => {
     if (!detail.data) return null;
@@ -6806,6 +6845,9 @@ function RunHistoryDetailSheet({
   const headlineCash = activeStoreTotal?.cash ?? breakdown?.totalCash ?? 0;
   const headlineTransfer = activeStoreTotal?.transfer ?? breakdown?.totalTransfer ?? 0;
   const headlineStoreCount = activeStoreId ? 1 : breakdown?.perStore.size ?? 0;
+  const activeStoreName = activeStoreId
+    ? storeById.get(activeStoreId)?.name ?? activeStoreId.slice(0, 8)
+    : null;
 
   return (
     <Sheet
@@ -6922,7 +6964,9 @@ function RunHistoryDetailSheet({
               the per-store totals against individual line items. */}
           <div>
             <SectionLabel padded={false} className="mb-2">
-              {i18n.t('run.history.itemsHeading')}
+              {activeStoreName
+                ? i18n.t('run.history.storeItemsHeading', { store: activeStoreName })
+                : i18n.t('run.history.itemsHeading')}
             </SectionLabel>
             <ul className="flex flex-col rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline">
               {visibleHistoryRows.length === 0 ? (

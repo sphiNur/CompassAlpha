@@ -1003,4 +1003,6 @@ export const ru = {
   'run.section.sharedExpenses': 'Общие расходы',
   'run.section.storeExpenses': 'Расходы точек',
   'run.history.viewAll': 'Вся история',
+  'run.history.storePurchases': 'Покупки магазинов за день',
+  'run.history.storeItemsHeading': 'Покупки {store} за день',
 } as const;

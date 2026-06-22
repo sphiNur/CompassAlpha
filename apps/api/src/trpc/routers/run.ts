@@ -1080,22 +1080,104 @@ export const runRouter = router({
           .orderBy(desc(s.marketRunsV.runDate), desc(s.marketRunsV.runIndex))
           .limit(input?.limit ?? 100);
 
-        if (allowedStoreIds === null || runs.length === 0) return runs;
+        if (runs.length === 0) return [];
+
+        let visibleRuns = runs;
+        const allowedStoreSet = allowedStoreIds === null ? null : new Set(allowedStoreIds);
         const allSessionIds = [
           ...new Set(runs.flatMap((run) => (run.sessionIdsJson as string[] | null) ?? [])),
         ];
-        if (allSessionIds.length === 0) return [];
-        const sessionRows = await tx.query.orderSessionsV.findMany({
-          where: (session, { inArray }) => inArray(session.id, allSessionIds),
-          columns: { id: true, storeId: true },
-        });
-        const storeBySession = new Map(sessionRows.map((session) => [session.id, session.storeId]));
-        const allowed = new Set(allowedStoreIds);
-        return runs.filter((run) =>
-          ((run.sessionIdsJson as string[] | null) ?? []).some((sessionId) =>
-            allowed.has(storeBySession.get(sessionId) ?? ''),
-          ),
-        );
+        if (allowedStoreSet) {
+          if (allSessionIds.length === 0) return [];
+          const sessionRows = await tx.query.orderSessionsV.findMany({
+            where: (session, { inArray }) => inArray(session.id, allSessionIds),
+            columns: { id: true, storeId: true },
+          });
+          const storeBySession = new Map(sessionRows.map((session) => [session.id, session.storeId]));
+          visibleRuns = runs.filter((run) =>
+            ((run.sessionIdsJson as string[] | null) ?? []).some((sessionId) =>
+              allowedStoreSet.has(storeBySession.get(sessionId) ?? ''),
+            ),
+          );
+        }
+        if (visibleRuns.length === 0) return [];
+
+        type MutableStoreTotal = {
+          storeId: string;
+          total: number;
+          cash: number;
+          transfer: number;
+          skuIds: Set<string>;
+        };
+        const totalsByRun = new Map<string, Map<string, MutableStoreTotal>>();
+        const ensureStoreTotal = (runId: string, storeId: string): MutableStoreTotal | null => {
+          if (allowedStoreSet && !allowedStoreSet.has(storeId)) return null;
+          let runTotals = totalsByRun.get(runId);
+          if (!runTotals) {
+            runTotals = new Map<string, MutableStoreTotal>();
+            totalsByRun.set(runId, runTotals);
+          }
+          let current = runTotals.get(storeId);
+          if (!current) {
+            current = { storeId, total: 0, cash: 0, transfer: 0, skuIds: new Set<string>() };
+            runTotals.set(storeId, current);
+          }
+          return current;
+        };
+        const visibleRunIds = visibleRuns.map((run) => run.id);
+        const splitRows = await tx
+          .select({
+            runId: s.runItemStoresV.runId,
+            storeId: s.runItemStoresV.storeId,
+            skuId: s.runItemStoresV.skuId,
+            qty: s.runItemStoresV.qty,
+            itemUnitPrice: s.runItemsV.unitPrice,
+            itemPaymentMethod: s.runItemsV.paymentMethod,
+            splitUnitPrice: s.runItemStoresV.unitPrice,
+            splitPaymentMethod: s.runItemStoresV.paymentMethod,
+          })
+          .from(s.runItemStoresV)
+          .innerJoin(
+            s.runItemsV,
+            and(
+              eq(s.runItemsV.runId, s.runItemStoresV.runId),
+              eq(s.runItemsV.skuId, s.runItemStoresV.skuId),
+            ),
+          )
+          .where(
+            and(
+              inArray(s.runItemStoresV.runId, visibleRunIds),
+              eq(s.runItemsV.status, 'purchased'),
+            ),
+          );
+        for (const row of splitRows) {
+          const unitPrice = row.splitUnitPrice ?? row.itemUnitPrice;
+          if (!unitPrice) continue;
+          const subtotal = Number(row.qty) * Number(unitPrice);
+          if (!Number.isFinite(subtotal)) continue;
+          const current = ensureStoreTotal(row.runId, row.storeId);
+          if (!current) continue;
+          current.total += subtotal;
+          if ((row.splitPaymentMethod ?? row.itemPaymentMethod) === 'transfer') {
+            current.transfer += subtotal;
+          } else {
+            current.cash += subtotal;
+          }
+          current.skuIds.add(row.skuId);
+        }
+        const moneyString = (n: number) => (Math.round(n * 100) / 100).toString();
+        return visibleRuns.map((run) => ({
+          ...run,
+          storeTotals: [...(totalsByRun.get(run.id)?.values() ?? [])]
+            .sort((a, b) => b.total - a.total)
+            .map((total) => ({
+              storeId: total.storeId,
+              total: moneyString(total.total),
+              cash: moneyString(total.cash),
+              transfer: moneyString(total.transfer),
+              itemCount: total.skuIds.size,
+            })),
+        }));
       }),
     ),
 

@@ -946,4 +946,6 @@ export const zh = {
   'run.section.sharedExpenses': '集体开销',
   'run.section.storeExpenses': '分店开销',
   'run.history.viewAll': '全部历史',
+  'run.history.storePurchases': '各店当天采购',
+  'run.history.storeItemsHeading': '{store} 当天采购清单',
 } as const;

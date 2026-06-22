@@ -1121,4 +1121,6 @@ export const en = {
   'run.section.sharedExpenses': 'Shared expenses',
   'run.section.storeExpenses': 'Store expenses',
   'run.history.viewAll': 'All history',
+  'run.history.storePurchases': 'Store purchases that day',
+  'run.history.storeItemsHeading': '{store} purchases that day',
 } as const;
