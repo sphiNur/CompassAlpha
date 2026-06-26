@@ -27,6 +27,7 @@
  * goes into the audit log.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent } from 'react';
 import {
   Badge,
   Banner,
@@ -48,12 +49,7 @@ import {
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton, haptic, getTg } from '../hooks/useTelegram';
-import {
-  useI18n,
-  useProductName,
-  useVendorName,
-  useVendorUnitLabel,
-} from '../hooks/useI18n';
+import { useI18n, useProductName } from '../hooks/useI18n';
 import { usePhotoUploader } from '../hooks/usePhotoUploader';
 // M3.5: StoreSwitcher pill removed from page chrome; picker lives in
 // SettingsSheet now. RunPage still uses useStoreContext indirectly
@@ -208,17 +204,6 @@ type ConfirmKind =
 export function RunPage() {
   const i18n = useI18n();
   const productName = useProductName();
-  // M3.45 (2026-05-22): vendor-language variant for per-vendor copy
-  // templates. Returns ONLY the secondary locale's name (so the text
-  // pasted into the vendor's chat is clean Uzbek, no parenthetical
-  // Chinese noise). Falls back to primary locale when no secondary
-  // is set.
-  const vendorName = useVendorName();
-  // M3.48 (2026-05-23): unit-label resolver for the SAME copy templates.
-  // Without this, copy emitted raw canonical units ("bunch", "kg") even
-  // when the user's primary locale was Chinese — bug the user reported
-  // when "把" showed as "bunch" in the pasted text.
-  const vendorUnitLabel = useVendorUnitLabel();
   const session = useAuthStore((s) => s.session);
   const toast = useToast();
   const photoUploader = usePhotoUploader('receipt');
@@ -1637,8 +1622,6 @@ export function RunPage() {
                 preview={p}
                 skuById={skuById}
                 productName={productName}
-                vendorName={vendorName}
-                vendorUnitLabel={vendorUnitLabel}
                 i18n={i18n}
                 toast={toast}
               />
@@ -1680,8 +1663,6 @@ export function RunPage() {
           }}
           skuById={skuById}
           productName={productName}
-          vendorName={vendorName}
-          vendorUnitLabel={vendorUnitLabel}
           i18n={i18n}
           toast={toast}
         />
@@ -2889,8 +2870,6 @@ function PreviewSummaryCard({
   preview,
   skuById,
   productName,
-  vendorName,
-  vendorUnitLabel,
   i18n,
   toast,
 }: {
@@ -2936,15 +2915,6 @@ function PreviewSummaryCard({
     { id: string; names: Record<string, string>; unit: string; step: string; categoryId?: string | null }
   >;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
-  /** M3.45 (2026-05-22): used inside the copy templates so the text
-   *  sent to vendors is in the secondary locale only (no Chinese
-   *  noise when the vendor only reads Uzbek). Falls back to the
-   *  primary locale name when the user hasn't opted into bilingual. */
-  vendorName: (item: { names: Record<string, string> | null | undefined }) => string;
-  /** M3.48 (2026-05-23): unit-label resolver for the copy templates
-   *  so "bunch" → "把" / "bog'lam" instead of leaking the canonical
-   *  storage value. Mirrors vendorName's locale resolution. */
-  vendorUnitLabel: (unit: string | null | undefined) => string;
   i18n: ReturnType<typeof useI18n>;
   toast: ReturnType<typeof useToast>;
 }) {
@@ -2957,6 +2927,31 @@ function PreviewSummaryCard({
   const [vendorPickerFor, setVendorPickerFor] = useState<string | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
+  const currentUnitLabel = useCallback(
+    (unit: string | null | undefined): string => {
+      if (!unit) return '';
+      const canonical = unit.toLowerCase();
+      const key = ('unit.' + canonical) as Parameters<typeof i18n.t>[0];
+      const localized = i18n.t(key);
+      return localized === key ? unit : localized;
+    },
+    [i18n],
+  );
+  const currentSkuName = useCallback(
+    (item: { names: Record<string, string> | null | undefined }): string => {
+      const names = item.names ?? {};
+      return (
+        names[i18n.locale] ??
+        names.en ??
+        names.ru ??
+        names.zh ??
+        names.uz ??
+        Object.values(names)[0] ??
+        '—'
+      );
+    },
+    [i18n.locale],
+  );
   useEffect(() => {
     if (typeof window !== 'undefined')
       window.localStorage.setItem(PREVIEW_VIEW_STORAGE_KEY, view);
@@ -3012,7 +3007,7 @@ function PreviewSummaryCard({
         skuId: row.skuId,
         name: sku ? productName(sku) : row.skuId.slice(0, 8),
         qty: row.qty,
-        unit: vendorUnitLabel(sku?.unit),
+        unit: currentUnitLabel(sku?.unit),
         unitPrice,
         total: previewLineTotal(row.qty, unitPrice),
       });
@@ -3046,13 +3041,13 @@ function PreviewSummaryCard({
       .sort((a, b) => a.storeName.localeCompare(b.storeName));
   }, [
     ensurePreviewStoreGroup,
+    currentUnitLabel,
     estimatedPriceForSku,
     preview.perStoreDemand,
     preview.sessionExtrasByStore,
     preview.sessionNotesByStore,
     productName,
     skuById,
-    vendorUnitLabel,
   ]);
 
   const bySupplier = useMemo(() => {
@@ -3212,14 +3207,16 @@ function PreviewSummaryCard({
 
   const formatLineForText = (line: PreviewLine): string => {
     const sku = line.skuId ? skuById.get(line.skuId) : null;
-    const name = sku ? vendorName(sku) : line.name;
+    const name = sku ? currentSkuName(sku) : line.name;
+    const unit = sku ? currentUnitLabel(sku.unit) : line.unit;
+    const qtyUnit = `${formatQty(line.qty)} ${unit}`.trim();
     const prefix = line.kind === 'extra' ? `${i18n.t('order.extras.label')} · ` : '';
     const note = line.note ? `\n  ${line.note}` : '';
-    return `${prefix}${name}: ${lineFormula(line)}${note}`;
+    return `${prefix}${name}: ${qtyUnit}${note}`;
   };
 
   const buildStoreText = (group: PreviewStoreGroup): string => {
-    const lines = [group.storeName, groupMoneyMeta(group.total, group.unknownCount), ''];
+    const lines = [group.storeName, ''];
     for (const line of group.items) lines.push(formatLineForText(line));
     if (group.legacyNote) {
       lines.push('', `${i18n.t('order.notes.label')}:`, group.legacyNote);
@@ -3228,13 +3225,9 @@ function PreviewSummaryCard({
   };
 
   const buildSupplierText = (group: PreviewSupplierGroup): string => {
-    const lines = [
-      group.supplierName,
-      groupMoneyMeta(group.total, group.unknownCount),
-      '',
-    ];
+    const lines = [group.supplierName, ''];
     for (const store of group.stores) {
-      lines.push(`${store.storeName} · ${groupMoneyMeta(store.total, store.unknownCount)}`);
+      lines.push(store.storeName);
       for (const line of store.items) lines.push(formatLineForText(line));
       if (store.legacyNote) {
         lines.push(`${i18n.t('order.notes.label')}:`, store.legacyNote);
@@ -3252,44 +3245,49 @@ function PreviewSummaryCard({
   const toggleGroup = (key: string): void => {
     setCollapsedGroups((prev) => ({ ...prev, [key]: !prev[key] }));
   };
+  const handleGroupHeaderKeyDown = (e: KeyboardEvent<HTMLDivElement>, key: string): void => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    toggleGroup(key);
+  };
 
   const renderLine = (
     line: PreviewLine,
+    index: number,
     opts?: { editableSupplier?: boolean },
   ) => {
-    const amount =
-      line.total === null
-        ? i18n.t('run.preview.priceUnknown')
-        : `${formatMoney(line.total)} ${currency}`;
+    const rowBg = index % 2 === 0 ? 'bg-[var(--c-surface)]' : 'bg-[var(--c-bg)]';
+    const formulaTone =
+      line.total === null ? 'text-[var(--c-warning)]' : 'text-[var(--c-fg-muted)]';
     const nameNode =
       opts?.editableSupplier && line.kind === 'sku' && line.skuId ? (
         <button
           type="button"
           onClick={() => setVendorPickerFor(line.skuId)}
-          className="press min-w-0 max-w-full truncate text-left text-[var(--c-fg)]"
+          className="press min-w-0 max-w-full text-left text-[var(--c-fg)]"
           title={i18n.t('run.previewSupplier.changeVendor')}
         >
           {line.name}
         </button>
       ) : (
-        <span className="min-w-0 truncate text-[var(--c-fg)]">{line.name}</span>
+        <span className="min-w-0 max-w-full text-[var(--c-fg)]">{line.name}</span>
       );
     return (
       <li
         key={line.id}
-        className="flex items-start justify-between gap-3 border-t border-[var(--c-divider)]/60 py-2 first:border-t-0 first:pt-0 last:pb-0"
+        className={`rounded-[var(--r-utility)] px-2.5 py-2 ${rowBg}`}
       >
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-1 text-body">
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 text-body">
             {line.kind === 'extra' ? (
               <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--c-warning)] ring-hairline">
                 {i18n.t('order.extras.label')}
               </span>
             ) : null}
             {nameNode}
-          </div>
-          <div className="mt-0.5 truncate font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
-            {lineFormula(line)}
+            <span className={`min-w-0 font-mono text-label tabular-nums ${formulaTone}`}>
+              {lineFormula(line)}
+            </span>
           </div>
           {line.note ? (
             <div className="mt-0.5 whitespace-pre-wrap text-label leading-snug text-[var(--c-fg-muted)]">
@@ -3297,14 +3295,6 @@ function PreviewSummaryCard({
             </div>
           ) : null}
         </div>
-        <span
-          className={
-            'shrink-0 pt-0.5 text-right font-mono text-body font-semibold tabular-nums ' +
-            (line.total === null ? 'text-[var(--c-warning)]' : 'text-[var(--c-fg)]')
-          }
-        >
-          {amount}
-        </span>
       </li>
     );
   };
@@ -3390,36 +3380,43 @@ function PreviewSummaryCard({
           {byStore.map((g) => {
             const collapsed = isCollapsed(`store:${g.storeId}`);
             const storeNote = g.legacyNote;
-            const storeExtras = [] as Array<{ name: string; qty: string; unit: string }>;
+            const groupKey = `store:${g.storeId}`;
             return (
             <section key={g.storeId} className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3">
-              <div className="mb-2 flex items-baseline justify-between gap-2">
-                <span className="text-body font-semibold text-[var(--c-fg)]">
-                  🏪 {g.storeName}
-                </span>
-                <span className="ml-auto min-w-0 truncate text-right font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
-                  {groupMoneyMeta(g.total, g.unknownCount)}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => toggleGroup(`store:${g.storeId}`)}
-                  className="press shrink-0 rounded-[var(--r-pill)] px-2 py-1 font-mono text-label text-[var(--c-fg-muted)] ring-hairline"
-                  aria-expanded={!collapsed}
-                  aria-label={i18n.t(collapsed ? 'run.preview.expand' : 'run.preview.collapse')}
-                >
+              <div
+                role="button"
+                tabIndex={0}
+                aria-expanded={!collapsed}
+                onClick={() => toggleGroup(groupKey)}
+                onKeyDown={(e) => handleGroupHeaderKeyDown(e, groupKey)}
+                className="press mb-2 flex cursor-pointer items-start gap-2 rounded-[var(--r-utility)] px-1 py-1 outline-none focus-visible:ring-2 focus-visible:ring-[var(--c-ring)]"
+              >
+                <span className="mt-0.5 shrink-0 font-mono text-label text-[var(--c-fg-muted)]">
                   {collapsed ? '+' : '-'}
-                </button>
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-body font-semibold text-[var(--c-fg)]">
+                    🏪 {g.storeName}
+                  </div>
+                  <div className="mt-0.5 truncate font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
+                    {groupMoneyMeta(g.total, g.unknownCount)}
+                  </div>
+                </div>
                 {/* M2.1: Button component (was raw <button>). */}
                 <Button
                   variant="pearl"
                   size="sm"
-                  onClick={() => void shareOrCopyText(buildStoreText(g))}
+                  className="shrink-0"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void shareOrCopyText(buildStoreText(g));
+                  }}
                 >
                   {i18n.t('run.previewShare.sendList')}
                 </Button>
               </div>
-              <ul className={collapsed ? 'hidden' : ''}>
-                {g.items.map((line) => renderLine(line))}
+              <ul className={collapsed ? 'hidden' : 'flex flex-col gap-1'}>
+                {g.items.map((line, idx) => renderLine(line, idx))}
               </ul>
               {/* M1.8 / M3.16-C: surface the staff's "其他物品" requests
                   inline. M3.16-C structured extras render as one row
@@ -3427,28 +3424,11 @@ function PreviewSummaryCard({
                   underneath in italic. The purchaser scrolls the by-
                   store view at the market and needs requests right
                   next to the SKU list. */}
-              {!collapsed && (storeExtras.length > 0 || storeNote) ? (
+              {!collapsed && storeNote ? (
                 <div className="mt-2 rounded-[var(--r-card)] bg-[var(--c-warn-bg)] px-3 py-2 ring-hairline">
                   <SectionLabel padded={false}>
                     📝 {i18n.t('order.extras.label')}
                   </SectionLabel>
-                  {storeExtras.length > 0 ? (
-                    <ul className="mt-0.5 flex flex-col gap-0.5">
-                      {storeExtras.map((e, idx) => (
-                        <li
-                          key={`${e.name}-${idx}`}
-                          className="flex items-baseline justify-between gap-2 text-body-sm"
-                        >
-                          <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">
-                            {e.name}
-                          </span>
-                          <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
-                            {e.qty} {e.unit}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
                   {storeNote ? (
                     <div className="mt-1 whitespace-pre-wrap text-body-sm italic leading-snug text-[var(--c-fg-muted)]">
                       {storeNote}
@@ -3481,15 +3461,26 @@ function PreviewSummaryCard({
           ) : null}
           {bySupplier.map((b) => {
             const supplierKey = b.supplierId ?? '__unassigned__';
-            const collapsed = isCollapsed(`supplier:${supplierKey}`);
+            const groupKey = `supplier:${supplierKey}`;
+            const collapsed = isCollapsed(groupKey);
             return (
             <section
               key={supplierKey}
               className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3"
             >
-              <div className="mb-2 flex items-baseline justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="text-body font-semibold text-[var(--c-fg)]">
+              <div
+                role="button"
+                tabIndex={0}
+                aria-expanded={!collapsed}
+                onClick={() => toggleGroup(groupKey)}
+                onKeyDown={(e) => handleGroupHeaderKeyDown(e, groupKey)}
+                className="press mb-2 flex cursor-pointer items-start gap-2 rounded-[var(--r-utility)] px-1 py-1 outline-none focus-visible:ring-2 focus-visible:ring-[var(--c-ring)]"
+              >
+                <span className="mt-0.5 shrink-0 font-mono text-label text-[var(--c-fg-muted)]">
+                  {collapsed ? '+' : '-'}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-body font-semibold text-[var(--c-fg)]">
                     {b.supplierId ? `🛒 ${b.supplierName}` : `❓ ${b.supplierName}`}
                   </div>
                   {b.contactTg ? (
@@ -3497,19 +3488,10 @@ function PreviewSummaryCard({
                   ) : b.contactPhone ? (
                     <div className="text-label text-[var(--c-fg-muted)]">{b.contactPhone}</div>
                   ) : null}
+                  <div className="mt-0.5 truncate font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
+                    {groupMoneyMeta(b.total, b.unknownCount)}
+                  </div>
                 </div>
-                <span className="ml-auto min-w-0 truncate text-right font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
-                  {groupMoneyMeta(b.total, b.unknownCount)}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => toggleGroup(`supplier:${supplierKey}`)}
-                  className="press shrink-0 rounded-[var(--r-pill)] px-2 py-1 font-mono text-label text-[var(--c-fg-muted)] ring-hairline"
-                  aria-expanded={!collapsed}
-                  aria-label={i18n.t(collapsed ? 'run.preview.expand' : 'run.preview.collapse')}
-                >
-                  {collapsed ? '+' : '-'}
-                </button>
                 {/* M3.26 (2026-05-18): copy button is now visible for the
                     unassigned bucket too — items to buy individually
                     deserve their own paste — and switched to the same
@@ -3518,7 +3500,11 @@ function PreviewSummaryCard({
                 <Button
                   variant="pearl"
                   size="sm"
-                  onClick={() => void shareOrCopyText(buildSupplierText(b))}
+                  className="shrink-0"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void shareOrCopyText(buildSupplierText(b));
+                  }}
                 >
                   {i18n.t('run.previewShare.sendList')}
                 </Button>
@@ -3546,9 +3532,9 @@ function PreviewSummaryCard({
                         {groupMoneyMeta(store.total, store.unknownCount)}
                       </span>
                     </div>
-                    <ul>
-                      {store.items.map((line) =>
-                        renderLine(line, { editableSupplier: true }),
+                    <ul className="flex flex-col gap-1">
+                      {store.items.map((line, idx) =>
+                        renderLine(line, idx, { editableSupplier: true }),
                       )}
                     </ul>
                     {store.legacyNote ? (
