@@ -460,6 +460,8 @@ export const en = {
   'run.extras.status.bought': 'Bought',
   'run.extras.status.unavailable': 'Not available',
   'run.extras.status.cycleHint': 'Tap to mark · current: {current}',
+  'run.extras.recordPrice': 'Price',
+  'run.extras.recordExpenseReason': 'Other item from staff order',
   'order.extras.add': '+ Add item',
   'order.extras.namePlaceholder': 'Item name',
   'order.extras.remove': 'Remove',

@@ -60,6 +60,7 @@ import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
 import { shareLink } from '../lib/telegramLinks';
+import { matchesNameLike, normalizeQuery } from '../lib/searchMatch';
 
 /**
  * Convert a raw UZS price string to its thousands-mode display form.
@@ -164,6 +165,12 @@ interface AddItemDraft {
   paymentMethod: 'cash' | 'transfer';
   receiptPhotoUrl: string | null;
   reason: string;
+}
+
+function newClientId(): string {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 interface PurchaseDraft {
@@ -1506,10 +1513,7 @@ export function RunPage() {
                   // M3.44: pre-generate expense UUID even when opening
                   // in SKU mode so a mid-flow tab switch to expense
                   // mode already has the id ready (idempotency).
-                  expenseId:
-                    typeof crypto !== 'undefined' && 'randomUUID' in crypto
-                      ? crypto.randomUUID()
-                      : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                  expenseId: newClientId(),
                   label: '',
                   unitHint: '',
                   expenseScope: 'shared',
@@ -1786,6 +1790,28 @@ export function RunPage() {
           onMarkExtraStatus={(sessionId, extraIndex, status) =>
             markExtraStatus.mutate({ sessionId, extraIndex, status })
           }
+          onRecordExtraExpense={(storeId, extra) => {
+            setAddItemDraft({
+              mode: 'expense',
+              runId: activeRun.id,
+              skuId: null,
+              supplierId: null,
+              skuCostMode: 'merge',
+              expenseId: newClientId(),
+              label: extra.name,
+              unitHint: extra.unit,
+              expenseScope: 'store',
+              actualQty: extra.qty || '1',
+              unitPrice: '',
+              splits: new Map([[storeId, extra.qty || '1']]),
+              splitPrices: new Map(),
+              splitPaymentMethods: new Map(),
+              perStorePricing: false,
+              paymentMethod: 'cash',
+              receiptPhotoUrl: null,
+              reason: i18n.t('run.extras.recordExpenseReason'),
+            });
+          }}
           onRemoveExpense={(expenseId) =>
             removeExpense.mutate({
               runId: activeRun.id,
@@ -1800,10 +1826,7 @@ export function RunPage() {
               skuId: null,
               supplierId: null,
               skuCostMode: 'merge',
-              expenseId:
-                typeof crypto !== 'undefined' && 'randomUUID' in crypto
-                  ? crypto.randomUUID()
-                  : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+              expenseId: newClientId(),
               label: '',
               unitHint: '',
               expenseScope: 'shared',
@@ -2334,6 +2357,7 @@ function ActiveRunPanel({
   onDeliverStore,
   onRecallStore,
   onMarkExtraStatus,
+  onRecordExtraExpense,
   onRemoveExpense,
   onOpenExpense,
 }: {
@@ -2375,6 +2399,10 @@ function ActiveRunPanel({
     sessionId: string,
     extraIndex: number,
     status: 'pending' | 'bought' | 'unavailable',
+  ) => void;
+  onRecordExtraExpense: (
+    storeId: string,
+    extra: { name: string; qty: string; unit: string; note?: string },
   ) => void;
   /** M3.44: remove an off-catalog expense (purchasing phase only). */
   onRemoveExpense: (expenseId: string, label: string) => void;
@@ -2569,6 +2597,7 @@ function ActiveRunPanel({
           onEditPurchased={onEditPurchased}
           onUnmark={onUnmark}
           onMarkExtraStatus={onMarkExtraStatus}
+          onRecordExtraExpense={onRecordExtraExpense}
         />
       ) : null}
       {showViewToggle && viewMode === 'perCategory' && showPerCategory ? (
@@ -2671,6 +2700,7 @@ function ActiveRunPanel({
           i18n={i18n}
           editable={run.status === 'purchasing'}
           onMarkExtraStatus={onMarkExtraStatus}
+          onRecordExtraExpense={onRecordExtraExpense}
         />
       ) : null}
 
@@ -3852,6 +3882,7 @@ function PerVendorView({
   onEditPurchased,
   onUnmark,
   onMarkExtraStatus,
+  onRecordExtraExpense,
 }: {
   run: ActiveRun;
   skuById: Map<
@@ -3893,6 +3924,10 @@ function PerVendorView({
     sessionId: string,
     extraIndex: number,
     status: 'pending' | 'bought' | 'unavailable',
+  ) => void;
+  onRecordExtraExpense: (
+    storeId: string,
+    extra: { name: string; qty: string; unit: string; note?: string },
   ) => void;
 }) {
   // M3.52: run-level multi-store flag. PurchaseRow uses this to decide
@@ -4065,6 +4100,7 @@ function PerVendorView({
         i18n={i18n}
         editable={run.status === 'purchasing'}
         onMarkExtraStatus={onMarkExtraStatus}
+        onRecordExtraExpense={onRecordExtraExpense}
       />
     </div>
   );
@@ -4084,6 +4120,7 @@ function RunExtrasCard({
   i18n,
   editable = false,
   onMarkExtraStatus,
+  onRecordExtraExpense,
 }: {
   sessionExtrasByStore?: Record<
     string,
@@ -4107,6 +4144,10 @@ function RunExtrasCard({
     sessionId: string,
     extraIndex: number,
     status: 'pending' | 'bought' | 'unavailable',
+  ) => void;
+  onRecordExtraExpense?: (
+    storeId: string,
+    extra: { name: string; qty: string; unit: string; note?: string },
   ) => void;
 }) {
   const resolveStoreName = (id: string) => storeById.get(id)?.name ?? id.slice(0, 8);
@@ -4171,6 +4212,7 @@ function RunExtrasCard({
                     const hasAddress =
                       typeof e.sessionId === 'string' && typeof e.idx === 'number';
                     const canTap = editable && !!onMarkExtraStatus && hasAddress;
+                    const canRecordExpense = editable && !!onRecordExtraExpense;
                     const inner = (
                       <>
                         <span aria-hidden className={`shrink-0 text-body ${v.tone}`}>
@@ -4194,20 +4236,33 @@ function RunExtrasCard({
                         key={`${e.sessionId ?? storeId}-${e.idx ?? idx}-${e.name}`}
                         className="text-body-sm"
                       >
-                        {canTap ? (
-                          <button
-                            type="button"
-                            title={i18n.t('run.extras.status.cycleHint', { current: v.label })}
-                            onClick={() =>
-                              onMarkExtraStatus!(e.sessionId!, e.idx!, cycle(status))
-                            }
-                            className="-mx-2 flex w-[calc(100%+1rem)] items-baseline gap-2 rounded-md px-2 py-0.5 text-left active:bg-[var(--c-surface-2)]"
-                          >
-                            {inner}
-                          </button>
-                        ) : (
-                          <div className="flex items-baseline gap-2 py-0.5">{inner}</div>
-                        )}
+                        <div className="-mx-2 flex w-[calc(100%+1rem)] items-baseline gap-1 rounded-md px-2 py-0.5">
+                          {canTap ? (
+                            <button
+                              type="button"
+                              title={i18n.t('run.extras.status.cycleHint', { current: v.label })}
+                              onClick={() =>
+                                onMarkExtraStatus!(e.sessionId!, e.idx!, cycle(status))
+                              }
+                              className="flex min-w-0 flex-1 items-baseline gap-2 rounded-md text-left active:bg-[var(--c-surface-2)]"
+                            >
+                              {inner}
+                            </button>
+                          ) : (
+                            <div className="flex min-w-0 flex-1 items-baseline gap-2">
+                              {inner}
+                            </div>
+                          )}
+                          {canRecordExpense ? (
+                            <button
+                              type="button"
+                              onClick={() => onRecordExtraExpense!(storeId, e)}
+                              className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2 py-0.5 text-label font-medium text-[var(--c-action)] ring-hairline active:opacity-70"
+                            >
+                              {i18n.t('run.extras.recordPrice')}
+                            </button>
+                          ) : null}
+                        </div>
                       </li>
                     );
                   })}
@@ -5463,6 +5518,7 @@ function AddItemSheet({
   skus: Array<{
     id: string;
     names: Record<string, string>;
+    code?: string | null;
     unit: string;
     step: string;
     isArchived: boolean;
@@ -5507,7 +5563,7 @@ function AddItemSheet({
   // but purchasable existing SKUs remain selectable. Duplicate store/SKU
   // entries are recorded as store-scoped expenses so prices can differ.
   const filteredSkus = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const tokens = normalizeQuery(search);
     return skus
       .filter((sku) => {
         if (sku.isArchived) return false;
@@ -5520,10 +5576,10 @@ function AddItemSheet({
         return true;
       })
       .filter((sku) => {
-        if (!q) return true;
-        const names = sku.names ?? {};
-        return Object.values(names).some(
-          (v) => typeof v === 'string' && v.toLowerCase().includes(q),
+        if (!tokens) return true;
+        return matchesNameLike(
+          { names: sku.names as Record<string, string> | null, code: sku.code ?? null },
+          tokens,
         );
       })
       .slice(0, 20);

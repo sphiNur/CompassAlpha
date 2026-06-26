@@ -394,6 +394,8 @@ export const ru = {
   'run.extras.status.bought': 'Куплено',
   'run.extras.status.unavailable': 'Не нашли',
   'run.extras.status.cycleHint': 'Тап для смены · сейчас: {current}',
+  'run.extras.recordPrice': 'Цена',
+  'run.extras.recordExpenseReason': 'Прочая позиция из заявки сотрудника',
   'order.extras.add': '+ Добавить',
   'order.extras.namePlaceholder': 'Название позиции',
   'order.extras.remove': 'Удалить',

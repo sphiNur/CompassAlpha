@@ -405,6 +405,8 @@ export const uz = {
   'run.extras.status.bought': 'Olindi',
   'run.extras.status.unavailable': 'Topilmadi',
   'run.extras.status.cycleHint': "Bosing · hozir: {current}",
+  'run.extras.recordPrice': 'Narx',
+  'run.extras.recordExpenseReason': "Xodim buyurtmasidagi boshqa narsa",
   'order.extras.add': '+ Qoʻshish',
   'order.extras.namePlaceholder': 'Mahsulot nomi',
   'order.extras.remove': 'Oʻchirish',

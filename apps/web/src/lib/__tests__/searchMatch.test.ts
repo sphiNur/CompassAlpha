@@ -6,11 +6,7 @@
  * the suite.
  */
 import { describe, expect, test } from 'bun:test';
-import {
-  normalizeQuery,
-  matchesNameLike,
-  matchesAnyString,
-} from '../searchMatch';
+import { normalizeQuery, matchesNameLike, matchesAnyString } from '../searchMatch';
 
 describe('normalizeQuery', () => {
   test('returns null for empty / whitespace-only input', () => {
@@ -22,6 +18,11 @@ describe('normalizeQuery', () => {
   test('lowercases + splits on whitespace', () => {
     expect(normalizeQuery('Beef Rib')).toEqual(['beef', 'rib']);
     expect(normalizeQuery('  HELLO  WORLD  ')).toEqual(['hello', 'world']);
+  });
+
+  test('normalizes accents and punctuation variants', () => {
+    expect(normalizeQuery('Qoʻy go‘shti')).toEqual(['qoy', "go'shti"]);
+    expect(normalizeQuery('Crème-Fraîche')).toEqual(['creme-fraiche']);
   });
 
   test('preserves CJK + Cyrillic as single tokens', () => {
@@ -51,12 +52,18 @@ describe('matchesNameLike', () => {
   test('hits when query matches a non-locale name (cross-language)', () => {
     expect(matchesNameLike(beef, ['牛肉'])).toBe(true);
     expect(matchesNameLike(beef, ['говядина'])).toBe(true);
-    expect(matchesNameLike(beef, ["mol"])).toBe(true);
+    expect(matchesNameLike(beef, ['mol'])).toBe(true);
   });
 
   test('hits when query matches the code', () => {
     expect(matchesNameLike(beef, ['beef-1kg'])).toBe(true);
     expect(matchesNameLike(beef, ['1kg'])).toBe(true);
+  });
+
+  test('fuzzy matches mobile typos in Latin and Cyrillic fields', () => {
+    expect(matchesNameLike(beef, ['gohti'])).toBe(true);
+    expect(matchesNameLike({ names: { en: 'Tomato', uz: 'Pomidor' } }, ['tomto'])).toBe(true);
+    expect(matchesNameLike({ names: { ru: 'Помидор' } }, ['помдор'])).toBe(true);
   });
 
   test('case-insensitive', () => {
@@ -98,13 +105,9 @@ describe('matchesAnyString', () => {
 
   test('multi-token AND across fields', () => {
     // "alice" hits the name; "wonder" hits the username.
-    expect(
-      matchesAnyString(['Alice Liddell', '@wonderland'], ['alice', 'wonder']),
-    ).toBe(true);
+    expect(matchesAnyString(['Alice Liddell', '@wonderland'], ['alice', 'wonder'])).toBe(true);
     // "alice" hits; "tea" doesn't.
-    expect(
-      matchesAnyString(['Alice Liddell', '@wonderland'], ['alice', 'tea']),
-    ).toBe(false);
+    expect(matchesAnyString(['Alice Liddell', '@wonderland'], ['alice', 'tea'])).toBe(false);
   });
 
   test('empty tokens always matches', () => {

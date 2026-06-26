@@ -360,6 +360,8 @@ export const zh = {
   'run.extras.status.bought': '已购买',
   'run.extras.status.unavailable': '没买到',
   'run.extras.status.cycleHint': '点击切换状态 · 当前：{current}',
+  'run.extras.recordPrice': '记价',
+  'run.extras.recordExpenseReason': '员工订单里的其他物品',
   'order.extras.add': '+ 新增条目',
   'order.extras.namePlaceholder': '物品名称',
   'order.extras.remove': '删除',
