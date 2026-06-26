@@ -3256,7 +3256,7 @@ function PreviewSummaryCard({
     index: number,
     opts?: { editableSupplier?: boolean },
   ) => {
-    const rowBg = index % 2 === 0 ? 'bg-[var(--c-surface)]' : 'bg-[var(--c-bg)]';
+    const rowBg = index % 2 === 0 ? 'bg-[var(--c-surface)]' : 'bg-[var(--c-surface-2)]';
     const formulaTone =
       line.total === null ? 'text-[var(--c-warning)]' : 'text-[var(--c-fg-muted)]';
     const nameNode =
@@ -3275,10 +3275,10 @@ function PreviewSummaryCard({
     return (
       <li
         key={line.id}
-        className={`rounded-[var(--r-utility)] px-2.5 py-2 ${rowBg}`}
+        className={`px-2 py-1.5 ${rowBg}`}
       >
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 text-body">
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-body">
             {line.kind === 'extra' ? (
               <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--c-warning)] ring-hairline">
                 {i18n.t('order.extras.label')}
@@ -3300,15 +3300,15 @@ function PreviewSummaryCard({
   };
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className="-mx-2 overflow-hidden rounded-[var(--r-capsule)]">
+      <CardHeader className="px-3 pt-3">
         <CardTitle>{i18n.t('run.section.readyToPlan')}</CardTitle>
         <Badge>{i18n.t('run.label.sessionsCount', { n: preview.sessions.length })}</Badge>
       </CardHeader>
       {/* Segmented control — sticky horizontal pill bar, same visual
           language as ScopeTab in MemberPermissionsSheet. Three taps
           here, all instant (no async work — all data is in `preview`). */}
-      <div className="flex gap-1 px-4 pb-2 pt-1">
+      <div className="flex gap-1 px-3 pb-2 pt-1">
         {(['overall', 'byStore', 'bySupplier'] as const).map((v) => (
           <button
             key={v}
@@ -3333,7 +3333,7 @@ function PreviewSummaryCard({
       </div>
 
       {preview.perStoreBudgets?.length ? (
-        <div className="border-t border-[var(--c-divider)] px-4 py-2">
+        <div className="border-t border-[var(--c-divider)] px-3 py-2">
           <div className="mb-1 text-label font-semibold text-[var(--c-fg-muted)]">
             分店预算
           </div>
@@ -3360,7 +3360,7 @@ function PreviewSummaryCard({
             so the summary card stays bounded, but the teaser line just
             advertised content the user can't expand here — they'll see
             the full list once the run is created. */
-        <ul className="flex flex-col gap-1 px-4 py-3">
+        <ul className="flex flex-col gap-1 px-3 py-2">
           {preview.plannedItems.slice(0, 8).map((it) => {
             const sku = skuById.get(it.skuId);
             return (
@@ -3376,20 +3376,23 @@ function PreviewSummaryCard({
       ) : null}
 
       {view === 'byStore' ? (
-        <div className="flex flex-col gap-3 px-4 py-3">
+        <div className="px-2 py-2">
           {byStore.map((g) => {
             const collapsed = isCollapsed(`store:${g.storeId}`);
             const storeNote = g.legacyNote;
             const groupKey = `store:${g.storeId}`;
             return (
-            <section key={g.storeId} className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3">
+            <section
+              key={g.storeId}
+              className="border-t border-[var(--c-divider)] py-2 first:border-t-0 first:pt-0 last:pb-0"
+            >
               <div
                 role="button"
                 tabIndex={0}
                 aria-expanded={!collapsed}
                 onClick={() => toggleGroup(groupKey)}
                 onKeyDown={(e) => handleGroupHeaderKeyDown(e, groupKey)}
-                className="press mb-2 flex cursor-pointer items-start gap-2 rounded-[var(--r-utility)] px-1 py-1 outline-none focus-visible:ring-2 focus-visible:ring-[var(--c-ring)]"
+                className="press mb-1.5 flex cursor-pointer items-start gap-2 rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-2 py-1.5 outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]"
               >
                 <span className="mt-0.5 shrink-0 font-mono text-label text-[var(--c-fg-muted)]">
                   {collapsed ? '+' : '-'}
@@ -3415,7 +3418,7 @@ function PreviewSummaryCard({
                   {i18n.t('run.previewShare.sendList')}
                 </Button>
               </div>
-              <ul className={collapsed ? 'hidden' : 'flex flex-col gap-1'}>
+              <ul className={collapsed ? 'hidden' : 'overflow-hidden rounded-[var(--r-utility)]'}>
                 {g.items.map((line, idx) => renderLine(line, idx))}
               </ul>
               {/* M1.8 / M3.16-C: surface the staff's "其他物品" requests
@@ -3425,7 +3428,7 @@ function PreviewSummaryCard({
                   store view at the market and needs requests right
                   next to the SKU list. */}
               {!collapsed && storeNote ? (
-                <div className="mt-2 rounded-[var(--r-card)] bg-[var(--c-warn-bg)] px-3 py-2 ring-hairline">
+                <div className="mt-1.5 rounded-[var(--r-utility)] bg-[var(--c-warn-bg)] px-2 py-1.5">
                   <SectionLabel padded={false}>
                     📝 {i18n.t('order.extras.label')}
                   </SectionLabel>
@@ -3443,13 +3446,13 @@ function PreviewSummaryCard({
       ) : null}
 
       {view === 'bySupplier' ? (
-        <div className="flex flex-col gap-3 px-4 py-3">
+        <div className="px-2 py-2">
           {/* M3.26 (2026-05-18): top-of-list "copy everything" button so
               the purchaser can paste one block into a notebook and walk
               the bazaar. Hidden when there's nothing to copy (no rows
               with qty > 0 in any bucket). */}
           {bySupplier.length > 0 ? (
-            <div className="flex justify-end">
+            <div className="mb-2 flex justify-end">
               <Button
                 variant="pearl"
                 size="sm"
@@ -3466,7 +3469,7 @@ function PreviewSummaryCard({
             return (
             <section
               key={supplierKey}
-              className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3"
+              className="border-t border-[var(--c-divider)] py-2 first:border-t-0 first:pt-0 last:pb-0"
             >
               <div
                 role="button"
@@ -3474,7 +3477,7 @@ function PreviewSummaryCard({
                 aria-expanded={!collapsed}
                 onClick={() => toggleGroup(groupKey)}
                 onKeyDown={(e) => handleGroupHeaderKeyDown(e, groupKey)}
-                className="press mb-2 flex cursor-pointer items-start gap-2 rounded-[var(--r-utility)] px-1 py-1 outline-none focus-visible:ring-2 focus-visible:ring-[var(--c-ring)]"
+                className="press mb-1.5 flex cursor-pointer items-start gap-2 rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-2 py-1.5 outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]"
               >
                 <span className="mt-0.5 shrink-0 font-mono text-label text-[var(--c-fg-muted)]">
                   {collapsed ? '+' : '-'}
@@ -3510,7 +3513,7 @@ function PreviewSummaryCard({
                 </Button>
               </div>
               {!collapsed && !b.supplierId ? (
-                <p className="mb-2 text-label text-[var(--c-fg-muted)]">
+                <p className="mb-1.5 px-2 text-label text-[var(--c-fg-muted)]">
                   {i18n.t('run.previewSupplier.unassignedHint')}
                 </p>
               ) : null}
@@ -3523,22 +3526,22 @@ function PreviewSummaryCard({
                   Now each store is a small section header with its
                   items underneath — matches the copy template format
                   the user asked for in the previous round. */}
-              <div className={collapsed ? 'hidden' : 'flex flex-col gap-3'}>
+              <div className={collapsed ? 'hidden' : 'flex flex-col gap-2'}>
                 {b.stores.map((store) => (
                   <div key={store.storeId}>
-                    <div className="mb-1 flex items-baseline gap-2 text-label font-semibold text-[var(--c-fg-muted)]">
+                    <div className="mb-1 flex items-baseline gap-2 px-2 text-label font-semibold text-[var(--c-fg-muted)]">
                       <span>🏪 {store.storeName}</span>
                       <span className="ml-auto font-mono font-normal tabular-nums">
                         {groupMoneyMeta(store.total, store.unknownCount)}
                       </span>
                     </div>
-                    <ul className="flex flex-col gap-1">
+                    <ul className="overflow-hidden rounded-[var(--r-utility)]">
                       {store.items.map((line, idx) =>
                         renderLine(line, idx, { editableSupplier: true }),
                       )}
                     </ul>
                     {store.legacyNote ? (
-                      <div className="mt-2 rounded-[var(--r-card)] bg-[var(--c-warn-bg)] px-3 py-2 ring-hairline">
+                      <div className="mt-1.5 rounded-[var(--r-utility)] bg-[var(--c-warn-bg)] px-2 py-1.5">
                         <SectionLabel padded={false}>
                           {i18n.t('order.notes.label')}
                         </SectionLabel>
