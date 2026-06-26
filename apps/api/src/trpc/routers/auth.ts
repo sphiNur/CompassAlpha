@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { and, eq, gt, isNull, or } from 'drizzle-orm';
+import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { schema as s, type DB } from '@compass/db';
 import {
   NonTelegramLoginInputSchema,
@@ -55,6 +55,12 @@ function enforceRate(scope: string, ip: string | null): void {
 }
 
 type Session = z.infer<typeof SessionShape>;
+
+type LoginIdentity = {
+  userId: string;
+  memberId: string;
+  orgId: string;
+};
 
 function releaseChannel(): 'development' | 'staging' | 'production' {
   return env.COMPASS_RELEASE_CHANNEL ?? (env.NODE_ENV === 'production' ? 'production' : 'development');
@@ -113,6 +119,51 @@ function isDevMockLoginAvailable(): boolean {
     env.NODE_ENV === 'development' &&
     releaseChannel() === 'development'
   );
+}
+
+async function findDevBypassIdentity(db: DB): Promise<LoginIdentity> {
+  const rows = await db.execute<{
+    user_id: string;
+    member_id: string;
+    org_id: string;
+  }>(sql`
+    SELECT
+      m.user_id::text AS user_id,
+      m.id::text AS member_id,
+      m.org_id::text AS org_id
+    FROM auth.members m
+    INNER JOIN auth.users u ON u.id = m.user_id
+    INNER JOIN auth.organizations o ON o.id = m.org_id
+    WHERE m.status = 'active'
+      AND u.deleted_at IS NULL
+      AND o.deleted_at IS NULL
+    ORDER BY
+      EXISTS (
+        SELECT 1
+        FROM auth.member_role_bindings mrb
+        INNER JOIN auth.role_permissions rp ON rp.role_id = mrb.role_id
+        WHERE mrb.member_id = m.id
+          AND rp.permission_key = 'users.manage'
+      ) DESC,
+      u.display_name_locked DESC,
+      m.joined_at ASC
+    LIMIT 1
+  `);
+  const list = Array.isArray(rows)
+    ? rows
+    : ((rows as { rows?: typeof rows }).rows ?? []);
+  const picked = list[0];
+  if (!picked) {
+    throw new TRPCError({
+      code: 'PRECONDITION_FAILED',
+      message: 'auth.errors.devBypassNoMember',
+    });
+  }
+  return {
+    userId: picked.user_id,
+    memberId: picked.member_id,
+    orgId: picked.org_id,
+  };
 }
 
 async function ensureDevMockAdminAccess(db: DB, memberId: string, orgId: string): Promise<void> {
@@ -186,10 +237,60 @@ async function issueLoginResult(
   };
 }
 
+async function issueDevBypassLoginResult(
+  db: DB,
+  userId: string,
+  memberId: string,
+  orgId: string,
+) {
+  const session = await buildSessionPayload(db, userId, memberId, orgId);
+  const accessToken = await signAccess({ sub: userId, org: session.member.orgId, mid: memberId });
+  const accessExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  return {
+    tokens: {
+      accessToken,
+      // Keep this truthy so the normal AuthGate/auth.me synchronization
+      // path runs in the browser, but deliberately do not issue a tracked
+      // refresh token. If this access token expires, refresh fails, auth
+      // clears, and the development-only bypass logs in again.
+      refreshToken: 'dev-bypass',
+      accessExpiresAt,
+      refreshExpiresAt: accessExpiresAt,
+    },
+    session,
+  };
+}
+
 export const authRouter = router({
   nonTelegramStatus: publicProcedure.query(() => ({
     enabled: isNonTelegramLoginAvailable(),
   })),
+
+  /**
+   * Development-only browser bypass for local UI work.
+   *
+   * This exists so Codex / browser QA can open the Mini App outside
+   * Telegram without stopping on the Telegram access screen. It never
+   * accepts a user id from the client and never creates or grants
+   * access. The server picks an existing active member from the local
+   * database, preferring an admin account so all screens are reachable.
+   */
+  devBypassLogin: publicProcedure.mutation(async ({ ctx }) => {
+    enforceRate('devBypassLogin', ctx.ip);
+    if (!isDevMockLoginAvailable()) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'auth.errors.devBypassDisabled',
+      });
+    }
+    const identity = await findDevBypassIdentity(ctx.db);
+    return issueDevBypassLoginResult(
+      ctx.db,
+      identity.userId,
+      identity.memberId,
+      identity.orgId,
+    );
+  }),
 
   /**
    * Browser-only login for remote development/staging UI checks.

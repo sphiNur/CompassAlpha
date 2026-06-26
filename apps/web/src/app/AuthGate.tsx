@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Button, Banner, EmptyState, Input, Spinner } from '@compass/ui';
-import { useAuthStore } from '../stores/authStore';
+import { useAuthStore, type AuthSession } from '../stores/authStore';
 import { trpc } from '../lib/trpc';
 import { getTg, haptic } from '../hooks/useTelegram';
 import { useI18n } from '../hooks/useI18n';
@@ -14,6 +14,15 @@ interface AuthGateProps {
 // only the non-secret Telegram ID keeps the rare re-authentication path short
 // without putting the access code in local storage or the client bundle.
 const DEV_BROWSER_TG_USER_ID_KEY = 'compass.devBrowserTgUserId';
+
+function shouldUseDevBypassLogin(): boolean {
+  return (
+    import.meta.env.DEV &&
+    import.meta.env.VITE_DEV_MOCK_INIT_DATA === '1' &&
+    typeof window !== 'undefined' &&
+    !window.Telegram?.WebApp?.initData
+  );
+}
 
 function initialDevBrowserTgUserId(): string {
   if (!import.meta.env.DEV || typeof window === 'undefined') return '';
@@ -48,6 +57,8 @@ export function AuthGate({ children }: AuthGateProps) {
   const [error, setError] = useState<string | null>(null);
   const [browserTgUserId, setBrowserTgUserId] = useState(initialDevBrowserTgUserId);
   const [browserAccessCode, setBrowserAccessCode] = useState('');
+  const [loginSession, setLoginSession] = useState<AuthSession | null>(null);
+  const activeSession = session ?? loginSession;
   /** True once we've issued a telegramLogin call this mount cycle. */
   const loginAttempted = useRef(false);
   /** True once `auth.me` failed with UNAUTHORIZED — don't auto-login again. */
@@ -58,7 +69,7 @@ export function AuthGate({ children }: AuthGateProps) {
     retry: false,
   });
   const nonTelegramStatus = trpc.auth.nonTelegramStatus.useQuery(undefined, {
-    enabled: !session,
+    enabled: !activeSession,
     retry: false,
     staleTime: 60_000,
   });
@@ -71,8 +82,10 @@ export function AuthGate({ children }: AuthGateProps) {
     const code = (me.error as { data?: { code?: string } } | undefined)?.data?.code;
     if (code === 'UNAUTHORIZED' || code === 'FORBIDDEN') {
       const hasTelegramInitData = Boolean(getTg()?.initData);
-      meUnauthorized.current = !hasTelegramInitData;
-      if (hasTelegramInitData) loginAttempted.current = false;
+      const canAutoLogin = hasTelegramInitData || shouldUseDevBypassLogin();
+      meUnauthorized.current = !canAutoLogin;
+      if (canAutoLogin) loginAttempted.current = false;
+      setLoginSession(null);
       clear();
     }
   }, [me.isError, me.error, clear]);
@@ -84,6 +97,7 @@ export function AuthGate({ children }: AuthGateProps) {
     const rt = useAuthStore.getState().refreshToken;
     if (!at || !rt) return;
     setSession({ accessToken: at, refreshToken: rt, session: me.data });
+    setLoginSession(me.data);
   }, [me.data, setSession]);
 
   const login = trpc.auth.telegramLogin.useMutation({
@@ -93,11 +107,27 @@ export function AuthGate({ children }: AuthGateProps) {
         refreshToken: data.tokens.refreshToken,
         session: data.session,
       });
+      setLoginSession(data.session);
       meUnauthorized.current = false;
       setError(null);
     },
     onError(err) {
       setError(err.message);
+    },
+  });
+  const devBypassLogin = trpc.auth.devBypassLogin.useMutation({
+    onSuccess(data) {
+      setSession({
+        accessToken: data.tokens.accessToken,
+        refreshToken: data.tokens.refreshToken,
+        session: data.session,
+      });
+      setLoginSession(data.session);
+      meUnauthorized.current = false;
+      setError(null);
+    },
+    onError(err) {
+      setError(nonTelegramErrorMessage(err.message));
     },
   });
   const nonTelegramLogin = trpc.auth.nonTelegramLogin.useMutation({
@@ -107,6 +137,7 @@ export function AuthGate({ children }: AuthGateProps) {
         refreshToken: data.tokens.refreshToken,
         session: data.session,
       });
+      setLoginSession(data.session);
       if (import.meta.env.DEV && browserTgUserId.trim()) {
         try {
           window.localStorage.setItem(DEV_BROWSER_TG_USER_ID_KEY, browserTgUserId.trim());
@@ -125,12 +156,17 @@ export function AuthGate({ children }: AuthGateProps) {
   // Auto-login exactly once per mount, gated by ref so UNAUTHORIZED on me
   // can't restart the cycle.
   useEffect(() => {
-    if (session) return;
+    if (activeSession) return;
     if (loginAttempted.current) return;
     if (meUnauthorized.current && !getTg()?.initData) return;
     if (accessToken) return; // there's a token, let auth.me decide its fate first
     const tg = getTg();
     const initData = tg?.initData;
+    if (shouldUseDevBypassLogin()) {
+      loginAttempted.current = true;
+      devBypassLogin.mutate();
+      return;
+    }
     // M3.18 (launch hardening): only honor the dev-mock initData in
     // a dev build. `import.meta.env.DEV` is statically replaced by
     // `false` in production, so Rollup tree-shakes the entire mock
@@ -141,14 +177,21 @@ export function AuthGate({ children }: AuthGateProps) {
     if (!data) return;
     loginAttempted.current = true;
     login.mutate({ initData: data });
-  }, [session, accessToken, login]);
+  }, [activeSession, accessToken, login, devBypassLogin]);
 
-  const autoLoginData = getTg()?.initData ?? (import.meta.env.DEV ? import.meta.env.VITE_DEV_MOCK_INIT_DATA : null);
+  const autoLoginData =
+    getTg()?.initData ??
+    (shouldUseDevBypassLogin()
+      ? 'dev-bypass'
+      : import.meta.env.DEV
+        ? import.meta.env.VITE_DEV_MOCK_INIT_DATA
+        : null);
 
   if (
     login.isPending ||
-    (me.isLoading && !!accessToken) ||
-    (!session && !!autoLoginData && !error && !login.isError)
+    (devBypassLogin.isPending && !activeSession) ||
+    (me.isLoading && !!accessToken && !activeSession) ||
+    (!activeSession && !!autoLoginData && !error && !login.isError && !devBypassLogin.isError)
   ) {
     return (
       <div className="flex h-full items-center justify-center text-[var(--c-fg-muted)]">
@@ -157,7 +200,7 @@ export function AuthGate({ children }: AuthGateProps) {
     );
   }
 
-  if (!session) {
+  if (!activeSession) {
     const hasTelegramInitData = Boolean(getTg()?.initData);
     const showBrowserLogin = Boolean(nonTelegramStatus.data?.enabled && !hasTelegramInitData);
     return (
@@ -174,6 +217,10 @@ export function AuthGate({ children }: AuthGateProps) {
             onClick={() => {
               loginAttempted.current = true;
               meUnauthorized.current = false;
+              if (shouldUseDevBypassLogin()) {
+                devBypassLogin.mutate();
+                return;
+              }
               // M3.18: same DEV-only guard as the auto-login path above.
               // Production builds never read VITE_DEV_MOCK_INIT_DATA.
               const mock = import.meta.env.DEV ? import.meta.env.VITE_DEV_MOCK_INIT_DATA : null;
@@ -254,18 +301,18 @@ export function AuthGate({ children }: AuthGateProps) {
   // Until they finish, no business pages render — keeps the rule that
   // names appear in approval / audit logs from leaking placeholder
   // strings.
-  if (session.needsOnboarding) {
+  if (activeSession.needsOnboarding) {
     return <OnboardingScreen />;
   }
 
   // After name onboarding, regular staff need at least one store
   // assigned. Admins (users.manage) bypass — they always see all stores.
-  const isAdmin = session.permissions.includes('users.manage');
-  if (!isAdmin && session.stores.length === 0) {
+  const isAdmin = activeSession.permissions.includes('users.manage');
+  if (!isAdmin && activeSession.stores.length === 0) {
     return <NoStoreScreen />;
   }
 
-  if (session.permissions.length === 0) {
+  if (activeSession.permissions.length === 0) {
     return <NoAccessScreen />;
   }
   return <>{children}</>;
@@ -279,6 +326,10 @@ function nonTelegramErrorMessage(message: string): string {
       return 'Telegram ID 或访问码无效，或该用户不在允许名单中。';
     case 'auth.errors.noMembership':
       return '该用户没有可用的组织成员身份。';
+    case 'auth.errors.devBypassDisabled':
+      return '本地开发自动登录未开启，或当前不是 development 环境。';
+    case 'auth.errors.devBypassNoMember':
+      return '本地数据库里没有可用于自动登录的 active 成员。';
     default:
       return message;
   }

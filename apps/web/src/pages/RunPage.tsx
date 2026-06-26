@@ -47,7 +47,7 @@ import {
 } from '@compass/ui';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
-import { usePageMainButton, haptic } from '../hooks/useTelegram';
+import { usePageMainButton, haptic, getTg } from '../hooks/useTelegram';
 import {
   useI18n,
   useProductName,
@@ -63,6 +63,7 @@ import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
+import { shareLink } from '../lib/telegramLinks';
 
 /**
  * Convert a raw UZS price string to its thousands-mode display form.
@@ -2839,48 +2840,49 @@ function ActiveRunPanel({
 type PreviewView = 'overall' | 'byStore' | 'bySupplier';
 const PREVIEW_VIEW_STORAGE_KEY = 'compass.runPreview.view';
 
-/**
- * Pivot a supplier's items from SKU-major (each SKU has a list of
- * stores it goes to) into store-major (each store has the SKUs the
- * supplier delivers there) — used by the by-supplier preview view
- * (M1.7-fix2, 2026-05-07).
- *
- * Stores are sorted alphabetically so the rendered output is stable
- * across re-renders, matching the copy template's order.
- */
-function pivotSupplierToStoreMajor(
-  items: ReadonlyArray<{
-    skuId: string;
-    total: string;
-    perStore: ReadonlyArray<{ storeId: string; storeName: string; qty: string }>;
-  }>,
-): Array<{
+type PreviewLine = {
+  id: string;
+  kind: 'sku' | 'extra';
+  skuId: string | null;
+  name: string;
+  qty: string;
+  unit: string;
+  unitPrice: string | null;
+  total: number | null;
+  note?: string;
+};
+
+type PreviewStoreGroup = {
   storeId: string;
   storeName: string;
-  items: Array<{ skuId: string; qty: string }>;
-}> {
-  const byStore = new Map<
-    string,
-    {
-      storeId: string;
-      storeName: string;
-      items: Array<{ skuId: string; qty: string }>;
-    }
-  >();
-  for (const it of items) {
-    for (const ps of it.perStore) {
-      const bucket = byStore.get(ps.storeId) ?? {
-        storeId: ps.storeId,
-        storeName: ps.storeName,
-        items: [],
-      };
-      bucket.items.push({ skuId: it.skuId, qty: ps.qty });
-      byStore.set(ps.storeId, bucket);
-    }
-  }
-  return [...byStore.values()].sort((a, b) =>
-    a.storeName.localeCompare(b.storeName),
-  );
+  items: PreviewLine[];
+  total: number;
+  unknownCount: number;
+  legacyNote?: string;
+};
+
+type PreviewSupplierGroup = {
+  supplierId: string | null;
+  supplierName: string;
+  contactPhone: string | null;
+  contactTg: string | null;
+  stores: PreviewStoreGroup[];
+  total: number;
+  unknownCount: number;
+};
+
+function previewLineTotal(qty: string, unitPrice: string | null): number | null {
+  if (!unitPrice) return null;
+  const qtyNum = Number(qty);
+  const priceNum = Number(unitPrice);
+  if (!Number.isFinite(qtyNum) || !Number.isFinite(priceNum)) return null;
+  return qtyNum * priceNum;
+}
+
+function addPreviewLine(group: PreviewStoreGroup, line: PreviewLine): void {
+  group.items.push(line);
+  if (line.total === null) group.unknownCount += 1;
+  else group.total += line.total;
 }
 
 function PreviewSummaryCard({
@@ -2897,7 +2899,7 @@ function PreviewSummaryCard({
     // specific date — preview then spans every approved-not-in-run
     // session regardless of order_date.
     date: string | null;
-    sessions: ReadonlyArray<{ id: string; storeId: string; orderDate?: string }>;
+    sessions: ReadonlyArray<{ id: string; storeId: string; storeName?: string; orderDate?: string }>;
     plannedItems: ReadonlyArray<{ skuId: string; qty: string }>;
     perStoreDemand: ReadonlyArray<{
       storeId: string;
@@ -2914,6 +2916,7 @@ function PreviewSummaryCard({
       lastSeenPrice?: string | null;
       estimatedUnitPrice?: string | null;
     } | null>;
+    lastPurchasePriceBySku?: Record<string, string>;
     perStoreBudgets?: ReadonlyArray<{
       storeId: string;
       storeName: string;
@@ -2925,7 +2928,7 @@ function PreviewSummaryCard({
     /** M3.16-C: per-store structured extras. */
     sessionExtrasByStore?: Record<
       string,
-      Array<{ name: string; qty: string; unit: string; note?: string }>
+      Array<{ name: string; qty: string; unit: string; note?: string; sessionId?: string; idx?: number }>
     >;
   };
   skuById: Map<
@@ -2952,75 +2955,211 @@ function PreviewSummaryCard({
   });
   // M1.6 #1: when set, the VendorPickerSheet is open for this skuId.
   const [vendorPickerFor, setVendorPickerFor] = useState<string | null>(null);
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   useEffect(() => {
     if (typeof window !== 'undefined')
       window.localStorage.setItem(PREVIEW_VIEW_STORAGE_KEY, view);
   }, [view]);
 
-  // Group perStoreDemand by storeId for the "by store" view.
+  const storeNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const row of preview.perStoreDemand) m.set(row.storeId, row.storeName);
+    for (const row of preview.perStoreBudgets ?? []) m.set(row.storeId, row.storeName);
+    for (const row of preview.sessions) {
+      if (row.storeName) m.set(row.storeId, row.storeName);
+    }
+    return m;
+  }, [preview.perStoreBudgets, preview.perStoreDemand, preview.sessions]);
+
+  const estimatedPriceForSku = useCallback(
+    (skuId: string): string | null =>
+      preview.lastPurchasePriceBySku?.[skuId] ??
+      preview.supplierBySku[skuId]?.estimatedUnitPrice ??
+      null,
+    [preview.lastPurchasePriceBySku, preview.supplierBySku],
+  );
+
+  const ensurePreviewStoreGroup = useCallback(
+    (m: Map<string, PreviewStoreGroup>, storeId: string, storeName?: string) => {
+      let cur = m.get(storeId);
+      if (!cur) {
+        cur = {
+          storeId,
+          storeName: storeName ?? storeNameById.get(storeId) ?? storeId.slice(0, 8),
+          items: [],
+          total: 0,
+          unknownCount: 0,
+        };
+        m.set(storeId, cur);
+      } else if (storeName && cur.storeName === storeId.slice(0, 8)) {
+        cur.storeName = storeName;
+      }
+      return cur;
+    },
+    [storeNameById],
+  );
+
   const byStore = useMemo(() => {
-    const m = new Map<
-      string,
-      { storeId: string; storeName: string; items: Array<{ skuId: string; qty: string }> }
-    >();
+    const m = new Map<string, PreviewStoreGroup>();
     for (const row of preview.perStoreDemand) {
-      const cur = m.get(row.storeId) ?? {
-        storeId: row.storeId,
-        storeName: row.storeName,
-        items: [],
-      };
-      cur.items.push({ skuId: row.skuId, qty: row.qty });
-      m.set(row.storeId, cur);
+      const sku = skuById.get(row.skuId);
+      const unitPrice = estimatedPriceForSku(row.skuId);
+      const group = ensurePreviewStoreGroup(m, row.storeId, row.storeName);
+      addPreviewLine(group, {
+        id: `sku:${row.storeId}:${row.skuId}`,
+        kind: 'sku',
+        skuId: row.skuId,
+        name: sku ? productName(sku) : row.skuId.slice(0, 8),
+        qty: row.qty,
+        unit: vendorUnitLabel(sku?.unit),
+        unitPrice,
+        total: previewLineTotal(row.qty, unitPrice),
+      });
     }
-    return [...m.values()].sort((a, b) => a.storeName.localeCompare(b.storeName));
-  }, [preview.perStoreDemand]);
 
-  // Group plannedItems by supplier for the "by supplier" view. Each
-  // SKU group holds a per-store breakdown drawn from perStoreDemand.
+    for (const [storeId, extras] of Object.entries(preview.sessionExtrasByStore ?? {})) {
+      const group = ensurePreviewStoreGroup(m, storeId);
+      for (const ex of extras) {
+        addPreviewLine(group, {
+          id: `extra:${storeId}:${ex.sessionId ?? ''}:${ex.idx ?? group.items.length}:${ex.name}`,
+          kind: 'extra',
+          skuId: null,
+          name: ex.name,
+          qty: ex.qty,
+          unit: ex.unit,
+          unitPrice: null,
+          total: null,
+          note: ex.note,
+        });
+      }
+    }
+
+    for (const [storeId, note] of Object.entries(preview.sessionNotesByStore ?? {})) {
+      const trimmed = note.trim();
+      if (!trimmed) continue;
+      ensurePreviewStoreGroup(m, storeId).legacyNote = trimmed;
+    }
+
+    return [...m.values()]
+      .filter((g) => g.items.length > 0 || g.legacyNote)
+      .sort((a, b) => a.storeName.localeCompare(b.storeName));
+  }, [
+    ensurePreviewStoreGroup,
+    estimatedPriceForSku,
+    preview.perStoreDemand,
+    preview.sessionExtrasByStore,
+    preview.sessionNotesByStore,
+    productName,
+    skuById,
+    vendorUnitLabel,
+  ]);
+
   const bySupplier = useMemo(() => {
-    type SkuPerStore = { storeId: string; storeName: string; qty: string };
-    type SkuRow = { skuId: string; total: string; perStore: SkuPerStore[] };
-    type Bucket = {
-      supplierId: string | null; // null = unassigned
-      supplierName: string;
-      contactPhone: string | null;
-      contactTg: string | null;
-      items: SkuRow[];
+    const buckets = new Map<string, PreviewSupplierGroup>();
+    const ensureSupplier = (
+      supplierId: string | null,
+      supplierName: string,
+      contactPhone: string | null,
+      contactTg: string | null,
+    ) => {
+      const key = supplierId ?? '__unassigned__';
+      let cur = buckets.get(key);
+      if (!cur) {
+        cur = {
+          supplierId,
+          supplierName,
+          contactPhone,
+          contactTg,
+          stores: [],
+          total: 0,
+          unknownCount: 0,
+        };
+        buckets.set(key, cur);
+      }
+      return cur;
     };
-    // Index per-store breakdown by skuId.
-    const psBySku = new Map<string, SkuPerStore[]>();
-    for (const row of preview.perStoreDemand) {
-      const arr = psBySku.get(row.skuId) ?? [];
-      arr.push({ storeId: row.storeId, storeName: row.storeName, qty: row.qty });
-      psBySku.set(row.skuId, arr);
-    }
-    const buckets = new Map<string, Bucket>();
-    for (const it of preview.plannedItems) {
-      const sup = preview.supplierBySku[it.skuId] ?? null;
-      const key = sup?.id ?? '__unassigned__';
-      const cur = buckets.get(key) ?? {
-        supplierId: sup?.id ?? null,
-        supplierName: sup?.name ?? i18n.t('run.previewSupplier.unassigned'),
-        contactPhone: sup?.contactPhone ?? null,
-        contactTg: sup?.contactTg ?? null,
-        items: [] as SkuRow[],
-      };
-      const perStore = (psBySku.get(it.skuId) ?? []).slice().sort((a, b) =>
-        a.storeName.localeCompare(b.storeName),
-      );
-      cur.items.push({ skuId: it.skuId, total: it.qty, perStore });
-      buckets.set(key, cur);
-    }
-    // Sort: real suppliers (alphabetical) before "unassigned".
-    return [...buckets.values()].sort((a, b) => {
-      if (a.supplierId === null) return 1;
-      if (b.supplierId === null) return -1;
-      return a.supplierName.localeCompare(b.supplierName);
-    });
-  }, [preview.plannedItems, preview.perStoreDemand, preview.supplierBySku, i18n]);
+    const ensureSupplierStore = (
+      supplier: PreviewSupplierGroup,
+      storeId: string,
+      storeName: string,
+    ) => {
+      let cur = supplier.stores.find((s) => s.storeId === storeId);
+      if (!cur) {
+        cur = {
+          storeId,
+          storeName,
+          items: [],
+          total: 0,
+          unknownCount: 0,
+        };
+        supplier.stores.push(cur);
+      }
+      return cur;
+    };
 
-  const copyToClipboard = async (text: string, successKey: 'run.previewStore.copied' | 'run.previewSupplier.copied') => {
+    for (const store of byStore) {
+      for (const line of store.items) {
+        const supplier =
+          line.kind === 'sku' && line.skuId
+            ? preview.supplierBySku[line.skuId] ?? null
+            : null;
+        const bucket = ensureSupplier(
+          supplier?.id ?? null,
+          supplier?.name ?? i18n.t('run.previewSupplier.unassigned'),
+          supplier?.contactPhone ?? null,
+          supplier?.contactTg ?? null,
+        );
+        const storeBucket = ensureSupplierStore(bucket, store.storeId, store.storeName);
+        addPreviewLine(storeBucket, line);
+        if (line.total === null) bucket.unknownCount += 1;
+        else bucket.total += line.total;
+      }
+      if (store.legacyNote) {
+        const bucket = ensureSupplier(
+          null,
+          i18n.t('run.previewSupplier.unassigned'),
+          null,
+          null,
+        );
+        ensureSupplierStore(bucket, store.storeId, store.storeName).legacyNote =
+          store.legacyNote;
+      }
+    }
+
+    return [...buckets.values()]
+      .map((b) => ({
+        ...b,
+        stores: b.stores.sort((a, b2) => a.storeName.localeCompare(b2.storeName)),
+      }))
+      .sort((a, b) => {
+        if (a.supplierId === null) return 1;
+        if (b.supplierId === null) return -1;
+        return a.supplierName.localeCompare(b.supplierName);
+      });
+  }, [byStore, i18n, preview.supplierBySku]);
+
+  const groupMoneyMeta = (total: number, unknownCount: number): string => {
+    const parts = [
+      `${i18n.t('run.preview.groupTotal')} ${formatMoney(total)} ${currency}`,
+    ];
+    if (unknownCount > 0) {
+      parts.push(i18n.t('run.preview.unknownPrices', { n: unknownCount }));
+    }
+    return parts.join(' · ');
+  };
+
+  const lineFormula = (line: PreviewLine): string => {
+    const qtyUnit = `${formatQty(line.qty)} ${line.unit}`.trim();
+    if (line.total === null || !line.unitPrice) {
+      return `${qtyUnit} * ${i18n.t('run.preview.priceUnknown')} = ${i18n.t(
+        'run.preview.priceUnknown',
+      )}`;
+    }
+    return `${qtyUnit} * ${formatMoney(line.unitPrice)} = ${formatMoney(line.total)}`;
+  };
+
+  const copyToClipboard = async (text: string): Promise<boolean> => {
     try {
       if (typeof navigator !== 'undefined' && navigator.clipboard) {
         await navigator.clipboard.writeText(text);
@@ -3035,131 +3174,139 @@ function PreviewSummaryCard({
         document.execCommand('copy');
         document.body.removeChild(ta);
       }
-      toast.success(i18n.t(successKey));
-      haptic('success');
+      return true;
     } catch {
-      toast.error(i18n.t('common.error'));
+      return false;
     }
   };
 
-  const buildStoreText = (
-    storeId: string,
-    storeName: string,
-    items: ReadonlyArray<{ skuId: string; qty: string }>,
-  ): string => {
-    const lines = [`🏪 ${storeName}`, ''];
-    for (const it of items) {
-      const sku = skuById.get(it.skuId);
-      // M3.45 (2026-05-22): use vendorName not productName so the
-      // pasted text reads cleanly in the vendor's language (no
-      // parenthetical primary-locale noise).
-      const name = sku ? vendorName(sku) : it.skuId.slice(0, 8);
-      // M3.48 (2026-05-23): localized unit — was raw `sku.unit`
-      // (canonical "bunch" / "kg" / …) leaking into pasted text.
-      lines.push(`• ${name}: ${formatQty(it.qty)} ${vendorUnitLabel(sku?.unit)}`);
+  const shareOrCopyText = async (text: string): Promise<void> => {
+    const copied = await copyToClipboard(text);
+    let opened = false;
+    const url = shareLink({ url: '', text });
+    try {
+      const tg = getTg();
+      if (tg?.openTelegramLink) {
+        tg.openTelegramLink(url);
+        opened = true;
+      } else if (typeof window !== 'undefined') {
+        opened = window.open(url, '_blank', 'noopener,noreferrer') !== null;
+      }
+    } catch {
+      opened = false;
     }
-    // M1.8 / M3.16-C: append the staff's "其他物品" requests so the
-    // purchaser sees them on the same copy-paste they ship to the
-    // chat group. Structured extras (M3.16-C+) listed line-by-line;
-    // legacy free-text notes (pre-M3.16) appended after.
-    const extras = preview.sessionExtrasByStore?.[storeId] ?? [];
-    if (extras.length > 0) {
+    if (opened) {
+      toast.success(
+        i18n.t(copied ? 'run.previewShare.openedWithCopy' : 'run.previewShare.opened'),
+      );
+      haptic('success');
+      return;
+    }
+    if (copied) {
+      toast.success(i18n.t('run.previewStore.copied'));
+      haptic('success');
+      return;
+    }
+    toast.error(i18n.t('common.error'));
+  };
+
+  const formatLineForText = (line: PreviewLine): string => {
+    const sku = line.skuId ? skuById.get(line.skuId) : null;
+    const name = sku ? vendorName(sku) : line.name;
+    const prefix = line.kind === 'extra' ? `${i18n.t('order.extras.label')} · ` : '';
+    const note = line.note ? `\n  ${line.note}` : '';
+    return `${prefix}${name}: ${lineFormula(line)}${note}`;
+  };
+
+  const buildStoreText = (group: PreviewStoreGroup): string => {
+    const lines = [group.storeName, groupMoneyMeta(group.total, group.unknownCount), ''];
+    for (const line of group.items) lines.push(formatLineForText(line));
+    if (group.legacyNote) {
+      lines.push('', `${i18n.t('order.notes.label')}:`, group.legacyNote);
+    }
+    return lines.join('\n').trim();
+  };
+
+  const buildSupplierText = (group: PreviewSupplierGroup): string => {
+    const lines = [
+      group.supplierName,
+      groupMoneyMeta(group.total, group.unknownCount),
+      '',
+    ];
+    for (const store of group.stores) {
+      lines.push(`${store.storeName} · ${groupMoneyMeta(store.total, store.unknownCount)}`);
+      for (const line of store.items) lines.push(formatLineForText(line));
+      if (store.legacyNote) {
+        lines.push(`${i18n.t('order.notes.label')}:`, store.legacyNote);
+      }
       lines.push('');
-      lines.push(`📝 ${i18n.t('order.extras.label')}:`);
-      for (const ex of extras) {
-        lines.push(`  ${ex.name} ${ex.qty} ${ex.unit}`.trim());
-      }
     }
-    const note = preview.sessionNotesByStore?.[storeId];
-    if (note && note.trim()) {
-      if (extras.length === 0) {
-        lines.push('');
-        lines.push(`📝 ${i18n.t('order.notes.label')}:`);
-      }
-      lines.push(note.trim());
-    }
-    return lines.join('\n');
+    return lines.join('\n').trim();
   };
 
-  /**
-   * Build the vendor copy-paste text (M1.7-fix, 2026-05-06).
-   *
-   * Format intentionally minimal — the user pointed out the previous
-   * version was over-engineered:
-   *
-   *   - No greeting "Hi {vendor}" — they're already in the chat with
-   *     this vendor; the salutation is noise.
-   *   - No date line — implicit from when the message lands.
-   *   - No closing "Thanks!" — same reason.
-   *   - Group by STORE, not by SKU. The vendor's job is to prepare
-   *     N separate piles, one per store. SKU-grouped output makes
-   *     them mentally re-pivot the data.
-   *
-   * Output shape (one block per store, separated by blank line):
-   *
-   *     红旗店:
-   *     牛肉 8kg
-   *     番茄 5kg
-   *
-   *     解放店:
-   *     牛肉 7kg
-   *     番茄 5kg
-   */
-  /**
-   * Build "all vendors at once" copy-paste text (M3.26, 2026-05-18).
-   *
-   * User feedback: walking the bazaar with N WeChat chats open is a
-   * pain. They wanted a single paste they can drop into a notebook /
-   * note app and tick off as they go. Format mirrors per-vendor:
-   * vendor header → store-major lines, separated by blank lines.
-   * The unassigned bucket gets its own block at the end so items
-   * without a fixed stall don't disappear.
-   */
   const buildAllVendorsText = (): string => {
-    const blocks: string[] = [];
-    for (const b of bySupplier) {
-      const body = buildVendorText(b);
-      if (!body) continue;
-      const header = b.supplierId ? `🛒 ${b.supplierName}` : `❓ ${b.supplierName}`;
-      blocks.push(`${header}\n${body}`);
-    }
-    return blocks.join('\n\n');
+    return bySupplier.map(buildSupplierText).filter(Boolean).join('\n\n');
   };
 
-  const buildVendorText = (b: (typeof bySupplier)[number]): string => {
-    // Pivot from SKU-grouped (`b.items[].perStore[]`) to store-grouped.
-    type StoreLine = { skuId: string; qty: string };
-    const byStoreId = new Map<string, { name: string; lines: StoreLine[] }>();
-    for (const it of b.items) {
-      for (const ps of it.perStore) {
-        const bucket = byStoreId.get(ps.storeId) ?? {
-          name: ps.storeName,
-          lines: [],
-        };
-        bucket.lines.push({ skuId: it.skuId, qty: ps.qty });
-        byStoreId.set(ps.storeId, bucket);
-      }
-    }
-    const blocks: string[] = [];
-    // Stable ordering: store name alphabetical so the message reads
-    // the same every time the same vendor copies it twice.
-    const ordered = [...byStoreId.values()].sort((a, b2) =>
-      a.name.localeCompare(b2.name),
+  const isCollapsed = (key: string): boolean => collapsedGroups[key] === true;
+  const toggleGroup = (key: string): void => {
+    setCollapsedGroups((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const renderLine = (
+    line: PreviewLine,
+    opts?: { editableSupplier?: boolean },
+  ) => {
+    const amount =
+      line.total === null
+        ? i18n.t('run.preview.priceUnknown')
+        : `${formatMoney(line.total)} ${currency}`;
+    const nameNode =
+      opts?.editableSupplier && line.kind === 'sku' && line.skuId ? (
+        <button
+          type="button"
+          onClick={() => setVendorPickerFor(line.skuId)}
+          className="press min-w-0 max-w-full truncate text-left text-[var(--c-fg)]"
+          title={i18n.t('run.previewSupplier.changeVendor')}
+        >
+          {line.name}
+        </button>
+      ) : (
+        <span className="min-w-0 truncate text-[var(--c-fg)]">{line.name}</span>
+      );
+    return (
+      <li
+        key={line.id}
+        className="flex items-start justify-between gap-3 border-t border-[var(--c-divider)]/60 py-2 first:border-t-0 first:pt-0 last:pb-0"
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-1 text-body">
+            {line.kind === 'extra' ? (
+              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--c-warning)] ring-hairline">
+                {i18n.t('order.extras.label')}
+              </span>
+            ) : null}
+            {nameNode}
+          </div>
+          <div className="mt-0.5 truncate font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
+            {lineFormula(line)}
+          </div>
+          {line.note ? (
+            <div className="mt-0.5 whitespace-pre-wrap text-label leading-snug text-[var(--c-fg-muted)]">
+              {line.note}
+            </div>
+          ) : null}
+        </div>
+        <span
+          className={
+            'shrink-0 pt-0.5 text-right font-mono text-body font-semibold tabular-nums ' +
+            (line.total === null ? 'text-[var(--c-warning)]' : 'text-[var(--c-fg)]')
+          }
+        >
+          {amount}
+        </span>
+      </li>
     );
-    for (const store of ordered) {
-      const lines = [`${store.name}:`];
-      for (const line of store.lines) {
-        const sku = skuById.get(line.skuId);
-        // M3.45: vendor-language copy
-        const name = sku ? vendorName(sku) : line.skuId.slice(0, 8);
-        // No bullet, no spaces around the unit — the user wants
-        // "牛肉 8kg" form, not "• 牛肉 (8 kg)".
-        // M3.48 (2026-05-23): localized unit (was raw canonical).
-        lines.push(`${name} ${formatQty(line.qty)}${vendorUnitLabel(sku?.unit)}`);
-      }
-      blocks.push(lines.join('\n'));
-    }
-    return blocks.join('\n\n');
   };
 
   return (
@@ -3241,40 +3388,38 @@ function PreviewSummaryCard({
       {view === 'byStore' ? (
         <div className="flex flex-col gap-3 px-4 py-3">
           {byStore.map((g) => {
-            const storeNote = preview.sessionNotesByStore?.[g.storeId]?.trim();
-            const storeExtras = preview.sessionExtrasByStore?.[g.storeId] ?? [];
+            const collapsed = isCollapsed(`store:${g.storeId}`);
+            const storeNote = g.legacyNote;
+            const storeExtras = [] as Array<{ name: string; qty: string; unit: string }>;
             return (
             <section key={g.storeId} className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3">
               <div className="mb-2 flex items-baseline justify-between gap-2">
                 <span className="text-body font-semibold text-[var(--c-fg)]">
                   🏪 {g.storeName}
                 </span>
+                <span className="ml-auto min-w-0 truncate text-right font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
+                  {groupMoneyMeta(g.total, g.unknownCount)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(`store:${g.storeId}`)}
+                  className="press shrink-0 rounded-[var(--r-pill)] px-2 py-1 font-mono text-label text-[var(--c-fg-muted)] ring-hairline"
+                  aria-expanded={!collapsed}
+                  aria-label={i18n.t(collapsed ? 'run.preview.expand' : 'run.preview.collapse')}
+                >
+                  {collapsed ? '+' : '-'}
+                </button>
                 {/* M2.1: Button component (was raw <button>). */}
                 <Button
                   variant="pearl"
                   size="sm"
-                  onClick={() =>
-                    copyToClipboard(
-                      buildStoreText(g.storeId, g.storeName, g.items),
-                      'run.previewStore.copied',
-                    )
-                  }
+                  onClick={() => void shareOrCopyText(buildStoreText(g))}
                 >
-                  {i18n.t('run.previewStore.copyList')}
+                  {i18n.t('run.previewShare.sendList')}
                 </Button>
               </div>
-              <ul className="flex flex-col gap-1">
-                {g.items.map((it) => {
-                  const sku = skuById.get(it.skuId);
-                  return (
-                    <li key={it.skuId} className="flex justify-between text-body">
-                      <span>{sku ? productName(sku) : it.skuId.slice(0, 8)}</span>
-                      <span className="font-mono tabular-nums">
-                        {formatQty(it.qty)} {sku?.unit}
-                      </span>
-                    </li>
-                  );
-                })}
+              <ul className={collapsed ? 'hidden' : ''}>
+                {g.items.map((line) => renderLine(line))}
               </ul>
               {/* M1.8 / M3.16-C: surface the staff's "其他物品" requests
                   inline. M3.16-C structured extras render as one row
@@ -3282,7 +3427,7 @@ function PreviewSummaryCard({
                   underneath in italic. The purchaser scrolls the by-
                   store view at the market and needs requests right
                   next to the SKU list. */}
-              {storeExtras.length > 0 || storeNote ? (
+              {!collapsed && (storeExtras.length > 0 || storeNote) ? (
                 <div className="mt-2 rounded-[var(--r-card)] bg-[var(--c-warn-bg)] px-3 py-2 ring-hairline">
                   <SectionLabel padded={false}>
                     📝 {i18n.t('order.extras.label')}
@@ -3328,17 +3473,18 @@ function PreviewSummaryCard({
               <Button
                 variant="pearl"
                 size="sm"
-                onClick={() =>
-                  copyToClipboard(buildAllVendorsText(), 'run.previewSupplier.copied')
-                }
+                onClick={() => void shareOrCopyText(buildAllVendorsText())}
               >
-                {i18n.t('run.previewSupplier.copyAll')}
+                {i18n.t('run.previewShare.sendAll')}
               </Button>
             </div>
           ) : null}
-          {bySupplier.map((b) => (
+          {bySupplier.map((b) => {
+            const supplierKey = b.supplierId ?? '__unassigned__';
+            const collapsed = isCollapsed(`supplier:${supplierKey}`);
+            return (
             <section
-              key={b.supplierId ?? '__unassigned__'}
+              key={supplierKey}
               className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3"
             >
               <div className="mb-2 flex items-baseline justify-between gap-2">
@@ -3352,6 +3498,18 @@ function PreviewSummaryCard({
                     <div className="text-label text-[var(--c-fg-muted)]">{b.contactPhone}</div>
                   ) : null}
                 </div>
+                <span className="ml-auto min-w-0 truncate text-right font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
+                  {groupMoneyMeta(b.total, b.unknownCount)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(`supplier:${supplierKey}`)}
+                  className="press shrink-0 rounded-[var(--r-pill)] px-2 py-1 font-mono text-label text-[var(--c-fg-muted)] ring-hairline"
+                  aria-expanded={!collapsed}
+                  aria-label={i18n.t(collapsed ? 'run.preview.expand' : 'run.preview.collapse')}
+                >
+                  {collapsed ? '+' : '-'}
+                </button>
                 {/* M3.26 (2026-05-18): copy button is now visible for the
                     unassigned bucket too — items to buy individually
                     deserve their own paste — and switched to the same
@@ -3360,14 +3518,12 @@ function PreviewSummaryCard({
                 <Button
                   variant="pearl"
                   size="sm"
-                  onClick={() =>
-                    copyToClipboard(buildVendorText(b), 'run.previewSupplier.copied')
-                  }
+                  onClick={() => void shareOrCopyText(buildSupplierText(b))}
                 >
-                  {i18n.t('run.previewStore.copyList')}
+                  {i18n.t('run.previewShare.sendList')}
                 </Button>
               </div>
-              {!b.supplierId ? (
+              {!collapsed && !b.supplierId ? (
                 <p className="mb-2 text-label text-[var(--c-fg-muted)]">
                   {i18n.t('run.previewSupplier.unassignedHint')}
                 </p>
@@ -3381,46 +3537,36 @@ function PreviewSummaryCard({
                   Now each store is a small section header with its
                   items underneath — matches the copy template format
                   the user asked for in the previous round. */}
-              <div className="flex flex-col gap-3">
-                {pivotSupplierToStoreMajor(b.items).map((store) => (
+              <div className={collapsed ? 'hidden' : 'flex flex-col gap-3'}>
+                {b.stores.map((store) => (
                   <div key={store.storeId}>
                     <div className="mb-1 flex items-baseline gap-2 text-label font-semibold text-[var(--c-fg-muted)]">
                       <span>🏪 {store.storeName}</span>
+                      <span className="ml-auto font-mono font-normal tabular-nums">
+                        {groupMoneyMeta(store.total, store.unknownCount)}
+                      </span>
                     </div>
-                    <ul className="flex flex-col gap-0.5">
-                      {store.items.map((it) => {
-                        const sku = skuById.get(it.skuId);
-                        return (
-                          <li
-                            key={`${store.storeId}-${it.skuId}`}
-                            className="flex items-baseline justify-between gap-2 text-body"
-                          >
-                            <button
-                              type="button"
-                              onClick={() => setVendorPickerFor(it.skuId)}
-                              // M3.15 (2026-05-16): drop the dotted
-                              // underline. On dark theme it read as
-                              // "broken link" rather than "tap to change
-                              // vendor"; the row tap area is the
-                              // affordance, and a long-press hint can
-                              // be added later if discovery is an issue.
-                              className="press min-w-0 flex-1 text-left text-[var(--c-fg)]"
-                              title={i18n.t('run.previewSupplier.changeVendor')}
-                            >
-                              {sku ? productName(sku) : it.skuId.slice(0, 8)}
-                            </button>
-                            <span className="font-mono tabular-nums text-[var(--c-fg-muted)]">
-                              {formatQty(it.qty)} {sku?.unit}
-                            </span>
-                          </li>
-                        );
-                      })}
+                    <ul>
+                      {store.items.map((line) =>
+                        renderLine(line, { editableSupplier: true }),
+                      )}
                     </ul>
+                    {store.legacyNote ? (
+                      <div className="mt-2 rounded-[var(--r-card)] bg-[var(--c-warn-bg)] px-3 py-2 ring-hairline">
+                        <SectionLabel padded={false}>
+                          {i18n.t('order.notes.label')}
+                        </SectionLabel>
+                        <div className="mt-1 whitespace-pre-wrap text-body-sm leading-snug text-[var(--c-fg-muted)]">
+                          {store.legacyNote}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </div>
             </section>
-          ))}
+            );
+          })}
         </div>
       ) : null}
       {vendorPickerFor ? (

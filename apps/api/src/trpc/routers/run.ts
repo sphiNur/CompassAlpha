@@ -246,7 +246,9 @@ export const runRouter = router({
         // (which only covers the actor's accessible stores). For an
         // admin viewing an org-wide preview we want every involved
         // store's name, not just theirs.
-        const involvedStoreIds = [...perStoreSkuQty.keys()];
+        const involvedStoreIds = [
+          ...new Set([...perStoreSkuQty.keys(), ...sessions.map((s) => s.storeId)]),
+        ];
         // M1.9-fix (2026-05-07): drizzle's tagged template binds a JS
         // array as a single parameter — `IN ${array}` becomes
         // `IN ($1)` with $1 being the entire array, not an IN-list.
@@ -467,6 +469,7 @@ export const runRouter = router({
           sessions: sessions.map((s) => ({
             id: s.id,
             storeId: s.storeId,
+            storeName: storeNameById.get(s.storeId) ?? '—',
             orderDate: s.orderDate,
             submittedByMemberId: s.submittedByMemberId,
             notes: s.notes,

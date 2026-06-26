@@ -45,6 +45,7 @@ async function main() {
   const server = Bun.serve<WSData>({
     port: env.PORT,
     hostname: env.HOST,
+    idleTimeout: 60,
     async fetch(req, server) {
       const url = new URL(req.url);
       if (url.pathname === '/ws') {

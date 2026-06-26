@@ -98,7 +98,10 @@ async function authFetch(input: RequestInfo | URL, init: RequestInit = {}): Prom
     return res;
   }
   const refreshed = await refreshAccessToken();
-  if (!refreshed) return res; // refresh failed; let caller see 401
+  if (!refreshed) {
+    useAuthStore.getState().clear();
+    return res;
+  }
   token = refreshed.accessToken;
   res = await fetch(input, attach(token));
   return res;
