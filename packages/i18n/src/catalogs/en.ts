@@ -630,6 +630,26 @@ export const en = {
   'run.step.deliver': 'Deliver',
   'run.step.done': 'Done',
   'run.action.startPurchase': 'Start purchase',
+  'run.action.ejectSession': 'Return to review',
+  'run.section.sessions': 'Submissions in this run',
+  'run.sessions.meta': '{n} submission(s)',
+  'run.sessions.stats': '{items} SKU(s) · {qty} units · {extras} other item(s)',
+  'run.sessions.unknownSubmitter': 'Unknown submitter',
+  'run.sessions.ejectHint':
+    'Only submissions whose items are still untouched can be returned to review.',
+  'run.eject.reasonPlaceholder': 'Reason (optional)',
+  'run.confirm.ejectSession.title': 'Return {store} / {who} to review?',
+  'run.confirm.ejectSession.body':
+    'This removes their pending quantities from the current purchase run and returns the submission to approved review. If any included SKU was already bought or marked unavailable, undo that item first.',
+  'run.toast.sessionEjected': 'Submission returned to review',
+  'run.toast.couldNotEjectSession': 'Could not return the submission',
+  'run.errors.cannotEjectSession': 'You do not have permission to return submissions from a run',
+  'run.errors.cannotEjectInStatus':
+    'Submissions can only be returned while the run is planned or purchasing',
+  'run.errors.sessionNotInRun': 'That submission is not in this purchase run',
+  'run.errors.cannotEjectLastSession': 'Cancel the run instead of returning the last submission',
+  'run.errors.noItemsToEject': 'That submission has no SKU items to remove',
+  'run.errors.ejectQtyExceedsPlan': 'The submission quantity is larger than the run plan',
   'run.action.attachSessions': 'Attach to run',
   'run.attach.banner.title':
     '{n, plural, =1 {1 new approved order ready to attach} other {{n} new approved orders ready to attach}}',

@@ -1254,15 +1254,35 @@ export const runRouter = router({
         };
         const sessionNotesByStore: Record<string, string> = {};
         const sessionExtrasByStore: Record<string, ExtraItem[]> = {};
+        let runSessions: Array<{
+          id: string;
+          storeId: string;
+          submittedByMemberId: string | null;
+          initiatedByMemberId: string | null;
+          submittedByDisplayName: string | null;
+          itemCount: number;
+          totalQty: string;
+          extrasCount: number;
+          status: string;
+        }> = [];
         if (sessionIds.length > 0) {
           const sessions = await tx.query.orderSessionsV.findMany({
             where: (sess, { inArray: ia }) => ia(sess.id, sessionIds),
-            columns: { id: true, storeId: true, notes: true, extrasJson: true },
+            columns: {
+              id: true,
+              storeId: true,
+              notes: true,
+              extrasJson: true,
+              submittedByMemberId: true,
+              initiatedByMemberId: true,
+              status: true,
+            },
           });
           const sessionItems = await tx.query.orderItemsV.findMany({
             where: (it, { inArray: ia }) => ia(it.sessionId, sessionIds),
           });
           const sessionStoreById = new Map<string, string>();
+          const sessionStats = new Map<string, { itemCount: number; totalQty: number }>();
           const noteAccumulator = new Map<string, string[]>();
           const extrasAccumulator = new Map<string, ExtraItem[]>();
           for (const s of sessions) {
@@ -1289,6 +1309,51 @@ export const runRouter = router({
               extrasAccumulator.set(s.storeId, arr);
             }
           }
+          for (const it of sessionItems) {
+            const qty = Number(it.qty);
+            if (qty <= 0) continue;
+            const stat = sessionStats.get(it.sessionId) ?? { itemCount: 0, totalQty: 0 };
+            stat.itemCount += 1;
+            stat.totalQty += qty;
+            sessionStats.set(it.sessionId, stat);
+          }
+          const submitterIds = [
+            ...new Set(
+              sessions
+                .map((sess) => sess.submittedByMemberId ?? sess.initiatedByMemberId)
+                .filter((id): id is string => Boolean(id)),
+            ),
+          ];
+          const displayNameByMemberId = new Map<string, string>();
+          if (submitterIds.length > 0) {
+            const rows = await tx
+              .select({
+                memberId: s.members.id,
+                displayName: s.users.displayName,
+              })
+              .from(s.members)
+              .innerJoin(s.users, eq(s.users.id, s.members.userId))
+              .where(inArray(s.members.id, submitterIds));
+            for (const row of rows) displayNameByMemberId.set(row.memberId, row.displayName);
+          }
+          runSessions = sessions.map((sess) => {
+            const stat = sessionStats.get(sess.id) ?? { itemCount: 0, totalQty: 0 };
+            const submitterId = sess.submittedByMemberId ?? sess.initiatedByMemberId;
+            const extras = (sess.extrasJson ?? []) as unknown[];
+            return {
+              id: sess.id,
+              storeId: sess.storeId,
+              submittedByMemberId: sess.submittedByMemberId,
+              initiatedByMemberId: sess.initiatedByMemberId,
+              submittedByDisplayName: submitterId
+                ? displayNameByMemberId.get(submitterId) ?? null
+                : null,
+              itemCount: stat.itemCount,
+              totalQty: stat.totalQty.toString(),
+              extrasCount: Array.isArray(extras) ? extras.length : 0,
+              status: sess.status,
+            };
+          });
           for (const [sid, arr] of noteAccumulator.entries()) {
             sessionNotesByStore[sid] = arr.join('\n\n');
           }
@@ -1435,6 +1500,7 @@ export const runRouter = router({
           sessionNotesByStore,
           sessionExtrasByStore,
           supplierBySku,
+          sessions: runSessions,
           // M3.44: off-catalog expenses (purchaser-recorded). FE
           // renders these in an "Off-catalog / Expenses" card and
           // sums them into the finish-summary breakdown.
@@ -2137,6 +2203,7 @@ export const runRouter = router({
 
   ejectSession: authedProcedure.input(EjectSessionInputSchema).mutation(async ({ ctx, input }) => {
     return ctx.withOrg(async (tx) => {
+      const run = await loadRun(tx, ctx.session!.orgId, input.runId);
       // M3.33 (2026-05-18, Wave1 #3): scope check. Without this, any
       // actor with run.eject_session could pop another store's
       // session out of a run regardless of their store binding.
@@ -2174,7 +2241,48 @@ export const runRouter = router({
         }
       }
 
-      // Emit EjectedFromRun on the order stream.
+      const removedBySku = new Map<string, number>();
+      for (const item of sessionItems) {
+        const qty = Number(item.qty);
+        if (qty <= 0) continue;
+        removedBySku.set(item.skuId, (removedBySku.get(item.skuId) ?? 0) + qty);
+      }
+      const removedPlannedItems = [...removedBySku.entries()].map(([skuId, qty]) => ({
+        skuId,
+        qty: qty.toString(),
+      }));
+
+      try {
+        const runRemovalEvents = decideRun(runState, {
+          type: 'EjectSession',
+          sessionId: input.sessionId,
+          removedPlannedItems,
+          reason: input.reason,
+          actor: actorFromCtx(ctx),
+        });
+        if (runRemovalEvents.length > 0) {
+          await appendEvents(tx, {
+            streamType: 'run',
+            streamId: run.id,
+            orgId: ctx.session!.orgId,
+            events: runRemovalEvents.map((e) => ({ ...e })),
+          });
+          for (const e of runRemovalEvents) runState = applyRun(runState, e);
+          await projectRun(tx, ctx.session!.orgId, runRemovalEvents);
+          await dispatchRunEventNotifications(
+            tx,
+            ctx.session!.orgId,
+            ctx.session!.userId,
+            runState,
+            runRemovalEvents,
+          );
+        }
+      } catch (err) {
+        if (err instanceof DomainError) rethrowDomainError(err);
+        throw err;
+      }
+
+      // Emit EjectedFromRun on the order stream in the same tx.
       const orderEvents = (await readStream(tx, 'order', input.sessionId)) as unknown as OrderEvent[];
       let oState = emptyOrderState(input.sessionId);
       for (const e of orderEvents) oState = applyOrder(oState, e);
@@ -2198,7 +2306,19 @@ export const runRouter = router({
         });
         await projectOrder(tx, ctx.session!.orgId, ev);
       }
-      return { lastSeq: ev[ev.length - 1]?.seq ?? oState.seq };
+      hub.publish(ctx.session!.orgId, {
+        type: 'run.changed',
+        orgId: ctx.session!.orgId,
+        runId: runState.streamId,
+        lastSeq: runState.seq,
+      });
+      hub.publish(ctx.session!.orgId, {
+        type: 'order.changed',
+        orgId: ctx.session!.orgId,
+        sessionId: input.sessionId,
+        lastSeq: ev[ev.length - 1]?.seq ?? oState.seq,
+      });
+      return { lastSeq: runState.seq, orderLastSeq: ev[ev.length - 1]?.seq ?? oState.seq };
     });
   }),
 });

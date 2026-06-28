@@ -558,6 +558,26 @@ export const ru = {
   'run.step.deliver': 'Доставка',
   'run.step.done': 'Готово',
   'run.action.startPurchase': 'Начать закупку',
+  'run.action.ejectSession': 'Вернуть на проверку',
+  'run.section.sessions': 'Заявки в этой закупке',
+  'run.sessions.meta': '{n} заявок',
+  'run.sessions.stats': '{items} SKU · {qty} ед. · прочее {extras}',
+  'run.sessions.unknownSubmitter': 'Неизвестный отправитель',
+  'run.sessions.ejectHint':
+    'Вернуть можно только заявки, товары из которых еще не куплены и не отмечены отсутствующими.',
+  'run.eject.reasonPlaceholder': 'Причина (необязательно)',
+  'run.confirm.ejectSession.title': 'Вернуть {store} / {who} на проверку?',
+  'run.confirm.ejectSession.body':
+    'Это уберет ожидаемые количества из текущей закупки и вернет заявку в статус одобрения. Если какой-либо SKU уже куплен или отмечен отсутствующим, сначала отмените это действие.',
+  'run.toast.sessionEjected': 'Заявка возвращена на проверку',
+  'run.toast.couldNotEjectSession': 'Не удалось вернуть заявку',
+  'run.errors.cannotEjectSession': 'Нет прав возвращать заявки из закупки',
+  'run.errors.cannotEjectInStatus':
+    'Заявки можно возвращать только на этапе плана или закупки',
+  'run.errors.sessionNotInRun': 'Этой заявки нет в данной закупке',
+  'run.errors.cannotEjectLastSession': 'Для последней заявки отмените всю закупку',
+  'run.errors.noItemsToEject': 'В этой заявке нет SKU для удаления',
+  'run.errors.ejectQtyExceedsPlan': 'Количество в заявке больше плана закупки',
   'run.action.attachSessions': 'Добавить в закупку',
   'run.attach.banner.title':
     '{n, plural, one {Новая одобренная заявка готова к добавлению} few {Готовы {n} новых одобренных заявки} other {Готовы {n} новых одобренных заявок}}',

@@ -206,7 +206,8 @@ type ConfirmKind =
   | { kind: 'deliverStore'; storeId: string; storeName: string }
   | { kind: 'recallDelivery'; storeId: string; storeName: string }
   | { kind: 'unmarkUnavailable'; skuId: string; skuName: string }
-  | { kind: 'undoPurchase'; skuId: string; skuName: string };
+  | { kind: 'undoPurchase'; skuId: string; skuName: string }
+  | { kind: 'ejectSession'; sessionId: string; storeName: string; submitterName: string };
 
 export function RunPage() {
   const i18n = useI18n();
@@ -416,6 +417,18 @@ export function RunPage() {
       toast.info(i18n.t('run.toast.expenseRemoved'));
     },
     onError: errToast('common.error'),
+  });
+  const ejectSession = trpc.run.ejectSession.useMutation({
+    onSuccess: () => {
+      void utils.run.get.invalidate();
+      void utils.run.list.invalidate();
+      void utils.run.previewCreatable.invalidate();
+      void utils.order.todaySession.invalidate();
+      void utils.order.pendingList.invalidate();
+      haptic('success');
+      toast.success(i18n.t('run.toast.sessionEjected'));
+    },
+    onError: errToast('run.toast.couldNotEjectSession'),
   });
   const purchaseItem = trpc.run.purchaseItem.useMutation({
     onSuccess: () => {
@@ -1318,6 +1331,29 @@ export function RunPage() {
                 { onSuccess: () => setConfirmAction(null) },
               ),
           };
+        case 'ejectSession':
+          return {
+            title: i18n.t('run.confirm.ejectSession.title', {
+              store: confirmAction.storeName,
+              who: confirmAction.submitterName,
+            }),
+            body: i18n.t('run.confirm.ejectSession.body'),
+            confirmLabel: i18n.t('run.action.ejectSession'),
+            danger: true,
+            requireReason: false,
+            reasonOptional: true,
+            reasonPlaceholder: i18n.t('run.eject.reasonPlaceholder'),
+            isPending: ejectSession.isPending,
+            run: () =>
+              ejectSession.mutate(
+                {
+                  runId,
+                  sessionId: confirmAction.sessionId,
+                  reason: confirmReason.trim() || undefined,
+                },
+                { onSuccess: () => setConfirmAction(null) },
+              ),
+          };
       }
     }
     return null;
@@ -1338,6 +1374,7 @@ export function RunPage() {
     undeliverStore,
     unmarkUnavailable,
     undoPurchase,
+    ejectSession,
   ]);
 
   // ---- Unified MainButton dispatcher --------------------------------
@@ -1632,6 +1669,29 @@ export function RunPage() {
             )
           }
         </DataState>
+      ) : null}
+
+      {activeRun &&
+      runDetailQuery.data &&
+      (activeRun.status === 'planned' || activeRun.status === 'purchasing') &&
+      (runDetailQuery.data.sessions?.length ?? 0) > 0 ? (
+        <RunSessionsCard
+          sessions={runDetailQuery.data.sessions ?? []}
+          storeById={storeById}
+          i18n={i18n}
+          ejecting={ejectSession.isPending}
+          onEject={(sessionRow) => {
+            const storeName =
+              storeById.get(sessionRow.storeId)?.name ?? sessionRow.storeId.slice(0, 8);
+            setConfirmAction({
+              kind: 'ejectSession',
+              sessionId: sessionRow.id,
+              storeName,
+              submitterName:
+                sessionRow.submittedByDisplayName ?? i18n.t('run.sessions.unknownSubmitter'),
+            });
+          }}
+        />
       ) : null}
 
       {/* M3.30 (2026-05-18): for an EXISTING run that's back in `planned`
@@ -2254,6 +2314,17 @@ interface ActiveRun {
     confirmedAt: Date | string | null;
   }>;
   perStoreDemand?: Array<{ storeId: string; skuId: string; qty: string }>;
+  sessions?: Array<{
+    id: string;
+    storeId: string;
+    submittedByMemberId: string | null;
+    initiatedByMemberId: string | null;
+    submittedByDisplayName: string | null;
+    itemCount: number;
+    totalQty: string;
+    extrasCount: number;
+    status: string;
+  }>;
   lastPriceBySku?: Record<string, string>;
   /** M1.8: per-store concatenated session notes ("其他物品", legacy). */
   sessionNotesByStore?: Record<string, string>;
@@ -3706,6 +3777,70 @@ function VendorPickerSheet({
         })}
       </div>
     </Sheet>
+  );
+}
+
+function RunSessionsCard({
+  sessions,
+  storeById,
+  i18n,
+  ejecting,
+  onEject,
+}: {
+  sessions: NonNullable<ActiveRun['sessions']>;
+  storeById: Map<string, { id: string; name: string; code: string | null }>;
+  i18n: ReturnType<typeof useI18n>;
+  ejecting: boolean;
+  onEject: (session: NonNullable<ActiveRun['sessions']>[number]) => void;
+}) {
+  return (
+    <Card>
+      <SectionLabel meta={i18n.t('run.sessions.meta', { n: sessions.length })}>
+        {i18n.t('run.section.sessions')}
+      </SectionLabel>
+      <ul className="flex flex-col" role="list">
+        {sessions.map((sessionRow) => {
+          const storeName =
+            storeById.get(sessionRow.storeId)?.name ?? sessionRow.storeId.slice(0, 8);
+          const submitter =
+            sessionRow.submittedByDisplayName ?? i18n.t('run.sessions.unknownSubmitter');
+          return (
+            <li
+              key={sessionRow.id}
+              className="flex items-center gap-2 border-b border-[var(--c-divider)] px-3 py-2 last:border-b-0"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-body font-semibold">{storeName}</span>
+                  <span className="shrink-0 text-label text-[var(--c-fg-muted)]">
+                    {submitter}
+                  </span>
+                </div>
+                <div className="truncate text-label text-[var(--c-fg-muted)]">
+                  {i18n.t('run.sessions.stats', {
+                    items: sessionRow.itemCount,
+                    qty: formatQty(sessionRow.totalQty),
+                    extras: sessionRow.extrasCount,
+                  })}
+                </div>
+              </div>
+              <Button
+                variant="pearl"
+                size="sm"
+                disabled={ejecting}
+                loading={ejecting}
+                onClick={() => onEject(sessionRow)}
+              >
+                {i18n.t('run.action.ejectSession')}
+              </Button>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="border-t border-[var(--c-divider)] px-3 py-2 text-label text-[var(--c-fg-muted)]">
+        {i18n.t('run.sessions.ejectHint')}
+      </div>
+    </Card>
   );
 }
 

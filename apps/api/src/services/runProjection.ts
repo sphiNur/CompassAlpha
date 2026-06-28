@@ -570,6 +570,62 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
         }
         break;
       }
+
+      case 'SessionEjectedFromRun': {
+        const current = await db
+          .select({ sessionIdsJson: s.marketRunsV.sessionIdsJson })
+          .from(s.marketRunsV)
+          .where(eq(s.marketRunsV.id, e.streamId))
+          .limit(1);
+        const existingIds = (current[0]?.sessionIdsJson as unknown as string[] | null) ?? [];
+        const remainingIds = existingIds.filter((id) => id !== e.payload.sessionId);
+        await db
+          .update(s.marketRunsV)
+          .set({
+            sessionIdsJson: remainingIds as unknown as Record<string, unknown>,
+            lastSeq: e.seq,
+            updatedAt: new Date(),
+          })
+          .where(eq(s.marketRunsV.id, e.streamId));
+
+        for (const removed of e.payload.removedPlannedItems) {
+          const existing = await db
+            .select({
+              plannedQty: s.runItemsV.plannedQty,
+            })
+            .from(s.runItemsV)
+            .where(and(eq(s.runItemsV.runId, e.streamId), eq(s.runItemsV.skuId, removed.skuId)))
+            .limit(1);
+          const planned = Number(existing[0]?.plannedQty ?? 0);
+          const remaining = planned - Number(removed.qty);
+          if (remaining <= 1e-6) {
+            await db
+              .delete(s.runItemStoresV)
+              .where(
+                and(
+                  eq(s.runItemStoresV.runId, e.streamId),
+                  eq(s.runItemStoresV.skuId, removed.skuId),
+                ),
+              );
+            await db
+              .delete(s.runItemsV)
+              .where(
+                and(eq(s.runItemsV.runId, e.streamId), eq(s.runItemsV.skuId, removed.skuId)),
+              );
+          } else {
+            await db
+              .update(s.runItemsV)
+              .set({
+                plannedQty: remaining.toString(),
+                updatedAt: new Date(),
+              })
+              .where(
+                and(eq(s.runItemsV.runId, e.streamId), eq(s.runItemsV.skuId, removed.skuId)),
+              );
+          }
+        }
+        break;
+      }
     }
   }
 }

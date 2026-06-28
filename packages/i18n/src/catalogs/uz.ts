@@ -572,6 +572,27 @@ export const uz = {
   'run.step.deliver': 'Yetkazish',
   'run.step.done': 'Tugadi',
   'run.action.startPurchase': "Xaridni boshlash",
+  'run.action.ejectSession': "Tekshiruvga qaytarish",
+  'run.section.sessions': "Ushbu xariddagi yuborilganlar",
+  'run.sessions.meta': "{n} ta yuborilgan",
+  'run.sessions.stats': "{items} SKU · {qty} birlik · boshqa {extras}",
+  'run.sessions.unknownSubmitter': "Noma'lum yuboruvchi",
+  'run.sessions.ejectHint':
+    "Faqat hali xarid qilinmagan va mavjud emas deb belgilanmagan yuborilganlarni qaytarish mumkin.",
+  'run.eject.reasonPlaceholder': "Sabab (ixtiyoriy)",
+  'run.confirm.ejectSession.title': "{store} / {who} ni tekshiruvga qaytarilsinmi?",
+  'run.confirm.ejectSession.body':
+    "Bu joriy xariddan ushbu yuborilgan miqdorlarni olib tashlaydi va yuborilganni tasdiqlangan holatga qaytaradi. Agar SKU allaqachon xarid qilingan yoki mavjud emas deb belgilangan bo'lsa, avval shu amalni bekor qiling.",
+  'run.toast.sessionEjected': "Yuborilgan tekshiruvga qaytarildi",
+  'run.toast.couldNotEjectSession': "Yuborilganni qaytarib bo'lmadi",
+  'run.errors.cannotEjectSession': "Xariddan yuborilganlarni qaytarish huquqi yo'q",
+  'run.errors.cannotEjectInStatus':
+    "Yuborilganlarni faqat reja yoki xarid bosqichida qaytarish mumkin",
+  'run.errors.sessionNotInRun': "Bu yuborilgan ushbu xaridda yo'q",
+  'run.errors.cannotEjectLastSession':
+    "Oxirgi yuborilgan uchun butun xaridni bekor qiling",
+  'run.errors.noItemsToEject': "Bu yuborilganda olib tashlanadigan SKU yo'q",
+  'run.errors.ejectQtyExceedsPlan': "Yuborilgan miqdor xarid rejasidan katta",
   'run.action.attachSessions': "Xaridga qo'shish",
   'run.attach.banner.title': "{n} ta yangi tasdiqlangan buyurtma qo'shishga tayyor",
   'run.toast.sessionsAttached': "Buyurtmalar qo'shildi",

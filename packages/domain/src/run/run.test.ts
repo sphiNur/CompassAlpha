@@ -765,6 +765,125 @@ describe('run.reversals', () => {
     ).toThrow('run.errors.cannotAttachInStatus');
   });
 
+  test('EjectSession removes one session demand from a mutable run', () => {
+    let state = emptyRunState('run-1');
+    state = decideRun(
+      state,
+      {
+        type: 'PlanRun',
+        orgId: 'org-1',
+        runDate: '2026-05-01',
+        runIndex: 0,
+        sessionIds: ['sess-A', 'sess-B'],
+        plannedItems: [
+          { skuId: 'sku-1', qty: '7' },
+          { skuId: 'sku-2', qty: '3' },
+        ],
+        actor: purchaser(),
+      },
+      clock,
+    ).reduce(applyRun, state);
+
+    state = decideRun(
+      state,
+      {
+        type: 'EjectSession',
+        sessionId: 'sess-B',
+        removedPlannedItems: [
+          { skuId: 'sku-1', qty: '2' },
+          { skuId: 'sku-2', qty: '3' },
+        ],
+        reason: 'approved by mistake',
+        actor: purchaser(['run.eject_session']),
+      },
+      clock,
+    ).reduce(applyRun, state);
+
+    expect(state.sessionIds).toEqual(['sess-A']);
+    expect(state.items.get('sku-1')?.plannedQty).toBe('5');
+    expect(state.items.has('sku-2')).toBe(false);
+  });
+
+  test('EjectSession rejects touched SKUs', () => {
+    let state = emptyRunState('run-1');
+    state = decideRun(
+      state,
+      {
+        type: 'PlanRun',
+        orgId: 'org-1',
+        runDate: '2026-05-01',
+        runIndex: 0,
+        sessionIds: ['sess-A', 'sess-B'],
+        plannedItems: [{ skuId: 'sku-1', qty: '7' }],
+        actor: purchaser(),
+      },
+      clock,
+    ).reduce(applyRun, state);
+    state = decideRun(state, { type: 'StartPurchase', actor: purchaser() }, clock).reduce(
+      applyRun,
+      state,
+    );
+    state = decideRun(
+      state,
+      {
+        type: 'PurchaseItem',
+        skuId: 'sku-1',
+        supplierId: null,
+        unitPrice: '1000',
+        actualQty: '7',
+        receiptPhotoUrl: null,
+        storeSplits: [{ storeId: 'A', qty: '7' }],
+        paymentMethod: 'cash',
+        actor: purchaser(),
+      },
+      clock,
+    ).reduce(applyRun, state);
+
+    expect(() =>
+      decideRun(
+        state,
+        {
+          type: 'EjectSession',
+          sessionId: 'sess-B',
+          removedPlannedItems: [{ skuId: 'sku-1', qty: '2' }],
+          actor: purchaser(['run.eject_session']),
+        },
+        clock,
+      ),
+    ).toThrow('order.errors.cannotEject');
+  });
+
+  test('EjectSession can remove a submission with only extra items', () => {
+    let state = emptyRunState('run-1');
+    state = decideRun(
+      state,
+      {
+        type: 'PlanRun',
+        orgId: 'org-1',
+        runDate: '2026-05-01',
+        runIndex: 0,
+        sessionIds: ['sess-A', 'sess-B'],
+        plannedItems: [{ skuId: 'sku-1', qty: '4' }],
+        actor: purchaser(),
+      },
+      clock,
+    ).reduce(applyRun, state);
+
+    state = decideRun(
+      state,
+      {
+        type: 'EjectSession',
+        sessionId: 'sess-B',
+        removedPlannedItems: [],
+        actor: purchaser(['run.eject_session']),
+      },
+      clock,
+    ).reduce(applyRun, state);
+
+    expect(state.sessionIds).toEqual(['sess-A']);
+    expect(state.items.get('sku-1')?.plannedQty).toBe('4');
+  });
+
   test('UndoStartPurchase preserves item-level purchase state when reverting (M3.29)', () => {
     // After M3.29 the "all items pending" gate was lifted — the user
     // can step back to planning to modify the run without losing what
