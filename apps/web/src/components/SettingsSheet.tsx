@@ -201,7 +201,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
         {/* ── Language ────────────────────────────────────── */}
         <section>
           <SectionLabel as="h3" padded={false} className="mb-2">
-            🌐 {i18n.t('settings.language.title')}
+            {i18n.t('settings.language.title')}
           </SectionLabel>
           <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
             {LANGS.map((lang) => {

@@ -3254,7 +3254,7 @@ function PreviewSummaryCard({
               {storeExtras.length > 0 || storeNote ? (
                 <div className="mt-2 rounded-[var(--r-card)] bg-[var(--c-warn-bg)] px-3 py-2 ring-hairline">
                   <SectionLabel padded={false}>
-                    📝 {i18n.t('order.extras.label')}
+                    {i18n.t('order.extras.label')}
                   </SectionLabel>
                   {storeExtras.length > 0 ? (
                     <ul className="mt-0.5 flex flex-col gap-0.5">
@@ -3573,7 +3573,7 @@ function PerStoreView({
               return (
                 <div className="mx-4 mb-2 mt-1 rounded-[var(--r-card)] bg-[var(--c-warn-bg)] px-3 py-2 ring-hairline">
                   <SectionLabel padded={false}>
-                    📝 {i18n.t('order.extras.label')}
+                    {i18n.t('order.extras.label')}
                   </SectionLabel>
                   {extras.length > 0 ? (
                     <ul className="mt-0.5 flex flex-col gap-0.5">
@@ -3987,7 +3987,7 @@ function RunExtrasCard({
 
   return (
     <Card>
-      <SectionLabel meta="">📝 {i18n.t('order.extras.label')}</SectionLabel>
+      <SectionLabel meta="">{i18n.t('order.extras.label')}</SectionLabel>
       <div className="flex flex-col gap-3 px-4 pb-3">
         {storeIds.map((storeId) => {
           const extras = sessionExtrasByStore?.[storeId] ?? [];
@@ -4103,7 +4103,7 @@ function ExpensesCard({
   return (
     <Card>
       <SectionLabel meta={`${list.length} · ${formatMoney(grandTotal)} ${currency}`}>
-        🧾 {i18n.t('run.section.expenses')}
+        {i18n.t('run.section.expenses')}
       </SectionLabel>
       <ul className="flex flex-col" role="list">
         {list.map((e) => {
