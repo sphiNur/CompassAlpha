@@ -26,7 +26,7 @@ import {
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton, haptic } from '../hooks/useTelegram';
-import { useI18n, useProductName } from '../hooks/useI18n';
+import { useI18n, useProductNameParts } from '../hooks/useI18n';
 import { usePhotoUploader } from '../hooks/usePhotoUploader';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { isLikelyNetworkError } from '../lib/networkError';
@@ -38,7 +38,7 @@ type DecisionStatus = 'ok' | 'short' | 'wrong' | 'quality';
 
 export function ConfirmPage() {
   const i18n = useI18n();
-  const productName = useProductName();
+  const productNameParts = useProductNameParts();
   const session = useAuthStore((s) => s.session);
   // ConfirmPage needs a SPECIFIC store — staff confirm receipt at THEIR
   // store. Reading via the context helper coerces 'all' to null so the
@@ -307,19 +307,28 @@ export function ConfirmPage() {
                   <ul className="flex flex-col" role="list">
                     {myItems.map((it) => {
                       const sku = skuById.get(it.skuId);
+                      const nm = sku ? productNameParts(sku) : null;
                       const effectiveStatus = (it.confirmStatus ?? 'ok') as DecisionStatus;
                       return (
                         <li
                           key={`${it.runId}:${it.skuId}`}
                           className="flex flex-col gap-2 border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0"
                         >
-                          <div className="flex items-baseline justify-between">
+                          <div className="flex items-start justify-between gap-3">
                             {/* M2.2: list-row primary unified to
-                                text-body font-semibold across pages. */}
-                            <span className="text-body font-semibold">
-                              {sku ? productName(sku) : it.skuId.slice(0, 8)}
+                                text-body font-semibold across pages.
+                                UI-4: secondary locale on a muted 2nd line. */}
+                            <span className="min-w-0">
+                              <span className="block truncate text-body font-semibold">
+                                {nm ? nm.primary : it.skuId.slice(0, 8)}
+                              </span>
+                              {nm?.secondary ? (
+                                <span className="block truncate text-label font-normal leading-tight text-[var(--c-fg-subtle)]">
+                                  {nm.secondary}
+                                </span>
+                              ) : null}
                             </span>
-                            <span className="font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
+                            <span className="shrink-0 font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
                               {formatQty(it.qty)} {sku?.unit ?? ''}
                             </span>
                           </div>
