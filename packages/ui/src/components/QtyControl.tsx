@@ -207,7 +207,7 @@ export function QtyControl({
             disabled && 'opacity-40 pointer-events-none',
           )}
         >
-          {showZero ? '−' : (
+          {showZero ? '' : (
             <>
               <span>{display}</span>
               {unit ? (

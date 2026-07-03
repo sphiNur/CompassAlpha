@@ -250,7 +250,6 @@ export function ApprovalPage() {
                           {i18n.t('order.notes.badge')}
                         </Badge>
                       ) : null}
-                      <Badge status={row.status} />
                     </div>
                   </CardHeader>
 

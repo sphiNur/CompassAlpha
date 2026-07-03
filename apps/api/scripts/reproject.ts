@@ -189,8 +189,8 @@ async function main() {
             stream_id::text   AS stream_id,
             seq::int          AS seq,
             occurred_at       AS occurred_at,
-            actor_user_id::text   AS actor_user_id,
-            actor_member_id::text AS actor_member_id,
+            actor_id::text    AS actor_user_id,
+            NULL::text        AS actor_member_id,
             type              AS type,
             payload           AS payload
           FROM domain.events
@@ -245,8 +245,8 @@ async function main() {
             stream_id::text   AS stream_id,
             seq::int          AS seq,
             occurred_at       AS occurred_at,
-            actor_user_id::text   AS actor_user_id,
-            actor_member_id::text AS actor_member_id,
+            actor_id::text    AS actor_user_id,
+            NULL::text        AS actor_member_id,
             type              AS type,
             payload           AS payload
           FROM domain.events

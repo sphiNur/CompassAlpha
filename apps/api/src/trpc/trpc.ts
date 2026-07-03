@@ -175,6 +175,15 @@ export const authedProcedure = t.procedure
  */
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
+/**
+ * tRPC v11 stamps every middleware result with an internal `marker`. The
+ * procedure caller only reads `.ok`/`.data`, but we mirror the full shape
+ * on the cache-hit short-circuit to stay forward-compatible. We capture the
+ * marker from a real result on the first cache miss rather than importing
+ * tRPC internals — decoupled and self-healing across restarts.
+ */
+let capturedMiddlewareMarker: unknown;
+
 const idempotencyMiddleware = t.middleware(async (opts) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ctx = opts.ctx as any;
@@ -204,14 +213,28 @@ const idempotencyMiddleware = t.middleware(async (opts) => {
       { path: opts.path, userId, key },
       'idempotency cache hit — returning prior response',
     );
-    return existing.response as unknown as ReturnType<typeof opts.next>;
+    // Return a properly-shaped tRPC middleware result. The prior code
+    // returned the raw cached payload, which has no `ok` field — tRPC's
+    // procedure caller then treated it as a FAILED middleware result and
+    // threw INTERNAL_SERVER_ERROR on every replay (P0 H2), defeating the
+    // whole mechanism. The caller reads only `.ok`/`.data`; we include
+    // `ctx` and (once captured) `marker` to match a real result's shape.
+    return {
+      ok: true,
+      data: existing.response,
+      ctx: opts.ctx,
+      ...(capturedMiddlewareMarker !== undefined ? { marker: capturedMiddlewareMarker } : {}),
+    } as unknown as Awaited<ReturnType<typeof opts.next>>;
   }
 
   // Run the handler. Cache on success only.
   const result = await opts.next();
-  // tRPC v11 middleware return shape: { ok: true, data, ctx } | { ok: false, error }
+  // tRPC v11 middleware return shape: { ok: true, data, ctx, marker } | { ok: false, error }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const r = result as any;
+  if (capturedMiddlewareMarker === undefined && r && typeof r === 'object' && 'marker' in r) {
+    capturedMiddlewareMarker = r.marker;
+  }
   if (r?.ok === true) {
     try {
       await db

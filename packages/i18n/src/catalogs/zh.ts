@@ -657,6 +657,7 @@ export const zh = {
   'run.toast.couldNotPlan': '生成采购单失败',
   'run.toast.purchaseRecorded': '采购已记录',
   'run.toast.purchaseSavedOffline': '已离线保存，联网后自动同步',
+  'run.toast.syncFailed': '有一笔已保存的操作未能同步，请复核',
   'run.toast.couldNotSavePurchase': '保存采购记录失败',
   'run.toast.markedUnavailable': '已标记缺货',
   'run.toast.purchaseRevised': '采购记录已更新',

@@ -132,6 +132,14 @@ let fix: Fixture | null = null;
     .insert(s.stores)
     .values({ orgId: org!.id, name: 'Test Store', code: 'CC-' + slug.slice(-6) })
     .returning();
+  // P0 H1 (2026-07-03): run mutations now enforce the same store-scope
+  // gate run.create/run.get already apply — a store-tier actor
+  // (run.create without run.create.org) must be bound to a store the run
+  // touches. Bind the canceller to the run's store so this fixture models
+  // a real purchaser rather than a state run.create itself would reject.
+  await db
+    .insert(s.memberStoreAssignments)
+    .values({ memberId: cancellerMember!.id, storeId: store!.id, assignedBy: cancellerUser!.id });
   const [sku] = await db
     .insert(s.skus)
     .values({
