@@ -48,6 +48,13 @@ export interface OutboxEntry<P = unknown> {
   input: P;
   enqueuedAt: number;
   retries: number;
+  /**
+   * Stable idempotency key shared with the original (failed) attempt (H2).
+   * When present, the replay sends it so the server dedupes a request it
+   * already committed but whose response was lost. Optional: procedures
+   * that aren't server-idempotent leave it unset.
+   */
+  idempotencyKey?: string;
 }
 
 export const outbox = {

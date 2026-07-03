@@ -46,7 +46,7 @@ import {
   Sheet,
   useToast,
 } from '@compass/ui';
-import { trpc } from '../lib/trpc';
+import { trpc, newIdempotencyKey } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton, haptic } from '../hooks/useTelegram';
 import {
@@ -295,8 +295,11 @@ export function RunPage() {
   );
   const offline = useOfflineQueue({
     'run.purchaseItem': async (entry) => {
+      // H2: replay with the SAME idempotency key the first attempt used, so
+      // a request the server already committed (lost response) dedupes.
       await utils.client.run.purchaseItem.mutate(
         entry.input as Parameters<typeof utils.client.run.purchaseItem.mutate>[0],
+        entry.idempotencyKey ? { context: { idempotencyKey: entry.idempotencyKey } } : undefined,
       );
       void utils.run.get.invalidate();
       void utils.run.list.invalidate();
@@ -423,17 +426,31 @@ export function RunPage() {
     },
     onError: errToast('common.error'),
   });
+  // H2: one stable idempotency key per purchase, shared between the first
+  // attempt (sent via trpc.context → httpLink header) and any offline
+  // replay (stored on the outbox entry). onMutate runs before the request
+  // is built, so the header picks up the key; the app's mutation-in-flight
+  // guard serialises purchases, so the shared context object can't be
+  // clobbered by a concurrent one.
+  const purchaseIdemCtx = useRef<{ idempotencyKey?: string }>({}).current;
   const purchaseItem = trpc.run.purchaseItem.useMutation({
+    trpc: { context: purchaseIdemCtx },
+    onMutate: () => {
+      const idempotencyKey = newIdempotencyKey();
+      purchaseIdemCtx.idempotencyKey = idempotencyKey;
+      return { idempotencyKey };
+    },
     onSuccess: () => {
       invalidateRunQuietly(true);
       setPurchaseDraft(null);
       haptic('success');
       toast.success(i18n.t('run.toast.purchaseRecorded'));
     },
-    onError: (err, vars) => {
+    onError: (err, vars, ctx) => {
       setInlineSavingSkuId((cur) => (cur === vars.skuId ? null : cur));
       if (isLikelyNetworkError(err)) {
-        void offline.enqueue('run.purchaseItem', vars);
+        const key = (ctx as { idempotencyKey?: string } | undefined)?.idempotencyKey;
+        void offline.enqueue('run.purchaseItem', vars, key);
         setPurchaseDraft(null);
         toast.info(i18n.t('run.toast.purchaseSavedOffline'));
       } else {

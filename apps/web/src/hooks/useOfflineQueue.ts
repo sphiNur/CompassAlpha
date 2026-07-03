@@ -125,7 +125,9 @@ interface UseOfflineQueueOptions {
 
 interface UseOfflineQueueResult {
   pendingCount: number;
-  enqueue<P>(procedure: string, input: P): Promise<number>;
+  /** `idempotencyKey`: pass the SAME key the first attempt used so the
+   *  replay dedupes server-side (H2). Omit for non-idempotent procedures. */
+  enqueue<P>(procedure: string, input: P, idempotencyKey?: string): Promise<number>;
   flush(): Promise<void>;
   online: boolean;
 }
@@ -214,9 +216,16 @@ export function useOfflineQueue(
   }, [refresh]);
 
   const enqueue = useCallback(
-    async <P,>(procedure: string, input: P): Promise<number> => {
+    async <P,>(procedure: string, input: P, idempotencyKey?: string): Promise<number> => {
       const clientSeq = await nextSeq();
-      await outbox.add({ clientSeq, procedure, input, enqueuedAt: Date.now(), retries: 0 });
+      await outbox.add({
+        clientSeq,
+        procedure,
+        input,
+        enqueuedAt: Date.now(),
+        retries: 0,
+        idempotencyKey,
+      });
       await refresh();
       // Try immediately if we're online — if we're offline this will no-op.
       void flush();
