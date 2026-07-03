@@ -6305,7 +6305,6 @@ function RunHistorySection({
                       </div>
                     ) : null}
                   </div>
-                  <Badge tone="success">{r.status}</Badge>
                 </button>
               </li>
               );
