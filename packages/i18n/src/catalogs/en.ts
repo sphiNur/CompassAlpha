@@ -783,6 +783,7 @@ export const en = {
   'run.toast.couldNotPlan': 'Could not plan run',
   'run.toast.purchaseRecorded': 'Purchase recorded',
   'run.toast.purchaseSavedOffline': 'Saved offline — will sync when back online',
+  'run.toast.syncFailed': "A saved change couldn't be synced — please re-check it",
   'run.toast.couldNotSavePurchase': 'Could not save purchase',
   'run.toast.markedUnavailable': 'Marked unavailable',
   'run.toast.purchaseRevised': 'Purchase updated',

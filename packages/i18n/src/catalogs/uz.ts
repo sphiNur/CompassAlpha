@@ -723,6 +723,7 @@ export const uz = {
   'run.toast.purchaseRecorded': "Xarid yozildi",
   'run.toast.purchaseSavedOffline':
     "Oflayn saqlandi — internet qaytganda sinxronlanadi",
+  'run.toast.syncFailed': "Saqlangan o'zgarishni sinxronlab bo'lmadi — tekshiring",
   'run.toast.couldNotSavePurchase': "Xaridni saqlab bo'lmadi",
   'run.toast.markedUnavailable': "«Yo'q» deb belgilandi",
   'run.toast.purchaseRevised': "Xarid yangilandi",

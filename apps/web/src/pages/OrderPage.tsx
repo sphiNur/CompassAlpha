@@ -84,7 +84,7 @@ export function OrderPage() {
       );
       void utils.order.todaySession.invalidate();
     },
-  });
+  }, { onDrop: () => toast.error(i18n.t('run.toast.syncFailed')) });
   // OPTIMISTIC ADJUST — fire-and-forget pattern.
   //
   // Why no onSettled invalidate? Because invalidate triggers a refetch

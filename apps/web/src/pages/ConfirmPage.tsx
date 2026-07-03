@@ -75,7 +75,7 @@ export function ConfirmPage() {
       );
       void utils.run.get.invalidate();
     },
-  });
+  }, { onDrop: () => toast.error(i18n.t('run.toast.syncFailed')) });
 
   const activeRun = useMemo(
     () => runsQuery.data?.find((r) => r.status === 'delivering') ?? null,

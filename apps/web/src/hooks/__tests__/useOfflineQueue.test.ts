@@ -13,7 +13,12 @@
  *   - classifyReplayError: terminal server rejections vs transient retries.
  */
 import { describe, it, expect } from 'bun:test';
-import { classifyEntry, classifyReplayError } from '../useOfflineQueue';
+import {
+  classifyEntry,
+  classifyReplayError,
+  shouldGiveUp,
+  MAX_REPLAY_RETRIES,
+} from '../useOfflineQueue';
 
 const DAY = 24 * 60 * 60 * 1000;
 const TTL = 7 * DAY;
@@ -45,18 +50,40 @@ describe('classifyEntry', () => {
 });
 
 describe('classifyReplayError', () => {
-  it('drops on terminal server rejections', () => {
+  it('drops on terminal rejections that can never succeed on retry', () => {
     expect(classifyReplayError('CONFLICT')).toBe('drop');
     expect(classifyReplayError('BAD_REQUEST')).toBe('drop');
     expect(classifyReplayError('NOT_FOUND')).toBe('drop');
+    // H3: these two used to retry forever and head-of-line-block the queue.
+    expect(classifyReplayError('PRECONDITION_FAILED')).toBe('drop'); // runFrozen
+    expect(classifyReplayError('FORBIDDEN')).toBe('drop');
   });
 
   it('retries on transient / unknown failures (incl. no code)', () => {
     expect(classifyReplayError(undefined)).toBe('retry');
     expect(classifyReplayError('INTERNAL_SERVER_ERROR')).toBe('retry');
     expect(classifyReplayError('TIMEOUT')).toBe('retry');
-    // PRECONDITION_FAILED (runFrozen) is intentionally NOT terminal here yet
-    // — surfacing + capping it is the H3 follow-up.
-    expect(classifyReplayError('PRECONDITION_FAILED')).toBe('retry');
+    expect(classifyReplayError('TOO_MANY_REQUESTS')).toBe('retry');
+  });
+
+  it('does NOT drop on UNAUTHORIZED — a re-login lets a later flush succeed', () => {
+    expect(classifyReplayError('UNAUTHORIZED')).toBe('retry');
+  });
+});
+
+describe('shouldGiveUp', () => {
+  it('keeps retrying below the cap', () => {
+    expect(shouldGiveUp(0)).toBe(false);
+    expect(shouldGiveUp(MAX_REPLAY_RETRIES - 1)).toBe(false);
+  });
+
+  it('gives up at or beyond the cap', () => {
+    expect(shouldGiveUp(MAX_REPLAY_RETRIES)).toBe(true);
+    expect(shouldGiveUp(MAX_REPLAY_RETRIES + 5)).toBe(true);
+  });
+
+  it('honours a custom cap', () => {
+    expect(shouldGiveUp(2, 3)).toBe(false);
+    expect(shouldGiveUp(3, 3)).toBe(true);
   });
 });

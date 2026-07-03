@@ -74,12 +74,53 @@ export function classifyEntry(
 export type ReplayErrorAction = 'drop' | 'retry';
 
 /**
- * Classify a replay failure. Server-side rejections are terminal (keeping
- * them can't help); everything else is treated as transient and retried.
+ * Classify a replay failure (H3). Terminal codes can never succeed on
+ * retry, so we drop rather than loop:
+ *   - CONFLICT / BAD_REQUEST / NOT_FOUND — bad or superseded input.
+ *   - PRECONDITION_FAILED — the run was finished/cancelled (runFrozen);
+ *     a queued purchase can never apply. Retrying it forever also
+ *     head-of-line-blocks every later queued write — the H3 bug.
+ *   - FORBIDDEN — the actor lost permission for this store/action.
+ * UNAUTHORIZED is deliberately NOT terminal: authFetch refreshes the token
+ * and a later flush (post re-login) can still succeed — dropping a money
+ * write just because the 15-minute access token lapsed would be wrong.
  */
 export function classifyReplayError(code: string | undefined): ReplayErrorAction {
-  if (code === 'CONFLICT' || code === 'BAD_REQUEST' || code === 'NOT_FOUND') return 'drop';
+  if (
+    code === 'CONFLICT' ||
+    code === 'BAD_REQUEST' ||
+    code === 'NOT_FOUND' ||
+    code === 'PRECONDITION_FAILED' ||
+    code === 'FORBIDDEN'
+  )
+    return 'drop';
   return 'retry';
+}
+
+/** Cap on transient retries before an entry is abandoned (mirrors the
+ *  server-side outbox worker's MAX_RETRIES). Stops an endlessly-failing
+ *  entry from blocking the queue forever. */
+export const MAX_REPLAY_RETRIES = 8;
+
+export function shouldGiveUp(retries: number, max: number = MAX_REPLAY_RETRIES): boolean {
+  return retries >= max;
+}
+
+export interface OfflineDropInfo {
+  procedure: string;
+  /** Why the entry was permanently removed without being applied. */
+  reason: 'rejected' | 'gaveup' | 'stale';
+}
+
+interface UseOfflineQueueOptions {
+  /**
+   * Called when an entry is permanently removed WITHOUT being applied —
+   * a terminal server rejection ('rejected'), the retry cap being reached
+   * ('gaveup'), or stale-bundle expiry ('stale'). Lets the host surface
+   * "a saved change didn't sync" instead of the write vanishing silently
+   * after the user was told it was saved. NOT called on successful replay.
+   */
+  onDrop?: (info: OfflineDropInfo) => void;
 }
 
 interface UseOfflineQueueResult {
@@ -92,13 +133,20 @@ interface UseOfflineQueueResult {
 /** Pages register a per-procedure replay fn. The hook merges them into the
  *  shared registry and calls them in order when flushing. Anything that
  *  throws (transiently) stays in the queue with retries++ for the next
- *  online event. */
-export function useOfflineQueue(replayMap: Record<string, ReplayFn>): UseOfflineQueueResult {
+ *  online event, up to MAX_REPLAY_RETRIES. */
+export function useOfflineQueue(
+  replayMap: Record<string, ReplayFn>,
+  options: UseOfflineQueueOptions = {},
+): UseOfflineQueueResult {
   const [pendingCount, setPendingCount] = useState(0);
   const [online, setOnline] = useState<boolean>(
     typeof navigator !== 'undefined' ? navigator.onLine : true,
   );
   const flushingRef = useRef(false);
+  // Keep the latest onDrop in a ref so the stable flush callback always
+  // calls the current handler without needing it in its dep list.
+  const onDropRef = useRef(options.onDrop);
+  onDropRef.current = options.onDrop;
 
   // Merge this page's handlers into the shared registry, retained across
   // unmounts. Pages pass inline object literals so identity changes every
@@ -130,6 +178,7 @@ export function useOfflineQueue(replayMap: Record<string, ReplayFn>): UseOffline
           // retired bundle, so a truly orphaned entry can't loop forever.
           if (classifyEntry(false, Date.now() - entry.enqueuedAt) === 'expire') {
             await outbox.remove(entry.clientSeq);
+            onDropRef.current?.({ procedure: entry.procedure, reason: 'stale' });
           }
           continue;
         }
@@ -141,10 +190,19 @@ export function useOfflineQueue(replayMap: Record<string, ReplayFn>): UseOffline
           if (classifyReplayError(code) === 'drop') {
             // Server-side rejection — keeping it in the queue won't help.
             await outbox.remove(entry.clientSeq);
+            onDropRef.current?.({ procedure: entry.procedure, reason: 'rejected' });
+            continue;
+          }
+          const nextRetries = entry.retries + 1;
+          if (shouldGiveUp(nextRetries)) {
+            // Transient failures exhausted — abandon this entry so it can't
+            // block the queue forever, but surface the loss (H3).
+            await outbox.remove(entry.clientSeq);
+            onDropRef.current?.({ procedure: entry.procedure, reason: 'gaveup' });
             continue;
           }
           // Likely a transient network issue. Bump retries; leave in queue.
-          await outbox.add({ ...entry, retries: entry.retries + 1 });
+          await outbox.add({ ...entry, retries: nextRetries });
           // Stop the loop on first transient — preserves order on next attempt.
           break;
         }

@@ -331,7 +331,7 @@ export function RunPage() {
       void utils.run.get.invalidate();
       void utils.run.list.invalidate();
     },
-  });
+  }, { onDrop: () => toast.error(i18n.t('run.toast.syncFailed')) });
 
   // ---- Mutations ------------------------------------------------------
   // M1.9 (2026-05-07): hoisted into `lib/errToast.ts` so the same
