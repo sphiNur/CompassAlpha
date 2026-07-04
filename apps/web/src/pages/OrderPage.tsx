@@ -8,6 +8,7 @@ import {
   DataState,
   EmptyState,
   Input,
+  NameCell,
   NumberInput,
   QtyControl,
   SearchInput,
@@ -953,14 +954,7 @@ const SkuRow = memo(function SkuRow({
   return (
     <li className="flex items-center justify-between border-b border-[var(--c-divider)] px-4 py-1.5 last:border-b-0">
       <div className="min-w-0 flex-1 pr-3">
-        <div className="truncate text-h2 font-semibold leading-tight text-[var(--c-fg)]">
-          {nm.primary}
-        </div>
-        {nm.secondary ? (
-          <div className="truncate text-label font-normal leading-tight text-[var(--c-fg-subtle)]">
-            {nm.secondary}
-          </div>
-        ) : null}
+        <NameCell primary={nm.primary} secondary={nm.secondary} size="prominent" />
         {hasSecondaryLine ? (
           <div className="mt-0.5 text-label leading-tight text-[var(--c-fg-muted)]">
             {sku.suggestedQty
@@ -1125,7 +1119,13 @@ function ReviewList({
                   key={r.name + i}
                   className="flex items-baseline justify-between border-b border-[var(--c-divider)] px-4 py-2.5 last:border-b-0"
                 >
-                  <span className="truncate pr-3 text-body text-[var(--c-fg)]">{r.name}</span>
+                  {/* 2026-07-05: match the prominent SKU-name tier used
+                      by SkuRow above (the Order surface is the "browse"
+                      tier, text-h2) so the review summary and the pick
+                      list read at the same size. */}
+                  <span className="truncate pr-3 text-h2 font-semibold text-[var(--c-fg)]">
+                    {r.name}
+                  </span>
                   <span className="shrink-0 font-mono text-body tabular-nums text-[var(--c-fg-muted)]">
                     {formatQty(r.qty)} {r.unit}
                   </span>

@@ -295,3 +295,44 @@ export function PickerRow({ label, hint, selected, disabled, onClick, className 
     </button>
   );
 }
+
+/**
+ * NameCell — a bilingual product/entity name: the primary-locale name
+ * on one line, the secondary-locale name as a muted second line (UI-4:
+ * never `primary (secondary)` inline). Replaces the div-based (Order)
+ * and span-based (Confirm) hand-rolled copies that rendered the SAME
+ * name two incompatible ways.
+ *
+ * `size` encodes the two deliberate tiers (owner decision, 2026-07-05):
+ *   - 'prominent' — text-h2 (15px). Browse/pick surfaces (OrderPage)
+ *     where the name is the primary thing the user scans (M3.55).
+ *   - 'default'   — text-body (13px). Dense/money surfaces (Confirm,
+ *     Run) where more rows per screen matters (M2.2).
+ * The secondary line is text-label muted in both tiers.
+ */
+export interface NameCellProps {
+  primary: ReactNode;
+  secondary?: ReactNode;
+  size?: 'default' | 'prominent';
+  className?: string;
+}
+
+export function NameCell({ primary, secondary, size = 'default', className }: NameCellProps) {
+  return (
+    <div className={cn('min-w-0', className)}>
+      <div
+        className={cn(
+          'truncate font-semibold leading-tight text-[var(--c-fg)]',
+          size === 'prominent' ? 'text-h2' : 'text-body',
+        )}
+      >
+        {primary}
+      </div>
+      {secondary ? (
+        <div className="truncate text-label font-normal leading-tight text-[var(--c-fg-subtle)]">
+          {secondary}
+        </div>
+      ) : null}
+    </div>
+  );
+}

@@ -18,6 +18,7 @@ import {
   ChipBar,
   DataState,
   EmptyState,
+  NameCell,
   PhotoCapture,
   Sheet,
   StickyPageBar,
@@ -309,19 +310,13 @@ export function ConfirmPage() {
                           className="flex flex-col gap-2 border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0"
                         >
                           <div className="flex items-start justify-between gap-3">
-                            {/* M2.2: list-row primary unified to
-                                text-body font-semibold across pages.
-                                UI-4: secondary locale on a muted 2nd line. */}
-                            <span className="min-w-0">
-                              <span className="block truncate text-body font-semibold">
-                                {nm ? nm.primary : it.skuId.slice(0, 8)}
-                              </span>
-                              {nm?.secondary ? (
-                                <span className="block truncate text-label font-normal leading-tight text-[var(--c-fg-subtle)]">
-                                  {nm.secondary}
-                                </span>
-                              ) : null}
-                            </span>
+                            {/* Confirm is the "default" (dense) name tier
+                                per the 2026-07-05 two-tier decision. */}
+                            <NameCell
+                              primary={nm ? nm.primary : it.skuId.slice(0, 8)}
+                              secondary={nm?.secondary}
+                              size="default"
+                            />
                             <span className="shrink-0 font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
                               {formatQty(it.qty)} {sku?.unit ?? ''}
                             </span>

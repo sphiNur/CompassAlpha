@@ -46,7 +46,16 @@ export { StickyPageBar } from './components/StickyPageBar';
 export type { StickyPageBarProps } from './components/StickyPageBar';
 export { SectionLabel } from './components/SectionLabel';
 export type { SectionLabelProps } from './components/SectionLabel';
-export { SectionRow, ListRow, DetailRow, Tile, Field, FieldLabel, PickerRow } from './components/Rows';
+export {
+  SectionRow,
+  ListRow,
+  DetailRow,
+  Tile,
+  Field,
+  FieldLabel,
+  PickerRow,
+  NameCell,
+} from './components/Rows';
 export type {
   SectionRowProps,
   ListRowProps,
@@ -54,6 +63,7 @@ export type {
   TileProps,
   FieldProps,
   PickerRowProps,
+  NameCellProps,
 } from './components/Rows';
 export { ConfirmSheet } from './components/ConfirmSheet';
 export type { ConfirmSheetProps } from './components/ConfirmSheet';
