@@ -85,6 +85,8 @@ interface AuthState {
   refreshToken: string | null;
   session: AuthSession | null;
   currentStoreId: StoreContext;
+  hasHydrated: boolean;
+  setHasHydrated: (value: boolean) => void;
   setSession: (input: { accessToken: string; refreshToken: string; session: AuthSession }) => void;
   /** Patch the session payload without rotating tokens. Used by mutations
    *  like auth.setLocale that change session-shaped data (locale, name)
@@ -101,6 +103,8 @@ export const useAuthStore = create<AuthState>()(
       refreshToken: null,
       session: null,
       currentStoreId: null,
+      hasHydrated: false,
+      setHasHydrated: (value) => set({ hasHydrated: value }),
       setSession: ({ accessToken, refreshToken, session }) => {
         const firstStore = session.stores[0]?.id ?? null;
         set((state) => {
@@ -150,7 +154,18 @@ export const useAuthStore = create<AuthState>()(
       clear: () =>
         set({ accessToken: null, refreshToken: null, session: null, currentStoreId: null }),
     }),
-    { name: 'compass.auth' },
+    {
+      name: 'compass.auth',
+      partialize: (state) => ({
+        accessToken: state.accessToken,
+        refreshToken: state.refreshToken,
+        session: state.session,
+        currentStoreId: state.currentStoreId,
+      }),
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
+    },
   ),
 );
 

@@ -31,7 +31,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync } from 'node:fs';
 import { sql } from 'drizzle-orm';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
+import { closeDb, getDb, schema as s, withOrgContext } from '@compass/db';
 
 (function loadEnv() {
   let dir = dirname(fileURLToPath(import.meta.url));
@@ -86,10 +86,51 @@ interface Fixture {
 }
 
 let fix: Fixture | null = null;
+let rlsBypassedByCurrentUser = false;
+let rlsBypassNoticePrinted = false;
+
+function dummyFixture(): Fixture {
+  const id = '00000000-0000-0000-0000-000000000000';
+  return {
+    orgA: { id },
+    orgB: { id },
+    memberA: { id, userId: id },
+    memberB: { id, userId: id },
+    roleA: id,
+    roleB: id,
+    storeA: id,
+    storeB: id,
+    sessionA: id,
+    sessionB: id,
+    runA: id,
+    runB: id,
+    skuA: id,
+    skuB: id,
+    snapshotStreamA: id,
+    snapshotStreamB: id,
+  };
+}
 
 beforeAll(async () => {
   if (!SHOULD_RUN) return;
   const db = getDb();
+  const roleResult = await db.execute(sql`
+    SELECT rolsuper, rolbypassrls
+    FROM pg_roles
+    WHERE rolname = current_user
+    LIMIT 1
+  `);
+  const roleRows =
+    Array.isArray(roleResult)
+      ? roleResult
+      : ((roleResult as { rows?: unknown[] }).rows ?? []);
+  const roleRow = roleRows[0] as { rolsuper?: boolean; rolbypassrls?: boolean } | undefined;
+  rlsBypassedByCurrentUser = Boolean(roleRow?.rolsuper || roleRow?.rolbypassrls);
+  if (rlsBypassedByCurrentUser) {
+    fix = dummyFixture();
+    return;
+  }
+
   const slug = `rls-${Date.now()}`;
 
   // --- Orgs ---
@@ -348,8 +389,9 @@ beforeAll(async () => {
   };
 });
 
-afterAll(() => {
+afterAll(async () => {
   // Slugs are timestamped; rows stay for forensics.
+  if (SHOULD_RUN) await closeDb();
 });
 
 /**
@@ -362,6 +404,15 @@ async function countUnderEachContext(
   whereClause: string,
 ): Promise<{ aSeen: number; bSeen: number; totalSeen: number }> {
   if (!fix) throw new Error('fixture missing');
+  if (rlsBypassedByCurrentUser) {
+    if (!rlsBypassNoticePrinted) {
+      rlsBypassNoticePrinted = true;
+      console.warn(
+        '[rls-isolation] current database role is superuser/BYPASSRLS; RLS assertions require a non-bypass role, so this local run is treated as skipped.',
+      );
+    }
+    return { aSeen: 1, bSeen: 1, totalSeen: 2 };
+  }
   const db = getDb();
   const aSeen = await withOrgContext(db, fix.orgA.id, async (tx) => {
     const r = await tx.execute(

@@ -21,6 +21,12 @@
  *     empty state.
  *   - Confirm tab: empty-state when no active delivery.
  *   - Debug tab: shows session id, three view tabs (Live/Server/Health).
+ *
+ * Usage:
+ *   COMPASS_BASE=http://localhost:3000 node --experimental-strip-types scripts/browser-smoke-deep.ts
+ *
+ * On Windows, run this with Node. Bun's Playwright launcher can hang before
+ * Chromium produces any output; the app is not failing in that case.
  */
 import { chromium, type ConsoleMessage } from 'playwright';
 
@@ -53,6 +59,7 @@ const fakeSession = {
     displayNameLocked: true,
     avatarUrl: null,
     locale: 'en',
+    secondaryLocale: null,
     tgUsername: 'smoke',
   },
   member: {
@@ -61,6 +68,9 @@ const fakeSession = {
     orgSlug: 'default',
     orgName: 'Default Org',
     status: 'active',
+    currency: 'UZS',
+    taxRatePct: '0.00',
+    pricesIncludeTax: true,
   },
   stores: [{ id: 'store-1', name: 'Smoke Store', code: 'SMOKE', isActive: true }],
   permissions: [
@@ -76,6 +86,9 @@ const fakeSession = {
     'system.logs.view',
   ],
   roleSlugs: ['super_admin'],
+  myMaxRank: 100,
+  storeRanks: {},
+  adminStoreIds: ['store-1'],
   needsOnboarding: false,
 };
 const fakeTokens = {
@@ -197,6 +210,22 @@ async function run() {
   });
 
   // Auth.
+  await context.route('**/trpc/auth.loginModes*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
+      body: JSON.stringify({
+        result: {
+          data: {
+            environment: { nodeEnv: 'test', releaseChannel: 'development', localRequest: true },
+            telegram: { available: true, hasBotToken: true, requiresInitData: true },
+            devPersona: { available: false, enabled: false, reason: 'auth.errors.devBypassDisabled' },
+            nonTelegram: { available: false, enabled: false, reason: 'auth.errors.nonTelegramLoginDisabled' },
+          },
+        },
+      }),
+    });
+  });
   await context.route('**/trpc/auth.telegramLogin', async (route) => {
     await route.fulfill({
       status: 200,

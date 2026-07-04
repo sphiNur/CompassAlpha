@@ -23,6 +23,7 @@ import {
 } from '../../services/refreshTokens';
 import { logger } from '../../infra/log';
 import { env } from '../../env';
+import type { RequestContext } from '../context';
 
 /**
  * Brute-force defence on the two public auth endpoints (added 2026-05-05).
@@ -61,6 +62,34 @@ type LoginIdentity = {
   memberId: string;
   orgId: string;
 };
+
+type DevPersonaRow = {
+  user_id: string;
+  member_id: string;
+  org_id: string;
+  org_name: string;
+  display_name: string;
+  tg_user_id: string | null;
+  role_slugs: string | null;
+  store_names: string | null;
+  is_admin: boolean | string | number | null;
+  max_rank: number | string | null;
+  permission_count: number | string | null;
+};
+
+type DevPersonaIdentityRow = {
+  user_id: string;
+  member_id: string;
+  org_id: string;
+};
+
+const DevPersonaLoginInputSchema = z.object({
+  memberId: z.string().uuid(),
+});
+
+function resultRows<T>(rows: T[] | { rows?: T[] }): T[] {
+  return Array.isArray(rows) ? rows : (rows.rows ?? []);
+}
 
 function releaseChannel(): 'development' | 'staging' | 'production' {
   return env.COMPASS_RELEASE_CHANNEL ?? (env.NODE_ENV === 'production' ? 'production' : 'development');
@@ -121,6 +150,103 @@ function isDevMockLoginAvailable(): boolean {
   );
 }
 
+function isLocalhostValue(value: string | null | undefined): boolean {
+  if (!value) return false;
+  const trimmed = value.trim().toLowerCase();
+  if (!trimmed) return false;
+  try {
+    const url = new URL(trimmed.includes('://') ? trimmed : `http://${trimmed}`);
+    return (
+      url.hostname === 'localhost' ||
+      url.hostname === '127.0.0.1' ||
+      url.hostname === '[::1]' ||
+      url.hostname === '::1'
+    );
+  } catch {
+    return (
+      trimmed === 'localhost' ||
+      trimmed.startsWith('localhost:') ||
+      trimmed === '127.0.0.1' ||
+      trimmed.startsWith('127.0.0.1:') ||
+      trimmed === '::1' ||
+      trimmed.startsWith('[::1]:')
+    );
+  }
+}
+
+function isLocalDevRequest(ctx: RequestContext): boolean {
+  const host = ctx.hono.req.header('host');
+  const origin = ctx.hono.req.header('origin');
+  const forwardedHost = ctx.hono.req.header('x-forwarded-host');
+  return (
+    isLocalhostValue(host) ||
+    isLocalhostValue(origin) ||
+    isLocalhostValue(forwardedHost) ||
+    ctx.ip === '127.0.0.1' ||
+    ctx.ip === '::1'
+  );
+}
+
+function devLoginUnavailableReason(ctx: RequestContext): string | null {
+  if (!isDevMockLoginAvailable()) return 'auth.errors.devBypassDisabled';
+  if (!isLocalDevRequest(ctx)) return 'auth.errors.devLocalhostOnly';
+  return null;
+}
+
+function assertDevLoginAvailable(ctx: RequestContext): void {
+  const reason = devLoginUnavailableReason(ctx);
+  if (!reason) return;
+  throw new TRPCError({
+    code: 'FORBIDDEN',
+    message: reason,
+  });
+}
+
+function nonTelegramUnavailableReason(): string | null {
+  if (env.NON_TELEGRAM_LOGIN_ENABLED !== 'true') {
+    return 'auth.errors.nonTelegramLoginDisabled';
+  }
+  if (releaseChannel() === 'production') {
+    return 'auth.errors.nonTelegramProductionDisabled';
+  }
+  if (parseNonTelegramUsers().size === 0) {
+    return 'auth.errors.nonTelegramAllowlistEmpty';
+  }
+  return null;
+}
+
+function isDevDatabaseUnavailableError(err: unknown): boolean {
+  const e = err as { code?: string; errno?: string; message?: string; cause?: unknown };
+  const cause = e?.cause as { code?: string; message?: string } | undefined;
+  const code = e?.code ?? e?.errno ?? cause?.code;
+  const message = `${e?.message ?? ''} ${cause?.message ?? ''}`;
+  return (
+    code === 'ECONNREFUSED' ||
+    code === 'ECONNRESET' ||
+    code === 'ETIMEDOUT' ||
+    code === 'ENOTFOUND' ||
+    message.includes('ECONNREFUSED') ||
+    message.includes('Connection terminated') ||
+    message.includes('connect ETIMEDOUT')
+  );
+}
+
+function throwDevDatabaseUnavailable(err: unknown): never {
+  logger.warn(
+    { err: err instanceof Error ? err.message : String(err) },
+    'auth.devLogin database unavailable',
+  );
+  throw new TRPCError({
+    code: 'PRECONDITION_FAILED',
+    message: 'auth.errors.devDatabaseUnavailable',
+  });
+}
+
+function rethrowDevLoginDatabaseError(err: unknown): never {
+  if (isDevDatabaseUnavailableError(err)) throwDevDatabaseUnavailable(err);
+  throw err;
+}
+
 async function findDevBypassIdentity(db: DB): Promise<LoginIdentity> {
   const rows = await db.execute<{
     user_id: string;
@@ -157,6 +283,35 @@ async function findDevBypassIdentity(db: DB): Promise<LoginIdentity> {
     throw new TRPCError({
       code: 'PRECONDITION_FAILED',
       message: 'auth.errors.devBypassNoMember',
+    });
+  }
+  return {
+    userId: picked.user_id,
+    memberId: picked.member_id,
+    orgId: picked.org_id,
+  };
+}
+
+async function findDevPersonaIdentity(db: DB, memberId: string): Promise<LoginIdentity> {
+  const rows = await db.execute<DevPersonaIdentityRow>(sql`
+    SELECT
+      m.user_id::text AS user_id,
+      m.id::text AS member_id,
+      m.org_id::text AS org_id
+    FROM auth.members m
+    INNER JOIN auth.users u ON u.id = m.user_id
+    INNER JOIN auth.organizations o ON o.id = m.org_id
+    WHERE m.id = ${memberId}
+      AND m.status = 'active'
+      AND u.deleted_at IS NULL
+      AND o.deleted_at IS NULL
+    LIMIT 1
+  `);
+  const picked = resultRows(rows)[0];
+  if (!picked) {
+    throw new TRPCError({
+      code: 'NOT_FOUND',
+      message: 'auth.errors.devPersonaMissing',
     });
   }
   return {
@@ -262,9 +417,97 @@ async function issueDevBypassLoginResult(
 }
 
 export const authRouter = router({
+  loginModes: publicProcedure.query(({ ctx }) => {
+    const devReason = devLoginUnavailableReason(ctx);
+    const nonTelegramReason = nonTelegramUnavailableReason();
+    return {
+      environment: {
+        nodeEnv: env.NODE_ENV,
+        releaseChannel: releaseChannel(),
+        localRequest: isLocalDevRequest(ctx),
+      },
+      telegram: {
+        available: true,
+        hasBotToken: Boolean(env.TELEGRAM_BOT_TOKEN),
+        requiresInitData: true,
+      },
+      devPersona: {
+        available: devReason === null,
+        enabled: env.DEV_MOCK_LOGIN_ENABLED === 'true',
+        reason: devReason,
+      },
+      nonTelegram: {
+        available: nonTelegramReason === null,
+        enabled: env.NON_TELEGRAM_LOGIN_ENABLED === 'true',
+        reason: nonTelegramReason,
+      },
+    };
+  }),
+
   nonTelegramStatus: publicProcedure.query(() => ({
     enabled: isNonTelegramLoginAvailable(),
   })),
+
+  /**
+   * Development-only persona list for browser QA outside Telegram.
+   *
+   * This endpoint exposes only existing active members in the local
+   * development database. It is unavailable outside localhost +
+   * development, so production users never see or hit this path.
+   */
+  devPersonas: publicProcedure.query(async ({ ctx }) => {
+    enforceRate('devPersonas', ctx.ip);
+    assertDevLoginAvailable(ctx);
+    let rows: DevPersonaRow[] | { rows?: DevPersonaRow[] };
+    try {
+      rows = await ctx.db.execute<DevPersonaRow>(sql`
+        SELECT
+          u.id::text AS user_id,
+          m.id::text AS member_id,
+          m.org_id::text AS org_id,
+          o.name AS org_name,
+          u.display_name AS display_name,
+          u.tg_user_id::text AS tg_user_id,
+          STRING_AGG(DISTINCT r.slug, ',' ORDER BY r.slug) AS role_slugs,
+          STRING_AGG(DISTINCT st.name, ',' ORDER BY st.name) AS store_names,
+          COALESCE(BOOL_OR(rp.permission_key = 'users.manage'), false) AS is_admin,
+          COALESCE(MAX(r.rank), 0) AS max_rank,
+          COUNT(DISTINCT rp.permission_key)::int AS permission_count
+        FROM auth.members m
+        INNER JOIN auth.users u ON u.id = m.user_id
+        INNER JOIN auth.organizations o ON o.id = m.org_id
+        LEFT JOIN auth.member_role_bindings mrb ON mrb.member_id = m.id
+        LEFT JOIN auth.roles r ON r.id = mrb.role_id
+        LEFT JOIN auth.role_permissions rp ON rp.role_id = r.id
+        LEFT JOIN auth.member_store_assignments msa ON msa.member_id = m.id
+        LEFT JOIN inventory.stores st ON st.id = msa.store_id AND st.is_active = true
+        WHERE m.status = 'active'
+          AND u.deleted_at IS NULL
+          AND o.deleted_at IS NULL
+        GROUP BY u.id, m.id, m.org_id, o.name, u.display_name, u.tg_user_id
+        ORDER BY
+          COALESCE(BOOL_OR(rp.permission_key = 'users.manage'), false) DESC,
+          COALESCE(MAX(r.rank), 0) DESC,
+          LOWER(u.display_name) ASC
+        LIMIT 50
+      `);
+    } catch (err) {
+      rethrowDevLoginDatabaseError(err);
+    }
+    return resultRows(rows).map((row) => ({
+      memberId: row.member_id,
+      userId: row.user_id,
+      orgId: row.org_id,
+      orgName: row.org_name,
+      displayName: row.display_name,
+      tgUserId: row.tg_user_id,
+      roleSlugs: row.role_slugs ? row.role_slugs.split(',').filter(Boolean) : [],
+      storeNames: row.store_names ? row.store_names.split(',').filter(Boolean) : [],
+      isAdmin: row.is_admin === true || row.is_admin === 'true' || row.is_admin === 1,
+      maxRank: Number(row.max_rank ?? 0),
+      permissionCount: Number(row.permission_count ?? 0),
+    }));
+  }),
 
   /**
    * Development-only browser bypass for local UI work.
@@ -277,13 +520,14 @@ export const authRouter = router({
    */
   devBypassLogin: publicProcedure.mutation(async ({ ctx }) => {
     enforceRate('devBypassLogin', ctx.ip);
-    if (!isDevMockLoginAvailable()) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'auth.errors.devBypassDisabled',
-      });
+    assertDevLoginAvailable(ctx);
+    let identity: LoginIdentity;
+    try {
+      identity = await findDevBypassIdentity(ctx.db);
+    } catch (err) {
+      if (err instanceof TRPCError) throw err;
+      rethrowDevLoginDatabaseError(err);
     }
-    const identity = await findDevBypassIdentity(ctx.db);
     return issueDevBypassLoginResult(
       ctx.db,
       identity.userId,
@@ -291,6 +535,26 @@ export const authRouter = router({
       identity.orgId,
     );
   }),
+
+  devPersonaLogin: publicProcedure
+    .input(DevPersonaLoginInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      enforceRate('devPersonaLogin', ctx.ip);
+      assertDevLoginAvailable(ctx);
+      let identity: LoginIdentity;
+      try {
+        identity = await findDevPersonaIdentity(ctx.db, input.memberId);
+      } catch (err) {
+        if (err instanceof TRPCError) throw err;
+        rethrowDevLoginDatabaseError(err);
+      }
+      return issueDevBypassLoginResult(
+        ctx.db,
+        identity.userId,
+        identity.memberId,
+        identity.orgId,
+      );
+    }),
 
   /**
    * Browser-only login for remote development/staging UI checks.

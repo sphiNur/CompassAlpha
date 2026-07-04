@@ -14,13 +14,41 @@ interface AuthGateProps {
 // only the non-secret Telegram ID keeps the rare re-authentication path short
 // without putting the access code in local storage or the client bundle.
 const DEV_BROWSER_TG_USER_ID_KEY = 'compass.devBrowserTgUserId';
+const DEV_LOGIN_MODE_KEY = 'compass.devLoginMode';
+const AUTH_WAIT_TIMEOUT_MS = 10_000;
+
+interface DevPersona {
+  memberId: string;
+  displayName: string;
+  orgName: string;
+  tgUserId: string | null;
+  roleSlugs: string[];
+  storeNames: string[];
+  isAdmin: boolean;
+  maxRank: number;
+  permissionCount: number;
+}
+
+function wantsDevPersonaPicker(): boolean {
+  if (!import.meta.env.DEV || typeof window === 'undefined') return false;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return (
+      params.get('devLogin') === 'choose' ||
+      window.localStorage.getItem(DEV_LOGIN_MODE_KEY) === 'choose'
+    );
+  } catch {
+    return false;
+  }
+}
 
 function shouldUseDevBypassLogin(): boolean {
   return (
     import.meta.env.DEV &&
     import.meta.env.VITE_DEV_MOCK_INIT_DATA === '1' &&
     typeof window !== 'undefined' &&
-    !window.Telegram?.WebApp?.initData
+    !window.Telegram?.WebApp?.initData &&
+    !wantsDevPersonaPicker()
   );
 }
 
@@ -51,6 +79,7 @@ function initialDevBrowserTgUserId(): string {
 export function AuthGate({ children }: AuthGateProps) {
   const accessToken = useAuthStore((s) => s.accessToken);
   const session = useAuthStore((s) => s.session);
+  const authHydrated = useAuthStore((s) => s.hasHydrated);
   const setSession = useAuthStore((s) => s.setSession);
   const clear = useAuthStore((s) => s.clear);
   const i18n = useI18n();
@@ -58,20 +87,34 @@ export function AuthGate({ children }: AuthGateProps) {
   const [browserTgUserId, setBrowserTgUserId] = useState(initialDevBrowserTgUserId);
   const [browserAccessCode, setBrowserAccessCode] = useState('');
   const [loginSession, setLoginSession] = useState<AuthSession | null>(null);
+  const [authWaitTimedOut, setAuthWaitTimedOut] = useState(false);
   const activeSession = session ?? loginSession;
+  const hasTelegramInitData = Boolean(getTg()?.initData);
+  const forceDevPersonaPicker = wantsDevPersonaPicker();
   /** True once we've issued a telegramLogin call this mount cycle. */
   const loginAttempted = useRef(false);
   /** True once `auth.me` failed with UNAUTHORIZED — don't auto-login again. */
   const meUnauthorized = useRef(false);
 
   const me = trpc.auth.me.useQuery(undefined, {
-    enabled: !!accessToken,
+    enabled: authHydrated && !!accessToken,
     retry: false,
   });
-  const nonTelegramStatus = trpc.auth.nonTelegramStatus.useQuery(undefined, {
-    enabled: !activeSession,
+  const loginModes = trpc.auth.loginModes.useQuery(undefined, {
+    enabled: authHydrated && !activeSession,
     retry: false,
-    staleTime: 60_000,
+    staleTime: 30_000,
+  });
+  const shouldShowDevPersonas = Boolean(
+    !activeSession &&
+      !hasTelegramInitData &&
+      loginModes.data?.devPersona.available &&
+      (forceDevPersonaPicker || authWaitTimedOut || error),
+  );
+  const devPersonas = trpc.auth.devPersonas.useQuery(undefined, {
+    enabled: authHydrated && shouldShowDevPersonas,
+    retry: false,
+    staleTime: 15_000,
   });
 
   // If an existing token is bad, drop it. In Telegram Mini App we can
@@ -109,6 +152,7 @@ export function AuthGate({ children }: AuthGateProps) {
       });
       setLoginSession(data.session);
       meUnauthorized.current = false;
+      setAuthWaitTimedOut(false);
       setError(null);
     },
     onError(err) {
@@ -124,6 +168,7 @@ export function AuthGate({ children }: AuthGateProps) {
       });
       setLoginSession(data.session);
       meUnauthorized.current = false;
+      setAuthWaitTimedOut(false);
       setError(null);
     },
     onError(err) {
@@ -146,6 +191,23 @@ export function AuthGate({ children }: AuthGateProps) {
         }
       }
       meUnauthorized.current = false;
+      setAuthWaitTimedOut(false);
+      setError(null);
+    },
+    onError(err) {
+      setError(nonTelegramErrorMessage(err.message));
+    },
+  });
+  const devPersonaLogin = trpc.auth.devPersonaLogin.useMutation({
+    onSuccess(data) {
+      setSession({
+        accessToken: data.tokens.accessToken,
+        refreshToken: data.tokens.refreshToken,
+        session: data.session,
+      });
+      setLoginSession(data.session);
+      meUnauthorized.current = false;
+      setAuthWaitTimedOut(false);
       setError(null);
     },
     onError(err) {
@@ -153,9 +215,58 @@ export function AuthGate({ children }: AuthGateProps) {
     },
   });
 
+  const autoLoginData =
+    getTg()?.initData ??
+    (shouldUseDevBypassLogin() ? 'dev-bypass' : null);
+
+  if (import.meta.env.DEV && typeof window !== 'undefined') {
+    (
+      window as Window & {
+        __compassAuthDebug?: Record<string, unknown>;
+      }
+    ).__compassAuthDebug = {
+      authHydrated,
+      hasAccessToken: Boolean(accessToken),
+      hasStoreSession: Boolean(session),
+      hasLoginSession: Boolean(loginSession),
+      hasActiveSession: Boolean(activeSession),
+      loginPending: login.isPending,
+      devBypassPending: devBypassLogin.isPending,
+      personaPending: devPersonaLogin.isPending,
+      meLoading: me.isLoading,
+      loginModesLoading: loginModes.isLoading,
+      hasAutoLoginData: Boolean(autoLoginData),
+      error,
+      authWaitTimedOut,
+    };
+  }
+
+  const authBusy =
+    !activeSession &&
+    !error &&
+    ((login.isPending && !activeSession) ||
+      devBypassLogin.isPending ||
+      nonTelegramLogin.isPending ||
+      devPersonaLogin.isPending ||
+      (me.isLoading && !!accessToken) ||
+      loginModes.isLoading ||
+      devPersonas.isLoading);
+
+  useEffect(() => {
+    if (!authBusy) {
+      setAuthWaitTimedOut(false);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setAuthWaitTimedOut(true);
+    }, AUTH_WAIT_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [authBusy]);
+
   // Auto-login exactly once per mount, gated by ref so UNAUTHORIZED on me
   // can't restart the cycle.
   useEffect(() => {
+    if (!authHydrated) return;
     if (activeSession) return;
     if (loginAttempted.current) return;
     if (meUnauthorized.current && !getTg()?.initData) return;
@@ -167,31 +278,19 @@ export function AuthGate({ children }: AuthGateProps) {
       devBypassLogin.mutate();
       return;
     }
-    // M3.18 (launch hardening): only honor the dev-mock initData in
-    // a dev build. `import.meta.env.DEV` is statically replaced by
-    // `false` in production, so Rollup tree-shakes the entire mock
-    // branch out — the production bundle does not contain the env
-    // var name. See vite.config.ts for the build-time hard guard.
-    const mock = import.meta.env.DEV ? import.meta.env.VITE_DEV_MOCK_INIT_DATA : null;
-    const data = initData || mock;
-    if (!data) return;
+    if (!initData) return;
     loginAttempted.current = true;
-    login.mutate({ initData: data });
-  }, [activeSession, accessToken, login, devBypassLogin]);
-
-  const autoLoginData =
-    getTg()?.initData ??
-    (shouldUseDevBypassLogin()
-      ? 'dev-bypass'
-      : import.meta.env.DEV
-        ? import.meta.env.VITE_DEV_MOCK_INIT_DATA
-        : null);
+    login.mutate({ initData });
+  }, [authHydrated, activeSession, accessToken, login, devBypassLogin]);
 
   if (
-    login.isPending ||
+    !authHydrated ||
+    !authWaitTimedOut &&
+    ((login.isPending && !activeSession) ||
     (devBypassLogin.isPending && !activeSession) ||
+    (devPersonaLogin.isPending && !activeSession) ||
     (me.isLoading && !!accessToken && !activeSession) ||
-    (!activeSession && !!autoLoginData && !error && !login.isError && !devBypassLogin.isError)
+    (!activeSession && !!autoLoginData && !error && !login.isError && !devBypassLogin.isError))
   ) {
     return (
       <div className="flex h-full items-center justify-center text-[var(--c-fg-muted)]">
@@ -201,18 +300,41 @@ export function AuthGate({ children }: AuthGateProps) {
   }
 
   if (!activeSession) {
-    const hasTelegramInitData = Boolean(getTg()?.initData);
-    const showBrowserLogin = Boolean(nonTelegramStatus.data?.enabled && !hasTelegramInitData);
+    const showBrowserLogin = Boolean(loginModes.data?.nonTelegram.available && !hasTelegramInitData);
+    const showDevLogin = shouldShowDevPersonas;
+    const showSignInButton = !showBrowserLogin && !showDevLogin;
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
+      <div className="flex h-full flex-col items-center gap-4 overflow-y-auto px-6 py-8 text-center">
         <h1 className="text-display font-semibold">Compass</h1>
         <p className="text-body text-[var(--c-fg-muted)]">{i18n.t('auth.shareThisId')}</p>
+        {authWaitTimedOut ? (
+          <Banner tone="warn" title="登录等待时间过长">
+            {loginDiagnosticText(loginModes.data, loginModes.error?.message)}
+          </Banner>
+        ) : null}
         {error ? (
           <Banner tone="danger" title={i18n.t('auth.errors.signInFailed')}>
             {error}
           </Banner>
         ) : null}
-        {!showBrowserLogin ? (
+        {showDevLogin ? (
+          <DevPersonaPicker
+            personas={(devPersonas.data ?? []) as DevPersona[]}
+            loading={devPersonas.isLoading}
+            error={devPersonas.error ? nonTelegramErrorMessage(devPersonas.error.message) : null}
+            pending={devPersonaLogin.isPending}
+            onSelect={(memberId) => {
+              setError(null);
+              devPersonaLogin.mutate({ memberId });
+            }}
+            onAutoLogin={() => {
+              setError(null);
+              loginAttempted.current = true;
+              devBypassLogin.mutate();
+            }}
+          />
+        ) : null}
+        {showSignInButton ? (
           <Button
             onClick={() => {
               loginAttempted.current = true;
@@ -221,10 +343,7 @@ export function AuthGate({ children }: AuthGateProps) {
                 devBypassLogin.mutate();
                 return;
               }
-              // M3.18: same DEV-only guard as the auto-login path above.
-              // Production builds never read VITE_DEV_MOCK_INIT_DATA.
-              const mock = import.meta.env.DEV ? import.meta.env.VITE_DEV_MOCK_INIT_DATA : null;
-              const data = getTg()?.initData ?? mock ?? '';
+              const data = getTg()?.initData ?? '';
               if (!data) {
                 setError(i18n.t('auth.errors.noInitData'));
                 return;
@@ -322,17 +441,144 @@ function nonTelegramErrorMessage(message: string): string {
   switch (message) {
     case 'auth.errors.nonTelegramLoginDisabled':
       return '非 Telegram 测试登录未开启。';
+    case 'auth.errors.nonTelegramProductionDisabled':
+      return '正式环境不允许非 Telegram 测试登录。';
+    case 'auth.errors.nonTelegramAllowlistEmpty':
+      return '非 Telegram 测试登录白名单为空。';
     case 'auth.errors.invalidNonTelegramLogin':
       return 'Telegram ID 或访问码无效，或该用户不在允许名单中。';
     case 'auth.errors.noMembership':
       return '该用户没有可用的组织成员身份。';
     case 'auth.errors.devBypassDisabled':
       return '本地开发自动登录未开启，或当前不是 development 环境。';
+    case 'auth.errors.devLocalhostOnly':
+      return '开发登录只允许从 localhost 或 127.0.0.1 访问。';
+    case 'auth.errors.devDatabaseUnavailable':
+      return '本地开发数据库不可用。请启动本地 PostgreSQL，或确认 DATABASE_URL 指向可用的本地副本。';
     case 'auth.errors.devBypassNoMember':
       return '本地数据库里没有可用于自动登录的 active 成员。';
+    case 'auth.errors.devPersonaMissing':
+      return '选择的开发测试身份不存在或已停用。';
     default:
       return message;
   }
+}
+
+interface LoginModeDiagnostics {
+  environment?: {
+    nodeEnv: string;
+    releaseChannel: string;
+    localRequest: boolean;
+  };
+  devPersona?: {
+    available: boolean;
+    enabled: boolean;
+    reason: string | null;
+  };
+  nonTelegram?: {
+    available: boolean;
+    enabled: boolean;
+    reason: string | null;
+  };
+}
+
+function loginDiagnosticText(
+  modes: LoginModeDiagnostics | undefined,
+  queryError: string | undefined,
+): string {
+  if (queryError) return `无法读取登录模式：${queryError}`;
+  if (!modes) return '正在等待 API 返回登录模式。';
+  const dev = modes.devPersona?.available
+    ? '开发登录可用'
+    : `开发登录不可用：${nonTelegramErrorMessage(modes.devPersona?.reason ?? '未知原因')}`;
+  const browser = modes.nonTelegram?.available
+    ? '浏览器访问码登录可用'
+    : `浏览器访问码登录不可用：${nonTelegramErrorMessage(modes.nonTelegram?.reason ?? '未知原因')}`;
+  return `${dev}；${browser}；环境 ${modes.environment?.nodeEnv ?? '?'} / ${modes.environment?.releaseChannel ?? '?'}，本地请求 ${modes.environment?.localRequest ? '是' : '否'}。`;
+}
+
+function DevPersonaPicker({
+  personas,
+  loading,
+  error,
+  pending,
+  onSelect,
+  onAutoLogin,
+}: {
+  personas: DevPersona[];
+  loading: boolean;
+  error: string | null;
+  pending: boolean;
+  onSelect: (memberId: string) => void;
+  onAutoLogin: () => void;
+}) {
+  return (
+    <section className="mt-2 flex w-full max-w-sm flex-col gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] p-4 text-left ring-hairline">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-h3 font-semibold text-[var(--c-fg)]">开发测试身份登录</div>
+          <p className="mt-1 text-body-sm text-[var(--c-fg-muted)]">
+            只在本地 development 环境显示，用真实成员权限进入前端。
+          </p>
+        </div>
+        <Button
+          size="sm"
+          variant="secondary"
+          loading={pending}
+          onClick={onAutoLogin}
+        >
+          自动
+        </Button>
+      </div>
+      {loading ? (
+        <div className="flex items-center justify-center py-4 text-[var(--c-fg-muted)]">
+          <Spinner size={22} />
+        </div>
+      ) : error ? (
+        <Banner tone="danger" title="无法读取开发身份">
+          {error}
+        </Banner>
+      ) : personas.length === 0 ? (
+        <Banner tone="warn" title="没有可用身份">
+          本地数据库里没有 active 成员。请先迁移并初始化本地数据库。
+        </Banner>
+      ) : (
+        <div className="grid max-h-[52vh] gap-2 overflow-y-auto pr-1">
+          {personas.map((persona) => {
+            const stores =
+              persona.storeNames.length > 0 ? persona.storeNames.join(', ') : '未分配店铺';
+            const roles =
+              persona.roleSlugs.length > 0 ? persona.roleSlugs.join(', ') : '无角色';
+            return (
+              <button
+                key={persona.memberId}
+                type="button"
+                disabled={pending}
+                onClick={() => onSelect(persona.memberId)}
+                className="press w-full rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 text-left ring-hairline disabled:opacity-50"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0 truncate text-body font-semibold text-[var(--c-fg)]">
+                    {persona.displayName}
+                  </div>
+                  <div className="shrink-0 rounded-full bg-[var(--c-surface)] px-2 py-0.5 text-label font-semibold text-[var(--c-fg-muted)] ring-hairline">
+                    {persona.isAdmin ? 'Admin' : `R${persona.maxRank}`}
+                  </div>
+                </div>
+                <div className="mt-1 truncate text-body-sm text-[var(--c-fg-muted)]">
+                  {persona.orgName} · {roles}
+                </div>
+                <div className="mt-0.5 truncate text-label text-[var(--c-fg-muted)]">
+                  {stores} · {persona.permissionCount} permissions
+                  {persona.tgUserId ? ` · TG ${persona.tgUserId}` : ''}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
 }
 
 /**
