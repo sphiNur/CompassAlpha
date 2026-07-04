@@ -103,11 +103,6 @@ export function Segmented<V extends string>({
               active
                 ? `${activeBg} ${activeFg} font-semibold`
                 : 'bg-[var(--c-surface)] text-[var(--c-fg-muted)]',
-              // Internal divider between non-active siblings — looks
-              // like one continuous bar with subtle splits. Arbitrary
-              // `[&:not(:last-child)]` because the `not-last:` Tailwind
-              // modifier landed in v4; we're on v3.4.
-              '[&:not(:last-child)]:border-r [&:not(:last-child)]:border-[var(--c-divider)]',
             )}
           >
             {opt.label}
