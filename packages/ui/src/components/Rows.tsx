@@ -320,9 +320,13 @@ export interface NameCellProps {
 export function NameCell({ primary, secondary, size = 'default', className }: NameCellProps) {
   return (
     <div className={cn('min-w-0', className)}>
+      {/* No explicit leading on the primary — each tier inherits its
+          size token's line-height (text-h2 → 1.25, text-body → 1.4) so
+          this matches the hand-rolled markup it replaced byte-for-byte.
+          The secondary line stays leading-tight (both originals did). */}
       <div
         className={cn(
-          'truncate font-semibold leading-tight text-[var(--c-fg)]',
+          'truncate font-semibold text-[var(--c-fg)]',
           size === 'prominent' ? 'text-h2' : 'text-body',
         )}
       >
