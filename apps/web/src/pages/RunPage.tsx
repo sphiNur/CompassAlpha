@@ -4536,7 +4536,7 @@ function ExpensesCard({
                     title={i18n.t('run.label.paymentTransfer')}
                     className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-action)]/15 px-1.5 py-0.5 text-label text-[var(--c-action)] ring-1 ring-[var(--c-action)]"
                   >
-                    🏦
+                    {i18n.t('run.label.paymentTransfer')}
                   </span>
                 ) : null}
                 <span className="min-w-0 flex-1 truncate text-label text-[var(--c-fg-muted)]">
@@ -5191,7 +5191,7 @@ function PurchaseRow({
               title={i18n.t('run.label.paymentTransfer')}
               className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-action)]/15 px-1.5 py-0.5 text-label text-[var(--c-action)] ring-1 ring-[var(--c-action)]"
             >
-              🏦
+              {i18n.t('run.label.paymentTransfer')}
             </span>
           ) : null}
           <span className="min-w-0 flex-1 truncate text-label text-[var(--c-fg-muted)]">
