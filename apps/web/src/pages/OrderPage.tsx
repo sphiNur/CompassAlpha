@@ -13,6 +13,7 @@ import {
   SearchInput,
   SectionLabel,
   Sheet,
+  StickyPageBar,
   useToast,
 } from '@compass/ui';
 import { trpc } from '../lib/trpc';
@@ -638,14 +639,7 @@ export function OrderPage() {
             (top-right pill + MainButton) was visual stutter.
           The sticky strip now carries only the SearchInput + category
           ChipBar — the actual filters the user interacts with. */}
-      <div
-        className="sticky top-0 z-[1] flex flex-col gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] py-2"
-        style={{
-          // M3.46 (2026-05-22): clear Telegram's overlay chrome buttons.
-          paddingLeft: 'max(16px, var(--app-chrome-pad-left, 16px))',
-          paddingRight: 'max(16px, var(--app-chrome-pad-right, 16px))',
-        }}
-      >
+      <StickyPageBar direction="col">
         <SearchInput
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
@@ -686,7 +680,7 @@ export function OrderPage() {
             }
           </DataState>
         </ChipBar>
-      </div>
+      </StickyPageBar>
 
       {/* Status banners — only render the wrapper when at least one
           banner condition is true, so the empty-state draft view has
