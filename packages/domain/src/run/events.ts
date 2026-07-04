@@ -190,6 +190,21 @@ export type RunEvent =
         addedPlannedItems: Array<{ skuId: string; qty: string }>;
       };
     })
+  | (BaseEvent & {
+      // Removes one still-pending order session from an active run.
+      // The matching order stream receives EjectedFromRun in the same
+      // transaction, returning the store submission to approved/review
+      // state. Only pending SKU rows may be reduced; once a SKU has
+      // been bought or marked unavailable the purchaser must undo that
+      // item first.
+      type: 'SessionEjectedFromRun';
+      payload: {
+        sessionId: string;
+        removedPlannedItems: Array<{ skuId: string; qty: string }>;
+        reason: string | null;
+        byMemberId: string;
+      };
+    })
   // ---- Purchaser-initiated additions (M3.41, 2026-05-21) ---------------
   | (BaseEvent & {
       /**

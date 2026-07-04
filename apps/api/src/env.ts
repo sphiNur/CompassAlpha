@@ -39,6 +39,9 @@ export const env = createEnv({
     JWT_REFRESH_SECRET: z.string().min(32),
     TELEGRAM_BOT_TOKEN: z.string().optional(),
     TELEGRAM_BOT_USERNAME: z.string().optional(),
+    /** Local-only browser development identity. Never honored outside the
+     * development release channel; see auth.telegramLogin. */
+    DEV_MOCK_LOGIN_ENABLED: z.enum(['true', 'false']).optional(),
     NON_TELEGRAM_LOGIN_ENABLED: z.enum(['true', 'false']).optional(),
     NON_TELEGRAM_LOGIN_USERS: z.string().optional(),
     // Cloudflare Worker relay for outbound Bot API calls — used when the

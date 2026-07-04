@@ -84,6 +84,15 @@ export type RunCommand =
       actor: ActorCtx;
     }
   | {
+      // Remove one still-pending order session from a planned/purchasing
+      // run and reduce the aggregated planned quantities accordingly.
+      type: 'EjectSession';
+      sessionId: string;
+      removedPlannedItems: Array<{ skuId: string; qty: string }>;
+      reason?: string;
+      actor: ActorCtx;
+    }
+  | {
       /**
        * M3.41 (2026-05-21): purchaser adds a SKU mid-run that was NOT in
        * the original aggregated demand. Distinct from PurchaseItem (which
@@ -875,6 +884,71 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
       ];
     }
 
+    case 'EjectSession': {
+      assertActive(state);
+      if (!command.actor.permissions.has('run.eject_session')) {
+        throw forbidden('run.errors.cannotEjectSession');
+      }
+      if (state.status !== 'planned' && state.status !== 'purchasing') {
+        throw preconditionFailed('run.errors.cannotEjectInStatus', {
+          status: state.status,
+        });
+      }
+      if (!state.sessionIds.includes(command.sessionId)) {
+        throw preconditionFailed('run.errors.sessionNotInRun', {
+          sessionId: command.sessionId,
+        });
+      }
+      if (state.sessionIds.length <= 1) {
+        throw preconditionFailed('run.errors.cannotEjectLastSession');
+      }
+      const items = new Map(state.items);
+      for (const removed of command.removedPlannedItems) {
+        const qty = num(removed.qty, 'run.errors.invalidQty');
+        if (qty <= 0) throw validation('run.errors.qtyMustBePositive');
+        const existing = items.get(removed.skuId);
+        if (!existing) continue;
+        if (existing.status !== 'pending') {
+          throw preconditionFailed('order.errors.cannotEject', {
+            skuId: removed.skuId,
+            status: existing.status,
+          });
+        }
+        const planned = num(existing.plannedQty, 'run.errors.invalidQty');
+        if (qty - planned > TOLERANCE) {
+          throw preconditionFailed('run.errors.ejectQtyExceedsPlan', {
+            skuId: removed.skuId,
+            planned,
+            qty,
+          });
+        }
+        const remaining = planned - qty;
+        if (remaining <= TOLERANCE) {
+          items.delete(removed.skuId);
+        } else {
+          items.set(removed.skuId, { ...existing, plannedQty: remaining.toString() });
+        }
+      }
+      if (items.size === 0) {
+        throw preconditionFailed('run.errors.cannotEjectLastSession');
+      }
+
+      const reason = (command.reason ?? '').trim();
+      if (reason.length > 500) throw validation('run.errors.noteTooLong');
+      return [
+        {
+          ...baseFor(1),
+          type: 'SessionEjectedFromRun',
+          payload: {
+            sessionId: command.sessionId,
+            removedPlannedItems: command.removedPlannedItems,
+            reason: reason || null,
+            byMemberId: command.actor.memberId,
+          },
+        },
+      ];
+    }
+
     case 'UndoStartPurchase': {
       assertActive(state);
       if (!command.actor.permissions.has('run.purchase')) {
@@ -989,22 +1063,14 @@ function assertActive(state: RunState): void {
 }
 
 /**
- * Claim-ownership gate — C.2 (M3.38, 2026-05-19). Mutating commands
- * must be invoked by the current claimer (or with no claim set yet).
- * Mirrors the order-side check at packages/domain/src/order/commands.ts.
- *
- * Unclaimed runs accept writes from any permitted member — the FE
- * auto-claims on page mount so by the time a mutation reaches the
- * server the claim is usually set. The defensive fallback (allow
- * when null) keeps single-purchaser flows zero-friction; the lock
- * activates the moment two purchasers exist on the same run.
+ * Runs are intentionally collaborative. Concurrent purchasers can record
+ * independent rows or expenses; event-stream serialization protects the
+ * ledger from stale writes and each event still records its actor.
  */
-function assertClaimOwnership(state: RunState, actor: ActorCtx): void {
-  if (state.claimedByMemberId && state.claimedByMemberId !== actor.memberId) {
-    throw conflict('run.errors.claimedByOther', {
-      claimedBy: state.claimedByMemberId,
-    });
-  }
+function assertClaimOwnership(_state: RunState, _actor: ActorCtx): void {
+  // Runs are collaborative: separate purchasers may record separate
+  // SKU rows or expenses concurrently. Event-stream serialization and
+  // per-event actor auditing still protect the ledger from stale writes.
 }
 
 function assertSplitOverrides(splits: StoreSplitCommand[]): void {

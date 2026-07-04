@@ -207,6 +207,7 @@ export const runRouter = router({
               lastSeenPrice: string | null;
               estimatedUnitPrice: string | null;
             } | null>,
+            lastPurchasePriceBySku: {} as Record<string, string>,
             perStoreBudgets: [] as Array<{
               storeId: string;
               storeName: string;
@@ -245,7 +246,9 @@ export const runRouter = router({
         // (which only covers the actor's accessible stores). For an
         // admin viewing an org-wide preview we want every involved
         // store's name, not just theirs.
-        const involvedStoreIds = [...perStoreSkuQty.keys()];
+        const involvedStoreIds = [
+          ...new Set([...perStoreSkuQty.keys(), ...sessions.map((s) => s.storeId)]),
+        ];
         // M1.9-fix (2026-05-07): drizzle's tagged template binds a JS
         // array as a single parameter — `IN ${array}` becomes
         // `IN ($1)` with $1 being the entire array, not an IN-list.
@@ -293,6 +296,12 @@ export const runRouter = router({
           lastSeenPrice: string | null;
           estimatedUnitPrice: string | null;
         } | null> = {};
+        // Budgeting must not depend on a SKU having a preferred supplier.
+        // The most recent real purchase is the best reference price for a
+        // purchaser deciding today's branch budget, regardless of where it
+        // was bought. Preferred-supplier defaults remain useful for vendor
+        // grouping, but must not turn a priced SKU into “unknown price”.
+        const lastPurchasePriceBySku: Record<string, string> = {};
         if (skuIds.length > 0) {
           // Drizzle ORM doesn't have a clean `distinctOn` builder; use
           // `sql` raw for the prioritised ranking. Casting through
@@ -354,6 +363,25 @@ export const runRouter = router({
           // bucket for them rather than dropping them silently.
           for (const sid of skuIds) {
             if (!(sid in supplierBySku)) supplierBySku[sid] = null;
+          }
+
+          const priceRows = await tx.execute<{
+            sku_id: string;
+            unit_price: string;
+          }>(sql`
+            SELECT DISTINCT ON (ph.sku_id)
+              ph.sku_id::text AS sku_id,
+              ph.unit_price::text AS unit_price
+            FROM inventory.price_history ph
+            WHERE ph.org_id = ${ctx.session!.orgId}
+              AND ph.sku_id IN (${sql.raw(skuIds.map((id) => `'${id}'`).join(','))})
+            ORDER BY ph.sku_id, ph.observed_at DESC, ph.created_at DESC
+          `);
+          const prices = Array.isArray(priceRows)
+            ? priceRows
+            : ((priceRows as { rows?: typeof priceRows }).rows ?? []);
+          for (const price of prices) {
+            lastPurchasePriceBySku[price.sku_id] = price.unit_price;
           }
         }
 
@@ -418,7 +446,10 @@ export const runRouter = router({
           let estimatedTotal = 0;
           let unknownPriceCount = 0;
           for (const [skuId, qty] of perStoreSkuQty.get(storeId)?.entries() ?? []) {
-            const estimatedUnitPrice = supplierBySku[skuId]?.estimatedUnitPrice ?? null;
+            const estimatedUnitPrice =
+              lastPurchasePriceBySku[skuId] ??
+              supplierBySku[skuId]?.estimatedUnitPrice ??
+              null;
             if (!estimatedUnitPrice) {
               unknownPriceCount += 1;
               continue;
@@ -438,6 +469,7 @@ export const runRouter = router({
           sessions: sessions.map((s) => ({
             id: s.id,
             storeId: s.storeId,
+            storeName: storeNameById.get(s.storeId) ?? '—',
             orderDate: s.orderDate,
             submittedByMemberId: s.submittedByMemberId,
             notes: s.notes,
@@ -449,6 +481,7 @@ export const runRouter = router({
           })),
           perStoreDemand,
           supplierBySku,
+          lastPurchasePriceBySku,
           perStoreBudgets,
           /** Per-store concatenated session notes (M1.8, legacy). Empty
            *  record when no notes anywhere. */
@@ -1022,6 +1055,135 @@ export const runRouter = router({
     });
   }),
 
+  /**
+   * Complete finished-run history for the purchaser-facing history page.
+   * `list` deliberately stays compact for the live procurement screen;
+   * this endpoint is independently bounded and only returns finished runs
+   * so several months of records do not turn the active page into an
+   * endless scroll.
+   */
+  history: authedProcedure
+    .input(z.object({ limit: z.number().int().min(25).max(1000).default(100) }).optional())
+    .query(async ({ ctx, input }) =>
+      ctx.withOrg(async (tx) => {
+        const allowedStoreIds = ctx.session!.permissions.has('run.create.org')
+          ? null
+          : await getActorStoreIds(tx, ctx.session!.memberId, ctx.session!.permissions);
+        if (allowedStoreIds !== null && allowedStoreIds.length === 0) return [];
+
+        const runs = await tx
+          .select()
+          .from(s.marketRunsV)
+          .where(
+            and(
+              eq(s.marketRunsV.orgId, ctx.session!.orgId),
+              eq(s.marketRunsV.status, 'finished'),
+            ),
+          )
+          .orderBy(desc(s.marketRunsV.runDate), desc(s.marketRunsV.runIndex))
+          .limit(input?.limit ?? 100);
+
+        if (runs.length === 0) return [];
+
+        let visibleRuns = runs;
+        const allowedStoreSet = allowedStoreIds === null ? null : new Set(allowedStoreIds);
+        const allSessionIds = [
+          ...new Set(runs.flatMap((run) => (run.sessionIdsJson as string[] | null) ?? [])),
+        ];
+        if (allowedStoreSet) {
+          if (allSessionIds.length === 0) return [];
+          const sessionRows = await tx.query.orderSessionsV.findMany({
+            where: (session, { inArray }) => inArray(session.id, allSessionIds),
+            columns: { id: true, storeId: true },
+          });
+          const storeBySession = new Map(sessionRows.map((session) => [session.id, session.storeId]));
+          visibleRuns = runs.filter((run) =>
+            ((run.sessionIdsJson as string[] | null) ?? []).some((sessionId) =>
+              allowedStoreSet.has(storeBySession.get(sessionId) ?? ''),
+            ),
+          );
+        }
+        if (visibleRuns.length === 0) return [];
+
+        type MutableStoreTotal = {
+          storeId: string;
+          total: number;
+          cash: number;
+          transfer: number;
+          skuIds: Set<string>;
+        };
+        const totalsByRun = new Map<string, Map<string, MutableStoreTotal>>();
+        const ensureStoreTotal = (runId: string, storeId: string): MutableStoreTotal | null => {
+          if (allowedStoreSet && !allowedStoreSet.has(storeId)) return null;
+          let runTotals = totalsByRun.get(runId);
+          if (!runTotals) {
+            runTotals = new Map<string, MutableStoreTotal>();
+            totalsByRun.set(runId, runTotals);
+          }
+          let current = runTotals.get(storeId);
+          if (!current) {
+            current = { storeId, total: 0, cash: 0, transfer: 0, skuIds: new Set<string>() };
+            runTotals.set(storeId, current);
+          }
+          return current;
+        };
+        const visibleRunIds = visibleRuns.map((run) => run.id);
+        const splitRows = await tx
+          .select({
+            runId: s.runItemStoresV.runId,
+            storeId: s.runItemStoresV.storeId,
+            skuId: s.runItemStoresV.skuId,
+            qty: s.runItemStoresV.qty,
+            itemUnitPrice: s.runItemsV.unitPrice,
+            itemPaymentMethod: s.runItemsV.paymentMethod,
+            splitUnitPrice: s.runItemStoresV.unitPrice,
+            splitPaymentMethod: s.runItemStoresV.paymentMethod,
+          })
+          .from(s.runItemStoresV)
+          .innerJoin(
+            s.runItemsV,
+            and(
+              eq(s.runItemsV.runId, s.runItemStoresV.runId),
+              eq(s.runItemsV.skuId, s.runItemStoresV.skuId),
+            ),
+          )
+          .where(
+            and(
+              inArray(s.runItemStoresV.runId, visibleRunIds),
+              eq(s.runItemsV.status, 'purchased'),
+            ),
+          );
+        for (const row of splitRows) {
+          const unitPrice = row.splitUnitPrice ?? row.itemUnitPrice;
+          if (!unitPrice) continue;
+          const subtotal = Number(row.qty) * Number(unitPrice);
+          if (!Number.isFinite(subtotal)) continue;
+          const current = ensureStoreTotal(row.runId, row.storeId);
+          if (!current) continue;
+          current.total += subtotal;
+          if ((row.splitPaymentMethod ?? row.itemPaymentMethod) === 'transfer') {
+            current.transfer += subtotal;
+          } else {
+            current.cash += subtotal;
+          }
+          current.skuIds.add(row.skuId);
+        }
+        const moneyString = (n: number) => (Math.round(n * 100) / 100).toString();
+        return visibleRuns.map((run) => ({
+          ...run,
+          storeTotals: [...(totalsByRun.get(run.id)?.values() ?? [])]
+            .sort((a, b) => b.total - a.total)
+            .map((total) => ({
+              storeId: total.storeId,
+              total: moneyString(total.total),
+              cash: moneyString(total.cash),
+              transfer: moneyString(total.transfer),
+              itemCount: total.skuIds.size,
+            })),
+        }));
+      }),
+    ),
+
   get: authedProcedure
     .input(SimpleRunCommandSchema.pick({ runId: true }))
     .query(async ({ ctx, input }) => {
@@ -1092,15 +1254,35 @@ export const runRouter = router({
         };
         const sessionNotesByStore: Record<string, string> = {};
         const sessionExtrasByStore: Record<string, ExtraItem[]> = {};
+        let runSessions: Array<{
+          id: string;
+          storeId: string;
+          submittedByMemberId: string | null;
+          initiatedByMemberId: string | null;
+          submittedByDisplayName: string | null;
+          itemCount: number;
+          totalQty: string;
+          extrasCount: number;
+          status: string;
+        }> = [];
         if (sessionIds.length > 0) {
           const sessions = await tx.query.orderSessionsV.findMany({
             where: (sess, { inArray: ia }) => ia(sess.id, sessionIds),
-            columns: { id: true, storeId: true, notes: true, extrasJson: true },
+            columns: {
+              id: true,
+              storeId: true,
+              notes: true,
+              extrasJson: true,
+              submittedByMemberId: true,
+              initiatedByMemberId: true,
+              status: true,
+            },
           });
           const sessionItems = await tx.query.orderItemsV.findMany({
             where: (it, { inArray: ia }) => ia(it.sessionId, sessionIds),
           });
           const sessionStoreById = new Map<string, string>();
+          const sessionStats = new Map<string, { itemCount: number; totalQty: number }>();
           const noteAccumulator = new Map<string, string[]>();
           const extrasAccumulator = new Map<string, ExtraItem[]>();
           for (const s of sessions) {
@@ -1127,6 +1309,51 @@ export const runRouter = router({
               extrasAccumulator.set(s.storeId, arr);
             }
           }
+          for (const it of sessionItems) {
+            const qty = Number(it.qty);
+            if (qty <= 0) continue;
+            const stat = sessionStats.get(it.sessionId) ?? { itemCount: 0, totalQty: 0 };
+            stat.itemCount += 1;
+            stat.totalQty += qty;
+            sessionStats.set(it.sessionId, stat);
+          }
+          const submitterIds = [
+            ...new Set(
+              sessions
+                .map((sess) => sess.submittedByMemberId ?? sess.initiatedByMemberId)
+                .filter((id): id is string => Boolean(id)),
+            ),
+          ];
+          const displayNameByMemberId = new Map<string, string>();
+          if (submitterIds.length > 0) {
+            const rows = await tx
+              .select({
+                memberId: s.members.id,
+                displayName: s.users.displayName,
+              })
+              .from(s.members)
+              .innerJoin(s.users, eq(s.users.id, s.members.userId))
+              .where(inArray(s.members.id, submitterIds));
+            for (const row of rows) displayNameByMemberId.set(row.memberId, row.displayName);
+          }
+          runSessions = sessions.map((sess) => {
+            const stat = sessionStats.get(sess.id) ?? { itemCount: 0, totalQty: 0 };
+            const submitterId = sess.submittedByMemberId ?? sess.initiatedByMemberId;
+            const extras = (sess.extrasJson ?? []) as unknown[];
+            return {
+              id: sess.id,
+              storeId: sess.storeId,
+              submittedByMemberId: sess.submittedByMemberId,
+              initiatedByMemberId: sess.initiatedByMemberId,
+              submittedByDisplayName: submitterId
+                ? displayNameByMemberId.get(submitterId) ?? null
+                : null,
+              itemCount: stat.itemCount,
+              totalQty: stat.totalQty.toString(),
+              extrasCount: Array.isArray(extras) ? extras.length : 0,
+              status: sess.status,
+            };
+          });
           for (const [sid, arr] of noteAccumulator.entries()) {
             sessionNotesByStore[sid] = arr.join('\n\n');
           }
@@ -1273,6 +1500,7 @@ export const runRouter = router({
           sessionNotesByStore,
           sessionExtrasByStore,
           supplierBySku,
+          sessions: runSessions,
           // M3.44: off-catalog expenses (purchaser-recorded). FE
           // renders these in an "Off-catalog / Expenses" card and
           // sums them into the finish-summary breakdown.
@@ -1977,6 +2205,7 @@ export const runRouter = router({
 
   ejectSession: authedProcedure.input(EjectSessionInputSchema).mutation(async ({ ctx, input }) => {
     return ctx.withOrg(async (tx) => {
+      const run = await loadRun(tx, ctx.session!.orgId, input.runId);
       // M3.33 (2026-05-18, Wave1 #3): scope check. Without this, any
       // actor with run.eject_session could pop another store's
       // session out of a run regardless of their store binding.
@@ -2014,7 +2243,48 @@ export const runRouter = router({
         }
       }
 
-      // Emit EjectedFromRun on the order stream.
+      const removedBySku = new Map<string, number>();
+      for (const item of sessionItems) {
+        const qty = Number(item.qty);
+        if (qty <= 0) continue;
+        removedBySku.set(item.skuId, (removedBySku.get(item.skuId) ?? 0) + qty);
+      }
+      const removedPlannedItems = [...removedBySku.entries()].map(([skuId, qty]) => ({
+        skuId,
+        qty: qty.toString(),
+      }));
+
+      try {
+        const runRemovalEvents = decideRun(runState, {
+          type: 'EjectSession',
+          sessionId: input.sessionId,
+          removedPlannedItems,
+          reason: input.reason,
+          actor: actorFromCtx(ctx),
+        });
+        if (runRemovalEvents.length > 0) {
+          await appendEvents(tx, {
+            streamType: 'run',
+            streamId: run.id,
+            orgId: ctx.session!.orgId,
+            events: runRemovalEvents.map((e) => ({ ...e })),
+          });
+          for (const e of runRemovalEvents) runState = applyRun(runState, e);
+          await projectRun(tx, ctx.session!.orgId, runRemovalEvents);
+          await dispatchRunEventNotifications(
+            tx,
+            ctx.session!.orgId,
+            ctx.session!.userId,
+            runState,
+            runRemovalEvents,
+          );
+        }
+      } catch (err) {
+        if (err instanceof DomainError) rethrowDomainError(err);
+        throw err;
+      }
+
+      // Emit EjectedFromRun on the order stream in the same tx.
       const orderEvents = (await readStream(tx, 'order', input.sessionId)) as unknown as OrderEvent[];
       let oState = emptyOrderState(input.sessionId);
       for (const e of orderEvents) oState = applyOrder(oState, e);
@@ -2038,7 +2308,19 @@ export const runRouter = router({
         });
         await projectOrder(tx, ctx.session!.orgId, ev);
       }
-      return { lastSeq: ev[ev.length - 1]?.seq ?? oState.seq };
+      hub.publish(ctx.session!.orgId, {
+        type: 'run.changed',
+        orgId: ctx.session!.orgId,
+        runId: runState.streamId,
+        lastSeq: runState.seq,
+      });
+      hub.publish(ctx.session!.orgId, {
+        type: 'order.changed',
+        orgId: ctx.session!.orgId,
+        sessionId: input.sessionId,
+        lastSeq: ev[ev.length - 1]?.seq ?? oState.seq,
+      });
+      return { lastSeq: runState.seq, orderLastSeq: ev[ev.length - 1]?.seq ?? oState.seq };
     });
   }),
 });

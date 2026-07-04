@@ -27,13 +27,13 @@
  * goes into the audit log.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent } from 'react';
 import {
   Badge,
   Banner,
   Button,
   Card,
   CardHeader,
-  CardMeta,
   CardTitle,
   Chip,
   ChipBar,
@@ -48,13 +48,8 @@ import {
 } from '@compass/ui';
 import { trpc, newIdempotencyKey } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
-import { usePageMainButton, haptic } from '../hooks/useTelegram';
-import {
-  useI18n,
-  useProductName,
-  useVendorName,
-  useVendorUnitLabel,
-} from '../hooks/useI18n';
+import { usePageMainButton, haptic, getTg } from '../hooks/useTelegram';
+import { useI18n, useProductName } from '../hooks/useI18n';
 import { usePhotoUploader } from '../hooks/usePhotoUploader';
 // M3.5: StoreSwitcher pill removed from page chrome; picker lives in
 // SettingsSheet now. RunPage still uses useStoreContext indirectly
@@ -64,6 +59,8 @@ import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
+import { shareLink } from '../lib/telegramLinks';
+import { matchesNameLike, normalizeQuery } from '../lib/searchMatch';
 
 /**
  * Convert a raw UZS price string to its thousands-mode display form.
@@ -155,6 +152,8 @@ interface AddItemDraft {
   label: string;
   /** Expense mode — optional unit hint ("trip", "pack", null). */
   unitHint: string;
+  /** Shared costs are evenly allocated; store costs belong to one branch. */
+  expenseScope: 'shared' | 'store';
   // Shared across both modes
   actualQty: string;
   unitPrice: string;
@@ -166,6 +165,12 @@ interface AddItemDraft {
   paymentMethod: 'cash' | 'transfer';
   receiptPhotoUrl: string | null;
   reason: string;
+}
+
+function newClientId(): string {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 interface PurchaseDraft {
@@ -201,22 +206,12 @@ type ConfirmKind =
   | { kind: 'deliverStore'; storeId: string; storeName: string }
   | { kind: 'recallDelivery'; storeId: string; storeName: string }
   | { kind: 'unmarkUnavailable'; skuId: string; skuName: string }
-  | { kind: 'undoPurchase'; skuId: string; skuName: string };
+  | { kind: 'undoPurchase'; skuId: string; skuName: string }
+  | { kind: 'ejectSession'; sessionId: string; storeName: string; submitterName: string };
 
 export function RunPage() {
   const i18n = useI18n();
   const productName = useProductName();
-  // M3.45 (2026-05-22): vendor-language variant for per-vendor copy
-  // templates. Returns ONLY the secondary locale's name (so the text
-  // pasted into the vendor's chat is clean Uzbek, no parenthetical
-  // Chinese noise). Falls back to primary locale when no secondary
-  // is set.
-  const vendorName = useVendorName();
-  // M3.48 (2026-05-23): unit-label resolver for the SAME copy templates.
-  // Without this, copy emitted raw canonical units ("bunch", "kg") even
-  // when the user's primary locale was Chinese — bug the user reported
-  // when "把" showed as "bunch" in the pasted text.
-  const vendorUnitLabel = useVendorUnitLabel();
   const session = useAuthStore((s) => s.session);
   const toast = useToast();
   const photoUploader = usePhotoUploader('receipt');
@@ -262,15 +257,15 @@ export function RunPage() {
   const [confirmAction, setConfirmAction] = useState<ConfirmKind | null>(null);
   const [confirmReason, setConfirmReason] = useState('');
   // Drill-down for a historical run.
-  const [historyDetailFor, setHistoryDetailFor] = useState<{
-    runId: string;
-    runIndex: number;
-    runDate: string;
-    status: string;
-  } | null>(null);
+  const [historyDetailFor, setHistoryDetailFor] = useState<HistoryDetailTarget | null>(null);
+  const [historyPageOpen, setHistoryPageOpen] = useState(false);
 
   const previewQuery = trpc.run.previewCreatable.useQuery({});
   const runsQuery = trpc.run.list.useQuery();
+  const fullHistoryQuery = trpc.run.history.useQuery(
+    { limit: 500 },
+    { enabled: historyPageOpen },
+  );
   const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: false });
   const categoriesQuery = trpc.catalog.categories.useQuery();
   const storesQuery = trpc.catalog.stores.useQuery();
@@ -425,6 +420,18 @@ export function RunPage() {
       toast.info(i18n.t('run.toast.expenseRemoved'));
     },
     onError: errToast('common.error'),
+  });
+  const ejectSession = trpc.run.ejectSession.useMutation({
+    onSuccess: () => {
+      void utils.run.get.invalidate();
+      void utils.run.list.invalidate();
+      void utils.run.previewCreatable.invalidate();
+      void utils.order.todaySession.invalidate();
+      void utils.order.pendingList.invalidate();
+      haptic('success');
+      toast.success(i18n.t('run.toast.sessionEjected'));
+    },
+    onError: errToast('run.toast.couldNotEjectSession'),
   });
   // H2: one stable idempotency key per purchase, shared between the first
   // attempt (sent via trpc.context → httpLink header) and any offline
@@ -712,6 +719,7 @@ export function RunPage() {
   // C.2 (M3.38, 2026-05-19): run claim signals.
   const myMemberId = session?.member.memberId ?? null;
   const runClaimedByMemberId = runDetailQuery.data?.claimedByMemberId ?? null;
+  const collaborationEnabled = true;
   const isClaimedByMe = !!myMemberId && runClaimedByMemberId === myMemberId;
   const isClaimedByOther =
     !!runClaimedByMemberId && runClaimedByMemberId !== myMemberId;
@@ -725,6 +733,7 @@ export function RunPage() {
   // re-evaluates when another user releases.
   useEffect(() => {
     if (!activeRun || !myMemberId) return;
+    if (collaborationEnabled) return;
     if (activeRun.status !== 'purchasing' && activeRun.status !== 'delivering') {
       return;
     }
@@ -741,13 +750,14 @@ export function RunPage() {
     myMemberId,
     runClaimedByMemberId,
     runDetailQuery.data,
+    collaborationEnabled,
   ]);
   // Auto-release on page hide. Best-effort fire-and-forget; the
   // worker timeout sweep handles cases where this never fires
   // (force-close, network gone, etc.). Only releases if WE hold the
   // claim — visibility events fire for any user, not just claimers.
   useEffect(() => {
-    if (!activeRun || !isClaimedByMe) return;
+    if (!activeRun || !isClaimedByMe || collaborationEnabled) return;
     const handle = () => {
       if (document.visibilityState !== 'hidden') return;
       // Don't await — we may have ~100ms before the tab is killed.
@@ -759,7 +769,7 @@ export function RunPage() {
     document.addEventListener('visibilitychange', handle);
     return () => document.removeEventListener('visibilitychange', handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeRun?.id, isClaimedByMe]);
+  }, [activeRun?.id, collaborationEnabled, isClaimedByMe]);
 
   const finishSummary = useMemo(() => {
     const items = runDetailQuery.data?.items ?? [];
@@ -1338,6 +1348,29 @@ export function RunPage() {
                 { onSuccess: () => setConfirmAction(null) },
               ),
           };
+        case 'ejectSession':
+          return {
+            title: i18n.t('run.confirm.ejectSession.title', {
+              store: confirmAction.storeName,
+              who: confirmAction.submitterName,
+            }),
+            body: i18n.t('run.confirm.ejectSession.body'),
+            confirmLabel: i18n.t('run.action.ejectSession'),
+            danger: true,
+            requireReason: false,
+            reasonOptional: true,
+            reasonPlaceholder: i18n.t('run.eject.reasonPlaceholder'),
+            isPending: ejectSession.isPending,
+            run: () =>
+              ejectSession.mutate(
+                {
+                  runId,
+                  sessionId: confirmAction.sessionId,
+                  reason: confirmReason.trim() || undefined,
+                },
+                { onSuccess: () => setConfirmAction(null) },
+              ),
+          };
       }
     }
     return null;
@@ -1358,6 +1391,7 @@ export function RunPage() {
     undeliverStore,
     unmarkUnavailable,
     undoPurchase,
+    ejectSession,
   ]);
 
   // ---- Unified MainButton dispatcher --------------------------------
@@ -1454,6 +1488,20 @@ export function RunPage() {
       }`
     : i18n.t('run.empty.noActive');
 
+  if (historyPageOpen) {
+    return (
+      <RunHistoryPage
+        runs={fullHistoryQuery.data ?? []}
+        loading={fullHistoryQuery.isLoading}
+        storeById={storeById}
+        skuById={skuById}
+        productName={productName}
+        i18n={i18n}
+        onBack={() => setHistoryPageOpen(false)}
+      />
+    );
+  }
+
   return (
     /* M1.12: outer page is just `flex flex-col` + bottom safe-area.
         PageHeader removed entirely — Telegram's chrome (bot name +
@@ -1506,7 +1554,7 @@ export function RunPage() {
               hides the affordance to avoid a confusing tap-then-fail.
               The button opens AddItemSheet which collects SKU + qty +
               price + store split + reason. */}
-          {activeRun.status === 'purchasing' && isClaimedByMe ? (
+          {activeRun.status === 'purchasing' && (isClaimedByMe || collaborationEnabled) ? (
             <button
               type="button"
               onClick={() =>
@@ -1519,12 +1567,10 @@ export function RunPage() {
                   // M3.44: pre-generate expense UUID even when opening
                   // in SKU mode so a mid-flow tab switch to expense
                   // mode already has the id ready (idempotency).
-                  expenseId:
-                    typeof crypto !== 'undefined' && 'randomUUID' in crypto
-                      ? crypto.randomUUID()
-                      : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                  expenseId: newClientId(),
                   label: '',
                   unitHint: '',
+                  expenseScope: 'shared',
                   actualQty: '',
                   unitPrice: '',
                   splits: new Map(),
@@ -1554,7 +1600,7 @@ export function RunPage() {
           useEffect then re-grabs the claim under our memberId once
           the WS invalidate lands. Two API roundtrips visible to the
           user as a single tap. */}
-      {activeRun && isClaimedByOther ? (
+      {activeRun && !collaborationEnabled && isClaimedByOther ? (
         <div className="px-4 pt-2">
           <Banner
             tone="warn"
@@ -1634,14 +1680,35 @@ export function RunPage() {
                 preview={p}
                 skuById={skuById}
                 productName={productName}
-                vendorName={vendorName}
-                vendorUnitLabel={vendorUnitLabel}
                 i18n={i18n}
                 toast={toast}
               />
             )
           }
         </DataState>
+      ) : null}
+
+      {activeRun &&
+      runDetailQuery.data &&
+      (activeRun.status === 'planned' || activeRun.status === 'purchasing') &&
+      (runDetailQuery.data.sessions?.length ?? 0) > 0 ? (
+        <RunSessionsCard
+          sessions={runDetailQuery.data.sessions ?? []}
+          storeById={storeById}
+          i18n={i18n}
+          ejecting={ejectSession.isPending}
+          onEject={(sessionRow) => {
+            const storeName =
+              storeById.get(sessionRow.storeId)?.name ?? sessionRow.storeId.slice(0, 8);
+            setConfirmAction({
+              kind: 'ejectSession',
+              sessionId: sessionRow.id,
+              storeName,
+              submitterName:
+                sessionRow.submittedByDisplayName ?? i18n.t('run.sessions.unknownSubmitter'),
+            });
+          }}
+        />
       ) : null}
 
       {/* M3.30 (2026-05-18): for an EXISTING run that's back in `planned`
@@ -1677,8 +1744,6 @@ export function RunPage() {
           }}
           skuById={skuById}
           productName={productName}
-          vendorName={vendorName}
-          vendorUnitLabel={vendorUnitLabel}
           i18n={i18n}
           toast={toast}
         />
@@ -1802,10 +1867,54 @@ export function RunPage() {
           onMarkExtraStatus={(sessionId, extraIndex, status) =>
             markExtraStatus.mutate({ sessionId, extraIndex, status })
           }
+          onRecordExtraExpense={(storeId, extra) => {
+            setAddItemDraft({
+              mode: 'expense',
+              runId: activeRun.id,
+              skuId: null,
+              supplierId: null,
+              skuCostMode: 'merge',
+              expenseId: newClientId(),
+              label: extra.name,
+              unitHint: extra.unit,
+              expenseScope: 'store',
+              actualQty: extra.qty || '1',
+              unitPrice: '',
+              splits: new Map([[storeId, extra.qty || '1']]),
+              splitPrices: new Map(),
+              splitPaymentMethods: new Map(),
+              perStorePricing: false,
+              paymentMethod: 'cash',
+              receiptPhotoUrl: null,
+              reason: i18n.t('run.extras.recordExpenseReason'),
+            });
+          }}
           onRemoveExpense={(expenseId) =>
             removeExpense.mutate({
               runId: activeRun.id,
               expenseId,
+              reason: '',
+            })
+          }
+          onOpenExpense={() =>
+            setAddItemDraft({
+              mode: 'expense',
+              runId: activeRun.id,
+              skuId: null,
+              supplierId: null,
+              skuCostMode: 'merge',
+              expenseId: newClientId(),
+              label: '',
+              unitHint: '',
+              expenseScope: 'shared',
+              actualQty: '1',
+              unitPrice: '',
+              splits: new Map(),
+              splitPrices: new Map(),
+              splitPaymentMethods: new Map(),
+              perStorePricing: false,
+              paymentMethod: 'cash',
+              receiptPhotoUrl: null,
               reason: '',
             })
           }
@@ -1822,6 +1931,7 @@ export function RunPage() {
         productName={productName}
         storeById={storeById}
         i18n={i18n}
+        onOpenAll={() => setHistoryPageOpen(true)}
         onOpen={(r) =>
           setHistoryDetailFor({
             runId: r.id,
@@ -2221,6 +2331,17 @@ interface ActiveRun {
     confirmedAt: Date | string | null;
   }>;
   perStoreDemand?: Array<{ storeId: string; skuId: string; qty: string }>;
+  sessions?: Array<{
+    id: string;
+    storeId: string;
+    submittedByMemberId: string | null;
+    initiatedByMemberId: string | null;
+    submittedByDisplayName: string | null;
+    itemCount: number;
+    totalQty: string;
+    extrasCount: number;
+    status: string;
+  }>;
   lastPriceBySku?: Record<string, string>;
   /** M1.8: per-store concatenated session notes ("其他物品", legacy). */
   sessionNotesByStore?: Record<string, string>;
@@ -2324,7 +2445,9 @@ function ActiveRunPanel({
   onDeliverStore,
   onRecallStore,
   onMarkExtraStatus,
+  onRecordExtraExpense,
   onRemoveExpense,
+  onOpenExpense,
 }: {
   run: ActiveRun;
   skuById: Map<
@@ -2365,8 +2488,13 @@ function ActiveRunPanel({
     extraIndex: number,
     status: 'pending' | 'bought' | 'unavailable',
   ) => void;
+  onRecordExtraExpense: (
+    storeId: string,
+    extra: { name: string; qty: string; unit: string; note?: string },
+  ) => void;
   /** M3.44: remove an off-catalog expense (purchasing phase only). */
   onRemoveExpense: (expenseId: string, label: string) => void;
+  onOpenExpense: () => void;
 }) {
   const involvedStoreIds = useMemo(() => {
     const ids = new Set<string>();
@@ -2557,6 +2685,7 @@ function ActiveRunPanel({
           onEditPurchased={onEditPurchased}
           onUnmark={onUnmark}
           onMarkExtraStatus={onMarkExtraStatus}
+          onRecordExtraExpense={onRecordExtraExpense}
         />
       ) : null}
       {showViewToggle && viewMode === 'perCategory' && showPerCategory ? (
@@ -2659,6 +2788,7 @@ function ActiveRunPanel({
           i18n={i18n}
           editable={run.status === 'purchasing'}
           onMarkExtraStatus={onMarkExtraStatus}
+          onRecordExtraExpense={onRecordExtraExpense}
         />
       ) : null}
 
@@ -2672,7 +2802,7 @@ function ActiveRunPanel({
         (viewMode === 'perStore' && !showPerStore) ||
         (viewMode === 'perVendor' && !showPerVendor) ||
         (viewMode === 'perCategory' && !showPerCategory)) &&
-      (run.expenses?.length ?? 0) > 0 ? (
+      (run.status === 'purchasing' || (run.expenses?.length ?? 0) > 0) ? (
         <ExpensesCard
           expenses={run.expenses}
           storeById={storeById}
@@ -2680,6 +2810,7 @@ function ActiveRunPanel({
           priceInThousands={priceInThousands}
           editable={run.status === 'purchasing'}
           onRemove={onRemoveExpense}
+          onOpenExpense={onOpenExpense}
         />
       ) : null}
 
@@ -2808,56 +2939,55 @@ function ActiveRunPanel({
 type PreviewView = 'overall' | 'byStore' | 'bySupplier';
 const PREVIEW_VIEW_STORAGE_KEY = 'compass.runPreview.view';
 
-/**
- * Pivot a supplier's items from SKU-major (each SKU has a list of
- * stores it goes to) into store-major (each store has the SKUs the
- * supplier delivers there) — used by the by-supplier preview view
- * (M1.7-fix2, 2026-05-07).
- *
- * Stores are sorted alphabetically so the rendered output is stable
- * across re-renders, matching the copy template's order.
- */
-function pivotSupplierToStoreMajor(
-  items: ReadonlyArray<{
-    skuId: string;
-    total: string;
-    perStore: ReadonlyArray<{ storeId: string; storeName: string; qty: string }>;
-  }>,
-): Array<{
+type PreviewLine = {
+  id: string;
+  kind: 'sku' | 'extra';
+  skuId: string | null;
+  name: string;
+  qty: string;
+  unit: string;
+  unitPrice: string | null;
+  total: number | null;
+  note?: string;
+};
+
+type PreviewStoreGroup = {
   storeId: string;
   storeName: string;
-  items: Array<{ skuId: string; qty: string }>;
-}> {
-  const byStore = new Map<
-    string,
-    {
-      storeId: string;
-      storeName: string;
-      items: Array<{ skuId: string; qty: string }>;
-    }
-  >();
-  for (const it of items) {
-    for (const ps of it.perStore) {
-      const bucket = byStore.get(ps.storeId) ?? {
-        storeId: ps.storeId,
-        storeName: ps.storeName,
-        items: [],
-      };
-      bucket.items.push({ skuId: it.skuId, qty: ps.qty });
-      byStore.set(ps.storeId, bucket);
-    }
-  }
-  return [...byStore.values()].sort((a, b) =>
-    a.storeName.localeCompare(b.storeName),
-  );
+  items: PreviewLine[];
+  total: number;
+  unknownCount: number;
+  legacyNote?: string;
+};
+
+type PreviewSupplierGroup = {
+  supplierId: string | null;
+  supplierName: string;
+  contactPhone: string | null;
+  contactTg: string | null;
+  stores: PreviewStoreGroup[];
+  total: number;
+  unknownCount: number;
+};
+
+function previewLineTotal(qty: string, unitPrice: string | null): number | null {
+  if (!unitPrice) return null;
+  const qtyNum = Number(qty);
+  const priceNum = Number(unitPrice);
+  if (!Number.isFinite(qtyNum) || !Number.isFinite(priceNum)) return null;
+  return qtyNum * priceNum;
+}
+
+function addPreviewLine(group: PreviewStoreGroup, line: PreviewLine): void {
+  group.items.push(line);
+  if (line.total === null) group.unknownCount += 1;
+  else group.total += line.total;
 }
 
 function PreviewSummaryCard({
   preview,
   skuById,
   productName,
-  vendorName,
-  vendorUnitLabel,
   i18n,
   toast,
 }: {
@@ -2866,7 +2996,7 @@ function PreviewSummaryCard({
     // specific date — preview then spans every approved-not-in-run
     // session regardless of order_date.
     date: string | null;
-    sessions: ReadonlyArray<{ id: string; storeId: string; orderDate?: string }>;
+    sessions: ReadonlyArray<{ id: string; storeId: string; storeName?: string; orderDate?: string }>;
     plannedItems: ReadonlyArray<{ skuId: string; qty: string }>;
     perStoreDemand: ReadonlyArray<{
       storeId: string;
@@ -2883,6 +3013,7 @@ function PreviewSummaryCard({
       lastSeenPrice?: string | null;
       estimatedUnitPrice?: string | null;
     } | null>;
+    lastPurchasePriceBySku?: Record<string, string>;
     perStoreBudgets?: ReadonlyArray<{
       storeId: string;
       storeName: string;
@@ -2894,7 +3025,7 @@ function PreviewSummaryCard({
     /** M3.16-C: per-store structured extras. */
     sessionExtrasByStore?: Record<
       string,
-      Array<{ name: string; qty: string; unit: string; note?: string }>
+      Array<{ name: string; qty: string; unit: string; note?: string; sessionId?: string; idx?: number }>
     >;
   };
   skuById: Map<
@@ -2902,15 +3033,6 @@ function PreviewSummaryCard({
     { id: string; names: Record<string, string>; unit: string; step: string; categoryId?: string | null }
   >;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
-  /** M3.45 (2026-05-22): used inside the copy templates so the text
-   *  sent to vendors is in the secondary locale only (no Chinese
-   *  noise when the vendor only reads Uzbek). Falls back to the
-   *  primary locale name when the user hasn't opted into bilingual. */
-  vendorName: (item: { names: Record<string, string> | null | undefined }) => string;
-  /** M3.48 (2026-05-23): unit-label resolver for the copy templates
-   *  so "bunch" → "把" / "bog'lam" instead of leaking the canonical
-   *  storage value. Mirrors vendorName's locale resolution. */
-  vendorUnitLabel: (unit: string | null | undefined) => string;
   i18n: ReturnType<typeof useI18n>;
   toast: ReturnType<typeof useToast>;
 }) {
@@ -2921,75 +3043,236 @@ function PreviewSummaryCard({
   });
   // M1.6 #1: when set, the VendorPickerSheet is open for this skuId.
   const [vendorPickerFor, setVendorPickerFor] = useState<string | null>(null);
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
+  const currentUnitLabel = useCallback(
+    (unit: string | null | undefined): string => {
+      if (!unit) return '';
+      const canonical = unit.toLowerCase();
+      const key = ('unit.' + canonical) as Parameters<typeof i18n.t>[0];
+      const localized = i18n.t(key);
+      return localized === key ? unit : localized;
+    },
+    [i18n],
+  );
+  const currentSkuName = useCallback(
+    (item: { names: Record<string, string> | null | undefined }): string => {
+      const names = item.names ?? {};
+      return (
+        names[i18n.locale] ??
+        names.en ??
+        names.ru ??
+        names.zh ??
+        names.uz ??
+        Object.values(names)[0] ??
+        '—'
+      );
+    },
+    [i18n.locale],
+  );
   useEffect(() => {
     if (typeof window !== 'undefined')
       window.localStorage.setItem(PREVIEW_VIEW_STORAGE_KEY, view);
   }, [view]);
 
-  // Group perStoreDemand by storeId for the "by store" view.
+  const storeNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const row of preview.perStoreDemand) m.set(row.storeId, row.storeName);
+    for (const row of preview.perStoreBudgets ?? []) m.set(row.storeId, row.storeName);
+    for (const row of preview.sessions) {
+      if (row.storeName) m.set(row.storeId, row.storeName);
+    }
+    return m;
+  }, [preview.perStoreBudgets, preview.perStoreDemand, preview.sessions]);
+
+  const estimatedPriceForSku = useCallback(
+    (skuId: string): string | null =>
+      preview.lastPurchasePriceBySku?.[skuId] ??
+      preview.supplierBySku[skuId]?.estimatedUnitPrice ??
+      null,
+    [preview.lastPurchasePriceBySku, preview.supplierBySku],
+  );
+
+  const ensurePreviewStoreGroup = useCallback(
+    (m: Map<string, PreviewStoreGroup>, storeId: string, storeName?: string) => {
+      let cur = m.get(storeId);
+      if (!cur) {
+        cur = {
+          storeId,
+          storeName: storeName ?? storeNameById.get(storeId) ?? storeId.slice(0, 8),
+          items: [],
+          total: 0,
+          unknownCount: 0,
+        };
+        m.set(storeId, cur);
+      } else if (storeName && cur.storeName === storeId.slice(0, 8)) {
+        cur.storeName = storeName;
+      }
+      return cur;
+    },
+    [storeNameById],
+  );
+
   const byStore = useMemo(() => {
-    const m = new Map<
-      string,
-      { storeId: string; storeName: string; items: Array<{ skuId: string; qty: string }> }
-    >();
+    const m = new Map<string, PreviewStoreGroup>();
     for (const row of preview.perStoreDemand) {
-      const cur = m.get(row.storeId) ?? {
-        storeId: row.storeId,
-        storeName: row.storeName,
-        items: [],
-      };
-      cur.items.push({ skuId: row.skuId, qty: row.qty });
-      m.set(row.storeId, cur);
+      const sku = skuById.get(row.skuId);
+      const unitPrice = estimatedPriceForSku(row.skuId);
+      const group = ensurePreviewStoreGroup(m, row.storeId, row.storeName);
+      addPreviewLine(group, {
+        id: `sku:${row.storeId}:${row.skuId}`,
+        kind: 'sku',
+        skuId: row.skuId,
+        name: sku ? productName(sku) : row.skuId.slice(0, 8),
+        qty: row.qty,
+        unit: currentUnitLabel(sku?.unit),
+        unitPrice,
+        total: previewLineTotal(row.qty, unitPrice),
+      });
     }
-    return [...m.values()].sort((a, b) => a.storeName.localeCompare(b.storeName));
-  }, [preview.perStoreDemand]);
 
-  // Group plannedItems by supplier for the "by supplier" view. Each
-  // SKU group holds a per-store breakdown drawn from perStoreDemand.
+    for (const [storeId, extras] of Object.entries(preview.sessionExtrasByStore ?? {})) {
+      const group = ensurePreviewStoreGroup(m, storeId);
+      for (const ex of extras) {
+        addPreviewLine(group, {
+          id: `extra:${storeId}:${ex.sessionId ?? ''}:${ex.idx ?? group.items.length}:${ex.name}`,
+          kind: 'extra',
+          skuId: null,
+          name: ex.name,
+          qty: ex.qty,
+          unit: ex.unit,
+          unitPrice: null,
+          total: null,
+          note: ex.note,
+        });
+      }
+    }
+
+    for (const [storeId, note] of Object.entries(preview.sessionNotesByStore ?? {})) {
+      const trimmed = note.trim();
+      if (!trimmed) continue;
+      ensurePreviewStoreGroup(m, storeId).legacyNote = trimmed;
+    }
+
+    return [...m.values()]
+      .filter((g) => g.items.length > 0 || g.legacyNote)
+      .sort((a, b) => a.storeName.localeCompare(b.storeName));
+  }, [
+    ensurePreviewStoreGroup,
+    currentUnitLabel,
+    estimatedPriceForSku,
+    preview.perStoreDemand,
+    preview.sessionExtrasByStore,
+    preview.sessionNotesByStore,
+    productName,
+    skuById,
+  ]);
+
   const bySupplier = useMemo(() => {
-    type SkuPerStore = { storeId: string; storeName: string; qty: string };
-    type SkuRow = { skuId: string; total: string; perStore: SkuPerStore[] };
-    type Bucket = {
-      supplierId: string | null; // null = unassigned
-      supplierName: string;
-      contactPhone: string | null;
-      contactTg: string | null;
-      items: SkuRow[];
+    const buckets = new Map<string, PreviewSupplierGroup>();
+    const ensureSupplier = (
+      supplierId: string | null,
+      supplierName: string,
+      contactPhone: string | null,
+      contactTg: string | null,
+    ) => {
+      const key = supplierId ?? '__unassigned__';
+      let cur = buckets.get(key);
+      if (!cur) {
+        cur = {
+          supplierId,
+          supplierName,
+          contactPhone,
+          contactTg,
+          stores: [],
+          total: 0,
+          unknownCount: 0,
+        };
+        buckets.set(key, cur);
+      }
+      return cur;
     };
-    // Index per-store breakdown by skuId.
-    const psBySku = new Map<string, SkuPerStore[]>();
-    for (const row of preview.perStoreDemand) {
-      const arr = psBySku.get(row.skuId) ?? [];
-      arr.push({ storeId: row.storeId, storeName: row.storeName, qty: row.qty });
-      psBySku.set(row.skuId, arr);
-    }
-    const buckets = new Map<string, Bucket>();
-    for (const it of preview.plannedItems) {
-      const sup = preview.supplierBySku[it.skuId] ?? null;
-      const key = sup?.id ?? '__unassigned__';
-      const cur = buckets.get(key) ?? {
-        supplierId: sup?.id ?? null,
-        supplierName: sup?.name ?? i18n.t('run.previewSupplier.unassigned'),
-        contactPhone: sup?.contactPhone ?? null,
-        contactTg: sup?.contactTg ?? null,
-        items: [] as SkuRow[],
-      };
-      const perStore = (psBySku.get(it.skuId) ?? []).slice().sort((a, b) =>
-        a.storeName.localeCompare(b.storeName),
-      );
-      cur.items.push({ skuId: it.skuId, total: it.qty, perStore });
-      buckets.set(key, cur);
-    }
-    // Sort: real suppliers (alphabetical) before "unassigned".
-    return [...buckets.values()].sort((a, b) => {
-      if (a.supplierId === null) return 1;
-      if (b.supplierId === null) return -1;
-      return a.supplierName.localeCompare(b.supplierName);
-    });
-  }, [preview.plannedItems, preview.perStoreDemand, preview.supplierBySku, i18n]);
+    const ensureSupplierStore = (
+      supplier: PreviewSupplierGroup,
+      storeId: string,
+      storeName: string,
+    ) => {
+      let cur = supplier.stores.find((s) => s.storeId === storeId);
+      if (!cur) {
+        cur = {
+          storeId,
+          storeName,
+          items: [],
+          total: 0,
+          unknownCount: 0,
+        };
+        supplier.stores.push(cur);
+      }
+      return cur;
+    };
 
-  const copyToClipboard = async (text: string, successKey: 'run.previewStore.copied' | 'run.previewSupplier.copied') => {
+    for (const store of byStore) {
+      for (const line of store.items) {
+        const supplier =
+          line.kind === 'sku' && line.skuId
+            ? preview.supplierBySku[line.skuId] ?? null
+            : null;
+        const bucket = ensureSupplier(
+          supplier?.id ?? null,
+          supplier?.name ?? i18n.t('run.previewSupplier.unassigned'),
+          supplier?.contactPhone ?? null,
+          supplier?.contactTg ?? null,
+        );
+        const storeBucket = ensureSupplierStore(bucket, store.storeId, store.storeName);
+        addPreviewLine(storeBucket, line);
+        if (line.total === null) bucket.unknownCount += 1;
+        else bucket.total += line.total;
+      }
+      if (store.legacyNote) {
+        const bucket = ensureSupplier(
+          null,
+          i18n.t('run.previewSupplier.unassigned'),
+          null,
+          null,
+        );
+        ensureSupplierStore(bucket, store.storeId, store.storeName).legacyNote =
+          store.legacyNote;
+      }
+    }
+
+    return [...buckets.values()]
+      .map((b) => ({
+        ...b,
+        stores: b.stores.sort((a, b2) => a.storeName.localeCompare(b2.storeName)),
+      }))
+      .sort((a, b) => {
+        if (a.supplierId === null) return 1;
+        if (b.supplierId === null) return -1;
+        return a.supplierName.localeCompare(b.supplierName);
+      });
+  }, [byStore, i18n, preview.supplierBySku]);
+
+  const groupMoneyMeta = (total: number, unknownCount: number): string => {
+    const parts = [
+      `${i18n.t('run.preview.groupTotal')} ${formatMoney(total)} ${currency}`,
+    ];
+    if (unknownCount > 0) {
+      parts.push(i18n.t('run.preview.unknownPrices', { n: unknownCount }));
+    }
+    return parts.join(' · ');
+  };
+
+  const lineFormula = (line: PreviewLine): string => {
+    const qtyUnit = `${formatQty(line.qty)} ${line.unit}`.trim();
+    if (line.total === null || !line.unitPrice) {
+      return `${qtyUnit} * ${i18n.t('run.preview.priceUnknown')} = ${i18n.t(
+        'run.preview.priceUnknown',
+      )}`;
+    }
+    return `${qtyUnit} * ${formatMoney(line.unitPrice)} = ${formatMoney(line.total)}`;
+  };
+
+  const copyToClipboard = async (text: string): Promise<boolean> => {
     try {
       if (typeof navigator !== 'undefined' && navigator.clipboard) {
         await navigator.clipboard.writeText(text);
@@ -3004,143 +3287,146 @@ function PreviewSummaryCard({
         document.execCommand('copy');
         document.body.removeChild(ta);
       }
-      toast.success(i18n.t(successKey));
-      haptic('success');
+      return true;
     } catch {
-      toast.error(i18n.t('common.error'));
+      return false;
     }
   };
 
-  const buildStoreText = (
-    storeId: string,
-    storeName: string,
-    items: ReadonlyArray<{ skuId: string; qty: string }>,
-  ): string => {
-    const lines = [`🏪 ${storeName}`, ''];
-    for (const it of items) {
-      const sku = skuById.get(it.skuId);
-      // M3.45 (2026-05-22): use vendorName not productName so the
-      // pasted text reads cleanly in the vendor's language (no
-      // parenthetical primary-locale noise).
-      const name = sku ? vendorName(sku) : it.skuId.slice(0, 8);
-      // M3.48 (2026-05-23): localized unit — was raw `sku.unit`
-      // (canonical "bunch" / "kg" / …) leaking into pasted text.
-      lines.push(`• ${name}: ${formatQty(it.qty)} ${vendorUnitLabel(sku?.unit)}`);
+  const shareOrCopyText = async (text: string): Promise<void> => {
+    const copied = await copyToClipboard(text);
+    let opened = false;
+    const url = shareLink({ url: '', text });
+    try {
+      const tg = getTg();
+      if (tg?.openTelegramLink) {
+        tg.openTelegramLink(url);
+        opened = true;
+      } else if (typeof window !== 'undefined') {
+        opened = window.open(url, '_blank', 'noopener,noreferrer') !== null;
+      }
+    } catch {
+      opened = false;
     }
-    // M1.8 / M3.16-C: append the staff's "其他物品" requests so the
-    // purchaser sees them on the same copy-paste they ship to the
-    // chat group. Structured extras (M3.16-C+) listed line-by-line;
-    // legacy free-text notes (pre-M3.16) appended after.
-    const extras = preview.sessionExtrasByStore?.[storeId] ?? [];
-    if (extras.length > 0) {
+    if (opened) {
+      toast.success(
+        i18n.t(copied ? 'run.previewShare.openedWithCopy' : 'run.previewShare.opened'),
+      );
+      haptic('success');
+      return;
+    }
+    if (copied) {
+      toast.success(i18n.t('run.previewStore.copied'));
+      haptic('success');
+      return;
+    }
+    toast.error(i18n.t('common.error'));
+  };
+
+  const formatLineForText = (line: PreviewLine): string => {
+    const sku = line.skuId ? skuById.get(line.skuId) : null;
+    const name = sku ? currentSkuName(sku) : line.name;
+    const unit = sku ? currentUnitLabel(sku.unit) : line.unit;
+    const qtyUnit = `${formatQty(line.qty)} ${unit}`.trim();
+    const prefix = line.kind === 'extra' ? `${i18n.t('order.extras.label')} · ` : '';
+    const note = line.note ? `\n  ${line.note}` : '';
+    return `${prefix}${name}: ${qtyUnit}${note}`;
+  };
+
+  const buildStoreText = (group: PreviewStoreGroup): string => {
+    const lines = [group.storeName, ''];
+    for (const line of group.items) lines.push(formatLineForText(line));
+    if (group.legacyNote) {
+      lines.push('', `${i18n.t('order.notes.label')}:`, group.legacyNote);
+    }
+    return lines.join('\n').trim();
+  };
+
+  const buildSupplierText = (group: PreviewSupplierGroup): string => {
+    const lines = [group.supplierName, ''];
+    for (const store of group.stores) {
+      lines.push(store.storeName);
+      for (const line of store.items) lines.push(formatLineForText(line));
+      if (store.legacyNote) {
+        lines.push(`${i18n.t('order.notes.label')}:`, store.legacyNote);
+      }
       lines.push('');
-      lines.push(`📝 ${i18n.t('order.extras.label')}:`);
-      for (const ex of extras) {
-        lines.push(`  ${ex.name} ${ex.qty} ${ex.unit}`.trim());
-      }
     }
-    const note = preview.sessionNotesByStore?.[storeId];
-    if (note && note.trim()) {
-      if (extras.length === 0) {
-        lines.push('');
-        lines.push(`📝 ${i18n.t('order.notes.label')}:`);
-      }
-      lines.push(note.trim());
-    }
-    return lines.join('\n');
+    return lines.join('\n').trim();
   };
 
-  /**
-   * Build the vendor copy-paste text (M1.7-fix, 2026-05-06).
-   *
-   * Format intentionally minimal — the user pointed out the previous
-   * version was over-engineered:
-   *
-   *   - No greeting "Hi {vendor}" — they're already in the chat with
-   *     this vendor; the salutation is noise.
-   *   - No date line — implicit from when the message lands.
-   *   - No closing "Thanks!" — same reason.
-   *   - Group by STORE, not by SKU. The vendor's job is to prepare
-   *     N separate piles, one per store. SKU-grouped output makes
-   *     them mentally re-pivot the data.
-   *
-   * Output shape (one block per store, separated by blank line):
-   *
-   *     红旗店:
-   *     牛肉 8kg
-   *     番茄 5kg
-   *
-   *     解放店:
-   *     牛肉 7kg
-   *     番茄 5kg
-   */
-  /**
-   * Build "all vendors at once" copy-paste text (M3.26, 2026-05-18).
-   *
-   * User feedback: walking the bazaar with N WeChat chats open is a
-   * pain. They wanted a single paste they can drop into a notebook /
-   * note app and tick off as they go. Format mirrors per-vendor:
-   * vendor header → store-major lines, separated by blank lines.
-   * The unassigned bucket gets its own block at the end so items
-   * without a fixed stall don't disappear.
-   */
   const buildAllVendorsText = (): string => {
-    const blocks: string[] = [];
-    for (const b of bySupplier) {
-      const body = buildVendorText(b);
-      if (!body) continue;
-      const header = b.supplierId ? `🛒 ${b.supplierName}` : `❓ ${b.supplierName}`;
-      blocks.push(`${header}\n${body}`);
-    }
-    return blocks.join('\n\n');
+    return bySupplier.map(buildSupplierText).filter(Boolean).join('\n\n');
   };
 
-  const buildVendorText = (b: (typeof bySupplier)[number]): string => {
-    // Pivot from SKU-grouped (`b.items[].perStore[]`) to store-grouped.
-    type StoreLine = { skuId: string; qty: string };
-    const byStoreId = new Map<string, { name: string; lines: StoreLine[] }>();
-    for (const it of b.items) {
-      for (const ps of it.perStore) {
-        const bucket = byStoreId.get(ps.storeId) ?? {
-          name: ps.storeName,
-          lines: [],
-        };
-        bucket.lines.push({ skuId: it.skuId, qty: ps.qty });
-        byStoreId.set(ps.storeId, bucket);
-      }
-    }
-    const blocks: string[] = [];
-    // Stable ordering: store name alphabetical so the message reads
-    // the same every time the same vendor copies it twice.
-    const ordered = [...byStoreId.values()].sort((a, b2) =>
-      a.name.localeCompare(b2.name),
+  const isCollapsed = (key: string): boolean => collapsedGroups[key] === true;
+  const toggleGroup = (key: string): void => {
+    setCollapsedGroups((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+  const handleGroupHeaderKeyDown = (e: KeyboardEvent<HTMLDivElement>, key: string): void => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    toggleGroup(key);
+  };
+
+  const renderLine = (
+    line: PreviewLine,
+    index: number,
+    opts?: { editableSupplier?: boolean },
+  ) => {
+    const rowBg = index % 2 === 0 ? 'bg-[var(--c-surface)]' : 'bg-[var(--c-surface-2)]';
+    const formulaTone =
+      line.total === null ? 'text-[var(--c-warning)]' : 'text-[var(--c-fg-muted)]';
+    const nameNode =
+      opts?.editableSupplier && line.kind === 'sku' && line.skuId ? (
+        <button
+          type="button"
+          onClick={() => setVendorPickerFor(line.skuId)}
+          className="press min-w-0 max-w-full text-left text-[var(--c-fg)]"
+          title={i18n.t('run.previewSupplier.changeVendor')}
+        >
+          {line.name}
+        </button>
+      ) : (
+        <span className="min-w-0 max-w-full text-[var(--c-fg)]">{line.name}</span>
+      );
+    return (
+      <li
+        key={line.id}
+        className={`px-2 py-1.5 ${rowBg}`}
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-body">
+            {line.kind === 'extra' ? (
+              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--c-warning)] ring-hairline">
+                {i18n.t('order.extras.label')}
+              </span>
+            ) : null}
+            {nameNode}
+            <span className={`min-w-0 font-mono text-label tabular-nums ${formulaTone}`}>
+              {lineFormula(line)}
+            </span>
+          </div>
+          {line.note ? (
+            <div className="mt-0.5 whitespace-pre-wrap text-label leading-snug text-[var(--c-fg-muted)]">
+              {line.note}
+            </div>
+          ) : null}
+        </div>
+      </li>
     );
-    for (const store of ordered) {
-      const lines = [`${store.name}:`];
-      for (const line of store.lines) {
-        const sku = skuById.get(line.skuId);
-        // M3.45: vendor-language copy
-        const name = sku ? vendorName(sku) : line.skuId.slice(0, 8);
-        // No bullet, no spaces around the unit — the user wants
-        // "牛肉 8kg" form, not "• 牛肉 (8 kg)".
-        // M3.48 (2026-05-23): localized unit (was raw canonical).
-        lines.push(`${name} ${formatQty(line.qty)}${vendorUnitLabel(sku?.unit)}`);
-      }
-      blocks.push(lines.join('\n'));
-    }
-    return blocks.join('\n\n');
   };
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className="-mx-2 overflow-hidden rounded-[var(--r-capsule)]">
+      <CardHeader className="px-3 pt-3">
         <CardTitle>{i18n.t('run.section.readyToPlan')}</CardTitle>
         <Badge>{i18n.t('run.label.sessionsCount', { n: preview.sessions.length })}</Badge>
       </CardHeader>
       {/* Segmented control — sticky horizontal pill bar, same visual
           language as ScopeTab in MemberPermissionsSheet. Three taps
           here, all instant (no async work — all data is in `preview`). */}
-      <div className="flex gap-1 px-4 pb-2 pt-1">
+      <div className="flex gap-1 px-3 pb-2 pt-1">
         {(['overall', 'byStore', 'bySupplier'] as const).map((v) => (
           <button
             key={v}
@@ -3165,7 +3451,7 @@ function PreviewSummaryCard({
       </div>
 
       {preview.perStoreBudgets?.length ? (
-        <div className="border-t border-[var(--c-divider)] px-4 py-2">
+        <div className="border-t border-[var(--c-divider)] px-3 py-2">
           <div className="mb-1 text-label font-semibold text-[var(--c-fg-muted)]">
             分店预算
           </div>
@@ -3192,7 +3478,7 @@ function PreviewSummaryCard({
             so the summary card stays bounded, but the teaser line just
             advertised content the user can't expand here — they'll see
             the full list once the run is created. */
-        <ul className="flex flex-col gap-1 px-4 py-3">
+        <ul className="flex flex-col gap-1 px-3 py-2">
           {preview.plannedItems.slice(0, 8).map((it) => {
             const sku = skuById.get(it.skuId);
             return (
@@ -3208,42 +3494,50 @@ function PreviewSummaryCard({
       ) : null}
 
       {view === 'byStore' ? (
-        <div className="flex flex-col gap-3 px-4 py-3">
+        <div className="px-2 py-2">
           {byStore.map((g) => {
-            const storeNote = preview.sessionNotesByStore?.[g.storeId]?.trim();
-            const storeExtras = preview.sessionExtrasByStore?.[g.storeId] ?? [];
+            const collapsed = isCollapsed(`store:${g.storeId}`);
+            const storeNote = g.legacyNote;
+            const groupKey = `store:${g.storeId}`;
             return (
-            <section key={g.storeId} className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3">
-              <div className="mb-2 flex items-baseline justify-between gap-2">
-                <span className="text-body font-semibold text-[var(--c-fg)]">
-                  🏪 {g.storeName}
+            <section
+              key={g.storeId}
+              className="border-t border-[var(--c-divider)] py-2 first:border-t-0 first:pt-0 last:pb-0"
+            >
+              <div
+                role="button"
+                tabIndex={0}
+                aria-expanded={!collapsed}
+                onClick={() => toggleGroup(groupKey)}
+                onKeyDown={(e) => handleGroupHeaderKeyDown(e, groupKey)}
+                className="press mb-1.5 flex cursor-pointer items-start gap-2 rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-2 py-1.5 outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]"
+              >
+                <span className="mt-0.5 shrink-0 font-mono text-label text-[var(--c-fg-muted)]">
+                  {collapsed ? '+' : '-'}
                 </span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-body font-semibold text-[var(--c-fg)]">
+                    🏪 {g.storeName}
+                  </div>
+                  <div className="mt-0.5 truncate font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
+                    {groupMoneyMeta(g.total, g.unknownCount)}
+                  </div>
+                </div>
                 {/* M2.1: Button component (was raw <button>). */}
                 <Button
                   variant="pearl"
                   size="sm"
-                  onClick={() =>
-                    copyToClipboard(
-                      buildStoreText(g.storeId, g.storeName, g.items),
-                      'run.previewStore.copied',
-                    )
-                  }
+                  className="shrink-0"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void shareOrCopyText(buildStoreText(g));
+                  }}
                 >
-                  {i18n.t('run.previewStore.copyList')}
+                  {i18n.t('run.previewShare.sendList')}
                 </Button>
               </div>
-              <ul className="flex flex-col gap-1">
-                {g.items.map((it) => {
-                  const sku = skuById.get(it.skuId);
-                  return (
-                    <li key={it.skuId} className="flex justify-between text-body">
-                      <span>{sku ? productName(sku) : it.skuId.slice(0, 8)}</span>
-                      <span className="font-mono tabular-nums">
-                        {formatQty(it.qty)} {sku?.unit}
-                      </span>
-                    </li>
-                  );
-                })}
+              <ul className={collapsed ? 'hidden' : 'overflow-hidden rounded-[var(--r-utility)]'}>
+                {g.items.map((line, idx) => renderLine(line, idx))}
               </ul>
               {/* M1.8 / M3.16-C: surface the staff's "其他物品" requests
                   inline. M3.16-C structured extras render as one row
@@ -3251,28 +3545,11 @@ function PreviewSummaryCard({
                   underneath in italic. The purchaser scrolls the by-
                   store view at the market and needs requests right
                   next to the SKU list. */}
-              {storeExtras.length > 0 || storeNote ? (
-                <div className="mt-2 rounded-[var(--r-card)] bg-[var(--c-warn-bg)] px-3 py-2 ring-hairline">
+              {!collapsed && storeNote ? (
+                <div className="mt-1.5 rounded-[var(--r-utility)] bg-[var(--c-warn-bg)] px-2 py-1.5">
                   <SectionLabel padded={false}>
                     {i18n.t('order.extras.label')}
                   </SectionLabel>
-                  {storeExtras.length > 0 ? (
-                    <ul className="mt-0.5 flex flex-col gap-0.5">
-                      {storeExtras.map((e, idx) => (
-                        <li
-                          key={`${e.name}-${idx}`}
-                          className="flex items-baseline justify-between gap-2 text-body-sm"
-                        >
-                          <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">
-                            {e.name}
-                          </span>
-                          <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
-                            {e.qty} {e.unit}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
                   {storeNote ? (
                     <div className="mt-1 whitespace-pre-wrap text-body-sm italic leading-snug text-[var(--c-fg-muted)]">
                       {storeNote}
@@ -3287,32 +3564,44 @@ function PreviewSummaryCard({
       ) : null}
 
       {view === 'bySupplier' ? (
-        <div className="flex flex-col gap-3 px-4 py-3">
+        <div className="px-2 py-2">
           {/* M3.26 (2026-05-18): top-of-list "copy everything" button so
               the purchaser can paste one block into a notebook and walk
               the bazaar. Hidden when there's nothing to copy (no rows
               with qty > 0 in any bucket). */}
           {bySupplier.length > 0 ? (
-            <div className="flex justify-end">
+            <div className="mb-2 flex justify-end">
               <Button
                 variant="pearl"
                 size="sm"
-                onClick={() =>
-                  copyToClipboard(buildAllVendorsText(), 'run.previewSupplier.copied')
-                }
+                onClick={() => void shareOrCopyText(buildAllVendorsText())}
               >
-                {i18n.t('run.previewSupplier.copyAll')}
+                {i18n.t('run.previewShare.sendAll')}
               </Button>
             </div>
           ) : null}
-          {bySupplier.map((b) => (
+          {bySupplier.map((b) => {
+            const supplierKey = b.supplierId ?? '__unassigned__';
+            const groupKey = `supplier:${supplierKey}`;
+            const collapsed = isCollapsed(groupKey);
+            return (
             <section
-              key={b.supplierId ?? '__unassigned__'}
-              className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3"
+              key={supplierKey}
+              className="border-t border-[var(--c-divider)] py-2 first:border-t-0 first:pt-0 last:pb-0"
             >
-              <div className="mb-2 flex items-baseline justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="text-body font-semibold text-[var(--c-fg)]">
+              <div
+                role="button"
+                tabIndex={0}
+                aria-expanded={!collapsed}
+                onClick={() => toggleGroup(groupKey)}
+                onKeyDown={(e) => handleGroupHeaderKeyDown(e, groupKey)}
+                className="press mb-1.5 flex cursor-pointer items-start gap-2 rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-2 py-1.5 outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]"
+              >
+                <span className="mt-0.5 shrink-0 font-mono text-label text-[var(--c-fg-muted)]">
+                  {collapsed ? '+' : '-'}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-body font-semibold text-[var(--c-fg)]">
                     {b.supplierId ? `🛒 ${b.supplierName}` : `❓ ${b.supplierName}`}
                   </div>
                   {b.contactTg ? (
@@ -3320,6 +3609,9 @@ function PreviewSummaryCard({
                   ) : b.contactPhone ? (
                     <div className="text-label text-[var(--c-fg-muted)]">{b.contactPhone}</div>
                   ) : null}
+                  <div className="mt-0.5 truncate font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
+                    {groupMoneyMeta(b.total, b.unknownCount)}
+                  </div>
                 </div>
                 {/* M3.26 (2026-05-18): copy button is now visible for the
                     unassigned bucket too — items to buy individually
@@ -3329,15 +3621,17 @@ function PreviewSummaryCard({
                 <Button
                   variant="pearl"
                   size="sm"
-                  onClick={() =>
-                    copyToClipboard(buildVendorText(b), 'run.previewSupplier.copied')
-                  }
+                  className="shrink-0"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void shareOrCopyText(buildSupplierText(b));
+                  }}
                 >
-                  {i18n.t('run.previewStore.copyList')}
+                  {i18n.t('run.previewShare.sendList')}
                 </Button>
               </div>
-              {!b.supplierId ? (
-                <p className="mb-2 text-label text-[var(--c-fg-muted)]">
+              {!collapsed && !b.supplierId ? (
+                <p className="mb-1.5 px-2 text-label text-[var(--c-fg-muted)]">
                   {i18n.t('run.previewSupplier.unassignedHint')}
                 </p>
               ) : null}
@@ -3350,46 +3644,36 @@ function PreviewSummaryCard({
                   Now each store is a small section header with its
                   items underneath — matches the copy template format
                   the user asked for in the previous round. */}
-              <div className="flex flex-col gap-3">
-                {pivotSupplierToStoreMajor(b.items).map((store) => (
+              <div className={collapsed ? 'hidden' : 'flex flex-col gap-2'}>
+                {b.stores.map((store) => (
                   <div key={store.storeId}>
-                    <div className="mb-1 flex items-baseline gap-2 text-label font-semibold text-[var(--c-fg-muted)]">
+                    <div className="mb-1 flex items-baseline gap-2 px-2 text-label font-semibold text-[var(--c-fg-muted)]">
                       <span>🏪 {store.storeName}</span>
+                      <span className="ml-auto font-mono font-normal tabular-nums">
+                        {groupMoneyMeta(store.total, store.unknownCount)}
+                      </span>
                     </div>
-                    <ul className="flex flex-col gap-0.5">
-                      {store.items.map((it) => {
-                        const sku = skuById.get(it.skuId);
-                        return (
-                          <li
-                            key={`${store.storeId}-${it.skuId}`}
-                            className="flex items-baseline justify-between gap-2 text-body"
-                          >
-                            <button
-                              type="button"
-                              onClick={() => setVendorPickerFor(it.skuId)}
-                              // M3.15 (2026-05-16): drop the dotted
-                              // underline. On dark theme it read as
-                              // "broken link" rather than "tap to change
-                              // vendor"; the row tap area is the
-                              // affordance, and a long-press hint can
-                              // be added later if discovery is an issue.
-                              className="press min-w-0 flex-1 text-left text-[var(--c-fg)]"
-                              title={i18n.t('run.previewSupplier.changeVendor')}
-                            >
-                              {sku ? productName(sku) : it.skuId.slice(0, 8)}
-                            </button>
-                            <span className="font-mono tabular-nums text-[var(--c-fg-muted)]">
-                              {formatQty(it.qty)} {sku?.unit}
-                            </span>
-                          </li>
-                        );
-                      })}
+                    <ul className="overflow-hidden rounded-[var(--r-utility)]">
+                      {store.items.map((line, idx) =>
+                        renderLine(line, idx, { editableSupplier: true }),
+                      )}
                     </ul>
+                    {store.legacyNote ? (
+                      <div className="mt-1.5 rounded-[var(--r-utility)] bg-[var(--c-warn-bg)] px-2 py-1.5">
+                        <SectionLabel padded={false}>
+                          {i18n.t('order.notes.label')}
+                        </SectionLabel>
+                        <div className="mt-1 whitespace-pre-wrap text-body-sm leading-snug text-[var(--c-fg-muted)]">
+                          {store.legacyNote}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </div>
             </section>
-          ))}
+            );
+          })}
         </div>
       ) : null}
       {vendorPickerFor ? (
@@ -3510,6 +3794,70 @@ function VendorPickerSheet({
         })}
       </div>
     </Sheet>
+  );
+}
+
+function RunSessionsCard({
+  sessions,
+  storeById,
+  i18n,
+  ejecting,
+  onEject,
+}: {
+  sessions: NonNullable<ActiveRun['sessions']>;
+  storeById: Map<string, { id: string; name: string; code: string | null }>;
+  i18n: ReturnType<typeof useI18n>;
+  ejecting: boolean;
+  onEject: (session: NonNullable<ActiveRun['sessions']>[number]) => void;
+}) {
+  return (
+    <Card>
+      <SectionLabel meta={i18n.t('run.sessions.meta', { n: sessions.length })}>
+        {i18n.t('run.section.sessions')}
+      </SectionLabel>
+      <ul className="flex flex-col" role="list">
+        {sessions.map((sessionRow) => {
+          const storeName =
+            storeById.get(sessionRow.storeId)?.name ?? sessionRow.storeId.slice(0, 8);
+          const submitter =
+            sessionRow.submittedByDisplayName ?? i18n.t('run.sessions.unknownSubmitter');
+          return (
+            <li
+              key={sessionRow.id}
+              className="flex items-center gap-2 border-b border-[var(--c-divider)] px-3 py-2 last:border-b-0"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-body font-semibold">{storeName}</span>
+                  <span className="shrink-0 text-label text-[var(--c-fg-muted)]">
+                    {submitter}
+                  </span>
+                </div>
+                <div className="truncate text-label text-[var(--c-fg-muted)]">
+                  {i18n.t('run.sessions.stats', {
+                    items: sessionRow.itemCount,
+                    qty: formatQty(sessionRow.totalQty),
+                    extras: sessionRow.extrasCount,
+                  })}
+                </div>
+              </div>
+              <Button
+                variant="pearl"
+                size="sm"
+                disabled={ejecting}
+                loading={ejecting}
+                onClick={() => onEject(sessionRow)}
+              >
+                {i18n.t('run.action.ejectSession')}
+              </Button>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="border-t border-[var(--c-divider)] px-3 py-2 text-label text-[var(--c-fg-muted)]">
+        {i18n.t('run.sessions.ejectHint')}
+      </div>
+    </Card>
   );
 }
 
@@ -3686,6 +4034,7 @@ function PerVendorView({
   onEditPurchased,
   onUnmark,
   onMarkExtraStatus,
+  onRecordExtraExpense,
 }: {
   run: ActiveRun;
   skuById: Map<
@@ -3727,6 +4076,10 @@ function PerVendorView({
     sessionId: string,
     extraIndex: number,
     status: 'pending' | 'bought' | 'unavailable',
+  ) => void;
+  onRecordExtraExpense: (
+    storeId: string,
+    extra: { name: string; qty: string; unit: string; note?: string },
   ) => void;
 }) {
   // M3.52: run-level multi-store flag. PurchaseRow uses this to decide
@@ -3899,6 +4252,7 @@ function PerVendorView({
         i18n={i18n}
         editable={run.status === 'purchasing'}
         onMarkExtraStatus={onMarkExtraStatus}
+        onRecordExtraExpense={onRecordExtraExpense}
       />
     </div>
   );
@@ -3918,6 +4272,7 @@ function RunExtrasCard({
   i18n,
   editable = false,
   onMarkExtraStatus,
+  onRecordExtraExpense,
 }: {
   sessionExtrasByStore?: Record<
     string,
@@ -3941,6 +4296,10 @@ function RunExtrasCard({
     sessionId: string,
     extraIndex: number,
     status: 'pending' | 'bought' | 'unavailable',
+  ) => void;
+  onRecordExtraExpense?: (
+    storeId: string,
+    extra: { name: string; qty: string; unit: string; note?: string },
   ) => void;
 }) {
   const resolveStoreName = (id: string) => storeById.get(id)?.name ?? id.slice(0, 8);
@@ -4005,6 +4364,7 @@ function RunExtrasCard({
                     const hasAddress =
                       typeof e.sessionId === 'string' && typeof e.idx === 'number';
                     const canTap = editable && !!onMarkExtraStatus && hasAddress;
+                    const canRecordExpense = editable && !!onRecordExtraExpense;
                     const inner = (
                       <>
                         <span aria-hidden className={`shrink-0 text-body ${v.tone}`}>
@@ -4028,20 +4388,33 @@ function RunExtrasCard({
                         key={`${e.sessionId ?? storeId}-${e.idx ?? idx}-${e.name}`}
                         className="text-body-sm"
                       >
-                        {canTap ? (
-                          <button
-                            type="button"
-                            title={i18n.t('run.extras.status.cycleHint', { current: v.label })}
-                            onClick={() =>
-                              onMarkExtraStatus!(e.sessionId!, e.idx!, cycle(status))
-                            }
-                            className="-mx-2 flex w-[calc(100%+1rem)] items-baseline gap-2 rounded-md px-2 py-0.5 text-left active:bg-[var(--c-surface-2)]"
-                          >
-                            {inner}
-                          </button>
-                        ) : (
-                          <div className="flex items-baseline gap-2 py-0.5">{inner}</div>
-                        )}
+                        <div className="-mx-2 flex w-[calc(100%+1rem)] items-baseline gap-1 rounded-md px-2 py-0.5">
+                          {canTap ? (
+                            <button
+                              type="button"
+                              title={i18n.t('run.extras.status.cycleHint', { current: v.label })}
+                              onClick={() =>
+                                onMarkExtraStatus!(e.sessionId!, e.idx!, cycle(status))
+                              }
+                              className="flex min-w-0 flex-1 items-baseline gap-2 rounded-md text-left active:bg-[var(--c-surface-2)]"
+                            >
+                              {inner}
+                            </button>
+                          ) : (
+                            <div className="flex min-w-0 flex-1 items-baseline gap-2">
+                              {inner}
+                            </div>
+                          )}
+                          {canRecordExpense ? (
+                            <button
+                              type="button"
+                              onClick={() => onRecordExtraExpense!(storeId, e)}
+                              className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2 py-0.5 text-label font-medium text-[var(--c-action)] ring-hairline active:opacity-70"
+                            >
+                              {i18n.t('run.extras.recordPrice')}
+                            </button>
+                          ) : null}
+                        </div>
                       </li>
                     );
                   })}
@@ -4083,6 +4456,7 @@ function ExpensesCard({
   priceInThousands,
   editable,
   onRemove,
+  onOpenExpense,
 }: {
   expenses: ActiveRun['expenses'];
   storeById: Map<string, { id: string; name: string; code: string | null }>;
@@ -4092,10 +4466,10 @@ function ExpensesCard({
    *  button on each row. Read-only otherwise. */
   editable: boolean;
   onRemove: (expenseId: string, label: string) => void;
+  onOpenExpense: () => void;
 }) {
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   const list = expenses ?? [];
-  if (list.length === 0) return null;
   const grandTotal = list.reduce(
     (s, e) => s + Number(e.qty) * Number(e.unitPrice),
     0,
@@ -4105,6 +4479,22 @@ function ExpensesCard({
       <SectionLabel meta={`${list.length} · ${formatMoney(grandTotal)} ${currency}`}>
         {i18n.t('run.section.expenses')}
       </SectionLabel>
+      {editable ? (
+        <div className="flex justify-end px-4 pb-2">
+          <button
+            type="button"
+            onClick={onOpenExpense}
+            className="rounded-[var(--r-pill)] bg-[var(--c-action)] px-2.5 py-1 text-label font-semibold text-[var(--c-action-fg)] active:opacity-70"
+          >
+            {i18n.t('run.action.addExpense.button')}
+          </button>
+        </div>
+      ) : null}
+      {list.length === 0 ? (
+        <div className="px-4 pb-3 text-body-sm text-[var(--c-fg-muted)]">
+          {i18n.t('run.action.addExpense.scopeSharedHint')}
+        </div>
+      ) : null}
       <ul className="flex flex-col" role="list">
         {list.map((e) => {
           const total = Number(e.qty) * Number(e.unitPrice);
@@ -4127,6 +4517,13 @@ function ExpensesCard({
               <div className="flex items-baseline gap-2">
                 <span className="shrink-0 truncate text-body font-semibold">
                   {e.label}
+                </span>
+                <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-1.5 py-0.5 text-label text-[var(--c-fg-muted)] ring-hairline">
+                  {i18n.t(
+                    e.storeSplits.length > 1
+                      ? 'run.section.sharedExpenses'
+                      : 'run.section.storeExpenses',
+                  )}
                 </span>
                 {isTransfer ? (
                   <span
@@ -5273,6 +5670,7 @@ function AddItemSheet({
   skus: Array<{
     id: string;
     names: Record<string, string>;
+    code?: string | null;
     unit: string;
     step: string;
     isArchived: boolean;
@@ -5300,6 +5698,7 @@ function AddItemSheet({
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   const [search, setSearch] = useState('');
   const [priceInput, setPriceInput] = useState('');
+  const initializedExpenseScopeRef = useRef<string | null>(null);
 
   // Reset local input states when the sheet opens/closes for a new draft.
   useEffect(() => {
@@ -5316,7 +5715,7 @@ function AddItemSheet({
   // but purchasable existing SKUs remain selectable. Duplicate store/SKU
   // entries are recorded as store-scoped expenses so prices can differ.
   const filteredSkus = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const tokens = normalizeQuery(search);
     return skus
       .filter((sku) => {
         if (sku.isArchived) return false;
@@ -5329,10 +5728,10 @@ function AddItemSheet({
         return true;
       })
       .filter((sku) => {
-        if (!q) return true;
-        const names = sku.names ?? {};
-        return Object.values(names).some(
-          (v) => typeof v === 'string' && v.toLowerCase().includes(q),
+        if (!tokens) return true;
+        return matchesNameLike(
+          { names: sku.names as Record<string, string> | null, code: sku.code ?? null },
+          tokens,
         );
       })
       .slice(0, 20);
@@ -5453,6 +5852,29 @@ function AddItemSheet({
     next.set(storeIds[storeIds.length - 1]!, String(q - allocated));
     return next;
   };
+
+  // A new expense begins as a shared daily cost. Initialise its store split
+  // once, but leave deliberate later chip edits alone.
+  useEffect(() => {
+    if (
+      !draft ||
+      draft.mode !== 'expense' ||
+      draft.expenseScope !== 'shared' ||
+      draft.splits.size > 0 ||
+      storeChoices.length === 0 ||
+      initializedExpenseScopeRef.current === draft.expenseId
+    ) {
+      return;
+    }
+    initializedExpenseScopeRef.current = draft.expenseId;
+    onChange({
+      ...draft,
+      splits: evenSplit(
+        storeChoices.map((store) => store.id),
+        draft.actualQty,
+      ),
+    });
+  }, [draft, onChange, storeChoices]);
 
   return (
     <Sheet
@@ -5758,9 +6180,52 @@ function AddItemSheet({
           ) : null}
           {draft.mode === 'expense' && draft.label.trim() ? (
             <div>
+              <div className="mb-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
+                <div className="mb-1 text-label font-semibold text-[var(--c-fg-muted)]">
+                  {i18n.t('run.action.addExpense.scopeTitle')}
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {(['shared', 'store'] as const).map((scope) => {
+                    const selected = draft.expenseScope === scope;
+                    return (
+                      <button
+                        key={scope}
+                        type="button"
+                        onClick={() =>
+                          onChange({
+                            ...draft,
+                            expenseScope: scope,
+                            splits:
+                              scope === 'shared'
+                                ? evenSplit(storeChoices.map((store) => store.id), draft.actualQty)
+                                : new Map(),
+                          })
+                        }
+                        className={
+                          'rounded-[var(--r-pill)] px-3 py-1.5 text-label font-medium ring-hairline ' +
+                          (selected
+                            ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
+                            : 'bg-[var(--c-bg)] text-[var(--c-fg-muted)]')
+                        }
+                      >
+                        {scope === 'shared'
+                          ? i18n.t('run.action.addExpense.scopeShared')
+                          : i18n.t('run.action.addExpense.scopeStore')}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-1 text-label leading-snug text-[var(--c-fg-muted)]">
+                  {draft.expenseScope === 'shared'
+                    ? i18n.t('run.action.addExpense.scopeSharedHint')
+                    : i18n.t('run.action.addExpense.scopeStoreHint')}
+                </p>
+              </div>
               <div className="mb-1 flex items-baseline justify-between gap-2">
                 <span className="text-label font-semibold text-[var(--c-fg-muted)]">
-                  {i18n.t('run.action.addExpense.targetStores')}
+                  {draft.expenseScope === 'shared'
+                    ? i18n.t('run.action.addExpense.targetStores')
+                    : i18n.t('run.action.addItem.targetStore')}
                 </span>
                 <span className="text-label text-[var(--c-fg-muted)]">
                   {i18n.t('run.action.addExpense.splitHint', {
@@ -5776,9 +6241,12 @@ function AddItemSheet({
                       key={st.id}
                       type="button"
                       onClick={() => {
-                        const nextIds = selected
-                          ? [...draft.splits.keys()].filter((id) => id !== st.id)
-                          : [...draft.splits.keys(), st.id];
+                        const nextIds =
+                          draft.expenseScope === 'store'
+                            ? [st.id]
+                            : selected
+                              ? [...draft.splits.keys()].filter((id) => id !== st.id)
+                              : [...draft.splits.keys(), st.id];
                         onChange({
                           ...draft,
                           splits: evenSplit(nextIds, draft.actualQty),
@@ -6147,16 +6615,28 @@ interface RunListStoreTotal {
   itemCount: number;
 }
 
+interface HistoryDetailTarget {
+  runId: string;
+  runIndex: number;
+  runDate: string;
+  status: string;
+  /** When a user opens a store from the history list, land directly on
+   * that branch's daily purchase list instead of the combined run. */
+  initialStoreId?: string | null;
+}
+
 function RunHistorySection({
   runs,
   storeById,
   i18n,
+  onOpenAll,
   onOpen,
 }: {
   runs: RunListRow[];
   productName: ReturnType<typeof useProductName>;
   storeById: Map<string, { id: string; name: string; code: string | null }>;
   i18n: ReturnType<typeof useI18n>;
+  onOpenAll: () => void;
   onOpen: (r: RunListRow) => void;
 }) {
   // M3.9 (2026-05-16): cancelled runs are hidden from this list
@@ -6215,7 +6695,13 @@ function RunHistorySection({
     <Card>
       <CardHeader>
         <CardTitle>{i18n.t('run.history.title')}</CardTitle>
-        <CardMeta>{i18n.t('run.history.subtitle')}</CardMeta>
+        <button
+          type="button"
+          onClick={onOpenAll}
+          className="shrink-0 text-label font-semibold text-[var(--c-action)] active:opacity-70"
+        >
+          {i18n.t('run.history.viewAll')}
+        </button>
       </CardHeader>
       {/* M3.9: filter chip toolbar removed — cancelled runs no
          longer surface here, so there's nothing to toggle. */}
@@ -6324,6 +6810,141 @@ function RunHistorySection({
   );
 }
 
+function RunHistoryPage({
+  runs,
+  loading,
+  storeById,
+  skuById,
+  productName,
+  i18n,
+  onBack,
+}: {
+  runs: RunListRow[];
+  loading: boolean;
+  storeById: Map<string, { id: string; name: string; code: string | null }>;
+  skuById: Map<
+    string,
+    { id: string; names: Record<string, string>; unit: string; step: string; categoryId?: string | null }
+  >;
+  productName: ReturnType<typeof useProductName>;
+  i18n: ReturnType<typeof useI18n>;
+  onBack: () => void;
+}) {
+  const [detailFor, setDetailFor] = useState<HistoryDetailTarget | null>(null);
+  const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
+  const total = runs.reduce((sum, run) => sum + Number(run.actualTotal ?? 0), 0);
+
+  return (
+    <div className="flex flex-col gap-3 px-4 pb-24 pt-3">
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onBack}
+          className="rounded-[var(--r-pill)] px-2 py-1 text-label font-semibold text-[var(--c-action)] active:bg-[var(--c-surface-2)]"
+        >
+          {i18n.t('common.back')}
+        </button>
+        <h1 className="text-h2 font-semibold text-[var(--c-fg)]">{i18n.t('run.history.title')}</h1>
+      </div>
+      <Card>
+        <SectionLabel meta={`${runs.length} · ${formatMoney(total)} ${currency}`}>
+          {i18n.t('run.history.title')}
+        </SectionLabel>
+        {loading ? (
+          <div className="px-4 py-6 text-center text-body-sm text-[var(--c-fg-muted)]">
+            {i18n.t('common.loading')}
+          </div>
+        ) : runs.length === 0 ? (
+          <div className="px-4 py-6 text-center text-body-sm text-[var(--c-fg-muted)]">
+            {i18n.t('run.history.subtitle')}
+          </div>
+        ) : (
+          <ul className="flex flex-col" role="list">
+            {runs.map((run) => (
+              <li key={run.id} className="border-b border-[var(--c-divider)] last:border-b-0">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setDetailFor({
+                      runId: run.id,
+                      runIndex: run.runIndex,
+                      runDate: run.runDate,
+                      status: run.status,
+                    })
+                  }
+                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left active:bg-[var(--c-surface-2)]"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="text-body font-semibold tabular-nums">
+                      {run.runDate}
+                      {run.runIndex > 0 ? ` #${run.runIndex + 1}` : ''}
+                    </div>
+                    <div className="mt-0.5 text-label text-[var(--c-fg-muted)]">
+                      {run.actualTotal
+                        ? i18n.t('run.history.totalLine', {
+                            total: formatMoney(run.actualTotal),
+                          })
+                        : '—'}
+                    </div>
+                  </div>
+                  <Badge tone="success">{run.status}</Badge>
+                </button>
+                {(run.storeTotals?.length ?? 0) > 0 ? (
+                  <div className="border-t border-[var(--c-divider)] px-4 py-2.5">
+                    <div className="mb-1.5 text-label font-semibold text-[var(--c-fg-muted)]">
+                      {i18n.t('run.history.storePurchases')}
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      {run.storeTotals!.map((storeTotal) => {
+                        const storeName =
+                          storeById.get(storeTotal.storeId)?.name ?? storeTotal.storeId.slice(0, 8);
+                        return (
+                          <button
+                            key={storeTotal.storeId}
+                            type="button"
+                            onClick={() =>
+                              setDetailFor({
+                                runId: run.id,
+                                runIndex: run.runIndex,
+                                runDate: run.runDate,
+                                status: run.status,
+                                initialStoreId: storeTotal.storeId,
+                              })
+                            }
+                            className="flex min-h-10 w-full items-center justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 text-left ring-hairline active:bg-[var(--c-bg)]"
+                          >
+                            <span className="min-w-0 flex-1 truncate text-body-sm font-medium">
+                              {storeName}
+                            </span>
+                            <span className="shrink-0 text-label text-[var(--c-fg-muted)]">
+                              {i18n.t('run.label.itemsCount', { n: storeTotal.itemCount })}
+                            </span>
+                            <span className="shrink-0 font-mono text-label font-semibold tabular-nums">
+                              {formatMoney(storeTotal.total)}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+      <RunHistoryDetailSheet
+        target={detailFor}
+        skuById={skuById}
+        storeById={storeById}
+        productName={productName}
+        i18n={i18n}
+        onClose={() => setDetailFor(null)}
+      />
+    </div>
+  );
+}
+
 /**
  * Drill-down sheet for one historical run.
  *
@@ -6343,7 +6964,7 @@ function RunHistoryDetailSheet({
   i18n,
   onClose,
 }: {
-  target: { runId: string; runIndex: number; runDate: string; status: string } | null;
+  target: HistoryDetailTarget | null;
   skuById: Map<
     string,
     { id: string; names: Record<string, string>; unit: string; step: string; categoryId?: string | null }
@@ -6362,8 +6983,8 @@ function RunHistoryDetailSheet({
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
 
   useEffect(() => {
-    setSelectedStoreId(null);
-  }, [target?.runId]);
+    setSelectedStoreId(target?.initialStoreId ?? null);
+  }, [target?.initialStoreId, target?.runId]);
 
   const breakdown = useMemo(() => {
     if (!detail.data) return null;
@@ -6566,6 +7187,9 @@ function RunHistoryDetailSheet({
   const headlineCash = activeStoreTotal?.cash ?? breakdown?.totalCash ?? 0;
   const headlineTransfer = activeStoreTotal?.transfer ?? breakdown?.totalTransfer ?? 0;
   const headlineStoreCount = activeStoreId ? 1 : breakdown?.perStore.size ?? 0;
+  const activeStoreName = activeStoreId
+    ? storeById.get(activeStoreId)?.name ?? activeStoreId.slice(0, 8)
+    : null;
 
   return (
     <Sheet
@@ -6682,7 +7306,9 @@ function RunHistoryDetailSheet({
               the per-store totals against individual line items. */}
           <div>
             <SectionLabel padded={false} className="mb-2">
-              {i18n.t('run.history.itemsHeading')}
+              {activeStoreName
+                ? i18n.t('run.history.storeItemsHeading', { store: activeStoreName })
+                : i18n.t('run.history.itemsHeading')}
             </SectionLabel>
             <ul className="flex flex-col rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline">
               {visibleHistoryRows.length === 0 ? (

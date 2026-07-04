@@ -461,6 +461,26 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
       };
     }
 
+    case 'SessionEjectedFromRun': {
+      const items = new Map(state.items);
+      for (const removed of event.payload.removedPlannedItems) {
+        const existing = items.get(removed.skuId);
+        if (!existing) continue;
+        const remaining = Number(existing.plannedQty) - Number(removed.qty);
+        if (remaining <= 1e-6) {
+          items.delete(removed.skuId);
+        } else {
+          items.set(removed.skuId, { ...existing, plannedQty: remaining.toString() });
+        }
+      }
+      return {
+        ...state,
+        seq: event.seq,
+        sessionIds: state.sessionIds.filter((id) => id !== event.payload.sessionId),
+        items,
+      };
+    }
+
     default: {
       const _x: never = event;
       void _x;

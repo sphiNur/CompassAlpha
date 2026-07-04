@@ -6,7 +6,7 @@
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**", "build/**", ".vite/**", ".turbo/**", "lingui/**"],
-      "env": ["VITE_API_URL", "VITE_WS_URL", "VITE_BUILD_SHA", "VITE_DEFAULT_THEME"]
+      "env": ["VITE_API_URL", "VITE_WS_URL", "VITE_BUILD_SHA", "VITE_DEFAULT_THEME", "VITE_DEV_MOCK_INIT_DATA"]
     },
     "dev": {
       "cache": false,
