@@ -120,6 +120,42 @@ function splitSubtotal(
 }
 
 /**
+ * The per-item settlement line: what one purchased item cost in total,
+ * plus how that splits into cash vs transfer. Honors per-store overrides
+ * (each split's own price/method) and otherwise falls back to the
+ * item-level price/method.
+ *
+ * This is the one bug-prone bit of run money math (the override/flat
+ * branch + cash/transfer allocation) that was typed IDENTICALLY inside
+ * both `finishSummary` and the history-detail `breakdown`. One copy now;
+ * callers add the returned deltas into their own running totals. (The
+ * fuller per-store settlement — which still diverges between the two
+ * views — stays inline pending a settlement.ts with a unit test.)
+ */
+function settleItemLine(
+  item: { unitPrice?: string | null; purchasedQty?: string | null; paymentMethod?: string | null },
+  itemSplits: Array<{ qty: string; unitPrice?: string | null; paymentMethod?: string | null }>,
+): { line: number; cash: number; transfer: number } {
+  const hasSplitOverrides = itemSplits.some((sp) => sp.unitPrice || sp.paymentMethod);
+  let line = 0;
+  let cash = 0;
+  let transfer = 0;
+  if (hasSplitOverrides) {
+    for (const sp of itemSplits) {
+      const subtotal = splitSubtotal(sp, item);
+      line += subtotal;
+      if (splitPaymentMethod(sp, item) === 'transfer') transfer += subtotal;
+      else cash += subtotal;
+    }
+  } else {
+    line = Number(item.unitPrice) * Number(item.purchasedQty);
+    if (item.paymentMethod === 'transfer') transfer += line;
+    else cash += line;
+  }
+  return { line, cash, transfer };
+}
+
+/**
  * M3.41 + M3.44 (2026-05-21 / 2026-05-22): draft state for the "+ add"
  * sheet. Dual-mode:
  *   - `mode: 'sku'`   → AddPurchaserItem mutation (target an existing
@@ -791,21 +827,10 @@ export function RunPage() {
     for (const it of items) {
       if (it.status === 'purchased' && it.unitPrice && it.purchasedQty) {
         const itemSplits = splits.filter((sp) => sp.skuId === it.skuId);
-        const hasSplitOverrides = itemSplits.some((sp) => sp.unitPrice || sp.paymentMethod);
-        let line = 0;
-        if (hasSplitOverrides) {
-          for (const sp of itemSplits) {
-            const subtotal = splitSubtotal(sp, it);
-            line += subtotal;
-            if (splitPaymentMethod(sp, it) === 'transfer') totalTransfer += subtotal;
-            else totalCash += subtotal;
-          }
-        } else {
-          line = Number(it.unitPrice) * Number(it.purchasedQty);
-          if (it.paymentMethod === 'transfer') totalTransfer += line;
-          else totalCash += line;
-        }
+        const { line, cash, transfer } = settleItemLine(it, itemSplits);
         total += line;
+        totalCash += cash;
+        totalTransfer += transfer;
         if (it.addedByPurchaser) {
           addedSkus += 1;
           addedTotal += line;
@@ -6968,21 +6993,10 @@ function RunHistoryDetailSheet({
     for (const it of items) {
       if (it.status === 'purchased' && it.unitPrice && it.purchasedQty) {
         const itemSplits = splits.filter((sp) => sp.skuId === it.skuId);
-        const hasSplitOverrides = itemSplits.some((sp) => sp.unitPrice || sp.paymentMethod);
-        let line = 0;
-        if (hasSplitOverrides) {
-          for (const sp of itemSplits) {
-            const subtotal = splitSubtotal(sp, it);
-            line += subtotal;
-            if (splitPaymentMethod(sp, it) === 'transfer') totalTransfer += subtotal;
-            else totalCash += subtotal;
-          }
-        } else {
-          line = Number(it.unitPrice) * Number(it.purchasedQty);
-          if (it.paymentMethod === 'transfer') totalTransfer += line;
-          else totalCash += line;
-        }
+        const { line, cash, transfer } = settleItemLine(it, itemSplits);
         total += line;
+        totalCash += cash;
+        totalTransfer += transfer;
       }
     }
     // M3.44: off-catalog expenses contribute to the run total + the
