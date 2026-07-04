@@ -7294,7 +7294,7 @@ function FinanceSection() {
         <div className="mb-3 grid grid-cols-3 gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3">
           <div>
             <SectionLabel padded={false}>
-              💵 {i18n.t('run.label.paymentCash')}
+              {i18n.t('run.label.paymentCash')}
             </SectionLabel>
             <div className="font-mono text-h2 font-semibold tabular-nums">
               {formatMoney(totalsQuery.data.totalCash)}
@@ -7305,7 +7305,7 @@ function FinanceSection() {
           </div>
           <div>
             <SectionLabel padded={false}>
-              🏦 {i18n.t('run.label.paymentTransfer')}
+              {i18n.t('run.label.paymentTransfer')}
             </SectionLabel>
             <div className="font-mono text-h2 font-semibold tabular-nums">
               {formatMoney(totalsQuery.data.totalTransfer)}
