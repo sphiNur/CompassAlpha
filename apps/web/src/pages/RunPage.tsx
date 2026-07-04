@@ -47,6 +47,7 @@ import {
   useToast,
 } from '@compass/ui';
 import { trpc, newIdempotencyKey } from '../lib/trpc';
+import { PaymentMethodChips } from '../components/PaymentMethodChips';
 import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton, haptic, getTg } from '../hooks/useTelegram';
 import { useI18n, useProductName } from '../hooks/useI18n';
@@ -5435,29 +5436,10 @@ function PurchaseSheet({
             <div className="mb-1 text-label font-semibold text-[var(--c-fg-muted)]">
               {i18n.t('run.label.paymentMethod')}
             </div>
-            <div className="flex gap-2">
-              {(['cash', 'transfer'] as const).map((m) => {
-                const selected = draft.paymentMethod === m;
-                return (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => onChange({ ...draft, paymentMethod: m })}
-                    className={
-                      'press flex-1 rounded-[var(--r-pill)] px-3 py-2 text-label font-medium ring-hairline ' +
-                      (selected
-                        ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                        : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]')
-                    }
-                  >
-                    {m === 'cash' ? '💵 ' : '🏦 '}
-                    {m === 'cash'
-                      ? i18n.t('run.label.paymentCash')
-                      : i18n.t('run.label.paymentTransfer')}
-                  </button>
-                );
-              })}
-            </div>
+            <PaymentMethodChips
+              value={draft.paymentMethod}
+              onChange={(m) => onChange({ ...draft, paymentMethod: m })}
+            />
           </div>
           <button
             type="button"
@@ -6366,29 +6348,10 @@ function AddItemSheet({
                 <div className="mb-1 text-label font-semibold text-[var(--c-fg-muted)]">
                   {i18n.t('run.label.paymentMethod')}
                 </div>
-                <div className="flex gap-2">
-                  {(['cash', 'transfer'] as const).map((m) => {
-                    const selected = draft.paymentMethod === m;
-                    return (
-                      <button
-                        key={m}
-                        type="button"
-                        onClick={() => onChange({ ...draft, paymentMethod: m })}
-                        className={
-                          'press flex-1 rounded-[var(--r-pill)] px-3 py-2 text-label font-medium ring-hairline ' +
-                          (selected
-                            ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                            : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]')
-                        }
-                      >
-                        {m === 'cash' ? '💵 ' : '🏦 '}
-                        {m === 'cash'
-                          ? i18n.t('run.label.paymentCash')
-                          : i18n.t('run.label.paymentTransfer')}
-                      </button>
-                    );
-                  })}
-                </div>
+                <PaymentMethodChips
+                  value={draft.paymentMethod}
+                  onChange={(m) => onChange({ ...draft, paymentMethod: m })}
+                />
               </div>
 
               {/* Reason (required) — the audit gate. The placeholder
