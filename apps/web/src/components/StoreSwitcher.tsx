@@ -65,7 +65,7 @@ export function StorePickerSection({ onClose }: { onClose: () => void }) {
   return (
     <section>
       <SectionLabel as="h3" padded={false} className="mb-2">
-        🏪 {i18n.t('storeSwitcher.title')}
+        {i18n.t('storeSwitcher.title')}
       </SectionLabel>
       <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
         <SwitcherRow

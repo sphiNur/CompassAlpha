@@ -3517,7 +3517,7 @@ function PreviewSummaryCard({
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-body font-semibold text-[var(--c-fg)]">
-                    🏪 {g.storeName}
+                    {g.storeName}
                   </div>
                   <div className="mt-0.5 truncate font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
                     {groupMoneyMeta(g.total, g.unknownCount)}
@@ -3648,7 +3648,7 @@ function PreviewSummaryCard({
                 {b.stores.map((store) => (
                   <div key={store.storeId}>
                     <div className="mb-1 flex items-baseline gap-2 px-2 text-label font-semibold text-[var(--c-fg-muted)]">
-                      <span>🏪 {store.storeName}</span>
+                      <span>{store.storeName}</span>
                       <span className="ml-auto font-mono font-normal tabular-nums">
                         {groupMoneyMeta(store.total, store.unknownCount)}
                       </span>
@@ -3781,7 +3781,7 @@ function VendorPickerSheet({
               }
             >
               <div className="min-w-0">
-                <div className="text-body font-medium">🛒 {sup.name}</div>
+                <div className="text-body font-medium">{sup.name}</div>
                 {sup.contactTg ? (
                   <div className="mt-0.5 text-label opacity-80">@{sup.contactTg}</div>
                 ) : sup.contactPhone ? (
@@ -4359,7 +4359,7 @@ function RunExtrasCard({
           return (
             <div key={storeId}>
               <div className="mb-1 text-label font-semibold text-[var(--c-fg-muted)]">
-                🏪 {resolveStoreName(storeId)}
+                {resolveStoreName(storeId)}
               </div>
               {extras.length > 0 ? (
                 <ul className="flex flex-col gap-0.5">
@@ -7248,13 +7248,13 @@ function RunHistoryDetailSheet({
             {headlineCash > 0 && headlineTransfer > 0 ? (
               <div className="flex items-baseline gap-3 border-t border-[var(--c-divider)] pt-2 text-label">
                 <span className="text-[var(--c-fg-muted)]">
-                  💵 {i18n.t('run.label.paymentCash')}
+                  {i18n.t('run.label.paymentCash')}
                 </span>
                 <span className="font-mono tabular-nums text-[var(--c-fg)]">
                   {formatMoney(headlineCash)}
                 </span>
                 <span className="ml-auto text-[var(--c-fg-muted)]">
-                  🏦 {i18n.t('run.label.paymentTransfer')}
+                  {i18n.t('run.label.paymentTransfer')}
                 </span>
                 <span className="font-mono tabular-nums text-[var(--c-fg)]">
                   {formatMoney(headlineTransfer)}
