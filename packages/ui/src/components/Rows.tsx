@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { cn } from '../cn';
+import { surfaceClass } from './Card';
 import { IconChevronRight } from './NavIcon';
 
 /**
@@ -38,7 +39,10 @@ export function SectionRow({
       <button
         type="button"
         onClick={onClick}
-        className="press flex w-full items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-2.5 text-left ring-hairline"
+        className={cn(
+          'press flex w-full items-center gap-3 px-4 py-2.5 text-left',
+          surfaceClass,
+        )}
       >
         <span className={cn('shrink-0', iconColor)}>{icon}</span>
         <span className="min-w-0 flex-1">
@@ -65,6 +69,15 @@ export interface ListRowProps {
   label: ReactNode;
   hint?: ReactNode;
   badge?: ReactNode;
+  /**
+   * Trailing action slot — a Button or menu affordance rendered on the
+   * right, before the chevron. Kills the hand-rolled action-strip rows
+   * (catalog item, member, store, sale) that each re-built this shape.
+   * NOTE: a `trailing` interactive element inside an `onClick` row nests
+   * a button in a button — for rows with their own actions, use the
+   * read-only variant (omit `onClick`) so the row is a `<div>`.
+   */
+  trailing?: ReactNode;
   onClick?: () => void;
   /** Hide the chevron when row is read-only. */
   noChevron?: boolean;
@@ -76,6 +89,7 @@ export function ListRow({
   label,
   hint,
   badge,
+  trailing,
   onClick,
   noChevron,
   className,
@@ -90,6 +104,7 @@ export function ListRow({
         ) : null}
       </span>
       {badge ? <span className="shrink-0">{badge}</span> : null}
+      {trailing ? <span className="shrink-0">{trailing}</span> : null}
       {onClick && !noChevron ? (
         <span aria-hidden className="shrink-0 text-[var(--c-fg-subtle)]">
           <IconChevronRight size={16} />
@@ -102,22 +117,14 @@ export function ListRow({
       <button
         type="button"
         onClick={onClick}
-        className={cn(
-          'press flex w-full items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-2.5 text-left ring-hairline',
-          className,
-        )}
+        className={cn('press flex w-full items-center gap-3 px-4 py-2.5 text-left', surfaceClass, className)}
       >
         {inner}
       </button>
     );
   }
   return (
-    <div
-      className={cn(
-        'flex w-full items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-2.5 ring-hairline',
-        className,
-      )}
-    >
+    <div className={cn('flex w-full items-center gap-3 px-4 py-2.5', surfaceClass, className)}>
       {inner}
     </div>
   );
@@ -173,12 +180,7 @@ export function Tile({ label, value, accent = 'muted', className }: TileProps) {
         ? 'text-[var(--c-success)]'
         : 'text-[var(--c-fg)]';
   return (
-    <div
-      className={cn(
-        'rounded-[var(--r-card)] bg-[var(--c-surface)] p-4 ring-hairline',
-        className,
-      )}
-    >
+    <div className={cn(surfaceClass, 'p-4', className)}>
       <div className="text-label font-medium uppercase tracking-[0.08em] text-[var(--c-fg-muted)]">
         {label}
       </div>
@@ -209,11 +211,27 @@ export interface FieldProps {
 export function Field({ label, hint, children, className }: FieldProps) {
   return (
     <label className={cn('block', className)}>
-      <span className="block text-label font-semibold text-[var(--c-fg-muted)]">{label}</span>
+      <FieldLabel>{label}</FieldLabel>
       <div className="mt-1">{children}</div>
       {hint ? (
         <span className="mt-1 block text-label text-[var(--c-fg-muted)]">{hint}</span>
       ) : null}
     </label>
+  );
+}
+
+/**
+ * Field label — the one definition of a form-field label (sentence
+ * case, `text-label font-semibold text-fg-muted`). Field uses it; call
+ * sites that re-inlined the same span (e.g. ConfirmSheet's reason
+ * label) should adopt it so "how a field label looks" lives in one
+ * place. Deliberately sentence-case: uppercase eyebrows are
+ * `SectionLabel`, a different role.
+ */
+export function FieldLabel({ className, children }: { className?: string; children: ReactNode }) {
+  return (
+    <span className={cn('block text-label font-semibold text-[var(--c-fg-muted)]', className)}>
+      {children}
+    </span>
   );
 }

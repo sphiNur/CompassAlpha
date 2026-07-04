@@ -4,9 +4,11 @@ import { cn } from '../cn';
 /**
  * Select — native dropdown with Concord styling.
  *
- * Style parity with `Input`: same height (h-11), same rounded pill
- * shape, same surface + ring tokens. Visual difference: the right
- * edge carries a chevron via background-image + appearance-none.
+ * Style parity with `Input`: both render at `--control-h` (40px), same
+ * rounded pill shape, same surface + ring tokens. (Was h-11/44px and
+ * drifted 4px above Input after M3.15 lowered Input to 40 — now both
+ * read from the one token.) Visual difference: the right edge carries a
+ * chevron via background-image + appearance-none.
  *
  * Native `<select>` is the right choice for the Telegram Mini App
  * launch — opens the platform-native picker (iOS wheel / Android
@@ -39,7 +41,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
       <select
         ref={ref}
         className={cn(
-          'h-11 w-full appearance-none rounded-[var(--r-pill)] bg-[var(--c-surface-2)] pl-4 pr-9 text-h3',
+          'h-[var(--control-h)] w-full appearance-none rounded-[var(--r-pill)] bg-[var(--c-surface-2)] pl-4 pr-9 text-h3',
           'text-[var(--c-fg)]',
           'outline-none ring-hairline',
           'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',

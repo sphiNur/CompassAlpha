@@ -1,5 +1,6 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { cn } from '../cn';
+import { pillButtonClass } from './pill';
 
 interface ChipProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   selected?: boolean;
@@ -11,25 +12,13 @@ export function Chip({ className, selected, children, ...rest }: ChipProps) {
       type="button"
       role="tab"
       aria-selected={selected || undefined}
-      className={cn(
-        // `shrink-0 whitespace-nowrap` (added 2026-05-05) — without
-        // them, the parent ChipBar's `flex` was squishing each chip
-        // down to ~24px wide, which made longer category names wrap
-        // char-by-char (CJK shows as a vertical column of single
-        // characters; Cyrillic shows each word stacked). The bar is
-        // already `overflow-x-auto`, so chips should KEEP their
-        // natural width and the bar pans horizontally.
-        // M2.4: pill text uniformly text-label (11 px after M3.14) +
-        // font-medium — matches Badge + RunPage history filter chip.
-        // M3.15 (2026-05-16): h-9 → h-8 (32 px), px-4 → px-3. Matches
-        // the bottom-nav rhythm and lets more chips fit on screen
-        // before the horizontal scroll kicks in.
-        'press inline-flex h-8 shrink-0 items-center whitespace-nowrap rounded-[var(--r-pill)] px-3 text-label font-medium',
-        selected
-          ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-          : 'bg-transparent text-[var(--c-fg-muted)] ring-hairline',
-        className,
-      )}
+      // Pill visual (h-8 / rounded-pill / text-label font-medium) lives
+      // in pillButtonClass, shared with Tab. Its `shrink-0
+      // whitespace-nowrap` keep chips their natural width so the parent
+      // ChipBar (overflow-x-auto) pans horizontally instead of squishing
+      // each chip into a char-per-line column (CJK/Cyrillic). M2.4 text,
+      // M3.15 h-8/px-3.
+      className={cn(pillButtonClass(selected), className)}
       {...rest}
     >
       {children}

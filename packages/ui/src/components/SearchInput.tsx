@@ -60,7 +60,7 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
         // first row appeared. The 4 px lift gets one extra row on
         // screen and matches the bottom-nav rhythm the user wants.
         className={cn(
-          'h-9 w-full min-w-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] pl-9 pr-10 text-body-sm',
+          'h-[var(--control-h-sm)] w-full min-w-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] pl-9 pr-10 text-body-sm',
           'text-[var(--c-fg)] placeholder:text-[var(--c-fg-subtle)]',
           'outline-none ring-hairline',
           'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',
