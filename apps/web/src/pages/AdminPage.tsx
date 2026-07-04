@@ -346,8 +346,8 @@ function titleForSection(
   i18n: ReturnType<typeof useI18n>,
 ): string {
   if (section === 'stores' && storeFocus !== null) {
-    if (storeFocus.kind === 'org-level') return `🌐 ${i18n.t('admin.label.orgLevel')}`;
-    return `🏪 ${storeFocus.storeName}`;
+    if (storeFocus.kind === 'org-level') return i18n.t('admin.label.orgLevel');
+    return storeFocus.storeName;
   }
   if (section === 'catalog' && catalogSub === 'categories')
     return i18n.t('admin.subsection.categories');
@@ -930,7 +930,7 @@ function PeopleSection({
                   <div className="flex flex-wrap gap-1 px-4 pt-2 pb-1">
                     {m.stores.map((st) => (
                       <Badge key={st.id} tone="info">
-                        🏪 {st.name}
+                        {st.name}
                       </Badge>
                     ))}
                   </div>
@@ -971,7 +971,7 @@ function PeopleSection({
                           <span className="font-semibold">{r.name}</span>
                           {scopedStoreName ? (
                             <span className="text-[var(--c-fg-muted)]">
-                              · 🏪 {scopedStoreName}
+                              · {scopedStoreName}
                             </span>
                           ) : null}
                           <span className="text-[var(--c-fg-muted)]">×</span>
@@ -1115,7 +1115,7 @@ function PeopleSection({
               {storeSections.map(([storeId, bucket]) => (
                 <section key={storeId}>
                   <SectionLabel as="h3" padded={false} className="mb-2">
-                    🏪 {bucket.name} ({bucket.members.length})
+                    {bucket.name} ({bucket.members.length})
                   </SectionLabel>
                   <ul className="flex flex-col gap-2" role="list">
                     {bucket.members.map(renderCard)}
@@ -1889,7 +1889,7 @@ function RoleAssigneesByStore({
         {grouped.map(([key, bucket]) => (
           <section key={key}>
             <h4 className="mb-1 text-label font-semibold text-[var(--c-fg-muted)]">
-              {key === '__org__' ? '🌐' : '🏪'} {bucket.label} ({bucket.members.length})
+              {bucket.label} ({bucket.members.length})
             </h4>
             <ul className="flex flex-col gap-1">
               {bucket.members.map((a) => (
@@ -2547,7 +2547,7 @@ function TransferStoreSheet({
               transfer copy. */}
           <Field label="From">
             <div className="rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 py-2 text-h3 ring-hairline">
-              🏪 {target.fromStoreName}
+              {target.fromStoreName}
             </div>
           </Field>
           <Field label="To *">
@@ -2818,7 +2818,7 @@ function MemberPermissionsSheet({
                         : "You don't administer this store — read-only"
                     }
                   >
-                    🏪 {st.name}
+                    {st.name}
                   </ScopeTab>
                 );
               })}
@@ -3209,7 +3209,7 @@ function GrantRoleSheet({
                         onChange={() => toggleStore(st.id)}
                       />
                       <span className="text-body text-[var(--c-fg)]">
-                        🏪 {st.name}
+                        {st.name}
                       </span>
                       {st.code ? (
                         <span className="text-label text-[var(--c-fg-muted)]">
@@ -3482,7 +3482,7 @@ function StoresHomeSection({
                   >
                     <span className="min-w-0">
                       <span className="block text-h3 font-semibold text-[var(--c-fg)]">
-                        🏪 {st.name}
+                        {st.name}
                       </span>
                       <span className="mt-0.5 block text-label text-[var(--c-fg-muted)]">
                         {st.code ? `code ${st.code}` : 'no code'}
@@ -5214,7 +5214,7 @@ function SuppliersSection() {
                   <div className="min-w-0">
                     <CardTitle>{sp.name}</CardTitle>
                     <CardMeta>
-                      {sp.contactPhone ? `📞 ${sp.contactPhone}` : ''}
+                      {sp.contactPhone ? sp.contactPhone : ''}
                       {sp.contactTg ? ` · @${sp.contactTg}` : ''}
                       {sp.address ? ` · ${sp.address}` : ''}
                     </CardMeta>
@@ -6800,7 +6800,7 @@ function AdminAuditSection() {
                   : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]')
               }
             >
-              🏪 {st.name}
+              {st.name}
             </button>
           ))}
         </div>
@@ -6862,7 +6862,7 @@ function AdminAuditSection() {
                             M3.17 (2026-05-16): inline span → <Badge>. */}
                         {r.scopeStoreId ? (
                           <Badge tone="muted">
-                            🏪 {storeNameById.get(r.scopeStoreId) ?? r.scopeStoreId.slice(0, 8)}
+                            {storeNameById.get(r.scopeStoreId) ?? r.scopeStoreId.slice(0, 8)}
                           </Badge>
                         ) : null}
                       </div>
@@ -7353,7 +7353,7 @@ function FinanceSection() {
           disabled={lines.length === 0}
           aria-label={i18n.t('finance.export.label')}
         >
-          📋 {i18n.t('finance.export.label')}
+          {i18n.t('finance.export.label')}
         </Button>
       </div>
 
@@ -7418,7 +7418,7 @@ function FinanceSection() {
                             </span>
                           </div>
                           <div className="flex items-baseline gap-2 text-label text-[var(--c-fg-muted)]">
-                            <span>🏪 {store}</span>
+                            <span>{store}</span>
                             <span>· {supplier}</span>
                             <span className="ml-auto font-mono tabular-nums">
                               {l.qty} × {formatMoney(l.unitPrice)}
@@ -7506,7 +7506,7 @@ function FinanceSection() {
                   onClick={() => setExpanded(isOpen ? null : g.storeId)}
                   className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left active:opacity-80"
                 >
-                  <span className="truncate text-body font-semibold">🏪 {name}</span>
+                  <span className="truncate text-body font-semibold">{name}</span>
                   <span className="font-mono text-body tabular-nums">
                     {formatMoney(g.cash + g.transfer)}
                   </span>
