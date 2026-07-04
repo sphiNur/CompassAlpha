@@ -774,7 +774,7 @@ export const zh = {
   'confirm.decided': '已确认',
   'confirm.deliveredItems': '送达商品',
   'confirm.deliveredItemsHint': '逐项点选状态',
-  'confirm.confirmStore': '确认收货 ({decided}/{total})',
+  'confirm.confirmStore': '确认收货',
   'confirm.confirmStoreFinal': '✓ 已确认',
   'confirm.confirmStoreFinalBanner': '本店已确认收货 ✓',
   'confirm.confirmingHint': '确认中…',

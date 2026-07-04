@@ -851,7 +851,7 @@ export const uz = {
   'confirm.deliveredItems': "Yetkazilgan mahsulotlar",
   'confirm.deliveredItemsHint':
     "Har bir mahsulot uchun statusni belgilang",
-  'confirm.confirmStore': "Do'konni tasdiqlash ({decided}/{total})",
+  'confirm.confirmStore': "Do'konni tasdiqlash",
   'confirm.confirmStoreFinal': '✓ Tasdiqlandi',
   'confirm.confirmStoreFinalBanner': "Do'kon tasdiqlandi ✓",
   'confirm.confirmingHint': 'Tasdiqlanmoqda…',

@@ -828,7 +828,7 @@ export const ru = {
   'confirm.decided': 'Готово',
   'confirm.deliveredItems': 'Доставленные позиции',
   'confirm.deliveredItemsHint': 'Отметьте статус по каждой позиции',
-  'confirm.confirmStore': 'Подтвердить магазин ({decided}/{total})',
+  'confirm.confirmStore': 'Подтвердить магазин',
   'confirm.confirmStoreFinal': '✓ Подтверждено',
   'confirm.confirmStoreFinalBanner': 'Магазин подтверждён ✓',
   'confirm.confirmingHint': 'Подтверждение…',

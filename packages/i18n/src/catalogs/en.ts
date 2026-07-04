@@ -913,7 +913,7 @@ export const en = {
   'confirm.decided': 'Decided',
   'confirm.deliveredItems': 'Delivered items',
   'confirm.deliveredItemsHint': 'Tap a status for each item',
-  'confirm.confirmStore': 'Confirm store ({decided}/{total})',
+  'confirm.confirmStore': 'Confirm store',
   'confirm.confirmStoreFinal': '✓ Confirmed',
   'confirm.confirmStoreFinalBanner': 'Store confirmed ✓',
   'confirm.confirmingHint': 'Confirming…',
