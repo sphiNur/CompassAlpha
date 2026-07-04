@@ -522,6 +522,7 @@ export const zh = {
   'run.section.sessions': '本次采购的提交',
   'run.sessions.meta': '{n} 份提交',
   'run.sessions.stats': '{items} 个 SKU · {qty} 个单位 · 其他 {extras} 项',
+  'run.sessions.statsNoExtras': '{items} 个 SKU · {qty} 个单位',
   'run.sessions.unknownSubmitter': '未知提交人',
   'run.sessions.ejectHint': '只有尚未采购、也没标缺的提交才能退回审核。',
   'run.eject.reasonPlaceholder': '原因（可选）',

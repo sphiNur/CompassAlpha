@@ -576,6 +576,7 @@ export const uz = {
   'run.section.sessions': "Ushbu xariddagi yuborilganlar",
   'run.sessions.meta': "{n} ta yuborilgan",
   'run.sessions.stats': "{items} SKU · {qty} birlik · boshqa {extras}",
+  'run.sessions.statsNoExtras': "{items} SKU · {qty} birlik",
   'run.sessions.unknownSubmitter': "Noma'lum yuboruvchi",
   'run.sessions.ejectHint':
     "Faqat hali xarid qilinmagan va mavjud emas deb belgilanmagan yuborilganlarni qaytarish mumkin.",

@@ -3834,11 +3834,16 @@ function RunSessionsCard({
                   </span>
                 </div>
                 <div className="truncate text-label text-[var(--c-fg-muted)]">
-                  {i18n.t('run.sessions.stats', {
-                    items: sessionRow.itemCount,
-                    qty: formatQty(sessionRow.totalQty),
-                    extras: sessionRow.extrasCount,
-                  })}
+                  {i18n.t(
+                    sessionRow.extrasCount > 0
+                      ? 'run.sessions.stats'
+                      : 'run.sessions.statsNoExtras',
+                    {
+                      items: sessionRow.itemCount,
+                      qty: formatQty(sessionRow.totalQty),
+                      extras: sessionRow.extrasCount,
+                    },
+                  )}
                 </div>
               </div>
               <Button

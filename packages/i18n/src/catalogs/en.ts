@@ -634,6 +634,7 @@ export const en = {
   'run.section.sessions': 'Submissions in this run',
   'run.sessions.meta': '{n} submission(s)',
   'run.sessions.stats': '{items} SKU(s) · {qty} units · {extras} other item(s)',
+  'run.sessions.statsNoExtras': '{items} SKU(s) · {qty} units',
   'run.sessions.unknownSubmitter': 'Unknown submitter',
   'run.sessions.ejectHint':
     'Only submissions whose items are still untouched can be returned to review.',

@@ -562,6 +562,7 @@ export const ru = {
   'run.section.sessions': 'Заявки в этой закупке',
   'run.sessions.meta': '{n} заявок',
   'run.sessions.stats': '{items} SKU · {qty} ед. · прочее {extras}',
+  'run.sessions.statsNoExtras': '{items} SKU · {qty} ед.',
   'run.sessions.unknownSubmitter': 'Неизвестный отправитель',
   'run.sessions.ejectHint':
     'Вернуть можно только заявки, товары из которых еще не куплены и не отмечены отсутствующими.',
