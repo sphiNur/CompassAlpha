@@ -44,13 +44,14 @@ export { PageHeader } from './components/PageHeader';
 export type { PageHeaderProps } from './components/PageHeader';
 export { SectionLabel } from './components/SectionLabel';
 export type { SectionLabelProps } from './components/SectionLabel';
-export { SectionRow, ListRow, DetailRow, Tile, Field, FieldLabel } from './components/Rows';
+export { SectionRow, ListRow, DetailRow, Tile, Field, FieldLabel, PickerRow } from './components/Rows';
 export type {
   SectionRowProps,
   ListRowProps,
   DetailRowProps,
   TileProps,
   FieldProps,
+  PickerRowProps,
 } from './components/Rows';
 export { ConfirmSheet } from './components/ConfirmSheet';
 export type { ConfirmSheetProps } from './components/ConfirmSheet';

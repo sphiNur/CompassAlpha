@@ -235,3 +235,63 @@ export function FieldLabel({ className, children }: { className?: string; childr
     </span>
   );
 }
+
+/**
+ * PickerRow — one selectable row in an inline picker (language, store,
+ * secondary-language…). A tap sets `selected`; the selected row fills
+ * with the action color and shows a check.
+ *
+ * Replaces the 5 hand-rolled copies (SettingsSheet ×3, LanguageSheet,
+ * StoreSwitcher's private SwitcherRow) that had drifted on background
+ * (surface vs surface-2) and truncation. Convention: rows are
+ * `bg-surface` and sit INSIDE a `bg-surface-2 p-2 ring-hairline`
+ * container, so the wrapper lifts the group and each row reads as a
+ * card on it. Don't place PickerRow directly on a bare `surface` sheet
+ * (it'd blend) — wrap it.
+ */
+export interface PickerRowProps {
+  label: ReactNode;
+  hint?: ReactNode;
+  selected?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  className?: string;
+}
+
+export function PickerRow({ label, hint, selected, disabled, onClick, className }: PickerRowProps) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      aria-pressed={selected}
+      className={cn(
+        'flex w-full items-center justify-between gap-3 rounded-[var(--r-card)] px-4 py-3 text-left',
+        selected
+          ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
+          : 'bg-[var(--c-surface)] text-[var(--c-fg)] active:opacity-80',
+        disabled && 'opacity-60 pointer-events-none',
+        className,
+      )}
+    >
+      <span className="min-w-0">
+        <span className="block truncate text-body font-semibold">{label}</span>
+        {hint ? (
+          <span
+            className={cn(
+              'mt-0.5 block truncate text-label',
+              selected ? 'opacity-80' : 'text-[var(--c-fg-muted)]',
+            )}
+          >
+            {hint}
+          </span>
+        ) : null}
+      </span>
+      {selected ? (
+        <span aria-hidden className="shrink-0">
+          ✓
+        </span>
+      ) : null}
+    </button>
+  );
+}
