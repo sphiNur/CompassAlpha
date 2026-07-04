@@ -228,13 +228,9 @@ export function ApprovalPage() {
                             : ''}
                           {' · '}
                           {row.orderDate}
-                          {row.submittedAt
-                            ? ' · ' +
-                              new Date(row.submittedAt).toLocaleTimeString(i18n.locale, {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })
-                            : ''}
+                          {/* UI-3 (declutter): dropped the standalone HH:MM
+                              time — it wrapped the meta to a second line and
+                              the exact timestamp lives in the detail view. */}
                         </CardMeta>
                       </div>
                     </div>
@@ -317,24 +313,13 @@ export function ApprovalPage() {
 
                   {row.status === 'rejected' ? (
                     <div className="px-4 pt-2">
-                      {/* M1.7-fix (2026-05-07, audit CRITICAL #3): the
-                          banner title was the literal "Draft" string,
-                          a stale i18n key copy-paste from when this
-                          card was reused for draft state. Use the new
-                          `rejectedTitle` key (just "Rejected", no
-                          interpolation) and keep the parameterized
-                          `rejected` key for the body line. */}
-                      {/* M1.9-fix (2026-05-07): the no-reason fallback
-                          was using `approval.empty.body` ("New orders
-                          awaiting review will appear here.") inside a
-                          danger banner, which made zero sense. Use a
-                          dedicated key. */}
-                      <Banner
-                        tone="danger"
-                        title={i18n.t('order.status.rejectedTitle')}
-                      >
+                      {/* UI-2 (declutter): status is stated once — by the
+                          已拒绝 tab and the danger-tone box. The callout
+                          shows only the reason; previously it doubled
+                          "已拒绝" in both the title and the body line. */}
+                      <Banner tone="danger">
                         {row.rejectReason
-                          ? i18n.t('order.status.rejected', { reason: row.rejectReason })
+                          ? row.rejectReason
                           : i18n.t('order.status.rejectedNoReason')}
                       </Banner>
                     </div>

@@ -447,7 +447,7 @@ export const en = {
   'order.notes.hint': 'Visible to your manager and the purchaser.',
   'order.notes.saving': 'Saving…',
   'order.notes.saved': 'Saved ✓',
-  'order.notes.badge': '📝',
+  'order.notes.badge': 'Note',
   'order.notes.hasNote': 'Has additional request',
   'order.toast.noteSaveFailed': 'Could not save the note — try again.',
 

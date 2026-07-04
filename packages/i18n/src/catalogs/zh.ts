@@ -349,7 +349,7 @@ export const zh = {
   'order.notes.hint': '经理审核时和采购员都能看到。',
   'order.notes.saving': '保存中…',
   'order.notes.saved': '已保存 ✓',
-  'order.notes.badge': '📝',
+  'order.notes.badge': '备注',
   'order.notes.hasNote': '有额外需求',
   'order.toast.noteSaveFailed': '备注未能保存，请再试一次。',
 

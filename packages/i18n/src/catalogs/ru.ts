@@ -382,7 +382,7 @@ export const ru = {
   'order.notes.hint': 'Видно менеджеру и закупщику.',
   'order.notes.saving': 'Сохраняю…',
   'order.notes.saved': 'Сохранено ✓',
-  'order.notes.badge': '📝',
+  'order.notes.badge': 'Заметка',
   'order.notes.hasNote': 'Есть дополнительная просьба',
   'order.toast.noteSaveFailed': 'Не удалось сохранить заметку — попробуйте ещё раз.',
 

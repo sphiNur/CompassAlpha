@@ -393,7 +393,7 @@ export const uz = {
   'order.notes.hint': "Menejer va xaridor ko'radi.",
   'order.notes.saving': 'Saqlanyapti…',
   'order.notes.saved': 'Saqlandi ✓',
-  'order.notes.badge': '📝',
+  'order.notes.badge': 'Izoh',
   'order.notes.hasNote': "Qo'shimcha so'rov bor",
   'order.toast.noteSaveFailed': "Izohni saqlab bo'lmadi — qaytadan urinib ko'ring.",
 
