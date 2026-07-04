@@ -447,7 +447,7 @@ export const en = {
   'order.notes.hint': 'Visible to your manager and the purchaser.',
   'order.notes.saving': 'Saving…',
   'order.notes.saved': 'Saved ✓',
-  'order.notes.badge': '📝',
+  'order.notes.badge': 'Note',
   'order.notes.hasNote': 'Has additional request',
   'order.toast.noteSaveFailed': 'Could not save the note — try again.',
 
@@ -634,6 +634,7 @@ export const en = {
   'run.section.sessions': 'Submissions in this run',
   'run.sessions.meta': '{n} submission(s)',
   'run.sessions.stats': '{items} SKU(s) · {qty} units · {extras} other item(s)',
+  'run.sessions.statsNoExtras': '{items} SKU(s) · {qty} units',
   'run.sessions.unknownSubmitter': 'Unknown submitter',
   'run.sessions.ejectHint':
     'Only submissions whose items are still untouched can be returned to review.',
@@ -912,7 +913,7 @@ export const en = {
   'confirm.decided': 'Decided',
   'confirm.deliveredItems': 'Delivered items',
   'confirm.deliveredItemsHint': 'Tap a status for each item',
-  'confirm.confirmStore': 'Confirm store ({decided}/{total})',
+  'confirm.confirmStore': 'Confirm store',
   'confirm.confirmStoreFinal': '✓ Confirmed',
   'confirm.confirmStoreFinalBanner': 'Store confirmed ✓',
   'confirm.confirmingHint': 'Confirming…',

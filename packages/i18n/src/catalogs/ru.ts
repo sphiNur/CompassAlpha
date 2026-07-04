@@ -382,7 +382,7 @@ export const ru = {
   'order.notes.hint': 'Видно менеджеру и закупщику.',
   'order.notes.saving': 'Сохраняю…',
   'order.notes.saved': 'Сохранено ✓',
-  'order.notes.badge': '📝',
+  'order.notes.badge': 'Заметка',
   'order.notes.hasNote': 'Есть дополнительная просьба',
   'order.toast.noteSaveFailed': 'Не удалось сохранить заметку — попробуйте ещё раз.',
 
@@ -562,6 +562,7 @@ export const ru = {
   'run.section.sessions': 'Заявки в этой закупке',
   'run.sessions.meta': '{n} заявок',
   'run.sessions.stats': '{items} SKU · {qty} ед. · прочее {extras}',
+  'run.sessions.statsNoExtras': '{items} SKU · {qty} ед.',
   'run.sessions.unknownSubmitter': 'Неизвестный отправитель',
   'run.sessions.ejectHint':
     'Вернуть можно только заявки, товары из которых еще не куплены и не отмечены отсутствующими.',
@@ -827,7 +828,7 @@ export const ru = {
   'confirm.decided': 'Готово',
   'confirm.deliveredItems': 'Доставленные позиции',
   'confirm.deliveredItemsHint': 'Отметьте статус по каждой позиции',
-  'confirm.confirmStore': 'Подтвердить магазин ({decided}/{total})',
+  'confirm.confirmStore': 'Подтвердить магазин',
   'confirm.confirmStoreFinal': '✓ Подтверждено',
   'confirm.confirmStoreFinalBanner': 'Магазин подтверждён ✓',
   'confirm.confirmingHint': 'Подтверждение…',

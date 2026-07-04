@@ -393,7 +393,7 @@ export const uz = {
   'order.notes.hint': "Menejer va xaridor ko'radi.",
   'order.notes.saving': 'Saqlanyapti…',
   'order.notes.saved': 'Saqlandi ✓',
-  'order.notes.badge': '📝',
+  'order.notes.badge': 'Izoh',
   'order.notes.hasNote': "Qo'shimcha so'rov bor",
   'order.toast.noteSaveFailed': "Izohni saqlab bo'lmadi — qaytadan urinib ko'ring.",
 
@@ -576,6 +576,7 @@ export const uz = {
   'run.section.sessions': "Ushbu xariddagi yuborilganlar",
   'run.sessions.meta': "{n} ta yuborilgan",
   'run.sessions.stats': "{items} SKU · {qty} birlik · boshqa {extras}",
+  'run.sessions.statsNoExtras': "{items} SKU · {qty} birlik",
   'run.sessions.unknownSubmitter': "Noma'lum yuboruvchi",
   'run.sessions.ejectHint':
     "Faqat hali xarid qilinmagan va mavjud emas deb belgilanmagan yuborilganlarni qaytarish mumkin.",
@@ -850,7 +851,7 @@ export const uz = {
   'confirm.deliveredItems': "Yetkazilgan mahsulotlar",
   'confirm.deliveredItemsHint':
     "Har bir mahsulot uchun statusni belgilang",
-  'confirm.confirmStore': "Do'konni tasdiqlash ({decided}/{total})",
+  'confirm.confirmStore': "Do'konni tasdiqlash",
   'confirm.confirmStoreFinal': '✓ Tasdiqlandi',
   'confirm.confirmStoreFinalBanner': "Do'kon tasdiqlandi ✓",
   'confirm.confirmingHint': 'Tasdiqlanmoqda…',

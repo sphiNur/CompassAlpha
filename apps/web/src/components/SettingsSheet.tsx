@@ -150,7 +150,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
         {/* ── Profile ─────────────────────────────────────── */}
         <section>
           <SectionLabel as="h3" padded={false} className="mb-2">
-            👤 {i18n.t('settings.profile.title')}
+            {i18n.t('settings.profile.title')}
           </SectionLabel>
           <div className="flex flex-col gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
             <Field label={i18n.t('settings.profile.displayName')}>
@@ -248,7 +248,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
             explicit "off" option (null in the DB). */}
         <section>
           <SectionLabel as="h3" padded={false} className="mb-2">
-            🏪 {i18n.t('settings.secondaryLanguage.title')}
+            {i18n.t('settings.secondaryLanguage.title')}
           </SectionLabel>
           <div className="mb-2 text-label text-[var(--c-fg-muted)]">
             {i18n.t('settings.secondaryLanguage.hint')}
