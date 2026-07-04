@@ -3950,7 +3950,13 @@ function PerStoreView({
               const extras = run.sessionExtrasByStore?.[storeId] ?? [];
               if (extras.length === 0 && !storeNote) return null;
               return (
-                <div className="mx-4 mb-2 mt-1 rounded-[var(--r-card)] bg-[var(--c-warn-bg)] px-3 py-2 ring-hairline">
+                // Flattened (2026-07-05): was a second rounded-card +
+                // ring-hairline box nested inside this store Card
+                // (card-in-card). Now a full-bleed tinted band — the
+                // warn background alone delineates it; the extra ring +
+                // radius were redundant seams. px-4 aligns with the card
+                // header/rows above and below.
+                <div className="mb-2 mt-1 bg-[var(--c-warn-bg)] px-4 py-2">
                   <SectionLabel padded={false}>
                     {i18n.t('order.extras.label')}
                   </SectionLabel>
