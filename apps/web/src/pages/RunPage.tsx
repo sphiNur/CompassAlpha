@@ -6910,7 +6910,12 @@ function RunHistoryPage({
                                 initialStoreId: storeTotal.storeId,
                               })
                             }
-                            className="flex min-h-10 w-full items-center justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 text-left ring-hairline active:bg-[var(--c-bg)]"
+                            // Flattened (2026-07-05): dropped the nested
+                            // rounded-card + ring-hairline + surface-2
+                            // (a card inside the history Card). These rows
+                            // already sit in the Card's own bordered
+                            // region, so a plain row reads cleaner.
+                            className="flex min-h-10 w-full items-center justify-between gap-3 px-3 py-2 text-left active:bg-[var(--c-surface-2)]"
                           >
                             <span className="min-w-0 flex-1 truncate text-body-sm font-medium">
                               {storeName}
