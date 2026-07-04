@@ -98,17 +98,23 @@ describe('full lifecycle (PG)', () => {
       .returning();
     if (!org) throw new Error('failed to insert org');
 
+    // tgUserId uniqueness: the disambiguator must TRAIL the timestamp, not
+    // lead it. `Date.now()` is already 13 digits, so a leading `100`/`200`/
+    // `300` prefix was sliced off by `.slice(-12)` — when these three inserts
+    // landed in the same millisecond the three users collided on
+    // users_tg_user_id_unique. A trailing 41/42/43 survives the slice and
+    // keeps them distinct regardless of timing (matches the other PG tests).
     const [staffUser] = await db
       .insert(s.users)
-      .values({ displayName: 'Staff', tgUserId: BigInt(`100${Date.now()}`.slice(-12)) })
+      .values({ displayName: 'Staff', tgUserId: BigInt(`${Date.now()}41`.slice(-12)) })
       .returning();
     const [managerUser] = await db
       .insert(s.users)
-      .values({ displayName: 'Manager', tgUserId: BigInt(`200${Date.now()}`.slice(-12)) })
+      .values({ displayName: 'Manager', tgUserId: BigInt(`${Date.now()}42`.slice(-12)) })
       .returning();
     const [purchaserUser] = await db
       .insert(s.users)
-      .values({ displayName: 'Purchaser', tgUserId: BigInt(`300${Date.now()}`.slice(-12)) })
+      .values({ displayName: 'Purchaser', tgUserId: BigInt(`${Date.now()}43`.slice(-12)) })
       .returning();
     if (!staffUser || !managerUser || !purchaserUser) throw new Error('user inserts failed');
 

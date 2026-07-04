@@ -3444,10 +3444,10 @@ function StoresHomeSection({
                 >
                   <span className="min-w-0">
                     <span className="block text-h3 font-semibold text-[var(--c-fg)]">
-                      🌐 Org-level
+                      {i18n.t('admin.label.orgLevel')}
                     </span>
                     <span className="mt-0.5 block text-label text-[var(--c-fg-muted)]">
-                      Admins / super-admins not bound to any store
+                      {i18n.t('admin.label.orgLevelHint')}
                     </span>
                   </span>
                   <Badge tone="muted">

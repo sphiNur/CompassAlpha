@@ -738,6 +738,7 @@ export const ru = {
   'run.toast.purchaseRecorded': 'Покупка записана',
   'run.toast.purchaseSavedOffline':
     'Сохранено офлайн — синхронизируется при подключении',
+  'run.toast.syncFailed': 'Сохранённое изменение не удалось синхронизировать — проверьте',
   'run.toast.couldNotSavePurchase': 'Не удалось сохранить покупку',
   'run.toast.markedUnavailable': 'Помечено как «нет»',
   'run.toast.purchaseRevised': 'Покупка обновлена',

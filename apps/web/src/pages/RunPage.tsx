@@ -46,7 +46,7 @@ import {
   Sheet,
   useToast,
 } from '@compass/ui';
-import { trpc } from '../lib/trpc';
+import { trpc, newIdempotencyKey } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton, haptic, getTg } from '../hooks/useTelegram';
 import { useI18n, useProductName } from '../hooks/useI18n';
@@ -290,8 +290,11 @@ export function RunPage() {
   );
   const offline = useOfflineQueue({
     'run.purchaseItem': async (entry) => {
+      // H2: replay with the SAME idempotency key the first attempt used, so
+      // a request the server already committed (lost response) dedupes.
       await utils.client.run.purchaseItem.mutate(
         entry.input as Parameters<typeof utils.client.run.purchaseItem.mutate>[0],
+        entry.idempotencyKey ? { context: { idempotencyKey: entry.idempotencyKey } } : undefined,
       );
       void utils.run.get.invalidate();
       void utils.run.list.invalidate();
@@ -326,7 +329,7 @@ export function RunPage() {
       void utils.run.get.invalidate();
       void utils.run.list.invalidate();
     },
-  });
+  }, { onDrop: () => toast.error(i18n.t('run.toast.syncFailed')) });
 
   // ---- Mutations ------------------------------------------------------
   // M1.9 (2026-05-07): hoisted into `lib/errToast.ts` so the same
@@ -430,17 +433,31 @@ export function RunPage() {
     },
     onError: errToast('run.toast.couldNotEjectSession'),
   });
+  // H2: one stable idempotency key per purchase, shared between the first
+  // attempt (sent via trpc.context → httpLink header) and any offline
+  // replay (stored on the outbox entry). onMutate runs before the request
+  // is built, so the header picks up the key; the app's mutation-in-flight
+  // guard serialises purchases, so the shared context object can't be
+  // clobbered by a concurrent one.
+  const purchaseIdemCtx = useRef<{ idempotencyKey?: string }>({}).current;
   const purchaseItem = trpc.run.purchaseItem.useMutation({
+    trpc: { context: purchaseIdemCtx },
+    onMutate: () => {
+      const idempotencyKey = newIdempotencyKey();
+      purchaseIdemCtx.idempotencyKey = idempotencyKey;
+      return { idempotencyKey };
+    },
     onSuccess: () => {
       invalidateRunQuietly(true);
       setPurchaseDraft(null);
       haptic('success');
       toast.success(i18n.t('run.toast.purchaseRecorded'));
     },
-    onError: (err, vars) => {
+    onError: (err, vars, ctx) => {
       setInlineSavingSkuId((cur) => (cur === vars.skuId ? null : cur));
       if (isLikelyNetworkError(err)) {
-        void offline.enqueue('run.purchaseItem', vars);
+        const key = (ctx as { idempotencyKey?: string } | undefined)?.idempotencyKey;
+        void offline.enqueue('run.purchaseItem', vars, key);
         setPurchaseDraft(null);
         toast.info(i18n.t('run.toast.purchaseSavedOffline'));
       } else {
@@ -3531,7 +3548,7 @@ function PreviewSummaryCard({
               {!collapsed && storeNote ? (
                 <div className="mt-1.5 rounded-[var(--r-utility)] bg-[var(--c-warn-bg)] px-2 py-1.5">
                   <SectionLabel padded={false}>
-                    📝 {i18n.t('order.extras.label')}
+                    {i18n.t('order.extras.label')}
                   </SectionLabel>
                   {storeNote ? (
                     <div className="mt-1 whitespace-pre-wrap text-body-sm italic leading-snug text-[var(--c-fg-muted)]">
@@ -3904,7 +3921,7 @@ function PerStoreView({
               return (
                 <div className="mx-4 mb-2 mt-1 rounded-[var(--r-card)] bg-[var(--c-warn-bg)] px-3 py-2 ring-hairline">
                   <SectionLabel padded={false}>
-                    📝 {i18n.t('order.extras.label')}
+                    {i18n.t('order.extras.label')}
                   </SectionLabel>
                   {extras.length > 0 ? (
                     <ul className="mt-0.5 flex flex-col gap-0.5">
@@ -4329,7 +4346,7 @@ function RunExtrasCard({
 
   return (
     <Card>
-      <SectionLabel meta="">📝 {i18n.t('order.extras.label')}</SectionLabel>
+      <SectionLabel meta="">{i18n.t('order.extras.label')}</SectionLabel>
       <div className="flex flex-col gap-3 px-4 pb-3">
         {storeIds.map((storeId) => {
           const extras = sessionExtrasByStore?.[storeId] ?? [];
@@ -4460,7 +4477,7 @@ function ExpensesCard({
   return (
     <Card>
       <SectionLabel meta={`${list.length} · ${formatMoney(grandTotal)} ${currency}`}>
-        🧾 {i18n.t('run.section.expenses')}
+        {i18n.t('run.section.expenses')}
       </SectionLabel>
       {editable ? (
         <div className="flex justify-end px-4 pb-2">
@@ -6774,7 +6791,6 @@ function RunHistorySection({
                       </div>
                     ) : null}
                   </div>
-                  <Badge tone="success">{r.status}</Badge>
                 </button>
               </li>
               );

@@ -22,7 +22,7 @@ import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
 import { matchesNameLike, normalizeQuery } from '../lib/searchMatch';
-import { useI18n, useProductName, useUnitLabel } from '../hooks/useI18n';
+import { useI18n, useProductName, useProductNameParts, useUnitLabel } from '../hooks/useI18n';
 
 // M3.34 (2026-05-19): canonical units for the extras editor's unit
 // dropdown — kept in sync with CanonicalUnitSchema in
@@ -47,6 +47,7 @@ import { useStoreContext } from '../components/StoreSwitcher';
 export function OrderPage() {
   const i18n = useI18n();
   const productName = useProductName();
+  const productNameParts = useProductNameParts();
   const session = useAuthStore((s) => s.session);
   // Language picker — accessible from every page's header so staff
   // who don't have admin access can still switch languages (added
@@ -84,7 +85,7 @@ export function OrderPage() {
       );
       void utils.order.todaySession.invalidate();
     },
-  });
+  }, { onDrop: () => toast.error(i18n.t('run.toast.syncFailed')) });
   // OPTIMISTIC ADJUST — fire-and-forget pattern.
   //
   // Why no onSettled invalidate? Because invalidate triggers a refetch
@@ -776,7 +777,7 @@ export function OrderPage() {
                 }
                 isReadOnly={isReadOnly}
                 storeId={currentStoreId}
-                productName={productName}
+                productNameParts={productNameParts}
                 i18n={i18n}
                 onQtyChange={handleQtyChange}
               />
@@ -920,7 +921,7 @@ const SkuRow = memo(function SkuRow({
   otherContribCount,
   isReadOnly,
   storeId,
-  productName,
+  productNameParts,
   i18n,
   onQtyChange,
 }: {
@@ -930,7 +931,9 @@ const SkuRow = memo(function SkuRow({
   otherContribCount: number;
   isReadOnly: boolean;
   storeId: string;
-  productName: (item: { names: Record<string, string> | null | undefined }) => string;
+  productNameParts: (item: {
+    names: Record<string, string> | null | undefined;
+  }) => { primary: string; secondary: string | null };
   i18n: ReturnType<typeof useI18n>;
   onQtyChange: (storeId: string, skuId: string, qty: string) => void;
 }) {
@@ -952,12 +955,18 @@ const SkuRow = memo(function SkuRow({
   //     collapses to a single line.
   const hasSecondaryLine =
     !!sku.suggestedQty || (otherContribCount > 0 && totalQty > 0);
+  const nm = productNameParts(sku);
   return (
     <li className="flex items-center justify-between border-b border-[var(--c-divider)] px-4 py-1.5 last:border-b-0">
       <div className="min-w-0 flex-1 pr-3">
         <div className="truncate text-h2 font-semibold leading-tight text-[var(--c-fg)]">
-          {productName(sku)}
+          {nm.primary}
         </div>
+        {nm.secondary ? (
+          <div className="truncate text-label font-normal leading-tight text-[var(--c-fg-subtle)]">
+            {nm.secondary}
+          </div>
+        ) : null}
         {hasSecondaryLine ? (
           <div className="mt-0.5 text-label leading-tight text-[var(--c-fg-muted)]">
             {sku.suggestedQty
@@ -989,7 +998,7 @@ const SkuRow = memo(function SkuRow({
         // quantity" — when the user mis-tapped a row, they couldn't
         // tell they'd opened the wrong SKU's picker. Now the title
         // reads e.g. "玉米淀粉" so a wrong row is obvious instantly.
-        pickTitle={productName(sku)}
+        pickTitle={nm.primary}
       />
     </li>
   );

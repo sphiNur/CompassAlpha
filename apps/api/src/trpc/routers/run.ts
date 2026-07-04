@@ -1822,6 +1822,7 @@ export const runRouter = router({
   finish: idempotentMutation.input(SimpleRunCommandSchema).mutation(async ({ ctx, input }) => {
     return ctx.withOrg(async (tx) => {
       const run = await loadRun(tx, ctx.session!.orgId, input.runId);
+      await assertRunStoreVisible(tx, ctx, run);
       const runEvents = (await readStream(tx, 'run', run.id)) as unknown as RunEvent[];
       let runState = emptyRunState(run.id);
       for (const e of runEvents) runState = applyRun(runState, e);
@@ -2083,6 +2084,7 @@ export const runRouter = router({
   cancel: authedProcedure.input(RunReasonOnlyInputSchema).mutation(async ({ ctx, input }) => {
     return ctx.withOrg(async (tx) => {
       const run = await loadRun(tx, ctx.session!.orgId, input.runId);
+      await assertRunStoreVisible(tx, ctx, run);
       const runEvents = (await readStream(tx, 'run', run.id)) as unknown as RunEvent[];
       let runState = emptyRunState(run.id);
       for (const e of runEvents) runState = applyRun(runState, e);
@@ -2349,6 +2351,7 @@ async function runSimpleCommand(
 ): Promise<{ lastSeq: number }> {
   return ctx.withOrg(async (tx) => {
     const run = await loadRun(tx, ctx.session!.orgId, runId);
+    await assertRunStoreVisible(tx, ctx, run);
     const events = (await readStream(tx, 'run', run.id)) as unknown as RunEvent[];
     let state = emptyRunState(run.id);
     for (const e of events) state = applyRun(state, e);
@@ -2410,6 +2413,41 @@ async function runInvolvedStoreIds(
     columns: { storeId: true },
   });
   return [...new Set(rows.map((r) => r.storeId))];
+}
+
+/**
+ * Store-scope gate for run MUTATIONS. Mirrors the exact predicate
+ * `run.get` uses (M3.33 Wave1 #2) so mutation visibility == read
+ * visibility: a store-tier actor may only act on a run whose sessions
+ * touch at least one store they are bound to. Org-tier actors
+ * (`run.create.org`) and admins (`getActorStoreIds` → null) bypass.
+ *
+ * P0 H1 (2026-07-03): without this, every run mutation routed through
+ * `runSimpleCommand` — plus `finish`/`cancel` which inline `loadRun` —
+ * checked only org membership. A purchaser bound to Store A could
+ * claim / purchaseItem / revisePurchase / addExpense / finish / cancel a
+ * run that exclusively serves Store B (money-bearing cross-store writes
+ * the read side already forbade). This intentionally does NOT tighten
+ * beyond `run.get`: anyone who can currently see a run can still act on
+ * it (subject to the domain-layer permission checks).
+ */
+async function assertRunStoreVisible(
+  db: import('@compass/db').DB,
+  ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
+  run: { sessionIdsJson: unknown },
+): Promise<void> {
+  if (ctx.session!.permissions.has('run.create.org')) return;
+  const allowedStoreIds = await getActorStoreIds(
+    db,
+    ctx.session!.memberId,
+    ctx.session!.permissions,
+  );
+  if (allowedStoreIds === null) return; // unrestricted (admin path)
+  const involvedStoreIds = await runInvolvedStoreIds(db, run);
+  const allowed = new Set(allowedStoreIds);
+  if (!involvedStoreIds.some((sid) => allowed.has(sid))) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'run.errors.notVisible' });
+  }
 }
 
 function isUniqueViolation(err: unknown): boolean {

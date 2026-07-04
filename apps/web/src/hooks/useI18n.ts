@@ -151,6 +151,35 @@ export function useProductName() {
 }
 
 /**
+ * UI-4 (2026-07): the two-line form of {@link useProductName}. Returns the
+ * primary-locale name and (when the user opted into a secondary locale and
+ * it differs) the secondary name SEPARATELY, so a row can render the primary
+ * on its own line and the secondary as a muted second line — instead of the
+ * `primary (secondary)` inline form that doubled row width and truncated the
+ * transliteration mid-word ("To'g'ralgan s…"). `secondary` is null whenever
+ * there is no distinct second name (default single-language users see no
+ * change). Memoized by locale for the same memo-stability reason as
+ * useProductName.
+ */
+export function useProductNameParts() {
+  const i18n = useI18n();
+  const secondaryLocale = useAuthStore((s) => s.session?.user.secondaryLocale ?? null);
+  return useMemo(
+    () =>
+      (item: {
+        names: Record<string, string> | null | undefined;
+      }): { primary: string; secondary: string | null } => {
+        const primary = pickName(item.names, i18n.locale);
+        if (!secondaryLocale || secondaryLocale === i18n.locale) return { primary, secondary: null };
+        const secondary = pickName(item.names, secondaryLocale);
+        if (!secondary || secondary === primary) return { primary, secondary: null };
+        return { primary, secondary };
+      },
+    [i18n.locale, secondaryLocale],
+  );
+}
+
+/**
  * M3.45 (2026-05-22): returns ONLY the secondary-locale name (no
  * parenthetical, no primary). Used by per-vendor copy templates —
  * when the operator pastes the list into the vendor's chat the

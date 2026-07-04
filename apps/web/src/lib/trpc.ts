@@ -123,15 +123,12 @@ async function authFetch(input: RequestInfo | URL, init: RequestInit = {}): Prom
  * accept an `X-Idempotency-Key` header. The server caches the
  * response for 24h keyed on (key, route, userId).
  *
- * Today's FE generates a fresh ULID per mutation attempt — this
- * doesn't dedupe double-taps (each tap = new key) since react-query
- * mutations don't auto-retry by default. The value is defense-in-
- * depth: if a future config change enables retries, OR an external
- * integration replays a mutation with the same key, dedupe kicks in.
- *
- * For offline-queue replays (useOfflineQueue), the entry's clientSeq
- * could be used as a stable key — that's the high-value follow-up
- * once we have a reproducer for ghost double-charges.
+ * H2 (2026-07-03): a caller can supply a STABLE key via the per-op
+ * `context.idempotencyKey`. run.purchaseItem uses this so the first
+ * attempt and its offline-queue replay send the SAME key — a request
+ * the server already committed but whose response was lost (the iOS
+ * "Load failed" case) then dedupes on replay instead of double-charging.
+ * Mutations without a context key fall back to a fresh per-request key.
  */
 const IDEMPOTENT_MUTATIONS = new Set<string>([
   'run.create',
@@ -153,6 +150,16 @@ function genKey(): string {
   return `${Date.now().toString(36)}${rand}`.slice(0, 64);
 }
 
+/**
+ * Mint a stable idempotency key for one logical action. Pass it to the
+ * first attempt via the mutation's `trpc.context.idempotencyKey` AND store
+ * it on the offline-outbox entry, so a replay reuses the SAME key and the
+ * server dedupes a lost-response retry (H2).
+ */
+export function newIdempotencyKey(): string {
+  return genKey();
+}
+
 export function buildTrpcClient() {
   return trpc.createClient({
     links: [
@@ -166,7 +173,13 @@ export function buildTrpcClient() {
         // mutations also get none (compatible with older server).
         headers: ({ op }) => {
           if (op.type === 'mutation' && IDEMPOTENT_MUTATIONS.has(op.path)) {
-            return { 'x-idempotency-key': genKey() };
+            // Prefer a caller-supplied stable key (first attempt + offline
+            // replay share one via op.context) so a lost-response retry
+            // dedupes; otherwise a fresh per-request key for one-shots.
+            const ctxKey = (op.context as { idempotencyKey?: unknown } | undefined)?.idempotencyKey;
+            return {
+              'x-idempotency-key': typeof ctxKey === 'string' && ctxKey.length > 0 ? ctxKey : genKey(),
+            };
           }
           return {};
         },
