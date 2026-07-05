@@ -119,9 +119,6 @@ export function RunHistorySection({
     });
   }, [allHistorical]);
 
-  const totalShown = groups.reduce((s, g) => s + g.rows.length, 0);
-  const hasMore = allHistorical.length > totalShown;
-
   if (allHistorical.length === 0) return null;
 
   // Format yyyy-mm into the user's locale month-year ("May 2026" / "2026年5月").
@@ -238,14 +235,10 @@ export function RunHistorySection({
           </ul>
         </section>
       ))}
-      {/* "View all" tail — only when truncated. Routes the user to
-          Operations → Submission history (the proper paginated view)
-          rather than dumping infinite scroll into RunPage. */}
-      {hasMore ? (
-        <div className="border-t border-[var(--c-divider)] px-4 py-2 text-center text-label text-[var(--c-fg-muted)]">
-          {i18n.t('run.history.viewAllHint')}
-        </div>
-      ) : null}
+      {/* UIUX-B1 (2026-07-06): truncation hint deleted — it pointed at
+          管理→运营→提交历史, which is ORDER-submission history, not run
+          history; the "View all" header link four lines up is the real
+          path to the full run list. */}
     </Card>
   );
 }
@@ -314,20 +307,17 @@ export function RunHistoryPage({
                   }
                   className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left active:bg-[var(--c-surface-2)]"
                 >
-                  <div className="min-w-0 flex-1">
-                    <div className="text-body font-semibold tabular-nums">
-                      {run.runDate}
-                      {run.runIndex > 0 ? ` #${run.runIndex + 1}` : ''}
-                    </div>
-                    <div className="mt-0.5 text-label text-[var(--c-fg-muted)]">
-                      {run.actualTotal
-                        ? i18n.t('run.history.totalLine', {
-                            total: formatMoney(run.actualTotal),
-                          })
-                        : '—'}
-                    </div>
+                  {/* UIUX-B1 (2026-07-06): constant success Badge with the
+                      raw status enum deleted (list is finished-only — it
+                      never varied, and leaked English; UI-2). The mono
+                      total takes the freed right slot (L2 settlement row). */}
+                  <div className="min-w-0 flex-1 text-body font-semibold tabular-nums">
+                    {run.runDate}
+                    {run.runIndex > 0 ? ` #${run.runIndex + 1}` : ''}
                   </div>
-                  <Badge tone="success">{run.status}</Badge>
+                  <span className="shrink-0 font-mono text-body tabular-nums">
+                    {run.actualTotal ? formatMoney(run.actualTotal) : '—'}
+                  </span>
                 </button>
                 {(run.storeTotals?.length ?? 0) > 0 ? (
                   <div className="border-t border-[var(--c-divider)] px-4 py-2.5">
