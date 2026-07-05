@@ -62,98 +62,10 @@ import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
 import { shareLink } from '../lib/telegramLinks';
 import { matchesNameLike, normalizeQuery } from '../lib/searchMatch';
-
-/**
- * Convert a raw UZS price string to its thousands-mode display form.
- * "147500" → "147.5" when in thousands mode; pass-through otherwise.
- * Used at every input boundary so the stored / network-sent value
- * stays in raw UZS and only the visible string is divided. Returns
- * the input unchanged on empty / NaN so intermediate typing states
- * ("147.") don't get clobbered.
- *
- * M3.36 (2026-05-19): UZS prices typically run 20–150k; typing the
- * trailing "000" on every row was the operator's #1 friction
- * complaint mid-purchase. The `.toFixed(3)` clamp keeps results
- * within the contract's `^\d+(\.\d{1,3})?$` regex — without it,
- * float drift (e.g. 147.555 × 1000 = 147555.00000000003) would let
- * the server reject otherwise-valid inputs.
- */
-function toDisplayPrice(rawStr: string, inThousands: boolean): string {
-  if (!inThousands || !rawStr) return rawStr;
-  const n = Number(rawStr);
-  if (!Number.isFinite(n)) return rawStr;
-  return String(Number((n / 1000).toFixed(3)));
-}
-
-/** Inverse of toDisplayPrice — used when committing back to the
- *  domain (purchaseItem / revisePurchase always speak raw UZS).
- *  The .toFixed(3) avoids the float-drift "147.555 * 1000 =
- *  147555.00000000003" trap that would fail server validation. */
-function fromDisplayPrice(displayStr: string, inThousands: boolean): string {
-  if (!inThousands || !displayStr) return displayStr;
-  const n = Number(displayStr);
-  if (!Number.isFinite(n)) return displayStr;
-  return String(Number((n * 1000).toFixed(3)));
-}
-
-function splitUnitPrice(
-  split: { unitPrice?: string | null },
-  item: { unitPrice?: string | null },
-): string | null {
-  return split.unitPrice ?? item.unitPrice ?? null;
-}
-
-function splitPaymentMethod(
-  split: { paymentMethod?: string | null },
-  item: { paymentMethod?: string | null },
-): string {
-  return split.paymentMethod ?? item.paymentMethod ?? 'cash';
-}
-
-function splitSubtotal(
-  split: { qty: string; unitPrice?: string | null },
-  item: { unitPrice?: string | null },
-): number {
-  const unitPrice = splitUnitPrice(split, item);
-  if (!unitPrice) return 0;
-  return Number(split.qty) * Number(unitPrice);
-}
-
-/**
- * The per-item settlement line: what one purchased item cost in total,
- * plus how that splits into cash vs transfer. Honors per-store overrides
- * (each split's own price/method) and otherwise falls back to the
- * item-level price/method.
- *
- * This is the one bug-prone bit of run money math (the override/flat
- * branch + cash/transfer allocation) that was typed IDENTICALLY inside
- * both `finishSummary` and the history-detail `breakdown`. One copy now;
- * callers add the returned deltas into their own running totals. (The
- * fuller per-store settlement — which still diverges between the two
- * views — stays inline pending a settlement.ts with a unit test.)
- */
-function settleItemLine(
-  item: { unitPrice?: string | null; purchasedQty?: string | null; paymentMethod?: string | null },
-  itemSplits: Array<{ qty: string; unitPrice?: string | null; paymentMethod?: string | null }>,
-): { line: number; cash: number; transfer: number } {
-  const hasSplitOverrides = itemSplits.some((sp) => sp.unitPrice || sp.paymentMethod);
-  let line = 0;
-  let cash = 0;
-  let transfer = 0;
-  if (hasSplitOverrides) {
-    for (const sp of itemSplits) {
-      const subtotal = splitSubtotal(sp, item);
-      line += subtotal;
-      if (splitPaymentMethod(sp, item) === 'transfer') transfer += subtotal;
-      else cash += subtotal;
-    }
-  } else {
-    line = Number(item.unitPrice) * Number(item.purchasedQty);
-    if (item.paymentMethod === 'transfer') transfer += line;
-    else cash += line;
-  }
-  return { line, cash, transfer };
-}
+// Run money math — extracted to pages/runs/lib (Phase 4 step 1) with
+// unit tests. Thousands-mode display conversion + per-item settlement.
+import { toDisplayPrice, fromDisplayPrice } from './runs/lib/priceMath';
+import { splitPaymentMethod, splitSubtotal, settleItemLine } from './runs/lib/settlement';
 
 /**
  * M3.41 + M3.44 (2026-05-21 / 2026-05-22): draft state for the "+ add"
