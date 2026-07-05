@@ -27,7 +27,7 @@
  * goes into the audit log.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { KeyboardEvent } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 import {
   Badge,
   Banner,
@@ -3892,6 +3892,23 @@ function RunSessionsCard({
   );
 }
 
+/**
+ * GroupCardHeader — the "group title + right-aligned count·qty meta"
+ * strip at the top of every grouped run card. Was typed byte-identically
+ * in PerStoreView + PerVendorView and divergently in PerCategoryView's
+ * <summary> (py-2, count inlined after the name). One copy now; the
+ * per-category view renders it inside its <summary> so the collapse
+ * affordance is preserved while the chrome matches the other two views.
+ */
+function GroupCardHeader({ title, meta }: { title: ReactNode; meta: ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-2 px-4 py-1.5 text-label text-[var(--c-fg-muted)]">
+      <span className="truncate text-body font-semibold text-[var(--c-fg)]">{title}</span>
+      <span className="tabular-nums">{meta}</span>
+    </div>
+  );
+}
+
 function PerStoreView({
   run,
   storeById,
@@ -3928,17 +3945,13 @@ function PerStoreView({
         const storeNote = run.sessionNotesByStore?.[storeId]?.trim();
         return (
           <Card key={storeId}>
-            <div className="flex items-baseline justify-between gap-2 px-4 py-1.5 text-label text-[var(--c-fg-muted)]">
-              <span className="truncate text-body font-semibold text-[var(--c-fg)]">
-                {store?.name ?? storeId.slice(0, 8)}
-              </span>
-              <span className="tabular-nums">
-                {i18n.t('run.label.skuCountAndQty', {
-                  n: rows.length,
-                  qty: formatQty(String(totalQty)),
-                })}
-              </span>
-            </div>
+            <GroupCardHeader
+              title={store?.name ?? storeId.slice(0, 8)}
+              meta={i18n.t('run.label.skuCountAndQty', {
+                n: rows.length,
+                qty: formatQty(String(totalQty)),
+              })}
+            />
             {/* M3.31 (2026-05-18, A.1): "其他物品" surfaces here in three
                 forms — M3.16-C structured extras (one row per item) +
                 M1.8 legacy free-text note + the section eyebrow. Until
@@ -4170,17 +4183,16 @@ function PerVendorView({
         const totalQty = b.items.reduce((s, r) => s + Number(r.plannedQty || 0), 0);
         return (
           <Card key={b.supplierId ?? '__unassigned__'}>
-            <div className="flex items-baseline justify-between gap-2 px-4 py-1.5 text-label text-[var(--c-fg-muted)]">
-              <span className="truncate text-body font-semibold text-[var(--c-fg)]">
-                {b.supplierId ? `🛒 ${b.supplierName}` : `❓ ${b.supplierName}`}
-              </span>
-              <span className="tabular-nums">
-                {i18n.t('run.label.skuCountAndQty', {
-                  n: b.items.length,
-                  qty: formatQty(String(totalQty)),
-                })}
-              </span>
-            </div>
+            {/* 🛒/❓ encode assigned-vs-unassigned supplier state (UI-1:
+                state-carrying, not decorative) — the Phase 6 sweep
+                decides whether to swap them for text/color. */}
+            <GroupCardHeader
+              title={b.supplierId ? `🛒 ${b.supplierName}` : `❓ ${b.supplierName}`}
+              meta={i18n.t('run.label.skuCountAndQty', {
+                n: b.items.length,
+                qty: formatQty(String(totalQty)),
+              })}
+            />
             <ul className="flex flex-col" role="list">
               {b.items
                 .map((r) => ({ ...r, sku: skuById.get(r.skuId) }))
@@ -4684,17 +4696,27 @@ function PerCategoryView({
 
   return (
     <div className="flex flex-col gap-2">
-      {groups.map((group) => (
+      {groups.map((group) => {
+        const totalQty = group.items.reduce((s, it) => s + Number(it.plannedQty || 0), 0);
+        return (
         <details
           key={group.categoryId}
           open
           className="overflow-hidden rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline"
         >
-          <summary className="cursor-pointer list-none px-4 py-2 text-body font-semibold">
-            {group.name}
-            <span className="ml-2 text-label font-normal text-[var(--c-fg-muted)]">
-              {group.items.length}
-            </span>
+          {/* Unified (2026-07-05): the category header now renders the
+              same GroupCardHeader as the per-store / per-vendor views
+              (was px-4 py-2 with the count inlined after the name — a
+              third chrome for the same semantic element). The <summary>
+              wrapper keeps the native collapse affordance. */}
+          <summary className="cursor-pointer list-none">
+            <GroupCardHeader
+              title={group.name}
+              meta={i18n.t('run.label.skuCountAndQty', {
+                n: group.items.length,
+                qty: formatQty(String(totalQty)),
+              })}
+            />
           </summary>
           <ul className="flex flex-col" role="list">
             {group.items.map((item) => {
@@ -4734,7 +4756,8 @@ function PerCategoryView({
             })}
           </ul>
         </details>
-      ))}
+        );
+      })}
     </div>
   );
 }
