@@ -22,7 +22,7 @@
  * Admin-of-org things stay in Admin so the mental model stays clean.
  */
 import { useState } from 'react';
-import { Sheet, Button, Field, Input, SectionLabel } from '@compass/ui';
+import { Sheet, Button, Field, Input, SectionLabel, PickerRow } from '@compass/ui';
 import { useToast } from '@compass/ui';
 import type { Locale } from '@compass/i18n';
 import { trpc } from '../lib/trpc';
@@ -207,33 +207,16 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
             {LANGS.map((lang) => {
               const selected = (session?.user.locale ?? 'en') === lang.code;
               return (
-                <button
+                <PickerRow
                   key={lang.code}
-                  type="button"
+                  label={lang.label}
+                  hint={lang.region}
+                  selected={selected}
                   disabled={setLocale.isPending}
                   onClick={() => {
                     if (!selected) setLocale.mutate({ locale: lang.code });
                   }}
-                  className={
-                    'flex items-center justify-between gap-3 rounded-[var(--r-card)] px-4 py-3 text-left ' +
-                    (selected
-                      ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                      : 'bg-[var(--c-surface)] text-[var(--c-fg)] active:opacity-80')
-                  }
-                >
-                  <div className="min-w-0">
-                    <div className="text-body font-semibold">{lang.label}</div>
-                    <div
-                      className={
-                        'mt-0.5 text-label ' +
-                        (selected ? 'opacity-80' : 'text-[var(--c-fg-muted)]')
-                      }
-                    >
-                      {lang.region}
-                    </div>
-                  </div>
-                  {selected ? <span aria-hidden>✓</span> : null}
-                </button>
+                />
               );
             })}
           </div>
@@ -259,69 +242,32 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
             {(() => {
               const selected = session?.user.secondaryLocale == null;
               return (
-                <button
-                  type="button"
+                <PickerRow
+                  label={i18n.t('settings.secondaryLanguage.off')}
+                  hint={i18n.t('settings.secondaryLanguage.offHint')}
+                  selected={selected}
                   disabled={setSecondaryLocale.isPending}
                   onClick={() => {
-                    if (!selected)
-                      setSecondaryLocale.mutate({ secondaryLocale: null });
+                    if (!selected) setSecondaryLocale.mutate({ secondaryLocale: null });
                   }}
-                  className={
-                    'flex items-center justify-between gap-3 rounded-[var(--r-card)] px-4 py-3 text-left ' +
-                    (selected
-                      ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                      : 'bg-[var(--c-surface)] text-[var(--c-fg)] active:opacity-80')
-                  }
-                >
-                  <div className="min-w-0">
-                    <div className="text-body font-semibold">
-                      {i18n.t('settings.secondaryLanguage.off')}
-                    </div>
-                    <div
-                      className={
-                        'mt-0.5 text-label ' +
-                        (selected ? 'opacity-80' : 'text-[var(--c-fg-muted)]')
-                      }
-                    >
-                      {i18n.t('settings.secondaryLanguage.offHint')}
-                    </div>
-                  </div>
-                  {selected ? <span aria-hidden>✓</span> : null}
-                </button>
+                />
               );
             })()}
             {LANGS.filter((l) => l.code !== (session?.user.locale ?? 'en')).map(
               (lang) => {
                 const selected = session?.user.secondaryLocale === lang.code;
                 return (
-                  <button
+                  <PickerRow
                     key={lang.code}
-                    type="button"
+                    label={lang.label}
+                    hint={lang.region}
+                    selected={selected}
                     disabled={setSecondaryLocale.isPending}
                     onClick={() => {
                       if (!selected)
                         setSecondaryLocale.mutate({ secondaryLocale: lang.code });
                     }}
-                    className={
-                      'flex items-center justify-between gap-3 rounded-[var(--r-card)] px-4 py-3 text-left ' +
-                      (selected
-                        ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                        : 'bg-[var(--c-surface)] text-[var(--c-fg)] active:opacity-80')
-                    }
-                  >
-                    <div className="min-w-0">
-                      <div className="text-body font-semibold">{lang.label}</div>
-                      <div
-                        className={
-                          'mt-0.5 text-label ' +
-                          (selected ? 'opacity-80' : 'text-[var(--c-fg-muted)]')
-                        }
-                      >
-                        {lang.region}
-                      </div>
-                    </div>
-                    {selected ? <span aria-hidden>✓</span> : null}
-                  </button>
+                  />
                 );
               },
             )}

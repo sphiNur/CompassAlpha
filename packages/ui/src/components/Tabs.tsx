@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 import { cn } from '../cn';
+import { pillButtonClass } from './pill';
 
 /**
  * Tabs — a real tab control with roving tabindex + keyboard nav.
@@ -95,18 +96,13 @@ export function Tab({
       tabIndex={_tabIndex}
       onClick={() => _onSelect?.(value)}
       onKeyDown={_onKeyDown}
+      // Pill visual shared with Chip via pillButtonClass (M2.4 text,
+      // M3.15 h-8/px-3). Tab adds a width cap + focus ring on top.
       className={cn(
-        // M2.4: pill text uniformly text-label (11 px after M3.14) +
-        // font-medium — matches Badge + Chip baseline.
-        // M3.15 (2026-05-16): h-9 (36) → h-8 (32) so the page-top
-        // segmented control matches the bottom-nav rhythm. Px-4 → px-3
-        // so the chip width tracks its content tighter.
-        'press inline-flex h-8 max-w-[72vw] shrink-0 items-center whitespace-nowrap rounded-[var(--r-pill)] px-3 text-label font-medium',
+        pillButtonClass(_selected),
+        'max-w-[72vw]',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',
         'focus-visible:ring-offset-[var(--c-bg)]',
-        _selected
-          ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-          : 'bg-transparent text-[var(--c-fg-muted)] ring-hairline',
         className,
       )}
     >

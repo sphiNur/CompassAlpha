@@ -54,6 +54,23 @@
   --r-card: 16px;
   --r-pill: 9999px;
 
+  /* Component sizing (2026-07-05, Phase 0 — FRONTEND_AUDIT_2026-07.md).
+   * Canonical spacing/height so the SAME element renders at ONE value
+   * instead of the 8 card-padding recipes / 4 control heights that had
+   * accumulated across call sites. Consume via `px-[var(--card-pad)]`,
+   * `h-[var(--control-h)]` etc. — never re-type a raw px height.
+   *
+   *   --card-pad       Card body/footer inner padding (== px-4).
+   *   --control-h      Standard form control height: Input, Select.
+   *   --control-h-sm   Compact controls: NumberInput/SearchInput/Segmented.
+   *
+   * Two control tiers is deliberate (not drift): --control-h is the
+   * "form field" rhythm, --control-h-sm the "dense/compact" rhythm.
+   * Assign each control to a tier ON PURPOSE; don't invent a third. */
+  --card-pad: 16px;
+  --control-h: 40px;
+  --control-h-sm: 36px;
+
   /* Shadows */
   --shadow-product: 0 8px 24px oklch(0% 0 0 / 0.12), 0 1px 2px oklch(0% 0 0 / 0.08);
 

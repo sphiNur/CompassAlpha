@@ -1,7 +1,8 @@
 export { cn } from './cn';
 export { Button } from './components/Button';
 export type { ButtonProps } from './components/Button';
-export { Card, CardHeader, CardTitle, CardMeta } from './components/Card';
+export { Card, CardHeader, CardTitle, CardMeta, CardBody, CardFooter, surfaceClass } from './components/Card';
+export { pillButtonClass } from './components/pill';
 export { Input } from './components/Input';
 export { SearchInput } from './components/SearchInput';
 export type { SearchInputProps } from './components/SearchInput';
@@ -41,15 +42,28 @@ export { NumberInput } from './components/NumberInput';
 export type { NumberInputProps } from './components/NumberInput';
 export { PageHeader } from './components/PageHeader';
 export type { PageHeaderProps } from './components/PageHeader';
+export { StickyPageBar } from './components/StickyPageBar';
+export type { StickyPageBarProps } from './components/StickyPageBar';
 export { SectionLabel } from './components/SectionLabel';
 export type { SectionLabelProps } from './components/SectionLabel';
-export { SectionRow, ListRow, DetailRow, Tile, Field } from './components/Rows';
+export {
+  SectionRow,
+  ListRow,
+  DetailRow,
+  Tile,
+  Field,
+  FieldLabel,
+  PickerRow,
+  NameCell,
+} from './components/Rows';
 export type {
   SectionRowProps,
   ListRowProps,
   DetailRowProps,
   TileProps,
   FieldProps,
+  PickerRowProps,
+  NameCellProps,
 } from './components/Rows';
 export { ConfirmSheet } from './components/ConfirmSheet';
 export type { ConfirmSheetProps } from './components/ConfirmSheet';

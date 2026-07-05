@@ -78,7 +78,7 @@ export function Segmented<V extends string>({
       aria-label={ariaLabel}
       className={cn(
         'flex overflow-hidden rounded-[var(--r-utility)] ring-hairline',
-        isSm ? 'h-7' : 'h-9',
+        isSm ? 'h-7' : 'h-[var(--control-h-sm)]',
         disabled && 'opacity-50 pointer-events-none',
         className,
       )}

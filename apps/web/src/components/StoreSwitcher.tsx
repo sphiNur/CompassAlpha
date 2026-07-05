@@ -19,7 +19,7 @@
  *               `useStoreContext()` (consumed by AdminPage and other
  *               readers) is unchanged; only the trigger UX moved.
  */
-import { SectionLabel } from '@compass/ui';
+import { SectionLabel, PickerRow } from '@compass/ui';
 import { useAuthStore, ALL_STORES } from '../stores/authStore';
 import type { StoreContext } from '../stores/authStore';
 import { useI18n } from '../hooks/useI18n';
@@ -68,7 +68,7 @@ export function StorePickerSection({ onClose }: { onClose: () => void }) {
         {i18n.t('storeSwitcher.title')}
       </SectionLabel>
       <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
-        <SwitcherRow
+        <PickerRow
           label={i18n.t('storeSwitcher.allOrgStores')}
           hint={i18n.t('storeSwitcher.allOrgHint')}
           selected={currentStoreId === ALL_STORES}
@@ -78,7 +78,7 @@ export function StorePickerSection({ onClose }: { onClose: () => void }) {
           }}
         />
         {stores.map((store) => (
-          <SwitcherRow
+          <PickerRow
             key={store.id}
             label={store.name}
             hint={store.code ?? ''}
@@ -91,46 +91,6 @@ export function StorePickerSection({ onClose }: { onClose: () => void }) {
         ))}
       </div>
     </section>
-  );
-}
-
-function SwitcherRow({
-  label,
-  hint,
-  selected,
-  onClick,
-}: {
-  label: string;
-  hint: string;
-  selected: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={
-        'flex w-full items-center justify-between gap-3 rounded-[var(--r-card)] px-4 py-3 text-left ' +
-        (selected
-          ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-          : 'bg-[var(--c-surface)] active:opacity-80')
-      }
-    >
-      <div className="min-w-0">
-        <div className="truncate text-body font-semibold">{label}</div>
-        {hint ? (
-          <div
-            className={
-              'mt-0.5 truncate text-label ' +
-              (selected ? 'opacity-80' : 'text-[var(--c-fg-muted)]')
-            }
-          >
-            {hint}
-          </div>
-        ) : null}
-      </div>
-      {selected ? <span aria-hidden>✓</span> : null}
-    </button>
   );
 }
 

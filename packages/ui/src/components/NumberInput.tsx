@@ -29,7 +29,8 @@ export interface NumberInputProps
 export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(
   function NumberInput({ className, size = 'md', width = 'auto', oneDecimal: _oneDecimal, ...rest }, ref) {
     void _oneDecimal; // reserved for future use; kept on the prop type for clarity
-    const hSize = size === 'sm' ? 'h-8' : 'h-9';
+    // md = --control-h-sm (36px, the compact-control tier); sm = h-8 (32px).
+    const hSize = size === 'sm' ? 'h-8' : 'h-[var(--control-h-sm)]';
     const w =
       width === 'narrow' ? 'w-20' : width === 'wide' ? 'w-full' : 'w-full min-w-0';
     return (

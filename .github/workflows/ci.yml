@@ -211,7 +211,8 @@ jobs:
             packages/domain \
             apps/api \
             apps/web/src/lib \
-            apps/web/src/hooks
+            apps/web/src/hooks \
+            apps/web/src/pages
 
   # ============ Job 2: PG-backed integration tests ============
   integration:

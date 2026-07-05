@@ -20,7 +20,7 @@
  * The 4 locales here are the same 4 that NamesSchema requires for
  * SKUs/categories — keep them in lockstep.
  */
-import { Sheet, Button } from '@compass/ui';
+import { Sheet, Button, PickerRow } from '@compass/ui';
 import type { Locale } from '@compass/i18n';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
@@ -74,43 +74,32 @@ export function LanguageSheet({ open, onOpenChange }: LanguageSheetProps) {
       title={i18n.t('settings.language.title')}
       description={i18n.t('settings.language.subtitle')}
     >
-      <div className="flex flex-col gap-2 py-3">
-        {LANGS.map((lang) => {
-          const selected = current === lang.code;
-          return (
-            <button
-              key={lang.code}
-              type="button"
-              disabled={setLocale.isPending}
-              onClick={() => {
-                if (selected) {
-                  onOpenChange(false);
-                  return;
-                }
-                setLocale.mutate({ locale: lang.code });
-              }}
-              className={
-                'flex items-center justify-between gap-3 rounded-[var(--r-card)] px-4 py-3 text-left ' +
-                (selected
-                  ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                  : 'bg-[var(--c-surface-2)] text-[var(--c-fg)] active:opacity-80')
-              }
-            >
-              <div className="min-w-0">
-                <div className="text-body font-semibold">{lang.label}</div>
-                <div
-                  className={
-                    'mt-0.5 text-label ' +
-                    (selected ? 'opacity-80' : 'text-[var(--c-fg-muted)]')
+      <div className="py-3">
+        {/* Rows sit inside a surface-2 container (matches SettingsSheet's
+            language picker) so both entry points render identically —
+            previously these rows were wrapper-less with a surface-2
+            background and drifted from Settings' surface rows. */}
+        <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
+          {LANGS.map((lang) => {
+            const selected = current === lang.code;
+            return (
+              <PickerRow
+                key={lang.code}
+                label={lang.label}
+                hint={lang.region}
+                selected={selected}
+                disabled={setLocale.isPending}
+                onClick={() => {
+                  if (selected) {
+                    onOpenChange(false);
+                    return;
                   }
-                >
-                  {lang.region}
-                </div>
-              </div>
-              {selected ? <span aria-hidden>✓</span> : null}
-            </button>
-          );
-        })}
+                  setLocale.mutate({ locale: lang.code });
+                }}
+              />
+            );
+          })}
+        </div>
       </div>
       {/* Cancel-only footer — user wanted a way out without picking
           a new lang. Tap-outside also dismisses (per ConfirmSheet rules

@@ -18,8 +18,10 @@ import {
   ChipBar,
   DataState,
   EmptyState,
+  NameCell,
   PhotoCapture,
   Sheet,
+  StickyPageBar,
   Input,
   useToast,
 } from '@compass/ui';
@@ -269,18 +271,11 @@ export function ConfirmPage() {
        active run; without one, no chrome row. */
     <div className="flex flex-col gap-3 pb-4">
       {activeRun ? (
-        <div
-          className="sticky top-0 z-[1] flex min-h-7 items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] py-2"
-          style={{
-            // M3.46 (2026-05-22): clear Telegram's overlay chrome buttons.
-            paddingLeft: 'max(16px, var(--app-chrome-pad-left, 16px))',
-            paddingRight: 'max(16px, var(--app-chrome-pad-right, 16px))',
-          }}
-        >
+        <StickyPageBar className="min-h-7">
           <span className="ml-auto truncate text-label tabular-nums text-[var(--c-fg-muted)]">
             {i18n.t('confirm.runOnDate', { date: activeRun.runDate })}
           </span>
-        </div>
+        </StickyPageBar>
       ) : null}
       <div className="flex flex-col gap-3 px-4">
 
@@ -315,19 +310,13 @@ export function ConfirmPage() {
                           className="flex flex-col gap-2 border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0"
                         >
                           <div className="flex items-start justify-between gap-3">
-                            {/* M2.2: list-row primary unified to
-                                text-body font-semibold across pages.
-                                UI-4: secondary locale on a muted 2nd line. */}
-                            <span className="min-w-0">
-                              <span className="block truncate text-body font-semibold">
-                                {nm ? nm.primary : it.skuId.slice(0, 8)}
-                              </span>
-                              {nm?.secondary ? (
-                                <span className="block truncate text-label font-normal leading-tight text-[var(--c-fg-subtle)]">
-                                  {nm.secondary}
-                                </span>
-                              ) : null}
-                            </span>
+                            {/* Confirm is the "default" (dense) name tier
+                                per the 2026-07-05 two-tier decision. */}
+                            <NameCell
+                              primary={nm ? nm.primary : it.skuId.slice(0, 8)}
+                              secondary={nm?.secondary}
+                              size="default"
+                            />
                             <span className="shrink-0 font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
                               {formatQty(it.qty)} {sku?.unit ?? ''}
                             </span>
