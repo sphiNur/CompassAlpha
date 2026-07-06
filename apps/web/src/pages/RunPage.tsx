@@ -86,6 +86,7 @@ type ConfirmKind =
   | 'startPurchase'
   | 'startDelivery'
   | 'finish'
+  | 'refinalize'
   | 'cancel'
   | 'undoStartPurchase'
   | 'undoStartDelivery'
@@ -472,6 +473,17 @@ export function RunPage() {
     },
     onError: errToast('common.error'),
   });
+  // 2026-07-06: close a super-admin correction — recompute + re-freeze
+  // totals and return amending → finished.
+  const refinalize = trpc.run.refinalize.useMutation({
+    onSuccess: () => {
+      void utils.run.list.invalidate();
+      invalidateRunQuietly();
+      haptic('success');
+      toast.success(i18n.t('run.toast.amendSaved'));
+    },
+    onError: errToast('common.error'),
+  });
   // M3.37 (2026-05-19, Wave2 #5): purchaser cycles an extra row's
   // outcome (pending → bought → unavailable → pending). One mutation
   // call per tap — the row is small, payload tiny, and the realtime
@@ -526,11 +538,31 @@ export function RunPage() {
     return m;
   }, [storesQuery.data]);
 
-  const activeRun = useMemo(
-    () =>
-      runsQuery.data?.find((r) => r.status !== 'finished' && r.status !== 'cancelled') ?? null,
-    [runsQuery.data],
-  );
+  // 2026-07-06: run.amend holders (super-admin) can reopen a finished
+  // run to `amending`. Two rules keep that safe on the shared Run tab:
+  //  1. An amending run surfaces ONLY for run.amend holders — a normal
+  //     purchaser never sees someone's correction session hijack their
+  //     tab (they get today's genuinely-active run instead).
+  //  2. For an amender we PREFER the amending run so it's always
+  //     reachable (and thus refinalizable) even if a newer active run
+  //     exists — otherwise a reopened run could get stuck & invisible.
+  const canAmend = session?.permissions.includes('run.amend') ?? false;
+  const activeRun = useMemo(() => {
+    const rows = runsQuery.data ?? [];
+    const normal =
+      rows.find(
+        (r) => r.status === 'planned' || r.status === 'purchasing' || r.status === 'delivering',
+      ) ?? null;
+    if (canAmend) {
+      const amend = rows.find((r) => r.status === 'amending');
+      if (amend) return amend;
+    }
+    return normal;
+  }, [runsQuery.data, canAmend]);
+  // `amending` reuses the purchasing edit surface, so most render gates
+  // treat it like purchasing; `editing` = "records are editable now".
+  const amending = activeRun?.status === 'amending';
+  const editing = activeRun?.status === 'purchasing' || amending;
 
   const runDetailQuery = trpc.run.get.useQuery(
     activeRun ? { runId: activeRun.id } : { runId: '' },
@@ -804,6 +836,14 @@ export function RunPage() {
           visible: allStoresConfirmed,
           active: allStoresConfirmed,
         };
+      case 'amending':
+        // Super-admin correction session — close it by re-freezing totals.
+        return {
+          text: i18n.t('run.action.refinalize'),
+          onClick: () => setConfirmAction('refinalize'),
+          visible: true,
+          active: true,
+        };
       default:
         return { text: '', onClick: () => {}, visible: false, active: false };
     }
@@ -1038,6 +1078,23 @@ export function RunPage() {
             run: () => finish.mutate({ runId }, { onSuccess: () => setConfirmAction(null) }),
           };
         }
+        case 'refinalize':
+          // finishSummary reflects the live (corrected) run.get during
+          // amending. Show the SKU-only total (finishSummary.total INCLUDES
+          // off-catalog expenses, but RunRefinalized re-freezes items-only
+          // actual_total — matching FinishRun + the finance report), so
+          // the number shown is exactly what gets frozen.
+          return {
+            title: i18n.t('run.confirm.refinalize.title'),
+            body: i18n.t('run.confirm.refinalize.body', {
+              total: formatMoney(finishSummary.total - finishSummary.expensesTotal),
+            }),
+            confirmLabel: i18n.t('run.action.refinalize'),
+            danger: false,
+            requireReason: false,
+            isPending: refinalize.isPending,
+            run: () => refinalize.mutate({ runId }, { onSuccess: () => setConfirmAction(null) }),
+          };
         case 'cancel':
           // M1.7-A (2026-05-06): soft-encourage reason but don't
           // gate. The user pointed out that hard-requiring a reason
@@ -1187,6 +1244,7 @@ export function RunPage() {
     startPurchase,
     startDelivery,
     finish,
+    refinalize,
     cancelRun,
     undoStartPurchase,
     undoStartDelivery,
@@ -1287,7 +1345,9 @@ export function RunPage() {
               ? i18n.t('run.step.deliver')
               : activeRun.status === 'finished'
                 ? i18n.t('run.step.done')
-                : activeRun.status
+                : activeRun.status === 'amending'
+                  ? i18n.t('run.step.amend')
+                  : activeRun.status
       }`
     : i18n.t('run.empty.noActive');
 
@@ -1335,7 +1395,7 @@ export function RunPage() {
               advanced edit can still pop) and purchasing. Hidden in
               delivering / finished where the toggle would be a
               no-op (no price inputs anywhere). */}
-          {activeRun.status === 'planned' || activeRun.status === 'purchasing' ? (
+          {activeRun.status === 'planned' || editing ? (
             <button
               type="button"
               onClick={togglePriceInThousands}
@@ -1357,7 +1417,7 @@ export function RunPage() {
               hides the affordance to avoid a confusing tap-then-fail.
               The button opens AddItemSheet which collects SKU + qty +
               price + store split + reason. */}
-          {activeRun.status === 'purchasing' ? (
+          {editing ? (
             <button
               type="button"
               onClick={() =>
@@ -1394,6 +1454,17 @@ export function RunPage() {
           <span className="ml-auto truncate text-label tabular-nums text-[var(--c-fg-muted)]">
             #{activeRun.runIndex + 1} · {runSubtitle}
           </span>
+        </div>
+      ) : null}
+
+      {/* 2026-07-06: a super-admin is correcting a finished run. Make the
+          mode unmistakable — the whole page is now an edit surface and
+          the MainButton re-finalizes. */}
+      {amending ? (
+        <div className="px-4 pt-2">
+          <Banner tone="warn" title={i18n.t('run.amend.banner')}>
+            {i18n.t('run.amend.bannerHint')}
+          </Banner>
         </div>
       ) : null}
 

@@ -52,6 +52,9 @@ export type RunCommand =
   | { type: 'ConfirmStore'; storeId: string; actor: ActorCtx }
   | { type: 'FinishRun'; actor: ActorCtx }
   | { type: 'CancelRun'; reason: string; actor: ActorCtx }
+  // Post-finish amendment (2026-07-06), super-admin only (run.amend).
+  | { type: 'ReopenRun'; reason: string; actor: ActorCtx }
+  | { type: 'RefinalizeRun'; actor: ActorCtx }
   // ---- Reversal commands (added 2026-05-03) ---------------------------
   | {
       type: 'RevisePurchase';
@@ -274,7 +277,13 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
       // race the store-split bake-in. After delivering, the operator
       // can still RevisePurchase existing rows, but creating new ones
       // is closed.
-      if (state.status !== 'planned' && state.status !== 'purchasing') {
+      if (
+        state.status !== 'planned' &&
+        state.status !== 'purchasing' &&
+        // 2026-07-06: a super-admin amending a finished run may add a
+        // missing item (records a correction, not a live purchase).
+        !(state.status === 'amending' && command.actor.permissions.has('run.amend'))
+      ) {
         throw preconditionFailed('run.errors.runFrozen', { status: state.status });
       }
       // No double-counting: if the SKU is already in the run (planned
@@ -367,9 +376,7 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
         throw forbidden('run.errors.cannotPurchase');
       }
       assertClaimOwnership(state, command.actor);
-      if (state.status === 'finished' || state.status === 'cancelled') {
-        throw preconditionFailed('run.errors.runFrozen', { status: state.status });
-      }
+      assertEditablePhase(state, command.actor);
       // Idempotent — replay of same expenseId is a no-op (the reducer
       // also detects this defensively but we short-circuit to avoid
       // writing a duplicate event).
@@ -409,18 +416,11 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
           }
         }
       }
-      // Receipt-photo threshold: >200,000 UZS requires a photo. The
-      // total is qty × unitPrice; the FE shows an upload affordance
-      // and prompts when the amount crosses the line. Server still
-      // enforces in case the FE was bypassed.
-      const total = qty * price;
-      const RECEIPT_THRESHOLD = 200_000;
-      if (total > RECEIPT_THRESHOLD && !command.receiptPhotoUrl) {
-        throw validation('run.errors.expenseReceiptRequired', {
-          threshold: RECEIPT_THRESHOLD,
-          total,
-        });
-      }
+      // 2026-07-06: removed the ">200,000 UZS requires a receipt photo"
+      // gate. AddRunExpense already mandates a `reason` (checked above),
+      // which is the actual audit trail; a paper receipt is often
+      // unavailable at a bazaar, so blocking on it was the wrong
+      // trade-off. The photo remains an optional attachment.
       return [
         {
           ...baseFor(1),
@@ -447,9 +447,7 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
         throw forbidden('run.errors.cannotPurchase');
       }
       assertClaimOwnership(state, command.actor);
-      if (state.status === 'finished' || state.status === 'cancelled') {
-        throw preconditionFailed('run.errors.runFrozen', { status: state.status });
-      }
+      assertEditablePhase(state, command.actor);
       // Idempotent — removing what's already gone is a no-op.
       const target = state.expenses.find((e) => e.id === command.expenseId);
       if (!target) return [];
@@ -636,35 +634,10 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
           throw preconditionFailed('run.errors.storeNotConfirmed', { storeId });
         }
       }
-      // M1.14: compute cash / transfer breakdown alongside the canonical
-      // total. Items with no payment method recorded (legacy data
-      // pre-M1.14) are bucketed as cash — that's the historical
-      // assumption since transfers weren't tracked at all before.
-      let total = 0;
-      let totalCash = 0;
-      let totalTransfer = 0;
-      for (const item of state.items.values()) {
-        if (item.status !== 'purchased' || !item.unitPrice || !item.purchasedQty) continue;
-        const hasSplitOverrides = item.storeSplits.some(
-          (split) => split.unitPrice !== undefined || split.paymentMethod !== undefined,
-        );
-        if (hasSplitOverrides) {
-          for (const split of item.storeSplits) {
-            const lineTotal = Number(split.unitPrice ?? item.unitPrice) * Number(split.qty);
-            total += lineTotal;
-            if ((split.paymentMethod ?? item.paymentMethod) === 'transfer') {
-              totalTransfer += lineTotal;
-            } else {
-              totalCash += lineTotal;
-            }
-          }
-        } else {
-          const lineTotal = Number(item.unitPrice) * Number(item.purchasedQty);
-          total += lineTotal;
-          if (item.paymentMethod === 'transfer') totalTransfer += lineTotal;
-          else totalCash += lineTotal;
-        }
-      }
+      // M1.14: cash / transfer breakdown alongside the canonical total.
+      // Shared with RefinalizeRun so a post-finish amendment re-freezes
+      // totals by the exact same math (cash + transfer = total holds).
+      const { total, totalCash, totalTransfer } = computeRunTotals(state);
       return [
         {
           ...baseFor(1),
@@ -700,6 +673,54 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
       ];
     }
 
+    // ---- Post-finish amendment (2026-07-06, super-admin) -------------
+    case 'ReopenRun': {
+      if (state.status === 'absent') throw preconditionFailed('run.errors.streamMissing');
+      if (!command.actor.permissions.has('run.amend')) {
+        throw forbidden('run.errors.cannotAmend');
+      }
+      // Only a FINISHED run can be reopened. Cancelled is permanently
+      // frozen; in-flight runs are edited normally, no reopen needed.
+      if (state.status !== 'finished') {
+        throw preconditionFailed('run.errors.notReopenable', { status: state.status });
+      }
+      const reason = command.reason.trim();
+      if (!reason) throw validation('run.errors.reopenReasonRequired');
+      if (reason.length > 500) throw validation('run.errors.noteTooLong');
+      return [
+        {
+          ...baseFor(1),
+          type: 'RunReopened',
+          payload: { reason, byMemberId: command.actor.memberId },
+        },
+      ];
+    }
+
+    case 'RefinalizeRun': {
+      if (state.status === 'absent') throw preconditionFailed('run.errors.streamMissing');
+      if (!command.actor.permissions.has('run.amend')) {
+        throw forbidden('run.errors.cannotAmend');
+      }
+      if (state.status !== 'amending') {
+        throw preconditionFailed('run.errors.notRefinalizable', { status: state.status });
+      }
+      // Recompute totals from the amended state (same math as FinishRun)
+      // so the read model's frozen totals are correct again.
+      const { total, totalCash, totalTransfer } = computeRunTotals(state);
+      return [
+        {
+          ...baseFor(1),
+          type: 'RunRefinalized',
+          payload: {
+            totalActual: total.toFixed(2),
+            totalCash: totalCash.toFixed(2),
+            totalTransfer: totalTransfer.toFixed(2),
+            byMemberId: command.actor.memberId,
+          },
+        },
+      ];
+    }
+
     // ---- Reversal commands -------------------------------------------
     case 'RevisePurchase': {
       assertActive(state);
@@ -707,9 +728,7 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
         throw forbidden('run.errors.cannotPurchase');
       }
       assertClaimOwnership(state, command.actor);
-      if (state.status === 'finished' || state.status === 'cancelled') {
-        throw preconditionFailed('run.errors.runFrozen', { status: state.status });
-      }
+      assertEditablePhase(state, command.actor);
       const item = state.items.get(command.skuId);
       if (!item) throw validation('run.errors.itemNotInRun');
       // Only revise an already-purchased item. Pending / unavailable
@@ -721,12 +740,18 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
       // to that store are baked into the world; revising them would be
       // misleading. Block revision if any of this SKU's stores have
       // already been delivered.
-      for (const split of item.storeSplits) {
-        const store = state.stores.get(split.storeId);
-        if (store?.deliveredAt) {
-          throw preconditionFailed('run.errors.cannotReviseAfterDelivery', {
-            storeId: split.storeId,
-          });
+      // Skipped while `amending`: a super-admin correcting a closed run
+      // may fix records for goods that were already delivered/confirmed
+      // (the physical receipt stands; the recorded numbers are what's
+      // being corrected). Outside amending the guard holds as before.
+      if (state.status !== 'amending') {
+        for (const split of item.storeSplits) {
+          const store = state.stores.get(split.storeId);
+          if (store?.deliveredAt) {
+            throw preconditionFailed('run.errors.cannotReviseAfterDelivery', {
+              storeId: split.storeId,
+            });
+          }
         }
       }
       const actual = num(command.actualQty, 'run.errors.invalidQty');
@@ -766,9 +791,7 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
         throw forbidden('run.errors.cannotPurchase');
       }
       assertClaimOwnership(state, command.actor);
-      if (state.status === 'finished' || state.status === 'cancelled') {
-        throw preconditionFailed('run.errors.runFrozen', { status: state.status });
-      }
+      assertEditablePhase(state, command.actor);
       const item = state.items.get(command.skuId);
       if (!item) throw validation('run.errors.itemNotInRun');
       if (item.status !== 'purchased') {
@@ -778,12 +801,18 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
       // to ANY destination store the purchase is "real" and can't be
       // un-recorded; revising the audit log to claim it never happened
       // would be misleading.
-      for (const split of item.storeSplits) {
-        const store = state.stores.get(split.storeId);
-        if (store?.deliveredAt) {
-          throw preconditionFailed('run.errors.cannotReviseAfterDelivery', {
-            storeId: split.storeId,
-          });
+      // Skipped while `amending`: a super-admin correcting a closed run
+      // may fix records for goods that were already delivered/confirmed
+      // (the physical receipt stands; the recorded numbers are what's
+      // being corrected). Outside amending the guard holds as before.
+      if (state.status !== 'amending') {
+        for (const split of item.storeSplits) {
+          const store = state.stores.get(split.storeId);
+          if (store?.deliveredAt) {
+            throw preconditionFailed('run.errors.cannotReviseAfterDelivery', {
+              storeId: split.storeId,
+            });
+          }
         }
       }
       // Reason was demoted to optional 2026-05-04 — see UndoPurchaseInputSchema
@@ -803,9 +832,7 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
         throw forbidden('run.errors.cannotPurchase');
       }
       assertClaimOwnership(state, command.actor);
-      if (state.status === 'finished' || state.status === 'cancelled') {
-        throw preconditionFailed('run.errors.runFrozen', { status: state.status });
-      }
+      assertEditablePhase(state, command.actor);
       const item = state.items.get(command.skuId);
       if (!item) throw validation('run.errors.itemNotInRun');
       if (item.status !== 'unavailable') {
@@ -1060,6 +1087,64 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
 
 function assertActive(state: RunState): void {
   if (state.status === 'absent') throw preconditionFailed('run.errors.streamMissing');
+}
+
+/**
+ * Run-level actual / cash / transfer totals, computed from the current
+ * purchased-item state (expenses are tracked separately and are NOT part
+ * of the run's canonical actual_total — matches the finance report).
+ * Extracted from FinishRun so RefinalizeRun re-freezes by identical math;
+ * cash + transfer = total by construction (every line lands in exactly
+ * one bucket).
+ */
+function computeRunTotals(state: RunState): {
+  total: number;
+  totalCash: number;
+  totalTransfer: number;
+} {
+  let total = 0;
+  let totalCash = 0;
+  let totalTransfer = 0;
+  for (const item of state.items.values()) {
+    if (item.status !== 'purchased' || !item.unitPrice || !item.purchasedQty) continue;
+    const hasSplitOverrides = item.storeSplits.some(
+      (split) => split.unitPrice !== undefined || split.paymentMethod !== undefined,
+    );
+    if (hasSplitOverrides) {
+      for (const split of item.storeSplits) {
+        const lineTotal = Number(split.unitPrice ?? item.unitPrice) * Number(split.qty);
+        total += lineTotal;
+        if ((split.paymentMethod ?? item.paymentMethod) === 'transfer') totalTransfer += lineTotal;
+        else totalCash += lineTotal;
+      }
+    } else {
+      const lineTotal = Number(item.unitPrice) * Number(item.purchasedQty);
+      total += lineTotal;
+      if (item.paymentMethod === 'transfer') totalTransfer += lineTotal;
+      else totalCash += lineTotal;
+    }
+  }
+  return { total, totalCash, totalTransfer };
+}
+
+/**
+ * Post-finish amendment gate (2026-07-06). A finished run reopened to
+ * `amending` unlocks the normal edit commands, but ONLY for actors
+ * holding `run.amend` (super-admin). Everyone else still hits the frozen
+ * wall. Cancelled stays permanently frozen. Returns nothing; throws the
+ * appropriate precondition/forbidden on a blocked edit.
+ */
+function assertEditablePhase(state: RunState, actor: ActorCtx): void {
+  if (state.status === 'cancelled') {
+    throw preconditionFailed('run.errors.runFrozen', { status: state.status });
+  }
+  if (state.status === 'finished') {
+    // Finished runs are frozen; a super-admin must ReopenRun first.
+    throw preconditionFailed('run.errors.runFrozen', { status: state.status });
+  }
+  if (state.status === 'amending' && !actor.permissions.has('run.amend')) {
+    throw forbidden('run.errors.cannotAmend');
+  }
 }
 
 /**

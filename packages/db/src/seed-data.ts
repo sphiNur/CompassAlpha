@@ -23,6 +23,9 @@ export const PERMISSIONS = [
   { key: 'run.purchase', description: 'Mark items purchased / unavailable' },
   { key: 'run.eject_session', description: 'Eject a session from a run' },
   { key: 'run.finish', description: 'Finish a run' },
+  // 2026-07-06: reopen + correct an already-FINISHED run (add/remove/
+  // modify items + prices). super-admin only — editing settled money.
+  { key: 'run.amend', description: 'Amend a finished run (super-admin correction)' },
 
   { key: 'delivery.dispatch', description: 'Mark items delivered to a store' },
   { key: 'delivery.confirm', description: 'Confirm a delivery on store side' },
@@ -93,7 +96,13 @@ export const BUILTIN_ROLES = [
     description: 'Org-level configuration without impersonation',
     rank: 80,
     permissions: ALL_PERMISSION_KEYS.filter(
-      (k) => k !== 'system.impersonate' && k !== 'system.test_data.purge',
+      (k) =>
+        k !== 'system.impersonate' &&
+        k !== 'system.test_data.purge' &&
+        // 2026-07-06: amending a finished (settled) run is super-admin
+        // only — an admin can configure the org but not rewrite closed
+        // financial records.
+        k !== 'run.amend',
     ) as readonly string[],
   },
   {

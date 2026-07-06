@@ -137,7 +137,12 @@ export const reportRouter = router({
             AND mr.run_date >= ${input.startDate}::date
             AND mr.run_date <= ${input.endDate}::date
             AND ri.status = 'purchased'
-            AND mr.status IN ('purchasing', 'delivering', 'finished')
+            -- 'amending' (2026-07-06): a finished run reopened by a
+            -- super-admin for correction. This query sums the LIVE
+            -- item×split rows, so keep amending runs in the books during
+            -- the correction — otherwise a run mid-amend would silently
+            -- drop out of finance.
+            AND mr.status IN ('purchasing', 'delivering', 'finished', 'amending')
             ${input.storeId ? sql`AND ris.store_id = ${input.storeId}` : sql``}
             ${input.paymentMethod ? sql`AND ri.payment_method = ${input.paymentMethod}` : sql``}
             ${allowedSql}
@@ -231,7 +236,12 @@ export const reportRouter = router({
             AND mr.run_date >= ${input.startDate}::date
             AND mr.run_date <= ${input.endDate}::date
             AND ri.status = 'purchased'
-            AND mr.status IN ('purchasing', 'delivering', 'finished')
+            -- 'amending' (2026-07-06): a finished run reopened by a
+            -- super-admin for correction. This query sums the LIVE
+            -- item×split rows, so keep amending runs in the books during
+            -- the correction — otherwise a run mid-amend would silently
+            -- drop out of finance.
+            AND mr.status IN ('purchasing', 'delivering', 'finished', 'amending')
             ${input.storeId ? sql`AND ris.store_id = ${input.storeId}` : sql``}
             ${allowedSql}
           GROUP BY ri.payment_method

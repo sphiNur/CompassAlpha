@@ -110,6 +110,27 @@ export type RunEvent =
       // arrive with null when the operator left the field blank.
       payload: { reason: string | null };
     })
+  // ---- Post-finish amendment (2026-07-06) ------------------------------
+  // A super-admin (permission `run.amend`) corrects an already-finished
+  // run. RunReopened brackets the start (finished → amending), the normal
+  // edit events fire in between, RunRefinalized closes it (amending →
+  // finished) carrying freshly recomputed totals. The reason on
+  // RunReopened is the audit anchor for "why was a closed run touched".
+  | (BaseEvent & {
+      type: 'RunReopened';
+      payload: { reason: string; byMemberId: string };
+    })
+  | (BaseEvent & {
+      type: 'RunRefinalized';
+      // Same shape as RunFinished's totals — recomputed from the amended
+      // state so cash + transfer = total holds after the correction.
+      payload: {
+        totalActual: string;
+        totalCash: string;
+        totalTransfer: string;
+        byMemberId: string;
+      };
+    })
   // ---- Reversal / "undo" events (added 2026-05-03) ---------------------
   // Event sourcing: we never delete or rewrite events. Reversal is a NEW
   // forward event that collapses a previous decision. The `applyRun`

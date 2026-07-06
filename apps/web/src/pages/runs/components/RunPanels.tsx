@@ -254,9 +254,13 @@ export function ActiveRunPanel({
   const showPerStore = demandStoreIds.length >= 2;
   const showPerVendor = distinctSupplierCount >= 2;
   const showPerCategory = distinctCategoryCount >= 2;
-  const showViewToggle =
-    (run.status === 'planned' || run.status === 'purchasing') &&
-    (showPerStore || showPerVendor || showPerCategory);
+  // 2026-07-06: `amending` (a super-admin correcting a finished run)
+  // reuses the exact purchasing edit surface — same views, same inline
+  // qty/price/add/undo — so the phase gates below treat it like
+  // purchasing. `editingPhase` = "records are editable right now".
+  const editingPhase = run.status === 'purchasing' || run.status === 'amending';
+  const plannedOrEditing = run.status === 'planned' || editingPhase;
+  const showViewToggle = plannedOrEditing && (showPerStore || showPerVendor || showPerCategory);
 
   return (
     <div className="flex flex-col gap-2">
@@ -359,7 +363,7 @@ export function ActiveRunPanel({
         (viewMode === 'perStore' && !showPerStore) ||
         (viewMode === 'perVendor' && !showPerVendor) ||
         (viewMode === 'perCategory' && !showPerCategory)) &&
-      (run.status === 'planned' || run.status === 'purchasing') && run.items.length > 0 ? (
+      plannedOrEditing && run.items.length > 0 ? (
         <Card>
           {/* M2.1: SectionLabel (was 3-line ad-hoc div). Same visual,
               standardised primitive so every section eyebrow renders
@@ -427,13 +431,13 @@ export function ActiveRunPanel({
         (viewMode === 'perStore' && !showPerStore) ||
         (viewMode === 'perVendor' && !showPerVendor) ||
         (viewMode === 'perCategory' && !showPerCategory)) &&
-      (run.status === 'planned' || run.status === 'purchasing') ? (
+      plannedOrEditing ? (
         <RunExtrasCard
           sessionExtrasByStore={run.sessionExtrasByStore}
           sessionNotesByStore={run.sessionNotesByStore}
           storeById={storeById}
           i18n={i18n}
-          editable={run.status === 'purchasing'}
+          editable={editingPhase}
           onMarkExtraStatus={onMarkExtraStatus}
           onRecordExtraExpense={onRecordExtraExpense}
         />
@@ -449,13 +453,13 @@ export function ActiveRunPanel({
         (viewMode === 'perStore' && !showPerStore) ||
         (viewMode === 'perVendor' && !showPerVendor) ||
         (viewMode === 'perCategory' && !showPerCategory)) &&
-      (run.status === 'purchasing' || (run.expenses?.length ?? 0) > 0) ? (
+      (editingPhase || (run.expenses?.length ?? 0) > 0) ? (
         <ExpensesCard
           expenses={run.expenses}
           storeById={storeById}
           i18n={i18n}
           priceInThousands={priceInThousands}
-          editable={run.status === 'purchasing'}
+          editable={editingPhase}
           onRemove={onRemoveExpense}
           onOpenExpense={onOpenExpense}
         />

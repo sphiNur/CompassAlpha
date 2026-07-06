@@ -12,9 +12,10 @@
  * ../lib/settlement (unit-tested).
  */
 import { useEffect, useMemo, useState } from 'react';
-import { Badge, Card, CardHeader, CardTitle, SectionLabel, Sheet } from '@compass/ui';
+import { Badge, Button, Card, CardHeader, CardTitle, Input, SectionLabel, Sheet, useToast } from '@compass/ui';
 import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
+import { useErrToast } from '../../../lib/errToast';
 import { formatMoney, formatQty } from '../../../lib/format';
 import type { useI18n, useProductName } from '../../../hooks/useI18n';
 import { splitPaymentMethod, splitSubtotal, settleItemLine } from '../lib/settlement';
@@ -411,6 +412,23 @@ export function RunHistoryDetailSheet({
 }) {
   // M1.21: org-wide currency for the headline label.
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
+  // 2026-07-06: super-admins (run.amend) may reopen a finished run to
+  // correct it. The reopen moves it to `amending`; editing continues on
+  // the 采购 (Run) tab, and the correction is closed with "完成修改" there.
+  const canAmend = useAuthStore((s) => s.session?.permissions.includes('run.amend') ?? false);
+  const toast = useToast();
+  const errToast = useErrToast();
+  const utils = trpc.useUtils();
+  const [reopenReason, setReopenReason] = useState('');
+  const reopen = trpc.run.reopen.useMutation({
+    onSuccess: () => {
+      void utils.run.list.invalidate();
+      toast.success(i18n.t('run.amend.reopened'));
+      setReopenReason('');
+      onClose();
+    },
+    onError: errToast('common.error'),
+  });
   const detail = trpc.run.get.useQuery(
     target ? { runId: target.runId } : { runId: '' },
     { enabled: !!target },
@@ -681,6 +699,31 @@ export function RunHistoryDetailSheet({
               </div>
             ) : null}
           </div>
+
+          {/* 2026-07-06: super-admin correction entry. Reopens the
+              finished run to `amending`; editing continues on the Run
+              tab, closed there with "完成修改". Requires a reason (audit). */}
+          {canAmend && target ? (
+            <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-warn-bg)] px-4 py-3">
+              <SectionLabel padded={false}>{i18n.t('run.amend.entryLabel')}</SectionLabel>
+              <Input
+                value={reopenReason}
+                onChange={(e) => setReopenReason(e.target.value)}
+                placeholder={i18n.t('run.amend.reasonPlaceholder')}
+                maxLength={500}
+              />
+              <Button
+                variant="pearl"
+                loading={reopen.isPending}
+                disabled={reopenReason.trim().length === 0}
+                onClick={() =>
+                  reopen.mutate({ runId: target.runId, reason: reopenReason.trim() })
+                }
+              >
+                {i18n.t('run.amend.reopenButton')}
+              </Button>
+            </div>
+          ) : null}
 
           {storeOptions.length > 1 ? (
             <div className="flex gap-1 overflow-x-auto rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-1 ring-hairline">
