@@ -491,19 +491,16 @@ export function ActiveRunPanel({
               // purchaser's main during-run view; non-English users were
               // seeing English on every store row.
               const subtitle = i18n.t(('run.deliveryStage.' + stage) as Parameters<typeof i18n.t>[0]);
-              const stageLabel = i18n.t(('run.deliveryStageBadge.' + stage) as Parameters<typeof i18n.t>[0]);
-              const tone =
-                stage === 'confirmed' ? 'success' : stage === 'delivered' ? 'info' : 'muted';
               const tappable = stage !== 'confirmed';
-              /* Single-line layout: name + meta + badge.
-                 Was a 2-line stacked block (~64px); now ~40px tappable. */
+              /* UIUX-B1 (2026-07-06): stage Badge deleted — the meta line
+                 already states the stage (UI-2: status once per row);
+                 the L1 delivery-stage rail lands in the B3 row pass. */
               const inner = (
                 <>
                   <span className="shrink-0 truncate text-body font-semibold">{storeName}</span>
                   <span className="min-w-0 flex-1 truncate text-label text-[var(--c-fg-muted)]">
                     {i18n.t('run.label.itemsCount', { n: splitsHere.length })} · {subtitle}
                   </span>
-                  <Badge tone={tone}>{stageLabel}</Badge>
                 </>
               );
               return (
@@ -912,9 +909,8 @@ export function PreviewSummaryCard({
   const lineFormula = (line: PreviewLine): string => {
     const qtyUnit = `${formatQty(line.qty)} ${line.unit}`.trim();
     if (line.total === null || !line.unitPrice) {
-      return `${qtyUnit} * ${i18n.t('run.preview.priceUnknown')} = ${i18n.t(
-        'run.preview.priceUnknown',
-      )}`;
+      // UIUX-B1: state "price unknown" once, not twice in one formula.
+      return `${qtyUnit} · ${i18n.t('run.preview.priceUnknown')}`;
     }
     return `${qtyUnit} * ${formatMoney(line.unitPrice)} = ${formatMoney(line.total)}`;
   };
@@ -1506,9 +1502,9 @@ export function RunSessionsCard({
           );
         })}
       </ul>
-      <div className="border-t border-[var(--c-divider)] px-3 py-2 text-label text-[var(--c-fg-muted)]">
-        {i18n.t('run.sessions.ejectHint')}
-      </div>
+      {/* UIUX-B1: the permanent eject-rules footer is gone — the eject
+          ConfirmSheet body already states the exact constraint at the
+          moment it matters. */}
     </Card>
   );
 }
