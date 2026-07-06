@@ -1,6 +1,23 @@
 import type { RunEvent, StoreSplitPayload } from './events';
 
-export type RunStatus = 'absent' | 'planned' | 'purchasing' | 'delivering' | 'finished' | 'cancelled';
+/**
+ * `amending` (2026-07-06): a FINISHED run reopened by a super-admin
+ * (permission `run.amend`) to correct records after the fact — wrong
+ * price typed, missing item, duplicate. Reached only via RunReopened
+ * (finished → amending) and left only via RunRefinalized (amending →
+ * finished, totals recomputed). While amending, the normal edit
+ * commands are permitted for `run.amend` holders and the frozen totals
+ * are stale until refinalize re-freezes them. It is a transient,
+ * privileged state — not part of the normal purchase lifecycle.
+ */
+export type RunStatus =
+  | 'absent'
+  | 'planned'
+  | 'purchasing'
+  | 'delivering'
+  | 'finished'
+  | 'amending'
+  | 'cancelled';
 
 /**
  * Payment method for a recorded purchase. M1.14 (2026-05-08).
@@ -288,6 +305,22 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
         claimedByMemberId: null,
         claimedAt: null,
         previousClaimerMemberId: null,
+      };
+    case 'RunReopened':
+      // Super-admin reopened a finished run for correction. Item / split
+      // / expense state is untouched — only the phase moves back so the
+      // edit commands unlock. The frozen totals on the read model are
+      // now stale until RunRefinalized re-freezes them.
+      return { ...state, seq: event.seq, status: 'amending' };
+    case 'RunRefinalized':
+      // Correction session closed. Totals were recomputed from the
+      // amended state (same math as RunFinished) and carried on the
+      // event; the reducer just moves the phase back to finished.
+      return {
+        ...state,
+        seq: event.seq,
+        status: 'finished',
+        finishedAt: event.occurredAt,
       };
 
     // ---- Reversal events (added 2026-05-03) -----------------------------

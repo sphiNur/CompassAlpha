@@ -11,6 +11,8 @@ export const RunStatusSchema = z.enum([
   'purchasing',
   'delivering',
   'finished',
+  // 2026-07-06: a finished run reopened by a super-admin for correction.
+  'amending',
   'cancelled',
 ]);
 

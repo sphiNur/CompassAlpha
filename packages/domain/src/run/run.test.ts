@@ -355,6 +355,79 @@ describe('run.decide', () => {
     expect(s.finishedAt).toEqual(NOW);
   });
 
+  test('super-admin amends a finished run: reopen → revise price → refinalize keeps cash+transfer=total', () => {
+    const superAdmin = (): ActorCtx => ({
+      userId: 'sa',
+      memberId: 'sa',
+      permissions: new Set(['run.purchase', 'run.amend']),
+    });
+    // Drive sku-1 (qty 4 @ 12,000 cash) all the way to finished → total 48,000.
+    let s = planAndPurchase({ storeSplits: [{ storeId: 'A', qty: '4' }] });
+    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
+    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(applyRun, s);
+    s = decideRun(
+      s,
+      { type: 'ConfirmStoreItem', storeId: 'A', skuId: 'sku-1', status: 'ok', note: null, photoUrl: null, actor: confirmer() },
+      clock,
+    ).reduce(applyRun, s);
+    s = decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock).reduce(applyRun, s);
+    const finishEvs = decideRun(s, { type: 'FinishRun', actor: purchaser() }, clock);
+    s = finishEvs.reduce(applyRun, s);
+    expect(s.status).toBe('finished');
+    const finished = finishEvs[0];
+    if (finished?.type !== 'RunFinished') throw new Error('expected RunFinished');
+    expect(finished.payload.totalActual).toBe('48000.00');
+
+    // A normal purchaser (no run.amend) can neither reopen nor edit it.
+    expect(() =>
+      decideRun(s, { type: 'ReopenRun', reason: 'fix', actor: purchaser() }, clock),
+    ).toThrow('run.errors.cannotAmend');
+    expect(() =>
+      decideRun(
+        s,
+        { type: 'RevisePurchase', skuId: 'sku-1', supplierId: 'sup-1', unitPrice: '15000', actualQty: '4', receiptPhotoUrl: null, storeSplits: [{ storeId: 'A', qty: '4' }], reason: 'x', paymentMethod: 'cash', actor: purchaser() },
+        clock,
+      ),
+    ).toThrow('run.errors.runFrozen');
+
+    // Super-admin reopens the finished run.
+    s = decideRun(s, { type: 'ReopenRun', reason: 'wrong unit price typed', actor: superAdmin() }, clock).reduce(applyRun, s);
+    expect(s.status).toBe('amending');
+
+    // Correct the price 12,000 → 15,000 — allowed even though store A was
+    // already delivered + confirmed (the amending delivered-guard skip).
+    s = decideRun(
+      s,
+      { type: 'RevisePurchase', skuId: 'sku-1', supplierId: 'sup-1', unitPrice: '15000', actualQty: '4', receiptPhotoUrl: null, storeSplits: [{ storeId: 'A', qty: '4' }], reason: 'corrected unit price', paymentMethod: 'cash', actor: superAdmin() },
+      clock,
+    ).reduce(applyRun, s);
+    expect(s.items.get('sku-1')?.unitPrice).toBe('15000');
+
+    // Refinalize: totals recomputed from the amended state.
+    const refinEvs = decideRun(s, { type: 'RefinalizeRun', actor: superAdmin() }, clock);
+    s = refinEvs.reduce(applyRun, s);
+    expect(s.status).toBe('finished');
+    const refin = refinEvs[0];
+    if (refin?.type !== 'RunRefinalized') throw new Error('expected RunRefinalized');
+    expect(refin.payload.totalActual).toBe('60000.00'); // 4 × 15,000
+    expect(refin.payload.totalCash).toBe('60000.00');
+    expect(refin.payload.totalTransfer).toBe('0.00');
+    // Money integrity invariant.
+    expect((Number(refin.payload.totalCash) + Number(refin.payload.totalTransfer)).toFixed(2)).toBe(
+      refin.payload.totalActual,
+    );
+  });
+
+  test('RefinalizeRun rejected unless status is amending', () => {
+    let s = planAndPurchase();
+    const superAdmin: ActorCtx = { userId: 'sa', memberId: 'sa', permissions: new Set(['run.amend']) };
+    expect(() => decideRun(s, { type: 'RefinalizeRun', actor: superAdmin }, clock)).toThrow(
+      'run.errors.notRefinalizable',
+    );
+    // Cancelled runs are permanently un-reopenable.
+    void s;
+  });
+
   test('CancelRun blocked after finished', () => {
     let s = planAndPurchase();
     s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);

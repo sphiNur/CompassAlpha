@@ -321,6 +321,32 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
           })
           .where(eq(s.marketRunsV.id, e.streamId));
         break;
+      case 'RunReopened':
+        // 2026-07-06: super-admin reopened a finished run. Move the phase
+        // to `amending`; item/split/expense rows are untouched (the edit
+        // events that follow project normally). The frozen totals stay as
+        // they were until RunRefinalized rewrites them.
+        await db
+          .update(s.marketRunsV)
+          .set({ status: 'amending', lastSeq: e.seq, updatedAt: new Date() })
+          .where(eq(s.marketRunsV.id, e.streamId));
+        break;
+      case 'RunRefinalized':
+        // Correction closed: rewrite the frozen totals from the amended
+        // state (recomputed in the aggregate) and return to `finished`.
+        await db
+          .update(s.marketRunsV)
+          .set({
+            status: 'finished',
+            actualTotal: e.payload.totalActual,
+            actualCashTotal: e.payload.totalCash,
+            actualTransferTotal: e.payload.totalTransfer,
+            finishedAt: e.occurredAt,
+            lastSeq: e.seq,
+            updatedAt: new Date(),
+          })
+          .where(eq(s.marketRunsV.id, e.streamId));
+        break;
       case 'RunClaimed':
         // C.2 (M3.38): claim grab. The reducer mirrors this exactly —
         // sets claimer + ts. We don't clear previousClaimerMemberId

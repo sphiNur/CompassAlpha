@@ -2013,6 +2013,36 @@ export const runRouter = router({
       ),
     ),
 
+  /**
+   * 2026-07-06: super-admin (run.amend) reopens a FINISHED run to correct
+   * it. Moves finished → amending, which unlocks the normal edit
+   * procedures (revisePurchase / addPurchaserItem / undoPurchase /
+   * add|removeExpense) for run.amend holders. Close with `refinalize`,
+   * which recomputes + re-freezes the totals. The domain enforces the
+   * permission + finished-only guard.
+   */
+  reopen: authedProcedure
+    .input(RunReasonOnlyInputSchema)
+    .mutation(async ({ ctx, input }) =>
+      runSimpleCommand(ctx, input.runId, (state) =>
+        decideRun(state, {
+          type: 'ReopenRun',
+          reason: input.reason,
+          actor: actorFromCtx(ctx),
+        }),
+      ),
+    ),
+
+  /** Close a super-admin correction: recompute + re-freeze the run
+   *  totals and return amending → finished. */
+  refinalize: authedProcedure
+    .input(SimpleRunCommandSchema)
+    .mutation(async ({ ctx, input }) =>
+      runSimpleCommand(ctx, input.runId, (state) =>
+        decideRun(state, { type: 'RefinalizeRun', actor: actorFromCtx(ctx) }),
+      ),
+    ),
+
   /** Recall a delivery to a store that has not yet confirmed receipt. */
   undeliverStore: authedProcedure
     .input(UndeliverStoreInputSchema)
