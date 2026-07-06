@@ -409,18 +409,11 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
           }
         }
       }
-      // Receipt-photo threshold: >200,000 UZS requires a photo. The
-      // total is qty × unitPrice; the FE shows an upload affordance
-      // and prompts when the amount crosses the line. Server still
-      // enforces in case the FE was bypassed.
-      const total = qty * price;
-      const RECEIPT_THRESHOLD = 200_000;
-      if (total > RECEIPT_THRESHOLD && !command.receiptPhotoUrl) {
-        throw validation('run.errors.expenseReceiptRequired', {
-          threshold: RECEIPT_THRESHOLD,
-          total,
-        });
-      }
+      // 2026-07-06: removed the ">200,000 UZS requires a receipt photo"
+      // gate. AddRunExpense already mandates a `reason` (checked above),
+      // which is the actual audit trail; a paper receipt is often
+      // unavailable at a bazaar, so blocking on it was the wrong
+      // trade-off. The photo remains an optional attachment.
       return [
         {
           ...baseFor(1),

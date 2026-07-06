@@ -598,20 +598,11 @@ export function AddItemSheet({
     return Math.round(q * effectiveP);
   }, [draft, priceInput, priceInThousands]);
 
-  // M3.44: receipt threshold for expense mode — server-side enforces
-  // the same 200,000 UZS line. The FE pre-validates so Save is
-  // disabled rather than letting the user submit and bounce.
-  const RECEIPT_THRESHOLD = 200_000;
-  const total = useMemo(() => {
-    if (!draft) return 0;
-    const q = Number(draft.actualQty);
-    const p = Number(draft.unitPrice);
-    if (!Number.isFinite(q) || !Number.isFinite(p) || q <= 0 || p <= 0) return 0;
-    return q * p;
-  }, [draft?.actualQty, draft?.unitPrice]);
-  const receiptRequired =
-    (draft?.mode === 'expense' || skuRecordsAsExpense) && total > RECEIPT_THRESHOLD;
-  const receiptOk = !receiptRequired || !!draft?.receiptPhotoUrl;
+  // 2026-07-06: the >200,000 UZS "receipt photo required" gate on
+  // expenses was removed. Every expense already carries a mandatory
+  // reason (the real audit trail); blocking a bazaar purchase because
+  // no paper receipt is available was the wrong trade. The photo stays
+  // available but optional.
 
   // Mode-aware split-sum check: in expense mode the split is multi-
   // store auto-divided, so the sum may drift by 1 UZS due to integer
@@ -633,7 +624,6 @@ export function AddItemSheet({
     draft.splits.size > 0 &&
     splitMatches &&
     draft.reason.trim().length > 0 &&
-    receiptOk &&
     !submitting
   );
 
@@ -722,11 +712,9 @@ export function AddItemSheet({
           disabled={!canSubmit}
           onClick={() => draft && canSubmit && onSubmit(draft)}
         >
-          {receiptRequired && !draft?.receiptPhotoUrl
-            ? i18n.t('run.action.addExpense.needReceipt')
-            : draft?.mode === 'expense'
-              ? i18n.t('run.action.addExpense.save')
-              : i18n.t('run.action.addItem.save')}
+          {draft?.mode === 'expense'
+            ? i18n.t('run.action.addExpense.save')
+            : i18n.t('run.action.addItem.save')}
         </Button>
       }
     >
@@ -1203,19 +1191,12 @@ export function AddItemSheet({
                 />
               </label>
 
-              {/* M3.44 (2026-05-22): receipt photo. Only shown in
-                  expense mode. Mandatory + visually flagged when the
-                  total crosses 200,000 UZS — the FE label switches to
-                  the "required above threshold" copy so the operator
-                  knows BEFORE submitting. */}
+              {/* Receipt photo — expense mode only, always optional
+                  (2026-07-06: dropped the >200k mandatory gate). */}
               {draft.mode === 'expense' || skuRecordsAsExpense ? (
                 <div>
                   <div className="mb-1 text-label font-semibold text-[var(--c-fg-muted)]">
-                    {receiptRequired
-                      ? i18n.t('run.action.addExpense.receiptRequired', {
-                          threshold: formatMoney(RECEIPT_THRESHOLD),
-                        })
-                      : i18n.t('run.action.addExpense.receiptOptional')}
+                    {i18n.t('run.action.addExpense.receiptOptional')}
                   </div>
                   <PhotoCapture
                     label={i18n.t('run.action.receiptPhoto')}
