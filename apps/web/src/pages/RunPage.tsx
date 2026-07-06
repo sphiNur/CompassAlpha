@@ -538,14 +538,29 @@ export function RunPage() {
     return m;
   }, [storesQuery.data]);
 
-  const activeRun = useMemo(
-    () =>
-      runsQuery.data?.find((r) => r.status !== 'finished' && r.status !== 'cancelled') ?? null,
-    [runsQuery.data],
-  );
-  // 2026-07-06: `amending` = a super-admin correcting a finished run.
-  // It reuses the purchasing edit surface, so most render gates treat it
-  // like purchasing; `editing` = "records are editable right now".
+  // 2026-07-06: run.amend holders (super-admin) can reopen a finished
+  // run to `amending`. Two rules keep that safe on the shared Run tab:
+  //  1. An amending run surfaces ONLY for run.amend holders — a normal
+  //     purchaser never sees someone's correction session hijack their
+  //     tab (they get today's genuinely-active run instead).
+  //  2. For an amender we PREFER the amending run so it's always
+  //     reachable (and thus refinalizable) even if a newer active run
+  //     exists — otherwise a reopened run could get stuck & invisible.
+  const canAmend = session?.permissions.includes('run.amend') ?? false;
+  const activeRun = useMemo(() => {
+    const rows = runsQuery.data ?? [];
+    const normal =
+      rows.find(
+        (r) => r.status === 'planned' || r.status === 'purchasing' || r.status === 'delivering',
+      ) ?? null;
+    if (canAmend) {
+      const amend = rows.find((r) => r.status === 'amending');
+      if (amend) return amend;
+    }
+    return normal;
+  }, [runsQuery.data, canAmend]);
+  // `amending` reuses the purchasing edit surface, so most render gates
+  // treat it like purchasing; `editing` = "records are editable now".
   const amending = activeRun?.status === 'amending';
   const editing = activeRun?.status === 'purchasing' || amending;
 
@@ -1064,13 +1079,15 @@ export function RunPage() {
           };
         }
         case 'refinalize':
-          // finishSummary is computed from run.get, which during amending
-          // already reflects the corrections — so the total shown here is
-          // the NEW, re-frozen figure.
+          // finishSummary reflects the live (corrected) run.get during
+          // amending. Show the SKU-only total (finishSummary.total INCLUDES
+          // off-catalog expenses, but RunRefinalized re-freezes items-only
+          // actual_total — matching FinishRun + the finance report), so
+          // the number shown is exactly what gets frozen.
           return {
             title: i18n.t('run.confirm.refinalize.title'),
             body: i18n.t('run.confirm.refinalize.body', {
-              total: formatMoney(finishSummary.total),
+              total: formatMoney(finishSummary.total - finishSummary.expensesTotal),
             }),
             confirmLabel: i18n.t('run.action.refinalize'),
             danger: false,

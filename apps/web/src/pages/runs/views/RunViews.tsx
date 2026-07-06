@@ -429,7 +429,10 @@ export function PerVendorView({
         sessionNotesByStore={run.sessionNotesByStore}
         storeById={storeById}
         i18n={i18n}
-        editable={run.status === 'purchasing'}
+        // 2026-07-06: match the per-store path — editable during
+        // purchasing AND super-admin amending (was purchasing-only,
+        // making extras editability view-mode-dependent).
+        editable={run.status === 'purchasing' || run.status === 'amending'}
         onMarkExtraStatus={onMarkExtraStatus}
         onRecordExtraExpense={onRecordExtraExpense}
       />
