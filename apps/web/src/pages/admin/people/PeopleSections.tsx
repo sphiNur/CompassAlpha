@@ -269,9 +269,9 @@ export function PeopleSection({
                       </CardMeta>
                     </div>
                   </div>
-                  <Badge tone={m.status === 'active' ? 'success' : 'warn'}>
-                    {m.status}
-                  </Badge>
+                  {/* UIUX-B1: 'active' is the silent default (L1 — no
+                      unearned green); only the exception renders. */}
+                  {m.status !== 'active' ? <Badge tone="warn">{m.status}</Badge> : null}
                 </CardHeader>
                 {/* Store-affiliation chips (added 2026-05-05). Empty
                     array is rendered as "no store" hint so admins can
@@ -701,11 +701,9 @@ export function PermissionsSection({ isSuperAdmin }: { isSuperAdmin: boolean }) 
                       }
                       hint={subtitle}
                       badge={
-                        grantable ? (
-                          <Badge tone="success">grantable</Badge>
-                        ) : (
-                          <Badge tone="warn">your rank ≤ this</Badge>
-                        )
+                        // UIUX-B1: 'grantable' is the common case → silent;
+                        // only the blocking state earns a badge.
+                        grantable ? null : <Badge tone="warn">your rank ≤ this</Badge>
                       }
                       onClick={() => setDrilldownSlug(r.slug)}
                     />
@@ -2614,8 +2612,6 @@ function GrantRoleSheet({
             </button>
           ))
         )}
-        {/* Soothing dummy reference so the i18n linter sees the new key */}
-        <span className="hidden">{i18n.t('admin.errors.notAdminOfStore')}</span>
       </div>
     </Sheet>
   );

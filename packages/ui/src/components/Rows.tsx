@@ -12,7 +12,9 @@ import { IconChevronRight } from './NavIcon';
  * shape without re-implementing styling.
  */
 export interface SectionRowProps {
-  icon: ReactNode;
+  /** Optional — a menu of like rows sharing one repeated icon carries
+   *  no information; omit it and the row renders text-only (UIUX-B1). */
+  icon?: ReactNode;
   label: ReactNode;
   hint?: ReactNode;
   tone?: 'normal' | 'warn' | 'danger';
@@ -44,7 +46,7 @@ export function SectionRow({
           surfaceClass,
         )}
       >
-        <span className={cn('shrink-0', iconColor)}>{icon}</span>
+        {icon ? <span className={cn('shrink-0', iconColor)}>{icon}</span> : null}
         <span className="min-w-0 flex-1">
           <span className="block truncate text-h3 font-semibold text-[var(--c-fg)]">{label}</span>
           {hint ? (
