@@ -277,7 +277,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
         {/* ── About ───────────────────────────────────────── */}
         <section>
           <SectionLabel as="h3" padded={false} className="mb-2">
-            ℹ️ {i18n.t('settings.about.title')}
+            {i18n.t('settings.about.title')}
           </SectionLabel>
           <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
             <div className="flex items-baseline justify-between text-label">
@@ -309,11 +309,9 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
           </div>
         </section>
       </div>
-      <div className="px-4 pb-2">
-        <Button block variant="pearl" onClick={() => onOpenChange(false)}>
-          {i18n.t('common.cancel')}
-        </Button>
-      </div>
+      {/* UIUX-B1: trailing Cancel deleted — the sheet dismisses via
+          scrim-tap and Telegram back, and Settings has nothing to
+          "cancel" (every change saves immediately). */}
     </Sheet>
   );
 }

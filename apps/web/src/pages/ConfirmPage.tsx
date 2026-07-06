@@ -12,8 +12,6 @@ import { useMemo, useState } from 'react';
 import {
   Button,
   Card,
-  CardHeader,
-  CardTitle,
   Chip,
   ChipBar,
   DataState,
@@ -177,7 +175,6 @@ export function ConfirmPage() {
     (sp) => sp.storeId === currentStoreId,
   );
   const allDecided = myItems.length > 0;
-  const decidedCount = myItems.length;
   /** True once the store-level confirmation has actually landed. The
    *  Confirm Store button must hide AFTER this, otherwise repeated taps
    *  used to fire repeated `confirmStore.mutate` calls — the user
@@ -219,10 +216,7 @@ export function ConfirmPage() {
       ? i18n.t('confirm.confirmStoreFinal')
       : confirmStore.isPending
         ? i18n.t('confirm.confirmingHint')
-        : i18n.t('confirm.confirmStore', {
-            decided: decidedCount,
-            total: myItems.length,
-          });
+        : i18n.t('confirm.confirmStore');
     mainBtnVisible = !!activeRun && myItems.length > 0 && !storeConfirmed;
     mainBtnActive = allDecided && !confirmStore.isPending;
     mainBtnClick = () => {
@@ -292,13 +286,10 @@ export function ConfirmPage() {
                 <EmptyState title={i18n.t('confirm.empty.noItems')} />
               ) : (
                 <Card>
-                  {/* M1.11 cleanup: dropped the
-                      `confirm.deliveredItemsHint` CardMeta — the
-                      visible chip-bar per item makes "tap a status"
-                      self-evident. */}
-                  <CardHeader>
-                    <CardTitle>{i18n.t('confirm.deliveredItems')}</CardTitle>
-                  </CardHeader>
+                  {/* UIUX-B1 (2026-07-06): CardHeader/CardTitle deleted —
+                      this is the sole card on the screen and the nav tab
+                      already names the job (same reasoning M1.11 used to
+                      drop the hint CardMeta). */}
                   <ul className="flex flex-col" role="list">
                     {myItems.map((it) => {
                       const sku = skuById.get(it.skuId);
@@ -389,34 +380,10 @@ export function ConfirmPage() {
                       );
                     })}
                   </ul>
-                  {storeConfirmed ? null : (
-                    // M3.49 (2026-05-23): dropped the `!getTg()` check.
-                    // The in-page PageMainButton in Shell now drives
-                    // the canonical CTA, but this inline button is the
-                    // fallback when no sheet is involved and the user
-                    // wants a visible CTA inline (e.g., per-store
-                    // section). Both render — the inline button is
-                    // contextually clearer here.
-                    <div className="px-4 py-3">
-                      <Button
-                        block
-                        disabled={!allDecided || confirmStore.isPending}
-                        loading={confirmStore.isPending}
-                        onClick={() => {
-                          if (storeConfirmed || confirmStore.isPending) return;
-                          confirmStore.mutate({
-                            runId: activeRun.id,
-                            storeId: currentStoreId,
-                          });
-                        }}
-                      >
-                        {i18n.t('confirm.confirmStore', {
-                          decided: decidedCount,
-                          total: myItems.length,
-                        })}
-                      </Button>
-                    </div>
-                  )}
+                  {/* UIUX-B1 (2026-07-06): inline Confirm-Store button
+                      deleted — it duplicated the PageMainButton's exact
+                      mutation and doubled the double-tap surface the
+                      storeConfirmed guard exists to fight. One CTA. */}
                 </Card>
               )}
             </>

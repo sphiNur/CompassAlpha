@@ -328,7 +328,7 @@ function titleForSection(
   }
 }
 
-/** Home tab inside Operations — picks one of the 3 day-to-day tools. */
+/** Home tab inside Operations — the operations tool menu (text-only rows: one repeated icon carried no information — UIUX-B1). */
 function OperationsHome({
   onPick,
   isSuperAdmin,
@@ -340,25 +340,21 @@ function OperationsHome({
   return (
     <ul className="mx-4 mt-2 mb-6 flex flex-col gap-2" role="list">
       <SectionRow
-        icon={<IconActivity size={20} />}
         label={i18n.t('admin.subsection.activity')}
         hint={i18n.t('admin.subsection.activityHint')}
         onClick={() => onPick('activity')}
       />
       <SectionRow
-        icon={<IconActivity size={20} />}
         label={i18n.t('admin.subsection.history')}
         hint={i18n.t('admin.subsection.historyHint')}
         onClick={() => onPick('history')}
       />
       <SectionRow
-        icon={<IconActivity size={20} />}
         label={i18n.t('admin.subsection.audit')}
         hint={i18n.t('admin.subsection.auditHint')}
         onClick={() => onPick('adminAudit')}
       />
       <SectionRow
-        icon={<IconActivity size={20} />}
         label={i18n.t('admin.subsection.priceReport')}
         hint={i18n.t('admin.subsection.priceReportHint')}
         onClick={() => onPick('priceReport')}
@@ -367,7 +363,6 @@ function OperationsHome({
           date range / supplier / store. Lives next to Price Report
           because both are read-only analytical views. */}
       <SectionRow
-        icon={<IconActivity size={20} />}
         label={i18n.t('admin.subsection.finance')}
         hint={i18n.t('admin.subsection.financeHint')}
         onClick={() => onPick('finance')}

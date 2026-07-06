@@ -213,9 +213,9 @@ export function StoresHomeSection({
                         {count} {count === 1 ? 'member' : 'members'}
                       </span>
                     </span>
-                    <Badge tone={st.isActive ? 'success' : 'muted'}>
-                      {st.isActive ? 'active' : 'paused'}
-                    </Badge>
+                    {/* UIUX-B1: active is the silent default; only the
+                        exception (paused) earns ink. */}
+                    {!st.isActive ? <Badge tone="muted">paused</Badge> : null}
                   </button>
                 </li>
               );
