@@ -239,6 +239,13 @@
       "when": 1779926400000,
       "tag": "0033_run_store_split_price_payment",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1780012800000,
+      "tag": "0034_run_amend_permission",
+      "breakpoints": true
     }
   ]
 }
