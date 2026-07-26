@@ -24,6 +24,7 @@ import {
   RemoveRunExpenseInputSchema,
   RevisePurchaseInputSchema,
   RunAttachSessionsInputSchema,
+  RunCancelInputSchema,
   RunCreateInputSchema,
   RunPreviewInputSchema,
   RunReasonOnlyInputSchema,
@@ -1215,11 +1216,21 @@ export const runRouter = router({
           }
         }
 
+        // 2026-07-26: both queries were unordered. Postgres returns heap
+        // order, and every UPDATE (i.e. every recorded purchase) writes a
+        // new tuple at the heap tail — so a row the purchaser just saved
+        // jumped to the bottom of the list. Combined with the RunPage's
+        // 6s poll, the whole list could reshuffle under the user's thumb
+        // mid-market. Ordering by the read model's PK columns is stable,
+        // free (both are index scans on (run_id, sku_id[, store_id])),
+        // and gives the client a deterministic base to re-sort on top of.
         const items = await tx.query.runItemsV.findMany({
           where: (i, { eq: eq2 }) => eq2(i.runId, run.id),
+          orderBy: (i, { asc }) => asc(i.skuId),
         });
         const splits = await tx.query.runItemStoresV.findMany({
           where: (i, { eq: eq2 }) => eq2(i.runId, run.id),
+          orderBy: (i, { asc }) => [asc(i.skuId), asc(i.storeId)],
         });
 
         // Per-(store, sku) demand from the underlying sessions. The
@@ -2111,7 +2122,13 @@ export const runRouter = router({
    * physical reality. The receiving stores can flag any issues via the
    * normal confirm/issue flow against the next run.
    */
-  cancel: authedProcedure.input(RunReasonOnlyInputSchema).mutation(async ({ ctx, input }) => {
+  // 2026-07-26: was RunReasonOnlyInputSchema (`reason: min(1)`), which
+  // rejected the empty reason the FE deliberately sends — every
+  // no-reason cancel died as BAD_REQUEST behind a generic error toast.
+  // The domain has allowed an empty reason since M1.7; only the edge
+  // schema disagreed. See RunCancelInputSchema for why the shared
+  // schema was NOT relaxed instead.
+  cancel: authedProcedure.input(RunCancelInputSchema).mutation(async ({ ctx, input }) => {
     return ctx.withOrg(async (tx) => {
       const run = await loadRun(tx, ctx.session!.orgId, input.runId);
       await assertRunStoreVisible(tx, ctx, run);

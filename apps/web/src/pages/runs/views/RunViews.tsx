@@ -18,7 +18,7 @@ import type { ReactNode } from 'react';
 import { Card, NumberInput, SectionLabel } from '@compass/ui';
 import { useAuthStore } from '../../../stores/authStore';
 import { formatMoney, formatQty } from '../../../lib/format';
-import { useI18n } from '../../../hooks/useI18n';
+import { useI18n, useUnitLabel } from '../../../hooks/useI18n';
 import { toDisplayPrice, fromDisplayPrice } from '../lib/priceMath';
 import type { ActiveRun } from '../types';
 
@@ -56,6 +56,12 @@ export function PerStoreView({
   skusByStore: Map<string, Array<{ skuId: string; qty: string }>>;
 }) {
   const i18n = useI18n();
+  // 2026-07-26: these views rendered the RAW canonical unit code
+  // ("kg" / "bunch" / "pcs") while the preview card next door rendered
+  // the localized label ("公斤" / "把"), so the same SKU read two
+  // different ways on two screens. useUnitLabel has existed since
+  // M3.34 and falls back to the raw string for exotic free-text units.
+  const unitLabel = useUnitLabel();
   const orderedStores = useMemo(() => {
     const ids = [...skusByStore.keys()];
     ids.sort((a, b) => {
@@ -117,7 +123,7 @@ export function PerStoreView({
                             ) : null}
                           </span>
                           <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
-                            {e.qty} {e.unit}
+                            {e.qty} {unitLabel(e.unit)}
                           </span>
                         </li>
                       ))}
@@ -171,7 +177,7 @@ export function PerStoreView({
                       </span>
                       <span className="min-w-0 flex-1 truncate text-body">{skuName}</span>
                       <span className="shrink-0 font-mono text-body tabular-nums text-[var(--c-fg-muted)]">
-                        {formatQty(r.qty)} {r.sku?.unit ?? ''}
+                        {formatQty(r.qty)} {unitLabel(r.sku?.unit)}
                       </span>
                     </li>
                   );
@@ -262,6 +268,8 @@ export function PerVendorView({
     extra: { name: string; qty: string; unit: string; note?: string },
   ) => void;
 }) {
+  // See PerStoreView — raw unit codes leaked here too.
+  const unitLabel = useUnitLabel();
   // M3.52: run-level multi-store flag. PurchaseRow uses this to decide
   // whether to render per-store chips on EVERY row of the run (true
   // when the run spans ≥2 stores) — without this single-store-demand
@@ -370,7 +378,7 @@ export function PerVendorView({
                       >
                         <span className="min-w-0 flex-1 truncate text-body">{skuName}</span>
                         <span className="shrink-0 font-mono text-body tabular-nums text-[var(--c-fg-muted)]">
-                          {formatQty(r.plannedQty)} {r.sku?.unit ?? ''}
+                          {formatQty(r.plannedQty)} {unitLabel(r.sku?.unit)}
                         </span>
                       </li>
                     );
@@ -394,7 +402,7 @@ export function PerVendorView({
                       key={r.skuId}
                       item={runItem}
                       skuName={skuName}
-                      unit={r.sku?.unit ?? ''}
+                      unit={unitLabel(r.sku?.unit)}
                       step={r.sku?.step ?? '0.1'}
                       demand={demandBySku.get(r.skuId) ?? []}
                       storeById={storeById}
@@ -484,6 +492,8 @@ export function RunExtrasCard({
     extra: { name: string; qty: string; unit: string; note?: string },
   ) => void;
 }) {
+  // See PerStoreView — raw unit codes leaked here too.
+  const unitLabel = useUnitLabel();
   const resolveStoreName = (id: string) => storeById.get(id)?.name ?? id.slice(0, 8);
   const storeIds = [
     ...new Set([
@@ -561,7 +571,7 @@ export function RunExtrasCard({
                           ) : null}
                         </span>
                         <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
-                          {e.qty} {e.unit}
+                          {e.qty} {unitLabel(e.unit)}
                         </span>
                       </>
                     );
@@ -800,6 +810,8 @@ export function PerCategoryView({
   onUndoPurchase: (skuId: string, skuName: string) => void;
   onOpenAdvancedPurchase: (item: ActiveRun['items'][number]) => void;
 }) {
+  // See PerStoreView — raw unit codes leaked here too.
+  const unitLabel = useUnitLabel();
   const demandStoreIds = useMemo(() => {
     const ids = new Set<string>();
     for (const d of run.perStoreDemand ?? []) ids.add(d.storeId);
@@ -868,7 +880,7 @@ export function PerCategoryView({
                   key={item.skuId}
                   item={item}
                   skuName={skuName}
-                  unit={sku?.unit ?? ''}
+                  unit={unitLabel(sku?.unit)}
                   step={sku?.step ?? '0.1'}
                   demand={demandBySku.get(item.skuId) ?? []}
                   storeById={storeById}
@@ -1033,6 +1045,8 @@ export function PurchaseRow({
   // typed 147500 in raw mode, toggles K mode → handleSave would
   // re-multiply ×1000 → 147,500,000).
   const prevThousandsRef = useRef(priceInThousands);
+  /** Enter on qty jumps here; Enter here saves. See the input grid below. */
+  const priceRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (prevThousandsRef.current === priceInThousands) return;
     setPrice((p) => {
@@ -1267,16 +1281,44 @@ export function PurchaseRow({
             sees their math without an extra row. */}
         <div className="mt-1.5 grid items-center gap-1.5"
              style={{ gridTemplateColumns: '4.5rem auto minmax(0,1fr) auto minmax(0,auto) auto auto' }}>
+          {/* 2026-07-26 keyboard pass. Both fields arrive PRE-FILLED
+              (qty from planned, price from the last observed market
+              price), so a tap that appends instead of replacing is the
+              common failure — hence select-on-focus. Enter chains
+              qty → price → save so a changed price is three actions
+              (tap, type, Enter) instead of tap-type-reach-for-✓. */}
           <NumberInput
             step={step}
             value={qty}
             onChange={(e) => setQty(e.target.value)}
+            onFocus={(e) => e.currentTarget.select()}
+            enterKeyHint="next"
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return;
+              e.preventDefault();
+              priceRef.current?.focus();
+            }}
             aria-label="actual qty"
           />
           <span className="text-body text-[var(--c-fg-muted)]">×</span>
           <NumberInput
+            ref={priceRef}
+            // Without a step, type="number" defaults to 1 — which makes
+            // every fractional value a stepMismatch. In thousands mode
+            // the displayed price IS fractional (147500 → "147.5"), so
+            // the field sat :invalid the whole time it was in use.
+            // "any" is the honest constraint: a market price has no
+            // fixed granularity. qty keeps the SKU's real step.
+            step="any"
             value={price}
             onChange={(e) => setPrice(e.target.value)}
+            onFocus={(e) => e.currentTarget.select()}
+            enterKeyHint="done"
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return;
+              e.preventDefault();
+              if (canSave) handleSave();
+            }}
             placeholder="price"
             aria-label="unit price"
           />
@@ -1313,7 +1355,21 @@ export function PurchaseRow({
                 : i18n.t('run.label.paymentTransfer')
             }
             className={
-              'flex h-8 min-w-8 items-center justify-center rounded-[var(--r-pill)] px-2 text-body active:opacity-70 ' +
+              // 2026-07-26: was h-8 min-w-8 (32px). This row is tapped
+              // hundreds of times per trip, one-handed, standing, often
+              // with wet hands — 32px is below every touch-target
+              // guideline and the misses cost a wrong record.
+              //
+              // Height is free, width is not: this button sits in a grid
+              // (see gridTemplateColumns above) whose only flexible track
+              // is the PRICE input, and `auto` tracks are maximized before
+              // `fr` tracks expand — so every pixel taken here comes
+              // straight out of the field the purchaser has to read back
+              // to the vendor. Hence 44px tall but only 36px wide
+              // (min-w-9), which costs the price field ~5px instead of
+              // ~21px. Do not widen this to min-w-11 without also giving
+              // column 3 a floor.
+              'flex h-11 min-w-9 items-center justify-center rounded-[var(--r-pill)] px-2 text-body active:opacity-70 ' +
               (paymentMethod === 'transfer'
                 ? 'bg-[var(--c-action)]/15 text-[var(--c-action)] ring-1 ring-[var(--c-action)]'
                 : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
@@ -1328,7 +1384,11 @@ export function PurchaseRow({
             aria-busy={saving || undefined}
             aria-label="save purchase"
             className={
-              'flex h-8 min-w-8 items-center justify-center rounded-[var(--r-pill)] px-2.5 text-body font-semibold ' +
+              // 44px tall / 36px wide — see the payment-method button
+              // above for why the width is deliberately not 44. This is
+              // the control that commits money, so it is the last one
+              // that should be hard to hit.
+              'flex h-11 min-w-9 items-center justify-center rounded-[var(--r-pill)] px-2.5 text-body font-semibold ' +
               (canSave
                 ? 'bg-[var(--c-action)] text-[var(--c-action-fg)] active:opacity-80'
                 : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')

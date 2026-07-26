@@ -31,7 +31,7 @@ import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { shareLink } from '../../../lib/telegramLinks';
 import { formatMoney, formatQty } from '../../../lib/format';
-import { useI18n } from '../../../hooks/useI18n';
+import { useI18n, useUnitLabel } from '../../../hooks/useI18n';
 import { haptic, getTg } from '../../../hooks/useTelegram';
 import {
   PerStoreView,
@@ -41,7 +41,17 @@ import {
   ExpensesCard,
   PurchaseRow,
 } from '../views/RunViews';
-import type { ActiveRun } from '../types';
+import type {
+  ActiveRun,
+  PreviewLine,
+  PreviewStoreGroup,
+  PreviewSupplierGroup,
+} from '../types';
+import {
+  buildStoreText as buildStoreTextPure,
+  buildSupplierText as buildSupplierTextPure,
+} from '../lib/shareText';
+import type { ShareTextDeps } from '../lib/shareText';
 
 // formatQty / formatMoney are imported from `../lib/format` —
 // thousand-separator + max-1-decimal display rule applied everywhere.
@@ -143,6 +153,12 @@ export function ActiveRunPanel({
   onRemoveExpense: (expenseId: string, label: string) => void;
   onOpenExpense: () => void;
 }) {
+  // 2026-07-26: the AGGREGATE view — the default screen during an
+  // actual run — passed the raw canonical unit code down to
+  // PurchaseRow, so the same SKU read "bunch" here and "把" on the
+  // preview card. Same fix as the three grouped views in RunViews.
+  const unitLabel = useUnitLabel();
+
   const involvedStoreIds = useMemo(() => {
     const ids = new Set<string>();
     for (const sp of run.splits) ids.add(sp.storeId);
@@ -397,7 +413,7 @@ export function ActiveRunPanel({
                   key={it.skuId}
                   item={it}
                   skuName={skuName}
-                  unit={sku?.unit ?? ''}
+                  unit={unitLabel(sku?.unit)}
                   step={sku?.step ?? '0.1'}
                   demand={demandBySku.get(it.skuId) ?? []}
                   storeById={storeById}
@@ -587,36 +603,9 @@ export function ActiveRunPanel({
 type PreviewView = 'overall' | 'byStore' | 'bySupplier';
 const PREVIEW_VIEW_STORAGE_KEY = 'compass.runPreview.view';
 
-type PreviewLine = {
-  id: string;
-  kind: 'sku' | 'extra';
-  skuId: string | null;
-  name: string;
-  qty: string;
-  unit: string;
-  unitPrice: string | null;
-  total: number | null;
-  note?: string;
-};
-
-type PreviewStoreGroup = {
-  storeId: string;
-  storeName: string;
-  items: PreviewLine[];
-  total: number;
-  unknownCount: number;
-  legacyNote?: string;
-};
-
-type PreviewSupplierGroup = {
-  supplierId: string | null;
-  supplierName: string;
-  contactPhone: string | null;
-  contactTg: string | null;
-  stores: PreviewStoreGroup[];
-  total: number;
-  unknownCount: number;
-};
+// PreviewLine / PreviewStoreGroup / PreviewSupplierGroup moved to
+// ../types (2026-07-26) so runs/lib/shareText.ts can consume them
+// without importing this component.
 
 function previewLineTotal(qty: string, unitPrice: string | null): number | null {
   if (!unitPrice) return null;
@@ -970,41 +959,39 @@ export function PreviewSummaryCard({
     toast.error(i18n.t('common.error'));
   };
 
-  const formatLineForText = (line: PreviewLine): string => {
-    const sku = line.skuId ? skuById.get(line.skuId) : null;
-    const name = sku ? currentSkuName(sku) : line.name;
-    const unit = sku ? currentUnitLabel(sku.unit) : line.unit;
-    const qtyUnit = `${formatQty(line.qty)} ${unit}`.trim();
-    const prefix = line.kind === 'extra' ? `${i18n.t('order.extras.label')} · ` : '';
-    const note = line.note ? `\n  ${line.note}` : '';
-    return `${prefix}${name}: ${qtyUnit}${note}`;
+  /**
+   * Catalog + i18n bindings handed to the pure builders in
+   * `../lib/shareText`. The builders themselves live outside this
+   * component so the vendor-vs-store disclosure boundary is unit-tested
+   * (see runs/lib/__tests__/shareText.test.ts) rather than eyeballed.
+   */
+  // Deliberately NOT memoized. `useI18n` returns a memo keyed on the
+  // resolved locale, so its identity does NOT change when a lazily
+  // imported catalog chunk lands — `useEnsureLocale` re-renders via a
+  // state counter instead. A useMemo here would therefore freeze
+  // extrasLabel / notesLabel at whatever the fallback catalog said on
+  // first render (English, if the user's locale chunk was still in
+  // flight on bazaar LTE) for the entire mount. Rebuilding this small
+  // object each render restores the live read the old inline closures
+  // had; the builders themselves only run on a button tap.
+  const shareDeps: ShareTextDeps = {
+    resolveSku: (skuId: string) => {
+      const sku = skuById.get(skuId);
+      if (!sku) return null;
+      return { name: currentSkuName(sku), unit: currentUnitLabel(sku.unit) };
+    },
+    extrasLabel: i18n.t('order.extras.label'),
+    notesLabel: i18n.t('order.notes.label'),
   };
 
-  const buildStoreText = (group: PreviewStoreGroup): string => {
-    const lines = [group.storeName, ''];
-    for (const line of group.items) lines.push(formatLineForText(line));
-    if (group.legacyNote) {
-      lines.push('', `${i18n.t('order.notes.label')}:`, group.legacyNote);
-    }
-    return lines.join('\n').trim();
-  };
+  const buildStoreText = (group: PreviewStoreGroup): string =>
+    buildStoreTextPure(group, shareDeps);
 
-  const buildSupplierText = (group: PreviewSupplierGroup): string => {
-    const lines = [group.supplierName, ''];
-    for (const store of group.stores) {
-      lines.push(store.storeName);
-      for (const line of store.items) lines.push(formatLineForText(line));
-      if (store.legacyNote) {
-        lines.push(`${i18n.t('order.notes.label')}:`, store.legacyNote);
-      }
-      lines.push('');
-    }
-    return lines.join('\n').trim();
-  };
+  const buildSupplierText = (group: PreviewSupplierGroup): string =>
+    buildSupplierTextPure(group, shareDeps);
 
-  const buildAllVendorsText = (): string => {
-    return bySupplier.map(buildSupplierText).filter(Boolean).join('\n\n');
-  };
+  const buildAllVendorsText = (): string =>
+    bySupplier.map((b) => buildSupplierText(b)).filter(Boolean).join('\n\n');
 
   const isCollapsed = (key: string): boolean => collapsedGroups[key] === true;
   const toggleGroup = (key: string): void => {
@@ -1132,7 +1119,11 @@ export function PreviewSummaryCard({
               <li key={it.skuId} className="flex justify-between text-body">
                 <span>{sku ? productName(sku) : it.skuId.slice(0, 8)}</span>
                 <span className="font-mono tabular-nums">
-                  {formatQty(it.qty)} {sku?.unit}
+                  {/* currentUnitLabel, not the raw code — the sibling
+                      by-store / by-supplier tabs of THIS SAME CARD have
+                      always localized it, so "kg" here vs "公斤" one tab
+                      over was the same item reading two ways. */}
+                  {formatQty(it.qty)} {currentUnitLabel(sku?.unit)}
                 </span>
               </li>
             );

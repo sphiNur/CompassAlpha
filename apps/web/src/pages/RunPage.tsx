@@ -202,8 +202,12 @@ export function RunPage() {
     // M3.41 (2026-05-21): purchaser-added items survive flaky bazaar
     // LTE just like regular purchases.
     'run.addPurchaserItem': async (entry) => {
+      // 2026-07-26: replay with the SAME key the first attempt used —
+      // see the mutation's onMutate. Without this a lost response
+      // recorded the off-catalog purchase twice.
       await utils.client.run.addPurchaserItem.mutate(
         entry.input as Parameters<typeof utils.client.run.addPurchaserItem.mutate>[0],
+        entry.idempotencyKey ? { context: { idempotencyKey: entry.idempotencyKey } } : undefined,
       );
       void utils.run.get.invalidate();
       void utils.run.list.invalidate();
@@ -212,6 +216,7 @@ export function RunPage() {
     'run.addExpense': async (entry) => {
       await utils.client.run.addExpense.mutate(
         entry.input as Parameters<typeof utils.client.run.addExpense.mutate>[0],
+        entry.idempotencyKey ? { context: { idempotencyKey: entry.idempotencyKey } } : undefined,
       );
       void utils.run.get.invalidate();
       void utils.run.list.invalidate();
@@ -263,16 +268,34 @@ export function RunPage() {
   // success/offline-queue pattern so the bazaar UX (flaky LTE) survives
   // a network drop mid-add. Idempotent at the API layer via
   // X-Idempotency-Key so replays don't double-buy.
+  // 2026-07-26: both of these enqueue to the offline outbox on a network
+  // error, but neither minted a STABLE idempotency key — so the replay
+  // sent a fresh one and the server's 24h dedupe cache never matched.
+  // A committed-but-lost response (the iOS "Load failed" case) therefore
+  // recorded the off-catalog purchase or the expense TWICE. Same shape as
+  // purchaseIdemCtx below; safe to share one ref per mutation because the
+  // add-item sheet's submit is gated on isPending (see the MainButton
+  // guard), so two concurrent calls of the same mutation can't interleave.
+  const addItemIdemCtx = useRef<{ idempotencyKey?: string }>({}).current;
+  const addExpenseIdemCtx = useRef<{ idempotencyKey?: string }>({}).current;
+
   const addPurchaserItem = trpc.run.addPurchaserItem.useMutation({
+    trpc: { context: addItemIdemCtx },
+    onMutate: () => {
+      const idempotencyKey = newIdempotencyKey();
+      addItemIdemCtx.idempotencyKey = idempotencyKey;
+      return { idempotencyKey };
+    },
     onSuccess: () => {
       invalidateRunQuietly(true);
       setAddItemDraft(null);
       haptic('success');
       toast.success(i18n.t('run.toast.itemAdded'));
     },
-    onError: (err, vars) => {
+    onError: (err, vars, ctx) => {
       if (isLikelyNetworkError(err)) {
-        void offline.enqueue('run.addPurchaserItem', vars);
+        const key = (ctx as { idempotencyKey?: string } | undefined)?.idempotencyKey;
+        void offline.enqueue('run.addPurchaserItem', vars, key);
         setAddItemDraft(null);
         toast.info(i18n.t('run.toast.purchaseSavedOffline'));
       } else {
@@ -284,15 +307,22 @@ export function RunPage() {
   // optimistic + offline-queue pattern as the SKU-item path so the
   // bazaar UX is consistent across modes.
   const addExpense = trpc.run.addExpense.useMutation({
+    trpc: { context: addExpenseIdemCtx },
+    onMutate: () => {
+      const idempotencyKey = newIdempotencyKey();
+      addExpenseIdemCtx.idempotencyKey = idempotencyKey;
+      return { idempotencyKey };
+    },
     onSuccess: () => {
       invalidateRunQuietly(true);
       setAddItemDraft(null);
       haptic('success');
       toast.success(i18n.t('run.toast.expenseAdded'));
     },
-    onError: (err, vars) => {
+    onError: (err, vars, ctx) => {
       if (isLikelyNetworkError(err)) {
-        void offline.enqueue('run.addExpense', vars);
+        const key = (ctx as { idempotencyKey?: string } | undefined)?.idempotencyKey;
+        void offline.enqueue('run.addExpense', vars, key);
         setAddItemDraft(null);
         toast.info(i18n.t('run.toast.purchaseSavedOffline'));
       } else {
@@ -1577,6 +1607,15 @@ export function RunPage() {
               qty: d.qty,
             })),
             supplierBySku: runDetailQuery.data.supplierBySku ?? {},
+            // 2026-07-26: was missing, so every row of an EXISTING
+            // planned run rendered "待询价" — the preview's price
+            // fallback chain is lastPurchasePriceBySku → supplier
+            // estimatedUnitPrice → null, and the middle link is dead
+            // (sku_supplier_links.default_price / last_seen_price have
+            // no writer anywhere in the repo, so estimatedUnitPrice is
+            // always null in production). The no-run-yet mount got this
+            // straight from run.preview; only this adapter dropped it.
+            lastPurchasePriceBySku: runDetailQuery.data.lastPriceBySku ?? {},
             sessionNotesByStore: runDetailQuery.data.sessionNotesByStore,
             sessionExtrasByStore: runDetailQuery.data.sessionExtrasByStore,
           }}

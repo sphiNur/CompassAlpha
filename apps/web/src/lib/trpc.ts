@@ -137,6 +137,25 @@ const IDEMPOTENT_MUTATIONS = new Set<string>([
   'run.finish',
   'sales.record',
   'order.submit',
+  // 2026-07-26: all three are already declared `idempotentMutation`
+  // server-side, but the middleware short-circuits on "no key = no
+  // dedupe" — with the client never sending the header, the cache was
+  // dead code for them.
+  //
+  // Membership here alone only buys the authFetch 401-refresh retry
+  // (that path re-issues the SAME init, so the key survives). Surviving
+  // a LOST RESPONSE additionally needs a stable key threaded through
+  // op.context, which addPurchaserItem / addExpense now do (RunPage's
+  // addItemIdemCtx / addExpenseIdemCtx + the outbox replay). Without
+  // that, `genKey()` below mints a fresh key per attempt and the replay
+  // never matches.
+  //
+  // attachSessions has no offline-replay path, so the 401 retry is the
+  // whole of its benefit — which is still worth having, since a double
+  // attach would pull other stores' orders into a run twice.
+  'run.addPurchaserItem',
+  'run.addExpense',
+  'run.attachSessions',
 ]);
 
 function genKey(): string {

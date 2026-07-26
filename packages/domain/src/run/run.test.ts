@@ -428,6 +428,36 @@ describe('run.decide', () => {
     void s;
   });
 
+  // The reason being OPTIONAL is a deliberate product decision (M1.7:
+  // most cancels are misclicks, and hard-requiring a reason just breeds
+  // "asdf"). Pinned here because the tRPC edge schema disagreed with
+  // this for months — `RunReasonOnlyInputSchema.min(1)` bounced every
+  // no-reason cancel as BAD_REQUEST, so the behaviour below was
+  // unreachable in production. See RunCancelInputSchema in contracts.
+  test('CancelRun accepts an empty reason and stores it as null', () => {
+    const s = planAndPurchase();
+    const evs = decideRun(s, { type: 'CancelRun', reason: '', actor: purchaser() }, clock);
+    expect(evs).toHaveLength(1);
+    expect(evs[0]!.type).toBe('RunCancelled');
+    expect((evs[0]! as { payload: { reason: string | null } }).payload.reason).toBeNull();
+  });
+
+  test('CancelRun normalizes a whitespace-only reason to null', () => {
+    const s = planAndPurchase();
+    const evs = decideRun(s, { type: 'CancelRun', reason: '   ', actor: purchaser() }, clock);
+    expect((evs[0]! as { payload: { reason: string | null } }).payload.reason).toBeNull();
+  });
+
+  test('CancelRun keeps a real reason verbatim after trimming', () => {
+    const s = planAndPurchase();
+    const evs = decideRun(
+      s,
+      { type: 'CancelRun', reason: '  市场关门了  ', actor: purchaser() },
+      clock,
+    );
+    expect((evs[0]! as { payload: { reason: string | null } }).payload.reason).toBe('市场关门了');
+  });
+
   test('CancelRun blocked after finished', () => {
     let s = planAndPurchase();
     s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
