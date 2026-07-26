@@ -591,7 +591,6 @@ export const en = {
   'run.view.perStore': 'Per store',
   'run.view.perVendor': 'Per vendor',
   // Plan-time preview views (M1.5).
-  'run.previewView.overall': 'Overall',
   'run.previewView.byStore': 'By store',
   'run.previewView.bySupplier': 'By vendor',
   'run.previewSupplier.unassigned': 'Unassigned vendor',
@@ -615,6 +614,13 @@ export const en = {
   'run.preview.unknownPrices': '{n, plural, =1 {1 no reference price} other {{n} no reference prices}}',
   'run.preview.expand': 'Expand',
   'run.preview.collapse': 'Collapse',
+  'run.view.perCategory': 'Per category',
+  'run.view.uncategorized': 'Uncategorized',
+  'run.preview.estimateTitle': 'Estimate',
+  'run.preview.coverage': 'Priced {known}/{total} · at least {money}',
+  'run.preview.noSupplierCount': 'No stall: {n}',
+  'run.purchase.pricingUniform': 'Uniform price / payment',
+  'run.purchase.pricingPerStore': 'Per-store price / payment',
   // Manual supplier assignment from preview (M1.6 #1).
   'run.previewSupplier.changeVendor': 'Change vendor',
   'run.previewSupplier.pickVendorTitle': 'Pick a vendor',

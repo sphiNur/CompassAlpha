@@ -850,12 +850,13 @@ export function PerCategoryView({
         categoryId,
         name:
           categoryId === '__uncategorized__'
-            ? '未分类'
+            ? // 2026-07-26: was a hard-coded Chinese literal.
+              i18n.t('run.view.uncategorized')
             : productName(categoryById.get(categoryId) ?? { names: { zh: categoryId.slice(0, 8) } }),
         items,
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [categoryById, productName, run.items, skuById]);
+  }, [categoryById, i18n, productName, run.items, skuById]);
 
   return (
     <div className="flex flex-col gap-2">

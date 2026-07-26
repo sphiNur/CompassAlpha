@@ -52,6 +52,7 @@ import {
   buildSupplierText as buildSupplierTextPure,
 } from '../lib/shareText';
 import type { ShareTextDeps } from '../lib/shareText';
+import { computePreviewStats } from '../lib/previewStats';
 
 // formatQty / formatMoney are imported from `../lib/format` —
 // thousand-separator + max-1-decimal display rule applied everywhere.
@@ -323,7 +324,10 @@ export function ActiveRunPanel({
                   setViewModePersist(viewMode === 'perCategory' ? 'aggregate' : 'perCategory')
                 }
               >
-                按类型
+                {/* 2026-07-26: was a hard-coded Chinese literal, so
+                    ru/uz/en operators saw 按类型 in an otherwise
+                    translated chip bar. */}
+                {i18n.t('run.view.perCategory')}
               </Chip>
             ) : null}
           </ChipBar>
@@ -603,7 +607,24 @@ export function ActiveRunPanel({
  * Persists view choice in localStorage so the operator's preference
  * survives page navigation.
  */
-type PreviewView = 'overall' | 'byStore' | 'bySupplier';
+/**
+ * 2026-07-26: dropped the third 'overall' tab.
+ *
+ * It rendered `plannedItems.slice(0, 8)` as name + qty — no price, no
+ * total, no store, no stall, no sort, no tap target, and (since M1.11)
+ * not even a "+N more". Every number in it was a strict SUBSET of the
+ * by-store tab, which shows the same SKUs split per store PLUS unit
+ * price, line total, per-store total and the extras. And it was the
+ * DEFAULT, so the first thing anyone saw was the least informative of
+ * the three.
+ *
+ * What was worth building is not a third way to slice the list — it is
+ * the run-wide facts (what will this cost, what is missing) — so those
+ * moved into a header that renders above whichever view is active. Same
+ * call the team already made in M3.28 when it removed the "aggregate"
+ * chip from the in-run view.
+ */
+type PreviewView = 'byStore' | 'bySupplier';
 const PREVIEW_VIEW_STORAGE_KEY = 'compass.runPreview.view';
 
 // PreviewLine / PreviewStoreGroup / PreviewSupplierGroup moved to
@@ -677,9 +698,25 @@ export function PreviewSummaryCard({
   toast: ReturnType<typeof useToast>;
 }) {
   const [view, setView] = useState<PreviewView>(() => {
-    if (typeof window === 'undefined') return 'overall';
-    const v = window.localStorage.getItem(PREVIEW_VIEW_STORAGE_KEY);
-    return v === 'byStore' || v === 'bySupplier' ? v : 'overall';
+    if (typeof window !== 'undefined') {
+      const v = window.localStorage.getItem(PREVIEW_VIEW_STORAGE_KEY);
+      // The whitelist already excluded 'overall', so a stored value from
+      // before that tab was removed falls through to the default below —
+      // no migration needed.
+      if (v === 'byStore' || v === 'bySupplier') return v;
+    }
+    // Adaptive, NOT hard-coded to bySupplier. That view is built purely
+    // from preview.supplierBySku, which the server fills only from
+    // `sku_supplier_links WHERE is_preferred` — and the sole writer of
+    // that table is run.setSkuPreferredSupplier, one SKU at a time, by
+    // hand. An org that has never done that assignment would land on a
+    // single "unassigned" bucket: worse than the tab we just deleted,
+    // with the fallback gone. So default there only once it will
+    // actually have structure.
+    const planned = preview.plannedItems;
+    if (planned.length === 0) return 'byStore';
+    const assigned = planned.filter((it) => preview.supplierBySku[it.skuId]).length;
+    return assigned / planned.length >= 0.5 ? 'bySupplier' : 'byStore';
   });
   // M1.6 #1: when set, the VendorPickerSheet is open for this skuId.
   const [vendorPickerFor, setVendorPickerFor] = useState<string | null>(null);
@@ -892,6 +929,25 @@ export function PreviewSummaryCard({
       });
   }, [byStore, i18n, preview.supplierBySku]);
 
+  /**
+   * Run-wide facts for the header. Derived from the CLIENT byStore memo,
+   * deliberately not from the server's `preview.perStoreBudgets`: that is
+   * built from order_items_v alone, so it cannot see `extrasJson`, while
+   * `addPreviewLine` counts extras as unpriced. The two disagree about
+   * the same store today — one of them had to win, and only the client
+   * number matches what is rendered directly underneath it.
+   *
+   * Counts are of DISTINCT items, not of rows: a SKU three stores want
+   * is one thing to buy, and "无摊位 3" meaning one SKU across three
+   * stores would be a lie. Extras key on name+unit, the same merge rule
+   * the vendor share-text uses.
+   */
+  const previewStats = useMemo(
+    () =>
+      computePreviewStats(byStore, (skuId) => Boolean(preview.supplierBySku[skuId])),
+    [byStore, preview.supplierBySku],
+  );
+
   const groupMoneyMeta = (total: number, unknownCount: number): string => {
     const parts = [
       `${i18n.t('run.preview.groupTotal')} ${formatMoney(total)} ${currency}`,
@@ -1061,10 +1117,11 @@ export function PreviewSummaryCard({
         <Badge>{i18n.t('run.label.sessionsCount', { n: preview.sessions.length })}</Badge>
       </CardHeader>
       {/* Segmented control — sticky horizontal pill bar, same visual
-          language as ScopeTab in MemberPermissionsSheet. Three taps
-          here, all instant (no async work — all data is in `preview`). */}
+          language as ScopeTab in MemberPermissionsSheet. Two taps here
+          (was three until 'overall' was dropped — see PreviewView), both
+          instant: all the data is already in `preview`. */}
       <div className="flex gap-1 px-3 pb-2 pt-1">
-        {(['overall', 'byStore', 'bySupplier'] as const).map((v) => (
+        {(['byStore', 'bySupplier'] as const).map((v) => (
           <button
             key={v}
             type="button"
@@ -1077,61 +1134,82 @@ export function PreviewSummaryCard({
             }
           >
             {i18n.t(
-              v === 'overall'
-                ? 'run.previewView.overall'
-                : v === 'byStore'
-                  ? 'run.previewView.byStore'
-                  : 'run.previewView.bySupplier',
+              v === 'byStore' ? 'run.previewView.byStore' : 'run.previewView.bySupplier',
             )}
           </button>
         ))}
       </div>
 
-      {preview.perStoreBudgets?.length ? (
+      {/* Run-wide header. Renders above BOTH views on purpose — "what
+          will this cost" and "what is missing" are facts about the whole
+          list, not a third way to group it, so burying them behind a tab
+          nobody had a reason to open is what made the old 'overall' tab
+          worthless. Same reasoning the per-store block already used: it
+          was never gated on `view` either. */}
+      {byStore.length > 0 ? (
         <div className="border-t border-[var(--c-divider)] px-3 py-2">
-          <div className="mb-1 text-label font-semibold text-[var(--c-fg-muted)]">
-            分店预算
+          <div className="mb-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <SectionLabel padded={false}>
+              {i18n.t('run.preview.estimateTitle')}
+            </SectionLabel>
+            {/* Coverage, NOT a spend estimate. Both the server and the
+                client drop unpriced lines from the sum entirely, and run
+                expenses (transport, porters, market fees) do not exist
+                until the run is finished — so this number is
+                systematically low. It says "at least", never "≈", and
+                must never read as "cash to bring". */}
+            <span className="text-label text-[var(--c-fg-muted)]">
+              {i18n.t('run.preview.coverage', {
+                known: previewStats.known,
+                total: previewStats.total,
+                money: formatMoney(previewStats.knownTotal, currency),
+              })}
+            </span>
           </div>
+
+          {/* Exceptions. "No stall" is tappable because there IS a fix
+              path — the by-stall view buckets them under "unassigned",
+              where tapping a SKU name opens the vendor picker. Nobody
+              could find that before. "No reference price" is a plain
+              count: there is no view that isolates those yet, and a chip
+              that goes nowhere is worse than a number. */}
+          {previewStats.noSupplier > 0 || previewStats.total > previewStats.known ? (
+            <div className="mb-1.5 flex flex-wrap gap-1.5">
+              {previewStats.noSupplier > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setView('bySupplier')}
+                  className="press rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2 py-1 text-label text-[var(--c-warning)] ring-hairline"
+                >
+                  {i18n.t('run.preview.noSupplierCount', { n: previewStats.noSupplier })}
+                </button>
+              ) : null}
+              {previewStats.total > previewStats.known ? (
+                <span className="rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2 py-1 text-label text-[var(--c-warning)]">
+                  {i18n.t('run.preview.unknownPrices', {
+                    n: previewStats.total - previewStats.known,
+                  })}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+
           <div className="flex flex-col gap-1">
-            {preview.perStoreBudgets.map((b) => (
-              <div key={b.storeId} className="flex items-baseline gap-2 text-body-sm">
-                <span className="min-w-0 flex-1 truncate">{b.storeName}</span>
-                {b.unknownPriceCount > 0 ? (
+            {byStore.map((g) => (
+              <div key={g.storeId} className="flex items-baseline gap-2 text-body-sm">
+                <span className="min-w-0 flex-1 truncate">{g.storeName}</span>
+                {g.unknownCount > 0 ? (
                   <span className="shrink-0 text-label text-[var(--c-warning)]">
-                    {b.unknownPriceCount} 个无参考价
+                    {i18n.t('run.preview.unknownPrices', { n: g.unknownCount })}
                   </span>
                 ) : null}
                 <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg)]">
-                  {formatMoney(b.estimatedTotal)} {currency}
+                  {formatMoney(g.total, currency)}
                 </span>
               </div>
             ))}
           </div>
         </div>
-      ) : null}
-
-      {view === 'overall' ? (
-        /* M1.11: dropped the "+N more" tail row. We still slice to 8
-            so the summary card stays bounded, but the teaser line just
-            advertised content the user can't expand here — they'll see
-            the full list once the run is created. */
-        <ul className="flex flex-col gap-1 px-3 py-2">
-          {preview.plannedItems.slice(0, 8).map((it) => {
-            const sku = skuById.get(it.skuId);
-            return (
-              <li key={it.skuId} className="flex justify-between text-body">
-                <span>{sku ? productName(sku) : it.skuId.slice(0, 8)}</span>
-                <span className="font-mono tabular-nums">
-                  {/* currentUnitLabel, not the raw code — the sibling
-                      by-store / by-supplier tabs of THIS SAME CARD have
-                      always localized it, so "kg" here vs "公斤" one tab
-                      over was the same item reading two ways. */}
-                  {formatQty(it.qty)} {currentUnitLabel(sku?.unit)}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
       ) : null}
 
       {view === 'byStore' ? (
