@@ -13,7 +13,6 @@
  * Props-driven; orchestrator state and mutations stay in RunPage.
  */
 import { useCallback, useMemo, useState } from 'react';
-import type { KeyboardEvent } from 'react';
 import {
   Badge,
   Button,
@@ -53,6 +52,7 @@ import {
 } from '../lib/shareText';
 import type { ShareTextDeps } from '../lib/shareText';
 import { computePreviewStats } from '../lib/previewStats';
+import { isOpen, pruneOpen, toggleOpen } from '../lib/accordion';
 
 // formatQty / formatMoney are imported from `../lib/format` —
 // thousand-separator + max-1-decimal display rule applied everywhere.
@@ -720,7 +720,18 @@ export function PreviewSummaryCard({
   });
   // M1.6 #1: when set, the VendorPickerSheet is open for this skuId.
   const [vendorPickerFor, setVendorPickerFor] = useState<string | null>(null);
-  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  /**
+   * Single-open accordion, one open key per view (2026-07-26).
+   *
+   * Was `Record<string, boolean>` initialised to `{}` with
+   * `isCollapsed = map[key] === true` — i.e. everything EXPANDED by
+   * default and any number open at once, the exact opposite of what was
+   * asked for. Two separate keys rather than one shared one so flipping
+   * byStore ↔ bySupplier and back does not lose your place, and so a
+   * store id can never be the "open" key of the supplier view.
+   */
+  const [openStore, setOpenStore] = useState<string | null>(null);
+  const [openSupplier, setOpenSupplier] = useState<string | null>(null);
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   const currentUnitLabel = useCallback(
     (unit: string | null | undefined): string => {
@@ -1067,15 +1078,15 @@ export function PreviewSummaryCard({
   const buildAllVendorsText = (): string =>
     bySupplier.map((b) => buildSupplierText(b)).filter(Boolean).join('\n\n');
 
-  const isCollapsed = (key: string): boolean => collapsedGroups[key] === true;
-  const toggleGroup = (key: string): void => {
-    setCollapsedGroups((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
-  const handleGroupHeaderKeyDown = (e: KeyboardEvent<HTMLDivElement>, key: string): void => {
-    if (e.key !== 'Enter' && e.key !== ' ') return;
-    e.preventDefault();
-    toggleGroup(key);
-  };
+  // Pruned during render rather than in an effect: the derived value is
+  // correct on the first frame, and the next toggle overwrites the stale
+  // state anyway. Groups really do come and go under the user — the 6s
+  // poll re-derives both memos, and reassigning a SKU's stall can empty
+  // a bucket outright.
+  const storeKeys = byStore.map((g) => g.storeId);
+  const supplierKeys = bySupplier.map((b) => b.supplierId ?? '__unassigned__');
+  const openStoreKey = pruneOpen(openStore, storeKeys);
+  const openSupplierKey = pruneOpen(openSupplier, supplierKeys);
 
   const renderLine = (
     line: PreviewLine,
@@ -1237,47 +1248,54 @@ export function PreviewSummaryCard({
       {view === 'byStore' ? (
         <div className="px-2 py-2">
           {byStore.map((g) => {
-            const collapsed = isCollapsed(`store:${g.storeId}`);
+            const open = isOpen(openStoreKey, g.storeId, byStore.length);
             const storeNote = g.legacyNote;
-            const groupKey = `store:${g.storeId}`;
+            const panelId = `preview-store-${g.storeId}`;
             return (
             <section
               key={g.storeId}
               className="border-t border-[var(--c-divider)] py-2 first:border-t-0 first:pt-0 last:pb-0"
             >
-              <div
-                role="button"
-                tabIndex={0}
-                aria-expanded={!collapsed}
-                onClick={() => toggleGroup(groupKey)}
-                onKeyDown={(e) => handleGroupHeaderKeyDown(e, groupKey)}
-                className="press mb-1.5 flex cursor-pointer items-start gap-2 rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-2 py-1.5 outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]"
-              >
-                <span className="mt-0.5 shrink-0 font-mono text-label text-[var(--c-fg-muted)]">
-                  {collapsed ? '+' : '-'}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-body font-semibold text-[var(--c-fg)]">
-                    {g.storeName}
-                  </div>
-                  <div className="mt-0.5 truncate font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
-                    {groupMoneyMeta(g.total, g.unknownCount)}
-                  </div>
-                </div>
+              {/* The toggle is a real <button> and the send action is its
+                  SIBLING. It used to be a role="button" div with the send
+                  <button> nested inside it — invalid HTML, a screen-reader
+                  trap, and the reason that send handler needed a
+                  stopPropagation() to avoid also toggling the group. */}
+              <div className="mb-1.5 flex items-start gap-2 rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-2 py-1.5">
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  aria-controls={panelId}
+                  aria-label={i18n.t(open ? 'run.preview.collapse' : 'run.preview.expand')}
+                  onClick={() => setOpenStore((o) => toggleOpen(o, g.storeId))}
+                  className="press flex min-w-0 flex-1 items-start gap-2 rounded-[var(--r-utility)] text-left outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]"
+                >
+                  <span aria-hidden className="mt-0.5 shrink-0 font-mono text-label text-[var(--c-fg-muted)]">
+                    {open ? '▾' : '▸'}
+                  </span>
+                  <span className="block min-w-0 flex-1">
+                    <span className="block truncate text-body font-semibold text-[var(--c-fg)]">
+                      {g.storeName}
+                    </span>
+                    <span className="mt-0.5 block truncate font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
+                      {groupMoneyMeta(g.total, g.unknownCount)}
+                    </span>
+                  </span>
+                </button>
                 {/* M2.1: Button component (was raw <button>). */}
                 <Button
                   variant="pearl"
                   size="sm"
                   className="shrink-0"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void shareOrCopyText(buildStoreText(g));
-                  }}
+                  onClick={() => void shareOrCopyText(buildStoreText(g))}
                 >
                   {i18n.t('run.previewShare.sendList')}
                 </Button>
               </div>
-              <ul className={collapsed ? 'hidden' : 'overflow-hidden rounded-[var(--r-utility)]'}>
+              <ul
+                id={panelId}
+                className={open ? 'overflow-hidden rounded-[var(--r-utility)]' : 'hidden'}
+              >
                 {g.items.map((line, idx) => renderLine(line, idx))}
               </ul>
               {/* M1.8 / M3.16-C: surface the staff's "其他物品" requests
@@ -1286,7 +1304,7 @@ export function PreviewSummaryCard({
                   underneath in italic. The purchaser scrolls the by-
                   store view at the market and needs requests right
                   next to the SKU list. */}
-              {!collapsed && storeNote ? (
+              {open && storeNote ? (
                 <div className="mt-1.5 rounded-[var(--r-utility)] bg-[var(--c-warn-bg)] px-2 py-1.5">
                   <SectionLabel padded={false}>
                     {i18n.t('order.extras.label')}
@@ -1323,37 +1341,41 @@ export function PreviewSummaryCard({
           ) : null}
           {bySupplier.map((b) => {
             const supplierKey = b.supplierId ?? '__unassigned__';
-            const groupKey = `supplier:${supplierKey}`;
-            const collapsed = isCollapsed(groupKey);
+            const open = isOpen(openSupplierKey, supplierKey, bySupplier.length);
+            const panelId = `preview-supplier-${supplierKey}`;
             return (
             <section
               key={supplierKey}
               className="border-t border-[var(--c-divider)] py-2 first:border-t-0 first:pt-0 last:pb-0"
             >
-              <div
-                role="button"
-                tabIndex={0}
-                aria-expanded={!collapsed}
-                onClick={() => toggleGroup(groupKey)}
-                onKeyDown={(e) => handleGroupHeaderKeyDown(e, groupKey)}
-                className="press mb-1.5 flex cursor-pointer items-start gap-2 rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-2 py-1.5 outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]"
-              >
-                <span className="mt-0.5 shrink-0 font-mono text-label text-[var(--c-fg-muted)]">
-                  {collapsed ? '+' : '-'}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-body font-semibold text-[var(--c-fg)]">
-                    {b.supplierId ? `🛒 ${b.supplierName}` : `❓ ${b.supplierName}`}
-                  </div>
-                  {b.contactTg ? (
-                    <div className="text-label text-[var(--c-fg-muted)]">@{b.contactTg}</div>
-                  ) : b.contactPhone ? (
-                    <div className="text-label text-[var(--c-fg-muted)]">{b.contactPhone}</div>
-                  ) : null}
-                  <div className="mt-0.5 truncate font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
-                    {groupMoneyMeta(b.total, b.unknownCount)}
-                  </div>
-                </div>
+              {/* Real <button> + sibling send action — see the by-store
+                  header for why the nested-button version had to go. */}
+              <div className="mb-1.5 flex items-start gap-2 rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-2 py-1.5">
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  aria-controls={panelId}
+                  aria-label={i18n.t(open ? 'run.preview.collapse' : 'run.preview.expand')}
+                  onClick={() => setOpenSupplier((o) => toggleOpen(o, supplierKey))}
+                  className="press flex min-w-0 flex-1 items-start gap-2 rounded-[var(--r-utility)] text-left outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]"
+                >
+                  <span aria-hidden className="mt-0.5 shrink-0 font-mono text-label text-[var(--c-fg-muted)]">
+                    {open ? '▾' : '▸'}
+                  </span>
+                  <span className="block min-w-0 flex-1">
+                    <span className="block truncate text-body font-semibold text-[var(--c-fg)]">
+                      {b.supplierId ? `🛒 ${b.supplierName}` : `❓ ${b.supplierName}`}
+                    </span>
+                    {b.contactTg ? (
+                      <span className="block text-label text-[var(--c-fg-muted)]">@{b.contactTg}</span>
+                    ) : b.contactPhone ? (
+                      <span className="block text-label text-[var(--c-fg-muted)]">{b.contactPhone}</span>
+                    ) : null}
+                    <span className="mt-0.5 block truncate font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
+                      {groupMoneyMeta(b.total, b.unknownCount)}
+                    </span>
+                  </span>
+                </button>
                 {/* M3.26 (2026-05-18): copy button is now visible for the
                     unassigned bucket too — items to buy individually
                     deserve their own paste — and switched to the same
@@ -1363,15 +1385,12 @@ export function PreviewSummaryCard({
                   variant="pearl"
                   size="sm"
                   className="shrink-0"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void shareOrCopyText(buildSupplierText(b));
-                  }}
+                  onClick={() => void shareOrCopyText(buildSupplierText(b))}
                 >
                   {i18n.t('run.previewShare.sendList')}
                 </Button>
               </div>
-              {!collapsed && !b.supplierId ? (
+              {open && !b.supplierId ? (
                 <p className="mb-1.5 px-2 text-label text-[var(--c-fg-muted)]">
                   {i18n.t('run.previewSupplier.unassignedHint')}
                 </p>
@@ -1385,7 +1404,7 @@ export function PreviewSummaryCard({
                   Now each store is a small section header with its
                   items underneath — matches the copy template format
                   the user asked for in the previous round. */}
-              <div className={collapsed ? 'hidden' : 'flex flex-col gap-2'}>
+              <div id={panelId} className={open ? 'flex flex-col gap-2' : 'hidden'}>
                 {b.stores.map((store) => (
                   <div key={store.storeId}>
                     <div className="mb-1 flex items-baseline gap-2 px-2 text-label font-semibold text-[var(--c-fg-muted)]">
