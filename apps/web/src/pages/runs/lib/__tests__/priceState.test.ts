@@ -11,6 +11,7 @@ import {
   priceRowState,
   priceAgeDays,
   isStalePrice,
+  collapsedCommit,
   countCarriedOver,
   STALE_PRICE_DAYS,
 } from '../priceState';
@@ -56,6 +57,56 @@ describe('priceRowState', () => {
     // purchased / unavailable rows have their own presentation.
     expect(priceRowState({ status: 'purchased', lastPrice: '7000', expanded: false })).toBe('editing');
     expect(priceRowState({ status: 'unavailable', lastPrice: null, expanded: false })).toBe('editing');
+  });
+});
+
+describe('collapsedCommit', () => {
+  const base = { status: 'pending', saving: false, plannedQty: '10', lastPrice: '70000' };
+
+  it('commits exactly the figures the collapsed row prints', () => {
+    expect(collapsedCommit(base)).toEqual({ qty: '10', price: '70000' });
+  });
+
+  it('refuses a row with no reference price', () => {
+    // The regression. The ✓ used to arm itself from component state
+    // seeded at mount, so after purchased -> revised -> undone a row
+    // printing "?" in its money column still rendered a live blue ✓ and
+    // committed the revised figures — numbers shown nowhere on screen.
+    expect(collapsedCommit({ ...base, lastPrice: null })).toBeNull();
+    expect(collapsedCommit({ ...base, lastPrice: '' })).toBeNull();
+    expect(collapsedCommit({ ...base, lastPrice: '0' })).toBeNull();
+    expect(collapsedCommit({ ...base, lastPrice: 'abc' })).toBeNull();
+  });
+
+  it('refuses a row with no usable planned quantity', () => {
+    expect(collapsedCommit({ ...base, plannedQty: '0' })).toBeNull();
+    expect(collapsedCommit({ ...base, plannedQty: null })).toBeNull();
+  });
+
+  it('refuses while a save is already in flight', () => {
+    expect(collapsedCommit({ ...base, saving: true })).toBeNull();
+  });
+
+  it('refuses on any row that is not pending', () => {
+    for (const status of ['purchased', 'unavailable']) {
+      expect(collapsedCommit({ ...base, status })).toBeNull();
+    }
+  });
+
+  it('depends only on the props the row renders, never on edit state', () => {
+    // Whatever the component happens to hold locally cannot reach the
+    // payload — that is the whole point of deriving it here.
+    const a = collapsedCommit({ ...base, plannedQty: '10', lastPrice: '70000' });
+    const b = collapsedCommit({ ...base, plannedQty: '10', lastPrice: '70000' });
+    expect(a).toEqual(b);
+    expect(a).toEqual({ qty: '10', price: '70000' });
+  });
+
+  it('passes decimals through untouched', () => {
+    expect(collapsedCommit({ ...base, plannedQty: '1.250' })).toEqual({
+      qty: '1.250',
+      price: '70000',
+    });
   });
 });
 

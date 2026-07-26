@@ -84,6 +84,37 @@ export function priceRowState(args: {
   return Number(args.lastPrice) > 0 ? 'carried' : 'unpriced';
 }
 
+/**
+ * What the collapsed row's one-tap ✓ commits — derived from exactly the
+ * values that row PRINTS, and null when it must not commit at all.
+ *
+ * This exists because the row's qty/price live in component state that
+ * is seeded once at mount, while the collapsed row renders `lastPrice`
+ * and `plannedQty` from props. Those two drifted apart on a real path:
+ * pending → purchased → revised in the sheet → undone leaves the row
+ * pending again, printing the reference price, while the state still
+ * held the revised figures. The ✓ then committed numbers that appeared
+ * nowhere on the screen — 999,000 x 7 under a row reading 70,000 x 10 —
+ * and, once the ✓ was rendered for unpriced rows too, armed itself on a
+ * row whose money column literally showed "?".
+ *
+ * Deriving the payload here rather than from state makes "the ✓ commits
+ * what the row shows" true by construction instead of by an effect
+ * happening to fire in the right order.
+ */
+export function collapsedCommit(args: {
+  status: string;
+  saving: boolean;
+  plannedQty: string | null | undefined;
+  lastPrice: string | null | undefined;
+}): { qty: string; price: string } | null {
+  if (args.status !== 'pending' || args.saving) return null;
+  const qty = String(args.plannedQty ?? '').trim();
+  const price = String(args.lastPrice ?? '').trim();
+  if (!(Number(qty) > 0) || !(Number(price) > 0)) return null;
+  return { qty, price };
+}
+
 /** Whole days between an ISO timestamp and `now`; null when unknown. */
 export function priceAgeDays(observedAt: string | null | undefined, now: number): number | null {
   if (!observedAt) return null;
