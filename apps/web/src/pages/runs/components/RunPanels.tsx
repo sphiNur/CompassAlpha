@@ -1194,13 +1194,20 @@ export function PreviewSummaryCard({
                 <button
                   type="button"
                   onClick={() => chooseView('bySupplier')}
-                  className="press rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2 py-1 text-label text-[var(--c-warning)] ring-hairline"
+                  // 36px, not the 44px the purchase row's ✓ gets. Measured
+                  // at 22px on a real instance, which is too small to hit
+                  // reliably one-handed — but this is a once-per-run
+                  // navigation shortcut whose worst failure is "tap again",
+                  // not a control that commits money hundreds of times a
+                  // trip. The static counter beside it matches so the row
+                  // reads as one band.
+                  className="press flex min-h-9 items-center rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2.5 text-label text-[var(--c-warning)] ring-hairline"
                 >
                   {i18n.t('run.preview.noSupplierCount', { n: previewStats.noSupplier })}
                 </button>
               ) : null}
               {previewStats.total > previewStats.known ? (
-                <span className="rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2 py-1 text-label text-[var(--c-warning)]">
+                <span className="flex min-h-9 items-center rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2.5 text-label text-[var(--c-warning)]">
                   {i18n.t('run.preview.unknownPrices', {
                     n: previewStats.total - previewStats.known,
                   })}
