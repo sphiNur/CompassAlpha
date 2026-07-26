@@ -714,7 +714,7 @@ export const uz = {
   'run.action.allocateAcrossStores': "Do'konlar bo'yicha taqsimlash",
   'run.action.actualQtyAriaLabel': 'haqiqiy miqdor',
   'run.action.unitPriceAriaLabel': 'birlik narxi',
-  'run.action.savePurchaseAriaLabel': 'xaridni saqlash',
+  'run.action.savePurchaseAriaLabel': 'Xaridni saqlash: {name}',
   'run.main.awaitingItems': "Avval barcha mahsulotni qayta ishlang",
   'run.main.awaitingConfirms': "Do'konlarning tasdiqi kutilmoqda",
   'run.confirm.startPurchase.title': 'Xaridni boshlaymizmi?',

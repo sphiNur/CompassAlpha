@@ -698,7 +698,7 @@ export const ru = {
   'run.action.allocateAcrossStores': 'Распределить по магазинам',
   'run.action.actualQtyAriaLabel': 'фактическое количество',
   'run.action.unitPriceAriaLabel': 'цена за единицу',
-  'run.action.savePurchaseAriaLabel': 'сохранить покупку',
+  'run.action.savePurchaseAriaLabel': 'Сохранить покупку: {name}',
   'run.main.awaitingItems': 'Сначала обработайте все позиции',
   'run.main.awaitingConfirms': 'Ждём подтверждение магазинов',
   'run.confirm.startPurchase.title': 'Начать закупку?',

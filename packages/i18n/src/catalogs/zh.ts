@@ -650,7 +650,7 @@ export const zh = {
   'run.action.allocateAcrossStores': '按门店分配',
   'run.action.actualQtyAriaLabel': '实际数量',
   'run.action.unitPriceAriaLabel': '单价',
-  'run.action.savePurchaseAriaLabel': '保存采购',
+  'run.action.savePurchaseAriaLabel': '保存采购：{name}',
   'run.main.awaitingItems': '请先处理完所有商品',
   'run.main.awaitingConfirms': '等待门店验收',
   'run.confirm.startPurchase.title': '确认开始采购?',

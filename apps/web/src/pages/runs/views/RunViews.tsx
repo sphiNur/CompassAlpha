@@ -17,7 +17,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Card, NumberInput, SectionLabel } from '@compass/ui';
 import { useAuthStore } from '../../../stores/authStore';
-import { formatMoney, formatQty } from '../../../lib/format';
+import { formatMoney, formatQty, toQtyInput } from '../../../lib/format';
 import { useI18n, useUnitLabel } from '../../../hooks/useI18n';
 import { toDisplayPrice, fromDisplayPrice } from '../lib/priceMath';
 import { priceRowState, priceAgeDays, isStalePrice } from '../lib/priceState';
@@ -1029,12 +1029,18 @@ export function PurchaseRow({
   onUndoPurchase: (skuId: string, skuName: string) => void;
   onOpenAdvanced: (item: ActiveRun['items'][number]) => void;
 }) {
-  // Default qty = planned (formatted to 1 decimal). Price defaults to
-  // the last observed market price for this SKU — saves typing when
-  // prices are unchanged from the previous run, which is the common
-  // case for staple goods. User can overwrite.
+  // Default qty = planned. Price defaults to the last observed market
+  // price for this SKU — saves typing when prices are unchanged from
+  // the previous run, which is the common case for staple goods. User
+  // can overwrite.
+  //
+  // toQtyInput, NOT formatQty: this value is editable and handleSave
+  // sends it to the API verbatim. formatQty rounds to one decimal and
+  // adds thousand separators, which turned a planned 1.25 kg into a
+  // saved 1.3 kg and made every qty >= 1000 unsaveable. See the doc
+  // comment on toQtyInput.
   const [qty, setQty] = useState<string>(
-    formatQty(item.purchasedQty ?? item.plannedQty),
+    toQtyInput(item.purchasedQty ?? item.plannedQty),
   );
   // M3.36: `price` holds the DISPLAYED value (divided by 1000 when in
   // thousands mode). Stays as the user typed it through intermediate
@@ -1059,7 +1065,7 @@ export function PurchaseRow({
   // pending and they may have typed something we shouldn't clobber).
   useEffect(() => {
     if (item.status === 'pending') return;
-    setQty(formatQty(item.purchasedQty ?? item.plannedQty));
+    setQty(toQtyInput(item.purchasedQty ?? item.plannedQty));
     setPrice(toDisplayPrice(item.unitPrice ?? lastPrice ?? '', priceInThousands));
   }, [item.status, item.purchasedQty, item.unitPrice, item.plannedQty, lastPrice, priceInThousands]);
 
@@ -1297,7 +1303,12 @@ export function PurchaseRow({
           <button
             type="button"
             onClick={() => setPriceEditorOpen(true)}
-            aria-label={skuName}
+            // No aria-label. It used to be {skuName}, which REPLACED the
+            // accessible name computed from the contents — so a screen
+            // reader announced the product and dropped the quantity, the
+            // carried price, the staleness and the "fill in a price"
+            // pill. The button's own text is already the right name; the
+            // accordion headers in RunPanels.tsx carry the same reasoning.
             className="press flex min-h-11 min-w-0 flex-1 items-baseline gap-2 rounded-[var(--r-utility)] text-left outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]"
           >
             <span className="shrink-0 truncate text-body font-semibold">{skuName}</span>
@@ -1314,7 +1325,7 @@ export function PurchaseRow({
                       : formatMoney(lastPrice)}
                   </span>
                   {stale && ageDays !== null ? (
-                    <span className="text-[var(--c-warning)]">
+                    <span className="text-[var(--c-warning-fg)]">
                       {' · '}
                       {i18n.t('run.price.daysAgo', { n: ageDays })}
                     </span>
@@ -1323,7 +1334,7 @@ export function PurchaseRow({
               ) : null}
             </span>
             {!carried ? (
-              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-2 py-0.5 text-label font-semibold text-[var(--c-warning)] ring-hairline">
+              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-2 py-0.5 text-label font-semibold text-[var(--c-warning-fg)] ring-hairline">
                 {i18n.t('run.price.fillIn')}
               </span>
             ) : null}
@@ -1341,7 +1352,7 @@ export function PurchaseRow({
               onClick={handleSave}
               disabled={!canSave}
               aria-busy={saving || undefined}
-              aria-label="save purchase"
+              aria-label={i18n.t('run.action.savePurchaseAriaLabel', { name: skuName })}
               className={
                 'flex h-11 min-w-9 shrink-0 items-center justify-center rounded-[var(--r-pill)] px-2.5 text-body font-semibold ' +
                 (canSave
@@ -1427,7 +1438,7 @@ export function PurchaseRow({
               e.preventDefault();
               priceRef.current?.focus();
             }}
-            aria-label="actual qty"
+            aria-label={i18n.t('run.action.actualQtyAriaLabel')}
           />
           <span className="text-body text-[var(--c-fg-muted)]">×</span>
           <NumberInput
@@ -1448,8 +1459,8 @@ export function PurchaseRow({
               e.preventDefault();
               if (canSave) handleSave();
             }}
-            placeholder="price"
-            aria-label="unit price"
+            placeholder={i18n.t('run.action.unitPriceAriaLabel')}
+            aria-label={i18n.t('run.action.unitPriceAriaLabel')}
           />
           <span className="text-label text-[var(--c-fg-muted)]">
             {priceInThousands ? `K·${currency}` : currency}
@@ -1511,7 +1522,7 @@ export function PurchaseRow({
             onClick={handleSave}
             disabled={!canSave}
             aria-busy={saving || undefined}
-            aria-label="save purchase"
+            aria-label={i18n.t('run.action.savePurchaseAriaLabel', { name: skuName })}
             className={
               // 44px tall / 36px wide — see the payment-method button
               // above for why the width is deliberately not 44. This is
@@ -1557,7 +1568,7 @@ export function PurchaseRow({
             <span
               aria-label={i18n.t('run.label.addedByPurchaser')}
               title={i18n.t('run.label.addedByPurchaser')}
-              className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warning)]/15 px-1.5 py-0.5 text-label text-[var(--c-warning)] ring-1 ring-[var(--c-warning)]"
+              className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warning)]/15 px-1.5 py-0.5 text-label text-[var(--c-warning-fg)] ring-1 ring-[var(--c-warning)]"
             >
               +
             </span>

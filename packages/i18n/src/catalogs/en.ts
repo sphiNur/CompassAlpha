@@ -770,7 +770,7 @@ export const en = {
   'run.action.allocateAcrossStores': 'Allocate across stores',
   'run.action.actualQtyAriaLabel': 'actual qty',
   'run.action.unitPriceAriaLabel': 'unit price',
-  'run.action.savePurchaseAriaLabel': 'save purchase',
+  'run.action.savePurchaseAriaLabel': 'Save purchase: {name}',
   'run.main.awaitingItems': 'Process every item first',
   'run.main.awaitingConfirms': 'Awaiting store confirmations',
   'run.confirm.startPurchase.title': 'Start purchasing?',
