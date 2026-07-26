@@ -22,6 +22,7 @@ import { formatMoney, formatQty } from '../../../lib/format';
 import { matchesNameLike, normalizeQuery } from '../../../lib/searchMatch';
 import type { useI18n } from '../../../hooks/useI18n';
 import { toDisplayPrice, fromDisplayPrice } from '../lib/priceMath';
+import { evenSplitQty } from '../lib/splitQty';
 
 /**
  * M3.41 + M3.44 (2026-05-21 / 2026-05-22): draft state for the "+ add"
@@ -645,27 +646,12 @@ export function AddItemSheet({
   const evenSplit = (storeIds: string[], qtyStr: string) => {
     const next = new Map<string, string>();
     if (storeIds.length === 0) return next;
-    const q = Number(qtyStr);
-    if (!Number.isFinite(q) || q <= 0) {
-      // No qty yet — register each selected store with an empty
-      // value. canSubmit still gates on Number(actualQty) > 0 +
-      // splitMatches, so the user can't accidentally submit a $0
-      // expense via this branch.
-      for (const id of storeIds) next.set(id, '');
-      return next;
-    }
-    if (storeIds.length === 1) {
-      next.set(storeIds[0]!, qtyStr);
-      return next;
-    }
-    const base = Math.floor(q / storeIds.length);
-    let allocated = 0;
-    for (let i = 0; i < storeIds.length - 1; i++) {
-      next.set(storeIds[i]!, String(base));
-      allocated += base;
-    }
-    // Last store absorbs the remainder so the sum matches actualQty exactly.
-    next.set(storeIds[storeIds.length - 1]!, String(q - allocated));
+    // Was Math.floor(q / n) — integer division on a value that is
+    // almost never an integer, so a shared 1 x 30,000 cost across three
+    // stores became {0, 0, 1} and the whole amount landed on one store.
+    // See runs/lib/splitQty.ts. Blank-when-no-qty behaviour preserved:
+    // canSubmit still gates on Number(actualQty) > 0 + splitMatches.
+    for (const [id, qty] of evenSplitQty(storeIds, qtyStr)) next.set(id, qty);
     return next;
   };
 

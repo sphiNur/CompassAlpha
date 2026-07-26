@@ -21,6 +21,7 @@ import { formatMoney, formatQty, toQtyInput } from '../../../lib/format';
 import { useI18n, useUnitLabel } from '../../../hooks/useI18n';
 import { toDisplayPrice, fromDisplayPrice } from '../lib/priceMath';
 import { priceRowState, priceAgeDays, isStalePrice } from '../lib/priceState';
+import { proportionalSplitQty } from '../lib/splitQty';
 import type { ActiveRun } from '../types';
 
 /**
@@ -1124,35 +1125,8 @@ export function PurchaseRow({
    * last, and have the last store absorb whatever's left so the total
    * matches actualQty bit-perfectly.
    */
-  const computeProportionalSplits = (
-    actualQtyStr: string,
-  ): Array<{ storeId: string; qty: string }> | null => {
-    if (demand.length === 0) return null;
-    const actualQtyNum = Number(actualQtyStr);
-    if (!Number.isFinite(actualQtyNum) || actualQtyNum <= 0) return null;
-    const plannedTotal = demand.reduce((s, d) => s + Number(d.qty), 0);
-    if (plannedTotal <= 0) return null;
-    if (demand.length === 1) {
-      // Trivial single-store case — no proportional math needed.
-      return [{ storeId: demand[0]!.storeId, qty: actualQtyStr }];
-    }
-    const out: Array<{ storeId: string; qty: string }> = [];
-    let allocated = 0;
-    for (let i = 0; i < demand.length; i++) {
-      const d = demand[i]!;
-      let qtyStr: string;
-      if (i === demand.length - 1) {
-        // Last store absorbs rounding error so the sum is exact.
-        qtyStr = (actualQtyNum - allocated).toFixed(3);
-      } else {
-        const portion = (Number(d.qty) / plannedTotal) * actualQtyNum;
-        qtyStr = portion.toFixed(3);
-        allocated += Number(qtyStr);
-      }
-      out.push({ storeId: d.storeId, qty: qtyStr });
-    }
-    return out;
-  };
+  const computeProportionalSplits = (actualQtyStr: string) =>
+    proportionalSplitQty(demand, actualQtyStr);
 
   const handleSave = () => {
     if (item.status !== 'pending') return;
