@@ -416,21 +416,27 @@ export function RunPage() {
       }
     },
   });
+  /**
+   * True while the in-flight revisePurchase is a ROW-LEVEL payment flip
+   * rather than a sheet submit. A ref, not state, because onSuccess
+   * closes over the render in which mutate() was called.
+   */
+  const paymentFlipInFlight = useRef(false);
+
   const revisePurchase = trpc.run.revisePurchase.useMutation({
-    onSuccess: (_res, vars) => {
+    onSuccess: () => {
       invalidateRunQuietly();
-      // Close the sheet ONLY if this response belongs to the row the
-      // sheet is open on.
+      // A row-level flip opened no sheet, so it must not close one.
       //
       // This handler used to clear the draft unconditionally, which was
-      // right while the sheet was its only caller. The row-level
-      // payment toggle is a second caller that opens no modal, so on a
-      // slow link a purchaser who taps 💵 and then — seeing nothing
-      // happen — opens some row to edit it would have that sheet ripped
-      // away mid-keystroke when the flip landed, under a green "purchase
-      // updated" toast that reads as confirmation of what they had just
-      // typed and never sent.
-      setPurchaseDraft((cur) => (cur && cur.skuId !== vars.skuId ? cur : null));
+      // correct while the sheet was its only caller. The payment toggle
+      // is a second caller that opens no modal, so on a slow link a
+      // purchaser who taps 💵, sees nothing happen, and then opens a row
+      // to edit it would have that sheet torn away mid-keystroke when
+      // the flip landed — under a green "purchase updated" toast that
+      // reads as confirmation of what they had just typed and never
+      // sent.
+      if (!paymentFlipInFlight.current) setPurchaseDraft(null);
       haptic('success');
       toast.success(i18n.t('run.toast.purchaseRevised'));
     },
@@ -1862,6 +1868,7 @@ export function RunPage() {
               return;
             }
             setPaymentBusySkuId(item.skuId);
+            paymentFlipInFlight.current = true;
             revisePurchase.mutate(
               {
                 runId: activeRun.id,
@@ -1874,7 +1881,12 @@ export function RunPage() {
                 paymentMethod: next,
                 reason: i18n.t('run.reason.paymentMethodChanged'),
               },
-              { onSettled: () => setPaymentBusySkuId(null) },
+              {
+                onSettled: () => {
+                  setPaymentBusySkuId(null);
+                  paymentFlipInFlight.current = false;
+                },
+              },
             );
           }}
           onUnmark={(skuId, skuName) =>
