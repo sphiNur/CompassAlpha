@@ -64,71 +64,48 @@ export function buildStoreText(group: PreviewStoreGroup, deps: ShareTextDeps): s
 }
 
 /**
- * Vendor-facing list. Two deliberate differences from
- * `buildStoreText`, both of which were bugs before 2026-07-26:
+ * One stall's list, KEPT SPLIT BY STORE.
  *
- *   1. NO store names. This string is pasted into a market stall
- *      owner's chat. The previous version pushed every `storeName` as a
- *      section header, so every "send" handed an outside party our full
- *      shop roster plus which shop wants what.
- *   2. Quantities MERGED across stores. The vendor sells one pile —
- *      "tomatoes 11 kg", not three lines of 5 / 3 / 3 for them to add up
- *      at the scale.
+ * On 2026-07-26 this was changed to merge quantities across stores and
+ * drop the store names, reasoning that a market stall owner should not
+ * receive our shop roster. The operator reported that as a regression on
+ * 2026-07-27 and asked for the split back, so the split is the
+ * behaviour:
  *
- * Also drops the extras marker: "off-catalog" is internal vocabulary the
- * vendor has no context for. A tomato is a tomato.
+ *     savza abat
  *
- * Merging is quantity-only: EVERY distinct note survives. Dropping all
- * but the first was a real bug in the first cut of this function — two
- * stores asking for the same off-catalog item with conflicting
- * requirements ("chilled" vs "room temperature") collapsed to one line
- * carrying only the first, and the copied text was the only artifact
- * the purchaser carried into the market.
+ *     Eden Magic City
+ *     Pomidor: 7 kg
+ *     Piyoz: 9 kg
+ *
+ *     Eden Seoul
+ *     Piyoz: 5 kg
+ *
+ * Why the merge was the wrong call, now that the actual workflow is
+ * clear: this text is not only a price quote, it is the instruction for
+ * how the goods get divided when they arrive. Merging destroyed exactly
+ * the information the purchaser needs at the scale — "9 for one shop, 5
+ * for the other" — and the message is the artifact they carry into the
+ * market. Whatever a vendor learns about our shop names is a smaller
+ * cost than bagging the wrong quantities.
+ *
+ * Matches the on-screen accordion, which has always shown these
+ * per-store sections with their own subtotals. The send now says the
+ * same thing the screen does.
+ *
+ * Notes survive per store by construction — nothing merges, so the
+ * "chilled" / "room temperature" collision that the merged version had
+ * to dedupe around cannot arise.
  */
 export function buildSupplierText(group: PreviewSupplierGroup, deps: ShareTextDeps): string {
-  const merged = new Map<string, { name: string; unit: string; qty: number; notes: string[] }>();
-  for (const store of group.stores) {
-    for (const line of store.items) {
-      const { name, unit } = displayOf(line, deps);
-      // Extras carry no skuId, so key them on localized name + unit —
-      // two stores asking for the same off-catalog item still merge.
-      const key = line.skuId ?? `extra:${name}|${unit}`;
-      const qty = Number(line.qty);
-      const safeQty = Number.isFinite(qty) ? qty : 0;
-      const cur = merged.get(key);
-      if (cur) {
-        cur.qty += safeQty;
-        // Dedupe identical notes (the common case: both stores typed
-        // the same thing) but keep genuinely different ones.
-        if (line.note && !cur.notes.includes(line.note)) cur.notes.push(line.note);
-      } else {
-        merged.set(key, {
-          name,
-          unit,
-          qty: safeQty,
-          notes: line.note ? [line.note] : [],
-        });
-      }
-    }
-  }
-
   const lines = [group.supplierName, ''];
-  for (const item of merged.values()) {
-    // formatQty rounds to 1 decimal, which also absorbs the float drift
-    // from summing splits (0.1 + 0.2 reads as 0.3, not 0.30000000000000004).
-    const qtyUnit = `${formatQty(item.qty)} ${item.unit}`.trim();
-    const notes = item.notes.map((n) => `\n  ${n}`).join('');
-    lines.push(`${item.name}: ${qtyUnit}${notes}`);
+  for (const store of group.stores) {
+    lines.push(store.storeName);
+    for (const line of store.items) lines.push(formatLineForText(line, deps));
+    if (store.legacyNote) {
+      lines.push(`${deps.notesLabel}:`, store.legacyNote);
+    }
+    lines.push('');
   }
-
-  // legacyNote only ever lands on the "unassigned supplier" bucket (see
-  // the bySupplier memo in RunPanels), so a real vendor never sees these
-  // — but `sendAll` concatenates that bucket too. Keep the text, drop
-  // the store attribution.
-  const notes = group.stores.map((s) => s.legacyNote).filter((n): n is string => Boolean(n));
-  if (notes.length > 0) {
-    lines.push('', `${deps.notesLabel}:`, ...notes);
-  }
-
   return lines.join('\n').trim();
 }

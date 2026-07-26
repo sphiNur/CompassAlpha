@@ -1,26 +1,26 @@
 /**
- * Pins the store-vs-vendor disclosure boundary for the preview card's
- * "send" buttons.
+ * Pins what the preview card's "send" buttons actually put in a chat.
  *
- * Before 2026-07-26 `buildSupplierText` pushed every `storeName` as a
- * section header, so each send handed a market stall owner our full shop
- * roster and told them which shop wanted what. There is no DOM test
- * environment in apps/web, so this pure-function suite is the only thing
- * standing between that regression and a vendor's Telegram chat.
+ * There is no DOM test environment in apps/web, so this pure-function
+ * suite is the only thing standing between a formatting change and what
+ * lands in someone's Telegram. That is not hypothetical: the M3.45/M3.48
+ * vendor-language feature was silently reverted by a layout refactor
+ * with no test failing, which is why these builders were pulled out of
+ * component closures in the first place.
  *
- * HOW THIS SUITE IS BUILT, AND WHY
+ * `buildSupplierText` has been through one full reversal, and the
+ * history is worth keeping. On 2026-07-26 it was changed to merge
+ * quantities across stores and drop the store names, reasoning that a
+ * market stall owner should not receive our shop roster. The operator
+ * reported that as a regression the next day. The reasoning was wrong
+ * about what the message is FOR: it is not only a quote for the vendor,
+ * it is the instruction for how the goods get divided when they arrive,
+ * and merging destroyed exactly the part the purchaser needs while
+ * standing at the scale. It also disagreed with the on-screen accordion,
+ * which has always shown per-store sections with their own subtotals.
  *
- * The first cut of this file had a single `not.toContain` on a fixture
- * where all stores wanted the SAME sku — so every line merged and there
- * was nothing left to attribute. An implementation that re-attached a
- * store name only to lines with exactly ONE contributing store passed
- * all sixteen assertions. That is not a contrived shape: a vendor who
- * sells tomatoes to one shop and onions to another is the normal case.
- *
- * So: `expectNoStoreNames` runs at the end of EVERY buildSupplierText
- * case, store names are distinctive multi-character strings, and
- * `mixedVendor` deliberately combines a merging sku with two
- * single-store skus — the shape that escaped before.
+ * The per-store split is the required behaviour. These tests hold it
+ * there.
  */
 import { describe, it, expect } from 'bun:test';
 import { buildStoreText, buildSupplierText, formatLineForText } from '../shareText';
@@ -76,17 +76,6 @@ function supplier(stores: PreviewStoreGroup[]): PreviewSupplierGroup {
   };
 }
 
-/**
- * The boundary assertion. Call this on the output of EVERY
- * buildSupplierText case — a targeted leak only shows up on the fixture
- * shape the author didn't think of.
- */
-function expectNoStoreNames(text: string, group: PreviewSupplierGroup): void {
-  for (const s of group.stores) {
-    expect(text).not.toContain(s.storeName);
-  }
-}
-
 describe('formatLineForText', () => {
   it('uses the catalog name + localized unit when the SKU resolves', () => {
     expect(formatLineForText(line({ qty: '2' }), deps)).toBe('西红柿: 2 公斤');
@@ -136,152 +125,124 @@ describe('buildSupplierText', () => {
     store('s3', 'Eden-Seoul', [line({ id: 'c', qty: '3' })]),
   ]);
 
-  /**
-   * The shape that defeated the first version of this suite: one vendor,
-   * two stores, one sku that MERGES across both and two skus that each
-   * come from exactly one store. Any implementation that attributes
-   * "unambiguous" lines to their single contributing store leaks here.
-   */
-  const mixedVendor = supplier([
-    store('s1', 'Eden-Magic-City', [
-      line({ id: 'a', skuId: 'sku-tomato', qty: '5' }),
-      line({ id: 'b', skuId: 'sku-onion', qty: '2' }),
-    ]),
-    store('s2', 'Hotel-Uzbek', [
-      line({ id: 'c', skuId: 'sku-tomato', qty: '3' }),
-      line({ id: 'd', skuId: 'sku-carrot', qty: '1' }),
-    ]),
-  ]);
+  it('keeps each store as its own labelled section', () => {
+    expect(buildSupplierText(threeStores, deps)).toBe(
+      [
+        'savza abat',
+        '',
+        'Eden-Magic-City',
+        '西红柿: 5 公斤',
+        '',
+        'Hotel-Uzbek',
+        '西红柿: 3 公斤',
+        '',
+        'Eden-Seoul',
+        '西红柿: 3 公斤',
+      ].join('\n'),
+    );
+  });
 
-  it('does NOT leak store names when every line merges', () => {
+  it('does NOT merge the same SKU across stores', () => {
+    // 5 / 3 / 3 stay separate. A single "11 公斤" line would make the
+    // purchaser re-derive the split from another screen while standing
+    // at the scale with the vendor waiting.
     const text = buildSupplierText(threeStores, deps);
-    expectNoStoreNames(text, threeStores);
+    expect(text).not.toContain('11 公斤');
+    expect(text).toContain('西红柿: 5 公斤');
+    expect(text).toContain('西红柿: 3 公斤');
   });
 
-  it('does NOT leak store names when some lines come from a single store', () => {
-    const text = buildSupplierText(mixedVendor, deps);
-    expectNoStoreNames(text, mixedVendor);
-    // Exact output — a per-line store annotation would have to show up here.
-    expect(text).toBe('savza abat\n\n西红柿: 8 公斤\n洋葱: 2 公斤\n胡萝卜: 1 公斤');
-  });
-
-  it('merges the same SKU across stores into one line', () => {
+  it('names every store that contributes', () => {
     const text = buildSupplierText(threeStores, deps);
-    // The vendor sells one pile: 5 + 3 + 3 = 11, not three lines.
-    expect(text).toBe('savza abat\n\n西红柿: 11 公斤');
-    expectNoStoreNames(text, threeStores);
+    for (const s of threeStores.stores) expect(text).toContain(s.storeName);
   });
 
-  it('keeps distinct SKUs on separate lines', () => {
+  it('keeps distinct SKUs under the store that asked for them', () => {
     const g = supplier([
       store('s1', 'Eden-Magic-City', [line({ id: 'a', qty: '2' })]),
       store('s2', 'Hotel-Uzbek', [line({ id: 'b', skuId: 'sku-onion', qty: '4' })]),
     ]);
-    const text = buildSupplierText(g, deps);
-    expect(text).toContain('西红柿: 2 公斤');
-    expect(text).toContain('洋葱: 4 公斤');
-    expectNoStoreNames(text, g);
+    expect(buildSupplierText(g, deps)).toBe(
+      [
+        'savza abat',
+        '',
+        'Eden-Magic-City',
+        '西红柿: 2 公斤',
+        '',
+        'Hotel-Uzbek',
+        '洋葱: 4 公斤',
+      ].join('\n'),
+    );
   });
 
-  it('drops the extras marker — internal jargon the vendor has no context for', () => {
+  it('carries off-catalog extras with their own name and unit', () => {
     const g = supplier([
       store('s1', 'Eden-Magic-City', [
         line({ kind: 'extra', skuId: null, name: '面包', unit: '个', qty: '2' }),
       ]),
     ]);
-    const text = buildSupplierText(g, deps);
-    expect(text).not.toContain('其他物品');
-    expectNoStoreNames(text, g);
+    expect(buildSupplierText(g, deps)).toContain('面包: 2 个');
   });
 
-  it('merges off-catalog extras across stores by name + unit', () => {
-    const extra = (id: string, qty: string) =>
-      line({ id, kind: 'extra', skuId: null, name: '面包', unit: '个', qty });
-    const g = supplier([
-      store('s1', 'Eden-Magic-City', [extra('a', '2')]),
-      store('s2', 'Hotel-Uzbek', [extra('b', '3')]),
-    ]);
-    const text = buildSupplierText(g, deps);
-    expect(text).toBe('savza abat\n\n面包: 5 个');
-    expectNoStoreNames(text, g);
-  });
-
-  it('does not merge same-name extras that use different units', () => {
+  it('keeps each note attached to the store that wrote it', () => {
+    // The case the merged version had to dedupe around: two shops
+    // wanting the same item differently. Split by store, each
+    // instruction sits under its own shop and nothing can collide.
     const g = supplier([
       store('s1', 'Eden-Magic-City', [
-        line({ id: 'a', kind: 'extra', skuId: null, name: '水', unit: '瓶', qty: '2' }),
+        line({
+          id: 'a',
+          kind: 'extra',
+          skuId: null,
+          name: '水',
+          unit: '瓶',
+          qty: '2',
+          note: '要冰的',
+        }),
       ]),
       store('s2', 'Hotel-Uzbek', [
-        line({ id: 'b', kind: 'extra', skuId: null, name: '水', unit: '箱', qty: '1' }),
+        line({
+          id: 'b',
+          kind: 'extra',
+          skuId: null,
+          name: '水',
+          unit: '瓶',
+          qty: '1',
+          note: '常温',
+        }),
       ]),
     ]);
-    const text = buildSupplierText(g, deps);
-    expect(text).toContain('水: 2 瓶');
-    expect(text).toContain('水: 1 箱');
-    expectNoStoreNames(text, g);
+    expect(buildSupplierText(g, deps)).toBe(
+      [
+        'savza abat',
+        '',
+        'Eden-Magic-City',
+        '其他物品 · 水: 2 瓶',
+        '  要冰的',
+        '',
+        'Hotel-Uzbek',
+        '其他物品 · 水: 1 瓶',
+        '  常温',
+      ].join('\n'),
+    );
   });
 
-  it('absorbs float drift when summing splits', () => {
-    const g = supplier([
-      store('s1', 'Eden-Magic-City', [line({ id: 'a', qty: '0.1' })]),
-      store('s2', 'Hotel-Uzbek', [line({ id: 'b', qty: '0.2' })]),
-    ]);
-    // 0.1 + 0.2 === 0.30000000000000004 in IEEE754; formatQty clamps it.
-    expect(buildSupplierText(g, deps)).toContain('西红柿: 0.3 公斤');
-  });
-
-  it('treats an unparseable qty as 0 rather than emitting NaN', () => {
-    const g = supplier([
-      store('s1', 'Eden-Magic-City', [line({ id: 'a', qty: '' })]),
-      store('s2', 'Hotel-Uzbek', [line({ id: 'b', qty: '4' })]),
-    ]);
+  it('carries a store-level note under that store', () => {
+    const g = supplier([store('s1', 'Eden-Seoul', [line({ qty: '1' })], '要新鲜的')]);
     const text = buildSupplierText(g, deps);
-    expect(text).toContain('西红柿: 4 公斤');
-    expect(text).not.toContain('NaN');
-  });
-
-  it('carries notes through without store attribution', () => {
-    const g = supplier([store('s1', 'Eden-Seoul', [], '要新鲜的')]);
-    const text = buildSupplierText(g, deps);
+    expect(text).toContain('Eden-Seoul');
     expect(text).toContain('备注:');
     expect(text).toContain('要新鲜的');
-    expectNoStoreNames(text, g);
   });
 
-  // Merging quantities must never merge REQUIREMENTS. Two shops wanting
-  // the same item for different reasons is exactly when the purchaser
-  // needs both instructions in the text they carry to the stall.
-  it('keeps BOTH notes when two stores request the same item differently', () => {
-    const g = supplier([
-      store('s1', 'Eden-Magic-City', [
-        line({ id: 'a', kind: 'extra', skuId: null, name: '水', unit: '瓶', qty: '2', note: '要冰的' }),
-      ]),
-      store('s2', 'Hotel-Uzbek', [
-        line({ id: 'b', kind: 'extra', skuId: null, name: '水', unit: '瓶', qty: '1', note: '常温' }),
-      ]),
-    ]);
-    const text = buildSupplierText(g, deps);
-    expect(text).toBe('savza abat\n\n水: 3 瓶\n  要冰的\n  常温');
-    expectNoStoreNames(text, g);
+  it('leaves no trailing blank line', () => {
+    const text = buildSupplierText(threeStores, deps);
+    expect(text.endsWith('\n')).toBe(false);
+    expect(text).toBe(text.trim());
   });
 
-  it('dedupes identical notes rather than repeating them', () => {
-    const g = supplier([
-      store('s1', 'Eden-Magic-City', [
-        line({ id: 'a', kind: 'extra', skuId: null, name: '水', unit: '瓶', qty: '2', note: '要冰的' }),
-      ]),
-      store('s2', 'Hotel-Uzbek', [
-        line({ id: 'b', kind: 'extra', skuId: null, name: '水', unit: '瓶', qty: '1', note: '要冰的' }),
-      ]),
-    ]);
-    expect(buildSupplierText(g, deps)).toBe('savza abat\n\n水: 3 瓶\n  要冰的');
-  });
-
-  it('attaches a note that only the second contributing store supplied', () => {
-    const g = supplier([
-      store('s1', 'Eden-Magic-City', [line({ id: 'a', qty: '1' })]),
-      store('s2', 'Hotel-Uzbek', [line({ id: 'b', qty: '1', note: '要熟的' })]),
-    ]);
-    expect(buildSupplierText(g, deps)).toBe('savza abat\n\n西红柿: 2 公斤\n  要熟的');
+  it('passes a quantity through verbatim rather than summing it', () => {
+    const g = supplier([store('s1', 'Eden-Magic-City', [line({ qty: '0.1' })])]);
+    expect(buildSupplierText(g, deps)).toContain('西红柿: 0.1 公斤');
   });
 });
