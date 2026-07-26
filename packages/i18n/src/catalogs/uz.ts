@@ -511,12 +511,11 @@ export const uz = {
   'run.empty.noPlannableBody':
     "Menejer bitta buyurtmani tasdiqlasa, xarid rejalashtirsa bo'ladi.",
   'run.header.runIndex': "Xarid #{n}",
-  'run.header.newRun': "Yangi xarid",
   'run.header.moreActions': "Boshqa amallar",
   'run.banner.readyToStart': "Xaridni boshlashga tayyor",
   'run.banner.readyToStartBody': "Pastdagi tugmadan keyingi bosqichga o'ting.",
   'run.banner.planLockWarning':
-    "{n} ta tasdiqlangan buyurtma bu xaridga qulflanadi. Xarid tugamaguncha yoki bekor qilinmaguncha tahrirlab bo'lmaydi.",
+    "Boshlash {n} ta tasdiqlangan buyurtmani bu xaridga biriktiradi — ularni qayta ko'rib chiqishga qaytarib bo'lmaydi. Alohida buyurtmani baribir chiqarib tashlash mumkin.",
   'run.banner.confirmingFinish':
     "Tugatilmoqchi. Bundan keyin narxlar, yetkazishlar va qabullarni o'zgartirib bo'lmaydi.",
   'run.section.items': 'Mahsulotlar',
@@ -564,6 +563,8 @@ export const uz = {
   'run.preview.noSupplierCount': 'Rastasiz: {n}',
   'run.preview.filterMatch': '{total} tadan {n} ta',
   'run.price.fillIn': 'Narx kiriting',
+  'run.offline.needNetworkToStart': "Xaridni boshlash uchun tarmoq kerak",
+  'run.toast.runAlreadyOpen': "Xarid allaqachon ochiq — o'sha ochildi",
   'run.price.daysAgo': '{n} kun oldin',
   'run.finish.carriedOver': '{n} ta oldingi narxda',
   'run.finish.carriedOverStale': 'shundan {n} tasi {days} kundan eski',
@@ -628,10 +629,8 @@ export const uz = {
   'run.action.undoStartPurchase': "Rejaga qaytish",
   'run.action.undoStartDelivery': "Xaridga qaytish",
   'run.action.confirmDeliver': "Yetkazganini tasdiqlash",
-  'run.action.planRun': "Xaridni rejalashtirish",
   'run.action.savePurchase': "Xaridni saqlash",
   'run.action.recordPurchase': "Xaridni yozish",
-  'run.action.createNewRun': "Yangi xarid yaratish",
   'run.action.markUnavailable': "Yo'q deb belgilash",
   'run.action.markUnavailableDesc':
     "Nima uchun ololmaganingizni jamoaga tushuntiring.",
@@ -713,7 +712,6 @@ export const uz = {
   'run.action.supplier': 'Yetkazib beruvchi',
   'run.action.receiptPhoto': 'Chek surati (ixtiyoriy)',
   'run.action.allocateAcrossStores': "Do'konlar bo'yicha taqsimlash",
-  'run.action.aggregateInfo': '{n} ta tasdiqlangan buyurtmani birlashtiradi.',
   'run.action.actualQtyAriaLabel': 'haqiqiy miqdor',
   'run.action.unitPriceAriaLabel': 'birlik narxi',
   'run.action.savePurchaseAriaLabel': 'xaridni saqlash',

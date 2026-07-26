@@ -104,7 +104,8 @@ export function RunPage() {
   const toast = useToast();
   const photoUploader = usePhotoUploader('receipt');
 
-  const [createOpen, setCreateOpen] = useState(false);
+  // Q7(a): `createOpen` is gone with the create sheet — starting a run
+  // is the page-level button, not a modal.
   const [purchaseDraft, setPurchaseDraft] = useState<PurchaseDraft | null>(null);
   const [inlineSavingSkuId, setInlineSavingSkuId] = useState<string | null>(null);
   // M3.41 (2026-05-21): purchaser-initiated mid-run additions. Distinct
@@ -233,12 +234,36 @@ export function RunPage() {
   // strings.
   const errToast = useErrToast();
   const create = trpc.run.create.useMutation({
-    onSuccess: () => {
+    onSuccess: (res) => {
       void utils.run.list.invalidate();
       void utils.run.previewCreatable.invalidate();
-      setCreateOpen(false);
       haptic('success');
+      /**
+       * `res.reused` means run.create found a live run and handed it
+       * back rather than creating one. Say so — silently landing the
+       * user in a trip someone else started, with a "run planned"
+       * success toast, would be a lie.
+       */
+      if (res?.reused) {
+        toast.info(i18n.t('run.toast.runAlreadyOpen'));
+        return;
+      }
       toast.success(i18n.t('run.toast.runPlanned'));
+      /**
+       * NO inline undo here, deliberately. Starting is now one tap with
+       * no confirm in front of it, so an immediate "Undo" on the toast
+       * is the right affordance — but the shared Toast primitive renders
+       * each toast as a single <button> that dismisses on click, and
+       * nesting an action button inside it is the exact invalid markup
+       * (and screen-reader trap) that had to be undone in the accordion
+       * header earlier today. Doing it properly means restructuring a
+       * component every page uses; that is its own change, not a
+       * tail-end addition to this one.
+       *
+       * Recovery today: the gear menu's Cancel — which actually works
+       * as of RunCancelInputSchema, having previously returned
+       * BAD_REQUEST for every no-reason cancel.
+       */
     },
     onError: errToast('run.toast.couldNotPlan'),
   });
@@ -813,19 +838,53 @@ export function RunPage() {
     active: boolean;
   }>(() => {
     if (!activeRun) {
-      // M1.12: when there's no active run BUT planned items exist, the
-      // MainButton becomes the "+ New run" CTA. Previously this button
-      // lived in the PageHeader actions slot, which we just dropped.
-      // Routing it through Telegram's MainButton keeps the action
-      // visually consistent with every other phase transition (Start
-      // purchase / Start delivery / Finish run all already do this).
+      /**
+       * Q7(a) — one tap, no ceremony (2026-07-27).
+       *
+       * "点击新建采购这个流程真的必要吗，不能在生成采购单这个页面直接开始吗"
+       *
+       * It was two taps through a modal: "新建采购" opened a sheet that
+       * re-listed the items already on screen behind it, and its confirm
+       * button then created the run. The sheet's red warning claimed the
+       * consequence was that the locked orders "can no longer be edited"
+       * — but order/commands.ts already rejects edits the moment a
+       * session is approved, so shop staff lost that ability at approval
+       * time, not here. The one thing this really does take away is the
+       * approver's ability to un-approve, which is reversible via
+       * run.ejectSession. That is worth stating, not worth a modal, so
+       * it now reads as an inline banner on the card itself.
+       *
+       * The run is created with startImmediately, so it lands directly
+       * in `purchasing` — hence the existing startPurchase label rather
+       * than a new one. Creating is undoable: the toast below offers it,
+       * and run.cancel actually works now (RunCancelInputSchema).
+       *
+       * NOT implicit-on-first-item, which was the earlier plan. It would
+       * save the same zero taps — you press the item's ✓ either way —
+       * while requiring the read-only preview to become a writable
+       * ActiveRunPanel, whose delivery / undo / expense callbacks are all
+       * meaningless before a run exists.
+       */
       const plannable = previewQuery.data?.plannedItems.length ?? 0;
       if (plannable > 0) {
+        const sessionIds = previewQuery.data?.sessions.map((s) => s.id) ?? [];
+        // Gate on connectivity HERE, at the point of the decision, not
+        // at the first save. run.create is not in the offline outbox and
+        // the replay classifier discards BAD_REQUEST permanently, so a
+        // purchaser who starts offline would walk to a stall, agree a
+        // price, type it in and only then discover there is no run to
+        // put it in.
+        const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
         return {
-          text: i18n.t('run.header.newRun'),
-          onClick: () => setCreateOpen(true),
+          text: offline
+            ? i18n.t('run.offline.needNetworkToStart')
+            : i18n.t('run.action.startPurchase'),
+          onClick: () => {
+            if (offline || sessionIds.length === 0 || create.isPending) return;
+            create.mutate({ sessionIds, startImmediately: true });
+          },
           visible: true,
-          active: true,
+          active: !offline && sessionIds.length > 0 && !create.isPending,
         };
       }
       return { text: '', onClick: () => {}, visible: false, active: false };
@@ -936,20 +995,8 @@ export function RunPage() {
         active: reasonOk && !markUnavailable.isPending,
       };
     }
-    if (createOpen) {
-      const sessionIds = previewQuery.data?.sessions.map((s) => s.id) ?? [];
-      return {
-        text: i18n.t('run.action.planRun'),
-        onClick: () => {
-          if (sessionIds.length === 0 || create.isPending) return;
-          // M1.13: collapse "+ New run" + "Start purchase" double tap
-          // into a single CTA. Server emits PlanRun + StartPurchase
-          // atomically when startImmediately is true.
-          create.mutate({ sessionIds, startImmediately: true });
-        },
-        active: sessionIds.length > 0 && !create.isPending,
-      };
-    }
+    // Q7(a): the create sheet is gone, so it no longer takes over the
+    // MainButton. Starting a run is the page-level button itself.
     return null;
   }, [
     confirmAction,
@@ -961,9 +1008,6 @@ export function RunPage() {
     unavailableFor,
     unavailableNote,
     markUnavailable,
-    createOpen,
-    previewQuery.data,
-    create,
     i18n,
   ]);
 
@@ -1859,62 +1903,12 @@ export function RunPage() {
       />
       </div>
 
-      {/* "Plan run" sheet — preview + lock-warning + confirm. Inside
-          Telegram the MainButton drives the planRun action; outside
-          Telegram (web preview) we still need an in-sheet button. */}
-      <Sheet
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        title={i18n.t('run.action.createNewRun')}
-        description={i18n.t('run.action.aggregateInfo', {
-          n: previewQuery.data?.sessions.length ?? 0,
-        })}
-        footer={
-          // M3.49 (2026-05-23): dropped the `!getTg()` check — the
-          // in-page PageMainButton is hidden behind any open sheet
-          // (Radix Dialog z-50), so we MUST render the sheet's own
-          // footer button regardless of Telegram presence.
-          <Button
-            block
-            loading={create.isPending}
-            disabled={!previewQuery.data?.sessions.length}
-            onClick={() => {
-              const sessionIds = previewQuery.data?.sessions.map((s) => s.id) ?? [];
-              if (sessionIds.length === 0) return;
-              create.mutate({ sessionIds, startImmediately: true });
-            }}
-          >
-            {i18n.t('run.action.planRun')}
-          </Button>
-        }
-      >
-        <div className="flex flex-col gap-3 py-2">
-          {previewQuery.data?.sessions.length ? (
-            <Banner
-              tone="warn"
-              title={i18n.t('run.banner.planLockWarning', {
-                n: previewQuery.data.sessions.length,
-              })}
-            />
-          ) : null}
-          <ul className="flex flex-col gap-2 text-body">
-            {(previewQuery.data?.plannedItems ?? []).map((it) => {
-              const sku = skuById.get(it.skuId);
-              return (
-                <li
-                  key={it.skuId}
-                  className="flex justify-between border-b border-[var(--c-divider)] py-2 last:border-b-0"
-                >
-                  <span>{sku ? productName(sku) : it.skuId.slice(0, 8)}</span>
-                  <span className="font-mono tabular-nums">
-                    {formatQty(it.qty)} {sku?.unit}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      </Sheet>
+      {/* Q7(a): the "Plan run" sheet is gone. It was a modal whose body
+          re-listed the items already visible behind it and whose confirm
+          button did what the page-level button now does in one tap. Its
+          one piece of real content — that starting the run locks these
+          approved orders out of un-approval — moved to an inline banner
+          on the preview card. */}
 
       {/* M1.12: ⋯ run-actions Sheet removed — its three buttons
           (Undo start purchase / Undo start delivery / Cancel run)
