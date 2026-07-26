@@ -417,14 +417,38 @@ export function RunPage() {
     },
   });
   const revisePurchase = trpc.run.revisePurchase.useMutation({
-    onSuccess: () => {
+    onSuccess: (_res, vars) => {
       invalidateRunQuietly();
-      setPurchaseDraft(null);
+      // Close the sheet ONLY if this response belongs to the row the
+      // sheet is open on.
+      //
+      // This handler used to clear the draft unconditionally, which was
+      // right while the sheet was its only caller. The row-level
+      // payment toggle is a second caller that opens no modal, so on a
+      // slow link a purchaser who taps 💵 and then — seeing nothing
+      // happen — opens some row to edit it would have that sheet ripped
+      // away mid-keystroke when the flip landed, under a green "purchase
+      // updated" toast that reads as confirmation of what they had just
+      // typed and never sent.
+      setPurchaseDraft((cur) => (cur && cur.skuId !== vars.skuId ? cur : null));
       haptic('success');
       toast.success(i18n.t('run.toast.purchaseRevised'));
     },
     onError: errToast('run.toast.couldNotSavePurchase'),
   });
+  /**
+   * Is the in-flight revisePurchase the SHEET's, rather than a row's
+   * payment-method flip?
+   *
+   * Both callers share one mutation, so `revisePurchase.isPending` alone
+   * was putting an unrelated open sheet's primary button — and the page
+   * MainButton — into a loading state whenever someone tapped 💵 on a
+   * row. `paymentBusySkuId` is non-null exactly while the row-level flip
+   * is the request in flight.
+   */
+  const revisePurchaseBusyForSheet =
+    revisePurchase.isPending && paymentBusySkuId === null;
+
   const markUnavailable = trpc.run.markUnavailable.useMutation({
     onSuccess: () => {
       invalidateRunQuietly();
@@ -1012,7 +1036,7 @@ export function RunPage() {
       return null; // filled in below right after confirmConfig is defined
     }
     if (purchaseDraft && purchaseFormState) {
-      const submitting = purchaseItem.isPending || revisePurchase.isPending;
+      const submitting = purchaseItem.isPending || revisePurchaseBusyForSheet;
       const text = !purchaseFormState.splitMatches
         ? i18n.t('run.label.splitsMismatch', {
             sum: formatQty(purchaseFormState.splitTotal),
@@ -1055,7 +1079,7 @@ export function RunPage() {
     purchaseDraft,
     purchaseFormState,
     purchaseItem.isPending,
-    revisePurchase.isPending,
+    revisePurchaseBusyForSheet,
     submitPurchaseDraft,
     unavailableFor,
     unavailableNote,
@@ -2043,7 +2067,7 @@ export function RunPage() {
             purchaseItem.mutate(payload);
           }
         }}
-        submitting={purchaseItem.isPending || revisePurchase.isPending}
+        submitting={purchaseItem.isPending || revisePurchaseBusyForSheet}
       />
 
       {/* M3.41 (2026-05-21): mid-run "+ add item" sheet. SKU search +

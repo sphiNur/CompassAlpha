@@ -20,7 +20,13 @@ import { useAuthStore } from '../../../stores/authStore';
 import { formatMoney, formatQty, toQtyInput } from '../../../lib/format';
 import { useI18n, useUnitLabel } from '../../../hooks/useI18n';
 import { toDisplayPrice, fromDisplayPrice } from '../lib/priceMath';
-import { priceRowState, priceAgeDays, AGING_DAYS, GUESS_DAYS } from '../lib/priceState';
+import {
+  priceRowState,
+  priceAgeDays,
+  collapsedCommit,
+  AGING_DAYS,
+  GUESS_DAYS,
+} from '../lib/priceState';
 import { proportionalSplitQty } from '../lib/splitQty';
 import type { ActiveRun } from '../types';
 
@@ -1247,14 +1253,46 @@ export function PurchaseRow({
   // tenant rollout.
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
 
-  // When server data updates (e.g. ws push, edit landed), reconcile
-  // the local input values UNLESS the user is mid-edit (the row is
-  // pending and they may have typed something we shouldn't clobber).
+  /**
+   * Q7(b): the qty/price editor is closed until the purchaser asks for
+   * it. Local to the row and not persisted — reopening the page should
+   * present the compact list again, and a row the user opened but did
+   * not save has nothing worth restoring.
+   */
+  const [priceEditorOpen, setPriceEditorOpen] = useState(false);
+
+  // When server data updates (ws push, an edit landing, an undo),
+  // reconcile the local input values.
+  //
+  // The guard used to be `item.status === 'pending'`, meant as "don't
+  // clobber what the user is typing". Since Q7(b) that is the wrong
+  // question: a pending row is COLLAPSED by default and has no inputs
+  // to protect, while purchased → revised → undone lands back on
+  // pending and so never resynced — leaving local state holding the
+  // revised figures behind a row printing the reference again.
+  //
+  // The real question is whether the editor is open, which is the only
+  // time a keystroke exists to lose.
   useEffect(() => {
-    if (item.status === 'pending') return;
+    if (priceEditorOpen) return;
     setQty(toQtyInput(item.purchasedQty ?? item.plannedQty));
     setPrice(toDisplayPrice(item.unitPrice ?? lastPrice ?? '', priceInThousands));
-  }, [item.status, item.purchasedQty, item.unitPrice, item.plannedQty, lastPrice, priceInThousands]);
+  }, [
+    priceEditorOpen,
+    item.status,
+    item.purchasedQty,
+    item.unitPrice,
+    item.plannedQty,
+    lastPrice,
+    priceInThousands,
+  ]);
+
+  // A row that leaves `pending` (saved, or marked unavailable) has
+  // nothing left to edit, so the editor closes — which also re-arms the
+  // reconcile effect above for the next time it comes back.
+  useEffect(() => {
+    if (item.status !== 'pending') setPriceEditorOpen(false);
+  }, [item.status]);
 
   // M3.36: when the page-level toggle flips while a row is mid-edit
   // (pending), rescale the displayed price so the same underlying
@@ -1265,13 +1303,6 @@ export function PurchaseRow({
   const prevThousandsRef = useRef(priceInThousands);
   /** Enter on qty jumps here; Enter here saves. See the input grid below. */
   const priceRef = useRef<HTMLInputElement>(null);
-  /**
-   * Q7(b): the qty/price editor is closed until the purchaser asks for
-   * it. Local to the row and not persisted — reopening the page should
-   * present the compact list again, and a row the user opened but did
-   * not save has nothing worth restoring.
-   */
-  const [priceEditorOpen, setPriceEditorOpen] = useState(false);
   useEffect(() => {
     if (prevThousandsRef.current === priceInThousands) return;
     setPrice((p) => {
@@ -1314,11 +1345,48 @@ export function PurchaseRow({
   const computeProportionalSplits = (actualQtyStr: string) =>
     proportionalSplitQty(demand, actualQtyStr);
 
-  const handleSave = () => {
+  /**
+   * Can the COLLAPSED row's one-tap ✓ commit?
+   *
+   * Asks about the values the collapsed row actually prints, not the
+   * ones in this component's inputs. Without this the ✓ armed itself
+   * from stale local state: a row with no reference price at all
+   * rendered "?" in the money column and a fully blue, enabled ✓,
+   * because `price` still held a figure from a purchase that had since
+   * been undone.
+   */
+  const collapsedPayload = collapsedCommit({
+    status: item.status,
+    saving,
+    plannedQty: item.plannedQty,
+    lastPrice,
+  });
+  const canSaveCollapsed = collapsedPayload !== null;
+
+  /**
+   * @param source
+   *   'editor'    — commit what is in the inputs.
+   *   'collapsed' — commit what the COLLAPSED ROW PRINTS, taken from
+   *                 props rather than from this component's state.
+   *
+   * The distinction is not cosmetic. `qty` and `price` are local state
+   * seeded once at mount, and the reconcile effect deliberately skips
+   * while the row is pending — so a row that went pending → purchased →
+   * revised → undone keeps the REVISED figures in local state while the
+   * collapsed row prints `lastPrice` and `item.plannedQty` again. The
+   * one-tap ✓ then committed numbers that appeared nowhere on screen:
+   * displayed 70,000 x 10 kg, saved 999,000 x 7. Reading the props back
+   * makes "the ✓ commits exactly what the row shows" true by
+   * construction instead of by an effect firing in the right order.
+   */
+  const handleSave = (source: 'editor' | 'collapsed' = 'editor') => {
     if (item.status !== 'pending') return;
     if (saving) return;
-    const actualQty = qty.trim();
-    const displayPrice = price.trim();
+    const actualQty = source === 'collapsed' ? (collapsedPayload?.qty ?? '') : qty.trim();
+    const displayPrice =
+      source === 'collapsed'
+        ? toDisplayPrice(collapsedPayload?.price ?? '', priceInThousands).trim()
+        : price.trim();
     if (!actualQty || Number(actualQty) <= 0) return;
     if (!displayPrice || Number(displayPrice) <= 0) return;
 
@@ -1334,8 +1402,12 @@ export function PurchaseRow({
       actualQty,
       // M3.36: convert display → raw UZS at the network boundary.
       unitPrice: fromDisplayPrice(displayPrice, priceInThousands),
+      // The collapsed row has no payment control, so it must not carry
+      // a method this component happens to be holding — 'cash' is the
+      // documented default for a one-tap buy, and the purchased row's
+      // toggle is how a transfer gets recorded.
+      paymentMethod: source === 'collapsed' ? 'cash' : paymentMethod,
       storeSplits: splits,
-      paymentMethod,
     });
   };
 
@@ -1358,6 +1430,7 @@ export function PurchaseRow({
     !saving &&
     Number(qty) > 0 &&
     Number(price) > 0;
+
 
   /**
    * M3.52 (2026-05-23): per-store demand breakdown chip row.
@@ -1605,11 +1678,11 @@ export function PurchaseRow({
               those ~48px are what the money column is made of. */}
           <button
             type="button"
-            onClick={handleSave}
-            disabled={!canSave}
+            onClick={() => handleSave('collapsed')}
+            disabled={!canSaveCollapsed}
             aria-busy={saving || undefined}
             aria-label={i18n.t('run.action.savePurchaseAriaLabel', { name: skuName })}
-            className={`${ROW_CTRL} ${canSave ? CTRL_COMMIT : CTRL_OFF}`}
+            className={`${ROW_CTRL} ${canSaveCollapsed ? CTRL_COMMIT : CTRL_OFF}`}
           >
             <span aria-hidden>✓</span>
           </button>
@@ -1712,7 +1785,7 @@ export function PurchaseRow({
             onKeyDown={(e) => {
               if (e.key !== 'Enter') return;
               e.preventDefault();
-              if (canSave) handleSave();
+              if (canSave) handleSave('editor');
             }}
             placeholder={i18n.t('run.action.unitPriceAriaLabel')}
             aria-label={i18n.t('run.action.unitPriceAriaLabel')}
@@ -1779,7 +1852,7 @@ export function PurchaseRow({
           </button>
           <button
             type="button"
-            onClick={handleSave}
+            onClick={() => handleSave('editor')}
             disabled={!canSave}
             aria-busy={saving || undefined}
             aria-label={i18n.t('run.action.savePurchaseAriaLabel', { name: skuName })}
