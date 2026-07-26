@@ -12,7 +12,7 @@
  *
  * Props-driven; orchestrator state and mutations stay in RunPage.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import {
   Badge,
@@ -747,10 +747,25 @@ export function PreviewSummaryCard({
     },
     [i18n.locale],
   );
-  useEffect(() => {
-    if (typeof window !== 'undefined')
-      window.localStorage.setItem(PREVIEW_VIEW_STORAGE_KEY, view);
-  }, [view]);
+  /**
+   * Persist only what the user CHOSE, never the computed default.
+   *
+   * This used to be a `useEffect` on [view], which wrote on first mount
+   * — so the adaptive default got stored as if it were a preference and
+   * every later visit read it back instead of re-deriving. Caught on a
+   * real dev instance (2026-07-26): the very first page load happened
+   * with no approved orders, the initializer correctly fell back to
+   * byStore for an empty preview, that got persisted, and afterwards the
+   * card stayed on byStore even at 84/93 SKUs assigned to stalls, where
+   * bySupplier is the whole point. The old constant default hid this;
+   * an adaptive one cannot afford it.
+   */
+  const chooseView = useCallback((v: PreviewView) => {
+    setView(v);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(PREVIEW_VIEW_STORAGE_KEY, v);
+    }
+  }, []);
 
   const storeNameById = useMemo(() => {
     const m = new Map<string, string>();
@@ -1125,7 +1140,7 @@ export function PreviewSummaryCard({
           <button
             key={v}
             type="button"
-            onClick={() => setView(v)}
+            onClick={() => chooseView(v)}
             className={
               'press flex-1 rounded-[var(--r-pill)] px-3 py-1.5 text-label font-medium ring-hairline ' +
               (view === v
@@ -1178,7 +1193,7 @@ export function PreviewSummaryCard({
               {previewStats.noSupplier > 0 ? (
                 <button
                   type="button"
-                  onClick={() => setView('bySupplier')}
+                  onClick={() => chooseView('bySupplier')}
                   className="press rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2 py-1 text-label text-[var(--c-warning)] ring-hairline"
                 >
                   {i18n.t('run.preview.noSupplierCount', { n: previewStats.noSupplier })}
