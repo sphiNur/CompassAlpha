@@ -12,8 +12,7 @@
  *
  * Props-driven; orchestrator state and mutations stay in RunPage.
  */
-import { useCallback, useMemo, useState } from 'react';
-import type { KeyboardEvent } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Badge,
   Button,
@@ -53,6 +52,7 @@ import {
 } from '../lib/shareText';
 import type { ShareTextDeps } from '../lib/shareText';
 import { computePreviewStats } from '../lib/previewStats';
+import { isOpen, pruneOpen, toggleOpen } from '../lib/accordion';
 
 // formatQty / formatMoney are imported from `../lib/format` —
 // thousand-separator + max-1-decimal display rule applied everywhere.
@@ -631,6 +631,17 @@ const PREVIEW_VIEW_STORAGE_KEY = 'compass.runPreview.view';
 // ../types (2026-07-26) so runs/lib/shareText.ts can consume them
 // without importing this component.
 
+/** Nearest scrollable ancestor — Shell's `<main class="overflow-y-auto">`. */
+function scrollParentOf(el: HTMLElement | null): HTMLElement | null {
+  let node = el?.parentElement ?? null;
+  while (node) {
+    const overflowY = getComputedStyle(node).overflowY;
+    if (overflowY === 'auto' || overflowY === 'scroll') return node;
+    node = node.parentElement;
+  }
+  return null;
+}
+
 function previewLineTotal(qty: string, unitPrice: string | null): number | null {
   if (!unitPrice) return null;
   const qtyNum = Number(qty);
@@ -720,7 +731,48 @@ export function PreviewSummaryCard({
   });
   // M1.6 #1: when set, the VendorPickerSheet is open for this skuId.
   const [vendorPickerFor, setVendorPickerFor] = useState<string | null>(null);
-  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  /**
+   * Single-open accordion, one open key per view (2026-07-26).
+   *
+   * Was `Record<string, boolean>` initialised to `{}` with
+   * `isCollapsed = map[key] === true` — i.e. everything EXPANDED by
+   * default and any number open at once, the exact opposite of what was
+   * asked for. Two separate keys rather than one shared one so flipping
+   * byStore ↔ bySupplier and back does not lose your place, and so a
+   * store id can never be the "open" key of the supplier view.
+   */
+  const [openStore, setOpenStore] = useState<string | null>(null);
+  const [openSupplier, setOpenSupplier] = useState<string | null>(null);
+
+  /**
+   * Keep the tapped header where the finger left it.
+   *
+   * Opening group 7 also CLOSES whichever group was open. If that one sat
+   * above the current scroll position its panel — easily 900px for a
+   * twenty-row store at two lines each — vanishes from above the
+   * viewport while scrollTop stays put, so the header the purchaser just
+   * pressed jumps off the top of the screen and they are suddenly looking
+   * at a different part of the list.
+   *
+   * Measure the header before the state change, re-measure after layout,
+   * and push the difference back into the scroller. `scrollIntoView` is
+   * deliberately not used: it fights the sticky page header and behaves
+   * differently in the Telegram WebView. iOS WKWebView has no scroll
+   * anchoring of its own, so nothing does this for us.
+   */
+  const scrollAnchor = useRef<{ el: HTMLElement; top: number } | null>(null);
+  const anchorOn = (el: HTMLElement | null): void => {
+    if (el) scrollAnchor.current = { el, top: el.getBoundingClientRect().top };
+  };
+  useLayoutEffect(() => {
+    const anchor = scrollAnchor.current;
+    if (!anchor) return;
+    scrollAnchor.current = null;
+    const scroller = scrollParentOf(anchor.el);
+    if (!scroller) return;
+    const delta = anchor.el.getBoundingClientRect().top - anchor.top;
+    if (delta !== 0) scroller.scrollTop += delta;
+  });
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   const currentUnitLabel = useCallback(
     (unit: string | null | undefined): string => {
@@ -811,6 +863,7 @@ export function PreviewSummaryCard({
       const sku = skuById.get(row.skuId);
       const unitPrice = estimatedPriceForSku(row.skuId);
       const group = ensurePreviewStoreGroup(m, row.storeId, row.storeName);
+      const supplier = preview.supplierBySku[row.skuId] ?? null;
       addPreviewLine(group, {
         id: `sku:${row.storeId}:${row.skuId}`,
         kind: 'sku',
@@ -820,6 +873,8 @@ export function PreviewSummaryCard({
         unit: currentUnitLabel(sku?.unit),
         unitPrice,
         total: previewLineTotal(row.qty, unitPrice),
+        supplierId: supplier?.id ?? null,
+        supplierName: supplier?.name ?? null,
       });
     }
 
@@ -846,6 +901,32 @@ export function PreviewSummaryCard({
       ensurePreviewStoreGroup(m, storeId).legacyNote = trimmed;
     }
 
+    // Order within a store: catalog SKUs before off-catalog extras, then
+    // by stall, then by name. Grouping by stall inside the store is the
+    // cheap way to get the visual clustering a nested store→stall→item
+    // tree would give, without a second level of headers eating ~28px
+    // each on a 375px screen. Unassigned SKUs sink to the bottom of the
+    // SKU block so the "no stall" exception reads as a tail, not noise
+    // sprinkled through the list.
+    //
+    // This also fixes a real defect: `perStoreDemand` comes from an
+    // unordered orderItemsV query, so the previous row order was
+    // Postgres heap order.
+    for (const g of m.values()) {
+      g.items.sort((a, b) => {
+        if (a.kind !== b.kind) return a.kind === 'sku' ? -1 : 1;
+        const an = a.supplierName ?? null;
+        const bn = b.supplierName ?? null;
+        if (an !== bn) {
+          if (an === null) return 1;
+          if (bn === null) return -1;
+          const bySupplierName = an.localeCompare(bn);
+          if (bySupplierName !== 0) return bySupplierName;
+        }
+        return a.name.localeCompare(b.name);
+      });
+    }
+
     return [...m.values()]
       .filter((g) => g.items.length > 0 || g.legacyNote)
       .sort((a, b) => a.storeName.localeCompare(b.storeName));
@@ -856,6 +937,7 @@ export function PreviewSummaryCard({
     preview.perStoreDemand,
     preview.sessionExtrasByStore,
     preview.sessionNotesByStore,
+    preview.supplierBySku,
     productName,
     skuById,
   ]);
@@ -905,9 +987,12 @@ export function PreviewSummaryCard({
 
     for (const store of byStore) {
       for (const line of store.items) {
+        // Read the id the LINE already carries rather than re-resolving
+        // from preview.supplierBySku — one resolve point means the two
+        // views cannot drift about where an item comes from.
         const supplier =
-          line.kind === 'sku' && line.skuId
-            ? preview.supplierBySku[line.skuId] ?? null
+          line.kind === 'sku' && line.supplierId
+            ? preview.supplierBySku[line.skuId!] ?? null
             : null;
         const bucket = ensureSupplier(
           supplier?.id ?? null,
@@ -1067,20 +1152,20 @@ export function PreviewSummaryCard({
   const buildAllVendorsText = (): string =>
     bySupplier.map((b) => buildSupplierText(b)).filter(Boolean).join('\n\n');
 
-  const isCollapsed = (key: string): boolean => collapsedGroups[key] === true;
-  const toggleGroup = (key: string): void => {
-    setCollapsedGroups((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
-  const handleGroupHeaderKeyDown = (e: KeyboardEvent<HTMLDivElement>, key: string): void => {
-    if (e.key !== 'Enter' && e.key !== ' ') return;
-    e.preventDefault();
-    toggleGroup(key);
-  };
+  // Pruned during render rather than in an effect: the derived value is
+  // correct on the first frame, and the next toggle overwrites the stale
+  // state anyway. Groups really do come and go under the user — the 6s
+  // poll re-derives both memos, and reassigning a SKU's stall can empty
+  // a bucket outright.
+  const storeKeys = byStore.map((g) => g.storeId);
+  const supplierKeys = bySupplier.map((b) => b.supplierId ?? '__unassigned__');
+  const openStoreKey = pruneOpen(openStore, storeKeys);
+  const openSupplierKey = pruneOpen(openSupplier, supplierKeys);
 
   const renderLine = (
     line: PreviewLine,
     index: number,
-    opts?: { editableSupplier?: boolean },
+    opts?: { editableSupplier?: boolean; showSupplier?: boolean },
   ) => {
     const rowBg = index % 2 === 0 ? 'bg-[var(--c-surface)]' : 'bg-[var(--c-surface-2)]';
     const formulaTone =
@@ -1098,6 +1183,69 @@ export function PreviewSummaryCard({
       ) : (
         <span className="min-w-0 max-w-full text-[var(--c-fg)]">{line.name}</span>
       );
+    /**
+     * Two-line form for the by-store view (2026-07-26). The stall is the
+     * group header in the by-supplier view, so repeating it per row there
+     * would be noise — hence the opt-in.
+     *
+     * Layout rule: only the product name and the stall name may truncate.
+     * Every number is `shrink-0`, because a half-visible price is worse
+     * than a wrapped one — the purchaser reads these back to a vendor.
+     */
+    if (opts?.showSupplier) {
+      const stallTone = line.supplierId
+        ? 'text-[var(--c-fg-muted)]'
+        : 'text-[var(--c-warning)]';
+      const qtyUnit = `${formatQty(line.qty)} ${line.unit}`.trim();
+      return (
+        <li key={line.id} className={`px-2 py-1.5 ${rowBg}`}>
+          <div className="flex min-w-0 items-baseline gap-2 text-body">
+            {line.kind === 'extra' ? (
+              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--c-warning)] ring-hairline">
+                {i18n.t('order.extras.label')}
+              </span>
+            ) : null}
+            <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">{line.name}</span>
+            <span
+              className={`shrink-0 font-mono text-label font-semibold tabular-nums ${
+                line.total === null ? 'text-[var(--c-warning)]' : 'text-[var(--c-fg)]'
+              }`}
+            >
+              {line.total === null
+                ? i18n.t('run.preview.priceUnknown')
+                : formatMoney(line.total)}
+            </span>
+          </div>
+          <div className="mt-0.5 flex min-w-0 items-baseline gap-1.5 text-label">
+            {/* flex-1, not a max-w cap: the stall name is the field this
+                whole row exists to surface, so it should take whatever the
+                number leaves rather than give up at 45% while half the row
+                sits empty. The emoji is decorative and aria-hidden — this
+                row repeats once per item, and a screen reader announcing
+                "shopping trolley" before every stall name is noise. */}
+            <span className={`min-w-0 flex-1 truncate ${stallTone}`}>
+              {line.kind === 'extra' ? null : (
+                <>
+                  <span aria-hidden>{line.supplierId ? '🛒' : '❓'}</span>{' '}
+                  {line.supplierId
+                    ? line.supplierName ?? ''
+                    : i18n.t('run.previewSupplier.unassigned')}
+                </>
+              )}
+            </span>
+            <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
+              {line.unitPrice ? `${qtyUnit} × ${formatMoney(line.unitPrice)}` : qtyUnit}
+            </span>
+          </div>
+          {line.note ? (
+            <div className="mt-0.5 whitespace-pre-wrap text-label leading-snug text-[var(--c-fg-muted)]">
+              {line.note}
+            </div>
+          ) : null}
+        </li>
+      );
+    }
+
     return (
       <li
         key={line.id}
@@ -1237,48 +1385,65 @@ export function PreviewSummaryCard({
       {view === 'byStore' ? (
         <div className="px-2 py-2">
           {byStore.map((g) => {
-            const collapsed = isCollapsed(`store:${g.storeId}`);
+            const open = isOpen(openStoreKey, g.storeId);
             const storeNote = g.legacyNote;
-            const groupKey = `store:${g.storeId}`;
+            const panelId = `preview-store-${g.storeId}`;
             return (
             <section
               key={g.storeId}
               className="border-t border-[var(--c-divider)] py-2 first:border-t-0 first:pt-0 last:pb-0"
             >
-              <div
-                role="button"
-                tabIndex={0}
-                aria-expanded={!collapsed}
-                onClick={() => toggleGroup(groupKey)}
-                onKeyDown={(e) => handleGroupHeaderKeyDown(e, groupKey)}
-                className="press mb-1.5 flex cursor-pointer items-start gap-2 rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-2 py-1.5 outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]"
-              >
-                <span className="mt-0.5 shrink-0 font-mono text-label text-[var(--c-fg-muted)]">
-                  {collapsed ? '+' : '-'}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-body font-semibold text-[var(--c-fg)]">
-                    {g.storeName}
-                  </div>
-                  <div className="mt-0.5 truncate font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
-                    {groupMoneyMeta(g.total, g.unknownCount)}
-                  </div>
-                </div>
+              {/* The toggle is a real <button> and the send action is its
+                  SIBLING. It used to be a role="button" div with the send
+                  <button> nested inside it — invalid HTML, a screen-reader
+                  trap, and the reason that send handler needed a
+                  stopPropagation() to avoid also toggling the group. */}
+              {/* Padding lives on the BUTTON, not the wrapper: putting it
+                  on the wrapper made the visible grey band 46px tall while
+                  the actual hit area was the ~35px text block inside it,
+                  so the band's edges were dead pixels that look tappable.
+                  No aria-label either — it would override the name and
+                  meta below as the accessible name, leaving every header
+                  announcing an identical "Expand". aria-expanded already
+                  carries the state. */}
+              <div className="mb-1.5 flex items-center gap-2 rounded-[var(--r-utility)] bg-[var(--c-surface-2)] pr-2">
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  aria-controls={panelId}
+                  onClick={(e) => {
+                    anchorOn(e.currentTarget);
+                    setOpenStore((o) => toggleOpen(o, g.storeId));
+                  }}
+                  className="press flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-[var(--r-utility)] px-2 py-1.5 text-left outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]"
+                >
+                  <span aria-hidden className="shrink-0 font-mono text-label text-[var(--c-fg-muted)]">
+                    {open ? '▾' : '▸'}
+                  </span>
+                  <span className="block min-w-0 flex-1">
+                    <span className="block truncate text-body font-semibold text-[var(--c-fg)]">
+                      {g.storeName}
+                    </span>
+                    <span className="mt-0.5 block truncate font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
+                      {groupMoneyMeta(g.total, g.unknownCount)}
+                    </span>
+                  </span>
+                </button>
                 {/* M2.1: Button component (was raw <button>). */}
                 <Button
                   variant="pearl"
                   size="sm"
                   className="shrink-0"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void shareOrCopyText(buildStoreText(g));
-                  }}
+                  onClick={() => void shareOrCopyText(buildStoreText(g))}
                 >
                   {i18n.t('run.previewShare.sendList')}
                 </Button>
               </div>
-              <ul className={collapsed ? 'hidden' : 'overflow-hidden rounded-[var(--r-utility)]'}>
-                {g.items.map((line, idx) => renderLine(line, idx))}
+              <ul
+                id={panelId}
+                className={open ? 'overflow-hidden rounded-[var(--r-utility)]' : 'hidden'}
+              >
+                {g.items.map((line, idx) => renderLine(line, idx, { showSupplier: true }))}
               </ul>
               {/* M1.8 / M3.16-C: surface the staff's "其他物品" requests
                   inline. M3.16-C structured extras render as one row
@@ -1286,7 +1451,7 @@ export function PreviewSummaryCard({
                   underneath in italic. The purchaser scrolls the by-
                   store view at the market and needs requests right
                   next to the SKU list. */}
-              {!collapsed && storeNote ? (
+              {open && storeNote ? (
                 <div className="mt-1.5 rounded-[var(--r-utility)] bg-[var(--c-warn-bg)] px-2 py-1.5">
                   <SectionLabel padded={false}>
                     {i18n.t('order.extras.label')}
@@ -1323,37 +1488,43 @@ export function PreviewSummaryCard({
           ) : null}
           {bySupplier.map((b) => {
             const supplierKey = b.supplierId ?? '__unassigned__';
-            const groupKey = `supplier:${supplierKey}`;
-            const collapsed = isCollapsed(groupKey);
+            const open = isOpen(openSupplierKey, supplierKey);
+            const panelId = `preview-supplier-${supplierKey}`;
             return (
             <section
               key={supplierKey}
               className="border-t border-[var(--c-divider)] py-2 first:border-t-0 first:pt-0 last:pb-0"
             >
-              <div
-                role="button"
-                tabIndex={0}
-                aria-expanded={!collapsed}
-                onClick={() => toggleGroup(groupKey)}
-                onKeyDown={(e) => handleGroupHeaderKeyDown(e, groupKey)}
-                className="press mb-1.5 flex cursor-pointer items-start gap-2 rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-2 py-1.5 outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]"
-              >
-                <span className="mt-0.5 shrink-0 font-mono text-label text-[var(--c-fg-muted)]">
-                  {collapsed ? '+' : '-'}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-body font-semibold text-[var(--c-fg)]">
-                    {b.supplierId ? `🛒 ${b.supplierName}` : `❓ ${b.supplierName}`}
-                  </div>
-                  {b.contactTg ? (
-                    <div className="text-label text-[var(--c-fg-muted)]">@{b.contactTg}</div>
-                  ) : b.contactPhone ? (
-                    <div className="text-label text-[var(--c-fg-muted)]">{b.contactPhone}</div>
-                  ) : null}
-                  <div className="mt-0.5 truncate font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
-                    {groupMoneyMeta(b.total, b.unknownCount)}
-                  </div>
-                </div>
+              {/* Real <button> + sibling send action — see the by-store
+                  header for why the nested-button version had to go. */}
+              <div className="mb-1.5 flex items-center gap-2 rounded-[var(--r-utility)] bg-[var(--c-surface-2)] pr-2">
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  aria-controls={panelId}
+                  onClick={(e) => {
+                    anchorOn(e.currentTarget);
+                    setOpenSupplier((o) => toggleOpen(o, supplierKey));
+                  }}
+                  className="press flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-[var(--r-utility)] px-2 py-1.5 text-left outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]"
+                >
+                  <span aria-hidden className="shrink-0 font-mono text-label text-[var(--c-fg-muted)]">
+                    {open ? '▾' : '▸'}
+                  </span>
+                  <span className="block min-w-0 flex-1">
+                    <span className="block truncate text-body font-semibold text-[var(--c-fg)]">
+                      {b.supplierId ? `🛒 ${b.supplierName}` : `❓ ${b.supplierName}`}
+                    </span>
+                    {b.contactTg ? (
+                      <span className="block text-label text-[var(--c-fg-muted)]">@{b.contactTg}</span>
+                    ) : b.contactPhone ? (
+                      <span className="block text-label text-[var(--c-fg-muted)]">{b.contactPhone}</span>
+                    ) : null}
+                    <span className="mt-0.5 block truncate font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
+                      {groupMoneyMeta(b.total, b.unknownCount)}
+                    </span>
+                  </span>
+                </button>
                 {/* M3.26 (2026-05-18): copy button is now visible for the
                     unassigned bucket too — items to buy individually
                     deserve their own paste — and switched to the same
@@ -1363,15 +1534,12 @@ export function PreviewSummaryCard({
                   variant="pearl"
                   size="sm"
                   className="shrink-0"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void shareOrCopyText(buildSupplierText(b));
-                  }}
+                  onClick={() => void shareOrCopyText(buildSupplierText(b))}
                 >
                   {i18n.t('run.previewShare.sendList')}
                 </Button>
               </div>
-              {!collapsed && !b.supplierId ? (
+              {open && !b.supplierId ? (
                 <p className="mb-1.5 px-2 text-label text-[var(--c-fg-muted)]">
                   {i18n.t('run.previewSupplier.unassignedHint')}
                 </p>
@@ -1385,7 +1553,7 @@ export function PreviewSummaryCard({
                   Now each store is a small section header with its
                   items underneath — matches the copy template format
                   the user asked for in the previous round. */}
-              <div className={collapsed ? 'hidden' : 'flex flex-col gap-2'}>
+              <div id={panelId} className={open ? 'flex flex-col gap-2' : 'hidden'}>
                 {b.stores.map((store) => (
                   <div key={store.storeId}>
                     <div className="mb-1 flex items-baseline gap-2 px-2 text-label font-semibold text-[var(--c-fg-muted)]">

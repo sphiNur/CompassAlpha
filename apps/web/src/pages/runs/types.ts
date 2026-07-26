@@ -22,6 +22,15 @@ export type PreviewLine = {
   unitPrice: string | null;
   total: number | null;
   note?: string;
+  /**
+   * Preferred stall for this SKU, resolved ONCE when the line is built
+   * (2026-07-26). Null for extras — an off-catalog item has no SKU and so
+   * can never carry a supplier link — and for SKUs nobody has assigned.
+   * The by-supplier grouping reads this instead of re-resolving, so the
+   * two views cannot disagree about where an item comes from.
+   */
+  supplierId?: string | null;
+  supplierName?: string | null;
 };
 
 export type PreviewStoreGroup = {
