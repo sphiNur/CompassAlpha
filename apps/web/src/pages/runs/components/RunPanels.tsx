@@ -15,6 +15,7 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Badge,
+  Banner,
   Button,
   Card,
   CardHeader,
@@ -1330,6 +1331,19 @@ export function PreviewSummaryCard({
           language as ScopeTab in MemberPermissionsSheet. Two taps here
           (was three until 'overall' was dropped — see PreviewView), both
           instant: all the data is already in `preview`. */}
+      {/* Q7(a): the one piece of real content the deleted "plan run"
+          sheet carried. Inline, not modal — it is information about what
+          the start button does, and information belongs next to the
+          thing it describes rather than in a dialog you have to dismiss
+          before you can act on it. */}
+      {preview.sessions.length > 0 ? (
+        <div className="px-3 pt-2">
+          <Banner
+            tone="warn"
+            title={i18n.t('run.banner.planLockWarning', { n: preview.sessions.length })}
+          />
+        </div>
+      ) : null}
       {/* Search sits ABOVE the view chips: it applies to both, and with
           every group collapsed it is the primary way to reach a row. */}
       <div className="px-3 pt-1">
