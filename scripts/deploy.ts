@@ -100,8 +100,33 @@ function run(cmd: string, opts?: { cwd?: string; quiet?: boolean }): void {
 function runCapture(cmd: string, opts?: { cwd?: string }): string {
   return execSync(cmd, { cwd: opts?.cwd ?? ROOT, encoding: 'utf8' });
 }
+/**
+ * Run a command on the deploy host.
+ *
+ * The payload is base64'd rather than quoted (2026-07-26). `execSync`
+ * spawns through the platform shell — cmd.exe on Windows, which is where
+ * this script is actually run from — and cmd.exe does not understand the
+ * POSIX quoting that `JSON.stringify` produces. Any remote command
+ * containing a single quote was silently shredded into fragments that
+ * cmd.exe then tried to execute as programs:
+ *
+ *     bash: -c: line 1: unexpected EOF while looking for matching `"'
+ *     'run_index' is not recognized as an internal or external command
+ *
+ * Every affected caller happens to be a VERIFICATION step wrapped in
+ * try/catch, so this failed OPEN: the dev-auth-bypass grep, the
+ * BYPASSRLS probe and the in-flight-run pre-flight all logged a warning
+ * about psql and let the deploy proceed. Checks that cannot run are
+ * worse than no checks, because they read as green.
+ *
+ * Base64 puts nothing but [A-Za-z0-9+/=] on the command line, so no
+ * shell on either side has anything to misparse.
+ */
 function ssh(cmd: string): string {
-  return runCapture(`ssh -i "${KEY}" -o StrictHostKeyChecking=no ${HOST} ${JSON.stringify(cmd)}`);
+  const payload = Buffer.from(cmd, 'utf8').toString('base64');
+  return runCapture(
+    `ssh -i "${KEY}" -o StrictHostKeyChecking=no ${HOST} "echo ${payload} | base64 -d | bash"`,
+  );
 }
 
 if (!existsSync(KEY)) {
