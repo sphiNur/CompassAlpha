@@ -15,6 +15,22 @@
  * run states how many prices were accepted unchanged and how many of
  * those references were already old. Without that line this whole
  * feature would just be a faster way to bill a shop last month's price.
+ *
+ * ⚠ That line depends on something outside this file. Every
+ * ItemPurchased inserts a row into inventory.price_history
+ * (runProjection.ts), so `lastPriceBySku` in run.get MUST exclude the
+ * current run — `AND run_id IS DISTINCT FROM $runId`. It did not until
+ * 2026-07-27, and the effect was total rather than partial: the
+ * reference for a row the purchaser had just saved WAS the price they
+ * had just saved, so every purchased row compared equal and `carried`
+ * counted all of them, while `observed_at` was always today and `stale`
+ * was structurally 0 — the warning could not fire even once. Proven on
+ * a live instance with a price retyped from 70,000 to 105,000, which
+ * reported as carried-over-unchecked.
+ *
+ * Nothing in this file can detect that; both halves keep returning
+ * plausible numbers. If you touch that query, re-verify against a run
+ * that mixes changed and unchanged prices.
  */
 
 /** Reference prices go stale; a fortnight-old market price is a guess. */
@@ -35,7 +51,13 @@ export function priceRowState(args: {
 }): PriceRowState {
   if (args.expanded) return 'editing';
   if (args.status !== 'pending') return 'editing';
-  return args.lastPrice ? 'carried' : 'unpriced';
+  // Number(), not truthiness: the string "0" (and "0.00", and any
+  // garbage that parses to NaN) is truthy, so a zero reference rendered
+  // the one-tap 'carried' row complete with a ✓ — while canSave, which
+  // requires Number(price) > 0, kept that ✓ permanently grey with
+  // nothing on the row to explain why. A price that cannot be saved is
+  // not a price to carry forward.
+  return Number(args.lastPrice) > 0 ? 'carried' : 'unpriced';
 }
 
 /** Whole days between an ISO timestamp and `now`; null when unknown. */

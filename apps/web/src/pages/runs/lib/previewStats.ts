@@ -53,6 +53,18 @@ export function computePreviewStats(
     for (const line of group.items) {
       const key = itemKey(line);
       seen.add(key);
+      // Extras are counted here on purpose, unlike in the noSupplier
+      // branch below — the asymmetry is deliberate, not an oversight
+      // (it was raised as one on 2026-07-27).
+      //
+      // The two counters answer different questions. noSupplier is an
+      // exception you can clear right now by linking a stall, and an
+      // off-catalog extra has no skuId to link, so including it would
+      // pin the chip above zero permanently. unpriced feeds the
+      // estimate's honesty: an extra's cost genuinely is not in
+      // knownTotal, and the purchaser WILL discover its price at the
+      // stall. Hiding it would make "at least X" quietly overconfident,
+      // which is the one thing that line must never be.
       if (line.total === null) unpriced.add(key);
       else knownTotal += line.total;
       // Extras carry no skuId, so they can never hold a preferred

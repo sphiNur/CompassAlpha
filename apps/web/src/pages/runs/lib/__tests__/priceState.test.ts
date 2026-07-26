@@ -27,6 +27,26 @@ describe('priceRowState', () => {
     expect(priceRowState({ status: 'pending', lastPrice: null, expanded: false })).toBe('unpriced');
   });
 
+  it('does not carry a reference that cannot be saved', () => {
+    // These are all truthy strings, so the original `lastPrice ? ...`
+    // rendered a one-tap 'carried' row with a ✓ — while canSave, which
+    // requires Number(price) > 0, held that ✓ grey forever with no
+    // reason shown anywhere on the row.
+    for (const lastPrice of ['0', '0.00', '-5', 'abc']) {
+      expect(priceRowState({ status: 'pending', lastPrice, expanded: false })).toBe(
+        'unpriced',
+      );
+    }
+  });
+
+  it('still carries an ordinary sub-1 price', () => {
+    // The guard is Number(x) > 0, not a length or format check — cheap
+    // goods priced under one unit of currency must stay one-tappable.
+    expect(priceRowState({ status: 'pending', lastPrice: '0.5', expanded: false })).toBe(
+      'carried',
+    );
+  });
+
   it('switches to editing the moment the purchaser opens the row', () => {
     expect(priceRowState({ status: 'pending', lastPrice: '7000', expanded: true })).toBe('editing');
     expect(priceRowState({ status: 'pending', lastPrice: null, expanded: true })).toBe('editing');
