@@ -562,6 +562,7 @@ export const uz = {
   'run.preview.estimateTitle': 'Taxminiy',
   'run.preview.coverage': 'Narxi bor {known}/{total} · kamida {money}',
   'run.preview.noSupplierCount': 'Rastasiz: {n}',
+  'run.preview.filterMatch': '{total} tadan {n} ta',
   'run.purchase.pricingUniform': "Yagona narx / to'lov",
   'run.purchase.pricingPerStore': "Do'kon bo'yicha narx / to'lov",
   'run.previewSupplier.changeVendor': "Sotuvchini almashtirish",

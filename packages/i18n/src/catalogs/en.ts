@@ -619,6 +619,7 @@ export const en = {
   'run.preview.estimateTitle': 'Estimate',
   'run.preview.coverage': 'Priced {known}/{total} · at least {money}',
   'run.preview.noSupplierCount': 'No stall: {n}',
+  'run.preview.filterMatch': '{n} of {total} shown',
   'run.purchase.pricingUniform': 'Uniform price / payment',
   'run.purchase.pricingPerStore': 'Per-store price / payment',
   // Manual supplier assignment from preview (M1.6 #1).

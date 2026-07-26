@@ -53,6 +53,13 @@ import {
 import type { ShareTextDeps } from '../lib/shareText';
 import { computePreviewStats } from '../lib/previewStats';
 import { isOpen, pruneOpen, toggleOpen } from '../lib/accordion';
+import {
+  countStoreLines,
+  countSupplierLines,
+  filterStoreGroups,
+  filterSupplierGroups,
+} from '../lib/previewFilter';
+import { normalizeQuery } from '../../../lib/searchMatch';
 
 // formatQty / formatMoney are imported from `../lib/format` —
 // thousand-separator + max-1-decimal display rule applied everywhere.
@@ -1157,6 +1164,45 @@ export function PreviewSummaryCard({
   // state anyway. Groups really do come and go under the user — the 6s
   // poll re-derives both memos, and reassigning a SKU's stall can empty
   // a bucket outright.
+  /**
+   * Name filter — the escape hatch collapse-by-default needed.
+   *
+   * Groups start shut, which is what was asked for, but it took away the
+   * one thing the old always-open list was good at: scrolling to find a
+   * SKU. "This stall is out of tomatoes, I bought them three stalls
+   * later" means reaching a row inside a group you are not standing in
+   * front of, and with everything collapsed the only way was to open
+   * nine groups one at a time.
+   *
+   * While a query is active the accordion is bypassed — every surviving
+   * group renders open, because the point of searching is to see the
+   * hits, not to then go tapping for them.
+   */
+  const [filterText, setFilterText] = useState('');
+  const filterTokens = useMemo(() => normalizeQuery(filterText) ?? [], [filterText]);
+  const filtering = filterTokens.length > 0;
+  // Other-language names for the SKU behind a line, so a Russian speaker
+  // finds a row whose display name resolved to Chinese.
+  const lineHaystack = useCallback(
+    (line: PreviewLine) => {
+      const sku = line.skuId ? skuById.get(line.skuId) : null;
+      return sku ? Object.values(sku.names ?? {}) : [];
+    },
+    [skuById],
+  );
+  const visibleByStore = useMemo(
+    () => filterStoreGroups(byStore, filterTokens, lineHaystack),
+    [byStore, filterTokens, lineHaystack],
+  );
+  const visibleBySupplier = useMemo(
+    () => filterSupplierGroups(bySupplier, filterTokens, lineHaystack),
+    [bySupplier, filterTokens, lineHaystack],
+  );
+  const matchCount =
+    view === 'byStore' ? countStoreLines(visibleByStore) : countSupplierLines(visibleBySupplier);
+  const totalCount =
+    view === 'byStore' ? countStoreLines(byStore) : countSupplierLines(bySupplier);
+
   const storeKeys = byStore.map((g) => g.storeId);
   const supplierKeys = bySupplier.map((b) => b.supplierId ?? '__unassigned__');
   const openStoreKey = pruneOpen(openStore, storeKeys);
@@ -1283,6 +1329,25 @@ export function PreviewSummaryCard({
           language as ScopeTab in MemberPermissionsSheet. Two taps here
           (was three until 'overall' was dropped — see PreviewView), both
           instant: all the data is already in `preview`. */}
+      {/* Search sits ABOVE the view chips: it applies to both, and with
+          every group collapsed it is the primary way to reach a row. */}
+      <div className="px-3 pt-1">
+        <div className="flex items-center gap-2">
+          <input
+            type="search"
+            value={filterText}
+            onChange={(e) => setFilterText(e.target.value)}
+            placeholder={i18n.t('order.search.placeholder')}
+            aria-label={i18n.t('order.search.placeholder')}
+            className="h-9 min-w-0 flex-1 rounded-[var(--r-pill)] border border-[var(--c-divider)] bg-[var(--c-surface-2)] px-3 text-body outline-none focus:border-[var(--c-action)]"
+          />
+          {filtering ? (
+            <span className="shrink-0 font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
+              {i18n.t('run.preview.filterMatch', { n: matchCount, total: totalCount })}
+            </span>
+          ) : null}
+        </div>
+      </div>
       <div className="flex gap-1 px-3 pb-2 pt-1">
         {(['byStore', 'bySupplier'] as const).map((v) => (
           <button
@@ -1382,10 +1447,23 @@ export function PreviewSummaryCard({
         </div>
       ) : null}
 
+      {filtering && matchCount === 0 ? (
+        <div className="px-4 py-6 text-center">
+          <div className="text-body font-semibold text-[var(--c-fg)]">
+            {i18n.t('order.search.noMatches.title')}
+          </div>
+          <div className="mt-1 text-label text-[var(--c-fg-muted)]">
+            {i18n.t('order.search.noMatches.description')}
+          </div>
+        </div>
+      ) : null}
+
       {view === 'byStore' ? (
         <div className="px-2 py-2">
-          {byStore.map((g) => {
-            const open = isOpen(openStoreKey, g.storeId);
+          {visibleByStore.map((g) => {
+            // While filtering, every surviving group is open: the point
+            // of searching is to see the hits, not to go tapping for them.
+            const open = filtering || isOpen(openStoreKey, g.storeId);
             const storeNote = g.legacyNote;
             const panelId = `preview-store-${g.storeId}`;
             return (
@@ -1486,9 +1564,9 @@ export function PreviewSummaryCard({
               </Button>
             </div>
           ) : null}
-          {bySupplier.map((b) => {
+          {visibleBySupplier.map((b) => {
             const supplierKey = b.supplierId ?? '__unassigned__';
-            const open = isOpen(openSupplierKey, supplierKey);
+            const open = filtering || isOpen(openSupplierKey, supplierKey);
             const panelId = `preview-supplier-${supplierKey}`;
             return (
             <section

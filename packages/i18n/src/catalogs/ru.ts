@@ -548,6 +548,7 @@ export const ru = {
   'run.preview.estimateTitle': 'Оценка',
   'run.preview.coverage': 'С ценой {known}/{total} · не менее {money}',
   'run.preview.noSupplierCount': 'Без прилавка: {n}',
+  'run.preview.filterMatch': 'Показано {n} из {total}',
   'run.purchase.pricingUniform': 'Единая цена / оплата',
   'run.purchase.pricingPerStore': 'Цена / оплата по магазинам',
   'run.previewSupplier.changeVendor': 'Сменить поставщика',
