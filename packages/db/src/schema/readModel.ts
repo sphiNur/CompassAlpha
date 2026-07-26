@@ -178,6 +178,31 @@ export const marketRunsV = readModelSchema.table(
       t.runIndex,
     ),
     orgStatusIdx: index('mrv_org_status_idx').on(t.orgId, t.status, t.runDate),
+    /**
+     * At most ONE non-terminal run per org (migration 0035, 2026-07-26).
+     *
+     * `mrv_org_date_index_unique` above is (org, date, index) — it does
+     * not stop a second run existing alongside a live one, and the
+     * domain's PlanRun guard is `state.status !== 'absent'`, which is
+     * always true for a fresh stream id. So nothing prevented two
+     * concurrent runs, and `activeRun` on the client takes the FIRST of
+     * a list sorted by (run_date DESC, run_index DESC) — a second run
+     * would silently mask the first along with every price recorded
+     * into it.
+     *
+     * Not a theoretical concern once run creation becomes implicit
+     * (Q7a): the race stops being a deliberate button press and starts
+     * happening in the middle of a market trip.
+     *
+     * Multiple runs PER DAY stay legal, which matters — production
+     * shows 2-3 on several days. The constraint is on runs that are
+     * still open. Verified against production before writing this: 71
+     * runs, zero pairs ever simultaneously non-terminal, so this
+     * enforces the existing usage rather than changing it.
+     */
+    oneActivePerOrg: uniqueIndex('mrv_one_active_per_org_unique')
+      .on(t.orgId)
+      .where(sql`status IN ('planned', 'purchasing', 'delivering')`),
     /** Partial index for the worker's stale-claim sweep. */
     claimedIdx: index('mrv_claimed_idx')
       .on(t.claimedAt)

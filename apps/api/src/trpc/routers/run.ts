@@ -613,6 +613,34 @@ export const runRouter = router({
   create: idempotentMutation.input(RunCreateInputSchema).mutation(async ({ ctx, input }) => {
     return ctx.withOrg(async (tx) => {
       const date = input.date ?? todayStr(ctx);
+
+      /**
+       * One non-terminal run per org (migration 0035, 2026-07-26).
+       *
+       * Return the live run instead of failing. This procedure is about
+       * to be called implicitly — Q7(a) drops the explicit "new run"
+       * button and creates the run on the purchaser's first recorded
+       * action — so "there is already one" is the normal case, not an
+       * error. Making it idempotent here means the caller can just ask
+       * for a run id and get the right one.
+       *
+       * Sessions are deliberately NOT attached to the returned run.
+       * Anything still plannable while a run is open belongs to
+       * run.attachSessions, which has its own guards for the run's
+       * status; quietly folding that into create would make one
+       * procedure mean two things.
+       */
+      const live = await tx.query.marketRunsV.findFirst({
+        where: (r, { eq: eq2, and: and2, inArray: inArray2 }) =>
+          and2(
+            eq2(r.orgId, ctx.session!.orgId),
+            inArray2(r.status, ['planned', 'purchasing', 'delivering']),
+          ),
+      });
+      if (live) {
+        return { runId: live.id, runIndex: live.runIndex, lastSeq: live.lastSeq, reused: true };
+      }
+
       // Determine next runIndex for the day (re-runs produce runIndex=1, 2, ...).
       const existing = await tx.query.marketRunsV.findMany({
         where: (r, { eq: eq2, and: and2 }) =>
@@ -738,13 +766,25 @@ export const runRouter = router({
             occurredAt: e.occurredAt,
           })),
         });
+        // 2026-07-26: projectRun moved INSIDE the try. It is where
+        // market_runs_v is actually inserted, so it is where both unique
+        // constraints can fire — (org, date, index) if two callers
+        // computed the same next index, and the new one-active-per-org
+        // index if another caller created a run between this one's
+        // `live` check above and this insert. Outside the try, either
+        // surfaced as a 500.
+        //
+        // CONFLICT rather than a server-side retry: the transaction is
+        // already aborted here, so we cannot re-read to find the winner.
+        // One client retry resolves it — the second attempt hits the
+        // `live` short-circuit and gets the run that won.
+        await projectRun(tx, ctx.session!.orgId, events);
       } catch (err) {
         if (isUniqueViolation(err)) {
           throw new TRPCError({ code: 'CONFLICT', message: 'run.errors.alreadyPlanned' });
         }
         throw err;
       }
-      await projectRun(tx, ctx.session!.orgId, events);
 
       // Emit AttachedToRun on each session stream.
       const attachedSessions: Array<{ sessionId: string; lastSeq: number }> = [];
@@ -807,7 +847,12 @@ export const runRouter = router({
         });
       }
 
-      return { runId, runIndex, lastSeq: events[events.length - 1]?.seq ?? 0 };
+      return {
+        runId,
+        runIndex,
+        lastSeq: events[events.length - 1]?.seq ?? 0,
+        reused: false,
+      };
     });
   }),
 
