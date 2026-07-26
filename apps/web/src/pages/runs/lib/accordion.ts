@@ -32,12 +32,23 @@ export function pruneOpen(open: string | null, keys: readonly string[]): string 
 }
 
 /**
- * A lone group is always open.
+ * Whether this group is the open one.
  *
- * Collapsing the only group leaves a header and nothing else — the user
- * would have to tap to see the one thing the screen exists to show.
+ * There is deliberately NO "a lone group stays open" special case. The
+ * first cut had one, reasoning that collapsing the only group leaves a
+ * header and nothing else. Two problems with that:
+ *
+ *   - it made the toggle lie. `open` was forced true regardless of
+ *     state, so the button still rendered aria-expanded=true, a ▾ glyph
+ *     and a live onClick that changed nothing a user could perceive —
+ *     and WAI-ARIA requires aria-expanded to reflect what activation
+ *     actually does;
+ *   - it was second-guessing the request. A single-store operator may
+ *     well want to shut the one group to reach the send button and the
+ *     summary without scrolling past forty rows, and the summary strip
+ *     above the views already names the store and its total, so a
+ *     collapsed lone group is not a blank screen.
  */
-export function isOpen(open: string | null, key: string, groupCount: number): boolean {
-  if (groupCount <= 1) return true;
+export function isOpen(open: string | null, key: string): boolean {
   return open === key;
 }

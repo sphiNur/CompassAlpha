@@ -12,7 +12,7 @@
  *
  * Props-driven; orchestrator state and mutations stay in RunPage.
  */
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Badge,
   Button,
@@ -631,6 +631,17 @@ const PREVIEW_VIEW_STORAGE_KEY = 'compass.runPreview.view';
 // ../types (2026-07-26) so runs/lib/shareText.ts can consume them
 // without importing this component.
 
+/** Nearest scrollable ancestor — Shell's `<main class="overflow-y-auto">`. */
+function scrollParentOf(el: HTMLElement | null): HTMLElement | null {
+  let node = el?.parentElement ?? null;
+  while (node) {
+    const overflowY = getComputedStyle(node).overflowY;
+    if (overflowY === 'auto' || overflowY === 'scroll') return node;
+    node = node.parentElement;
+  }
+  return null;
+}
+
 function previewLineTotal(qty: string, unitPrice: string | null): number | null {
   if (!unitPrice) return null;
   const qtyNum = Number(qty);
@@ -732,6 +743,36 @@ export function PreviewSummaryCard({
    */
   const [openStore, setOpenStore] = useState<string | null>(null);
   const [openSupplier, setOpenSupplier] = useState<string | null>(null);
+
+  /**
+   * Keep the tapped header where the finger left it.
+   *
+   * Opening group 7 also CLOSES whichever group was open. If that one sat
+   * above the current scroll position its panel — easily 900px for a
+   * twenty-row store at two lines each — vanishes from above the
+   * viewport while scrollTop stays put, so the header the purchaser just
+   * pressed jumps off the top of the screen and they are suddenly looking
+   * at a different part of the list.
+   *
+   * Measure the header before the state change, re-measure after layout,
+   * and push the difference back into the scroller. `scrollIntoView` is
+   * deliberately not used: it fights the sticky page header and behaves
+   * differently in the Telegram WebView. iOS WKWebView has no scroll
+   * anchoring of its own, so nothing does this for us.
+   */
+  const scrollAnchor = useRef<{ el: HTMLElement; top: number } | null>(null);
+  const anchorOn = (el: HTMLElement | null): void => {
+    if (el) scrollAnchor.current = { el, top: el.getBoundingClientRect().top };
+  };
+  useLayoutEffect(() => {
+    const anchor = scrollAnchor.current;
+    if (!anchor) return;
+    scrollAnchor.current = null;
+    const scroller = scrollParentOf(anchor.el);
+    if (!scroller) return;
+    const delta = anchor.el.getBoundingClientRect().top - anchor.top;
+    if (delta !== 0) scroller.scrollTop += delta;
+  });
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   const currentUnitLabel = useCallback(
     (unit: string | null | undefined): string => {
@@ -1176,14 +1217,23 @@ export function PreviewSummaryCard({
             </span>
           </div>
           <div className="mt-0.5 flex min-w-0 items-baseline gap-1.5 text-label">
-            <span className={`min-w-0 max-w-[45%] truncate ${stallTone}`}>
-              {line.kind === 'extra'
-                ? ''
-                : line.supplierId
-                  ? `🛒 ${line.supplierName ?? ''}`
-                  : `❓ ${i18n.t('run.previewSupplier.unassigned')}`}
+            {/* flex-1, not a max-w cap: the stall name is the field this
+                whole row exists to surface, so it should take whatever the
+                number leaves rather than give up at 45% while half the row
+                sits empty. The emoji is decorative and aria-hidden — this
+                row repeats once per item, and a screen reader announcing
+                "shopping trolley" before every stall name is noise. */}
+            <span className={`min-w-0 flex-1 truncate ${stallTone}`}>
+              {line.kind === 'extra' ? null : (
+                <>
+                  <span aria-hidden>{line.supplierId ? '🛒' : '❓'}</span>{' '}
+                  {line.supplierId
+                    ? line.supplierName ?? ''
+                    : i18n.t('run.previewSupplier.unassigned')}
+                </>
+              )}
             </span>
-            <span className="ml-auto shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
+            <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
               {line.unitPrice ? `${qtyUnit} × ${formatMoney(line.unitPrice)}` : qtyUnit}
             </span>
           </div>
@@ -1335,7 +1385,7 @@ export function PreviewSummaryCard({
       {view === 'byStore' ? (
         <div className="px-2 py-2">
           {byStore.map((g) => {
-            const open = isOpen(openStoreKey, g.storeId, byStore.length);
+            const open = isOpen(openStoreKey, g.storeId);
             const storeNote = g.legacyNote;
             const panelId = `preview-store-${g.storeId}`;
             return (
@@ -1348,16 +1398,26 @@ export function PreviewSummaryCard({
                   <button> nested inside it — invalid HTML, a screen-reader
                   trap, and the reason that send handler needed a
                   stopPropagation() to avoid also toggling the group. */}
-              <div className="mb-1.5 flex items-start gap-2 rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-2 py-1.5">
+              {/* Padding lives on the BUTTON, not the wrapper: putting it
+                  on the wrapper made the visible grey band 46px tall while
+                  the actual hit area was the ~35px text block inside it,
+                  so the band's edges were dead pixels that look tappable.
+                  No aria-label either — it would override the name and
+                  meta below as the accessible name, leaving every header
+                  announcing an identical "Expand". aria-expanded already
+                  carries the state. */}
+              <div className="mb-1.5 flex items-center gap-2 rounded-[var(--r-utility)] bg-[var(--c-surface-2)] pr-2">
                 <button
                   type="button"
                   aria-expanded={open}
                   aria-controls={panelId}
-                  aria-label={i18n.t(open ? 'run.preview.collapse' : 'run.preview.expand')}
-                  onClick={() => setOpenStore((o) => toggleOpen(o, g.storeId))}
-                  className="press flex min-w-0 flex-1 items-start gap-2 rounded-[var(--r-utility)] text-left outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]"
+                  onClick={(e) => {
+                    anchorOn(e.currentTarget);
+                    setOpenStore((o) => toggleOpen(o, g.storeId));
+                  }}
+                  className="press flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-[var(--r-utility)] px-2 py-1.5 text-left outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]"
                 >
-                  <span aria-hidden className="mt-0.5 shrink-0 font-mono text-label text-[var(--c-fg-muted)]">
+                  <span aria-hidden className="shrink-0 font-mono text-label text-[var(--c-fg-muted)]">
                     {open ? '▾' : '▸'}
                   </span>
                   <span className="block min-w-0 flex-1">
@@ -1428,7 +1488,7 @@ export function PreviewSummaryCard({
           ) : null}
           {bySupplier.map((b) => {
             const supplierKey = b.supplierId ?? '__unassigned__';
-            const open = isOpen(openSupplierKey, supplierKey, bySupplier.length);
+            const open = isOpen(openSupplierKey, supplierKey);
             const panelId = `preview-supplier-${supplierKey}`;
             return (
             <section
@@ -1437,16 +1497,18 @@ export function PreviewSummaryCard({
             >
               {/* Real <button> + sibling send action — see the by-store
                   header for why the nested-button version had to go. */}
-              <div className="mb-1.5 flex items-start gap-2 rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-2 py-1.5">
+              <div className="mb-1.5 flex items-center gap-2 rounded-[var(--r-utility)] bg-[var(--c-surface-2)] pr-2">
                 <button
                   type="button"
                   aria-expanded={open}
                   aria-controls={panelId}
-                  aria-label={i18n.t(open ? 'run.preview.collapse' : 'run.preview.expand')}
-                  onClick={() => setOpenSupplier((o) => toggleOpen(o, supplierKey))}
-                  className="press flex min-w-0 flex-1 items-start gap-2 rounded-[var(--r-utility)] text-left outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]"
+                  onClick={(e) => {
+                    anchorOn(e.currentTarget);
+                    setOpenSupplier((o) => toggleOpen(o, supplierKey));
+                  }}
+                  className="press flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-[var(--r-utility)] px-2 py-1.5 text-left outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]"
                 >
-                  <span aria-hidden className="mt-0.5 shrink-0 font-mono text-label text-[var(--c-fg-muted)]">
+                  <span aria-hidden className="shrink-0 font-mono text-label text-[var(--c-fg-muted)]">
                     {open ? '▾' : '▸'}
                   </span>
                   <span className="block min-w-0 flex-1">

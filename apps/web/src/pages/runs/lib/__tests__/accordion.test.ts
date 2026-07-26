@@ -41,26 +41,21 @@ describe('pruneOpen', () => {
 
 describe('isOpen', () => {
   it('collapses every group by default', () => {
-    expect(isOpen(null, 'a', 3)).toBe(false);
-    expect(isOpen(null, 'b', 3)).toBe(false);
+    expect(isOpen(null, 'a')).toBe(false);
+    expect(isOpen(null, 'b')).toBe(false);
   });
 
   it('opens only the selected group', () => {
-    expect(isOpen('a', 'a', 3)).toBe(true);
-    expect(isOpen('a', 'b', 3)).toBe(false);
-    expect(isOpen('a', 'c', 3)).toBe(false);
+    expect(isOpen('a', 'a')).toBe(true);
+    expect(isOpen('a', 'b')).toBe(false);
+    expect(isOpen('a', 'c')).toBe(false);
   });
 
-  it('keeps a lone group open — collapsing it would hide the whole screen', () => {
-    expect(isOpen(null, 'only', 1)).toBe(true);
-    expect(isOpen('other', 'only', 1)).toBe(true);
-  });
-
-  it('treats an empty group set as trivially open', () => {
-    expect(isOpen(null, 'x', 0)).toBe(true);
-  });
-
-  it('starts collapsing again as soon as there are two groups', () => {
-    expect(isOpen(null, 'a', 2)).toBe(false);
+  // No lone-group exception on purpose: a forced-open group made the
+  // toggle report a state it would not change on activation. See the
+  // note on isOpen.
+  it('collapses a lone group like any other', () => {
+    expect(isOpen(null, 'only')).toBe(false);
+    expect(isOpen('only', 'only')).toBe(true);
   });
 });
