@@ -213,6 +213,15 @@ console.log(`Branch: ${gitBranch}`);
  * was. That is a data-integrity event, not a developer inconvenience.
  *
  * `planned` runs are not blocking: nothing is being typed yet.
+ *
+ * `amending` IS blocking, and was missing here until 2026-07-27. It is a
+ * super-admin reopening a FINISHED run to correct its records, which is
+ * the same unsaved-input risk as `purchasing` and touches money that has
+ * already been settled. The gap showed up in the only way these things
+ * ever do — a deploy that reported "no run in purchasing/delivering" and
+ * restarted the api 8 seconds after a RunReopened, with the matching
+ * RunRefinalized landing 31 seconds later on the new build. It happened
+ * to survive. The check was simply not looking.
  */
 if (!DRY && !args.has('--allow-active-run')) {
   step('0. pre-flight: no run is mid-flight');
@@ -222,7 +231,7 @@ if (!DRY && !args.has('--allow-active-run')) {
         'set -e',
         'cd /home/ubuntu/compass-alpha',
         'DATABASE_URL=$(grep -E "^DATABASE_URL=" .env | head -1 | cut -d= -f2- | sed \'s/^"\\(.*\\)"$/\\1/\')',
-        `psql "$DATABASE_URL" -tAc "SELECT run_date || ' #' || run_index || ' (' || status || ')' FROM read_model.market_runs_v WHERE status IN ('purchasing','delivering')"`,
+        `psql "$DATABASE_URL" -tAc "SELECT run_date || ' #' || run_index || ' (' || status || ')' FROM read_model.market_runs_v WHERE status IN ('purchasing','delivering','amending')"`,
       ].join(' && '),
     );
     const active = out
@@ -237,7 +246,7 @@ if (!DRY && !args.has('--allow-active-run')) {
       console.error('  Wait for the run to finish, or re-run with --allow-active-run.');
       process.exit(1);
     }
-    console.log('  ✓ no run in purchasing/delivering');
+    console.log('  ✓ no run in purchasing/delivering/amending');
   } catch (err) {
     // Same posture as the BYPASSRLS probe below: a failed check is a
     // warning, not a hard stop — otherwise an unrelated psql problem
