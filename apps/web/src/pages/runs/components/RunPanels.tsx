@@ -62,6 +62,12 @@ import {
   filterSupplierGroups,
 } from '../lib/previewFilter';
 import { normalizeQuery } from '../../../lib/searchMatch';
+import {
+  countByStatus,
+  visibleItems,
+  type ItemFilter,
+  type ItemView,
+} from '../lib/itemList';
 
 // formatQty / formatMoney are imported from `../lib/format` —
 // thousand-separator + max-1-decimal display rule applied everywhere.
@@ -196,6 +202,24 @@ export function ActiveRunPanel({
   }, [run.perStoreDemand]);
 
   /**
+   * SKU → its recorded splits, for the same reason as `demandBySku`.
+   *
+   * Every row was calling `run.splits.filter(sp => sp.skuId === ...)`,
+   * so an 87-item run with ~260 splits did ~22,000 comparisons per
+   * render — and the 6-second poll hands back fresh arrays every time,
+   * so this recomputed on a timer even when nothing had changed.
+   */
+  const splitsBySku = useMemo(() => {
+    const m = new Map<string, typeof run.splits>();
+    for (const sp of run.splits) {
+      const arr = m.get(sp.skuId) ?? [];
+      arr.push(sp);
+      m.set(sp.skuId, arr);
+    }
+    return m;
+  }, [run.splits]);
+
+  /**
    * Inverse of `demandBySku` — `storeId → [{ skuId, qty }]`. Powers the
    * per-store view added 2026-05-05. We compute it once here rather
    * than per-render of each store card so a 10-store run with 50 SKUs
@@ -290,6 +314,47 @@ export function ActiveRunPanel({
   const editingPhase = run.status === 'purchasing' || run.status === 'amending';
   const plannedOrEditing = run.status === 'planned' || editingPhase;
   const showViewToggle = plannedOrEditing && (showPerStore || showPerVendor || showPerCategory);
+
+  /**
+   * Search + filter over the in-run list.
+   *
+   * The pre-run preview has had both since the accordion landed; the
+   * moment the run STARTS they disappeared, and the 87-row list the
+   * purchaser actually works from had no way to find anything. Same
+   * matcher as the preview (lib/searchMatch), so a Russian speaker
+   * typing "молоко" finds a SKU whose display name resolved to Chinese.
+   *
+   * Not persisted: a query is about the stall you are standing at, and
+   * reopening the page to a list silently hiding 80 rows is worse than
+   * retyping four characters.
+   */
+  const [itemQuery, setItemQuery] = useState('');
+  const [itemFilter, setItemFilter] = useState<ItemFilter>('all');
+  const itemTokens = useMemo(() => normalizeQuery(itemQuery) ?? [], [itemQuery]);
+  const itemCounts = useMemo(
+    () => countByStatus(run.items, (it) => it.status),
+    [run.items],
+  );
+  const itemListView = useMemo(
+    (): ItemView<ActiveRun['items'][number]> => ({
+      nameOf: (it) => {
+        const sku = skuById.get(it.skuId);
+        return sku ? productName(sku) : it.skuId;
+      },
+      supplierNameOf: (it) => run.supplierBySku?.[it.skuId]?.name ?? null,
+      // Other-language names, so the row is findable in whichever
+      // language the purchaser thinks in — mirrors the preview's
+      // lineHaystack.
+      extraHaystackOf: (it) => Object.values(skuById.get(it.skuId)?.names ?? {}),
+      statusOf: (it) => it.status,
+      idOf: (it) => it.skuId,
+    }),
+    [skuById, productName, run.supplierBySku],
+  );
+  const visibleRunItems = useMemo(
+    () => visibleItems(run.items, itemListView, { tokens: itemTokens, filter: itemFilter }),
+    [run.items, itemListView, itemTokens, itemFilter],
+  );
 
   return (
     <div className="flex flex-col gap-2">
@@ -421,22 +486,69 @@ export function ActiveRunPanel({
           >
             {i18n.t('run.section.items')}
           </SectionLabel>
+          {/* Search + filter, only once the list is long enough to need
+              them. Below that threshold the whole list is on one screen
+              and the controls would cost more rows than they save. */}
+          {run.items.length >= 8 ? (
+            <>
+              <div className="px-4 pb-1.5">
+                <input
+                  type="search"
+                  value={itemQuery}
+                  onChange={(e) => setItemQuery(e.target.value)}
+                  placeholder={i18n.t('run.search.itemsPlaceholder')}
+                  aria-label={i18n.t('run.search.itemsPlaceholder')}
+                  className="h-9 w-full rounded-[var(--r-pill)] border border-[var(--c-divider)] bg-[var(--c-surface-2)] px-3 text-body outline-none focus:border-[var(--c-action)]"
+                />
+              </div>
+              <ChipBar
+                className="pt-0"
+                ariaLabel={i18n.t('run.filter.ariaLabel')}
+              >
+                <Chip
+                  selected={itemFilter === 'all'}
+                  onClick={() => setItemFilter('all')}
+                >
+                  {i18n.t('run.filter.all', { n: itemCounts.all })}
+                </Chip>
+                <Chip
+                  selected={itemFilter === 'pending'}
+                  onClick={() => setItemFilter('pending')}
+                >
+                  {i18n.t('run.filter.pending', { n: itemCounts.pending })}
+                </Chip>
+                {itemCounts.unavailable > 0 ? (
+                  <Chip
+                    selected={itemFilter === 'unavailable'}
+                    onClick={() => setItemFilter('unavailable')}
+                  >
+                    {i18n.t('run.filter.unavailable', {
+                      n: itemCounts.unavailable,
+                    })}
+                  </Chip>
+                ) : null}
+              </ChipBar>
+            </>
+          ) : null}
+          {visibleRunItems.length === 0 ? (
+            <p className="px-4 py-6 text-center text-body text-[var(--c-fg-muted)]">
+              {i18n.t('run.filter.noMatch')}
+            </p>
+          ) : null}
           <ul className="flex flex-col" role="list">
-            {run.items.map((it) => {
+            {visibleRunItems.map((it) => {
               const sku = skuById.get(it.skuId);
               const skuName = sku ? productName(sku) : it.skuId.slice(0, 8);
               // M3.52: pluck this SKU's recorded splits for the
               // per-store breakdown chips shown under purchased rows.
               // Pending rows fall back to planned demand inside the
               // row component — so we pass both regardless of status.
-              const actualSplits = run.splits
-                .filter((sp) => sp.skuId === it.skuId)
-                .map((sp) => ({
-                  storeId: sp.storeId,
-                  qty: sp.qty,
-                  unitPrice: sp.unitPrice,
-                  paymentMethod: sp.paymentMethod,
-                }));
+              const actualSplits = (splitsBySku.get(it.skuId) ?? []).map((sp) => ({
+                storeId: sp.storeId,
+                qty: sp.qty,
+                unitPrice: sp.unitPrice,
+                paymentMethod: sp.paymentMethod,
+              }));
               return (
                 <PurchaseRow
                   key={it.skuId}

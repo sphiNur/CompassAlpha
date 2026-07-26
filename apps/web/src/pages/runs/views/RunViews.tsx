@@ -64,6 +64,13 @@ export function PerStoreView({
   // different ways on two screens. useUnitLabel has existed since
   // M3.34 and falls back to the raw string for exotic free-text units.
   const unitLabel = useUnitLabel();
+  // Indexed once. Every row was doing run.items.find(...), which on an
+  // 87-item run is ~7,600 comparisons per render, repeated whenever the
+  // 6-second poll hands back a new array.
+  const itemBySku = useMemo(
+    () => new Map(run.items.map((it) => [it.skuId, it])),
+    [run.items],
+  );
   const orderedStores = useMemo(() => {
     const ids = [...skusByStore.keys()];
     ids.sort((a, b) => {
@@ -148,7 +155,7 @@ export function PerStoreView({
                   // (purchased / pending / unavailable) of the rolled-up
                   // SKU. Even read-only the purchaser wants to know
                   // they've already bought half the rows.
-                  runItem: run.items.find((it) => it.skuId === r.skuId) ?? null,
+                  runItem: itemBySku.get(r.skuId) ?? null,
                 }))
                 .sort((a, b) => {
                   const ai = a.sku?.id ? 0 : 1;
@@ -156,7 +163,8 @@ export function PerStoreView({
                   if (ai !== bi) return ai - bi;
                   const an = a.sku ? productName(a.sku) : a.skuId;
                   const bn = b.sku ? productName(b.sku) : b.skuId;
-                  return an.localeCompare(bn);
+                  const byName = an.localeCompare(bn);
+                  return byName !== 0 ? byName : a.skuId.localeCompare(b.skuId);
                 })
                 .map((r) => {
                   const skuName = r.sku ? productName(r.sku) : r.skuId.slice(0, 8);
@@ -279,6 +287,23 @@ export function PerVendorView({
 }) {
   // See PerStoreView — raw unit codes leaked here too.
   const unitLabel = useUnitLabel();
+  // Indexed once each — every row did run.items.find(...) plus
+  // run.splits.filter(...), which on an 87-item run with ~260 splits is
+  // roughly 30,000 comparisons per render, recomputed whenever the
+  // 6-second poll returns fresh array identities.
+  const itemBySku = useMemo(
+    () => new Map(run.items.map((it) => [it.skuId, it])),
+    [run.items],
+  );
+  const splitsBySku = useMemo(() => {
+    const m = new Map<string, typeof run.splits>();
+    for (const sp of run.splits) {
+      const arr = m.get(sp.skuId) ?? [];
+      arr.push(sp);
+      m.set(sp.skuId, arr);
+    }
+    return m;
+  }, [run.splits]);
   // M3.52: run-level multi-store flag. PurchaseRow uses this to decide
   // whether to render per-store chips on EVERY row of the run (true
   // when the run spans ≥2 stores) — without this single-store-demand
@@ -344,26 +369,33 @@ export function PerVendorView({
               {b.items
                 .map((r) => ({ ...r, sku: skuById.get(r.skuId) }))
                 .sort((a, c) => {
-                  // M3.43: keep pending rows on top so the purchaser
-                  // sees what's left to buy at this stall before the
-                  // already-resolved (purchased / N/A) rows below. The
-                  // aggregate view sorts by sortIndex; here the stall
-                  // grouping makes "still TODO at this stall" the
-                  // more useful first-line ordering.
-                  const order: Record<string, number> = {
-                    pending: 0,
-                    purchased: 1,
-                    unavailable: 2,
-                  };
-                  const oa = order[a.status] ?? 3;
-                  const ob = order[c.status] ?? 3;
-                  if (oa !== ob) return oa - ob;
+                  // Sorted by NAME only, deliberately.
+                  //
+                  // This used to lead with status (pending 0 /
+                  // purchased 1 / unavailable 2) to "keep what's left
+                  // on top". On a touch screen that is a trap: saving
+                  // the top row drops it into the resolved bucket and
+                  // pulls every row below it up by one, under a thumb
+                  // already travelling toward the next ✓. The second
+                  // tap lands on a row that was somewhere else when the
+                  // finger started moving, and on this list a tap
+                  // commits money. "Show me only what's left" is now a
+                  // filter chip the purchaser chooses, not something
+                  // the list does underneath them.
+                  //
+                  // (The comment here also claimed the aggregate view
+                  // sorted by sortIndex. There is no sortIndex on a run
+                  // item — the field exists only on admin catalogue
+                  // rows — and that view had no sort at all until it
+                  // got runs/lib/itemList.ts.)
                   const ai = a.sku ? 0 : 1;
                   const bi = c.sku ? 0 : 1;
                   if (ai !== bi) return ai - bi;
                   const an = a.sku ? productName(a.sku) : a.skuId;
                   const bn = c.sku ? productName(c.sku) : c.skuId;
-                  return an.localeCompare(bn);
+                  const byName = an.localeCompare(bn);
+                  // Total order — equal names must not swap on re-render.
+                  return byName !== 0 ? byName : a.skuId.localeCompare(c.skuId);
                 })
                 .map((r) => {
                   const skuName = r.sku ? productName(r.sku) : r.skuId.slice(0, 8);
@@ -375,7 +407,7 @@ export function PerVendorView({
                   // against `demand`. Per-vendor view now lives up to its
                   // original purpose: standing at stall X, see everything
                   // I'm buying here, type prices in one go.
-                  const runItem = run.items.find((it) => it.skuId === r.skuId);
+                  const runItem = itemBySku.get(r.skuId);
                   if (!runItem) {
                     // Defensive — the bucket was derived from run.items;
                     // if lookup fails, render a read-only stub instead
@@ -398,14 +430,12 @@ export function PerVendorView({
                   // per-vendor view is where the purchaser actually
                   // stands at the stall counting items into bags;
                   // they need the per-store qty in front of them.
-                  const actualSplits = run.splits
-                    .filter((sp) => sp.skuId === r.skuId)
-                    .map((sp) => ({
-                      storeId: sp.storeId,
-                      qty: sp.qty,
-                      unitPrice: sp.unitPrice,
-                      paymentMethod: sp.paymentMethod,
-                    }));
+                  const actualSplits = (splitsBySku.get(r.skuId) ?? []).map((sp) => ({
+                    storeId: sp.storeId,
+                    qty: sp.qty,
+                    unitPrice: sp.unitPrice,
+                    paymentMethod: sp.paymentMethod,
+                  }));
                   return (
                     <PurchaseRow
                       key={r.skuId}
@@ -839,6 +869,16 @@ export function PerCategoryView({
     if (ids.size === 0) for (const sp of run.splits) ids.add(sp.storeId);
     return [...ids];
   }, [run.perStoreDemand, run.splits]);
+  // Indexed once — see PerVendorView.
+  const splitsBySku = useMemo(() => {
+    const m = new Map<string, typeof run.splits>();
+    for (const sp of run.splits) {
+      const arr = m.get(sp.skuId) ?? [];
+      arr.push(sp);
+      m.set(sp.skuId, arr);
+    }
+    return m;
+  }, [run.splits]);
   const groups = useMemo(() => {
     const byCategory = new Map<string, ActiveRun['items']>();
     for (const item of run.items) {
@@ -889,14 +929,12 @@ export function PerCategoryView({
             {group.items.map((item) => {
               const sku = skuById.get(item.skuId);
               const skuName = sku ? productName(sku) : item.skuId.slice(0, 8);
-              const actualSplits = run.splits
-                .filter((sp) => sp.skuId === item.skuId)
-                .map((sp) => ({
-                  storeId: sp.storeId,
-                  qty: sp.qty,
-                  unitPrice: sp.unitPrice,
-                  paymentMethod: sp.paymentMethod,
-                }));
+              const actualSplits = (splitsBySku.get(item.skuId) ?? []).map((sp) => ({
+                storeId: sp.storeId,
+                qty: sp.qty,
+                unitPrice: sp.unitPrice,
+                paymentMethod: sp.paymentMethod,
+              }));
               return (
                 <PurchaseRow
                   key={item.skuId}
