@@ -1484,19 +1484,36 @@ export const runRouter = router({
         // pull (single index scan) instead of N round-trips.
         const skuIds = items.map((it) => it.skuId);
         const lastPriceBySku: Record<string, string> = {};
+        // 2026-07-26: WHEN the reference price was observed, alongside
+        // what it was. The purchase row carries a price forward from the
+        // last trip; a price from three weeks ago deserves a different
+        // amount of trust than one from yesterday, and the finish sheet
+        // needs to say how many carried-over prices were stale. Kept as
+        // a PARALLEL map rather than changing lastPriceBySku's shape:
+        // that field feeds the inline price prefill in three mount
+        // sites, and reshaping the money path to add a timestamp is a
+        // bad trade.
+        const lastPriceObservedAtBySku: Record<string, string> = {};
         if (skuIds.length > 0) {
           const rows = (await tx.execute(
             sql`SELECT DISTINCT ON (sku_id) sku_id::text AS sku_id,
-                       unit_price::text AS unit_price
+                       unit_price::text AS unit_price,
+                       observed_at
                 FROM inventory.price_history
                 WHERE org_id = ${ctx.session!.orgId}
                   AND sku_id IN (${sql.raw(
                     skuIds.map((id) => `'${id}'`).join(','),
                   )})
                 ORDER BY sku_id, observed_at DESC`,
-          )) as unknown as Array<{ sku_id: string; unit_price: string }>;
+          )) as unknown as Array<{
+            sku_id: string;
+            unit_price: string;
+            observed_at: Date | string;
+          }>;
           for (const r of rows) {
             lastPriceBySku[r.sku_id] = r.unit_price;
+            lastPriceObservedAtBySku[r.sku_id] =
+              r.observed_at instanceof Date ? r.observed_at.toISOString() : String(r.observed_at);
           }
         }
         // C.2 (M3.38, 2026-05-19): resolve display names for the
@@ -1544,6 +1561,7 @@ export const runRouter = router({
           splits,
           perStoreDemand,
           lastPriceBySku,
+          lastPriceObservedAtBySku,
           sessionNotesByStore,
           sessionExtrasByStore,
           supplierBySku,

@@ -434,6 +434,7 @@ export function ActiveRunPanel({
                   actualSplits={actualSplits}
                   isMultiStoreRun={demandStoreIds.length > 1}
                   lastPrice={run.lastPriceBySku?.[it.skuId] ?? null}
+                  lastPriceObservedAt={run.lastPriceObservedAtBySku?.[it.skuId] ?? null}
                   i18n={i18n}
                   priceInThousands={priceInThousands}
                   saving={savingSkuId === it.skuId}

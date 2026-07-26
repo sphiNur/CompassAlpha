@@ -20,6 +20,7 @@ import { useAuthStore } from '../../../stores/authStore';
 import { formatMoney, formatQty } from '../../../lib/format';
 import { useI18n, useUnitLabel } from '../../../hooks/useI18n';
 import { toDisplayPrice, fromDisplayPrice } from '../lib/priceMath';
+import { priceRowState, priceAgeDays, isStalePrice } from '../lib/priceState';
 import type { ActiveRun } from '../types';
 
 /**
@@ -416,6 +417,7 @@ export function PerVendorView({
                       actualSplits={actualSplits}
                       isMultiStoreRun={isMultiStoreRun}
                       lastPrice={run.lastPriceBySku?.[r.skuId] ?? null}
+                      lastPriceObservedAt={run.lastPriceObservedAtBySku?.[r.skuId] ?? null}
                       i18n={i18n}
                       priceInThousands={priceInThousands}
                       saving={savingSkuId === r.skuId}
@@ -906,6 +908,7 @@ export function PerCategoryView({
                   actualSplits={actualSplits}
                   isMultiStoreRun={demandStoreIds.length > 1}
                   lastPrice={run.lastPriceBySku?.[item.skuId] ?? null}
+                  lastPriceObservedAt={run.lastPriceObservedAtBySku?.[item.skuId] ?? null}
                   i18n={i18n}
                   priceInThousands={priceInThousands}
                   saving={savingSkuId === item.skuId}
@@ -951,6 +954,7 @@ export function PurchaseRow({
   actualSplits,
   isMultiStoreRun,
   lastPrice,
+  lastPriceObservedAt,
   i18n,
   priceInThousands,
   saving,
@@ -1000,6 +1004,8 @@ export function PurchaseRow({
    */
   isMultiStoreRun: boolean;
   lastPrice: string | null;
+  /** When that reference price was observed, ISO. Drives the stale mark. */
+  lastPriceObservedAt?: string | null;
   i18n: ReturnType<typeof useI18n>;
   /** M3.36: when true, the price input shows raw UZS / 1000. Save still
    *  emits raw UZS. */
@@ -1066,6 +1072,13 @@ export function PurchaseRow({
   const prevThousandsRef = useRef(priceInThousands);
   /** Enter on qty jumps here; Enter here saves. See the input grid below. */
   const priceRef = useRef<HTMLInputElement>(null);
+  /**
+   * Q7(b): the qty/price editor is closed until the purchaser asks for
+   * it. Local to the row and not persisted — reopening the page should
+   * present the compact list again, and a row the user opened but did
+   * not save has nothing worth restoring.
+   */
+  const [priceEditorOpen, setPriceEditorOpen] = useState(false);
   useEffect(() => {
     if (prevThousandsRef.current === priceInThousands) return;
     setPrice((p) => {
@@ -1247,6 +1260,103 @@ export function PurchaseRow({
       })}
     </div>
   ) : null;
+
+  /**
+   * Q7(b) — the price editor is opt-in (2026-07-26).
+   *
+   * "大都数物品价格不是每天都会变化的，只有个别的价格会变，所以默认不显示价格
+   * 输入，需要输入价格要点击具体的物品."
+   *
+   * A pending row used to carry the whole qty × price × method × ✓ grid,
+   * on every one of several hundred items. Most of them cost the same as
+   * last trip, so that grid was noise pushing the rows that DO need
+   * attention off the screen. Now a row that already has a reference
+   * price renders as one line with the carried value and a single ✓;
+   * tapping anywhere on it opens the editor. A row with NO reference
+   * price cannot be one-tapped and says so.
+   *
+   * Tap economics are the point, and they are neutral-to-better:
+   * unchanged item stays one tap (✓, exactly as before), changed item is
+   * tap-row → type → Enter, which is the same three actions as
+   * tap-field → type → tap-✓. What changes is how many rows fit on the
+   * screen at once.
+   */
+  const collapsedState = priceRowState({
+    status: item.status,
+    lastPrice,
+    expanded: priceEditorOpen,
+  });
+
+  if (item.status === 'pending' && collapsedState !== 'editing') {
+    const carried = collapsedState === 'carried';
+    const ageDays = priceAgeDays(lastPriceObservedAt, Date.now());
+    const stale = isStalePrice(lastPriceObservedAt, Date.now());
+    return (
+      <li className="border-b border-[var(--c-divider)] last:border-b-0">
+        <div className="flex items-center gap-2 px-4 py-1.5">
+          <button
+            type="button"
+            onClick={() => setPriceEditorOpen(true)}
+            aria-label={skuName}
+            className="press flex min-h-11 min-w-0 flex-1 items-baseline gap-2 rounded-[var(--r-utility)] text-left outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]"
+          >
+            <span className="shrink-0 truncate text-body font-semibold">{skuName}</span>
+            <span className="min-w-0 flex-1 truncate text-label text-[var(--c-fg-muted)]">
+              {formatQty(item.plannedQty)} {unit}
+              {carried ? (
+                <>
+                  {' · '}
+                  {/* ↺ = carried forward, not confirmed today. */}
+                  <span aria-hidden>↺</span>{' '}
+                  <span className="font-mono tabular-nums">
+                    {priceInThousands
+                      ? `${formatMoney(Number(lastPrice) / 1000)}K`
+                      : formatMoney(lastPrice)}
+                  </span>
+                  {stale && ageDays !== null ? (
+                    <span className="text-[var(--c-warning)]">
+                      {' · '}
+                      {i18n.t('run.price.daysAgo', { n: ageDays })}
+                    </span>
+                  ) : null}
+                </>
+              ) : null}
+            </span>
+            {!carried ? (
+              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-2 py-0.5 text-label font-semibold text-[var(--c-warning)] ring-hairline">
+                {i18n.t('run.price.fillIn')}
+              </span>
+            ) : null}
+          </button>
+          <button
+            type="button"
+            onClick={() => onMarkNa(item.skuId)}
+            className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-label text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
+          >
+            {i18n.t('run.action.markNa')}
+          </button>
+          {carried ? (
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={!canSave}
+              aria-busy={saving || undefined}
+              aria-label="save purchase"
+              className={
+                'flex h-11 min-w-9 shrink-0 items-center justify-center rounded-[var(--r-pill)] px-2.5 text-body font-semibold ' +
+                (canSave
+                  ? 'bg-[var(--c-action)] text-[var(--c-action-fg)] active:opacity-80'
+                  : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
+              }
+            >
+              ✓
+            </button>
+          ) : null}
+        </div>
+        {showBreakdown ? <div className="px-4 pb-1.5">{breakdownChips}</div> : null}
+      </li>
+    );
+  }
 
   if (item.status === 'pending') {
     return (
