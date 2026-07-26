@@ -5,6 +5,8 @@
  * Falls back through en.ts only as a defensive measure for new keys
  * added between releases — production should never display fallback.
  */
+import type { CatalogKey } from './index';
+
 export const uz = {
   // ── 1. Navigation ──────────────────────────────────────────────
   'nav.order': 'Buyurtma',
@@ -1083,4 +1085,4 @@ export const uz = {
   'run.history.viewAll': 'Barcha tarix',
   'run.history.storePurchases': 'Do\'konlarning shu kundagi xaridlari',
   'run.history.storeItemsHeading': '{store}ning shu kundagi xaridlari',
-} as const;
+} as const satisfies Record<CatalogKey, string>;

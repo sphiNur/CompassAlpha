@@ -1,3 +1,5 @@
+import type { CatalogKey } from './index';
+
 export const zh = {
   // ── 1. Navigation ──────────────────────────────────────────────
   'nav.order': '下单',
@@ -994,4 +996,4 @@ export const zh = {
   'run.history.viewAll': '全部历史',
   'run.history.storePurchases': '各店当天采购',
   'run.history.storeItemsHeading': '{store} 当天采购清单',
-} as const;
+} as const satisfies Record<CatalogKey, string>;
