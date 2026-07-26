@@ -1549,6 +1549,32 @@ export const runRouter = router({
                   AND sku_id IN (${sql.raw(
                     skuIds.map((id) => `'${id}'`).join(','),
                   )})
+                  -- 2026-07-27: exclude THIS run's own observations.
+                  --
+                  -- Every ItemPurchased inserts a price_history row
+                  -- (runProjection.ts:88/138/465). Without this filter the
+                  -- "last observed price" for an item the purchaser just
+                  -- saved IS the price they just saved — so the reference
+                  -- chases the entry and can never disagree with it.
+                  --
+                  -- Two things broke on that, both proven empirically:
+                  --   * the finish sheet's "N priced the same as last
+                  --     time" counted EVERY purchased row, including one
+                  --     retyped from 70,000 to 105,000, because by then
+                  --     both sides of the comparison read 105,000;
+                  --   * observed_at became today for every saved row, so
+                  --     isStalePrice was permanently false and the
+                  --     stale-reference warning could never fire once.
+                  --
+                  -- That counter is the whole safety argument for hiding
+                  -- the price editor behind a tap (Q7b), so it has to
+                  -- compare against the PREVIOUS trip, not this one.
+                  --
+                  -- IS DISTINCT FROM, not <>: run_id is nullable, and
+                  -- NULL <> $1 evaluates to NULL, which would silently
+                  -- drop every historical observation that predates run
+                  -- tracking.
+                  AND run_id IS DISTINCT FROM ${run.id}
                 ORDER BY sku_id, observed_at DESC`,
           )) as unknown as Array<{
             sku_id: string;
