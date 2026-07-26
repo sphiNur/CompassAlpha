@@ -337,7 +337,7 @@ export function PurchaseSheet({
               </span>
               <span
                 className={`font-mono text-label tabular-nums ${
-                  splitMatches ? 'text-[var(--c-success)]' : 'text-[var(--c-warning)]'
+                  splitMatches ? 'text-[var(--c-success)]' : 'text-[var(--c-warning-fg)]'
                 }`}
               >
                 {formatQty(splitTotal)} / {formatQty(draft.actualQty || '0')}

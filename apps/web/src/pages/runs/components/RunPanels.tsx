@@ -1217,7 +1217,7 @@ export function PreviewSummaryCard({
   ) => {
     const rowBg = index % 2 === 0 ? 'bg-[var(--c-surface)]' : 'bg-[var(--c-surface-2)]';
     const formulaTone =
-      line.total === null ? 'text-[var(--c-warning)]' : 'text-[var(--c-fg-muted)]';
+      line.total === null ? 'text-[var(--c-warning-fg)]' : 'text-[var(--c-fg-muted)]';
     const nameNode =
       opts?.editableSupplier && line.kind === 'sku' && line.skuId ? (
         <button
@@ -1243,20 +1243,20 @@ export function PreviewSummaryCard({
     if (opts?.showSupplier) {
       const stallTone = line.supplierId
         ? 'text-[var(--c-fg-muted)]'
-        : 'text-[var(--c-warning)]';
+        : 'text-[var(--c-warning-fg)]';
       const qtyUnit = `${formatQty(line.qty)} ${line.unit}`.trim();
       return (
         <li key={line.id} className={`px-2 py-1.5 ${rowBg}`}>
           <div className="flex min-w-0 items-baseline gap-2 text-body">
             {line.kind === 'extra' ? (
-              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--c-warning)] ring-hairline">
+              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--c-warning-fg)] ring-hairline">
                 {i18n.t('order.extras.label')}
               </span>
             ) : null}
             <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">{line.name}</span>
             <span
               className={`shrink-0 font-mono text-label font-semibold tabular-nums ${
-                line.total === null ? 'text-[var(--c-warning)]' : 'text-[var(--c-fg)]'
+                line.total === null ? 'text-[var(--c-warning-fg)]' : 'text-[var(--c-fg)]'
               }`}
             >
               {line.total === null
@@ -1302,7 +1302,7 @@ export function PreviewSummaryCard({
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-body">
             {line.kind === 'extra' ? (
-              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--c-warning)] ring-hairline">
+              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--c-warning-fg)] ring-hairline">
                 {i18n.t('order.extras.label')}
               </span>
             ) : null}
@@ -1429,13 +1429,13 @@ export function PreviewSummaryCard({
                   // not a control that commits money hundreds of times a
                   // trip. The static counter beside it matches so the row
                   // reads as one band.
-                  className="press flex min-h-9 items-center rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2.5 text-label text-[var(--c-warning)] ring-hairline"
+                  className="press flex min-h-9 items-center rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2.5 text-label text-[var(--c-warning-fg)] ring-hairline"
                 >
                   {i18n.t('run.preview.noSupplierCount', { n: previewStats.noSupplier })}
                 </button>
               ) : null}
               {previewStats.total > previewStats.known ? (
-                <span className="flex min-h-9 items-center rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2.5 text-label text-[var(--c-warning)]">
+                <span className="flex min-h-9 items-center rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2.5 text-label text-[var(--c-warning-fg)]">
                   {i18n.t('run.preview.unknownPrices', {
                     n: previewStats.total - previewStats.known,
                   })}
@@ -1449,7 +1449,7 @@ export function PreviewSummaryCard({
               <div key={g.storeId} className="flex items-baseline gap-2 text-body-sm">
                 <span className="min-w-0 flex-1 truncate">{g.storeName}</span>
                 {g.unknownCount > 0 ? (
-                  <span className="shrink-0 text-label text-[var(--c-warning)]">
+                  <span className="shrink-0 text-label text-[var(--c-warning-fg)]">
                     {i18n.t('run.preview.unknownPrices', { n: g.unknownCount })}
                   </span>
                 ) : null}
