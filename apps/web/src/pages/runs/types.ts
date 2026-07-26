@@ -96,6 +96,13 @@ export interface ActiveRun {
     status: string;
   }>;
   lastPriceBySku?: Record<string, string>;
+  /**
+   * When each reference price was observed (ISO). Parallel to
+   * lastPriceBySku rather than folded into it: that map feeds the
+   * inline price prefill in three places, and reshaping the money path
+   * to carry a timestamp is a bad trade for a display concern.
+   */
+  lastPriceObservedAtBySku?: Record<string, string>;
   /** M1.8: per-store concatenated session notes ("其他物品", legacy). */
   sessionNotesByStore?: Record<string, string>;
   /** M3.16-C: per-store structured extras ("其他物品" rows).

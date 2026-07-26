@@ -51,6 +51,7 @@ import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
 // Run money math — extracted to pages/runs/lib (Phase 4 step 1, unit-tested).
 import { settleItemLine, settlePerStore } from './runs/lib/settlement';
+import { countCarriedOver, STALE_PRICE_DAYS } from './runs/lib/priceState';
 // History subsystem — extracted to runs/history (Phase 4 step 2).
 import {
   RunHistorySection,
@@ -708,6 +709,16 @@ export function RunPage() {
     const byStoreList = [...settlePerStore(items, splits, expenses).values()].sort(
       (a, b) => b.total - a.total,
     );
+    // Q7(b): how many of these prices are simply last trip's price
+    // again, and how many of those references were already old. See
+    // countCarriedOver — this is what makes hiding the price editor
+    // defensible.
+    const { carried: carriedOver, stale: carriedOverStale } = countCarriedOver(
+      items,
+      runDetailQuery.data?.lastPriceBySku ?? {},
+      runDetailQuery.data?.lastPriceObservedAtBySku ?? {},
+      Date.now(),
+    );
     return {
       skus,
       stores,
@@ -718,6 +729,8 @@ export function RunPage() {
       addedTotal,
       expensesCount,
       expensesTotal,
+      carriedOver,
+      carriedOverStale,
       byStore: byStoreList,
     };
   }, [runDetailQuery.data]);
@@ -1037,6 +1050,34 @@ export function RunPage() {
                 })
               : '';
           /**
+           * Q7(b) safety net (2026-07-26).
+           *
+           * Hiding the price editor is only defensible if closing a run
+           * says how much of it was billed at a price nobody re-checked.
+           * Otherwise "most prices don't change" quietly becomes "we
+           * charged three shops last month's number", and every accepted
+           * price also writes a fresh price_history row that becomes the
+           * NEXT trip's reference — the error compounds daily.
+           *
+           * Derived by comparing each saved price to its reference
+           * rather than by tracking taps: a tap flag is per-device state
+           * a reload loses, and it answers the wrong question. What the
+           * manager needs is not "did someone tap" but "which of these
+           * numbers is just last week's number again".
+           */
+          const carriedLine =
+            finishSummary.carriedOver > 0
+              ? '\n' +
+                i18n.t('run.finish.carriedOver', { n: finishSummary.carriedOver }) +
+                (finishSummary.carriedOverStale > 0
+                  ? ' · ' +
+                    i18n.t('run.finish.carriedOverStale', {
+                      n: finishSummary.carriedOverStale,
+                      days: STALE_PRICE_DAYS,
+                    })
+                  : '')
+              : '';
+          /**
            * M3.52 (2026-05-23): per-store settlement list. Shown only
            * for multi-store runs (single-store: the headline total
            * already says everything). The manager sees "店A 100,000
@@ -1078,6 +1119,7 @@ export function RunPage() {
               breakdownLine +
               addedLine +
               expensesLine +
+              carriedLine +
               perStoreLines,
             confirmLabel: i18n.t('run.action.finish'),
             danger: false,
