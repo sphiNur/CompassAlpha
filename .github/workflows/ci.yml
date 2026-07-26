@@ -30,9 +30,22 @@
 
 name: CI
 
+# 2026-07-26: widened from `push: [main]` to every branch.
+#
+# With main-only triggers a feature branch had ZERO gating — the
+# codex/procurement-collaboration-history-expenses branch sat 59 commits
+# behind main for weeks, was the branch the primary dev checkout was
+# sitting on (and therefore what deploy.ts would have shipped), and had
+# never had a single CI run against it. Since deploy.ts tars the working
+# directory rather than a git ref, "CI is green on main" says nothing
+# about what is actually running in production unless every branch a
+# human might deploy from is also checked.
+#
+# The concurrency group below already cancels superseded runs per ref,
+# so the marginal cost is roughly one run per branch push.
 on:
   push:
-    branches: [main]
+    branches: ['**']
   pull_request:
     branches: [main]
 
