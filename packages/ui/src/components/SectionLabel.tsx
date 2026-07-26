@@ -22,7 +22,10 @@ import { cn } from '../cn';
  *
  * Visual rules (read these BEFORE customising):
  *
- *   - Text size: `text-label` (12 px) — small enough to feel like
+ *   - Text size: `text-label` (11 px — see --text-label in tokens.css;
+ *     this comment said 12 px, which stopped being true at M3.14 and is
+ *     exactly the drift this component exists to prevent) — small
+ *     enough to feel like
  *     metadata, not a heading.
  *   - Color: `--c-fg-muted` (default `muted` tone) — keeps it visually
  *     lower than card titles which sit at text-h2 / --c-fg. Use

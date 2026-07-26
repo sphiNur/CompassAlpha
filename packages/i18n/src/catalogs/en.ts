@@ -574,7 +574,7 @@ export const en = {
   'run.section.stores': 'Stores',
   'run.section.readyToPlan': 'Ready to plan',
   'run.label.sessionsCount': '{n, plural, =1 {1 session} other {{n} sessions}}',
-  'run.label.pendingFraction': '{done}/{total} pending',
+  'run.label.itemsProgress': '{bought} bought · {na} n/a · {pending} left',
   'run.label.confirmedFraction': '{done}/{total} confirmed',
   'run.label.itemsHint': '{n, plural, =1 {1 item} other {{n} items}} · {subtitle}',
   'run.label.itemsCount': '{n, plural, =1 {1 item} other {{n} items}}',

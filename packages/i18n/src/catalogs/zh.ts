@@ -473,7 +473,7 @@ export const zh = {
   'run.section.stores': '门店',
   'run.section.readyToPlan': '可以生成采购单',
   'run.label.sessionsCount': '{n} 个订单',
-  'run.label.pendingFraction': '{done}/{total} 待办',
+  'run.label.itemsProgress': '已买 {bought} · 缺货 {na} · 剩 {pending}',
   'run.label.confirmedFraction': '{done}/{total} 已确认',
   'run.label.itemsHint': '{n} 项 · {subtitle}',
   'run.label.itemsCount': '{n} 项',

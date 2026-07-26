@@ -524,7 +524,7 @@ export const uz = {
   'run.section.stores': "Do'konlar",
   'run.section.readyToPlan': 'Rejalashtirishga tayyor',
   'run.label.sessionsCount': "{n, plural, =1 {1 buyurtma} other {{n} ta buyurtma}}",
-  'run.label.pendingFraction': "{done}/{total} kutilmoqda",
+  'run.label.itemsProgress': "{bought} olindi · {na} yo'q · {pending} qoldi",
   'run.label.confirmedFraction': "{done}/{total} tasdiqlandi",
   'run.label.itemsHint': "{n, plural, =1 {1 mahsulot} other {{n} ta mahsulot}} · {subtitle}",
   'run.label.itemsCount': "{n, plural, =1 {1 mahsulot} other {{n} ta mahsulot}}",

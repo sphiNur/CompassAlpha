@@ -400,10 +400,23 @@ export function ActiveRunPanel({
           {/* M2.1: SectionLabel (was 3-line ad-hoc div). Same visual,
               standardised primitive so every section eyebrow renders
               identically across the app. */}
+          {/* Was run.label.pendingFraction — "{done}/{total} 待办" fed
+              with the PENDING count. Two problems. An x/y fraction
+              beside a section header is read as "x of y done", so a
+              fresh run announced "87/87" (i.e. finished) and a nearly
+              finished one announced "3/87"; and the sibling
+              confirmedFraction twenty lines below uses the identical
+              shape counting the other way. It also folded "bought" and
+              "couldn't get" into one number, so the two outcomes that
+              matter most at handover were indistinguishable.
+
+              Three counts, each labelled, counting in the direction the
+              word implies. */}
           <SectionLabel
-            meta={i18n.t('run.label.pendingFraction', {
-              done: run.items.filter((i) => i.status === 'pending').length,
-              total: run.items.length,
+            meta={i18n.t('run.label.itemsProgress', {
+              bought: run.items.filter((i) => i.status === 'purchased').length,
+              na: run.items.filter((i) => i.status === 'unavailable').length,
+              pending: run.items.filter((i) => i.status === 'pending').length,
             })}
           >
             {i18n.t('run.section.items')}

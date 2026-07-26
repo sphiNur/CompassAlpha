@@ -510,7 +510,7 @@ export const ru = {
   'run.section.stores': 'Магазины',
   'run.section.readyToPlan': 'Готово к планированию',
   'run.label.sessionsCount': '{n, plural, one {1 заказ} few {{n} заказа} other {{n} заказов}}',
-  'run.label.pendingFraction': '{done}/{total} в очереди',
+  'run.label.itemsProgress': '{bought} куп. · {na} нет · {pending} ост.',
   'run.label.confirmedFraction': '{done}/{total} подтверждено',
   'run.label.itemsHint': '{n, plural, one {1 позиция} few {{n} позиции} other {{n} позиций}} · {subtitle}',
   'run.label.itemsCount': '{n, plural, one {1 позиция} few {{n} позиции} other {{n} позиций}}',
