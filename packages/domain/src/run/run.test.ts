@@ -237,6 +237,38 @@ describe('run.decide', () => {
     ).toThrow('run.errors.unavailableNoteRequired');
   });
 
+  // 2026-07-26: StartDelivery had no permission check whatsoever. The
+  // tRPC layer only asserts store VISIBILITY, so any member with a store
+  // in the run — including shop staff, whose whole permission set is
+  // order.draft / order.submit / delivery.confirm / sales.record — could
+  // end the purchasing phase while the purchaser was still in the
+  // market, after which PurchaseItem rejects everything.
+  test('StartDelivery is forbidden without run.purchase', () => {
+    const s = planAndPurchase();
+    const shopStaff: ActorCtx = {
+      userId: 'staff',
+      memberId: 'staff',
+      permissions: new Set(['order.draft', 'order.submit', 'delivery.confirm', 'sales.record']),
+    };
+    expect(() => decideRun(s, { type: 'StartDelivery', actor: shopStaff }, clock)).toThrow(
+      'run.errors.cannotPurchase',
+    );
+  });
+
+  test('StartDelivery is forbidden for a confirmer (delivery.confirm alone)', () => {
+    const s = planAndPurchase();
+    expect(() => decideRun(s, { type: 'StartDelivery', actor: confirmer() }, clock)).toThrow(
+      'run.errors.cannotPurchase',
+    );
+  });
+
+  test('StartDelivery still works for a purchaser', () => {
+    const s = planAndPurchase();
+    const evs = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock);
+    expect(evs).toHaveLength(1);
+    expect(evs[0]!.type).toBe('DeliveryStarted');
+  });
+
   test('StartDelivery requires all items handled', () => {
     let s = emptyRunState('r1');
     s = decideRun(
