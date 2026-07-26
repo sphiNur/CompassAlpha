@@ -15,15 +15,18 @@
  *      renders without unhandled JS errors.
  *
  * Usage:
- *   COMPASS_BASE=https://<your-tunnel>.trycloudflare.com bun run scripts/browser-smoke.ts
- *   COMPASS_BASE=http://localhost:3000                   bun run scripts/browser-smoke.ts
+ *   COMPASS_BASE=https://<your-tunnel>.trycloudflare.com node --experimental-strip-types scripts/browser-smoke.ts
+ *   COMPASS_BASE=http://localhost:3000                   node --experimental-strip-types scripts/browser-smoke.ts
+ *
+ * On Windows, run this with Node. Bun's Playwright launcher can hang before
+ * Chromium produces any output; the app is not failing in that case.
  *
  * COMPASS_BASE is required (P0-4, 2026-05-17 — stale-default footgun removed).
  */
 import { chromium, type ConsoleMessage, type Page } from 'playwright';
 
 // Use process.env (works under both Bun and Node) so this can run via
-// `node --experimental-strip-types ...` or `bun run ...` interchangeably.
+// `node --experimental-strip-types ...`.
 const rawBase = process.env.COMPASS_BASE;
 if (!rawBase) {
   console.error('✖ COMPASS_BASE is required (e.g. https://<tunnel>.trycloudflare.com or http://localhost:3000)');
@@ -44,13 +47,24 @@ function record(name: string, pass: boolean, detail?: string) {
 
 const fakeUser = { id: 6402913074, first_name: 'Smoke', username: 'smoke', language_code: 'en' };
 const fakeSession = {
-  user: { id: 'u-smoke', displayName: 'Smoke', displayNameLocked: true, avatarUrl: null, locale: 'en', tgUsername: 'smoke' },
+  user: {
+    id: 'u-smoke',
+    displayName: 'Smoke',
+    displayNameLocked: true,
+    avatarUrl: null,
+    locale: 'en',
+    secondaryLocale: null,
+    tgUsername: 'smoke',
+  },
   member: {
     memberId: 'mem-smoke',
     orgId: 'org-default',
     orgSlug: 'default',
     orgName: 'Default Organization',
     status: 'active',
+    currency: 'UZS',
+    taxRatePct: '0.00',
+    pricesIncludeTax: true,
   },
   stores: [{ id: 'store-1', name: 'Smoke Store', code: 'SMOKE', isActive: true }],
   permissions: [
@@ -66,6 +80,9 @@ const fakeSession = {
     'system.logs.view',
   ],
   roleSlugs: ['super_admin'],
+  myMaxRank: 100,
+  storeRanks: {},
+  adminStoreIds: ['store-1'],
   needsOnboarding: false,
 };
 const fakeTokens = {
@@ -181,7 +198,23 @@ async function run() {
     };
   }, { user: fakeUser });
 
-  // Stub auth.telegramLogin & auth.me at the network layer.
+  // Stub auth.loginModes, auth.telegramLogin & auth.me at the network layer.
+  await context.route('**/trpc/auth.loginModes*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
+      body: JSON.stringify({
+        result: {
+          data: {
+            environment: { nodeEnv: 'test', releaseChannel: 'development', localRequest: true },
+            telegram: { available: true, hasBotToken: true, requiresInitData: true },
+            devPersona: { available: false, enabled: false, reason: 'auth.errors.devBypassDisabled' },
+            nonTelegram: { available: false, enabled: false, reason: 'auth.errors.nonTelegramLoginDisabled' },
+          },
+        },
+      }),
+    });
+  });
   await context.route('**/trpc/auth.telegramLogin', async (route) => {
     await route.fulfill({
       status: 200,
@@ -362,6 +395,17 @@ async function run() {
       const visibleText = await page.evaluate(() => document.body.innerText.slice(0, 500));
       console.log('  --- diagnostic: visible text (first 500 chars) ---');
       console.log('    ' + visibleText.replace(/\n/g, '\n    '));
+      const authState = await page.evaluate(() => window.localStorage.getItem('compass.auth') ?? '(empty)');
+      console.log('  --- diagnostic: compass.auth localStorage ---');
+      console.log('    ' + authState.slice(0, 800));
+      const authDebug = await page.evaluate(() =>
+        JSON.stringify((window as unknown as { __compassAuthDebug?: unknown }).__compassAuthDebug ?? null),
+      );
+      console.log('  --- diagnostic: AuthGate render state ---');
+      console.log('    ' + authDebug);
+      const rootHtml = await page.evaluate(() => document.querySelector('#root')?.innerHTML.slice(0, 800) ?? '(no #root)');
+      console.log('  --- diagnostic: #root html (first 800 chars) ---');
+      console.log('    ' + rootHtml.replace(/\n/g, '\n    '));
       await page.screenshot({ path: 'smoke-failure-shell.png', fullPage: true });
     }
 

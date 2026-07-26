@@ -116,6 +116,7 @@ pgDescribe('refreshTokens service (PG-gated)', () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let db: any;
   let s: typeof import('@compass/db').schema;
+  let closeTestDb: typeof import('@compass/db').closeDb;
   let testUserId: string;
 
   beforeAll(async () => {
@@ -123,6 +124,7 @@ pgDescribe('refreshTokens service (PG-gated)', () => {
     svc = await import('../services/refreshTokens');
     const dbMod = await import('@compass/db');
     s = dbMod.schema;
+    closeTestDb = dbMod.closeDb;
     db = dbMod.getDb();
     // Insert a test user to satisfy refresh_tokens.user_id FK.
     const tgUserId = BigInt(Date.now());
@@ -138,9 +140,15 @@ pgDescribe('refreshTokens service (PG-gated)', () => {
   });
 
   afterAll(async () => {
-    if (!SHOULD_RUN_PG || !testUserId) return;
-    // CASCADE on user_id will sweep refresh_tokens.
-    await db.delete(s.users).where(eq(s.users.id, testUserId));
+    if (!SHOULD_RUN_PG) return;
+    try {
+      if (testUserId) {
+        // CASCADE on user_id will sweep refresh_tokens.
+        await db.delete(s.users).where(eq(s.users.id, testUserId));
+      }
+    } finally {
+      await closeTestDb?.();
+    }
   });
 
   test('issueRefresh inserts a tracked row and returns matching jti', async () => {
@@ -183,9 +191,14 @@ pgDescribe('refreshTokens service (PG-gated)', () => {
     // Consume parent twice. First succeeds (marks revoked); second
     // hits the replay path.
     await svc.consumeRefresh(db, root.id, root.family);
-    await expect(
-      svc.consumeRefresh(db, root.id, root.family),
-    ).rejects.toThrow(/replay/i);
+    let replayErr: unknown = null;
+    try {
+      await svc.consumeRefresh(db, root.id, root.family);
+    } catch (err) {
+      replayErr = err;
+    }
+    expect(replayErr).toBeTruthy();
+    expect((replayErr as Error).message).toMatch(/replay/i);
     // The replay path revokes ALL family members. Verify the child is
     // now also revoked even though we never directly touched it.
     const childRow = await db.query.refreshTokens.findFirst({
@@ -208,9 +221,14 @@ pgDescribe('refreshTokens service (PG-gated)', () => {
     // a replay to be safe (revokes the legitimate family).
     const issued = await svc.issueRefresh(db, { userId: testUserId });
     const wrongFamily = '99999999-9999-9999-9999-999999999999';
-    await expect(
-      svc.consumeRefresh(db, issued.id, wrongFamily),
-    ).rejects.toThrow(/replay/i);
+    let replayErr: unknown = null;
+    try {
+      await svc.consumeRefresh(db, issued.id, wrongFamily);
+    } catch (err) {
+      replayErr = err;
+    }
+    expect(replayErr).toBeTruthy();
+    expect((replayErr as Error).message).toMatch(/replay/i);
   });
 
   test('revokeAllForUser revokes every active token, leaves already-revoked alone', async () => {
