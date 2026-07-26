@@ -124,6 +124,9 @@ export function ActiveRunPanel({
     skuId: string;
     actualQty: string;
     unitPrice: string;
+    /** See the identical field on RunViews' views — only the by-stall
+     *  view supplies it; this panel's aggregate rows send nothing. */
+    supplierId?: string | null;
     storeSplits: Array<{
       storeId: string;
       qty: string;

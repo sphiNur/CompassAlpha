@@ -1636,7 +1636,14 @@ export function RunPage() {
           i18n={i18n}
           priceInThousands={priceInThousands}
           savingSkuId={inlineSavingSkuId}
-          onSavePurchaseInline={({ skuId, actualQty, unitPrice, storeSplits, paymentMethod }) => {
+          onSavePurchaseInline={({
+            skuId,
+            actualQty,
+            unitPrice,
+            storeSplits,
+            paymentMethod,
+            supplierId,
+          }) => {
             // Direct in-page save — no sheet involved. Triggered when
             // the user blurs the price input on a row whose qty
             // matches planned. Splits come from per-store demand.
@@ -1647,7 +1654,19 @@ export function RunPage() {
             purchaseItem.mutate({
               runId: activeRun.id,
               skuId,
-              supplierId: null,
+              // 2026-07-26: was hard-coded null, so every inline save wrote
+              // price_history.supplier_id = NULL (runProjection.ts:678 takes
+              // it straight off the event payload). That made "what did I pay
+              // for this at THIS stall last time" permanently unanswerable —
+              // the only price history we had was per-SKU-global.
+              //
+              // Only the by-stall view supplies it (see PerVendorView's
+              // onSave wrapper). The aggregate / by-store / by-category views
+              // have no stall context, and a SKU's *preferred* supplier is a
+              // guess about where the purchase happened — recording a guess
+              // would poison the very history this is meant to build, so
+              // those paths still send null. A gap beats a lie.
+              supplierId: supplierId ?? null,
               unitPrice,
               actualQty,
               receiptPhotoUrl: null,

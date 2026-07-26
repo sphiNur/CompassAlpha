@@ -747,6 +747,7 @@ export const runRouter = router({
       await projectRun(tx, ctx.session!.orgId, events);
 
       // Emit AttachedToRun on each session stream.
+      const attachedSessions: Array<{ sessionId: string; lastSeq: number }> = [];
       for (const sessionId of input.sessionIds) {
         const orderEvents = (await readStream(tx, 'order', sessionId)) as unknown as OrderEvent[];
         let oState = emptyOrderState(sessionId);
@@ -769,8 +770,43 @@ export const runRouter = router({
             events: ev.map((e) => ({ ...e })),
           });
           await projectOrder(tx, ctx.session!.orgId, ev);
+          attachedSessions.push({
+            sessionId,
+            lastSeq: ev[ev.length - 1]?.seq ?? oState.seq,
+          });
         }
       }
+
+      // 2026-07-26: run.create was the only run mutation that broadcast
+      // nothing — compare attachSessions / ejectSession / purchaseItem,
+      // which all publish here. Two visible consequences:
+      //
+      //   - a second purchaser's client had no idea a run existed until
+      //     its next 6s poll;
+      //   - the store staff whose approved orders this call just LOCKED
+      //     (AttachToRun makes them uneditable and un-unapprovable) got
+      //     no order.changed at all, so their Order/Approval screens
+      //     kept offering actions the server would now reject.
+      //
+      // Deliberately NOT calling dispatchRunEventNotifications here:
+      // that sends real Telegram messages, and "should creating a run
+      // notify everyone" is a product decision, not a missing-broadcast
+      // bug. Left for whoever wants that behaviour to choose it.
+      hub.publish(ctx.session!.orgId, {
+        type: 'run.changed',
+        orgId: ctx.session!.orgId,
+        runId,
+        lastSeq: events[events.length - 1]?.seq ?? 0,
+      });
+      for (const a of attachedSessions) {
+        hub.publish(ctx.session!.orgId, {
+          type: 'order.changed',
+          orgId: ctx.session!.orgId,
+          sessionId: a.sessionId,
+          lastSeq: a.lastSeq,
+        });
+      }
+
       return { runId, runIndex, lastSeq: events[events.length - 1]?.seq ?? 0 };
     });
   }),

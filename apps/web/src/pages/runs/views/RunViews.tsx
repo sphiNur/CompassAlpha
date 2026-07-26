@@ -244,6 +244,13 @@ export function PerVendorView({
     skuId: string;
     actualQty: string;
     unitPrice: string;
+    /**
+     * Where the purchase actually happened. Only the by-stall view can
+     * know this (the purchaser is working one stall at a time), so the
+     * other views omit it and the handler falls back to null rather
+     * than guessing from the SKU's preferred supplier.
+     */
+    supplierId?: string | null;
     storeSplits: Array<{
       storeId: string;
       qty: string;
@@ -412,7 +419,11 @@ export function PerVendorView({
                       i18n={i18n}
                       priceInThousands={priceInThousands}
                       saving={savingSkuId === r.skuId}
-                      onSave={onSavePurchaseInline}
+                      // The one place in the app that knows WHERE a
+                      // purchase happened: the purchaser is working
+                      // this stall's bucket. Everything else sends
+                      // null — see the handler in RunPage.
+                      onSave={(p) => onSavePurchaseInline({ ...p, supplierId: b.supplierId })}
                       onMarkNa={onMarkNa}
                       onEdit={onEditPurchased}
                       onUnmark={onUnmark}
@@ -796,6 +807,13 @@ export function PerCategoryView({
     skuId: string;
     actualQty: string;
     unitPrice: string;
+    /**
+     * Where the purchase actually happened. Only the by-stall view can
+     * know this (the purchaser is working one stall at a time), so the
+     * other views omit it and the handler falls back to null rather
+     * than guessing from the SKU's preferred supplier.
+     */
+    supplierId?: string | null;
     storeSplits: Array<{
       storeId: string;
       qty: string;
