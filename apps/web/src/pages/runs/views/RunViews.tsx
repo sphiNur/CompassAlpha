@@ -1391,6 +1391,21 @@ export function PurchaseRow({
    */
   const breakdown = item.status === 'pending' ? demand : actualSplits;
   const showBreakdown = isMultiStoreRun && breakdown.length >= 1;
+  /**
+   * On a SINGLE-store row the chip's quantity is the same number the row
+   * already prints in its quantity column — by construction, since
+   * plannedQty (and purchasedQty) for a one-store row IS that store's
+   * figure. 78% of production rows are single-store (3,137 of 4,024), so
+   * that duplicate was on most of the list.
+   *
+   * The store NAME stays: it is what M3.52's second pass explicitly
+   * asked for ("the rows where ONLY ONE store wants the SKU aren't
+   * labeled either — those still look ambiguous"). Only the redundant
+   * figure goes. Multi-store rows are unchanged — there the per-store
+   * quantities are the whole point, because they say how much to put in
+   * each bag.
+   */
+  const singleStore = breakdown.length === 1;
   const breakdownChips = showBreakdown ? (
     <div className="flex flex-wrap items-center gap-1.5">
       {breakdown.map((d) => {
@@ -1408,9 +1423,11 @@ export function PurchaseRow({
             className="inline-flex items-center gap-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-1.5 py-0.5 text-label ring-1 ring-[var(--c-divider)]"
           >
             <span className="font-medium text-[var(--c-fg)]">{storeName}</span>
-            <span className="font-mono tabular-nums text-[var(--c-fg-muted)]">
-              {formatQty(d.qty)} {unit}
-            </span>
+            {singleStore ? null : (
+              <span className="font-mono tabular-nums text-[var(--c-fg-muted)]">
+                {formatQty(d.qty)} {unit}
+              </span>
+            )}
             {overridePrice ? (
               <span className="font-mono tabular-nums text-[var(--c-fg-muted)]">
                 @{overridePrice}{priceInThousands ? 'K' : ''}
