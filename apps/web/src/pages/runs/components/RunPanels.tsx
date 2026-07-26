@@ -822,6 +822,7 @@ export function PreviewSummaryCard({
       const sku = skuById.get(row.skuId);
       const unitPrice = estimatedPriceForSku(row.skuId);
       const group = ensurePreviewStoreGroup(m, row.storeId, row.storeName);
+      const supplier = preview.supplierBySku[row.skuId] ?? null;
       addPreviewLine(group, {
         id: `sku:${row.storeId}:${row.skuId}`,
         kind: 'sku',
@@ -831,6 +832,8 @@ export function PreviewSummaryCard({
         unit: currentUnitLabel(sku?.unit),
         unitPrice,
         total: previewLineTotal(row.qty, unitPrice),
+        supplierId: supplier?.id ?? null,
+        supplierName: supplier?.name ?? null,
       });
     }
 
@@ -857,6 +860,32 @@ export function PreviewSummaryCard({
       ensurePreviewStoreGroup(m, storeId).legacyNote = trimmed;
     }
 
+    // Order within a store: catalog SKUs before off-catalog extras, then
+    // by stall, then by name. Grouping by stall inside the store is the
+    // cheap way to get the visual clustering a nested store→stall→item
+    // tree would give, without a second level of headers eating ~28px
+    // each on a 375px screen. Unassigned SKUs sink to the bottom of the
+    // SKU block so the "no stall" exception reads as a tail, not noise
+    // sprinkled through the list.
+    //
+    // This also fixes a real defect: `perStoreDemand` comes from an
+    // unordered orderItemsV query, so the previous row order was
+    // Postgres heap order.
+    for (const g of m.values()) {
+      g.items.sort((a, b) => {
+        if (a.kind !== b.kind) return a.kind === 'sku' ? -1 : 1;
+        const an = a.supplierName ?? null;
+        const bn = b.supplierName ?? null;
+        if (an !== bn) {
+          if (an === null) return 1;
+          if (bn === null) return -1;
+          const bySupplierName = an.localeCompare(bn);
+          if (bySupplierName !== 0) return bySupplierName;
+        }
+        return a.name.localeCompare(b.name);
+      });
+    }
+
     return [...m.values()]
       .filter((g) => g.items.length > 0 || g.legacyNote)
       .sort((a, b) => a.storeName.localeCompare(b.storeName));
@@ -867,6 +896,7 @@ export function PreviewSummaryCard({
     preview.perStoreDemand,
     preview.sessionExtrasByStore,
     preview.sessionNotesByStore,
+    preview.supplierBySku,
     productName,
     skuById,
   ]);
@@ -916,9 +946,12 @@ export function PreviewSummaryCard({
 
     for (const store of byStore) {
       for (const line of store.items) {
+        // Read the id the LINE already carries rather than re-resolving
+        // from preview.supplierBySku — one resolve point means the two
+        // views cannot drift about where an item comes from.
         const supplier =
-          line.kind === 'sku' && line.skuId
-            ? preview.supplierBySku[line.skuId] ?? null
+          line.kind === 'sku' && line.supplierId
+            ? preview.supplierBySku[line.skuId!] ?? null
             : null;
         const bucket = ensureSupplier(
           supplier?.id ?? null,
@@ -1091,7 +1124,7 @@ export function PreviewSummaryCard({
   const renderLine = (
     line: PreviewLine,
     index: number,
-    opts?: { editableSupplier?: boolean },
+    opts?: { editableSupplier?: boolean; showSupplier?: boolean },
   ) => {
     const rowBg = index % 2 === 0 ? 'bg-[var(--c-surface)]' : 'bg-[var(--c-surface-2)]';
     const formulaTone =
@@ -1109,6 +1142,60 @@ export function PreviewSummaryCard({
       ) : (
         <span className="min-w-0 max-w-full text-[var(--c-fg)]">{line.name}</span>
       );
+    /**
+     * Two-line form for the by-store view (2026-07-26). The stall is the
+     * group header in the by-supplier view, so repeating it per row there
+     * would be noise — hence the opt-in.
+     *
+     * Layout rule: only the product name and the stall name may truncate.
+     * Every number is `shrink-0`, because a half-visible price is worse
+     * than a wrapped one — the purchaser reads these back to a vendor.
+     */
+    if (opts?.showSupplier) {
+      const stallTone = line.supplierId
+        ? 'text-[var(--c-fg-muted)]'
+        : 'text-[var(--c-warning)]';
+      const qtyUnit = `${formatQty(line.qty)} ${line.unit}`.trim();
+      return (
+        <li key={line.id} className={`px-2 py-1.5 ${rowBg}`}>
+          <div className="flex min-w-0 items-baseline gap-2 text-body">
+            {line.kind === 'extra' ? (
+              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--c-warning)] ring-hairline">
+                {i18n.t('order.extras.label')}
+              </span>
+            ) : null}
+            <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">{line.name}</span>
+            <span
+              className={`shrink-0 font-mono text-label font-semibold tabular-nums ${
+                line.total === null ? 'text-[var(--c-warning)]' : 'text-[var(--c-fg)]'
+              }`}
+            >
+              {line.total === null
+                ? i18n.t('run.preview.priceUnknown')
+                : formatMoney(line.total)}
+            </span>
+          </div>
+          <div className="mt-0.5 flex min-w-0 items-baseline gap-1.5 text-label">
+            <span className={`min-w-0 max-w-[45%] truncate ${stallTone}`}>
+              {line.kind === 'extra'
+                ? ''
+                : line.supplierId
+                  ? `🛒 ${line.supplierName ?? ''}`
+                  : `❓ ${i18n.t('run.previewSupplier.unassigned')}`}
+            </span>
+            <span className="ml-auto shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
+              {line.unitPrice ? `${qtyUnit} × ${formatMoney(line.unitPrice)}` : qtyUnit}
+            </span>
+          </div>
+          {line.note ? (
+            <div className="mt-0.5 whitespace-pre-wrap text-label leading-snug text-[var(--c-fg-muted)]">
+              {line.note}
+            </div>
+          ) : null}
+        </li>
+      );
+    }
+
     return (
       <li
         key={line.id}
@@ -1296,7 +1383,7 @@ export function PreviewSummaryCard({
                 id={panelId}
                 className={open ? 'overflow-hidden rounded-[var(--r-utility)]' : 'hidden'}
               >
-                {g.items.map((line, idx) => renderLine(line, idx))}
+                {g.items.map((line, idx) => renderLine(line, idx, { showSupplier: true }))}
               </ul>
               {/* M1.8 / M3.16-C: surface the staff's "其他物品" requests
                   inline. M3.16-C structured extras render as one row
