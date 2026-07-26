@@ -111,6 +111,10 @@ interface PurchaseSheetProps {
   onChange: (d: PurchaseDraft | null) => void;
   onSubmit: (d: PurchaseDraft) => void;
   submitting: boolean;
+  /** Undo this purchase entirely. Edit mode only; the caller routes it
+   *  through the page's ConfirmSheet. Absent on a fresh purchase, where
+   *  there is nothing yet to undo. */
+  onUndo?: () => void;
 }
 
 
@@ -127,6 +131,7 @@ export function PurchaseSheet({
   onChange,
   onSubmit,
   submitting,
+  onUndo,
 }: PurchaseSheetProps) {
   const toast = useToast();
   const sku = draft ? skuById.get(draft.skuId) : null;
@@ -425,6 +430,22 @@ export function PurchaseSheet({
                 placeholder={i18n.t('run.label.reasonPlaceholder')}
               />
             </label>
+          ) : null}
+          {/* Undo lives here now.
+              It used to be a 20px text button on the purchased row,
+              immediately beside the row's other controls — a destructive
+              action one row-pitch from a money-committing one. Moving it
+              inside the edit sheet keeps it reachable (tap the row →
+              here) and puts deliberate distance between it and the ✓.
+              It still routes through RunPage's ConfirmSheet. */}
+          {draft.isEdit && onUndo ? (
+            <button
+              type="button"
+              onClick={onUndo}
+              className="w-full rounded-[var(--r-utility)] py-2 text-label font-semibold text-[var(--c-danger)] active:bg-[var(--c-surface-2)]"
+            >
+              {i18n.t('run.action.undoPurchase')}
+            </button>
           ) : null}
         </div>
       ) : null}

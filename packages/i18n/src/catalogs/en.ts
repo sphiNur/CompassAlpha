@@ -800,6 +800,8 @@ export const en = {
   'run.label.paymentMethod': 'Payment method',
   'run.label.paymentCash': 'Cash',
   'run.label.paymentTransfer': 'Transfer',
+  'run.action.unmarkUnavailableAriaLabel': 'Mark available again: {name}',
+  'run.reason.paymentMethodChanged': 'Payment method corrected on the row',
   'run.confirm.finish.paymentBreakdown': '💵 cash {cash} · 🏦 transfer {transfer}',
   'run.confirm.cancel.title': 'Cancel the entire run?',
   'run.confirm.cancel.body':

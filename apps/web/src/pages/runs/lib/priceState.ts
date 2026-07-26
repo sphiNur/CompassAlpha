@@ -36,6 +36,30 @@
 /** Reference prices go stale; a fortnight-old market price is a guess. */
 export const STALE_PRICE_DAYS = 7;
 
+/**
+ * Row-local freshness bands — deliberately NOT `STALE_PRICE_DAYS`.
+ *
+ * Seven days is the right question ONCE, on the finish sheet, where
+ * `countCarriedOver` asks an approver how much of a run was billed at a
+ * number nobody re-checked. It is the wrong question 87 times on a
+ * surface built for scanning: staples are re-bought weekly, so eight
+ * days is the steady state, not an exception, and the owner's screenshot
+ * showed six of eight rows coloured. A colour every row wears is not a
+ * warning, it is wallpaper — and it hides the genuinely 31-day-old row,
+ * which rendered in exactly the same orange.
+ *
+ * Three bands, one of which is silence:
+ *
+ *   <= AGING_DAYS   nothing on the row at all
+ *   <= GUESS_DAYS   a single tilde. No colour, no extra element
+ *   >  GUESS_DAYS   the only status ink on the row
+ *
+ * Turn these down if the operator reports too many tildes; that is the
+ * knob, and it is a tuning question, not a correctness one.
+ */
+export const AGING_DAYS = 14;
+export const GUESS_DAYS = 30;
+
 export type PriceRowState =
   /** Pending, has a reference price, purchaser hasn't touched it. */
   | 'carried'

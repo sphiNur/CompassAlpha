@@ -113,7 +113,6 @@ export function ActiveRunPanel({
   onMarkNa,
   onEditPurchased,
   onUnmark,
-  onUndoPurchase,
   onOpenAdvancedPurchase,
   onDeliverStore,
   onRecallStore,
@@ -121,6 +120,8 @@ export function ActiveRunPanel({
   onRecordExtraExpense,
   onRemoveExpense,
   onOpenExpense,
+  onSetPaymentMethod,
+  paymentBusySkuId,
 }: {
   run: ActiveRun;
   skuById: Map<
@@ -154,7 +155,6 @@ export function ActiveRunPanel({
   onMarkNa: (skuId: string) => void;
   onEditPurchased: (item: ActiveRun['items'][number]) => void;
   onUnmark: (skuId: string, skuName: string) => void;
-  onUndoPurchase: (skuId: string, skuName: string) => void;
   onOpenAdvancedPurchase: (item: ActiveRun['items'][number]) => void;
   onDeliverStore: (storeId: string, storeName: string) => void;
   onRecallStore: (storeId: string, storeName: string) => void;
@@ -171,6 +171,11 @@ export function ActiveRunPanel({
   /** M3.44: remove an off-catalog expense (purchasing phase only). */
   onRemoveExpense: (expenseId: string, label: string) => void;
   onOpenExpense: () => void;
+  onSetPaymentMethod: (
+    item: ActiveRun['items'][number],
+    next: 'cash' | 'transfer',
+  ) => void;
+  paymentBusySkuId: string | null;
 }) {
   // 2026-07-26: the AGGREGATE view — the default screen during an
   // actual run — passed the raw canonical unit code down to
@@ -418,6 +423,8 @@ export function ActiveRunPanel({
       ) : null}
       {showViewToggle && viewMode === 'perVendor' && showPerVendor ? (
         <PerVendorView
+          onSetPaymentMethod={onSetPaymentMethod}
+          paymentBusySkuId={paymentBusySkuId}
           run={run}
           skuById={skuById}
           storeById={storeById}
@@ -428,7 +435,6 @@ export function ActiveRunPanel({
           demandBySku={demandBySku}
           onSavePurchaseInline={onSavePurchaseInline}
           onMarkNa={onMarkNa}
-          onUndoPurchase={onUndoPurchase}
           onOpenAdvancedPurchase={onOpenAdvancedPurchase}
           onEditPurchased={onEditPurchased}
           onUnmark={onUnmark}
@@ -438,6 +444,8 @@ export function ActiveRunPanel({
       ) : null}
       {showViewToggle && viewMode === 'perCategory' && showPerCategory ? (
         <PerCategoryView
+          onSetPaymentMethod={onSetPaymentMethod}
+          paymentBusySkuId={paymentBusySkuId}
           run={run}
           skuById={skuById}
           categoryById={categoryById}
@@ -449,7 +457,6 @@ export function ActiveRunPanel({
           demandBySku={demandBySku}
           onSavePurchaseInline={onSavePurchaseInline}
           onMarkNa={onMarkNa}
-          onUndoPurchase={onUndoPurchase}
           onOpenAdvancedPurchase={onOpenAdvancedPurchase}
           onEditPurchased={onEditPurchased}
           onUnmark={onUnmark}
@@ -569,8 +576,9 @@ export function ActiveRunPanel({
                   onMarkNa={onMarkNa}
                   onEdit={onEditPurchased}
                   onUnmark={onUnmark}
-                  onUndoPurchase={onUndoPurchase}
                   onOpenAdvanced={onOpenAdvancedPurchase}
+                  onSetPaymentMethod={onSetPaymentMethod}
+                  paymentBusy={paymentBusySkuId === it.skuId}
                 />
               );
             })}

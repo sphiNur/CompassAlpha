@@ -20,7 +20,7 @@ import { useAuthStore } from '../../../stores/authStore';
 import { formatMoney, formatQty, toQtyInput } from '../../../lib/format';
 import { useI18n, useUnitLabel } from '../../../hooks/useI18n';
 import { toDisplayPrice, fromDisplayPrice } from '../lib/priceMath';
-import { priceRowState, priceAgeDays, isStalePrice } from '../lib/priceState';
+import { priceRowState, priceAgeDays, AGING_DAYS, GUESS_DAYS } from '../lib/priceState';
 import { proportionalSplitQty } from '../lib/splitQty';
 import type { ActiveRun } from '../types';
 
@@ -225,12 +225,13 @@ export function PerVendorView({
   demandBySku,
   onSavePurchaseInline,
   onMarkNa,
-  onUndoPurchase,
   onOpenAdvancedPurchase,
   onEditPurchased,
   onUnmark,
   onMarkExtraStatus,
   onRecordExtraExpense,
+  onSetPaymentMethod,
+  paymentBusySkuId,
 }: {
   run: ActiveRun;
   skuById: Map<
@@ -270,7 +271,6 @@ export function PerVendorView({
     paymentMethod: 'cash' | 'transfer';
   }) => void;
   onMarkNa: (skuId: string) => void;
-  onUndoPurchase: (skuId: string, skuName: string) => void;
   onOpenAdvancedPurchase: (item: ActiveRun['items'][number]) => void;
   onEditPurchased: (item: ActiveRun['items'][number]) => void;
   onUnmark: (skuId: string, skuName: string) => void;
@@ -284,6 +284,11 @@ export function PerVendorView({
     storeId: string,
     extra: { name: string; qty: string; unit: string; note?: string },
   ) => void;
+  onSetPaymentMethod: (
+    item: ActiveRun['items'][number],
+    next: 'cash' | 'transfer',
+  ) => void;
+  paymentBusySkuId: string | null;
 }) {
   // See PerStoreView — raw unit codes leaked here too.
   const unitLabel = useUnitLabel();
@@ -460,8 +465,9 @@ export function PerVendorView({
                       onMarkNa={onMarkNa}
                       onEdit={onEditPurchased}
                       onUnmark={onUnmark}
-                      onUndoPurchase={onUndoPurchase}
                       onOpenAdvanced={onOpenAdvancedPurchase}
+                      onSetPaymentMethod={onSetPaymentMethod}
+                      paymentBusy={paymentBusySkuId === r.skuId}
                     />
                   );
                 })}
@@ -819,10 +825,11 @@ export function PerCategoryView({
   demandBySku,
   onSavePurchaseInline,
   onMarkNa,
-  onUndoPurchase,
   onOpenAdvancedPurchase,
   onEditPurchased,
   onUnmark,
+  onSetPaymentMethod,
+  paymentBusySkuId,
 }: {
   run: ActiveRun;
   skuById: Map<
@@ -858,8 +865,12 @@ export function PerCategoryView({
   onMarkNa: (skuId: string) => void;
   onEditPurchased: (item: ActiveRun['items'][number]) => void;
   onUnmark: (skuId: string, skuName: string) => void;
-  onUndoPurchase: (skuId: string, skuName: string) => void;
   onOpenAdvancedPurchase: (item: ActiveRun['items'][number]) => void;
+  onSetPaymentMethod: (
+    item: ActiveRun['items'][number],
+    next: 'cash' | 'transfer',
+  ) => void;
+  paymentBusySkuId: string | null;
 }) {
   // See PerStoreView — raw unit codes leaked here too.
   const unitLabel = useUnitLabel();
@@ -955,8 +966,9 @@ export function PerCategoryView({
                   onMarkNa={onMarkNa}
                   onEdit={onEditPurchased}
                   onUnmark={onUnmark}
-                  onUndoPurchase={onUndoPurchase}
                   onOpenAdvanced={onOpenAdvancedPurchase}
+                  onSetPaymentMethod={onSetPaymentMethod}
+                  paymentBusy={paymentBusySkuId === item.skuId}
                 />
               );
             })}
@@ -965,6 +977,121 @@ export function PerCategoryView({
         );
       })}
     </div>
+  );
+}
+
+/* ── Row geometry. ONE track set, ALL FOUR states. ───────────────────
+ *
+ * The width is measured, not assumed. RunPage.tsx:1596 wraps the whole
+ * list in `px-4` and the <li> adds its own, so a 375px viewport leaves
+ * 311px of row — not the 343 you get by counting one of them:
+ *
+ *   375 viewport
+ *   −32  RunPage px-4   → 343  card
+ *   −32  <li> px-4      → 311  row
+ *   −36  control (h-11 w-9)
+ *   − 6  gap-1.5        → 269  tap target
+ *
+ *    20  state cell   fixed, never text, so it cannot grow with locale
+ *     ?  name         minmax(0,1fr) — the ONLY thing that may truncate
+ *    48  qty  floor
+ *    68  money floor
+ *    18  3 × 6px gap
+ *   ───
+ *   269 − 154 = 115px of name
+ *
+ * Numbers get a FLOOR, not a fixed width, so an outlier grows its own
+ * track and pays for it out of the NAME. That is the rule already
+ * written down at RunPanels.tsx — "only the product name and the stall
+ * name may truncate; every number is shrink-0, because a half-visible
+ * price is worse than a wrapped one" — which the preview rows follow
+ * and these rows did the exact opposite of: every name was `shrink-0
+ * truncate` (so `truncate` was dead CSS), leaving the meta span holding
+ * qty AND price as the only compressible thing on the row. A long name
+ * deleted both numbers and then overflowed the button.
+ *
+ * Money floor is honest about the worst case: '1,250,000' is 10 glyphs,
+ * ui-monospace advances 0.6em, so at text-label (11px) that is 66px and
+ * fits in 68. No money string is ever clipped.
+ */
+const ROW_TRACKS = '1.25rem minmax(0,1fr) minmax(3rem,auto) minmax(4.25rem,auto)';
+
+/* 52px, NOT 44. The control is h-11; two 44px controls in a 45px row sit
+ * 1px apart, and an off-by-one-row thumb on this list commits money
+ * against the wrong SKU with no confirmation step. 52 keeps ~9px of dead
+ * space between adjacent commit targets (today's row: 13px). Density is
+ * not what this redesign buys — see the note on the PurchaseRow doc. */
+const ROW_SHELL = 'flex min-h-[3.25rem] items-center gap-1.5 px-4';
+
+const ROW_TAP =
+  'press grid min-w-0 flex-1 items-center gap-x-1.5 rounded-[var(--r-utility)] ' +
+  'text-left outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]';
+const ROW_STATIC = 'grid min-w-0 flex-1 items-center gap-x-1.5';
+
+/* 36 wide × 44 tall. The thumb travels VERTICALLY on a scrolling list,
+ * so 44 is required in that dimension only; every pixel of width comes
+ * straight out of the number the purchaser reads back to a vendor. This
+ * is the reasoning already recorded for the existing ✓ button. */
+const ROW_CTRL =
+  'flex h-11 w-9 shrink-0 items-center justify-center self-center ' +
+  'rounded-[var(--r-pill)] text-body outline-none ' +
+  'focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]';
+
+/* Measured, not eyeballed. --c-action-fg on --c-action is 4.60:1 and
+ * passes AA. The audit asked for this disc to be demoted to a pale tint
+ * + ring, but --c-action on --c-info-bg is 3.97:1 light and 3.15:1 dark
+ * — LESS legible than what ships, on a screen whose first constraint is
+ * direct sunlight. The audit is right that 87 saturated discs are loud;
+ * it is wrong about which element should give way. The row gets quiet by
+ * losing the mark-unavailable pill and the run of orange text, not by
+ * dimming the one control that commits money. */
+const CTRL_COMMIT =
+  'bg-[var(--c-action)] font-semibold text-[var(--c-action-fg)] active:opacity-80';
+const CTRL_OFF = 'bg-[var(--c-surface-2)] font-semibold text-[var(--c-fg-muted)]';
+const CTRL_QUIET = 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)] active:opacity-70';
+const CTRL_TRANSFER =
+  'bg-[var(--c-action)]/15 text-[var(--c-action)] ring-1 ring-[var(--c-action)] active:opacity-70';
+
+/* px-4 (16) + state cell (20) + gap (6) — lines a second line up with
+ * the name's left edge. */
+const SUBLINE = 'pb-1.5 pl-[2.625rem] pr-4';
+
+type RowStateKind = 'pending' | 'unpriced' | 'saving' | 'purchased' | 'unavailable';
+
+/**
+ * The row's status mark.
+ *
+ * It is the sole carrier of row state and was `aria-hidden` in three of
+ * the four states, so a screen-reader user could not tell a bought row
+ * from an outstanding one. Every glyph here is still `aria-hidden` —
+ * "✓" read aloud is noise — but each is paired with an sr-only twin.
+ *
+ * Every state also has a distinct SHAPE (hollow ring / ! / filled dot /
+ * ✓ / ✗) rather than only a distinct colour, so the row survives
+ * greyscale, sunlight and a colour-blind purchaser.
+ *
+ * The cell is 20px wide in all four states, which is what stops the
+ * name's left edge from jittering: pending names used to start at x=16
+ * and purchased ones at x≈37, so a mixed list had a ragged left edge.
+ */
+function RowStateCell({ kind, label }: { kind: RowStateKind; label: string }) {
+  return (
+    <span className="flex items-center justify-center">
+      <span aria-hidden className="flex items-center justify-center leading-none">
+        {kind === 'pending' ? (
+          <span className="block h-[7px] w-[7px] rounded-full ring-1 ring-[var(--c-fg-muted)]" />
+        ) : kind === 'saving' ? (
+          <span className="block h-[7px] w-[7px] animate-pulse rounded-full bg-[var(--c-action)] motion-reduce:animate-none" />
+        ) : kind === 'unpriced' ? (
+          <span className="block text-body font-semibold text-[var(--c-warning-fg)]">!</span>
+        ) : kind === 'purchased' ? (
+          <span className="block text-body text-[var(--c-success)]">✓</span>
+        ) : (
+          <span className="block text-body text-[var(--c-danger)]">✗</span>
+        )}
+      </span>
+      <span className="sr-only">{label}</span>
+    </span>
   );
 }
 
@@ -1001,8 +1128,9 @@ export function PurchaseRow({
   onMarkNa,
   onEdit,
   onUnmark,
-  onUndoPurchase,
   onOpenAdvanced,
+  onSetPaymentMethod,
+  paymentBusy,
 }: {
   item: ActiveRun['items'][number];
   skuName: string;
@@ -1065,8 +1193,28 @@ export function PurchaseRow({
   onMarkNa: (skuId: string) => void;
   onEdit: (item: ActiveRun['items'][number]) => void;
   onUnmark: (skuId: string, skuName: string) => void;
-  onUndoPurchase: (skuId: string, skuName: string) => void;
   onOpenAdvanced: (item: ActiveRun['items'][number]) => void;
+  /**
+   * Correct the payment method of an ALREADY purchased row, from the row
+   * itself.
+   *
+   * The one-tap ✓ path has no method control, and `paymentMethod`
+   * defaults to 'cash' — so since the collapsed row became the default
+   * for every priced item, the fast path has been booking everything as
+   * cash and `totalCash` / `totalTransfer` drift by construction.
+   *
+   * This deliberately does NOT go through `onSave`. That reaches
+   * `PurchaseItem`, which has no already-purchased guard and emits a
+   * fresh `ItemPurchased`; the projection then appends an undeduped
+   * `price_history` row per tap and upserts `run_item_stores_v` with
+   * `unitPrice: split.unitPrice ?? null`, silently erasing per-store
+   * price overrides. The caller routes this through `revisePurchase`.
+   */
+  onSetPaymentMethod: (
+    item: ActiveRun['items'][number],
+    next: 'cash' | 'transfer',
+  ) => void;
+  paymentBusy: boolean;
 }) {
   // Default qty = planned. Price defaults to the last observed market
   // price for this SKU — saves typing when prices are unchanged from
@@ -1305,78 +1453,151 @@ export function PurchaseRow({
     expanded: priceEditorOpen,
   });
 
+  /* Price confidence — three bands, and the default one is silence.
+   * See AGING_DAYS / GUESS_DAYS in lib/priceState.ts for why this does
+   * not reuse STALE_PRICE_DAYS. */
+  const ageDays = priceAgeDays(lastPriceObservedAt, Date.now());
+  const confidence: 'fresh' | 'aging' | 'guess' | 'none' = !lastPrice
+    ? 'none'
+    : ageDays === null || ageDays <= AGING_DAYS
+      ? 'fresh'
+      : ageDays <= GUESS_DAYS
+        ? 'aging'
+        : 'guess';
+  const moneyInk =
+    confidence === 'guess' || confidence === 'none'
+      ? 'text-[var(--c-warning-fg)]'
+      : 'text-[var(--c-fg)]';
+
+  const refPriceText = lastPrice
+    ? priceInThousands
+      ? `${formatMoney(Number(lastPrice) / 1000)}K`
+      : formatMoney(lastPrice)
+    : '';
+  /* In thousands mode the visible figure is scaled, so long-press has to
+   * be able to recover the real one. */
+  const rawPriceTitle = (raw: string | null | undefined) =>
+    priceInThousands && raw ? `${formatMoney(raw)} ${currency}` : undefined;
+
+  const isTransfer = item.paymentMethod === 'transfer';
+  const isAdded = item.addedByPurchaser === true;
+  /* A row carrying per-store payment overrides has no single method, so
+   * a one-tap switch would be a lie about what it is changing. Those
+   * rows show a static indicator and are corrected in the sheet, which
+   * is where the per-store fields exist. */
+  const perStorePayment = actualSplits.some((s) => s.paymentMethod != null);
+  const paymentLabel = i18n.t(
+    isTransfer ? 'run.label.paymentTransfer' : 'run.label.paymentCash',
+  );
+  const paymentAria = `${i18n.t('run.label.paymentMethod')}: ${paymentLabel}`;
+
   if (item.status === 'pending' && collapsedState !== 'editing') {
     const carried = collapsedState === 'carried';
-    const ageDays = priceAgeDays(lastPriceObservedAt, Date.now());
-    const stale = isStalePrice(lastPriceObservedAt, Date.now());
     return (
       <li className="border-b border-[var(--c-divider)] last:border-b-0">
-        <div className="flex items-center gap-2 px-4 py-1.5">
+        <div className={ROW_SHELL}>
           <button
             type="button"
             onClick={() => setPriceEditorOpen(true)}
             // No aria-label. It used to be {skuName}, which REPLACED the
             // accessible name computed from the contents — so a screen
             // reader announced the product and dropped the quantity, the
-            // carried price, the staleness and the "fill in a price"
-            // pill. The button's own text is already the right name; the
-            // accordion headers in RunPanels.tsx carry the same reasoning.
-            className="press flex min-h-11 min-w-0 flex-1 items-baseline gap-2 rounded-[var(--r-utility)] text-left outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]"
+            // carried price and the freshness. The button's own text is
+            // already the right name; the accordion headers in
+            // RunPanels.tsx carry the same reasoning. `title` is
+            // supplementary: with content present it never becomes the
+            // accessible name.
+            title={i18n.t(carried ? 'run.action.recordPurchase' : 'run.price.fillIn')}
+            className={ROW_TAP}
+            style={{ gridTemplateColumns: ROW_TRACKS }}
           >
-            <span className="shrink-0 truncate text-body font-semibold">{skuName}</span>
-            <span className="min-w-0 flex-1 truncate text-label text-[var(--c-fg-muted)]">
-              {formatQty(item.plannedQty)} {unit}
+            <RowStateCell
+              kind={saving ? 'saving' : carried ? 'pending' : 'unpriced'}
+              label={i18n.t(
+                carried ? 'run.extras.status.pending' : 'run.price.fillIn',
+              )}
+            />
+
+            {/* The ONLY element on this row permitted to lose
+                characters — and it carries a `title`, because Cyrillic
+                and Uzbek catalogue names disambiguate at the END
+                ("...рафинированное" vs "...нерафинированное",
+                "охлаждённое" vs "замороженное") and CSS ellipsis eats
+                exactly that suffix. Long-press is the recovery; opening
+                the row is the other. */}
+            <span
+              className="min-w-0 truncate text-body font-semibold text-[var(--c-fg)]"
+              title={skuName}
+            >
+              {skuName}
+            </span>
+
+            {/* shrink-0 + nowrap: a number never truncates and never
+                wraps. Right-aligned so it lands in a column. */}
+            <span className="shrink-0 whitespace-nowrap text-right text-label text-[var(--c-fg-muted)]">
+              <span className="font-mono tabular-nums">{formatQty(item.plannedQty)}</span>{' '}
+              {unit}
+            </span>
+
+            {/* The money column. font-mono tabular-nums finally does
+                something, because this is a fixed-floor right-aligned
+                cell rather than the tail of a variable-length
+                "qty · unit · ↺ · price · 31 天前" sentence. "Which row's
+                price is 3x normal" becomes a vertical scan.
+
+                "?" rather than a localized pill: ru "Указать цену" is
+                ~66px and uz "Narx kiriting" ~72px, either of which blows
+                the 68px floor and takes ~60px from the name on every
+                unpriced row. It pairs with "~" as one three-mark
+                notation — nothing / ~ / ? — and the localized phrase
+                still reaches a screen reader and a long-press. */}
+            <span
+              className={`shrink-0 whitespace-nowrap text-right font-mono text-label font-semibold tabular-nums ${moneyInk}`}
+              title={carried ? rawPriceTitle(lastPrice) : i18n.t('run.price.fillIn')}
+            >
               {carried ? (
                 <>
-                  {' · '}
-                  {/* ↺ = carried forward, not confirmed today. */}
-                  <span aria-hidden>↺</span>{' '}
-                  <span className="font-mono tabular-nums">
-                    {priceInThousands
-                      ? `${formatMoney(Number(lastPrice) / 1000)}K`
-                      : formatMoney(lastPrice)}
-                  </span>
-                  {stale && ageDays !== null ? (
-                    <span className="text-[var(--c-warning-fg)]">
-                      {' · '}
+                  {confidence !== 'fresh' ? <span aria-hidden>~</span> : null}
+                  {refPriceText}
+                  {confidence !== 'fresh' && ageDays !== null ? (
+                    <span className="sr-only">
+                      {' '}
                       {i18n.t('run.price.daysAgo', { n: ageDays })}
                     </span>
                   ) : null}
                 </>
-              ) : null}
+              ) : (
+                <>
+                  <span aria-hidden>?</span>
+                  <span className="sr-only">{i18n.t('run.price.fillIn')}</span>
+                </>
+              )}
             </span>
-            {!carried ? (
-              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-2 py-0.5 text-label font-semibold text-[var(--c-warning-fg)] ring-hairline">
-                {i18n.t('run.price.fillIn')}
-              </span>
-            ) : null}
           </button>
+
+          {/* This state's one control: commit. Rendered in BOTH variants
+              so the right edge never changes shape down the list — the
+              unpriced row used to end in a ~22px pill and no ✓ at all,
+              two shapes at two heights, which is its own mis-tap
+              generator. canSave is already false without a price, so no
+              extra branch is needed.
+
+              Mark-unavailable moved into the expanded editor. It ran at
+              40x20px on all 87 rows while being used on 3.55% of them
+              (152 of 4,276 rows in production; worst trip 9 of 83) —
+              those ~48px are what the money column is made of. */}
           <button
             type="button"
-            onClick={() => onMarkNa(item.skuId)}
-            className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-label text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
+            onClick={handleSave}
+            disabled={!canSave}
+            aria-busy={saving || undefined}
+            aria-label={i18n.t('run.action.savePurchaseAriaLabel', { name: skuName })}
+            className={`${ROW_CTRL} ${canSave ? CTRL_COMMIT : CTRL_OFF}`}
           >
-            {i18n.t('run.action.markNa')}
+            <span aria-hidden>✓</span>
           </button>
-          {carried ? (
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={!canSave}
-              aria-busy={saving || undefined}
-              aria-label={i18n.t('run.action.savePurchaseAriaLabel', { name: skuName })}
-              className={
-                'flex h-11 min-w-9 shrink-0 items-center justify-center rounded-[var(--r-pill)] px-2.5 text-body font-semibold ' +
-                (canSave
-                  ? 'bg-[var(--c-action)] text-[var(--c-action-fg)] active:opacity-80'
-                  : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
-              }
-            >
-              ✓
-            </button>
-          ) : null}
         </div>
-        {showBreakdown ? <div className="px-4 pb-1.5">{breakdownChips}</div> : null}
+        {showBreakdown ? <div className={SUBLINE}>{breakdownChips}</div> : null}
       </li>
     );
   }
@@ -1391,7 +1612,12 @@ export function PurchaseRow({
           {/* M2.2: pending-row primary unified to text-body
               font-semibold (was text-h3 = 15px, mismatched with the
               same role on Order/Confirm pages). */}
-          <span className="shrink-0 truncate text-body font-semibold">{skuName}</span>
+          {/* Wraps instead of truncating: opening a row is how you read
+              a name the collapsed row had to clip, which matters because
+              Cyrillic names disambiguate at the end and the ellipsis
+              eats that. Was `shrink-0 truncate`, i.e. dead CSS that made
+              the qty and price the compressible things instead. */}
+          <span className="min-w-0 break-words text-body font-semibold">{skuName}</span>
           <span className="min-w-0 flex-1 truncate text-label text-[var(--c-fg-muted)]">
             {formatQty(item.plannedQty)} {unit}
             {lastPrice ? (
@@ -1496,11 +1722,16 @@ export function PurchaseRow({
             onClick={() =>
               setPaymentMethod((m) => (m === 'cash' ? 'transfer' : 'cash'))
             }
-            aria-label={
+            // aria-pressed + a label that names the CONTROL, not just
+            // its current face. The old label announced "cash" with no
+            // indication that it was a toggle or what tapping would do;
+            // the ×1000 toggle two files away already gets this right.
+            aria-pressed={paymentMethod === 'transfer'}
+            aria-label={`${i18n.t('run.label.paymentMethod')}: ${i18n.t(
               paymentMethod === 'cash'
-                ? i18n.t('run.label.paymentCash')
-                : i18n.t('run.label.paymentTransfer')
-            }
+                ? 'run.label.paymentCash'
+                : 'run.label.paymentTransfer',
+            )}`}
             title={
               paymentMethod === 'cash'
                 ? i18n.t('run.label.paymentCash')
@@ -1554,104 +1785,188 @@ export function PurchaseRow({
   }
 
   if (item.status === 'purchased') {
-    /* Single line: ✓ name · qty unit × price = total   [edit] [undo]
-       Was a two-line block; the badge + math is now inline and the
-       row actions slim down to icon buttons. */
-    const total =
-      Number(item.purchasedQty) > 0 && Number(item.unitPrice) > 0
-        ? formatMoney(Number(item.purchasedQty) * Number(item.unitPrice))
-        : null;
-    // M1.14: show 🏦 next to transfer purchases so the purchaser can
-    // scan the run at a glance and see which items hit the bank wire.
-    // Cash is the implicit default — no icon needed (avoids visual
-    // noise on the 90%+ rows that are cash).
-    const isTransfer = item.paymentMethod === 'transfer';
-    const isAdded = item.addedByPurchaser === true;
     return (
-      <li className="border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0">
-        <div className="flex items-center gap-2">
-          <span aria-hidden className="shrink-0 text-body text-[var(--c-success)]">✓</span>
-          <span className="shrink-0 truncate text-body font-semibold">{skuName}</span>
-          {isAdded ? (
-            // M3.41 (2026-05-21): "+" badge marks rows the purchaser added
-            // mid-run. The +ring outline disambiguates from the 🏦 transfer
-            // pill (which uses the same action accent). Tooltip carries
-            // the localized "added by purchaser" label.
-            <span
-              aria-label={i18n.t('run.label.addedByPurchaser')}
-              title={i18n.t('run.label.addedByPurchaser')}
-              className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warning)]/15 px-1.5 py-0.5 text-label text-[var(--c-warning-fg)] ring-1 ring-[var(--c-warning)]"
-            >
-              +
-            </span>
-          ) : null}
-          {isTransfer ? (
-            <span
-              aria-label={i18n.t('run.label.paymentTransfer')}
-              title={i18n.t('run.label.paymentTransfer')}
-              className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-action)]/15 px-1.5 py-0.5 text-label text-[var(--c-action)] ring-1 ring-[var(--c-action)]"
-            >
-              {i18n.t('run.label.paymentTransfer')}
-            </span>
-          ) : null}
-          <span className="min-w-0 flex-1 truncate text-label text-[var(--c-fg-muted)]">
-            {formatQty(item.purchasedQty)} {unit} ×{' '}
-            {/* M3.36: render persisted unitPrice in the same scale the
-               user is currently working in — keeps the displayed math
-               visually consistent with what they typed. */}
-            {priceInThousands && item.unitPrice
-              ? `${formatMoney(Number(item.unitPrice) / 1000)}K`
-              : formatMoney(item.unitPrice)}
-            {total ? (
-              <>
-                {' = '}
-                <span className="font-mono font-semibold tabular-nums text-[var(--c-fg)]">{total}</span>
-              </>
-            ) : null}
-          </span>
+      <li className="border-b border-[var(--c-divider)] last:border-b-0">
+        <div className={ROW_SHELL}>
           <button
             type="button"
             onClick={() => onEdit(item)}
-            aria-label={i18n.t('run.action.editPurchase')}
-            className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-label text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
+            title={i18n.t('run.action.editPurchase')}
+            className={ROW_TAP}
+            style={{ gridTemplateColumns: ROW_TRACKS }}
           >
-            {i18n.t('run.action.editPurchase')}
+            <RowStateCell kind="purchased" label={i18n.t('run.extras.status.bought')} />
+
+            <span className="flex min-w-0 items-baseline gap-1">
+              {/* One ink level down: finished work recedes so the eye
+                  finds what is left. */}
+              <span
+                className="min-w-0 truncate text-body font-semibold text-[var(--c-fg-muted)]"
+                title={skuName}
+              >
+                {skuName}
+              </span>
+              {isAdded ? (
+                /* M3.41: marks rows the purchaser added mid-run. Was
+                   bg-[--c-warning]/15 + ring-[--c-warning] + warning ink
+                   — three uses of the alarm channel on one 16px badge.
+                   "Added by the purchaser" is information for whoever
+                   approves the run, not an instruction to the person
+                   holding the phone, so it leaves the channel that means
+                   "act or this trip is wrong". Shape kept, alarm gone. */
+                <span
+                  title={i18n.t('run.label.addedByPurchaser')}
+                  className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-1.5 text-label text-[var(--c-fg-muted)]"
+                >
+                  <span aria-hidden>+</span>
+                  <span className="sr-only">{i18n.t('run.label.addedByPurchaser')}</span>
+                </span>
+              ) : null}
+            </span>
+
+            {/* Same track, same meaning as every other state: quantity.
+                Planned while pending, actual once bought. */}
+            <span className="shrink-0 whitespace-nowrap text-right text-label text-[var(--c-fg-muted)]">
+              <span className="font-mono tabular-nums">{formatQty(item.purchasedQty)}</span>{' '}
+              {unit}
+            </span>
+
+            {/* UNIT price, never the line total. A column that answers a
+                different question in each state is not a column, and the
+                unit price is the only figure comparable row-to-row —
+                which is the whole point of giving money a column. The
+                line total moves to sr-only; it is also live in the
+                expanded editor, which is where it gets read (before
+                paying, not after). */}
+            <span
+              className="shrink-0 whitespace-nowrap text-right font-mono text-label font-semibold tabular-nums text-[var(--c-fg)]"
+              title={rawPriceTitle(item.unitPrice)}
+            >
+              {priceInThousands && item.unitPrice
+                ? `${formatMoney(Number(item.unitPrice) / 1000)}K`
+                : formatMoney(item.unitPrice)}
+              {Number(item.purchasedQty) > 0 && Number(item.unitPrice) > 0 ? (
+                <span className="sr-only">
+                  {' = '}
+                  {formatMoney(
+                    Number(item.purchasedQty) * Number(item.unitPrice),
+                    currency,
+                  )}
+                </span>
+              ) : null}
+            </span>
           </button>
-          <button
-            type="button"
-            onClick={() => onUndoPurchase(item.skuId, skuName)}
-            aria-label={i18n.t('run.action.undoPurchase')}
-            className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-label text-[var(--c-danger)] active:bg-[var(--c-surface-2)]"
-          >
-            {i18n.t('run.action.undoPurchase')}
-          </button>
+
+          {/* This state's one control: the payment method.
+              Cash used to render NOTHING at all, so there was no object
+              to notice and no way to correct it from the list — and
+              since the one-tap ✓ has no method control and defaults to
+              cash, totalCash / totalTransfer drift by construction.
+              Every purchased row now shows its method as a persistent,
+              tappable object at a fixed x. */}
+          {perStorePayment ? (
+            <span
+              className={`${ROW_CTRL} ${isTransfer ? CTRL_TRANSFER : CTRL_QUIET}`}
+              title={i18n.t('run.label.paymentMethod')}
+            >
+              <span aria-hidden>{isTransfer ? '🏦' : '💵'}</span>
+              <span className="sr-only">{paymentAria}</span>
+            </span>
+          ) : (
+            <button
+              type="button"
+              // aria-pressed so the control announces that it IS a
+              // toggle and which way it currently sits. The CONTAINER
+              // carries the visual state, not the emoji: colour emoji
+              // ignore the ink token, so 💵 vs 🏦 alone is a weak signal
+              // at arm's length in sunlight.
+              aria-pressed={isTransfer}
+              aria-label={paymentAria}
+              title={paymentLabel}
+              disabled={paymentBusy}
+              onClick={() => onSetPaymentMethod(item, isTransfer ? 'cash' : 'transfer')}
+              className={`${ROW_CTRL} ${
+                paymentBusy ? CTRL_OFF : isTransfer ? CTRL_TRANSFER : CTRL_QUIET
+              }`}
+            >
+              <span aria-hidden>{isTransfer ? '🏦' : '💵'}</span>
+            </button>
+          )}
         </div>
-        {/* M3.52: per-store ACTUAL allocation chips. Sits below the
-            aggregate qty/price/total row so the purchaser can — at
-            a glance — see how many kg/pcs to bag for each store.
-            Shows the post-purchase splits (run.splits filtered to
-            this skuId), which may differ from planned demand when
-            the actual qty bought diverged from planned. */}
-        {showBreakdown ? <div className="mt-1">{breakdownChips}</div> : null}
+        {/* M3.52: per-store ACTUAL allocation — how many kg/pcs to bag
+            for each store. May differ from planned demand when the qty
+            bought diverged. */}
+        {showBreakdown ? <div className={SUBLINE}>{breakdownChips}</div> : null}
       </li>
     );
   }
 
-  // unavailable — single line: ✗ name · note   [unmark]
+  // unavailable
   return (
-    <li className="flex items-center gap-2 border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0">
-      <span aria-hidden className="shrink-0 text-body text-[var(--c-danger)]">✗</span>
-      <span className="shrink-0 truncate text-body font-semibold">{skuName}</span>
-      <span className="min-w-0 flex-1 truncate text-label text-[var(--c-fg-muted)]">
-        {item.unavailableNote ?? ''}
-      </span>
-      <button
-        type="button"
-        onClick={() => onUnmark(item.skuId, skuName)}
-        className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-label text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
-      >
-        {i18n.t('run.action.unmarkUnavailable')}
-      </button>
+    <li className="border-b border-[var(--c-divider)] last:border-b-0">
+      <div className={ROW_SHELL}>
+        {/* A dropped row has nothing to open, so this is a <div>:
+            identical geometry, no false affordance, and no way to
+            fat-finger a closed line while walking. */}
+        <div className={ROW_STATIC} style={{ gridTemplateColumns: ROW_TRACKS }}>
+          <RowStateCell kind="unavailable" label={i18n.t('run.extras.status.unavailable')} />
+
+          {/* line-through is a TEXTURE difference, so "dropped" survives
+              greyscale without spending --c-danger on the eye. Muted,
+              not subtle: --c-fg-subtle is 3.22:1 and the purchaser still
+              has to find this row by name when the vendor restocks. */}
+          <span
+            className="min-w-0 truncate text-body font-semibold text-[var(--c-fg-muted)] line-through"
+            title={skuName}
+          >
+            {skuName}
+          </span>
+
+          {/* The qty stays: what you FAILED to get is a number the
+              kitchen needs, and it keeps the column continuous. */}
+          <span className="shrink-0 whitespace-nowrap text-right text-label text-[var(--c-fg-muted)]">
+            <span className="font-mono tabular-nums">{formatQty(item.plannedQty)}</span>{' '}
+            {unit}
+          </span>
+
+          {/* Nothing was paid. The dash holds the track open so the list
+              stays a grid and says "no number here" rather than leaving
+              a gap that reads as a rendering fault. Decorative and
+              aria-hidden — the one place --c-fg-subtle is used, which is
+              what that ink is for. */}
+          <span
+            aria-hidden
+            className="shrink-0 text-right font-mono text-label tabular-nums text-[var(--c-fg-subtle)]"
+          >
+            —
+          </span>
+        </div>
+
+        {/* This state's one control: put it back. Already routes through
+            RunPage's ConfirmSheet. */}
+        <button
+          type="button"
+          onClick={() => onUnmark(item.skuId, skuName)}
+          aria-label={i18n.t('run.action.unmarkUnavailableAriaLabel', { name: skuName })}
+          title={i18n.t('run.action.unmarkUnavailable')}
+          className={`${ROW_CTRL} ${CTRL_QUIET}`}
+        >
+          <span aria-hidden>↺</span>
+        </button>
+      </div>
+
+      {/* The note is prose, so it cannot live in a number track. Second
+          line, indented to the name's left edge, only when there is one.
+          It used to sit in the flex-1 meta span, where it was the first
+          thing a long name deleted. */}
+      {item.unavailableNote ? (
+        <p
+          className={`${SUBLINE} truncate text-label text-[var(--c-fg-muted)]`}
+          title={item.unavailableNote}
+        >
+          {item.unavailableNote}
+        </p>
+      ) : null}
     </li>
   );
 }

@@ -725,6 +725,8 @@ export const ru = {
   'run.label.paymentMethod': 'Способ оплаты',
   'run.label.paymentCash': 'Наличные',
   'run.label.paymentTransfer': 'Перевод',
+  'run.action.unmarkUnavailableAriaLabel': 'Снова доступно: {name}',
+  'run.reason.paymentMethodChanged': 'Способ оплаты исправлен в списке',
   'run.confirm.finish.paymentBreakdown': '💵 наличные {cash} · 🏦 перевод {transfer}',
   'run.confirm.cancel.title': 'Отменить всю закупку?',
   'run.confirm.cancel.body':

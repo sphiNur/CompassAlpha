@@ -742,6 +742,8 @@ export const uz = {
   'run.label.paymentMethod': "To'lov usuli",
   'run.label.paymentCash': 'Naqd',
   'run.label.paymentTransfer': "O'tkazma",
+  'run.action.unmarkUnavailableAriaLabel': "Yana mavjud deb belgilash: {name}",
+  'run.reason.paymentMethodChanged': "Ro'yxatda to'lov usuli tuzatildi",
   'run.confirm.finish.paymentBreakdown': "💵 naqd {cash} · 🏦 o'tkazma {transfer}",
   'run.confirm.cancel.title': "Butun xaridni bekor qilamizmi?",
   'run.confirm.cancel.body':

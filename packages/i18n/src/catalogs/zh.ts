@@ -675,6 +675,8 @@ export const zh = {
   'run.label.paymentMethod': '支付方式',
   'run.label.paymentCash': '现金',
   'run.label.paymentTransfer': '转账',
+  'run.action.unmarkUnavailableAriaLabel': '改为可购：{name}',
+  'run.reason.paymentMethodChanged': '在列表中更正付款方式',
   'run.confirm.finish.paymentBreakdown': '💵 现金 {cash} · 🏦 转账 {transfer}',
   'run.confirm.cancel.title': '取消整张采购单?',
   'run.confirm.cancel.body':
