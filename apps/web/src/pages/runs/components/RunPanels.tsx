@@ -22,6 +22,7 @@ import {
   CardTitle,
   Chip,
   ChipBar,
+  EmptyState,
   SectionLabel,
   Sheet,
   useToast,
@@ -495,6 +496,20 @@ export function ActiveRunPanel({
           onRemove={onRemoveExpense}
           onOpenExpense={onOpenExpense}
         />
+      ) : null}
+
+      {/* A trip where nothing could be bought reaches `delivering` with
+          zero splits, so the store list below renders nothing at all and
+          the screen went blank. Say so instead — and note that Finish is
+          reachable, which it now is (see allStoresConfirmed in
+          RunPage.tsx). */}
+      {run.status === 'delivering' && involvedStoreIds.length === 0 ? (
+        <Card>
+          <EmptyState
+            title={i18n.t('run.empty.nothingToDeliver')}
+            description={i18n.t('run.empty.nothingToDeliverBody')}
+          />
+        </Card>
       ) : null}
 
       {run.status === 'delivering' && involvedStoreIds.length > 0 ? (

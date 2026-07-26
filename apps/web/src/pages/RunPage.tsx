@@ -52,6 +52,10 @@ import { formatQty, formatMoney } from '../lib/format';
 // Run money math — extracted to pages/runs/lib (Phase 4 step 1, unit-tested).
 import { settleItemLine, settlePerStore } from './runs/lib/settlement';
 import { countCarriedOver, STALE_PRICE_DAYS } from './runs/lib/priceState';
+import {
+  allItemsHandled as allItemsHandledOf,
+  allStoresConfirmed as allStoresConfirmedOf,
+} from './runs/lib/runProgress';
 // History subsystem — extracted to runs/history (Phase 4 step 2).
 import {
   RunHistorySection,
@@ -639,26 +643,17 @@ export function RunPage() {
     return () => clearTimeout(t);
   }, [inlineSavingSkuId, purchaseItem.isPending, runDetailQuery.data?.items]);
 
-  const allItemsHandled = useMemo(() => {
-    const items = runDetailQuery.data?.items ?? [];
-    return (
-      items.length > 0 &&
-      items.every((i) => i.status === 'purchased' || i.status === 'unavailable')
-    );
-  }, [runDetailQuery.data]);
+  // Both predicates live in runs/lib/runProgress.ts with tests — they
+  // gate MainButton VISIBILITY, so a wrong answer does not grey a
+  // button out, it removes it and strands the run.
+  const allItemsHandled = useMemo(
+    () => allItemsHandledOf(runDetailQuery.data?.items ?? []),
+    [runDetailQuery.data],
+  );
 
   const allStoresConfirmed = useMemo(() => {
     if (!runDetailQuery.data) return false;
-    const involved = new Set<string>();
-    for (const sp of runDetailQuery.data.splits) involved.add(sp.storeId);
-    if (involved.size === 0) return false;
-    for (const id of involved) {
-      const allConfirmed = runDetailQuery.data.splits
-        .filter((sp) => sp.storeId === id)
-        .every((sp) => !!sp.confirmedAt);
-      if (!allConfirmed) return false;
-    }
-    return true;
+    return allStoresConfirmedOf(runDetailQuery.data.splits);
   }, [runDetailQuery.data]);
 
   /** "We can still un-Start delivery" — true iff status=delivering AND

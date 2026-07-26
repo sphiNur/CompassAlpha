@@ -510,6 +510,8 @@ export const uz = {
   'run.empty.noPlannable': "Rejalashtirish uchun tasdiqlangan buyurtma yo'q",
   'run.empty.noPlannableBody':
     "Menejer bitta buyurtmani tasdiqlasa, xarid rejalashtirsa bo'ladi.",
+  'run.empty.nothingToDeliver': "Yetkazadigan narsa yo'q",
+  'run.empty.nothingToDeliverBody': "Bu xaridda hech narsa olinmadi. Uni darhol yakunlash mumkin.",
   'run.header.runIndex': "Xarid #{n}",
   'run.header.moreActions': "Boshqa amallar",
   'run.banner.readyToStart': "Xaridni boshlashga tayyor",

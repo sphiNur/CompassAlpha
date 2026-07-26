@@ -459,6 +459,8 @@ export const zh = {
   'run.empty.noActive': '暂无进行中的采购',
   'run.empty.noPlannable': '暂无审核通过的订单可生成采购单',
   'run.empty.noPlannableBody': '管理员审核通过订单后，可生成采购单。',
+  'run.empty.nothingToDeliver': '没有可配送的物品',
+  'run.empty.nothingToDeliverBody': '这趟采购没有买到任何物品，直接结束即可。',
   'run.header.runIndex': '第 {n} 次采购',
   'run.header.moreActions': '更多操作',
   'run.banner.readyToStart': '可以开始采购',

@@ -560,6 +560,8 @@ export const en = {
   'run.empty.noPlannable': 'No approved sessions to plan',
   'run.empty.noPlannableBody':
     'Once a manager approves at least one session, you can plan a run.',
+  'run.empty.nothingToDeliver': 'Nothing to deliver',
+  'run.empty.nothingToDeliverBody': 'No items were bought on this trip. You can finish it directly.',
   'run.header.runIndex': 'Market run #{n}',
   'run.header.moreActions': 'More actions',
   'run.banner.readyToStart': 'Ready to start purchasing',

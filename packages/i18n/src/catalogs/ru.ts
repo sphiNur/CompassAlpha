@@ -496,6 +496,8 @@ export const ru = {
   'run.empty.noPlannable': 'Нет одобренных заказов для планирования',
   'run.empty.noPlannableBody':
     'Когда менеджер одобрит хотя бы один заказ, можно запланировать закупку.',
+  'run.empty.nothingToDeliver': 'Нечего доставлять',
+  'run.empty.nothingToDeliverBody': 'В этой закупке ничего не куплено. Её можно сразу завершить.',
   'run.header.runIndex': 'Закупка #{n}',
   'run.header.moreActions': 'Ещё',
   'run.banner.readyToStart': 'Готово к началу закупки',
