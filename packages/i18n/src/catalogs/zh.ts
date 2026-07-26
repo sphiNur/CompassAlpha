@@ -510,6 +510,7 @@ export const zh = {
   'run.preview.estimateTitle': '预估',
   'run.preview.coverage': '已知价格 {known}/{total} 项 · 至少 {money}',
   'run.preview.noSupplierCount': '无摊位 {n}',
+  'run.preview.filterMatch': '匹配 {n} / 共 {total} 项',
   'run.purchase.pricingUniform': '统一价格/付款',
   'run.purchase.pricingPerStore': '按店铺单独价格/付款',
   'run.previewSupplier.changeVendor': '更换摊位',
