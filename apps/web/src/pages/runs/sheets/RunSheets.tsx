@@ -301,7 +301,10 @@ export function PurchaseSheet({
             }}
             className="press rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-2 text-label font-semibold text-[var(--c-fg)] ring-hairline"
           >
-            {draft.perStorePricing ? '统一价格/付款' : '按店铺单独价格/付款'}
+            {/* 2026-07-26: both labels were hard-coded Chinese. */}
+            {draft.perStorePricing
+              ? i18n.t('run.purchase.pricingUniform')
+              : i18n.t('run.purchase.pricingPerStore')}
           </button>
           {suppliers.length > 0 ? (
             <label className="block text-label font-semibold text-[var(--c-fg-muted)]">

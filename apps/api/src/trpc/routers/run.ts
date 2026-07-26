@@ -24,6 +24,7 @@ import {
   RemoveRunExpenseInputSchema,
   RevisePurchaseInputSchema,
   RunAttachSessionsInputSchema,
+  RunCancelInputSchema,
   RunCreateInputSchema,
   RunPreviewInputSchema,
   RunReasonOnlyInputSchema,
@@ -746,6 +747,7 @@ export const runRouter = router({
       await projectRun(tx, ctx.session!.orgId, events);
 
       // Emit AttachedToRun on each session stream.
+      const attachedSessions: Array<{ sessionId: string; lastSeq: number }> = [];
       for (const sessionId of input.sessionIds) {
         const orderEvents = (await readStream(tx, 'order', sessionId)) as unknown as OrderEvent[];
         let oState = emptyOrderState(sessionId);
@@ -768,8 +770,43 @@ export const runRouter = router({
             events: ev.map((e) => ({ ...e })),
           });
           await projectOrder(tx, ctx.session!.orgId, ev);
+          attachedSessions.push({
+            sessionId,
+            lastSeq: ev[ev.length - 1]?.seq ?? oState.seq,
+          });
         }
       }
+
+      // 2026-07-26: run.create was the only run mutation that broadcast
+      // nothing — compare attachSessions / ejectSession / purchaseItem,
+      // which all publish here. Two visible consequences:
+      //
+      //   - a second purchaser's client had no idea a run existed until
+      //     its next 6s poll;
+      //   - the store staff whose approved orders this call just LOCKED
+      //     (AttachToRun makes them uneditable and un-unapprovable) got
+      //     no order.changed at all, so their Order/Approval screens
+      //     kept offering actions the server would now reject.
+      //
+      // Deliberately NOT calling dispatchRunEventNotifications here:
+      // that sends real Telegram messages, and "should creating a run
+      // notify everyone" is a product decision, not a missing-broadcast
+      // bug. Left for whoever wants that behaviour to choose it.
+      hub.publish(ctx.session!.orgId, {
+        type: 'run.changed',
+        orgId: ctx.session!.orgId,
+        runId,
+        lastSeq: events[events.length - 1]?.seq ?? 0,
+      });
+      for (const a of attachedSessions) {
+        hub.publish(ctx.session!.orgId, {
+          type: 'order.changed',
+          orgId: ctx.session!.orgId,
+          sessionId: a.sessionId,
+          lastSeq: a.lastSeq,
+        });
+      }
+
       return { runId, runIndex, lastSeq: events[events.length - 1]?.seq ?? 0 };
     });
   }),
@@ -1215,11 +1252,21 @@ export const runRouter = router({
           }
         }
 
+        // 2026-07-26: both queries were unordered. Postgres returns heap
+        // order, and every UPDATE (i.e. every recorded purchase) writes a
+        // new tuple at the heap tail — so a row the purchaser just saved
+        // jumped to the bottom of the list. Combined with the RunPage's
+        // 6s poll, the whole list could reshuffle under the user's thumb
+        // mid-market. Ordering by the read model's PK columns is stable,
+        // free (both are index scans on (run_id, sku_id[, store_id])),
+        // and gives the client a deterministic base to re-sort on top of.
         const items = await tx.query.runItemsV.findMany({
           where: (i, { eq: eq2 }) => eq2(i.runId, run.id),
+          orderBy: (i, { asc }) => asc(i.skuId),
         });
         const splits = await tx.query.runItemStoresV.findMany({
           where: (i, { eq: eq2 }) => eq2(i.runId, run.id),
+          orderBy: (i, { asc }) => [asc(i.skuId), asc(i.storeId)],
         });
 
         // Per-(store, sku) demand from the underlying sessions. The
@@ -2111,7 +2158,13 @@ export const runRouter = router({
    * physical reality. The receiving stores can flag any issues via the
    * normal confirm/issue flow against the next run.
    */
-  cancel: authedProcedure.input(RunReasonOnlyInputSchema).mutation(async ({ ctx, input }) => {
+  // 2026-07-26: was RunReasonOnlyInputSchema (`reason: min(1)`), which
+  // rejected the empty reason the FE deliberately sends — every
+  // no-reason cancel died as BAD_REQUEST behind a generic error toast.
+  // The domain has allowed an empty reason since M1.7; only the edge
+  // schema disagreed. See RunCancelInputSchema for why the shared
+  // schema was NOT relaxed instead.
+  cancel: authedProcedure.input(RunCancelInputSchema).mutation(async ({ ctx, input }) => {
     return ctx.withOrg(async (tx) => {
       const run = await loadRun(tx, ctx.session!.orgId, input.runId);
       await assertRunStoreVisible(tx, ctx, run);

@@ -1,11 +1,27 @@
 /**
  * One-button deploy + verify.
  *
- *   bun run scripts/deploy.ts           # ship every staged file + verify
- *   bun run scripts/deploy.ts --dry     # only verify; don't ship
+ *   bun run scripts/deploy.ts                     # ship + verify
+ *   bun run scripts/deploy.ts --dry               # only verify; don't ship
+ *   bun run scripts/deploy.ts --force             # ship an unreproducible tree
+ *   bun run scripts/deploy.ts --allow-active-run  # ship during a live run
+ *
+ * The two override flags exist because this script ships a WORKING
+ * DIRECTORY rather than a git ref, and both gates protect against that:
+ *
+ *   --force            skips the provenance gates (clean tree, on main,
+ *                      pushed to origin/main). The release sha is then
+ *                      suffixed `-unverified` so /health/version cannot
+ *                      claim a provenance the artifact does not have.
+ *   --allow-active-run skips the check for a run in purchasing/delivering.
+ *                      The api restart forces a reload on every live
+ *                      client, which discards prices a purchaser has
+ *                      typed but not yet committed.
  *
  * Pipeline:
- *   1. Tar local CompassAlpha sources (excl. node_modules / .env / .turbo)
+ *   0. Provenance gates (local) + no-active-run pre-flight (server)
+ *   1. Tar local CompassAlpha sources (excl. node_modules / .env / .turbo
+ *      / .git / .claude)
  *   2. scp to server
  *   3. extract over /home/ubuntu/compass-alpha (in place; no downtime
  *      until the api restart in step 4)
@@ -88,14 +104,124 @@ function ssh(cmd: string): string {
   return runCapture(`ssh -i "${KEY}" -o StrictHostKeyChecking=no ${HOST} ${JSON.stringify(cmd)}`);
 }
 
-const releaseSha = runCapture('git rev-parse --short=12 HEAD').trim();
-
 if (!existsSync(KEY)) {
   console.error(`SSH key not found at ${KEY}`);
   process.exit(2);
 }
 
+/**
+ * Provenance gates (2026-07-26).
+ *
+ * This script tars the WORKING DIRECTORY, not a git ref, and extracts it
+ * server-side with `--strip-components=1` and no `--delete`. Three
+ * consequences that bit us:
+ *
+ *   - uncommitted (or unpushed) code ships to production and exists
+ *     nowhere else;
+ *   - deploying from a different branch leaves the union of both trees
+ *     on disk, because files deleted in the repo are never removed on
+ *     the server (this is live right now: `main` split RunPage.tsx into
+ *     apps/web/src/pages/runs/*, a branch that predates the split would
+ *     restore the monolith and orphan the split tree beside it);
+ *   - `/health/version` reports whatever HEAD said on the dev box, so a
+ *     sha that looks clean can describe a tree nobody can reconstruct.
+ *
+ * So: refuse to ship anything that isn't a committed, pushed commit on
+ * main. `--force` overrides for a genuine emergency, and when it does,
+ * the release sha is suffixed so the version endpoint cannot claim a
+ * provenance the artifact does not have.
+ */
+const gitBranch = runCapture('git rev-parse --abbrev-ref HEAD').trim();
+const gitDirty = runCapture('git status --porcelain').trim();
+const provenanceProblems: string[] = [];
+
+if (gitDirty) {
+  provenanceProblems.push(
+    `working tree is dirty (${gitDirty.split('\n').length} file(s)) — commit or stash first`,
+  );
+}
+if (gitBranch !== 'main') {
+  provenanceProblems.push(`HEAD is on "${gitBranch}", not main`);
+}
+try {
+  // Non-fatal on network failure: we still check against whatever
+  // origin/main we already have.
+  execSync('git fetch origin main --quiet', { cwd: ROOT, stdio: 'pipe' });
+} catch {
+  console.log('  \x1b[33m⚠ could not fetch origin/main — checking against the local copy\x1b[0m');
+}
+try {
+  execSync('git merge-base --is-ancestor HEAD origin/main', { cwd: ROOT, stdio: 'pipe' });
+} catch {
+  provenanceProblems.push('HEAD is not an ancestor of origin/main — push and merge it first');
+}
+
+const FORCED = provenanceProblems.length > 0;
+if (FORCED) {
+  const bullets = provenanceProblems.map((p) => `    • ${p}`).join('\n');
+  if (!args.has('--force')) {
+    console.error('\x1b[31m✖ Refusing to deploy — this artifact is not reproducible:\x1b[0m');
+    console.error(bullets);
+    console.error('\n  Fix the above, or re-run with --force if you accept shipping');
+    console.error('  code that exists only on this machine.');
+    process.exit(2);
+  }
+  console.log('\x1b[33m⚠ --force: shipping an unreproducible artifact:\x1b[0m');
+  console.log(bullets);
+}
+
+const releaseSha =
+  runCapture('git rev-parse --short=12 HEAD').trim() + (FORCED ? '-unverified' : '');
+
 console.log(`Release sha: ${releaseSha}`);
+console.log(`Branch: ${gitBranch}`);
+
+/**
+ * Pre-flight: never swap the frontend out from under a purchaser who is
+ * standing in the market (2026-07-26).
+ *
+ * The api restart in step 4b bumps web/dist/build-id.txt, so every live
+ * client sees a version mismatch and gets a reload prompt. A PurchaseRow
+ * holds the typed qty/price in LOCAL component state until the ✓ commits
+ * it — a reload mid-row silently discards whatever the purchaser has
+ * entered but not saved, and they are unlikely to notice which row it
+ * was. That is a data-integrity event, not a developer inconvenience.
+ *
+ * `planned` runs are not blocking: nothing is being typed yet.
+ */
+if (!DRY && !args.has('--allow-active-run')) {
+  step('0. pre-flight: no run is mid-flight');
+  try {
+    const out = ssh(
+      [
+        'set -e',
+        'cd /home/ubuntu/compass-alpha',
+        'DATABASE_URL=$(grep -E "^DATABASE_URL=" .env | head -1 | cut -d= -f2- | sed \'s/^"\\(.*\\)"$/\\1/\')',
+        `psql "$DATABASE_URL" -tAc "SELECT run_date || ' #' || run_index || ' (' || status || ')' FROM read_model.market_runs_v WHERE status IN ('purchasing','delivering')"`,
+      ].join(' && '),
+    );
+    const active = out
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (active.length > 0) {
+      console.error('\x1b[31m✖ Refusing to deploy — a run is in progress:\x1b[0m');
+      for (const a of active) console.error(`    • ${a}`);
+      console.error('\n  Restarting the api forces a reload prompt on every live client,');
+      console.error('  which discards any price a purchaser has typed but not yet saved.');
+      console.error('  Wait for the run to finish, or re-run with --allow-active-run.');
+      process.exit(1);
+    }
+    console.log('  ✓ no run in purchasing/delivering');
+  } catch (err) {
+    // Same posture as the BYPASSRLS probe below: a failed check is a
+    // warning, not a hard stop — otherwise an unrelated psql problem
+    // makes the system undeployable.
+    console.log(
+      `  \x1b[33m⚠ couldn't check for active runs (psql failed): ${(err as Error).message}\x1b[0m`,
+    );
+  }
+}
 
 if (!DRY) {
   step('1. Tar local source');
@@ -125,6 +251,18 @@ if (!DRY) {
     '--exclude=CompassAlpha/*.log',
     '--exclude=CompassAlpha/test-results',
     '--exclude=*.pem',
+    // 2026-07-26: neither of these was excluded, and both were being
+    // scp'd to production on every deploy.
+    //   .git     — ~10 MB of history the server never reads, and it
+    //              shipped every branch name and commit message.
+    //   .claude  — agent worktrees. Measured 222 MB, of which one stale
+    //              worktree was 206 MB because it carried its OWN
+    //              node_modules: the node_modules excludes above are
+    //              anchored at `CompassAlpha/apps/*`, so they never
+    //              matched `.claude/worktrees/*/apps/*`. That is an
+    //              unrelated branch's full checkout, on the prod box.
+    '--exclude=CompassAlpha/.git',
+    '--exclude=CompassAlpha/.claude',
   ].join(' ');
   run(`tar ${excludes} -czf "${TARBALL_RELATIVE}" CompassAlpha`, { cwd: PARENT });
 

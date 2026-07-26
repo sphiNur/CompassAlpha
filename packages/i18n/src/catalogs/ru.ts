@@ -1,3 +1,5 @@
+import type { CatalogKey } from './index';
+
 export const ru = {
   // ── 1. Navigation ──────────────────────────────────────────────
   'nav.order': 'Заказ',
@@ -521,7 +523,6 @@ export const ru = {
   'run.deliveryStageBadge.delivered': 'доставлено',
   'run.deliveryStageBadge.confirmed': 'подтв.',
   'run.purchase.priceInputPlaceholder': 'цена',
-  'run.previewView.overall': 'Сводно',
   'run.previewView.byStore': 'По магазинам',
   'run.previewView.bySupplier': 'По поставщикам',
   'run.previewSupplier.unassigned': 'Поставщик не указан',
@@ -542,6 +543,13 @@ export const ru = {
   'run.preview.unknownPrices': 'без цены: {n}',
   'run.preview.expand': 'Развернуть',
   'run.preview.collapse': 'Свернуть',
+  'run.view.perCategory': 'По категориям',
+  'run.view.uncategorized': 'Без категории',
+  'run.preview.estimateTitle': 'Оценка',
+  'run.preview.coverage': 'С ценой {known}/{total} · не менее {money}',
+  'run.preview.noSupplierCount': 'Без прилавка: {n}',
+  'run.purchase.pricingUniform': 'Единая цена / оплата',
+  'run.purchase.pricingPerStore': 'Цена / оплата по магазинам',
   'run.previewSupplier.changeVendor': 'Сменить поставщика',
   'run.previewSupplier.pickVendorTitle': 'Выберите поставщика',
   'run.previewSupplier.pickVendorHint':
@@ -1053,4 +1061,4 @@ export const ru = {
   'run.history.viewAll': 'Вся история',
   'run.history.storePurchases': 'Покупки магазинов за день',
   'run.history.storeItemsHeading': 'Покупки {store} за день',
-} as const;
+} as const satisfies Record<CatalogKey, string>;

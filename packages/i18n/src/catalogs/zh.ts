@@ -1,3 +1,5 @@
+import type { CatalogKey } from './index';
+
 export const zh = {
   // ── 1. Navigation ──────────────────────────────────────────────
   'nav.order': '下单',
@@ -484,7 +486,6 @@ export const zh = {
   'run.deliveryStageBadge.delivered': '已送达',
   'run.deliveryStageBadge.confirmed': '已确认',
   'run.purchase.priceInputPlaceholder': '价格',
-  'run.previewView.overall': '整体',
   'run.previewView.byStore': '按店铺',
   'run.previewView.bySupplier': '按摊位',
   'run.previewSupplier.unassigned': '未指定摊位',
@@ -504,6 +505,13 @@ export const zh = {
   'run.preview.unknownPrices': '{n} 个无参考价',
   'run.preview.expand': '展开',
   'run.preview.collapse': '折叠',
+  'run.view.perCategory': '按类型',
+  'run.view.uncategorized': '未分类',
+  'run.preview.estimateTitle': '预估',
+  'run.preview.coverage': '已知价格 {known}/{total} 项 · 至少 {money}',
+  'run.preview.noSupplierCount': '无摊位 {n}',
+  'run.purchase.pricingUniform': '统一价格/付款',
+  'run.purchase.pricingPerStore': '按店铺单独价格/付款',
   'run.previewSupplier.changeVendor': '更换摊位',
   'run.previewSupplier.pickVendorTitle': '选择摊位',
   'run.previewSupplier.pickVendorHint': '设置此商品的固定摊位,会延续到以后的采购,直到再次更改。',
@@ -994,4 +1002,4 @@ export const zh = {
   'run.history.viewAll': '全部历史',
   'run.history.storePurchases': '各店当天采购',
   'run.history.storeItemsHeading': '{store} 当天采购清单',
-} as const;
+} as const satisfies Record<CatalogKey, string>;

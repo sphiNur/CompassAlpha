@@ -6,6 +6,43 @@
  * Moved verbatim out of RunPage.tsx so runs/views can import it without
  * reaching back into the god-file.
  */
+/**
+ * Preview-shaped rows for the pre-run summary card (整体 / 按店铺 /
+ * 按摊位). Moved here from RunPanels.tsx (2026-07-26) so `runs/lib`
+ * can build the share-text strings as pure, testable functions instead
+ * of closures trapped inside the component.
+ */
+export type PreviewLine = {
+  id: string;
+  kind: 'sku' | 'extra';
+  skuId: string | null;
+  name: string;
+  qty: string;
+  unit: string;
+  unitPrice: string | null;
+  total: number | null;
+  note?: string;
+};
+
+export type PreviewStoreGroup = {
+  storeId: string;
+  storeName: string;
+  items: PreviewLine[];
+  total: number;
+  unknownCount: number;
+  legacyNote?: string;
+};
+
+export type PreviewSupplierGroup = {
+  supplierId: string | null;
+  supplierName: string;
+  contactPhone: string | null;
+  contactTg: string | null;
+  stores: PreviewStoreGroup[];
+  total: number;
+  unknownCount: number;
+};
+
 export interface ActiveRun {
   id: string;
   status: string;

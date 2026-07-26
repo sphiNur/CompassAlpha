@@ -196,6 +196,29 @@ export const RunReasonOnlyInputSchema = z.object({
   reason: z.string().min(1).max(500),
 });
 
+/**
+ * Cancel is the ONE reason-carrying run command whose reason is
+ * optional, so it cannot share `RunReasonOnlyInputSchema` (which also
+ * backs reopen / undoStartPurchase / undoStartDelivery — all three
+ * genuinely require a reason, enforced again in the domain layer).
+ *
+ * 2026-07-26: before this existed, cancel was broken end to end. The
+ * domain deliberately allows an empty reason (run/commands.ts CancelRun,
+ * M1.7: "most cancels are misclicks; hard-requiring a reason produces
+ * 'asdf' noise") and the FE deliberately sends one (RunPage's cancel
+ * branch sets requireReason:false / reasonOptional:true) — but the
+ * shared `.min(1)` in between rejected it at the tRPC boundary. Every
+ * no-reason cancel died as a BAD_REQUEST behind a generic error toast.
+ *
+ * Relaxing the shared schema was the wrong fix: it would only move the
+ * other three procedures' validation from the edge into a domain throw.
+ * Mirrors `UndoPurchaseInputSchema`, which already models exactly this.
+ */
+export const RunCancelInputSchema = z.object({
+  runId: UuidSchema,
+  reason: z.string().trim().max(500).optional().default(''),
+});
+
 export const RunItemViewSchema = z.object({
   skuId: UuidSchema,
   plannedQty: DecimalStringSchema,

@@ -5,6 +5,8 @@
  * Falls back through en.ts only as a defensive measure for new keys
  * added between releases — production should never display fallback.
  */
+import type { CatalogKey } from './index';
+
 export const uz = {
   // ── 1. Navigation ──────────────────────────────────────────────
   'nav.order': 'Buyurtma',
@@ -535,7 +537,6 @@ export const uz = {
   'run.deliveryStageBadge.delivered': 'yetkazildi',
   'run.deliveryStageBadge.confirmed': 'tasdiqlandi',
   'run.purchase.priceInputPlaceholder': 'narx',
-  'run.previewView.overall': 'Umumiy',
   'run.previewView.byStore': "Do'kon bo'yicha",
   'run.previewView.bySupplier': "Sotuvchi bo'yicha",
   'run.previewSupplier.unassigned': "Sotuvchi tanlanmagan",
@@ -556,6 +557,13 @@ export const uz = {
   'run.preview.unknownPrices': 'narxsiz: {n}',
   'run.preview.expand': 'Ochish',
   'run.preview.collapse': 'Yigish',
+  'run.view.perCategory': "Turkum bo'yicha",
+  'run.view.uncategorized': 'Turkumsiz',
+  'run.preview.estimateTitle': 'Taxminiy',
+  'run.preview.coverage': 'Narxi bor {known}/{total} · kamida {money}',
+  'run.preview.noSupplierCount': 'Rastasiz: {n}',
+  'run.purchase.pricingUniform': "Yagona narx / to'lov",
+  'run.purchase.pricingPerStore': "Do'kon bo'yicha narx / to'lov",
   'run.previewSupplier.changeVendor': "Sotuvchini almashtirish",
   'run.previewSupplier.pickVendorTitle': "Sotuvchini tanlang",
   'run.previewSupplier.pickVendorHint':
@@ -1083,4 +1091,4 @@ export const uz = {
   'run.history.viewAll': 'Barcha tarix',
   'run.history.storePurchases': 'Do\'konlarning shu kundagi xaridlari',
   'run.history.storeItemsHeading': '{store}ning shu kundagi xaridlari',
-} as const;
+} as const satisfies Record<CatalogKey, string>;

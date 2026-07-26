@@ -16,6 +16,7 @@ import {
   splitPaymentMethod,
   splitSubtotal,
   settleItemLine,
+  settlePerStore,
 } from '../settlement';
 
 describe('splitUnitPrice / splitPaymentMethod fallbacks', () => {
@@ -97,5 +98,161 @@ describe('settleItemLine — override path', () => {
       ],
     );
     expect(r).toEqual({ line: 40, cash: 30, transfer: 10 });
+  });
+});
+
+/**
+ * settlePerStore is the "who owes what" number: it drives the
+ * finish-confirm sheet the manager reads before closing a run, and the
+ * history detail they check afterwards. Until 2026-07-26 this loop was
+ * duplicated verbatim in RunPage and RunHistory with no test at all.
+ */
+describe('settlePerStore', () => {
+  const purchased = (skuId: string, unitPrice: string, paymentMethod?: string) => ({
+    skuId,
+    status: 'purchased',
+    unitPrice,
+    paymentMethod,
+  });
+
+  it('attributes a split to its store at the item price', () => {
+    const m = settlePerStore(
+      [purchased('sku-a', '100')],
+      [
+        { skuId: 'sku-a', storeId: 'A', qty: '2' },
+        { skuId: 'sku-a', storeId: 'B', qty: '3' },
+      ],
+      [],
+    );
+    expect(m.get('A')!.total).toBe(200);
+    expect(m.get('B')!.total).toBe(300);
+    // No override anywhere → everything falls to the item's method (cash).
+    expect(m.get('A')!.cash).toBe(200);
+    expect(m.get('A')!.transfer).toBe(0);
+  });
+
+  it('lets one store have its own price without touching the other', () => {
+    const m = settlePerStore(
+      [purchased('sku-a', '100')],
+      [
+        { skuId: 'sku-a', storeId: 'A', qty: '2', unitPrice: '150' },
+        { skuId: 'sku-a', storeId: 'B', qty: '2' },
+      ],
+      [],
+    );
+    expect(m.get('A')!.total).toBe(300);
+    expect(m.get('B')!.total).toBe(200);
+  });
+
+  it('allocates cash vs transfer per split, and the parts sum to the total', () => {
+    const m = settlePerStore(
+      [purchased('sku-a', '100', 'cash')],
+      [
+        { skuId: 'sku-a', storeId: 'A', qty: '2', paymentMethod: 'transfer' },
+        { skuId: 'sku-a', storeId: 'A', qty: '1' },
+      ],
+      [],
+    );
+    const a = m.get('A')!;
+    expect(a.total).toBe(300);
+    expect(a.transfer).toBe(200);
+    expect(a.cash).toBe(100);
+    expect(a.cash + a.transfer).toBe(a.total);
+  });
+
+  it('charges nobody for a pending or unavailable item', () => {
+    const m = settlePerStore(
+      [
+        { skuId: 'sku-a', status: 'pending', unitPrice: null },
+        { skuId: 'sku-b', status: 'unavailable', unitPrice: null },
+      ],
+      [
+        { skuId: 'sku-a', storeId: 'A', qty: '5' },
+        { skuId: 'sku-b', storeId: 'A', qty: '5' },
+      ],
+      [],
+    );
+    expect(m.size).toBe(0);
+  });
+
+  it('charges nobody for a purchased item with no price', () => {
+    const m = settlePerStore(
+      [{ skuId: 'sku-a', status: 'purchased', unitPrice: null }],
+      [{ skuId: 'sku-a', storeId: 'A', qty: '5' }],
+      [],
+    );
+    expect(m.size).toBe(0);
+  });
+
+  it('skips a split whose SKU is not in the run items', () => {
+    const m = settlePerStore(
+      [purchased('sku-a', '100')],
+      [
+        { skuId: 'sku-a', storeId: 'A', qty: '1' },
+        { skuId: 'sku-ghost', storeId: 'A', qty: '99' },
+      ],
+      [],
+    );
+    expect(m.get('A')!.total).toBe(100);
+  });
+
+  it('counts distinct SKUs per store, not split rows', () => {
+    const m = settlePerStore(
+      [purchased('sku-a', '10'), purchased('sku-b', '10')],
+      [
+        { skuId: 'sku-a', storeId: 'A', qty: '1' },
+        { skuId: 'sku-a', storeId: 'A', qty: '1' },
+        { skuId: 'sku-b', storeId: 'A', qty: '1' },
+      ],
+      [],
+    );
+    expect(m.get('A')!.skuIds.size).toBe(2);
+  });
+
+  it('allocates run expenses by their own store splits, inside the total', () => {
+    const m = settlePerStore(
+      [purchased('sku-a', '100')],
+      [{ skuId: 'sku-a', storeId: 'A', qty: '1' }],
+      [
+        {
+          qty: '1',
+          unitPrice: '5000',
+          paymentMethod: 'cash',
+          storeSplits: [
+            { storeId: 'A', qty: '1' },
+            { storeId: 'B', qty: '2' },
+          ],
+        },
+      ],
+    );
+    const a = m.get('A')!;
+    expect(a.expensesTotal).toBe(5000);
+    expect(a.expensesCount).toBe(1);
+    // Goods 100 + expense 5000 — the expense is part of total, not beside it.
+    expect(a.total).toBe(5100);
+    // Store B bought no goods but still owes its share of the expense.
+    expect(m.get('B')!.total).toBe(10000);
+    expect(m.get('B')!.skuIds.size).toBe(0);
+  });
+
+  it('sends a transfer-paid expense to the transfer bucket', () => {
+    const m = settlePerStore(
+      [],
+      [],
+      [
+        {
+          qty: '1',
+          unitPrice: '3000',
+          paymentMethod: 'transfer',
+          storeSplits: [{ storeId: 'A', qty: '1' }],
+        },
+      ],
+    );
+    expect(m.get('A')!.transfer).toBe(3000);
+    expect(m.get('A')!.cash).toBe(0);
+  });
+
+  it('returns an empty map for a run with nothing settled', () => {
+    expect(settlePerStore([], [], []).size).toBe(0);
   });
 });

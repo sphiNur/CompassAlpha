@@ -50,7 +50,7 @@ import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
 // Run money math — extracted to pages/runs/lib (Phase 4 step 1, unit-tested).
-import { splitPaymentMethod, splitSubtotal, settleItemLine } from './runs/lib/settlement';
+import { settleItemLine, settlePerStore } from './runs/lib/settlement';
 // History subsystem — extracted to runs/history (Phase 4 step 2).
 import {
   RunHistorySection,
@@ -202,8 +202,12 @@ export function RunPage() {
     // M3.41 (2026-05-21): purchaser-added items survive flaky bazaar
     // LTE just like regular purchases.
     'run.addPurchaserItem': async (entry) => {
+      // 2026-07-26: replay with the SAME key the first attempt used —
+      // see the mutation's onMutate. Without this a lost response
+      // recorded the off-catalog purchase twice.
       await utils.client.run.addPurchaserItem.mutate(
         entry.input as Parameters<typeof utils.client.run.addPurchaserItem.mutate>[0],
+        entry.idempotencyKey ? { context: { idempotencyKey: entry.idempotencyKey } } : undefined,
       );
       void utils.run.get.invalidate();
       void utils.run.list.invalidate();
@@ -212,6 +216,7 @@ export function RunPage() {
     'run.addExpense': async (entry) => {
       await utils.client.run.addExpense.mutate(
         entry.input as Parameters<typeof utils.client.run.addExpense.mutate>[0],
+        entry.idempotencyKey ? { context: { idempotencyKey: entry.idempotencyKey } } : undefined,
       );
       void utils.run.get.invalidate();
       void utils.run.list.invalidate();
@@ -263,16 +268,34 @@ export function RunPage() {
   // success/offline-queue pattern so the bazaar UX (flaky LTE) survives
   // a network drop mid-add. Idempotent at the API layer via
   // X-Idempotency-Key so replays don't double-buy.
+  // 2026-07-26: both of these enqueue to the offline outbox on a network
+  // error, but neither minted a STABLE idempotency key — so the replay
+  // sent a fresh one and the server's 24h dedupe cache never matched.
+  // A committed-but-lost response (the iOS "Load failed" case) therefore
+  // recorded the off-catalog purchase or the expense TWICE. Same shape as
+  // purchaseIdemCtx below; safe to share one ref per mutation because the
+  // add-item sheet's submit is gated on isPending (see the MainButton
+  // guard), so two concurrent calls of the same mutation can't interleave.
+  const addItemIdemCtx = useRef<{ idempotencyKey?: string }>({}).current;
+  const addExpenseIdemCtx = useRef<{ idempotencyKey?: string }>({}).current;
+
   const addPurchaserItem = trpc.run.addPurchaserItem.useMutation({
+    trpc: { context: addItemIdemCtx },
+    onMutate: () => {
+      const idempotencyKey = newIdempotencyKey();
+      addItemIdemCtx.idempotencyKey = idempotencyKey;
+      return { idempotencyKey };
+    },
     onSuccess: () => {
       invalidateRunQuietly(true);
       setAddItemDraft(null);
       haptic('success');
       toast.success(i18n.t('run.toast.itemAdded'));
     },
-    onError: (err, vars) => {
+    onError: (err, vars, ctx) => {
       if (isLikelyNetworkError(err)) {
-        void offline.enqueue('run.addPurchaserItem', vars);
+        const key = (ctx as { idempotencyKey?: string } | undefined)?.idempotencyKey;
+        void offline.enqueue('run.addPurchaserItem', vars, key);
         setAddItemDraft(null);
         toast.info(i18n.t('run.toast.purchaseSavedOffline'));
       } else {
@@ -284,15 +307,22 @@ export function RunPage() {
   // optimistic + offline-queue pattern as the SKU-item path so the
   // bazaar UX is consistent across modes.
   const addExpense = trpc.run.addExpense.useMutation({
+    trpc: { context: addExpenseIdemCtx },
+    onMutate: () => {
+      const idempotencyKey = newIdempotencyKey();
+      addExpenseIdemCtx.idempotencyKey = idempotencyKey;
+      return { idempotencyKey };
+    },
     onSuccess: () => {
       invalidateRunQuietly(true);
       setAddItemDraft(null);
       haptic('success');
       toast.success(i18n.t('run.toast.expenseAdded'));
     },
-    onError: (err, vars) => {
+    onError: (err, vars, ctx) => {
       if (isLikelyNetworkError(err)) {
-        void offline.enqueue('run.addExpense', vars);
+        const key = (ctx as { idempotencyKey?: string } | undefined)?.idempotencyKey;
+        void offline.enqueue('run.addExpense', vars, key);
         setAddItemDraft(null);
         toast.info(i18n.t('run.toast.purchaseSavedOffline'));
       } else {
@@ -669,37 +699,15 @@ export function RunPage() {
      * Same shape as the history-sheet breakdown (SKU lines + expense
      * splits, never mixing across stores).
      */
-    const byStore = new Map<
-      string,
-      { storeId: string; total: number; cash: number; transfer: number }
-    >();
-    const ensureStore = (storeId: string) => {
-      let cur = byStore.get(storeId);
-      if (!cur) {
-        cur = { storeId, total: 0, cash: 0, transfer: 0 };
-        byStore.set(storeId, cur);
-      }
-      return cur;
-    };
-    for (const sp of splits) {
-      const item = items.find((i) => i.skuId === sp.skuId);
-      if (!item || item.status !== 'purchased' || !item.unitPrice) continue;
-      const subtotal = splitSubtotal(sp, item);
-      const cur = ensureStore(sp.storeId);
-      cur.total += subtotal;
-      if (splitPaymentMethod(sp, item) === 'transfer') cur.transfer += subtotal;
-      else cur.cash += subtotal;
-    }
-    for (const ex of expenses) {
-      for (const ss of ex.storeSplits) {
-        const subtotal = Number(ss.qty) * Number(ex.unitPrice);
-        const cur = ensureStore(ss.storeId);
-        cur.total += subtotal;
-        if (ex.paymentMethod === 'transfer') cur.transfer += subtotal;
-        else cur.cash += subtotal;
-      }
-    }
-    const byStoreList = [...byStore.values()].sort((a, b) => b.total - a.total);
+    // 2026-07-26: this loop was duplicated verbatim in RunHistory's
+    // detail breakdown. Same money, two copies, no tests — exactly the
+    // shape that lets a later edit silently move one number and not the
+    // other. It now lives in runs/lib/settlement.ts with tests; the
+    // extra fields (skuIds / expense counters) are the history sheet's
+    // and are simply unused here.
+    const byStoreList = [...settlePerStore(items, splits, expenses).values()].sort(
+      (a, b) => b.total - a.total,
+    );
     return {
       skus,
       stores,
@@ -1577,6 +1585,15 @@ export function RunPage() {
               qty: d.qty,
             })),
             supplierBySku: runDetailQuery.data.supplierBySku ?? {},
+            // 2026-07-26: was missing, so every row of an EXISTING
+            // planned run rendered "待询价" — the preview's price
+            // fallback chain is lastPurchasePriceBySku → supplier
+            // estimatedUnitPrice → null, and the middle link is dead
+            // (sku_supplier_links.default_price / last_seen_price have
+            // no writer anywhere in the repo, so estimatedUnitPrice is
+            // always null in production). The no-run-yet mount got this
+            // straight from run.preview; only this adapter dropped it.
+            lastPurchasePriceBySku: runDetailQuery.data.lastPriceBySku ?? {},
             sessionNotesByStore: runDetailQuery.data.sessionNotesByStore,
             sessionExtrasByStore: runDetailQuery.data.sessionExtrasByStore,
           }}
@@ -1597,7 +1614,14 @@ export function RunPage() {
           i18n={i18n}
           priceInThousands={priceInThousands}
           savingSkuId={inlineSavingSkuId}
-          onSavePurchaseInline={({ skuId, actualQty, unitPrice, storeSplits, paymentMethod }) => {
+          onSavePurchaseInline={({
+            skuId,
+            actualQty,
+            unitPrice,
+            storeSplits,
+            paymentMethod,
+            supplierId,
+          }) => {
             // Direct in-page save — no sheet involved. Triggered when
             // the user blurs the price input on a row whose qty
             // matches planned. Splits come from per-store demand.
@@ -1608,7 +1632,19 @@ export function RunPage() {
             purchaseItem.mutate({
               runId: activeRun.id,
               skuId,
-              supplierId: null,
+              // 2026-07-26: was hard-coded null, so every inline save wrote
+              // price_history.supplier_id = NULL (runProjection.ts:678 takes
+              // it straight off the event payload). That made "what did I pay
+              // for this at THIS stall last time" permanently unanswerable —
+              // the only price history we had was per-SKU-global.
+              //
+              // Only the by-stall view supplies it (see PerVendorView's
+              // onSave wrapper). The aggregate / by-store / by-category views
+              // have no stall context, and a SKU's *preferred* supplier is a
+              // guess about where the purchase happened — recording a guess
+              // would poison the very history this is meant to build, so
+              // those paths still send null. A gap beats a lie.
+              supplierId: supplierId ?? null,
               unitPrice,
               actualQty,
               receiptPhotoUrl: null,

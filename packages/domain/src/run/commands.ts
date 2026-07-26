@@ -488,9 +488,28 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
 
     case 'StartDelivery': {
       assertActive(state);
-      // C.2 (M3.38): StartDelivery is the purchaser's "I'm done buying"
-      // transition. Gate it with claim ownership so a second purchaser
-      // doesn't flip the run forward while the first is still recording.
+      // 2026-07-26: this transition had NO permission check at all.
+      // The comment below says claim ownership gates it, but
+      // assertClaimOwnership has an empty body (runs are deliberately
+      // collaborative), so the only barrier was the tRPC layer's
+      // assertRunStoreVisible — a STORE-SCOPE check, not a permission
+      // one. Any member with a store in the run, including shop staff
+      // whose entire permission set is order.draft / order.submit /
+      // delivery.confirm / sales.record, could end the purchasing phase
+      // while the purchaser was still standing in the market. After
+      // that PurchaseItem rejects everything (it requires status
+      // 'purchasing'), so the buy is frozen mid-trip.
+      //
+      // M3.33 Wave1 #11 fixed exactly this on StartPurchase and missed
+      // its sibling; the gate below is the same one, deliberately, so
+      // the pair reads identically. Every built-in role that can start
+      // a delivery today (purchaser, admin, super_admin) holds
+      // run.purchase, so no legitimate actor loses the transition.
+      if (!command.actor.permissions.has('run.purchase')) {
+        throw forbidden('run.errors.cannotPurchase');
+      }
+      // C.2 (M3.38): kept for symmetry with the other purchaser
+      // transitions — currently a no-op by design (see the function).
       assertClaimOwnership(state, command.actor);
       if (state.status !== 'purchasing') {
         throw preconditionFailed('run.errors.notReadyToDeliver', { status: state.status });

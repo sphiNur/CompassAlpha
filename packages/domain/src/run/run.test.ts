@@ -237,6 +237,38 @@ describe('run.decide', () => {
     ).toThrow('run.errors.unavailableNoteRequired');
   });
 
+  // 2026-07-26: StartDelivery had no permission check whatsoever. The
+  // tRPC layer only asserts store VISIBILITY, so any member with a store
+  // in the run — including shop staff, whose whole permission set is
+  // order.draft / order.submit / delivery.confirm / sales.record — could
+  // end the purchasing phase while the purchaser was still in the
+  // market, after which PurchaseItem rejects everything.
+  test('StartDelivery is forbidden without run.purchase', () => {
+    const s = planAndPurchase();
+    const shopStaff: ActorCtx = {
+      userId: 'staff',
+      memberId: 'staff',
+      permissions: new Set(['order.draft', 'order.submit', 'delivery.confirm', 'sales.record']),
+    };
+    expect(() => decideRun(s, { type: 'StartDelivery', actor: shopStaff }, clock)).toThrow(
+      'run.errors.cannotPurchase',
+    );
+  });
+
+  test('StartDelivery is forbidden for a confirmer (delivery.confirm alone)', () => {
+    const s = planAndPurchase();
+    expect(() => decideRun(s, { type: 'StartDelivery', actor: confirmer() }, clock)).toThrow(
+      'run.errors.cannotPurchase',
+    );
+  });
+
+  test('StartDelivery still works for a purchaser', () => {
+    const s = planAndPurchase();
+    const evs = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock);
+    expect(evs).toHaveLength(1);
+    expect(evs[0]!.type).toBe('DeliveryStarted');
+  });
+
   test('StartDelivery requires all items handled', () => {
     let s = emptyRunState('r1');
     s = decideRun(
@@ -426,6 +458,36 @@ describe('run.decide', () => {
     );
     // Cancelled runs are permanently un-reopenable.
     void s;
+  });
+
+  // The reason being OPTIONAL is a deliberate product decision (M1.7:
+  // most cancels are misclicks, and hard-requiring a reason just breeds
+  // "asdf"). Pinned here because the tRPC edge schema disagreed with
+  // this for months — `RunReasonOnlyInputSchema.min(1)` bounced every
+  // no-reason cancel as BAD_REQUEST, so the behaviour below was
+  // unreachable in production. See RunCancelInputSchema in contracts.
+  test('CancelRun accepts an empty reason and stores it as null', () => {
+    const s = planAndPurchase();
+    const evs = decideRun(s, { type: 'CancelRun', reason: '', actor: purchaser() }, clock);
+    expect(evs).toHaveLength(1);
+    expect(evs[0]!.type).toBe('RunCancelled');
+    expect((evs[0]! as { payload: { reason: string | null } }).payload.reason).toBeNull();
+  });
+
+  test('CancelRun normalizes a whitespace-only reason to null', () => {
+    const s = planAndPurchase();
+    const evs = decideRun(s, { type: 'CancelRun', reason: '   ', actor: purchaser() }, clock);
+    expect((evs[0]! as { payload: { reason: string | null } }).payload.reason).toBeNull();
+  });
+
+  test('CancelRun keeps a real reason verbatim after trimming', () => {
+    const s = planAndPurchase();
+    const evs = decideRun(
+      s,
+      { type: 'CancelRun', reason: '  市场关门了  ', actor: purchaser() },
+      clock,
+    );
+    expect((evs[0]! as { payload: { reason: string | null } }).payload.reason).toBe('市场关门了');
   });
 
   test('CancelRun blocked after finished', () => {
