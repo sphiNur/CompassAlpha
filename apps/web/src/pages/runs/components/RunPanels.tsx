@@ -22,6 +22,7 @@ import {
   CardTitle,
   Chip,
   ChipBar,
+  EmptyState,
   SectionLabel,
   Sheet,
   useToast,
@@ -61,6 +62,12 @@ import {
   filterSupplierGroups,
 } from '../lib/previewFilter';
 import { normalizeQuery } from '../../../lib/searchMatch';
+import {
+  countByStatus,
+  visibleItems,
+  type ItemFilter,
+  type ItemView,
+} from '../lib/itemList';
 
 // formatQty / formatMoney are imported from `../lib/format` —
 // thousand-separator + max-1-decimal display rule applied everywhere.
@@ -106,7 +113,6 @@ export function ActiveRunPanel({
   onMarkNa,
   onEditPurchased,
   onUnmark,
-  onUndoPurchase,
   onOpenAdvancedPurchase,
   onDeliverStore,
   onRecallStore,
@@ -114,6 +120,8 @@ export function ActiveRunPanel({
   onRecordExtraExpense,
   onRemoveExpense,
   onOpenExpense,
+  onSetPaymentMethod,
+  paymentBusySkuId,
 }: {
   run: ActiveRun;
   skuById: Map<
@@ -147,7 +155,6 @@ export function ActiveRunPanel({
   onMarkNa: (skuId: string) => void;
   onEditPurchased: (item: ActiveRun['items'][number]) => void;
   onUnmark: (skuId: string, skuName: string) => void;
-  onUndoPurchase: (skuId: string, skuName: string) => void;
   onOpenAdvancedPurchase: (item: ActiveRun['items'][number]) => void;
   onDeliverStore: (storeId: string, storeName: string) => void;
   onRecallStore: (storeId: string, storeName: string) => void;
@@ -164,6 +171,11 @@ export function ActiveRunPanel({
   /** M3.44: remove an off-catalog expense (purchasing phase only). */
   onRemoveExpense: (expenseId: string, label: string) => void;
   onOpenExpense: () => void;
+  onSetPaymentMethod: (
+    item: ActiveRun['items'][number],
+    next: 'cash' | 'transfer',
+  ) => void;
+  paymentBusySkuId: string | null;
 }) {
   // 2026-07-26: the AGGREGATE view — the default screen during an
   // actual run — passed the raw canonical unit code down to
@@ -193,6 +205,24 @@ export function ActiveRunPanel({
     }
     return m;
   }, [run.perStoreDemand]);
+
+  /**
+   * SKU → its recorded splits, for the same reason as `demandBySku`.
+   *
+   * Every row was calling `run.splits.filter(sp => sp.skuId === ...)`,
+   * so an 87-item run with ~260 splits did ~22,000 comparisons per
+   * render — and the 6-second poll hands back fresh arrays every time,
+   * so this recomputed on a timer even when nothing had changed.
+   */
+  const splitsBySku = useMemo(() => {
+    const m = new Map<string, typeof run.splits>();
+    for (const sp of run.splits) {
+      const arr = m.get(sp.skuId) ?? [];
+      arr.push(sp);
+      m.set(sp.skuId, arr);
+    }
+    return m;
+  }, [run.splits]);
 
   /**
    * Inverse of `demandBySku` — `storeId → [{ skuId, qty }]`. Powers the
@@ -290,6 +320,47 @@ export function ActiveRunPanel({
   const plannedOrEditing = run.status === 'planned' || editingPhase;
   const showViewToggle = plannedOrEditing && (showPerStore || showPerVendor || showPerCategory);
 
+  /**
+   * Search + filter over the in-run list.
+   *
+   * The pre-run preview has had both since the accordion landed; the
+   * moment the run STARTS they disappeared, and the 87-row list the
+   * purchaser actually works from had no way to find anything. Same
+   * matcher as the preview (lib/searchMatch), so a Russian speaker
+   * typing "молоко" finds a SKU whose display name resolved to Chinese.
+   *
+   * Not persisted: a query is about the stall you are standing at, and
+   * reopening the page to a list silently hiding 80 rows is worse than
+   * retyping four characters.
+   */
+  const [itemQuery, setItemQuery] = useState('');
+  const [itemFilter, setItemFilter] = useState<ItemFilter>('all');
+  const itemTokens = useMemo(() => normalizeQuery(itemQuery) ?? [], [itemQuery]);
+  const itemCounts = useMemo(
+    () => countByStatus(run.items, (it) => it.status),
+    [run.items],
+  );
+  const itemListView = useMemo(
+    (): ItemView<ActiveRun['items'][number]> => ({
+      nameOf: (it) => {
+        const sku = skuById.get(it.skuId);
+        return sku ? productName(sku) : it.skuId;
+      },
+      supplierNameOf: (it) => run.supplierBySku?.[it.skuId]?.name ?? null,
+      // Other-language names, so the row is findable in whichever
+      // language the purchaser thinks in — mirrors the preview's
+      // lineHaystack.
+      extraHaystackOf: (it) => Object.values(skuById.get(it.skuId)?.names ?? {}),
+      statusOf: (it) => it.status,
+      idOf: (it) => it.skuId,
+    }),
+    [skuById, productName, run.supplierBySku],
+  );
+  const visibleRunItems = useMemo(
+    () => visibleItems(run.items, itemListView, { tokens: itemTokens, filter: itemFilter }),
+    [run.items, itemListView, itemTokens, itemFilter],
+  );
+
   return (
     <div className="flex flex-col gap-2">
       {/* View-mode toggle — M3.28 (2026-05-18): dropped the "Aggregate"
@@ -352,6 +423,8 @@ export function ActiveRunPanel({
       ) : null}
       {showViewToggle && viewMode === 'perVendor' && showPerVendor ? (
         <PerVendorView
+          onSetPaymentMethod={onSetPaymentMethod}
+          paymentBusySkuId={paymentBusySkuId}
           run={run}
           skuById={skuById}
           storeById={storeById}
@@ -362,7 +435,6 @@ export function ActiveRunPanel({
           demandBySku={demandBySku}
           onSavePurchaseInline={onSavePurchaseInline}
           onMarkNa={onMarkNa}
-          onUndoPurchase={onUndoPurchase}
           onOpenAdvancedPurchase={onOpenAdvancedPurchase}
           onEditPurchased={onEditPurchased}
           onUnmark={onUnmark}
@@ -372,6 +444,8 @@ export function ActiveRunPanel({
       ) : null}
       {showViewToggle && viewMode === 'perCategory' && showPerCategory ? (
         <PerCategoryView
+          onSetPaymentMethod={onSetPaymentMethod}
+          paymentBusySkuId={paymentBusySkuId}
           run={run}
           skuById={skuById}
           categoryById={categoryById}
@@ -383,7 +457,6 @@ export function ActiveRunPanel({
           demandBySku={demandBySku}
           onSavePurchaseInline={onSavePurchaseInline}
           onMarkNa={onMarkNa}
-          onUndoPurchase={onUndoPurchase}
           onOpenAdvancedPurchase={onOpenAdvancedPurchase}
           onEditPurchased={onEditPurchased}
           onUnmark={onUnmark}
@@ -399,30 +472,90 @@ export function ActiveRunPanel({
           {/* M2.1: SectionLabel (was 3-line ad-hoc div). Same visual,
               standardised primitive so every section eyebrow renders
               identically across the app. */}
+          {/* Was run.label.pendingFraction — "{done}/{total} 待办" fed
+              with the PENDING count. Two problems. An x/y fraction
+              beside a section header is read as "x of y done", so a
+              fresh run announced "87/87" (i.e. finished) and a nearly
+              finished one announced "3/87"; and the sibling
+              confirmedFraction twenty lines below uses the identical
+              shape counting the other way. It also folded "bought" and
+              "couldn't get" into one number, so the two outcomes that
+              matter most at handover were indistinguishable.
+
+              Three counts, each labelled, counting in the direction the
+              word implies. */}
           <SectionLabel
-            meta={i18n.t('run.label.pendingFraction', {
-              done: run.items.filter((i) => i.status === 'pending').length,
-              total: run.items.length,
+            meta={i18n.t('run.label.itemsProgress', {
+              bought: run.items.filter((i) => i.status === 'purchased').length,
+              na: run.items.filter((i) => i.status === 'unavailable').length,
+              pending: run.items.filter((i) => i.status === 'pending').length,
             })}
           >
             {i18n.t('run.section.items')}
           </SectionLabel>
+          {/* Search + filter, only once the list is long enough to need
+              them. Below that threshold the whole list is on one screen
+              and the controls would cost more rows than they save. */}
+          {run.items.length >= 8 ? (
+            <>
+              <div className="px-4 pb-1.5">
+                <input
+                  type="search"
+                  value={itemQuery}
+                  onChange={(e) => setItemQuery(e.target.value)}
+                  placeholder={i18n.t('run.search.itemsPlaceholder')}
+                  aria-label={i18n.t('run.search.itemsPlaceholder')}
+                  className="h-9 w-full rounded-[var(--r-pill)] border border-[var(--c-divider)] bg-[var(--c-surface-2)] px-3 text-body outline-none focus:border-[var(--c-action)]"
+                />
+              </div>
+              <ChipBar
+                className="pt-0"
+                ariaLabel={i18n.t('run.filter.ariaLabel')}
+              >
+                <Chip
+                  selected={itemFilter === 'all'}
+                  onClick={() => setItemFilter('all')}
+                >
+                  {i18n.t('run.filter.all', { n: itemCounts.all })}
+                </Chip>
+                <Chip
+                  selected={itemFilter === 'pending'}
+                  onClick={() => setItemFilter('pending')}
+                >
+                  {i18n.t('run.filter.pending', { n: itemCounts.pending })}
+                </Chip>
+                {itemCounts.unavailable > 0 ? (
+                  <Chip
+                    selected={itemFilter === 'unavailable'}
+                    onClick={() => setItemFilter('unavailable')}
+                  >
+                    {i18n.t('run.filter.unavailable', {
+                      n: itemCounts.unavailable,
+                    })}
+                  </Chip>
+                ) : null}
+              </ChipBar>
+            </>
+          ) : null}
+          {visibleRunItems.length === 0 ? (
+            <p className="px-4 py-6 text-center text-body text-[var(--c-fg-muted)]">
+              {i18n.t('run.filter.noMatch')}
+            </p>
+          ) : null}
           <ul className="flex flex-col" role="list">
-            {run.items.map((it) => {
+            {visibleRunItems.map((it) => {
               const sku = skuById.get(it.skuId);
               const skuName = sku ? productName(sku) : it.skuId.slice(0, 8);
               // M3.52: pluck this SKU's recorded splits for the
               // per-store breakdown chips shown under purchased rows.
               // Pending rows fall back to planned demand inside the
               // row component — so we pass both regardless of status.
-              const actualSplits = run.splits
-                .filter((sp) => sp.skuId === it.skuId)
-                .map((sp) => ({
-                  storeId: sp.storeId,
-                  qty: sp.qty,
-                  unitPrice: sp.unitPrice,
-                  paymentMethod: sp.paymentMethod,
-                }));
+              const actualSplits = (splitsBySku.get(it.skuId) ?? []).map((sp) => ({
+                storeId: sp.storeId,
+                qty: sp.qty,
+                unitPrice: sp.unitPrice,
+                paymentMethod: sp.paymentMethod,
+              }));
               return (
                 <PurchaseRow
                   key={it.skuId}
@@ -443,8 +576,9 @@ export function ActiveRunPanel({
                   onMarkNa={onMarkNa}
                   onEdit={onEditPurchased}
                   onUnmark={onUnmark}
-                  onUndoPurchase={onUndoPurchase}
                   onOpenAdvanced={onOpenAdvancedPurchase}
+                  onSetPaymentMethod={onSetPaymentMethod}
+                  paymentBusy={paymentBusySkuId === it.skuId}
                 />
               );
             })}
@@ -495,6 +629,20 @@ export function ActiveRunPanel({
           onRemove={onRemoveExpense}
           onOpenExpense={onOpenExpense}
         />
+      ) : null}
+
+      {/* A trip where nothing could be bought reaches `delivering` with
+          zero splits, so the store list below renders nothing at all and
+          the screen went blank. Say so instead — and note that Finish is
+          reachable, which it now is (see allStoresConfirmed in
+          RunPage.tsx). */}
+      {run.status === 'delivering' && involvedStoreIds.length === 0 ? (
+        <Card>
+          <EmptyState
+            title={i18n.t('run.empty.nothingToDeliver')}
+            description={i18n.t('run.empty.nothingToDeliverBody')}
+          />
+        </Card>
       ) : null}
 
       {run.status === 'delivering' && involvedStoreIds.length > 0 ? (
@@ -1217,7 +1365,7 @@ export function PreviewSummaryCard({
   ) => {
     const rowBg = index % 2 === 0 ? 'bg-[var(--c-surface)]' : 'bg-[var(--c-surface-2)]';
     const formulaTone =
-      line.total === null ? 'text-[var(--c-warning)]' : 'text-[var(--c-fg-muted)]';
+      line.total === null ? 'text-[var(--c-warning-fg)]' : 'text-[var(--c-fg-muted)]';
     const nameNode =
       opts?.editableSupplier && line.kind === 'sku' && line.skuId ? (
         <button
@@ -1243,20 +1391,20 @@ export function PreviewSummaryCard({
     if (opts?.showSupplier) {
       const stallTone = line.supplierId
         ? 'text-[var(--c-fg-muted)]'
-        : 'text-[var(--c-warning)]';
+        : 'text-[var(--c-warning-fg)]';
       const qtyUnit = `${formatQty(line.qty)} ${line.unit}`.trim();
       return (
         <li key={line.id} className={`px-2 py-1.5 ${rowBg}`}>
           <div className="flex min-w-0 items-baseline gap-2 text-body">
             {line.kind === 'extra' ? (
-              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--c-warning)] ring-hairline">
+              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--c-warning-fg)] ring-hairline">
                 {i18n.t('order.extras.label')}
               </span>
             ) : null}
             <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">{line.name}</span>
             <span
               className={`shrink-0 font-mono text-label font-semibold tabular-nums ${
-                line.total === null ? 'text-[var(--c-warning)]' : 'text-[var(--c-fg)]'
+                line.total === null ? 'text-[var(--c-warning-fg)]' : 'text-[var(--c-fg)]'
               }`}
             >
               {line.total === null
@@ -1302,7 +1450,7 @@ export function PreviewSummaryCard({
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-body">
             {line.kind === 'extra' ? (
-              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--c-warning)] ring-hairline">
+              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--c-warning-fg)] ring-hairline">
                 {i18n.t('order.extras.label')}
               </span>
             ) : null}
@@ -1429,13 +1577,13 @@ export function PreviewSummaryCard({
                   // not a control that commits money hundreds of times a
                   // trip. The static counter beside it matches so the row
                   // reads as one band.
-                  className="press flex min-h-9 items-center rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2.5 text-label text-[var(--c-warning)] ring-hairline"
+                  className="press flex min-h-9 items-center rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2.5 text-label text-[var(--c-warning-fg)] ring-hairline"
                 >
                   {i18n.t('run.preview.noSupplierCount', { n: previewStats.noSupplier })}
                 </button>
               ) : null}
               {previewStats.total > previewStats.known ? (
-                <span className="flex min-h-9 items-center rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2.5 text-label text-[var(--c-warning)]">
+                <span className="flex min-h-9 items-center rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2.5 text-label text-[var(--c-warning-fg)]">
                   {i18n.t('run.preview.unknownPrices', {
                     n: previewStats.total - previewStats.known,
                   })}
@@ -1449,7 +1597,7 @@ export function PreviewSummaryCard({
               <div key={g.storeId} className="flex items-baseline gap-2 text-body-sm">
                 <span className="min-w-0 flex-1 truncate">{g.storeName}</span>
                 {g.unknownCount > 0 ? (
-                  <span className="shrink-0 text-label text-[var(--c-warning)]">
+                  <span className="shrink-0 text-label text-[var(--c-warning-fg)]">
                     {i18n.t('run.preview.unknownPrices', { n: g.unknownCount })}
                   </span>
                 ) : null}

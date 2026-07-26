@@ -32,7 +32,7 @@ export function SectionRow({
 }: SectionRowProps) {
   const iconColor =
     tone === 'warn'
-      ? 'text-[var(--c-warning)]'
+      ? 'text-[var(--c-warning-fg)]'
       : tone === 'danger'
         ? 'text-[var(--c-danger)]'
         : 'text-[var(--c-action)]';
@@ -177,7 +177,7 @@ export function Tile({ label, value, accent = 'muted', className }: TileProps) {
   const isAlerting = numeric && accent === 'warn' && (value as number) > 0;
   const valueColor =
     isAlerting
-      ? 'text-[var(--c-warning)]'
+      ? 'text-[var(--c-warning-fg)]'
       : accent === 'success'
         ? 'text-[var(--c-success)]'
         : 'text-[var(--c-fg)]';

@@ -11,7 +11,14 @@ export function Chip({ className, selected, children, ...rest }: ChipProps) {
     <button
       type="button"
       role="tab"
-      aria-selected={selected || undefined}
+      // `selected || undefined` turned false into "attribute absent",
+      // so an UNSELECTED chip carried no aria-selected at all. Inside a
+      // tablist that is invalid — every tab must state its selection —
+      // and assistive tech reads the group as having no selectable
+      // options rather than one chosen out of several. React already
+      // omits the attribute for undefined, so passing the boolean
+      // straight through is both the fix and the simpler code.
+      aria-selected={selected}
       // Pill visual (h-8 / rounded-pill / text-label font-medium) lives
       // in pillButtonClass, shared with Tab. Its `shrink-0
       // whitespace-nowrap` keep chips their natural width so the parent

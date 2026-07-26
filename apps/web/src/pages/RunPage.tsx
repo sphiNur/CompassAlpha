@@ -52,6 +52,10 @@ import { formatQty, formatMoney } from '../lib/format';
 // Run money math — extracted to pages/runs/lib (Phase 4 step 1, unit-tested).
 import { settleItemLine, settlePerStore } from './runs/lib/settlement';
 import { countCarriedOver, STALE_PRICE_DAYS } from './runs/lib/priceState';
+import {
+  allItemsHandled as allItemsHandledOf,
+  allStoresConfirmed as allStoresConfirmedOf,
+} from './runs/lib/runProgress';
 // History subsystem — extracted to runs/history (Phase 4 step 2).
 import {
   RunHistorySection,
@@ -108,6 +112,10 @@ export function RunPage() {
   // is the page-level button, not a modal.
   const [purchaseDraft, setPurchaseDraft] = useState<PurchaseDraft | null>(null);
   const [inlineSavingSkuId, setInlineSavingSkuId] = useState<string | null>(null);
+  // Which purchased row is mid-flight on a payment-method correction, so
+  // that row's toggle greys out instead of accepting a second tap on a
+  // slow link.
+  const [paymentBusySkuId, setPaymentBusySkuId] = useState<string | null>(null);
   // M3.41 (2026-05-21): purchaser-initiated mid-run additions. Distinct
   // from `purchaseDraft` because the workflow is different — picking a
   // SKU that's NOT in the run (vs. recording a buy for a planned row),
@@ -639,26 +647,70 @@ export function RunPage() {
     return () => clearTimeout(t);
   }, [inlineSavingSkuId, purchaseItem.isPending, runDetailQuery.data?.items]);
 
-  const allItemsHandled = useMemo(() => {
-    const items = runDetailQuery.data?.items ?? [];
-    return (
-      items.length > 0 &&
-      items.every((i) => i.status === 'purchased' || i.status === 'unavailable')
-    );
-  }, [runDetailQuery.data]);
+  // Both predicates live in runs/lib/runProgress.ts with tests — they
+  // gate MainButton VISIBILITY, so a wrong answer does not grey a
+  // button out, it removes it and strands the run.
+  /**
+   * Open the full purchase sheet on an already-recorded row.
+   *
+   * Hoisted out of the JSX because the row's payment-method toggle also
+   * needs it as a fallback: a row with per-store payment overrides has
+   * no single method to flip, and the sheet is where those fields live.
+   */
+  const openPurchaseEdit = useCallback(
+    (item: {
+      skuId: string;
+      unitPrice: string | null;
+      purchasedQty: string | null;
+      supplierId?: string | null;
+      receiptPhotoUrl?: string | null;
+      paymentMethod?: string | null;
+    }) => {
+      const splits = new Map<string, string>();
+      const splitPrices = new Map<string, string>();
+      const splitPaymentMethods = new Map<string, 'cash' | 'transfer'>();
+      let perStorePricing = false;
+      for (const sp of runDetailQuery.data?.splits ?? []) {
+        if (sp.skuId !== item.skuId) continue;
+        splits.set(sp.storeId, sp.qty);
+        if (sp.unitPrice) {
+          splitPrices.set(sp.storeId, sp.unitPrice);
+          perStorePricing = true;
+        }
+        if (sp.paymentMethod) {
+          splitPaymentMethods.set(sp.storeId, sp.paymentMethod as 'cash' | 'transfer');
+          perStorePricing = true;
+        }
+      }
+      setPurchaseDraft({
+        isEdit: true,
+        skuId: item.skuId,
+        runId: activeRun!.id,
+        unitPrice: item.unitPrice ?? '',
+        actualQty: item.purchasedQty ?? '',
+        supplierId: item.supplierId ?? null,
+        splits,
+        splitPrices,
+        splitPaymentMethods,
+        perStorePricing,
+        receiptPhotoUrl: item.receiptPhotoUrl ?? null,
+        reason: '',
+        // M1.14: prefill from the existing record so editing doesn't
+        // accidentally flip the method back to cash.
+        paymentMethod: (item.paymentMethod as 'cash' | 'transfer') ?? 'cash',
+      });
+    },
+    [runDetailQuery.data, activeRun],
+  );
+
+  const allItemsHandled = useMemo(
+    () => allItemsHandledOf(runDetailQuery.data?.items ?? []),
+    [runDetailQuery.data],
+  );
 
   const allStoresConfirmed = useMemo(() => {
     if (!runDetailQuery.data) return false;
-    const involved = new Set<string>();
-    for (const sp of runDetailQuery.data.splits) involved.add(sp.storeId);
-    if (involved.size === 0) return false;
-    for (const id of involved) {
-      const allConfirmed = runDetailQuery.data.splits
-        .filter((sp) => sp.storeId === id)
-        .every((sp) => !!sp.confirmedAt);
-      if (!allConfirmed) return false;
-    }
-    return true;
+    return allStoresConfirmedOf(runDetailQuery.data.splits);
   }, [runDetailQuery.data]);
 
   /** "We can still un-Start delivery" — true iff status=delivering AND
@@ -1741,47 +1793,68 @@ export function RunPage() {
           onMarkNa={(skuId) =>
             setUnavailableFor({ runId: activeRun.id, skuId })
           }
-          onEditPurchased={(item) => {
-            const splits = new Map<string, string>();
-            const splitPrices = new Map<string, string>();
-            const splitPaymentMethods = new Map<string, 'cash' | 'transfer'>();
-            let perStorePricing = false;
-            for (const sp of runDetailQuery.data!.splits) {
-              if (sp.skuId === item.skuId) {
-                splits.set(sp.storeId, sp.qty);
-                if (sp.unitPrice) {
-                  splitPrices.set(sp.storeId, sp.unitPrice);
-                  perStorePricing = true;
-                }
-                if (sp.paymentMethod) {
-                  splitPaymentMethods.set(sp.storeId, sp.paymentMethod as 'cash' | 'transfer');
-                  perStorePricing = true;
-                }
-              }
+          onEditPurchased={openPurchaseEdit}
+          paymentBusySkuId={paymentBusySkuId}
+          onSetPaymentMethod={(item, next) => {
+            // Correcting the method of an ALREADY purchased row goes
+            // through revisePurchase, NOT the inline purchase path.
+            //
+            // purchaseItem reaches PurchaseItem, which has no
+            // already-purchased guard and emits a fresh ItemPurchased.
+            // The projection then appends an UNDEDUPED price_history row
+            // per tap (insertPriceObservations does a bare insert) and
+            // upserts run_item_stores_v with
+            // `unitPrice: split.unitPrice ?? null`, so a single tap on a
+            // row carrying per-store price overrides would erase them.
+            // revisePurchase is the command that exists for this; its
+            // schema requires a reason, hence the canned localized one.
+            const rows = (runDetailQuery.data?.splits ?? []).filter(
+              (sp) => sp.skuId === item.skuId,
+            );
+            // A row with per-store payment overrides has no single
+            // method to flip — send it to the sheet, where those fields
+            // exist. (The row already renders a static indicator in that
+            // case; this is defence in depth.)
+            if (
+              rows.some((sp) => sp.paymentMethod) ||
+              !item.unitPrice ||
+              !item.purchasedQty
+            ) {
+              openPurchaseEdit(item);
+              return;
             }
-            setPurchaseDraft({
-              isEdit: true,
-              skuId: item.skuId,
-              runId: activeRun.id,
-              unitPrice: item.unitPrice ?? '',
-              actualQty: item.purchasedQty ?? '',
-              supplierId: item.supplierId ?? null,
-              splits,
-              splitPrices,
-              splitPaymentMethods,
-              perStorePricing,
-              receiptPhotoUrl: item.receiptPhotoUrl ?? null,
-              reason: '',
-              // M1.14: prefill from existing record so editing doesn't
-              // accidentally flip the method back to cash.
-              paymentMethod: (item.paymentMethod as 'cash' | 'transfer') ?? 'cash',
-            });
+            const storeSplits = rows
+              .filter((sp) => Number(sp.qty) > 0)
+              // Preserve per-store PRICE overrides; omit paymentMethod
+              // so the projection writes null, which is what it already
+              // was on every split of this row.
+              .map((sp) => ({
+                storeId: sp.storeId,
+                qty: sp.qty,
+                ...(sp.unitPrice ? { unitPrice: sp.unitPrice } : {}),
+              }));
+            if (storeSplits.length === 0) {
+              openPurchaseEdit(item);
+              return;
+            }
+            setPaymentBusySkuId(item.skuId);
+            revisePurchase.mutate(
+              {
+                runId: activeRun.id,
+                skuId: item.skuId,
+                supplierId: item.supplierId ?? null,
+                unitPrice: item.unitPrice,
+                actualQty: item.purchasedQty,
+                receiptPhotoUrl: item.receiptPhotoUrl ?? null,
+                storeSplits,
+                paymentMethod: next,
+                reason: i18n.t('run.reason.paymentMethodChanged'),
+              },
+              { onSettled: () => setPaymentBusySkuId(null) },
+            );
           }}
           onUnmark={(skuId, skuName) =>
             setConfirmAction({ kind: 'unmarkUnavailable', skuId, skuName })
-          }
-          onUndoPurchase={(skuId, skuName) =>
-            setConfirmAction({ kind: 'undoPurchase', skuId, skuName })
           }
           onOpenAdvancedPurchase={(item) => {
             // User changed qty from planned (or no per-store demand
@@ -1924,6 +1997,23 @@ export function RunPage() {
         i18n={i18n}
         priceInThousands={priceInThousands}
         onCancel={() => setPurchaseDraft(null)}
+        // Undo moved off the purchased row (where it sat one row-pitch
+        // from a money-committing ✓) into this sheet. Same ConfirmSheet
+        // as before.
+        onUndo={
+          purchaseDraft?.isEdit
+            ? () => {
+                const d = purchaseDraft;
+                const sku = skuById.get(d.skuId);
+                setPurchaseDraft(null);
+                setConfirmAction({
+                  kind: 'undoPurchase',
+                  skuId: d.skuId,
+                  skuName: sku ? productName(sku) : d.skuId.slice(0, 8),
+                });
+              }
+            : undefined
+        }
         onChange={setPurchaseDraft}
         onSubmit={(d) => {
           const payload = {
