@@ -175,6 +175,17 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
 
   switch (command.type) {
     case 'PlanRun': {
+      // Per-STREAM guard only, and deliberately so: a decider sees one
+      // aggregate, and "does this org already have another run open" is
+      // not a fact about this stream. Note the consequence — for a fresh
+      // run id `state.status` is always 'absent', so this check never
+      // fires on a first PlanRun and provides no cross-run protection
+      // whatsoever.
+      //
+      // That rule lives where it can be enforced atomically: the partial
+      // unique index mrv_one_active_per_org_unique (migration 0035), with
+      // run.create short-circuiting to the live run before it gets here.
+      // If you come looking for a missing guard, it is not missing.
       if (state.status !== 'absent') {
         throw conflict('run.errors.alreadyPlanned', { status: state.status });
       }
