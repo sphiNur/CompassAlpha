@@ -50,7 +50,7 @@ import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
 // Run money math — extracted to pages/runs/lib (Phase 4 step 1, unit-tested).
-import { splitPaymentMethod, splitSubtotal, settleItemLine } from './runs/lib/settlement';
+import { settleItemLine, settlePerStore } from './runs/lib/settlement';
 // History subsystem — extracted to runs/history (Phase 4 step 2).
 import {
   RunHistorySection,
@@ -699,37 +699,15 @@ export function RunPage() {
      * Same shape as the history-sheet breakdown (SKU lines + expense
      * splits, never mixing across stores).
      */
-    const byStore = new Map<
-      string,
-      { storeId: string; total: number; cash: number; transfer: number }
-    >();
-    const ensureStore = (storeId: string) => {
-      let cur = byStore.get(storeId);
-      if (!cur) {
-        cur = { storeId, total: 0, cash: 0, transfer: 0 };
-        byStore.set(storeId, cur);
-      }
-      return cur;
-    };
-    for (const sp of splits) {
-      const item = items.find((i) => i.skuId === sp.skuId);
-      if (!item || item.status !== 'purchased' || !item.unitPrice) continue;
-      const subtotal = splitSubtotal(sp, item);
-      const cur = ensureStore(sp.storeId);
-      cur.total += subtotal;
-      if (splitPaymentMethod(sp, item) === 'transfer') cur.transfer += subtotal;
-      else cur.cash += subtotal;
-    }
-    for (const ex of expenses) {
-      for (const ss of ex.storeSplits) {
-        const subtotal = Number(ss.qty) * Number(ex.unitPrice);
-        const cur = ensureStore(ss.storeId);
-        cur.total += subtotal;
-        if (ex.paymentMethod === 'transfer') cur.transfer += subtotal;
-        else cur.cash += subtotal;
-      }
-    }
-    const byStoreList = [...byStore.values()].sort((a, b) => b.total - a.total);
+    // 2026-07-26: this loop was duplicated verbatim in RunHistory's
+    // detail breakdown. Same money, two copies, no tests — exactly the
+    // shape that lets a later edit silently move one number and not the
+    // other. It now lives in runs/lib/settlement.ts with tests; the
+    // extra fields (skuIds / expense counters) are the history sheet's
+    // and are simply unused here.
+    const byStoreList = [...settlePerStore(items, splits, expenses).values()].sort(
+      (a, b) => b.total - a.total,
+    );
     return {
       skus,
       stores,

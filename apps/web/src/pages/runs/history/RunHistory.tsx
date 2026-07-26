@@ -18,7 +18,7 @@ import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { formatMoney, formatQty } from '../../../lib/format';
 import type { useI18n, useProductName } from '../../../hooks/useI18n';
-import { splitPaymentMethod, splitSubtotal, settleItemLine } from '../lib/settlement';
+import { splitSubtotal, settleItemLine, settlePerStore } from '../lib/settlement';
 
 // ====================================================================
 // HISTORY VIEW
@@ -485,55 +485,9 @@ export function RunHistoryDetailSheet({
      * "split rows" before, which double-counted when the run had
      * multiple delivery cycles in legacy data).
      */
-    const perStore = new Map<
-      string,
-      {
-        storeId: string;
-        total: number;
-        cash: number;
-        transfer: number;
-        skuIds: Set<string>;
-        expensesTotal: number;
-        expensesCount: number;
-      }
-    >();
-    const ensureStore = (storeId: string) => {
-      let cur = perStore.get(storeId);
-      if (!cur) {
-        cur = {
-          storeId,
-          total: 0,
-          cash: 0,
-          transfer: 0,
-          skuIds: new Set<string>(),
-          expensesTotal: 0,
-          expensesCount: 0,
-        };
-        perStore.set(storeId, cur);
-      }
-      return cur;
-    };
-    for (const sp of splits) {
-      const item = items.find((i) => i.skuId === sp.skuId);
-      if (!item || item.status !== 'purchased' || !item.unitPrice) continue;
-      const subtotal = splitSubtotal(sp, item);
-      const cur = ensureStore(sp.storeId);
-      cur.total += subtotal;
-      if (splitPaymentMethod(sp, item) === 'transfer') cur.transfer += subtotal;
-      else cur.cash += subtotal;
-      cur.skuIds.add(sp.skuId);
-    }
-    for (const ex of expenses) {
-      for (const ss of ex.storeSplits) {
-        const subtotal = Number(ss.qty) * Number(ex.unitPrice);
-        const cur = ensureStore(ss.storeId);
-        cur.total += subtotal;
-        cur.expensesTotal += subtotal;
-        cur.expensesCount += 1;
-        if (ex.paymentMethod === 'transfer') cur.transfer += subtotal;
-        else cur.cash += subtotal;
-      }
-    }
+    // 2026-07-26: shared with finishSummary's byStore in RunPage, which
+    // held a verbatim copy of this loop. See runs/lib/settlement.ts.
+    const perStore = settlePerStore(items, splits, expenses);
     return {
       items,
       splits,
