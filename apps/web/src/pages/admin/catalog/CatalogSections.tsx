@@ -24,13 +24,14 @@ import {
   Input,
   SearchInput,
   SectionLabel,
-  Segmented,
   Select,
   Sheet,
   Spinner,
   Switch,
   useToast,
 } from '@compass/ui';
+import { SKU_STEPS, SKU_UNITS } from '@compass/contracts';
+import type { SkuStep, SkuUnit } from '@compass/contracts';
 import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
@@ -283,25 +284,38 @@ interface SkuDraft {
   nameRu: string;
   nameEn: string;
   nameZh: string;
-  unit: string;
-  /** M3.14: only '0.5' or '1' — see SkuStepSchema in @compass/contracts. */
-  step: '0.5' | '1';
+  /** 2026-07-30: fixed vocabulary — see SkuUnitSchema in @compass/contracts. */
+  unit: SkuUnit;
+  /** M3.14 + 2026-07-30: only the canonical grid — see SkuStepSchema. */
+  step: SkuStep;
   sortIndex: number;
 }
 
 /**
- * Snap a legacy step value onto the M3.14 {'0.5', '1'} grid.
+ * Snap a legacy unit string onto the fixed SkuUnitSchema vocabulary.
  *
- * Existing SKUs may have step=0.25 / 0.1 / 5 / 50 / 100 from before the
- * restriction landed. When the operator opens one in the edit sheet,
- * we have to show SOMETHING in the new 2-option segmented control. The
- * server-side migration will eventually coerce these rows too, but the
- * UI shouldn't blow up if it sees a legacy value mid-flight.
- *
- * Rule: <= 0.5 → '0.5' (weigh-and-pay band), > 0.5 → '1' (countable).
+ * Prod rows are already migrated (0036), but a dev DB seeded before the
+ * restriction may still carry 个 / ta / karobka / "pcs（500g）" etc. The
+ * edit sheet has to preselect SOMETHING valid or the Select goes blank
+ * and Save submits a rejected value.
  */
-function snapStepToCanonical(step: string): '0.5' | '1' {
-  if (step === '0.5' || step === '1') return step;
+function snapUnitToCanonical(unit: string): SkuUnit {
+  if ((SKU_UNITS as readonly string[]).includes(unit)) return unit as SkuUnit;
+  if (unit === 'g') return 'kg';
+  if (unit === 'karobka') return 'box';
+  if (unit === 'boglima') return 'bunch';
+  return 'pcs';
+}
+
+/**
+ * Snap a legacy step value onto the canonical grid.
+ *
+ * Exact matches pass through; anything else collapses to the M3.14
+ * rule (<= 0.5 → '0.5', else '1') — never up-snap a stale 5 or 25 to
+ * a bulk step the operator didn't choose.
+ */
+function snapStepToCanonical(step: string): SkuStep {
+  if ((SKU_STEPS as readonly string[]).includes(step)) return step as SkuStep;
   const n = Number(step);
   if (!Number.isFinite(n)) return '1';
   return n <= 0.5 ? '0.5' : '1';
@@ -452,11 +466,9 @@ export function SkusSection() {
                           nameRu: names.ru ?? '',
                           nameEn: names.en ?? '',
                           nameZh: names.zh ?? '',
-                          unit: sk.unit,
-                          // M3.14: snap legacy values onto the new {0.5, 1}
-                          // grid so the segmented control has a valid
-                          // initial selection. Round half-up so 0.25/0.1
-                          // → 0.5 and 5/50/100 → 1.
+                          // Snap legacy values onto the contract enums so
+                          // both Selects have a valid initial selection.
+                          unit: snapUnitToCanonical(sk.unit),
                           step: snapStepToCanonical(sk.step),
                           sortIndex: sk.sortIndex,
                         })
@@ -600,25 +612,32 @@ export function SkusSection() {
               </Select>
             </Field>
             <div className="grid grid-cols-2 gap-3">
+              {/* 2026-07-30: unit and step are Selects over the contract
+                  enums (SkuUnitSchema / SkuStepSchema) — free-text units
+                  produced 个 / ta / Pcs / karobka duplicates in prod. */}
               <Field label={`${i18n.t('admin.field.unit')} *`}>
-                <Input value={draft.unit} onChange={(e) => setDraft({ ...draft, unit: e.target.value })} maxLength={16} placeholder="kg / pcs / L" />
+                <Select
+                  value={draft.unit}
+                  onChange={(e) => setDraft({ ...draft, unit: e.target.value as SkuUnit })}
+                >
+                  {SKU_UNITS.map((u) => (
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
+                  ))}
+                </Select>
               </Field>
-              {/* M3.14 (2026-05-16): step is a 2-option segmented control,
-                  not a free-form field. 0.5 = weigh-and-pay (kg/L), 1 =
-                  countable (pcs/pair/bunch). The schema rejects anything
-                  else.
-                  M3.17 (2026-05-16): migrated to the shared <Segmented>
-                  primitive — was the third inline copy of the pattern. */}
               <Field label={i18n.t('admin.field.step')}>
-                <Segmented<'0.5' | '1'>
+                <Select
                   value={draft.step}
-                  options={[
-                    { value: '0.5', label: '0.5' },
-                    { value: '1', label: '1' },
-                  ]}
-                  onChange={(next) => setDraft({ ...draft, step: next })}
-                  ariaLabel={i18n.t('admin.field.step')}
-                />
+                  onChange={(e) => setDraft({ ...draft, step: e.target.value as SkuStep })}
+                >
+                  {SKU_STEPS.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </Select>
               </Field>
             </div>
             <Field label={i18n.t('admin.field.code')}>
