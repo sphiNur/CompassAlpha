@@ -15,7 +15,7 @@
  *   names:       jsonb { zh, en, ru, uz }
  *   aliases:     jsonb { zh: string[], ... } — search keywords (added 0006)
  *   description: jsonb { zh, ... }            — purchase notes (added 0006)
- *   unit:        kg | g | L | ml | pcs | pack | pair | bunch | roll
+ *   unit:        kg | L | pcs | pack | bunch | box | roll | pair
  *   step:        decimal — UX granularity (smallest +/- bump)
  *   sortIndex:   integer — within-category order (preserves owner's list)
  *
@@ -54,21 +54,20 @@ export interface CatalogSku {
   aliases?: { zh?: string[]; en?: string[]; ru?: string[]; uz?: string[] };
   /** Optional purchase notes (e.g. "按包,通常 10 支"). */
   description?: { zh?: string; en?: string; ru?: string; uz?: string };
-  unit: 'kg' | 'g' | 'L' | 'ml' | 'pcs' | 'pack' | 'pair' | 'bunch' | 'roll';
+  /** Fixed vocabulary (2026-07-30) — keep in lockstep with
+   *  SkuUnitSchema in @compass/contracts. `g` retired: spices are kg. */
+  unit: 'kg' | 'L' | 'pcs' | 'pack' | 'bunch' | 'box' | 'roll' | 'pair';
   /**
-   * UX granularity for +/- buttons. M3.14 (2026-05-16) restricts this
-   * to exactly '0.5' or '1'. The original catalog had 0.25 / 5 / 50 /
-   * 100 sprinkled in but those rendered as 0.25-kg increments in the
-   * UI that the procurer couldn't relate to real-world packaging.
+   * UX granularity for +/- buttons. M3.14 (2026-05-16) restricted this
+   * to '0.5' / '1'; 2026-07-30 widened the grid with 10/50/100 for bulk
+   * packaging goods. Keep in lockstep with SkuStepSchema.
    *
-   * Mapping rule (applied in this file 2026-05-16):
-   *   - kg/L weigh-and-pay: '0.5'  (was 0.25 → 0.5; was 5 → 1)
-   *   - g spice/packaged:   '1'    (was 50 / 100 → 1, since the unit
-   *                                 stays g; ordering 50g packets just
-   *                                 means submitting qty=50)
-   *   - pcs / pair / bunch: '1'
+   * Mapping rule:
+   *   - kg/L weigh-and-pay: '0.5' (incl. former g-unit spices, now kg)
+   *   - pcs / pair / bunch / box: '1'
+   *   - bulk pack goods bought 50-100 at a time: '10' / '50' / '100'
    */
-  step: '0.5' | '1';
+  step: '0.5' | '1' | '10' | '50' | '100';
   sortIndex: number;
 }
 
@@ -741,7 +740,7 @@ export const SKUS: CatalogSku[] = [
   sk({
     catSlug: 'dry-goods', code: 'DRY_ZVYOZDOCHKA',
     names: { zh: '八角', en: 'Star Anise', ru: 'Бадьян', uz: 'Zvyozdochka' },
-    unit: 'g', step: '1',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_SEDANA',
@@ -753,7 +752,7 @@ export const SKUS: CatalogSku[] = [
     },
     aliases: { zh: ['黑芝麻调料'] },
     description: { zh: '撒在馕饼表面' },
-    unit: 'g', step: '1',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_MOSH',
@@ -818,7 +817,7 @@ export const SKUS: CatalogSku[] = [
   sk({
     catSlug: 'dry-goods', code: 'DRY_DROJA',
     names: { zh: '酵母', en: 'Yeast', ru: 'Дрожжи', uz: 'Droja' },
-    unit: 'g', step: '1',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_KRAXMAL',
@@ -924,27 +923,27 @@ export const SKUS: CatalogSku[] = [
       ru: 'Семена кориандра',
       uz: "Kashnich urug'i",
     },
-    unit: 'g', step: '1',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_ARPABODIYON',
     names: { zh: '茴香', en: 'Fennel', ru: 'Фенхель', uz: 'Arpabodiyon' },
-    unit: 'g', step: '1',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_LAVR_BARGI',
     names: { zh: '月桂叶', en: 'Bay Leaves', ru: 'Лавровый лист', uz: 'Lavr bargi' },
-    unit: 'g', step: '1',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_KORITSA',
     names: { zh: '肉桂', en: 'Cinnamon', ru: 'Корица', uz: 'Koritsa' },
-    unit: 'g', step: '1',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_SUMOK',
     names: { zh: '漆树粉', en: 'Sumac', ru: 'Сумах', uz: 'Sumok' },
-    unit: 'g', step: '1',
+    unit: 'kg', step: '0.5',
   }),
   sk({
     catSlug: 'dry-goods', code: 'DRY_KARKADE',

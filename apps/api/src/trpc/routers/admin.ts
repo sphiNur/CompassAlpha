@@ -12,7 +12,13 @@ import { TRPCError } from '@trpc/server';
 import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { schema as s } from '@compass/db';
-import { ADMIN_RANK, GrantRoleInputSchema, UuidSchema } from '@compass/contracts';
+import {
+  ADMIN_RANK,
+  GrantRoleInputSchema,
+  SkuStepSchema,
+  SkuUnitSchema,
+  UuidSchema,
+} from '@compass/contracts';
 import { dateInTz, todayInTz } from '@compass/domain';
 import { authedProcedure, router } from '../trpc';
 import { hub } from '../../realtime/hub';
@@ -451,20 +457,12 @@ const NamesSchema = z
   })
   .strict();
 
-// M3.14 (2026-05-16): step is restricted to exactly '0.5' or '1'.
-//
-// Earlier the schema accepted any positive decimal — but field
-// operators ended up with SKU rows that stepped by 0.25, 0.1, 5,
-// 50, 100 etc., depending on whoever filled the form. The QtyControl
-// UI then rendered "0.25" / "0.5" / "0.75" increments that the
-// procurer had no way to relate to real-world packaging. Snapping
-// to 0.5 (kg/L, "weigh-and-pay" goods) or 1 (pcs/pair, countable
-// goods) makes the +/- buttons readable at a glance.
-//
-// Migration: catalog-uzbek.ts seed and the prod data backfill both
-// coerce existing rows; this schema is the gate that keeps future
-// writes clean.
-const StepSchema = z.enum(['0.5', '1']);
+// M3.14 (2026-05-16) restricted step to {'0.5','1'}; 2026-07-30 widened
+// it to the canonical {'0.5','1','10','50','100'} grid and locked unit
+// to a fixed vocabulary. Both enums live in @compass/contracts
+// (SkuStepSchema / SkuUnitSchema) so the admin sheet's Selects and this
+// gate can't drift apart. Migration 0036 backfills existing rows.
+const StepSchema = SkuStepSchema;
 
 const StoreCreateInputSchema = z.object({
   name: z.string().min(1).max(200),
@@ -504,7 +502,7 @@ const SkuCreateInputSchema = z.object({
   categoryId: UuidSchema.optional().nullable(),
   code: z.string().max(64).optional().nullable(),
   names: NamesSchema,
-  unit: z.string().min(1).max(16),
+  unit: SkuUnitSchema,
   step: StepSchema.default('1'),
   sortIndex: z.number().int().default(0),
 });
@@ -514,7 +512,7 @@ const SkuUpdateInputSchema = z.object({
   categoryId: UuidSchema.optional().nullable(),
   code: z.string().max(64).optional().nullable(),
   names: NamesSchema.optional(),
-  unit: z.string().min(1).max(16).optional(),
+  unit: SkuUnitSchema.optional(),
   step: StepSchema.optional(),
   sortIndex: z.number().int().optional(),
   isArchived: z.boolean().optional(),
