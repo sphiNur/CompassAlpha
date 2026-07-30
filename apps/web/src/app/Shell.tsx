@@ -4,6 +4,7 @@ import {
   IconAdmin,
   IconApprove,
   IconConfirm,
+  IconHistory,
   IconOrder,
   IconRun,
   Spinner,
@@ -31,6 +32,13 @@ const AdminPage = lazy(importAdminPage);
 const importRunPage = () =>
   import('../pages/RunPage').then((m) => ({ default: m.RunPage }));
 const RunPage = lazy(importRunPage);
+// 2026-07-30: history is its own tab now. Lazy for the same reason as
+// RunPage — it pulls in the ~800-line history subsystem plus the money
+// settlement helpers. Rollup hoists RunHistory.tsx into a chunk shared
+// with RunPage, so a purchaser who opens both downloads it once.
+const importHistoryPage = () =>
+  import('../pages/HistoryPage').then((m) => ({ default: m.HistoryPage }));
+const HistoryPage = lazy(importHistoryPage);
 import { useAuthStore } from '../stores/authStore';
 import { useNavStore, resolveVisibleTab } from '../stores/navStore';
 import { useI18n } from '../hooks/useI18n';
@@ -41,13 +49,14 @@ import {
 } from '../hooks/useTelegram';
 import { useAppMutating } from '../hooks/useAppMutating';
 import { SettingsSheet } from '../components/SettingsSheet';
+import { StoreChip } from '../components/StoreSwitcher';
 import { PageMenuProvider, usePageMenuRegistration } from './PageMenuContext';
 
 // Debug tab moved INTO Admin as a sub-tab. Reduces bottom-nav clutter
 // (was 6 items, now 5) and groups operator-only views together. Admins
 // reach Debug via Admin → Debug; non-admins never see it (which is
 // what `system.logs.view` already gated).
-type Tab = 'order' | 'approve' | 'run' | 'confirm' | 'admin';
+type Tab = 'order' | 'approve' | 'run' | 'history' | 'confirm' | 'admin';
 
 type IconComponent = ComponentType<SVGProps<SVGSVGElement> & { size?: number }>;
 
@@ -55,6 +64,14 @@ const TABS: Array<{ key: Tab; permission: string | null; labelKey: string; Icon:
   { key: 'order', permission: 'order.draft', labelKey: 'nav.order', Icon: IconOrder },
   { key: 'approve', permission: 'order.approve', labelKey: 'nav.approve', Icon: IconApprove },
   { key: 'run', permission: 'run.purchase', labelKey: 'nav.run', Icon: IconRun },
+  // 2026-07-30: purchase history used to be reachable only from the
+  // bottom of the Run tab, which meant only `run.purchase` holders
+  // could see it — a store manager had no route to their own store's
+  // spend. `prices.view` is the money-visibility permission (purchaser
+  // + manager + admin + super_admin) and is the right gate for a
+  // price-and-spend record. See HistoryPage.tsx for why this needed no
+  // server-side change.
+  { key: 'history', permission: 'prices.view', labelKey: 'nav.history', Icon: IconHistory },
   { key: 'confirm', permission: 'delivery.confirm', labelKey: 'nav.confirm', Icon: IconConfirm },
   { key: 'admin', permission: 'users.manage', labelKey: 'nav.admin', Icon: IconAdmin },
 ];
@@ -77,6 +94,11 @@ const PAGES: Record<Tab, () => ReactNode> = {
   run: () => (
     <Suspense fallback={<PageLoading />}>
       <RunPage />
+    </Suspense>
+  ),
+  history: () => (
+    <Suspense fallback={<PageLoading />}>
+      <HistoryPage />
     </Suspense>
   ),
   confirm: () => <ConfirmPage />,
@@ -206,7 +228,26 @@ function ShellInner() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const tg = window.Telegram?.WebApp;
-    if (!tg) return;
+    // 2026-07-30: the same trap the header fix above walked into, one
+    // layer down. index.html loads the SDK statically, so `tg` exists in
+    // a plain browser too — platform 'unknown', empty initData, every
+    // inset 0. Its presence says nothing about whether Telegram's chrome
+    // is on screen, and `contentSafeAreaInset.left/right` of 0 falls
+    // through to the platform-empirical defaults, so the browser build
+    // padded every StickyPageBar by 56 px left / 96 px right to clear a
+    // Close button and a ⋯ menu that are not there. On Order that left
+    // the store chip + search + category strip boxed into the middle
+    // 208 px of a 375 px viewport while the SKU rows under it ran edge
+    // to edge. Outside Telegram, Shell renders its own <header> and
+    // there is no overlay chrome to clear — drop the vars so the
+    // `var(--app-chrome-pad-*, 16px)` fallbacks take over.
+    if (!tg || !inTelegram) {
+      const root = document.documentElement;
+      root.style.removeProperty('--app-chrome-reserve');
+      root.style.removeProperty('--app-chrome-pad-left');
+      root.style.removeProperty('--app-chrome-pad-right');
+      return;
+    }
     const apply = () => {
       const platform = tg.platform ?? 'unknown';
       // M3.47 (2026-05-22): even when the SDK reports a number,
@@ -300,7 +341,7 @@ function ShellInner() {
       };
     }
     return;
-  }, []);
+  }, [inTelegram]);
 
   return (
     <div
@@ -326,18 +367,39 @@ function ShellInner() {
         // iOS env(safe-top) already covers the dynamic island; we add
         // ~36 px for the chrome row itself. On Android the SDK reports
         // a ~56 px row, which the variable now picks up correctly.
+        //
+        // 2026-07-30: the strip is no longer blank — it carries the
+        // current store, centered, which is exactly the slot Telegram
+        // leaves free between its Close button (left) and ⋯ overflow
+        // (right). The horizontal padding is the SAME pair of vars the
+        // sticky page bars use, so the label can never slide under
+        // either button; `paddingTop` drops it below the device safe
+        // area so it lands in the chrome ROW rather than the notch
+        // (`--app-chrome-reserve` spans safe-area + chrome row, and
+        // box-border makes the padding eat the safe-area share).
         <div
-          aria-hidden
+          className="flex items-center justify-center"
           style={{
             flexShrink: 0,
             height:
               'var(--app-chrome-reserve, calc(var(--app-safe-top) + 36px))',
             background: 'var(--c-bg)',
+            paddingTop: 'var(--app-safe-top)',
+            paddingLeft: 'var(--app-chrome-pad-left, 16px)',
+            paddingRight: 'var(--app-chrome-pad-right, 16px)',
           }}
-        />
+        >
+          <StoreChip />
+        </div>
       ) : (
+        // Outside Telegram there are no overlay buttons, but the header
+        // plays the same role — so the store sits centered here too,
+        // between the wordmark and the org name. A 3-column grid with
+        // `1fr auto 1fr` keeps the chip on the true centre line no
+        // matter how wide the two side labels are; `justify-between`
+        // would drift it toward whichever side is shorter.
         <header
-          className="sticky top-0 z-10 flex items-center justify-between border-b border-[var(--c-divider)] bg-[var(--c-surface)]"
+          className="sticky top-0 z-10 grid grid-cols-[1fr_auto_1fr] items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-surface)]"
           style={{
             paddingTop: 'var(--app-safe-top)',
             paddingLeft: 'max(16px, var(--app-safe-left))',
@@ -345,8 +407,9 @@ function ShellInner() {
             height: 'calc(var(--app-header-h) + var(--app-safe-top))',
           }}
         >
-          <span className="text-h3 font-semibold">Compass</span>
-          <span className="text-label text-[var(--c-fg-muted)]">
+          <span className="truncate text-h3 font-semibold">Compass</span>
+          <StoreChip />
+          <span className="justify-self-end truncate text-label text-[var(--c-fg-muted)]">
             {session?.member.orgName}
           </span>
         </header>

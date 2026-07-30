@@ -81,6 +81,7 @@ export {
   IconWorkspace,
   IconPeople,
   IconCatalog,
+  IconHistory,
   IconActivity,
   IconMaintenance,
   IconChevronRight,

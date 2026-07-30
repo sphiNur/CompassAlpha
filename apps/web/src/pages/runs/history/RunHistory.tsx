@@ -2,22 +2,28 @@
  * Run history subsystem — extracted verbatim from RunPage.tsx
  * (Phase 4 step 2, FRONTEND_AUDIT_2026-07.md run-domain split).
  *
- *   - RunHistorySection    inline "recent finished runs" card at the
- *                          bottom of RunPage (month-grouped, capped).
- *   - RunHistoryPage       full-history drill page ("View all").
+ *   - RunHistoryPage       the history screen itself (list + totals).
  *   - RunHistoryDetailSheet per-run breakdown sheet (items, prices,
- *                          per-store settlement) — used by both.
+ *                          per-store settlement).
+ *
+ * 2026-07-30: `RunHistorySection` — the summary card that used to sit
+ * at the bottom of RunPage — is gone. History is its own bottom-nav
+ * tab now (pages/HistoryPage.tsx), so the card had no caller: its
+ * whole job was to be the doorway from the run page, and that doorway
+ * was also the reason only `run.purchase` holders could see history at
+ * all. Recover it from git if a "last run / month so far" summary is
+ * ever wanted back on the run page.
  *
  * Read-only: one run.get query, no mutations. Money math comes from
  * ../lib/settlement (unit-tested).
  */
 import { useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Card, CardHeader, CardTitle, Input, SectionLabel, Sheet, useToast } from '@compass/ui';
+import { Badge, Button, Card, Input, SectionLabel, Sheet, useToast } from '@compass/ui';
 import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { formatMoney, formatQty } from '../../../lib/format';
-import { useDateFormat, useUnitLabel } from '../../../hooks/useI18n';
+import { useUnitLabel } from '../../../hooks/useI18n';
 import type { useI18n, useProductName } from '../../../hooks/useI18n';
 import { splitSubtotal, settleItemLine, settlePerStore } from '../lib/settlement';
 
@@ -67,124 +73,6 @@ export interface HistoryDetailTarget {
   initialStoreId?: string | null;
 }
 
-export function RunHistorySection({
-  runs,
-  i18n,
-  onOpenAll,
-  onOpen,
-}: {
-  runs: RunListRow[];
-  productName: ReturnType<typeof useProductName>;
-  i18n: ReturnType<typeof useI18n>;
-  onOpenAll: () => void;
-  onOpen: (r: RunListRow) => void;
-}) {
-  const dateFmt = useDateFormat();
-  const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
-  // M3.9 (2026-05-16): cancelled runs are hidden from this list
-  // entirely. The earlier UX had a 3-tab filter (finished / all /
-  // cancelled) but the user's mental model is "history = completed
-  // outcomes; a cancelled run didn't happen — please erase it."
-  // Cancellations stay in the event log + read model so admins can
-  // dig them up via Operations → Submission history if forensics
-  // are ever needed; here they just vanish. No localStorage state,
-  // no filter chip toolbar, no count badges.
-  const allHistorical = useMemo(
-    () => runs.filter((r) => r.status === 'finished'),
-    [runs],
-  );
-  /**
-   * 2026-07-30 (flow review): this section used to render up to 12 finished
-   * runs inline, grouped by month, at the very bottom of the run page —
-   * measured at ~8,161 px down, behind 87 in-flight purchase rows. To see
-   * last month's spend you scrolled past the work you were in the middle
-   * of. And a "全部历史" link sat right there in the header the whole time,
-   * opening a dedicated view that already has pagination, search and
-   * filters, so the inline copy was duplicating a better surface.
-   *
-   * Now it's one summary row. The two questions worth answering FROM the
-   * run page are "when did we last go out" and "what have we spent this
-   * month"; everything else is a history-browsing task and belongs in the
-   * history view.
-   *
-   * Caveat, inherited rather than introduced: `runs` is whatever the list
-   * query returned, so the month total covers the runs we have, not
-   * necessarily every run in the month. The old per-month headers had the
-   * same limitation (they aggregated a 12-row slice) — noting it here
-   * because a single prominent number invites more trust than twelve
-   * did.
-   */
-  const summary = useMemo(() => {
-    const newest = allHistorical[0];
-    if (!newest) return null;
-    const month = newest.runDate.slice(0, 7);
-    const inMonth = allHistorical.filter((r) => r.runDate.slice(0, 7) === month);
-    const monthTotal = inMonth.reduce(
-      (sum, r) => sum + (r.actualTotal ? Number(r.actualTotal) : 0),
-      0,
-    );
-    return { newest, month, monthCount: inMonth.length, monthTotal };
-  }, [allHistorical]);
-
-  if (allHistorical.length === 0) return null;
-
-  // Format yyyy-mm into the user's locale month-year ("May 2026" / "2026年5月").
-  //
-  // 2026-07-30 (flow review): the comment already said "the user's locale",
-  // but `toLocaleDateString(undefined, …)` reads the BROWSER's locale, not
-  // the app's. A Chinese operator on an English phone got "JUNE 2026" as
-  // the header of an otherwise Chinese screen. useDateFormat binds to
-  // i18n.locale, which is the language the user actually chose.
-  const formatMonth = (key: string): string => {
-    const [y, m] = key.split('-');
-    return dateFmt.monthYear(new Date(Number(y), Number(m) - 1, 1));
-  };
-
-  if (!summary) return null;
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{i18n.t('run.history.title')}</CardTitle>
-        <button
-          type="button"
-          onClick={onOpenAll}
-          className="shrink-0 text-label font-semibold text-[var(--c-action)] active:opacity-70"
-        >
-          {i18n.t('run.history.viewAll')}
-        </button>
-      </CardHeader>
-      {/* The row names ONE run, so tapping it opens that run — not the
-          list. The header's 全部历史 is the list action. Two targets, each
-          doing what its own label says. */}
-      <button
-        type="button"
-        onClick={() => onOpen(summary.newest)}
-        className="flex w-full items-center justify-between gap-3 border-t border-[var(--c-divider)] px-4 py-3 text-left active:bg-[var(--c-surface-2)]"
-      >
-        <span className="min-w-0">
-          <span className="block truncate text-body font-semibold text-[var(--c-fg)]">
-            {i18n.t('run.history.lastRun', { date: summary.newest.runDate })}
-          </span>
-          <span className="mt-0.5 block truncate text-label text-[var(--c-fg-muted)]">
-            {i18n.t('run.history.monthSoFar', {
-              month: formatMonth(summary.month),
-              n: summary.monthCount,
-            })}
-          </span>
-        </span>
-        <span className="shrink-0 text-right">
-          {summary.monthTotal > 0 ? (
-            <span className="block font-mono text-h3 font-semibold tabular-nums text-[var(--c-fg)]">
-              {formatMoney(String(summary.monthTotal))} {currency}
-            </span>
-          ) : null}
-        </span>
-      </button>
-    </Card>
-  );
-}
-
 export function RunHistoryPage({
   runs,
   loading,
@@ -203,7 +91,17 @@ export function RunHistoryPage({
   >;
   productName: ReturnType<typeof useProductName>;
   i18n: ReturnType<typeof useI18n>;
-  onBack: () => void;
+  /**
+   * Omit when this renders as a top-level destination.
+   *
+   * 2026-07-30: history became its own bottom-nav tab, so the common
+   * case has nothing to go back TO — a Back button there would either
+   * dead-end or, worse, imply the tab is a drill-down off whatever the
+   * user was looking at before. It stays optional rather than being
+   * deleted because the component is still mounted as a drill page
+   * elsewhere; when a caller passes it, the row renders as before.
+   */
+  onBack?: () => void;
 }) {
   const [detailFor, setDetailFor] = useState<HistoryDetailTarget | null>(null);
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
@@ -211,18 +109,31 @@ export function RunHistoryPage({
 
   return (
     <div className="flex flex-col gap-3 px-4 pb-24 pt-3">
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onBack}
-          className="rounded-[var(--r-pill)] px-2 py-1 text-label font-semibold text-[var(--c-action)] active:bg-[var(--c-surface-2)]"
-        >
-          {i18n.t('common.back')}
-        </button>
-        <h1 className="text-h2 font-semibold text-[var(--c-fg)]">{i18n.t('run.history.title')}</h1>
-      </div>
+      {/* The title row exists to host the Back button. As a tab there is
+          no Back, and a lone <h1> reading "历史记录" directly above a card
+          whose own header reads "历史记录  39 · 118,112,379.9 UZS" is the
+          same word twice with the second one carrying all the
+          information. Drop the row and let the card header BE the page
+          heading (`as="h1"`), which is also how Order / Run already
+          work — the bottom nav names the page, so an in-body title bar
+          is redundant chrome. */}
+      {onBack ? (
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onBack}
+            className="rounded-[var(--r-pill)] px-2 py-1 text-label font-semibold text-[var(--c-action)] active:bg-[var(--c-surface-2)]"
+          >
+            {i18n.t('common.back')}
+          </button>
+          <h1 className="text-h2 font-semibold text-[var(--c-fg)]">{i18n.t('run.history.title')}</h1>
+        </div>
+      ) : null}
       <Card>
-        <SectionLabel meta={`${runs.length} · ${formatMoney(total)} ${currency}`}>
+        <SectionLabel
+          as={onBack ? undefined : 'h1'}
+          meta={`${runs.length} · ${formatMoney(total)} ${currency}`}
+        >
           {i18n.t('run.history.title')}
         </SectionLabel>
         {loading ? (

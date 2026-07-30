@@ -50,7 +50,7 @@ const UNIT_STEP: Record<string, string> = {
 };
 const UNIT_IS_INTEGER = new Set(['pcs', 'pack', 'pair', 'bunch', 'roll']);
 import { formatQty, formatMoney } from '../lib/format';
-import { StoreChip, useStoreContext } from '../components/StoreSwitcher';
+import { useStoreContext } from '../components/StoreSwitcher';
 
 export function OrderPage() {
   const i18n = useI18n();
@@ -723,7 +723,8 @@ export function OrderPage() {
     return (
       <div className="flex flex-col pb-4">
         <StickyPageBar>
-          <StoreChip />
+          {/* Store moved to Shell's top strip (2026-07-30) — the date is
+              the only page-specific thing this strip carried. */}
           <span className="ml-auto shrink-0 text-label tabular-nums text-[var(--c-fg-muted)]">
             {dateLabel}
           </span>
@@ -833,9 +834,31 @@ export function OrderPage() {
             stated NOWHERE on this page. See the StoreChip docblock —
             with the picker two taps deep in Telegram's overflow and the
             selection persisted, an owner could spend a day ordering into
-            the wrong store with no cue at all. */}
+            the wrong store with no cue at all.
+
+            Later the same day: the chip moved OUT of here and into
+            Shell's top strip, centered in the slot Telegram leaves
+            between its Close and ⋯ buttons. It is page-independent
+            context, so one instance in the shell beats a copy in each
+            page's sticky bar — and Run / Admin, which never had one,
+            get it for free. What stays here is the batch count, which
+            IS page state.
+
+            Losing the chip left the batch count alone on a row of its
+            own, `ml-auto` pinning it to the right edge with a hand's
+            width of nothing beside it. It rides the search row now:
+            one less row on a 375-px screen, and "field + trailing
+            action" is a shape people already read. */}
         <div className="flex items-center gap-2">
-          <StoreChip />
+          <SearchInput
+            className="flex-1"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onClear={() => setSearchQuery('')}
+            placeholder={i18n.t('order.search.placeholder')}
+            clearAriaLabel={i18n.t('common.clear')}
+            aria-label={i18n.t('order.search.placeholder')}
+          />
           {/* Batch count stays visible while drafting too — otherwise
               "再报一批" drops you into an empty catalog identical to a
               first-of-the-day order, with nothing saying the earlier
@@ -844,20 +867,12 @@ export function OrderPage() {
             <button
               type="button"
               onClick={() => setBatchesOpen(true)}
-              className="press ml-auto shrink-0 rounded-[var(--r-pill)] px-1.5 py-0.5 text-label tabular-nums text-[var(--c-action)]"
+              className="press shrink-0 rounded-[var(--r-pill)] px-1.5 py-0.5 text-label tabular-nums text-[var(--c-action)]"
             >
               {i18n.t('order.batches.today', { n: batchesQuery.data!.length })}
             </button>
           ) : null}
         </div>
-        <SearchInput
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          onClear={() => setSearchQuery('')}
-          placeholder={i18n.t('order.search.placeholder')}
-          clearAriaLabel={i18n.t('common.clear')}
-          aria-label={i18n.t('order.search.placeholder')}
-        />
         <ChipBar ariaLabel={i18n.t('order.categoriesAriaLabel')} className="-mx-4 px-4 py-0">
           <Chip
             selected={activeCategory === null}

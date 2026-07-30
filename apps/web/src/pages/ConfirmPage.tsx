@@ -32,7 +32,7 @@ import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
 import { formatQty } from '../lib/format';
-import { StoreChip, useStoreContext } from '../components/StoreSwitcher';
+import { useStoreContext } from '../components/StoreSwitcher';
 
 type DecisionStatus = 'ok' | 'short' | 'wrong' | 'quality';
 
@@ -349,9 +349,8 @@ export function ConfirmPage() {
       {activeRun ? (
         <StickyPageBar className="min-h-7">
           {/* 2026-07-30: the receiver is signing for goods at a specific
-              store — which the page never named. `ml-auto` on the date
-              still pushes it right, so the chip owns the left edge. */}
-          <StoreChip />
+              store — which the page never named. Now named once, in
+              Shell's top strip, on every page including this one. */}
           <span className="ml-auto truncate text-label tabular-nums text-[var(--c-fg-muted)]">
             {i18n.t('confirm.runOnDate', { date: activeRun.runDate })}
           </span>

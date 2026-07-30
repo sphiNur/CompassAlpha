@@ -57,13 +57,9 @@ import {
   pendingItemCount as pendingItemCountOf,
   allStoresConfirmed as allStoresConfirmedOf,
 } from './runs/lib/runProgress';
-// History subsystem — extracted to runs/history (Phase 4 step 2).
-import {
-  RunHistorySection,
-  RunHistoryPage,
-  RunHistoryDetailSheet,
-  type HistoryDetailTarget,
-} from './runs/history/RunHistory';
+// History subsystem lives in runs/history and is rendered by the 历史
+// tab (pages/HistoryPage.tsx) as of 2026-07-30 — this page no longer
+// imports any of it.
 // Mutation sheets + draft types — extracted to runs/sheets (Phase 4 step 3).
 import {
   PurchaseSheet,
@@ -154,16 +150,8 @@ export function RunPage() {
   const [unavailableNote, setUnavailableNote] = useState('');
   const [confirmAction, setConfirmAction] = useState<ConfirmKind | null>(null);
   const [confirmReason, setConfirmReason] = useState('');
-  // Drill-down for a historical run.
-  const [historyDetailFor, setHistoryDetailFor] = useState<HistoryDetailTarget | null>(null);
-  const [historyPageOpen, setHistoryPageOpen] = useState(false);
-
   const previewQuery = trpc.run.previewCreatable.useQuery({});
   const runsQuery = trpc.run.list.useQuery();
-  const fullHistoryQuery = trpc.run.history.useQuery(
-    { limit: 500 },
-    { enabled: historyPageOpen },
-  );
   const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: false });
   const categoriesQuery = trpc.catalog.categories.useQuery();
   const storesQuery = trpc.catalog.stores.useQuery();
@@ -1124,11 +1112,10 @@ export function RunPage() {
     i18n,
   ]);
 
-  /** Sheets that DON'T have a single primary action (drill-down
-   *  history). MainButton hides while these are open. (M1.12: the
-   *  former header ⋯ Sheet was removed; its contents migrated to the
-   *  Telegram gear via usePageMenu.) */
-  const multiOptionSheetOpen = !!historyDetailFor;
+  /* The "multi-option sheet" branch is gone with the history drill
+     (2026-07-30). Its only member was `historyDetailFor`; the history
+     detail sheet lives on the 历史 tab now, so on this page there is
+     no longer any sheet that hides MainButton outright. */
 
   // ---- Confirm-sheet wiring --------------------------------------------
   // Resets the reason input whenever the confirm switches kind (or
@@ -1492,8 +1479,6 @@ export function RunPage() {
     mainBtnClick = sheetPrimary.onClick;
     mainBtnVisible = true;
     mainBtnActive = sheetPrimary.active;
-  } else if (multiOptionSheetOpen) {
-    mainBtnVisible = false;
   }
 
   usePageMainButton(mainBtnText, mainBtnClick, {
@@ -1586,20 +1571,6 @@ export function RunPage() {
                   : activeRun.status
       }`
     : i18n.t('run.empty.noActive');
-
-  if (historyPageOpen) {
-    return (
-      <RunHistoryPage
-        runs={fullHistoryQuery.data ?? []}
-        loading={fullHistoryQuery.isLoading}
-        storeById={storeById}
-        skuById={skuById}
-        productName={productName}
-        i18n={i18n}
-        onBack={() => setHistoryPageOpen(false)}
-      />
-    );
-  }
 
   return (
     /* M1.12: outer page is just `flex flex-col` + bottom safe-area.
@@ -2058,25 +2029,12 @@ export function RunPage() {
         />
       ) : null}
 
-      {/* History section — finished + cancelled runs, newest first.
-          M1.13 (2026-05-08): moved INSIDE the px-4 wrapper. Was
-          rendered outside → ended up edge-to-edge while every other
-          Card on the page was inset 16 px. Now visually flush with
-          PreviewSummaryCard / ActiveRunPanel. */}
-      <RunHistorySection
-        runs={runsQuery.data ?? []}
-        productName={productName}
-        i18n={i18n}
-        onOpenAll={() => setHistoryPageOpen(true)}
-        onOpen={(r) =>
-          setHistoryDetailFor({
-            runId: r.id,
-            runIndex: r.runIndex,
-            runDate: r.runDate,
-            status: r.status,
-          })
-        }
-      />
+      {/* History section removed 2026-07-30 — it is the 历史 tab now.
+          It had been the ONLY route to purchase history, which meant
+          history inherited this page's `run.purchase` gate and no
+          store manager could reach their own store's spend. Moving it
+          to a top-level tab fixes both that and the "scroll past the
+          run you're in the middle of" problem. See HistoryPage.tsx. */}
       </div>
 
       {/* Q7(a): the "Plan run" sheet is gone. It was a modal whose body
@@ -2390,14 +2348,6 @@ export function RunPage() {
           - Delivered store rows: tap → recall-confirm sheet
           - Confirmed store rows: read-only, not tappable. */}
 
-      <RunHistoryDetailSheet
-        target={historyDetailFor}
-        skuById={skuById}
-        storeById={storeById}
-        productName={productName}
-        i18n={i18n}
-        onClose={() => setHistoryDetailFor(null)}
-      />
     </div>
   );
 }

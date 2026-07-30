@@ -118,6 +118,20 @@ export function IconCatalog(props: IconProps) {
   );
 }
 
+/** Clock with a counter-clockwise arrow — the conventional "history"
+ *  mark. Deliberately NOT a list/receipt glyph: IconCatalog and
+ *  IconOrder already own that shape in the same bottom nav, and at
+ *  24 px three list-like icons in a row are indistinguishable. */
+export function IconHistory(props: IconProps) {
+  return (
+    <svg {...svgBase(props)}>
+      <path d="M3.5 9A9 9 0 1 1 3 12" />
+      <path d="M3 4.5V9h4.5" />
+      <path d="M12 7.5V12l3 2" />
+    </svg>
+  );
+}
+
 export function IconActivity(props: IconProps) {
   return (
     <svg {...svgBase(props)}>

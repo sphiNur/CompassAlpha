@@ -34,7 +34,7 @@ import { useI18n, useProductName, useUnitLabel } from '../hooks/useI18n';
 import { getTg, haptic } from '../hooks/useTelegram';
 import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
-import { StoreChip, useStoreContext } from '../components/StoreSwitcher';
+import { useStoreContext } from '../components/StoreSwitcher';
 
 type ApprovalTab = 'pending' | 'approved' | 'rejected';
 
@@ -167,10 +167,9 @@ export function ApprovalPage() {
       <StickyPageBar direction="col">
         {/* 2026-07-30: which store's queue am I looking at? The list is
             filtered by store context but never said so. On 'all' the chip
-            reads 所有门店, which is equally load-bearing. */}
-        <div className="flex items-center gap-2">
-          <StoreChip />
-        </div>
+            reads 所有门店, which is equally load-bearing. Answered by the
+            chip in Shell's top strip now (same day) rather than a copy
+            per page — this strip is back to just the state Tabs. */}
         {/* M1.9-extra (P6, 2026-05-07): real <Tabs> with roving
             tabindex + ArrowLeft/ArrowRight/Home/End nav. Was
             `ChipBar`-as-tabs with role=tablist/tab on the buttons

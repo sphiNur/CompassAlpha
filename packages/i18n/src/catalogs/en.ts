@@ -34,6 +34,7 @@ export const en = {
   'nav.run': 'Run',
   'nav.deliver': 'Deliver',
   'nav.confirm': 'Confirm',
+  'nav.history': 'History',
   'nav.admin': 'Admin',
   'nav.reports': 'Reports',
   'nav.debug': 'Debug',
