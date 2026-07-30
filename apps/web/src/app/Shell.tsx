@@ -34,7 +34,11 @@ const RunPage = lazy(importRunPage);
 import { useAuthStore } from '../stores/authStore';
 import { useNavStore, resolveVisibleTab } from '../stores/navStore';
 import { useI18n } from '../hooks/useI18n';
-import { useTelegramSettingsButton, usePageMainButtonState } from '../hooks/useTelegram';
+import {
+  isInTelegram,
+  useTelegramSettingsButton,
+  usePageMainButtonState,
+} from '../hooks/useTelegram';
 import { useAppMutating } from '../hooks/useAppMutating';
 import { SettingsSheet } from '../components/SettingsSheet';
 import { PageMenuProvider, usePageMenuRegistration } from './PageMenuContext';
@@ -177,7 +181,13 @@ function ShellInner() {
   // it produced a ~140 px black band before the first content row. A small
   // 12 px floor avoids hairline-tight content while letting env() do its job.
   // M3.18: window.Telegram is globally typed via src/types/telegram.d.ts.
-  const inTelegram = typeof window !== 'undefined' && !!window.Telegram;
+  //
+  // 2026-07-30: was `!!window.Telegram`, true in any browser because
+  // index.html loads the SDK statically. The app therefore ALWAYS reserved
+  // a blank strip for Telegram's chrome and never rendered its own header
+  // — no title, no org name, just ~60 px of empty space at the top of
+  // every screen outside Telegram. `isInTelegram()` tests real initData.
+  const inTelegram = isInTelegram();
 
   // M3.42 (2026-05-22): Android Telegram WebView doesn't expose
   // `env(safe-area-inset-top)` (returns 0), so the 36-px chrome reserve
@@ -415,7 +425,7 @@ function BottomNav({
         opacity: busy ? 0.5 : undefined,
         transition: 'opacity 120ms ease',
       }}
-      aria-label="Primary"
+      aria-label={i18n.t('nav.primaryAriaLabel')}
       aria-busy={busy || undefined}
     >
       {visible.map((t) => {

@@ -8,12 +8,16 @@ import { useI18n } from '../hooks/useI18n';
  * "mirror PurchaseSheet's shape"). One source now.
  *
  * NOTE: PurchaseRow's inline cash/transfer control is a DIFFERENT
- * affordance (a single icon-only toggle with a ring-accent active state,
- * not a two-chip group) and is intentionally not folded in here.
+ * affordance (a single toggle in a fixed-width row slot, not a two-chip
+ * group) and is intentionally not folded in here. What WAS unified, on
+ * 2026-07-30, is the thing that actually confused people: that control
+ * used to be a bare 💵/🏦 with the meaning only in `title` — invisible on
+ * touch. Every payment-method surface now NAMES the method in words.
  *
- * The 💵/🏦 glyphs are preserved as-is for a behaviour-preserving
- * extraction; the UI-1 decision on whether they're redundant next to the
- * text label belongs to the Phase 6 emoji sweep.
+ * So the standing rule is: the word is the signal; the 💵/🏦 glyph is
+ * decoration and may only ever appear ALONGSIDE it, never instead of it.
+ * (That closes the "Phase 6 emoji sweep" question for this control — the
+ * glyphs here are fine precisely because the label sits next to them.)
  */
 export interface PaymentMethodChipsProps {
   value: 'cash' | 'transfer';

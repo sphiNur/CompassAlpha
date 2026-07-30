@@ -50,7 +50,7 @@ import { trpc } from '../lib/trpc';
 import { useErrToast } from '../lib/errToast';
 import { useAuthStore } from '../stores/authStore';
 import { useNavStore } from '../stores/navStore';
-import { getTg, useTelegramBackButton } from '../hooks/useTelegram';
+import { isInTelegram, useTelegramBackButton } from '../hooks/useTelegram';
 import { useI18n } from '../hooks/useI18n';
 import { LanguageSheet } from '../components/LanguageSheet';
 // Operations sections — extracted to admin/operations (Phase 5 step 1).
@@ -417,7 +417,12 @@ function SectionFrame({
   const i18n = useI18n();
   const sheetCount = useSheetCount();
   useTelegramBackButton(onBack, sheetCount === 0);
-  const inTg = !!getTg();
+  // 2026-07-30: was `!!getTg()`, which is true in ANY browser because the
+  // Telegram SDK is a static script tag — so this chevron never rendered
+  // and admin drill-down had no way back outside Telegram. Worse, the
+  // section is persisted to localStorage, so a reload came straight back
+  // to the same page. `isInTelegram()` checks for real initData.
+  const inTg = isInTelegram();
   return (
     <div className="flex flex-col">
       {inTg ? null : (
@@ -429,7 +434,8 @@ function SectionFrame({
             aria-label={i18n.t('admin.aria.back')}
           >
             <span aria-hidden className="text-h2 leading-none">‹</span>
-            <span>Admin</span>
+            {/* was the literal "Admin" */}
+            <span>{i18n.t('nav.admin')}</span>
           </button>
         </header>
       )}

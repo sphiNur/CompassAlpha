@@ -227,6 +227,7 @@ export function PerVendorView({
   productName,
   i18n,
   priceInThousands,
+  onTogglePriceUnit,
   savingSkuId,
   demandBySku,
   onSavePurchaseInline,
@@ -256,6 +257,7 @@ export function PerVendorView({
    *  diverges from the planned demand (handled by PurchaseRow
    *  internally via onOpenAdvanced). */
   priceInThousands: boolean;
+  onTogglePriceUnit: () => void;
   demandBySku: Map<string, Array<{ storeId: string; qty: string }>>;
   onSavePurchaseInline: (payload: {
     skuId: string;
@@ -462,6 +464,7 @@ export function PerVendorView({
                       lastPriceObservedAt={run.lastPriceObservedAtBySku?.[r.skuId] ?? null}
                       i18n={i18n}
                       priceInThousands={priceInThousands}
+                      onTogglePriceUnit={onTogglePriceUnit}
                       saving={savingSkuId === r.skuId}
                       // The one place in the app that knows WHERE a
                       // purchase happened: the purchaser is working
@@ -827,6 +830,7 @@ export function PerCategoryView({
   productName,
   i18n,
   priceInThousands,
+  onTogglePriceUnit,
   savingSkuId,
   demandBySku,
   onSavePurchaseInline,
@@ -847,6 +851,7 @@ export function PerCategoryView({
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
   i18n: ReturnType<typeof useI18n>;
   priceInThousands: boolean;
+  onTogglePriceUnit: () => void;
   savingSkuId: string | null;
   demandBySku: Map<string, Array<{ storeId: string; qty: string }>>;
   onSavePurchaseInline: (payload: {
@@ -967,6 +972,7 @@ export function PerCategoryView({
                   lastPriceObservedAt={run.lastPriceObservedAtBySku?.[item.skuId] ?? null}
                   i18n={i18n}
                   priceInThousands={priceInThousands}
+                  onTogglePriceUnit={onTogglePriceUnit}
                   saving={savingSkuId === item.skuId}
                   onSave={onSavePurchaseInline}
                   onMarkNa={onMarkNa}
@@ -1129,6 +1135,7 @@ export function PurchaseRow({
   lastPriceObservedAt,
   i18n,
   priceInThousands,
+  onTogglePriceUnit,
   saving,
   onSave,
   onMarkNa,
@@ -1183,6 +1190,18 @@ export function PurchaseRow({
   /** M3.36: when true, the price input shows raw UZS / 1000. Save still
    *  emits raw UZS. */
   priceInThousands: boolean;
+  /**
+   * Flip the price field between UZS and thousands-of-UZS (2026-07-30).
+   *
+   * The control used to be a `×千` pill in the sticky bar whose meaning
+   * lived ONLY in a `title` attribute — invisible on touch, where there is
+   * no hover. It defaulted to ON and silently multiplied every price the
+   * purchaser typed by 1000. Moving it onto the unit suffix beside the
+   * price input puts it where the user is already looking when the setting
+   * matters, and lets the suffix state the current unit instead of naming
+   * an operation.
+   */
+  onTogglePriceUnit: () => void;
   saving: boolean;
   onSave: (payload: {
     skuId: string;
@@ -1584,7 +1603,13 @@ export function PurchaseRow({
   if (item.status === 'pending' && collapsedState !== 'editing') {
     const carried = collapsedState === 'carried';
     return (
-      <li className="border-b border-[var(--c-divider)] last:border-b-0">
+      // data-run-item-pending (2026-07-30): the "N left" button in the
+      // bottom bar scrolls to the first one of these. A marker attribute
+      // rather than a ref chain because the rows are rendered by four
+      // different view components (flat / per-store / per-vendor /
+      // per-category) and threading a ref through all of them to support
+      // one scroll-into-view would cost far more than it's worth.
+      <li data-run-item-pending className="border-b border-[var(--c-divider)] last:border-b-0">
         <div className={ROW_SHELL}>
           <button
             type="button"
@@ -1747,8 +1772,27 @@ export function PurchaseRow({
         {/* Line 2: qty × price = total ✓ — everything on one line.
             Total hint is inline (right of price, before ✓) so the user
             sees their math without an extra row. */}
+        {/* 2026-07-30: two changes here, both forced by making the price
+            UNIT switchable (the K·UZS button below).
+
+            a) The price track gained a 4.25rem floor. It was
+               `minmax(0,1fr)` — flexible but collapsible — which was fine
+               while every price was 2-3 digits in thousands mode, and
+               clipped hard in plain UZS: "30000" rendered as "300". That
+               clipping is plausibly WHY ×1000 was defaulted on to begin
+               with. Plain mode is now a real choice, so it has to be
+               readable.
+
+            b) The `= total` readout moved OUT of this grid onto its own
+               line below. Seven tracks never fit 375 px once the price
+               needed 5-6 digits — squeezing them made the total collapse
+               to "= 3…" and then to nothing. It's a readout, not an
+               input, and it's the safety net against the ×1000 mistake,
+               so it gets a full line where it can't be truncated. The
+               price stays the single flexible track, which keeps the
+               payment-button note below accurate. */}
         <div className="mt-1.5 grid items-center gap-1.5"
-             style={{ gridTemplateColumns: '4.5rem auto minmax(0,1fr) auto minmax(0,auto) auto auto' }}>
+             style={{ gridTemplateColumns: '4.5rem auto minmax(4.25rem,1fr) auto auto auto' }}>
           {/* 2026-07-26 keyboard pass. Both fields arrive PRE-FILLED
               (qty from planned, price from the last observed market
               price), so a tap that appends instead of replacing is the
@@ -1790,23 +1834,22 @@ export function PurchaseRow({
             placeholder={i18n.t('run.action.unitPriceAriaLabel')}
             aria-label={i18n.t('run.action.unitPriceAriaLabel')}
           />
-          <span className="text-label text-[var(--c-fg-muted)]">
+          {/* The unit suffix IS the toggle (2026-07-30). It already had to
+              be here to disambiguate "20" from "20,000"; making it tappable
+              costs no layout and puts the control at the point of use. */}
+          <button
+            type="button"
+            onClick={onTogglePriceUnit}
+            aria-label={i18n.t('run.label.priceUnitAria')}
+            className="press shrink-0 rounded-[var(--r-utility)] px-1 text-label text-[var(--c-action)] underline decoration-dotted underline-offset-2 active:opacity-70"
+          >
             {priceInThousands ? `K·${currency}` : currency}
-          </span>
-          <span className="truncate text-right text-label text-[var(--c-fg-muted)]">
-            {totalHint !== null ? (
-              <>
-                ={' '}
-                <span className="font-mono font-semibold tabular-nums text-[var(--c-fg)]">
-                  {formatMoney(totalHint)}
-                </span>
-              </>
-            ) : null}
-          </span>
-          {/* M1.14: payment-method toggle. Default 💵 cash; tap to
-              flip to 🏦 transfer. Sits before ✓ save so the muscle
-              memory is "set method → confirm". Tooltip on long-press
-              spells out the active label for accessibility. */}
+          </button>
+          {/* M1.14: payment-method toggle. Defaults to cash; tap to flip
+              to transfer. Sits before ✓ save so the muscle memory is
+              "set method → confirm".
+              2026-07-30: the label is now ON the control instead of only
+              in a tooltip — there is no long-press tooltip on touch. */}
           <button
             type="button"
             onClick={() =>
@@ -1842,13 +1885,22 @@ export function PurchaseRow({
               // (min-w-9), which costs the price field ~5px instead of
               // ~21px. Do not widen this to min-w-11 without also giving
               // column 3 a floor.
-              'flex h-11 min-w-9 items-center justify-center rounded-[var(--r-pill)] px-2 text-body active:opacity-70 ' +
+              'flex h-11 min-w-9 items-center justify-center rounded-[var(--r-pill)] px-1.5 text-label font-medium active:opacity-70 ' +
               (paymentMethod === 'transfer'
                 ? 'bg-[var(--c-action)]/15 text-[var(--c-action)] ring-1 ring-[var(--c-action)]'
                 : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
             }
           >
-            {paymentMethod === 'cash' ? '💵' : '🏦'}
+            {/* 2026-07-30: was a bare 💵/🏦. The comment on the sibling
+                control below already conceded the weakness — "colour emoji
+                ignore the ink token, so 💵 vs 🏦 alone is a weak signal at
+                arm's length in sunlight" — and compensated with container
+                colour. The word is the signal; colour is now reinforcement
+                rather than the only carrier. Two CJK glyphs at text-label
+                fit the same 36 px slot the emoji occupied. */}
+            {paymentMethod === 'cash'
+              ? i18n.t('run.label.paymentCash')
+              : i18n.t('run.label.paymentTransfer')}
           </button>
           <button
             type="button"
@@ -1870,6 +1922,20 @@ export function PurchaseRow({
             ✓
           </button>
         </div>
+        {/* Line 3: the computed total, on its own line (2026-07-30).
+            This is the readout that catches a ×1000 slip — "I typed 30,
+            that's 30,000 som" — so it must never be the thing that gets
+            truncated when the row runs out of width. Right-aligned under
+            the price it belongs to. */}
+        {totalHint !== null ? (
+          <div className="mt-1 pr-1 text-right text-label text-[var(--c-fg-muted)]">
+            ={' '}
+            <span className="font-mono font-semibold tabular-nums text-[var(--c-fg)]">
+              {formatMoney(totalHint)}
+            </span>{' '}
+            {currency}
+          </div>
+        ) : null}
       </li>
     );
   }
@@ -1959,7 +2025,7 @@ export function PurchaseRow({
               className={`${ROW_CTRL} ${isTransfer ? CTRL_TRANSFER : CTRL_QUIET}`}
               title={i18n.t('run.label.paymentMethod')}
             >
-              <span aria-hidden>{isTransfer ? '🏦' : '💵'}</span>
+              <span className="text-label font-medium">{paymentLabel}</span>
               <span className="sr-only">{paymentAria}</span>
             </span>
           ) : (
@@ -1979,7 +2045,7 @@ export function PurchaseRow({
                 paymentBusy ? CTRL_OFF : isTransfer ? CTRL_TRANSFER : CTRL_QUIET
               }`}
             >
-              <span aria-hidden>{isTransfer ? '🏦' : '💵'}</span>
+              <span className="text-label font-medium">{paymentLabel}</span>
             </button>
           )}
         </div>

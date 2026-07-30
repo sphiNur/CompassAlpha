@@ -17,6 +17,7 @@ import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { formatMoney, formatQty } from '../../../lib/format';
+import { useDateFormat, useUnitLabel } from '../../../hooks/useI18n';
 import type { useI18n, useProductName } from '../../../hooks/useI18n';
 import { splitSubtotal, settleItemLine, settlePerStore } from '../lib/settlement';
 
@@ -68,18 +69,18 @@ export interface HistoryDetailTarget {
 
 export function RunHistorySection({
   runs,
-  storeById,
   i18n,
   onOpenAll,
   onOpen,
 }: {
   runs: RunListRow[];
   productName: ReturnType<typeof useProductName>;
-  storeById: Map<string, { id: string; name: string; code: string | null }>;
   i18n: ReturnType<typeof useI18n>;
   onOpenAll: () => void;
   onOpen: (r: RunListRow) => void;
 }) {
+  const dateFmt = useDateFormat();
+  const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   // M3.9 (2026-05-16): cancelled runs are hidden from this list
   // entirely. The earlier UX had a 3-tab filter (finished / all /
   // cancelled) but the user's mental model is "history = completed
@@ -92,42 +93,54 @@ export function RunHistorySection({
     () => runs.filter((r) => r.status === 'finished'),
     [runs],
   );
-  // M1.13 (2026-05-08): cap the inline list at 12 rows. Anything older
-  // is reachable via the "View all" link → Operations → Submission
-  // history (which already has full pagination, search, filters).
-  // Keeps RunPage's bottom from becoming an infinite scroll dump.
-  const HISTORY_INLINE_CAP = 12;
-
-  // Group by yyyy-mm so the section reads as a calendar
-  // ("May 2026 · 8 runs · ₸4,250,000 / April 2026 · 12 runs · ...").
-  const groups = useMemo(() => {
-    const capped = allHistorical.slice(0, HISTORY_INLINE_CAP);
-    const byMonth = new Map<string, RunListRow[]>();
-    for (const r of capped) {
-      // runDate is stored as "YYYY-MM-DD" — slice the year+month prefix.
-      const key = r.runDate.slice(0, 7);
-      const arr = byMonth.get(key) ?? [];
-      arr.push(r);
-      byMonth.set(key, arr);
-    }
-    return [...byMonth.entries()].map(([month, rows]) => {
-      const total = rows.reduce(
-        (sum, r) =>
-          sum + (r.actualTotal ? Number(r.actualTotal) : 0),
-        0,
-      );
-      return { month, rows, total };
-    });
+  /**
+   * 2026-07-30 (flow review): this section used to render up to 12 finished
+   * runs inline, grouped by month, at the very bottom of the run page —
+   * measured at ~8,161 px down, behind 87 in-flight purchase rows. To see
+   * last month's spend you scrolled past the work you were in the middle
+   * of. And a "全部历史" link sat right there in the header the whole time,
+   * opening a dedicated view that already has pagination, search and
+   * filters, so the inline copy was duplicating a better surface.
+   *
+   * Now it's one summary row. The two questions worth answering FROM the
+   * run page are "when did we last go out" and "what have we spent this
+   * month"; everything else is a history-browsing task and belongs in the
+   * history view.
+   *
+   * Caveat, inherited rather than introduced: `runs` is whatever the list
+   * query returned, so the month total covers the runs we have, not
+   * necessarily every run in the month. The old per-month headers had the
+   * same limitation (they aggregated a 12-row slice) — noting it here
+   * because a single prominent number invites more trust than twelve
+   * did.
+   */
+  const summary = useMemo(() => {
+    const newest = allHistorical[0];
+    if (!newest) return null;
+    const month = newest.runDate.slice(0, 7);
+    const inMonth = allHistorical.filter((r) => r.runDate.slice(0, 7) === month);
+    const monthTotal = inMonth.reduce(
+      (sum, r) => sum + (r.actualTotal ? Number(r.actualTotal) : 0),
+      0,
+    );
+    return { newest, month, monthCount: inMonth.length, monthTotal };
   }, [allHistorical]);
 
   if (allHistorical.length === 0) return null;
 
   // Format yyyy-mm into the user's locale month-year ("May 2026" / "2026年5月").
+  //
+  // 2026-07-30 (flow review): the comment already said "the user's locale",
+  // but `toLocaleDateString(undefined, …)` reads the BROWSER's locale, not
+  // the app's. A Chinese operator on an English phone got "JUNE 2026" as
+  // the header of an otherwise Chinese screen. useDateFormat binds to
+  // i18n.locale, which is the language the user actually chose.
   const formatMonth = (key: string): string => {
     const [y, m] = key.split('-');
-    const d = new Date(Number(y), Number(m) - 1, 1);
-    return d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    return dateFmt.monthYear(new Date(Number(y), Number(m) - 1, 1));
   };
+
+  if (!summary) return null;
 
   return (
     <Card>
@@ -141,105 +154,33 @@ export function RunHistorySection({
           {i18n.t('run.history.viewAll')}
         </button>
       </CardHeader>
-      {/* M3.9: filter chip toolbar removed — cancelled runs no
-         longer surface here, so there's nothing to toggle. */}
-      {groups.map((g) => (
-        <section key={g.month} className="border-t border-[var(--c-divider)] first:border-t-0">
-          {/* Month group header — sub-section label + per-month total
-              spend for finished runs. Helps the operator see "we spent
-              X this month" without leaving the page. */}
-          {/* M2.1: SectionLabel (month group header). */}
-          <SectionLabel
-            meta={g.total > 0 ? formatMoney(String(g.total)) : undefined}
-            className="pt-3 pb-1"
-          >
-            {formatMonth(g.month)}
-          </SectionLabel>
-          <ul className="flex flex-col" role="list">
-            {/* M3.9: cancelled-row branches dropped — `allHistorical`
-               above filters to status==='finished' only, so the dead
-               code that used to render the ❌ badge + cancelled-reason
-               line is gone. If forensics ever needs to surface
-               cancelled runs back here, both the FE filter and the
-               row branches need restoring together. */}
-            {g.rows.map((r) => {
-              const storeTotals = (r.storeTotals ?? []).filter((st) => Number(st.total) > 0);
-              return (
-              <li
-                key={r.id}
-                className="border-b border-[var(--c-divider)] last:border-b-0"
-              >
-                <button
-                  type="button"
-                  onClick={() => onOpen(r)}
-                  className="flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left active:bg-[var(--c-surface-2)]"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-body font-semibold tabular-nums">
-                        {r.runDate}
-                      </span>
-                      {r.runIndex > 0 ? (
-                        <span className="text-label text-[var(--c-fg-muted)]">
-                          #{r.runIndex + 1}
-                        </span>
-                      ) : null}
-                    </div>
-                    {r.actualTotal ? (
-                      <div className="text-label text-[var(--c-fg-muted)]">
-                        {i18n.t('run.history.totalLine', {
-                          total: formatMoney(r.actualTotal),
-                        })}
-                        {/* M1.14: when this run mixed both methods,
-                            surface a tiny "💵 X · 🏦 Y" breakdown so
-                            the operator can see split at a glance.
-                            Hidden when one bucket is zero (single-
-                            method run) or both columns are NULL
-                            (legacy run pre-M1.14). */}
-                        {r.actualCashTotal != null &&
-                        r.actualTransferTotal != null &&
-                        Number(r.actualCashTotal) > 0 &&
-                        Number(r.actualTransferTotal) > 0 ? (
-                          <span className="ml-1 text-label">
-                            {' · '}💵 {formatMoney(r.actualCashTotal)}
-                            {' · '}🏦 {formatMoney(r.actualTransferTotal)}
-                          </span>
-                        ) : null}
-                      </div>
-                    ) : null}
-                    {storeTotals.length > 1 ? (
-                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                        {storeTotals.map((st) => {
-                          const storeName =
-                            storeById.get(st.storeId)?.name ?? st.storeId.slice(0, 8);
-                          return (
-                            <span
-                              key={st.storeId}
-                              className="inline-flex max-w-full items-center gap-1.5 rounded-[var(--r-pill)] bg-[var(--c-bg)] px-1.5 py-0.5 text-label ring-1 ring-[var(--c-divider)]"
-                            >
-                              <span className="max-w-[8rem] truncate font-medium text-[var(--c-fg)]">
-                                {storeName}
-                              </span>
-                              <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
-                                {formatMoney(st.total)}
-                              </span>
-                            </span>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-                  </div>
-                </button>
-              </li>
-              );
+      {/* The row names ONE run, so tapping it opens that run — not the
+          list. The header's 全部历史 is the list action. Two targets, each
+          doing what its own label says. */}
+      <button
+        type="button"
+        onClick={() => onOpen(summary.newest)}
+        className="flex w-full items-center justify-between gap-3 border-t border-[var(--c-divider)] px-4 py-3 text-left active:bg-[var(--c-surface-2)]"
+      >
+        <span className="min-w-0">
+          <span className="block truncate text-body font-semibold text-[var(--c-fg)]">
+            {i18n.t('run.history.lastRun', { date: summary.newest.runDate })}
+          </span>
+          <span className="mt-0.5 block truncate text-label text-[var(--c-fg-muted)]">
+            {i18n.t('run.history.monthSoFar', {
+              month: formatMonth(summary.month),
+              n: summary.monthCount,
             })}
-          </ul>
-        </section>
-      ))}
-      {/* UIUX-B1 (2026-07-06): truncation hint deleted — it pointed at
-          管理→运营→提交历史, which is ORDER-submission history, not run
-          history; the "View all" header link four lines up is the real
-          path to the full run list. */}
+          </span>
+        </span>
+        <span className="shrink-0 text-right">
+          {summary.monthTotal > 0 ? (
+            <span className="block font-mono text-h3 font-semibold tabular-nums text-[var(--c-fg)]">
+              {formatMoney(String(summary.monthTotal))} {currency}
+            </span>
+          ) : null}
+        </span>
+      </button>
     </Card>
   );
 }
@@ -410,6 +351,9 @@ export function RunHistoryDetailSheet({
   i18n: ReturnType<typeof useI18n>;
   onClose: () => void;
 }) {
+  // 2026-07-30 (flow review): history detail rows printed the raw canonical
+  // unit ("kg") while the live run rows printed "公斤".
+  const unitLabel = useUnitLabel();
   // M1.21: org-wide currency for the headline label.
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   // 2026-07-06: super-admins (run.amend) may reopen a finished run to
@@ -762,12 +706,12 @@ export function RunHistoryDetailSheet({
                     <div className="text-label text-[var(--c-fg-muted)]">
                       {activeStoreId ? (
                         it.status === 'purchased'
-                          ? `${formatQty(row.qty)} ${sku?.unit ?? ''} x ${formatMoney(it.unitPrice)}`
+                          ? `${formatQty(row.qty)} ${unitLabel(sku?.unit)} × ${formatMoney(it.unitPrice)}`
                           : it.unavailableNote ?? ''
                       ) : (
                         <>
                           {it.status === 'purchased'
-                            ? `${formatQty(it.purchasedQty)} ${sku?.unit ?? ''} × ${formatMoney(it.unitPrice)}`
+                            ? `${formatQty(it.purchasedQty)} ${unitLabel(sku?.unit)} × ${formatMoney(it.unitPrice)}`
                             : it.unavailableNote ?? ''}
                         </>
                       )}
@@ -788,7 +732,7 @@ export function RunHistoryDetailSheet({
                                 {storeName}
                               </span>
                               <span className="font-mono tabular-nums text-[var(--c-fg-muted)]">
-                                {formatQty(sp.qty)} {sku?.unit ?? ''}
+                                {formatQty(sp.qty)} {unitLabel(sku?.unit)}
                               </span>
                             </span>
                           );
@@ -856,8 +800,12 @@ export function RunHistoryDetailSheet({
                         </div>
                         {mixed ? (
                           <div className="flex items-baseline gap-3 text-label text-[var(--c-fg-muted)]">
-                            <span>💵 {formatMoney(ps.cash)}</span>
-                            <span>🏦 {formatMoney(ps.transfer)}</span>
+                            <span>
+                              {i18n.t('run.label.paymentCash')} {formatMoney(ps.cash)}
+                            </span>
+                            <span>
+                              {i18n.t('run.label.paymentTransfer')} {formatMoney(ps.transfer)}
+                            </span>
                           </div>
                         ) : null}
                       </li>

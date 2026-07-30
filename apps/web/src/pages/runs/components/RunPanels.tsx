@@ -108,6 +108,7 @@ export function ActiveRunPanel({
   productName,
   i18n,
   priceInThousands,
+  onTogglePriceUnit,
   savingSkuId,
   onSavePurchaseInline,
   onMarkNa,
@@ -136,6 +137,8 @@ export function ActiveRunPanel({
    *  and parse back to raw UZS on save. Page-level toggle in the
    *  sticky header. */
   priceInThousands: boolean;
+  /** Forwarded to PurchaseRow's unit-suffix toggle. */
+  onTogglePriceUnit: () => void;
   savingSkuId: string | null;
   onSavePurchaseInline: (payload: {
     skuId: string;
@@ -375,7 +378,11 @@ export function ActiveRunPanel({
           short-circuits straight to aggregate. */}
       {showViewToggle ? (
         <div className="border-b border-[var(--c-divider)] bg-[var(--c-bg)] py-1">
-          <ChipBar ariaLabel="Run view mode">
+          {/* variant="toggles" (2026-07-30): tapping the lit chip clears
+              it back to aggregate, so this is a set of independent toggle
+              buttons — not a tab group. As a tablist with nothing selected
+              (the default aggregate state) it was invalid ARIA. */}
+          <ChipBar variant="toggles" ariaLabel={i18n.t('run.view.ariaLabel')}>
             {showPerStore ? (
               <Chip
                 selected={viewMode === 'perStore'}
@@ -431,6 +438,7 @@ export function ActiveRunPanel({
           productName={productName}
           i18n={i18n}
           priceInThousands={priceInThousands}
+          onTogglePriceUnit={onTogglePriceUnit}
           savingSkuId={savingSkuId}
           demandBySku={demandBySku}
           onSavePurchaseInline={onSavePurchaseInline}
@@ -453,6 +461,7 @@ export function ActiveRunPanel({
           productName={productName}
           i18n={i18n}
           priceInThousands={priceInThousands}
+          onTogglePriceUnit={onTogglePriceUnit}
           savingSkuId={savingSkuId}
           demandBySku={demandBySku}
           onSavePurchaseInline={onSavePurchaseInline}
@@ -559,6 +568,7 @@ export function ActiveRunPanel({
               return (
                 <PurchaseRow
                   key={it.skuId}
+                  onTogglePriceUnit={onTogglePriceUnit}
                   item={it}
                   skuName={skuName}
                   unit={unitLabel(sku?.unit)}

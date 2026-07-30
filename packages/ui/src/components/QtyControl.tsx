@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useUiLabels } from '../labels';
 import { cn } from '../cn';
 import { Sheet, SheetFooter } from './Sheet';
 import { Button } from './Button';
@@ -53,6 +54,9 @@ export function QtyControl({
   pickTitle,
   pickPresets,
 }: QtyControlProps) {
+  // 2026-07-30: aria-labels and the entire quick-pick sheet were frozen
+  // English in a package with no i18n dependency. See ../labels.tsx.
+  const labels = useUiLabels();
   const [pressing, setPressing] = useState<'plus' | 'minus' | null>(null);
   const [pickOpen, setPickOpen] = useState(false);
   // M3.12 (2026-05-16): tap-vs-hold disambiguation.
@@ -172,7 +176,7 @@ export function QtyControl({
       <div className={cn('inline-flex items-center gap-2', className)}>
         <button
           type="button"
-          aria-label="Decrement"
+          aria-label={labels.decrement}
           className={tone(pressing === 'minus')}
           disabled={disabled || value <= min}
           onPointerDown={() => armHold(-1, 'minus')}
@@ -196,7 +200,7 @@ export function QtyControl({
             it now reads as a peer of the surrounding row primary text. */}
         <button
           type="button"
-          aria-label={`Quantity ${display}${unit ? ' ' + unit : ''} — tap to pick`}
+          aria-label={labels.quantityPick(`${display}${unit ? ' ' + unit : ''}`)}
           onClick={openQuickPick}
           disabled={disabled}
           className={cn(
@@ -207,19 +211,26 @@ export function QtyControl({
             disabled && 'opacity-40 pointer-events-none',
           )}
         >
-          {showZero ? '' : (
-            <>
-              <span>{display}</span>
-              {unit ? (
-                <span className="ml-0.5 text-label text-[var(--c-fg-muted)]">{unit}</span>
-              ) : null}
-            </>
-          )}
+          {/*
+            2026-07-30 (flow review): this used to render the EMPTY STRING at
+            value 0. On a fresh order that left a ~64 px invisible button on
+            every one of ~190 rows — and that button is the quick-pick sheet,
+            i.e. the fast path to "12 kg" in one tap. It was undiscoverable,
+            and the blank gap between − and + made each row look broken.
+
+            Now zero renders a subdued `0` plus the unit, so the tap target is
+            visible and the row states its unit without the caption M3.55
+            removed. Non-zero values are unchanged.
+          */}
+          <span>{display}</span>
+          {unit ? (
+            <span className="ml-0.5 text-label text-[var(--c-fg-muted)]">{unit}</span>
+          ) : null}
         </button>
 
         <button
           type="button"
-          aria-label="Increment"
+          aria-label={labels.increment}
           className={tone(pressing === 'plus')}
           disabled={disabled || value >= max}
           onPointerDown={() => armHold(1, 'plus')}
@@ -301,6 +312,7 @@ function QtyQuickPickSheet({
   presets: number[];
   onPick: (value: number) => void;
 }) {
+  const labels = useUiLabels();
   const [draft, setDraft] = useState<string>(() => String(current));
   // Re-seed the input every time the sheet opens with a fresh `current`
   // so the user sees what's already there before editing.
@@ -316,48 +328,50 @@ function QtyQuickPickSheet({
   }, [draft, min, max, step]);
   const draftDiffers = sanitizedDraft !== null && sanitizedDraft !== current;
 
-  const setLabel =
-    'Set ' +
+  const setLabel = labels.setValue(
     (sanitizedDraft !== null ? formatQty(sanitizedDraft, step) : '—') +
-    (unit ? ' ' + unit : '');
+      (unit ? ' ' + unit : ''),
+  );
 
-  // M3.14-C: drive Telegram's MainButton from inside the sheet when
-  // the SDK is present. Falls back to the in-sheet <Button> below if
-  // we're outside Telegram (web preview, jest, storybook).
-  const hasTelegramMainButton = useTelegramMainButton({
-    open,
-    text: setLabel,
-    active: draftDiffers,
-    onClick: () => {
-      if (sanitizedDraft !== null) onPick(sanitizedDraft);
-    },
-  });
+  // 2026-07-30: this sheet used to commandeer Telegram's native
+  // MainButton (M3.14-C) and suppress its own footer whenever the SDK
+  // was present. Both halves of that broke:
+  //
+  //   - The host retired the native MainButton in M3.49 — Shell renders
+  //     an in-DOM PageMainButton above the nav and calls
+  //     `tg.MainButton.hide()` permanently, precisely so the button
+  //     appearing/disappearing stops shoving the bottom nav around.
+  //     Grabbing it here resurrected exactly that layout shift.
+  //   - The "is the SDK present" test (`!!getMainButton()`) is TRUE in
+  //     any browser, because index.html loads telegram-web-app.js as a
+  //     static script. So outside Telegram the footer was suppressed AND
+  //     no native button existed: typing a custom quantity had nothing to
+  //     confirm it with. Verified on 2026-07-30 — the open sheet's only
+  //     controls were the preset chips and a bare number input.
+  //
+  // The sheet now always renders its own confirm button, which is what
+  // ConfirmPage's issue sheet and RunSheets' confirm sheet already do
+  // (see their M3.49 notes). `Sheet` renders above PageMainButton, so
+  // there's nothing to collide with.
 
   return (
     <Sheet
       open={open}
       onOpenChange={onOpenChange}
-      title={title ?? 'Set quantity'}
-      description={unit ? `Unit: ${unit}` : undefined}
+      title={title ?? labels.setQuantity}
+      description={unit ? labels.unitIs(unit) : undefined}
       footer={
-        // When Telegram is driving the MainButton, the in-sheet footer
-        // is empty — the system button at the bottom of the WebApp
-        // viewport is the confirmation affordance. Outside Telegram
-        // (preview / desktop), keep the fallback button visible so the
-        // sheet remains usable.
-        hasTelegramMainButton ? null : (
-          <SheetFooter>
-            <Button
-              block
-              disabled={!draftDiffers}
-              onClick={() => {
-                if (sanitizedDraft !== null) onPick(sanitizedDraft);
-              }}
-            >
-              {setLabel}
-            </Button>
-          </SheetFooter>
-        )
+        <SheetFooter>
+          <Button
+            block
+            disabled={!draftDiffers}
+            onClick={() => {
+              if (sanitizedDraft !== null) onPick(sanitizedDraft);
+            }}
+          >
+            {setLabel}
+          </Button>
+        </SheetFooter>
       }
     >
       <div className="flex flex-col gap-3 py-3">
@@ -393,7 +407,7 @@ function QtyQuickPickSheet({
             non-form element, so we keep the eyebrow class string here.
             The CI typography guard allow-lists this comment. */}
         <label className="block text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
-          Custom
+          {labels.custom}
           <NumberInput
             className="mt-1"
             value={draft}
@@ -407,122 +421,6 @@ function QtyQuickPickSheet({
       </div>
     </Sheet>
   );
-}
-
-// ──────────────────────────────────────────────────────────────────
-// Telegram MainButton override (M3.14-C, 2026-05-16)
-// ──────────────────────────────────────────────────────────────────
-//
-// Hook the sheet uses to temporarily commandeer Telegram's MainButton
-// while it's open. Three-step lifecycle:
-//
-//   1. On open: snapshot the live button (text, isVisible, isActive),
-//      bind our click handler, override text, ensure visible, set
-//      active state.
-//   2. While open: update text + active state as the draft changes.
-//      We do NOT touch visibility on this path — the override stays
-//      on for the duration of the sheet.
-//   3. On close: deregister click handler, restore the snapshot
-//      (setText back, hide if it was hidden, restore active state).
-//      Importantly this keeps the parent page's `usePageMainButton`
-//      hook in a consistent state — the parent's `lastTextRef` etc.
-//      reflected whatever the live state was before we entered, and
-//      we leave the live state matching that.
-//
-// Returns `true` if the sheet is inside Telegram and the MainButton
-// is driving the confirm action (so the caller should hide the
-// in-sheet fallback button). Returns `false` outside Telegram —
-// caller renders the in-sheet button as before.
-//
-// The hook is self-contained in @compass/ui because Sheet already
-// lazily reaches into `window.Telegram?.WebApp?.BackButton` with the
-// same defensive optionality. Keeping MainButton wiring in the same
-// place means the QtyControl works in any host (apps/web today,
-// future admin tool, future kitchen display) without re-implementing
-// the dance.
-type TgMainButton = {
-  text?: string;
-  isVisible?: boolean;
-  isActive?: boolean;
-  setText: (s: string) => void;
-  show: () => void;
-  hide: () => void;
-  enable: () => void;
-  disable: () => void;
-  onClick: (cb: () => void) => void;
-  offClick: (cb: () => void) => void;
-};
-
-function getMainButton(): TgMainButton | null {
-  if (typeof window === 'undefined') return null;
-  const w = window as { Telegram?: { WebApp?: { MainButton?: TgMainButton } } };
-  return w.Telegram?.WebApp?.MainButton ?? null;
-}
-
-function useTelegramMainButton({
-  open,
-  text,
-  active,
-  onClick,
-}: {
-  open: boolean;
-  text: string;
-  active: boolean;
-  onClick: () => void;
-}): boolean {
-  // Keep the latest click handler behind a ref so we can bind ONCE
-  // per open-cycle without re-registering every render. Re-registering
-  // produces a brief visible blip on iOS Telegram.
-  const onClickRef = useRef(onClick);
-  onClickRef.current = onClick;
-  // Snapshot of pre-override state, restored on close.
-  const snapshotRef = useRef<{ text: string; visible: boolean; active: boolean } | null>(null);
-
-  const driving = open && !!getMainButton();
-
-  // Open/close lifecycle. Take/release the MainButton in lockstep with
-  // `open`. Active-state and text changes ride on the separate effect
-  // below so they don't trigger a snapshot reset mid-sheet.
-  useEffect(() => {
-    const mb = getMainButton();
-    if (!open || !mb) return;
-
-    snapshotRef.current = {
-      text: mb.text ?? '',
-      visible: !!mb.isVisible,
-      active: !!mb.isActive,
-    };
-
-    const handler = () => onClickRef.current();
-    mb.onClick(handler);
-    mb.show();
-
-    return () => {
-      mb.offClick(handler);
-      const snap = snapshotRef.current;
-      if (snap) {
-        // Restore text first so the brief "between" frame on iOS
-        // doesn't flash our override.
-        mb.setText(snap.text || '');
-        if (!snap.visible) mb.hide();
-        if (snap.active) mb.enable();
-        else mb.disable();
-      }
-      snapshotRef.current = null;
-    };
-  }, [open]);
-
-  // Text + active updates while open. Skipped outside Telegram.
-  useEffect(() => {
-    if (!open) return;
-    const mb = getMainButton();
-    if (!mb) return;
-    mb.setText(text);
-    if (active) mb.enable();
-    else mb.disable();
-  }, [open, text, active]);
-
-  return driving;
 }
 
 /**

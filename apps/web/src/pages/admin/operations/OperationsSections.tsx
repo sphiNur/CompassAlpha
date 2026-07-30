@@ -35,12 +35,13 @@ import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { formatMoney, formatQty } from '../../../lib/format';
-import { useI18n, useProductName } from '../../../hooks/useI18n';
+import { useDateFormat, useI18n, useProductName, useUnitLabel } from '../../../hooks/useI18n';
 import { DebugPage } from '../../DebugPage';
 
 // ============ Activity ============
 
 export function ActivitySection() {
+  const dateFmt = useDateFormat();
   const i18n = useI18n();
   const overview = trpc.admin.overview.useQuery();
   const eventsQuery = trpc.admin.recentEvents.useQuery({ limit: PAGE_SIZE.feed });
@@ -77,7 +78,12 @@ export function ActivitySection() {
       <DataState
         query={eventsQuery}
         emptyWhen={(d) => d.length === 0}
-        empty={<EmptyState title="No events yet" description="Activity appears once orders or runs move." />}
+        empty={
+          <EmptyState
+            title={i18n.t('ops.activity.emptyTitle')}
+            description={i18n.t('ops.activity.emptyBody')}
+          />
+        }
       >
         {(rows) => (
           <ul className="flex flex-col gap-1.5" role="list">
@@ -136,12 +142,8 @@ export function ActivitySection() {
                       {e.actor?.tgUsername ? ` · @${e.actor.tgUsername}` : ''}
                     </span>
                     <span className="font-mono text-tiny">
-                      {new Date(e.occurredAt).toLocaleString([], {
-                        month: 'short',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
+                      {/* 2026-07-30: `[]` meant "browser locale". */}
+                      {dateFmt.dateTime(e.occurredAt)}
                     </span>
                   </div>
                 </li>
@@ -181,6 +183,7 @@ export function ActivitySection() {
  * for managers and admins. Default range: last 30 days.
  */
 export function HistorySection() {
+  const i18n = useI18n();
   const [storeFilter, setStoreFilter] = useState<string | null>(null);
   const stores = trpc.admin.storeList.useQuery();
   const history = trpc.admin.submissionHistory.useQuery({
@@ -209,8 +212,8 @@ export function HistorySection() {
         emptyWhen={(d) => d.length === 0}
         empty={
           <EmptyState
-            title="Nothing submitted yet"
-            description="Submitted orders show up here once staff press Submit."
+            title={i18n.t('ops.history.emptyTitle')}
+            description={i18n.t('ops.history.emptyBody')}
           />
         }
       >
@@ -237,20 +240,39 @@ export function HistorySection() {
                         <CardMeta>
                           {r.orderDate}
                           {r.submittedAt
-                            ? ` · submitted ${formatRelative(r.submittedAt)}`
+                            ? ` · ${i18n.t('ops.history.submittedAgo', {
+                                when: formatRelative(r.submittedAt, i18n),
+                              })}`
                             : ''}
-                          {r.submittedByName ? ` by ${r.submittedByName}` : ''}
+                          {r.submittedByName
+                            ? ` ${i18n.t('ops.history.byWhom', { name: r.submittedByName })}`
+                            : ''}
                         </CardMeta>
                       </div>
-                      <Badge tone={statusTone}>{r.status}</Badge>
+                      <Badge tone={statusTone}>
+                        {i18n.t(
+                          ('order.status.' +
+                            (r.status === 'rejected' ? 'rejectedTitle' : r.status)) as Parameters<
+                            typeof i18n.t
+                          >[0],
+                        )}
+                      </Badge>
                     </CardHeader>
                   </button>
                   <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-2 text-label text-[var(--c-fg-muted)]">
                     <span>
-                      {r.skuCount} SKU{r.skuCount === 1 ? '' : 's'} · {formatQty(r.totalQty)} total
+                      {i18n.t('ops.history.skuTotalLine', {
+                        n: r.skuCount,
+                        total: formatQty(r.totalQty),
+                      })}
                     </span>
                     {r.contributors.length > 0 ? (
-                      <span>· {r.contributors.length} contributor{r.contributors.length === 1 ? '' : 's'}</span>
+                      <span>
+                        ·{' '}
+                        {i18n.t('ops.history.contributorCount', {
+                          n: r.contributors.length,
+                        })}
+                      </span>
                     ) : null}
                     {r.reviewMinutes !== null ? (
                       <span>· decided in {r.reviewMinutes} min</span>
@@ -262,7 +284,7 @@ export function HistorySection() {
                   {isOpen ? (
                     <div className="border-t border-[var(--c-divider)] px-4 py-2">
                       <SectionLabel padded={false}>
-                        Contributor breakdown
+                        {i18n.t('ops.history.contributorBreakdown')}
                       </SectionLabel>
                       <ul className="mt-2 flex flex-col gap-1">
                         {r.contributors.map((c) => (
@@ -281,7 +303,9 @@ export function HistorySection() {
                       </ul>
                       {r.rejectReason ? (
                         <p className="mt-3 text-label text-[var(--c-danger)]">
-                          Rejection reason: {r.rejectReason}
+                          {i18n.t('ops.history.rejectionReason', {
+                            reason: r.rejectReason,
+                          })}
                         </p>
                       ) : null}
                     </div>
@@ -296,15 +320,23 @@ export function HistorySection() {
   );
 }
 
-function formatRelative(iso: string): string {
+/**
+ * Relative "how long ago" label.
+ *
+ * 2026-07-30: took the i18n instance as a parameter rather than reading a hook,
+ * so it stays a pure function (callers are inside components that already have
+ * `i18n`). Previously returned hardcoded English — "just now" / "3m ago" —
+ * inside an otherwise Chinese activity feed.
+ */
+function formatRelative(iso: string, i18n: ReturnType<typeof useI18n>): string {
   const ms = Date.now() - new Date(iso).getTime();
-  if (ms < 60_000) return 'just now';
+  if (ms < 60_000) return i18n.t('time.justNow');
   const minutes = Math.floor(ms / 60_000);
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return i18n.t('time.minutesAgo', { n: minutes });
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return i18n.t('time.hoursAgo', { n: hours });
   const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  return i18n.t('time.daysAgo', { n: days });
 }
 
 // ============ Maintenance ============
@@ -417,7 +449,7 @@ function TargetedPurgeBrowser() {
               : 'bg-transparent text-[var(--c-fg-muted)]')
           }
         >
-          Orders
+          {i18n.t('ops.purge.tabOrders')}
         </button>
         <button
           type="button"
@@ -429,7 +461,7 @@ function TargetedPurgeBrowser() {
               : 'bg-transparent text-[var(--c-fg-muted)]')
           }
         >
-          Runs
+          {i18n.t('ops.purge.tabRuns')}
         </button>
       </div>
 
@@ -439,8 +471,8 @@ function TargetedPurgeBrowser() {
           emptyWhen={(d) => d.length === 0}
           empty={
             <EmptyState
-              title="No order sessions"
-              description={`Nothing was submitted on ${date}.`}
+              title={i18n.t('ops.purge.noSessionsTitle')}
+              description={i18n.t('ops.purge.noSessionsBody', { date })}
             />
           }
         >
@@ -461,11 +493,20 @@ function TargetedPurgeBrowser() {
                           {label}
                         </span>
                         {sess.isMine ? (
-                          <Badge tone="info">you</Badge>
+                          <Badge tone="info">{i18n.t('admin.label.you')}</Badge>
                         ) : null}
                       </div>
                       <div className="mt-0.5 text-label text-[var(--c-fg-muted)]">
-                        {sess.status} · {sess.itemCount} items · {sess.orderDate}
+                        {i18n.t('ops.purge.sessionMeta', {
+                          status: i18n.t(
+                            ('order.status.' +
+                              (sess.status === 'rejected'
+                                ? 'rejectedTitle'
+                                : sess.status)) as Parameters<typeof i18n.t>[0],
+                          ),
+                          items: i18n.t('run.label.itemsCount', { n: sess.itemCount }),
+                          date: sess.orderDate,
+                        })}
                       </div>
                     </div>
                     {inRun ? (
@@ -487,7 +528,7 @@ function TargetedPurgeBrowser() {
                           });
                         }}
                       >
-                        Delete
+                        {i18n.t('common.delete')}
                       </Button>
                     )}
                   </li>
@@ -502,8 +543,8 @@ function TargetedPurgeBrowser() {
           emptyWhen={(d) => d.length === 0}
           empty={
             <EmptyState
-              title="No market runs"
-              description={`No purchasing runs on ${date}.`}
+              title={i18n.t('ops.purge.noRunsTitle')}
+              description={i18n.t('ops.purge.noRunsBody', { date })}
             />
           }
         >
@@ -522,11 +563,18 @@ function TargetedPurgeBrowser() {
                           {label}
                         </span>
                         {r.purchaserIsMe ? (
-                          <Badge tone="info">you</Badge>
+                          <Badge tone="info">{i18n.t('admin.label.you')}</Badge>
                         ) : null}
                       </div>
                       <div className="mt-0.5 text-label text-[var(--c-fg-muted)]">
-                        {r.status} · {r.sessionCount} sessions
+                        {i18n.t('ops.purge.runMeta', {
+                          status: i18n.t(
+                            ('run.status.' + r.status) as Parameters<typeof i18n.t>[0],
+                          ),
+                          sessions: i18n.t('run.label.sessionsCount', {
+                            n: r.sessionCount,
+                          }),
+                        })}
                         {r.purchaserDisplayName ? ` · by ${r.purchaserDisplayName}` : ''}
                       </div>
                     </div>
@@ -542,7 +590,7 @@ function TargetedPurgeBrowser() {
                         });
                       }}
                     >
-                      Delete
+                      {i18n.t('common.delete')}
                     </Button>
                   </li>
                 );
@@ -595,7 +643,7 @@ function TargetedPurgeBrowser() {
       <Sheet
         open={!!runTarget}
         onOpenChange={(o) => !o && !runCommit.isPending && setRunTarget(null)}
-        title="Delete market run"
+        title={i18n.t('ops.purge.deleteRunTitle')}
         description={runTarget?.label}
         footer={
           <Button
@@ -627,11 +675,10 @@ function TargetedPurgeBrowser() {
             </div>
           ) : runTarget?.preview ? (
             <>
-              <Banner tone="warn" title="This includes attached sessions">
-                Deleting this run also deletes its {runTarget.preview.sessionIds.length}{' '}
-                attached order session{runTarget.preview.sessionIds.length === 1 ? '' : 's'}.
-                The server refuses if any of them belongs to a real user — use
-                the per-session purge instead in that case.
+              <Banner tone="warn" title={i18n.t('ops.purge.cascadeTitle')}>
+                {i18n.t('ops.purge.cascadeBody', {
+                  n: runTarget.preview.sessionIds.length,
+                })}
               </Banner>
               <CascadePreview byTable={runTarget.preview.byTable} total={runTarget.preview.total} />
             </>
@@ -694,6 +741,8 @@ function CascadePreview({
  *   admin.memberPermission.{allow|deny|revoke}
  */
 export function AdminAuditSection() {
+  const i18n = useI18n();
+  const dateFmt = useDateFormat();
   // B2 (2026-05-06): per-store filter. The pill row at the top lets an
   // admin scope the log to one store; rows pre-2026-05-06 (NULL scope)
   // disappear under the filter, which is correct — they predate the
@@ -731,7 +780,7 @@ export function AdminAuditSection() {
                 : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]')
             }
           >
-            All scopes
+            {i18n.t('ops.audit.allScopes')}
           </button>
           {sessionStores.map((st) => (
             <button
@@ -782,13 +831,8 @@ export function AdminAuditSection() {
                   : verb === 'allow' || verb === 'create'
                     ? 'success'
                     : 'muted';
-              const date = new Date(r.occurredAt);
-              const when = date.toLocaleString(undefined, {
-                month: 'short',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-              });
+              // 2026-07-30: `undefined` meant "browser locale".
+              const when = dateFmt.dateTime(r.occurredAt);
               return (
                 <Card key={r.id}>
                   <div className="flex items-start gap-3 px-4 py-3">
@@ -825,7 +869,7 @@ export function AdminAuditSection() {
                       {isSuperAdmin ? (
                         <details className="mt-2">
                           <summary className="cursor-pointer text-label font-medium text-[var(--c-fg-muted)]">
-                            inputs
+                            {i18n.t('ops.audit.inputs')}
                           </summary>
                           <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2 py-1 font-mono text-label text-[var(--c-fg-muted)]">
                             {JSON.stringify(r.inputs, null, 2)}
@@ -864,7 +908,11 @@ export function AdminAuditSection() {
  * admins also want a standalone view to spot anomalies and trends.
  */
 export function PriceReportSection() {
+  const i18n = useI18n();
   const productName = useProductName();
+  // 2026-07-30 (flow review): the "/ unit" suffix printed the raw canonical
+  // unit next to a localized product name.
+  const unitLabel = useUnitLabel();
   const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: false });
   // No skuIds filter → return all SKUs with observations in 30 days.
   const statsQuery = trpc.catalog.skuPriceStats.useQuery();
@@ -912,11 +960,8 @@ export function PriceReportSection() {
 
   return (
     <div className="px-4 py-3">
-      <Banner tone="info" title="How to read this">
-        Last 30 days of price observations across the org. The last
-        column is the change vs 30-day mean — green = cheaper, red =
-        spike. Use 7-day mean for next-day budgeting; 30-day mean
-        smooths weekly oscillations.
+      <Banner tone="info" title={i18n.t('ops.price.howTitle')}>
+        {i18n.t('ops.price.howBody')}
       </Banner>
       {statsQuery.isLoading || skusQuery.isLoading ? (
         <div className="mt-4">
@@ -924,8 +969,8 @@ export function PriceReportSection() {
         </div>
       ) : rows.length === 0 ? (
         <EmptyState
-          title="No price data yet"
-          description="Once your purchaser records the first run, prices land here."
+          title={i18n.t('ops.price.emptyTitle')}
+          description={i18n.t('ops.price.emptyBody')}
         />
       ) : (
         <ul className="mt-3 flex flex-col gap-1" role="list">
@@ -956,7 +1001,7 @@ export function PriceReportSection() {
                   <span className="font-mono text-body tabular-nums text-[var(--c-fg)]">
                     {r.last !== null ? formatMoney(r.last) : '—'}{' '}
                     <span className="text-label font-normal text-[var(--c-fg-muted)]">
-                      / {r.unit}
+                      / {unitLabel(r.unit)}
                     </span>
                   </span>
                 </div>
@@ -1333,8 +1378,12 @@ export function FinanceSection() {
                 </button>
                 {mixed ? (
                   <div className="flex items-baseline gap-3 px-3 pb-1.5 text-label text-[var(--c-fg-muted)]">
-                    <span>💵 {formatMoney(g.cash)}</span>
-                    <span>🏦 {formatMoney(g.transfer)}</span>
+                    <span>
+                      {i18n.t('run.label.paymentCash')} {formatMoney(g.cash)}
+                    </span>
+                    <span>
+                      {i18n.t('run.label.paymentTransfer')} {formatMoney(g.transfer)}
+                    </span>
                   </div>
                 ) : null}
                 {isOpen ? (
@@ -1355,7 +1404,9 @@ export function FinanceSection() {
                         >
                           <div className="flex items-baseline justify-between gap-2">
                             <span className="truncate text-body font-medium">
-                              {l.paymentMethod === 'transfer' ? '🏦 ' : '💵 '}
+                              {l.paymentMethod === 'transfer'
+                                ? i18n.t('run.label.paymentTransfer') + ' '
+                                : i18n.t('run.label.paymentCash') + ' '}
                               {skuName}
                             </span>
                             <span className="font-mono text-body tabular-nums">
@@ -1404,8 +1455,12 @@ export function FinanceSection() {
                 </button>
                 {mixed ? (
                   <div className="flex items-baseline gap-3 px-3 pb-1.5 text-label text-[var(--c-fg-muted)]">
-                    <span>💵 {formatMoney(g.cash)}</span>
-                    <span>🏦 {formatMoney(g.transfer)}</span>
+                    <span>
+                      {i18n.t('run.label.paymentCash')} {formatMoney(g.cash)}
+                    </span>
+                    <span>
+                      {i18n.t('run.label.paymentTransfer')} {formatMoney(g.transfer)}
+                    </span>
                   </div>
                 ) : null}
                 {isOpen ? (
@@ -1421,7 +1476,11 @@ export function FinanceSection() {
                           className="flex items-baseline justify-between gap-2 border-b border-[var(--c-divider)] px-3 py-1.5 text-label last:border-b-0"
                         >
                           <span className="truncate">
-                            {l.runDate} · {l.paymentMethod === 'transfer' ? '🏦' : '💵'} {skuName}
+                            {l.runDate} ·{' '}
+                            {l.paymentMethod === 'transfer'
+                              ? i18n.t('run.label.paymentTransfer')
+                              : i18n.t('run.label.paymentCash')}{' '}
+                            {skuName}
                           </span>
                           <span className="font-mono tabular-nums">
                             {formatMoney(l.lineTotal)}
@@ -1458,8 +1517,12 @@ export function FinanceSection() {
                 </button>
                 {mixed ? (
                   <div className="flex items-baseline gap-3 px-3 pb-1.5 text-label text-[var(--c-fg-muted)]">
-                    <span>💵 {formatMoney(g.cash)}</span>
-                    <span>🏦 {formatMoney(g.transfer)}</span>
+                    <span>
+                      {i18n.t('run.label.paymentCash')} {formatMoney(g.cash)}
+                    </span>
+                    <span>
+                      {i18n.t('run.label.paymentTransfer')} {formatMoney(g.transfer)}
+                    </span>
                   </div>
                 ) : null}
                 {isOpen ? (
@@ -1475,7 +1538,11 @@ export function FinanceSection() {
                           className="flex items-baseline justify-between gap-2 border-b border-[var(--c-divider)] px-3 py-1.5 text-label last:border-b-0"
                         >
                           <span className="truncate">
-                            {l.runDate} · {l.paymentMethod === 'transfer' ? '🏦' : '💵'} {skuName}
+                            {l.runDate} ·{' '}
+                            {l.paymentMethod === 'transfer'
+                              ? i18n.t('run.label.paymentTransfer')
+                              : i18n.t('run.label.paymentCash')}{' '}
+                            {skuName}
                           </span>
                           <span className="font-mono tabular-nums">
                             {formatMoney(l.lineTotal)}
@@ -1546,9 +1613,8 @@ export function MaintenanceSection() {
   if (!isSuperAdmin) {
     return (
       <div className="px-4 py-3">
-        <Banner tone="warn" title="Super-admin only">
-          Maintenance actions can permanently delete data. Only members
-          with the super_admin role can use this section.
+        <Banner tone="warn" title={i18n.t('ops.maint.superOnlyTitle')}>
+          {i18n.t('ops.maint.superOnlyBody')}
         </Banner>
       </div>
     );
@@ -1561,13 +1627,10 @@ export function MaintenanceSection() {
         <div className="flex flex-col gap-3 px-4 py-4">
           <div>
             <div className="text-h2 font-semibold text-[var(--c-fg)]">
-              Delete a specific test order or run
+              {i18n.t('ops.maint.targetedTitle')}
             </div>
             <p className="mt-0.5 text-body-sm text-[var(--c-fg-muted)]">
-              Use this when test data and real data exist on the same day.
-              Browse a list, pick the test session or run, see exactly what
-              gets cascade-deleted, then commit. Real users&apos; sessions
-              are NOT touched.
+              {i18n.t('ops.maint.targetedBody')}
             </p>
           </div>
           <TargetedPurgeBrowser />
@@ -1580,13 +1643,10 @@ export function MaintenanceSection() {
         <div className="flex flex-col gap-3 px-4 py-4">
           <div>
             <div className="text-h2 font-semibold text-[var(--c-fg)]">
-              Reset today&apos;s entire flow
+              {i18n.t('ops.maint.resetTodayTitle')}
             </div>
             <p className="mt-0.5 text-body-sm text-[var(--c-fg-muted)]">
-              Wipes every order, run, delivery, notification and price-history
-              row dated <span className="font-mono">{todayIso()}</span> —
-              regardless of who created it. Catalog and members untouched.
-              Use only when you&apos;re sure no real users have data today.
+              {i18n.t('ops.maint.resetTodayBody', { date: todayIso() })}
             </p>
           </div>
           <Button
@@ -1597,7 +1657,7 @@ export function MaintenanceSection() {
               datePreviewMut.mutate({ date: todayIso(), dryRun: true })
             }
           >
-            Reset today
+            {i18n.t('ops.maint.resetToday')}
           </Button>
         </div>
       </Card>
@@ -1609,10 +1669,10 @@ export function MaintenanceSection() {
           <div className="flex flex-col gap-3 px-4 py-4">
             <div>
               <div className="text-h2 font-semibold text-[var(--c-fg)]">
-                Reset a specific date
+                {i18n.t('ops.maint.resetDateTitle')}
               </div>
               <p className="mt-0.5 text-body-sm text-[var(--c-fg-muted)]">
-                Same scope as above, different day. Pick the date below.
+                {i18n.t('ops.maint.resetDateBody')}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -1631,7 +1691,7 @@ export function MaintenanceSection() {
                   datePreviewMut.mutate({ date: dateInput, dryRun: true })
                 }
               >
-                Preview
+                {i18n.t('ops.maint.preview')}
               </Button>
             </div>
           </div>
@@ -1640,21 +1700,18 @@ export function MaintenanceSection() {
 
       {/* ============ Nuclear option ============ */}
       <div className="mt-6">
-        <Banner tone="danger" title="Wipe the entire workspace">
-          The button below deletes every event, run, order, notification
-          and outbox row this workspace has ever produced — regardless
-          of date. Use only if you need a clean-slate restart.
+        <Banner tone="danger" title={i18n.t('ops.maint.wipeTitle')}>
+          {i18n.t('ops.maint.wipeBody')}
         </Banner>
         <div className="mt-3">
           <Card>
             <div className="flex flex-col gap-3 px-4 py-4">
               <div>
                 <div className="text-h2 font-semibold text-[var(--c-fg)]">
-                  Purge ALL test data
+                  {i18n.t('ops.maint.purgeAllTitle')}
                 </div>
                 <p className="mt-0.5 text-body-sm text-[var(--c-fg-muted)]">
-                  Step 1 previews the row counts. Step 2 deletes after
-                  you type the workspace slug to confirm.
+                  {i18n.t('ops.maint.purgeAllBody')}
                 </p>
               </div>
               <Button
@@ -1668,7 +1725,7 @@ export function MaintenanceSection() {
                   );
                 }}
               >
-                Preview everything
+                {i18n.t('ops.maint.previewEverything')}
               </Button>
             </div>
           </Card>
@@ -1679,8 +1736,8 @@ export function MaintenanceSection() {
       <Sheet
         open={dateConfirmOpen}
         onOpenChange={(o) => !o && !dateCommitMut.isPending && setDateConfirmOpen(false)}
-        title={`Reset ${datePreview?.date ?? ''}`}
-        description="Review what will be deleted, then confirm."
+        title={i18n.t('ops.maint.resetSheetTitle', { date: datePreview?.date ?? '' })}
+        description={i18n.t('ops.maint.resetSheetBody')}
         footer={
           <Button
             block
@@ -1733,8 +1790,8 @@ export function MaintenanceSection() {
       <Sheet
         open={allOpen}
         onOpenChange={(o) => !o && !allCommit.isPending && setAllOpen(false)}
-        title="Confirm purge"
-        description={`Type the workspace slug "${orgSlug}" to confirm.`}
+        title={i18n.t('ops.maint.confirmPurgeTitle')}
+        description={i18n.t('ops.maint.confirmPurgeBody', { slug: orgSlug })}
         footer={
           <Button
             block
@@ -1772,7 +1829,7 @@ export function MaintenanceSection() {
               </ul>
               {allDryRun.data.total === 0 ? (
                 <p className="mt-2 text-label text-[var(--c-fg-muted)]">
-                  Nothing to purge — workspace is already clean.
+                  {i18n.t('ops.maint.nothingToPurge')}
                 </p>
               ) : null}
             </div>

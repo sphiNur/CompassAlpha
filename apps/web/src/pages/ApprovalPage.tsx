@@ -34,7 +34,7 @@ import { useI18n, useProductName, useUnitLabel } from '../hooks/useI18n';
 import { getTg, haptic } from '../hooks/useTelegram';
 import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
-import { useStoreContext } from '../components/StoreSwitcher';
+import { StoreChip, useStoreContext } from '../components/StoreSwitcher';
 
 type ApprovalTab = 'pending' | 'approved' | 'rejected';
 
@@ -67,6 +67,8 @@ export function ApprovalPage() {
   //   'all'      → no filter (server still scopes to actor's allowed set)
   //   'none'     → user has no stores; refuse to query
   const storeCtx = useStoreContext();
+  /** Filtered to a single store — the chip already names it. */
+  const storeScoped = storeCtx.kind === 'specific';
 
   const myStores = session?.stores ?? [];
 
@@ -132,10 +134,21 @@ export function ApprovalPage() {
     onError: errToast('common.error'),
   });
 
+  // 2026-07-30 (flow review): `step` was missing from this map while
+  // SessionItems read `Number(sku.step ?? '1')` — and its prop type had
+  // `step?: string`, so TS never complained. Net effect: the approver's
+  // +/- moved in whole units for EVERY SKU. A 0.1 kg-step herb and a
+  // 0.5 kg-step vegetable both jumped by 1 here, while the Order screen
+  // the quantity came from used the real step. `step` is required in the
+  // prop type below now, so the same omission can't come back silently.
   const skuById = useMemo(() => {
-    const m = new Map<string, { names: Record<string, string>; unit: string }>();
+    const m = new Map<string, { names: Record<string, string>; unit: string; step: string }>();
     for (const sku of skusQuery.data ?? []) {
-      m.set(sku.id, { names: sku.names as Record<string, string>, unit: sku.unit });
+      m.set(sku.id, {
+        names: sku.names as Record<string, string>,
+        unit: sku.unit,
+        step: sku.step,
+      });
     }
     return m;
   }, [skusQuery.data]);
@@ -152,6 +165,12 @@ export function ApprovalPage() {
       {/* M3.5: store-switcher pill moved to SettingsSheet. The sticky
          band now only carries the approval-state Tabs. */}
       <StickyPageBar direction="col">
+        {/* 2026-07-30: which store's queue am I looking at? The list is
+            filtered by store context but never said so. On 'all' the chip
+            reads 所有门店, which is equally load-bearing. */}
+        <div className="flex items-center gap-2">
+          <StoreChip />
+        </div>
         {/* M1.9-extra (P6, 2026-05-07): real <Tabs> with roving
             tabindex + ArrowLeft/ArrowRight/Home/End nav. Was
             `ChipBar`-as-tabs with role=tablist/tab on the buttons
@@ -201,25 +220,47 @@ export function ApprovalPage() {
                 <Card key={row.id}>
                   <CardHeader>
                     <div className="flex items-center gap-3">
+                      {/* The avatar is the SUBMITTER's photo (`attribAvatarUrl`),
+                          so `name` — which supplies both the alt text and the
+                          initials fallback — has to be the submitter too.
+                          2026-07-30: it was the STORE name, so a screen reader
+                          announced a person's face as "Eden Magic City", and a
+                          submitter without a photo got the store's initials. */}
                       <Avatar
                         src={row.attribAvatarUrl}
-                        name={row.storeName ?? row.attribDisplayName ?? '?'}
+                        name={row.attribDisplayName ?? '?'}
                         size={32}
                       />
-                      <div>
-                        <CardTitle>{row.storeName ?? row.storeId.slice(0, 8)}</CardTitle>
+                      <div className="min-w-0">
+                        {/*
+                          Which name is the headline depends on what the page
+                          has ALREADY told you (2026-07-30).
+
+                          Filtered to one store, the store chip in the sticky
+                          bar names it once — repeating it on every card spent
+                          the title line restating context and pushed the one
+                          thing that differs between cards, WHO submitted,
+                          down into the muted meta. Scoped to one store the
+                          submitter is the headline; on 所有门店 the store is,
+                          because that's what distinguishes the rows.
+                        */}
+                        <CardTitle>
+                          {storeScoped
+                            ? (row.attribDisplayName ?? i18n.t('approval.unknownReviewer'))
+                            : (row.storeName?.trim() ?? row.storeId.slice(0, 8))}
+                        </CardTitle>
                         <CardMeta>
-                          {/* Attribution = submitter (or initiator if not yet submitted).
-                              M1.9-fix (2026-05-07): all 3 segments and the
+                          {/* M1.9-fix (2026-05-07): all 3 segments and the
                               timestamp locale were hardcoded; non-English
                               users saw English meta on every card. */}
-                          {row.attribDisplayName
-                            ? i18n.t('approval.submittedBy', { name: row.attribDisplayName })
-                            : '—'}
+                          {storeScoped
+                            ? null
+                            : row.attribDisplayName
+                              ? i18n.t('approval.submittedBy', { name: row.attribDisplayName }) + ' · '
+                              : '— · '}
                           {row.contributorCount > 1
-                            ? ' · ' + i18n.t('approval.contributorsCount', { n: row.contributorCount })
+                            ? i18n.t('approval.contributorsCount', { n: row.contributorCount }) + ' · '
                             : ''}
-                          {' · '}
                           {row.orderDate}
                           {/* UI-3 (declutter): dropped the standalone HH:MM
                               time — it wrapped the meta to a second line and
@@ -227,13 +268,38 @@ export function ApprovalPage() {
                         </CardMeta>
                       </div>
                     </div>
-                    <div className="flex shrink-0 items-center gap-1.5">
-                      {/* M1.11 cleanup (2026-05-08): dropped the
-                          "{itemCount} · {totalQty}" Badge — the View
-                          items expansion + the inline estimate row
-                          already surface count + total. The "has
-                          notes" 📝 pill stays — it's the only signal
-                          for the free-text request before expanding. */}
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      {/* M1.11 cleanup (2026-05-08) dropped the
+                          "{itemCount} · {totalQty}" Badge, reasoning that
+                          "the View items expansion + the inline estimate
+                          row already surface count + total".
+
+                          2026-07-30 (flow review): that reasoning is
+                          inverted — triage happens BEFORE expanding. With
+                          nothing on the card, an approver had to open every
+                          single one to find out whether it was a 1-line
+                          top-up or an 80-line weekly shop. The count is
+                          back, now paired with the estimated value (the
+                          number the approve decision actually turns on) and
+                          NOT with the old totalQty, which summed kg and pcs
+                          into one meaningless figure.
+
+                          The "has notes" 📝 pill stays — still the only
+                          pre-expand signal for a free-text request. */}
+                      <span className="whitespace-nowrap text-label tabular-nums text-[var(--c-fg-muted)]">
+                        {i18n.t('approval.itemsCount', { n: row.itemCount })}
+                      </span>
+                      {row.estimatedTotal ? (
+                        <span
+                          className="whitespace-nowrap font-mono text-body font-semibold tabular-nums text-[var(--c-fg)]"
+                          title={i18n.t('order.review.estimateHint', {
+                            known: row.estimatedKnown,
+                            unknown: row.estimatedUnknown,
+                          })}
+                        >
+                          ~{formatMoney(Number(row.estimatedTotal))}
+                        </span>
+                      ) : null}
                       {row.notes ? (
                         <Badge tone="warn" title={i18n.t('order.notes.hasNote')}>
                           {i18n.t('order.notes.badge')}
@@ -474,7 +540,9 @@ function SessionItems({
 }: {
   sessionId: string;
   storeId: string;
-  skuById: Map<string, { names: Record<string, string>; unit: string; step?: string }>;
+  // `step` is REQUIRED (2026-07-30) — see the skuById docblock in the
+  // parent. An optional `step` is how the whole-unit-increment bug hid.
+  skuById: Map<string, { names: Record<string, string>; unit: string; step: string }>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
   isClaimedByMe: boolean;
 }) {
@@ -652,12 +720,17 @@ function SessionItems({
                 <QtyControl
                   size="sm"
                   value={Number(singleRow.qty)}
-                  step={Number(sku.step ?? '1')}
+                  step={Number(sku.step)}
                   unit={unitLabel(sku.unit)}
                   disabled={adjust.isPending}
                   onChange={(next) =>
                     adjust.mutate({
                       storeId,
+                      // 2026-07-30 (flow review): pass the SESSION's date.
+                      // Omitting it made the server default to today, so
+                      // adjusting a session submitted on an earlier day
+                      // looked up the wrong (store, date) row entirely.
+                      date: detail.data?.orderDate,
                       skuId: t.skuId,
                       qty: String(next),
                       targetMemberId: singleRow.contributorMemberId,
@@ -688,12 +761,13 @@ function SessionItems({
                       <QtyControl
                         size="sm"
                         value={Number(r.qty)}
-                        step={Number(sku.step ?? '1')}
+                        step={Number(sku.step)}
                         unit={unitLabel(sku.unit)}
                         disabled={adjust.isPending}
                         onChange={(next) =>
                           adjust.mutate({
                             storeId,
+                            date: detail.data?.orderDate,
                             skuId: t.skuId,
                             qty: String(next),
                             targetMemberId: r.contributorMemberId,

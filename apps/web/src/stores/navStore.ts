@@ -128,6 +128,99 @@ export const useNavStore = create<NavState>()(
         storeFocus: s.storeFocus,
         storeSub: s.storeSub,
       }),
+      /**
+       * Sanitize on rehydrate (2026-07-30).
+       *
+       * `persist` trusts whatever is in localStorage. The types say
+       * `adminSection` is never null and the actions can't produce an
+       * inconsistent pair, but the STORED payload is outside the type
+       * system: a value from an older build, a partially-written entry, a
+       * hand-edited key, or a future field rename all land here verbatim.
+       *
+       * Observed 2026-07-30: a payload carrying `adminSection: null`
+       * alongside `catalogSub: 'skus'` rendered the Admin tab as a blank
+       * page with an empty <h1> — and because admin drill-down has no
+       * in-app back control (it relies on Telegram's chrome BackButton)
+       * and the bad value is PERSISTED, a reload landed straight back on
+       * the same blank screen. No way out without clearing storage.
+       *
+       * Same spirit as `resolveVisibleTab` below and the "stale-tab guard"
+       * this file's header already promises: never let stored state render
+       * a dead end. Anything unrecognized falls back to its default, and a
+       * sub-selection whose parent section isn't active is dropped.
+       */
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<NavState>;
+        const oneOf = <T extends string>(v: unknown, allowed: readonly T[], fallback: T): T =>
+          allowed.includes(v as T) ? (v as T) : fallback;
+        /** Same, but `null` is itself a valid value (a section's own home). */
+        const oneOfOrNull = <T extends string>(v: unknown, allowed: readonly T[]): T | null =>
+          allowed.includes(v as T) ? (v as T) : null;
+
+        const tab = oneOf(
+          p.tab,
+          ['order', 'approve', 'run', 'confirm', 'admin'] as const,
+          DEFAULTS.tab,
+        );
+        const adminSection = oneOf(
+          p.adminSection,
+          ['home', 'organization', 'stores', 'permissions', 'catalog', 'operations'] as const,
+          DEFAULTS.adminSection,
+        );
+        const storeSub = oneOf(
+          p.storeSub,
+          ['team', 'settings', 'inventory', 'sales'] as const,
+          DEFAULTS.storeSub,
+        );
+        // A sub-selection only means anything inside its own section.
+        const catalogSub: CatalogSub =
+          adminSection === 'catalog'
+            ? oneOfOrNull(p.catalogSub, [
+                'categories',
+                'skus',
+                'suppliers',
+                'dishes',
+                'expenseTemplates',
+              ] as const)
+            : null;
+        const opsSub: OperationsSub =
+          adminSection === 'operations'
+            ? oneOfOrNull(p.opsSub, [
+                'activity',
+                'history',
+                'maintenance',
+                'adminAudit',
+                'priceReport',
+                'finance',
+              ] as const)
+            : null;
+        // storeFocus is a discriminated union; accept only its two shapes.
+        const f = p.storeFocus;
+        const storeFocus: StoreFocus =
+          f && typeof f === 'object' && 'kind' in f
+            ? f.kind === 'org-level'
+              ? { kind: 'org-level' }
+              : f.kind === 'store' &&
+                  typeof (f as { storeId?: unknown }).storeId === 'string' &&
+                  typeof (f as { storeName?: unknown }).storeName === 'string'
+                ? {
+                    kind: 'store',
+                    storeId: (f as { storeId: string }).storeId,
+                    storeName: (f as { storeName: string }).storeName,
+                  }
+                : null
+            : null;
+
+        return {
+          ...current,
+          tab,
+          adminSection,
+          catalogSub,
+          opsSub,
+          storeFocus: adminSection === 'stores' ? storeFocus : null,
+          storeSub,
+        };
+      },
     },
   ),
 );

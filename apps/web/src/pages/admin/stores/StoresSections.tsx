@@ -30,8 +30,7 @@ import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { formatMoney, formatQty } from '../../../lib/format';
-import { useI18n, useProductName } from '../../../hooks/useI18n';
-import { getTg } from '../../../hooks/useTelegram';
+import { useDateFormat, useI18n, useProductName, useUnitLabel } from '../../../hooks/useI18n';
 import { nativeConfirm, type StoreFocus, type StoreSub } from '../shared';
 import { PeopleSection } from '../people/PeopleSections';
 
@@ -129,7 +128,7 @@ export function StoresHomeSection({
             setCreateDraft({ name: '', code: '', address: '', timezone: '' })
           }
         >
-          + New store
+          + {i18n.t('admin.store.new')}
         </Button>
       </div>
       <DataState
@@ -137,8 +136,8 @@ export function StoresHomeSection({
         emptyWhen={(d) => d.length === 0 && memberCounts.orgLevel === 0}
         empty={
           <EmptyState
-            title="No stores"
-            description="Create one with the button above to start onboarding your team."
+            title={i18n.t('admin.store.emptyTitle')}
+            description={i18n.t('admin.store.emptyBody')}
           />
         }
       >
@@ -174,8 +173,9 @@ export function StoresHomeSection({
                     </span>
                   </span>
                   <Badge tone="muted">
-                    {memberCounts.orgLevel}{' '}
-                    {memberCounts.orgLevel === 1 ? 'member' : 'members'}
+                    {i18n.t('admin.label.memberCount', {
+                      n: memberCounts.orgLevel,
+                    })}
                   </Badge>
                 </button>
               </li>
@@ -210,7 +210,7 @@ export function StoresHomeSection({
                       <span className="mt-0.5 block text-label text-[var(--c-fg-muted)]">
                         {st.code ? `code ${st.code}` : 'no code'}
                         {' · '}
-                        {count} {count === 1 ? 'member' : 'members'}
+                        {i18n.t('admin.label.memberCount', { n: count })}
                       </span>
                     </span>
                     {/* UIUX-B1: active is the silent default; only the
@@ -227,7 +227,7 @@ export function StoresHomeSection({
       <Sheet
         open={!!createDraft}
         onOpenChange={(open) => !open && setCreateDraft(null)}
-        title="New store"
+        title={i18n.t('admin.store.new')}
         footer={
           <Button
             block
@@ -243,7 +243,7 @@ export function StoresHomeSection({
               });
             }}
           >
-            Create
+            {i18n.t('common.create')}
           </Button>
         }
       >
@@ -289,9 +289,7 @@ export function StoresHomeSection({
               />
             </Field>
             <p className="text-label text-[var(--c-fg-muted)]">
-              You can set the default role and other settings after the
-              store is created — open it from the list and switch to the
-              Settings tab.
+              {i18n.t('admin.store.createHint')}
             </p>
           </div>
         ) : null}
@@ -323,6 +321,7 @@ export function StoreDetailScreen({
   sub: StoreSub;
   onSubChange: (s: StoreSub) => void;
 }) {
+  const i18n = useI18n();
   const isOrgLevel = focus.kind === 'org-level';
   const effectiveSub: StoreSub = isOrgLevel ? 'team' : sub;
   return (
@@ -336,13 +335,13 @@ export function StoreDetailScreen({
           <Segmented<StoreSub>
             value={effectiveSub}
             options={[
-              { value: 'team', label: 'Team' },
-              { value: 'inventory', label: 'Inventory' },
-              { value: 'sales', label: 'Sales' },
-              { value: 'settings', label: 'Settings' },
+              { value: 'team', label: i18n.t('admin.store.tabTeam') },
+              { value: 'inventory', label: i18n.t('admin.store.tabInventory') },
+              { value: 'sales', label: i18n.t('admin.store.tabSales') },
+              { value: 'settings', label: i18n.t('admin.store.tabSettings') },
             ]}
             onChange={onSubChange}
-            ariaLabel="Store section"
+            ariaLabel={i18n.t('admin.store.sectionAria')}
           />
         </div>
       ) : null}
@@ -385,6 +384,9 @@ export function StoreDetailScreen({
  */
 function StoreInventoryTab({ storeId }: { storeId: string }) {
   const i18n = useI18n();
+  // 2026-07-30 (flow review): on-hand quantities printed the raw canonical
+  // unit while the rest of the app printed the localized label.
+  const unitLabel = useUnitLabel();
   const toast = useToast();
   const errToast = useErrToast();
   const productName = useProductName();
@@ -490,7 +492,7 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
                   <div className="flex items-baseline justify-between gap-2">
                     <span className="truncate text-body font-semibold">{r.name}</span>
                     <span className="font-mono text-body tabular-nums">
-                      {formatQty(r.onHand)} {r.unit}
+                      {formatQty(r.onHand)} {unitLabel(r.unit)}
                     </span>
                   </div>
                   {/* M3.17 (2026-05-16): inline pill buttons → Button
@@ -540,7 +542,13 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
           action ? productName({ names: skuById.get(action.skuId)?.names ?? {} }) : ''
         }
         footer={
-          !getTg() && action ? (
+          // 2026-07-30: dropped `!getTg() &&` — same defect as the dish
+          // editor. `getTg()` is truthy in any browser (the Telegram SDK
+          // is a static script tag), and nothing drives the native
+          // MainButton for this sheet, so stocktake / wastage had no
+          // submit button in any environment. See the CatalogSections
+          // dish-editor footer for the full write-up.
+          action ? (
             <Button
               block
               loading={stocktake.isPending || recordWastage.isPending}
@@ -653,6 +661,7 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
  *   - Anyone with read access to the store can see the list.
  */
 function StoreSalesTab({ storeId }: { storeId: string }) {
+  const dateFmt = useDateFormat();
   const i18n = useI18n();
   const toast = useToast();
   const errToast = useErrToast();
@@ -843,10 +852,8 @@ function StoreSalesTab({ storeId }: { storeId: string }) {
               const name = dish
                 ? productName({ names: dish.names })
                 : sale.dishId.slice(0, 8);
-              const time = new Date(sale.occurredAt).toLocaleTimeString(undefined, {
-                hour: '2-digit',
-                minute: '2-digit',
-              });
+              // 2026-07-30: `undefined` meant "browser locale".
+              const time = dateFmt.time(sale.occurredAt);
               const lineTotal =
                 sale.unitPrice && Number(sale.qty) > 0
                   ? Number(sale.qty) * Number(sale.unitPrice)
@@ -1030,17 +1037,16 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
             }
             disabled={!canAdmin}
           >
-            <option value="">— no default (operator picks each invite) —</option>
+            <option value="">{i18n.t('admin.store.noDefaultRole')}</option>
             {storeTierRoles.map((r) => (
               <option key={r.id} value={r.slug}>
-                {r.name} (rank {r.rank})
+                {i18n.t('people.roleNameWithRank', { name: r.name, rank: r.rank })}
               </option>
             ))}
           </Select>
         )}
         <p className="mt-1 text-label text-[var(--c-fg-muted)]">
-          When set, new members invited into this store with no explicit
-          role pick are auto-granted this role.
+          {i18n.t('admin.store.defaultRoleHint')}
         </p>
       </Field>
       <Switch
@@ -1068,7 +1074,7 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
             });
           }}
         >
-          Save
+          {i18n.t('common.save')}
         </Button>
         {/* M1.9: clone-roles requires global admin (was canAdmin + ≥2
             admin stores; per-store managers shouldn't trigger this
@@ -1078,26 +1084,26 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
             variant="pearl"
             onClick={() => setCloneOpen(true)}
           >
-            Clone roles…
+            {i18n.t('admin.action.cloneRoles')}
           </Button>
         ) : null}
         {canAdmin ? (
           <Button
             variant="danger-ghost"
             onClick={() =>
-              nativeConfirm(`Archive "${store.name}"?`, () =>
-                remove.mutate({ storeId }),
+              nativeConfirm(
+                i18n.t('admin.store.confirmArchive', { name: store.name }),
+                () => remove.mutate({ storeId }),
               )
             }
           >
-            Archive
+            {i18n.t('common.archive')}
           </Button>
         ) : null}
       </div>
       {!canAdmin ? (
-        <Banner tone="info" title="Read-only">
-          You don't administer this store. Settings are visible but
-          can't be changed from your account.
+        <Banner tone="info" title={i18n.t('admin.label.readOnly')}>
+          {i18n.t('admin.store.readOnlyBody')}
         </Banner>
       ) : null}
 
@@ -1164,13 +1170,15 @@ function StoreCloneRolesSheet({
     onSuccess: (data) => {
       void utils.admin.storeList.invalidate();
       void utils.admin.memberList.invalidate();
-      const parts = [`Cloned ${data.cloned} role binding${data.cloned === 1 ? '' : 's'}`];
+      const parts = [i18n.t('admin.clone.toastCloned', { n: data.cloned })];
       if (data.skippedExisting > 0)
-        parts.push(`${data.skippedExisting} already existed`);
+        parts.push(
+          i18n.t('admin.clone.toastAlreadyExisted', { n: data.skippedExisting }),
+        );
       if (data.skippedRank > 0)
-        parts.push(`${data.skippedRank} skipped (rank too high)`);
+        parts.push(i18n.t('admin.clone.toastSkippedRank', { n: data.skippedRank }));
       if (data.assigned > 0)
-        parts.push(`${data.assigned} member${data.assigned === 1 ? '' : 's'} assigned`);
+        parts.push(i18n.t('admin.clone.toastAssigned', { n: data.assigned }));
       toast.success(parts.join(' · '));
       onClose();
     },
@@ -1181,8 +1189,10 @@ function StoreCloneRolesSheet({
     <Sheet
       open={open}
       onOpenChange={(o) => !o && !cloneMut.isPending && onClose()}
-      title="Clone roles into store"
-      description={target ? `Target: 🏪 ${target.targetStoreName}` : ''}
+      title={i18n.t('admin.clone.title')}
+      description={
+        target ? i18n.t('admin.clone.target', { store: target.targetStoreName }) : ''
+      }
       footer={
         target ? (
           <Button
@@ -1198,7 +1208,7 @@ function StoreCloneRolesSheet({
               })
             }
           >
-            Clone
+            {i18n.t('admin.clone.action')}
           </Button>
         ) : undefined
       }
@@ -1207,9 +1217,8 @@ function StoreCloneRolesSheet({
         <div className="flex flex-col gap-3 py-3">
           <Field label={`${i18n.t('admin.field.sourceStore')} *`}>
             {sourceCandidates.length === 0 ? (
-              <Banner tone="warn" title="No eligible source">
-                You need to administer at least one OTHER store to clone
-                from. Ask a higher-rank admin to add you to one first.
+              <Banner tone="warn" title={i18n.t('admin.clone.noSourceTitle')}>
+                {i18n.t('admin.clone.noSourceBody')}
               </Banner>
             ) : (
               <Select
@@ -1234,22 +1243,15 @@ function StoreCloneRolesSheet({
             />
             <div className="min-w-0 flex-1">
               <div className="text-body font-semibold text-[var(--c-fg)]">
-                Also assign source members
+                {i18n.t('admin.clone.alsoMembers')}
               </div>
               <p className="mt-0.5 text-label text-[var(--c-fg-muted)]">
-                When on, every member with an MSA row in the source
-                store also gets one for the target — they'll see and
-                operate in both. Off (default) clones only the role
-                shape; you staff the target with different people.
+                {i18n.t('admin.clone.alsoMembersHint')}
               </p>
             </div>
           </label>
-          <Banner tone="info" title="What this does">
-            For every store-scoped role binding in the source store,
-            create the same binding in {target.targetStoreName} (skip
-            duplicates). Roles you don't outrank in {target.targetStoreName}
-            are skipped — counted separately so you know what to do
-            manually.
+          <Banner tone="info" title={i18n.t('admin.clone.whatTitle')}>
+            {i18n.t('admin.clone.whatBody', { store: target.targetStoreName })}
           </Banner>
         </div>
       ) : null}

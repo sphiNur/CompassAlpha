@@ -22,6 +22,7 @@ import {
   SetSessionExtrasInputSchema,
   SetSessionNoteInputSchema,
   SimpleSessionCommandSchema,
+  TodayBatchesInputSchema,
   TodaySessionInputSchema,
   UnapproveInputSchema,
 } from '@compass/contracts';
@@ -39,6 +40,7 @@ import { authedProcedure, idempotentMutation, rethrowDomainError, router } from 
 import { appendEvents, readStream } from '../../services/eventStore';
 import { projectOrder } from '../../services/orderProjection';
 import { dispatchOrderEventNotifications } from '../../services/notifyForEvent';
+import { estimateLines, loadSkuPriceStats } from '../../services/priceStats';
 import {
   assertActorAssignedToStore,
   effectivePermissionsForStore,
@@ -146,6 +148,19 @@ export const orderRouter = router({
       const items = await tx.query.orderItemsV.findMany({
         where: (it, { eq: eq2 }) => eq2(it.sessionId, session.id),
       });
+      // 2026-07-30: resolve the claimer's name. The Order page's
+      // "under review by X" banner had `who: 'manager'` hardcoded — an
+      // English literal, and the same "nobody can tell WHO is sitting on
+      // it" problem M3.22 fixed for the approval queue. sessionDetail and
+      // pendingList already ship this; todaySession didn't.
+      const claimerRow = session.claimedByMemberId
+        ? await tx
+            .select({ displayName: s.users.displayName })
+            .from(s.members)
+            .innerJoin(s.users, eq(s.users.id, s.members.userId))
+            .where(eq(s.members.id, session.claimedByMemberId))
+            .limit(1)
+        : [];
       // Per-(sku, member) rows. Aggregate by sku for the UI's running
       // total; also expose the raw per-contributor rows so the OrderPage
       // can show "Apple — your 3, total 5" and ApprovalPage can show
@@ -163,6 +178,7 @@ export const orderRouter = router({
         orderDate: session.orderDate,
         status: session.status,
         claimedByMemberId: session.claimedByMemberId,
+        claimedByDisplayName: claimerRow[0]?.displayName ?? null,
         claimedAt: session.claimedAt?.toISOString() ?? null,
         submittedAt: session.submittedAt?.toISOString() ?? null,
         decidedAt: session.decidedAt?.toISOString() ?? null,
@@ -205,6 +221,103 @@ export const orderRouter = router({
 
   /** Look up a session by id (any status). Used by ApprovalPage's expand-row,
    *  Withdraw history, RunPage's session-list. */
+  /**
+   * Every session this member started for one (store, date) (2026-07-30).
+   *
+   * `todaySession` deliberately returns ONE session — the open draft, else
+   * the most recent unclaimed submitted one. That's the right answer for
+   * "what am I editing", and it was also the only thing the Order page
+   * knew, which made M3.32's multi-batch-per-day support invisible: submit
+   * a batch, start another, and the first one silently vanished from your
+   * view. There was no list, no count, and no way back to what you'd sent.
+   *
+   * This is the list. Cheap enough to run alongside todaySession on every
+   * Order-page mount: one indexed read plus a single price-history scan
+   * shared across the batches.
+   */
+  todayBatches: authedProcedure
+    .input(TodayBatchesInputSchema)
+    .query(async ({ ctx, input }) => {
+      return ctx.withOrg(async (tx) => {
+        const store = await tx.query.stores.findFirst({
+          where: (st, { eq: eq2, and: and2 }) =>
+            and2(eq2(st.id, input.storeId), eq2(st.orgId, ctx.session!.orgId)),
+        });
+        if (!store) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.storeForbidden' });
+        }
+        await assertActorAssignedToStore(
+          tx,
+          ctx.session!.memberId,
+          input.storeId,
+          ctx.session!.permissions,
+        );
+
+        const date = input.date ?? todayInOrgTz(ctx);
+        const sessions = await tx.query.orderSessionsV.findMany({
+          where: (sess, { eq: eq2, and: and2 }) =>
+            and2(
+              eq2(sess.orgId, ctx.session!.orgId),
+              eq2(sess.storeId, input.storeId),
+              eq2(sess.orderDate, date),
+              eq2(sess.initiatedByMemberId, ctx.session!.memberId),
+            ),
+          // `submittedAt ASC NULLS LAST`: immutable once set, so a batch
+          // keeps its number while the user keeps editing. The open draft
+          // (null) sorts last and becomes the highest number, which is
+          // what "the one I'm working on now" should be. There is no
+          // createdAt on this read model, and updatedAt would reshuffle
+          // the list on every keystroke.
+          orderBy: (sess) => sql`${sess.submittedAt} asc nulls last`,
+        });
+        if (sessions.length === 0) return [];
+
+        const ids = sessions.map((x) => x.id);
+        const items = await tx.query.orderItemsV.findMany({
+          where: (it, { inArray: inArray2 }) => inArray2(it.sessionId, ids),
+        });
+
+        // Per-session distinct-SKU totals, so itemCount matches what the
+        // review sheet and the approval card call "N 项".
+        const qtyBySession = new Map<string, Map<string, number>>();
+        for (const it of items) {
+          const qty = Number(it.qty);
+          if (!(qty > 0)) continue;
+          const perSku = qtyBySession.get(it.sessionId) ?? new Map<string, number>();
+          perSku.set(it.skuId, (perSku.get(it.skuId) ?? 0) + qty);
+          qtyBySession.set(it.sessionId, perSku);
+        }
+
+        const allSkuIds = new Set<string>();
+        for (const perSku of qtyBySession.values()) {
+          for (const skuId of perSku.keys()) allSkuIds.add(skuId);
+        }
+        const priceStats =
+          allSkuIds.size > 0
+            ? await loadSkuPriceStats(tx, ctx.session!.orgId, [...allSkuIds])
+            : new Map();
+
+        return sessions.map((sess, idx) => {
+          const perSku = qtyBySession.get(sess.id) ?? new Map<string, number>();
+          const est = estimateLines(
+            [...perSku.entries()].map(([skuId, qty]) => ({ skuId, qty })),
+            priceStats,
+          );
+          return {
+            id: sess.id,
+            status: sess.status,
+            /** 1-based position among today's batches — what the UI labels. */
+            batchNumber: idx + 1,
+            submittedAt: sess.submittedAt?.toISOString() ?? null,
+            claimedByMemberId: sess.claimedByMemberId,
+            itemCount: perSku.size,
+            extrasCount: (sess.extrasJson as unknown[] | null)?.length ?? 0,
+            estimatedTotal: est.known > 0 ? est.total.toFixed(2) : null,
+          };
+        });
+      });
+    }),
+
   sessionDetail: authedProcedure
     .input(SessionDetailInputSchema)
     .query(async ({ ctx, input }) => {
@@ -428,12 +541,46 @@ export const orderRouter = router({
         });
       }
 
+      // 2026-07-30 (flow review): approval cards carried store, submitter
+      // and date but NOT what was in the order. M1.11 had removed the
+      // "{itemCount} · {totalQty}" badge on the grounds that "the View
+      // items expansion + the inline estimate row already surface count +
+      // total" — but triage happens BEFORE expanding, so the approver had
+      // to open every card just to learn whether it held 1 line or 80.
+      //
+      // We ship the count (already aggregated above) plus an estimated
+      // value, priced by the same avg-7d rule the detail view and the
+      // order review sheet use, so the two never disagree. One extra
+      // price-history scan for the whole page, not one per card.
+      const allSkuIds = new Set<string>();
+      for (const skuTotals of skuTotalsBySession.values()) {
+        for (const [skuId, qty] of skuTotals) if (qty > 0) allSkuIds.add(skuId);
+      }
+      const priceStats =
+        allSkuIds.size > 0
+          ? await loadSkuPriceStats(tx, ctx.session!.orgId, [...allSkuIds])
+          : new Map();
+      const estimateBySession = new Map<
+        string,
+        { total: number; known: number; unknown: number }
+      >();
+      for (const [sessionId, skuTotals] of skuTotalsBySession) {
+        estimateBySession.set(
+          sessionId,
+          estimateLines(
+            [...skuTotals.entries()].map(([skuId, qty]) => ({ skuId, qty })),
+            priceStats,
+          ),
+        );
+      }
+
       return sessions.map((sess) => {
         const agg = aggregateBySession.get(sess.id) ?? {
           itemCount: 0,
           totalQty: 0,
           contributors: new Set<string>(),
         };
+        const est = estimateBySession.get(sess.id) ?? { total: 0, known: 0, unknown: 0 };
         const store = storeById.get(sess.storeId);
         const attribMemberId = sess.submittedByMemberId ?? sess.initiatedByMemberId;
         const member = attribMemberId ? memberById.get(attribMemberId) : null;
@@ -465,6 +612,17 @@ export const orderRouter = router({
           itemCount: agg.itemCount,
           totalQty: agg.totalQty.toFixed(3).replace(/\.?0+$/, ''),
           contributorCount: agg.contributors.size,
+          /**
+           * Estimated order value (2026-07-30), avg-7d per SKU with
+           * last-price fallback — identical rule to `catalog.skuPriceStats`
+           * consumers. `estimatedKnown` / `estimatedUnknown` count the
+           * lines that could and could not be priced, so the FE can say
+           * "~450K" honestly instead of passing off a partial sum as the
+           * whole order. Null total when nothing could be priced at all.
+           */
+          estimatedTotal: est.known > 0 ? est.total.toFixed(2) : null,
+          estimatedKnown: est.known,
+          estimatedUnknown: est.unknown,
         };
       });
     });
@@ -530,11 +688,51 @@ export const orderRouter = router({
       //     row. If the staff has multiple sessions, pick the most
       //     recent submitted (or draft) since that's what the manager
       //     just claimed.
-      const isManagerEdit =
-        input.targetMemberId !== undefined &&
-        input.targetMemberId !== ctx.session!.memberId;
+      //
+      // 2026-07-30 (flow review) — the discriminator was wrong.
+      //
+      // It read `targetMemberId !== undefined && targetMemberId !== me`.
+      // But `targetMemberId` is ONLY ever sent by the approval surface;
+      // the order surface omits it entirely. So the extra `!== me` clause
+      // did nothing except misroute the one case where approver ==
+      // submitter — a completely normal setup (super_admin, or an owner /
+      // single-store manager who drafts their own store's order and then
+      // approves it).
+      //
+      // In that case `isManagerEdit` came out false, the lookup asked for
+      // "my DRAFT for today", missed the submitted session the approver
+      // had just claimed, fell through to the lazy-create branch below
+      // (whose guard has the same redundant `!== me` clause, so it didn't
+      // stop it either) and SILENTLY CREATED A SECOND DRAFT, writing the
+      // approver's edit there. HTTP 200, `applied: []`-shaped response, no
+      // toast, the number on screen unchanged — and a phantom order that
+      // then shadowed the real one on the staff's Order page.
+      //
+      // Reproduced on 2026-07-30: submitted 洋葱 0.5 → claimed → tapped +
+      // → DB held `submitted 0.500` untouched plus a new `draft 1.500`.
+      //
+      // Presence of `targetMemberId` IS the intent signal. The domain's
+      // assertCanEditSession still re-checks status + claimer, so this
+      // only decides WHICH session row we load.
+      const isManagerEdit = input.targetMemberId !== undefined;
       let session = isManagerEdit
-        ? await tx.query.orderSessionsV.findFirst({
+        ? // Prefer the session this actor has actually claimed. Without
+          // this, `orderBy updatedAt` could hand back the approver's own
+          // unrelated draft for the same (store, date) when approver ==
+          // submitter — the multi-batch case from M3.32.
+          (await tx.query.orderSessionsV.findFirst({
+            where: (sess, { eq: eq2, and: and2 }) =>
+              and2(
+                eq2(sess.orgId, ctx.session!.orgId),
+                eq2(sess.storeId, input.storeId),
+                eq2(sess.orderDate, date),
+                eq2(sess.initiatedByMemberId, ownerForLookup),
+                eq2(sess.status, 'submitted'),
+                eq2(sess.claimedByMemberId, ctx.session!.memberId),
+              ),
+            orderBy: (sess, { desc }) => desc(sess.updatedAt),
+          })) ??
+          (await tx.query.orderSessionsV.findFirst({
             where: (sess, { eq: eq2, and: and2, inArray: inArray2 }) =>
               and2(
                 eq2(sess.orgId, ctx.session!.orgId),
@@ -544,7 +742,7 @@ export const orderRouter = router({
                 inArray2(sess.status, ['submitted', 'draft']),
               ),
             orderBy: (sess, { desc }) => desc(sess.updatedAt),
-          })
+          }))
         : await tx.query.orderSessionsV.findFirst({
             where: (sess, { eq: eq2, and: and2 }) =>
               and2(
@@ -565,7 +763,13 @@ export const orderRouter = router({
         // OWN session. A manager passing targetMemberId for a staff
         // whose session doesn't exist yet must not create a phantom
         // draft on their behalf — the staff has to start their own.
-        if (input.targetMemberId && input.targetMemberId !== ctx.session!.memberId) {
+        //
+        // 2026-07-30: dropped the `!== me` clause for the same reason as
+        // `isManagerEdit` above — it let the approver == submitter case
+        // slip through and lazy-create the phantom draft this guard exists
+        // to prevent. Any request carrying targetMemberId comes from the
+        // approval surface and must edit an EXISTING session or fail loudly.
+        if (isManagerEdit) {
           throw new TRPCError({
             code: 'NOT_FOUND',
             message: 'order.errors.sessionMissing',

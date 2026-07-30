@@ -81,6 +81,39 @@ export function getTg(): TelegramWebApp | null {
 }
 
 /**
+ * Are we ACTUALLY running inside a Telegram client? (2026-07-30)
+ *
+ * `getTg()` above answers a different question — "is the WebApp SDK
+ * object present" — and `index.html` loads telegram-web-app.js from a
+ * static <script> tag, so it is TRUE in every browser. Six call sites had
+ * been using it (or `!!window.Telegram`) to decide whether Telegram's
+ * native chrome would render something for us, and therefore always chose
+ * the "Telegram is here, it'll provide the affordance" branch:
+ *
+ *   - AdminPage's SectionFrame hid its in-page back chevron, so admin
+ *     drill-down had NO way back outside Telegram (and the section is
+ *     persisted, so a reload landed on the same page).
+ *   - Shell rendered the Telegram chrome-reserve strip instead of its own
+ *     header, so the app never showed a title or the org name.
+ *   - Three sheets suppressed their own submit button in favour of a
+ *     native MainButton that M3.49 had permanently hidden — leaving the
+ *     dish editor, stocktake/wastage and the qty quick-pick with no way
+ *     to confirm at all.
+ *
+ * `initData` is the honest signal: Telegram populates it (a signed query
+ * string) only when the page is opened as a Mini App. AuthGate has been
+ * using exactly this check for its dev-bypass path since M1.
+ *
+ * Use `getTg()` when you just want to CALL the SDK — haptics,
+ * showConfirm, MainButton.hide() — where a no-op outside Telegram is
+ * fine. Use this when the answer changes what we RENDER.
+ */
+export function isInTelegram(): boolean {
+  const tg = getTg();
+  return !!tg?.initData && tg.initData.length > 0;
+}
+
+/**
  * Trigger Telegram's native haptic feedback. Safe to call outside
  * Telegram (no-op). Prefer this over the raw API so we have one
  * place to throttle / mute haptics later.

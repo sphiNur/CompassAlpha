@@ -38,7 +38,6 @@ import { useErrToast } from '../../../lib/errToast';
 import { formatMoney, formatQty } from '../../../lib/format';
 import { matchesNameLike, normalizeQuery } from '../../../lib/searchMatch';
 import { useI18n, useProductName } from '../../../hooks/useI18n';
-import { getTg } from '../../../hooks/useTelegram';
 import { nativeConfirm } from '../shared';
 
 interface CategoryDraft {
@@ -101,13 +100,18 @@ export function CategoriesSection() {
             })
           }
         >
-          + New category
+          + {i18n.t('catalog.category.newButton')}
         </Button>
       </div>
       <DataState
         query={categoriesQuery}
         emptyWhen={(d) => d.length === 0}
-        empty={<EmptyState title="No categories" description="Used to group SKUs in the order page." />}
+        empty={
+          <EmptyState
+            title={i18n.t('catalog.category.emptyTitle')}
+            description={i18n.t('catalog.category.emptyBody')}
+          />
+        }
       >
         {(rows) => (
           <ul className="flex flex-col gap-2" role="list">
@@ -152,7 +156,7 @@ export function CategoriesSection() {
                         })
                       }
                     >
-                      Edit
+                      {i18n.t('common.edit')}
                     </Button>
                     {!c.isArchived ? (
                       <Button
@@ -165,7 +169,7 @@ export function CategoriesSection() {
                           )
                         }
                       >
-                        Archive
+                        {i18n.t('common.archive')}
                       </Button>
                     ) : null}
                   </div>
@@ -179,7 +183,7 @@ export function CategoriesSection() {
       <Sheet
         open={!!draft}
         onOpenChange={(open) => !open && setDraft(null)}
-        title={draft?.categoryId ? 'Edit category' : 'New category'}
+        title={i18n.t(draft?.categoryId ? 'catalog.category.edit' : 'catalog.category.new')}
         footer={
           <Button
             block
@@ -214,7 +218,7 @@ export function CategoriesSection() {
               }
             }}
           >
-            {draft?.categoryId ? 'Save' : 'Create'}
+            {draft?.categoryId ? i18n.t('common.save') : i18n.t('common.create')}
           </Button>
         }
       >
@@ -234,7 +238,7 @@ export function CategoriesSection() {
                 value={draft.nameUz}
                 onChange={(e) => setDraft({ ...draft, nameUz: e.target.value })}
                 maxLength={200}
-                placeholder="Sabzavotlar"
+                placeholder="Sabzavotlar" /* i18n-exempt: example word FOR that specific language field */
               />
             </Field>
             <Field label={`${i18n.t('admin.field.nameInLocale', { locale: 'Русский' })} *`}>
@@ -250,7 +254,7 @@ export function CategoriesSection() {
                 value={draft.nameEn}
                 onChange={(e) => setDraft({ ...draft, nameEn: e.target.value })}
                 maxLength={200}
-                placeholder="Vegetables"
+                placeholder="Vegetables" /* i18n-exempt: example word FOR that specific language field */
               />
             </Field>
             <Field label={`${i18n.t('admin.field.nameInLocale', { locale: '中文' })} *`}>
@@ -385,7 +389,7 @@ export function SkusSection() {
             })
           }
         >
-          + New SKU
+          + {i18n.t('catalog.sku.new')}
         </Button>
         <div className="ml-auto">
           <Switch
@@ -474,19 +478,21 @@ export function SkusSection() {
                         })
                       }
                     >
-                      Edit
+                      {i18n.t('common.edit')}
                     </Button>
                     {!sk.isArchived ? (
                       <Button
                         size="sm"
                         variant="danger-ghost"
                         onClick={() =>
-                          nativeConfirm(`Archive SKU "${primary}"?`, () =>
+                          nativeConfirm(
+                            i18n.t('catalog.sku.confirmArchive', { name: primary }),
+                            () =>
                             remove.mutate({ skuId: sk.id }),
                           )
                         }
                       >
-                        Archive
+                        {i18n.t('common.archive')}
                       </Button>
                     ) : (
                       <Button
@@ -494,7 +500,7 @@ export function SkusSection() {
                         variant="pearl"
                         onClick={() => update.mutate({ skuId: sk.id, isArchived: false })}
                       >
-                        Unarchive
+                        {i18n.t('common.unarchive')}
                       </Button>
                     )}
                   </div>
@@ -509,7 +515,7 @@ export function SkusSection() {
       <Sheet
         open={!!draft}
         onOpenChange={(open) => !open && setDraft(null)}
-        title={draft?.skuId ? 'Edit SKU' : 'New SKU'}
+        title={i18n.t(draft?.skuId ? 'catalog.sku.edit' : 'catalog.sku.new')}
         footer={
           <Button
             block
@@ -553,7 +559,7 @@ export function SkusSection() {
               }
             }}
           >
-            {draft?.skuId ? 'Save' : 'Create'}
+            {draft?.skuId ? i18n.t('common.save') : i18n.t('common.create')}
           </Button>
         }
       >
@@ -567,7 +573,7 @@ export function SkusSection() {
                 value={draft.nameUz}
                 onChange={(e) => setDraft({ ...draft, nameUz: e.target.value })}
                 maxLength={200}
-                placeholder="Pomidor"
+                placeholder="Pomidor" /* i18n-exempt: example word FOR that specific language field */
                 autoFocus
               />
             </Field>
@@ -584,7 +590,7 @@ export function SkusSection() {
                 value={draft.nameEn}
                 onChange={(e) => setDraft({ ...draft, nameEn: e.target.value })}
                 maxLength={200}
-                placeholder="Tomato"
+                placeholder="Tomato" /* i18n-exempt: example word FOR that specific language field */
               />
             </Field>
             <Field label={`${i18n.t('admin.field.nameInLocale', { locale: '中文' })} *`}>
@@ -716,7 +722,7 @@ export function SuppliersSection() {
             })
           }
         >
-          + New supplier
+          + {i18n.t('catalog.supplier.newButton')}
         </Button>
         <div className="ml-auto">
           <Switch
@@ -729,7 +735,12 @@ export function SuppliersSection() {
       <DataState
         query={suppliersQuery}
         emptyWhen={(d) => d.length === 0}
-        empty={<EmptyState title="No suppliers" description="Track who you buy from at the market." />}
+        empty={
+          <EmptyState
+            title={i18n.t('catalog.supplier.emptyTitle')}
+            description={i18n.t('catalog.supplier.emptyBody')}
+          />
+        }
       >
         {(rows) => (
           <ul className="flex flex-col gap-2" role="list">
@@ -762,19 +773,21 @@ export function SuppliersSection() {
                       })
                     }
                   >
-                    Edit
+                    {i18n.t('common.edit')}
                   </Button>
                   {!sp.isArchived ? (
                     <Button
                       size="sm"
                       variant="danger-ghost"
                       onClick={() =>
-                        nativeConfirm(`Archive supplier "${sp.name}"?`, () =>
+                        nativeConfirm(
+                          i18n.t('catalog.supplier.confirmArchive', { name: sp.name }),
+                          () =>
                           remove.mutate({ supplierId: sp.id }),
                         )
                       }
                     >
-                      Archive
+                      {i18n.t('common.archive')}
                     </Button>
                   ) : (
                     <Button
@@ -782,7 +795,7 @@ export function SuppliersSection() {
                       variant="pearl"
                       onClick={() => update.mutate({ supplierId: sp.id, isArchived: false })}
                     >
-                      Unarchive
+                      {i18n.t('common.unarchive')}
                     </Button>
                   )}
                 </div>
@@ -795,7 +808,7 @@ export function SuppliersSection() {
       <Sheet
         open={!!draft}
         onOpenChange={(open) => !open && setDraft(null)}
-        title={draft?.supplierId ? 'Edit supplier' : 'New supplier'}
+        title={i18n.t(draft?.supplierId ? 'catalog.supplier.edit' : 'catalog.supplier.new')}
         footer={
           <Button
             block
@@ -824,7 +837,7 @@ export function SuppliersSection() {
               }
             }}
           >
-            {draft?.supplierId ? 'Save' : 'Create'}
+            {draft?.supplierId ? i18n.t('common.save') : i18n.t('common.create')}
           </Button>
         }
       >
@@ -1488,7 +1501,21 @@ export function DishesSection() {
             : i18n.t('dishes.sheet.newTitle')
         }
         footer={
-          !getTg() && draft ? (
+          // 2026-07-30: was `!getTg() && draft`, i.e. "only outside
+          // Telegram, because inside it the native MainButton is the CTA".
+          // Two things were wrong with that. `getTg()` is truthy in ANY
+          // browser — index.html loads telegram-web-app.js statically — so
+          // the footer never rendered anywhere. And nothing has driven the
+          // native MainButton for this sheet since M3.49 retired it in
+          // favour of the in-DOM PageMainButton, which this page doesn't
+          // register either. Net result: creating or editing a dish was
+          // impossible, in every environment. Verified in the browser —
+          // the sheet's only button was "+ 添加食材".
+          //
+          // M3.49 already made exactly this fix for ConfirmPage's issue
+          // sheet and RunSheets' confirm sheet ("Was `!inTelegram` … no
+          // longer correct"); these two admin sheets were missed.
+          draft ? (
             <Button
               block
               loading={create.isPending || update.isPending || setIngredients.isPending}
