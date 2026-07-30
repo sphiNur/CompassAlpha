@@ -244,6 +244,7 @@ function ShellInner() {
     if (!tg || !inTelegram) {
       const root = document.documentElement;
       root.style.removeProperty('--app-chrome-reserve');
+      root.style.removeProperty('--app-chrome-safe-top');
       root.style.removeProperty('--app-chrome-pad-left');
       root.style.removeProperty('--app-chrome-pad-right');
       return;
@@ -260,6 +261,20 @@ function ShellInner() {
       const chromeRowFloor =
         platform === 'android' ? 56 : platform === 'tdesktop' ? 0 : 64;
       // --- Vertical chrome reserve ---
+      // 2026-07-30: publish the SDK's own safe-area top alongside the
+      // reserve. The strip that holds the store title needs to know
+      // which slice of `--app-chrome-reserve` is device safe-area
+      // (notch / dynamic island) and which is Telegram's actual button
+      // row, so it can center the title on the BUTTONS rather than on
+      // the whole strip. It used to derive that from CSS
+      // `--app-safe-top` — `max(env(safe-area-inset-top), 16px)` — a
+      // different source of truth with a 16px floor the SDK value
+      // doesn't have, so the two disagreed and the title rendered a
+      // few px below the Close / ⋯ centerline.
+      document.documentElement.style.setProperty(
+        '--app-chrome-safe-top',
+        `${tg.safeAreaInset?.top ?? 0}px`,
+      );
       const contentTop = tg.contentSafeAreaInset?.top;
       if (typeof contentTop === 'number' && contentTop > 0) {
         const safeTop = tg.safeAreaInset?.top ?? 0;
@@ -369,14 +384,24 @@ function ShellInner() {
         // a ~56 px row, which the variable now picks up correctly.
         //
         // 2026-07-30: the strip is no longer blank — it carries the
-        // current store, centered, which is exactly the slot Telegram
-        // leaves free between its Close button (left) and ⋯ overflow
-        // (right). The horizontal padding is the SAME pair of vars the
-        // sticky page bars use, so the label can never slide under
-        // either button; `paddingTop` drops it below the device safe
-        // area so it lands in the chrome ROW rather than the notch
-        // (`--app-chrome-reserve` spans safe-area + chrome row, and
-        // box-border makes the padding eat the safe-area share).
+        // current store, sitting where Telegram puts a bot title:
+        // between the Close button (left) and the ⋯ overflow (right).
+        //
+        // Padding is the LARGER of the two chrome pads on BOTH sides,
+        // not each side's own value. Telegram's right cluster is wider
+        // than Close (96px vs 56px measured on Android), so per-side
+        // padding centers the title in the free GAP — about 30px left
+        // of the screen's center line, which reads as misaligned right
+        // next to Telegram's own screen-centered chrome. Padding both
+        // sides by max() puts the title on the true center line while
+        // still clearing the wider cluster, so it cannot slide under
+        // either button.
+        //
+        // `paddingTop` drops it below the device safe area so it lands
+        // on the button row rather than in the notch — using the SDK's
+        // `--app-chrome-safe-top`, the same source the height came
+        // from (box-border makes that padding eat the safe-area share
+        // of `--app-chrome-reserve`, leaving exactly the button row).
         <div
           className="flex items-center justify-center"
           style={{
@@ -384,9 +409,11 @@ function ShellInner() {
             height:
               'var(--app-chrome-reserve, calc(var(--app-safe-top) + 36px))',
             background: 'var(--c-bg)',
-            paddingTop: 'var(--app-safe-top)',
-            paddingLeft: 'var(--app-chrome-pad-left, 16px)',
-            paddingRight: 'var(--app-chrome-pad-right, 16px)',
+            paddingTop: 'var(--app-chrome-safe-top, 0px)',
+            paddingLeft:
+              'max(var(--app-chrome-pad-left, 16px), var(--app-chrome-pad-right, 16px))',
+            paddingRight:
+              'max(var(--app-chrome-pad-left, 16px), var(--app-chrome-pad-right, 16px))',
           }}
         >
           <StoreChip />

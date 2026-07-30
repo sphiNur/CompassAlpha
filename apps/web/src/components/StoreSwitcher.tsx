@@ -172,16 +172,32 @@ export function StoreChip({ className }: { className?: string } = {}) {
       : (stores.find((st) => st.id === ctx.storeId)?.name.trim() ??
         i18n.t('storeSwitcher.pickStore'));
 
-  // `min-w-0 truncate` + `shrink` so a long store name yields to the
-  // controls beside it instead of pushing them off a 375 px screen.
-  const shell = 'inline-flex min-w-0 shrink items-center gap-1 rounded-[var(--r-pill)] px-2 py-0.5 text-label';
+  /**
+   * Styled as a TITLE, not a control.
+   *
+   * 2026-07-30, from Telegram screenshots: as a pale `--c-surface-2`
+   * pill at `text-label` (11px) this sat between Telegram's Close and
+   * ⋯ — solid dark pills roughly twice its height, white glyphs, high
+   * contrast — and read as a stray app widget dropped into the title
+   * bar rather than the screen's title. It is also the single most
+   * load-bearing piece of context on the page ("which store am I
+   * ordering for") rendered at the smallest type size in the frame.
+   *
+   * Telegram's own rule is the one to follow: the buttons flanking the
+   * bar are pills, the bot title between them is plain text. So: no
+   * fill, no ring, `text-body` semibold at full `--c-fg`. The ▾ stays
+   * for actors who can switch — it is the only remaining hint that the
+   * title is tappable, so it carries that weight alone now.
+   *
+   * `min-w-0 truncate` + `shrink` so a long store name truncates
+   * instead of pushing into either chrome button.
+   */
+  const shell = 'inline-flex min-w-0 shrink items-center gap-1 text-body font-semibold';
 
   if (!canSwitch) {
     return (
-      <span
-        className={cn(shell, 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]', className)}
-      >
-        <span className="truncate font-medium text-[var(--c-fg)]">{label}</span>
+      <span className={cn(shell, className)}>
+        <span className="truncate text-[var(--c-fg)]">{label}</span>
       </span>
     );
   }
@@ -192,13 +208,9 @@ export function StoreChip({ className }: { className?: string } = {}) {
         type="button"
         onClick={() => setOpen(true)}
         aria-label={i18n.t('storeSwitcher.aria')}
-        className={cn(
-          shell,
-          'press bg-[var(--c-surface-2)] ring-hairline active:opacity-70',
-          className,
-        )}
+        className={cn(shell, 'press active:opacity-60', className)}
       >
-        <span className="truncate font-medium text-[var(--c-fg)]">{label}</span>
+        <span className="truncate text-[var(--c-fg)]">{label}</span>
         <span aria-hidden className="shrink-0 text-[var(--c-fg-muted)]">
           ▾
         </span>
