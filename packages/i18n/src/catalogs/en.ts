@@ -54,6 +54,267 @@ export const en = {
   'common.close': 'Close',
   'common.retry': 'Retry',
   'common.loading': 'Loading…',
+  'common.errorUnknown': 'Unknown error',
+  // 2026-07-30: QtyControl lives in @compass/ui (no i18n dep) and had
+  // these frozen in English. Bridged via app/UiLabelsBridge.tsx.
+  'qty.decrement': 'Decrease',
+  'qty.increment': 'Increase',
+  'qty.pickAria': 'Quantity {value} — tap to choose',
+  'qty.setTitle': 'Set quantity',
+  'qty.unitIs': 'Unit: {unit}',
+  'qty.custom': 'Custom',
+  'qty.setValue': 'Set {value}',
+  'photo.label': 'Receipt photo',
+  'photo.remove': 'Remove photo',
+  'photo.hint': 'Tap to take a photo',
+  'photo.uploading': 'Uploading…',
+  'common.create': 'Create',
+  'common.edit': 'Edit',
+  'common.delete': 'Delete',
+  'catalog.category.new': 'New category',
+  'catalog.category.edit': 'Edit category',
+  'catalog.category.emptyTitle': 'No categories',
+  'catalog.category.emptyBody': 'Used to group SKUs in the order page.',
+  'catalog.sku.new': 'New SKU',
+  'catalog.sku.edit': 'Edit SKU',
+  'catalog.sku.confirmArchive': 'Archive SKU "{name}"?',
+  'catalog.supplier.new': 'New supplier',
+  'catalog.supplier.edit': 'Edit supplier',
+  'catalog.supplier.emptyTitle': 'No suppliers',
+  'catalog.supplier.emptyBody': 'Track who you buy from at the market.',
+  'catalog.supplier.confirmArchive': 'Archive supplier "{name}"?',
+  'admin.store.new': 'New store',
+  'admin.store.emptyTitle': 'No stores',
+  'admin.store.emptyBody': 'Create one with the button above to start onboarding your team.',
+  'admin.store.confirmArchive': 'Archive "{name}"?',
+  'admin.store.tabTeam': 'Team',
+  'admin.store.tabInventory': 'Inventory',
+  'admin.store.tabSales': 'Sales',
+  'admin.store.tabSettings': 'Settings',
+  'nav.primaryAriaLabel': 'Main sections',
+  'admin.store.createHint':
+    'You can set the default role and other settings after the store is created — open it from the list and switch to the Settings tab.',
+  'admin.store.readOnlyBody':
+    "You don't administer this store. Settings are visible but can't be changed from your account.",
+  'admin.clone.title': 'Clone roles into store',
+  'admin.clone.target': 'Target: {store}',
+  'admin.clone.action': 'Clone',
+  'admin.clone.noSourceTitle': 'No eligible source',
+  'admin.clone.noSourceBody':
+    'You need to administer at least one OTHER store to clone from. Ask a higher-rank admin to add you to one first.',
+  'admin.clone.alsoMembers': 'Also assign source members',
+  'admin.clone.alsoMembersHint':
+    "When on, every member with an MSA row in the source store also gets one for the target — they'll see and operate in both. Off (default) clones only the role shape; you staff the target with different people.",
+  'admin.clone.whatTitle': 'What this does',
+  'admin.clone.whatBody':
+    "For every store-scoped role binding in the source store, create the same binding in {store} (skip duplicates). Roles you don't outrank in {store} are skipped — counted separately so you know what to do manually.",
+  // 2026-07-30: Operations was the second-largest pocket of untranslated
+  // copy. Titles AND their body paragraphs — see the note in
+  // scripts/check-untranslated.ts about why the guard only counts titles.
+  'ops.activity.emptyTitle': 'No events yet',
+  'ops.activity.emptyBody': 'Activity appears once orders or runs move.',
+  'ops.history.emptyTitle': 'Nothing submitted yet',
+  'ops.history.emptyBody': 'Submitted orders show up here once staff press Submit.',
+  'ops.history.contributorBreakdown': 'Contributor breakdown',
+  'ops.purge.tabOrders': 'Orders',
+  'ops.purge.tabRuns': 'Runs',
+  'ops.purge.noSessionsTitle': 'No order sessions',
+  'ops.purge.noSessionsBody': 'Nothing was submitted on {date}.',
+  'ops.purge.noRunsTitle': 'No market runs',
+  'ops.purge.noRunsBody': 'No purchasing runs on {date}.',
+  'ops.purge.deleteRunTitle': 'Delete market run',
+  'ops.purge.cascadeTitle': 'This includes attached sessions',
+  'ops.purge.cascadeBody':
+    'Deleting this run also deletes {n, plural, =1 {its 1 attached order session} other {its # attached order sessions}}. The server refuses if any of them belongs to a real user — use the per-session purge instead in that case.',
+  'ops.audit.allScopes': 'All scopes',
+  'ops.audit.inputs': 'inputs',
+  'ops.price.howTitle': 'How to read this',
+  'ops.price.howBody':
+    'Last 30 days of price observations across the org. The last column is the change vs 30-day mean — green = cheaper, red = spike. Use 7-day mean for next-day budgeting; 30-day mean smooths weekly oscillations.',
+  'ops.price.emptyTitle': 'No price data yet',
+  'ops.price.emptyBody': 'Once your purchaser records the first run, prices land here.',
+  'ops.maint.superOnlyTitle': 'Super-admin only',
+  'ops.maint.superOnlyBody':
+    'Maintenance actions can permanently delete data. Only members with the super_admin role can use this section.',
+  'ops.maint.targetedTitle': 'Delete a specific test order or run',
+  'ops.maint.targetedBody':
+    "Use this when test data and real data exist on the same day. Browse a list, pick the test session or run, see exactly what gets cascade-deleted, then commit. Real users' sessions are NOT touched.",
+  'ops.maint.resetToday': 'Reset today',
+  'ops.maint.resetDateTitle': 'Reset a specific date',
+  'ops.maint.resetDateBody': 'Same scope as above, different day. Pick the date below.',
+  'ops.maint.preview': 'Preview',
+  'ops.maint.wipeTitle': 'Wipe the entire workspace',
+  'ops.maint.wipeBody':
+    'The button below deletes every event, run, order, notification and outbox row this workspace has ever produced — regardless of date. Use only if you need a clean-slate restart.',
+  'ops.maint.purgeAllTitle': 'Purge ALL test data',
+  'ops.maint.purgeAllBody':
+    'Step 1 previews the row counts. Step 2 deletes after you type the workspace slug to confirm.',
+  'ops.maint.previewEverything': 'Preview everything',
+  'ops.maint.resetSheetTitle': 'Reset {date}',
+  'ops.maint.resetSheetBody': 'Review what will be deleted, then confirm.',
+  'ops.maint.confirmPurgeTitle': 'Confirm purge',
+  'ops.maint.confirmPurgeBody': 'Type the workspace slug "{slug}" to confirm.',
+  // 2026-07-30: the last and largest pocket of untranslated admin copy.
+  // The transfer sheet even carried a comment deferring "its own dedicated
+  // i18n pass with all the other admin transfer copy" — this is that pass.
+  //
+  // Note on the two banners that had inline <em>/<strong>: this i18n layer
+  // formats to a plain string, so markup can't ride through a key. Rather
+  // than split a sentence into fragments around the tags — which produces
+  // bad word order in zh/ru/uz — those became whole sentences without
+  // emphasis. A correctly-ordered sentence beats a bolded mistranslation.
+  'people.tapToRevoke': 'Tap to revoke',
+  'people.orgLevelEmptyTitle': 'No org-level members',
+  'people.orgLevelEmptyBody':
+    "Admins and super-admins who don't belong to any specific store appear here.",
+  'people.permsHowTitle': 'How permissions work',
+  'people.permsHowBody':
+    'Roles are stacks of permission keys. Higher rank = more powerful. You can grant a role to a member only if its rank is strictly below your own ({rank}). Built-in roles cannot be deleted but their name, description, and permission set are editable.',
+  'people.rolesHeading': 'Roles',
+  'people.rolesEmptyTitle': 'No roles',
+  'people.rolesEmptyBody': 'Run db:seed to get the built-ins.',
+  'people.newRoleTitle': 'New role',
+  'people.newRoleHint': 'Custom roles can have any rank from 1 to {max}.',
+  'people.rolePlaceholderName': 'Shift Lead',
+  'people.rolePlaceholderDesc': 'Optional',
+  'people.rankField': 'Rank (1–{max})',
+  'people.deleteRole': 'Delete role',
+  'people.confirmDeleteRole': 'Delete role "{name}"?',
+  'people.noRole': 'No role',
+  'people.orgLevelLabel': 'Org-level',
+  'people.storeGone': '— store gone —',
+  'people.inviteTitle': 'Invite a member',
+  'people.inviteHint': 'Pick a method',
+  'people.inviteViaTelegram': 'Share via Telegram',
+  'people.inviteCopyLink': 'Copy invite link',
+  'people.inviteCopyLinkHint': 'Paste anywhere outside Telegram.',
+  'people.inviteOr': 'or',
+  'people.inviteByTgId': 'Add by Telegram ID',
+  'people.inviteByTgIdHint': 'Enter a numeric TG ID directly. Use this if you already know it.',
+  'people.memberFallback': 'Member',
+  'people.editMemberHint': 'Edit name and assign stores',
+  'people.transferTooltip': 'Transfer this member to another store',
+  'people.transferTitle': 'Transfer between stores',
+  'people.transferMoving': 'Move {name}',
+  'people.transferAction': 'Transfer',
+  'people.transferFrom': 'From',
+  'people.transferTo': 'To',
+  'people.transferNoDestTitle': 'No eligible destinations',
+  'people.transferNoDestBody':
+    "You don't administer any other store. Ask a higher-rank admin to add you to the destination first.",
+  'people.mirrorRoles': 'Mirror role bindings',
+  'people.mirrorRolesHint':
+    'When on (default), every store-scoped role this member has in {store} is duplicated against the destination so they keep the same role. Turn off to give them no role at the new store — useful when the move also implies a promotion or demotion.',
+  'people.transferWhatTitle': 'What this does',
+  'people.transferWhatIntro': 'Atomic in one transaction:',
+  'people.transferWhatAdded': '{name} is added to the destination store',
+  'people.transferWhatMirrored':
+    'their store-scoped role bindings in the source are recreated in the destination',
+  'people.transferWhatNoRoles': 'no role bindings are created in the destination',
+  'people.transferWhatRemoved':
+    'their assignment + bindings + per-store overrides in {store} are removed',
+  'people.transferWhatOutro':
+    'Other stores they belong to are untouched. If anything fails, the whole transfer rolls back.',
+  'people.scopeGlobal': 'Global',
+  'people.overridesHowTitle': 'How this works',
+  'people.overridesHowGlobal':
+    'Each row shows what the role would grant (gray) and lets you override per-member with allow (force on) or deny (force off). Deny always wins on conflict.',
+  'people.overridesHowStore':
+    'Overrides on this tab apply only in {store}. The role-derived baseline is the same across stores; per-store allow/deny lets you fine-tune what this member can do in this location specifically.',
+  'people.toastRoleGranted': 'Role granted',
+  'people.toastRoleAlready': 'Role already assigned',
+  'people.grantRoleTitle': 'Grant role',
+  'people.grantRoleTo': 'to {name}',
+  'people.grantGlobally': 'Globally',
+  'people.grantGloballyLocked': 'Globally (org-admin only)',
+  'people.noGrantStoresTitle': 'No stores you can grant in',
+  'people.noGrantStoresBody':
+    "You don't administer any store yet. Ask a higher-rank admin to add you to a store first.",
+  'people.noGrantableTitle': 'No grantable roles',
+  'people.noGrantableGlobal': 'All org-tier roles are at or above your rank ({rank}).',
+  'people.noGrantableStore':
+    'Your rank in the selected store(s) is {rank} — no role ranked below that exists.',
+  // 2026-07-30, final sweep: prose the syntax-anchored guard can't see, plus
+  // one title it missed because `&apos;` is ASCII punctuation.
+  'people.noPermsAssigned': 'No permissions assigned.',
+  'people.nameOverrideHint':
+    "The user can't change their own name after onboarding — admins can always override here.",
+  'people.noStoresInOrg': 'No stores in this org. Create one in the Catalog tab.',
+  'people.storeScopeHint':
+    "Staff can only place orders for, and confirm deliveries to, the stores they're assigned to. Admins always see all stores.",
+  'people.globalGrantLockedHint':
+    'Only org-level admins can grant global (org-tier) roles. You can still assign per-store roles in the stores you administer.',
+  'people.pickScopeFirst': 'Pick a scope above to see available roles.',
+  'ops.maint.resetTodayTitle': "Reset today's entire flow",
+  'ops.maint.resetTodayBody':
+    'Wipes every order, run, delivery, notification and price-history row dated {date} — regardless of who created it. Catalog and members untouched. Use only when you are sure no real users have data today.',
+  'ops.maint.nothingToPurge': 'Nothing to purge — workspace is already clean.',
+  'admin.store.defaultRoleHint':
+    'When set, new members invited into this store with no explicit role pick are auto-granted this role.',
+  // 2026-07-30: English plural-suffix constructions and composed toast
+  // fragments. `{n === 1 ? '' : 's'}` is untranslatable by construction — ru
+  // needs three forms and zh/uz need none — so these became ICU plurals.
+  'people.toastRemovedFromStore': 'Removed from store',
+  'people.toastRolesRevoked': '{n, plural, =1 {1 role revoked} other {# roles revoked}}',
+  'people.toastOverridesDropped':
+    '{n, plural, =1 {1 override dropped} other {# overrides dropped}}',
+  'people.toastTransferred': 'Transferred',
+  'people.toastRolesMirrored': '{n, plural, =1 {1 role mirrored} other {# roles mirrored}}',
+  'people.toastFromSideRevoked':
+    '{n, plural, =1 {1 from-side role revoked} other {# from-side roles revoked}}',
+  'people.toastGrantedInStores':
+    'Role granted in {n, plural, =1 {1 store} other {# stores}}',
+  'people.toastAlreadyHad': '({n} already had it)',
+  'people.toastAlreadyEverywhere': 'Role was already assigned everywhere selected',
+  'people.permissionCount': '{n, plural, =1 {1 permission} other {# permissions}}',
+  'people.effectiveOverridesLine':
+    '{eff} effective · {ov, plural, =1 {1 override} other {# overrides}}',
+  'ops.history.skuTotalLine': '{n, plural, =1 {1 SKU} other {# SKUs}} · {total} total',
+  'ops.history.contributorCount':
+    '{n, plural, =1 {1 contributor} other {# contributors}}',
+  'admin.clone.toastCloned':
+    'Cloned {n, plural, =1 {1 role binding} other {# role bindings}}',
+  'admin.clone.toastAlreadyExisted': '{n} already existed',
+  'admin.clone.toastSkippedRank': '{n} skipped (rank too high)',
+  'admin.clone.toastAssigned': '{n, plural, =1 {1 member} other {# members}} assigned',
+  // 2026-07-30: role/rank chrome. `+ New <thing>` slipped past the guard's
+  // first rule because the line starts with '+', not a letter.
+  'people.newRoleButton': 'New role',
+  'catalog.category.newButton': 'New category',
+  'catalog.supplier.newButton': 'New supplier',
+  'people.builtInLocked': 'Rank {rank} (built-in, locked)',
+  'people.builtInRankBody':
+    "Built-in role rank can't be changed — it anchors the permission ladder. Custom roles let you pick any rank.",
+  'people.rankOutranksYou': 'your rank ≤ this',
+  'people.roleFallback': 'Role',
+  'people.rankLine': 'rank {rank}',
+  'people.roleMetaLine': 'rank {rank} · {perms}',
+  'people.roleNameWithRank': '{name} (rank {rank})',
+  'admin.store.noDefaultRole': '— no default (operator picks each invite) —',
+  // 2026-07-30: run-status enum had no keys at all (order.status.* did), plus
+  // formatRelative and a few Operations meta fragments.
+  'run.status.planned': 'Planned',
+  'run.status.purchasing': 'Purchasing',
+  'run.status.delivering': 'Delivering',
+  'run.status.finished': 'Finished',
+  'run.status.cancelled': 'Cancelled',
+  'run.status.amending': 'Amending',
+  'time.justNow': 'just now',
+  'time.minutesAgo': '{n}m ago',
+  'time.hoursAgo': '{n}h ago',
+  'time.daysAgo': '{n}d ago',
+  'ops.history.submittedAgo': 'submitted {when}',
+  'ops.history.byWhom': 'by {name}',
+  'ops.history.rejectionReason': 'Rejection reason: {reason}',
+  'ops.purge.sessionMeta': '{status} · {items} · {date}',
+  'ops.purge.runMeta': '{status} · {sessions}',
+  'admin.store.sectionAria': 'Store section',
+  // 2026-07-30: the crash screen was the LAST English-only surface —
+  // and it's the only thing a user sees when the app breaks.
+  'boot.crashTitle': 'Something broke before the app could render.',
+  'boot.crashBody': 'The error has been reported. Try closing and reopening the Mini App. If it keeps happening, share the trace below with your administrator.',
+  'boot.tryAgain': 'Try again',
+  'boot.resetAndReload': 'Reset session and reload',
   'common.noData': 'No data',
   'common.clear': 'Clear',
   'common.notes': 'Notes',
@@ -119,10 +380,10 @@ export const en = {
   'storeSwitcher.allOrgHint': 'See aggregated activity across the entire organization.',
   'storeSwitcher.aria': 'Change store context',
   'storeSwitcher.pickPrompt.title': 'Pick a store first',
+  // 2026-07-30: was "open Settings (gear icon)" — the store chip in the
+  // page's sticky bar is now the direct route.
   'storeSwitcher.pickPrompt.body':
-    'This page needs a single store. Open Settings (gear icon) and pick one.',
-
-  // ── 4. Auth (login / onboarding / access) ──────────────────────
+    'This page needs one specific store. Tap the store chip at the top to choose.',
   'auth.signIn': 'Sign in',
   'auth.signOut': 'Sign out',
   'auth.shareThisId': 'Share this Telegram ID with your administrator to be granted access:',
@@ -175,8 +436,6 @@ export const en = {
   'admin.subsection.categories': 'Categories',
   'admin.subsection.skus': 'SKUs',
   'admin.subsection.suppliers': 'Suppliers',
-  'admin.subsection.team': 'Team',
-  'admin.subsection.settings': 'Settings',
   'admin.subsection.activity': 'Live activity',
   'admin.subsection.history': 'Submission history',
   'admin.subsection.audit': 'Admin audit',
@@ -195,13 +454,8 @@ export const en = {
   'admin.subsection.categoriesHint': 'Grouping for SKUs',
   'admin.subsection.skusHint': 'The catalog of items',
   'admin.subsection.suppliersHint': 'Who you buy from',
-  'admin.action.newStoreBtn': '+ New store',
-  'admin.action.newCategory': '+ New category',
-  'admin.action.newSupplier': '+ New supplier',
   'admin.action.edit': 'Edit',
-  'admin.action.save': 'Save',
   'admin.action.archive': 'Archive',
-  'admin.action.delete': 'Delete',
   'admin.action.cloneRoles': 'Clone roles…',
   'admin.action.transfer': 'Transfer…',
   'admin.action.removeFromStore': 'Remove from store',
@@ -268,6 +522,7 @@ export const en = {
   'admin.label.paused': 'paused',
   'admin.label.you': 'you',
   'admin.label.noTelegram': 'no telegram',
+  'admin.label.seen': 'seen {date}',
   'admin.label.neverSeen': 'never seen',
   'admin.label.signedInAs': 'Signed in as @{name}',
   'admin.label.signedIn': 'Signed in',
@@ -422,6 +677,14 @@ export const en = {
   'order.banner.inRun.body':
     "This order is part of an active market run. You'll get a notification when delivery arrives.",
   'order.editedBy': 'edited by {who} · {when}',
+  // 2026-07-30: the Order page had no idea M3.32 supports several batches
+  // a day — submit one, start another, and the first vanished from view.
+  'order.batches.today': '{n, plural, =1 {1 batch today} other {{n} batches today}}',
+  'order.batches.title': "Today's batches",
+  'order.batches.batchLabel': 'Batch {n}',
+  'order.batches.newBatch': 'Order another batch',
+  'order.batches.viewing': 'viewing',
+  'order.receipt.submittedItems': 'What you sent',
   'order.withdraw': 'Withdraw',
   'order.actions.addNote': 'Add note',
   'order.toast.submitted': 'Order submitted ✓',
@@ -433,7 +696,7 @@ export const en = {
   'order.action.submitOrder': 'Submit order',
   'order.action.submitting': 'Submitting…',
   'order.review.title': 'Review your order',
-  'order.review.itemsCount': '{n, plural, one {1 item} other {{n} items}}',
+  'order.review.itemsCount': '{n, plural, one {# item} other {{n} items}}',
   'order.review.empty': 'Nothing selected yet.',
   'order.review.reviewSheet.title': 'Review your order',
   'order.review.estimatedTotal': 'Estimated total',
@@ -478,6 +741,9 @@ export const en = {
   'approval.viewItems': 'View items',
   'approval.tabsAriaLabel': 'Approval status filter',
   'approval.submittedBy': 'submitted by {name}',
+  // 2026-07-30 (flow review): back on the card so the approver can
+  // triage without expanding every row.
+  'approval.itemsCount': '{n, plural, =1 {1 item} other {{n} items}}',
   'approval.contributorsCount': '{n, plural, =1 {1 contributor} other {{n} contributors}}',
   'approval.hideItems': 'Hide items',
   'approval.approve': 'Approve',
@@ -595,6 +861,9 @@ export const en = {
   'run.deliveryStageBadge.delivered': 'delivered',
   'run.deliveryStageBadge.confirmed': 'confirmed',
   'run.purchase.priceInputPlaceholder': 'price',
+  // 2026-07-30: was the hardcoded English "Run view mode" passed
+  // straight to aria-label.
+  'run.view.ariaLabel': 'Group the run list',
   'run.view.perStore': 'Per store',
   'run.view.perVendor': 'Per vendor',
   // Plan-time preview views (M1.5).
@@ -680,6 +949,7 @@ export const en = {
   'run.errors.sessionAlreadyInRun': 'That session is already attached to this run',
   'run.errors.allSessionsAlreadyInRun': 'Every selected session is already in this run',
   'run.errors.noSessionsToAttach': 'No sessions selected to attach',
+  'run.action.remainingItems': '{n} left to handle',
   'run.action.startDelivery': 'Start delivery',
   'run.action.finish': 'Finish run',
   'run.action.cancelRun': 'Cancel run',
@@ -771,8 +1041,8 @@ export const en = {
   // tenant. Math + persisted values stay in raw UZS — only the
   // input/display is divided.
   'run.action.unitPriceUzsThousands': 'Unit price (×1000 UZS)',
-  'run.label.thousandsToggle': '×1000',
-  'run.label.thousandsToggleAria': 'Type prices in thousands (×1000)',
+  'run.label.staleRun': '{days}d old',
+  'run.label.priceUnitAria': 'Price unit — tap to switch between UZS and thousands',
   'run.action.supplier': 'Supplier',
   'run.action.receiptPhoto': 'Receipt photo (optional)',
   'run.action.allocateAcrossStores': 'Allocate across stores',
@@ -856,6 +1126,9 @@ export const en = {
   'run.history.title': 'History',
   'run.history.subtitle': 'Past runs — tap to see details',
   'run.history.viewAllHint': 'Open Admin → Operations → Submission history for older runs',
+  // 2026-07-30: the run page's inline history collapsed to one summary row.
+  'run.history.lastRun': 'Last trip {date}',
+  'run.history.monthSoFar': '{month} · {n} so far',
   'run.history.totalLine': 'Total {total} UZS',
   'run.history.allStores': 'All stores',
   // M3.9: filter chip toolbar + cancelled-row label dropped — cancelled
@@ -948,10 +1221,17 @@ export const en = {
   'confirm.deliveredItems': 'Delivered items',
   'confirm.deliveredItemsHint': 'Tap a status for each item',
   'confirm.confirmStore': 'Confirm store',
+  // 2026-07-30 (flow review): receiving used to open with every line
+  // pre-ticked "ok" and the confirm button already live. These three carry
+  // the gate that replaced that default.
+  'confirm.progress': 'Checked {done}/{total}',
+  'confirm.markAllOk': 'All arrived fine',
+  'confirm.confirmStoreBlocked': '{n} still to check',
   'confirm.confirmStoreFinal': '✓ Confirmed',
   'confirm.confirmStoreFinalBanner': 'Store confirmed ✓',
   'confirm.confirmingHint': 'Confirming…',
   'confirm.toast.markedOk': 'Marked OK',
+  'confirm.toast.allMarkedOk': '{n} items marked fine',
   'confirm.toast.issueNoted': 'Issue noted',
   'confirm.toast.storeConfirmed': 'Store confirmed',
   'confirm.toast.savedOffline': 'Saved offline — will sync when back online',
@@ -963,6 +1243,7 @@ export const en = {
   // M1.9-fix (2026-05-07): the 4 receive-side decision chips. These
   // are the most-tapped UI on the entire page; rendering raw enum
   // values to non-English users was a launch blocker.
+  'confirm.status.ariaLabel': 'Receiving status for this item',
   'confirm.status.ok': 'OK',
   'confirm.status.short': 'Short qty',
   'confirm.status.wrong': 'Wrong item',
