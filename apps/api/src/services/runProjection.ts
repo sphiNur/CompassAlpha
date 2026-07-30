@@ -321,6 +321,15 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
           })
           .where(eq(s.marketRunsV.id, e.streamId));
         break;
+      case 'RunDateChanged':
+        // 2026-07-30: the only writer of `runDate` other than RunPlanned.
+        // History groups and totals by this column, so this is what makes
+        // a mis-dated run's spend land in the right day/month.
+        await db
+          .update(s.marketRunsV)
+          .set({ runDate: e.payload.runDate, lastSeq: e.seq, updatedAt: new Date() })
+          .where(eq(s.marketRunsV.id, e.streamId));
+        break;
       case 'RunReopened':
         // 2026-07-06: super-admin reopened a finished run. Move the phase
         // to `amending`; item/split/expense rows are untouched (the edit

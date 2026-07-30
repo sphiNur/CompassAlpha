@@ -284,6 +284,35 @@ export function RunHistoryDetailSheet({
     },
     onError: errToast('common.error'),
   });
+
+  /**
+   * Purchase-date correction (2026-07-30).
+   *
+   * `runDate` is set once, when the run is CREATED, and nothing ever
+   * changed it — so a run opened on the 23rd and closed on the 30th books
+   * its whole spend under the 23rd. History groups and totals by this
+   * field, so a wrong value quietly misattributes a day's (and a month's)
+   * spend. This is the correction surface: past runs are exactly where
+   * you notice the date is wrong.
+   *
+   * Unlike the reopen path below, this does NOT move the run to
+   * `amending` — it touches no money, and refinalizing would rewrite the
+   * frozen totals as a side effect of a pure calendar fix.
+   */
+  const [dateDraft, setDateDraft] = useState('');
+  useEffect(() => {
+    setDateDraft(target?.runDate ?? '');
+  }, [target?.runDate, target?.runId]);
+  const changeDate = trpc.run.changeDate.useMutation({
+    onSuccess: () => {
+      void utils.run.list.invalidate();
+      void utils.run.history.invalidate();
+      void utils.run.get.invalidate();
+      toast.success(i18n.t('run.date.changed'));
+      onClose();
+    },
+    onError: errToast('common.error'),
+  });
   const detail = trpc.run.get.useQuery(
     target ? { runId: target.runId } : { runId: '' },
     { enabled: !!target },
@@ -508,6 +537,35 @@ export function RunHistoryDetailSheet({
               </div>
             ) : null}
           </div>
+
+          {/* 2026-07-30: purchase-date correction. Separate from the
+              reopen block below on purpose — changing when a run is
+              booked is not an edit to what was bought, so it neither
+              needs nor triggers the amend cycle. */}
+          {canAmend && target ? (
+            <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3">
+              <SectionLabel padded={false}>{i18n.t('run.date.label')}</SectionLabel>
+              <p className="text-label text-[var(--c-fg-muted)]">
+                {i18n.t('run.date.hint')}
+              </p>
+              <Input
+                type="date"
+                value={dateDraft}
+                onChange={(e) => setDateDraft(e.target.value)}
+                aria-label={i18n.t('run.date.label')}
+              />
+              <Button
+                variant="pearl"
+                loading={changeDate.isPending}
+                disabled={!dateDraft || dateDraft === target.runDate}
+                onClick={() =>
+                  changeDate.mutate({ runId: target.runId, runDate: dateDraft })
+                }
+              >
+                {i18n.t('run.date.change')}
+              </Button>
+            </div>
+          ) : null}
 
           {/* 2026-07-06: super-admin correction entry. Reopens the
               finished run to `amending`; editing continues on the Run

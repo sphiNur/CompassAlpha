@@ -120,6 +120,27 @@ export type RunEvent =
       type: 'RunReopened';
       payload: { reason: string; byMemberId: string };
     })
+  // ---- Purchase-date correction (2026-07-30) ---------------------------
+  // `runDate` was written exactly once, by RunPlanned, and no code path
+  // ever changed it. It is the date the run was CREATED, which is only
+  // the date the shopping happened when both fall on the same day — a run
+  // opened on the 23rd and closed on the 30th books the whole spend under
+  // the 23rd. Since history groups and totals by this field, a wrong
+  // value silently misattributes a day's spend and cannot be corrected.
+  //
+  // Same permission as the other post-finish corrections (`run.amend`):
+  // moving a run between dates moves money between reporting periods, so
+  // it belongs behind the same door as amending a settled run.
+  | (BaseEvent & {
+      type: 'RunDateChanged';
+      payload: {
+        /** YYYY-MM-DD. */
+        runDate: string;
+        /** The value being replaced, so the audit trail is self-contained. */
+        previousRunDate: string | null;
+        byMemberId: string;
+      };
+    })
   | (BaseEvent & {
       type: 'RunRefinalized';
       // Same shape as RunFinished's totals — recomputed from the amended
