@@ -133,6 +133,39 @@ export function AuthGate({ children }: AuthGateProps) {
     }
   }, [me.isError, me.error, clear]);
 
+  /**
+   * Tokens are the source of truth for "am I logged in".
+   *
+   * 2026-07-30. `activeSession` is `session ?? loginSession`: the first
+   * lives in the auth store, the second is React state here. `authFetch`
+   * clears the STORE from outside this component whenever it meets a 401
+   * it cannot refresh — and that 401 almost always comes from a page
+   * query (catalog.skus, order.pendingList, run.get…), not from auth.me.
+   *
+   * When that happened, `session` went null but `loginSession` kept its
+   * stale copy, so `activeSession` stayed truthy and we rendered the
+   * Shell over a session with no tokens. Every query then failed
+   * UNAUTHORIZED; `me` could not rescue it because its `enabled` reads
+   * `!!accessToken`, so with the token gone the query was DISABLED, not
+   * errored — and the effect above, the only thing that clears
+   * `loginSession` and re-arms `loginAttempted`, never ran. The result
+   * was the app frame rendering over an empty body forever, recoverable
+   * only by wiping localStorage — which a user inside Telegram cannot do.
+   *
+   * So: no access token means no session, whatever `loginSession` still
+   * remembers. Dropping it lets `activeSession` fall to null, which lets
+   * the auto-login effect below re-run — silent re-login from initData in
+   * Telegram, and the real sign-in screen (not a blank page) anywhere else.
+   */
+  useEffect(() => {
+    if (!authHydrated) return;
+    if (accessToken) return;
+    if (!loginSession) return;
+    setLoginSession(null);
+    loginAttempted.current = false;
+    meUnauthorized.current = false;
+  }, [authHydrated, accessToken, loginSession]);
+
   // Refresh session in store when auth.me succeeds.
   useEffect(() => {
     if (!me.data) return;

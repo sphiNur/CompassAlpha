@@ -408,7 +408,17 @@ async function issueDevBypassLoginResult(
       // path runs in the browser, but deliberately do not issue a tracked
       // refresh token. If this access token expires, refresh fails, auth
       // clears, and the development-only bypass logs in again.
-      refreshToken: 'dev-bypass',
+      //
+      // 2026-07-30: the sentinel used to be 'dev-bypass' — 10 characters,
+      // against a `RefreshInputSchema` of `z.string().min(20).max(200)`.
+      // So auth.refresh answered 400 BAD_REQUEST with a Zod `too_small`
+      // dump rather than 401. Same outcome for the client (any non-ok
+      // response clears auth), but it reads like a client bug and sent a
+      // debugging session chasing a malformed request instead of an
+      // expired session. Long enough to reach the handler now, where
+      // verifyRefresh rejects it as what it actually is: not a valid
+      // refresh token.
+      refreshToken: 'dev-bypass-no-refresh-token',
       accessExpiresAt,
       refreshExpiresAt: accessExpiresAt,
     },
