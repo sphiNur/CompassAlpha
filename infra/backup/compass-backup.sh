@@ -39,6 +39,36 @@ if [[ -z "${DATABASE_URL:-}" ]]; then
   echo "[backup] ERROR: DATABASE_URL not found in $ENV_FILE" >&2
   exit 1
 fi
+
+# 2026-07-30: dump as BACKUP_DATABASE_URL when it is set, not as the app
+# role.
+#
+# The app role (`compass`) is deliberately NOT BYPASSRLS — deploy.ts has a
+# hard gate (step 4a-pg) that aborts the deploy if it ever becomes so,
+# because multi-tenant isolation rests on it. But pg_dump run as an
+# RLS-constrained role cannot produce a complete dump; postgres refuses
+# the COPY outright rather than silently emitting a partial table:
+#
+#   ERROR: query would be affected by row-level security policy for
+#          table "member_permission_overrides"
+#
+# So this script could never have worked as written, and had in fact
+# never produced a single backup file. The fix is a purpose-built role —
+# `compass_backup`: LOGIN + BYPASSRLS + SELECT-only — rather than
+# loosening the app role or dumping as the superuser. Set
+# BACKUP_DATABASE_URL in the server .env to that role's connection string.
+#
+# The fallback keeps the script working on a box that has no dedicated
+# role yet (a dev machine with RLS effectively unused), where the app
+# role can still dump fine.
+BACKUP_DATABASE_URL=$(grep -E '^BACKUP_DATABASE_URL=' "$ENV_FILE" | head -1 | cut -d= -f2- | sed 's/^"\(.*\)"$/\1/' || true)
+DUMP_URL="${BACKUP_DATABASE_URL:-$DATABASE_URL}"
+if [[ -n "${BACKUP_DATABASE_URL:-}" ]]; then
+  echo "[backup] using dedicated backup role from BACKUP_DATABASE_URL"
+else
+  echo "[backup] WARNING: BACKUP_DATABASE_URL unset — dumping as the app role." >&2
+  echo "[backup]          If that role is subject to RLS, pg_dump will refuse." >&2
+fi
 BACKUP_S3_BUCKET=$(grep -E '^BACKUP_S3_BUCKET=' "$ENV_FILE" | head -1 | cut -d= -f2- | sed 's/^"\(.*\)"$/\1/' || true)
 BACKUP_S3_PREFIX=$(grep -E '^BACKUP_S3_PREFIX=' "$ENV_FILE" | head -1 | cut -d= -f2- | sed 's/^"\(.*\)"$/\1/' || true)
 BACKUP_S3_ENDPOINT=$(grep -E '^BACKUP_S3_ENDPOINT=' "$ENV_FILE" | head -1 | cut -d= -f2- | sed 's/^"\(.*\)"$/\1/' || true)
@@ -59,7 +89,7 @@ pg_dump \
   --no-owner \
   --no-privileges \
   --file="$DUMP" \
-  "$DATABASE_URL"
+  "$DUMP_URL"
 
 ELAPSED=$(( $(date +%s) - START ))
 SIZE=$(stat -c %s "$DUMP")
