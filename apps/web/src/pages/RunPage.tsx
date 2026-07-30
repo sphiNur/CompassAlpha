@@ -1584,19 +1584,15 @@ export function RunPage() {
         run state without losing 60+ px to a redundant header bar. */
     <div className="flex flex-col pb-24">
       {/* M3.5: store-switcher pill moved to SettingsSheet. Sticky strip
-         now only renders when there's an active run to label. */}
+         now only renders when there's an active run to label.
+
+         2026-07-30: dropped the `--app-chrome-pad-*` inline padding this
+         bar copied from StickyPageBar. Telegram's Close / ⋯ overlay the
+         reserved strip Shell renders above the scroll container; this bar
+         is below that strip and was never underneath them. See the
+         StickyPageBar docblock. */}
       {activeRun ? (
-        <div
-          className="sticky top-0 z-[1] flex min-h-9 items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] py-2"
-          style={{
-            // M3.46 (2026-05-22): clear Telegram's overlay chrome
-            // (Close at left, ⋯ at right). Vars set by Shell.tsx's
-            // chrome detection; default to 16px so non-Telegram /
-            // web-preview keeps the legacy px-4 look.
-            paddingLeft: 'max(16px, var(--app-chrome-pad-left, 16px))',
-            paddingRight: 'max(16px, var(--app-chrome-pad-right, 16px))',
-          }}
-        >
+        <div className="sticky top-0 z-[1] flex min-h-9 items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-2">
           {/* M3.36 shipped the "×1000" price-mode toggle here as a pill
               whose entire meaning lived in a `title` attribute. On a
               touch device there is no hover, so nothing ever revealed

@@ -6,12 +6,19 @@ import { cn } from '../cn';
  * on Order, the Tabs on Approval, the run-date on Confirm/Run.
  *
  * Owns the chrome that was copy-pasted verbatim into 4 pages: `sticky
- * top-0 z-[1]` + `border-b divider` + `bg-bg` + `py-2`, AND the
- * load-bearing inline padding that clears Telegram's overlay chrome
- * buttons (Close at left, ⋯ at right) via the `--app-chrome-pad-*`
- * vars Shell sets at runtime. That wiring must stay in ONE place — a
- * per-page copy is a bug waiting to drift (and it already had, on
- * min-height: 7 vs 9 vs none).
+ * top-0 z-[1]` + `border-b divider` + `bg-bg` + `px-4 py-2`.
+ *
+ * It used to also carry inline `--app-chrome-pad-*` padding to clear
+ * Telegram's Close / ⋯ buttons. Removed 2026-07-30: those buttons
+ * overlay the RESERVED STRIP that Shell renders above `<main>`, and
+ * this bar renders below that strip — it was never underneath them.
+ * The padding bought nothing and cost a lot: on a 392-px Telegram
+ * viewport it inset the search field and category chips 56px/96px
+ * while the SKU rows immediately beneath used px-4, so the filters sat
+ * 40px/80px narrower than the list they filter and the chip row was
+ * clipped mid-character on the right. Clearing the chrome is the
+ * strip's job (see Shell.tsx); everything below it is ordinary page
+ * content and uses ordinary page padding.
  *
  * `direction`:
  *   - 'row' (default) — horizontal `items-center` strip (Confirm/Run
@@ -32,17 +39,10 @@ export function StickyPageBar({ children, direction = 'row', className }: Sticky
   return (
     <div
       className={cn(
-        'sticky top-0 z-[1] border-b border-[var(--c-divider)] bg-[var(--c-bg)] py-2',
+        'sticky top-0 z-[1] border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-2',
         direction === 'col' ? 'flex flex-col gap-2' : 'flex items-center gap-2',
         className,
       )}
-      style={{
-        // Clear Telegram's overlay chrome (Close at left, ⋯ at right).
-        // Vars set by Shell's chrome detection; default 16px so
-        // non-Telegram / web-preview keeps the legacy px-4 look.
-        paddingLeft: 'max(16px, var(--app-chrome-pad-left, 16px))',
-        paddingRight: 'max(16px, var(--app-chrome-pad-right, 16px))',
-      }}
     >
       {children}
     </div>
