@@ -1,0 +1,43 @@
+# Line-ending policy.
+#
+# 2026-07-30. This file exists because its absence had silently disabled
+# the nightly Postgres backup.
+#
+# The dev box runs Windows with `core.autocrlf=true`, so git checks every
+# text file out as CRLF. Normally that is invisible: git converts back on
+# commit, and CI/Linux only ever see the LF version in the object store.
+#
+# It is NOT invisible here, because `scripts/deploy.ts` ships the WORKING
+# TREE — it tars the checked-out directory rather than using `git
+# archive`. So whatever line endings are on the Windows disk are the line
+# endings that land on the production box. `infra/backup/compass-backup.sh`
+# arrived with a `#!/usr/bin/env bash\r` shebang, and systemd reported:
+#
+#     /usr/bin/env: 'bash\r': No such file or directory
+#
+# `compass-backup.service` had been failing on every timer fire, which
+# means there were no nightly database backups at all.
+#
+# Everything the Linux box executes or parses is pinned to LF below.
+# `text=auto` keeps normal source files behaving as before.
+* text=auto
+
+# Executed by a shell on the server — a CR in the shebang is fatal.
+*.sh text eol=lf
+
+# systemd refuses to parse units with stray CRs in some directives, and
+# ExecStart values silently inherit the CR.
+*.service text eol=lf
+*.timer text eol=lf
+
+# Read by Linux daemons / builders.
+Caddyfile text eol=lf
+Dockerfile text eol=lf
+
+# Binary-ish assets git should never touch.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary

@@ -55,6 +55,9 @@ export type RunCommand =
   // Post-finish amendment (2026-07-06), super-admin only (run.amend).
   | { type: 'ReopenRun'; reason: string; actor: ActorCtx }
   | { type: 'RefinalizeRun'; actor: ActorCtx }
+  // Correct the calendar date a run's spend is booked under (2026-07-30),
+  // super-admin only (run.amend). See the RunDateChanged event docblock.
+  | { type: 'ChangeRunDate'; runDate: string; actor: ActorCtx }
   // ---- Reversal commands (added 2026-05-03) ---------------------------
   | {
       type: 'RevisePurchase';
@@ -241,7 +244,22 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
       // the dispatcher had no awareness of. `planned` is still allowed
       // because the command auto-emits PurchaseStarted (atomic first
       // buy on a fresh run).
-      if (state.status !== 'planned' && state.status !== 'purchasing') {
+      if (
+        state.status !== 'planned' &&
+        state.status !== 'purchasing' &&
+        // 2026-07-30: `amending` was missing here while AddPurchaserItem
+        // (which DOES allow it for `run.amend`) and RevisePurchase /
+        // UndoPurchase / UnmarkUnavailable (via assertEditablePhase) all
+        // allowed it. The gap: an item that is IN the run but was never
+        // bought — typically one marked unavailable — can only be
+        // recorded through PurchaseItem, and that threw runFrozen. The
+        // obvious workaround was blocked too: re-adding the same SKU via
+        // AddPurchaserItem refuses with alreadyInRun. So a super-admin
+        // who reopened a finished run to record a buy they had missed
+        // hit a wall with no path forward and no explanation beyond
+        // "采购单已冻结". Same permission bar as the sibling commands.
+        !(state.status === 'amending' && command.actor.permissions.has('run.amend'))
+      ) {
         throw preconditionFailed('run.errors.runFrozen', { status: state.status });
       }
       const item = state.items.get(command.skuId);
@@ -722,6 +740,49 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
           ...baseFor(1),
           type: 'RunReopened',
           payload: { reason, byMemberId: command.actor.memberId },
+        },
+      ];
+    }
+
+    case 'ChangeRunDate': {
+      if (state.status === 'absent') throw preconditionFailed('run.errors.streamMissing');
+      if (!command.actor.permissions.has('run.amend')) {
+        throw forbidden('run.errors.cannotAmend');
+      }
+      // Cancelled runs stay frozen, exactly as they are for every other
+      // edit. Every other phase is fair game — unlike the item-level
+      // commands this does NOT require a reopen first, because the whole
+      // point is correcting a finished run's date, and forcing
+      // reopen → change → refinalize would rewrite the run's totals as a
+      // side effect of a pure calendar fix.
+      if (state.status === 'cancelled') {
+        throw preconditionFailed('run.errors.runFrozen', { status: state.status });
+      }
+      const runDate = command.runDate.trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(runDate)) {
+        throw validation('run.errors.invalidRunDate');
+      }
+      // Reject a date the calendar doesn't have (2026-02-31 parses to
+      // March 3 via Date's rollover, which would silently book the spend
+      // in the wrong month).
+      const parsed = new Date(`${runDate}T00:00:00Z`);
+      if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== runDate) {
+        throw validation('run.errors.invalidRunDate');
+      }
+      // No-op guard: emitting an event that changes nothing would add an
+      // audit entry claiming a correction happened.
+      if (state.runDate === runDate) {
+        throw preconditionFailed('run.errors.runDateUnchanged');
+      }
+      return [
+        {
+          ...baseFor(1),
+          type: 'RunDateChanged',
+          payload: {
+            runDate,
+            previousRunDate: state.runDate,
+            byMemberId: command.actor.memberId,
+          },
         },
       ];
     }

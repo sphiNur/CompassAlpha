@@ -450,6 +450,135 @@ describe('run.decide', () => {
     );
   });
 
+  test('PurchaseItem is allowed while amending for run.amend holders (2026-07-30)', () => {
+    // The gap this closes: an item that is IN the run but was never
+    // bought — e.g. one marked unavailable — can only be recorded via
+    // PurchaseItem, which used to hard-require planned/purchasing. A
+    // super-admin who reopened a finished run to add a buy they had
+    // missed hit `runFrozen`, and the workaround was blocked too
+    // (AddPurchaserItem refuses an SKU already in the run).
+    const sa: ActorCtx = {
+      userId: 'sa',
+      memberId: 'sa',
+      permissions: new Set(['run.amend', 'run.purchase']),
+    };
+    // Two planned items; only sku-1 gets bought, sku-2 is marked
+    // unavailable — the exact shape that used to dead-end.
+    let s = emptyRunState('run-amend-purchase');
+    for (const cmd of [
+      {
+        type: 'PlanRun' as const,
+        orgId: 'org-1',
+        runDate: '2026-05-01',
+        runIndex: 0,
+        sessionIds: ['s1'],
+        plannedItems: [
+          { skuId: 'sku-1', qty: '4' },
+          { skuId: 'sku-2', qty: '1' },
+        ],
+        actor: purchaser(),
+      },
+      { type: 'StartPurchase' as const, actor: purchaser() },
+      {
+        type: 'PurchaseItem' as const,
+        skuId: 'sku-1',
+        supplierId: 'sup-1',
+        unitPrice: '12000',
+        actualQty: '4',
+        receiptPhotoUrl: null,
+        storeSplits: [{ storeId: 'A', qty: '4' }],
+        paymentMethod: 'cash' as const,
+        actor: purchaser(),
+      },
+      {
+        type: 'MarkUnavailable' as const,
+        skuId: 'sku-2',
+        note: 'out of stock',
+        actor: purchaser(),
+      },
+      { type: 'StartDelivery' as const, actor: purchaser() },
+      { type: 'DeliverToStore' as const, storeId: 'A', actor: purchaser() },
+      {
+        type: 'ConfirmStoreItem' as const,
+        storeId: 'A',
+        skuId: 'sku-1',
+        status: 'ok' as const,
+        note: null,
+        photoUrl: null,
+        actor: confirmer(),
+      },
+      { type: 'ConfirmStore' as const, storeId: 'A', actor: confirmer() },
+      { type: 'FinishRun' as const, actor: purchaser() },
+    ]) {
+      s = decideRun(s, cmd, clock).reduce(applyRun, s);
+    }
+    expect(s.status).toBe('finished');
+
+    // Frozen while finished, for everyone.
+    expect(() =>
+      decideRun(
+        s,
+        { type: 'PurchaseItem', skuId: 'sku-2', supplierId: null, unitPrice: '900', actualQty: '1', receiptPhotoUrl: null, storeSplits: [{ storeId: 'A', qty: '1' }], paymentMethod: 'cash', actor: sa },
+        clock,
+      ),
+    ).toThrow('run.errors.runFrozen');
+
+    s = decideRun(s, { type: 'ReopenRun', reason: 'missed a buy', actor: sa }, clock).reduce(applyRun, s);
+    expect(s.status).toBe('amending');
+
+    // Now it goes through — this is the line that used to throw.
+    s = decideRun(
+      s,
+      { type: 'PurchaseItem', skuId: 'sku-2', supplierId: null, unitPrice: '900', actualQty: '1', receiptPhotoUrl: null, storeSplits: [{ storeId: 'A', qty: '1' }], paymentMethod: 'cash', actor: sa },
+      clock,
+    ).reduce(applyRun, s);
+    expect(s.items.get('sku-2')?.unitPrice).toBe('900');
+
+    // Still closed to an actor without run.amend, even while amending.
+    expect(() =>
+      decideRun(
+        s,
+        { type: 'PurchaseItem', skuId: 'sku-1', supplierId: null, unitPrice: '1', actualQty: '1', receiptPhotoUrl: null, storeSplits: [{ storeId: 'A', qty: '1' }], paymentMethod: 'cash', actor: purchaser() },
+        clock,
+      ),
+    ).toThrow('run.errors.runFrozen');
+  });
+
+  test('ChangeRunDate moves the booking date without touching money', () => {
+    const sa: ActorCtx = { userId: 'sa', memberId: 'sa', permissions: new Set(['run.amend']) };
+    let s = planAndPurchase();
+    const before = s.runDate;
+    const totalsBefore = [...s.items.values()].map((i) => i.unitPrice);
+
+    // Permission gate.
+    expect(() =>
+      decideRun(s, { type: 'ChangeRunDate', runDate: '2026-07-23', actor: purchaser() }, clock),
+    ).toThrow('run.errors.cannotAmend');
+
+    // Garbage and impossible dates are rejected (2026-02-31 would roll
+    // over to March 3 and silently book the spend in the wrong month).
+    for (const bad of ['not-a-date', '2026-13-01', '2026-02-31', '26-01-01']) {
+      expect(() =>
+        decideRun(s, { type: 'ChangeRunDate', runDate: bad, actor: sa }, clock),
+      ).toThrow('run.errors.invalidRunDate');
+    }
+
+    const evs = decideRun(s, { type: 'ChangeRunDate', runDate: '2026-07-23', actor: sa }, clock);
+    const ev = evs[0];
+    if (ev?.type !== 'RunDateChanged') throw new Error('expected RunDateChanged');
+    expect(ev.payload.previousRunDate).toBe(before);
+    expect(ev.payload.runDate).toBe('2026-07-23');
+    s = evs.reduce(applyRun, s);
+    expect(s.runDate).toBe('2026-07-23');
+    // Money is untouched — this reschedules, it does not re-price.
+    expect([...s.items.values()].map((i) => i.unitPrice)).toEqual(totalsBefore);
+
+    // Re-applying the same date is a no-op that must not forge an audit entry.
+    expect(() =>
+      decideRun(s, { type: 'ChangeRunDate', runDate: '2026-07-23', actor: sa }, clock),
+    ).toThrow('run.errors.runDateUnchanged');
+  });
+
   test('RefinalizeRun rejected unless status is amending', () => {
     let s = planAndPurchase();
     const superAdmin: ActorCtx = { userId: 'sa', memberId: 'sa', permissions: new Set(['run.amend']) };

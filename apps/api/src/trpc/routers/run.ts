@@ -27,6 +27,7 @@ import {
   RunCancelInputSchema,
   RunCreateInputSchema,
   RunPreviewInputSchema,
+  ChangeRunDateInputSchema,
   RunReasonOnlyInputSchema,
   SimpleRunCommandSchema,
   UndeliverStoreInputSchema,
@@ -2164,6 +2165,26 @@ export const runRouter = router({
         decideRun(state, {
           type: 'ReopenRun',
           reason: input.reason,
+          actor: actorFromCtx(ctx),
+        }),
+      ),
+    ),
+
+  /**
+   * Correct the calendar date a run's spend is booked under.
+   *
+   * Deliberately NOT wrapped in reopen → change → refinalize: this
+   * touches no money, and refinalize would rewrite the run's frozen
+   * totals as a side effect of a pure date fix. Works on finished runs
+   * directly; the domain rejects only `cancelled`.
+   */
+  changeDate: authedProcedure
+    .input(ChangeRunDateInputSchema)
+    .mutation(async ({ ctx, input }) =>
+      runSimpleCommand(ctx, input.runId, (state) =>
+        decideRun(state, {
+          type: 'ChangeRunDate',
+          runDate: input.runDate,
           actor: actorFromCtx(ctx),
         }),
       ),

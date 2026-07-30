@@ -150,6 +150,18 @@ export const SimpleRunCommandSchema = z.object({
   expectedSeq: z.number().int().optional(),
 });
 
+/**
+ * Correct the calendar date a run's spend is booked under (2026-07-30).
+ * Super-admin only; see the RunDateChanged event docblock in
+ * packages/domain/src/run/events.ts.
+ */
+export const ChangeRunDateInputSchema = z.object({
+  runId: UuidSchema,
+  /** YYYY-MM-DD. The domain re-validates and rejects impossible dates. */
+  runDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  expectedSeq: z.number().int().optional(),
+});
+
 export const EjectSessionInputSchema = SimpleRunCommandSchema.extend({
   sessionId: UuidSchema,
   reason: z.string().max(500).optional(),
