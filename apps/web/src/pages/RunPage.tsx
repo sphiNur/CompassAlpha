@@ -54,6 +54,7 @@ import { settleItemLine, settlePerStore } from './runs/lib/settlement';
 import { countCarriedOver, STALE_PRICE_DAYS } from './runs/lib/priceState';
 import {
   allItemsHandled as allItemsHandledOf,
+  pendingItemCount as pendingItemCountOf,
   allStoresConfirmed as allStoresConfirmedOf,
 } from './runs/lib/runProgress';
 // History subsystem — extracted to runs/history (Phase 4 step 2).
@@ -737,6 +738,11 @@ export function RunPage() {
     () => allItemsHandledOf(runDetailQuery.data?.items ?? []),
     [runDetailQuery.data],
   );
+  /** Drives the "N left to handle" bottom bar during purchasing. */
+  const pendingCount = useMemo(
+    () => pendingItemCountOf(runDetailQuery.data?.items ?? []),
+    [runDetailQuery.data],
+  );
 
   const allStoresConfirmed = useMemo(() => {
     if (!runDetailQuery.data) return false;
@@ -980,16 +986,41 @@ export function RunPage() {
           active: true,
         };
       case 'purchasing':
-        // 2026-05-04: HIDE the button entirely when not actionable.
-        // The previous "Process every item first" disabled label ate
-        // 60 vertical pixels with zero value — user already knows from
-        // the row badges what's pending. Reserve the bottom strip for
-        // a real CTA, or nothing at all.
+        // 2026-05-04 hid this button entirely until every item was
+        // handled, reasoning that a disabled "Process every item first"
+        // label ate 60 px for nothing since "the user already knows from
+        // the row badges what's pending".
+        //
+        // 2026-07-30 (flow review): walking the screen with 85 of 87
+        // items outstanding, that assumption doesn't survive contact.
+        // The row badges are a 7 px ring spread over ~7,000 px of list;
+        // the "剩 85" counter scrolls away with the section header; and
+        // the bottom strip — the one piece of chrome that is always in
+        // view — was empty. The screen answered neither "what's left?"
+        // nor "how do I move on?". runProgress.ts's own header calls this
+        // out: a wrong answer here doesn't disable a button, it deletes
+        // it and strands the purchaser.
+        //
+        // The fix isn't a dead disabled button. It's the same slot doing
+        // useful work the whole time: it states the remaining count and
+        // jumps to the next item that needs one, then becomes the advance
+        // action at zero. Always visible, always actionable.
+        if (!allItemsHandled) {
+          return {
+            text: i18n.t('run.action.remainingItems', { n: pendingCount }),
+            onClick: () => {
+              const next = document.querySelector('[data-run-item-pending]');
+              next?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            },
+            visible: pendingCount > 0,
+            active: true,
+          };
+        }
         return {
           text: i18n.t('run.action.startDelivery'),
-          onClick: () => allItemsHandled && setConfirmAction('startDelivery'),
-          visible: allItemsHandled,
-          active: allItemsHandled,
+          onClick: () => setConfirmAction('startDelivery'),
+          visible: true,
+          active: true,
         };
       case 'delivering':
         return {
@@ -1009,7 +1040,7 @@ export function RunPage() {
       default:
         return { text: '', onClick: () => {}, visible: false, active: false };
     }
-  }, [activeRun, allItemsHandled, allStoresConfirmed, i18n, previewQuery.data]);
+  }, [activeRun, allItemsHandled, allStoresConfirmed, pendingCount, i18n, previewQuery.data]);
 
   /**
    * MainButton dispatch: when a sheet with a single primary action is
@@ -1226,7 +1257,8 @@ export function RunPage() {
                       storeById.get(ps.storeId)?.name ?? ps.storeId.slice(0, 8);
                     const mixed = ps.cash > 0 && ps.transfer > 0;
                     const tail = mixed
-                      ? ` · 💵 ${formatMoney(ps.cash)} · 🏦 ${formatMoney(ps.transfer)}`
+                      ? ` · ${i18n.t('run.label.paymentCash')} ${formatMoney(ps.cash)}` +
+                        ` · ${i18n.t('run.label.paymentTransfer')} ${formatMoney(ps.transfer)}`
                       : '';
                     return `${storeName}: ${formatMoney(ps.total)}${tail}`;
                   })
@@ -1511,8 +1543,36 @@ export function RunPage() {
   // M1.9-extra (P4): adopted shared <PageHeader>. Subtitle folds in
   // run date + phase label so the line under the title shows
   // "2026-05-07 · Purchase" or "No active run" depending on state.
+  /**
+   * Whole days between the run's date and today; 0 for today's run.
+   *
+   * `runDate` is YYYY-MM-DD in the ORG's timezone while "today" here comes
+   * from the device. On a device set to a wildly different timezone the
+   * count can be off by one around midnight — acceptable, because this
+   * drives a "this is old" hint, not a gate. Both sides are pinned to UTC
+   * midnight so the subtraction itself can't drift.
+   */
+  const runAgeDays = (() => {
+    if (!activeRun) return 0;
+    const runMs = Date.parse(`${activeRun.runDate}T00:00:00Z`);
+    if (Number.isNaN(runMs)) return 0;
+    const now = new Date();
+    const todayMs = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+    return Math.max(0, Math.round((todayMs - runMs) / 86_400_000));
+  })();
+
+  // 2026-07-30: drop the year for runs in the current year. The bar has to
+  // fit `+ 新增`, this line and the staleness badge inside ~223 px once
+  // Telegram's chrome pads are subtracted; "2026-" is the least
+  // informative five characters available, and the badge now carries "how
+  // old" anyway.
+  const runDateShort =
+    activeRun && activeRun.runDate.slice(0, 4) === String(new Date().getFullYear())
+      ? activeRun.runDate.slice(5)
+      : (activeRun?.runDate ?? '');
+
   const runSubtitle = activeRun
-    ? `${activeRun.runDate} · ${
+    ? `${runDateShort} · ${
         activeRun.status === 'planned'
           ? i18n.t('run.step.plan')
           : activeRun.status === 'purchasing'
@@ -1566,27 +1626,19 @@ export function RunPage() {
             paddingRight: 'max(16px, var(--app-chrome-pad-right, 16px))',
           }}
         >
-          {/* M3.36 (2026-05-19): "×1000" toggle. Visible during the
-              two stages where price actually gets typed — planned (an
-              advanced edit can still pop) and purchasing. Hidden in
-              delivering / finished where the toggle would be a
-              no-op (no price inputs anywhere). */}
-          {activeRun.status === 'planned' || editing ? (
-            <button
-              type="button"
-              onClick={togglePriceInThousands}
-              title={i18n.t('run.label.thousandsToggleAria')}
-              aria-pressed={priceInThousands}
-              className={
-                'shrink-0 rounded-[var(--r-pill)] px-2 py-0.5 text-label font-mono tabular-nums active:opacity-70 ' +
-                (priceInThousands
-                  ? 'bg-[var(--c-action)]/15 text-[var(--c-action)] ring-1 ring-[var(--c-action)]'
-                  : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
-              }
-            >
-              {i18n.t('run.label.thousandsToggle')}
-            </button>
-          ) : null}
+          {/* M3.36 shipped the "×1000" price-mode toggle here as a pill
+              whose entire meaning lived in a `title` attribute. On a
+              touch device there is no hover, so nothing ever revealed
+              what "×千" did — while it defaulted to ON and silently
+              multiplied every price the purchaser typed by 1000. It also
+              cost width in a bar that, inside Telegram, has only ~223 px
+              to work with once the chrome pads are subtracted.
+
+              2026-07-30: the control moved ONTO the price field's unit
+              suffix in PurchaseRow (`K·UZS` / `UZS`). That is where the
+              user is looking when the setting matters, the suffix states
+              the current unit rather than naming an operation, and the
+              sticky bar gets its width back for the run identity. */}
           {/* M3.41 (2026-05-21): "+ add item" — only shown during
               purchasing AND when I hold the run claim (C.2 gate). The
               domain layer enforces the same constraints; gating the UI
@@ -1627,9 +1679,24 @@ export function RunPage() {
               {i18n.t('run.action.addItem.button')}
             </button>
           ) : null}
-          <span className="ml-auto truncate text-label tabular-nums text-[var(--c-fg-muted)]">
+          {/* 2026-07-30 (flow review): this line is the definite article
+              for everything below it — every submission, item and price on
+              the page belongs to THIS run — and it was rendered as the
+              smallest, faintest, right-most element in the bar. Removing
+              the ×千 pill freed the width to give it normal weight.
+
+              The staleness badge is the other half. The run I walked was
+              3 days old and still `purchasing`, with nothing anywhere
+              saying so; a purchaser opening the app can't tell an active
+              trip from one somebody forgot to close. */}
+          <span className="min-w-0 flex-1 truncate text-body font-semibold tabular-nums text-[var(--c-fg)]">
             #{activeRun.runIndex + 1} · {runSubtitle}
           </span>
+          {runAgeDays > 0 ? (
+            <span className="shrink-0 whitespace-nowrap rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-label text-[var(--c-warning-fg)]">
+              {i18n.t('run.label.staleRun', { days: runAgeDays })}
+            </span>
+          ) : null}
         </div>
       ) : null}
 
@@ -1781,6 +1848,7 @@ export function RunPage() {
           productName={productName}
           i18n={i18n}
           priceInThousands={priceInThousands}
+          onTogglePriceUnit={togglePriceInThousands}
           savingSkuId={inlineSavingSkuId}
           onSavePurchaseInline={({
             skuId,
@@ -1998,7 +2066,6 @@ export function RunPage() {
       <RunHistorySection
         runs={runsQuery.data ?? []}
         productName={productName}
-        storeById={storeById}
         i18n={i18n}
         onOpenAll={() => setHistoryPageOpen(true)}
         onOpen={(r) =>

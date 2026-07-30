@@ -19,12 +19,18 @@ import {
 } from '@compass/ui';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
-import { usePageMainButton, getTg, haptic } from '../hooks/useTelegram';
+import { usePageMainButton, haptic } from '../hooks/useTelegram';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
 import { matchesNameLike, normalizeQuery } from '../lib/searchMatch';
-import { useI18n, useProductName, useProductNameParts, useUnitLabel } from '../hooks/useI18n';
+import {
+  useDateFormat,
+  useI18n,
+  useProductName,
+  useProductNameParts,
+  useUnitLabel,
+} from '../hooks/useI18n';
 
 // M3.34 (2026-05-19): canonical units for the extras editor's unit
 // dropdown — kept in sync with CanonicalUnitSchema in
@@ -44,13 +50,21 @@ const UNIT_STEP: Record<string, string> = {
 };
 const UNIT_IS_INTEGER = new Set(['pcs', 'pack', 'pair', 'bunch', 'roll']);
 import { formatQty, formatMoney } from '../lib/format';
-import { useStoreContext } from '../components/StoreSwitcher';
+import { StoreChip, useStoreContext } from '../components/StoreSwitcher';
 
 export function OrderPage() {
   const i18n = useI18n();
   const productName = useProductName();
   const productNameParts = useProductNameParts();
+  // 2026-07-30 (flow review): the Order surface was the ONE place still
+  // rendering the raw canonical unit ("kg" / "pcs") while Approval, Run
+  // and the extras editor all went through useUnitLabel. Staff saw
+  // "0.5 kg" here and "0.5 公斤" on every downstream screen. Memoized by
+  // locale, so passing it into the React.memo'd SkuRow is memo-safe.
+  const unitLabel = useUnitLabel();
+  const dateFmt = useDateFormat();
   const session = useAuthStore((s) => s.session);
+  const orgCurrency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   // Language picker — accessible from every page's header so staff
   // who don't have admin access can still switch languages (added
   // 2026-05-05). State lives at OrderPage level since this is the
@@ -65,6 +79,27 @@ export function OrderPage() {
   const errToast = useErrToast();
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
+  // 2026-07-30: BatchStrip was written but never rendered, so the
+  // "今日 N 批" count in the sticky bar was a dead number -- it told you
+  // other batches existed and gave you no way to look at them. Now the
+  // count is a button that opens this sheet, and the receipt view renders
+  // the same strip inline.
+  const [batchesOpen, setBatchesOpen] = useState(false);
+  /**
+   * "I want to start a fresh batch" (2026-07-30).
+   *
+   * `todaySession` returns the open draft if there is one, else the most
+   * recent submitted batch — so once you've submitted, the page has a
+   * non-draft session and goes read-only. M3.32 supports several batches
+   * per (member, store, day), and the server lazy-creates the next draft
+   * on the first AdjustItem, but nothing in the UI ever asked for one.
+   *
+   * This flag says "ignore the submitted session, show me an empty
+   * editable catalog". `startNewBatch` also nulls the cached session so
+   * handleQtyChange takes its `if (!old)` path and builds a fresh
+   * optimistic draft instead of appending to the submitted one.
+   */
+  const [newBatch, setNewBatch] = useState(false);
   // M1.10 (2026-05-08): cross-language SKU search. Lives above the
   // category chip-bar; queries match across uz/ru/en/zh names + code.
   const [searchQuery, setSearchQuery] = useState('');
@@ -72,6 +107,12 @@ export function OrderPage() {
   const categoriesQuery = trpc.catalog.categories.useQuery();
   const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: false });
   const sessionQuery = trpc.order.todaySession.useQuery(
+    { storeId: currentStoreId ?? '' },
+    { enabled: !!currentStoreId },
+  );
+  // Every batch this member started today at this store — drives the
+  // "今日 N 批" strip and the receipt's batch list.
+  const batchesQuery = trpc.order.todayBatches.useQuery(
     { storeId: currentStoreId ?? '' },
     { enabled: !!currentStoreId },
   );
@@ -324,6 +365,7 @@ export function OrderPage() {
             orderDate: new Date().toISOString().slice(0, 10),
             status: 'draft' as const,
             claimedByMemberId: null,
+            claimedByDisplayName: null,
             claimedAt: null,
             submittedAt: null,
             decidedAt: null,
@@ -394,6 +436,9 @@ export function OrderPage() {
     retry: false,
     onSuccess: () => {
       void utils.order.todaySession.invalidate();
+      void utils.order.todayBatches.invalidate();
+      // Leave new-batch mode: the batch we just sent is now the receipt.
+      setNewBatch(false);
       haptic('success');
       toast.success(i18n.t('order.toast.submitted'));
     },
@@ -412,8 +457,29 @@ export function OrderPage() {
     },
   });
   const withdraw = trpc.order.withdraw.useMutation({
-    onSuccess: () => void utils.order.todaySession.invalidate(),
+    onSuccess: () => {
+      void utils.order.todaySession.invalidate();
+      void utils.order.todayBatches.invalidate();
+    },
   });
+
+  /**
+   * Leave the receipt and start the next batch. Nulling the cached session
+   * is what makes handleQtyChange build a fresh optimistic draft rather
+   * than appending to the submitted one; the server lazy-creates the real
+   * draft on the first AdjustItem.
+   */
+  const startNewBatch = useCallback(() => {
+    if (!currentStoreId) return;
+    setNewBatch(true);
+    utils.order.todaySession.setData({ storeId: currentStoreId }, null);
+  }, [currentStoreId, utils.order.todaySession]);
+
+  // Switching stores must not carry new-batch mode across — the other
+  // store has its own session and its own answer to "am I editing?".
+  useEffect(() => {
+    setNewBatch(false);
+  }, [currentStoreId]);
 
   /**
    * Session-level "其他物品" structured extras (M3.16-C, 2026-05-16).
@@ -495,11 +561,14 @@ export function OrderPage() {
   const selectedCount = totals.length;
 
   const sessionStatus = sessionQuery.data?.status ?? null;
-  const isReadOnly =
+  const sessionLocked =
     sessionStatus === 'submitted' ||
     sessionStatus === 'approved' ||
     sessionStatus === 'in_run' ||
     sessionStatus === 'archived';
+  // While starting a new batch the locked session is not what we're
+  // editing, so nothing is read-only.
+  const isReadOnly = sessionLocked && !newBatch;
 
   // Telegram MainButton — single point of control for the entire submit
   // flow. State machine:
@@ -621,12 +690,131 @@ export function OrderPage() {
     );
   }
 
-  const today = new Date();
-  const dateLabel = today.toLocaleDateString(undefined, {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-  });
+  // 2026-07-30 (flow review): was `toLocaleDateString(undefined, …)`, i.e.
+  // the BROWSER's locale, so the review sheet's subtitle read
+  // "Thursday, July 30" above a Chinese item list.
+  const dateLabel = dateFmt.weekdayLong(new Date());
+
+  /**
+   * SUBMITTED-BATCH RECEIPT (2026-07-30).
+   *
+   * Before this, submitting left you on the same 244-row catalog with every
+   * row disabled — ~12,000 px of greyed-out list — and the review sheet's
+   * only entry point was the main button, which hides itself once
+   * `canSubmit` goes false. So after pressing Submit there was literally no
+   * way to see what you had just sent.
+   *
+   * The catalog is a tool for *choosing*; once the choice is made it's
+   * noise. This replaces it with the receipt: what you sent, what it's
+   * worth, where it is in the pipeline, and the two things you might now
+   * want — take it back, or start another batch.
+   *
+   * `ReviewList` is reused deliberately: the pre-submit preview and the
+   * post-submit receipt should be the same object, so nothing looks like it
+   * changed in transit.
+   */
+  if (isReadOnly && sessionQuery.data) {
+    const locked = sessionQuery.data;
+    const claimedByOther =
+      !!locked.claimedByMemberId && locked.claimedByMemberId !== session.member.memberId;
+    // Withdraw is only offered while nobody has picked the batch up. The
+    // server enforces the same rule; hiding it avoids a tap-then-403.
+    const canWithdraw = sessionStatus === 'submitted' && !claimedByOther;
+    return (
+      <div className="flex flex-col pb-4">
+        <StickyPageBar>
+          <StoreChip />
+          <span className="ml-auto shrink-0 text-label tabular-nums text-[var(--c-fg-muted)]">
+            {dateLabel}
+          </span>
+        </StickyPageBar>
+
+        <div className="flex flex-col gap-3 px-4 pt-3">
+          <BatchStrip
+            batches={batchesQuery.data ?? []}
+            currentId={locked.id}
+            i18n={i18n}
+            currency={orgCurrency}
+          />
+          {claimedByOther ? (
+            <Banner
+              tone="warn"
+              title={i18n.t('order.banner.claimed', {
+                who: locked.claimedByDisplayName ?? i18n.t('approval.unknownReviewer'),
+              })}
+            />
+          ) : sessionStatus === 'submitted' ? (
+            <Banner
+              tone="info"
+              title={i18n.t('order.status.submitted')}
+              action={
+                canWithdraw ? (
+                  <Button
+                    size="sm"
+                    variant="pearl"
+                    loading={withdraw.isPending}
+                    onClick={() => withdraw.mutate({ sessionId: locked.id })}
+                  >
+                    {i18n.t('order.withdraw')}
+                  </Button>
+                ) : undefined
+              }
+            />
+          ) : sessionStatus === 'approved' ? (
+            <Banner tone="success" title={i18n.t('order.banner.approved.title')}>
+              {i18n.t('order.banner.approved.body')}
+            </Banner>
+          ) : sessionStatus === 'in_run' ? (
+            <Banner tone="info" title={i18n.t('order.banner.inRun.title')}>
+              {i18n.t('order.banner.inRun.body')}
+            </Banner>
+          ) : (
+            <Banner tone="info" title={i18n.t('order.status.archived')} />
+          )}
+
+          <BatchStrip
+            batches={batchesQuery.data ?? []}
+            currentId={locked.id}
+            i18n={i18n}
+            currency={orgCurrency}
+          />
+
+          <div>
+            <SectionLabel padded={false} className="mb-1.5">
+              {i18n.t('order.receipt.submittedItems')}
+            </SectionLabel>
+            <ReviewList totals={totals} skus={skus} productName={productName} />
+          </div>
+        </div>
+
+        {/* Extras render read-only through the same editor the draft uses,
+            so an off-catalog request the store made still shows up on the
+            receipt instead of silently disappearing after submit. */}
+        {locked.id !== 'optimistic' ? (
+          <SessionExtrasEditor
+            sessionId={locked.id}
+            storeId={currentStoreId}
+            initialValue={(locked.extras ?? []).map((r) => ({
+              ...r,
+              unit: (CANONICAL_UNITS as readonly string[]).includes(r.unit)
+                ? (r.unit as (typeof CANONICAL_UNITS)[number])
+                : 'kg',
+            }))}
+            isReadOnly
+            onSave={async () => {
+              /* read-only — never called */
+            }}
+          />
+        ) : null}
+
+        <div className="px-4 pt-4">
+          <Button block size="lg" variant="pearl" onClick={startNewBatch}>
+            {i18n.t('order.batches.newBatch')}
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col">
@@ -641,6 +829,27 @@ export function OrderPage() {
           The sticky strip now carries only the SearchInput + category
           ChipBar — the actual filters the user interacts with. */}
       <StickyPageBar direction="col">
+        {/* 2026-07-30 (flow review): the store you are ordering for was
+            stated NOWHERE on this page. See the StoreChip docblock —
+            with the picker two taps deep in Telegram's overflow and the
+            selection persisted, an owner could spend a day ordering into
+            the wrong store with no cue at all. */}
+        <div className="flex items-center gap-2">
+          <StoreChip />
+          {/* Batch count stays visible while drafting too — otherwise
+              "再报一批" drops you into an empty catalog identical to a
+              first-of-the-day order, with nothing saying the earlier
+              batches exist. */}
+          {(batchesQuery.data?.length ?? 0) > 1 ? (
+            <button
+              type="button"
+              onClick={() => setBatchesOpen(true)}
+              className="press ml-auto shrink-0 rounded-[var(--r-pill)] px-1.5 py-0.5 text-label tabular-nums text-[var(--c-action)]"
+            >
+              {i18n.t('order.batches.today', { n: batchesQuery.data!.length })}
+            </button>
+          ) : null}
+        </div>
         <SearchInput
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
@@ -773,6 +982,7 @@ export function OrderPage() {
                 isReadOnly={isReadOnly}
                 storeId={currentStoreId}
                 productNameParts={productNameParts}
+                unitLabel={unitLabel}
                 i18n={i18n}
                 onQtyChange={handleQtyChange}
               />
@@ -823,21 +1033,15 @@ export function OrderPage() {
         />
       ) : null}
 
-      {/* In-page primary action — ONLY when not running inside Telegram.
-          Inside Telegram the MainButton (above) is the canonical CTA;
-          rendering this button too would show two duplicate buttons. */}
-      {!getTg() && canSubmit && selectedCount > 0 ? (
-        <div className="sticky bottom-[var(--app-safe-bottom)] mt-3 px-4 pb-4">
-          <Button
-            block
-            size="lg"
-            disabled={submit.isPending}
-            onClick={() => setReviewOpen(true)}
-          >
-            {i18n.t('order.review', { n: selectedCount })}
-          </Button>
-        </div>
-      ) : null}
+      {/* An in-page "Review order (N)" fallback used to live here, gated on
+          `!getTg()` — "only outside Telegram, where there's no MainButton".
+          Deleted 2026-07-30. It never rendered (getTg() is truthy in any
+          browser: the SDK is a static script tag), and it MUST not: since
+          M3.49 the in-DOM <PageMainButton /> in Shell renders in every
+          environment and already carries this exact action. Reviving the
+          branch by "fixing" its predicate would just show the button
+          twice. The other five sites that conflated SDK-present with
+          inside-Telegram needed real fixes; this one needed deleting. */}
 
       {/* Review sheet — preview of what's being submitted. No buttons in
           the body: inside Telegram the MainButton text changes from
@@ -845,6 +1049,25 @@ export function OrderPage() {
           submit trigger. Tap-outside / swipe-down dismisses the sheet.
           Outside Telegram (rare — web preview) we render a single
           fallback button in the footer since there's no MainButton. */}
+      {/* Today's batches, reachable while drafting. Without this the count
+          above was informational only: you could see that an earlier batch
+          existed but not what was in it or where it had got to. */}
+      <Sheet
+        open={batchesOpen}
+        onOpenChange={setBatchesOpen}
+        title={i18n.t('order.batches.today', { n: batchesQuery.data?.length ?? 0 })}
+      >
+        <div className="py-3">
+          <BatchStrip
+            batches={batchesQuery.data ?? []}
+            currentId={sessionQuery.data?.id ?? ''}
+            i18n={i18n}
+            currency={orgCurrency}
+            showHeading={false}
+          />
+        </div>
+      </Sheet>
+
       <Sheet
         open={reviewOpen}
         onOpenChange={(open) => !open && !submit.isPending && setReviewOpen(false)}
@@ -917,6 +1140,7 @@ const SkuRow = memo(function SkuRow({
   isReadOnly,
   storeId,
   productNameParts,
+  unitLabel,
   i18n,
   onQtyChange,
 }: {
@@ -929,6 +1153,7 @@ const SkuRow = memo(function SkuRow({
   productNameParts: (item: {
     names: Record<string, string> | null | undefined;
   }) => { primary: string; secondary: string | null };
+  unitLabel: (unit: string | null | undefined) => string;
   i18n: ReturnType<typeof useI18n>;
   onQtyChange: (storeId: string, skuId: string, qty: string) => void;
 }) {
@@ -966,7 +1191,7 @@ const SkuRow = memo(function SkuRow({
             {otherContribCount > 0 && totalQty > 0 ? (
               <>
                 <span className="font-semibold text-[var(--c-fg)]">
-                  {i18n.t('order.totalQty', { qty: totalQty, unit: sku.unit })}
+                  {i18n.t('order.totalQty', { qty: totalQty, unit: unitLabel(sku.unit) })}
                 </span>
                 {' '}
                 ({otherContribCount + (myQty > 0 ? 1 : 0)})
@@ -978,7 +1203,7 @@ const SkuRow = memo(function SkuRow({
       <QtyControl
         value={myQty}
         step={Number(sku.step)}
-        unit={sku.unit}
+        unit={unitLabel(sku.unit)}
         disabled={isReadOnly}
         onChange={(next) => onQtyChange(storeId, sku.id, String(next))}
         // M3.55 (2026-05-23): show the SKU name in the qty quick-pick
@@ -991,6 +1216,91 @@ const SkuRow = memo(function SkuRow({
     </li>
   );
 });
+
+/**
+ * "Today's batches" strip (2026-07-30).
+ *
+ * M3.32 gave a (member, store, day) several sessions; the Order page only
+ * ever showed one of them, so submitting a batch and starting another made
+ * the first disappear with no trace. This is the trace: one chip per batch,
+ * the one you're looking at marked, so "did my morning order go through?"
+ * is answerable without leaving the page.
+ *
+ * Renders nothing for a single batch — with one chip the strip would just
+ * restate the receipt below it.
+ */
+function BatchStrip({
+  batches,
+  currentId,
+  i18n,
+  currency,
+  showHeading = true,
+}: {
+  /** The sheet that can host this strip supplies its own title, so it
+   *  turns the internal heading off rather than stating "今日 N 批" twice. */
+  showHeading?: boolean;
+  batches: Array<{
+    id: string;
+    status: string;
+    batchNumber: number;
+    itemCount: number;
+    estimatedTotal: string | null;
+  }>;
+  currentId: string;
+  i18n: ReturnType<typeof useI18n>;
+  currency: string;
+}) {
+  if (batches.length < 2) return null;
+  return (
+    <div>
+      {showHeading ? (
+        <SectionLabel padded={false} className="mb-1.5">
+          {i18n.t('order.batches.today', { n: batches.length })}
+        </SectionLabel>
+      ) : null}
+      <ul className="flex flex-col gap-1" role="list">
+        {batches.map((b) => {
+          const isCurrent = b.id === currentId;
+          return (
+            <li
+              key={b.id}
+              className={
+                'flex items-baseline justify-between gap-2 rounded-[var(--r-card)] px-3 py-2 text-label ring-hairline ' +
+                (isCurrent
+                  ? 'bg-[var(--c-action)]/10 ring-1 ring-[var(--c-action)]'
+                  : 'bg-[var(--c-surface-2)]')
+              }
+            >
+              <span className="min-w-0 truncate">
+                <span className="font-semibold text-[var(--c-fg)]">
+                  {i18n.t('order.batches.batchLabel', { n: b.batchNumber })}
+                </span>{' '}
+                <span className="text-[var(--c-fg-muted)]">
+                  {i18n.t(
+                    ('order.status.' + b.status) as Parameters<typeof i18n.t>[0],
+                    { reason: '' },
+                  )}
+                </span>
+                {isCurrent ? (
+                  <span className="text-[var(--c-action)]">
+                    {' · '}
+                    {i18n.t('order.batches.viewing')}
+                  </span>
+                ) : null}
+              </span>
+              <span className="shrink-0 whitespace-nowrap tabular-nums text-[var(--c-fg-muted)]">
+                {i18n.t('approval.itemsCount', { n: b.itemCount })}
+                {b.estimatedTotal
+                  ? ` · ~${formatMoney(Number(b.estimatedTotal))} ${currency}`
+                  : ''}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
 
 interface ReviewTotal {
   skuId: string;
@@ -1007,6 +1317,9 @@ function ReviewList({
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
 }) {
   const i18n = useI18n();
+  // 2026-07-30 (flow review): was printing the raw canonical unit, so the
+  // last screen before Submit read "0.5 kg" while Approval showed "0.5 公斤".
+  const unitLabel = useUnitLabel();
   // M1.21: org-wide currency for the estimate suffix.
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   // Pull avg-7d price stats for the SKUs being reviewed so we can show
@@ -1127,7 +1440,7 @@ function ReviewList({
                     {r.name}
                   </span>
                   <span className="shrink-0 font-mono text-body tabular-nums text-[var(--c-fg-muted)]">
-                    {formatQty(r.qty)} {r.unit}
+                    {formatQty(r.qty)} {unitLabel(r.unit)}
                   </span>
                 </li>
               ))}

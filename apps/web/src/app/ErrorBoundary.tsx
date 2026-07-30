@@ -7,6 +7,47 @@
  */
 import { Component } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
+import { createI18n, detectLocale, type Locale } from '@compass/i18n';
+
+/**
+ * Resolve the user's locale WITHOUT hooks (2026-07-30).
+ *
+ * ErrorBoundary is the outermost component — it wraps ThemeProvider and
+ * UiLabelsBridge — so it can't use `useI18n()` and can't read any React
+ * context: it is the ancestor of all of them. It also has to keep working
+ * when the tree below it has just blown up.
+ *
+ * Preference order:
+ *   1. The persisted session's `user.locale` — the language the user
+ *      actually chose, and what every other screen is rendering in.
+ *   2. Telegram's `language_code` / `navigator.language`, same signal
+ *      /boot-guard.js uses to set <html lang> before React boots.
+ *
+ * `lookup()` falls back through `en`, and `en` is the statically-bundled
+ * catalog, so a crash that happens BEFORE the locale chunk resolves
+ * degrades to English rather than rendering keys. That's the honest
+ * outcome for a boot-time crash; a mid-session crash (the realistic case,
+ * and the one observed on 2026-07-30) has the catalog long since loaded.
+ */
+function crashLocale(): Locale {
+  try {
+    const raw = window.localStorage.getItem('compass.auth');
+    if (raw) {
+      const persisted = JSON.parse(raw) as {
+        state?: { session?: { user?: { locale?: string } } };
+      };
+      const chosen = persisted.state?.session?.user?.locale;
+      if (chosen) return detectLocale(chosen);
+    }
+  } catch {
+    /* unparseable / storage blocked — fall through to the platform hint */
+  }
+  const tgLang =
+    typeof window !== 'undefined'
+      ? window.Telegram?.WebApp?.initDataUnsafe?.user?.language_code
+      : undefined;
+  return detectLocale(tgLang ?? (typeof navigator !== 'undefined' ? navigator.language : 'en'));
+}
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -43,6 +84,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     if (this.state.error) {
       const message = this.state.error.message ?? String(this.state.error);
       const stack = this.state.error.stack ?? '';
+      // Resolved per render rather than in a field: the locale catalog may
+      // land between the crash and a re-render, and this screen is sticky
+      // (the user sits on it), so picking the language up late still helps.
+      const { t } = createI18n(crashLocale());
       return (
         <div
           style={{
@@ -62,12 +107,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           <div style={{ fontSize: 64 }} aria-hidden>
             ⚠
           </div>
-          <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>
-            Something broke before the app could render.
-          </h1>
+          <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>{t('boot.crashTitle')}</h1>
           <p style={{ fontSize: 14, opacity: 0.7, margin: 0, maxWidth: 320 }}>
-            The error has been reported. Try closing and reopening the Mini App.
-            If it keeps happening, share the trace below with your administrator.
+            {t('boot.crashBody')}
           </p>
           <pre
             style={{
@@ -102,7 +144,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               cursor: 'pointer',
             }}
           >
-            Try again
+            {t('boot.tryAgain')}
           </button>
           <button
             type="button"
@@ -124,7 +166,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               cursor: 'pointer',
             }}
           >
-            Reset session and reload
+            {t('boot.resetAndReload')}
           </button>
         </div>
       );

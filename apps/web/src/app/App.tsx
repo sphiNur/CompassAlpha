@@ -11,6 +11,7 @@ import { useRealtime } from '../hooks/useRealtime';
 import { AuthGate } from './AuthGate';
 import { Shell } from './Shell';
 import { ErrorBoundary } from './ErrorBoundary';
+import { UiLabelsBridge } from './UiLabelsBridge';
 
 const isBrowser = typeof window !== 'undefined';
 // Local-scope augmentation: `__compassLoggerBooted` is a private
@@ -95,19 +96,27 @@ export function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme={defaultTheme}>
-        <ToastProvider>
-          <ToastConsumers>
-            <trpc.Provider client={trpcClient} queryClient={queryClient}>
-              <QueryClientProvider client={queryClient}>
-                <QueryConsumers>
-                  <AuthGate>
-                    <Shell />
-                  </AuthGate>
-                </QueryConsumers>
-              </QueryClientProvider>
-            </trpc.Provider>
-          </ToastConsumers>
-        </ToastProvider>
+        {/* UiLabelsBridge feeds the i18n catalog into @compass/ui so the
+            strings the design system renders itself (QtyControl's
+            quick-pick sheet + aria-labels, DataState empty/error states,
+            PhotoCapture hints) follow the user's language instead of
+            being frozen English. Sits outside AuthGate so the auth and
+            onboarding screens get it too. */}
+        <UiLabelsBridge>
+          <ToastProvider>
+            <ToastConsumers>
+              <trpc.Provider client={trpcClient} queryClient={queryClient}>
+                <QueryClientProvider client={queryClient}>
+                  <QueryConsumers>
+                    <AuthGate>
+                      <Shell />
+                    </AuthGate>
+                  </QueryConsumers>
+                </QueryClientProvider>
+              </trpc.Provider>
+            </ToastConsumers>
+          </ToastProvider>
+        </UiLabelsBridge>
       </ThemeProvider>
     </ErrorBoundary>
   );

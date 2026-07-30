@@ -20,6 +20,7 @@ import { PaymentMethodChips } from '../../../components/PaymentMethodChips';
 import { useAuthStore } from '../../../stores/authStore';
 import { formatMoney, formatQty } from '../../../lib/format';
 import { matchesNameLike, normalizeQuery } from '../../../lib/searchMatch';
+import { useUnitLabel } from '../../../hooks/useI18n';
 import type { useI18n } from '../../../hooks/useI18n';
 import { toDisplayPrice, fromDisplayPrice } from '../lib/priceMath';
 import { evenSplitQty } from '../lib/splitQty';
@@ -544,6 +545,9 @@ export function AddItemSheet({
   submitting: boolean;
 }) {
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
+  // 2026-07-30 (flow review): the SKU picker rows showed the raw canonical
+  // unit while every other run surface showed the localized label.
+  const unitLabel = useUnitLabel();
   const [search, setSearch] = useState('');
   const [priceInput, setPriceInput] = useState('');
   const initializedExpenseScopeRef = useRef<string | null>(null);
@@ -832,7 +836,7 @@ export function AddItemSheet({
                             {productName(sku)}
                           </span>
                           <span className="shrink-0 text-label text-[var(--c-fg-muted)]">
-                            {sku.unit}
+                            {unitLabel(sku.unit)}
                           </span>
                         </button>
                       </li>

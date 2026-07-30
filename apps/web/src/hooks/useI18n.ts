@@ -71,6 +71,57 @@ export function useI18n() {
 }
 
 /**
+ * Locale-bound date/time formatters (2026-07-30, flow review).
+ *
+ * Every `toLocaleDateString` / `toLocaleString` call site passed either
+ * `undefined` or `[]` as the locale, which means "use the BROWSER's
+ * locale" — not the app's. A Chinese operator on a phone set to English
+ * therefore saw "Thursday, July 30" as the review-sheet subtitle and
+ * "JUNE 2026" as the run-history month header, in an otherwise fully
+ * Chinese UI. The user's language choice lives in the session and drives
+ * every other string; dates were the one thing ignoring it.
+ *
+ * Formatter instances are memoized per locale — `Intl.DateTimeFormat`
+ * construction is the expensive part, and the run-history header builds
+ * one per month group on every render.
+ *
+ * Accepts `Date | string | number | null`; returns '' for nullish input so
+ * call sites can pipe possibly-absent server values straight through.
+ */
+export function useDateFormat() {
+  const i18n = useI18n();
+  return useMemo(() => {
+    const locale = i18n.locale;
+    const fmt = (opts: Intl.DateTimeFormatOptions) => {
+      const f = new Intl.DateTimeFormat(locale, opts);
+      return (v: Date | string | number | null | undefined): string => {
+        if (v === null || v === undefined || v === '') return '';
+        const d = v instanceof Date ? v : new Date(v);
+        return Number.isNaN(d.getTime()) ? '' : f.format(d);
+      };
+    };
+    return {
+      /** "2026年7月30日星期四" / "Thursday, July 30" — order-review subtitle. */
+      weekdayLong: fmt({ weekday: 'long', month: 'long', day: 'numeric' }),
+      /** "2026年6月" / "June 2026" — run-history month group header. */
+      monthYear: fmt({ month: 'long', year: 'numeric' }),
+      /** Calendar date only. */
+      date: fmt({ year: 'numeric', month: 'short', day: 'numeric' }),
+      /** Date + HH:MM — audit rows, sales rows. */
+      dateTime: fmt({
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+      /** HH:MM only. */
+      time: fmt({ hour: '2-digit', minute: '2-digit' }),
+    };
+  }, [i18n.locale]);
+}
+
+/**
  * Hook for localized unit labels (M3.34, 2026-05-19).
  *
  * Backend stores unit as a short canonical string per the SKU schema

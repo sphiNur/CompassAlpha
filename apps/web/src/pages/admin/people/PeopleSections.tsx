@@ -43,7 +43,7 @@ import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { matchesAnyString, normalizeQuery } from '../../../lib/searchMatch';
-import { useI18n } from '../../../hooks/useI18n';
+import { useDateFormat, useI18n } from '../../../hooks/useI18n';
 import { getTg } from '../../../hooks/useTelegram';
 import { useStoreContext } from '../../../components/StoreSwitcher';
 import { botLink as makeBotLink, shareLink as makeShareLink } from '../../../lib/telegramLinks';
@@ -90,6 +90,7 @@ export function PeopleSection({
   const toast = useToast();
   const errToast = useErrToast();
   const i18n = useI18n();
+  const dateFmt = useDateFormat();
   // M1.9: per-key allow/deny override grid is power-user surface — gate
   // the "Permissions" button to global admins only. The 4 built-in
   // roles cover the common cases that store-scoped managers need.
@@ -181,11 +182,11 @@ export function PeopleSection({
   const detachFromStore = trpc.admin.memberDetachFromStore.useMutation({
     onSuccess: (data) => {
       void utils.admin.memberList.invalidate();
-      const parts = ['Removed from store'];
+      const parts = [i18n.t('people.toastRemovedFromStore')];
       if (data.revokedBindings > 0)
-        parts.push(`${data.revokedBindings} role${data.revokedBindings === 1 ? '' : 's'} revoked`);
+        parts.push(i18n.t('people.toastRolesRevoked', { n: data.revokedBindings }));
       if (data.revokedOverrides > 0)
-        parts.push(`${data.revokedOverrides} override${data.revokedOverrides === 1 ? '' : 's'} dropped`);
+        parts.push(i18n.t('people.toastOverridesDropped', { n: data.revokedOverrides }));
       toast.info(parts.join(' · '));
     },
     onError: errToast('common.error'),
@@ -259,13 +260,22 @@ export function PeopleSection({
                     <div className="min-w-0">
                       <CardTitle>
                         {m.displayName}
-                        {isSelf ? ' · you' : ''}
+                        {/* 2026-07-30 (flow review): these four strings were
+                            English literals even though admin.label.you /
+                            .noTelegram / .neverSeen have existed in all four
+                            catalogs for months — translated and wired up
+                            nowhere. The date also read the browser locale. */}
+                        {isSelf ? ` · ${i18n.t('admin.label.you')}` : ''}
                       </CardTitle>
                       <CardMeta>
-                        {m.tgUsername ? `@${m.tgUsername}` : 'no telegram'}
+                        {m.tgUsername
+                          ? `@${m.tgUsername}`
+                          : i18n.t('admin.label.noTelegram')}
                         {m.lastSeenAt
-                          ? ` · seen ${new Date(m.lastSeenAt).toLocaleDateString()}`
-                          : ' · never seen'}
+                          ? ` · ${i18n.t('admin.label.seen', {
+                              date: dateFmt.date(m.lastSeenAt),
+                            })}`
+                          : ` · ${i18n.t('admin.label.neverSeen')}`}
                       </CardMeta>
                     </div>
                   </div>
@@ -319,7 +329,7 @@ export function PeopleSection({
                               () => revoke.mutate({ bindingId: r.bindingId }),
                             )
                           }
-                          title="Tap to revoke"
+                          title={i18n.t('people.tapToRevoke')}
                         >
                           <span className="font-semibold">{r.name}</span>
                           {scopedStoreName ? (
@@ -421,8 +431,8 @@ export function PeopleSection({
             if (orgOnly.length === 0) {
               return (
                 <EmptyState
-                  title="No org-level members"
-                  description="Admins and super-admins who don't belong to any specific store appear here."
+                  title={i18n.t('people.orgLevelEmptyTitle')}
+                  description={i18n.t('people.orgLevelEmptyBody')}
                 />
               );
             }
@@ -634,6 +644,7 @@ export function PeopleSection({
  * roles).
  */
 export function PermissionsSection({ isSuperAdmin }: { isSuperAdmin: boolean }) {
+  const i18n = useI18n();
   const session = useAuthStore((s) => s.session);
   const myMaxRank = session?.myMaxRank ?? 0;
   const rolesQuery = trpc.admin.roleList.useQuery();
@@ -658,19 +669,16 @@ export function PermissionsSection({ isSuperAdmin }: { isSuperAdmin: boolean }) 
 
   return (
     <div className="px-4 py-3">
-      <Banner tone="info" title="How permissions work">
-        Roles are stacks of permission keys. Higher rank = more powerful.
-        You can grant a role to a member only if its rank is strictly
-        below your own ({myMaxRank}). Built-in roles cannot be deleted
-        but their name, description, and permission set are editable.
+      <Banner tone="info" title={i18n.t('people.permsHowTitle')}>
+        {i18n.t('people.permsHowBody', { rank: myMaxRank })}
       </Banner>
       <div className="mt-3 flex items-center justify-between">
         <SectionLabel padded={false}>
-          Roles
+          {i18n.t('people.rolesHeading')}
         </SectionLabel>
         {isGlobalAdmin ? (
           <Button size="sm" onClick={() => setCreateOpen(true)}>
-            + New role
+            + {i18n.t('people.newRoleButton')}
           </Button>
         ) : null}
       </div>
@@ -678,15 +686,20 @@ export function PermissionsSection({ isSuperAdmin }: { isSuperAdmin: boolean }) 
         <DataState
           query={rolesQuery}
           emptyWhen={(d) => d.length === 0}
-          empty={<EmptyState title="No roles" description="Run db:seed to get the built-ins." />}
+          empty={
+            <EmptyState
+              title={i18n.t('people.rolesEmptyTitle')}
+              description={i18n.t('people.rolesEmptyBody')}
+            />
+          }
         >
           {(rows) => (
             <ul className="flex flex-col gap-2" role="list">
               {rows.map((r) => {
                 const grantable = r.rank < myMaxRank;
                 const subtitleParts: string[] = [
-                  `rank ${r.rank}`,
-                  `${r.permissionCount} permission${r.permissionCount === 1 ? '' : 's'}`,
+                  i18n.t('people.rankLine', { rank: r.rank }),
+                  i18n.t('people.permissionCount', { n: r.permissionCount }),
                 ];
                 if (r.description) subtitleParts.push(r.description);
                 const subtitle = subtitleParts.join(' · ');
@@ -696,14 +709,14 @@ export function PermissionsSection({ isSuperAdmin }: { isSuperAdmin: boolean }) 
                       label={
                         <span className="flex items-center gap-2">
                           {r.name}
-                          {r.isBuiltIn ? <Badge tone="muted">built-in</Badge> : null}
+                          {r.isBuiltIn ? <Badge tone="muted">{i18n.t('admin.label.builtIn')}</Badge> : null}
                         </span>
                       }
                       hint={subtitle}
                       badge={
                         // UIUX-B1: 'grantable' is the common case → silent;
                         // only the blocking state earns a badge.
-                        grantable ? null : <Badge tone="warn">your rank ≤ this</Badge>
+                        grantable ? null : <Badge tone="warn">{i18n.t('people.rankOutranksYou')}</Badge>
                       }
                       onClick={() => setDrilldownSlug(r.slug)}
                     />
@@ -816,8 +829,8 @@ function RoleCreateSheet({
     <Sheet
       open={open}
       onOpenChange={(o) => !o && onClose()}
-      title="New role"
-      description={`Custom roles can have any rank from 1 to ${myMaxRank - 1}.`}
+      title={i18n.t('people.newRoleTitle')}
+      description={i18n.t('people.newRoleHint', { max: myMaxRank - 1 })}
       footer={
         <Button
           block
@@ -833,7 +846,7 @@ function RoleCreateSheet({
             });
           }}
         >
-          Create
+          {i18n.t('common.create')}
         </Button>
       }
     >
@@ -852,7 +865,7 @@ function RoleCreateSheet({
             value={name}
             onChange={(e) => setName(e.target.value)}
             maxLength={100}
-            placeholder="Shift Lead"
+            placeholder={i18n.t('people.rolePlaceholderName')}
           />
         </Field>
         <Field label={i18n.t('admin.field.description')}>
@@ -860,10 +873,10 @@ function RoleCreateSheet({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             maxLength={500}
-            placeholder="Optional"
+            placeholder={i18n.t('people.rolePlaceholderDesc')}
           />
         </Field>
-        <Field label={`Rank (1–${myMaxRank - 1}) *`}>
+        <Field label={`${i18n.t('people.rankField', { max: myMaxRank - 1 })} *`}>
           <Input
             type="number"
             value={String(rank)}
@@ -1011,10 +1024,15 @@ function RolePermissionsSheet({
     <Sheet
       open={open}
       onOpenChange={(o) => !o && onClose()}
-      title={detail.data?.name ?? 'Role'}
+      title={detail.data?.name ?? i18n.t('people.roleFallback')}
       description={
         detail.data
-          ? `rank ${detail.data.rank} · ${detail.data.permissions.length} permissions${isBuiltIn ? ' · built-in' : ''}`
+          ? i18n.t('people.roleMetaLine', {
+              rank: detail.data.rank,
+              perms: i18n.t('people.permissionCount', {
+                n: detail.data.permissions.length,
+              }),
+            }) + (isBuiltIn ? ` · ${i18n.t('admin.label.builtIn')}` : '')
           : undefined
       }
       footer={
@@ -1034,16 +1052,16 @@ function RolePermissionsSheet({
                 });
               }}
             >
-              Save
+              {i18n.t('common.save')}
             </Button>
             <Button block variant="pearl" onClick={() => setEditing(false)}>
-              Cancel
+              {i18n.t('common.cancel')}
             </Button>
           </div>
         ) : isEditable && detail.data ? (
           <div className="flex flex-col gap-2">
             <Button block onClick={() => setEditing(true)}>
-              Edit
+              {i18n.t('common.edit')}
             </Button>
             {!isBuiltIn ? (
               <Button
@@ -1051,12 +1069,14 @@ function RolePermissionsSheet({
                 variant="danger"
                 loading={remove.isPending}
                 onClick={() => {
-                  nativeConfirm(`Delete role "${detail.data!.name}"?`, () =>
+                  nativeConfirm(
+                    i18n.t('people.confirmDeleteRole', { name: detail.data!.name }),
+                    () =>
                     remove.mutate({ roleId: detail.data!.id }),
                   );
                 }}
               >
-                Delete role
+                {i18n.t('people.deleteRole')}
               </Button>
             ) : null}
           </div>
@@ -1069,7 +1089,7 @@ function RolePermissionsSheet({
         </div>
       ) : !detail.data ? (
         <div className="py-8 text-center text-body text-[var(--c-fg-muted)]">
-          No role
+          {i18n.t('people.noRole')}
         </div>
       ) : (
         <div className="flex flex-col gap-3 py-3">
@@ -1090,12 +1110,14 @@ function RolePermissionsSheet({
                 />
               </Field>
               {isBuiltIn ? (
-                <Banner tone="info" title={`Rank ${rank} (built-in, locked)`}>
-                  Built-in role rank can't be changed — it anchors the
-                  permission ladder. Custom roles let you pick any rank.
+                <Banner
+                  tone="info"
+                  title={i18n.t('people.builtInLocked', { rank })}
+                >
+                  {i18n.t('people.builtInRankBody')}
                 </Banner>
               ) : (
-                <Field label={`Rank (1–${myMaxRank - 1}) *`}>
+                <Field label={`${i18n.t('people.rankField', { max: myMaxRank - 1 })} *`}>
                   <Input
                     type="number"
                     value={String(rank)}
@@ -1120,7 +1142,7 @@ function RolePermissionsSheet({
           ) : null}
           {grouped.length === 0 ? (
             <p className="text-body text-[var(--c-fg-muted)]">
-              No permissions assigned.
+              {i18n.t('people.noPermsAssigned')}
             </p>
           ) : (
             <ul className="flex flex-col gap-3">
@@ -1202,6 +1224,7 @@ function RoleAssigneesByStore({
     storeName: string | null;
   }>;
 }) {
+  const i18n = useI18n();
   const grouped = useMemo(() => {
     // 'org-level' bucket plus per-store buckets keyed by storeId.
     type Bucket = { label: string; members: typeof assignees };
@@ -1212,10 +1235,10 @@ function RoleAssigneesByStore({
       let label: string;
       if (a.scopeType === 'global' || !a.scopeId) {
         key = orgLevelKey;
-        label = 'Org-level';
+        label = i18n.t('people.orgLevelLabel');
       } else {
         key = a.scopeId;
-        label = a.storeName ?? '— store gone —';
+        label = a.storeName ?? i18n.t('people.storeGone');
       }
       const cur = buckets.get(key) ?? { label, members: [] };
       cur.members.push(a);
@@ -1324,8 +1347,8 @@ function InviteHubSheet({
     <Sheet
       open={open}
       onOpenChange={(o) => !o && onClose()}
-      title="Invite a member"
-      description="Pick a method"
+      title={i18n.t('people.inviteTitle')}
+      description={i18n.t('people.inviteHint')}
     >
       <div className="flex flex-col gap-2 py-3">
         <button
@@ -1339,7 +1362,7 @@ function InviteHubSheet({
           </span>
           <span className="min-w-0 flex-1">
             <span className="block text-body font-semibold text-[var(--c-fg)]">
-              Share via Telegram
+              {i18n.t('people.inviteViaTelegram')}
             </span>
             <span className="mt-0.5 block text-label text-[var(--c-fg-muted)]">
               {botUsername
@@ -1363,16 +1386,16 @@ function InviteHubSheet({
           </span>
           <span className="min-w-0 flex-1">
             <span className="block text-body font-semibold text-[var(--c-fg)]">
-              Copy invite link
+              {i18n.t('people.inviteCopyLink')}
             </span>
             <span className="mt-0.5 block text-label text-[var(--c-fg-muted)]">
-              Paste anywhere outside Telegram.
+              {i18n.t('people.inviteCopyLinkHint')}
             </span>
           </span>
         </button>
 
         <div className="my-2 text-center text-label uppercase tracking-eyebrow text-[var(--c-fg-subtle)]">
-          or
+          {i18n.t('people.inviteOr')}
         </div>
 
         <button
@@ -1382,10 +1405,10 @@ function InviteHubSheet({
         >
           <span className="min-w-0 flex-1">
             <span className="block text-body font-semibold text-[var(--c-fg)]">
-              Add by Telegram ID
+              {i18n.t('people.inviteByTgId')}
             </span>
             <span className="mt-0.5 block text-label text-[var(--c-fg-muted)]">
-              Enter a numeric TG ID directly. Use this if you already know it.
+              {i18n.t('people.inviteByTgIdHint')}
             </span>
           </span>
           <span aria-hidden className="shrink-0 text-[var(--c-fg-subtle)]">
@@ -1655,8 +1678,8 @@ function ManageMemberSheet({
     <Sheet
       open={open}
       onOpenChange={(o) => !o && onClose()}
-      title={target?.displayName ?? 'Member'}
-      description="Edit name and assign stores"
+      title={target?.displayName ?? i18n.t('people.memberFallback')}
+      description={i18n.t('people.editMemberHint')}
     >
       {target ? (
         <div className="flex flex-col gap-4 py-3">
@@ -1676,12 +1699,11 @@ function ManageMemberSheet({
                   renameMut.mutate({ memberId: target.memberId, displayName: name.trim() })
                 }
               >
-                Save
+                {i18n.t('common.save')}
               </Button>
             </div>
             <p className="mt-1 text-label text-[var(--c-fg-muted)]">
-              The user can&apos;t change their own name after onboarding — admins can
-              always override here.
+              {i18n.t('people.nameOverrideHint')}
             </p>
           </Field>
 
@@ -1746,9 +1768,9 @@ function ManageMemberSheet({
                             ev.stopPropagation();
                             setTransferFrom({ storeId: st.id, storeName: st.name });
                           }}
-                          title="Transfer this member to another store"
+                          title={i18n.t('people.transferTooltip')}
                         >
-                          → Transfer…
+                          → {i18n.t('admin.action.transfer')}
                         </button>
                       ) : !editable ? (
                         <span className="ml-auto text-tiny uppercase tracking-wide text-[var(--c-fg-muted)]">
@@ -1760,14 +1782,13 @@ function ManageMemberSheet({
                 })}
                 {(storesQuery.data ?? []).length === 0 ? (
                   <span className="px-2 py-1 text-label text-[var(--c-fg-muted)]">
-                    No stores in this org. Create one in the Catalog tab.
+                    {i18n.t('people.noStoresInOrg')}
                   </span>
                 ) : null}
               </div>
             )}
             <p className="mt-1 text-label text-[var(--c-fg-muted)]">
-              Staff can only place orders for, and confirm deliveries to, the
-              stores they&apos;re assigned to. Admins always see all stores.
+              {i18n.t('people.storeScopeHint')}
             </p>
           </Field>
         </div>
@@ -1816,6 +1837,7 @@ function TransferStoreSheet({
   } | null;
   onClose: () => void;
 }) {
+  const i18n = useI18n();
   const utils = trpc.useUtils();
   const toast = useToast();
   const errToast = useErrToast();
@@ -1851,11 +1873,13 @@ function TransferStoreSheet({
     onSuccess: (data) => {
       void utils.admin.memberList.invalidate();
       void utils.admin.memberStoreAssignments.invalidate();
-      const parts = ['Transferred'];
+      const parts = [i18n.t('people.toastTransferred')];
       if (data.mirrored > 0)
-        parts.push(`${data.mirrored} role${data.mirrored === 1 ? '' : 's'} mirrored`);
+        parts.push(i18n.t('people.toastRolesMirrored', { n: data.mirrored }));
       if (data.revokedBindings > 0)
-        parts.push(`${data.revokedBindings} from-side role${data.revokedBindings === 1 ? '' : 's'} revoked`);
+        parts.push(
+          i18n.t('people.toastFromSideRevoked', { n: data.revokedBindings }),
+        );
       toast.success(parts.join(' · '));
       onClose();
     },
@@ -1866,8 +1890,10 @@ function TransferStoreSheet({
     <Sheet
       open={open}
       onOpenChange={(o) => !o && !transferMut.isPending && onClose()}
-      title="Transfer between stores"
-      description={target ? `Move ${target.displayName}` : ''}
+      title={i18n.t('people.transferTitle')}
+      description={
+        target ? i18n.t('people.transferMoving', { name: target.displayName }) : ''
+      }
       footer={
         target ? (
           <Button
@@ -1884,7 +1910,7 @@ function TransferStoreSheet({
               })
             }
           >
-            Transfer
+            {i18n.t('people.transferAction')}
           </Button>
         ) : undefined
       }
@@ -1896,16 +1922,15 @@ function TransferStoreSheet({
               range. Leave English here until the sheet gets its
               own dedicated i18n pass with all the other admin
               transfer copy. */}
-          <Field label="From">
+          <Field label={i18n.t('people.transferFrom')}>
             <div className="rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 py-2 text-h3 ring-hairline">
               {target.fromStoreName}
             </div>
           </Field>
-          <Field label="To *">
+          <Field label={`${i18n.t('people.transferTo')} *`}>
             {destinationStores.length === 0 ? (
-              <Banner tone="warn" title="No eligible destinations">
-                You don't administer any other store. Ask a higher-rank
-                admin to add you to the destination first.
+              <Banner tone="warn" title={i18n.t('people.transferNoDestTitle')}>
+                {i18n.t('people.transferNoDestBody')}
               </Banner>
             ) : (
               <Select
@@ -1930,33 +1955,31 @@ function TransferStoreSheet({
             />
             <div className="min-w-0 flex-1">
               <div className="text-body font-semibold text-[var(--c-fg)]">
-                Mirror role bindings
+                {i18n.t('people.mirrorRoles')}
               </div>
               <p className="mt-0.5 text-label text-[var(--c-fg-muted)]">
-                When on (default), every store-scoped role this member
-                has in {target.fromStoreName} is duplicated against the
-                destination so they keep the same role. Turn off to give
-                them no role at the new store — useful when the move
-                also implies a promotion or demotion.
+                {i18n.t('people.mirrorRolesHint', { store: target.fromStoreName })}
               </p>
             </div>
           </label>
-          <Banner tone="info" title="What this does">
-            Atomic in one transaction:
+          <Banner tone="info" title={i18n.t('people.transferWhatTitle')}>
+            {i18n.t('people.transferWhatIntro')}
             <ul className="mt-1 list-disc space-y-0.5 pl-4 text-label">
-              <li>{target.displayName} is added to the destination store</li>
               <li>
-                {mirrorRoles
-                  ? 'their store-scoped role bindings in the source are recreated in the destination'
-                  : 'no role bindings are created in the destination'}
+                {i18n.t('people.transferWhatAdded', { name: target.displayName })}
               </li>
               <li>
-                their assignment + bindings + per-store overrides in
-                {' '}{target.fromStoreName} are removed
+                {i18n.t(
+                  mirrorRoles
+                    ? 'people.transferWhatMirrored'
+                    : 'people.transferWhatNoRoles',
+                )}
+              </li>
+              <li>
+                {i18n.t('people.transferWhatRemoved', { store: target.fromStoreName })}
               </li>
             </ul>
-            Other stores they belong to are untouched. If anything fails,
-            the whole transfer rolls back.
+            {i18n.t('people.transferWhatOutro')}
           </Banner>
         </div>
       ) : null}
@@ -1996,6 +2019,7 @@ function MemberPermissionsSheet({
     | null;
   onClose: () => void;
 }) {
+  const i18n = useI18n();
   const utils = trpc.useUtils();
   const errToast = useErrToast();
   const session = useAuthStore((s) => s.session);
@@ -2116,7 +2140,10 @@ function MemberPermissionsSheet({
       title={target ? `Permissions — ${target.displayName}` : 'Permissions'}
       description={
         detail.data
-          ? `${detail.data.effective.length} effective · ${detail.data.overrides.length} override${detail.data.overrides.length === 1 ? '' : 's'}`
+          ? i18n.t('people.effectiveOverridesLine', {
+              eff: detail.data.effective.length,
+              ov: detail.data.overrides.length,
+            })
           : undefined
       }
     >
@@ -2141,7 +2168,7 @@ function MemberPermissionsSheet({
                 onClick={() => setScope({ kind: 'global' })}
                 count={overrideByScopeKey.get('global')?.size ?? 0}
               >
-                Global
+                {i18n.t('people.scopeGlobal')}
               </ScopeTab>
               {(target?.stores ?? []).map((st) => {
                 const editable = adminStoreIds.has(st.id);
@@ -2175,22 +2202,10 @@ function MemberPermissionsSheet({
               })}
             </div>
           )}
-          <Banner tone="info" title="How this works">
-            {scope.kind === 'global' ? (
-              <>
-                Each row shows what the member's <em>role</em> would grant
-                (gray) and lets you override per-member with{' '}
-                <strong>allow</strong> (force on) or <strong>deny</strong>{' '}
-                (force off). Deny always wins on conflict.
-              </>
-            ) : (
-              <>
-                Overrides on this tab apply <strong>only in {scope.storeName}</strong>.
-                The role-derived baseline is the same across stores; per-store
-                allow/deny lets you fine-tune what this member can do in this
-                location specifically.
-              </>
-            )}
+          <Banner tone="info" title={i18n.t('people.overridesHowTitle')}>
+            {scope.kind === 'global'
+              ? i18n.t('people.overridesHowGlobal')
+              : i18n.t('people.overridesHowStore', { store: scope.storeName })}
           </Banner>
           {grouped.map(([ns, keys]) => (
             <div key={ns}>
@@ -2457,7 +2472,9 @@ function GrantRoleSheet({
           scopeType: 'global',
         });
         toast[data.granted ? 'success' : 'info'](
-          data.granted ? 'Role granted' : 'Role already assigned',
+          i18n.t(
+            data.granted ? 'people.toastRoleGranted' : 'people.toastRoleAlready',
+          ),
         );
         void utils.admin.memberList.invalidate();
         onClose();
@@ -2487,11 +2504,13 @@ function GrantRoleSheet({
     }
     if (createdCount > 0) {
       toast.success(
-        `Role granted in ${createdCount} store${createdCount === 1 ? '' : 's'}` +
-          (skipped > 0 ? ` (${skipped} already had it)` : ''),
+        i18n.t('people.toastGrantedInStores', { n: createdCount }) +
+          (skipped > 0
+            ? ` ${i18n.t('people.toastAlreadyHad', { n: skipped })}`
+            : ''),
       );
     } else if (skipped > 0) {
-      toast.info('Role was already assigned everywhere selected');
+      toast.info(i18n.t('people.toastAlreadyEverywhere'));
     }
     void utils.admin.memberList.invalidate();
     onClose();
@@ -2506,8 +2525,10 @@ function GrantRoleSheet({
     <Sheet
       open={!!target}
       onOpenChange={(open) => !open && onClose()}
-      title="Grant role"
-      description={target ? `to ${target.displayName}` : ''}
+      title={i18n.t('people.grantRoleTitle')}
+      description={
+        target ? i18n.t('people.grantRoleTo', { name: target.displayName }) : ''
+      }
     >
       <div className="flex flex-col gap-3 py-3">
         {/* Step 1 — scope */}
@@ -2521,7 +2542,9 @@ function GrantRoleSheet({
               { value: 'store', label: 'In specific store(s)' },
               {
                 value: 'global',
-                label: canGrantGlobal ? 'Globally' : 'Globally (org-admin only)',
+                label: i18n.t(
+                  canGrantGlobal ? 'people.grantGlobally' : 'people.grantGloballyLocked',
+                ),
               },
             ]}
             onChange={(next) => {
@@ -2532,8 +2555,7 @@ function GrantRoleSheet({
           />
           {!canGrantGlobal ? (
             <p className="mt-1 text-label text-[var(--c-fg-muted)]">
-              Only org-level admins can grant global (org-tier) roles. You can
-              still assign per-store roles in the stores you administer.
+              {i18n.t('people.globalGrantLockedHint')}
             </p>
           ) : null}
         </Field>
@@ -2542,9 +2564,8 @@ function GrantRoleSheet({
         {scopeMode === 'store' ? (
           <Field label={i18n.t('admin.field.stores')}>
             {eligibleStores.length === 0 ? (
-              <Banner tone="warn" title="No stores you can grant in">
-                You don't administer any store yet. Ask a higher-rank admin
-                to add you to a store first.
+              <Banner tone="warn" title={i18n.t('people.noGrantStoresTitle')}>
+                {i18n.t('people.noGrantStoresBody')}
               </Banner>
             ) : (
               <div className="flex flex-col gap-1.5 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
@@ -2578,17 +2599,17 @@ function GrantRoleSheet({
         {/* Step 2 — role list (filtered by chosen scope + effectiveRank) */}
         {!canSubmit ? (
           <p className="text-label text-[var(--c-fg-muted)]">
-            Pick a scope above to see available roles.
+            {i18n.t('people.pickScopeFirst')}
           </p>
         ) : rolesQuery.isLoading ? (
           <div className="flex items-center gap-2 text-body-sm text-[var(--c-fg-muted)]">
             <Spinner size={14} /> Loading roles…
           </div>
         ) : grantableRoles.length === 0 ? (
-          <Banner tone="warn" title="No grantable roles">
+          <Banner tone="warn" title={i18n.t('people.noGrantableTitle')}>
             {scopeMode === 'global'
-              ? `All org-tier roles are at or above your rank (${effectiveRank}).`
-              : `Your rank in the selected store(s) is ${effectiveRank} — no role ranked below that exists.`}
+              ? i18n.t('people.noGrantableGlobal', { rank: effectiveRank })
+              : i18n.t('people.noGrantableStore', { rank: effectiveRank })}
           </Banner>
         ) : (
           grantableRoles.map((r) => (
@@ -2604,11 +2625,11 @@ function GrantRoleSheet({
                   {r.name}
                 </div>
                 <div className="mt-0.5 text-label text-[var(--c-fg-muted)]">
-                  rank {r.rank}
+                  {i18n.t('people.rankLine', { rank: r.rank })}
                   {r.description ? ` · ${r.description}` : ''}
                 </div>
               </div>
-              {r.isBuiltIn ? <Badge tone="muted">built-in</Badge> : null}
+              {r.isBuiltIn ? <Badge tone="muted">{i18n.t('admin.label.builtIn')}</Badge> : null}
             </button>
           ))
         )}

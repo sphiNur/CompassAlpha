@@ -8,7 +8,7 @@
  * For M1 the photo capture stub is a text URL; full S3 upload + image picker
  * lands in M1 follow-ups (PhotoCapture component).
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   Button,
   Card,
@@ -26,19 +26,23 @@ import {
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton, haptic } from '../hooks/useTelegram';
-import { useI18n, useProductNameParts } from '../hooks/useI18n';
+import { useI18n, useProductNameParts, useUnitLabel } from '../hooks/useI18n';
 import { usePhotoUploader } from '../hooks/usePhotoUploader';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
 import { formatQty } from '../lib/format';
-import { useStoreContext } from '../components/StoreSwitcher';
+import { StoreChip, useStoreContext } from '../components/StoreSwitcher';
 
 type DecisionStatus = 'ok' | 'short' | 'wrong' | 'quality';
 
 export function ConfirmPage() {
   const i18n = useI18n();
   const productNameParts = useProductNameParts();
+  // 2026-07-30 (flow review): the receiving list printed the raw canonical
+  // unit ("kg") while Run — the screen the goods just came from — printed
+  // "公斤". Same goods, same locale, two spellings.
+  const unitLabel = useUnitLabel();
   const session = useAuthStore((s) => s.session);
   // ConfirmPage needs a SPECIFIC store — staff confirm receipt at THEIR
   // store. Reading via the context helper coerces 'all' to null so the
@@ -55,6 +59,13 @@ export function ConfirmPage() {
   } | null>(null);
   const [issueNote, setIssueNote] = useState('');
   const [issuePhoto, setIssuePhoto] = useState<string | null>(null);
+  // 2026-07-30: bulk "mark everything OK" runs N confirmStoreItem calls in
+  // series. `markingAll` disables the trigger; `bulkRef` suppresses the
+  // per-item success toast so the receiver gets one summary toast instead of
+  // a stack of N. A ref (not state) because confirmItem.onSuccess reads it
+  // outside React's render cycle.
+  const [markingAll, setMarkingAll] = useState(false);
+  const bulkRef = useRef(false);
   const photoUploader = usePhotoUploader('issue');
 
   const runsQuery = trpc.run.list.useQuery();
@@ -133,6 +144,10 @@ export function ConfirmPage() {
       // Bug fix: previously this said "Issue noted" for EVERY confirm,
       // including the most common "ok" case — confusing. The toast now
       // matches what actually happened.
+      //
+      // 2026-07-30: during the bulk "mark all OK" loop, stay silent — the
+      // loop toasts once when it finishes rather than N times.
+      if (bulkRef.current) return;
       if (vars.status === 'ok') {
         haptic('success');
         toast.success(i18n.t('confirm.toast.markedOk'));
@@ -174,12 +189,72 @@ export function ConfirmPage() {
   const myItems = (detailQuery.data?.splits ?? []).filter(
     (sp) => sp.storeId === currentStoreId,
   );
-  const allDecided = myItems.length > 0;
+  /**
+   * 2026-07-30 (flow review) — the receiving check used to be a no-op.
+   *
+   * `allDecided` was literally `myItems.length > 0`: the name said "every
+   * line has a verdict", the code said "there is at least one line". It
+   * fed `mainBtnActive`, so 确认收货 was tappable the instant the page
+   * opened. Paired with the old `it.confirmStatus ?? 'ok'` default (which
+   * pre-selected the 正常 chip on every undecided row), a receiver could
+   * sign off an entire delivery as received-and-correct without looking at
+   * a single item — and nothing in the record distinguished "checked, fine"
+   * from "never opened".
+   *
+   * Now: a line counts as decided only when the server actually holds a
+   * `confirmStatus` for it. The chips render unselected until then, the
+   * gate is stated on screen (progress row + main-button label), and
+   * "全部标记正常" is an explicit, auditable bulk action instead of a
+   * disguised default.
+   */
+  const decidedCount = myItems.filter((sp) => sp.confirmStatus != null).length;
+  const undecided = myItems.filter((sp) => sp.confirmStatus == null);
+  const allDecided = myItems.length > 0 && undecided.length === 0;
   /** True once the store-level confirmation has actually landed. The
    *  Confirm Store button must hide AFTER this, otherwise repeated taps
    *  used to fire repeated `confirmStore.mutate` calls — the user
    *  reported tapping 5+ times before the UI caught up. */
   const storeConfirmed = myItems.length > 0 && myItems.every((s) => !!s.confirmedAt);
+
+  /**
+   * Bulk "everything arrived correctly" path. Fires one confirmStoreItem
+   * per undecided line, SEQUENTIALLY — every event lands on the same run
+   * stream, so concurrent appends would race the `(streamId, seq)` UNIQUE
+   * constraint exactly like the order-adjust burst did before M3.x added
+   * per-store serialization. A receiving split is a handful of lines, so
+   * serial round-trips are cheap.
+   */
+  const markAllOk = async () => {
+    if (storeConfirmed || markingAll) return;
+    const targets = undecided;
+    if (targets.length === 0) return;
+    setMarkingAll(true);
+    bulkRef.current = true;
+    haptic('light');
+    let done = 0;
+    try {
+      for (const it of targets) {
+        writeOptimisticItemConfirm(it.runId, it.skuId, it.storeId, 'ok', null, null);
+        await confirmItem.mutateAsync({
+          runId: it.runId,
+          skuId: it.skuId,
+          storeId: it.storeId,
+          status: 'ok',
+          note: null,
+          photoUrl: null,
+        });
+        done += 1;
+      }
+      haptic('success');
+      toast.success(i18n.t('confirm.toast.allMarkedOk', { n: done }));
+    } catch {
+      // confirmItem's own onError already toasts / enqueues offline.
+      // Stop the loop so we don't pile failures on a dead network.
+    } finally {
+      bulkRef.current = false;
+      setMarkingAll(false);
+    }
+  };
 
   // MainButton dispatch — when the issue sheet is open it takes over
   // and drives Save. Otherwise it acts as Confirm Store.
@@ -212,13 +287,20 @@ export function ConfirmPage() {
       });
     };
   } else {
+    // 2026-07-30: when the gate is closed, SAY so on the button instead of
+    // showing an inert "确认收货". The comment where the gating banner used
+    // to live claimed a "Decided X/Y" counter, a card-meta hint and a
+    // disabled MainButton already conveyed this — all three had since been
+    // deleted or broken, so the gate was invisible AND never actually shut.
     mainBtnText = storeConfirmed
       ? i18n.t('confirm.confirmStoreFinal')
       : confirmStore.isPending
         ? i18n.t('confirm.confirmingHint')
-        : i18n.t('confirm.confirmStore');
+        : allDecided
+          ? i18n.t('confirm.confirmStore')
+          : i18n.t('confirm.confirmStoreBlocked', { n: undecided.length });
     mainBtnVisible = !!activeRun && myItems.length > 0 && !storeConfirmed;
-    mainBtnActive = allDecided && !confirmStore.isPending;
+    mainBtnActive = allDecided && !confirmStore.isPending && !markingAll;
     mainBtnClick = () => {
       if (!activeRun || !currentStoreId) return;
       if (storeConfirmed || confirmStore.isPending) return;
@@ -266,6 +348,10 @@ export function ConfirmPage() {
     <div className="flex flex-col gap-3 pb-4">
       {activeRun ? (
         <StickyPageBar className="min-h-7">
+          {/* 2026-07-30: the receiver is signing for goods at a specific
+              store — which the page never named. `ml-auto` on the date
+              still pushes it right, so the chip owns the left edge. */}
+          <StoreChip />
           <span className="ml-auto truncate text-label tabular-nums text-[var(--c-fg-muted)]">
             {i18n.t('confirm.runOnDate', { date: activeRun.runDate })}
           </span>
@@ -289,12 +375,52 @@ export function ConfirmPage() {
                   {/* UIUX-B1 (2026-07-06): CardHeader/CardTitle deleted —
                       this is the sole card on the screen and the nav tab
                       already names the job (same reasoning M1.11 used to
-                      drop the hint CardMeta). */}
+                      drop the hint CardMeta).
+
+                      2026-07-30 (flow review): a progress row comes back,
+                      but carrying the one thing the deleted chrome never
+                      did — the GATE. It states how many lines still need a
+                      verdict and offers the honest fast path next to it, so
+                      "everything arrived fine" is one deliberate tap rather
+                      than a pre-ticked default. */}
+                  {!storeConfirmed ? (
+                    <div className="flex items-center justify-between gap-3 border-b border-[var(--c-divider)] px-4 py-2">
+                      <span
+                        className={
+                          'text-label font-semibold tabular-nums ' +
+                          (allDecided
+                            ? 'text-[var(--c-fg-muted)]'
+                            : 'text-[var(--c-warning-fg)]')
+                        }
+                      >
+                        {i18n.t('confirm.progress', {
+                          done: decidedCount,
+                          total: myItems.length,
+                        })}
+                      </span>
+                      {!allDecided ? (
+                        <Button
+                          size="sm"
+                          variant="pearl"
+                          loading={markingAll}
+                          onClick={() => void markAllOk()}
+                        >
+                          {i18n.t('confirm.markAllOk')}
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <ul className="flex flex-col" role="list">
                     {myItems.map((it) => {
                       const sku = skuById.get(it.skuId);
                       const nm = sku ? productNameParts(sku) : null;
-                      const effectiveStatus = (it.confirmStatus ?? 'ok') as DecisionStatus;
+                      // 2026-07-30 (flow review): was `it.confirmStatus ?? 'ok'`,
+                      // which pre-selected 正常 on every untouched line. The
+                      // receiver's screen therefore OPENED in the state
+                      // "everything is fine" — the exact claim the step exists
+                      // to obtain from them. null now means null: no chip is
+                      // selected until they choose one.
+                      const effectiveStatus = it.confirmStatus as DecisionStatus | null;
                       return (
                         <li
                           key={`${it.runId}:${it.skuId}`}
@@ -309,10 +435,18 @@ export function ConfirmPage() {
                               size="default"
                             />
                             <span className="shrink-0 font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
-                              {formatQty(it.qty)} {sku?.unit ?? ''}
+                              {formatQty(it.qty)} {unitLabel(sku?.unit)}
                             </span>
                           </div>
-                          <ChipBar>
+                          {/* variant="radio" (2026-07-30): now that an
+                              undecided line selects NOTHING, a tablist
+                              with no selected tab would be invalid ARIA.
+                              A radiogroup with nothing checked is exactly
+                              the state we mean. */}
+                          <ChipBar
+                            variant="radio"
+                            ariaLabel={i18n.t('confirm.status.ariaLabel')}
+                          >
                             {(['ok', 'short', 'wrong', 'quality'] as DecisionStatus[]).map((s) => (
                               <Chip
                                 key={s}

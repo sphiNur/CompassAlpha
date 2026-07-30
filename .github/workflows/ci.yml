@@ -120,6 +120,51 @@ jobs:
           done
           echo "i18n parity: $en keys × 4 langs"
 
+      - name: ICU plural sanity
+        # 2026-07-30. Two failure modes, both of which shipped and neither of
+        # which any existing check could see:
+        #
+        #   1. `format()` used to DISCARD plural blocks, replacing
+        #      `{n, plural, one {# role} other {# roles}}` with the bare count.
+        #      24 keys in en / 20 in ru / 8 in uz were authored in ICU form
+        #      anyway, so English and Russian silently rendered "3" where they
+        #      meant "3 contributors". zh has no plural blocks at all (Chinese
+        #      doesn't inflect for number) — which is exactly why the primary
+        #      locale looked perfect the whole time.
+        #
+        #   2. A CLDR *category* case whose body hardcodes a digit:
+        #      `one {1 role}`. Russian's `one` covers 1, 21, 31, 101 …, so
+        #      n=21 rendered "1 role". 8 ru keys + 1 en key had this.
+        #
+        # The engine is fixed and unit-tested (packages/i18n plural.test.ts).
+        # This grep is the cheap guard against (2) creeping back in a new key:
+        # inside a category case the count must come from `#` or `{n}`.
+        run: |
+          bad=$(grep -nE "\b(one|few|many|other) \{[^#{]*[0-9]" \
+            packages/i18n/src/catalogs/*.ts || true)
+          if [ -n "$bad" ]; then
+            echo "ICU plural: category case hardcodes a digit instead of # / {n}:"
+            echo "$bad"
+            echo
+            echo "In ru, 'one' also matches 21/31/101 — a literal 1 renders wrong."
+            exit 1
+          fi
+          echo "ICU plural: category cases all reference the count ✓"
+
+      - name: Untranslated-literal guard
+        # 2026-07-30. The parity check above is blind to the failure mode
+        # that actually shipped: strings that never became KEYS. The
+        # 2026-07-30 flow walkthrough found 124 English literals rendering
+        # inside an otherwise-Chinese UI — `Edit` / `Archive` / `+ New SKU`
+        # buttons, `Archive SKU "x"?` confirms, and every string
+        # @compass/ui renders itself (QtyControl's quick-pick sheet was
+        # entirely English, and that's the app's most-used interaction).
+        #
+        # Started as a ratchet (baseline 124) so CI wasn't red from day one.
+        # The backlog was cleared in three passes and the count reached 0, so
+        # it is now a hard gate: any anchored untranslated literal fails.
+        run: bun run scripts/check-untranslated.ts
+
       - name: Typography drift guard
         # M3.13 (2026-05-16): SectionLabel is the single source of truth
         # for the eyebrow style ("text-label font-semibold uppercase

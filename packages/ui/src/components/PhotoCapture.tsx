@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { useUiLabels } from '../labels';
 import { cn } from '../cn.js';
 
 /**
@@ -53,10 +54,14 @@ export function PhotoCapture({
   value,
   maxSize = 1280,
   quality = 0.85,
-  label = 'Receipt photo',
+  label,
   className,
   uploader,
 }: PhotoCaptureProps) {
+  // 2026-07-30: label / remove / hint / uploading were English literals.
+  // See packages/ui/src/labels.tsx.
+  const labels = useUiLabels();
+  const effectiveLabel = label ?? labels.photoLabel;
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -96,13 +101,13 @@ export function PhotoCapture({
 
   return (
     <div className={cn('flex flex-col gap-2', className)}>
-      <span className="text-label font-semibold text-[var(--c-fg-muted)]">{label}</span>
+      <span className="text-label font-semibold text-[var(--c-fg-muted)]">{effectiveLabel}</span>
       {value ? (
         <div className="relative">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={value}
-            alt={label}
+            alt={effectiveLabel}
             className="block max-h-40 w-auto rounded-[var(--r-card)] ring-hairline"
           />
           {onClear ? (
@@ -110,7 +115,7 @@ export function PhotoCapture({
               type="button"
               onClick={onClear}
               className="press absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-[oklch(0%_0_0_/_0.7)] text-white"
-              aria-label="Remove photo"
+              aria-label={labels.photoRemove}
             >
               ×
             </button>
@@ -131,7 +136,7 @@ export function PhotoCapture({
           <span className="text-h1" aria-hidden>
             📷
           </span>
-          <span className="text-body-sm">{busy ? 'Uploading…' : 'Tap to take a photo'}</span>
+          <span className="text-body-sm">{busy ? labels.uploading : labels.photoHint}</span>
         </button>
       )}
       {error ? <span className="text-label text-[var(--c-danger)]">{error}</span> : null}

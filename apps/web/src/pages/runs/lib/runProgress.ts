@@ -63,3 +63,23 @@ export function allItemsHandled(items: readonly ItemStatusLike[]): boolean {
     items.every((i) => i.status === 'purchased' || i.status === 'unavailable')
   );
 }
+
+/**
+ * How many items still need a decision (2026-07-30).
+ *
+ * Companion to `allItemsHandled`, which answers the same question as a
+ * boolean and is used to GATE the advance button. The gate alone left the
+ * purchasing screen with no bottom CTA and no statement of what the gate
+ * even was — 85 unhandled items spread over ~7,000 px of list, and nothing
+ * on screen answering "what do I do next?". The comment at the top of this
+ * file already names that hazard; this is the number the UI needs to say it
+ * out loud.
+ *
+ * Same predicate as `allItemsHandled`, inverted and counted, so the two can
+ * never disagree about what "handled" means.
+ */
+export function pendingItemCount(items: readonly ItemStatusLike[]): number {
+  return items.filter(
+    (i) => i.status !== 'purchased' && i.status !== 'unavailable',
+  ).length;
+}

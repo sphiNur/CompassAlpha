@@ -18,11 +18,48 @@
  *               State source unchanged — `useAuthStore.currentStoreId`.
  *               `useStoreContext()` (consumed by AdminPage and other
  *               readers) is unchanged; only the trigger UX moved.
+ *
+ *   2026-07-30  (flow review) `StoreChip` — a pill back in the sticky bar,
+ *               but this time it is primarily a LABEL, not a trigger.
+ *
+ *               M3.5 moved the picker into Settings on the grounds that
+ *               only the owner needs to switch. That reasoning holds for
+ *               the *switching*; what it took with it was the only place
+ *               the app ever said WHICH STORE you are working in. Walking
+ *               the flow on 2026-07-30, the current store appeared nowhere
+ *               across Order / Approval / Run / Confirm / Admin — I only
+ *               learned which store I'd been ordering for by reading it
+ *               off an approval card. Combine that with a picker two taps
+ *               deep in Telegram's ⋯ overflow and a selection persisted to
+ *               localStorage, and an owner who switched to another store
+ *               last week orders into it all day without a single cue.
+ *
+ *               So the chip shows for EVERYONE (context is not a
+ *               privilege), and only becomes tappable for `org.admin` —
+ *               who get the picker in a sheet the chip owns, rather than
+ *               being sent to Settings to hunt for it.
  */
-import { SectionLabel, PickerRow } from '@compass/ui';
+import { useState } from 'react';
+import { cn, SectionLabel, PickerRow, Sheet } from '@compass/ui';
 import { useAuthStore, ALL_STORES } from '../stores/authStore';
-import type { StoreContext } from '../stores/authStore';
+import type { AuthSession, StoreContext } from '../stores/authStore';
 import { useI18n } from '../hooks/useI18n';
+
+/**
+ * Module-level empty array for the `stores` selector below.
+ *
+ * Why this exists: zustand compares selector output with `Object.is` and
+ * feeds it to `useSyncExternalStore`. A selector that ends in `?? []`
+ * mints a FRESH array on every call, so the snapshot always looks
+ * "changed" — React re-renders, re-reads, sees another new array, and
+ * loops until it throws `Maximum update depth exceeded` out of
+ * `forceStoreRerender`. That crash was observed once while navigating
+ * Run → Confirm (both pages call useStoreContext) on 2026-07-30.
+ *
+ * Returning the SAME frozen reference every time keeps the snapshot
+ * stable when `session` is null or `session.stores` is undefined.
+ */
+const NO_STORES: AuthSession['stores'] = [];
 
 /**
  * True iff the actor is allowed to see + use the store picker.
@@ -51,7 +88,19 @@ export function useCanSeeStorePicker(): boolean {
  * first; this internal early-return is belt-and-suspenders so a mis-call
  * from a non-admin context never leaks the chrome.
  */
-export function StorePickerSection({ onClose }: { onClose: () => void }) {
+export function StorePickerSection({
+  onClose,
+  showLabel = true,
+}: {
+  onClose: () => void;
+  /**
+   * The section heading. On by default because this component was built to
+   * sit among OTHER sections inside SettingsSheet, where it needs to name
+   * itself. StoreChip renders it in a sheet whose title already says
+   * "当前门店", so it passes false rather than printing the phrase twice.
+   */
+  showLabel?: boolean;
+}) {
   const i18n = useI18n();
   const session = useAuthStore((s) => s.session);
   const currentStoreId = useAuthStore((s) => s.currentStoreId);
@@ -64,9 +113,11 @@ export function StorePickerSection({ onClose }: { onClose: () => void }) {
 
   return (
     <section>
-      <SectionLabel as="h3" padded={false} className="mb-2">
-        {i18n.t('storeSwitcher.title')}
-      </SectionLabel>
+      {showLabel ? (
+        <SectionLabel as="h3" padded={false} className="mb-2">
+          {i18n.t('storeSwitcher.title')}
+        </SectionLabel>
+      ) : null}
       <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
         <PickerRow
           label={i18n.t('storeSwitcher.allOrgStores')}
@@ -95,6 +146,78 @@ export function StorePickerSection({ onClose }: { onClose: () => void }) {
 }
 
 /**
+ * The current-store pill for a page's sticky bar.
+ *
+ * Renders for every actor — knowing which store you're acting on is
+ * context, not a privilege. Tappable only when the actor may switch
+ * (`org.admin`); otherwise it's a plain label with no affordance, so
+ * nobody taps something that can't respond.
+ *
+ * Returns null when there is no store context to state at all (`kind:
+ * 'none'` — the actor has no assignments; those pages already render a
+ * dedicated empty state that explains it).
+ */
+export function StoreChip({ className }: { className?: string } = {}) {
+  const i18n = useI18n();
+  const ctx = useStoreContext();
+  const canSwitch = useCanSeeStorePicker();
+  const stores = useAuthStore((s) => s.session?.stores ?? NO_STORES);
+  const [open, setOpen] = useState(false);
+
+  if (ctx.kind === 'none') return null;
+
+  const label =
+    ctx.kind === 'all'
+      ? i18n.t('storeSwitcher.allOrgStores')
+      : (stores.find((st) => st.id === ctx.storeId)?.name.trim() ??
+        i18n.t('storeSwitcher.pickStore'));
+
+  // `min-w-0 truncate` + `shrink` so a long store name yields to the
+  // controls beside it instead of pushing them off a 375 px screen.
+  const shell = 'inline-flex min-w-0 shrink items-center gap-1 rounded-[var(--r-pill)] px-2 py-0.5 text-label';
+
+  if (!canSwitch) {
+    return (
+      <span
+        className={cn(shell, 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]', className)}
+      >
+        <span className="truncate font-medium text-[var(--c-fg)]">{label}</span>
+      </span>
+    );
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label={i18n.t('storeSwitcher.aria')}
+        className={cn(
+          shell,
+          'press bg-[var(--c-surface-2)] ring-hairline active:opacity-70',
+          className,
+        )}
+      >
+        <span className="truncate font-medium text-[var(--c-fg)]">{label}</span>
+        <span aria-hidden className="shrink-0 text-[var(--c-fg-muted)]">
+          ▾
+        </span>
+      </button>
+      <Sheet
+        open={open}
+        onOpenChange={setOpen}
+        title={i18n.t('storeSwitcher.title')}
+        description={i18n.t('storeSwitcher.subtitle')}
+      >
+        <div className="py-2">
+          <StorePickerSection showLabel={false} onClose={() => setOpen(false)} />
+        </div>
+      </Sheet>
+    </>
+  );
+}
+
+/**
  * Hook helper — does the current page need a specific store?
  *
  * Returns:
@@ -117,7 +240,9 @@ export function useStoreContext():
   | { kind: 'all' }
   | { kind: 'none' } {
   const currentStoreId = useAuthStore((s) => s.currentStoreId);
-  const stores = useAuthStore((s) => s.session?.stores ?? []);
+  // NO_STORES (module-level) — never `?? []` inline here. See the
+  // constant's docblock: a fresh array per call loops useSyncExternalStore.
+  const stores = useAuthStore((s) => s.session?.stores ?? NO_STORES);
   const isAdmin = useAuthStore((s) =>
     s.session?.permissions.includes('users.manage') ?? false,
   );

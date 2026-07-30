@@ -88,3 +88,5 @@ export {
   IconShield,
 } from './components/NavIcon';
 export { ThemeProvider, useTheme } from './theme';
+export { UiLabelsProvider, useUiLabels, DEFAULT_UI_LABELS } from './labels';
+export type { UiLabels } from './labels';

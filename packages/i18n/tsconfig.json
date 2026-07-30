@@ -2,7 +2,10 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    // 2026-07-30: needed for `bun:test` in src/__tests__/plural.test.ts.
+    // Matches packages/domain, which has had unit tests since M1.
+    "types": ["bun"]
   },
   "include": ["src/**/*"]
 }

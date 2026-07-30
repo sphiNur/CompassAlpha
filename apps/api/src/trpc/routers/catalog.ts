@@ -1,8 +1,9 @@
-import { eq, and, gte, inArray } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { z } from 'zod';
 import { schema as s } from '@compass/db';
 import { SkuListInputSchema } from '@compass/contracts';
 import { authedProcedure, router } from '../trpc';
+import { loadSkuPriceStats } from '../../services/priceStats';
 
 export const catalogRouter = router({
   categories: authedProcedure.query(async ({ ctx }) => {
@@ -96,71 +97,18 @@ export const catalogRouter = router({
     )
     .query(async ({ ctx, input }) => {
       return ctx.withOrg(async (tx) => {
-        const orgId = ctx.session!.orgId;
-        const since30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-        const since7 = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-
-        // Pull the raw observations once and aggregate in JS — keeps
-        // the SQL simple (no FILTER/ROLLUP) and lets us run a single
-        // round-trip even with the optional skuIds filter applied.
-        const obs = await tx
-          .select({
-            skuId: s.priceHistory.skuId,
-            unitPrice: s.priceHistory.unitPrice,
-            observedAt: s.priceHistory.observedAt,
-          })
-          .from(s.priceHistory)
-          .where(
-            and(
-              eq(s.priceHistory.orgId, orgId),
-              gte(s.priceHistory.observedAt, since30),
-              // M3.23-fix (2026-05-18): was `sql\`... = ANY(${arr})\`` — Drizzle's
-              // tagged template binds a JS array as a single parameter, but PG
-              // expects an actual array type on the right of ANY(). Result:
-              // `op ANY/ALL (array) requires array on right side` (500). Same
-              // failure mode that run.ts hit in M1.9; the fix is the same —
-              // use `inArray()` which expands to `IN ($1, $2, ...)` with one
-              // bound parameter per element.
-              input?.skuIds && input.skuIds.length > 0
-                ? inArray(s.priceHistory.skuId, input.skuIds)
-                : undefined,
-            ),
-          )
-          .orderBy(s.priceHistory.skuId, s.priceHistory.observedAt);
-
-        type Acc = {
-          last: { price: number; at: Date } | null;
-          sum7: number;
-          n7: number;
-          sum30: number;
-          n30: number;
-        };
-        const bySku = new Map<string, Acc>();
-        for (const r of obs) {
-          const price = Number(r.unitPrice);
-          if (!Number.isFinite(price)) continue;
-          let acc = bySku.get(r.skuId);
-          if (!acc) {
-            acc = { last: null, sum7: 0, n7: 0, sum30: 0, n30: 0 };
-            bySku.set(r.skuId, acc);
-          }
-          acc.sum30 += price;
-          acc.n30 += 1;
-          if (r.observedAt >= since7) {
-            acc.sum7 += price;
-            acc.n7 += 1;
-          }
-          if (!acc.last || r.observedAt > acc.last.at) {
-            acc.last = { price, at: r.observedAt };
-          }
-        }
-        return [...bySku.entries()].map(([skuId, a]) => ({
-          skuId,
-          lastPrice: a.last ? a.last.price.toFixed(2) : null,
-          lastObservedAt: a.last ? a.last.at.toISOString() : null,
-          avg7d: a.n7 > 0 ? (a.sum7 / a.n7).toFixed(2) : null,
-          avg30d: a.n30 > 0 ? (a.sum30 / a.n30).toFixed(2) : null,
-          observations30d: a.n30,
+        // 2026-07-30: the 30-line last/avg7d/avg30d accumulator that used
+        // to live inline moved to services/priceStats.ts so
+        // order.pendingList can put the SAME figure on approval cards.
+        // Two copies of this arithmetic would drift.
+        const stats = await loadSkuPriceStats(tx, ctx.session!.orgId, input?.skuIds);
+        return [...stats.values()].map((a) => ({
+          skuId: a.skuId,
+          lastPrice: a.lastPrice != null ? a.lastPrice.toFixed(2) : null,
+          lastObservedAt: a.lastObservedAt ? a.lastObservedAt.toISOString() : null,
+          avg7d: a.avg7d != null ? a.avg7d.toFixed(2) : null,
+          avg30d: a.avg30d != null ? a.avg30d.toFixed(2) : null,
+          observations30d: a.observations30d,
         }));
       });
     }),

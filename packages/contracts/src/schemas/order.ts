@@ -21,6 +21,19 @@ export const TodaySessionInputSchema = z.object({
   date: DateStringSchema.optional(),
 });
 
+/**
+ * Every session this member started for one (store, date) — the input for
+ * the Order page's "N batches submitted today" strip (2026-07-30).
+ *
+ * Same shape as TodaySessionInputSchema; separate name because the two
+ * answer different questions and one of them is going to grow filters
+ * before the other does.
+ */
+export const TodayBatchesInputSchema = z.object({
+  storeId: UuidSchema,
+  date: DateStringSchema.optional(),
+});
+
 export const SessionDetailInputSchema = z.object({
   sessionId: UuidSchema,
 });
