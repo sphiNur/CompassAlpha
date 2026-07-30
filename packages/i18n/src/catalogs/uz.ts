@@ -14,6 +14,7 @@ export const uz = {
   'nav.run': 'Xarid',
   'nav.deliver': 'Yetkazish',
   'nav.confirm': 'Qabul',
+  'nav.history': 'Tarix',
   'nav.admin': 'Boshqaruv',
   'nav.reports': 'Hisobotlar',
   'nav.debug': 'Debug',

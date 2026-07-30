@@ -7,6 +7,7 @@ export const ru = {
   'nav.run': 'Закупка',
   'nav.deliver': 'Доставка',
   'nav.confirm': 'Приёмка',
+  'nav.history': 'История',
   'nav.admin': 'Админ',
   'nav.reports': 'Отчёты',
   'nav.debug': 'Отладка',

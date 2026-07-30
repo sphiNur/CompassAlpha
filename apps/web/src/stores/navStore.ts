@@ -30,7 +30,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type Tab = 'order' | 'approve' | 'run' | 'confirm' | 'admin';
+export type Tab = 'order' | 'approve' | 'run' | 'history' | 'confirm' | 'admin';
 
 // Mirror of AdminPage's local types. Kept inline so this file has no
 // dependency on AdminPage.tsx (which is a lazy-loaded chunk).
@@ -159,7 +159,7 @@ export const useNavStore = create<NavState>()(
 
         const tab = oneOf(
           p.tab,
-          ['order', 'approve', 'run', 'confirm', 'admin'] as const,
+          ['order', 'approve', 'run', 'history', 'confirm', 'admin'] as const,
           DEFAULTS.tab,
         );
         const adminSection = oneOf(

@@ -68,8 +68,13 @@ export interface SectionLabelProps {
    * M3.13 (2026-05-16): semantic element. Default `'div'`. Switch to
    * `'h2'` / `'h3'` when the label heads a screen-reader-discoverable
    * section. Has no visual effect — only the role exposed to AT.
+   *
+   * 2026-07-30: `'h1'` added. A page whose card header IS its title
+   * (history-as-a-tab) had no way to say so — the choice was an
+   * `<h2>` with no `<h1>` above it, or a duplicate visible title just
+   * to own the h1. Still no visual effect.
    */
-  as?: 'div' | 'h2' | 'h3';
+  as?: 'div' | 'h1' | 'h2' | 'h3';
   /**
    * M3.13 (2026-05-16): controls the `px-4 py-1.5` padding. When the
    * label sits inside an already-padded container (Card body, Sheet

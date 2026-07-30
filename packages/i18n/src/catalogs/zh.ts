@@ -7,6 +7,7 @@ export const zh = {
   'nav.run': '采购',
   'nav.deliver': '配送',
   'nav.confirm': '验收',
+  'nav.history': '历史',
   'nav.admin': '管理',
   'nav.reports': '报表',
   'nav.debug': '调试',
