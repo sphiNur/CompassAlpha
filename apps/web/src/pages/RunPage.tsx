@@ -1592,7 +1592,7 @@ export function RunPage() {
          is below that strip and was never underneath them. See the
          StickyPageBar docblock. */}
       {activeRun ? (
-        <div className="sticky top-0 z-[1] flex min-h-9 items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-2">
+        <div className="sticky top-0 z-[1] flex min-h-[var(--control-h-sm)] items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-2">
           {/* M3.36 shipped the "×1000" price-mode toggle here as a pill
               whose entire meaning lived in a `title` attribute. On a
               touch device there is no hover, so nothing ever revealed
@@ -1641,7 +1641,7 @@ export function RunPage() {
                 })
               }
               title={i18n.t('run.action.addItem.title')}
-              className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-action)] px-2.5 py-0.5 text-label font-semibold text-[var(--c-action-fg)] active:opacity-70"
+              className="inline-flex h-[var(--capsule-h)] shrink-0 items-center rounded-[var(--r-pill)] bg-[var(--c-action)] px-3 text-body-sm font-medium text-[var(--c-action-fg)] active:opacity-70"
             >
               {i18n.t('run.action.addItem.button')}
             </button>
@@ -1660,7 +1660,7 @@ export function RunPage() {
             #{activeRun.runIndex + 1} · {runSubtitle}
           </span>
           {runAgeDays > 0 ? (
-            <span className="shrink-0 whitespace-nowrap rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-label text-[var(--c-warning-fg)]">
+            <span className="inline-flex h-5 shrink-0 items-center whitespace-nowrap rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-2 text-label font-medium text-[var(--c-warning-fg)]">
               {i18n.t('run.label.staleRun', { days: runAgeDays })}
             </span>
           ) : null}

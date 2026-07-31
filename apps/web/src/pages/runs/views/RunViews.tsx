@@ -639,7 +639,7 @@ export function RunExtrasCard({
                         key={`${e.sessionId ?? storeId}-${e.idx ?? idx}-${e.name}`}
                         className="text-body-sm"
                       >
-                        <div className="-mx-2 flex w-[calc(100%+1rem)] items-baseline gap-1 rounded-md px-2 py-0.5">
+                        <div className="-mx-2 flex w-[calc(100%+1rem)] items-baseline gap-1 rounded-[var(--r-utility)] px-2 py-0.5">
                           {canTap ? (
                             <button
                               type="button"
@@ -647,7 +647,7 @@ export function RunExtrasCard({
                               onClick={() =>
                                 onMarkExtraStatus!(e.sessionId!, e.idx!, cycle(status))
                               }
-                              className="flex min-w-0 flex-1 items-baseline gap-2 rounded-md text-left active:bg-[var(--c-surface-2)]"
+                              className="flex min-w-0 flex-1 items-baseline gap-2 rounded-[var(--r-utility)] text-left active:bg-[var(--c-surface-2)]"
                             >
                               {inner}
                             </button>
@@ -660,7 +660,7 @@ export function RunExtrasCard({
                             <button
                               type="button"
                               onClick={() => onRecordExtraExpense!(storeId, e)}
-                              className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2 py-0.5 text-label font-medium text-[var(--c-action)] ring-hairline active:opacity-70"
+                              className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-capsule)] px-2 py-0.5 text-label font-medium text-[var(--c-action)] active:opacity-70"
                             >
                               {i18n.t('run.extras.recordPrice')}
                             </button>
@@ -735,7 +735,7 @@ export function ExpensesCard({
           <button
             type="button"
             onClick={onOpenExpense}
-            className="rounded-[var(--r-pill)] bg-[var(--c-action)] px-2.5 py-1 text-label font-semibold text-[var(--c-action-fg)] active:opacity-70"
+            className="inline-flex h-[var(--capsule-h)] shrink-0 items-center whitespace-nowrap rounded-[var(--r-pill)] bg-[var(--c-action)] px-3 text-body-sm font-medium text-[var(--c-action-fg)] active:opacity-70"
           >
             {i18n.t('run.action.addExpense.button')}
           </button>
@@ -769,7 +769,7 @@ export function ExpensesCard({
                 <span className="shrink-0 truncate text-body font-semibold">
                   {e.label}
                 </span>
-                <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-1.5 py-0.5 text-label text-[var(--c-fg-muted)] ring-hairline">
+                <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-capsule)] px-1.5 py-0.5 text-label text-[var(--c-fg-muted)]">
                   {i18n.t(
                     e.storeSplits.length > 1
                       ? 'run.section.sharedExpenses'
@@ -780,7 +780,7 @@ export function ExpensesCard({
                   <span
                     aria-label={i18n.t('run.label.paymentTransfer')}
                     title={i18n.t('run.label.paymentTransfer')}
-                    className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-action)]/15 px-1.5 py-0.5 text-label text-[var(--c-action)] ring-1 ring-[var(--c-action)]"
+                    className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-info-bg)] px-1.5 py-0.5 text-label text-[var(--c-action)]"
                   >
                     {i18n.t('run.label.paymentTransfer')}
                   </span>
@@ -793,7 +793,7 @@ export function ExpensesCard({
                     type="button"
                     onClick={() => onRemove(e.id, e.label)}
                     aria-label={i18n.t('run.action.removeExpense')}
-                    className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-label text-[var(--c-danger)] active:bg-[var(--c-surface-2)]"
+                    className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-capsule)] px-2 py-0.5 text-label text-[var(--c-danger)] active:bg-[var(--c-surface-2)]"
                   >
                     ✗
                   </button>
@@ -1040,12 +1040,13 @@ const ROW_TAP =
   'text-left outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]';
 const ROW_STATIC = 'grid min-w-0 flex-1 items-center gap-x-1.5';
 
-/* 36 wide × 44 tall. The thumb travels VERTICALLY on a scrolling list,
- * so 44 is required in that dimension only; every pixel of width comes
- * straight out of the number the purchaser reads back to a vendor. This
- * is the reasoning already recorded for the existing ✓ button. */
+/* 36 wide × 44 tall (--control-h-touch, the ladder's restricted `touch`
+ * tier). The thumb travels VERTICALLY on a scrolling list, so 44 is
+ * required in that dimension only; every pixel of width comes straight
+ * out of the number the purchaser reads back to a vendor. This is the
+ * reasoning already recorded for the existing ✓ button. */
 const ROW_CTRL =
-  'flex h-11 w-9 shrink-0 items-center justify-center self-center ' +
+  'flex h-[var(--control-h-touch)] w-9 shrink-0 items-center justify-center self-center ' +
   'rounded-[var(--r-pill)] text-body outline-none ' +
   'focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]';
 
@@ -1059,10 +1060,9 @@ const ROW_CTRL =
  * dimming the one control that commits money. */
 const CTRL_COMMIT =
   'bg-[var(--c-action)] font-semibold text-[var(--c-action-fg)] active:opacity-80';
-const CTRL_OFF = 'bg-[var(--c-surface-2)] font-semibold text-[var(--c-fg-muted)]';
-const CTRL_QUIET = 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)] active:opacity-70';
-const CTRL_TRANSFER =
-  'bg-[var(--c-action)]/15 text-[var(--c-action)] ring-1 ring-[var(--c-action)] active:opacity-70';
+const CTRL_OFF = 'bg-[var(--c-capsule)] font-semibold text-[var(--c-fg-muted)]';
+const CTRL_QUIET = 'bg-[var(--c-capsule)] text-[var(--c-fg-muted)] active:opacity-70';
+const CTRL_TRANSFER = 'bg-[var(--c-info-bg)] text-[var(--c-action)] active:opacity-70';
 
 /* px-4 (16) + state cell (20) + gap (6) — lines a second line up with
  * the name's left edge. */
@@ -1091,9 +1091,9 @@ function RowStateCell({ kind, label }: { kind: RowStateKind; label: string }) {
     <span className="flex items-center justify-center">
       <span aria-hidden className="flex items-center justify-center leading-none">
         {kind === 'pending' ? (
-          <span className="block h-[7px] w-[7px] rounded-full ring-1 ring-[var(--c-fg-muted)]" />
+          <span className="block h-[7px] w-[7px] rounded-[var(--r-pill)] ring-1 ring-[var(--c-fg-muted)]" />
         ) : kind === 'saving' ? (
-          <span className="block h-[7px] w-[7px] animate-pulse rounded-full bg-[var(--c-action)] motion-reduce:animate-none" />
+          <span className="block h-[7px] w-[7px] animate-pulse rounded-[var(--r-pill)] bg-[var(--c-action)] motion-reduce:animate-none" />
         ) : kind === 'unpriced' ? (
           <span className="block text-body font-semibold text-[var(--c-warning-fg)]">!</span>
         ) : kind === 'purchased' ? (
@@ -1512,7 +1512,7 @@ export function PurchaseRow({
         return (
           <span
             key={d.storeId}
-            className="inline-flex items-center gap-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-1.5 py-0.5 text-label ring-1 ring-[var(--c-divider)]"
+            className="inline-flex items-center gap-1 rounded-[var(--r-pill)] bg-[var(--c-capsule)] px-1.5 py-0.5 text-label"
           >
             <span className="font-medium text-[var(--c-fg)]">{storeName}</span>
             {singleStore ? null : (
@@ -1757,7 +1757,7 @@ export function PurchaseRow({
           <button
             type="button"
             onClick={() => onMarkNa(item.skuId)}
-            className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-label text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
+            className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-capsule)] px-2 py-0.5 text-label text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
           >
             {i18n.t('run.action.markNa')}
           </button>
@@ -1885,10 +1885,13 @@ export function PurchaseRow({
               // (min-w-9), which costs the price field ~5px instead of
               // ~21px. Do not widen this to min-w-11 without also giving
               // column 3 a floor.
-              'flex h-11 min-w-9 items-center justify-center rounded-[var(--r-pill)] px-1.5 text-label font-medium active:opacity-70 ' +
+              //
+              // The height is --control-h-touch, the ladder's restricted
+              // 44px `touch` tier (tokens.css documents when it applies).
+              'flex h-[var(--control-h-touch)] min-w-9 items-center justify-center rounded-[var(--r-pill)] px-1.5 text-label font-medium active:opacity-70 ' +
               (paymentMethod === 'transfer'
-                ? 'bg-[var(--c-action)]/15 text-[var(--c-action)] ring-1 ring-[var(--c-action)]'
-                : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
+                ? 'bg-[var(--c-info-bg)] text-[var(--c-action)]'
+                : 'bg-[var(--c-capsule)] text-[var(--c-fg-muted)]')
             }
           >
             {/* 2026-07-30: was a bare 💵/🏦. The comment on the sibling
@@ -1909,14 +1912,14 @@ export function PurchaseRow({
             aria-busy={saving || undefined}
             aria-label={i18n.t('run.action.savePurchaseAriaLabel', { name: skuName })}
             className={
-              // 44px tall / 36px wide — see the payment-method button
-              // above for why the width is deliberately not 44. This is
-              // the control that commits money, so it is the last one
-              // that should be hard to hit.
-              'flex h-11 min-w-9 items-center justify-center rounded-[var(--r-pill)] px-2.5 text-body font-semibold ' +
+              // 44px tall (--control-h-touch) / 36px wide — see the
+              // payment-method button above for why the width is
+              // deliberately not 44. This is the control that commits
+              // money, so it is the last one that should be hard to hit.
+              'flex h-[var(--control-h-touch)] min-w-9 items-center justify-center rounded-[var(--r-pill)] px-2 text-body font-semibold ' +
               (canSave
                 ? 'bg-[var(--c-action)] text-[var(--c-action-fg)] active:opacity-80'
-                : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
+                : 'bg-[var(--c-capsule)] text-[var(--c-fg-muted)]')
             }
           >
             ✓
@@ -1972,7 +1975,7 @@ export function PurchaseRow({
                    "act or this trip is wrong". Shape kept, alarm gone. */
                 <span
                   title={i18n.t('run.label.addedByPurchaser')}
-                  className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-1.5 text-label text-[var(--c-fg-muted)]"
+                  className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-capsule)] px-1.5 text-label text-[var(--c-fg-muted)]"
                 >
                   <span aria-hidden>+</span>
                   <span className="sr-only">{i18n.t('run.label.addedByPurchaser')}</span>

@@ -1153,10 +1153,13 @@ export function ExpenseTemplatesSection() {
                       setDraft({ ...draft, defaultPaymentMethod: m })
                     }
                     className={
-                      'flex-1 rounded-[var(--r-pill)] px-3 py-2 text-label font-medium ring-hairline ' +
+                      // Capsule pass (2026-07-31): 32px borderless pill —
+                      // selected takes the action fill, unselected the
+                      // translucent capsule fill (no ring).
+                      'h-[var(--capsule-h)] flex-1 rounded-[var(--r-pill)] px-3 text-body-sm font-medium ' +
                       (draft.defaultPaymentMethod === m
                         ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                        : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
+                        : 'bg-[var(--c-capsule)] text-[var(--c-fg)]')
                     }
                   >
                     {m === 'cash'
@@ -1587,7 +1590,11 @@ export function DishesSection() {
                       >
                         <div className="flex items-center gap-2">
                           <select
-                            className="h-9 min-w-0 flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface)] px-3 text-body ring-hairline"
+                            // Capsule pass (2026-07-31): dense 32px field
+                            // capsule, borderless. Fill is --c-capsule rather
+                            // than the field default --c-surface-2 because
+                            // this row already sits ON a surface-2 panel.
+                            className="h-[var(--control-h-sm)] min-w-0 flex-1 rounded-[var(--r-pill)] bg-[var(--c-capsule)] px-3 text-h3"
                             value={ing.skuId}
                             onChange={(e) => {
                               const next = [...draft.ingredients];
@@ -1609,7 +1616,7 @@ export function DishesSection() {
                               setDraft({ ...draft, ingredients: next });
                             }}
                             aria-label={i18n.t('common.remove')}
-                            className="press shrink-0 rounded-[var(--r-pill)] bg-[var(--c-surface)] px-2 py-0.5 text-label text-[var(--c-danger)] ring-hairline"
+                            className="press h-[var(--control-h-sm)] shrink-0 rounded-[var(--r-pill)] bg-[var(--c-capsule)] px-3 text-body-sm text-[var(--c-danger)]"
                           >
                             ×
                           </button>

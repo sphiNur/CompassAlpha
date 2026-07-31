@@ -588,20 +588,20 @@ function DevPersonaPicker({
                 type="button"
                 disabled={pending}
                 onClick={() => onSelect(persona.memberId)}
-                className="press w-full rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 text-left ring-hairline disabled:opacity-50"
+                className="press w-full rounded-[var(--r-card)] bg-[var(--c-capsule)] px-3 py-2 text-left disabled:opacity-50"
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0 truncate text-body font-semibold text-[var(--c-fg)]">
                     {persona.displayName}
                   </div>
-                  <div className="shrink-0 rounded-full bg-[var(--c-surface)] px-2 py-0.5 text-label font-semibold text-[var(--c-fg-muted)] ring-hairline">
+                  <div className="inline-flex h-5 shrink-0 items-center rounded-[var(--r-pill)] bg-[var(--c-capsule)] px-2 text-label font-medium text-[var(--c-fg-muted)]">
                     {persona.isAdmin ? 'Admin' : `R${persona.maxRank}`}
                   </div>
                 </div>
                 <div className="mt-1 truncate text-body-sm text-[var(--c-fg-muted)]">
                   {persona.orgName} · {roles}
                 </div>
-                <div className="mt-0.5 truncate text-label text-[var(--c-fg-muted)]">
+                <div className="mt-1 truncate text-label text-[var(--c-fg-muted)]">
                   {stores} · {persona.permissionCount} permissions
                   {persona.tgUserId ? ` · TG ${persona.tgUserId}` : ''}
                 </div>
@@ -711,7 +711,7 @@ function NoAccessScreen() {
         <button
           type="button"
           onClick={() => navigator.clipboard?.writeText(String(tgUserId))}
-          className="press rounded-full bg-[var(--c-surface-2)] px-4 py-2 font-mono text-body ring-hairline"
+          className="press inline-flex h-[var(--capsule-h)] items-center rounded-[var(--r-pill)] bg-[var(--c-capsule)] px-4 font-mono text-body-sm font-medium"
         >
           {tgUserId}
         </button>

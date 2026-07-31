@@ -33,13 +33,16 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
+// Capsule pass (2026-07-31): raw oklch literals → the --c-*-bg /
+// --c-*-fg token pairs (UI-8; the literals had no dark override), and
+// the colored rings are gone — the tinted fill already delineates
+// (UI-7), and the pill floats on --shadow-product instead of a border,
+// matching the borderless capsule language.
 const TONE: Record<ToastTone, string> = {
-  info: 'bg-[var(--c-surface-elevated)] text-[var(--c-fg)] ring-hairline',
-  success:
-    'bg-[oklch(96%_0.06_145)] text-[oklch(35%_0.16_145)] ring-1 ring-[var(--c-success)]',
-  warn: 'bg-[oklch(97%_0.07_75)] text-[oklch(38%_0.16_75)] ring-1 ring-[var(--c-warning)]',
-  danger:
-    'bg-[oklch(96%_0.06_25)] text-[var(--c-danger)] ring-1 ring-[var(--c-danger)]',
+  info: 'bg-[var(--c-surface-elevated)] text-[var(--c-fg)]',
+  success: 'bg-[var(--c-success-bg)] text-[var(--c-success-fg)]',
+  warn: 'bg-[var(--c-warn-bg)] text-[var(--c-warning-fg)]',
+  danger: 'bg-[var(--c-danger-bg)] text-[var(--c-danger-fg)]',
 };
 
 let counter = 0;
@@ -145,7 +148,8 @@ export function ToastProvider({
             type="button"
             onClick={() => dismiss(t.id)}
             className={cn(
-              'press min-w-[200px] max-w-[92vw] rounded-[var(--r-pill)] px-4 py-2.5 text-left',
+              'press min-w-[200px] max-w-[92vw] rounded-[var(--r-pill)] px-4 py-2 text-left',
+              'shadow-[var(--shadow-product)]',
               TONE[t.tone],
             )}
             style={{ pointerEvents: 'auto' }}

@@ -40,10 +40,12 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
     <span className="relative inline-flex w-full">
       <select
         ref={ref}
+        // Capsule pass (2026-07-31): flat filled capsule, no resting
+        // hairline — parity with Input.
         className={cn(
           'h-[var(--control-h)] w-full appearance-none rounded-[var(--r-pill)] bg-[var(--c-surface-2)] pl-4 pr-9 text-h3',
           'text-[var(--c-fg)]',
-          'outline-none ring-hairline',
+          'outline-none',
           'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',
           'focus-visible:ring-offset-[var(--c-bg)]',
           'disabled:opacity-60',

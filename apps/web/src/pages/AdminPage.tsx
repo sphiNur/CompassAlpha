@@ -430,7 +430,7 @@ function SectionFrame({
           <button
             type="button"
             onClick={onBack}
-            className="press inline-flex h-9 items-center gap-1 rounded-[var(--r-pill)] px-3 text-body text-[var(--c-action)]"
+            className="press inline-flex h-[var(--control-h-sm)] items-center gap-1 rounded-[var(--r-pill)] px-3 text-body-sm font-medium text-[var(--c-action)]"
             aria-label={i18n.t('admin.aria.back')}
           >
             <span aria-hidden className="text-h2 leading-none">‹</span>
@@ -589,7 +589,7 @@ function WorkspaceSection() {
         <div className="flex flex-col gap-3 py-3">
           <Field label={i18n.t('admin.workspace.currency')}>
             <select
-              className="h-11 w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-h3 ring-hairline"
+              className="h-[var(--control-h)] w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-h3"
               value={draftCurrency}
               onChange={(e) => setDraftCurrency(e.target.value)}
             >

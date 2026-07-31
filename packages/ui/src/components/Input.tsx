@@ -18,10 +18,13 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
       // an Input + Button row reads as same-rhythm controls). Select
       // shares this token so Input and Select finally line up. Text
       // stays text-h3 (14 px).
+      // Capsule pass (2026-07-31): fields are flat filled capsules like
+      // Telegram's own search field — surface-2 fill, no resting
+      // hairline. Focus/invalid rings unchanged.
       className={cn(
         'h-[var(--control-h)] w-full min-w-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-h3',
         'text-[var(--c-fg)] placeholder:text-[var(--c-fg-subtle)]',
-        'outline-none ring-hairline',
+        'outline-none',
         'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',
         'focus-visible:ring-offset-[var(--c-bg)]',
         invalid && 'ring-2 ring-[var(--c-danger)]',

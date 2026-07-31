@@ -347,7 +347,7 @@ export function ConfirmPage() {
        active run; without one, no chrome row. */
     <div className="flex flex-col gap-3 pb-4">
       {activeRun ? (
-        <StickyPageBar className="min-h-7">
+        <StickyPageBar className="min-h-[var(--control-h-xs)]">
           {/* 2026-07-30: the receiver is signing for goods at a specific
               store — which the page never named. Now named once, in
               Shell's top strip, on every page including this one. */}

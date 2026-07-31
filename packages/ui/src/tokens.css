@@ -22,8 +22,25 @@
   --c-fg-subtle: oklch(65% 0.02 240);
   --c-fg-inverse: oklch(99% 0 0);
 
-  /* Action */
-  --c-action: oklch(56% 0.18 250);
+  /* Action
+   *
+   * 2026-07-31: 56% → 55%. Measured (canvas rasterization, not
+   * eyeballed): --c-action-fg on the 56% fill scored 4.47:1, a hair
+   * under AA's 4.5 for normal text — and that pairing is every primary
+   * button label in the app, including the one that commits a
+   * purchase. 55% scores 4.69:1. The hue and chroma are untouched and
+   * the shift is rgb(0,118,216) → rgb(0,114,213), which reads as the
+   * same blue.
+   *
+   * NOTE (open, not fixed here): --c-action used as INK on a light
+   * surface still measures 3.89:1 on a capsule fill and 4.81:1 on a
+   * white card, so the 19 `text-[var(--c-action)]` call sites are
+   * borderline on quiet capsules. Fixing that properly means a second
+   * "action ink" token (the same fill-vs-ink split --c-warning /
+   * --c-warning-fg already uses) plus a sweep of those call sites —
+   * a colour change worth reviewing on its own rather than smuggling
+   * into a sizing pass. */
+  --c-action: oklch(55% 0.18 250);
   --c-action-hover: oklch(50% 0.18 250);
   --c-action-fg: oklch(99% 0 0);
 
@@ -52,6 +69,14 @@
    * "simplify" the two tokens back into one; they are different jobs.
    */
   --c-warning-fg: oklch(53% 0.11 75);
+  /* Success/danger inks (2026-07-31, capsule pass): same fill-vs-ink
+   * split as --c-warning-fg above. Badge/Toast/Banner used to put the
+   * FILL colors (--c-success 58%, --c-danger 58%) — or raw oklch
+   * literals with no dark override — on the pale *-bg tints, landing
+   * near 3:1 for 11-12px text. These are the measured text inks for
+   * tinted surfaces; the fills keep their jobs. */
+  --c-success-fg: oklch(40% 0.13 145);
+  --c-danger-fg: oklch(45% 0.19 25);
 
   /* Status surfaces (M1.9-extra, 2026-05-07): pale tint backgrounds
    * for inline highlighted blocks (e.g. M1.8 "其他物品" note callout
@@ -63,33 +88,110 @@
   --c-danger-bg: oklch(96% 0.06 25);
   --c-info-bg: oklch(95% 0.04 240);
 
+  /* Capsule fill (2026-07-31, Telegram-capsule pass).
+   *
+   * The reference element for the whole UI is Telegram's own top-bar
+   * chrome capsule (the Close / ∨⋯ buttons): a fully-rounded pill,
+   * ~32px tall, filled with a TRANSLUCENT neutral — no border, no
+   * hairline. This token is that fill. Every secondary/unselected
+   * capsule control (chips, tabs, secondary buttons, qty steppers,
+   * badges) uses `bg-[var(--c-capsule)]` with NO ring; the fill alone
+   * carries the shape, exactly like Telegram's chrome. Translucency
+   * (not a solid gray) keeps the capsule legible over any surface —
+   * white cards, tinted callouts, dark sheets — without a per-context
+   * variant.
+   *
+   * Alpha is measured, not eyeballed (rasterized on a canvas and
+   * scored, 2026-07-31). It trades two things against each other:
+   * the SHAPE (fill vs the surface under it) and the INK (--c-fg-muted
+   * on top of the fill). On white:
+   *
+   *   alpha   shape    muted ink
+   *   0.06    1.13     5.30      first draft — vanishes in sunlight
+   *   0.10    1.24     4.84   ←  chosen
+   *   0.12    1.29     4.65
+   *   0.14    1.35     4.44      ink fails AA
+   *
+   * 0.10 roughly doubles the perceived shape over the first draft and
+   * still clears AA (4.5) for secondary ink with headroom. This app is
+   * read outdoors in direct sun, so the shape has to survive that;
+   * 0.14 would be crisper but drops the ink below AA, and the ink is
+   * what the user actually reads. Do not raise past 0.12. */
+  --c-capsule: oklch(20% 0.015 240 / 0.1);
+
   /* Lines */
   --c-divider: oklch(0% 0 0 / 0.08);
   --c-ring: oklch(56% 0.18 250);
   --c-ring-offset: var(--c-bg);
 
-  /* Radii */
+  /* Scrims (2026-07-31): were raw oklch literals inside Sheet.tsx and
+   * PhotoCapture.tsx (UI-8). Theme-invariant on purpose — a dark veil
+   * works over light and dark surfaces alike, and `--c-scrim-strong`
+   * sits over arbitrary user photos where neither theme's surface
+   * tokens apply. `--c-on-scrim` is the ink for content on top of
+   * them; it is NOT --c-fg-inverse, which flips with the theme and
+   * would turn dark-on-dark in the dark theme. */
+  --c-scrim: oklch(0% 0 0 / 0.32);
+  --c-scrim-strong: oklch(0% 0 0 / 0.6);
+  --c-on-scrim: oklch(100% 0 0);
+
+  /* Radii — capsule-first (2026-07-31 Telegram-capsule pass).
+   * Interactive controls are CAPSULES (--r-pill). Containers are
+   * --r-card (U/2 = 16). Sheets round their top edge with --r-sheet
+   * (3/4 U = 24). --r-utility (U/4 = 8) is for tiny squares only
+   * (checkbox box, code blocks). --r-capsule (12px) was RETIRED —
+   * it sat off the ladder and read as neither pill nor card. */
   --r-utility: 8px;
-  --r-capsule: 12px;
   --r-card: 16px;
+  --r-sheet: 24px;
   --r-pill: 9999px;
 
-  /* Component sizing (2026-07-05, Phase 0 — FRONTEND_AUDIT_2026-07.md).
-   * Canonical spacing/height so the SAME element renders at ONE value
-   * instead of the 8 card-padding recipes / 4 control heights that had
-   * accumulated across call sites. Consume via `px-[var(--card-pad)]`,
-   * `h-[var(--control-h)]` etc. — never re-type a raw px height.
+  /* ────────────────────────────────────────────────────────────────
+   * SIZE LADDER (2026-07-31, Telegram-capsule pass)
+   * ────────────────────────────────────────────────────────────────
+   * Anchor unit U = 32px — the height of Telegram's top-bar chrome
+   * capsule (Close / ∨⋯), i.e. the one element every screen already
+   * shows and the user's eye calibrates against. EVERY element height
+   * in the app is a fixed fraction of U, on the 4px grid:
    *
-   *   --card-pad       Card body/footer inner padding (== px-4).
-   *   --control-h      Standard form control height: Input, Select.
-   *   --control-h-sm   Compact controls: NumberInput/SearchInput/Segmented.
+   *   TIER      PX   ×U     ELEMENTS
+   *   ────────────────────────────────────────────────────────────
+   *   micro     20   5/8    Badge, Switch track
+   *   dense     28   7/8    QtyControl sm, Segmented sm, NumberInput sm
+   *   capsule   32   1      Chip, Tab, Button sm, SearchInput,
+   *                         Segmented md, NumberInput md, QtyControl md
+   *   field     40   5/4    Input, Select, Button md
+   *   touch     44   11/8   RESTRICTED — see below
+   *   cta       48   3/2    Button lg, PageMainButton
+   *   header    56   7/4    app header (web fallback)
+   *   nav       64   2      bottom nav
    *
-   * Two control tiers is deliberate (not drift): --control-h is the
-   * "form field" rhythm, --control-h-sm the "dense/compact" rhythm.
-   * Assign each control to a tier ON PURPOSE; don't invent a third. */
+   * The `touch` tier (--control-h-touch) is NOT a free choice. It is
+   * iOS HIG's 44px minimum, and it applies to exactly one situation:
+   * a control that COMMITS STATE while living in a vertically
+   * scrolling dense list, where the thumb travels across neighbours
+   * (RunViews' per-row ✓-save and payment-method buttons). Going to
+   * the 48 CTA tier there would eat the dead space that keeps an
+   * off-by-one-row tap from committing money against the wrong SKU —
+   * the row shell is 52px, so 44 leaves 8px between adjacent commit
+   * targets and 48 would leave 4. Anywhere else, use field or cta.
+   *
+   * Text follows height (capsule-family type rule, see PILL FAMILY
+   * below): 20/28 → text-label 11 · 32 → text-body-sm 12 ·
+   * 40/48 → text-h3 14. Horizontal padding follows height too:
+   * 32 → px-3 (3/8 U) · 40 → px-4..5 · 48 → px-6 (3/4 U).
+   *
+   * Consume via the tokens — `h-[var(--capsule-h)]`,
+   * `h-[var(--control-h)]` — or the exact Tailwind step (h-8 == 32);
+   * never invent an off-ladder height. If a screen genuinely needs an
+   * exception, add a one-line comment naming the role. */
+  --capsule-h: 32px;
   --card-pad: 16px;
   --control-h: 40px;
-  --control-h-sm: 36px;
+  --control-h-sm: 32px;
+  --control-h-xs: 28px;
+  --control-h-touch: 44px;
+  --control-h-lg: 48px;
 
   /* Shadows */
   --shadow-product: 0 8px 24px oklch(0% 0 0 / 0.12), 0 1px 2px oklch(0% 0 0 / 0.08);
@@ -204,20 +306,31 @@
    *   Tabular density / legacy          text-meta                 10px  (deprecated)
    *
    * ────────────────────────────────────────────────────────────────
-   * PILL FAMILY (M3.14, 2026-05-16)
+   * PILL FAMILY (M3.14, 2026-05-16 · revised 2026-07-31 capsule pass)
    * ────────────────────────────────────────────────────────────────
-   * ALL pill-shape controls — Badge, ChipBar's Chip, Tabs' Tab,
-   * Button size="sm", and any inline rounded-[var(--r-pill)] button
-   * — render text at:
+   * ALL capsule-height (32px) pill controls — ChipBar's Chip, Tabs'
+   * Tab, Button size="sm", Segmented md, and any inline
+   * rounded-[var(--r-pill)] button — render text at:
    *
-   *     text-label + font-medium      (11 px, weight 500)
+   *     text-body-sm + font-medium    (12 px, weight 500)
    *
-   * (Was 12px before M3.14.) The entire pill family stays on a
-   * single baseline.
+   * 2026-07-31: raised from M3.14's text-label (11) back to 12.
+   * Telegram's chrome capsule sets its label at ≈0.45× its height;
+   * 11px on a 32px capsule (0.34×) read a tier under-scaled next to
+   * the real Close button one strip above. 12px (0.375×) is the
+   * closest on-scale step. The M3.14 page-text shrink (body 13,
+   * labels 11) is untouched — this applies to CAPSULE CONTROLS only.
+   * Micro/dense capsules (Badge 20, QtyControl sm 28, Segmented sm
+   * 28) stay at text-label 11.
+   *
+   * Capsule fills (same pass): selected/primary = --c-action fill;
+   * unselected/secondary = --c-capsule translucent fill, NO
+   * ring-hairline. Borders on capsule controls are retired — the
+   * fill carries the shape, as on Telegram's own chrome buttons.
    *
    * Exceptions (keep larger):
-   *   - Button md (h-11) — primary actions: text-h3 (14)
-   *   - Button lg (h-14) — sheet-footer commits: text-h2 (15)
+   *   - Button md (h-10) — primary actions: text-h3 (14)
+   *   - Button lg (h-12) — sheet-footer commits: text-h3 (14)
    *   - Input lookalikes (rounded-pill display reading like an
    *     <Input>) — text-h3 to match the Input component
    *   - Single-emoji icon buttons in pill containers — size doesn't
@@ -259,12 +372,22 @@
   --c-fg-muted: oklch(70% 0.02 240);
   --c-fg-subtle: oklch(55% 0.02 240);
   --c-fg-inverse: oklch(15% 0.01 240);
+  /* Dark capsule fill — white translucency, like Telegram's dark
+   * chrome capsules. Higher alpha than light because low-luminance
+   * surfaces swallow subtle overlays: 0.12 measures 1.41 against
+   * --c-surface (light's 0.10 measures 1.24 on white), which is the
+   * matching perceived strength. Light ink on it stays >10:1, so the
+   * ink ceiling that caps the light value doesn't bind here. */
+  --c-capsule: oklch(100% 0 0 / 0.12);
   --c-divider: oklch(100% 0 0 / 0.1);
   /* The light-theme warning ink is a dark amber; on these surfaces it
    * would be ~1.3:1. Dark theme wants the opposite direction, and the
    * existing fill value already measures 7.12:1 on --c-surface and
    * 5.79:1 on the dark --c-warn-bg below, so it doubles as the ink. */
   --c-warning-fg: oklch(72% 0.15 75);
+  /* Same inversion for the success/danger inks on the dim tints below. */
+  --c-success-fg: oklch(78% 0.13 145);
+  --c-danger-fg: oklch(76% 0.14 25);
   /* Dim status surfaces so they read as backgrounds, not panels. */
   --c-warn-bg: oklch(28% 0.07 75);
   --c-success-bg: oklch(28% 0.06 145);
@@ -278,12 +401,12 @@
   --c-surface-2: oklch(94% 0.003 240);
   --c-fg: oklch(15% 0 0); /* near-black */
   --c-fg-muted: oklch(45% 0 0);
+  --c-capsule: oklch(15% 0 0 / 0.06);
   --c-action: oklch(52% 0.19 255);
   --c-action-hover: oklch(46% 0.19 255);
-  --r-utility: 8px;
-  --r-capsule: 11px;
-  --r-card: 18px;
-  --r-pill: 9999px;
+  /* Radii inherit the capsule-pass ladder (utility 8 / card 16 /
+   * sheet 24 / pill) — the old 11/18px overrides sat off the 4px
+   * grid the 2026-07-31 pass standardizes on. */
   --shadow-product: 0 16px 32px oklch(0% 0 0 / 0.14), 0 2px 4px oklch(0% 0 0 / 0.08);
 }
 

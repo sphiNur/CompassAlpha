@@ -100,7 +100,7 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(function Che
     <label
       htmlFor={inputId}
       className={cn(
-        'press flex cursor-pointer items-start gap-2.5 rounded-[var(--r-utility)] py-1.5',
+        'press flex cursor-pointer items-start gap-2 rounded-[var(--r-utility)] py-1.5',
         disabled && 'cursor-not-allowed opacity-60',
         className,
       )}

@@ -514,7 +514,7 @@ export function ActiveRunPanel({
                   onChange={(e) => setItemQuery(e.target.value)}
                   placeholder={i18n.t('run.search.itemsPlaceholder')}
                   aria-label={i18n.t('run.search.itemsPlaceholder')}
-                  className="h-9 w-full rounded-[var(--r-pill)] border border-[var(--c-divider)] bg-[var(--c-surface-2)] px-3 text-body outline-none focus:border-[var(--c-action)]"
+                  className="h-[var(--control-h-sm)] w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 text-body-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--c-bg)]"
                 />
               </div>
               <ChipBar
@@ -1407,7 +1407,7 @@ export function PreviewSummaryCard({
         <li key={line.id} className={`px-2 py-1.5 ${rowBg}`}>
           <div className="flex min-w-0 items-baseline gap-2 text-body">
             {line.kind === 'extra' ? (
-              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--c-warning-fg)] ring-hairline">
+              <span className="inline-flex h-5 shrink-0 items-center rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-2 text-label font-medium text-[var(--c-warning-fg)]">
                 {i18n.t('order.extras.label')}
               </span>
             ) : null}
@@ -1460,7 +1460,7 @@ export function PreviewSummaryCard({
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-body">
             {line.kind === 'extra' ? (
-              <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--c-warning-fg)] ring-hairline">
+              <span className="inline-flex h-5 shrink-0 items-center rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-2 text-label font-medium text-[var(--c-warning-fg)]">
                 {i18n.t('order.extras.label')}
               </span>
             ) : null}
@@ -1480,7 +1480,7 @@ export function PreviewSummaryCard({
   };
 
   return (
-    <Card className="-mx-2 overflow-hidden rounded-[var(--r-capsule)]">
+    <Card className="-mx-2 overflow-hidden">
       <CardHeader className="px-3 pt-3">
         <CardTitle>{i18n.t('run.section.readyToPlan')}</CardTitle>
         <Badge>{i18n.t('run.label.sessionsCount', { n: preview.sessions.length })}</Badge>
@@ -1512,7 +1512,7 @@ export function PreviewSummaryCard({
             onChange={(e) => setFilterText(e.target.value)}
             placeholder={i18n.t('order.search.placeholder')}
             aria-label={i18n.t('order.search.placeholder')}
-            className="h-9 min-w-0 flex-1 rounded-[var(--r-pill)] border border-[var(--c-divider)] bg-[var(--c-surface-2)] px-3 text-body outline-none focus:border-[var(--c-action)]"
+            className="h-[var(--control-h-sm)] min-w-0 flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 text-body-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--c-bg)]"
           />
           {filtering ? (
             <span className="shrink-0 font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
@@ -1528,10 +1528,10 @@ export function PreviewSummaryCard({
             type="button"
             onClick={() => chooseView(v)}
             className={
-              'press flex-1 rounded-[var(--r-pill)] px-3 py-1.5 text-label font-medium ring-hairline ' +
+              'press flex h-[var(--capsule-h)] flex-1 items-center justify-center rounded-[var(--r-pill)] px-3 text-body-sm font-medium ' +
               (view === v
                 ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]')
+                : 'bg-[var(--c-capsule)] text-[var(--c-fg)]')
             }
           >
             {i18n.t(
@@ -1580,20 +1580,20 @@ export function PreviewSummaryCard({
                 <button
                   type="button"
                   onClick={() => chooseView('bySupplier')}
-                  // 36px, not the 44px the purchase row's ✓ gets. Measured
+                  // 32px (capsule tier), not the 44px the purchase row's ✓ gets. Measured
                   // at 22px on a real instance, which is too small to hit
                   // reliably one-handed — but this is a once-per-run
                   // navigation shortcut whose worst failure is "tap again",
                   // not a control that commits money hundreds of times a
                   // trip. The static counter beside it matches so the row
                   // reads as one band.
-                  className="press flex min-h-9 items-center rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2.5 text-label text-[var(--c-warning-fg)] ring-hairline"
+                  className="press flex min-h-[var(--control-h-sm)] items-center rounded-[var(--r-pill)] bg-[var(--c-capsule)] px-3 text-body-sm font-medium text-[var(--c-warning-fg)]"
                 >
                   {i18n.t('run.preview.noSupplierCount', { n: previewStats.noSupplier })}
                 </button>
               ) : null}
               {previewStats.total > previewStats.known ? (
-                <span className="flex min-h-9 items-center rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2.5 text-label text-[var(--c-warning-fg)]">
+                <span className="flex min-h-[var(--control-h-sm)] items-center rounded-[var(--r-pill)] bg-[var(--c-capsule)] px-3 text-body-sm font-medium text-[var(--c-warning-fg)]">
                   {i18n.t('run.preview.unknownPrices', {
                     n: previewStats.total - previewStats.known,
                   })}
@@ -1666,7 +1666,7 @@ export function PreviewSummaryCard({
                     anchorOn(e.currentTarget);
                     setOpenStore((o) => toggleOpen(o, g.storeId));
                   }}
-                  className="press flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-[var(--r-utility)] px-2 py-1.5 text-left outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]"
+                  className="press flex min-h-[var(--control-h)] min-w-0 flex-1 items-center gap-2 rounded-[var(--r-utility)] px-2 py-2 text-left outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]"
                 >
                   <span aria-hidden className="shrink-0 font-mono text-label text-[var(--c-fg-muted)]">
                     {open ? '▾' : '▸'}
@@ -1757,7 +1757,7 @@ export function PreviewSummaryCard({
                     anchorOn(e.currentTarget);
                     setOpenSupplier((o) => toggleOpen(o, supplierKey));
                   }}
-                  className="press flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-[var(--r-utility)] px-2 py-1.5 text-left outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]"
+                  className="press flex min-h-[var(--control-h)] min-w-0 flex-1 items-center gap-2 rounded-[var(--r-utility)] px-2 py-2 text-left outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]"
                 >
                   <span aria-hidden className="shrink-0 font-mono text-label text-[var(--c-fg-muted)]">
                     {open ? '▾' : '▸'}
@@ -1914,10 +1914,10 @@ function VendorPickerSheet({
           onClick={() => setSupplier.mutate({ skuId, supplierId: null })}
           disabled={setSupplier.isPending}
           className={
-            'press flex items-center justify-between gap-3 rounded-[var(--r-card)] px-4 py-3 text-left ring-hairline ' +
+            'press flex items-center justify-between gap-3 rounded-[var(--r-card)] px-4 py-3 text-left ' +
             (currentSupplierId === null
               ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-              : 'bg-[var(--c-surface-2)]')
+              : 'bg-[var(--c-capsule)]')
           }
         >
           <span className="text-body">
@@ -1934,10 +1934,10 @@ function VendorPickerSheet({
               onClick={() => setSupplier.mutate({ skuId, supplierId: sup.id })}
               disabled={setSupplier.isPending}
               className={
-                'press flex items-center justify-between gap-3 rounded-[var(--r-card)] px-4 py-3 text-left ring-hairline ' +
+                'press flex items-center justify-between gap-3 rounded-[var(--r-card)] px-4 py-3 text-left ' +
                 (selected
                   ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                  : 'bg-[var(--c-surface-2)]')
+                  : 'bg-[var(--c-capsule)]')
               }
             >
               <div className="min-w-0">
@@ -1984,7 +1984,7 @@ export function RunSessionsCard({
           return (
             <li
               key={sessionRow.id}
-              className="flex items-center gap-2 border-b border-[var(--c-divider)] px-3 py-2 last:border-b-0"
+              className="flex items-center gap-2 border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0"
             >
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">

@@ -162,7 +162,7 @@ export function StoresHomeSection({
                 <button
                   type="button"
                   onClick={() => onPickStore({ kind: 'org-level' })}
-                  className="press flex w-full items-start justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-2.5 text-left ring-hairline"
+                  className="press flex w-full items-start justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-3 text-left ring-hairline"
                 >
                   <span className="min-w-0">
                     <span className="block text-h3 font-semibold text-[var(--c-fg)]">
@@ -201,7 +201,7 @@ export function StoresHomeSection({
                         storeName: st.name,
                       })
                     }
-                    className="press flex w-full items-start justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-2.5 text-left ring-hairline"
+                    className="press flex w-full items-start justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-3 text-left ring-hairline"
                   >
                     <span className="min-w-0">
                       <span className="block text-h3 font-semibold text-[var(--c-fg)]">
@@ -779,8 +779,11 @@ function StoreSalesTab({ storeId }: { storeId: string }) {
             </p>
           ) : (
             <>
+              {/* Raw native <select> (keeps the platform arrow) styled to
+                  the Select primitive's capsule recipe: --control-h,
+                  r-pill, surface-2 fill, no resting hairline, text-h3. */}
               <select
-                className="h-10 w-full rounded-[var(--r-pill)] bg-[var(--c-surface)] px-3 text-body ring-hairline"
+                className="h-[var(--control-h)] w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-h3"
                 value={draftDishId}
                 onChange={(e) => setDraftDishId(e.target.value)}
               >

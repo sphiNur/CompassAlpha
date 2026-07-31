@@ -17,8 +17,11 @@ const button = cva(
       variant: {
         primary:
           'bg-[var(--c-action)] text-[var(--c-action-fg)] hover:bg-[var(--c-action-hover)] rounded-[var(--r-pill)]',
+        // 2026-07-31 (capsule pass): secondary = the Telegram chrome
+        // capsule — translucent neutral fill, no hairline. Borders on
+        // capsule controls are retired app-wide; the fill is the shape.
         secondary:
-          'bg-[var(--c-surface-2)] text-[var(--c-fg)] rounded-[var(--r-pill)] ring-hairline',
+          'bg-[var(--c-capsule)] text-[var(--c-fg)] rounded-[var(--r-pill)]',
         ghost:
           'bg-transparent text-[var(--c-action)] rounded-[var(--r-pill)]',
         utility:
@@ -27,31 +30,40 @@ const button = cva(
         // (delete account, drop org). Heavy by design.
         danger:
           'bg-[var(--c-danger)] text-[var(--c-fg-inverse)] rounded-[var(--r-pill)]',
-        // M3.16 (2026-05-16): "soft danger" — transparent with red
-        // text + red hairline. Right tone for SECONDARY destructive
-        // operations (archive a category, archive a SKU) where the
-        // PRIMARY action sitting next to it is "Edit". Filled-danger
-        // was outweighing Edit in admin lists and pulling the user's
-        // eye to the dangerous button.
+        // M3.16 (2026-05-16): "soft danger" — the right tone for
+        // SECONDARY destructive operations (archive a category, archive
+        // a SKU) where the PRIMARY action next to it is "Edit".
+        // Filled-danger was outweighing Edit in admin lists and pulling
+        // the user's eye to the dangerous button.
+        //
+        // 2026-07-31: was `ring-1 ring-[var(--c-danger)]/40` over a
+        // transparent fill. Tailwind emits NO rule for an opacity
+        // modifier on an arbitrary var() color, so the ring-COLOR class
+        // resolved to nothing while `ring-1` still set a width — every
+        // danger-ghost button in the admin lists has been rendering
+        // Tailwind's default BLUE ring. Now a quiet danger-tinted
+        // capsule, which fixes the color and matches UI-12 (controls
+        // are filled, not outlined).
         'danger-ghost':
-          'bg-transparent text-[var(--c-danger)] rounded-[var(--r-pill)] ring-1 ring-[var(--c-danger)]/40',
+          'bg-[var(--c-danger-bg)] text-[var(--c-danger-fg)] rounded-[var(--r-pill)]',
+        // Capsule pass: --r-capsule (12px) retired; pearl is now the
+        // same borderless capsule as secondary. Kept as an alias so
+        // call sites keep compiling — new code should say `secondary`.
         pearl:
-          'bg-[var(--c-surface-2)] text-[var(--c-fg)] rounded-[var(--r-capsule)] ring-hairline',
+          'bg-[var(--c-capsule)] text-[var(--c-fg)] rounded-[var(--r-pill)]',
       },
       size: {
-        // M2.4 (text), M3.15 (heights, 2026-05-16):
-        //   - sm: h-8 (32) + text-label (11) — compact secondary actions.
-        //   - md: h-10 (40, was 44) + text-h3 (14) — default form / inline
-        //     actions. -4 px brings the row rhythm closer to the bottom
-        //     nav (icons + label = ~36 px tall).
-        //   - lg: h-13 (52, was 56) + text-h3 (14, was text-h2 / 15) —
-        //     sheet-footer commits + page-bottom CTAs. Big enough to
-        //     anchor the action without towering over the 64 px nav.
-        sm: 'h-8 px-3 text-label',
-        md: 'h-10 px-5 text-h3',
-        // h-[52px] — Tailwind's scale jumps 12→14 (48→56), and we want
-        // exactly the middle.
-        lg: 'h-[52px] px-7 text-h3',
+        // Capsule-pass ladder (2026-07-31; see SIZE LADDER in tokens.css):
+        //   - sm: capsule tier (32) + text-body-sm (12, the capsule type
+        //     rule) — compact secondary actions, same rhythm as Chip/Tab.
+        //   - md: field tier (40) + text-h3 (14) — default form / inline
+        //     actions, lines up with Input/Select.
+        //   - lg: CTA tier (48 = 3/2 U, was the off-ladder 52) + text-h3
+        //     (14, M3.15 decision) — sheet-footer commits + page-bottom
+        //     CTAs; same height as Shell's PageMainButton.
+        sm: 'h-[var(--capsule-h)] px-3 text-body-sm',
+        md: 'h-[var(--control-h)] px-5 text-h3',
+        lg: 'h-[var(--control-h-lg)] px-6 text-h3',
       },
       block: {
         true: 'w-full',

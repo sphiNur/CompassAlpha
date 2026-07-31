@@ -28,6 +28,7 @@ import {
   Sheet,
   Spinner,
   Tile,
+  pillButtonClass,
   useToast,
 } from '@compass/ui';
 import { PAGE_SIZE } from '../../../config/timings';
@@ -100,9 +101,12 @@ export function ActivitySection() {
                   : undefined;
               const isIntervention =
                 claimReason === 'override' || claimReason === 'timeout';
+              // 2026-07-31 (capsule pass): the tint was a pair of raw OKLCH
+              // literals (UI-8) that also re-declared the ring the row wrapper
+              // already carries. Now the warn-tint token, ring left to the row.
               const rowBg = isIntervention
-                ? 'bg-[oklch(97%_0.07_75)] ring-[oklch(35%_0.16_75)]/20'
-                : 'bg-[var(--c-surface)] ring-hairline';
+                ? 'bg-[var(--c-warn-bg)]'
+                : 'bg-[var(--c-surface)]';
               return (
                 <li
                   key={e.id}
@@ -124,8 +128,8 @@ export function ActivitySection() {
                         <span
                           className={
                             isIntervention
-                              ? 'ml-1.5 text-tiny font-medium uppercase tracking-wider text-[oklch(35%_0.16_75)]'
-                              : 'ml-1.5 text-tiny font-medium uppercase tracking-wider text-[var(--c-fg-muted)]'
+                              ? 'ml-1.5 text-tiny font-medium uppercase tracking-eyebrow text-[var(--c-warning-fg)]'
+                              : 'ml-1.5 text-tiny font-medium uppercase tracking-eyebrow text-[var(--c-fg-muted)]'
                           }
                         >
                           · {claimReason}
@@ -437,30 +441,16 @@ function TargetedPurgeBrowser() {
           type="date"
           value={date}
           onChange={(e) => setDate(e.target.value)}
-          className="h-10 flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 text-body ring-hairline"
+          // Capsule pass (2026-07-31): field tier — --control-h, flat
+          // surface-2 fill, no resting hairline (parity with <Input>).
+          className="h-[var(--control-h)] flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-h3"
         />
-        <button
-          type="button"
-          onClick={() => setTab('orders')}
-          className={
-            'press rounded-[var(--r-pill)] px-3 py-1.5 text-label font-medium ring-hairline ' +
-            (tab === 'orders'
-              ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-              : 'bg-transparent text-[var(--c-fg-muted)]')
-          }
-        >
+        {/* Capsule pass (2026-07-31): the two hand-rolled tab pills now
+            share the one capsule recipe (pillButtonClass) with Chip/Tab. */}
+        <button type="button" onClick={() => setTab('orders')} className={pillButtonClass(tab === 'orders')}>
           {i18n.t('ops.purge.tabOrders')}
         </button>
-        <button
-          type="button"
-          onClick={() => setTab('runs')}
-          className={
-            'press rounded-[var(--r-pill)] px-3 py-1.5 text-label font-medium ring-hairline ' +
-            (tab === 'runs'
-              ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-              : 'bg-transparent text-[var(--c-fg-muted)]')
-          }
-        >
+        <button type="button" onClick={() => setTab('runs')} className={pillButtonClass(tab === 'runs')}>
           {i18n.t('ops.purge.tabRuns')}
         </button>
       </div>
@@ -770,15 +760,12 @@ export function AdminAuditSection() {
           filter. Single-store users see one chip + "all". */}
       {sessionStores.length > 0 ? (
         <div className="mb-3 flex flex-wrap gap-1">
+          {/* Capsule pass (2026-07-31): the filter chips were hand-rolled
+              rounded-full + ring pills; now the shared capsule recipe. */}
           <button
             type="button"
             onClick={() => setStoreFilter(null)}
-            className={
-              'rounded-full px-3 py-1 text-label font-medium ring-hairline ' +
-              (storeFilter === null
-                ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]')
-            }
+            className={pillButtonClass(storeFilter === null)}
           >
             {i18n.t('ops.audit.allScopes')}
           </button>
@@ -787,12 +774,7 @@ export function AdminAuditSection() {
               key={st.id}
               type="button"
               onClick={() => setStoreFilter(st.id)}
-              className={
-                'rounded-full px-3 py-1 text-label font-medium ring-hairline ' +
-                (storeFilter === st.id
-                  ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                  : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]')
-              }
+              className={pillButtonClass(storeFilter === st.id)}
             >
               {st.name}
             </button>
@@ -871,7 +853,10 @@ export function AdminAuditSection() {
                           <summary className="cursor-pointer text-label font-medium text-[var(--c-fg-muted)]">
                             {i18n.t('ops.audit.inputs')}
                           </summary>
-                          <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2 py-1 font-mono text-label text-[var(--c-fg-muted)]">
+                          {/* --r-utility, not --r-pill: this is a multi-line
+                              code block, and the utility radius is the token
+                              for exactly that (capsule pass 2026-07-31). */}
+                          <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-2 py-1 font-mono text-label text-[var(--c-fg-muted)]">
                             {JSON.stringify(r.inputs, null, 2)}
                           </pre>
                         </details>
@@ -1680,7 +1665,10 @@ export function MaintenanceSection() {
                 type="date"
                 value={dateInput}
                 onChange={(e) => setDateInput(e.target.value)}
-                className="h-11 flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-h3 ring-hairline"
+                // Capsule pass (2026-07-31): this was an off-ladder 44px
+                // box; a plain form field belongs on the field tier
+                // (--control-h), flat fill, no resting hairline.
+                className="h-[var(--control-h)] flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-h3"
               />
               <Button
                 size="sm"

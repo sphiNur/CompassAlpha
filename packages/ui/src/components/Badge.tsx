@@ -2,17 +2,24 @@ import type { HTMLAttributes } from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '../cn';
 
+// Capsule pass (2026-07-31): Badge is the micro capsule — fixed h-5
+// (20px = 5/8 U on the size ladder) instead of the py-wiggle height,
+// borderless fills only. Neutral tones use the translucent --c-capsule
+// fill (Telegram chrome look); status tones use the --c-*-bg tints
+// with their measured *-fg inks — the raw oklch literals that lived
+// here (and drifted against Banner's and Toast's copies, and had no
+// dark-theme override) are gone per UI-8.
 const badge = cva(
-  'inline-flex items-center gap-1 rounded-[var(--r-pill)] px-2.5 py-0.5 text-label font-medium',
+  'inline-flex h-5 items-center gap-1 rounded-[var(--r-pill)] px-2 text-label font-medium',
   {
     variants: {
       tone: {
-        info: 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)] ring-hairline',
-        success: 'bg-[oklch(95%_0.06_145)] text-[var(--c-success)]',
-        warn: 'bg-[oklch(96%_0.07_75)] text-[oklch(40%_0.16_75)]',
-        danger: 'bg-[oklch(96%_0.06_25)] text-[var(--c-danger)]',
+        info: 'bg-[var(--c-capsule)] text-[var(--c-fg-muted)]',
+        success: 'bg-[var(--c-success-bg)] text-[var(--c-success-fg)]',
+        warn: 'bg-[var(--c-warn-bg)] text-[var(--c-warning-fg)]',
+        danger: 'bg-[var(--c-danger-bg)] text-[var(--c-danger-fg)]',
         action: 'bg-[var(--c-action)] text-[var(--c-action-fg)]',
-        muted: 'bg-transparent text-[var(--c-fg-subtle)] ring-hairline',
+        muted: 'bg-[var(--c-capsule)] text-[var(--c-fg-subtle)]',
       },
     },
     defaultVariants: { tone: 'info' },

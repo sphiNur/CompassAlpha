@@ -191,8 +191,15 @@ export function StoreChip({ className }: { className?: string } = {}) {
    *
    * `min-w-0 truncate` + `shrink` so a long store name truncates
    * instead of pushing into either chrome button.
+   *
+   * 2026-07-31 (capsule pass): still fill-less — Telegram's own bot
+   * title is plain text and that is the whole point — but it now
+   * reserves the capsule tier's height. Unlike Telegram's title ours
+   * is TAPPABLE for org admins, and it was an 18px-tall touch target
+   * sitting between two 32px chrome buttons.
    */
-  const shell = 'inline-flex min-w-0 shrink items-center gap-1 text-body font-semibold';
+  const shell =
+    'inline-flex min-h-[var(--capsule-h)] min-w-0 shrink items-center gap-1 text-body font-semibold';
 
   if (!canSwitch) {
     return (

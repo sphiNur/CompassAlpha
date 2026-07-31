@@ -24,6 +24,7 @@ so HDR + sRGB renders match perceived hue.
 | `--c-action` | Primary CTA |
 | `--c-action-hover` | Press / hover state |
 | `--c-success`/`warn`/`danger`/`info` | Status |
+| `--c-capsule` | Translucent capsule fill (secondary/unselected pill controls; no ring) |
 | `--c-divider` | 1px hairline lines |
 | `--c-ring` | Focus outline |
 
@@ -31,25 +32,30 @@ so HDR + sRGB renders match perceived hue.
 
 | Variable | Use |
 |---|---|
-| `--r-utility` (8px) | Small internal chrome (buttons in toolbars) |
-| `--r-capsule` (11/12px) | Pearl pill, small cards |
-| `--r-card` (16/18px) | Cards, sheets |
-| `--r-pill` (9999px) | Buttons, inputs |
+| `--r-utility` (8px) | Tiny squares (checkbox box, code blocks) |
+| `--r-card` (16px) | Cards, callouts, textarea |
+| `--r-sheet` (24px) | Sheet top edge |
+| `--r-pill` (9999px) | Every interactive capsule control: buttons, chips, tabs, inputs |
 
-**Rule:** Never invent intermediate radii. Pick one.
+**Rule:** Never invent intermediate radii. Pick one. (`--r-capsule` 11/12px was
+retired in the 2026-07-31 Telegram-capsule pass.)
+
+### Size ladder (2026-07-31, Telegram-capsule pass)
+
+Anchor unit **U = 32px** — the height of Telegram's own top-bar chrome capsule
+(Close / ∨⋯). Every element height is a fixed fraction of U on the 4px grid:
+micro 20 (5/8U) · dense 28 (7/8U) · capsule 32 (1U) · field 40 (5/4U) ·
+CTA 48 (3/2U) · header 56 (7/4U) · nav 64 (2U). Capsule-family text follows
+height: 20/28 → 11px, 32 → 12px medium, 40/48 → 14px. See the SIZE LADDER
+block in `packages/ui/src/tokens.css` for the token names.
 
 ### Typography
 
-System font stack via `--font-sans`. Hierarchy in Tailwind utilities:
-
-| Class | Size / weight | Use |
-|---|---|---|
-| `text-[28px] font-semibold tracking-tight` | Hero / H1 | Page title |
-| `text-[20px] font-semibold tracking-tight` | H2 | Section title |
-| `text-[17px] font-semibold` | Body strong | List row title, button label |
-| `text-[15px]` | Body | Default |
-| `text-[13px] text-[var(--c-fg-muted)]` | Caption | Subtitle, timestamp |
-| `text-[12px] uppercase tracking-wide text-[var(--c-fg-muted)]` | Eyebrow | Label above metric |
+System font stack via `--font-sans` (SF Pro inside iOS Telegram — the same face
+as the chrome capsule this UI keys off). The scale lives in
+`apps/web/tailwind.config.js` + `tokens.css` (M3.14 values): display 24 · h1 19 ·
+h2 15 · h3 14 · body 13 · body-sm 12 · label 11 · tiny 9. Use the semantic
+`text-*` utilities, never raw pixel classes.
 
 ## Components
 
@@ -57,7 +63,7 @@ Re-exported from `@compass/ui`. Each is one-theme-agnostic via tokens.
 
 | Component | Notes |
 |---|---|
-| `Button` | 6 variants: primary / secondary / ghost / utility / danger / pearl. `loading` shows Spinner. |
+| `Button` | Variants: primary / secondary / ghost / utility / danger / danger-ghost. `pearl` is a legacy alias of `secondary` (identical since the capsule pass) — prefer `secondary` in new code. Sizes sm 32 / md 40 / lg 48 per the ladder. `loading` shows Spinner. |
 | `Card` / `CardHeader` / `CardTitle` / `CardMeta` | Polymorphic. `interactive` adds press affordance. |
 | `Input` | Pill-shaped (`--r-pill`). `invalid` highlights with `--c-danger`. |
 | `Sheet` | Bottom sheet via Radix Dialog. Three slots: header / body / footer. |

@@ -12,7 +12,9 @@ interface EmptyStateProps {
 export function EmptyState({ icon, title, description, action, className }: EmptyStateProps) {
   return (
     <div className={cn('flex flex-col items-center justify-center gap-3 px-6 py-12 text-center', className)}>
-      {icon ? <div className="text-[var(--c-fg-subtle)] text-3xl">{icon}</div> : null}
+      {/* text-display, not a raw Tailwind scale class — this was the one
+          off-scale text size the package carried (capsule pass). */}
+      {icon ? <div className="text-display text-[var(--c-fg-subtle)]">{icon}</div> : null}
       <h3 className="text-h1 font-semibold text-[var(--c-fg)]">{title}</h3>
       {description ? (
         <p className="max-w-sm text-body text-[var(--c-fg-muted)]">{description}</p>

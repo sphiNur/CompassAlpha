@@ -650,11 +650,11 @@ function SessionItems({
         sees everything the store asked for in one place. Yellow tint
         because these are off-catalog and need extra scrutiny. */}
     {sessionExtras.length > 0 ? (
-      <div className="border-b border-[var(--c-divider)] bg-[var(--c-warn-bg)] px-4 py-2.5">
+      <div className="border-b border-[var(--c-divider)] bg-[var(--c-warn-bg)] px-4 py-2">
         <SectionLabel padded={false}>
           {i18n.t('order.extras.label')}
         </SectionLabel>
-        <ul className="mt-1 flex flex-col gap-0.5">
+        <ul className="mt-1 flex flex-col gap-1">
           {sessionExtras.map((e, idx) => (
             <li
               key={`${e.name}-${idx}`}
@@ -670,7 +670,7 @@ function SessionItems({
       </div>
     ) : null}
     {sessionNotes ? (
-      <div className="border-b border-[var(--c-divider)] bg-[var(--c-warn-bg)] px-4 py-2.5">
+      <div className="border-b border-[var(--c-divider)] bg-[var(--c-warn-bg)] px-4 py-2">
         <SectionLabel padded={false}>
           {i18n.t('order.notes.label')}
         </SectionLabel>
@@ -684,14 +684,17 @@ function SessionItems({
         the last 7 days of price history. SKUs with no history skip
         and are flagged. */}
     {estimateTotal.known > 0 ? (
-      <div className="flex items-baseline justify-between gap-2 px-4 py-2 text-label text-[var(--c-fg-muted)]">
-        <span className="font-semibold uppercase tracking-eyebrow">
-          {i18n.t('order.review.estimatedTotal')}
-        </span>
-        <span className="font-mono text-body font-semibold tabular-nums text-[var(--c-fg)]">
-          ~{formatMoney(estimateTotal.sum)} {currency}
-        </span>
-      </div>
+      <SectionLabel
+        padded={false}
+        className="px-4 py-2"
+        meta={
+          <span className="font-mono text-body font-semibold tabular-nums text-[var(--c-fg)]">
+            ~{formatMoney(estimateTotal.sum)} {currency}
+          </span>
+        }
+      >
+        {i18n.t('order.review.estimatedTotal')}
+      </SectionLabel>
     ) : null}
     <ul
       className="flex flex-col px-4 py-2"

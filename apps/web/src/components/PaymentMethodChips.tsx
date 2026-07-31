@@ -37,10 +37,10 @@ export function PaymentMethodChips({ value, onChange, className }: PaymentMethod
             type="button"
             onClick={() => onChange(m)}
             className={cn(
-              'press flex-1 rounded-[var(--r-pill)] px-3 py-2 text-label font-medium ring-hairline',
+              'press flex h-[var(--capsule-h)] flex-1 items-center justify-center rounded-[var(--r-pill)] px-3 text-body-sm font-medium',
               selected
                 ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]',
+                : 'bg-[var(--c-capsule)] text-[var(--c-fg)]',
             )}
           >
             {m === 'cash' ? '💵 ' : '🏦 '}

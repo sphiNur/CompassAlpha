@@ -2,7 +2,17 @@
    strict CSP (no inline scripts; styles still allow 'unsafe-inline'
    for Tailwind/Radix runtime styles) keeps inline <style> out of
    index.html. The .ready class is added by main.tsx on successful
-   mount, hiding the splash. */
+   mount, hiding the splash.
+
+   2026-07-31 (Telegram-capsule pass): this file CANNOT use the design
+   tokens — it renders before packages/ui/tokens.css is parsed — so the
+   literals below are hand-converted from those tokens and sized on the
+   same ladder (U = 32px Telegram chrome capsule). Keep them in sync:
+     #fafafa ≈ --c-bg light     · #1c1e21 ≈ --c-bg dark
+     #2a2d31 ≈ --c-fg light     · #f4f4f4 ≈ --c-fg dark
+     40px button = the CTA/field tier · 16px radius = --r-card
+   Before this pass the splash used #f5f5f7/#1c1c1e, a visible flash
+   against the real background the instant React mounted. */
 
 html,
 body {
@@ -11,14 +21,14 @@ body {
 }
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  background: #f5f5f7;
-  color: #1d1d1f;
+  background: #fafafa;
+  color: #2a2d31;
   -webkit-font-smoothing: antialiased;
 }
 @media (prefers-color-scheme: dark) {
   body {
-    background: #1c1c1e;
-    color: #f5f5f7;
+    background: #1c1e21;
+    color: #f4f4f4;
   }
 }
 #boot-splash {
@@ -52,21 +62,21 @@ body {
   }
 }
 .boot-title {
-  font-size: 17px;
+  font-size: 15px; /* = text-h2 */
   font-weight: 600;
 }
 .boot-subtitle {
-  font-size: 13px;
+  font-size: 13px; /* = text-body */
   opacity: 0.55;
 }
 #boot-error {
   display: none;
   max-width: 480px;
-  padding: 16px 20px;
+  padding: 16px;
   background: rgba(255, 59, 48, 0.08);
   color: #d70015;
-  border-radius: 14px;
-  font-size: 14px;
+  border-radius: 16px; /* = --r-card */
+  font-size: 13px; /* = text-body */
   line-height: 1.5;
   text-align: left;
   word-break: break-word;
@@ -90,17 +100,20 @@ body {
 }
 .boot-btn {
   appearance: none;
-  padding: 10px 20px;
+  height: 40px; /* field/CTA tier */
+  padding: 0 20px;
   border-radius: 9999px;
   background: #0066cc;
   color: white;
   border: 0;
-  font-size: 15px;
+  font-size: 14px; /* = text-h3, the 40px tier's type */
   font-weight: 500;
   cursor: pointer;
 }
+/* Filled capsule, no outline — same rule as the app's secondary
+   buttons (UI-12). currentColor at 10% reads on both themes. */
 .boot-btn-secondary {
-  background: transparent;
+  background: color-mix(in oklab, currentColor 10%, transparent);
   color: inherit;
-  border: 1px solid currentColor;
+  border: 0;
 }
