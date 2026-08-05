@@ -60,17 +60,17 @@ export interface AuthSession {
  * Three states:
  *   - `null`     — no store has ever been selected (very first login).
  *                  setSession auto-picks the first assigned store, so in
- *                  practice null is transient. Pages should treat null
- *                  the same as "ALL" for safety, OR redirect to a picker.
+ *                  practice null is transient. Pages resolve it to the
+ *                  first store authorized by the current session.
  *   - <storeId>  — the user is acting in a single store's context. This
  *                  is the default state for staff and store managers.
  *                  Pages that need a specific store (Order, Confirm)
  *                  use it directly; pages that aggregate (Approval,
  *                  Run) filter by it.
- *   - 'ALL'      — only valid when the user has rank ≥ admin OR is
- *                  assigned to ≥ 2 stores. Means "show me everything I
- *                  have access to". Pages that need a specific store
- *                  refuse this state and prompt the user to pick.
+ *   - 'ALL'      — only valid for a user with the explicit `org.admin`
+ *                  permission. It means "show every organization store".
+ *                  Pages that need a specific store refuse this state and
+ *                  prompt the user to pick.
  *
  * Why a sentinel string instead of e.g. an empty array of allowed
  * stores: keeps the type a simple discriminated union and makes the
@@ -79,6 +79,24 @@ export interface AuthSession {
  */
 export const ALL_STORES = 'ALL' as const;
 export type StoreContext = string | typeof ALL_STORES | null;
+
+function canUseAllStores(session: AuthSession | null): boolean {
+  return session?.permissions.includes('org.admin') ?? false;
+}
+
+function resolveCurrentStore(
+  currentStoreId: StoreContext,
+  session: AuthSession,
+): StoreContext {
+  if (currentStoreId === ALL_STORES && canUseAllStores(session)) return ALL_STORES;
+  if (
+    typeof currentStoreId === 'string' &&
+    session.stores.some((store) => store.id === currentStoreId)
+  ) {
+    return currentStoreId;
+  }
+  return session.stores[0]?.id ?? null;
+}
 
 interface AuthState {
   accessToken: string | null;
@@ -106,51 +124,35 @@ export const useAuthStore = create<AuthState>()(
       hasHydrated: false,
       setHasHydrated: (value) => set({ hasHydrated: value }),
       setSession: ({ accessToken, refreshToken, session }) => {
-        const firstStore = session.stores[0]?.id ?? null;
         set((state) => {
-          // Validate the persisted currentStoreId against the new
-          // session. 'ALL' is always valid. A real storeId is valid
-          // only if it's still in the assigned set. Otherwise reset
-          // to first-store (or null if none).
-          let nextCurrent: StoreContext;
-          if (state.currentStoreId === ALL_STORES) {
-            nextCurrent = ALL_STORES;
-          } else if (
-            state.currentStoreId &&
-            session.stores.some((s) => s.id === state.currentStoreId)
-          ) {
-            nextCurrent = state.currentStoreId;
-          } else {
-            nextCurrent = firstStore;
-          }
           return {
             accessToken,
             refreshToken,
             session,
-            currentStoreId: nextCurrent,
+            currentStoreId: resolveCurrentStore(state.currentStoreId, session),
           };
         });
       },
       patchSession: (session) =>
         set((state) => {
-          let nextCurrent: StoreContext;
-          if (state.currentStoreId === ALL_STORES) {
-            nextCurrent = ALL_STORES;
-          } else if (
-            state.currentStoreId &&
-            session.stores.some((s) => s.id === state.currentStoreId)
-          ) {
-            nextCurrent = state.currentStoreId;
-          } else {
-            nextCurrent = session.stores[0]?.id ?? null;
-          }
           return {
             ...state,
             session,
-            currentStoreId: nextCurrent,
+            currentStoreId: resolveCurrentStore(state.currentStoreId, session),
           };
         }),
-      setCurrentStore: (id) => set({ currentStoreId: id }),
+      setCurrentStore: (id) =>
+        set((state) => {
+          const session = state.session;
+          if (!session) return {};
+          if (id === ALL_STORES) {
+            return canUseAllStores(session) ? { currentStoreId: ALL_STORES } : {};
+          }
+          if (id === null || session.stores.some((store) => store.id === id)) {
+            return { currentStoreId: id };
+          }
+          return {};
+        }),
       clear: () =>
         set({ accessToken: null, refreshToken: null, session: null, currentStoreId: null }),
     }),

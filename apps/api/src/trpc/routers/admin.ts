@@ -2341,6 +2341,19 @@ export const adminRouter = router({
         if (!member) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.memberNotFound' });
         }
+        // Global overrides change authority across the whole organization.
+        // Store managers may manage their own store, but cannot mint or
+        // alter organization-wide grants. `org.admin` itself is global-only
+        // even when cleaning up a malformed historical row.
+        if (input.permissionKey === 'org.admin' && input.scopeType !== 'global') {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'admin.errors.orgAdminMustBeGlobal',
+          });
+        }
+        if (input.scopeType === 'global' || input.permissionKey === 'org.admin') {
+          requireOrgAdmin(ctx.session!.permissions);
+        }
         // Scope coherence — store scope requires a store id (validated
         // up-front so the C2 check has a concrete storeId to look at).
         if (input.scopeType === 'store') {
@@ -2362,8 +2375,7 @@ export const adminRouter = router({
           }
         }
         // C2 (2026-05-06): store-scoped overrides require admin-of-store.
-        // Global overrides are inherently org-wide and only globally-
-        // privileged admins should be able to set those.
+        // Global overrides are already guarded by requireOrgAdmin above.
         if (input.scopeType === 'store' && input.scopeId) {
           const allowed = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId);
           if (!allowed.includes(input.scopeId)) {
@@ -2475,10 +2487,15 @@ export const adminRouter = router({
         if (!member) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.memberNotFound' });
         }
+        // Mirror memberPermissionSet: only organization administrators may
+        // revoke a global override, and only they may touch the reserved
+        // org.admin key (including removal of a legacy store-scoped row).
+        if (input.scopeType === 'global' || input.permissionKey === 'org.admin') {
+          requireOrgAdmin(ctx.session!.permissions);
+        }
         // C2 (2026-05-06): symmetric to `memberPermissionSet`. Store-
-        // scoped revoke requires admin-of-store; global revoke is org-
-        // wide so global admin authority is required (the requireAdmin
-        // call above checks `users.manage` which is sufficient).
+        // scoped revoke requires admin-of-store; global revoke was
+        // organization-gated above.
         if (input.scopeType === 'store' && input.scopeId) {
           const allowed = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId);
           if (!allowed.includes(input.scopeId)) {
@@ -2547,6 +2564,39 @@ export const adminRouter = router({
       });
       if (!role) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.roleNotFound' });
+      }
+
+      // Global role bindings are organization-wide authority. Require the
+      // dedicated marker before creating one; `users.manage` also belongs to
+      // store managers and is therefore not sufficient here.
+      if (input.scopeType === 'global') {
+        requireOrgAdmin(ctx.session!.permissions);
+      }
+
+      // Roles at the organization tier must never be attached to one store.
+      // This is the inverse of the pre-existing low-rank rule below and
+      // prevents a scoped admin/super_admin binding from leaking org.admin.
+      if (role.rank >= ADMIN_RANK && input.scopeType !== 'global') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'admin.errors.orgAdminMustBeGlobal',
+        });
+      }
+
+      // Custom roles can carry org.admin too. Guard by the permission rather
+      // than rank as defense in depth for malformed or legacy role rows.
+      const roleHasOrgAdmin = await tx.query.rolePermissions.findFirst({
+        where: (rp, { eq: eq2, and: and2 }) =>
+          and2(eq2(rp.roleId, role.id), eq2(rp.permissionKey, 'org.admin')),
+      });
+      if (roleHasOrgAdmin && input.scopeType !== 'global') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'admin.errors.orgAdminMustBeGlobal',
+        });
+      }
+      if (roleHasOrgAdmin) {
+        requireOrgAdmin(ctx.session!.permissions);
       }
 
       // STORE-SCOPE REQUIREMENT (added 2026-05-05).

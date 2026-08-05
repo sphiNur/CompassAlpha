@@ -240,12 +240,9 @@ export function StoreChip({ className }: { className?: string } = {}) {
  * Centralizes the "what's our store context right now" logic so each
  * page doesn't reinvent the discriminated-union check.
  *
- * NOTE (M3.5): "isAdmin" here still uses `users.manage` because the
- * decision is "should this user even see the noStore dead-end?" Both
- * org.admin and store-manager need to be steered into either a
- * specific store or 'all' — neither should land on `kind: 'none'`
- * just because they don't have an MSA row. (`users.manage` correctly
- * captures both.)
+ * A persisted context is validated against the current session. A store
+ * manager can only resolve to a store present in that session; `all` is
+ * reserved for the explicit `org.admin` permission.
  */
 export function useStoreContext():
   | { kind: 'specific'; storeId: string }
@@ -255,16 +252,21 @@ export function useStoreContext():
   // NO_STORES (module-level) — never `?? []` inline here. See the
   // constant's docblock: a fresh array per call loops useSyncExternalStore.
   const stores = useAuthStore((s) => s.session?.stores ?? NO_STORES);
-  const isAdmin = useAuthStore((s) =>
-    s.session?.permissions.includes('users.manage') ?? false,
+  const isOrgAdmin = useAuthStore((s) =>
+    s.session?.permissions.includes('org.admin') ?? false,
   );
-  if (currentStoreId === ALL_STORES) return { kind: 'all' };
-  if (typeof currentStoreId === 'string') return { kind: 'specific', storeId: currentStoreId };
-  // null path. If the user has stores but hasn't picked one yet (rare —
-  // setSession auto-picks first), treat as "all" for read pages and let
-  // write pages prompt to pick. If they have NO stores AND aren't admin,
-  // it's the noStore dead-end.
-  if (stores.length === 0 && !isAdmin) return { kind: 'none' };
+  if (currentStoreId === ALL_STORES && isOrgAdmin) return { kind: 'all' };
+  if (
+    typeof currentStoreId === 'string' &&
+    stores.some((store) => store.id === currentStoreId)
+  ) {
+    return { kind: 'specific', storeId: currentStoreId };
+  }
+  if (stores[0]) return { kind: 'specific', storeId: stores[0].id };
+  // A missing or stale context falls back to the first authorized store;
+  // without an authorized store, only an org admin may use the all-stores
+  // read context.
+  if (!isOrgAdmin) return { kind: 'none' };
   return { kind: 'all' };
 }
 

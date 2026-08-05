@@ -61,6 +61,7 @@ import {
   filterStoreGroups,
   filterSupplierGroups,
 } from '../lib/previewFilter';
+import { groupStoreBySupplier } from '../lib/previewGrouping';
 import { normalizeQuery } from '../../../lib/searchMatch';
 import {
   countByStatus,
@@ -1690,12 +1691,24 @@ export function PreviewSummaryCard({
                   {i18n.t('run.previewShare.sendList')}
                 </Button>
               </div>
-              <ul
-                id={panelId}
-                className={open ? 'overflow-hidden rounded-[var(--r-utility)]' : 'hidden'}
-              >
-                {g.items.map((line, idx) => renderLine(line, idx, { showSupplier: true }))}
-              </ul>
+              <div id={panelId} className={open ? 'flex flex-col gap-2' : 'hidden'}>
+                {groupStoreBySupplier(
+                  g,
+                  i18n.t('run.previewSupplier.unassigned'),
+                ).map((supplier) => (
+                  <section key={supplier.supplierId ?? '__unassigned__'}>
+                    <div className="mb-1 flex items-baseline gap-2 px-2 text-label font-semibold text-[var(--c-fg-muted)]">
+                      <span className="min-w-0 flex-1 truncate">{supplier.supplierName}</span>
+                      <span className="shrink-0 font-mono font-normal tabular-nums">
+                        {groupMoneyMeta(supplier.total, supplier.unknownCount)}
+                      </span>
+                    </div>
+                    <ul className="overflow-hidden rounded-[var(--r-utility)]">
+                      {supplier.items.map((line, idx) => renderLine(line, idx))}
+                    </ul>
+                  </section>
+                ))}
+              </div>
               {/* M1.8 / M3.16-C: surface the staff's "其他物品" requests
                   inline. M3.16-C structured extras render as one row
                   per item; legacy free-text notes (pre-M3.16) appended

@@ -992,9 +992,24 @@ async function buildSessionPayload(
     })
     .from(s.memberRoleBindings)
     .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
-    .where(eq(s.memberRoleBindings.memberId, memberId));
-  const roleSlugs = bindings.map((b) => b.role.slug);
+    .where(
+      and(
+        eq(s.memberRoleBindings.memberId, memberId),
+        or(
+          isNull(s.memberRoleBindings.expiresAt),
+          gt(s.memberRoleBindings.expiresAt, new Date()),
+        ),
+      ),
+    );
+  // `super_admin` is used by a handful of destructive maintenance gates;
+  // it is meaningful only from a global role binding.
+  const roleSlugs = bindings
+    .filter((b) => b.role.slug !== 'super_admin' || b.scopeType === 'global')
+    .map((b) => b.role.slug);
   const roleIds = bindings.map((b) => b.role.id);
+  const globalRoleIds = new Set(
+    bindings.filter((b) => b.scopeType === 'global').map((b) => b.role.id),
+  );
   // Highest rank held by this member. Used by the FE to gate role
   // grant UI: an admin can only see + offer roles strictly below
   // their own rank. The server enforces the same rule on grantRole;
@@ -1020,7 +1035,16 @@ async function buildSessionPayload(
           where: (rp, { inArray }) => inArray(rp.roleId, roleIds),
         })
       : [];
-  const permKeys = new Set(perms.map((p) => p.permissionKey));
+  // The client receives a flat permission set for feature affordances.
+  // `org.admin` is the one exception: it is an organization-wide bypass,
+  // so it can only originate from a global role binding.
+  const permKeys = new Set(
+    perms
+      .filter(
+        (p) => p.permissionKey !== 'org.admin' || globalRoleIds.has(p.roleId),
+      )
+      .map((p) => p.permissionKey),
+  );
 
   // Per-member overrides (added 2026-05-05, migration 0008).
   //
@@ -1058,23 +1082,38 @@ async function buildSessionPayload(
   //
   // We collapse global + store-scoped overrides into the flat permKeys
   // set here for back-compat with old code paths. Per-store evaluation
-  // happens via `effectivePermissionsForStore` at command time. For
-  // computing `adminStoreIds` below we keep the originals.
+  // happens via `effectivePermissionsForStore` at command time. The
+  // organization-wide `org.admin` marker is never collapsed from a
+  // store scope; for computing `adminStoreIds` below we keep originals.
   for (const o of overrides) {
-    if (o.effect === 'allow' && o.permissionKey) permKeys.add(o.permissionKey);
+    if (
+      o.effect === 'allow' &&
+      o.permissionKey &&
+      (o.permissionKey !== 'org.admin' || o.scopeType === 'global')
+    ) {
+      permKeys.add(o.permissionKey);
+    }
   }
   for (const o of overrides) {
-    if (o.effect === 'deny' && o.permissionKey) permKeys.delete(o.permissionKey);
+    if (
+      o.effect === 'deny' &&
+      o.permissionKey &&
+      (o.permissionKey !== 'org.admin' || o.scopeType === 'global')
+    ) {
+      permKeys.delete(o.permissionKey);
+    }
   }
 
-  const isAdmin = permKeys.has('users.manage');
+  // `users.manage` is store-manager authority too. Only the explicit
+  // org-tier marker grants visibility over every store in the session.
+  const isOrgAdmin = permKeys.has('org.admin');
 
-  // Scope stores: admins see ALL active stores in the org. Regular
+  // Scope stores: org admins see ALL active stores in the org. Regular
   // staff see ONLY stores they're explicitly assigned to. This is the
   // multi-store isolation guarantee — prevents store A's staff from
   // seeing store B's data in their session.stores list.
   let storeRows: Array<{ id: string; name: string; code: string | null; isActive: boolean; sortIndex: number }>;
-  if (isAdmin) {
+  if (isOrgAdmin) {
     storeRows = await db
       .select({
         id: s.stores.id,
@@ -1134,6 +1173,10 @@ async function buildSessionPayload(
             eq(s.stores.isActive, true),
             eq(s.memberRoleBindings.memberId, memberId),
             eq(s.memberRoleBindings.scopeType, 'store'),
+            or(
+              isNull(s.memberRoleBindings.expiresAt),
+              gt(s.memberRoleBindings.expiresAt, new Date()),
+            ),
           ),
         ),
     ]);

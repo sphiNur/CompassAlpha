@@ -446,6 +446,7 @@ export const zh = {
   'admin.errors.orgNotFound': '组织不存在',
   'admin.errors.purgeConfirmMismatch': '确认文字不匹配 — 已取消清除',
   'admin.errors.purgeRequiresSuperAdmin': '仅 super-admin 可清除数据',
+  'admin.errors.orgAdminMustBeGlobal': '组织级角色和权限只能全局授予',
   'admin.errors.roleNotFound': '角色不存在',
   'admin.errors.runHasForeignSessions': '此采购单包含其他门店的订单 — 无法操作',
   'admin.errors.runNotFound': '采购单不存在',

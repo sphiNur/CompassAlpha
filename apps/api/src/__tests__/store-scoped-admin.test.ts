@@ -29,7 +29,11 @@ import { and, eq } from 'drizzle-orm';
 import { getDb, schema as s, withOrgContext } from '@compass/db';
 import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
-import type { RequestContext, SessionContext } from '../trpc/context';
+import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
+import {
+  effectivePermissionsForStore,
+  getActorStoreIds,
+} from '../services/storeScope';
 
 // ---------- bootstrap .env so DATABASE_URL is on the env ---------------
 
@@ -85,34 +89,6 @@ function buildCtx(
     async withOrg(fn) {
       return withOrgContext(db, session.orgId, fn);
     },
-  };
-}
-
-/**
- * Refresh a session's permission set by re-loading the actor's bindings.
- * Most tests grant a binding mid-run and need the next call to see the
- * new perms. Mirrors what loadSession() does in production but skips
- * the JWT layer.
- */
-async function reloadSession(
-  db: ReturnType<typeof getDb>,
-  prev: SessionContext,
-): Promise<SessionContext> {
-  const bindings = await db
-    .select({ role: s.roles })
-    .from(s.memberRoleBindings)
-    .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
-    .where(eq(s.memberRoleBindings.memberId, prev.memberId));
-  const roleIds = bindings.map((b) => b.role.id);
-  const perms = roleIds.length
-    ? await db.query.rolePermissions.findMany({
-        where: (rp, { inArray }) => inArray(rp.roleId, roleIds),
-      })
-    : [];
-  return {
-    ...prev,
-    roleSlugs: new Set(bindings.map((b) => b.role.slug)),
-    permissions: new Set(perms.map((p) => p.permissionKey)),
   };
 }
 
@@ -275,16 +251,197 @@ async function bindRole(
 async function sessionFor(memberId: string, userId: string): Promise<SessionContext> {
   if (!fix) throw new Error('fixture missing');
   const db = getDb();
-  const base: SessionContext = {
-    userId,
-    memberId,
-    orgId: fix.orgId,
-    orgTimezone: 'UTC',
-    permissions: new Set(),
-    roleSlugs: new Set(),
-  };
-  return reloadSession(db, base);
+  const session = await loadSession(db, userId, fix.orgId, memberId);
+  if (!session) throw new Error('session failed to load');
+  return session;
 }
+
+// ---------- P0: store managers never become organization-wide ----------
+
+describe('P0 store-manager scope', () => {
+  test.skipIf(!SHOULD_RUN)(
+    'manager of Store A receives only Store A and cannot read Store B orders',
+    async () => {
+      const fx = fix!;
+      const db = getDb();
+      const storeA = await makeStore(`ScopeA-${Math.random()}`);
+      const storeB = await makeStore(`ScopeB-${Math.random()}`);
+      const managerUser = await makeUser('A-Manager-Scope');
+      const managerMember = await makeMember(managerUser.id);
+      await bindRole(managerMember, fx.managerRoleId, {
+        type: 'store',
+        storeId: storeA.id,
+      });
+      const session = await sessionFor(managerMember, managerUser.id);
+      const caller = appRouter.createCaller(buildCtx(db, session));
+
+      // This is the regression condition: store managers intentionally
+      // have users.manage, but that is not organization-wide authority.
+      expect(session.permissions.has('users.manage')).toBe(true);
+      expect(session.permissions.has('org.admin')).toBe(false);
+
+      const me = await caller.auth.me();
+      expect(me.stores.map((store) => store.id)).toEqual([storeA.id]);
+      expect(await getActorStoreIds(db, managerMember, session.permissions)).toEqual([storeA.id]);
+
+      // The narrowed manager scope must not regress real org-admin access.
+      const orgAdminMe = await appRouter.createCaller(fx.superAdminCtx).auth.me();
+      expect(orgAdminMe.stores.map((store) => store.id)).toContain(storeA.id);
+      expect(orgAdminMe.stores.map((store) => store.id)).toContain(storeB.id);
+
+      let threw = false;
+      try {
+        await caller.order.todaySession({ storeId: storeB.id });
+      } catch (err) {
+        threw = true;
+        expect((err as Error).message).toContain('notAssignedToStore');
+      }
+      expect(threw).toBe(true);
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'manager permissions in Store A do not bleed into a staff binding in Store B',
+    async () => {
+      const fx = fix!;
+      const db = getDb();
+      const storeA = await makeStore(`RoleA-${Math.random()}`);
+      const storeB = await makeStore(`RoleB-${Math.random()}`);
+      const user = await makeUser('Manager-A-Staff-B');
+      const memberId = await makeMember(user.id);
+      await bindRole(memberId, fx.managerRoleId, { type: 'store', storeId: storeA.id });
+      await bindRole(memberId, fx.staffRoleId, { type: 'store', storeId: storeB.id });
+      const session = await sessionFor(memberId, user.id);
+
+      // The flat session is intentionally broad for frontend affordances;
+      // server-side authorization must resolve role bindings per store.
+      expect(session.permissions.has('order.approve')).toBe(true);
+      const atStoreA = await effectivePermissionsForStore(
+        db,
+        memberId,
+        storeA.id,
+        session.permissions,
+      );
+      const atStoreB = await effectivePermissionsForStore(
+        db,
+        memberId,
+        storeB.id,
+        session.permissions,
+      );
+
+      expect(atStoreA.has('order.approve')).toBe(true);
+      expect(atStoreA.has('users.manage')).toBe(true);
+      expect(atStoreB.has('order.approve')).toBe(false);
+      expect(atStoreB.has('users.manage')).toBe(false);
+      expect(atStoreB.has('order.draft')).toBe(true);
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'legacy store-scoped organization grants remain store-scoped',
+    async () => {
+      const fx = fix!;
+      const db = getDb();
+      const storeA = await makeStore(`LegacyA-${Math.random()}`);
+      const storeB = await makeStore(`LegacyB-${Math.random()}`);
+
+      // Simulate historical malformed data: an org-tier role was bound to
+      // one store. Neither the HTTP session nor auth.me may turn that into
+      // all-store authority.
+      const adminUser = await makeUser('Legacy Scoped Admin');
+      const adminMember = await makeMember(adminUser.id);
+      await bindRole(adminMember, fx.adminRoleId, { type: 'store', storeId: storeA.id });
+      const adminSession = await sessionFor(adminMember, adminUser.id);
+      expect(adminSession.permissions.has('org.admin')).toBe(false);
+      expect(await getActorStoreIds(db, adminMember, new Set(['org.admin']))).toEqual([storeA.id]);
+      const adminMe = await appRouter.createCaller(buildCtx(db, adminSession)).auth.me();
+      expect(adminMe.permissions).not.toContain('org.admin');
+      expect(adminMe.stores.map((store) => store.id)).toEqual([storeA.id]);
+
+      // A malformed scoped super-admin must not satisfy legacy destructive
+      // maintenance gates that still inspect roleSlugs.
+      const superUser = await makeUser('Legacy Scoped Super');
+      const superMember = await makeMember(superUser.id);
+      await bindRole(superMember, fx.superAdminRoleId, { type: 'store', storeId: storeA.id });
+      const superSession = await sessionFor(superMember, superUser.id);
+      expect(superSession.permissions.has('org.admin')).toBe(false);
+      expect(superSession.roleSlugs.has('super_admin')).toBe(false);
+
+      // Simulate a malformed pre-fix store override as well. The resolver
+      // must ignore it even if a caller presents a forged flat permission.
+      const staffUser = await makeUser('Legacy Scoped Override');
+      const staffMember = await makeMember(staffUser.id);
+      await bindRole(staffMember, fx.staffRoleId, { type: 'store', storeId: storeA.id });
+      await db.insert(s.memberPermissionOverrides).values({
+        memberId: staffMember,
+        permissionKey: 'org.admin',
+        effect: 'allow',
+        scopeType: 'store',
+        scopeId: storeA.id,
+        grantedBy: fx.superAdminUserId,
+      });
+      const staffSession = await sessionFor(staffMember, staffUser.id);
+      expect(staffSession.permissions.has('org.admin')).toBe(false);
+      expect(await getActorStoreIds(db, staffMember, new Set(['org.admin']))).toEqual([storeA.id]);
+      const effective = await effectivePermissionsForStore(
+        db,
+        staffMember,
+        storeA.id,
+        new Set(['org.admin']),
+      );
+      expect(effective.has('org.admin')).toBe(false);
+      const staffMe = await appRouter.createCaller(buildCtx(db, staffSession)).auth.me();
+      expect(staffMe.permissions).not.toContain('org.admin');
+      expect(staffMe.stores.map((store) => store.id)).toEqual([storeA.id]);
+
+      // Keep Store B referenced so the setup proves this is a multi-store
+      // organization rather than a vacuous single-store assertion.
+      expect(storeB.id).not.toBe(storeA.id);
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'rejects new store-scoped organization roles and overrides',
+    async () => {
+      const fx = fix!;
+      const db = getDb();
+      const storeA = await makeStore(`RejectA-${Math.random()}`);
+      const targetUser = await makeUser('Override Target');
+      const targetMember = await makeMember(targetUser.id);
+      await bindRole(targetMember, fx.staffRoleId, { type: 'store', storeId: storeA.id });
+
+      // An actual org administrator cannot attach an organization-tier role
+      // to a store. This closes the write path for future malformed rows.
+      const orgCaller = appRouter.createCaller(fx.superAdminCtx);
+      await expect(
+        orgCaller.admin.grantRole({
+          userId: targetUser.id,
+          roleSlug: 'admin',
+          scopeType: 'store',
+          scopeId: storeA.id,
+        }),
+      ).rejects.toThrow('orgAdminMustBeGlobal');
+
+      // A store manager cannot create the reserved org.admin override in
+      // their store, even for a lower-ranked staff member.
+      const managerUser = await makeUser('Scoped Override Manager');
+      const managerMember = await makeMember(managerUser.id);
+      await bindRole(managerMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
+      const managerCaller = appRouter.createCaller(
+        buildCtx(db, await sessionFor(managerMember, managerUser.id)),
+      );
+      await expect(
+        managerCaller.admin.memberPermissionSet({
+          memberId: targetMember,
+          permissionKey: 'org.admin',
+          effect: 'allow',
+          scopeType: 'store',
+          scopeId: storeA.id,
+        }),
+      ).rejects.toThrow('orgAdminMustBeGlobal');
+    },
+  );
+});
 
 // ---------- C2: store-scoped admin can only act on their stores ----------
 

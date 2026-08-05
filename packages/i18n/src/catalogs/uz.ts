@@ -495,6 +495,8 @@ export const uz = {
     "Tasdiq matni mos kelmadi — tozalash bekor qilindi",
   'admin.errors.purgeRequiresSuperAdmin':
     "Faqat super-admin ma'lumotlarni tozalashi mumkin",
+  'admin.errors.orgAdminMustBeGlobal':
+    "Tashkilot darajasidagi rol va ruxsatlar faqat global berilishi mumkin",
   'admin.errors.roleNotFound': "Rol topilmadi",
   'admin.errors.runHasForeignSessions':
     "Bu xaridda boshqa do'konlarning buyurtmalari bor — amal qilib bo'lmaydi",

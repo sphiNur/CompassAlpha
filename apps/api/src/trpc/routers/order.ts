@@ -656,6 +656,12 @@ export const orderRouter = router({
         input.storeId,
         ctx.session!.permissions,
       );
+      const effectivePerms = await effectivePermissionsForStore(
+        tx,
+        ctx.session!.memberId,
+        input.storeId,
+        ctx.session!.permissions,
+      );
 
       const sku = await loadSku(tx, ctx.session!.orgId, input.skuId);
 
@@ -785,7 +791,7 @@ export const orderRouter = router({
             orgId: ctx.session!.orgId,
             storeId: input.storeId,
             orderDate: date,
-            actor: buildActor(ctx, state),
+            actor: buildActor(ctx, state, effectivePerms),
           },
         );
         for (const e of startEvents) {
@@ -805,7 +811,7 @@ export const orderRouter = router({
           skuId: input.skuId,
           qty: input.qty,
           sku,
-          actor: buildActor(ctx, state),
+          actor: buildActor(ctx, state, effectivePerms),
           targetMemberId: input.targetMemberId,
           correlationId: input.idempotencyKey,
         });
@@ -888,6 +894,18 @@ export const orderRouter = router({
   setNote: authedProcedure.input(SetNoteInputSchema).mutation(async ({ ctx, input }) => {
     return ctx.withOrg(async (tx) => {
       const session = await loadSession(tx, ctx.session!.orgId, input.sessionId);
+      await assertActorAssignedToStore(
+        tx,
+        ctx.session!.memberId,
+        session.storeId,
+        ctx.session!.permissions,
+      );
+      const effectivePerms = await effectivePermissionsForStore(
+        tx,
+        ctx.session!.memberId,
+        session.storeId,
+        ctx.session!.permissions,
+      );
       const events = (await readStream(tx, 'order', session.id)) as unknown as OrderEvent[];
       let state = emptyState(session.id);
       for (const e of events) state = apply(state, e);
@@ -896,7 +914,7 @@ export const orderRouter = router({
           type: 'SetNote',
           skuId: input.skuId,
           note: input.note,
-          actor: buildActor(ctx, state),
+          actor: buildActor(ctx, state, effectivePerms),
           targetMemberId: input.targetMemberId,
         });
         if (out.length === 0) return { lastSeq: state.seq };

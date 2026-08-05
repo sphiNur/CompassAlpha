@@ -570,6 +570,8 @@ export const en = {
   'admin.errors.orgNotFound': 'Organization not found',
   'admin.errors.purgeConfirmMismatch': 'Confirmation text did not match — purge cancelled',
   'admin.errors.purgeRequiresSuperAdmin': 'Only a super-admin can purge data',
+  'admin.errors.orgAdminMustBeGlobal':
+    'Organization-level roles and permissions can only be granted globally',
   'admin.errors.roleNotFound': 'Role not found',
   'admin.errors.runHasForeignSessions':
     'This run contains sessions from other stores — cannot operate on it',

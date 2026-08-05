@@ -94,15 +94,11 @@ export function PeopleSection({
   // M1.9: per-key allow/deny override grid is power-user surface — gate
   // the "Permissions" button to global admins only. The 4 built-in
   // roles cover the common cases that store-scoped managers need.
-  const peopleAdminStoreIds = useMemo(
-    () => new Set(session?.adminStoreIds ?? []),
-    [session?.adminStoreIds],
-  );
-  const peopleSessionStores = session?.stores ?? [];
-  const isGlobalAdminPeople = useMemo(() => {
-    if (peopleSessionStores.length === 0) return peopleAdminStoreIds.size > 0;
-    return peopleSessionStores.every((s) => peopleAdminStoreIds.has(s.id));
-  }, [peopleSessionStores, peopleAdminStoreIds]);
+  // Managing every store currently visible in a session is not the same as
+  // organization-wide authority (a single-store manager satisfies that old
+  // test). Permission overrides are global-impact tooling, so gate them on
+  // the explicit organization marker.
+  const isGlobalAdminPeople = session?.permissions.includes('org.admin') ?? false;
   // Resolve the effective storeCtx. When `lockMode` is set we bypass
   // the global StoreSwitcher; otherwise we fall back to it for the
   // legacy unscoped path.

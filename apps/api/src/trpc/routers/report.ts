@@ -84,14 +84,11 @@ export const reportRouter = router({
         // explicitly passed input.storeId AND it's outside their set,
         // throw notAssignedToStore so they get a clear error
         // (consistent with sales.list M3.1 behaviour).
-        const allowedStoreIds = ctx.session!.permissions.has('org.admin')
-          ? null
-          : await getActorStoreIds(
-              tx,
-              ctx.session!.memberId,
-              ctx.session!.permissions,
-              { bypassUsersManage: false },
-            );
+        const allowedStoreIds = await getActorStoreIds(
+          tx,
+          ctx.session!.memberId,
+          ctx.session!.permissions,
+        );
         if (allowedStoreIds !== null && input.storeId !== undefined) {
           if (!allowedStoreIds.includes(input.storeId)) {
             throw new TRPCError({
@@ -196,14 +193,11 @@ export const reportRouter = router({
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
         // M3.7: same store-scope split as purchaseLines (above).
-        const allowedStoreIds = ctx.session!.permissions.has('org.admin')
-          ? null
-          : await getActorStoreIds(
-              tx,
-              ctx.session!.memberId,
-              ctx.session!.permissions,
-              { bypassUsersManage: false },
-            );
+        const allowedStoreIds = await getActorStoreIds(
+          tx,
+          ctx.session!.memberId,
+          ctx.session!.permissions,
+        );
         if (allowedStoreIds !== null && input.storeId !== undefined) {
           if (!allowedStoreIds.includes(input.storeId)) {
             throw new TRPCError({

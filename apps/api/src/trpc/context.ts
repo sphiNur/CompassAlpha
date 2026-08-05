@@ -1,10 +1,11 @@
 import type { Context as HonoContext } from 'hono';
-import { eq } from 'drizzle-orm';
+import { and, eq, gt, isNull, or } from 'drizzle-orm';
 import { getDb, schema as s, withOrgContext } from '@compass/db';
 import { verifyAccess } from '../infra/jwt';
 import { logger } from '../infra/log';
 import { env } from '../env';
 import { ulid } from 'ulid';
+import { hasGlobalOrgAdmin } from '../services/orgAdmin';
 
 export interface SessionContext {
   userId: string;
@@ -101,7 +102,15 @@ export async function loadSession(
     .select({ role: s.roles, binding: s.memberRoleBindings })
     .from(s.memberRoleBindings)
     .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
-    .where(eq(s.memberRoleBindings.memberId, member.id));
+    .where(
+      and(
+        eq(s.memberRoleBindings.memberId, member.id),
+        or(
+          isNull(s.memberRoleBindings.expiresAt),
+          gt(s.memberRoleBindings.expiresAt, new Date()),
+        ),
+      ),
+    );
 
   const roleIds = bindings.map((b) => b.role.id);
   const perms = roleIds.length
@@ -109,6 +118,13 @@ export async function loadSession(
         where: (rp, { inArray }) => inArray(rp.roleId, roleIds),
       })
     : [];
+  const isGlobalOrgAdmin = await hasGlobalOrgAdmin(db, member.id);
+  const permissions = new Set(perms.map((p) => p.permissionKey));
+  // The flat set is used by many legacy permission gates. Preserve its
+  // compatibility for ordinary store-scoped permissions, but never let a
+  // store-scoped role manufacture the organization-wide marker.
+  if (isGlobalOrgAdmin) permissions.add('org.admin');
+  else permissions.delete('org.admin');
 
   // D.1 (M3.39, 2026-05-20): pull the org's timezone alongside the
   // member/perms lookup so routers can resolve "today" correctly. The
@@ -125,7 +141,13 @@ export async function loadSession(
     memberId,
     orgId,
     orgTimezone,
-    roleSlugs: new Set(bindings.map((b) => b.role.slug)),
-    permissions: new Set(perms.map((p) => p.permissionKey)),
+    // A few destructive maintenance endpoints use this legacy slug gate.
+    // Treat `super_admin` as global-only for the same reason as org.admin.
+    roleSlugs: new Set(
+      bindings
+        .filter((b) => b.role.slug !== 'super_admin' || b.binding.scopeType === 'global')
+        .map((b) => b.role.slug),
+    ),
+    permissions,
   };
 }

@@ -494,6 +494,8 @@ export const ru = {
     'Подтверждение не совпало — очистка отменена',
   'admin.errors.purgeRequiresSuperAdmin':
     'Очистку данных может выполнять только super-admin',
+  'admin.errors.orgAdminMustBeGlobal':
+    'Роли и права уровня организации можно назначать только глобально',
   'admin.errors.roleNotFound': 'Роль не найдена',
   'admin.errors.runHasForeignSessions':
     'В закупке есть заказы из других магазинов — операция запрещена',

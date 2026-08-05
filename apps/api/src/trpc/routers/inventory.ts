@@ -94,13 +94,12 @@ export const inventoryRouter = router({
       // took input.storeId and returned on-hand for any guessed UUID
       // — a Store A cashier could read Store B's stock levels. Mirrors
       // the sales.list / sales.record gates from M3.1. Admins (with
-      // `users.manage`) bypass via the helper.
+      // `org.admin`) bypass via the helper.
       await assertActorAssignedToStore(
         tx,
         ctx.session!.memberId,
         input.storeId,
         ctx.session!.permissions,
-        { bypassUsersManage: ctx.session!.permissions.has('org.admin') },
       );
       const orgId = ctx.session!.orgId;
       const rows = (await tx.execute(sql`
@@ -146,7 +145,6 @@ export const inventoryRouter = router({
           ctx.session!.memberId,
           input.storeId,
           ctx.session!.permissions,
-          { bypassUsersManage: ctx.session!.permissions.has('org.admin') },
         );
         const orgId = ctx.session!.orgId;
         const rows = await tx
@@ -196,7 +194,6 @@ export const inventoryRouter = router({
           ctx.session!.memberId,
           input.storeId,
           ctx.session!.permissions,
-          { bypassUsersManage: ctx.session!.permissions.has('org.admin') },
         ),
       );
       // Per-store override check: an admin may have denied the actor
@@ -272,7 +269,6 @@ export const inventoryRouter = router({
           ctx.session!.memberId,
           input.storeId,
           ctx.session!.permissions,
-          { bypassUsersManage: ctx.session!.permissions.has('org.admin') },
         ),
       );
       const effective = await ctx.withOrg((tx) =>
