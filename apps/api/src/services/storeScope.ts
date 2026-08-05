@@ -53,6 +53,105 @@ export async function getActorStoreIds(
   // Resolve `org.admin` from its persisted global provenance instead.
   if (await hasGlobalOrgAdmin(db, memberId)) return null;
 
+  return loadAssignedStoreIds(db, memberId);
+}
+
+/**
+ * Return the concrete stores where `permissionKey` is effective, or null
+ * when the permission comes from an active GLOBAL binding/override.
+ *
+ * This is deliberately stricter than `getActorStoreIds`: session
+ * permissions are a union used for UI affordances, while store membership
+ * says only where somebody belongs. A member can be a manager in Store A
+ * and ordinary staff in Store B; finance/history reads must not treat the
+ * manager permission from A as effective in B.
+ *
+ * Global deny wins over global allow. Store-level resolution is delegated
+ * to `effectivePermissionsForStore`, where global + store allows are also
+ * applied before denies.
+ */
+export async function getActorStoreIdsForPermission(
+  db: DB,
+  memberId: string,
+  permissionKey: string,
+  permissions: ReadonlySet<string>,
+): Promise<string[] | null> {
+  const now = new Date();
+  const [globalRoleRows, globalOverrides, storeOverrides] = await Promise.all([
+    db
+      .select({ permissionKey: s.rolePermissions.permissionKey })
+      .from(s.memberRoleBindings)
+      .innerJoin(s.rolePermissions, eq(s.rolePermissions.roleId, s.memberRoleBindings.roleId))
+      .where(
+        and(
+          eq(s.memberRoleBindings.memberId, memberId),
+          eq(s.memberRoleBindings.scopeType, 'global'),
+          eq(s.rolePermissions.permissionKey, permissionKey),
+          or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, now)),
+        ),
+      ),
+    db
+      .select({ effect: s.memberPermissionOverrides.effect })
+      .from(s.memberPermissionOverrides)
+      .where(
+        and(
+          eq(s.memberPermissionOverrides.memberId, memberId),
+          eq(s.memberPermissionOverrides.scopeType, 'global'),
+          eq(s.memberPermissionOverrides.permissionKey, permissionKey),
+          or(
+            isNull(s.memberPermissionOverrides.expiresAt),
+            gt(s.memberPermissionOverrides.expiresAt, now),
+          ),
+        ),
+      ),
+    db
+      .select({ scopeId: s.memberPermissionOverrides.scopeId })
+      .from(s.memberPermissionOverrides)
+      .where(
+        and(
+          eq(s.memberPermissionOverrides.memberId, memberId),
+          eq(s.memberPermissionOverrides.scopeType, 'store'),
+          eq(s.memberPermissionOverrides.permissionKey, permissionKey),
+          or(
+            isNull(s.memberPermissionOverrides.expiresAt),
+            gt(s.memberPermissionOverrides.expiresAt, now),
+          ),
+        ),
+      ),
+  ]);
+
+  let globallyAllowed = globalRoleRows.length > 0;
+  if (globalOverrides.some((row) => row.effect === 'allow')) globallyAllowed = true;
+  // A global deny applies inside every store and therefore defeats both
+  // global and store-scoped allows (same deny-wins rule as the resolver).
+  if (globalOverrides.some((row) => row.effect === 'deny')) return [];
+
+  // A clean global grant is the only safe unrestricted fast path. If a
+  // store override exists, enumerate every store in the member's org and
+  // resolve each one so a Store-B deny cannot be bypassed by returning null.
+  if (globallyAllowed && storeOverrides.length === 0) return null;
+
+  const candidateStoreIds = globallyAllowed
+    ? (
+        await db
+          .select({ storeId: s.stores.id })
+          .from(s.stores)
+          .innerJoin(s.members, eq(s.members.orgId, s.stores.orgId))
+          .where(eq(s.members.id, memberId))
+      ).map((row) => row.storeId)
+    : await loadAssignedStoreIds(db, memberId);
+  if (candidateStoreIds.length === 0) return [];
+
+  const resolved = await Promise.all(
+    candidateStoreIds.map(async (storeId) => ({
+      storeId,
+      permissions: await effectivePermissionsForStore(db, memberId, storeId, permissions),
+    })),
+  );
+  return resolved.filter((row) => row.permissions.has(permissionKey)).map((row) => row.storeId);
+}
+
+async function loadAssignedStoreIds(db: DB, memberId: string): Promise<string[]> {
   const now = new Date();
   const [msaRows, roleScopeRows] = await Promise.all([
     db
@@ -66,10 +165,7 @@ export async function getActorStoreIds(
         and(
           eq(s.memberRoleBindings.memberId, memberId),
           eq(s.memberRoleBindings.scopeType, 'store'),
-          or(
-            isNull(s.memberRoleBindings.expiresAt),
-            gt(s.memberRoleBindings.expiresAt, now),
-          ),
+          or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, now)),
         ),
       ),
   ]);
@@ -106,10 +202,7 @@ export async function effectivePermissionsForStore(
         scopeType: s.memberRoleBindings.scopeType,
       })
       .from(s.memberRoleBindings)
-      .innerJoin(
-        s.rolePermissions,
-        eq(s.rolePermissions.roleId, s.memberRoleBindings.roleId),
-      )
+      .innerJoin(s.rolePermissions, eq(s.rolePermissions.roleId, s.memberRoleBindings.roleId))
       .where(
         and(
           eq(s.memberRoleBindings.memberId, memberId),
@@ -120,10 +213,7 @@ export async function effectivePermissionsForStore(
               eq(s.memberRoleBindings.scopeId, storeId),
             ),
           ),
-          or(
-            isNull(s.memberRoleBindings.expiresAt),
-            gt(s.memberRoleBindings.expiresAt, now),
-          ),
+          or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, now)),
         ),
       ),
     db
@@ -191,12 +281,7 @@ export async function assertHasPermissionInStore(
   storeId: string,
   permissions: ReadonlySet<string>,
 ): Promise<void> {
-  const effective = await effectivePermissionsForStore(
-    db,
-    memberId,
-    storeId,
-    permissions,
-  );
+  const effective = await effectivePermissionsForStore(db, memberId, storeId, permissions);
   if (effective.has(permKey)) return;
 
   throw new TRPCError({

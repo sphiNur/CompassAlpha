@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  date,
   decimal,
   index,
   integer,
@@ -12,7 +13,7 @@ import {
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
-import { organizations } from './auth';
+import { members, organizations } from './auth';
 import { createdAt, deletedAt, inventorySchema, pkUuid, updatedAt } from './_helpers';
 
 export const stores = inventorySchema.table(
@@ -44,6 +45,112 @@ export const stores = inventorySchema.table(
   (t) => ({
     orgIdx: index('stores_org_idx').on(t.orgId),
     orgCodeUnique: uniqueIndex('stores_org_code_unique').on(t.orgId, t.code),
+  }),
+);
+
+/**
+ * One closing record per store and business date.
+ *
+ * This is an operational ledger, not a tax-concealment mechanism. The
+ * `cashOnHand` field records physical cash left in the till/safe after
+ * close; every create/update is attributed to a member and the API also
+ * writes an update-protected audit snapshot to `storeDailySettlementRevisions`.
+ */
+export const storeDailySettlements = inventorySchema.table(
+  'store_daily_settlements',
+  {
+    id: pkUuid(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    storeId: uuid('store_id')
+      .notNull()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+    settlementDate: date('settlement_date', { mode: 'string' }).notNull(),
+
+    /** Card/transfer/QR receipts visible on the bank statement. */
+    onlineRevenue: decimal('online_revenue', { precision: 14, scale: 2 }).notNull().default('0'),
+    /** Cash received from customers for invoiced/fiscalized sales. */
+    invoicedCashRevenue: decimal('invoiced_cash_revenue', { precision: 14, scale: 2 })
+      .notNull()
+      .default('0'),
+    operatingExpenses: decimal('operating_expenses', { precision: 14, scale: 2 })
+      .notNull()
+      .default('0'),
+    wagesPaid: decimal('wages_paid', { precision: 14, scale: 2 }).notNull().default('0'),
+    wagesAccrued: decimal('wages_accrued', { precision: 14, scale: 2 }).notNull().default('0'),
+    nextPurchaseReserve: decimal('next_purchase_reserve', { precision: 14, scale: 2 })
+      .notNull()
+      .default('0'),
+    /** Signed: positive = store still owes procurement; negative = surplus/credit. */
+    priorPurchaseAdjustment: decimal('prior_purchase_adjustment', {
+      precision: 14,
+      scale: 2,
+    })
+      .notNull()
+      .default('0'),
+    /** Physical cash remaining after the daily close. */
+    cashOnHand: decimal('cash_on_hand', { precision: 14, scale: 2 }).notNull().default('0'),
+    note: text('note'),
+
+    /** Optimistic concurrency token; incremented on every successful save. */
+    version: integer('version').notNull().default(1),
+    createdByMemberId: uuid('created_by_member_id').references(() => members.id, {
+      onDelete: 'set null',
+    }),
+    updatedByMemberId: uuid('updated_by_member_id').references(() => members.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    orgStoreDateUnique: uniqueIndex('sds_org_store_date_unique').on(
+      t.orgId,
+      t.storeId,
+      t.settlementDate,
+    ),
+    orgDateIdx: index('sds_org_date_idx').on(t.orgId, t.settlementDate),
+    storeDateIdx: index('sds_store_date_idx').on(t.storeId, t.settlementDate),
+  }),
+);
+
+/**
+ * Append-only snapshots for every daily-settlement save. There is no API
+ * mutation that updates or deletes these rows: corrections create a new
+ * settlement version and a matching revision in the same transaction.
+ */
+export const storeDailySettlementRevisions = inventorySchema.table(
+  'store_daily_settlement_revisions',
+  {
+    id: pkUuid(),
+    settlementId: uuid('settlement_id')
+      .notNull()
+      .references(() => storeDailySettlements.id, { onDelete: 'cascade' }),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    storeId: uuid('store_id')
+      .notNull()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+    settlementDate: date('settlement_date', { mode: 'string' }).notNull(),
+    version: integer('version').notNull(),
+    snapshot: jsonb('snapshot').notNull(),
+    changedFields: jsonb('changed_fields')
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    correctionReason: text('correction_reason'),
+    /** Deliberately not an FK: audit actor identity survives member removal. */
+    actorMemberId: uuid('actor_member_id').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    settlementVersionUnique: uniqueIndex('sdsr_settlement_version_unique').on(
+      t.settlementId,
+      t.version,
+    ),
+    orgDateIdx: index('sdsr_org_date_idx').on(t.orgId, t.settlementDate),
+    storeDateIdx: index('sdsr_store_date_idx').on(t.storeId, t.settlementDate),
   }),
 );
 
@@ -104,7 +211,9 @@ export const categories = inventorySchema.table(
       .references(() => organizations.id, { onDelete: 'cascade' }),
     slug: varchar('slug', { length: 64 }).notNull(),
     /** i18n names: { zh: '...', en: '...', ru: '...', uz: '...' } */
-    names: jsonb('names').notNull().default(sql`'{}'::jsonb`),
+    names: jsonb('names')
+      .notNull()
+      .default(sql`'{}'::jsonb`),
     sortIndex: integer('sort_index').notNull().default(0),
     icon: varchar('icon', { length: 64 }),
     isArchived: boolean('is_archived').notNull().default(false),
@@ -126,13 +235,19 @@ export const skus = inventorySchema.table(
     categoryId: uuid('category_id').references(() => categories.id, { onDelete: 'set null' }),
     code: varchar('code', { length: 64 }), // optional internal code
     /** i18n names */
-    names: jsonb('names').notNull().default(sql`'{}'::jsonb`),
+    names: jsonb('names')
+      .notNull()
+      .default(sql`'{}'::jsonb`),
     /** i18n search aliases (added 0006). Shape: { zh: [...], ru: [...], ... }
      *  Powers OrderPage fuzzy search so "纸" matches every packaging paper. */
-    aliases: jsonb('aliases').notNull().default(sql`'{}'::jsonb`),
+    aliases: jsonb('aliases')
+      .notNull()
+      .default(sql`'{}'::jsonb`),
     /** i18n purchase notes (added 0006). Shape: { zh: "...", en: "...", ... }
      *  e.g. "按整包,通常 10 支" for `Sasiska (pochka)`. */
-    description: jsonb('description').notNull().default(sql`'{}'::jsonb`),
+    description: jsonb('description')
+      .notNull()
+      .default(sql`'{}'::jsonb`),
     /** Unit string (kg, g, L, ml, pcs, pack, pair, bunch, roll). Display
      *  only; step controls UX granularity. */
     unit: varchar('unit', { length: 16 }).notNull(),
@@ -190,9 +305,7 @@ export const expenseTemplates = inventorySchema.table(
     label: varchar('label', { length: 200 }).notNull(),
     /** Optional unit hint ("trip", "次"). Carried onto the expense row. */
     unitHint: varchar('unit_hint', { length: 32 }),
-    defaultQty: decimal('default_qty', { precision: 12, scale: 3 })
-      .notNull()
-      .default('1'),
+    defaultQty: decimal('default_qty', { precision: 12, scale: 3 }).notNull().default('1'),
     defaultUnitPrice: decimal('default_unit_price', {
       precision: 14,
       scale: 2,
@@ -207,11 +320,7 @@ export const expenseTemplates = inventorySchema.table(
     updatedAt: updatedAt(),
   },
   (t) => ({
-    orgActiveIdx: index('expense_templates_org_active_idx').on(
-      t.orgId,
-      t.sortIndex,
-      t.createdAt,
-    ),
+    orgActiveIdx: index('expense_templates_org_active_idx').on(t.orgId, t.sortIndex, t.createdAt),
   }),
 );
 
@@ -263,8 +372,12 @@ export const dishes = inventorySchema.table(
       .notNull()
       .references(() => organizations.id, { onDelete: 'cascade' }),
     code: varchar('code', { length: 32 }),
-    names: jsonb('names').notNull().default(sql`'{}'::jsonb`),
-    description: jsonb('description').notNull().default(sql`'{}'::jsonb`),
+    names: jsonb('names')
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    description: jsonb('description')
+      .notNull()
+      .default(sql`'{}'::jsonb`),
     /** Selling price per serving in the org's currency. Optional. */
     unitPrice: decimal('unit_price', { precision: 14, scale: 2 }),
     sortIndex: integer('sort_index').notNull().default(0),

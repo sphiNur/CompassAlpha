@@ -30,7 +30,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type Tab = 'order' | 'approve' | 'run' | 'history' | 'confirm' | 'admin';
+export type Tab = 'order' | 'approve' | 'run' | 'history' | 'settlement' | 'confirm' | 'admin';
 
 // Mirror of AdminPage's local types. Kept inline so this file has no
 // dependency on AdminPage.tsx (which is a lazy-loaded chunk).
@@ -41,13 +41,7 @@ export type AdminSection =
   | 'permissions'
   | 'catalog'
   | 'operations';
-export type CatalogSub =
-  | 'categories'
-  | 'skus'
-  | 'suppliers'
-  | 'dishes'
-  | 'expenseTemplates'
-  | null;
+export type CatalogSub = 'categories' | 'skus' | 'suppliers' | 'dishes' | 'expenseTemplates' | null;
 export type OperationsSub =
   | 'activity'
   | 'history'
@@ -159,7 +153,7 @@ export const useNavStore = create<NavState>()(
 
         const tab = oneOf(
           p.tab,
-          ['order', 'approve', 'run', 'history', 'confirm', 'admin'] as const,
+          ['order', 'approve', 'run', 'history', 'settlement', 'confirm', 'admin'] as const,
           DEFAULTS.tab,
         );
         const adminSection = oneOf(
@@ -230,10 +224,7 @@ export const useNavStore = create<NavState>()(
  * If the user lost a permission since last session, fall back to the
  * first visible tab so we don't render a blank page.
  */
-export function resolveVisibleTab(
-  persisted: Tab,
-  visibleKeys: readonly Tab[],
-): Tab {
+export function resolveVisibleTab(persisted: Tab, visibleKeys: readonly Tab[]): Tab {
   if (visibleKeys.includes(persisted)) return persisted;
   return visibleKeys[0] ?? 'order';
 }

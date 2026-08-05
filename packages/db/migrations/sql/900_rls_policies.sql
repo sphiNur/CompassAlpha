@@ -21,6 +21,8 @@ DECLARE
     'auth.roles',
     'auth.policy_rules',
     'inventory.stores',
+    'inventory.store_daily_settlements',
+    'inventory.store_daily_settlement_revisions',
     'inventory.suppliers',
     'inventory.categories',
     'inventory.skus',

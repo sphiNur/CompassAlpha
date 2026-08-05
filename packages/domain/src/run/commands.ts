@@ -166,7 +166,11 @@ export interface ActorCtx {
 
 const TOLERANCE = 1e-6;
 
-export function decideRun(state: RunState, command: RunCommand, clock: Clock = systemClock): RunEvent[] {
+export function decideRun(
+  state: RunState,
+  command: RunCommand,
+  clock: Clock = systemClock,
+): RunEvent[] {
   const now = clock.now();
   const baseFor = (offset: number) => ({
     streamId: state.streamId,
@@ -266,7 +270,10 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
       if (!item) throw validation('run.errors.itemNotInRun');
       const actual = num(command.actualQty, 'run.errors.invalidQty');
       if (actual <= 0) throw validation('run.errors.qtyMustBePositive');
-      const splitSum = command.storeSplits.reduce((s, x) => s + num(x.qty, 'run.errors.invalidQty'), 0);
+      const splitSum = command.storeSplits.reduce(
+        (s, x) => s + num(x.qty, 'run.errors.invalidQty'),
+        0,
+      );
       if (Math.abs(splitSum - actual) > TOLERANCE) {
         throw validation('run.errors.splitSumMismatch', { actual, splitSum });
       }
@@ -501,11 +508,36 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
         throw forbidden('run.errors.cannotPurchase');
       }
       assertClaimOwnership(state, command.actor);
+
+      // Marking an item unavailable is a purchasing decision, not a generic
+      // item-state toggle. In particular, a terminal run must not accept a
+      // late ItemUnavailable event: that would change the settled ledger
+      // without going through ReopenRun -> amendment -> RefinalizeRun.
+      //
+      // `planned` remains legal for backwards compatibility (just like the
+      // first PurchaseItem can be recorded before StartPurchase). A reopened
+      // run may use this command to correct "purchased" -> UndoPurchase ->
+      // "unavailable", but the domain requires run.amend explicitly; the API
+      // additionally proves that permission came from a persisted global
+      // grant before invoking this decider for an amending stream.
+      const inLivePurchasePhase = state.status === 'planned' || state.status === 'purchasing';
+      const inAuthorizedAmendment =
+        state.status === 'amending' && command.actor.permissions.has('run.amend');
+      if (!inLivePurchasePhase && !inAuthorizedAmendment) {
+        if (state.status === 'amending') {
+          throw forbidden('run.errors.cannotAmend');
+        }
+        throw preconditionFailed('run.errors.runFrozen', { status: state.status });
+      }
+
+      const item = state.items.get(command.skuId);
+      if (!item) throw validation('run.errors.itemNotInRun');
+      if (item.status !== 'pending') {
+        throw preconditionFailed('run.errors.itemNotPending', { status: item.status });
+      }
       const note = command.note.trim();
       if (!note) throw validation('run.errors.unavailableNoteRequired');
       if (note.length > 500) throw validation('run.errors.noteTooLong');
-      const item = state.items.get(command.skuId);
-      if (!item) throw validation('run.errors.itemNotInRun');
       return [
         {
           ...baseFor(1),
@@ -618,6 +650,13 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
       assertActive(state);
       if (!command.actor.permissions.has('delivery.confirm')) {
         throw forbidden('run.errors.cannotConfirm');
+      }
+      // A delivery may only be accepted while the run is actively in its
+      // delivery phase. In particular, a store that was delivered before a
+      // later cancellation must not be able to confirm the cancelled run and
+      // trigger the inventory-receipt projection afterwards.
+      if (state.status !== 'delivering') {
+        throw preconditionFailed('run.errors.notDelivering', { status: state.status });
       }
       const store = state.stores.get(command.storeId);
       if (!store?.deliveredAt) {
@@ -912,9 +951,7 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
       // string when the operator didn't bother typing one.
       const reason = (command.reason ?? '').trim();
       if (reason.length > 500) throw validation('run.errors.noteTooLong');
-      return [
-        { ...baseFor(1), type: 'PurchaseUndone', payload: { skuId: command.skuId, reason } },
-      ];
+      return [{ ...baseFor(1), type: 'PurchaseUndone', payload: { skuId: command.skuId, reason } }];
     }
 
     case 'UnmarkUnavailable': {
@@ -959,7 +996,11 @@ export function decideRun(state: RunState, command: RunCommand, clock: Clock = s
       if (!reason) throw validation('run.errors.recallReasonRequired');
       if (reason.length > 500) throw validation('run.errors.noteTooLong');
       return [
-        { ...baseFor(1), type: 'StoreDeliveryUndone', payload: { storeId: command.storeId, reason } },
+        {
+          ...baseFor(1),
+          type: 'StoreDeliveryUndone',
+          payload: { storeId: command.storeId, reason },
+        },
       ];
     }
 

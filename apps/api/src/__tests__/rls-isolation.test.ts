@@ -27,6 +27,7 @@
  * Skipped when DATABASE_URL is unset OR SKIP_PG_TESTS=1.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { randomUUID } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync } from 'node:fs';
@@ -70,6 +71,10 @@ interface Fixture {
   /** storeId for each org (for member_store_assignments). */
   storeA: string;
   storeB: string;
+  settlementA: string;
+  settlementB: string;
+  settlementRevisionA: string;
+  settlementRevisionB: string;
   /** sessionId for each org's order_sessions_v row. Same UUID sub-
    *  for events stream id. */
   sessionA: string;
@@ -100,6 +105,10 @@ function dummyFixture(): Fixture {
     roleB: id,
     storeA: id,
     storeB: id,
+    settlementA: id,
+    settlementB: id,
+    settlementRevisionA: id,
+    settlementRevisionB: id,
     sessionA: id,
     sessionB: id,
     runA: id,
@@ -120,10 +129,9 @@ beforeAll(async () => {
     WHERE rolname = current_user
     LIMIT 1
   `);
-  const roleRows =
-    Array.isArray(roleResult)
-      ? roleResult
-      : ((roleResult as { rows?: unknown[] }).rows ?? []);
+  const roleRows = Array.isArray(roleResult)
+    ? roleResult
+    : ((roleResult as { rows?: unknown[] }).rows ?? []);
   const roleRow = roleRows[0] as { rolsuper?: boolean; rolbypassrls?: boolean } | undefined;
   rlsBypassedByCurrentUser = Boolean(roleRow?.rolsuper || roleRow?.rolbypassrls);
   if (rlsBypassedByCurrentUser) {
@@ -175,12 +183,8 @@ beforeAll(async () => {
     .insert(s.permissions)
     .values({ key: 'rls.test', description: 'RLS isolation test perm' })
     .onConflictDoNothing();
-  await db
-    .insert(s.rolePermissions)
-    .values({ roleId: roleA!.id, permissionKey: 'rls.test' });
-  await db
-    .insert(s.rolePermissions)
-    .values({ roleId: roleB!.id, permissionKey: 'rls.test' });
+  await db.insert(s.rolePermissions).values({ roleId: roleA!.id, permissionKey: 'rls.test' });
+  await db.insert(s.rolePermissions).values({ roleId: roleB!.id, permissionKey: 'rls.test' });
   await db
     .insert(s.memberRoleBindings)
     .values({ memberId: memA!.id, roleId: roleA!.id, scopeType: 'global' });
@@ -197,12 +201,56 @@ beforeAll(async () => {
     .insert(s.stores)
     .values({ orgId: orgB!.id, name: 'Store B', code: `RB-${slug.slice(-6)}` })
     .returning();
-  await db
-    .insert(s.memberStoreAssignments)
-    .values({ memberId: memA!.id, storeId: storeA!.id });
-  await db
-    .insert(s.memberStoreAssignments)
-    .values({ memberId: memB!.id, storeId: storeB!.id });
+  await db.insert(s.memberStoreAssignments).values({ memberId: memA!.id, storeId: storeA!.id });
+  await db.insert(s.memberStoreAssignments).values({ memberId: memB!.id, storeId: storeB!.id });
+
+  // --- Daily settlements + update-protected revisions ---
+  const [settlementA] = await db
+    .insert(s.storeDailySettlements)
+    .values({
+      orgId: orgA!.id,
+      storeId: storeA!.id,
+      settlementDate: '2026-05-07',
+      createdByMemberId: memA!.id,
+      updatedByMemberId: memA!.id,
+    })
+    .returning();
+  const [settlementB] = await db
+    .insert(s.storeDailySettlements)
+    .values({
+      orgId: orgB!.id,
+      storeId: storeB!.id,
+      settlementDate: '2026-05-07',
+      createdByMemberId: memB!.id,
+      updatedByMemberId: memB!.id,
+    })
+    .returning();
+  const [settlementRevisionA] = await db
+    .insert(s.storeDailySettlementRevisions)
+    .values({
+      settlementId: settlementA!.id,
+      orgId: orgA!.id,
+      storeId: storeA!.id,
+      settlementDate: '2026-05-07',
+      version: 1,
+      snapshot: { version: 1 },
+      changedFields: [],
+      actorMemberId: memA!.id,
+    })
+    .returning();
+  const [settlementRevisionB] = await db
+    .insert(s.storeDailySettlementRevisions)
+    .values({
+      settlementId: settlementB!.id,
+      orgId: orgB!.id,
+      storeId: storeB!.id,
+      settlementDate: '2026-05-07',
+      version: 1,
+      snapshot: { version: 1 },
+      changedFields: [],
+      actorMemberId: memB!.id,
+    })
+    .returning();
 
   const [catA] = await db
     .insert(s.categories)
@@ -236,34 +284,26 @@ beforeAll(async () => {
     })
     .returning();
 
-  await db
-    .insert(s.suppliers)
-    .values({ orgId: orgA!.id, name: 'sup-A' });
-  await db
-    .insert(s.suppliers)
-    .values({ orgId: orgB!.id, name: 'sup-B' });
+  await db.insert(s.suppliers).values({ orgId: orgA!.id, name: 'sup-A' });
+  await db.insert(s.suppliers).values({ orgId: orgB!.id, name: 'sup-B' });
 
   // --- Member permission overrides ---
-  await db
-    .insert(s.memberPermissionOverrides)
-    .values({
-      memberId: memA!.id,
-      permissionKey: 'rls.test',
-      effect: 'allow',
-      scopeType: 'global',
-    });
-  await db
-    .insert(s.memberPermissionOverrides)
-    .values({
-      memberId: memB!.id,
-      permissionKey: 'rls.test',
-      effect: 'allow',
-      scopeType: 'global',
-    });
+  await db.insert(s.memberPermissionOverrides).values({
+    memberId: memA!.id,
+    permissionKey: 'rls.test',
+    effect: 'allow',
+    scopeType: 'global',
+  });
+  await db.insert(s.memberPermissionOverrides).values({
+    memberId: memB!.id,
+    permissionKey: 'rls.test',
+    effect: 'allow',
+    scopeType: 'global',
+  });
 
   // --- Order session + items (read_model views) + the matching events.
-  const sessionA = '11111111-aaaa-aaaa-aaaa-111111111111';
-  const sessionB = '22222222-bbbb-bbbb-bbbb-222222222222';
+  const sessionA = randomUUID();
+  const sessionB = randomUUID();
   await db.insert(s.orderSessionsV).values({
     id: sessionA,
     orgId: orgA!.id,
@@ -326,8 +366,8 @@ beforeAll(async () => {
   });
 
   // --- Market runs + run items + per-store splits ---
-  const runA = '33333333-aaaa-aaaa-aaaa-333333333333';
-  const runB = '44444444-bbbb-bbbb-bbbb-444444444444';
+  const runA = randomUUID();
+  const runB = randomUUID();
   await db.insert(s.marketRunsV).values({
     id: runA,
     orgId: orgA!.id,
@@ -342,12 +382,8 @@ beforeAll(async () => {
     runIndex: 0,
     status: 'planned',
   });
-  await db
-    .insert(s.runItemsV)
-    .values({ runId: runA, skuId: skuA!.id, plannedQty: '1' });
-  await db
-    .insert(s.runItemsV)
-    .values({ runId: runB, skuId: skuB!.id, plannedQty: '1' });
+  await db.insert(s.runItemsV).values({ runId: runA, skuId: skuA!.id, plannedQty: '1' });
+  await db.insert(s.runItemsV).values({ runId: runB, skuId: skuB!.id, plannedQty: '1' });
   await db
     .insert(s.runItemStoresV)
     .values({ runId: runA, skuId: skuA!.id, storeId: storeA!.id, qty: '1' });
@@ -378,6 +414,10 @@ beforeAll(async () => {
     roleB: roleB!.id,
     storeA: storeA!.id,
     storeB: storeB!.id,
+    settlementA: settlementA!.id,
+    settlementB: settlementB!.id,
+    settlementRevisionA: settlementRevisionA!.id,
+    settlementRevisionB: settlementRevisionB!.id,
     sessionA,
     sessionB,
     runA,
@@ -429,8 +469,7 @@ async function countUnderEachContext(
     const r = await tx.execute(
       sql.raw(`SELECT COUNT(*)::int AS n FROM ${table} WHERE ${whereClause}`),
     );
-    const rows =
-      Array.isArray(r) ? r : ((r as { rows?: unknown[] }).rows ?? []);
+    const rows = Array.isArray(r) ? r : ((r as { rows?: unknown[] }).rows ?? []);
     return Number((rows[0] as { n: number }).n);
   });
   // Without context — we expect to see both rows (fail-open documented
@@ -440,8 +479,7 @@ async function countUnderEachContext(
   const totalSeen = await db
     .execute(sql.raw(`SELECT COUNT(*)::int AS n FROM ${table} WHERE ${whereClause}`))
     .then((r) => {
-      const rows =
-        Array.isArray(r) ? r : ((r as { rows?: unknown[] }).rows ?? []);
+      const rows = Array.isArray(r) ? r : ((r as { rows?: unknown[] }).rows ?? []);
       return Number((rows[0] as { n: number }).n);
     });
   return { aSeen, bSeen, totalSeen };
@@ -461,10 +499,7 @@ describe.skipIf(!SHOULD_RUN)('RLS cross-org isolation (PG-gated)', () => {
 
   test('auth.roles — isolated by org', async () => {
     if (!fix) throw new Error('fixture missing');
-    const r = await countUnderEachContext(
-      'auth.roles',
-      `id IN ('${fix.roleA}', '${fix.roleB}')`,
-    );
+    const r = await countUnderEachContext('auth.roles', `id IN ('${fix.roleA}', '${fix.roleB}')`);
     expect(r.aSeen).toBe(1);
     expect(r.bSeen).toBe(1);
     expect(r.totalSeen).toBe(2);
@@ -525,12 +560,31 @@ describe.skipIf(!SHOULD_RUN)('RLS cross-org isolation (PG-gated)', () => {
     expect(r.totalSeen).toBe(2);
   });
 
-  test('inventory.skus — direct org_id', async () => {
+  test('inventory.store_daily_settlements — direct org_id', async () => {
     if (!fix) throw new Error('fixture missing');
     const r = await countUnderEachContext(
-      'inventory.skus',
-      `id IN ('${fix.skuA}', '${fix.skuB}')`,
+      'inventory.store_daily_settlements',
+      `id IN ('${fix.settlementA}', '${fix.settlementB}')`,
     );
+    expect(r.aSeen).toBe(1);
+    expect(r.bSeen).toBe(1);
+    expect(r.totalSeen).toBe(2);
+  });
+
+  test('inventory.store_daily_settlement_revisions — direct org_id', async () => {
+    if (!fix) throw new Error('fixture missing');
+    const r = await countUnderEachContext(
+      'inventory.store_daily_settlement_revisions',
+      `id IN ('${fix.settlementRevisionA}', '${fix.settlementRevisionB}')`,
+    );
+    expect(r.aSeen).toBe(1);
+    expect(r.bSeen).toBe(1);
+    expect(r.totalSeen).toBe(2);
+  });
+
+  test('inventory.skus — direct org_id', async () => {
+    if (!fix) throw new Error('fixture missing');
+    const r = await countUnderEachContext('inventory.skus', `id IN ('${fix.skuA}', '${fix.skuB}')`);
     expect(r.aSeen).toBe(1);
     expect(r.bSeen).toBe(1);
     expect(r.totalSeen).toBe(2);
@@ -562,7 +616,7 @@ describe.skipIf(!SHOULD_RUN)('RLS cross-org isolation (PG-gated)', () => {
     if (!fix) throw new Error('fixture missing');
     const r = await countUnderEachContext(
       'domain.policy_decisions',
-      `action = 'rls.test'`,
+      `actor_id IN ('${fix.memberA.userId}', '${fix.memberB.userId}')`,
     );
     expect(r.aSeen).toBe(1);
     expect(r.bSeen).toBe(1);

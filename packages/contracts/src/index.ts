@@ -7,3 +7,4 @@ export * from './schemas/run';
 export * from './schemas/delivery';
 export * from './schemas/admin';
 export * from './schemas/system';
+export * from './schemas/settlement';

@@ -27,15 +27,7 @@
  * goes into the audit log.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Banner,
-  Button,
-  DataState,
-  EmptyState,
-  Input,
-  Sheet,
-  useToast,
-} from '@compass/ui';
+import { Banner, Button, DataState, EmptyState, Input, Sheet, useToast } from '@compass/ui';
 import { trpc, newIdempotencyKey } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton, haptic } from '../hooks/useTelegram';
@@ -69,11 +61,7 @@ import {
   type AddItemDraft,
 } from './runs/sheets/RunSheets';
 // Mid-level panels — extracted to runs/components (Phase 4 step 5).
-import {
-  ActiveRunPanel,
-  PreviewSummaryCard,
-  RunSessionsCard,
-} from './runs/components/RunPanels';
+import { ActiveRunPanel, PreviewSummaryCard, RunSessionsCard } from './runs/components/RunPanels';
 
 function newClientId(): string {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -154,7 +142,7 @@ export function RunPage() {
   const runsQuery = trpc.run.list.useQuery();
   const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: false });
   const categoriesQuery = trpc.catalog.categories.useQuery();
-  const storesQuery = trpc.catalog.stores.useQuery();
+  const storesQuery = trpc.catalog.stores.useQuery({ permission: 'run.purchase' });
   const suppliersQuery = trpc.catalog.suppliers.useQuery();
   const expenseTemplatesQuery = trpc.run.expenseTemplates.useQuery(undefined, {
     enabled:
@@ -174,53 +162,56 @@ export function RunPage() {
     },
     [utils],
   );
-  const offline = useOfflineQueue({
-    'run.purchaseItem': async (entry) => {
-      // H2: replay with the SAME idempotency key the first attempt used, so
-      // a request the server already committed (lost response) dedupes.
-      await utils.client.run.purchaseItem.mutate(
-        entry.input as Parameters<typeof utils.client.run.purchaseItem.mutate>[0],
-        entry.idempotencyKey ? { context: { idempotencyKey: entry.idempotencyKey } } : undefined,
-      );
-      void utils.run.get.invalidate();
-      void utils.run.list.invalidate();
+  const offline = useOfflineQueue(
+    {
+      'run.purchaseItem': async (entry) => {
+        // H2: replay with the SAME idempotency key the first attempt used, so
+        // a request the server already committed (lost response) dedupes.
+        await utils.client.run.purchaseItem.mutate(
+          entry.input as Parameters<typeof utils.client.run.purchaseItem.mutate>[0],
+          entry.idempotencyKey ? { context: { idempotencyKey: entry.idempotencyKey } } : undefined,
+        );
+        void utils.run.get.invalidate();
+        void utils.run.list.invalidate();
+      },
+      'run.markUnavailable': async (entry) => {
+        await utils.client.run.markUnavailable.mutate(
+          entry.input as Parameters<typeof utils.client.run.markUnavailable.mutate>[0],
+        );
+        void utils.run.get.invalidate();
+      },
+      'run.deliverToStore': async (entry) => {
+        await utils.client.run.deliverToStore.mutate(
+          entry.input as Parameters<typeof utils.client.run.deliverToStore.mutate>[0],
+        );
+        void utils.run.get.invalidate();
+        void utils.run.list.invalidate();
+      },
+      // M3.41 (2026-05-21): purchaser-added items survive flaky bazaar
+      // LTE just like regular purchases.
+      'run.addPurchaserItem': async (entry) => {
+        // 2026-07-26: replay with the SAME key the first attempt used —
+        // see the mutation's onMutate. Without this a lost response
+        // recorded the off-catalog purchase twice.
+        await utils.client.run.addPurchaserItem.mutate(
+          entry.input as Parameters<typeof utils.client.run.addPurchaserItem.mutate>[0],
+          entry.idempotencyKey ? { context: { idempotencyKey: entry.idempotencyKey } } : undefined,
+        );
+        void utils.run.get.invalidate();
+        void utils.run.list.invalidate();
+      },
+      // M3.44 (2026-05-22): off-catalog expenses. Same retry pattern.
+      'run.addExpense': async (entry) => {
+        await utils.client.run.addExpense.mutate(
+          entry.input as Parameters<typeof utils.client.run.addExpense.mutate>[0],
+          entry.idempotencyKey ? { context: { idempotencyKey: entry.idempotencyKey } } : undefined,
+        );
+        void utils.run.get.invalidate();
+        void utils.run.list.invalidate();
+      },
     },
-    'run.markUnavailable': async (entry) => {
-      await utils.client.run.markUnavailable.mutate(
-        entry.input as Parameters<typeof utils.client.run.markUnavailable.mutate>[0],
-      );
-      void utils.run.get.invalidate();
-    },
-    'run.deliverToStore': async (entry) => {
-      await utils.client.run.deliverToStore.mutate(
-        entry.input as Parameters<typeof utils.client.run.deliverToStore.mutate>[0],
-      );
-      void utils.run.get.invalidate();
-      void utils.run.list.invalidate();
-    },
-    // M3.41 (2026-05-21): purchaser-added items survive flaky bazaar
-    // LTE just like regular purchases.
-    'run.addPurchaserItem': async (entry) => {
-      // 2026-07-26: replay with the SAME key the first attempt used —
-      // see the mutation's onMutate. Without this a lost response
-      // recorded the off-catalog purchase twice.
-      await utils.client.run.addPurchaserItem.mutate(
-        entry.input as Parameters<typeof utils.client.run.addPurchaserItem.mutate>[0],
-        entry.idempotencyKey ? { context: { idempotencyKey: entry.idempotencyKey } } : undefined,
-      );
-      void utils.run.get.invalidate();
-      void utils.run.list.invalidate();
-    },
-    // M3.44 (2026-05-22): off-catalog expenses. Same retry pattern.
-    'run.addExpense': async (entry) => {
-      await utils.client.run.addExpense.mutate(
-        entry.input as Parameters<typeof utils.client.run.addExpense.mutate>[0],
-        entry.idempotencyKey ? { context: { idempotencyKey: entry.idempotencyKey } } : undefined,
-      );
-      void utils.run.get.invalidate();
-      void utils.run.list.invalidate();
-    },
-  }, { onDrop: () => toast.error(i18n.t('run.toast.syncFailed')) });
+    { onDrop: () => toast.error(i18n.t('run.toast.syncFailed')) },
+  );
 
   // ---- Mutations ------------------------------------------------------
   // M1.9 (2026-05-07): hoisted into `lib/errToast.ts` so the same
@@ -441,8 +432,7 @@ export function RunPage() {
    * row. `paymentBusySkuId` is non-null exactly while the row-level flip
    * is the request in flight.
    */
-  const revisePurchaseBusyForSheet =
-    revisePurchase.isPending && paymentBusySkuId === null;
+  const revisePurchaseBusyForSheet = revisePurchase.isPending && paymentBusySkuId === null;
 
   const markUnavailable = trpc.run.markUnavailable.useMutation({
     onSuccess: () => {
@@ -538,9 +528,7 @@ export function RunPage() {
       const failures = result?.ejectionFailures?.length ?? 0;
       if (failures > 0) {
         haptic('warning');
-        toast.info(
-          i18n.t('run.toast.runCancelledWithOrphans', { n: failures }),
-        );
+        toast.info(i18n.t('run.toast.runCancelledWithOrphans', { n: failures }));
       } else {
         haptic('success');
         toast.success(i18n.t('run.toast.runCancelled'));
@@ -593,7 +581,13 @@ export function RunPage() {
   const skuById = useMemo(() => {
     const m = new Map<
       string,
-      { id: string; names: Record<string, string>; unit: string; step: string; categoryId: string | null }
+      {
+        id: string;
+        names: Record<string, string>;
+        unit: string;
+        step: string;
+        categoryId: string | null;
+      }
     >();
     for (const sku of skusQuery.data ?? []) {
       m.set(sku.id, {
@@ -883,14 +877,16 @@ export function RunPage() {
     if (!purchaseDraft) return null;
     let splitTotal = 0;
     for (const v of purchaseDraft.splits.values()) splitTotal += Number(v) || 0;
-    const splitMatches =
-      Math.abs(splitTotal - Number(purchaseDraft.actualQty || 0)) < 0.001;
+    const splitMatches = Math.abs(splitTotal - Number(purchaseDraft.actualQty || 0)) < 0.001;
     const reasonOk = !purchaseDraft.isEdit || purchaseDraft.reason.trim().length > 0;
     const splitPricesOk =
       !purchaseDraft.perStorePricing ||
       [...purchaseDraft.splits.entries()]
         .filter(([, qty]) => Number(qty) > 0)
-        .every(([storeId]) => Number(purchaseDraft.splitPrices.get(storeId) || purchaseDraft.unitPrice) > 0);
+        .every(
+          ([storeId]) =>
+            Number(purchaseDraft.splitPrices.get(storeId) || purchaseDraft.unitPrice) > 0,
+        );
     const canSubmit = !!(
       Number(purchaseDraft.actualQty) > 0 &&
       Number(purchaseDraft.unitPrice) > 0 &&
@@ -1159,8 +1155,7 @@ export function RunPage() {
           // one-decimal cap match every other money display in the
           // app. Was `.toFixed(0)` which produced a raw integer
           // string with no separators (e.g. "1234567").
-          const showBreakdown =
-            finishSummary.totalCash > 0 && finishSummary.totalTransfer > 0;
+          const showBreakdown = finishSummary.totalCash > 0 && finishSummary.totalTransfer > 0;
           const breakdownLine = showBreakdown
             ? '\n' +
               i18n.t('run.confirm.finish.paymentBreakdown', {
@@ -1240,8 +1235,7 @@ export function RunPage() {
                 '\n' +
                 finishSummary.byStore
                   .map((ps) => {
-                    const storeName =
-                      storeById.get(ps.storeId)?.name ?? ps.storeId.slice(0, 8);
+                    const storeName = storeById.get(ps.storeId)?.name ?? ps.storeId.slice(0, 8);
                     const mixed = ps.cash > 0 && ps.transfer > 0;
                     const tail = mixed
                       ? ` · ${i18n.t('run.label.paymentCash')} ${formatMoney(ps.cash)}` +
@@ -1715,51 +1709,51 @@ export function RunPage() {
       ) : null}
 
       <div className="flex flex-col gap-2 px-4 pt-2">
-      {!activeRun ? (
-        <DataState query={previewQuery}>
-          {(p) =>
-            p.plannedItems.length === 0 ? (
-              <EmptyState
-                title={i18n.t('run.empty.noPlannable')}
-                description={i18n.t('run.empty.noPlannableBody')}
-              />
-            ) : (
-              <PreviewSummaryCard
-                preview={p}
-                skuById={skuById}
-                productName={productName}
-                i18n={i18n}
-                toast={toast}
-              />
-            )
-          }
-        </DataState>
-      ) : null}
+        {!activeRun ? (
+          <DataState query={previewQuery}>
+            {(p) =>
+              p.plannedItems.length === 0 ? (
+                <EmptyState
+                  title={i18n.t('run.empty.noPlannable')}
+                  description={i18n.t('run.empty.noPlannableBody')}
+                />
+              ) : (
+                <PreviewSummaryCard
+                  preview={p}
+                  skuById={skuById}
+                  productName={productName}
+                  i18n={i18n}
+                  toast={toast}
+                />
+              )
+            }
+          </DataState>
+        ) : null}
 
-      {activeRun &&
-      runDetailQuery.data &&
-      (activeRun.status === 'planned' || activeRun.status === 'purchasing') &&
-      (runDetailQuery.data.sessions?.length ?? 0) > 0 ? (
-        <RunSessionsCard
-          sessions={runDetailQuery.data.sessions ?? []}
-          storeById={storeById}
-          i18n={i18n}
-          ejecting={ejectSession.isPending}
-          onEject={(sessionRow) => {
-            const storeName =
-              storeById.get(sessionRow.storeId)?.name ?? sessionRow.storeId.slice(0, 8);
-            setConfirmAction({
-              kind: 'ejectSession',
-              sessionId: sessionRow.id,
-              storeName,
-              submitterName:
-                sessionRow.submittedByDisplayName ?? i18n.t('run.sessions.unknownSubmitter'),
-            });
-          }}
-        />
-      ) : null}
+        {activeRun &&
+        runDetailQuery.data &&
+        (activeRun.status === 'planned' || activeRun.status === 'purchasing') &&
+        (runDetailQuery.data.sessions?.length ?? 0) > 0 ? (
+          <RunSessionsCard
+            sessions={runDetailQuery.data.sessions ?? []}
+            storeById={storeById}
+            i18n={i18n}
+            ejecting={ejectSession.isPending}
+            onEject={(sessionRow) => {
+              const storeName =
+                storeById.get(sessionRow.storeId)?.name ?? sessionRow.storeId.slice(0, 8);
+              setConfirmAction({
+                kind: 'ejectSession',
+                sessionId: sessionRow.id,
+                storeName,
+                submitterName:
+                  sessionRow.submittedByDisplayName ?? i18n.t('run.sessions.unknownSubmitter'),
+              });
+            }}
+          />
+        ) : null}
 
-      {/* M3.30 (2026-05-18): for an EXISTING run that's back in `planned`
+        {/* M3.30 (2026-05-18): for an EXISTING run that's back in `planned`
           status (either freshly created or reverted via "Back to plan",
           M3.29), render the same preview-style summary the no-run-yet
           path uses — three-way view toggle, by-store / by-vendor copy
@@ -1768,264 +1762,255 @@ export function RunPage() {
           Adapts run.detail's shape into PreviewSummaryCard's expected
           prop: planned-qty from items, store names looked up via
           storeById, supplierBySku straight from run.get (added M3.27). */}
-      {activeRun && runDetailQuery.data && activeRun.status === 'planned' ? (
-        <PreviewSummaryCard
-          preview={{
-            date: runDetailQuery.data.runDate,
-            sessions: ((runDetailQuery.data.sessionIdsJson as string[] | null) ?? []).map(
-              (id) => ({ id, storeId: '' }),
-            ),
-            plannedItems: runDetailQuery.data.items.map((it) => ({
-              skuId: it.skuId,
-              qty: it.plannedQty,
-            })),
-            perStoreDemand: (runDetailQuery.data.perStoreDemand ?? []).map((d) => ({
-              storeId: d.storeId,
-              storeName:
-                storeById.get(d.storeId)?.name ?? d.storeId.slice(0, 8),
-              skuId: d.skuId,
-              qty: d.qty,
-            })),
-            supplierBySku: runDetailQuery.data.supplierBySku ?? {},
-            // 2026-07-26: was missing, so every row of an EXISTING
-            // planned run rendered "待询价" — the preview's price
-            // fallback chain is lastPurchasePriceBySku → supplier
-            // estimatedUnitPrice → null, and the middle link is dead
-            // (sku_supplier_links.default_price / last_seen_price have
-            // no writer anywhere in the repo, so estimatedUnitPrice is
-            // always null in production). The no-run-yet mount got this
-            // straight from run.preview; only this adapter dropped it.
-            lastPurchasePriceBySku: runDetailQuery.data.lastPriceBySku ?? {},
-            sessionNotesByStore: runDetailQuery.data.sessionNotesByStore,
-            sessionExtrasByStore: runDetailQuery.data.sessionExtrasByStore,
-          }}
-          skuById={skuById}
-          productName={productName}
-          i18n={i18n}
-          toast={toast}
-        />
-      ) : null}
+        {activeRun && runDetailQuery.data && activeRun.status === 'planned' ? (
+          <PreviewSummaryCard
+            preview={{
+              date: runDetailQuery.data.runDate,
+              sessions: ((runDetailQuery.data.sessionIdsJson as string[] | null) ?? []).map(
+                (id) => ({ id, storeId: '' }),
+              ),
+              plannedItems: runDetailQuery.data.items.map((it) => ({
+                skuId: it.skuId,
+                qty: it.plannedQty,
+              })),
+              perStoreDemand: (runDetailQuery.data.perStoreDemand ?? []).map((d) => ({
+                storeId: d.storeId,
+                storeName: storeById.get(d.storeId)?.name ?? d.storeId.slice(0, 8),
+                skuId: d.skuId,
+                qty: d.qty,
+              })),
+              supplierBySku: runDetailQuery.data.supplierBySku ?? {},
+              // 2026-07-26: was missing, so every row of an EXISTING
+              // planned run rendered "待询价" — the preview's price
+              // fallback chain is lastPurchasePriceBySku → supplier
+              // estimatedUnitPrice → null, and the middle link is dead
+              // (sku_supplier_links.default_price / last_seen_price have
+              // no writer anywhere in the repo, so estimatedUnitPrice is
+              // always null in production). The no-run-yet mount got this
+              // straight from run.preview; only this adapter dropped it.
+              lastPurchasePriceBySku: runDetailQuery.data.lastPriceBySku ?? {},
+              sessionNotesByStore: runDetailQuery.data.sessionNotesByStore,
+              sessionExtrasByStore: runDetailQuery.data.sessionExtrasByStore,
+            }}
+            skuById={skuById}
+            productName={productName}
+            i18n={i18n}
+            toast={toast}
+          />
+        ) : null}
 
-      {activeRun && runDetailQuery.data && activeRun.status !== 'planned' ? (
-        <ActiveRunPanel
-          run={runDetailQuery.data}
-          skuById={skuById}
-          categoryById={categoryById}
-          storeById={storeById}
-          productName={productName}
-          i18n={i18n}
-          priceInThousands={priceInThousands}
-          onTogglePriceUnit={togglePriceInThousands}
-          savingSkuId={inlineSavingSkuId}
-          onSavePurchaseInline={({
-            skuId,
-            actualQty,
-            unitPrice,
-            storeSplits,
-            paymentMethod,
-            supplierId,
-          }) => {
-            // Direct in-page save — no sheet involved. Triggered when
-            // the user blurs the price input on a row whose qty
-            // matches planned. Splits come from per-store demand.
-            // M1.14: paymentMethod comes from the in-row toggle
-            // (defaults to 'cash'; user can flip to 'transfer' before
-            // saving for the relatively rare transfer items).
-            setInlineSavingSkuId(skuId);
-            purchaseItem.mutate({
-              runId: activeRun.id,
+        {activeRun && runDetailQuery.data && activeRun.status !== 'planned' ? (
+          <ActiveRunPanel
+            run={runDetailQuery.data}
+            skuById={skuById}
+            categoryById={categoryById}
+            storeById={storeById}
+            productName={productName}
+            i18n={i18n}
+            priceInThousands={priceInThousands}
+            onTogglePriceUnit={togglePriceInThousands}
+            savingSkuId={inlineSavingSkuId}
+            onSavePurchaseInline={({
               skuId,
-              // 2026-07-26: was hard-coded null, so every inline save wrote
-              // price_history.supplier_id = NULL (runProjection.ts:678 takes
-              // it straight off the event payload). That made "what did I pay
-              // for this at THIS stall last time" permanently unanswerable —
-              // the only price history we had was per-SKU-global.
-              //
-              // Only the by-stall view supplies it (see PerVendorView's
-              // onSave wrapper). The aggregate / by-store / by-category views
-              // have no stall context, and a SKU's *preferred* supplier is a
-              // guess about where the purchase happened — recording a guess
-              // would poison the very history this is meant to build, so
-              // those paths still send null. A gap beats a lie.
-              supplierId: supplierId ?? null,
-              unitPrice,
               actualQty,
-              receiptPhotoUrl: null,
+              unitPrice,
               storeSplits,
               paymentMethod,
-            });
-          }}
-          onMarkNa={(skuId) =>
-            setUnavailableFor({ runId: activeRun.id, skuId })
-          }
-          onEditPurchased={openPurchaseEdit}
-          paymentBusySkuId={paymentBusySkuId}
-          onSetPaymentMethod={(item, next) => {
-            // Correcting the method of an ALREADY purchased row goes
-            // through revisePurchase, NOT the inline purchase path.
-            //
-            // purchaseItem reaches PurchaseItem, which has no
-            // already-purchased guard and emits a fresh ItemPurchased.
-            // The projection then appends an UNDEDUPED price_history row
-            // per tap (insertPriceObservations does a bare insert) and
-            // upserts run_item_stores_v with
-            // `unitPrice: split.unitPrice ?? null`, so a single tap on a
-            // row carrying per-store price overrides would erase them.
-            // revisePurchase is the command that exists for this; its
-            // schema requires a reason, hence the canned localized one.
-            const rows = (runDetailQuery.data?.splits ?? []).filter(
-              (sp) => sp.skuId === item.skuId,
-            );
-            // A row with per-store payment overrides has no single
-            // method to flip — send it to the sheet, where those fields
-            // exist. (The row already renders a static indicator in that
-            // case; this is defence in depth.)
-            if (
-              rows.some((sp) => sp.paymentMethod) ||
-              !item.unitPrice ||
-              !item.purchasedQty
-            ) {
-              openPurchaseEdit(item);
-              return;
-            }
-            const storeSplits = rows
-              .filter((sp) => Number(sp.qty) > 0)
-              // Preserve per-store PRICE overrides; omit paymentMethod
-              // so the projection writes null, which is what it already
-              // was on every split of this row.
-              .map((sp) => ({
-                storeId: sp.storeId,
-                qty: sp.qty,
-                ...(sp.unitPrice ? { unitPrice: sp.unitPrice } : {}),
-              }));
-            if (storeSplits.length === 0) {
-              openPurchaseEdit(item);
-              return;
-            }
-            setPaymentBusySkuId(item.skuId);
-            paymentFlipInFlight.current = true;
-            revisePurchase.mutate(
-              {
+              supplierId,
+            }) => {
+              // Direct in-page save — no sheet involved. Triggered when
+              // the user blurs the price input on a row whose qty
+              // matches planned. Splits come from per-store demand.
+              // M1.14: paymentMethod comes from the in-row toggle
+              // (defaults to 'cash'; user can flip to 'transfer' before
+              // saving for the relatively rare transfer items).
+              setInlineSavingSkuId(skuId);
+              purchaseItem.mutate({
                 runId: activeRun.id,
-                skuId: item.skuId,
-                supplierId: item.supplierId ?? null,
-                unitPrice: item.unitPrice,
-                actualQty: item.purchasedQty,
-                receiptPhotoUrl: item.receiptPhotoUrl ?? null,
+                skuId,
+                // 2026-07-26: was hard-coded null, so every inline save wrote
+                // price_history.supplier_id = NULL (runProjection.ts:678 takes
+                // it straight off the event payload). That made "what did I pay
+                // for this at THIS stall last time" permanently unanswerable —
+                // the only price history we had was per-SKU-global.
+                //
+                // Only the by-stall view supplies it (see PerVendorView's
+                // onSave wrapper). The aggregate / by-store / by-category views
+                // have no stall context, and a SKU's *preferred* supplier is a
+                // guess about where the purchase happened — recording a guess
+                // would poison the very history this is meant to build, so
+                // those paths still send null. A gap beats a lie.
+                supplierId: supplierId ?? null,
+                unitPrice,
+                actualQty,
+                receiptPhotoUrl: null,
                 storeSplits,
-                paymentMethod: next,
-                reason: i18n.t('run.reason.paymentMethodChanged'),
-              },
-              {
-                onSettled: () => {
-                  setPaymentBusySkuId(null);
-                  paymentFlipInFlight.current = false;
+                paymentMethod,
+              });
+            }}
+            onMarkNa={(skuId) => setUnavailableFor({ runId: activeRun.id, skuId })}
+            onEditPurchased={openPurchaseEdit}
+            paymentBusySkuId={paymentBusySkuId}
+            onSetPaymentMethod={(item, next) => {
+              // Correcting the method of an ALREADY purchased row goes
+              // through revisePurchase, NOT the inline purchase path.
+              //
+              // purchaseItem reaches PurchaseItem, which has no
+              // already-purchased guard and emits a fresh ItemPurchased.
+              // The projection then appends an UNDEDUPED price_history row
+              // per tap (insertPriceObservations does a bare insert) and
+              // upserts run_item_stores_v with
+              // `unitPrice: split.unitPrice ?? null`, so a single tap on a
+              // row carrying per-store price overrides would erase them.
+              // revisePurchase is the command that exists for this; its
+              // schema requires a reason, hence the canned localized one.
+              const rows = (runDetailQuery.data?.splits ?? []).filter(
+                (sp) => sp.skuId === item.skuId,
+              );
+              // A row with per-store payment overrides has no single
+              // method to flip — send it to the sheet, where those fields
+              // exist. (The row already renders a static indicator in that
+              // case; this is defence in depth.)
+              if (rows.some((sp) => sp.paymentMethod) || !item.unitPrice || !item.purchasedQty) {
+                openPurchaseEdit(item);
+                return;
+              }
+              const storeSplits = rows
+                .filter((sp) => Number(sp.qty) > 0)
+                // Preserve per-store PRICE overrides; omit paymentMethod
+                // so the projection writes null, which is what it already
+                // was on every split of this row.
+                .map((sp) => ({
+                  storeId: sp.storeId,
+                  qty: sp.qty,
+                  ...(sp.unitPrice ? { unitPrice: sp.unitPrice } : {}),
+                }));
+              if (storeSplits.length === 0) {
+                openPurchaseEdit(item);
+                return;
+              }
+              setPaymentBusySkuId(item.skuId);
+              paymentFlipInFlight.current = true;
+              revisePurchase.mutate(
+                {
+                  runId: activeRun.id,
+                  skuId: item.skuId,
+                  supplierId: item.supplierId ?? null,
+                  unitPrice: item.unitPrice,
+                  actualQty: item.purchasedQty,
+                  receiptPhotoUrl: item.receiptPhotoUrl ?? null,
+                  storeSplits,
+                  paymentMethod: next,
+                  reason: i18n.t('run.reason.paymentMethodChanged'),
                 },
-              },
-            );
-          }}
-          onUnmark={(skuId, skuName) =>
-            setConfirmAction({ kind: 'unmarkUnavailable', skuId, skuName })
-          }
-          onOpenAdvancedPurchase={(item) => {
-            // User changed qty from planned (or no per-store demand
-            // info available) — open the full PurchaseSheet so they
-            // can manually allocate across stores. Pre-fill with
-            // demand if known.
-            const splits = new Map<string, string>();
-            const demand =
-              runDetailQuery.data?.perStoreDemand?.filter(
-                (d) => d.skuId === item.skuId,
-              ) ?? [];
-            for (const d of demand) splits.set(d.storeId, d.qty);
-            // Fallback to first store with the planned qty if no demand
-            // info (legacy runs that were planned before perStoreDemand
-            // existed).
-            if (splits.size === 0) {
-              const firstStore = storesQuery.data?.[0]?.id ?? '';
-              if (firstStore) splits.set(firstStore, item.plannedQty);
+                {
+                  onSettled: () => {
+                    setPaymentBusySkuId(null);
+                    paymentFlipInFlight.current = false;
+                  },
+                },
+              );
+            }}
+            onUnmark={(skuId, skuName) =>
+              setConfirmAction({ kind: 'unmarkUnavailable', skuId, skuName })
             }
-            setPurchaseDraft({
-              isEdit: false,
-              skuId: item.skuId,
-              runId: activeRun.id,
-              unitPrice: '',
-              actualQty: item.plannedQty,
-              supplierId: null,
-              splits,
-              splitPrices: new Map(),
-              splitPaymentMethods: new Map(),
-              perStorePricing: false,
-              receiptPhotoUrl: null,
-              reason: '',
-              // M1.14: cash default; user flips to transfer in the sheet.
-              paymentMethod: 'cash',
-            });
-          }}
-          onDeliverStore={(storeId, storeName) =>
-            setConfirmAction({ kind: 'deliverStore', storeId, storeName })
-          }
-          onRecallStore={(storeId, storeName) =>
-            setConfirmAction({ kind: 'recallDelivery', storeId, storeName })
-          }
-          onMarkExtraStatus={(sessionId, extraIndex, status) =>
-            markExtraStatus.mutate({ sessionId, extraIndex, status })
-          }
-          onRecordExtraExpense={(storeId, extra) => {
-            setAddItemDraft({
-              mode: 'expense',
-              runId: activeRun.id,
-              skuId: null,
-              supplierId: null,
-              skuCostMode: 'merge',
-              expenseId: newClientId(),
-              label: extra.name,
-              unitHint: extra.unit,
-              expenseScope: 'store',
-              actualQty: extra.qty || '1',
-              unitPrice: '',
-              splits: new Map([[storeId, extra.qty || '1']]),
-              splitPrices: new Map(),
-              splitPaymentMethods: new Map(),
-              perStorePricing: false,
-              paymentMethod: 'cash',
-              receiptPhotoUrl: null,
-              reason: i18n.t('run.extras.recordExpenseReason'),
-            });
-          }}
-          onRemoveExpense={(expenseId) =>
-            removeExpense.mutate({
-              runId: activeRun.id,
-              expenseId,
-              reason: '',
-            })
-          }
-          onOpenExpense={() =>
-            setAddItemDraft({
-              mode: 'expense',
-              runId: activeRun.id,
-              skuId: null,
-              supplierId: null,
-              skuCostMode: 'merge',
-              expenseId: newClientId(),
-              label: '',
-              unitHint: '',
-              expenseScope: 'shared',
-              actualQty: '1',
-              unitPrice: '',
-              splits: new Map(),
-              splitPrices: new Map(),
-              splitPaymentMethods: new Map(),
-              perStorePricing: false,
-              paymentMethod: 'cash',
-              receiptPhotoUrl: null,
-              reason: '',
-            })
-          }
-        />
-      ) : null}
+            onOpenAdvancedPurchase={(item) => {
+              // User changed qty from planned (or no per-store demand
+              // info available) — open the full PurchaseSheet so they
+              // can manually allocate across stores. Pre-fill with
+              // demand if known.
+              const splits = new Map<string, string>();
+              const demand =
+                runDetailQuery.data?.perStoreDemand?.filter((d) => d.skuId === item.skuId) ?? [];
+              for (const d of demand) splits.set(d.storeId, d.qty);
+              // Fallback to first store with the planned qty if no demand
+              // info (legacy runs that were planned before perStoreDemand
+              // existed).
+              if (splits.size === 0) {
+                const firstStore = storesQuery.data?.[0]?.id ?? '';
+                if (firstStore) splits.set(firstStore, item.plannedQty);
+              }
+              setPurchaseDraft({
+                isEdit: false,
+                skuId: item.skuId,
+                runId: activeRun.id,
+                unitPrice: '',
+                actualQty: item.plannedQty,
+                supplierId: null,
+                splits,
+                splitPrices: new Map(),
+                splitPaymentMethods: new Map(),
+                perStorePricing: false,
+                receiptPhotoUrl: null,
+                reason: '',
+                // M1.14: cash default; user flips to transfer in the sheet.
+                paymentMethod: 'cash',
+              });
+            }}
+            onDeliverStore={(storeId, storeName) =>
+              setConfirmAction({ kind: 'deliverStore', storeId, storeName })
+            }
+            onRecallStore={(storeId, storeName) =>
+              setConfirmAction({ kind: 'recallDelivery', storeId, storeName })
+            }
+            onMarkExtraStatus={(sessionId, extraIndex, status) =>
+              markExtraStatus.mutate({ sessionId, extraIndex, status })
+            }
+            onRecordExtraExpense={(storeId, extra) => {
+              setAddItemDraft({
+                mode: 'expense',
+                runId: activeRun.id,
+                skuId: null,
+                supplierId: null,
+                skuCostMode: 'merge',
+                expenseId: newClientId(),
+                label: extra.name,
+                unitHint: extra.unit,
+                expenseScope: 'store',
+                actualQty: extra.qty || '1',
+                unitPrice: '',
+                splits: new Map([[storeId, extra.qty || '1']]),
+                splitPrices: new Map(),
+                splitPaymentMethods: new Map(),
+                perStorePricing: false,
+                paymentMethod: 'cash',
+                receiptPhotoUrl: null,
+                reason: i18n.t('run.extras.recordExpenseReason'),
+              });
+            }}
+            onRemoveExpense={(expenseId) =>
+              removeExpense.mutate({
+                runId: activeRun.id,
+                expenseId,
+                reason: '',
+              })
+            }
+            onOpenExpense={() =>
+              setAddItemDraft({
+                mode: 'expense',
+                runId: activeRun.id,
+                skuId: null,
+                supplierId: null,
+                skuCostMode: 'merge',
+                expenseId: newClientId(),
+                label: '',
+                unitHint: '',
+                expenseScope: 'shared',
+                actualQty: '1',
+                unitPrice: '',
+                splits: new Map(),
+                splitPrices: new Map(),
+                splitPaymentMethods: new Map(),
+                perStorePricing: false,
+                paymentMethod: 'cash',
+                receiptPhotoUrl: null,
+                reason: '',
+              })
+            }
+          />
+        ) : null}
 
-      {/* History section removed 2026-07-30 — it is the 历史 tab now.
+        {/* History section removed 2026-07-30 — it is the 历史 tab now.
           It had been the ONLY route to purchase history, which meant
           history inherited this page's `run.purchase` gate and no
           store manager could reach their own store's spend. Moving it
@@ -2175,9 +2160,7 @@ export function RunPage() {
             // Falls back to addPurchaserItem when the SKU is truly
             // new to the run (the only path that creates a fresh
             // purchaser-added row).
-            const existingItem = runDetailQuery.data?.items.find(
-              (it) => it.skuId === d.skuId,
-            );
+            const existingItem = runDetailQuery.data?.items.find((it) => it.skuId === d.skuId);
             const existingSplits = (runDetailQuery.data?.splits ?? []).filter(
               (sp) => sp.skuId === d.skuId,
             );
@@ -2185,10 +2168,7 @@ export function RunPage() {
             const overlapsExistingStore = storeSplits.some((sp) =>
               existingStoreIds.has(sp.storeId),
             );
-            if (
-              existingItem &&
-              (d.skuCostMode === 'separateExpense' || overlapsExistingStore)
-            ) {
+            if (existingItem && (d.skuCostMode === 'separateExpense' || overlapsExistingStore)) {
               const sku = skusQuery.data?.find((s) => s.id === d.skuId) ?? null;
               addExpense.mutate({
                 runId: d.runId,
@@ -2239,9 +2219,7 @@ export function RunPage() {
                   receiptPhotoUrl: d.receiptPhotoUrl,
                   storeSplits: combinedSplits,
                   paymentMethod: d.paymentMethod,
-                  reason:
-                    d.reason.trim() ||
-                    i18n.t('run.action.addItem.defaultCrossStoreReason'),
+                  reason: d.reason.trim() || i18n.t('run.action.addItem.defaultCrossStoreReason'),
                 });
                 setAddItemDraft(null);
                 return;
@@ -2343,7 +2321,6 @@ export function RunPage() {
           - Pending store rows: tap → deliver-confirm sheet
           - Delivered store rows: tap → recall-confirm sheet
           - Confirmed store rows: read-only, not tappable. */}
-
     </div>
   );
 }

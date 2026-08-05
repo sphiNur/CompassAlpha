@@ -10,25 +10,32 @@ import { and, eq, gt, isNull, or } from 'drizzle-orm';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
 
-export async function hasGlobalOrgAdmin(db: DB, memberId: string): Promise<boolean> {
+/**
+ * Resolve one permission strictly from active GLOBAL persisted grants.
+ *
+ * The session permission set is intentionally a union across scopes, so it
+ * cannot prove that an organization-wide capability came from an
+ * organization-wide binding. Global overrides follow the usual deny-wins
+ * contract. Store overrides are applied separately when an operation touches
+ * concrete stores.
+ */
+export async function hasGlobalPermission(
+  db: DB,
+  memberId: string,
+  permissionKey: string,
+): Promise<boolean> {
   const now = new Date();
   const [roleGrants, overrides] = await Promise.all([
     db
       .select({ id: s.memberRoleBindings.id })
       .from(s.memberRoleBindings)
-      .innerJoin(
-        s.rolePermissions,
-        eq(s.rolePermissions.roleId, s.memberRoleBindings.roleId),
-      )
+      .innerJoin(s.rolePermissions, eq(s.rolePermissions.roleId, s.memberRoleBindings.roleId))
       .where(
         and(
           eq(s.memberRoleBindings.memberId, memberId),
           eq(s.memberRoleBindings.scopeType, 'global'),
-          eq(s.rolePermissions.permissionKey, 'org.admin'),
-          or(
-            isNull(s.memberRoleBindings.expiresAt),
-            gt(s.memberRoleBindings.expiresAt, now),
-          ),
+          eq(s.rolePermissions.permissionKey, permissionKey),
+          or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, now)),
         ),
       ),
     db
@@ -37,7 +44,7 @@ export async function hasGlobalOrgAdmin(db: DB, memberId: string): Promise<boole
       .where(
         and(
           eq(s.memberPermissionOverrides.memberId, memberId),
-          eq(s.memberPermissionOverrides.permissionKey, 'org.admin'),
+          eq(s.memberPermissionOverrides.permissionKey, permissionKey),
           eq(s.memberPermissionOverrides.scopeType, 'global'),
           or(
             isNull(s.memberPermissionOverrides.expiresAt),
@@ -58,4 +65,8 @@ export async function hasGlobalOrgAdmin(db: DB, memberId: string): Promise<boole
     if (override.effect === 'deny') granted = false;
   }
   return granted;
+}
+
+export async function hasGlobalOrgAdmin(db: DB, memberId: string): Promise<boolean> {
+  return hasGlobalPermission(db, memberId, 'org.admin');
 }

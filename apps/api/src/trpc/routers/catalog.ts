@@ -1,9 +1,10 @@
-import { eq, and } from 'drizzle-orm';
+import { eq, and, inArray, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { schema as s } from '@compass/db';
 import { SkuListInputSchema } from '@compass/contracts';
 import { authedProcedure, router } from '../trpc';
 import { loadSkuPriceStats } from '../../services/priceStats';
+import { getActorStoreIds, getActorStoreIdsForPermission } from '../../services/storeScope';
 
 export const catalogRouter = router({
   categories: authedProcedure.query(async ({ ctx }) => {
@@ -48,14 +49,61 @@ export const catalogRouter = router({
     });
   }),
 
-  stores: authedProcedure.query(async ({ ctx }) => {
-    return ctx.withOrg(async (tx) => {
-      return tx.query.stores.findMany({
-        where: (st, { eq: eq2 }) => eq2(st.orgId, ctx.session!.orgId),
-        orderBy: (st, { asc }) => asc(st.sortIndex),
+  stores: authedProcedure
+    .input(
+      z
+        .object({
+          permission: z
+            .enum(['prices.view', 'run.purchase', 'users.manage', 'settlement.record'])
+            .optional(),
+        })
+        .optional(),
+    )
+    .query(async ({ ctx, input }) => {
+      return ctx.withOrg(async (tx) => {
+        // Store names are themselves tenant data. Resolve scope for the
+        // concrete consumer instead of exposing every org store to any signed-
+        // in employee (especially important for the financial History page).
+        let allowedStoreIds = input?.permission
+          ? await getActorStoreIdsForPermission(
+              tx,
+              ctx.session!.memberId,
+              input.permission,
+              ctx.session!.permissions,
+            )
+          : await getActorStoreIds(tx, ctx.session!.memberId, ctx.session!.permissions);
+        // Settlement routes require BOTH an effective permission and store
+        // assignment (except the persisted org-admin bypass). Keep this
+        // picker query identical to that write boundary: a custom global
+        // settlement grant must not make unassigned stores appear selectable.
+        if (input?.permission === 'settlement.record') {
+          const assignedStoreIds = await getActorStoreIds(
+            tx,
+            ctx.session!.memberId,
+            ctx.session!.permissions,
+          );
+          if (assignedStoreIds !== null) {
+            const assigned = new Set(assignedStoreIds);
+            allowedStoreIds =
+              allowedStoreIds === null
+                ? assignedStoreIds
+                : allowedStoreIds.filter((storeId) => assigned.has(storeId));
+          }
+        }
+        if (allowedStoreIds !== null && allowedStoreIds.length === 0) return [];
+        return tx.query.stores.findMany({
+          where: (st) =>
+            and(
+              eq(st.orgId, ctx.session!.orgId),
+              ...(allowedStoreIds === null ? [] : [inArray(st.id, allowedStoreIds)]),
+              ...(input?.permission === 'settlement.record'
+                ? [eq(st.isActive, true), isNull(st.deletedAt)]
+                : []),
+            ),
+          orderBy: (st, { asc }) => asc(st.sortIndex),
+        });
       });
-    });
-  }),
+    }),
 
   suppliers: authedProcedure.query(async ({ ctx }) => {
     return ctx.withOrg(async (tx) => {

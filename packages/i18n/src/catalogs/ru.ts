@@ -8,6 +8,7 @@ export const ru = {
   'nav.deliver': 'Доставка',
   'nav.confirm': 'Приёмка',
   'nav.history': 'История',
+  'nav.settlement': 'Закрытие',
   'nav.admin': 'Админ',
   'nav.reports': 'Отчёты',
   'nav.debug': 'Отладка',
@@ -120,7 +121,8 @@ export const ru = {
   'ops.maint.resetSheetTitle': 'Сбросить {date}',
   'ops.maint.resetSheetBody': 'Проверьте, что будет удалено, затем подтвердите.',
   'ops.maint.confirmPurgeTitle': 'Подтвердите удаление',
-  'ops.maint.confirmPurgeBody': 'Введите идентификатор рабочего пространства «{slug}» для подтверждения.',
+  'ops.maint.confirmPurgeBody':
+    'Введите идентификатор рабочего пространства «{slug}» для подтверждения.',
   'people.tapToRevoke': 'Нажмите, чтобы отозвать',
   'people.orgLevelEmptyTitle': 'Нет участников уровня организации',
   'people.orgLevelEmptyBody':
@@ -169,8 +171,7 @@ export const ru = {
   'people.transferWhatMirrored':
     'его привязки ролей из исходного магазина воссоздаются в магазине назначения',
   'people.transferWhatNoRoles': 'в магазине назначения привязки ролей не создаются',
-  'people.transferWhatRemoved':
-    'его назначение, привязки и переопределения в {store} удаляются',
+  'people.transferWhatRemoved': 'его назначение, привязки и переопределения в {store} удаляются',
   'people.transferWhatOutro':
     'Другие магазины участника не затрагиваются. При любой ошибке весь перевод откатывается.',
   'people.scopeGlobal': 'Глобально',
@@ -190,8 +191,7 @@ export const ru = {
     'Вы пока не администрируете ни один магазин. Попросите администратора выше по рангу добавить вас.',
   'people.noGrantableTitle': 'Нет ролей для выдачи',
   'people.noGrantableGlobal': 'Все роли уровня организации не ниже вашего ранга ({rank}).',
-  'people.noGrantableStore':
-    'Ваш ранг в выбранных магазинах — {rank}; роли ниже этого ранга нет.',
+  'people.noGrantableStore': 'Ваш ранг в выбранных магазинах — {rank}; роли ниже этого ранга нет.',
   'people.noPermsAssigned': 'Права не назначены.',
   'people.nameOverrideHint':
     'Пользователь не может сменить своё имя после онбординга — администратор всегда может переопределить его здесь.',
@@ -221,8 +221,7 @@ export const ru = {
     'Роль выдана в {n, plural, one {# магазине} few {# магазинах} other {# магазинах}}',
   'people.toastAlreadyHad': '({n} уже имели)',
   'people.toastAlreadyEverywhere': 'Роль уже назначена во всех выбранных областях',
-  'people.permissionCount':
-    '{n, plural, one {# право} few {# права} other {# прав}}',
+  'people.permissionCount': '{n, plural, one {# право} few {# права} other {# прав}}',
   'people.effectiveOverridesLine':
     '{eff} действует · {ov, plural, one {# переопределение} few {# переопределения} other {# переопределений}}',
   'ops.history.skuTotalLine': '{n} SKU · всего {total}',
@@ -263,7 +262,8 @@ export const ru = {
   'ops.purge.runMeta': '{status} · {sessions}',
   'admin.store.sectionAria': 'Раздел магазина',
   'boot.crashTitle': 'Что-то сломалось до отрисовки приложения.',
-  'boot.crashBody': 'Ошибка отправлена. Попробуйте закрыть и снова открыть мини-приложение. Если повторяется — передайте трассировку ниже администратору.',
+  'boot.crashBody':
+    'Ошибка отправлена. Попробуйте закрыть и снова открыть мини-приложение. Если повторяется — передайте трассировку ниже администратору.',
   'boot.tryAgain': 'Повторить',
   'boot.resetAndReload': 'Сбросить сессию и перезагрузить',
   'common.noData': 'Нет данных',
@@ -317,10 +317,8 @@ export const ru = {
   'storeSwitcher.pickStore': 'Выберите магазин',
   'storeSwitcher.allMyStores': 'Все мои магазины',
   'storeSwitcher.allOrgStores': 'Все магазины',
-  'storeSwitcher.allMyHint':
-    'Сводная активность по всем вашим магазинам.',
-  'storeSwitcher.allOrgHint':
-    'Сводная активность по всей организации.',
+  'storeSwitcher.allMyHint': 'Сводная активность по всем вашим магазинам.',
+  'storeSwitcher.allOrgHint': 'Сводная активность по всей организации.',
   'storeSwitcher.aria': 'Сменить магазин',
   'storeSwitcher.pickPrompt.title': 'Сначала выберите магазин',
   'storeSwitcher.pickPrompt.body':
@@ -344,8 +342,7 @@ export const ru = {
 
   // ── 5. Auth errors ─────────────────────────────────────────────
   'auth.errors.botTokenMissing': 'Токен бота не настроен',
-  'auth.errors.invalidInitData':
-    'Сессия Telegram недействительна — переоткройте приложение',
+  'auth.errors.invalidInitData': 'Сессия Telegram недействительна — переоткройте приложение',
   'auth.errors.invalidRefresh': 'Сессия истекла — войдите снова',
   'auth.errors.refreshReplayDetected':
     'Обнаружена подозрительная активность — все сессии этого аккаунта прерваны. Войдите снова.',
@@ -406,8 +403,7 @@ export const ru = {
   'admin.confirm.suspend': 'Приостановить {name}?',
   'admin.confirm.removeFromStore':
     'Удалить {name} из 🏪 {store}?\n\nЭто отзывает роли и переопределения, привязанные к этому магазину. Привязки к другим магазинам сохраняются.',
-  'admin.confirm.removeFromOrg':
-    'Удалить {name} из этой организации? Действие необратимо.',
+  'admin.confirm.removeFromOrg': 'Удалить {name} из этой организации? Действие необратимо.',
   'admin.label.thisStore': 'этот магазин',
   'admin.label.loadingRoles': 'Загрузка ролей…',
   'admin.label.loadingStores': 'Загрузка магазинов…',
@@ -427,8 +423,7 @@ export const ru = {
   'admin.invite.noRoleYet': '— пока без роли (можно выдать позже) —',
   'admin.invite.staffNeedStoreHint':
     'Сотрудникам нужно быть привязанными к магазину, чтобы оформлять заказы.',
-  'admin.invite.onlyYourStoresHint':
-    'Вы можете приглашать только в магазины, которыми управляете.',
+  'admin.invite.onlyYourStoresHint': 'Вы можете приглашать только в магазины, которыми управляете.',
   'admin.invite.adminBypassHint':
     'Администраторы / супер-администраторы по умолчанию видят все магазины — привязка не нужна.',
   'admin.banner.noStoresToInviteInto.title': 'Нет магазинов для приглашения',
@@ -458,52 +453,45 @@ export const ru = {
   'admin.label.fromRole': 'из роли',
   'admin.label.builtIn': 'встроенная',
   'admin.label.defaultRole': 'Роль по умолчанию',
-  'admin.label.memberCount': '{n, plural, one {# участник} few {{n} участника} other {{n} участников}}',
+  'admin.label.memberCount':
+    '{n, plural, one {# участник} few {{n} участника} other {{n} участников}}',
   'admin.workspace.name': 'Название',
   'admin.workspace.slug': 'Идентификатор',
   'admin.workspace.yourRole': 'Ваша роль',
   'admin.workspace.telegram': 'Telegram',
-  'admin.workspace.futureNote': 'Настройки организации (часовой пояс, флаги процессов) появятся в M2.',
+  'admin.workspace.futureNote':
+    'Настройки организации (часовой пояс, флаги процессов) появятся в M2.',
   'auth.errors.sessionStale': 'Сессия устарела — обновите страницу',
   'auth.errors.storeArchived': 'Этот магазин больше не активен',
   'auth.errors.storeForbidden': 'Вы не привязаны к этому магазину',
   'auth.errors.userMissing': 'Пользователь не найден',
-  'auth.errors.cannotGrantEqualOrHigher':
-    'Нельзя выдавать роль вашего уровня или выше',
-  'auth.errors.cannotRevokeEqualOrHigher':
-    'Нельзя отзывать роль вашего уровня или выше',
+  'auth.errors.cannotGrantEqualOrHigher': 'Нельзя выдавать роль вашего уровня или выше',
+  'auth.errors.cannotRevokeEqualOrHigher': 'Нельзя отзывать роль вашего уровня или выше',
   'auth.errors.rateLimited': 'Слишком много попыток — подождите минуту',
   'system.errors.logRateLimited': 'Слишком много клиентских логов — притормозите',
 
   // ── 6. Admin errors ────────────────────────────────────────────
   'admin.errors.bindingNotFound': 'Привязка роли не найдена',
-  'admin.errors.cannotLeaveZeroStores':
-    'У сотрудника должен оставаться хотя бы один магазин',
-  'admin.errors.cannotRemoveLastAdmin':
-    'Нельзя удалить последнего администратора организации',
+  'admin.errors.cannotLeaveZeroStores': 'У сотрудника должен оставаться хотя бы один магазин',
+  'admin.errors.cannotRemoveLastAdmin': 'Нельзя удалить последнего администратора организации',
   'admin.errors.cannotRemoveSelf': 'Нельзя удалить самого себя',
   'admin.errors.cannotRevokeSelfAdmin': 'Нельзя отозвать свою же роль администратора',
   'admin.errors.cannotSuspendSelf': 'Нельзя заблокировать самого себя',
   'admin.errors.categoryNotFound': 'Категория не найдена',
-  'admin.errors.inviteNeedsStore':
-    'Для приглашения не-админа нужен хотя бы один магазин',
+  'admin.errors.inviteNeedsStore': 'Для приглашения не-админа нужен хотя бы один магазин',
   'admin.errors.memberCreateFailed': 'Не удалось создать запись сотрудника',
   'admin.errors.memberNotFound': 'Сотрудник не найден',
   'admin.errors.orgNotFound': 'Организация не найдена',
-  'admin.errors.purgeConfirmMismatch':
-    'Подтверждение не совпало — очистка отменена',
-  'admin.errors.purgeRequiresSuperAdmin':
-    'Очистку данных может выполнять только super-admin',
+  'admin.errors.purgeConfirmMismatch': 'Подтверждение не совпало — очистка отменена',
+  'admin.errors.purgeRequiresSuperAdmin': 'Очистку данных может выполнять только super-admin',
   'admin.errors.orgAdminMustBeGlobal':
     'Роли и права уровня организации можно назначать только глобально',
   'admin.errors.roleNotFound': 'Роль не найдена',
   'admin.errors.runHasForeignSessions':
     'В закупке есть заказы из других магазинов — операция запрещена',
   'admin.errors.runNotFound': 'Закупка не найдена',
-  'admin.errors.scopeStoreIdRequired':
-    'Для роли уровня магазина нужно указать конкретный магазин',
-  'admin.errors.sessionAttachedToRun':
-    'Заказ прикреплён к закупке и не может быть изменён',
+  'admin.errors.scopeStoreIdRequired': 'Для роли уровня магазина нужно указать конкретный магазин',
+  'admin.errors.sessionAttachedToRun': 'Заказ прикреплён к закупке и не может быть изменён',
   'admin.errors.sessionNotFound': 'Заказ не найден',
   'admin.errors.skuNotFound': 'Товар не найден',
   'admin.errors.storeNotFound': 'Магазин не найден',
@@ -514,12 +502,10 @@ export const ru = {
   'admin.errors.roleHasBindings':
     'Эта роль ещё назначена сотрудникам — сначала отзовите назначения',
   'admin.errors.permissionNotFound': 'Право не найдено в справочнике',
-  'admin.errors.notAdminOfStore':
-    'Вы не администрируете этот магазин — операция запрещена',
+  'admin.errors.notAdminOfStore': 'Вы не администрируете этот магазин — операция запрещена',
   'admin.errors.cannotInviteOrgAdminAsStoreAdmin':
     'Назначить роль уровня организации может только администратор организации',
-  'admin.errors.transferSameStore':
-    'Магазин-источник и магазин-цель должны различаться',
+  'admin.errors.transferSameStore': 'Магазин-источник и магазин-цель должны различаться',
   'admin.errors.defaultRoleMustBeStoreTier':
     'Роль по умолчанию должна быть на уровне магазина — admin/super_admin не подходят',
 
@@ -588,13 +574,12 @@ export const ru = {
   'order.banner.claimedAfterHandoff': 'Проверяет {who} (принял от {prev})',
   'order.banner.editLocked': 'Редактирование заблокировано',
   'order.banner.approved.title': 'Одобрено · ждёт закупки',
-  'order.banner.approved.body':
-    'Менеджер одобрил заказ. Закупщик включит его в следующую закупку.',
+  'order.banner.approved.body': 'Менеджер одобрил заказ. Закупщик включит его в следующую закупку.',
   'order.banner.inRun.title': 'В работе · идёт закупка',
-  'order.banner.inRun.body':
-    'Заказ в активной закупке. Получите уведомление, когда доставят.',
+  'order.banner.inRun.body': 'Заказ в активной закупке. Получите уведомление, когда доставят.',
   'order.editedBy': 'изменил {who} · {when}',
-  'order.batches.today': '{n, plural, one {# партия сегодня} few {{n} партии сегодня} other {{n} партий сегодня}}',
+  'order.batches.today':
+    '{n, plural, one {# партия сегодня} few {{n} партии сегодня} other {{n} партий сегодня}}',
   'order.batches.title': 'Партии за сегодня',
   'order.batches.batchLabel': 'Партия {n}',
   'order.batches.newBatch': 'Заказать ещё партию',
@@ -603,8 +588,7 @@ export const ru = {
   'order.withdraw': 'Отозвать',
   'order.actions.addNote': 'Добавить заметку',
   'order.toast.submitted': 'Заказ отправлен ✓',
-  'order.toast.submitFailedNetwork':
-    'Сбой сети — заказ НЕ отправлен. Нажмите «Отправить» ещё раз.',
+  'order.toast.submitFailedNetwork': 'Сбой сети — заказ НЕ отправлен. Нажмите «Отправить» ещё раз.',
   'order.toast.submitFailed': 'Не удалось отправить заказ',
   'order.toast.adjustFailed': 'Не удалось сохранить — повторите',
   'order.toast.syncing': 'Синхронизация — повторите «Отправить»',
@@ -615,8 +599,7 @@ export const ru = {
   'order.review.empty': 'Пока ничего не выбрано.',
   'order.review.reviewSheet.title': 'Проверьте заказ',
   'order.review.estimatedTotal': 'Оценка стоимости',
-  'order.review.estimateHint':
-    '~ среднее за 7 дней · {known} с ценой · {unknown} без цены',
+  'order.review.estimateHint': '~ среднее за 7 дней · {known} с ценой · {unknown} без цены',
 
   // ── Прочие позиции (заметка к сессии, M1.8) ──────────────────────
   'order.notes.label': 'Прочее',
@@ -656,7 +639,8 @@ export const ru = {
   'approval.tabsAriaLabel': 'Фильтр по статусу',
   'approval.submittedBy': 'отправил(а) {name}',
   'approval.itemsCount': '{n, plural, one {# позиция} few {{n} позиции} other {{n} позиций}}',
-  'approval.contributorsCount': '{n, plural, one {# участник} few {{n} участника} other {{n} участников}}',
+  'approval.contributorsCount':
+    '{n, plural, one {# участник} few {{n} участника} other {{n} участников}}',
   'approval.hideItems': 'Скрыть',
   'approval.approve': 'Одобрить',
   'approval.reject': 'Отклонить',
@@ -676,8 +660,7 @@ export const ru = {
   'approval.items.loading': 'Загрузка позиций…',
   'approval.items.failed': 'Не удалось загрузить позиции.',
   'approval.confirm.reject.title': 'Отклонить заказ?',
-  'approval.confirm.reject.body':
-    'Отправитель увидит вашу причину и сможет пересоздать заказ.',
+  'approval.confirm.reject.body': 'Отправитель увидит вашу причину и сможет пересоздать заказ.',
   'approval.confirm.reject.reasonPlaceholder': 'например: дублирующий заказ',
   'approval.confirm.unapprove.title': 'Отменить одобрение?',
   'approval.confirm.unapprove.body':
@@ -760,7 +743,8 @@ export const ru = {
   'run.search.itemsPlaceholder': 'Поиск товара или точки…',
   'run.filter.noMatch': 'Ничего не найдено',
   'run.label.confirmedFraction': '{done}/{total} подтверждено',
-  'run.label.itemsHint': '{n, plural, one {# позиция} few {{n} позиции} other {{n} позиций}} · {subtitle}',
+  'run.label.itemsHint':
+    '{n, plural, one {# позиция} few {{n} позиции} other {{n} позиций}} · {subtitle}',
   'run.label.itemsCount': '{n, plural, one {# позиция} few {{n} позиции} other {{n} позиций}}',
   'run.label.skuCountAndQty': '{n, plural, one {# SKU} other {{n} SKU}} · {qty}',
   'run.label.splitsMismatch': 'Распределение: {sum} / {target}',
@@ -838,8 +822,7 @@ export const ru = {
   'run.toast.sessionEjected': 'Заявка возвращена на проверку',
   'run.toast.couldNotEjectSession': 'Не удалось вернуть заявку',
   'run.errors.cannotEjectSession': 'Нет прав возвращать заявки из закупки',
-  'run.errors.cannotEjectInStatus':
-    'Заявки можно возвращать только на этапе плана или закупки',
+  'run.errors.cannotEjectInStatus': 'Заявки можно возвращать только на этапе плана или закупки',
   'run.errors.sessionNotInRun': 'Этой заявки нет в данной закупке',
   'run.errors.cannotEjectLastSession': 'Для последней заявки отмените всю закупку',
   'run.errors.noItemsToEject': 'В этой заявке нет SKU для удаления',
@@ -877,11 +860,9 @@ export const ru = {
   // M3.41 (2026-05-21): покупатель добавляет позицию по ходу закупки
   'run.action.addItem.button': '+ Добавить',
   'run.action.addItem.title': 'Добавить позицию в закупку',
-  'run.action.addItem.subtitle':
-    'Записать покупку SKU, которой не было в исходном заказе',
+  'run.action.addItem.subtitle': 'Записать покупку SKU, которой не было в исходном заказе',
   'run.action.addItem.searchPlaceholder': 'Поиск SKU…',
-  'run.action.addItem.noMatch':
-    'Совпадений нет. Позиции, уже включённые в закупку, скрыты.',
+  'run.action.addItem.noMatch': 'Совпадений нет. Позиции, уже включённые в закупку, скрыты.',
   'run.action.addItem.changeSku': 'Сменить',
   'run.action.addItem.targetStore': 'В какой магазин?',
   'run.action.addItem.crossStoreHint':
@@ -894,12 +875,10 @@ export const ru = {
     'напр. Звонок повара / Акция на рынке / Бонус от поставщика',
   'run.action.addItem.save': 'Сохранить',
   'run.label.addedByPurchaser': 'Добавлено покупателем по ходу',
-  'run.confirm.finish.addedByPurchaser':
-    '➕ Добавлено сверх заказа: {n} поз. · {total} UZS',
+  'run.confirm.finish.addedByPurchaser': '➕ Добавлено сверх заказа: {n} поз. · {total} UZS',
   'run.toast.itemAdded': 'Позиция добавлена',
   'run.toast.couldNotAddItem': 'Не удалось добавить позицию',
-  'run.errors.alreadyInRun':
-    'Эта SKU уже в закупке — отредактируйте существующую строку',
+  'run.errors.alreadyInRun': 'Эта SKU уже в закупке — отредактируйте существующую строку',
   'run.errors.storeNotInRun': 'Этот магазин не входит в текущую закупку',
   'run.errors.addReasonRequired': 'Укажите причину добавления',
   // M3.44 (2026-05-22): расходы вне каталога
@@ -909,16 +888,14 @@ export const ru = {
   'run.action.addExpense.subtitle':
     'Грузчик · такси · бонус от поставщика · разовая покупка без SKU',
   'run.action.addExpense.labelInput': 'Название',
-  'run.action.addExpense.labelPlaceholder':
-    'напр. Грузчик / Салфетки / Такси обратно',
+  'run.action.addExpense.labelPlaceholder': 'напр. Грузчик / Салфетки / Такси обратно',
   'run.action.addExpense.unitHint': 'Единица (необязательно)',
   'run.action.addExpense.unitHintPlaceholder': 'напр. поездка / упаковка / —',
   'run.action.addExpense.targetStores': 'Какие магазины платят?',
   'run.action.addExpense.splitHint': 'выбрано {n} · авто-деление поровну',
   'run.action.addExpense.resplitEvenly': 'Разделить поровну',
   'run.action.addExpense.receiptOptional': 'Чек (необязательно)',
-  'run.action.addExpense.receiptRequired':
-    'Чек ОБЯЗАТЕЛЕН (сумма больше {threshold} UZS)',
+  'run.action.addExpense.receiptRequired': 'Чек ОБЯЗАТЕЛЕН (сумма больше {threshold} UZS)',
   'run.action.addExpense.needReceipt': 'Нужно фото чека',
   'run.action.addExpense.save': 'Сохранить расход',
   'run.action.removeExpense': 'Удалить расход',
@@ -926,14 +903,12 @@ export const ru = {
   'run.toast.expenseAdded': 'Расход добавлен',
   'run.toast.expenseRemoved': 'Расход удалён',
   'run.toast.couldNotAddExpense': 'Не удалось сохранить расход',
-  'run.confirm.finish.expenses':
-    '🧾 {n} поз. вне каталога / расходов · {total} UZS',
+  'run.confirm.finish.expenses': '🧾 {n} поз. вне каталога / расходов · {total} UZS',
   'run.confirm.finish.perStoreHeading': 'Расчёт по магазинам:',
   'run.errors.expenseLabelRequired': 'Укажите название',
   'run.errors.expenseLabelTooLong': 'Название слишком длинное (макс 200)',
   'run.errors.expenseReasonRequired': 'Укажите причину',
-  'run.errors.expenseReceiptRequired':
-    'Для суммы больше {threshold} UZS требуется фото чека',
+  'run.errors.expenseReceiptRequired': 'Для суммы больше {threshold} UZS требуется фото чека',
   // C.2 (M3.38, 2026-05-19): баннер захвата закупки.
   'run.banner.claimed': 'Закупкой занимается {who}',
   'run.banner.claimedAfterHandoff': '{prev} → {who} теперь ведёт эту закупку',
@@ -1002,8 +977,7 @@ export const ru = {
   'run.toast.deliveryStarted': 'Начало доставки',
   'run.toast.couldNotPlan': 'Не удалось запланировать закупку',
   'run.toast.purchaseRecorded': 'Покупка записана',
-  'run.toast.purchaseSavedOffline':
-    'Сохранено офлайн — синхронизируется при подключении',
+  'run.toast.purchaseSavedOffline': 'Сохранено офлайн — синхронизируется при подключении',
   'run.toast.syncFailed': 'Сохранённое изменение не удалось синхронизировать — проверьте',
   'run.toast.couldNotSavePurchase': 'Не удалось сохранить покупку',
   'run.toast.markedUnavailable': 'Помечено как «нет»',
@@ -1018,8 +992,7 @@ export const ru = {
   'run.toast.startPurchaseUndone': 'Назад к плану',
   'run.toast.startDeliveryUndone': 'Назад к закупке',
   'run.toast.runFinished': 'Закупка завершена',
-  'run.toast.markIncompleteFirst':
-    'Сначала отметьте каждую позицию как купленную или «нет»',
+  'run.toast.markIncompleteFirst': 'Сначала отметьте каждую позицию как купленную или «нет»',
   'run.toast.storesNeedConfirm': 'Магазины ещё не подтвердили приёмку',
   'run.history.title': 'История',
   'run.history.subtitle': 'Прошлые закупки — нажмите для деталей',
@@ -1058,9 +1031,11 @@ export const ru = {
   'run.action.refinalize': 'Сохранить правки',
   'run.toast.amendSaved': 'Правки сохранены, пересчитано',
   'run.confirm.refinalize.title': 'Сохранить правки?',
-  'run.confirm.refinalize.body': 'Закупка будет пересчитана по исправленным данным. Новая сумма: {total}.',
+  'run.confirm.refinalize.body':
+    'Закупка будет пересчитана по исправленным данным. Новая сумма: {total}.',
   'run.amend.banner': 'Режим правки (супер-админ)',
-  'run.amend.bannerHint': 'Правка завершённой закупки. Нажмите «Сохранить правки» внизу, чтобы пересчитать.',
+  'run.amend.bannerHint':
+    'Правка завершённой закупки. Нажмите «Сохранить правки» внизу, чтобы пересчитать.',
   'run.step.amend': 'Правка',
   'run.amend.reopened': 'Режим правки включён — продолжите на вкладке «Закупка»',
   'run.amend.entryLabel': 'Править эту закупку (супер-админ)',
@@ -1071,6 +1046,7 @@ export const ru = {
   'run.errors.qtyMustBePositive': 'Количество должно быть больше 0',
   'run.errors.splitSumMismatch': 'Сумма по магазинам должна совпадать',
   'run.errors.unavailableNoteRequired': 'Опишите причину отсутствия',
+  'run.errors.itemNotPending': 'Отметить как отсутствующий можно только ожидающий товар',
   'run.errors.noteTooLong': 'Заметка слишком длинная (до 500 символов)',
   'run.errors.notReadyToDeliver': 'Доставку начинать рано',
   'run.errors.itemsPending': 'Есть необработанные позиции',
@@ -1129,8 +1105,7 @@ export const ru = {
   'confirm.toast.storeConfirmed': 'Магазин подтвердил приёмку',
   'confirm.toast.savedOffline': 'Сохранено офлайн — синхронизируется при подключении',
   'confirm.issue.markAs': 'Отметить как {status}',
-  'confirm.issue.describe':
-    'Опишите проблему — закупщик увидит и сможет исправить.',
+  'confirm.issue.describe': 'Опишите проблему — закупщик увидит и сможет исправить.',
   'confirm.issue.placeholder': 'Что не так?',
   'confirm.issue.photoOptional': 'Фото (необязательно)',
   'confirm.issue.save': 'Сохранить',
@@ -1232,16 +1207,14 @@ export const ru = {
   'inventory.sheet.note': 'Заметка',
   'inventory.toast.stocktakeSaved': 'Инвентаризация сохранена.',
   'inventory.toast.wastageSaved': 'Списание записано.',
-  'inventory.errors.cannotAdjust':
-    'Для инвентаризации / списания нужно право inventory.adjust.',
+  'inventory.errors.cannotAdjust': 'Для инвентаризации / списания нужно право inventory.adjust.',
   'inventory.errors.invalidQty': 'Количество должно быть неотрицательным.',
   'inventory.errors.wastageNeedsNote': 'Списание требует причины.',
 
   // ── 17. Dishes / Recipes (M2.0b) ───────────────────────
   'admin.subsection.dishes': 'Блюда',
   'admin.subsection.expenseTemplates': 'Шаблоны расходов',
-  'admin.subsection.expenseTemplatesHint':
-    'Быстрые шаблоны для ежедневных расходов магазинов',
+  'admin.subsection.expenseTemplatesHint': 'Быстрые шаблоны для ежедневных расходов магазинов',
   'admin.action.newExpenseTemplate': '+ Новый шаблон',
   'admin.action.unarchive': 'Восстановить',
   'admin.label.archived': 'В архиве',
@@ -1267,13 +1240,15 @@ export const ru = {
   'admin.errors.expenseTemplateNotFound': 'Шаблон не найден',
   'admin.subsection.dishesHint': 'Меню + рецепт (BOM) для каждого блюда',
   'dishes.empty.title': 'Пока нет блюд',
-  'dishes.empty.description': 'Добавьте блюда меню; рецепт связывает каждое блюдо с ингредиентами SKU.',
+  'dishes.empty.description':
+    'Добавьте блюда меню; рецепт связывает каждое блюдо с ингредиентами SKU.',
   'dishes.action.new': '+ Новое блюдо',
   'dishes.action.showArchived': 'Показать архив',
   'dishes.action.hideArchived': 'Скрыть архив',
   'dishes.action.addIngredient': '+ Ингредиент',
   'dishes.label.noIngredients': 'Нет рецепта',
-  'dishes.label.noIngredientsHint': 'Добавьте ингредиенты — M2.0c автоматически спишет при продаже.',
+  'dishes.label.noIngredientsHint':
+    'Добавьте ингредиенты — M2.0c автоматически спишет при продаже.',
   'dishes.label.ingredientCount': '{n} ингредиентов',
   'dishes.sheet.newTitle': 'Новое блюдо',
   'dishes.sheet.editTitle': 'Изменить блюдо',
@@ -1323,7 +1298,8 @@ export const ru = {
   'run.action.addExpense.scopeTitle': 'Тип расхода',
   'run.action.addExpense.scopeShared': 'Общий расход',
   'run.action.addExpense.scopeStore': 'Расход точки',
-  'run.action.addExpense.scopeSharedHint': 'Равномерно распределяется между всеми точками этой закупки.',
+  'run.action.addExpense.scopeSharedHint':
+    'Равномерно распределяется между всеми точками этой закупки.',
   'run.action.addExpense.scopeStoreHint': 'Вся сумма записывается на выбранную точку.',
   'run.action.addExpense.button': '+ Расход',
   'run.section.sharedExpenses': 'Общие расходы',
@@ -1331,4 +1307,90 @@ export const ru = {
   'run.history.viewAll': 'Вся история',
   'run.history.storePurchases': 'Покупки магазинов за день',
   'run.history.storeItemsHeading': 'Покупки {store} за день',
+  'run.history.searchPlaceholder': 'Поиск закупок',
+  'run.history.filters': 'Фильтры ({n})',
+  'run.history.activeFilters': 'Активные фильтры: {n}',
+  'run.history.clearAll': 'Очистить всё',
+  'run.history.filterTitle': 'Фильтры истории',
+  'run.history.filterDescription': 'Отберите результаты по магазину, дате и способу оплаты.',
+  'run.history.resetFilters': 'Сбросить фильтры',
+  'run.history.applyFilters': 'Применить фильтры',
+  'run.history.storeFilter': 'Магазин',
+  'run.history.dateRange': 'Диапазон дат',
+  'run.history.lastDays': 'Последние {n} дней',
+  'run.history.dateFrom': 'С',
+  'run.history.dateTo': 'По',
+  'run.history.invalidDateRange': 'Дата окончания должна быть не раньше даты начала.',
+  'run.history.paymentFilter': 'Способ оплаты',
+  'run.history.payment.all': 'Все способы',
+  'run.history.payment.cash': 'Наличные',
+  'run.history.payment.transfer': 'Перевод',
+  'run.history.payment.mixed': 'Смешанная оплата',
+  'run.history.sortLabel': 'Сортировка',
+  'run.history.sort.newest': 'Сначала новые',
+  'run.history.sort.oldest': 'Сначала старые',
+  'run.history.noMatches': 'Нет закупок, соответствующих этим фильтрам.',
+  'run.history.resultRange': '{from}–{to} из {total}',
+  'run.history.previousPage': 'Предыдущая страница',
+  'run.history.nextPage': 'Следующая страница',
+
+  // ── 19. Ежедневное закрытие ─────────────────────────────────────────
+  'settlement.title': 'Закрытие дня',
+  'settlement.subtitle': 'Зафиксируйте остатки и обязательства магазина на конец дня.',
+  'settlement.store.label': 'Магазин',
+  'settlement.date.label': 'Рабочая дата',
+  'settlement.date.timezone': 'Часовой пояс магазина: {timezone}',
+  'settlement.group.revenue': 'Выручка',
+  'settlement.group.costs': 'Расходы и зарплата',
+  'settlement.group.procurement': 'Закупки',
+  'settlement.group.cash': 'Закрытие кассы',
+  'settlement.field.onlineRevenue': 'Онлайн-выручка / переводы',
+  'settlement.field.invoicedCashRevenue': 'Наличные с оформленным счётом',
+  'settlement.field.operatingExpenses': 'Операционные расходы',
+  'settlement.field.wagesPaid': 'Выплаченная зарплата',
+  'settlement.field.wagesAccrued': 'Начисленная, но не выплаченная зарплата',
+  'settlement.field.nextPurchaseReserve': 'Резерв на следующую закупку',
+  'settlement.field.priorPurchaseAdjustment': 'Корректировка прошлой закупки',
+  'settlement.field.cashOnHand': 'Наличные в кассе',
+  'settlement.field.note': 'Примечания',
+  'settlement.field.correctionReason': 'Причина исправления',
+  'settlement.field.amountHint': 'Если суммы нет, укажите 0.',
+  'settlement.note.placeholder': 'Необязательное рабочее примечание',
+  'settlement.correction.placeholder': 'Почему данные за этот день исправляются?',
+  'settlement.correction.required': 'Перед сохранением укажите причину исправления.',
+  'settlement.editing.title': 'Редактирование существующего закрытия',
+  'settlement.editing.body': 'Причина исправления обязательна и сохраняется в журнале аудита.',
+  'settlement.purchaseAdjustment.help':
+    'Используйте только для сверки прошлой закупки. Положительная сумма — к доплате, отрицательная — кредит или излишек.',
+  'settlement.purchaseAdjustment.positive': '+ к доплате за закупку',
+  'settlement.purchaseAdjustment.negative': '− кредит или излишек',
+  'settlement.summary.title': 'Итоги расчёта',
+  'settlement.summary.totalRevenue': 'Зафиксированная выручка',
+  'settlement.summary.paidOutflows': 'Оплаченные расходы',
+  'settlement.summary.futureCommitments': 'Будущие обязательства',
+  'settlement.summary.priorPurchaseAdjustment': 'Корректировка прошлой закупки',
+  'settlement.summary.endingCash': 'Остаток наличных',
+  'settlement.recent.title': 'Последние закрытия дня',
+  'settlement.recent.empty': 'Для этого магазина ещё нет закрытий дня.',
+  'settlement.recent.version': 'Версия {version}',
+  'settlement.recent.updatedBy': 'Обновил(а): {name}',
+  'settlement.recent.open': 'Открыть запись',
+  'settlement.save.new': 'Сохранить закрытие дня',
+  'settlement.save.update': 'Сохранить исправление',
+  'settlement.save.saving': 'Сохранение…',
+  'settlement.saved': 'Закрытие дня сохранено',
+  'settlement.action.refresh': 'Обновить запись',
+  'settlement.noEligibleStores.title': 'Нет магазина для закрытия дня',
+  'settlement.noEligibleStores.body':
+    'У вас нет права закрывать день ни в одном назначенном магазине. Попросите руководителя проверить вашу роль.',
+  'settlement.storeRequired.title': 'Выберите один магазин',
+  'settlement.storeRequired.body':
+    'Закрытие дня ведётся отдельно для каждого магазина. Выберите конкретный магазин вместо всех.',
+  'settlement.errors.invalidMoney': 'Введите корректную сумму, не более двух знаков после запятой.',
+  'settlement.errors.stores': 'Не удалось загрузить магазины для закрытия дня.',
+  'settlement.errors.businessDate': 'Не удалось загрузить рабочую дату магазина.',
+  'settlement.errors.save': 'Не удалось сохранить закрытие дня. Повторите попытку.',
+  'settlement.errors.versionConflict': 'Это закрытие дня было изменено в другом месте.',
+  'settlement.errors.versionConflictBody':
+    'Обновите запись и проверьте последнюю версию перед сохранением исправления.',
 } as const satisfies Record<CatalogKey, string>;

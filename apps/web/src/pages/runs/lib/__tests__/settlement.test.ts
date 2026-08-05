@@ -24,7 +24,9 @@ describe('splitUnitPrice / splitPaymentMethod fallbacks', () => {
     expect(splitUnitPrice({ unitPrice: '200' }, { unitPrice: '100' })).toBe('200');
     expect(splitUnitPrice({}, { unitPrice: '100' })).toBe('100');
     expect(splitUnitPrice({}, {})).toBeNull();
-    expect(splitPaymentMethod({ paymentMethod: 'transfer' }, { paymentMethod: 'cash' })).toBe('transfer');
+    expect(splitPaymentMethod({ paymentMethod: 'transfer' }, { paymentMethod: 'cash' })).toBe(
+      'transfer',
+    );
     expect(splitPaymentMethod({}, { paymentMethod: 'transfer' })).toBe('transfer');
     expect(splitPaymentMethod({}, {})).toBe('cash');
   });
@@ -43,18 +45,16 @@ describe('splitSubtotal', () => {
 
 describe('settleItemLine — flat path (no overrides)', () => {
   it('unitPrice × purchasedQty, all cash by default', () => {
-    const r = settleItemLine(
-      { unitPrice: '1000', purchasedQty: '3', paymentMethod: null },
-      [{ qty: '3' }],
-    );
+    const r = settleItemLine({ unitPrice: '1000', purchasedQty: '3', paymentMethod: null }, [
+      { qty: '3' },
+    ]);
     expect(r).toEqual({ line: 3000, cash: 3000, transfer: 0 });
   });
 
   it('allocates to transfer when the item method is transfer', () => {
-    const r = settleItemLine(
-      { unitPrice: '1000', purchasedQty: '2', paymentMethod: 'transfer' },
-      [{ qty: '2' }],
-    );
+    const r = settleItemLine({ unitPrice: '1000', purchasedQty: '2', paymentMethod: 'transfer' }, [
+      { qty: '2' },
+    ]);
     expect(r).toEqual({ line: 2000, cash: 0, transfer: 2000 });
   });
 });
@@ -64,24 +64,18 @@ describe('settleItemLine — override path', () => {
     // Two splits; only one carries an override price. The line becomes
     // the sum of BOTH split subtotals (the un-overridden one falls back
     // to the item price), NOT unitPrice × purchasedQty.
-    const r = settleItemLine(
-      { unitPrice: '100', purchasedQty: '5', paymentMethod: 'cash' },
-      [
-        { qty: '2', unitPrice: '150' }, // 300, cash (falls back to item method)
-        { qty: '3' }, //                   300, cash (falls back to item price)
-      ],
-    );
+    const r = settleItemLine({ unitPrice: '100', purchasedQty: '5', paymentMethod: 'cash' }, [
+      { qty: '2', unitPrice: '150' }, // 300, cash (falls back to item method)
+      { qty: '3' }, //                   300, cash (falls back to item price)
+    ]);
     expect(r).toEqual({ line: 600, cash: 600, transfer: 0 });
   });
 
   it('mixes cash and transfer per split; parts sum to the line', () => {
-    const r = settleItemLine(
-      { unitPrice: '100', purchasedQty: '5', paymentMethod: 'cash' },
-      [
-        { qty: '2', paymentMethod: 'transfer' }, // 200 transfer (method override triggers path)
-        { qty: '3' }, //                             300 cash
-      ],
-    );
+    const r = settleItemLine({ unitPrice: '100', purchasedQty: '5', paymentMethod: 'cash' }, [
+      { qty: '2', paymentMethod: 'transfer' }, // 200 transfer (method override triggers path)
+      { qty: '3' }, //                             300 cash
+    ]);
     expect(r).toEqual({ line: 500, cash: 300, transfer: 200 });
     expect(r.cash + r.transfer).toBe(r.line);
   });
@@ -90,13 +84,10 @@ describe('settleItemLine — override path', () => {
     // Regression guard: `hasSplitOverrides` checks unitPrice OR
     // paymentMethod — a method-only override must not fall into the
     // flat path (which would ignore per-split allocation).
-    const r = settleItemLine(
-      { unitPrice: '10', purchasedQty: '4', paymentMethod: 'cash' },
-      [
-        { qty: '1', paymentMethod: 'transfer' },
-        { qty: '3', paymentMethod: 'cash' },
-      ],
-    );
+    const r = settleItemLine({ unitPrice: '10', purchasedQty: '4', paymentMethod: 'cash' }, [
+      { qty: '1', paymentMethod: 'transfer' },
+      { qty: '3', paymentMethod: 'cash' },
+    ]);
     expect(r).toEqual({ line: 40, cash: 30, transfer: 10 });
   });
 });
@@ -142,6 +133,31 @@ describe('settlePerStore', () => {
     );
     expect(m.get('A')!.total).toBe(300);
     expect(m.get('B')!.total).toBe(200);
+  });
+
+  it('uses materialized split metadata when the scoped item summary is redacted', () => {
+    const m = settlePerStore(
+      [{ skuId: 'sku-a', status: 'purchased', unitPrice: null, paymentMethod: null }],
+      [
+        {
+          skuId: 'sku-a',
+          storeId: 'A',
+          qty: '2',
+          unitPrice: '150',
+          paymentMethod: 'cash',
+        },
+        {
+          skuId: 'sku-a',
+          storeId: 'B',
+          qty: '1',
+          unitPrice: '200',
+          paymentMethod: 'transfer',
+        },
+      ],
+      [],
+    );
+    expect(m.get('A')).toMatchObject({ total: 300, cash: 300, transfer: 0 });
+    expect(m.get('B')).toMatchObject({ total: 200, cash: 0, transfer: 200 });
   });
 
   it('allocates cash vs transfer per split, and the parts sum to the total', () => {

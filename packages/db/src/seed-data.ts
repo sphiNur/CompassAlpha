@@ -19,7 +19,10 @@ export const PERMISSIONS = [
   //   the org regardless of store binding. Held by admin/super_admin
   //   and any custom head-purchaser role you create.
   { key: 'run.create', description: 'Plan a market run for bound stores' },
-  { key: 'run.create.org', description: 'Plan a market run across the entire org (head purchaser)' },
+  {
+    key: 'run.create.org',
+    description: 'Plan a market run across the entire org (head purchaser)',
+  },
   { key: 'run.purchase', description: 'Mark items purchased / unavailable' },
   { key: 'run.eject_session', description: 'Eject a session from a run' },
   { key: 'run.finish', description: 'Finish a run' },
@@ -57,6 +60,7 @@ export const PERMISSIONS = [
   // to. The `sales.record` mutation also auto-deducts ingredient
   // inventory via the recipe BOM in the same transaction.
   { key: 'sales.record', description: 'Record dish sales at a store' },
+  { key: 'settlement.record', description: 'Record and review a store daily settlement' },
 
   { key: 'users.manage', description: 'Manage members, roles, and bindings' },
   // Granular split of users.manage (added 2026-05-03). Servers
@@ -73,7 +77,10 @@ export const PERMISSIONS = [
   // M1.9, so it couldn't be used as a gate for org-wide writes like
   // SKU/supplier/role create. requireOrgAdmin checks THIS key
   // instead. Manager (rank 60) never holds it.
-  { key: 'org.admin', description: 'Org-tier administrative authority (catalog, roles, org settings)' },
+  {
+    key: 'org.admin',
+    description: 'Org-tier administrative authority (catalog, roles, org settings)',
+  },
   { key: 'system.test_data.purge', description: 'Use the test-data purge tool' },
   { key: 'system.logs.view', description: 'View system + client logs' },
   { key: 'system.impersonate', description: 'Impersonate other users (super_admin)' },
@@ -142,6 +149,7 @@ export const BUILTIN_ROLES = [
       // M2.0c (2026-05-08): managers usually open/close the till
       // themselves; let them record sales without elevating to admin.
       'sales.record',
+      'settlement.record',
     ] as readonly string[],
   },
   {
@@ -159,6 +167,13 @@ export const BUILTIN_ROLES = [
     ] as readonly string[],
   },
   {
+    slug: 'cashier',
+    name: 'Cashier',
+    description: 'Records store sales and completes the daily settlement',
+    rank: 30,
+    permissions: ['sales.record', 'settlement.record'] as readonly string[],
+  },
+  {
     slug: 'staff',
     name: 'Store Staff',
     description: 'Drafts and submits daily order; confirms deliveries',
@@ -167,9 +182,8 @@ export const BUILTIN_ROLES = [
       'order.draft',
       'order.submit',
       'delivery.confirm',
-      // M2.0c (2026-05-08): staff include cashiers / shift leads
-      // who tally end-of-day sales. Per-store override can still
-      // strip this for non-cash-handling roles.
+      // General staff can record sales. Cash handling and financial close
+      // belong to the dedicated cashier role instead.
       'sales.record',
     ] as readonly string[],
   },

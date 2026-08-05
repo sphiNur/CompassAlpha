@@ -8,6 +8,7 @@ import { orderRouter } from './routers/order';
 import { reportRouter } from './routers/report';
 import { runRouter } from './routers/run';
 import { salesRouter } from './routers/sales';
+import { settlementRouter } from './routers/settlement';
 import { systemRouter } from './routers/system';
 import { uploadRouter } from './routers/upload';
 
@@ -32,6 +33,8 @@ export const appRouter = router({
   // M2.0c: sales recording. Closes the ERP loop by auto-deducting
   // ingredient inventory in the same tx that logs the sale event.
   sales: salesRouter,
+  // Per-store daily close: current ledger + append-only API revision history.
+  settlement: settlementRouter,
   system: systemRouter,
   upload: uploadRouter,
 });

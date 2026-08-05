@@ -98,8 +98,7 @@ export function ActivitySection() {
                 e.type === 'ClaimReleased'
                   ? (e.payload as { reason?: string } | null)?.reason
                   : undefined;
-              const isIntervention =
-                claimReason === 'override' || claimReason === 'timeout';
+              const isIntervention = claimReason === 'override' || claimReason === 'timeout';
               const rowBg = isIntervention
                 ? 'bg-[oklch(97%_0.07_75)] ring-[oklch(35%_0.16_75)]/20'
                 : 'bg-[var(--c-surface)] ring-hairline';
@@ -195,10 +194,7 @@ export function HistorySection() {
   return (
     <div className="px-4 py-3">
       <div className="mb-3">
-        <Select
-          value={storeFilter ?? ''}
-          onChange={(e) => setStoreFilter(e.target.value || null)}
-        >
+        <Select value={storeFilter ?? ''} onChange={(e) => setStoreFilter(e.target.value || null)}>
           <option value="">All stores</option>
           {(stores.data ?? []).map((st) => (
             <option key={st.id} value={st.id}>
@@ -277,9 +273,7 @@ export function HistorySection() {
                     {r.reviewMinutes !== null ? (
                       <span>· decided in {r.reviewMinutes} min</span>
                     ) : null}
-                    {r.decidedByName ? (
-                      <span>· by {r.decidedByName}</span>
-                    ) : null}
+                    {r.decidedByName ? <span>· by {r.decidedByName}</span> : null}
                   </div>
                   {isOpen ? (
                     <div className="border-t border-[var(--c-divider)] px-4 py-2">
@@ -360,22 +354,16 @@ function TargetedPurgeBrowser() {
   const errToast = useErrToast();
   const i18n = useI18n();
 
-  const [sessionTarget, setSessionTarget] = useState<
-    | {
-        sessionId: string;
-        label: string;
-        preview?: { total: number; byTable: Record<string, number> };
-      }
-    | null
-  >(null);
-  const [runTarget, setRunTarget] = useState<
-    | {
-        runId: string;
-        label: string;
-        preview?: { total: number; byTable: Record<string, number>; sessionIds: string[] };
-      }
-    | null
-  >(null);
+  const [sessionTarget, setSessionTarget] = useState<{
+    sessionId: string;
+    label: string;
+    preview?: { total: number; byTable: Record<string, number> };
+  } | null>(null);
+  const [runTarget, setRunTarget] = useState<{
+    runId: string;
+    label: string;
+    preview?: { total: number; byTable: Record<string, number>; sessionIds: string[] };
+  } | null>(null);
 
   const sessionDryRun = trpc.admin.purgeSession.useMutation({
     onSuccess: (data) => {
@@ -510,9 +498,7 @@ function TargetedPurgeBrowser() {
                       </div>
                     </div>
                     {inRun ? (
-                      <span className="text-tiny text-[var(--c-fg-muted)]">
-                        in&nbsp;run
-                      </span>
+                      <span className="text-tiny text-[var(--c-fg-muted)]">in&nbsp;run</span>
                     ) : (
                       <Button
                         size="sm"
@@ -634,7 +620,10 @@ function TargetedPurgeBrowser() {
               <Spinner size={14} /> Counting…
             </div>
           ) : sessionTarget?.preview ? (
-            <CascadePreview byTable={sessionTarget.preview.byTable} total={sessionTarget.preview.total} />
+            <CascadePreview
+              byTable={sessionTarget.preview.byTable}
+              total={sessionTarget.preview.total}
+            />
           ) : null}
         </div>
       </Sheet>
@@ -689,13 +678,7 @@ function TargetedPurgeBrowser() {
   );
 }
 
-function CascadePreview({
-  byTable,
-  total,
-}: {
-  byTable: Record<string, number>;
-  total: number;
-}) {
+function CascadePreview({ byTable, total }: { byTable: Record<string, number>; total: number }) {
   return (
     <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
       <div className="text-body font-semibold text-[var(--c-fg)]">
@@ -839,9 +822,7 @@ export function AdminAuditSection() {
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-baseline gap-2">
                         <Badge tone={tone}>{verb}</Badge>
-                        <span className="text-body font-semibold text-[var(--c-fg)]">
-                          {obj}
-                        </span>
+                        <span className="text-body font-semibold text-[var(--c-fg)]">{obj}</span>
                         {r.resourceId ? (
                           <span className="font-mono text-label text-[var(--c-fg-muted)]">
                             {r.resourceId.slice(0, 8)}…
@@ -940,9 +921,7 @@ export function PriceReportSection() {
         // Delta = (last − avg30) / avg30, signed. Used for the trend
         // arrow + tone. Skip when either side is unknown.
         const deltaPct =
-          last !== null && avg30 && avg30 > 0
-            ? ((last - avg30) / avg30) * 100
-            : null;
+          last !== null && avg30 && avg30 > 0 ? ((last - avg30) / avg30) * 100 : null;
         return {
           skuId: r.skuId,
           name,
@@ -986,9 +965,7 @@ export function PriceReportSection() {
             const arrow =
               r.deltaPct === null ? '·' : r.deltaPct > 0 ? '▲' : r.deltaPct < 0 ? '▼' : '·';
             const deltaLabel =
-              r.deltaPct === null
-                ? '—'
-                : `${r.deltaPct > 0 ? '+' : ''}${r.deltaPct.toFixed(1)}%`;
+              r.deltaPct === null ? '—' : `${r.deltaPct > 0 ? '+' : ''}${r.deltaPct.toFixed(1)}%`;
             return (
               <li
                 key={r.skuId}
@@ -1059,7 +1036,7 @@ export function FinanceSection() {
   const productName = useProductName();
   const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: true });
   const suppliersQuery = trpc.admin.supplierList.useQuery();
-  const storesQuery = trpc.catalog.stores.useQuery();
+  const storesQuery = trpc.catalog.stores.useQuery({ permission: 'users.manage' });
 
   // Date range. Default to "this month" since that's the most common
   // reconciliation cadence (monthly bank statement vs. cash drawer
@@ -1218,7 +1195,7 @@ export function FinanceSection() {
           `#${l.runIndex + 1}`,
           skuName,
           storeById.get(l.storeId) ?? l.storeId.slice(0, 8),
-          l.supplierId ? supplierById.get(l.supplierId) ?? l.supplierId.slice(0, 8) : '—',
+          l.supplierId ? (supplierById.get(l.supplierId) ?? l.supplierId.slice(0, 8)) : '—',
           l.paymentMethod,
           l.qty,
           l.unitPrice,
@@ -1283,9 +1260,7 @@ export function FinanceSection() {
       {totalsQuery.data ? (
         <div className="mb-3 grid grid-cols-3 gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3">
           <div>
-            <SectionLabel padded={false}>
-              {i18n.t('run.label.paymentCash')}
-            </SectionLabel>
+            <SectionLabel padded={false}>{i18n.t('run.label.paymentCash')}</SectionLabel>
             <div className="font-mono text-h2 font-semibold tabular-nums">
               {formatMoney(totalsQuery.data.totalCash)}
             </div>
@@ -1294,9 +1269,7 @@ export function FinanceSection() {
             </div>
           </div>
           <div>
-            <SectionLabel padded={false}>
-              {i18n.t('run.label.paymentTransfer')}
-            </SectionLabel>
+            <SectionLabel padded={false}>{i18n.t('run.label.paymentTransfer')}</SectionLabel>
             <div className="font-mono text-h2 font-semibold tabular-nums">
               {formatMoney(totalsQuery.data.totalTransfer)}
             </div>
@@ -1305,9 +1278,7 @@ export function FinanceSection() {
             </div>
           </div>
           <div>
-            <SectionLabel padded={false}>
-              Σ {i18n.t('finance.label.total')}
-            </SectionLabel>
+            <SectionLabel padded={false}>Σ {i18n.t('finance.label.total')}</SectionLabel>
             <div className="font-mono text-h2 font-semibold tabular-nums">
               {formatMoney(totalsQuery.data.total)}
             </div>
@@ -1390,12 +1361,8 @@ export function FinanceSection() {
                   <ul className="flex flex-col border-t border-[var(--c-divider)]" role="list">
                     {g.lines.map((l, i) => {
                       const sku = skuById.get(l.skuId);
-                      const skuName = sku
-                        ? productName({ names: sku.names })
-                        : l.skuId.slice(0, 8);
-                      const supplier = l.supplierId
-                        ? supplierById.get(l.supplierId) ?? '—'
-                        : '—';
+                      const skuName = sku ? productName({ names: sku.names }) : l.skuId.slice(0, 8);
+                      const supplier = l.supplierId ? (supplierById.get(l.supplierId) ?? '—') : '—';
                       const store = storeById.get(l.storeId) ?? l.storeId.slice(0, 8);
                       return (
                         <li
@@ -1435,7 +1402,7 @@ export function FinanceSection() {
             const key = g.supplierId ?? '__none';
             const isOpen = expanded === key;
             const name = g.supplierId
-              ? supplierById.get(g.supplierId) ?? g.supplierId.slice(0, 8)
+              ? (supplierById.get(g.supplierId) ?? g.supplierId.slice(0, 8))
               : `— ${i18n.t('finance.label.noSupplier')}`;
             const mixed = g.cash > 0 && g.transfer > 0;
             return (
@@ -1467,9 +1434,7 @@ export function FinanceSection() {
                   <ul className="flex flex-col border-t border-[var(--c-divider)]" role="list">
                     {g.lines.map((l, i) => {
                       const sku = skuById.get(l.skuId);
-                      const skuName = sku
-                        ? productName({ names: sku.names })
-                        : l.skuId.slice(0, 8);
+                      const skuName = sku ? productName({ names: sku.names }) : l.skuId.slice(0, 8);
                       return (
                         <li
                           key={`${l.runId}-${l.skuId}-${l.storeId}-${i}`}
@@ -1482,9 +1447,7 @@ export function FinanceSection() {
                               : i18n.t('run.label.paymentCash')}{' '}
                             {skuName}
                           </span>
-                          <span className="font-mono tabular-nums">
-                            {formatMoney(l.lineTotal)}
-                          </span>
+                          <span className="font-mono tabular-nums">{formatMoney(l.lineTotal)}</span>
                         </li>
                       );
                     })}
@@ -1529,9 +1492,7 @@ export function FinanceSection() {
                   <ul className="flex flex-col border-t border-[var(--c-divider)]" role="list">
                     {g.lines.map((l, i) => {
                       const sku = skuById.get(l.skuId);
-                      const skuName = sku
-                        ? productName({ names: sku.names })
-                        : l.skuId.slice(0, 8);
+                      const skuName = sku ? productName({ names: sku.names }) : l.skuId.slice(0, 8);
                       return (
                         <li
                           key={`${l.runId}-${l.skuId}-${l.storeId}-${i}`}
@@ -1544,9 +1505,7 @@ export function FinanceSection() {
                               : i18n.t('run.label.paymentCash')}{' '}
                             {skuName}
                           </span>
-                          <span className="font-mono tabular-nums">
-                            {formatMoney(l.lineTotal)}
-                          </span>
+                          <span className="font-mono tabular-nums">{formatMoney(l.lineTotal)}</span>
                         </li>
                       );
                     })}
@@ -1573,7 +1532,11 @@ export function MaintenanceSection() {
 
   // ---- by-date purge state ----
   const [dateInput, setDateInput] = useState<string>(todayIso());
-  const [datePreview, setDatePreview] = useState<{ date: string; total: number; byTable: Record<string, number> } | null>(null);
+  const [datePreview, setDatePreview] = useState<{
+    date: string;
+    total: number;
+    byTable: Record<string, number>;
+  } | null>(null);
   const [dateConfirmOpen, setDateConfirmOpen] = useState(false);
 
   const datePreviewMut = trpc.admin.purgeByDate.useMutation({
@@ -1602,7 +1565,12 @@ export function MaintenanceSection() {
   });
   const allCommit = trpc.admin.purgeAllTestData.useMutation({
     onSuccess: (data) => {
-      toast.success(i18n.t('admin.toast.dataPurged', { n: data.total, tables: Object.keys(data.byTable).length }));
+      toast.success(
+        i18n.t('admin.toast.dataPurged', {
+          n: data.total,
+          tables: Object.keys(data.byTable).length,
+        }),
+      );
       setAllOpen(false);
       setConfirmText('');
       void utils.invalidate();
@@ -1639,28 +1607,26 @@ export function MaintenanceSection() {
 
       {/* ============ Reset today (still useful when nothing real yet) ============ */}
       <div className="mt-3">
-      <Card>
-        <div className="flex flex-col gap-3 px-4 py-4">
-          <div>
-            <div className="text-h2 font-semibold text-[var(--c-fg)]">
-              {i18n.t('ops.maint.resetTodayTitle')}
+        <Card>
+          <div className="flex flex-col gap-3 px-4 py-4">
+            <div>
+              <div className="text-h2 font-semibold text-[var(--c-fg)]">
+                {i18n.t('ops.maint.resetTodayTitle')}
+              </div>
+              <p className="mt-0.5 text-body-sm text-[var(--c-fg-muted)]">
+                {i18n.t('ops.maint.resetTodayBody', { date: todayIso() })}
+              </p>
             </div>
-            <p className="mt-0.5 text-body-sm text-[var(--c-fg-muted)]">
-              {i18n.t('ops.maint.resetTodayBody', { date: todayIso() })}
-            </p>
+            <Button
+              size="sm"
+              variant="pearl"
+              loading={datePreviewMut.isPending}
+              onClick={() => datePreviewMut.mutate({ date: todayIso(), dryRun: true })}
+            >
+              {i18n.t('ops.maint.resetToday')}
+            </Button>
           </div>
-          <Button
-            size="sm"
-            variant="pearl"
-            loading={datePreviewMut.isPending}
-            onClick={() =>
-              datePreviewMut.mutate({ date: todayIso(), dryRun: true })
-            }
-          >
-            {i18n.t('ops.maint.resetToday')}
-          </Button>
-        </div>
-      </Card>
+        </Card>
       </div>
 
       {/* ============ Reset another date ============ */}
@@ -1687,9 +1653,7 @@ export function MaintenanceSection() {
                 variant="pearl"
                 loading={datePreviewMut.isPending}
                 disabled={!/^\d{4}-\d{2}-\d{2}$/.test(dateInput)}
-                onClick={() =>
-                  datePreviewMut.mutate({ date: dateInput, dryRun: true })
-                }
+                onClick={() => datePreviewMut.mutate({ date: dateInput, dryRun: true })}
               >
                 {i18n.t('ops.maint.preview')}
               </Button>
@@ -1719,10 +1683,7 @@ export function MaintenanceSection() {
                 variant="pearl"
                 loading={allDryRun.isPending}
                 onClick={() => {
-                  allDryRun.mutate(
-                    { dryRun: true },
-                    { onSuccess: () => setAllOpen(true) },
-                  );
+                  allDryRun.mutate({ dryRun: true }, { onSuccess: () => setAllOpen(true) });
                 }}
               >
                 {i18n.t('ops.maint.previewEverything')}

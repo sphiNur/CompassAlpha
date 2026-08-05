@@ -71,12 +71,14 @@ export const orderSessionsV = readModelSchema.table(
      * Last-write-wins on the whole array — there is no per-item
      * event; SessionExtrasSet overwrites the list atomically.
      */
-    extrasJson: jsonb('extras_json').notNull().default(sql`'[]'::jsonb`),
-    totalsJson: jsonb('totals_json').notNull().default(sql`'{}'::jsonb`),
-    lastSeq: bigint('last_seq', { mode: 'number' }).notNull().default(0),
-    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' })
+    extrasJson: jsonb('extras_json')
       .notNull()
-      .defaultNow(),
+      .default(sql`'[]'::jsonb`),
+    totalsJson: jsonb('totals_json')
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    lastSeq: bigint('last_seq', { mode: 'number' }).notNull().default(0),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
   },
   (t) => ({
     /** M3.32 (2026-05-18): the historical unique was unconditional —
@@ -94,6 +96,10 @@ export const orderSessionsV = readModelSchema.table(
       .where(sql`status = 'draft'`),
     orgStatusDateIdx: index('osv_org_status_date_idx').on(t.orgId, t.status, t.orderDate),
     runIdx: index('osv_run_idx').on(t.runId),
+    /** Store-scoped history visibility/filter lookup. */
+    historyStoreRunIdx: index('osv_history_store_idx')
+      .on(t.orgId, t.storeId, t.runId)
+      .where(sql`run_id IS NOT NULL`),
   }),
 );
 
@@ -154,7 +160,9 @@ export const marketRunsV = readModelSchema.table(
     actualCashTotal: decimal('actual_cash_total', { precision: 14, scale: 2 }),
     actualTransferTotal: decimal('actual_transfer_total', { precision: 14, scale: 2 }),
     purchaserMemberId: uuid('purchaser_member_id'),
-    sessionIdsJson: jsonb('session_ids_json').notNull().default(sql`'[]'::jsonb`),
+    sessionIdsJson: jsonb('session_ids_json')
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     startedAt: timestamp('started_at', { withTimezone: true, mode: 'date' }),
     finishedAt: timestamp('finished_at', { withTimezone: true, mode: 'date' }),
     /**
@@ -167,17 +175,15 @@ export const marketRunsV = readModelSchema.table(
     /** Snapshot of last forcibly-released claimer (override / timeout). */
     previousClaimerMemberId: uuid('previous_claimer_member_id'),
     lastSeq: bigint('last_seq', { mode: 'number' }).notNull().default(0),
-    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' })
-      .notNull()
-      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
   },
   (t) => ({
-    orgDateIndexUnique: uniqueIndex('mrv_org_date_index_unique').on(
-      t.orgId,
-      t.runDate,
-      t.runIndex,
-    ),
+    orgDateIndexUnique: uniqueIndex('mrv_org_date_index_unique').on(t.orgId, t.runDate, t.runIndex),
     orgStatusIdx: index('mrv_org_status_idx').on(t.orgId, t.status, t.runDate),
+    /** Stable finished-history pagination in either chronological direction. */
+    historyPageIdx: index('mrv_history_page_idx')
+      .on(t.orgId, t.runDate.desc(), t.runIndex.desc(), t.id.desc())
+      .where(sql`status = 'finished'`),
     /**
      * At most ONE non-terminal run per org (migration 0035, 2026-07-26).
      *
@@ -242,9 +248,7 @@ export const runItemsV = readModelSchema.table(
      * came from RunPlanned or SessionsAttachedToRun.
      */
     addedByPurchaser: boolean('added_by_purchaser').notNull().default(false),
-    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' })
-      .notNull()
-      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.runId, t.skuId] }),
@@ -329,6 +333,8 @@ export const runExpensesV = readModelSchema.table(
   (t) => ({
     runIdx: index('rev_run_idx').on(t.runId, t.addedAt),
     /** Active expenses only — drives the FE's per-run query. */
-    activeIdx: index('rev_active_idx').on(t.runId).where(sql`removed_at IS NULL`),
+    activeIdx: index('rev_active_idx')
+      .on(t.runId)
+      .where(sql`removed_at IS NULL`),
   }),
 );

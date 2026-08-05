@@ -7,6 +7,7 @@ import {
   IconHistory,
   IconOrder,
   IconRun,
+  IconSettlement,
   Spinner,
 } from '@compass/ui';
 import { OrderPage } from '../pages/OrderPage';
@@ -19,8 +20,7 @@ import { ConfirmPage } from '../pages/ConfirmPage';
 // Suspense splits it out to its own chunk that only admins pay for.
 // (M1.3, 2026-05-06.) The other tabs stay eagerly imported because
 // every authenticated user reaches at least one of them.
-const importAdminPage = () =>
-  import('../pages/AdminPage').then((m) => ({ default: m.AdminPage }));
+const importAdminPage = () => import('../pages/AdminPage').then((m) => ({ default: m.AdminPage }));
 const AdminPage = lazy(importAdminPage);
 // M3.11 (2026-05-16): same treatment for RunPage. ~3.4k LoC + heavy
 // purchase / delivery / confirm sheets + history detail. The
@@ -29,8 +29,7 @@ const AdminPage = lazy(importAdminPage);
 // so 90% of users pay for the chunk without ever opening it. Pulling
 // it behind lazy() saves ~60 kB off the initial bundle. Prefetch
 // (below) keeps the tap-to-open latency snappy for actual purchasers.
-const importRunPage = () =>
-  import('../pages/RunPage').then((m) => ({ default: m.RunPage }));
+const importRunPage = () => import('../pages/RunPage').then((m) => ({ default: m.RunPage }));
 const RunPage = lazy(importRunPage);
 // 2026-07-30: history is its own tab now. Lazy for the same reason as
 // RunPage — it pulls in the ~800-line history subsystem plus the money
@@ -39,6 +38,11 @@ const RunPage = lazy(importRunPage);
 const importHistoryPage = () =>
   import('../pages/HistoryPage').then((m) => ({ default: m.HistoryPage }));
 const HistoryPage = lazy(importHistoryPage);
+// Daily close is a financial, permission-gated surface. Keep its form and
+// recent-ledger query code out of the startup bundle for everyone else.
+const importSettlementPage = () =>
+  import('../pages/SettlementPage').then((m) => ({ default: m.SettlementPage }));
+const SettlementPage = lazy(importSettlementPage);
 import { useAuthStore } from '../stores/authStore';
 import { useNavStore, resolveVisibleTab } from '../stores/navStore';
 import { useI18n } from '../hooks/useI18n';
@@ -56,25 +60,32 @@ import { PageMenuProvider, usePageMenuRegistration } from './PageMenuContext';
 // (was 6 items, now 5) and groups operator-only views together. Admins
 // reach Debug via Admin → Debug; non-admins never see it (which is
 // what `system.logs.view` already gated).
-type Tab = 'order' | 'approve' | 'run' | 'history' | 'confirm' | 'admin';
+type Tab = 'order' | 'approve' | 'run' | 'history' | 'settlement' | 'confirm' | 'admin';
 
 type IconComponent = ComponentType<SVGProps<SVGSVGElement> & { size?: number }>;
 
-const TABS: Array<{ key: Tab; permission: string | null; labelKey: string; Icon: IconComponent }> = [
-  { key: 'order', permission: 'order.draft', labelKey: 'nav.order', Icon: IconOrder },
-  { key: 'approve', permission: 'order.approve', labelKey: 'nav.approve', Icon: IconApprove },
-  { key: 'run', permission: 'run.purchase', labelKey: 'nav.run', Icon: IconRun },
-  // 2026-07-30: purchase history used to be reachable only from the
-  // bottom of the Run tab, which meant only `run.purchase` holders
-  // could see it — a store manager had no route to their own store's
-  // spend. `prices.view` is the money-visibility permission (purchaser
-  // + manager + admin + super_admin) and is the right gate for a
-  // price-and-spend record. See HistoryPage.tsx for why this needed no
-  // server-side change.
-  { key: 'history', permission: 'prices.view', labelKey: 'nav.history', Icon: IconHistory },
-  { key: 'confirm', permission: 'delivery.confirm', labelKey: 'nav.confirm', Icon: IconConfirm },
-  { key: 'admin', permission: 'users.manage', labelKey: 'nav.admin', Icon: IconAdmin },
-];
+const TABS: Array<{ key: Tab; permission: string | null; labelKey: string; Icon: IconComponent }> =
+  [
+    { key: 'order', permission: 'order.draft', labelKey: 'nav.order', Icon: IconOrder },
+    { key: 'approve', permission: 'order.approve', labelKey: 'nav.approve', Icon: IconApprove },
+    { key: 'run', permission: 'run.purchase', labelKey: 'nav.run', Icon: IconRun },
+    // 2026-07-30: purchase history used to be reachable only from the
+    // bottom of the Run tab, which meant only `run.purchase` holders
+    // could see it — a store manager had no route to their own store's
+    // spend. `prices.view` is the money-visibility permission (purchaser
+    // + manager + admin + super_admin) and is the right gate for a
+    // price-and-spend record. See HistoryPage.tsx for why this needed no
+    // server-side change.
+    { key: 'history', permission: 'prices.view', labelKey: 'nav.history', Icon: IconHistory },
+    {
+      key: 'settlement',
+      permission: 'settlement.record',
+      labelKey: 'nav.settlement',
+      Icon: IconSettlement,
+    },
+    { key: 'confirm', permission: 'delivery.confirm', labelKey: 'nav.confirm', Icon: IconConfirm },
+    { key: 'admin', permission: 'users.manage', labelKey: 'nav.admin', Icon: IconAdmin },
+  ];
 
 // Loading fallback for lazily-imported pages. Centered spinner so the
 // blip between bundle download and render doesn't look like a stall.
@@ -101,6 +112,11 @@ const PAGES: Record<Tab, () => ReactNode> = {
       <HistoryPage />
     </Suspense>
   ),
+  settlement: () => (
+    <Suspense fallback={<PageLoading />}>
+      <SettlementPage />
+    </Suspense>
+  ),
   confirm: () => <ConfirmPage />,
   admin: () => (
     <Suspense fallback={<PageLoading />}>
@@ -125,9 +141,7 @@ function ShellInner() {
   // sheet opens it shows the page section first, then global settings.
   const pageMenu = usePageMenuRegistration();
 
-  const visible = TABS.filter(
-    (t) => !t.permission || session?.permissions.includes(t.permission),
-  );
+  const visible = TABS.filter((t) => !t.permission || session?.permissions.includes(t.permission));
 
   // Warm the AdminPage chunk in the background once we know the user
   // can see the tab. The static `lazy()` above splits it into a
@@ -258,8 +272,7 @@ function ShellInner() {
       // beyond the standard chrome row. Without the floor, page
       // content (e.g. PreviewSummaryCard's "可以生成采购单"
       // CardHeader title) lands behind the close button.
-      const chromeRowFloor =
-        platform === 'android' ? 56 : platform === 'tdesktop' ? 0 : 64;
+      const chromeRowFloor = platform === 'android' ? 56 : platform === 'tdesktop' ? 0 : 64;
       // --- Vertical chrome reserve ---
       // 2026-07-30: publish the SDK's own safe-area top alongside the
       // reserve. The strip that holds the store title needs to know
@@ -280,10 +293,7 @@ function ShellInner() {
         const safeTop = tg.safeAreaInset?.top ?? 0;
         const minReserve = safeTop + chromeRowFloor;
         const reserve = Math.max(contentTop, minReserve);
-        document.documentElement.style.setProperty(
-          '--app-chrome-reserve',
-          `${reserve}px`,
-        );
+        document.documentElement.style.setProperty('--app-chrome-reserve', `${reserve}px`);
       } else {
         const safeTop = tg.safeAreaInset?.top;
         // chromeRowFloor (declared above) carries the empirical
@@ -321,24 +331,14 @@ function ShellInner() {
       // iOS slightly smaller — but 56/96 over-pads safely; under-pads
       // are the visible bug, over-pads just shrink the title area.
       // tdesktop: no chrome — 0.
-      const defaultLeft =
-        platform === 'tdesktop' ? 0 : platform === 'android' ? 56 : 56;
-      const defaultRight =
-        platform === 'tdesktop' ? 0 : platform === 'android' ? 96 : 96;
+      const defaultLeft = platform === 'tdesktop' ? 0 : platform === 'android' ? 56 : 56;
+      const defaultRight = platform === 'tdesktop' ? 0 : platform === 'android' ? 96 : 96;
       const padLeft =
         typeof contentLeft === 'number' && contentLeft > 0 ? contentLeft : defaultLeft;
       const padRight =
-        typeof contentRight === 'number' && contentRight > 0
-          ? contentRight
-          : defaultRight;
-      document.documentElement.style.setProperty(
-        '--app-chrome-pad-left',
-        `${padLeft}px`,
-      );
-      document.documentElement.style.setProperty(
-        '--app-chrome-pad-right',
-        `${padRight}px`,
-      );
+        typeof contentRight === 'number' && contentRight > 0 ? contentRight : defaultRight;
+      document.documentElement.style.setProperty('--app-chrome-pad-left', `${padLeft}px`);
+      document.documentElement.style.setProperty('--app-chrome-pad-right', `${padRight}px`);
     };
     apply();
     // Newer Telegram clients fire these events when the user changes
@@ -363,11 +363,7 @@ function ShellInner() {
       className="flex min-h-0 flex-col bg-[var(--c-bg)]"
       style={{ height: 'var(--app-viewport-h, 100dvh)' }}
     >
-      <SettingsSheet
-        open={settingsOpen}
-        onOpenChange={setSettingsOpen}
-        pageMenu={pageMenu}
-      />
+      <SettingsSheet open={settingsOpen} onOpenChange={setSettingsOpen} pageMenu={pageMenu} />
       {inTelegram ? (
         // Reserved strip lets Telegram's chrome (Close + bot title + ⋯)
         // sit on top without overlapping our content.
@@ -406,12 +402,10 @@ function ShellInner() {
           className="flex items-center justify-center"
           style={{
             flexShrink: 0,
-            height:
-              'var(--app-chrome-reserve, calc(var(--app-safe-top) + 36px))',
+            height: 'var(--app-chrome-reserve, calc(var(--app-safe-top) + 36px))',
             background: 'var(--c-bg)',
             paddingTop: 'var(--app-chrome-safe-top, 0px)',
-            paddingLeft:
-              'max(var(--app-chrome-pad-left, 16px), var(--app-chrome-pad-right, 16px))',
+            paddingLeft: 'max(var(--app-chrome-pad-left, 16px), var(--app-chrome-pad-right, 16px))',
             paddingRight:
               'max(var(--app-chrome-pad-left, 16px), var(--app-chrome-pad-right, 16px))',
           }}
@@ -469,12 +463,7 @@ function ShellInner() {
           usePageMainButton hook every page already uses. */}
       <PageMainButton />
 
-      <BottomNav
-        visible={visible}
-        tab={tab}
-        setTab={(k) => setTab(k as Tab)}
-        i18n={i18n}
-      />
+      <BottomNav visible={visible} tab={tab} setTab={(k) => setTab(k as Tab)} i18n={i18n} />
     </div>
   );
 }

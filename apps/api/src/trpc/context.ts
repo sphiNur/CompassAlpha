@@ -1,6 +1,6 @@
 import type { Context as HonoContext } from 'hono';
 import { and, eq, gt, isNull, or } from 'drizzle-orm';
-import { getDb, schema as s, withOrgContext } from '@compass/db';
+import { getDb, schema as s, withOrgContext, type OrgTransactionOptions } from '@compass/db';
 import { verifyAccess } from '../infra/jwt';
 import { logger } from '../infra/log';
 import { env } from '../env';
@@ -39,13 +39,13 @@ export interface RequestContext {
   /** Resolved when request carried a valid Bearer token. */
   session: SessionContext | null;
   /** Run a callback inside a tx with RLS org context bound. */
-  withOrg<T>(fn: (tx: ReturnType<typeof getDb>) => Promise<T>): Promise<T>;
+  withOrg<T>(
+    fn: (tx: ReturnType<typeof getDb>) => Promise<T>,
+    options?: OrgTransactionOptions,
+  ): Promise<T>;
 }
 
-export async function createContext(
-  _opts: unknown,
-  c: HonoContext,
-): Promise<RequestContext> {
+export async function createContext(_opts: unknown, c: HonoContext): Promise<RequestContext> {
   const db = getDb(env.DATABASE_URL);
   const traceId = c.req.header('x-trace-id') ?? ulid();
   const ip = c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null;
@@ -55,8 +55,7 @@ export async function createContext(
   // a client sending `X-Idempotency-Key: ` (no value) doesn't get
   // dedupe behavior.
   const rawIdem = c.req.header('x-idempotency-key');
-  const idempotencyKey =
-    rawIdem && rawIdem.trim().length > 0 ? rawIdem.trim().slice(0, 128) : null;
+  const idempotencyKey = rawIdem && rawIdem.trim().length > 0 ? rawIdem.trim().slice(0, 128) : null;
   const auth = c.req.header('authorization');
 
   let session: SessionContext | null = null;
@@ -79,9 +78,9 @@ export async function createContext(
     userAgent,
     idempotencyKey,
     session,
-    async withOrg(fn) {
+    async withOrg(fn, options) {
       if (!session) throw new Error('withOrg requires authenticated session');
-      return withOrgContext(db, session.orgId, fn);
+      return withOrgContext(db, session.orgId, fn, options);
     },
   };
 }
@@ -105,10 +104,7 @@ export async function loadSession(
     .where(
       and(
         eq(s.memberRoleBindings.memberId, member.id),
-        or(
-          isNull(s.memberRoleBindings.expiresAt),
-          gt(s.memberRoleBindings.expiresAt, new Date()),
-        ),
+        or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, new Date())),
       ),
     );
 

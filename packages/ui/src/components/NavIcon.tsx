@@ -132,6 +132,22 @@ export function IconHistory(props: IconProps) {
   );
 }
 
+/**
+ * Daily settlement / cash-register mark. The drawer + receipt notch make
+ * the close-of-day destination distinct from the order sheet and history
+ * clock already present in the primary navigation.
+ */
+export function IconSettlement(props: IconProps) {
+  return (
+    <svg {...svgBase(props)}>
+      <path d="M5 9h14v10H5z" />
+      <path d="M7 9V5h10v4" />
+      <path d="M8 13h8M9 16h2" />
+      <path d="M17 16h.01" />
+    </svg>
+  );
+}
+
 export function IconActivity(props: IconProps) {
   return (
     <svg {...svgBase(props)}>

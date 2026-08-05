@@ -14,6 +14,8 @@
  *   domain.snapshots                    -- aggregate snapshots
  *   domain.events                       -- the entire event log
  *   domain.policy_decisions             -- audit trail of allow/deny
+ *   inventory.store_daily_settlement_revisions -- settlement audit snapshots
+ *   inventory.store_daily_settlements   -- daily store closes
  *   inventory.price_history             -- per-purchase observations
  *   inventory.sku_supplier_links        -- preferred-supplier table
  *   inventory.skus                      -- ALL SKUs (including any new ones)
@@ -29,7 +31,7 @@
  *   auth.organizations                  -- the tenant
  *   auth.users                          -- you (owner) + any teammates
  *   auth.members                        -- org membership
- *   auth.roles + role_permissions       -- the 5 built-in roles
+ *   auth.roles + role_permissions       -- built-in roles
  *   auth.permissions                    -- the static dictionary
  *   auth.member_role_bindings           -- so you keep super_admin
  *   auth.policy_rules                   -- ABAC rules (no fake ones exist)
@@ -63,7 +65,10 @@ import { getDb, closeDb } from './index';
         const idx = line.indexOf('=');
         if (idx < 0) continue;
         const key = line.slice(0, idx).trim();
-        const val = line.slice(idx + 1).trim().replace(/^"(.*)"$/, '$1');
+        const val = line
+          .slice(idx + 1)
+          .trim()
+          .replace(/^"(.*)"$/, '$1');
         if (!(key in process.env)) process.env[key] = val;
       }
       return;
@@ -136,6 +141,16 @@ const WIPE_PLAN: Array<{ name: string; deleteSql: string; countSql: string }> = 
     countSql: 'SELECT COUNT(*)::int AS n FROM domain.policy_decisions',
   },
   // Inventory layer
+  {
+    name: 'inventory.store_daily_settlement_revisions',
+    deleteSql: 'DELETE FROM inventory.store_daily_settlement_revisions',
+    countSql: 'SELECT COUNT(*)::int AS n FROM inventory.store_daily_settlement_revisions',
+  },
+  {
+    name: 'inventory.store_daily_settlements',
+    deleteSql: 'DELETE FROM inventory.store_daily_settlements',
+    countSql: 'SELECT COUNT(*)::int AS n FROM inventory.store_daily_settlements',
+  },
   {
     name: 'inventory.price_history',
     deleteSql: 'DELETE FROM inventory.price_history',

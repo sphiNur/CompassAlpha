@@ -1,7 +1,15 @@
 export { cn } from './cn';
 export { Button } from './components/Button';
 export type { ButtonProps } from './components/Button';
-export { Card, CardHeader, CardTitle, CardMeta, CardBody, CardFooter, surfaceClass } from './components/Card';
+export {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardMeta,
+  CardBody,
+  CardFooter,
+  surfaceClass,
+} from './components/Card';
 export { pillButtonClass } from './components/pill';
 export { Input } from './components/Input';
 export { SearchInput } from './components/SearchInput';
@@ -82,6 +90,7 @@ export {
   IconPeople,
   IconCatalog,
   IconHistory,
+  IconSettlement,
   IconActivity,
   IconMaintenance,
   IconChevronRight,

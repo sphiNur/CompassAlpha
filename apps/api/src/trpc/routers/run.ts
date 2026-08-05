@@ -27,6 +27,7 @@ import {
   RunCancelInputSchema,
   RunCreateInputSchema,
   RunPreviewInputSchema,
+  RunHistoryInputSchema,
   ChangeRunDateInputSchema,
   RunReasonOnlyInputSchema,
   SimpleRunCommandSchema,
@@ -38,7 +39,9 @@ import {
   assertActorAssignedToStore,
   effectivePermissionsForStore,
   getActorStoreIds,
+  getActorStoreIdsForPermission,
 } from '../../services/storeScope';
+import { hasGlobalPermission } from '../../services/orgAdmin';
 import {
   applyRun,
   decideRun,
@@ -46,7 +49,12 @@ import {
   type RunEvent,
   type RunState,
 } from '@compass/domain/run';
-import { decide as decideOrder, apply as applyOrder, emptyState as emptyOrderState, type OrderEvent } from '@compass/domain/order';
+import {
+  decide as decideOrder,
+  apply as applyOrder,
+  emptyState as emptyOrderState,
+  type OrderEvent,
+} from '@compass/domain/order';
 import { DomainError } from '@compass/domain';
 import { authedProcedure, idempotentMutation, rethrowDomainError, router } from '../trpc';
 import { appendEvents, readStream } from '../../services/eventStore';
@@ -64,6 +72,59 @@ import { todayInTz } from '@compass/domain';
  */
 function todayStr(ctx: { session: { orgTimezone: string } | null }): string {
   return todayInTz(ctx.session?.orgTimezone ?? 'UTC');
+}
+
+function executeRows<T>(result: unknown): T[] {
+  if (Array.isArray(result)) return result as T[];
+  if (result && typeof result === 'object' && 'rows' in result) {
+    const rows = (result as { rows?: unknown }).rows;
+    if (Array.isArray(rows)) return rows as T[];
+  }
+  return [];
+}
+
+/** Exact decimal addition for quantities represented as DB strings. */
+function sumDecimalStrings(values: readonly string[]): string {
+  if (values.length === 0) return '0';
+  const scale = values.reduce((max, value) => {
+    const point = value.indexOf('.');
+    return Math.max(max, point < 0 ? 0 : value.length - point - 1);
+  }, 0);
+  let total = 0n;
+  for (const value of values) {
+    const negative = value.startsWith('-');
+    const unsigned = negative ? value.slice(1) : value;
+    const [whole = '0', fraction = ''] = unsigned.split('.');
+    const units = BigInt(`${whole || '0'}${fraction.padEnd(scale, '0')}`);
+    total += negative ? -units : units;
+  }
+  const negative = total < 0n;
+  const digits = (negative ? -total : total).toString().padStart(scale + 1, '0');
+  if (scale === 0) return `${negative ? '-' : ''}${digits}`;
+  const whole = digits.slice(0, -scale) || '0';
+  const fraction = digits.slice(-scale).replace(/0+$/, '');
+  return `${negative ? '-' : ''}${whole}${fraction ? `.${fraction}` : ''}`;
+}
+
+/** Exact multiplication for DB decimal strings (quantity × unit price). */
+function multiplyDecimalStrings(left: string, right: string): string {
+  const parse = (value: string): { units: bigint; scale: number } => {
+    const negative = value.startsWith('-');
+    const unsigned = negative ? value.slice(1) : value;
+    const [whole = '0', fraction = ''] = unsigned.split('.');
+    const units = BigInt(`${whole || '0'}${fraction}`);
+    return { units: negative ? -units : units, scale: fraction.length };
+  };
+  const a = parse(left);
+  const b = parse(right);
+  const scale = a.scale + b.scale;
+  const product = a.units * b.units;
+  const negative = product < 0n;
+  const digits = (negative ? -product : product).toString().padStart(scale + 1, '0');
+  if (scale === 0) return `${negative ? '-' : ''}${digits}`;
+  const whole = digits.slice(0, -scale) || '0';
+  const fraction = digits.slice(-scale).replace(/0+$/, '');
+  return `${negative ? '-' : ''}${whole}${fraction ? `.${fraction}` : ''}`;
 }
 
 export const runRouter = router({
@@ -145,62 +206,53 @@ export const runRouter = router({
    *                                synthetic "unassigned" bucket on
    *                                the FE.
    */
-  previewCreatable: authedProcedure
-    .input(RunPreviewInputSchema)
-    .query(async ({ ctx, input }) => {
-      return ctx.withOrg(async (tx) => {
-        // M3.24-fix (2026-05-18): when caller omits `date`, return EVERY
-        // approved session that hasn't been attached to a run yet —
-        // regardless of order_date. Old behavior was "default to today
-        // (UTC)", which left approved-yesterday sessions invisible to
-        // the purchaser once the server's UTC date rolled over (the
-        // known org-tz issue order.ts:48 calls out). Explicit `date`
-        // arg still narrows to that day. status='approved' already
-        // implies run_id IS NULL because the projector clears run_id
-        // only on Approved → in_run / archived transitions.
-        const date = input.date ?? null;
-        // M3.2: org-wide visibility requires `run.create.org` (or the
-        // legacy `users.manage` super-perm). Without it, scope the
-        // query to the actor's bound stores. `getActorStoreIds`
-        // returns `null` for org-tier actors (skip filter), an
-        // explicit array for store-tier actors.
-        const allowedStoreIds = ctx.session!.permissions.has('run.create.org')
-          ? null
-          : await getActorStoreIds(
-              tx,
-              ctx.session!.memberId,
-              ctx.session!.permissions,
-            );
-        const sessions = await tx.query.orderSessionsV.findMany({
-          where: (sess, { eq: eq2, and: and2, inArray: inArray2 }) => {
-            const base = [
-              eq2(sess.orgId, ctx.session!.orgId),
-              eq2(sess.status, 'approved'),
-            ];
-            if (date !== null) base.push(eq2(sess.orderDate, date));
-            // null = unrestricted (org-tier actor). Empty array = actor
-            // has no stores anywhere → return zero sessions without a
-            // SQL parameter error (Drizzle's inArray on [] is a no-op
-            // that matches everything, so we must guard here).
-            if (allowedStoreIds !== null) {
-              if (allowedStoreIds.length === 0) {
-                // Sentinel that can never match — a fresh UUID.
-                base.push(eq2(sess.storeId, '00000000-0000-0000-0000-000000000000'));
-              } else {
-                base.push(inArray2(sess.storeId, allowedStoreIds));
-              }
+  previewCreatable: authedProcedure.input(RunPreviewInputSchema).query(async ({ ctx, input }) => {
+    return ctx.withOrg(async (tx) => {
+      // M3.24-fix (2026-05-18): when caller omits `date`, return EVERY
+      // approved session that hasn't been attached to a run yet —
+      // regardless of order_date. Old behavior was "default to today
+      // (UTC)", which left approved-yesterday sessions invisible to
+      // the purchaser once the server's UTC date rolled over (the
+      // known org-tz issue order.ts:48 calls out). Explicit `date`
+      // arg still narrows to that day. status='approved' already
+      // implies run_id IS NULL because the projector clears run_id
+      // only on Approved → in_run / archived transitions.
+      const date = input.date ?? null;
+      // M3.2: org-wide visibility requires `run.create.org` (or the
+      // legacy `users.manage` super-perm). Without it, scope the
+      // query to the actor's bound stores. `getActorStoreIds`
+      // returns `null` for org-tier actors (skip filter), an
+      // explicit array for store-tier actors.
+      const allowedStoreIds = await resolveRunCreateStoreScope(tx, ctx);
+      const sessions = await tx.query.orderSessionsV.findMany({
+        where: (sess, { eq: eq2, and: and2, inArray: inArray2 }) => {
+          const base = [eq2(sess.orgId, ctx.session!.orgId), eq2(sess.status, 'approved')];
+          if (date !== null) base.push(eq2(sess.orderDate, date));
+          // null = unrestricted (org-tier actor). Empty array = actor
+          // has no stores anywhere → return zero sessions without a
+          // SQL parameter error (Drizzle's inArray on [] is a no-op
+          // that matches everything, so we must guard here).
+          if (allowedStoreIds !== null) {
+            if (allowedStoreIds.length === 0) {
+              // Sentinel that can never match — a fresh UUID.
+              base.push(eq2(sess.storeId, '00000000-0000-0000-0000-000000000000'));
+            } else {
+              base.push(inArray2(sess.storeId, allowedStoreIds));
             }
-            return and2(...base);
-          },
-        });
-        const sessionIds = sessions.map((s) => s.id);
-        if (sessionIds.length === 0) {
-          return {
-            date,
-            sessions: [],
-            plannedItems: [],
-            perStoreDemand: [],
-            supplierBySku: {} as Record<string, {
+          }
+          return and2(...base);
+        },
+      });
+      const sessionIds = sessions.map((s) => s.id);
+      if (sessionIds.length === 0) {
+        return {
+          date,
+          sessions: [],
+          plannedItems: [],
+          perStoreDemand: [],
+          supplierBySku: {} as Record<
+            string,
+            {
               id: string;
               name: string;
               contactPhone: string | null;
@@ -208,88 +260,91 @@ export const runRouter = router({
               defaultPrice: string | null;
               lastSeenPrice: string | null;
               estimatedUnitPrice: string | null;
-            } | null>,
-            lastPurchasePriceBySku: {} as Record<string, string>,
-            perStoreBudgets: [] as Array<{
-              storeId: string;
-              storeName: string;
-              estimatedTotal: string;
-              unknownPriceCount: number;
-            }>,
-            sessionNotesByStore: {} as Record<string, string>,
-            total: 0,
-          };
+            } | null
+          >,
+          lastPurchasePriceBySku: {} as Record<string, string>,
+          perStoreBudgets: [] as Array<{
+            storeId: string;
+            storeName: string;
+            estimatedTotal: string;
+            unknownPriceCount: number;
+          }>,
+          sessionNotesByStore: {} as Record<string, string>,
+          total: 0,
+        };
+      }
+      const items = await tx.query.orderItemsV.findMany({
+        where: (it, { inArray: inArray2 }) => inArray2(it.sessionId, sessionIds),
+      });
+
+      // Build a session.id → storeId lookup so we can pivot items by
+      // store. Cheaper than re-joining at the SQL level for the small
+      // session counts (≤ a few dozen) we expect today.
+      const storeBySession = new Map<string, string>();
+      for (const sess of sessions) storeBySession.set(sess.id, sess.storeId);
+
+      const aggregated = new Map<string, number>();
+      const perStoreSkuQty = new Map<string, Map<string, number>>(); // storeId → skuId → qty
+      for (const it of items) {
+        const qty = Number(it.qty);
+        if (qty <= 0) continue;
+        aggregated.set(it.skuId, (aggregated.get(it.skuId) ?? 0) + qty);
+        const sid = storeBySession.get(it.sessionId);
+        if (!sid) continue;
+        const inner = perStoreSkuQty.get(sid) ?? new Map<string, number>();
+        inner.set(it.skuId, (inner.get(it.skuId) ?? 0) + qty);
+        perStoreSkuQty.set(sid, inner);
+      }
+
+      // Resolve store display names in one query — the FE renders
+      // "🏪 {name}" headings so we'd otherwise need session.stores
+      // (which only covers the actor's accessible stores). For an
+      // admin viewing an org-wide preview we want every involved
+      // store's name, not just theirs.
+      const involvedStoreIds = [
+        ...new Set([...perStoreSkuQty.keys(), ...sessions.map((s) => s.storeId)]),
+      ];
+      // M1.9-fix (2026-05-07): drizzle's tagged template binds a JS
+      // array as a single parameter — `IN ${array}` becomes
+      // `IN ($1)` with $1 being the entire array, not an IN-list.
+      // Postgres compares the UUID column to the text representation
+      // of the array and returns no rows; storeName silently became
+      // '—' for every store on the by-store preview. Use the
+      // `inArray()` builder, which expands to a proper IN-list.
+      const storeRows = involvedStoreIds.length
+        ? await tx
+            .select({ id: s.stores.id, name: s.stores.name })
+            .from(s.stores)
+            .where(inArray(s.stores.id, involvedStoreIds))
+        : [];
+      const storeNameById = new Map(storeRows.map((r) => [r.id, r.name]));
+
+      const perStoreDemand: Array<{
+        storeId: string;
+        storeName: string;
+        skuId: string;
+        qty: string;
+      }> = [];
+      for (const [sid, inner] of perStoreSkuQty.entries()) {
+        const storeName = storeNameById.get(sid) ?? '—';
+        for (const [skuId, qty] of inner.entries()) {
+          perStoreDemand.push({
+            storeId: sid,
+            storeName,
+            skuId,
+            qty: qty.toString(),
+          });
         }
-        const items = await tx.query.orderItemsV.findMany({
-          where: (it, { inArray: inArray2 }) => inArray2(it.sessionId, sessionIds),
-        });
+      }
 
-        // Build a session.id → storeId lookup so we can pivot items by
-        // store. Cheaper than re-joining at the SQL level for the small
-        // session counts (≤ a few dozen) we expect today.
-        const storeBySession = new Map<string, string>();
-        for (const sess of sessions) storeBySession.set(sess.id, sess.storeId);
-
-        const aggregated = new Map<string, number>();
-        const perStoreSkuQty = new Map<string, Map<string, number>>(); // storeId → skuId → qty
-        for (const it of items) {
-          const qty = Number(it.qty);
-          if (qty <= 0) continue;
-          aggregated.set(it.skuId, (aggregated.get(it.skuId) ?? 0) + qty);
-          const sid = storeBySession.get(it.sessionId);
-          if (!sid) continue;
-          const inner = perStoreSkuQty.get(sid) ?? new Map<string, number>();
-          inner.set(it.skuId, (inner.get(it.skuId) ?? 0) + qty);
-          perStoreSkuQty.set(sid, inner);
-        }
-
-        // Resolve store display names in one query — the FE renders
-        // "🏪 {name}" headings so we'd otherwise need session.stores
-        // (which only covers the actor's accessible stores). For an
-        // admin viewing an org-wide preview we want every involved
-        // store's name, not just theirs.
-        const involvedStoreIds = [
-          ...new Set([...perStoreSkuQty.keys(), ...sessions.map((s) => s.storeId)]),
-        ];
-        // M1.9-fix (2026-05-07): drizzle's tagged template binds a JS
-        // array as a single parameter — `IN ${array}` becomes
-        // `IN ($1)` with $1 being the entire array, not an IN-list.
-        // Postgres compares the UUID column to the text representation
-        // of the array and returns no rows; storeName silently became
-        // '—' for every store on the by-store preview. Use the
-        // `inArray()` builder, which expands to a proper IN-list.
-        const storeRows = involvedStoreIds.length
-          ? await tx
-              .select({ id: s.stores.id, name: s.stores.name })
-              .from(s.stores)
-              .where(inArray(s.stores.id, involvedStoreIds))
-          : [];
-        const storeNameById = new Map(storeRows.map((r) => [r.id, r.name]));
-
-        const perStoreDemand: Array<{
-          storeId: string;
-          storeName: string;
-          skuId: string;
-          qty: string;
-        }> = [];
-        for (const [sid, inner] of perStoreSkuQty.entries()) {
-          const storeName = storeNameById.get(sid) ?? '—';
-          for (const [skuId, qty] of inner.entries()) {
-            perStoreDemand.push({
-              storeId: sid,
-              storeName,
-              skuId,
-              qty: qty.toString(),
-            });
-          }
-        }
-
-        // Resolve preferred supplier per SKU. DISTINCT ON (sku_id) +
-        // ORDER BY is_preferred DESC, last_seen_at DESC NULLS LAST
-        // gives us "the best link per SKU". Only one query for all
-        // planned SKUs.
-        const skuIds = [...aggregated.keys()];
-        const supplierBySku: Record<string, {
+      // Resolve preferred supplier per SKU. DISTINCT ON (sku_id) +
+      // ORDER BY is_preferred DESC, last_seen_at DESC NULLS LAST
+      // gives us "the best link per SKU". Only one query for all
+      // planned SKUs.
+      const skuIds = [...aggregated.keys()];
+      const supplierBySku: Record<
+        string,
+        {
           id: string;
           name: string;
           contactPhone: string | null;
@@ -297,40 +352,41 @@ export const runRouter = router({
           defaultPrice: string | null;
           lastSeenPrice: string | null;
           estimatedUnitPrice: string | null;
-        } | null> = {};
-        // Budgeting must not depend on a SKU having a preferred supplier.
-        // The most recent real purchase is the best reference price for a
-        // purchaser deciding today's branch budget, regardless of where it
-        // was bought. Preferred-supplier defaults remain useful for vendor
-        // grouping, but must not turn a priced SKU into “unknown price”.
-        const lastPurchasePriceBySku: Record<string, string> = {};
-        if (skuIds.length > 0) {
-          // Drizzle ORM doesn't have a clean `distinctOn` builder; use
-          // `sql` raw for the prioritised ranking. Casting through
-          // `any` for the row shape — we know what columns we asked
-          // for.
-          // M1.7-fix (2026-05-06): require is_preferred=true. Earlier
-          // version sorted by `is_preferred DESC, last_seen_at DESC`
-          // and took DISTINCT ON, which silently returned a "best
-          // available" supplier even when ALL links for the SKU had
-          // is_preferred=false. That broke the user-clears-supplier
-          // flow: setSkuPreferredSupplier(null) wipes is_preferred to
-          // false on every link, but the preview kept showing the
-          // most-recent link as if it were still preferred.
-          //
-          // With WHERE is_preferred=true, a SKU with no preferred
-          // link returns no row → falls into the FE's "Unassigned"
-          // bucket, which matches the operator's mental model
-          // ("I cleared it, so it's gone").
-          const rows = await tx.execute<{
-            sku_id: string;
-            supplier_id: string;
-            name: string;
-            contact_phone: string | null;
-            contact_tg: string | null;
-            default_price: string | null;
-            last_seen_price: string | null;
-          }>(sql`
+        } | null
+      > = {};
+      // Budgeting must not depend on a SKU having a preferred supplier.
+      // The most recent real purchase is the best reference price for a
+      // purchaser deciding today's branch budget, regardless of where it
+      // was bought. Preferred-supplier defaults remain useful for vendor
+      // grouping, but must not turn a priced SKU into “unknown price”.
+      const lastPurchasePriceBySku: Record<string, string> = {};
+      if (skuIds.length > 0) {
+        // Drizzle ORM doesn't have a clean `distinctOn` builder; use
+        // `sql` raw for the prioritised ranking. Casting through
+        // `any` for the row shape — we know what columns we asked
+        // for.
+        // M1.7-fix (2026-05-06): require is_preferred=true. Earlier
+        // version sorted by `is_preferred DESC, last_seen_at DESC`
+        // and took DISTINCT ON, which silently returned a "best
+        // available" supplier even when ALL links for the SKU had
+        // is_preferred=false. That broke the user-clears-supplier
+        // flow: setSkuPreferredSupplier(null) wipes is_preferred to
+        // false on every link, but the preview kept showing the
+        // most-recent link as if it were still preferred.
+        //
+        // With WHERE is_preferred=true, a SKU with no preferred
+        // link returns no row → falls into the FE's "Unassigned"
+        // bucket, which matches the operator's mental model
+        // ("I cleared it, so it's gone").
+        const rows = await tx.execute<{
+          sku_id: string;
+          supplier_id: string;
+          name: string;
+          contact_phone: string | null;
+          contact_tg: string | null;
+          default_price: string | null;
+          last_seen_price: string | null;
+        }>(sql`
             SELECT DISTINCT ON (sl.sku_id)
               sl.sku_id, sl.supplier_id,
               sup.name, sup.contact_phone, sup.contact_tg,
@@ -344,33 +400,31 @@ export const runRouter = router({
             ORDER BY sl.sku_id,
                      sl.last_seen_at DESC NULLS LAST
           `);
-          // node-postgres returns rows under `.rows` for raw SQL; the
-          // drizzle execute() result is already an array on Postgres
-          // adapters but we defensively support both shapes.
-          const list = Array.isArray(rows)
-            ? rows
-            : ((rows as { rows?: typeof rows }).rows ?? []);
-          for (const r of list) {
-            supplierBySku[r.sku_id] = {
-              id: r.supplier_id,
-              name: r.name,
-              contactPhone: r.contact_phone,
-              contactTg: r.contact_tg,
-              defaultPrice: r.default_price,
-              lastSeenPrice: r.last_seen_price,
-              estimatedUnitPrice: r.default_price ?? r.last_seen_price,
-            };
-          }
-          // SKUs with no link → null entry, so the FE can still show a
-          // bucket for them rather than dropping them silently.
-          for (const sid of skuIds) {
-            if (!(sid in supplierBySku)) supplierBySku[sid] = null;
-          }
+        // node-postgres returns rows under `.rows` for raw SQL; the
+        // drizzle execute() result is already an array on Postgres
+        // adapters but we defensively support both shapes.
+        const list = Array.isArray(rows) ? rows : ((rows as { rows?: typeof rows }).rows ?? []);
+        for (const r of list) {
+          supplierBySku[r.sku_id] = {
+            id: r.supplier_id,
+            name: r.name,
+            contactPhone: r.contact_phone,
+            contactTg: r.contact_tg,
+            defaultPrice: r.default_price,
+            lastSeenPrice: r.last_seen_price,
+            estimatedUnitPrice: r.default_price ?? r.last_seen_price,
+          };
+        }
+        // SKUs with no link → null entry, so the FE can still show a
+        // bucket for them rather than dropping them silently.
+        for (const sid of skuIds) {
+          if (!(sid in supplierBySku)) supplierBySku[sid] = null;
+        }
 
-          const priceRows = await tx.execute<{
-            sku_id: string;
-            unit_price: string;
-          }>(sql`
+        const priceRows = await tx.execute<{
+          sku_id: string;
+          unit_price: string;
+        }>(sql`
             SELECT DISTINCT ON (ph.sku_id)
               ph.sku_id::text AS sku_id,
               ph.unit_price::text AS unit_price
@@ -379,122 +433,120 @@ export const runRouter = router({
               AND ph.sku_id IN (${sql.raw(skuIds.map((id) => `'${id}'`).join(','))})
             ORDER BY ph.sku_id, ph.observed_at DESC, ph.created_at DESC
           `);
-          const prices = Array.isArray(priceRows)
-            ? priceRows
-            : ((priceRows as { rows?: typeof priceRows }).rows ?? []);
-          for (const price of prices) {
-            lastPurchasePriceBySku[price.sku_id] = price.unit_price;
-          }
+        const prices = Array.isArray(priceRows)
+          ? priceRows
+          : ((priceRows as { rows?: typeof priceRows }).rows ?? []);
+        for (const price of prices) {
+          lastPurchasePriceBySku[price.sku_id] = price.unit_price;
         }
+      }
 
-        // M1.8 (2026-05-07): bundle the session-level "其他物品" notes
-        // by store so the FE can show them inline next to that store's
-        // demand block. Per-store concat with separators for legibility.
-        //
-        // M3.16-C (2026-05-16): also bundle structured `extras`. Both
-        // surfaces are emitted so the FE can render whichever the user
-        // typed (pre-M3.16 sessions = notes string, new sessions =
-        // extras array). Eventually `notes` drops once no live sessions
-        // carry the legacy text.
-        //
-        // M3.37 (2026-05-19, Wave2 #5): each extra now carries
-        // `sessionId` + `idx` + optional `status` so the FE can route
-        // a tap into the `order.markExtraStatus` mutation. Without
-        // sessionId/idx the flattened per-store list was unaddressable.
-        type ExtraItem = {
+      // M1.8 (2026-05-07): bundle the session-level "其他物品" notes
+      // by store so the FE can show them inline next to that store's
+      // demand block. Per-store concat with separators for legibility.
+      //
+      // M3.16-C (2026-05-16): also bundle structured `extras`. Both
+      // surfaces are emitted so the FE can render whichever the user
+      // typed (pre-M3.16 sessions = notes string, new sessions =
+      // extras array). Eventually `notes` drops once no live sessions
+      // carry the legacy text.
+      //
+      // M3.37 (2026-05-19, Wave2 #5): each extra now carries
+      // `sessionId` + `idx` + optional `status` so the FE can route
+      // a tap into the `order.markExtraStatus` mutation. Without
+      // sessionId/idx the flattened per-store list was unaddressable.
+      type ExtraItem = {
+        name: string;
+        qty: string;
+        unit: string;
+        note?: string;
+        status?: 'pending' | 'bought' | 'unavailable';
+        sessionId: string;
+        idx: number;
+      };
+      const notesByStore = new Map<string, string[]>();
+      const extrasByStore = new Map<string, ExtraItem[]>();
+      for (const sess of sessions) {
+        const trimmed = (sess.notes ?? '').trim();
+        if (trimmed) {
+          const arr = notesByStore.get(sess.storeId) ?? [];
+          arr.push(trimmed);
+          notesByStore.set(sess.storeId, arr);
+        }
+        const sessionExtras = (sess.extrasJson ?? []) as Array<{
           name: string;
           qty: string;
           unit: string;
           note?: string;
           status?: 'pending' | 'bought' | 'unavailable';
-          sessionId: string;
-          idx: number;
-        };
-        const notesByStore = new Map<string, string[]>();
-        const extrasByStore = new Map<string, ExtraItem[]>();
-        for (const sess of sessions) {
-          const trimmed = (sess.notes ?? '').trim();
-          if (trimmed) {
-            const arr = notesByStore.get(sess.storeId) ?? [];
-            arr.push(trimmed);
-            notesByStore.set(sess.storeId, arr);
+        }>;
+        if (sessionExtras.length > 0) {
+          const arr = extrasByStore.get(sess.storeId) ?? [];
+          for (let i = 0; i < sessionExtras.length; i++) {
+            const ex = sessionExtras[i]!;
+            arr.push({ ...ex, sessionId: sess.id, idx: i });
           }
-          const sessionExtras = (sess.extrasJson ?? []) as Array<{
-            name: string;
-            qty: string;
-            unit: string;
-            note?: string;
-            status?: 'pending' | 'bought' | 'unavailable';
-          }>;
-          if (sessionExtras.length > 0) {
-            const arr = extrasByStore.get(sess.storeId) ?? [];
-            for (let i = 0; i < sessionExtras.length; i++) {
-              const ex = sessionExtras[i]!;
-              arr.push({ ...ex, sessionId: sess.id, idx: i });
-            }
-            extrasByStore.set(sess.storeId, arr);
-          }
+          extrasByStore.set(sess.storeId, arr);
         }
-        const sessionNotesByStore: Record<string, string> = {};
-        for (const [sid, arr] of notesByStore.entries()) {
-          sessionNotesByStore[sid] = arr.join('\n\n');
-        }
-        const sessionExtrasByStore: Record<string, ExtraItem[]> = {};
-        for (const [sid, arr] of extrasByStore.entries()) {
-          sessionExtrasByStore[sid] = arr;
-        }
+      }
+      const sessionNotesByStore: Record<string, string> = {};
+      for (const [sid, arr] of notesByStore.entries()) {
+        sessionNotesByStore[sid] = arr.join('\n\n');
+      }
+      const sessionExtrasByStore: Record<string, ExtraItem[]> = {};
+      for (const [sid, arr] of extrasByStore.entries()) {
+        sessionExtrasByStore[sid] = arr;
+      }
 
-        const perStoreBudgets = involvedStoreIds.map((storeId) => {
-          let estimatedTotal = 0;
-          let unknownPriceCount = 0;
-          for (const [skuId, qty] of perStoreSkuQty.get(storeId)?.entries() ?? []) {
-            const estimatedUnitPrice =
-              lastPurchasePriceBySku[skuId] ??
-              supplierBySku[skuId]?.estimatedUnitPrice ??
-              null;
-            if (!estimatedUnitPrice) {
-              unknownPriceCount += 1;
-              continue;
-            }
-            estimatedTotal += Number(qty) * Number(estimatedUnitPrice);
+      const perStoreBudgets = involvedStoreIds.map((storeId) => {
+        let estimatedTotal = 0;
+        let unknownPriceCount = 0;
+        for (const [skuId, qty] of perStoreSkuQty.get(storeId)?.entries() ?? []) {
+          const estimatedUnitPrice =
+            lastPurchasePriceBySku[skuId] ?? supplierBySku[skuId]?.estimatedUnitPrice ?? null;
+          if (!estimatedUnitPrice) {
+            unknownPriceCount += 1;
+            continue;
           }
-          return {
-            storeId,
-            storeName: storeNameById.get(storeId) ?? '—',
-            estimatedTotal: estimatedTotal.toFixed(2),
-            unknownPriceCount,
-          };
-        });
-
+          estimatedTotal += Number(qty) * Number(estimatedUnitPrice);
+        }
         return {
-          date,
-          sessions: sessions.map((s) => ({
-            id: s.id,
-            storeId: s.storeId,
-            storeName: storeNameById.get(s.storeId) ?? '—',
-            orderDate: s.orderDate,
-            submittedByMemberId: s.submittedByMemberId,
-            notes: s.notes,
-            extras: (s.extrasJson ?? []) as ExtraItem[],
-          })),
-          plannedItems: [...aggregated.entries()].map(([skuId, qty]) => ({
-            skuId,
-            qty: qty.toString(),
-          })),
-          perStoreDemand,
-          supplierBySku,
-          lastPurchasePriceBySku,
-          perStoreBudgets,
-          /** Per-store concatenated session notes (M1.8, legacy). Empty
-           *  record when no notes anywhere. */
-          sessionNotesByStore,
-          /** Per-store structured extras (M3.16-C). Empty record when
-           *  no extras anywhere. */
-          sessionExtrasByStore,
-          total: aggregated.size,
+          storeId,
+          storeName: storeNameById.get(storeId) ?? '—',
+          estimatedTotal: estimatedTotal.toFixed(2),
+          unknownPriceCount,
         };
       });
-    }),
+
+      return {
+        date,
+        sessions: sessions.map((s) => ({
+          id: s.id,
+          storeId: s.storeId,
+          storeName: storeNameById.get(s.storeId) ?? '—',
+          orderDate: s.orderDate,
+          submittedByMemberId: s.submittedByMemberId,
+          notes: s.notes,
+          extras: (s.extrasJson ?? []) as ExtraItem[],
+        })),
+        plannedItems: [...aggregated.entries()].map(([skuId, qty]) => ({
+          skuId,
+          qty: qty.toString(),
+        })),
+        perStoreDemand,
+        supplierBySku,
+        lastPurchasePriceBySku,
+        perStoreBudgets,
+        /** Per-store concatenated session notes (M1.8, legacy). Empty
+         *  record when no notes anywhere. */
+        sessionNotesByStore,
+        /** Per-store structured extras (M3.16-C). Empty record when
+         *  no extras anywhere. */
+        sessionExtrasByStore,
+        total: aggregated.size,
+      };
+    });
+  }),
 
   /**
    * Manual supplier (re-)assignment from the Run preview (M1.6 #1,
@@ -541,8 +593,7 @@ export const runRouter = router({
         // from org B by passing its UUID — leaks the supplier's
         // existence and creates a dangling reference.
         const sku = await tx.query.skus.findFirst({
-          where: (k, { eq: eq2, and: and2 }) =>
-            and2(eq2(k.id, input.skuId), eq2(k.orgId, orgId)),
+          where: (k, { eq: eq2, and: and2 }) => and2(eq2(k.id, input.skuId), eq2(k.orgId, orgId)),
         });
         if (!sku) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.skuNotFound' });
@@ -639,6 +690,11 @@ export const runRouter = router({
           ),
       });
       if (live) {
+        // Returning an existing live run is still a run.create operation.
+        // A Store-A purchaser must not learn/reuse a Store-B-only run merely
+        // because a store-scoped custom role leaked `run.create.org` into the
+        // flat session union.
+        await assertRunCreateScopeForRun(tx, ctx, live);
         return { runId: live.id, runIndex: live.runIndex, lastSeq: live.lastSeq, reused: true };
       }
 
@@ -666,31 +722,15 @@ export const runRouter = router({
           });
         }
       }
-      // M3.2: store-scope check. Skip for org-tier actors. For
-      // everyone else, every targeted session's storeId must be in
-      // the actor's bound set. We reject the WHOLE create — partial
-      // runs would leave the FE in a weird state and the audit log
-      // would record an attempt to plan cross-store without auth.
-      if (!ctx.session!.permissions.has('run.create.org')) {
-        const allowedStoreIds = await getActorStoreIds(
-          tx,
-          ctx.session!.memberId,
-          ctx.session!.permissions,
-        );
-        // `null` from getActorStoreIds means unrestricted (admin path).
-        // We only enforce when we got a concrete list back.
-        if (allowedStoreIds !== null) {
-          const allowed = new Set(allowedStoreIds);
-          for (const sess of sessions) {
-            if (!allowed.has(sess.storeId)) {
-              throw new TRPCError({
-                code: 'FORBIDDEN',
-                message: 'auth.errors.notAssignedToStore',
-              });
-            }
-          }
-        }
-      }
+      // A global preview/create scope must come from a persisted GLOBAL
+      // `run.create.org` grant. Otherwise resolve `run.create` at each
+      // concrete store, so Store-A purchaser + Store-B staff membership
+      // cannot combine into Store-B planning authority.
+      const allowedStoreIds = await resolveRunCreateStoreScope(tx, ctx);
+      assertStoreIdsWithinRunCreateScope(
+        sessions.map((session) => session.storeId),
+        allowedStoreIds,
+      );
 
       // Aggregate items across sessions.
       const items = await tx.query.orderItemsV.findMany({
@@ -874,6 +914,8 @@ export const runRouter = router({
     .mutation(async ({ ctx, input }) => {
       return ctx.withOrg(async (tx) => {
         const run = await loadRun(tx, ctx.session!.orgId, input.runId);
+        await assertRunCreateScopeForRun(tx, ctx, run);
+        if (run.status === 'amending') await assertCanAmendRun(tx, ctx, run);
         if (run.status !== 'planned' && run.status !== 'purchasing') {
           throw new TRPCError({
             code: 'PRECONDITION_FAILED',
@@ -903,27 +945,11 @@ export const runRouter = router({
             });
           }
         }
-        // Store-scope: same gate as create. Org-tier (`run.create.org`)
-        // bypasses; store-tier purchasers can only attach from their
-        // bound stores.
-        if (!ctx.session!.permissions.has('run.create.org')) {
-          const allowedStoreIds = await getActorStoreIds(
-            tx,
-            ctx.session!.memberId,
-            ctx.session!.permissions,
-          );
-          if (allowedStoreIds !== null) {
-            const allowed = new Set(allowedStoreIds);
-            for (const sess of sessions) {
-              if (!allowed.has(sess.storeId)) {
-                throw new TRPCError({
-                  code: 'FORBIDDEN',
-                  message: 'auth.errors.notAssignedToStore',
-                });
-              }
-            }
-          }
-        }
+        const allowedStoreIds = await resolveRunCreateStoreScope(tx, ctx);
+        assertStoreIdsWithinRunCreateScope(
+          sessions.map((session) => session.storeId),
+          allowedStoreIds,
+        );
 
         // Aggregate items across the new sessions only — these become
         // the delta. The run state reducer merges them on top of
@@ -1009,19 +1035,11 @@ export const runRouter = router({
 
   list: authedProcedure.query(async ({ ctx }) => {
     return ctx.withOrg(async (tx) => {
-      // M3.33 (2026-05-18, Wave1 #2): store-scope filter. Org-tier
-      // (run.create.org / users.manage) sees every run in the org.
-      // Store-tier actors only see runs that touch a store they're
-      // bound to. Without this, a single-store manager could enumerate
-      // every other store's run-level metadata (runDate, sessionIds,
-      // purchaser, totals).
-      const allowedStoreIds = ctx.session!.permissions.has('run.create.org')
-        ? null
-        : await getActorStoreIds(
-            tx,
-            ctx.session!.memberId,
-            ctx.session!.permissions,
-          );
+      // A flat session permission is a union across role scopes and cannot
+      // prove organization-wide read authority. Resolve the persisted
+      // provenance first; store-scoped readers receive a redacted projection
+      // below rather than the raw cross-store run row.
+      const allowedStoreIds = await resolveRunReadStoreScope(tx, ctx);
       const runs = await tx
         .select()
         .from(s.marketRunsV)
@@ -1037,13 +1055,14 @@ export const runRouter = router({
         ...new Set(runs.flatMap((r) => (r.sessionIdsJson as unknown as string[]) ?? [])),
       ];
       const allowedStoreSet = allowedStoreIds === null ? null : new Set(allowedStoreIds);
+      const sessionStore = new Map<string, string>();
       if (allowedStoreSet) {
         if (allSessionIds.length === 0) return [];
         const sessionStoreRows = await tx.query.orderSessionsV.findMany({
           where: (sess, { inArray }) => inArray(sess.id, allSessionIds),
           columns: { id: true, storeId: true },
         });
-        const sessionStore = new Map(sessionStoreRows.map((r) => [r.id, r.storeId]));
+        for (const row of sessionStoreRows) sessionStore.set(row.id, row.storeId);
         visibleRuns = runs.filter((r) => {
           const ids = (r.sessionIdsJson as unknown as string[]) ?? [];
           return ids.some((sid) => {
@@ -1104,10 +1123,7 @@ export const runRouter = router({
           ),
         )
         .where(
-          and(
-            inArray(s.runItemStoresV.runId, visibleRunIds),
-            eq(s.runItemsV.status, 'purchased'),
-          ),
+          and(inArray(s.runItemStoresV.runId, visibleRunIds), eq(s.runItemsV.status, 'purchased')),
         );
       for (const row of splitRows) {
         const unitPrice = row.splitUnitPrice ?? row.itemUnitPrice;
@@ -1117,15 +1133,15 @@ export const runRouter = router({
         const cur = ensureStoreTotal(row.runId, row.storeId);
         if (!cur) continue;
         cur.total += subtotal;
-        if ((row.splitPaymentMethod ?? row.itemPaymentMethod) === 'transfer') cur.transfer += subtotal;
+        if ((row.splitPaymentMethod ?? row.itemPaymentMethod) === 'transfer')
+          cur.transfer += subtotal;
         else cur.cash += subtotal;
         cur.skuIds.add(row.skuId);
       }
 
       const moneyString = (n: number) => (Math.round(n * 100) / 100).toString();
-      return visibleRuns.map((run) => ({
-        ...run,
-        storeTotals: [...(totalsByRun.get(run.id)?.values() ?? [])]
+      return visibleRuns.map((run) => {
+        const storeTotals = [...(totalsByRun.get(run.id)?.values() ?? [])]
           .sort((a, b) => b.total - a.total)
           .map((total) => ({
             storeId: total.storeId,
@@ -1133,137 +1149,744 @@ export const runRouter = router({
             cash: moneyString(total.cash),
             transfer: moneyString(total.transfer),
             itemCount: total.skuIds.size,
-          })),
-      }));
+          }));
+        if (!allowedStoreSet) return { ...run, storeTotals };
+
+        const visibleSessionIds = ((run.sessionIdsJson as unknown as string[]) ?? []).filter(
+          (sessionId) => {
+            const storeId = sessionStore.get(sessionId);
+            return storeId !== undefined && allowedStoreSet.has(storeId);
+          },
+        );
+        const visibleActualTotal = storeTotals.reduce((total, row) => total + Number(row.total), 0);
+        const visibleCashTotal = storeTotals.reduce((total, row) => total + Number(row.cash), 0);
+        const visibleTransferTotal = storeTotals.reduce(
+          (total, row) => total + Number(row.transfer),
+          0,
+        );
+        return {
+          ...run,
+          // These columns are aggregates over the entire run. Never expose
+          // their raw values to a partial reader.
+          plannedTotal: null,
+          actualTotal: run.actualTotal === null ? null : moneyString(visibleActualTotal),
+          actualCashTotal: run.actualCashTotal === null ? null : moneyString(visibleCashTotal),
+          actualTransferTotal:
+            run.actualTransferTotal === null ? null : moneyString(visibleTransferTotal),
+          sessionIdsJson: visibleSessionIds,
+          storeTotals,
+        };
+      });
     });
   }),
 
   /**
    * Complete finished-run history for the purchaser-facing history page.
-   * `list` deliberately stays compact for the live procurement screen;
-   * this endpoint is independently bounded and only returns finished runs
-   * so several months of records do not turn the active page into an
-   * endless scroll.
+   *
+   * This is deliberately a server-side page, not `LIMIT 100` followed by
+   * client filtering. Visibility, search and money filters all run before
+   * LIMIT/OFFSET, and every monetary field is recomputed from the stores
+   * where `prices.view` is actually effective. That matters for mixed-role
+   * members (manager in A, staff in B): the flat session permission set is
+   * suitable for showing the History tab, but must never authorize B's
+   * financial rows or leak B's contribution through the run-level total.
    */
-  history: authedProcedure
-    .input(z.object({ limit: z.number().int().min(25).max(1000).default(100) }).optional())
+  history: authedProcedure.input(RunHistoryInputSchema.optional()).query(async ({ ctx, input }) =>
+    ctx.withOrg(
+      async (tx) => {
+        const query = input ?? RunHistoryInputSchema.parse({});
+        const orgId = ctx.session!.orgId;
+        const permissionStoreIds = await getActorStoreIdsForPermission(
+          tx,
+          ctx.session!.memberId,
+          'prices.view',
+          ctx.session!.permissions,
+        );
+        if (permissionStoreIds !== null && permissionStoreIds.length === 0) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'auth.errors.missingPermission',
+            cause: { missingPermission: 'prices.view' },
+          });
+        }
+
+        let scopedStoreIds = permissionStoreIds;
+        if (query.storeId) {
+          if (permissionStoreIds !== null && !permissionStoreIds.includes(query.storeId)) {
+            throw new TRPCError({
+              code: 'FORBIDDEN',
+              message: 'auth.errors.notAssignedToStore',
+            });
+          }
+          const store = await tx.query.stores.findFirst({
+            where: (st, { and: and2, eq: eq2 }) =>
+              and2(eq2(st.id, query.storeId!), eq2(st.orgId, orgId)),
+            columns: { id: true },
+          });
+          if (!store) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.storeNotFound' });
+          }
+          scopedStoreIds = [query.storeId];
+        }
+
+        const storeIdsSql =
+          scopedStoreIds === null
+            ? null
+            : sql.join(
+                scopedStoreIds.map((id) => sql`${id}::uuid`),
+                sql`, `,
+              );
+        const splitScopeSql = storeIdsSql ? sql`AND ris.store_id IN (${storeIdsSql})` : sql``;
+        const sessionScopeSql = storeIdsSql ? sql`AND os.store_id IN (${storeIdsSql})` : sql``;
+        const expenseScopeSql = storeIdsSql
+          ? sql`AND (expense_split.value->>'storeId')::uuid IN (${storeIdsSql})`
+          : sql``;
+        const visibilitySql = storeIdsSql
+          ? sql`AND EXISTS (
+              SELECT 1
+              FROM read_model.order_sessions_v os
+              WHERE os.run_id = mr.id
+                AND os.org_id = ${orgId}
+                ${sessionScopeSql}
+            )`
+          : sql``;
+        const dateFromSql = query.dateFrom
+          ? sql`AND mr.run_date >= ${query.dateFrom}::date`
+          : sql``;
+        const dateToSql = query.dateTo ? sql`AND mr.run_date <= ${query.dateTo}::date` : sql``;
+
+        // Each token must match somewhere, while fields within a token
+        // are ORed. Item/vendor and expense matches are joined to the
+        // same visible store scope, preventing search-result side channels.
+        const searchTokens = (query.search ?? '').trim().split(/\s+/u).filter(Boolean).slice(0, 8);
+        const tokenPredicates = searchTokens.map((token) => {
+          const pattern = `%${token}%`;
+          return sql`(
+            mr.run_date::text ILIKE ${pattern}
+            OR ('#' || (mr.run_index + 1)::text) ILIKE ${pattern}
+            OR EXISTS (
+              SELECT 1
+              FROM read_model.order_sessions_v os
+              INNER JOIN inventory.stores st ON st.id = os.store_id
+              WHERE os.run_id = mr.id
+                AND os.org_id = ${orgId}
+                ${sessionScopeSql}
+                AND (st.name ILIKE ${pattern} OR COALESCE(st.code, '') ILIKE ${pattern})
+            )
+            OR EXISTS (
+              SELECT 1
+              FROM read_model.run_items_v ri_search
+              INNER JOIN read_model.run_item_stores_v ris
+                ON ris.run_id = ri_search.run_id AND ris.sku_id = ri_search.sku_id
+              INNER JOIN inventory.skus sku ON sku.id = ri_search.sku_id
+              LEFT JOIN inventory.suppliers supplier ON supplier.id = ri_search.supplier_id
+              WHERE ri_search.run_id = mr.id
+                AND ri_search.status = 'purchased'
+                ${splitScopeSql}
+                AND (
+                  COALESCE(sku.code, '') ILIKE ${pattern}
+                  OR sku.names::text ILIKE ${pattern}
+                  OR sku.aliases::text ILIKE ${pattern}
+                  OR COALESCE(supplier.name, '') ILIKE ${pattern}
+                )
+            )
+            OR EXISTS (
+              SELECT 1
+              FROM read_model.run_expenses_v expense_search
+              CROSS JOIN LATERAL jsonb_array_elements(expense_search.store_splits_json)
+                AS expense_split(value)
+              WHERE expense_search.run_id = mr.id
+                AND expense_search.removed_at IS NULL
+                ${expenseScopeSql}
+                AND expense_search.label ILIKE ${pattern}
+            )
+          )`;
+        });
+        const searchSql =
+          tokenPredicates.length > 0 ? sql`AND ${sql.join(tokenPredicates, sql` AND `)}` : sql``;
+        const paymentSql =
+          query.payment === 'cash'
+            ? sql`AND COALESCE(vt.cash_total, 0) > 0
+                  AND COALESCE(vt.transfer_total, 0) = 0`
+            : query.payment === 'transfer'
+              ? sql`AND COALESCE(vt.transfer_total, 0) > 0
+                    AND COALESCE(vt.cash_total, 0) = 0`
+              : query.payment === 'mixed'
+                ? sql`AND COALESCE(vt.cash_total, 0) > 0
+                      AND COALESCE(vt.transfer_total, 0) > 0`
+                : sql``;
+
+        const historyCte = sql`
+          WITH candidate_runs AS (
+            SELECT mr.*
+            FROM read_model.market_runs_v mr
+            WHERE mr.org_id = ${orgId}
+              AND mr.status = 'finished'
+              ${dateFromSql}
+              ${dateToSql}
+              ${visibilitySql}
+              ${searchSql}
+          ),
+          item_lines AS (
+            SELECT
+              ris.run_id,
+              ris.store_id,
+              ris.sku_id,
+              ris.qty * COALESCE(ris.unit_price, ri.unit_price, 0) AS amount,
+              COALESCE(ris.payment_method, ri.payment_method, 'cash') AS payment_method
+            FROM candidate_runs cr
+            INNER JOIN read_model.run_items_v ri ON ri.run_id = cr.id
+            INNER JOIN read_model.run_item_stores_v ris
+              ON ris.run_id = ri.run_id AND ris.sku_id = ri.sku_id
+            WHERE ri.status = 'purchased'
+              ${splitScopeSql}
+          ),
+          expense_lines AS (
+            SELECT
+              expense.run_id,
+              (expense_split.value->>'storeId')::uuid AS store_id,
+              NULL::uuid AS sku_id,
+              COALESCE(NULLIF(expense_split.value->>'qty', '')::numeric, 0)
+                * expense.unit_price AS amount,
+              expense.payment_method
+            FROM candidate_runs cr
+            INNER JOIN read_model.run_expenses_v expense ON expense.run_id = cr.id
+            CROSS JOIN LATERAL jsonb_array_elements(expense.store_splits_json)
+              AS expense_split(value)
+            WHERE expense.removed_at IS NULL
+              ${expenseScopeSql}
+          ),
+          money_lines AS (
+            SELECT * FROM item_lines
+            UNION ALL
+            SELECT * FROM expense_lines
+          ),
+          visible_totals AS (
+            SELECT
+              run_id,
+              COALESCE(SUM(amount), 0) AS total,
+              COALESCE(SUM(amount) FILTER (WHERE payment_method = 'cash'), 0) AS cash_total,
+              COALESCE(SUM(amount) FILTER (WHERE payment_method = 'transfer'), 0) AS transfer_total,
+              (COUNT(DISTINCT sku_id) FILTER (WHERE sku_id IS NOT NULL))::int AS item_count
+            FROM money_lines
+            GROUP BY run_id
+          ),
+          visible_store_counts AS (
+            SELECT os.run_id, COUNT(DISTINCT os.store_id)::int AS store_count
+            FROM read_model.order_sessions_v os
+            INNER JOIN candidate_runs cr ON cr.id = os.run_id
+            WHERE os.org_id = ${orgId} ${sessionScopeSql}
+            GROUP BY os.run_id
+          ),
+          filtered AS (
+            SELECT
+              cr.id,
+              cr.run_date,
+              cr.run_index,
+              cr.status,
+              cr.finished_at,
+              COALESCE(vt.total, 0) AS actual_total,
+              COALESCE(vt.cash_total, 0) AS actual_cash_total,
+              COALESCE(vt.transfer_total, 0) AS actual_transfer_total,
+              COALESCE(vt.item_count, 0)::int AS item_count,
+              COALESCE(vsc.store_count, 0)::int AS store_count
+            FROM candidate_runs cr
+            LEFT JOIN visible_totals vt ON vt.run_id = cr.id
+            LEFT JOIN visible_store_counts vsc ON vsc.run_id = cr.id
+            WHERE TRUE ${paymentSql}
+          )
+        `;
+
+        type SummaryDbRow = {
+          total_count: number;
+          total: string;
+          cash: string;
+          transfer: string;
+        };
+        const summaryRows = executeRows<SummaryDbRow>(
+          await tx.execute(sql`
+          ${historyCte}
+          SELECT
+            COUNT(*)::int AS total_count,
+            COALESCE(SUM(actual_total), 0)::text AS total,
+            COALESCE(SUM(actual_cash_total), 0)::text AS cash,
+            COALESCE(SUM(actual_transfer_total), 0)::text AS transfer
+          FROM filtered
+        `),
+        );
+        const summary = summaryRows[0] ?? {
+          total_count: 0,
+          total: '0',
+          cash: '0',
+          transfer: '0',
+        };
+
+        type PageDbRow = {
+          id: string;
+          run_date: string;
+          run_index: number;
+          status: string;
+          finished_at: Date | string | null;
+          actual_total: string;
+          actual_cash_total: string;
+          actual_transfer_total: string;
+          item_count: number;
+          store_count: number;
+        };
+        const directionSql =
+          query.sort === 'oldest'
+            ? sql`run_date ASC, run_index ASC, id ASC`
+            : sql`run_date DESC, run_index DESC, id DESC`;
+        const offset = (query.page - 1) * query.pageSize;
+        const pageRows = executeRows<PageDbRow>(
+          await tx.execute(sql`
+          ${historyCte}
+          SELECT
+            id::text AS id,
+            run_date::text AS run_date,
+            run_index,
+            status,
+            finished_at,
+            actual_total::text AS actual_total,
+            actual_cash_total::text AS actual_cash_total,
+            actual_transfer_total::text AS actual_transfer_total,
+            item_count,
+            store_count
+          FROM filtered
+          ORDER BY ${directionSql}
+          LIMIT ${query.pageSize}
+          OFFSET ${offset}
+        `),
+        );
+
+        type StoreTotalDbRow = {
+          run_id: string;
+          store_id: string;
+          total: string;
+          cash: string;
+          transfer: string;
+          item_count: number;
+        };
+        const storeTotalsByRun = new Map<
+          string,
+          Array<{
+            storeId: string;
+            total: string;
+            cash: string;
+            transfer: string;
+            itemCount: number;
+          }>
+        >();
+        const pageRunIds = pageRows.map((row) => row.id);
+        if (pageRunIds.length > 0) {
+          const runIdsSql = sql.join(
+            pageRunIds.map((id) => sql`${id}::uuid`),
+            sql`, `,
+          );
+          const storeTotalRows = executeRows<StoreTotalDbRow>(
+            await tx.execute(sql`
+            WITH item_lines AS (
+              SELECT
+                ris.run_id,
+                ris.store_id,
+                ris.sku_id,
+                ris.qty * COALESCE(ris.unit_price, ri.unit_price, 0) AS amount,
+                COALESCE(ris.payment_method, ri.payment_method, 'cash') AS payment_method
+              FROM read_model.run_items_v ri
+              INNER JOIN read_model.run_item_stores_v ris
+                ON ris.run_id = ri.run_id AND ris.sku_id = ri.sku_id
+              WHERE ri.run_id IN (${runIdsSql})
+                AND ri.status = 'purchased'
+                ${splitScopeSql}
+            ),
+            expense_lines AS (
+              SELECT
+                expense.run_id,
+                (expense_split.value->>'storeId')::uuid AS store_id,
+                NULL::uuid AS sku_id,
+                COALESCE(NULLIF(expense_split.value->>'qty', '')::numeric, 0)
+                  * expense.unit_price AS amount,
+                expense.payment_method
+              FROM read_model.run_expenses_v expense
+              CROSS JOIN LATERAL jsonb_array_elements(expense.store_splits_json)
+                AS expense_split(value)
+              WHERE expense.run_id IN (${runIdsSql})
+                AND expense.removed_at IS NULL
+                ${expenseScopeSql}
+            ),
+            money_lines AS (
+              SELECT * FROM item_lines
+              UNION ALL
+              SELECT * FROM expense_lines
+            )
+            SELECT
+              run_id::text AS run_id,
+              store_id::text AS store_id,
+              COALESCE(SUM(amount), 0)::text AS total,
+              COALESCE(SUM(amount) FILTER (WHERE payment_method = 'cash'), 0)::text AS cash,
+              COALESCE(SUM(amount) FILTER (WHERE payment_method = 'transfer'), 0)::text AS transfer,
+              (COUNT(DISTINCT sku_id) FILTER (WHERE sku_id IS NOT NULL))::int AS item_count
+            FROM money_lines
+            GROUP BY run_id, store_id
+            ORDER BY run_id, SUM(amount) DESC, store_id
+          `),
+          );
+          for (const row of storeTotalRows) {
+            const totals = storeTotalsByRun.get(row.run_id) ?? [];
+            totals.push({
+              storeId: row.store_id,
+              total: row.total,
+              cash: row.cash,
+              transfer: row.transfer,
+              itemCount: row.item_count,
+            });
+            storeTotalsByRun.set(row.run_id, totals);
+          }
+        }
+
+        const totalCount = Number(summary.total_count ?? 0);
+        return {
+          rows: pageRows.map((row) => ({
+            id: row.id,
+            runDate: row.run_date,
+            runIndex: row.run_index,
+            status: row.status,
+            actualTotal: row.actual_total,
+            actualCashTotal: row.actual_cash_total,
+            actualTransferTotal: row.actual_transfer_total,
+            finishedAt: row.finished_at,
+            itemCount: row.item_count,
+            storeCount: row.store_count,
+            storeTotals: storeTotalsByRun.get(row.id) ?? [],
+          })),
+          pageInfo: {
+            page: query.page,
+            pageSize: query.pageSize,
+            totalCount,
+            totalPages: Math.ceil(totalCount / query.pageSize),
+            hasPrevious: query.page > 1,
+            hasNext: query.page * query.pageSize < totalCount,
+          },
+          summary: {
+            total: summary.total,
+            cash: summary.cash,
+            transfer: summary.transfer,
+          },
+        };
+      },
+      {
+        isolationLevel: 'repeatable read',
+        accessMode: 'read only',
+      },
+    ),
+  ),
+
+  /**
+   * Read-only detail payload for History. Unlike `run.get` (the live
+   * purchaser workspace), this endpoint requires financial visibility and
+   * physically removes every store branch outside that permission scope.
+   */
+  historyDetail: authedProcedure
+    .input(SimpleRunCommandSchema.pick({ runId: true }))
     .query(async ({ ctx, input }) =>
       ctx.withOrg(async (tx) => {
-        const allowedStoreIds = ctx.session!.permissions.has('run.create.org')
-          ? null
-          : await getActorStoreIds(tx, ctx.session!.memberId, ctx.session!.permissions);
-        if (allowedStoreIds !== null && allowedStoreIds.length === 0) return [];
-
-        const runs = await tx
-          .select()
-          .from(s.marketRunsV)
-          .where(
-            and(
-              eq(s.marketRunsV.orgId, ctx.session!.orgId),
-              eq(s.marketRunsV.status, 'finished'),
-            ),
-          )
-          .orderBy(desc(s.marketRunsV.runDate), desc(s.marketRunsV.runIndex))
-          .limit(input?.limit ?? 100);
-
-        if (runs.length === 0) return [];
-
-        let visibleRuns = runs;
-        const allowedStoreSet = allowedStoreIds === null ? null : new Set(allowedStoreIds);
-        const allSessionIds = [
-          ...new Set(runs.flatMap((run) => (run.sessionIdsJson as string[] | null) ?? [])),
-        ];
-        if (allowedStoreSet) {
-          if (allSessionIds.length === 0) return [];
-          const sessionRows = await tx.query.orderSessionsV.findMany({
-            where: (session, { inArray }) => inArray(session.id, allSessionIds),
-            columns: { id: true, storeId: true },
+        const allowedStoreIds = await getActorStoreIdsForPermission(
+          tx,
+          ctx.session!.memberId,
+          'prices.view',
+          ctx.session!.permissions,
+        );
+        if (allowedStoreIds !== null && allowedStoreIds.length === 0) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'auth.errors.missingPermission',
+            cause: { missingPermission: 'prices.view' },
           });
-          const storeBySession = new Map(sessionRows.map((session) => [session.id, session.storeId]));
-          visibleRuns = runs.filter((run) =>
-            ((run.sessionIdsJson as string[] | null) ?? []).some((sessionId) =>
-              allowedStoreSet.has(storeBySession.get(sessionId) ?? ''),
-            ),
-          );
         }
-        if (visibleRuns.length === 0) return [];
 
-        type MutableStoreTotal = {
-          storeId: string;
-          total: number;
-          cash: number;
-          transfer: number;
-          skuIds: Set<string>;
-        };
-        const totalsByRun = new Map<string, Map<string, MutableStoreTotal>>();
-        const ensureStoreTotal = (runId: string, storeId: string): MutableStoreTotal | null => {
-          if (allowedStoreSet && !allowedStoreSet.has(storeId)) return null;
-          let runTotals = totalsByRun.get(runId);
-          if (!runTotals) {
-            runTotals = new Map<string, MutableStoreTotal>();
-            totalsByRun.set(runId, runTotals);
-          }
-          let current = runTotals.get(storeId);
-          if (!current) {
-            current = { storeId, total: 0, cash: 0, transfer: 0, skuIds: new Set<string>() };
-            runTotals.set(storeId, current);
-          }
-          return current;
-        };
-        const visibleRunIds = visibleRuns.map((run) => run.id);
-        const splitRows = await tx
-          .select({
-            runId: s.runItemStoresV.runId,
-            storeId: s.runItemStoresV.storeId,
-            skuId: s.runItemStoresV.skuId,
-            qty: s.runItemStoresV.qty,
-            itemUnitPrice: s.runItemsV.unitPrice,
-            itemPaymentMethod: s.runItemsV.paymentMethod,
-            splitUnitPrice: s.runItemStoresV.unitPrice,
-            splitPaymentMethod: s.runItemStoresV.paymentMethod,
-          })
-          .from(s.runItemStoresV)
-          .innerJoin(
-            s.runItemsV,
-            and(
-              eq(s.runItemsV.runId, s.runItemStoresV.runId),
-              eq(s.runItemsV.skuId, s.runItemStoresV.skuId),
-            ),
-          )
-          .where(
-            and(
-              inArray(s.runItemStoresV.runId, visibleRunIds),
-              eq(s.runItemsV.status, 'purchased'),
-            ),
-          );
-        for (const row of splitRows) {
-          const unitPrice = row.splitUnitPrice ?? row.itemUnitPrice;
-          if (!unitPrice) continue;
-          const subtotal = Number(row.qty) * Number(unitPrice);
-          if (!Number.isFinite(subtotal)) continue;
-          const current = ensureStoreTotal(row.runId, row.storeId);
-          if (!current) continue;
-          current.total += subtotal;
-          if ((row.splitPaymentMethod ?? row.itemPaymentMethod) === 'transfer') {
-            current.transfer += subtotal;
-          } else {
-            current.cash += subtotal;
-          }
-          current.skuIds.add(row.skuId);
+        const run = await loadRun(tx, ctx.session!.orgId, input.runId);
+        if (run.status !== 'finished') {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'run.errors.notVisible' });
         }
-        const moneyString = (n: number) => (Math.round(n * 100) / 100).toString();
-        return visibleRuns.map((run) => ({
-          ...run,
-          storeTotals: [...(totalsByRun.get(run.id)?.values() ?? [])]
-            .sort((a, b) => b.total - a.total)
-            .map((total) => ({
-              storeId: total.storeId,
-              total: moneyString(total.total),
-              cash: moneyString(total.cash),
-              transfer: moneyString(total.transfer),
-              itemCount: total.skuIds.size,
-            })),
-        }));
+        const canAmend = await canAmendRun(tx, ctx, run);
+        const allowedStoreSet = allowedStoreIds === null ? null : new Set(allowedStoreIds);
+        const sessionIds = (run.sessionIdsJson as string[] | null) ?? [];
+        const rawSessions =
+          sessionIds.length > 0
+            ? await tx.query.orderSessionsV.findMany({
+                where: (session, { inArray: inArray2 }) => inArray2(session.id, sessionIds),
+                columns: {
+                  id: true,
+                  storeId: true,
+                  notes: true,
+                  extrasJson: true,
+                  submittedByMemberId: true,
+                  initiatedByMemberId: true,
+                  status: true,
+                },
+              })
+            : [];
+        const visibleSessions = allowedStoreSet
+          ? rawSessions.filter((session) => allowedStoreSet.has(session.storeId))
+          : rawSessions;
+        if (allowedStoreSet && visibleSessions.length === 0) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'run.errors.notVisible' });
+        }
+
+        const visibleSessionIds = visibleSessions.map((session) => session.id);
+        const sessionItems =
+          visibleSessionIds.length > 0
+            ? await tx.query.orderItemsV.findMany({
+                where: (item, { inArray: inArray2 }) => inArray2(item.sessionId, visibleSessionIds),
+                columns: { sessionId: true, skuId: true, qty: true },
+              })
+            : [];
+        const allItems = await tx.query.runItemsV.findMany({
+          where: (item, { eq: eq2 }) => eq2(item.runId, run.id),
+          orderBy: (item, { asc }) => asc(item.skuId),
+        });
+        const allSplits = await tx.query.runItemStoresV.findMany({
+          where: (split, { eq: eq2 }) => eq2(split.runId, run.id),
+          orderBy: (split, { asc }) => [asc(split.skuId), asc(split.storeId)],
+        });
+
+        const itemBySkuId = new Map(allItems.map((item) => [item.skuId, item]));
+        const rawSplits =
+          allowedStoreSet === null
+            ? allSplits
+            : allSplits.filter((split) => allowedStoreSet.has(split.storeId));
+        const hiddenSplitSkuIds =
+          allowedStoreSet === null
+            ? new Set<string>()
+            : new Set(
+                allSplits
+                  .filter((split) => !allowedStoreSet.has(split.storeId))
+                  .map((split) => split.skuId),
+              );
+        const splits =
+          allowedStoreSet === null
+            ? rawSplits
+            : rawSplits.map((split) => {
+                const item = itemBySkuId.get(split.skuId);
+                return {
+                  ...split,
+                  // A null split value means "inherit the run item". Resolve
+                  // that inheritance while the row is known to belong to a
+                  // visible store, so downstream money math never needs the
+                  // org-wide item fallback.
+                  unitPrice: split.unitPrice ?? item?.unitPrice ?? null,
+                  paymentMethod: split.paymentMethod ?? item?.paymentMethod ?? null,
+                };
+              });
+
+        const sessionStoreById = new Map(
+          visibleSessions.map((session) => [session.id, session.storeId]),
+        );
+        const demandParts = new Map<string, string[]>();
+        const sessionQtyParts = new Map<string, string[]>();
+        const sessionSkuIds = new Map<string, Set<string>>();
+        for (const item of sessionItems) {
+          if (Number(item.qty) <= 0) continue;
+          const storeId = sessionStoreById.get(item.sessionId);
+          if (!storeId) continue;
+          const demandKey = `${storeId}|${item.skuId}`;
+          const parts = demandParts.get(demandKey) ?? [];
+          parts.push(item.qty);
+          demandParts.set(demandKey, parts);
+          const qtyParts = sessionQtyParts.get(item.sessionId) ?? [];
+          qtyParts.push(item.qty);
+          sessionQtyParts.set(item.sessionId, qtyParts);
+          const skuIds = sessionSkuIds.get(item.sessionId) ?? new Set<string>();
+          skuIds.add(item.skuId);
+          sessionSkuIds.set(item.sessionId, skuIds);
+        }
+        const perStoreDemand = [...demandParts.entries()].map(([key, qtyParts]) => {
+          const [storeId, skuId] = key.split('|');
+          return { storeId: storeId!, skuId: skuId!, qty: sumDecimalStrings(qtyParts) };
+        });
+
+        const splitQtyParts = new Map<string, string[]>();
+        for (const split of splits) {
+          const parts = splitQtyParts.get(split.skuId) ?? [];
+          parts.push(split.qty);
+          splitQtyParts.set(split.skuId, parts);
+        }
+        const demandQtyParts = new Map<string, string[]>();
+        for (const demand of perStoreDemand) {
+          const parts = demandQtyParts.get(demand.skuId) ?? [];
+          parts.push(demand.qty);
+          demandQtyParts.set(demand.skuId, parts);
+        }
+        const items =
+          allowedStoreSet === null
+            ? allItems
+            : allItems
+                .filter((item) =>
+                  item.status === 'purchased'
+                    ? splitQtyParts.has(item.skuId)
+                    : demandQtyParts.has(item.skuId),
+                )
+                .map((item) => {
+                  const splitQty = sumDecimalStrings(splitQtyParts.get(item.skuId) ?? []);
+                  const demandQty = sumDecimalStrings(demandQtyParts.get(item.skuId) ?? []);
+                  const itemSplits = splits.filter((split) => split.skuId === item.skuId);
+                  const unitPrices = new Set(
+                    itemSplits
+                      .map((split) => split.unitPrice)
+                      .filter((value): value is string => value !== null),
+                  );
+                  const paymentMethods = new Set(
+                    itemSplits
+                      .map((split) => split.paymentMethod)
+                      .filter((value): value is string => value !== null),
+                  );
+                  const hasHiddenSplit = hiddenSplitSkuIds.has(item.skuId);
+                  return {
+                    ...item,
+                    // Never return the org-wide planned/purchased quantities to
+                    // a store-scoped history reader.
+                    plannedQty: demandQty !== '0' ? demandQty : splitQty,
+                    purchasedQty: item.status === 'purchased' ? splitQty : item.purchasedQty,
+                    // Item-level purchase metadata has no store attribution.
+                    // Only expose a summary value when every visible split
+                    // resolves to the same value; otherwise the resolved split
+                    // rows remain the sole source of truth. Supplier and receipt
+                    // metadata cannot be derived from a visible split at all.
+                    unitPrice:
+                      item.status === 'purchased' &&
+                      itemSplits.length > 0 &&
+                      unitPrices.size === 1 &&
+                      itemSplits.every((split) => split.unitPrice !== null)
+                        ? [...unitPrices][0]!
+                        : null,
+                    paymentMethod:
+                      item.status === 'purchased' &&
+                      itemSplits.length > 0 &&
+                      paymentMethods.size === 1 &&
+                      itemSplits.every((split) => split.paymentMethod !== null)
+                        ? [...paymentMethods][0]!
+                        : null,
+                    // Supplier/receipt live only on the item. Preserve them
+                    // when the SKU has no hidden allocation; otherwise their
+                    // provenance is ambiguous and they must be redacted.
+                    supplierId: hasHiddenSplit ? null : item.supplierId,
+                    receiptPhotoUrl: hasHiddenSplit ? null : item.receiptPhotoUrl,
+                  };
+                });
+
+        const submitterIds = [
+          ...new Set(
+            visibleSessions
+              .map((session) => session.submittedByMemberId ?? session.initiatedByMemberId)
+              .filter((id): id is string => Boolean(id)),
+          ),
+        ];
+        const displayNameByMemberId = new Map<string, string>();
+        if (submitterIds.length > 0) {
+          const members = await tx
+            .select({ memberId: s.members.id, displayName: s.users.displayName })
+            .from(s.members)
+            .innerJoin(s.users, eq(s.users.id, s.members.userId))
+            .where(inArray(s.members.id, submitterIds));
+          for (const member of members) {
+            displayNameByMemberId.set(member.memberId, member.displayName);
+          }
+        }
+        const sessions = visibleSessions.map((session) => {
+          const submitterId = session.submittedByMemberId ?? session.initiatedByMemberId;
+          const extras = (session.extrasJson ?? []) as unknown[];
+          return {
+            id: session.id,
+            storeId: session.storeId,
+            submittedByMemberId: session.submittedByMemberId,
+            initiatedByMemberId: session.initiatedByMemberId,
+            submittedByDisplayName: submitterId
+              ? (displayNameByMemberId.get(submitterId) ?? null)
+              : null,
+            itemCount: sessionSkuIds.get(session.id)?.size ?? 0,
+            totalQty: sumDecimalStrings(sessionQtyParts.get(session.id) ?? []),
+            extrasCount: Array.isArray(extras) ? extras.length : 0,
+            status: session.status,
+          };
+        });
+
+        type ExtraItem = {
+          name: string;
+          qty: string;
+          unit: string;
+          note?: string;
+          status?: 'pending' | 'bought' | 'unavailable';
+          sessionId: string;
+          idx: number;
+        };
+        const notesByStore = new Map<string, string[]>();
+        const extrasByStore = new Map<string, ExtraItem[]>();
+        for (const session of visibleSessions) {
+          const note = (session.notes ?? '').trim();
+          if (note) {
+            const notes = notesByStore.get(session.storeId) ?? [];
+            notes.push(note);
+            notesByStore.set(session.storeId, notes);
+          }
+          const extras = (session.extrasJson ?? []) as Array<{
+            name: string;
+            qty: string;
+            unit: string;
+            note?: string;
+            status?: 'pending' | 'bought' | 'unavailable';
+          }>;
+          const target = extrasByStore.get(session.storeId) ?? [];
+          extras.forEach((extra, idx) => target.push({ ...extra, sessionId: session.id, idx }));
+          if (target.length > 0) extrasByStore.set(session.storeId, target);
+        }
+        const sessionNotesByStore = Object.fromEntries(
+          [...notesByStore].map(([storeId, notes]) => [storeId, notes.join('\n\n')]),
+        );
+        const sessionExtrasByStore = Object.fromEntries(extrasByStore);
+
+        const rawExpenses = await tx.query.runExpensesV.findMany({
+          where: (expense, { and: and2, eq: eq2, isNull }) =>
+            and2(eq2(expense.runId, run.id), isNull(expense.removedAt)),
+          orderBy: (expense, { asc }) => asc(expense.addedAt),
+        });
+        const expenses = rawExpenses.flatMap((expense) => {
+          const allStoreSplits = expense.storeSplitsJson as Array<{ storeId: string; qty: string }>;
+          const storeSplits = allowedStoreSet
+            ? allStoreSplits.filter((split) => allowedStoreSet.has(split.storeId))
+            : allStoreSplits;
+          if (storeSplits.length === 0) return [];
+          return [
+            {
+              id: expense.id,
+              label: expense.label,
+              unitHint: expense.unitHint,
+              qty: sumDecimalStrings(storeSplits.map((split) => split.qty)),
+              unitPrice: expense.unitPrice,
+              storeSplits,
+              paymentMethod: expense.paymentMethod,
+              receiptPhotoUrl: expense.receiptPhotoUrl,
+              reason: expense.reason,
+              addedByMemberId: expense.addedByMemberId,
+              addedAt: expense.addedAt.toISOString(),
+            },
+          ];
+        });
+
+        return {
+          id: run.id,
+          runDate: run.runDate,
+          runIndex: run.runIndex,
+          status: run.status,
+          finishedAt: run.finishedAt,
+          items,
+          splits,
+          perStoreDemand,
+          sessionNotesByStore,
+          sessionExtrasByStore,
+          sessions,
+          expenses,
+          canAmend,
+        };
       }),
     ),
 
@@ -1279,22 +1902,15 @@ export const runRouter = router({
         // anyone with a runId could read its full demand + extras
         // (cross-store information leak — paired with the same fix
         // on run.list).
-        if (!ctx.session!.permissions.has('run.create.org')) {
-          const allowedStoreIds = await getActorStoreIds(
-            tx,
-            ctx.session!.memberId,
-            ctx.session!.permissions,
-          );
-          if (allowedStoreIds !== null) {
-            const involvedStoreIds = await runInvolvedStoreIds(tx, run);
-            const allowed = new Set(allowedStoreIds);
-            const overlap = involvedStoreIds.some((sid) => allowed.has(sid));
-            if (!overlap) {
-              throw new TRPCError({
-                code: 'NOT_FOUND',
-                message: 'run.errors.notVisible',
-              });
-            }
+        const allowedStoreIds = await resolveRunReadStoreScope(tx, ctx);
+        const allowedStoreSet = allowedStoreIds === null ? null : new Set(allowedStoreIds);
+        if (allowedStoreSet) {
+          const involvedStoreIds = await runInvolvedStoreIds(tx, run);
+          if (!involvedStoreIds.some((storeId) => allowedStoreSet.has(storeId))) {
+            throw new TRPCError({
+              code: 'NOT_FOUND',
+              message: 'run.errors.notVisible',
+            });
           }
         }
 
@@ -1306,14 +1922,42 @@ export const runRouter = router({
         // mid-market. Ordering by the read model's PK columns is stable,
         // free (both are index scans on (run_id, sku_id[, store_id])),
         // and gives the client a deterministic base to re-sort on top of.
-        const items = await tx.query.runItemsV.findMany({
+        const allItems = await tx.query.runItemsV.findMany({
           where: (i, { eq: eq2 }) => eq2(i.runId, run.id),
           orderBy: (i, { asc }) => asc(i.skuId),
         });
-        const splits = await tx.query.runItemStoresV.findMany({
+        type VisibleRunItem = Omit<(typeof allItems)[number], 'paymentMethod'> & {
+          paymentMethod: string | null;
+        };
+        let items: VisibleRunItem[] = allItems;
+        let splits = await tx.query.runItemStoresV.findMany({
           where: (i, { eq: eq2 }) => eq2(i.runId, run.id),
           orderBy: (i, { asc }) => [asc(i.skuId), asc(i.storeId)],
         });
+        const allSplits = splits;
+        const itemBySkuId = new Map(allItems.map((item) => [item.skuId, item]));
+        const hiddenSplitSkuIds =
+          allowedStoreSet === null
+            ? new Set<string>()
+            : new Set(
+                allSplits
+                  .filter((split) => !allowedStoreSet.has(split.storeId))
+                  .map((split) => split.skuId),
+              );
+        if (allowedStoreSet) {
+          splits = allSplits
+            .filter((split) => allowedStoreSet.has(split.storeId))
+            .map((split) => {
+              const item = itemBySkuId.get(split.skuId);
+              return {
+                ...split,
+                // Resolve item fallback only while the allocation is tied to
+                // a visible store; clients must not read hidden item metadata.
+                unitPrice: split.unitPrice ?? item?.unitPrice ?? null,
+                paymentMethod: split.paymentMethod ?? item?.paymentMethod ?? null,
+              };
+            });
+        }
 
         // Per-(store, sku) demand from the underlying sessions. The
         // RunPage uses this to PRE-FILL splits when the purchaser
@@ -1347,6 +1991,7 @@ export const runRouter = router({
         };
         const sessionNotesByStore: Record<string, string> = {};
         const sessionExtrasByStore: Record<string, ExtraItem[]> = {};
+        let visibleSessionIds: string[] = [];
         let runSessions: Array<{
           id: string;
           storeId: string;
@@ -1359,7 +2004,7 @@ export const runRouter = router({
           status: string;
         }> = [];
         if (sessionIds.length > 0) {
-          const sessions = await tx.query.orderSessionsV.findMany({
+          const rawSessions = await tx.query.orderSessionsV.findMany({
             where: (sess, { inArray: ia }) => ia(sess.id, sessionIds),
             columns: {
               id: true,
@@ -1371,9 +2016,16 @@ export const runRouter = router({
               status: true,
             },
           });
-          const sessionItems = await tx.query.orderItemsV.findMany({
-            where: (it, { inArray: ia }) => ia(it.sessionId, sessionIds),
-          });
+          const sessions = allowedStoreSet
+            ? rawSessions.filter((session) => allowedStoreSet.has(session.storeId))
+            : rawSessions;
+          visibleSessionIds = sessions.map((session) => session.id);
+          const sessionItems =
+            visibleSessionIds.length > 0
+              ? await tx.query.orderItemsV.findMany({
+                  where: (it, { inArray: ia }) => ia(it.sessionId, visibleSessionIds),
+                })
+              : [];
           const sessionStoreById = new Map<string, string>();
           const sessionStats = new Map<string, { itemCount: number; totalQty: number }>();
           const noteAccumulator = new Map<string, string[]>();
@@ -1439,7 +2091,7 @@ export const runRouter = router({
               submittedByMemberId: sess.submittedByMemberId,
               initiatedByMemberId: sess.initiatedByMemberId,
               submittedByDisplayName: submitterId
-                ? displayNameByMemberId.get(submitterId) ?? null
+                ? (displayNameByMemberId.get(submitterId) ?? null)
                 : null,
               itemCount: stat.itemCount,
               totalQty: stat.totalQty.toString(),
@@ -1473,18 +2125,79 @@ export const runRouter = router({
           }
         }
 
+        if (allowedStoreSet) {
+          const splitQtyParts = new Map<string, string[]>();
+          for (const split of splits) {
+            const qtyParts = splitQtyParts.get(split.skuId) ?? [];
+            qtyParts.push(split.qty);
+            splitQtyParts.set(split.skuId, qtyParts);
+          }
+          const demandQtyParts = new Map<string, string[]>();
+          for (const demand of perStoreDemand) {
+            const qtyParts = demandQtyParts.get(demand.skuId) ?? [];
+            qtyParts.push(demand.qty);
+            demandQtyParts.set(demand.skuId, qtyParts);
+          }
+          items = allItems
+            .filter((item) =>
+              item.status === 'purchased'
+                ? splitQtyParts.has(item.skuId)
+                : demandQtyParts.has(item.skuId),
+            )
+            .map((item) => {
+              const splitQty = sumDecimalStrings(splitQtyParts.get(item.skuId) ?? []);
+              const demandQty = sumDecimalStrings(demandQtyParts.get(item.skuId) ?? []);
+              const itemSplits = splits.filter((split) => split.skuId === item.skuId);
+              const unitPrices = new Set(
+                itemSplits
+                  .map((split) => split.unitPrice)
+                  .filter((value): value is string => value !== null),
+              );
+              const paymentMethods = new Set(
+                itemSplits
+                  .map((split) => split.paymentMethod)
+                  .filter((value): value is string => value !== null),
+              );
+              const hasHiddenSplit = hiddenSplitSkuIds.has(item.skuId);
+              return {
+                ...item,
+                plannedQty: demandQty !== '0' ? demandQty : splitQty,
+                purchasedQty: item.status === 'purchased' ? splitQty : item.purchasedQty,
+                unitPrice:
+                  item.status === 'purchased' &&
+                  itemSplits.length > 0 &&
+                  unitPrices.size === 1 &&
+                  itemSplits.every((split) => split.unitPrice !== null)
+                    ? [...unitPrices][0]!
+                    : null,
+                paymentMethod:
+                  item.status === 'purchased' &&
+                  itemSplits.length > 0 &&
+                  paymentMethods.size === 1 &&
+                  itemSplits.every((split) => split.paymentMethod !== null)
+                    ? [...paymentMethods][0]!
+                    : null,
+                supplierId: hasHiddenSplit ? null : item.supplierId,
+                receiptPhotoUrl: hasHiddenSplit ? null : item.receiptPhotoUrl,
+              };
+            });
+        }
+
         // M3.27 (2026-05-18): preferred-supplier mapping for the
         // active-run "by vendor" view. Mirrors previewCreatable's
         // logic verbatim (preview/active should always agree on which
         // stall an item is routed to). Only one DISTINCT ON query
         // for all SKUs in the run.
         const runSkuIds = items.map((it) => it.skuId);
-        const supplierBySku: Record<string, {
-          id: string;
-          name: string;
-          contactPhone: string | null;
-          contactTg: string | null;
-        } | null> = {};
+        const supplierBySku: Record<
+          string,
+          {
+            id: string;
+            name: string;
+            contactPhone: string | null;
+            contactTg: string | null;
+          } | null
+        > = {};
         if (runSkuIds.length > 0) {
           const rows = await tx.execute<{
             sku_id: string;
@@ -1504,9 +2217,7 @@ export const runRouter = router({
             ORDER BY sl.sku_id,
                      sl.last_seen_at DESC NULLS LAST
           `);
-          const list = Array.isArray(rows)
-            ? rows
-            : ((rows as { rows?: typeof rows }).rows ?? []);
+          const list = Array.isArray(rows) ? rows : ((rows as { rows?: typeof rows }).rows ?? []);
           for (const r of list) {
             supplierBySku[r.sku_id] = {
               id: r.supplier_id,
@@ -1541,15 +2252,27 @@ export const runRouter = router({
         // bad trade.
         const lastPriceObservedAtBySku: Record<string, string> = {};
         if (skuIds.length > 0) {
+          const visiblePriceStoreIds = [
+            ...new Set([
+              ...perStoreDemand.map((row) => row.storeId),
+              ...splits.map((row) => row.storeId),
+            ]),
+          ];
+          const priceStoreScope =
+            allowedStoreSet === null
+              ? sql``
+              : sql`AND store_id IN (${sql.join(
+                  visiblePriceStoreIds.map((storeId) => sql`${storeId}::uuid`),
+                  sql`, `,
+                )})`;
           const rows = (await tx.execute(
             sql`SELECT DISTINCT ON (sku_id) sku_id::text AS sku_id,
                        unit_price::text AS unit_price,
                        observed_at
                 FROM inventory.price_history
                 WHERE org_id = ${ctx.session!.orgId}
-                  AND sku_id IN (${sql.raw(
-                    skuIds.map((id) => `'${id}'`).join(','),
-                  )})
+                  ${priceStoreScope}
+                  AND sku_id IN (${sql.raw(skuIds.map((id) => `'${id}'`).join(','))})
                   -- 2026-07-27: exclude THIS run's own observations.
                   --
                   -- Every ItemPurchased inserts a price_history row
@@ -1621,14 +2344,72 @@ export const runRouter = router({
         // (rev_active_idx) so this is a cheap lookup. Admin reports
         // pull the full table (including removed rows) via a separate
         // query.
-        const expenses = await tx.query.runExpensesV.findMany({
+        const rawExpenses = await tx.query.runExpensesV.findMany({
           where: (e, { eq: eq2, and: and2, isNull }) =>
             and2(eq2(e.runId, run.id), isNull(e.removedAt)),
           orderBy: (e, { asc }) => asc(e.addedAt),
         });
+        const expenses = rawExpenses.flatMap((expense) => {
+          const allStoreSplits = expense.storeSplitsJson as Array<{
+            storeId: string;
+            qty: string;
+          }>;
+          const storeSplits = allowedStoreSet
+            ? allStoreSplits.filter((split) => allowedStoreSet.has(split.storeId))
+            : allStoreSplits;
+          if (storeSplits.length === 0) return [];
+          return [
+            {
+              id: expense.id,
+              label: expense.label,
+              unitHint: expense.unitHint,
+              qty: sumDecimalStrings(storeSplits.map((split) => split.qty)),
+              unitPrice: expense.unitPrice,
+              storeSplits,
+              paymentMethod: expense.paymentMethod,
+              receiptPhotoUrl:
+                allowedStoreSet && storeSplits.length !== allStoreSplits.length
+                  ? null
+                  : expense.receiptPhotoUrl,
+              reason: expense.reason,
+              addedByMemberId: expense.addedByMemberId,
+              addedAt: expense.addedAt.toISOString(),
+            },
+          ];
+        });
+
+        const visibleMoney = {
+          total: [] as string[],
+          cash: [] as string[],
+          transfer: [] as string[],
+        };
+        if (allowedStoreSet) {
+          for (const split of splits) {
+            const item = itemBySkuId.get(split.skuId);
+            if (item?.status !== 'purchased' || split.unitPrice === null) continue;
+            const subtotal = multiplyDecimalStrings(split.qty, split.unitPrice);
+            visibleMoney.total.push(subtotal);
+            if (split.paymentMethod === 'transfer') visibleMoney.transfer.push(subtotal);
+            else visibleMoney.cash.push(subtotal);
+          }
+        }
 
         return {
           ...run,
+          ...(allowedStoreSet
+            ? {
+                plannedTotal: null,
+                actualTotal:
+                  run.actualTotal === null ? null : sumDecimalStrings(visibleMoney.total),
+                actualCashTotal:
+                  run.actualCashTotal === null ? null : sumDecimalStrings(visibleMoney.cash),
+                actualTransferTotal:
+                  run.actualTransferTotal === null
+                    ? null
+                    : sumDecimalStrings(visibleMoney.transfer),
+                sessionIdsJson: visibleSessionIds,
+              }
+            : {}),
           items,
           splits,
           perStoreDemand,
@@ -1641,22 +2422,7 @@ export const runRouter = router({
           // M3.44: off-catalog expenses (purchaser-recorded). FE
           // renders these in an "Off-catalog / Expenses" card and
           // sums them into the finish-summary breakdown.
-          expenses: expenses.map((e) => ({
-            id: e.id,
-            label: e.label,
-            unitHint: e.unitHint,
-            qty: e.qty,
-            unitPrice: e.unitPrice,
-            storeSplits: e.storeSplitsJson as Array<{
-              storeId: string;
-              qty: string;
-            }>,
-            paymentMethod: e.paymentMethod,
-            receiptPhotoUrl: e.receiptPhotoUrl,
-            reason: e.reason,
-            addedByMemberId: e.addedByMemberId,
-            addedAt: e.addedAt.toISOString(),
-          })),
+          expenses,
           // C.2: claim display fields. The raw memberId columns are
           // already in `...run` (drizzle spreads the row); these are
           // the resolved names for the banner.
@@ -1705,11 +2471,13 @@ export const runRouter = router({
       ),
     ),
 
-  startPurchase: authedProcedure.input(SimpleRunCommandSchema).mutation(async ({ ctx, input }) =>
-    runSimpleCommand(ctx, input.runId, (state) =>
-      decideRun(state, { type: 'StartPurchase', actor: actorFromCtx(ctx) }),
+  startPurchase: authedProcedure
+    .input(SimpleRunCommandSchema)
+    .mutation(async ({ ctx, input }) =>
+      runSimpleCommand(ctx, input.runId, (state) =>
+        decideRun(state, { type: 'StartPurchase', actor: actorFromCtx(ctx) }),
+      ),
     ),
-  ),
 
   // M1.20: idempotent — record-purchase replays would double-deduct
   // inventory + double-record price history.
@@ -1776,25 +2544,23 @@ export const runRouter = router({
    *   - all storeSplits within run scope
    *   - receipt photo when total > 200,000 UZS
    */
-  addExpense: idempotentMutation
-    .input(AddRunExpenseInputSchema)
-    .mutation(async ({ ctx, input }) =>
-      runSimpleCommand(ctx, input.runId, (state) =>
-        decideRun(state, {
-          type: 'AddRunExpense',
-          expenseId: input.expenseId,
-          label: input.label,
-          ...(input.unitHint !== undefined ? { unitHint: input.unitHint } : {}),
-          qty: input.qty,
-          unitPrice: input.unitPrice,
-          storeSplits: input.storeSplits,
-          paymentMethod: input.paymentMethod,
-          receiptPhotoUrl: input.receiptPhotoUrl,
-          reason: input.reason,
-          actor: actorFromCtx(ctx),
-        }),
-      ),
+  addExpense: idempotentMutation.input(AddRunExpenseInputSchema).mutation(async ({ ctx, input }) =>
+    runSimpleCommand(ctx, input.runId, (state) =>
+      decideRun(state, {
+        type: 'AddRunExpense',
+        expenseId: input.expenseId,
+        label: input.label,
+        ...(input.unitHint !== undefined ? { unitHint: input.unitHint } : {}),
+        qty: input.qty,
+        unitPrice: input.unitPrice,
+        storeSplits: input.storeSplits,
+        paymentMethod: input.paymentMethod,
+        receiptPhotoUrl: input.receiptPhotoUrl,
+        reason: input.reason,
+        actor: actorFromCtx(ctx),
+      }),
     ),
+  ),
 
   /**
    * M3.44: soft-delete an expense before the run is finished. The
@@ -1828,11 +2594,13 @@ export const runRouter = router({
       ),
     ),
 
-  startDelivery: authedProcedure.input(SimpleRunCommandSchema).mutation(async ({ ctx, input }) =>
-    runSimpleCommand(ctx, input.runId, (state) =>
-      decideRun(state, { type: 'StartDelivery', actor: actorFromCtx(ctx) }),
+  startDelivery: authedProcedure
+    .input(SimpleRunCommandSchema)
+    .mutation(async ({ ctx, input }) =>
+      runSimpleCommand(ctx, input.runId, (state) =>
+        decideRun(state, { type: 'StartDelivery', actor: actorFromCtx(ctx) }),
+      ),
     ),
-  ),
 
   deliverToStore: authedProcedure.input(DispatchInputSchema).mutation(async ({ ctx, input }) => {
     // Purchaser delivering — they need run.purchase, NOT a store-scope
@@ -1851,12 +2619,16 @@ export const runRouter = router({
         ctx.session!.permissions,
       ),
     );
-    return runSimpleCommand(ctx, input.runId, (state) =>
-      decideRun(state, {
-        type: 'DeliverToStore',
-        storeId: input.storeId,
-        actor: actorFromCtx(ctx, effectivePerms),
-      }),
+    return runSimpleCommand(
+      ctx,
+      input.runId,
+      (state) =>
+        decideRun(state, {
+          type: 'DeliverToStore',
+          storeId: input.storeId,
+          actor: actorFromCtx(ctx, effectivePerms),
+        }),
+      { skipRunPermissionScope: true },
     );
   }),
 
@@ -1881,16 +2653,20 @@ export const runRouter = router({
           ctx.session!.permissions,
         );
       });
-      return runSimpleCommand(ctx, input.runId, (state) =>
-        decideRun(state, {
-          type: 'ConfirmStoreItem',
-          storeId: input.storeId,
-          skuId: input.skuId,
-          status: input.status,
-          note: input.note,
-          photoUrl: input.photoUrl,
-          actor: actorFromCtx(ctx, effectivePerms),
-        }),
+      return runSimpleCommand(
+        ctx,
+        input.runId,
+        (state) =>
+          decideRun(state, {
+            type: 'ConfirmStoreItem',
+            storeId: input.storeId,
+            skuId: input.skuId,
+            status: input.status,
+            note: input.note,
+            photoUrl: input.photoUrl,
+            actor: actorFromCtx(ctx, effectivePerms),
+          }),
+        { skipRunPermissionScope: true },
       );
     }),
 
@@ -1909,12 +2685,16 @@ export const runRouter = router({
         ctx.session!.permissions,
       );
     });
-    return runSimpleCommand(ctx, input.runId, (state) =>
-      decideRun(state, {
-        type: 'ConfirmStore',
-        storeId: input.storeId,
-        actor: actorFromCtx(ctx, effectivePerms),
-      }),
+    return runSimpleCommand(
+      ctx,
+      input.runId,
+      (state) =>
+        decideRun(state, {
+          type: 'ConfirmStore',
+          storeId: input.storeId,
+          actor: actorFromCtx(ctx, effectivePerms),
+        }),
+      { skipRunPermissionScope: true },
     );
   }),
 
@@ -1959,12 +2739,17 @@ export const runRouter = router({
   finish: idempotentMutation.input(SimpleRunCommandSchema).mutation(async ({ ctx, input }) => {
     return ctx.withOrg(async (tx) => {
       const run = await loadRun(tx, ctx.session!.orgId, input.runId);
-      await assertRunStoreVisible(tx, ctx, run);
       const runEvents = (await readStream(tx, 'run', run.id)) as unknown as RunEvent[];
       let runState = emptyRunState(run.id);
       for (const e of runEvents) runState = applyRun(runState, e);
 
       // Step 1 — RunFinished on the run stream.
+      if (runState.status === 'amending') {
+        await assertCanAmendRun(tx, ctx, run);
+      } else {
+        await assertRunPermissionForAllStores(tx, ctx, run, 'run.finish');
+      }
+
       let finishEvents: RunEvent[] = [];
       try {
         finishEvents = decideRun(runState, {
@@ -2088,9 +2873,12 @@ export const runRouter = router({
       }
 
       // archiveFailures is always empty on success (any non-empty
-       // list would have thrown above). Kept in the response shape
-       // for FE backwards compat — older clients may still read it.
-      return { lastSeq: runState.seq, archiveFailures: [] as Array<{ sessionId: string; reason: string }> };
+      // list would have thrown above). Kept in the response shape
+      // for FE backwards compat — older clients may still read it.
+      return {
+        lastSeq: runState.seq,
+        archiveFailures: [] as Array<{ sessionId: string; reason: string }>,
+      };
     });
   }),
 
@@ -2137,18 +2925,16 @@ export const runRouter = router({
   /** Revert a purchased item back to pending (mistapped row, decided
    *  not to buy after all). Blocked once any destination store has
    *  accepted delivery. */
-  undoPurchase: authedProcedure
-    .input(UndoPurchaseInputSchema)
-    .mutation(async ({ ctx, input }) =>
-      runSimpleCommand(ctx, input.runId, (state) =>
-        decideRun(state, {
-          type: 'UndoPurchase',
-          skuId: input.skuId,
-          reason: input.reason,
-          actor: actorFromCtx(ctx),
-        }),
-      ),
+  undoPurchase: authedProcedure.input(UndoPurchaseInputSchema).mutation(async ({ ctx, input }) =>
+    runSimpleCommand(ctx, input.runId, (state) =>
+      decideRun(state, {
+        type: 'UndoPurchase',
+        skuId: input.skuId,
+        reason: input.reason,
+        actor: actorFromCtx(ctx),
+      }),
     ),
+  ),
 
   /**
    * 2026-07-06: super-admin (run.amend) reopens a FINISHED run to correct
@@ -2158,17 +2944,19 @@ export const runRouter = router({
    * which recomputes + re-freezes the totals. The domain enforces the
    * permission + finished-only guard.
    */
-  reopen: authedProcedure
-    .input(RunReasonOnlyInputSchema)
-    .mutation(async ({ ctx, input }) =>
-      runSimpleCommand(ctx, input.runId, (state) =>
+  reopen: authedProcedure.input(RunReasonOnlyInputSchema).mutation(async ({ ctx, input }) =>
+    runSimpleCommand(
+      ctx,
+      input.runId,
+      (state) =>
         decideRun(state, {
           type: 'ReopenRun',
           reason: input.reason,
           actor: actorFromCtx(ctx),
         }),
-      ),
+      { requireGlobalAmend: true },
     ),
+  ),
 
   /**
    * Correct the calendar date a run's spend is booked under.
@@ -2178,17 +2966,19 @@ export const runRouter = router({
    * totals as a side effect of a pure date fix. Works on finished runs
    * directly; the domain rejects only `cancelled`.
    */
-  changeDate: authedProcedure
-    .input(ChangeRunDateInputSchema)
-    .mutation(async ({ ctx, input }) =>
-      runSimpleCommand(ctx, input.runId, (state) =>
+  changeDate: authedProcedure.input(ChangeRunDateInputSchema).mutation(async ({ ctx, input }) =>
+    runSimpleCommand(
+      ctx,
+      input.runId,
+      (state) =>
         decideRun(state, {
           type: 'ChangeRunDate',
           runDate: input.runDate,
           actor: actorFromCtx(ctx),
         }),
-      ),
+      { requireGlobalAmend: true },
     ),
+  ),
 
   /** Close a super-admin correction: recompute + re-freeze the run
    *  totals and return amending → finished. */
@@ -2212,13 +3002,17 @@ export const runRouter = router({
           ctx.session!.permissions,
         ),
       );
-      return runSimpleCommand(ctx, input.runId, (state) =>
-        decideRun(state, {
-          type: 'UndeliverStore',
-          storeId: input.storeId,
-          reason: input.reason,
-          actor: actorFromCtx(ctx, effectivePerms),
-        }),
+      return runSimpleCommand(
+        ctx,
+        input.runId,
+        (state) =>
+          decideRun(state, {
+            type: 'UndeliverStore',
+            storeId: input.storeId,
+            reason: input.reason,
+            actor: actorFromCtx(ctx, effectivePerms),
+          }),
+        { skipRunPermissionScope: true },
       );
     }),
 
@@ -2239,12 +3033,16 @@ export const runRouter = router({
   undoStartDelivery: authedProcedure
     .input(RunReasonOnlyInputSchema)
     .mutation(async ({ ctx, input }) =>
-      runSimpleCommand(ctx, input.runId, (state) =>
-        decideRun(state, {
-          type: 'UndoStartDelivery',
-          reason: input.reason,
-          actor: actorFromCtx(ctx),
-        }),
+      runSimpleCommand(
+        ctx,
+        input.runId,
+        (state) =>
+          decideRun(state, {
+            type: 'UndoStartDelivery',
+            reason: input.reason,
+            actor: actorFromCtx(ctx),
+          }),
+        { requiredPermission: 'delivery.dispatch' },
       ),
     ),
 
@@ -2277,13 +3075,18 @@ export const runRouter = router({
   cancel: authedProcedure.input(RunCancelInputSchema).mutation(async ({ ctx, input }) => {
     return ctx.withOrg(async (tx) => {
       const run = await loadRun(tx, ctx.session!.orgId, input.runId);
-      await assertRunStoreVisible(tx, ctx, run);
       const runEvents = (await readStream(tx, 'run', run.id)) as unknown as RunEvent[];
       let runState = emptyRunState(run.id);
       for (const e of runEvents) runState = applyRun(runState, e);
 
       // Step 1 — produce RunCancelled. Domain validates permission +
       // status guards (e.g. not already finished).
+      if (runState.status === 'amending') {
+        await assertCanAmendRun(tx, ctx, run);
+      } else {
+        await assertRunPermissionForAllStores(tx, ctx, run, 'run.create');
+      }
+
       let cancelEvents: RunEvent[] = [];
       try {
         cancelEvents = decideRun(runState, {
@@ -2330,10 +3133,7 @@ export const runRouter = router({
         // the perm at this synthesis layer is safe because we're
         // already inside an authorized cancel; we're not letting the
         // actor eject sessions outside of this cancellation.
-        const ejectPerms = new Set([
-          ...ctx.session!.permissions,
-          'run.eject_session',
-        ]);
+        const ejectPerms = new Set([...ctx.session!.permissions, 'run.eject_session']);
         let ev: OrderEvent[] = [];
         try {
           ev = decideOrder(oState, {
@@ -2417,12 +3217,27 @@ export const runRouter = router({
         session.storeId,
         ctx.session!.permissions,
       );
+      const effectivePerms = await effectivePermissionsForStore(
+        tx,
+        ctx.session!.memberId,
+        session.storeId,
+        ctx.session!.permissions,
+      );
+      if (!effectivePerms.has('run.eject_session')) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'auth.errors.missingPermission',
+          cause: { missingPermission: 'run.eject_session' },
+        });
+      }
 
       const runEvents = (await readStream(tx, 'run', input.runId)) as unknown as RunEvent[];
       let runState = emptyRunState(input.runId);
       for (const e of runEvents) runState = applyRun(runState, e);
 
       // Check no per-session items have been touched yet.
+      if (runState.status === 'amending') await assertCanAmendRun(tx, ctx, run);
+
       const sessionItems = await tx.query.orderItemsV.findMany({
         where: (it, { eq: eq2 }) => eq2(it.sessionId, input.sessionId),
       });
@@ -2453,7 +3268,7 @@ export const runRouter = router({
           sessionId: input.sessionId,
           removedPlannedItems,
           reason: input.reason,
-          actor: actorFromCtx(ctx),
+          actor: actorFromCtx(ctx, effectivePerms),
         });
         if (runRemovalEvents.length > 0) {
           await appendEvents(tx, {
@@ -2478,7 +3293,11 @@ export const runRouter = router({
       }
 
       // Emit EjectedFromRun on the order stream in the same tx.
-      const orderEvents = (await readStream(tx, 'order', input.sessionId)) as unknown as OrderEvent[];
+      const orderEvents = (await readStream(
+        tx,
+        'order',
+        input.sessionId,
+      )) as unknown as OrderEvent[];
       let oState = emptyOrderState(input.sessionId);
       for (const e of orderEvents) oState = applyOrder(oState, e);
       const ev = decideOrder(oState, {
@@ -2488,7 +3307,7 @@ export const runRouter = router({
         actor: {
           userId: ctx.session!.userId,
           memberId: ctx.session!.memberId,
-          permissions: ctx.session!.permissions,
+          permissions: effectivePerms,
           isClaimer: oState.claimedByMemberId === ctx.session!.memberId,
         },
       });
@@ -2541,13 +3360,27 @@ async function runSimpleCommand(
   ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
   runId: string,
   produce: (state: RunState) => RunEvent[],
+  options?: {
+    requireGlobalAmend?: boolean;
+    requiredPermission?: string;
+    skipRunPermissionScope?: boolean;
+  },
 ): Promise<{ lastSeq: number }> {
   return ctx.withOrg(async (tx) => {
     const run = await loadRun(tx, ctx.session!.orgId, runId);
-    await assertRunStoreVisible(tx, ctx, run);
     const events = (await readStream(tx, 'run', run.id)) as unknown as RunEvent[];
     let state = emptyRunState(run.id);
     for (const e of events) state = applyRun(state, e);
+    if (options?.requireGlobalAmend || state.status === 'amending') {
+      await assertCanAmendRun(tx, ctx, run);
+    } else if (!options?.skipRunPermissionScope) {
+      await assertRunPermissionForAllStores(
+        tx,
+        ctx,
+        run,
+        options?.requiredPermission ?? 'run.purchase',
+      );
+    }
     try {
       const out = produce(state);
       if (out.length === 0) return { lastSeq: state.seq };
@@ -2609,38 +3442,154 @@ async function runInvolvedStoreIds(
 }
 
 /**
- * Store-scope gate for run MUTATIONS. Mirrors the exact predicate
- * `run.get` uses (M3.33 Wave1 #2) so mutation visibility == read
- * visibility: a store-tier actor may only act on a run whose sessions
- * touch at least one store they are bound to. Org-tier actors
- * (`run.create.org`) and admins (`getActorStoreIds` → null) bypass.
+ * Resolve the store slice that may be serialized by live run reads.
  *
- * P0 H1 (2026-07-03): without this, every run mutation routed through
- * `runSimpleCommand` — plus `finish`/`cancel` which inline `loadRun` —
- * checked only org membership. A purchaser bound to Store A could
- * claim / purchaseItem / revisePurchase / addExpense / finish / cancel a
- * run that exclusively serves Store B (money-bearing cross-store writes
- * the read side already forbade). This intentionally does NOT tighten
- * beyond `run.get`: anyone who can currently see a run can still act on
- * it (subject to the domain-layer permission checks).
+ * A persisted GLOBAL `run.create.org` grant gets organization-wide run
+ * visibility, subject to store-level denies. A store-scoped copy of that key
+ * is only a UI affordance in the flat session union and must not widen the
+ * read beyond the member's concrete assignments. A genuine org admin still
+ * returns `null` through `getActorStoreIds`.
  */
-async function assertRunStoreVisible(
+async function resolveRunReadStoreScope(
+  db: import('@compass/db').DB,
+  ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
+): Promise<string[] | null> {
+  if (await hasGlobalPermission(db, ctx.session!.memberId, 'run.create.org')) {
+    return getActorStoreIdsForPermission(
+      db,
+      ctx.session!.memberId,
+      'run.create.org',
+      ctx.session!.permissions,
+    );
+  }
+  return getActorStoreIds(db, ctx.session!.memberId, ctx.session!.permissions);
+}
+
+/**
+ * Resolve the stores where this actor may plan/extend a run.
+ *
+ * `SessionContext.permissions` is a compatibility union across every role
+ * binding, so the presence of `run.create.org` there cannot prove an
+ * organization-wide grant. Only an active persisted GLOBAL grant selects the
+ * org-wide path. Both paths still go through the effective-permission resolver
+ * so a store-scoped deny wins:
+ *
+ *   - GLOBAL `run.create.org` -> stores where `run.create.org` is effective
+ *   - otherwise              -> stores where `run.create` is effective
+ *
+ * This also prevents an unrelated Store-B staff assignment from widening a
+ * Store-A purchaser's planning scope.
+ */
+async function resolveRunCreateStoreScope(
+  db: import('@compass/db').DB,
+  ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
+): Promise<string[] | null> {
+  const hasPersistedOrgGrant = await hasGlobalPermission(
+    db,
+    ctx.session!.memberId,
+    'run.create.org',
+  );
+  return getActorStoreIdsForPermission(
+    db,
+    ctx.session!.memberId,
+    hasPersistedOrgGrant ? 'run.create.org' : 'run.create',
+    ctx.session!.permissions,
+  );
+}
+
+function assertStoreIdsWithinRunCreateScope(
+  storeIds: readonly string[],
+  allowedStoreIds: readonly string[] | null,
+): void {
+  if (allowedStoreIds === null) return;
+  const allowed = new Set(allowedStoreIds);
+  if (storeIds.every((storeId) => allowed.has(storeId))) return;
+  throw new TRPCError({
+    code: 'FORBIDDEN',
+    message: 'auth.errors.notAssignedToStore',
+  });
+}
+
+async function assertRunCreateScopeForRun(
   db: import('@compass/db').DB,
   ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
   run: { sessionIdsJson: unknown },
 ): Promise<void> {
-  if (ctx.session!.permissions.has('run.create.org')) return;
-  const allowedStoreIds = await getActorStoreIds(
-    db,
-    ctx.session!.memberId,
-    ctx.session!.permissions,
-  );
-  if (allowedStoreIds === null) return; // unrestricted (admin path)
+  const allowedStoreIds = await resolveRunCreateStoreScope(db, ctx);
+  if (allowedStoreIds === null) return;
   const involvedStoreIds = await runInvolvedStoreIds(db, run);
   const allowed = new Set(allowedStoreIds);
-  if (!involvedStoreIds.some((sid) => allowed.has(sid))) {
-    throw new TRPCError({ code: 'NOT_FOUND', message: 'run.errors.notVisible' });
+  if (involvedStoreIds.every((storeId) => allowed.has(storeId))) return;
+  throw new TRPCError({ code: 'NOT_FOUND', message: 'run.errors.notVisible' });
+}
+
+/**
+ * `run.amend` is organization-wide authority over settled money. Prove that
+ * it comes from an active GLOBAL persisted grant, then resolve it at every
+ * store touched by the run so a store-level deny still wins. A store-scoped
+ * role may put `run.amend` in the flat session union, but can never satisfy
+ * this gate by itself.
+ */
+async function canAmendRun(
+  db: import('@compass/db').DB,
+  ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
+  run: { sessionIdsJson: unknown },
+): Promise<boolean> {
+  const globallyGranted = await hasGlobalPermission(db, ctx.session!.memberId, 'run.amend');
+  if (!globallyGranted) return false;
+
+  const storeIds = await runInvolvedStoreIds(db, run);
+  for (const storeId of storeIds) {
+    const effective = await effectivePermissionsForStore(
+      db,
+      ctx.session!.memberId,
+      storeId,
+      ctx.session!.permissions,
+    );
+    if (!effective.has('run.amend')) return false;
   }
+  return true;
+}
+
+async function assertCanAmendRun(
+  db: import('@compass/db').DB,
+  ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
+  run: { sessionIdsJson: unknown },
+): Promise<void> {
+  if (await canAmendRun(db, ctx, run)) return;
+  throw new TRPCError({
+    code: 'FORBIDDEN',
+    message: 'run.errors.cannotAmend',
+    cause: { missingPermission: 'run.amend' },
+  });
+}
+
+/**
+ * Whole-run mutations affect every store represented by the run. Resolve the
+ * command's permission at each concrete store and require full coverage; a
+ * permission granted in Store A must never combine with mere membership in
+ * Store B to authorize a B-only or A+B mutation. A clean persisted global
+ * grant returns `null`, while store-level denies force enumeration and win.
+ */
+async function assertRunPermissionForAllStores(
+  db: import('@compass/db').DB,
+  ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
+  run: { sessionIdsJson: unknown },
+  permissionKey: string,
+): Promise<void> {
+  const allowedStoreIds = await getActorStoreIdsForPermission(
+    db,
+    ctx.session!.memberId,
+    permissionKey,
+    ctx.session!.permissions,
+  );
+  if (allowedStoreIds === null) return;
+  const involvedStoreIds = await runInvolvedStoreIds(db, run);
+  const allowed = new Set(allowedStoreIds);
+  if (involvedStoreIds.length > 0 && involvedStoreIds.every((storeId) => allowed.has(storeId))) {
+    return;
+  }
+  throw new TRPCError({ code: 'NOT_FOUND', message: 'run.errors.notVisible' });
 }
 
 function isUniqueViolation(err: unknown): boolean {

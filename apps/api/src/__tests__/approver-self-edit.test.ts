@@ -91,8 +91,8 @@ function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): Reques
     userAgent: null,
     idempotencyKey: null,
     session,
-    async withOrg(fn) {
-      return withOrgContext(db, session.orgId, fn);
+    async withOrg(fn, options) {
+      return withOrgContext(db, session.orgId, fn, options);
     },
   };
 }

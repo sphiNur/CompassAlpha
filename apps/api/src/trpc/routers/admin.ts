@@ -137,11 +137,7 @@ function deriveScopeStoreId(_action: string, resourceType: string, inputs: unkno
   if (!inputs || typeof inputs !== 'object') return null;
   const o = inputs as Record<string, unknown>;
   if (typeof o.storeId === 'string') return o.storeId;
-  if (
-    typeof o.scopeType === 'string' &&
-    o.scopeType === 'store' &&
-    typeof o.scopeId === 'string'
-  ) {
+  if (typeof o.scopeType === 'string' && o.scopeType === 'store' && typeof o.scopeId === 'string') {
     return o.scopeId;
   }
   if (typeof o.targetStoreId === 'string') return o.targetStoreId;
@@ -234,10 +230,7 @@ function broadcastPeople(orgId: string): void {
  */
 const ADMIN_RANK_THRESHOLD = ADMIN_RANK;
 
-async function countAdminsInOrg(
-  tx: import('@compass/db').DB,
-  orgId: string,
-): Promise<number> {
+async function countAdminsInOrg(tx: import('@compass/db').DB, orgId: string): Promise<number> {
   const rows = await tx
     .select({ memberId: s.memberRoleBindings.memberId })
     .from(s.memberRoleBindings)
@@ -317,9 +310,7 @@ async function getActorMaxRankInStore(
     .where(and(eq(s.members.orgId, orgId), eq(s.members.userId, actorUserId)));
   let max = 0;
   for (const r of rows) {
-    const counts =
-      r.scopeType === 'global' ||
-      (r.scopeType === 'store' && r.scopeId === storeId);
+    const counts = r.scopeType === 'global' || (r.scopeType === 'store' && r.scopeId === storeId);
     if (counts && r.rank > max) max = r.rank;
   }
   return max;
@@ -355,8 +346,7 @@ async function getActorAdminStoreIds(
   // Step 1: load actor's bindings (with scope) + the perm keys their
   // roles grant. Cheap: actor typically has ≤3 bindings.
   const member = await tx.query.members.findFirst({
-    where: (m, { eq: eq2, and: and2 }) =>
-      and2(eq2(m.orgId, orgId), eq2(m.userId, actorUserId)),
+    where: (m, { eq: eq2, and: and2 }) => and2(eq2(m.orgId, orgId), eq2(m.userId, actorUserId)),
   });
   if (!member) return [];
   const bindings = await tx
@@ -577,14 +567,23 @@ const ExpenseTemplateDeleteInputSchema = z.object({
 });
 
 const CategoryCreateInputSchema = z.object({
-  slug: z.string().min(1).max(64).regex(/^[a-z0-9-]+$/),
+  slug: z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^[a-z0-9-]+$/),
   names: NamesSchema,
   sortIndex: z.number().int().default(0),
 });
 
 const CategoryUpdateInputSchema = z.object({
   categoryId: UuidSchema,
-  slug: z.string().min(1).max(64).regex(/^[a-z0-9-]+$/).optional(),
+  slug: z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^[a-z0-9-]+$/)
+    .optional(),
   names: NamesSchema.optional(),
   sortIndex: z.number().int().optional(),
   isArchived: z.boolean().optional(),
@@ -604,7 +603,10 @@ const MemberRemoveInputSchema = z.object({
 });
 
 const InviteMemberByTgIdInputSchema = z.object({
-  tgUserId: z.string().regex(/^\d{4,15}$/, 'Telegram ID must be a numeric string').transform((s) => BigInt(s)),
+  tgUserId: z
+    .string()
+    .regex(/^\d{4,15}$/, 'Telegram ID must be a numeric string')
+    .transform((s) => BigInt(s)),
   displayName: z.string().min(1).max(200).optional(),
   roleSlug: z.string().min(1).max(64).optional(),
   /** Stores to assign at invite time. The new model REQUIRES at least
@@ -746,21 +748,13 @@ export const adminRouter = router({
       const [pendingApprovals] = await tx
         .select({ n: sql<number>`count(*)::int` })
         .from(s.orderSessionsV)
-        .where(
-          and(
-            eq(s.orderSessionsV.orgId, orgId),
-            eq(s.orderSessionsV.status, 'submitted'),
-          ),
-        );
+        .where(and(eq(s.orderSessionsV.orgId, orgId), eq(s.orderSessionsV.status, 'submitted')));
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
       const [ordersThisWeek] = await tx
         .select({ n: sql<number>`count(*)::int` })
         .from(s.orderSessionsV)
         .where(
-          and(
-            eq(s.orderSessionsV.orgId, orgId),
-            gte(s.orderSessionsV.updatedAt, sevenDaysAgo),
-          ),
+          and(eq(s.orderSessionsV.orgId, orgId), gte(s.orderSessionsV.updatedAt, sevenDaysAgo)),
         );
       return {
         memberCount: memberCount?.n ?? 0,
@@ -829,14 +823,7 @@ export const adminRouter = router({
             updatedAt: new Date(),
           })
           .where(eq(s.organizations.id, orgId));
-        await auditAdmin(
-          tx,
-          ctx,
-          'admin.orgFinanceUpdate',
-          'organization',
-          orgId,
-          input,
-        );
+        await auditAdmin(tx, ctx, 'admin.orgFinanceUpdate', 'organization', orgId, input);
         return { ok: true as const };
       });
     }),
@@ -904,7 +891,13 @@ export const adminRouter = router({
 
       const rolesByMember = new Map<
         string,
-        Array<{ bindingId: string; slug: string; name: string; scopeType: string; scopeId: string | null }>
+        Array<{
+          bindingId: string;
+          slug: string;
+          name: string;
+          scopeType: string;
+          scopeId: string | null;
+        }>
       >();
       for (const b of bindings) {
         const arr = rolesByMember.get(b.memberId) ?? [];
@@ -956,45 +949,47 @@ export const adminRouter = router({
     });
   }),
 
-  memberSetStatus: authedProcedure.input(MemberSetStatusInputSchema).mutation(async ({ ctx, input }) => {
-    requireAdmin(ctx.session!.permissions);
-    return ctx.withOrg(async (tx) => {
-      const orgId = ctx.session!.orgId;
-      const member = await tx.query.members.findFirst({
-        where: (m, { eq: eq2, and: and2 }) =>
-          and2(eq2(m.id, input.memberId), eq2(m.orgId, orgId)),
-      });
-      if (!member) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.memberNotFound' });
-      }
-      // Don't let an admin lock themselves out: refuse to suspend self.
-      if (member.userId === ctx.session!.userId && input.status === 'suspended') {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'admin.errors.cannotSuspendSelf',
+  memberSetStatus: authedProcedure
+    .input(MemberSetStatusInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      requireAdmin(ctx.session!.permissions);
+      return ctx.withOrg(async (tx) => {
+        const orgId = ctx.session!.orgId;
+        const member = await tx.query.members.findFirst({
+          where: (m, { eq: eq2, and: and2 }) =>
+            and2(eq2(m.id, input.memberId), eq2(m.orgId, orgId)),
         });
-      }
-      // Last-admin guard for suspend.
-      if (input.status === 'suspended') {
-        const targetMaxRank = await getActorMaxRank(tx, orgId, member.userId);
-        if (targetMaxRank >= ADMIN_RANK_THRESHOLD) {
-          const adminCount = await countAdminsInOrg(tx, orgId);
-          if (adminCount <= 1) {
-            throw new TRPCError({
-              code: 'BAD_REQUEST',
-              message: 'admin.errors.cannotRemoveLastAdmin',
-            });
+        if (!member) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.memberNotFound' });
+        }
+        // Don't let an admin lock themselves out: refuse to suspend self.
+        if (member.userId === ctx.session!.userId && input.status === 'suspended') {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'admin.errors.cannotSuspendSelf',
+          });
+        }
+        // Last-admin guard for suspend.
+        if (input.status === 'suspended') {
+          const targetMaxRank = await getActorMaxRank(tx, orgId, member.userId);
+          if (targetMaxRank >= ADMIN_RANK_THRESHOLD) {
+            const adminCount = await countAdminsInOrg(tx, orgId);
+            if (adminCount <= 1) {
+              throw new TRPCError({
+                code: 'BAD_REQUEST',
+                message: 'admin.errors.cannotRemoveLastAdmin',
+              });
+            }
           }
         }
-      }
-      await tx
-        .update(s.members)
-        .set({ status: input.status })
-        .where(eq(s.members.id, input.memberId));
-      broadcastPeople(orgId);
-      return { ok: true };
-    });
-  }),
+        await tx
+          .update(s.members)
+          .set({ status: input.status })
+          .where(eq(s.members.id, input.memberId));
+        broadcastPeople(orgId);
+        return { ok: true };
+      });
+    }),
 
   /**
    * Invite a member by Telegram user ID. Auto-provisions a user row
@@ -1017,8 +1012,7 @@ export const adminRouter = router({
         // for them and they appear active but locked out. Admins
         // (super_admin / admin) bypass since they see all stores via
         // the admin bypass in assertActorAssignedToStore.
-        const isAdminInvite =
-          input.roleSlug === 'super_admin' || input.roleSlug === 'admin';
+        const isAdminInvite = input.roleSlug === 'super_admin' || input.roleSlug === 'admin';
         if (!isAdminInvite && input.storeIds.length === 0) {
           throw new TRPCError({
             code: 'BAD_REQUEST',
@@ -1037,11 +1031,7 @@ export const adminRouter = router({
         // would normally block that via the rank check, but the
         // invite path inlines its own grant so we mirror the rule
         // here.
-        const actorAdminStores = await getActorAdminStoreIds(
-          tx,
-          orgId,
-          ctx.session!.userId,
-        );
+        const actorAdminStores = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId);
         if (input.storeIds.length > 0) {
           const allowed = new Set(actorAdminStores);
           for (const sid of input.storeIds) {
@@ -1093,12 +1083,14 @@ export const adminRouter = router({
             .where(eq(s.users.id, user.id));
         }
         if (!user) {
-          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'admin.errors.userCreateFailed' });
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'admin.errors.userCreateFailed',
+          });
         }
         // Find or create the member.
         let member = await tx.query.members.findFirst({
-          where: (m, { eq: eq2, and: and2 }) =>
-            and2(eq2(m.orgId, orgId), eq2(m.userId, user.id)),
+          where: (m, { eq: eq2, and: and2 }) => and2(eq2(m.orgId, orgId), eq2(m.userId, user.id)),
         });
         const created = !member;
         if (!member) {
@@ -1109,7 +1101,10 @@ export const adminRouter = router({
           member = m;
         }
         if (!member) {
-          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'admin.errors.memberCreateFailed' });
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'admin.errors.memberCreateFailed',
+          });
         }
         // Optional role grant.
         // SECURITY (2026-05-04): same rank gate as admin.grantRole. Without
@@ -1277,7 +1272,7 @@ export const adminRouter = router({
           }
         }
         broadcastPeople(orgId);
-      return { memberId: member.id, userId: user.id, created };
+        return { memberId: member.id, userId: user.id, created };
       });
     }),
 
@@ -1308,7 +1303,7 @@ export const adminRouter = router({
           })
           .where(eq(s.users.id, member.userId));
         broadcastPeople(orgId);
-      return { ok: true };
+        return { ok: true };
       });
     }),
 
@@ -1391,7 +1386,7 @@ export const adminRouter = router({
           })
           .onConflictDoNothing();
         broadcastPeople(orgId);
-      return { ok: true };
+        return { ok: true };
       });
     }),
 
@@ -1430,9 +1425,7 @@ export const adminRouter = router({
             .where(eq(s.memberStoreAssignments.memberId, input.memberId));
           // After this delete, count would drop to (remaining-1). Refuse
           // if removing this assignment would leave them with zero.
-          const willRemain = remaining.filter(
-            (r) => r.storeId !== input.storeId,
-          ).length;
+          const willRemain = remaining.filter((r) => r.storeId !== input.storeId).length;
           if (willRemain === 0) {
             throw new TRPCError({
               code: 'BAD_REQUEST',
@@ -1449,7 +1442,7 @@ export const adminRouter = router({
             ),
           );
         broadcastPeople(orgId);
-      return { ok: true };
+        return { ok: true };
       });
     }),
 
@@ -1506,12 +1499,7 @@ export const adminRouter = router({
         // Store A cannot detach a manager-rank-30 of Store A — same
         // rule as revokeRole, applied to all bindings we're about to
         // delete plus the MSA row.
-        const targetRank = await getActorMaxRankInStore(
-          tx,
-          orgId,
-          member.userId,
-          input.storeId,
-        );
+        const targetRank = await getActorMaxRankInStore(tx, orgId, member.userId, input.storeId);
         const actorRank = await getActorMaxRankInStore(
           tx,
           orgId,
@@ -1597,14 +1585,11 @@ export const adminRouter = router({
               eq(s.memberStoreAssignments.storeId, input.storeId),
             ),
           );
-        await auditAdmin(
-          tx,
-          ctx,
-          'admin.memberDetachFromStore',
-          'member',
-          member.id,
-          { ...input, revokedBindings: revokedBindings.length, revokedOverrides: revokedOverrides.length },
-        );
+        await auditAdmin(tx, ctx, 'admin.memberDetachFromStore', 'member', member.id, {
+          ...input,
+          revokedBindings: revokedBindings.length,
+          revokedOverrides: revokedOverrides.length,
+        });
         broadcastPeople(orgId);
         return {
           ok: true,
@@ -1813,19 +1798,12 @@ export const adminRouter = router({
               eq(s.memberStoreAssignments.storeId, input.fromStoreId),
             ),
           );
-        await auditAdmin(
-          tx,
-          ctx,
-          'admin.memberTransferStore',
-          'member',
-          member.id,
-          {
-            ...input,
-            mirrored,
-            revokedBindings: revokedBindings.length,
-            revokedOverrides: revokedOverrides.length,
-          },
-        );
+        await auditAdmin(tx, ctx, 'admin.memberTransferStore', 'member', member.id, {
+          ...input,
+          mirrored,
+          revokedBindings: revokedBindings.length,
+          revokedOverrides: revokedOverrides.length,
+        });
         broadcastPeople(orgId);
         return {
           ok: true,
@@ -1844,8 +1822,7 @@ export const adminRouter = router({
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
       const member = await tx.query.members.findFirst({
-        where: (m, { eq: eq2, and: and2 }) =>
-          and2(eq2(m.id, input.memberId), eq2(m.orgId, orgId)),
+        where: (m, { eq: eq2, and: and2 }) => and2(eq2(m.id, input.memberId), eq2(m.orgId, orgId)),
       });
       if (!member) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.memberNotFound' });
@@ -2060,8 +2037,7 @@ export const adminRouter = router({
         }
         // Idempotency: if the slug already exists, return it.
         const existing = await tx.query.roles.findFirst({
-          where: (r, { eq: eq2, and: and2 }) =>
-            and2(eq2(r.orgId, orgId), eq2(r.slug, input.slug)),
+          where: (r, { eq: eq2, and: and2 }) => and2(eq2(r.orgId, orgId), eq2(r.slug, input.slug)),
         });
         if (existing) {
           return { id: existing.id, created: false };
@@ -2121,8 +2097,7 @@ export const adminRouter = router({
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
         const role = await tx.query.roles.findFirst({
-          where: (r, { eq: eq2, and: and2 }) =>
-            and2(eq2(r.id, input.roleId), eq2(r.orgId, orgId)),
+          where: (r, { eq: eq2, and: and2 }) => and2(eq2(r.id, input.roleId), eq2(r.orgId, orgId)),
         });
         if (!role) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.roleNotFound' });
@@ -2186,8 +2161,7 @@ export const adminRouter = router({
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
         const role = await tx.query.roles.findFirst({
-          where: (r, { eq: eq2, and: and2 }) =>
-            and2(eq2(r.id, input.roleId), eq2(r.orgId, orgId)),
+          where: (r, { eq: eq2, and: and2 }) => and2(eq2(r.id, input.roleId), eq2(r.orgId, orgId)),
         });
         if (!role) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.roleNotFound' });
@@ -2423,9 +2397,7 @@ export const adminRouter = router({
               eq2(o.memberId, member.id),
               eq2(o.permissionKey, input.permissionKey),
               eq2(o.scopeType, input.scopeType),
-              input.scopeId
-                ? eq2(o.scopeId, input.scopeId)
-                : sql`${o.scopeId} IS NULL`,
+              input.scopeId ? eq2(o.scopeId, input.scopeId) : sql`${o.scopeId} IS NULL`,
             ),
         });
         if (existing) {
@@ -2532,14 +2504,7 @@ export const adminRouter = router({
                 : sql`${s.memberPermissionOverrides.scopeId} IS NULL`,
             ),
           );
-        await auditAdmin(
-          tx,
-          ctx,
-          'admin.memberPermission.revoke',
-          'permission',
-          member.id,
-          input,
-        );
+        await auditAdmin(tx, ctx, 'admin.memberPermission.revoke', 'permission', member.id, input);
         broadcastPeople(orgId);
         return { ok: true };
       });
@@ -2804,9 +2769,7 @@ export const adminRouter = router({
           });
         }
       }
-      await tx
-        .delete(s.memberRoleBindings)
-        .where(eq(s.memberRoleBindings.id, input.bindingId));
+      await tx.delete(s.memberRoleBindings).where(eq(s.memberRoleBindings.id, input.bindingId));
       hub.publish(orgId, { type: 'people.changed', orgId });
       return { revoked: true };
     });
@@ -3022,10 +2985,7 @@ export const adminRouter = router({
         // shape AND writing into the target both qualify as admin
         // actions.
         const allowed = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId);
-        if (
-          !allowed.includes(input.sourceStoreId) ||
-          !allowed.includes(input.targetStoreId)
-        ) {
+        if (!allowed.includes(input.sourceStoreId) || !allowed.includes(input.targetStoreId)) {
           throw new TRPCError({
             code: 'FORBIDDEN',
             message: 'admin.errors.notAdminOfStore',
@@ -3105,14 +3065,13 @@ export const adminRouter = router({
             if (inserted.length > 0) assigned++;
           }
         }
-        await auditAdmin(
-          tx,
-          ctx,
-          'admin.store.cloneRoles',
-          'store',
-          input.targetStoreId,
-          { ...input, cloned, skippedRank, skippedExisting, assigned },
-        );
+        await auditAdmin(tx, ctx, 'admin.store.cloneRoles', 'store', input.targetStoreId, {
+          ...input,
+          cloned,
+          skippedRank,
+          skippedExisting,
+          assigned,
+        });
         broadcastPeople(orgId);
         return { ok: true, cloned, skippedRank, skippedExisting, assigned };
       });
@@ -3139,69 +3098,75 @@ export const adminRouter = router({
     });
   }),
 
-  categoryCreate: authedProcedure.input(CategoryCreateInputSchema).mutation(async ({ ctx, input }) => {
-    // M3.3: categories are org-wide (no store_id) — org.admin only.
-    requireOrgAdmin(ctx.session!.permissions);
-    return ctx.withOrg(async (tx) => {
-      const orgId = ctx.session!.orgId;
-      const [created] = await tx
-        .insert(s.categories)
-        .values({
-          orgId,
-          slug: input.slug,
-          names: input.names,
-          sortIndex: input.sortIndex,
-        })
-        .returning();
-      await auditAdmin(tx, ctx, 'admin.category.create', 'category', created!.id, input);
-      broadcastCatalog(orgId, 'category');
-      return { id: created!.id };
-    });
-  }),
-
-  categoryUpdate: authedProcedure.input(CategoryUpdateInputSchema).mutation(async ({ ctx, input }) => {
-    requireOrgAdmin(ctx.session!.permissions);
-    return ctx.withOrg(async (tx) => {
-      const orgId = ctx.session!.orgId;
-      const existing = await tx.query.categories.findFirst({
-        where: (c, { eq: eq2, and: and2 }) =>
-          and2(eq2(c.id, input.categoryId), eq2(c.orgId, orgId)),
+  categoryCreate: authedProcedure
+    .input(CategoryCreateInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      // M3.3: categories are org-wide (no store_id) — org.admin only.
+      requireOrgAdmin(ctx.session!.permissions);
+      return ctx.withOrg(async (tx) => {
+        const orgId = ctx.session!.orgId;
+        const [created] = await tx
+          .insert(s.categories)
+          .values({
+            orgId,
+            slug: input.slug,
+            names: input.names,
+            sortIndex: input.sortIndex,
+          })
+          .returning();
+        await auditAdmin(tx, ctx, 'admin.category.create', 'category', created!.id, input);
+        broadcastCatalog(orgId, 'category');
+        return { id: created!.id };
       });
-      if (!existing) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.categoryNotFound' });
-      }
-      const patch: Record<string, unknown> = { updatedAt: new Date() };
-      if (input.slug !== undefined) patch.slug = input.slug;
-      if (input.names !== undefined) patch.names = input.names;
-      if (input.sortIndex !== undefined) patch.sortIndex = input.sortIndex;
-      if (input.isArchived !== undefined) patch.isArchived = input.isArchived;
-      await tx.update(s.categories).set(patch).where(eq(s.categories.id, input.categoryId));
-      await auditAdmin(tx, ctx, 'admin.category.update', 'category', input.categoryId, input);
-      broadcastCatalog(orgId, 'category');
-      return { ok: true };
-    });
-  }),
+    }),
 
-  categoryDelete: authedProcedure.input(CategoryDeleteInputSchema).mutation(async ({ ctx, input }) => {
-    requireOrgAdmin(ctx.session!.permissions);
-    return ctx.withOrg(async (tx) => {
-      const orgId = ctx.session!.orgId;
-      const existing = await tx.query.categories.findFirst({
-        where: (c, { eq: eq2, and: and2 }) =>
-          and2(eq2(c.id, input.categoryId), eq2(c.orgId, orgId)),
+  categoryUpdate: authedProcedure
+    .input(CategoryUpdateInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      requireOrgAdmin(ctx.session!.permissions);
+      return ctx.withOrg(async (tx) => {
+        const orgId = ctx.session!.orgId;
+        const existing = await tx.query.categories.findFirst({
+          where: (c, { eq: eq2, and: and2 }) =>
+            and2(eq2(c.id, input.categoryId), eq2(c.orgId, orgId)),
+        });
+        if (!existing) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.categoryNotFound' });
+        }
+        const patch: Record<string, unknown> = { updatedAt: new Date() };
+        if (input.slug !== undefined) patch.slug = input.slug;
+        if (input.names !== undefined) patch.names = input.names;
+        if (input.sortIndex !== undefined) patch.sortIndex = input.sortIndex;
+        if (input.isArchived !== undefined) patch.isArchived = input.isArchived;
+        await tx.update(s.categories).set(patch).where(eq(s.categories.id, input.categoryId));
+        await auditAdmin(tx, ctx, 'admin.category.update', 'category', input.categoryId, input);
+        broadcastCatalog(orgId, 'category');
+        return { ok: true };
       });
-      if (!existing) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.categoryNotFound' });
-      }
-      await tx
-        .update(s.categories)
-        .set({ isArchived: true, updatedAt: new Date() })
-        .where(eq(s.categories.id, input.categoryId));
-      await auditAdmin(tx, ctx, 'admin.category.delete', 'category', input.categoryId, input);
-      broadcastCatalog(orgId, 'category');
-      return { ok: true };
-    });
-  }),
+    }),
+
+  categoryDelete: authedProcedure
+    .input(CategoryDeleteInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      requireOrgAdmin(ctx.session!.permissions);
+      return ctx.withOrg(async (tx) => {
+        const orgId = ctx.session!.orgId;
+        const existing = await tx.query.categories.findFirst({
+          where: (c, { eq: eq2, and: and2 }) =>
+            and2(eq2(c.id, input.categoryId), eq2(c.orgId, orgId)),
+        });
+        if (!existing) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.categoryNotFound' });
+        }
+        await tx
+          .update(s.categories)
+          .set({ isArchived: true, updatedAt: new Date() })
+          .where(eq(s.categories.id, input.categoryId));
+        await auditAdmin(tx, ctx, 'admin.category.delete', 'category', input.categoryId, input);
+        broadcastCatalog(orgId, 'category');
+        return { ok: true };
+      });
+    }),
 
   // ============ SKUs ============
 
@@ -3275,8 +3240,7 @@ export const adminRouter = router({
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
       const existing = await tx.query.skus.findFirst({
-        where: (k, { eq: eq2, and: and2 }) =>
-          and2(eq2(k.id, input.skuId), eq2(k.orgId, orgId)),
+        where: (k, { eq: eq2, and: and2 }) => and2(eq2(k.id, input.skuId), eq2(k.orgId, orgId)),
       });
       if (!existing) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.skuNotFound' });
@@ -3311,8 +3275,7 @@ export const adminRouter = router({
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
       const existing = await tx.query.skus.findFirst({
-        where: (k, { eq: eq2, and: and2 }) =>
-          and2(eq2(k.id, input.skuId), eq2(k.orgId, orgId)),
+        where: (k, { eq: eq2, and: and2 }) => and2(eq2(k.id, input.skuId), eq2(k.orgId, orgId)),
       });
       if (!existing) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.skuNotFound' });
@@ -3364,73 +3327,79 @@ export const adminRouter = router({
       });
     }),
 
-  supplierCreate: authedProcedure.input(SupplierCreateInputSchema).mutation(async ({ ctx, input }) => {
-    // M3.3: suppliers are org-wide; only org.admin manages them.
-    requireOrgAdmin(ctx.session!.permissions);
-    return ctx.withOrg(async (tx) => {
-      const orgId = ctx.session!.orgId;
-      const [created] = await tx
-        .insert(s.suppliers)
-        .values({
-          orgId,
-          name: input.name,
-          contactPhone: input.contactPhone ?? null,
-          contactTg: input.contactTg ?? null,
-          address: input.address ?? null,
-          notes: input.notes ?? null,
-        })
-        .returning();
-      await auditAdmin(tx, ctx, 'admin.supplier.create', 'supplier', created!.id, input);
-      broadcastCatalog(orgId, 'supplier');
-      return { id: created!.id };
-    });
-  }),
-
-  supplierUpdate: authedProcedure.input(SupplierUpdateInputSchema).mutation(async ({ ctx, input }) => {
-    requireOrgAdmin(ctx.session!.permissions);
-    return ctx.withOrg(async (tx) => {
-      const orgId = ctx.session!.orgId;
-      const existing = await tx.query.suppliers.findFirst({
-        where: (sp, { eq: eq2, and: and2 }) =>
-          and2(eq2(sp.id, input.supplierId), eq2(sp.orgId, orgId)),
+  supplierCreate: authedProcedure
+    .input(SupplierCreateInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      // M3.3: suppliers are org-wide; only org.admin manages them.
+      requireOrgAdmin(ctx.session!.permissions);
+      return ctx.withOrg(async (tx) => {
+        const orgId = ctx.session!.orgId;
+        const [created] = await tx
+          .insert(s.suppliers)
+          .values({
+            orgId,
+            name: input.name,
+            contactPhone: input.contactPhone ?? null,
+            contactTg: input.contactTg ?? null,
+            address: input.address ?? null,
+            notes: input.notes ?? null,
+          })
+          .returning();
+        await auditAdmin(tx, ctx, 'admin.supplier.create', 'supplier', created!.id, input);
+        broadcastCatalog(orgId, 'supplier');
+        return { id: created!.id };
       });
-      if (!existing) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.supplierNotFound' });
-      }
-      const patch: Record<string, unknown> = { updatedAt: new Date() };
-      if (input.name !== undefined) patch.name = input.name;
-      if (input.contactPhone !== undefined) patch.contactPhone = input.contactPhone;
-      if (input.contactTg !== undefined) patch.contactTg = input.contactTg;
-      if (input.address !== undefined) patch.address = input.address;
-      if (input.notes !== undefined) patch.notes = input.notes;
-      if (input.isArchived !== undefined) patch.isArchived = input.isArchived;
-      await tx.update(s.suppliers).set(patch).where(eq(s.suppliers.id, input.supplierId));
-      await auditAdmin(tx, ctx, 'admin.supplier.update', 'supplier', input.supplierId, input);
-      broadcastCatalog(orgId, 'supplier');
-      return { ok: true };
-    });
-  }),
+    }),
 
-  supplierDelete: authedProcedure.input(SupplierDeleteInputSchema).mutation(async ({ ctx, input }) => {
-    requireOrgAdmin(ctx.session!.permissions);
-    return ctx.withOrg(async (tx) => {
-      const orgId = ctx.session!.orgId;
-      const existing = await tx.query.suppliers.findFirst({
-        where: (sp, { eq: eq2, and: and2 }) =>
-          and2(eq2(sp.id, input.supplierId), eq2(sp.orgId, orgId)),
+  supplierUpdate: authedProcedure
+    .input(SupplierUpdateInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      requireOrgAdmin(ctx.session!.permissions);
+      return ctx.withOrg(async (tx) => {
+        const orgId = ctx.session!.orgId;
+        const existing = await tx.query.suppliers.findFirst({
+          where: (sp, { eq: eq2, and: and2 }) =>
+            and2(eq2(sp.id, input.supplierId), eq2(sp.orgId, orgId)),
+        });
+        if (!existing) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.supplierNotFound' });
+        }
+        const patch: Record<string, unknown> = { updatedAt: new Date() };
+        if (input.name !== undefined) patch.name = input.name;
+        if (input.contactPhone !== undefined) patch.contactPhone = input.contactPhone;
+        if (input.contactTg !== undefined) patch.contactTg = input.contactTg;
+        if (input.address !== undefined) patch.address = input.address;
+        if (input.notes !== undefined) patch.notes = input.notes;
+        if (input.isArchived !== undefined) patch.isArchived = input.isArchived;
+        await tx.update(s.suppliers).set(patch).where(eq(s.suppliers.id, input.supplierId));
+        await auditAdmin(tx, ctx, 'admin.supplier.update', 'supplier', input.supplierId, input);
+        broadcastCatalog(orgId, 'supplier');
+        return { ok: true };
       });
-      if (!existing) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.supplierNotFound' });
-      }
-      await tx
-        .update(s.suppliers)
-        .set({ isArchived: true, updatedAt: new Date() })
-        .where(eq(s.suppliers.id, input.supplierId));
-      await auditAdmin(tx, ctx, 'admin.supplier.delete', 'supplier', input.supplierId, input);
-      broadcastCatalog(orgId, 'supplier');
-      return { ok: true };
-    });
-  }),
+    }),
+
+  supplierDelete: authedProcedure
+    .input(SupplierDeleteInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      requireOrgAdmin(ctx.session!.permissions);
+      return ctx.withOrg(async (tx) => {
+        const orgId = ctx.session!.orgId;
+        const existing = await tx.query.suppliers.findFirst({
+          where: (sp, { eq: eq2, and: and2 }) =>
+            and2(eq2(sp.id, input.supplierId), eq2(sp.orgId, orgId)),
+        });
+        if (!existing) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.supplierNotFound' });
+        }
+        await tx
+          .update(s.suppliers)
+          .set({ isArchived: true, updatedAt: new Date() })
+          .where(eq(s.suppliers.id, input.supplierId));
+        await auditAdmin(tx, ctx, 'admin.supplier.delete', 'supplier', input.supplierId, input);
+        broadcastCatalog(orgId, 'supplier');
+        return { ok: true };
+      });
+    }),
 
   // ============ EXPENSE TEMPLATES (M3.57) ============
   // Org-level recurring expenses (porter / taxi / parking / etc.). The
@@ -3463,10 +3432,7 @@ export const adminRouter = router({
           .where(
             includeArchived
               ? eq(s.expenseTemplates.orgId, orgId)
-              : and(
-                  eq(s.expenseTemplates.orgId, orgId),
-                  eq(s.expenseTemplates.isArchived, false),
-                ),
+              : and(eq(s.expenseTemplates.orgId, orgId), eq(s.expenseTemplates.isArchived, false)),
           )
           .orderBy(s.expenseTemplates.sortIndex, s.expenseTemplates.createdAt);
       });
@@ -3523,8 +3489,7 @@ export const adminRouter = router({
         if (input.label !== undefined) patch.label = input.label;
         if (input.unitHint !== undefined) patch.unitHint = input.unitHint;
         if (input.defaultQty !== undefined) patch.defaultQty = input.defaultQty;
-        if (input.defaultUnitPrice !== undefined)
-          patch.defaultUnitPrice = input.defaultUnitPrice;
+        if (input.defaultUnitPrice !== undefined) patch.defaultUnitPrice = input.defaultUnitPrice;
         if (input.defaultPaymentMethod !== undefined)
           patch.defaultPaymentMethod = input.defaultPaymentMethod;
         if (input.sortIndex !== undefined) patch.sortIndex = input.sortIndex;
@@ -3612,7 +3577,11 @@ export const adminRouter = router({
         const userIds = [...new Set(rows.map((r) => r.actorId).filter(Boolean) as string[])];
         const users = userIds.length
           ? await tx
-              .select({ id: s.users.id, displayName: s.users.displayName, tgUsername: s.users.tgUsername })
+              .select({
+                id: s.users.id,
+                displayName: s.users.displayName,
+                tgUsername: s.users.tgUsername,
+              })
               .from(s.users)
               .where(inArray(s.users.id, userIds))
           : [];
@@ -3623,7 +3592,7 @@ export const adminRouter = router({
           streamType: r.streamType,
           seq: r.seq,
           type: r.type,
-          actor: r.actorId ? userById.get(r.actorId) ?? null : null,
+          actor: r.actorId ? (userById.get(r.actorId) ?? null) : null,
           occurredAt: r.occurredAt.toISOString(),
           payload: r.payload as unknown,
         }));
@@ -3703,7 +3672,7 @@ export const adminRouter = router({
           action: r.action,
           resourceType: r.resourceType,
           resourceId: r.resourceId,
-          actor: r.actorId ? userById.get(r.actorId) ?? null : null,
+          actor: r.actorId ? (userById.get(r.actorId) ?? null) : null,
           occurredAt: r.occurredAt.toISOString(),
           inputs: r.inputs as unknown,
           scopeStoreId: r.scopeStoreId,
@@ -3719,6 +3688,7 @@ export const adminRouter = router({
    *
    * Tables that have org_id directly — simple WHERE org_id:
    *   ops.notifications, ops.client_logs, inventory.price_history,
+   *   inventory.store_daily_settlements and their revisions,
    *   read_model.market_runs_v, read_model.order_sessions_v,
    *   domain.events, domain.policy_decisions
    *
@@ -3765,76 +3735,154 @@ export const adminRouter = router({
         };
 
         // Direct org_id counts.
-        await tally('domain.events', await cnt(
-          tx.select({ n: sql<number>`count(*)::int` })
-            .from(s.events).where(eq(s.events.orgId, orgId))
-        ));
-        await tally('read_model.order_sessions_v', await cnt(
-          tx.select({ n: sql<number>`count(*)::int` })
-            .from(s.orderSessionsV).where(eq(s.orderSessionsV.orgId, orgId))
-        ));
-        await tally('read_model.market_runs_v', await cnt(
-          tx.select({ n: sql<number>`count(*)::int` })
-            .from(s.marketRunsV).where(eq(s.marketRunsV.orgId, orgId))
-        ));
-        await tally('ops.notifications', await cnt(
-          tx.select({ n: sql<number>`count(*)::int` })
-            .from(s.notifications).where(eq(s.notifications.orgId, orgId))
-        ));
-        await tally('ops.client_logs', await cnt(
-          tx.select({ n: sql<number>`count(*)::int` })
-            .from(s.clientLogs).where(eq(s.clientLogs.orgId, orgId))
-        ));
-        await tally('inventory.price_history', await cnt(
-          tx.select({ n: sql<number>`count(*)::int` })
-            .from(s.priceHistory).where(eq(s.priceHistory.orgId, orgId))
-        ));
-        await tally('domain.policy_decisions', await cnt(
-          tx.select({ n: sql<number>`count(*)::int` })
-            .from(s.policyDecisions).where(eq(s.policyDecisions.orgId, orgId))
-        ));
+        await tally(
+          'domain.events',
+          await cnt(
+            tx
+              .select({ n: sql<number>`count(*)::int` })
+              .from(s.events)
+              .where(eq(s.events.orgId, orgId)),
+          ),
+        );
+        await tally(
+          'read_model.order_sessions_v',
+          await cnt(
+            tx
+              .select({ n: sql<number>`count(*)::int` })
+              .from(s.orderSessionsV)
+              .where(eq(s.orderSessionsV.orgId, orgId)),
+          ),
+        );
+        await tally(
+          'read_model.market_runs_v',
+          await cnt(
+            tx
+              .select({ n: sql<number>`count(*)::int` })
+              .from(s.marketRunsV)
+              .where(eq(s.marketRunsV.orgId, orgId)),
+          ),
+        );
+        await tally(
+          'ops.notifications',
+          await cnt(
+            tx
+              .select({ n: sql<number>`count(*)::int` })
+              .from(s.notifications)
+              .where(eq(s.notifications.orgId, orgId)),
+          ),
+        );
+        await tally(
+          'ops.client_logs',
+          await cnt(
+            tx
+              .select({ n: sql<number>`count(*)::int` })
+              .from(s.clientLogs)
+              .where(eq(s.clientLogs.orgId, orgId)),
+          ),
+        );
+        await tally(
+          'inventory.price_history',
+          await cnt(
+            tx
+              .select({ n: sql<number>`count(*)::int` })
+              .from(s.priceHistory)
+              .where(eq(s.priceHistory.orgId, orgId)),
+          ),
+        );
+        await tally(
+          'inventory.store_daily_settlement_revisions',
+          await cnt(
+            tx
+              .select({ n: sql<number>`count(*)::int` })
+              .from(s.storeDailySettlementRevisions)
+              .where(eq(s.storeDailySettlementRevisions.orgId, orgId)),
+          ),
+        );
+        await tally(
+          'inventory.store_daily_settlements',
+          await cnt(
+            tx
+              .select({ n: sql<number>`count(*)::int` })
+              .from(s.storeDailySettlements)
+              .where(eq(s.storeDailySettlements.orgId, orgId)),
+          ),
+        );
+        await tally(
+          'domain.policy_decisions',
+          await cnt(
+            tx
+              .select({ n: sql<number>`count(*)::int` })
+              .from(s.policyDecisions)
+              .where(eq(s.policyDecisions.orgId, orgId)),
+          ),
+        );
 
         // Sub-query counts (FK-scoped).
-        await tally('read_model.order_items_v', await cnt(
-          tx.execute(
-            sql`SELECT count(*)::int AS n FROM read_model.order_items_v
+        await tally(
+          'read_model.order_items_v',
+          await cnt(
+            tx
+              .execute(
+                sql`SELECT count(*)::int AS n FROM read_model.order_items_v
                 WHERE session_id IN (
                   SELECT id FROM read_model.order_sessions_v WHERE org_id = ${orgId}
                 )`,
-          ).then((rows) => rows as unknown as Array<{ n: number }>)
-        ));
-        await tally('read_model.run_items_v', await cnt(
-          tx.execute(
-            sql`SELECT count(*)::int AS n FROM read_model.run_items_v
+              )
+              .then((rows) => rows as unknown as Array<{ n: number }>),
+          ),
+        );
+        await tally(
+          'read_model.run_items_v',
+          await cnt(
+            tx
+              .execute(
+                sql`SELECT count(*)::int AS n FROM read_model.run_items_v
                 WHERE run_id IN (
                   SELECT id FROM read_model.market_runs_v WHERE org_id = ${orgId}
                 )`,
-          ).then((rows) => rows as unknown as Array<{ n: number }>)
-        ));
-        await tally('read_model.run_item_stores_v', await cnt(
-          tx.execute(
-            sql`SELECT count(*)::int AS n FROM read_model.run_item_stores_v
+              )
+              .then((rows) => rows as unknown as Array<{ n: number }>),
+          ),
+        );
+        await tally(
+          'read_model.run_item_stores_v',
+          await cnt(
+            tx
+              .execute(
+                sql`SELECT count(*)::int AS n FROM read_model.run_item_stores_v
                 WHERE run_id IN (
                   SELECT id FROM read_model.market_runs_v WHERE org_id = ${orgId}
                 )`,
-          ).then((rows) => rows as unknown as Array<{ n: number }>)
-        ));
-        await tally('sync.outbox', await cnt(
-          tx.execute(
-            sql`SELECT count(*)::int AS n FROM sync.outbox
+              )
+              .then((rows) => rows as unknown as Array<{ n: number }>),
+          ),
+        );
+        await tally(
+          'sync.outbox',
+          await cnt(
+            tx
+              .execute(
+                sql`SELECT count(*)::int AS n FROM sync.outbox
                 WHERE event_id IN (
                   SELECT id FROM domain.events WHERE org_id = ${orgId}
                 )`,
-          ).then((rows) => rows as unknown as Array<{ n: number }>)
-        ));
-        await tally('domain.snapshots', await cnt(
-          tx.execute(
-            sql`SELECT count(*)::int AS n FROM domain.snapshots
+              )
+              .then((rows) => rows as unknown as Array<{ n: number }>),
+          ),
+        );
+        await tally(
+          'domain.snapshots',
+          await cnt(
+            tx
+              .execute(
+                sql`SELECT count(*)::int AS n FROM domain.snapshots
                 WHERE stream_id IN (
                   SELECT DISTINCT stream_id FROM domain.events WHERE org_id = ${orgId}
                 )`,
-          ).then((rows) => rows as unknown as Array<{ n: number }>)
-        ));
+              )
+              .then((rows) => rows as unknown as Array<{ n: number }>),
+          ),
+        );
 
         const total = Object.values(counts).reduce((a, b) => a + b, 0);
 
@@ -3877,6 +3925,10 @@ export const adminRouter = router({
         );
         await tx.delete(s.events).where(eq(s.events.orgId, orgId));
 
+        await tx
+          .delete(s.storeDailySettlementRevisions)
+          .where(eq(s.storeDailySettlementRevisions.orgId, orgId));
+        await tx.delete(s.storeDailySettlements).where(eq(s.storeDailySettlements.orgId, orgId));
         await tx.delete(s.priceHistory).where(eq(s.priceHistory.orgId, orgId));
         await tx.delete(s.notifications).where(eq(s.notifications.orgId, orgId));
         await tx.delete(s.clientLogs).where(eq(s.clientLogs.orgId, orgId));
@@ -3899,187 +3951,216 @@ export const adminRouter = router({
    *   7. Notifications with payload.sessionId / payload.runId in the
    *      doomed sets — uses JSONB ->> for the lookup.
    *   8. Price history rows with the same runId set.
+   *   9. Store daily settlements and their revision history for the date.
    *
    * Two passes: first pass is read-only and counts rows for the dry-run
    * preview; second pass actually deletes. Wrapped in a single tx, so a
    * partial failure rolls back the whole thing.
    */
-  purgeByDate: authedProcedure
-    .input(PurgeByDateInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      requireAdmin(ctx.session!.permissions);
-      if (!ctx.session!.roleSlugs.has('super_admin')) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'admin.errors.purgeRequiresSuperAdmin',
-        });
-      }
-      return ctx.withOrg(async (tx) => {
-        const orgId = ctx.session!.orgId;
-        const date = input.date;
+  purgeByDate: authedProcedure.input(PurgeByDateInputSchema).mutation(async ({ ctx, input }) => {
+    requireAdmin(ctx.session!.permissions);
+    if (!ctx.session!.roleSlugs.has('super_admin')) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'admin.errors.purgeRequiresSuperAdmin',
+      });
+    }
+    return ctx.withOrg(async (tx) => {
+      const orgId = ctx.session!.orgId;
+      const date = input.date;
 
-        // Resolve the affected stream id sets up-front. We use these
-        // in both the count and the delete passes so the numbers are
-        // self-consistent (no race between count and delete inside
-        // the same tx).
-        const sessionIdsResult = await tx.execute(
-          sql`SELECT id FROM read_model.order_sessions_v
+      // Resolve the affected stream id sets up-front. We use these
+      // in both the count and the delete passes so the numbers are
+      // self-consistent (no race between count and delete inside
+      // the same tx).
+      const sessionIdsResult = await tx.execute(
+        sql`SELECT id FROM read_model.order_sessions_v
               WHERE org_id = ${orgId} AND order_date = ${date}`,
-        );
-        const sessionIds: string[] = (sessionIdsResult as unknown as Array<{ id: string }>).map(
-          (r) => r.id,
-        );
+      );
+      const sessionIds: string[] = (sessionIdsResult as unknown as Array<{ id: string }>).map(
+        (r) => r.id,
+      );
 
-        const runIdsResult = await tx.execute(
-          sql`SELECT id FROM read_model.market_runs_v
+      const runIdsResult = await tx.execute(
+        sql`SELECT id FROM read_model.market_runs_v
               WHERE org_id = ${orgId} AND run_date = ${date}`,
+      );
+      const runIds: string[] = (runIdsResult as unknown as Array<{ id: string }>).map((r) => r.id);
+
+      const allStreamIds = [...sessionIds, ...runIds];
+
+      const counts: Record<string, number> = {
+        'read_model.order_sessions_v': 0,
+        'read_model.order_items_v': 0,
+        'read_model.market_runs_v': 0,
+        'read_model.run_items_v': 0,
+        'read_model.run_item_stores_v': 0,
+        'domain.events': 0,
+        'domain.snapshots': 0,
+        'sync.outbox': 0,
+        'ops.notifications': 0,
+        'inventory.price_history': 0,
+        'inventory.store_daily_settlement_revisions': 0,
+        'inventory.store_daily_settlements': 0,
+      };
+
+      // Counts.
+      counts['read_model.order_sessions_v'] = sessionIds.length;
+      counts['read_model.market_runs_v'] = runIds.length;
+      const [revisionCount] = await tx
+        .select({ n: sql<number>`count(*)::int` })
+        .from(s.storeDailySettlementRevisions)
+        .where(
+          and(
+            eq(s.storeDailySettlementRevisions.orgId, orgId),
+            eq(s.storeDailySettlementRevisions.settlementDate, date),
+          ),
         );
-        const runIds: string[] = (runIdsResult as unknown as Array<{ id: string }>).map(
-          (r) => r.id,
+      counts['inventory.store_daily_settlement_revisions'] = revisionCount?.n ?? 0;
+      const [settlementCount] = await tx
+        .select({ n: sql<number>`count(*)::int` })
+        .from(s.storeDailySettlements)
+        .where(
+          and(
+            eq(s.storeDailySettlements.orgId, orgId),
+            eq(s.storeDailySettlements.settlementDate, date),
+          ),
         );
+      counts['inventory.store_daily_settlements'] = settlementCount?.n ?? 0;
 
-        const allStreamIds = [...sessionIds, ...runIds];
-
-        const counts: Record<string, number> = {
-          'read_model.order_sessions_v': 0,
-          'read_model.order_items_v': 0,
-          'read_model.market_runs_v': 0,
-          'read_model.run_items_v': 0,
-          'read_model.run_item_stores_v': 0,
-          'domain.events': 0,
-          'domain.snapshots': 0,
-          'sync.outbox': 0,
-          'ops.notifications': 0,
-          'inventory.price_history': 0,
-        };
-
-        // Counts.
-        counts['read_model.order_sessions_v'] = sessionIds.length;
-        counts['read_model.market_runs_v'] = runIds.length;
-
-        if (sessionIds.length > 0) {
-          const r = await tx.execute(
-            sql`SELECT count(*)::int AS n FROM read_model.order_items_v
+      if (sessionIds.length > 0) {
+        const r = await tx.execute(
+          sql`SELECT count(*)::int AS n FROM read_model.order_items_v
                 WHERE session_id IN ${sql.raw(`(${sessionIds.map((id) => `'${id}'`).join(',')})`)}`,
-          );
-          counts['read_model.order_items_v'] = (r as unknown as Array<{ n: number }>)[0]?.n ?? 0;
-        }
-        if (runIds.length > 0) {
-          const r1 = await tx.execute(
-            sql`SELECT count(*)::int AS n FROM read_model.run_items_v
+        );
+        counts['read_model.order_items_v'] = (r as unknown as Array<{ n: number }>)[0]?.n ?? 0;
+      }
+      if (runIds.length > 0) {
+        const r1 = await tx.execute(
+          sql`SELECT count(*)::int AS n FROM read_model.run_items_v
                 WHERE run_id IN ${sql.raw(`(${runIds.map((id) => `'${id}'`).join(',')})`)}`,
-          );
-          counts['read_model.run_items_v'] = (r1 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
-          const r2 = await tx.execute(
-            sql`SELECT count(*)::int AS n FROM read_model.run_item_stores_v
+        );
+        counts['read_model.run_items_v'] = (r1 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
+        const r2 = await tx.execute(
+          sql`SELECT count(*)::int AS n FROM read_model.run_item_stores_v
                 WHERE run_id IN ${sql.raw(`(${runIds.map((id) => `'${id}'`).join(',')})`)}`,
-          );
-          counts['read_model.run_item_stores_v'] = (r2 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
-          const r3 = await tx.execute(
-            sql`SELECT count(*)::int AS n FROM inventory.price_history
+        );
+        counts['read_model.run_item_stores_v'] = (r2 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
+        const r3 = await tx.execute(
+          sql`SELECT count(*)::int AS n FROM inventory.price_history
                 WHERE org_id = ${orgId}
                   AND run_id IN ${sql.raw(`(${runIds.map((id) => `'${id}'`).join(',')})`)}`,
-          );
-          counts['inventory.price_history'] = (r3 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
-        }
-        if (allStreamIds.length > 0) {
-          const r1 = await tx.execute(
-            sql`SELECT count(*)::int AS n FROM domain.events
+        );
+        counts['inventory.price_history'] = (r3 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
+      }
+      if (allStreamIds.length > 0) {
+        const r1 = await tx.execute(
+          sql`SELECT count(*)::int AS n FROM domain.events
                 WHERE org_id = ${orgId}
                   AND stream_id IN ${sql.raw(`(${allStreamIds.map((id) => `'${id}'`).join(',')})`)}`,
-          );
-          counts['domain.events'] = (r1 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
-          const r2 = await tx.execute(
-            sql`SELECT count(*)::int AS n FROM domain.snapshots
+        );
+        counts['domain.events'] = (r1 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
+        const r2 = await tx.execute(
+          sql`SELECT count(*)::int AS n FROM domain.snapshots
                 WHERE stream_id IN ${sql.raw(`(${allStreamIds.map((id) => `'${id}'`).join(',')})`)}`,
-          );
-          counts['domain.snapshots'] = (r2 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
-          const r3 = await tx.execute(
-            sql`SELECT count(*)::int AS n FROM sync.outbox
+        );
+        counts['domain.snapshots'] = (r2 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
+        const r3 = await tx.execute(
+          sql`SELECT count(*)::int AS n FROM sync.outbox
                 WHERE event_id IN (
                   SELECT id FROM domain.events
                   WHERE org_id = ${orgId}
                     AND stream_id IN ${sql.raw(`(${allStreamIds.map((id) => `'${id}'`).join(',')})`)}
                 )`,
-          );
-          counts['sync.outbox'] = (r3 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
-          // Notifications stash sessionId/runId in payload jsonb.
-          const r4 = await tx.execute(
-            sql`SELECT count(*)::int AS n FROM ops.notifications
+        );
+        counts['sync.outbox'] = (r3 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
+        // Notifications stash sessionId/runId in payload jsonb.
+        const r4 = await tx.execute(
+          sql`SELECT count(*)::int AS n FROM ops.notifications
                 WHERE org_id = ${orgId}
                   AND (
                     payload->>'sessionId' IN ${sql.raw(`(${allStreamIds.map((id) => `'${id}'`).join(',')})`)}
                     OR payload->>'runId' IN ${sql.raw(`(${allStreamIds.map((id) => `'${id}'`).join(',')})`)}
                   )`,
-          );
-          counts['ops.notifications'] = (r4 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
-        }
+        );
+        counts['ops.notifications'] = (r4 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
+      }
 
-        const total = Object.values(counts).reduce((a, b) => a + b, 0);
+      const total = Object.values(counts).reduce((a, b) => a + b, 0);
 
-        if (input.dryRun) {
-          return { dryRun: true, total, byTable: counts, date };
-        }
+      if (input.dryRun) {
+        return { dryRun: true, total, byTable: counts, date };
+      }
 
-        // Commit pass — same id sets, dependency-safe order.
-        if (runIds.length > 0) {
-          const inRuns = sql.raw(`(${runIds.map((id) => `'${id}'`).join(',')})`);
-          await tx.execute(
-            sql`DELETE FROM read_model.run_item_stores_v WHERE run_id IN ${inRuns}`,
-          );
-          await tx.execute(
-            sql`DELETE FROM read_model.run_items_v WHERE run_id IN ${inRuns}`,
-          );
-          await tx.execute(
-            sql`DELETE FROM inventory.price_history
+      // Commit pass — same id sets, dependency-safe order.
+      if (runIds.length > 0) {
+        const inRuns = sql.raw(`(${runIds.map((id) => `'${id}'`).join(',')})`);
+        await tx.execute(sql`DELETE FROM read_model.run_item_stores_v WHERE run_id IN ${inRuns}`);
+        await tx.execute(sql`DELETE FROM read_model.run_items_v WHERE run_id IN ${inRuns}`);
+        await tx.execute(
+          sql`DELETE FROM inventory.price_history
                 WHERE org_id = ${orgId} AND run_id IN ${inRuns}`,
-          );
-          await tx.execute(
-            sql`DELETE FROM read_model.market_runs_v
+        );
+        await tx.execute(
+          sql`DELETE FROM read_model.market_runs_v
                 WHERE org_id = ${orgId} AND id IN ${inRuns}`,
-          );
-        }
-        if (sessionIds.length > 0) {
-          const inSessions = sql.raw(`(${sessionIds.map((id) => `'${id}'`).join(',')})`);
-          await tx.execute(
-            sql`DELETE FROM read_model.order_items_v WHERE session_id IN ${inSessions}`,
-          );
-          await tx.execute(
-            sql`DELETE FROM read_model.order_sessions_v
+        );
+      }
+      if (sessionIds.length > 0) {
+        const inSessions = sql.raw(`(${sessionIds.map((id) => `'${id}'`).join(',')})`);
+        await tx.execute(
+          sql`DELETE FROM read_model.order_items_v WHERE session_id IN ${inSessions}`,
+        );
+        await tx.execute(
+          sql`DELETE FROM read_model.order_sessions_v
                 WHERE org_id = ${orgId} AND id IN ${inSessions}`,
-          );
-        }
-        if (allStreamIds.length > 0) {
-          const inStreams = sql.raw(`(${allStreamIds.map((id) => `'${id}'`).join(',')})`);
-          // Notifications first (cheap; doesn't depend on events).
-          await tx.execute(
-            sql`DELETE FROM ops.notifications
+        );
+      }
+      if (allStreamIds.length > 0) {
+        const inStreams = sql.raw(`(${allStreamIds.map((id) => `'${id}'`).join(',')})`);
+        // Notifications first (cheap; doesn't depend on events).
+        await tx.execute(
+          sql`DELETE FROM ops.notifications
                 WHERE org_id = ${orgId}
                   AND (
                     payload->>'sessionId' IN ${inStreams}
                     OR payload->>'runId' IN ${inStreams}
                   )`,
-          );
-          // Outbox before events (event_id FK).
-          await tx.execute(
-            sql`DELETE FROM sync.outbox
+        );
+        // Outbox before events (event_id FK).
+        await tx.execute(
+          sql`DELETE FROM sync.outbox
                 WHERE event_id IN (
                   SELECT id FROM domain.events
                   WHERE org_id = ${orgId} AND stream_id IN ${inStreams}
                 )`,
-          );
-          await tx.execute(
-            sql`DELETE FROM domain.snapshots WHERE stream_id IN ${inStreams}`,
-          );
-          await tx.execute(
-            sql`DELETE FROM domain.events
+        );
+        await tx.execute(sql`DELETE FROM domain.snapshots WHERE stream_id IN ${inStreams}`);
+        await tx.execute(
+          sql`DELETE FROM domain.events
                 WHERE org_id = ${orgId} AND stream_id IN ${inStreams}`,
-          );
-        }
+        );
+      }
+      await tx
+        .delete(s.storeDailySettlementRevisions)
+        .where(
+          and(
+            eq(s.storeDailySettlementRevisions.orgId, orgId),
+            eq(s.storeDailySettlementRevisions.settlementDate, date),
+          ),
+        );
+      await tx
+        .delete(s.storeDailySettlements)
+        .where(
+          and(
+            eq(s.storeDailySettlements.orgId, orgId),
+            eq(s.storeDailySettlements.settlementDate, date),
+          ),
+        );
 
-        return { dryRun: false, total, byTable: counts, date };
-      });
-    }),
+      return { dryRun: false, total, byTable: counts, date };
+    });
+  }),
 
   // ============ TARGETED PURGE: list + per-session + per-run ============
 
@@ -4090,10 +4171,15 @@ export const adminRouter = router({
    */
   sessionList: authedProcedure
     .input(
-      z.object({
-        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-        limit: z.number().int().min(1).max(200).default(50),
-      }).optional(),
+      z
+        .object({
+          date: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/)
+            .optional(),
+          limit: z.number().int().min(1).max(200).default(50),
+        })
+        .optional(),
     )
     .query(async ({ ctx, input }) => {
       requireAdmin(ctx.session!.permissions);
@@ -4115,10 +4201,7 @@ export const adminRouter = router({
           .from(s.orderSessionsV)
           .where(
             date
-              ? and(
-                  eq(s.orderSessionsV.orgId, orgId),
-                  eq(s.orderSessionsV.orderDate, date),
-                )
+              ? and(eq(s.orderSessionsV.orgId, orgId), eq(s.orderSessionsV.orderDate, date))
               : eq(s.orderSessionsV.orgId, orgId),
           )
           .orderBy(desc(s.orderSessionsV.updatedAt))
@@ -4148,7 +4231,14 @@ export const adminRouter = router({
                 .from(s.members)
                 .innerJoin(s.users, eq(s.users.id, s.members.userId))
                 .where(inArray(s.members.id, memberIds))
-            : Promise.resolve([] as Array<{ memberId: string; userId: string; displayName: string; tgUsername: string | null }>),
+            : Promise.resolve(
+                [] as Array<{
+                  memberId: string;
+                  userId: string;
+                  displayName: string;
+                  tgUsername: string | null;
+                }>,
+              ),
           // All raw rows for these sessions (we'll filter empty ones out).
           tx
             .select({
@@ -4158,7 +4248,12 @@ export const adminRouter = router({
               qty: s.orderItemsV.qty,
             })
             .from(s.orderItemsV)
-            .where(inArray(s.orderItemsV.sessionId, rows.map((r) => r.id))),
+            .where(
+              inArray(
+                s.orderItemsV.sessionId,
+                rows.map((r) => r.id),
+              ),
+            ),
         ]);
         const storeById = new Map(stores.map((st) => [st.id, st]));
         const memberById = new Map(memberJoins.map((m) => [m.memberId, m]));
@@ -4195,35 +4290,37 @@ export const adminRouter = router({
           aggregateBySession.set(sessionId, { itemCount: count, totalQty: total });
         }
 
-        return rows
-          .map((r) => {
-            const attribMemberId = r.submittedByMemberId ?? r.initiatedByMemberId;
-            const m = attribMemberId ? memberById.get(attribMemberId) : null;
-            const agg = aggregateBySession.get(r.id) ?? { itemCount: 0, totalQty: 0 };
-            return {
-              sessionId: r.id,
-              storeId: r.storeId,
-              storeName: storeById.get(r.storeId)?.name ?? null,
-              attribMemberId: attribMemberId ?? null,
-              attribDisplayName: m?.displayName ?? null,
-              attribTgUsername: m?.tgUsername ?? null,
-              isMine:
-                sessionsWhereImAuthor.has(r.id) ||
-                (attribMemberId !== null && attribMemberId === callerMemberId),
-              orderDate: r.orderDate,
-              status: r.status,
-              runId: r.runId,
-              itemCount: agg.itemCount,
-              totalQty: agg.totalQty.toFixed(3).replace(/\.?0+$/, ''),
-              updatedAt: r.updatedAt.toISOString(),
-            };
-          })
-          // #4: an "empty" session (every contributor's qty is 0) shouldn't
-          // clutter the maintenance browser. Only show sessions that have
-          // at least one SKU with non-zero aggregate qty, OR whose status
-          // moved past draft (e.g. submitted-and-then-everything-cleared
-          // is still meaningful for audit).
-          .filter((r) => r.itemCount > 0 || r.status !== 'draft');
+        return (
+          rows
+            .map((r) => {
+              const attribMemberId = r.submittedByMemberId ?? r.initiatedByMemberId;
+              const m = attribMemberId ? memberById.get(attribMemberId) : null;
+              const agg = aggregateBySession.get(r.id) ?? { itemCount: 0, totalQty: 0 };
+              return {
+                sessionId: r.id,
+                storeId: r.storeId,
+                storeName: storeById.get(r.storeId)?.name ?? null,
+                attribMemberId: attribMemberId ?? null,
+                attribDisplayName: m?.displayName ?? null,
+                attribTgUsername: m?.tgUsername ?? null,
+                isMine:
+                  sessionsWhereImAuthor.has(r.id) ||
+                  (attribMemberId !== null && attribMemberId === callerMemberId),
+                orderDate: r.orderDate,
+                status: r.status,
+                runId: r.runId,
+                itemCount: agg.itemCount,
+                totalQty: agg.totalQty.toFixed(3).replace(/\.?0+$/, ''),
+                updatedAt: r.updatedAt.toISOString(),
+              };
+            })
+            // #4: an "empty" session (every contributor's qty is 0) shouldn't
+            // clutter the maintenance browser. Only show sessions that have
+            // at least one SKU with non-zero aggregate qty, OR whose status
+            // moved past draft (e.g. submitted-and-then-everything-cleared
+            // is still meaningful for audit).
+            .filter((r) => r.itemCount > 0 || r.status !== 'draft')
+        );
       });
     }),
 
@@ -4232,10 +4329,15 @@ export const adminRouter = router({
    */
   runList: authedProcedure
     .input(
-      z.object({
-        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-        limit: z.number().int().min(1).max(200).default(50),
-      }).optional(),
+      z
+        .object({
+          date: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/)
+            .optional(),
+          limit: z.number().int().min(1).max(200).default(50),
+        })
+        .optional(),
     )
     .query(async ({ ctx, input }) => {
       requireAdmin(ctx.session!.permissions);
@@ -4256,10 +4358,7 @@ export const adminRouter = router({
           .from(s.marketRunsV)
           .where(
             date
-              ? and(
-                  eq(s.marketRunsV.orgId, orgId),
-                  eq(s.marketRunsV.runDate, date),
-                )
+              ? and(eq(s.marketRunsV.orgId, orgId), eq(s.marketRunsV.runDate, date))
               : eq(s.marketRunsV.orgId, orgId),
           )
           .orderBy(desc(s.marketRunsV.updatedAt))
@@ -4333,8 +4432,7 @@ export const adminRouter = router({
         // 00:00 and 05:00 UTC.
         const tz = ctx.session!.orgTimezone;
         const sevenDaysOrFrom =
-          input?.fromDate ??
-          dateInTz(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), tz);
+          input?.fromDate ?? dateInTz(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), tz);
         const toDate = input?.toDate ?? todayInTz(tz);
 
         // Only sessions that progressed past draft are "submissions".
@@ -4434,12 +4532,12 @@ export const adminRouter = router({
             submittedAt: submittedAt?.toISOString() ?? null,
             submittedByMemberId: sess.submitted_by_member_id,
             submittedByName: sess.submitted_by_member_id
-              ? memberById.get(sess.submitted_by_member_id) ?? null
+              ? (memberById.get(sess.submitted_by_member_id) ?? null)
               : null,
             decidedAt: decidedAt?.toISOString() ?? null,
             decidedByMemberId: sess.decided_by_member_id,
             decidedByName: sess.decided_by_member_id
-              ? memberById.get(sess.decided_by_member_id) ?? null
+              ? (memberById.get(sess.decided_by_member_id) ?? null)
               : null,
             rejectReason: sess.reject_reason,
             runId: sess.run_id,
@@ -4461,137 +4559,132 @@ export const adminRouter = router({
     }),
 
   /** Surgical single-session purge. See PurgeSessionInputSchema doc. */
-  purgeSession: authedProcedure
-    .input(PurgeSessionInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      requireAdmin(ctx.session!.permissions);
-      if (!ctx.session!.roleSlugs.has('super_admin')) {
+  purgeSession: authedProcedure.input(PurgeSessionInputSchema).mutation(async ({ ctx, input }) => {
+    requireAdmin(ctx.session!.permissions);
+    if (!ctx.session!.roleSlugs.has('super_admin')) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'admin.errors.purgeRequiresSuperAdmin',
+      });
+    }
+    return ctx.withOrg(async (tx) => {
+      const orgId = ctx.session!.orgId;
+      const session = await tx.query.orderSessionsV.findFirst({
+        where: (sess, { eq: eq2, and: and2 }) =>
+          and2(eq2(sess.id, input.sessionId), eq2(sess.orgId, orgId)),
+      });
+      if (!session) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.sessionNotFound' });
+      }
+      // Refuse if attached to a run — caller should purge the run.
+      if (session.status === 'in_run' || session.status === 'archived' || session.runId) {
         throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'admin.errors.purgeRequiresSuperAdmin',
+          code: 'BAD_REQUEST',
+          message: 'admin.errors.sessionAttachedToRun',
         });
       }
-      return ctx.withOrg(async (tx) => {
-        const orgId = ctx.session!.orgId;
-        const session = await tx.query.orderSessionsV.findFirst({
-          where: (sess, { eq: eq2, and: and2 }) =>
-            and2(eq2(sess.id, input.sessionId), eq2(sess.orgId, orgId)),
-        });
-        if (!session) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.sessionNotFound' });
-        }
-        // Refuse if attached to a run — caller should purge the run.
-        if (session.status === 'in_run' || session.status === 'archived' || session.runId) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'admin.errors.sessionAttachedToRun',
-          });
-        }
 
-        const counts = await countSessionCascade(tx, orgId, input.sessionId);
-        if (input.dryRun) {
-          return {
-            dryRun: true,
-            total: Object.values(counts).reduce((a, b) => a + b, 0),
-            byTable: counts,
-            sessionId: input.sessionId,
-          };
-        }
-        await deleteSessionCascade(tx, orgId, input.sessionId);
+      const counts = await countSessionCascade(tx, orgId, input.sessionId);
+      if (input.dryRun) {
         return {
-          dryRun: false,
+          dryRun: true,
           total: Object.values(counts).reduce((a, b) => a + b, 0),
           byTable: counts,
           sessionId: input.sessionId,
         };
-      });
-    }),
+      }
+      await deleteSessionCascade(tx, orgId, input.sessionId);
+      return {
+        dryRun: false,
+        total: Object.values(counts).reduce((a, b) => a + b, 0),
+        byTable: counts,
+        sessionId: input.sessionId,
+      };
+    });
+  }),
 
   /** Whole-run purge. See PurgeRunInputSchema doc. */
-  purgeRun: authedProcedure
-    .input(PurgeRunInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      requireAdmin(ctx.session!.permissions);
-      if (!ctx.session!.roleSlugs.has('super_admin')) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'admin.errors.purgeRequiresSuperAdmin',
-        });
+  purgeRun: authedProcedure.input(PurgeRunInputSchema).mutation(async ({ ctx, input }) => {
+    requireAdmin(ctx.session!.permissions);
+    if (!ctx.session!.roleSlugs.has('super_admin')) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'admin.errors.purgeRequiresSuperAdmin',
+      });
+    }
+    return ctx.withOrg(async (tx) => {
+      const orgId = ctx.session!.orgId;
+      const run = await tx.query.marketRunsV.findFirst({
+        where: (r, { eq: eq2, and: and2 }) => and2(eq2(r.id, input.runId), eq2(r.orgId, orgId)),
+      });
+      if (!run) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.runNotFound' });
       }
-      return ctx.withOrg(async (tx) => {
-        const orgId = ctx.session!.orgId;
-        const run = await tx.query.marketRunsV.findFirst({
-          where: (r, { eq: eq2, and: and2 }) =>
-            and2(eq2(r.id, input.runId), eq2(r.orgId, orgId)),
+      const sessionIds = (run.sessionIdsJson as unknown as string[]) ?? [];
+
+      // Safety: refuse if any attached session belongs to someone other
+      // than the caller, unless explicitly waived.
+      if (input.requireOnlyTestSessions && sessionIds.length > 0) {
+        // Per-store sessions can have multiple contributors. A session
+        // counts as "test" only if every line author AND the submitter
+        // is the caller. Anyone else's line → refuse.
+        const myMember = await tx.query.members.findFirst({
+          where: (m, { eq: eq2, and: and2 }) =>
+            and2(eq2(m.orgId, orgId), eq2(m.userId, ctx.session!.userId)),
         });
-        if (!run) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.runNotFound' });
+        const myMemberId = myMember?.id ?? null;
+        const sessions = await tx.query.orderSessionsV.findMany({
+          where: (sess, { inArray: ia }) => ia(sess.id, sessionIds),
+        });
+        const items = await tx.query.orderItemsV.findMany({
+          where: (it, { inArray: ia }) => ia(it.sessionId, sessionIds),
+        });
+        const foreignAttribs = new Set<string>();
+        for (const sess of sessions) {
+          if (sess.submittedByMemberId && sess.submittedByMemberId !== myMemberId) {
+            foreignAttribs.add(sess.submittedByMemberId);
+          }
+          if (
+            sess.initiatedByMemberId &&
+            sess.initiatedByMemberId !== myMemberId &&
+            !sess.submittedByMemberId
+          ) {
+            foreignAttribs.add(sess.initiatedByMemberId);
+          }
         }
-        const sessionIds = (run.sessionIdsJson as unknown as string[]) ?? [];
+        for (const it of items) {
+          if (it.contributorMemberId && it.contributorMemberId !== myMemberId) {
+            foreignAttribs.add(it.contributorMemberId);
+          }
+        }
+        if (foreignAttribs.size > 0) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'admin.errors.runHasForeignSessions',
+          });
+        }
+      }
 
-        // Safety: refuse if any attached session belongs to someone other
-        // than the caller, unless explicitly waived.
-        if (input.requireOnlyTestSessions && sessionIds.length > 0) {
-          // Per-store sessions can have multiple contributors. A session
-          // counts as "test" only if every line author AND the submitter
-          // is the caller. Anyone else's line → refuse.
-          const myMember = await tx.query.members.findFirst({
-            where: (m, { eq: eq2, and: and2 }) =>
-              and2(eq2(m.orgId, orgId), eq2(m.userId, ctx.session!.userId)),
-          });
-          const myMemberId = myMember?.id ?? null;
-          const sessions = await tx.query.orderSessionsV.findMany({
-            where: (sess, { inArray: ia }) => ia(sess.id, sessionIds),
-          });
-          const items = await tx.query.orderItemsV.findMany({
-            where: (it, { inArray: ia }) => ia(it.sessionId, sessionIds),
-          });
-          const foreignAttribs = new Set<string>();
-          for (const sess of sessions) {
-            if (sess.submittedByMemberId && sess.submittedByMemberId !== myMemberId) {
-              foreignAttribs.add(sess.submittedByMemberId);
-            }
-            if (
-              sess.initiatedByMemberId &&
-              sess.initiatedByMemberId !== myMemberId &&
-              !sess.submittedByMemberId
-            ) {
-              foreignAttribs.add(sess.initiatedByMemberId);
-            }
-          }
-          for (const it of items) {
-            if (it.contributorMemberId && it.contributorMemberId !== myMemberId) {
-              foreignAttribs.add(it.contributorMemberId);
-            }
-          }
-          if (foreignAttribs.size > 0) {
-            throw new TRPCError({
-              code: 'BAD_REQUEST',
-              message: 'admin.errors.runHasForeignSessions',
-            });
-          }
-        }
-
-        const counts = await countRunCascade(tx, orgId, input.runId, sessionIds);
-        if (input.dryRun) {
-          return {
-            dryRun: true,
-            total: Object.values(counts).reduce((a, b) => a + b, 0),
-            byTable: counts,
-            runId: input.runId,
-            sessionIds,
-          };
-        }
-        await deleteRunCascade(tx, orgId, input.runId, sessionIds);
+      const counts = await countRunCascade(tx, orgId, input.runId, sessionIds);
+      if (input.dryRun) {
         return {
-          dryRun: false,
+          dryRun: true,
           total: Object.values(counts).reduce((a, b) => a + b, 0),
           byTable: counts,
           runId: input.runId,
           sessionIds,
         };
-      });
-    }),
+      }
+      await deleteRunCascade(tx, orgId, input.runId, sessionIds);
+      return {
+        dryRun: false,
+        total: Object.values(counts).reduce((a, b) => a + b, 0),
+        byTable: counts,
+        runId: input.runId,
+        sessionIds,
+      };
+    });
+  }),
 });
 
 // ---------- session/run cascade helpers ----------
@@ -4648,15 +4741,9 @@ async function deleteSessionCascade(tx: Tx, orgId: string, sessionId: string): P
     sql`DELETE FROM sync.outbox
         WHERE event_id IN (SELECT id FROM domain.events WHERE org_id = ${orgId} AND stream_id = ${sId})`,
   );
-  await tx.execute(
-    sql`DELETE FROM domain.snapshots WHERE stream_id = ${sId}`,
-  );
-  await tx.execute(
-    sql`DELETE FROM domain.events WHERE org_id = ${orgId} AND stream_id = ${sId}`,
-  );
-  await tx.execute(
-    sql`DELETE FROM read_model.order_items_v WHERE session_id = ${sId}`,
-  );
+  await tx.execute(sql`DELETE FROM domain.snapshots WHERE stream_id = ${sId}`);
+  await tx.execute(sql`DELETE FROM domain.events WHERE org_id = ${orgId} AND stream_id = ${sId}`);
+  await tx.execute(sql`DELETE FROM read_model.order_items_v WHERE session_id = ${sId}`);
   await tx.execute(
     sql`DELETE FROM read_model.order_sessions_v WHERE org_id = ${orgId} AND id = ${sId}`,
   );
@@ -4742,20 +4829,14 @@ async function deleteRunCascade(
             SELECT id FROM domain.events WHERE org_id = ${orgId} AND stream_id IN ${inStreams}
           )`,
     );
-    await tx.execute(
-      sql`DELETE FROM domain.snapshots WHERE stream_id IN ${inStreams}`,
-    );
+    await tx.execute(sql`DELETE FROM domain.snapshots WHERE stream_id IN ${inStreams}`);
     await tx.execute(
       sql`DELETE FROM domain.events WHERE org_id = ${orgId} AND stream_id IN ${inStreams}`,
     );
   }
   // Run-side projections.
-  await tx.execute(
-    sql`DELETE FROM read_model.run_item_stores_v WHERE run_id = ${runId}`,
-  );
-  await tx.execute(
-    sql`DELETE FROM read_model.run_items_v WHERE run_id = ${runId}`,
-  );
+  await tx.execute(sql`DELETE FROM read_model.run_item_stores_v WHERE run_id = ${runId}`);
+  await tx.execute(sql`DELETE FROM read_model.run_items_v WHERE run_id = ${runId}`);
   await tx.execute(
     sql`DELETE FROM inventory.price_history WHERE org_id = ${orgId} AND run_id = ${runId}`,
   );
@@ -4765,12 +4846,9 @@ async function deleteRunCascade(
   // Session-side projections (attached sessions).
   if (sessionIds.length > 0) {
     const inSessions = sql.raw(`(${sessionIds.map((id) => `'${id}'`).join(',')})`);
-    await tx.execute(
-      sql`DELETE FROM read_model.order_items_v WHERE session_id IN ${inSessions}`,
-    );
+    await tx.execute(sql`DELETE FROM read_model.order_items_v WHERE session_id IN ${inSessions}`);
     await tx.execute(
       sql`DELETE FROM read_model.order_sessions_v WHERE org_id = ${orgId} AND id IN ${inSessions}`,
     );
   }
 }
-

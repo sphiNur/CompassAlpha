@@ -6,7 +6,9 @@ import { fixedClock } from '../shared/clock';
 const NOW = new Date('2026-05-01T08:00:00Z');
 const clock = fixedClock(NOW);
 
-const purchaser = (perms: string[] = ['run.create', 'run.purchase', 'delivery.dispatch', 'run.finish']): ActorCtx => ({
+const purchaser = (
+  perms: string[] = ['run.create', 'run.purchase', 'delivery.dispatch', 'run.finish'],
+): ActorCtx => ({
   userId: 'u1',
   memberId: 'm1',
   permissions: new Set(perms),
@@ -237,6 +239,121 @@ describe('run.decide', () => {
     ).toThrow('run.errors.unavailableNoteRequired');
   });
 
+  test('MarkUnavailable is limited to live purchase phases and freezes terminal runs', () => {
+    let planned = emptyRunState('mark-unavailable-phase');
+    planned = decideRun(
+      planned,
+      {
+        type: 'PlanRun',
+        orgId: 'o',
+        runDate: '2026-05-01',
+        runIndex: 0,
+        sessionIds: ['s'],
+        plannedItems: [{ skuId: 'k', qty: '1' }],
+        actor: purchaser(),
+      },
+      clock,
+    ).reduce(applyRun, planned);
+
+    // Preserve the existing first-action behaviour: marking unavailable is
+    // legal while planned as well as after StartPurchase.
+    expect(
+      decideRun(
+        planned,
+        { type: 'MarkUnavailable', skuId: 'k', note: 'sold out', actor: purchaser() },
+        clock,
+      ).map((event) => event.type),
+    ).toEqual(['ItemUnavailable']);
+
+    for (const status of ['delivering', 'finished', 'cancelled'] as const) {
+      expect(() =>
+        decideRun(
+          { ...planned, status },
+          { type: 'MarkUnavailable', skuId: 'k', note: 'sold out', actor: purchaser() },
+          clock,
+        ),
+      ).toThrow('run.errors.runFrozen');
+    }
+  });
+
+  test('MarkUnavailable requires a pending item', () => {
+    const purchased = planAndPurchase();
+    expect(() =>
+      decideRun(
+        purchased,
+        {
+          type: 'MarkUnavailable',
+          skuId: 'sku-1',
+          note: 'incorrect second decision',
+          actor: purchaser(),
+        },
+        clock,
+      ),
+    ).toThrow('run.errors.itemNotPending');
+
+    let unavailable = emptyRunState('mark-unavailable-repeat');
+    unavailable = decideRun(
+      unavailable,
+      {
+        type: 'PlanRun',
+        orgId: 'o',
+        runDate: '2026-05-01',
+        runIndex: 0,
+        sessionIds: ['s'],
+        plannedItems: [{ skuId: 'k', qty: '1' }],
+        actor: purchaser(),
+      },
+      clock,
+    ).reduce(applyRun, unavailable);
+    unavailable = decideRun(
+      unavailable,
+      { type: 'MarkUnavailable', skuId: 'k', note: 'sold out', actor: purchaser() },
+      clock,
+    ).reduce(applyRun, unavailable);
+    expect(() =>
+      decideRun(
+        unavailable,
+        { type: 'MarkUnavailable', skuId: 'k', note: 'again', actor: purchaser() },
+        clock,
+      ),
+    ).toThrow('run.errors.itemNotPending');
+  });
+
+  test('MarkUnavailable explicitly permits only run.amend holders while amending', () => {
+    let planned = emptyRunState('mark-unavailable-amending');
+    planned = decideRun(
+      planned,
+      {
+        type: 'PlanRun',
+        orgId: 'o',
+        runDate: '2026-05-01',
+        runIndex: 0,
+        sessionIds: ['s'],
+        plannedItems: [{ skuId: 'k', qty: '1' }],
+        actor: purchaser(),
+      },
+      clock,
+    ).reduce(applyRun, planned);
+    const amending = { ...planned, status: 'amending' as const };
+
+    expect(() =>
+      decideRun(
+        amending,
+        { type: 'MarkUnavailable', skuId: 'k', note: 'correction', actor: purchaser() },
+        clock,
+      ),
+    ).toThrow('run.errors.cannotAmend');
+
+    const amendActor = purchaser(['run.purchase', 'run.amend']);
+    expect(
+      decideRun(
+        amending,
+        { type: 'MarkUnavailable', skuId: 'k', note: 'correction', actor: amendActor },
+        clock,
+      ).map((event) => event.type),
+    ).toEqual(['ItemUnavailable']);
+  });
+
   // 2026-07-26: StartDelivery had no permission check whatsoever. The
   // tRPC layer only asserts store VISIBILITY, so any member with a store
   // in the run — including shop staff, whose whole permission set is
@@ -312,11 +429,10 @@ describe('run.decide', () => {
   test('ConfirmStoreItem with non-ok status requires note', () => {
     let s = planAndPurchase();
     s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(
+    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
+      applyRun,
       s,
-      { type: 'DeliverToStore', storeId: 'A', actor: purchaser() },
-      clock,
-    ).reduce(applyRun, s);
+    );
     expect(() =>
       decideRun(
         s,
@@ -342,8 +458,14 @@ describe('run.decide', () => {
       ],
     });
     s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(s, { type: 'DeliverToStore', storeId: 'B', actor: purchaser() }, clock).reduce(applyRun, s);
+    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
+      applyRun,
+      s,
+    );
+    s = decideRun(s, { type: 'DeliverToStore', storeId: 'B', actor: purchaser() }, clock).reduce(
+      applyRun,
+      s,
+    );
     s = decideRun(
       s,
       {
@@ -357,7 +479,10 @@ describe('run.decide', () => {
       },
       clock,
     ).reduce(applyRun, s);
-    s = decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock).reduce(applyRun, s);
+    s = decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock).reduce(
+      applyRun,
+      s,
+    );
     // store B not yet confirmed
     expect(() => decideRun(s, { type: 'FinishRun', actor: purchaser() }, clock)).toThrow(
       'run.errors.storeNotConfirmed',
@@ -367,7 +492,10 @@ describe('run.decide', () => {
   test('full happy path lands in finished status', () => {
     let s = planAndPurchase({ storeSplits: [{ storeId: 'A', qty: '4' }] });
     s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(applyRun, s);
+    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
+      applyRun,
+      s,
+    );
     s = decideRun(
       s,
       {
@@ -381,7 +509,10 @@ describe('run.decide', () => {
       },
       clock,
     ).reduce(applyRun, s);
-    s = decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock).reduce(applyRun, s);
+    s = decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock).reduce(
+      applyRun,
+      s,
+    );
     s = decideRun(s, { type: 'FinishRun', actor: purchaser() }, clock).reduce(applyRun, s);
     expect(s.status).toBe('finished');
     expect(s.finishedAt).toEqual(NOW);
@@ -396,13 +527,27 @@ describe('run.decide', () => {
     // Drive sku-1 (qty 4 @ 12,000 cash) all the way to finished → total 48,000.
     let s = planAndPurchase({ storeSplits: [{ storeId: 'A', qty: '4' }] });
     s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(applyRun, s);
+    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
+      applyRun,
+      s,
+    );
     s = decideRun(
       s,
-      { type: 'ConfirmStoreItem', storeId: 'A', skuId: 'sku-1', status: 'ok', note: null, photoUrl: null, actor: confirmer() },
+      {
+        type: 'ConfirmStoreItem',
+        storeId: 'A',
+        skuId: 'sku-1',
+        status: 'ok',
+        note: null,
+        photoUrl: null,
+        actor: confirmer(),
+      },
       clock,
     ).reduce(applyRun, s);
-    s = decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock).reduce(applyRun, s);
+    s = decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock).reduce(
+      applyRun,
+      s,
+    );
     const finishEvs = decideRun(s, { type: 'FinishRun', actor: purchaser() }, clock);
     s = finishEvs.reduce(applyRun, s);
     expect(s.status).toBe('finished');
@@ -417,20 +562,46 @@ describe('run.decide', () => {
     expect(() =>
       decideRun(
         s,
-        { type: 'RevisePurchase', skuId: 'sku-1', supplierId: 'sup-1', unitPrice: '15000', actualQty: '4', receiptPhotoUrl: null, storeSplits: [{ storeId: 'A', qty: '4' }], reason: 'x', paymentMethod: 'cash', actor: purchaser() },
+        {
+          type: 'RevisePurchase',
+          skuId: 'sku-1',
+          supplierId: 'sup-1',
+          unitPrice: '15000',
+          actualQty: '4',
+          receiptPhotoUrl: null,
+          storeSplits: [{ storeId: 'A', qty: '4' }],
+          reason: 'x',
+          paymentMethod: 'cash',
+          actor: purchaser(),
+        },
         clock,
       ),
     ).toThrow('run.errors.runFrozen');
 
     // Super-admin reopens the finished run.
-    s = decideRun(s, { type: 'ReopenRun', reason: 'wrong unit price typed', actor: superAdmin() }, clock).reduce(applyRun, s);
+    s = decideRun(
+      s,
+      { type: 'ReopenRun', reason: 'wrong unit price typed', actor: superAdmin() },
+      clock,
+    ).reduce(applyRun, s);
     expect(s.status).toBe('amending');
 
     // Correct the price 12,000 → 15,000 — allowed even though store A was
     // already delivered + confirmed (the amending delivered-guard skip).
     s = decideRun(
       s,
-      { type: 'RevisePurchase', skuId: 'sku-1', supplierId: 'sup-1', unitPrice: '15000', actualQty: '4', receiptPhotoUrl: null, storeSplits: [{ storeId: 'A', qty: '4' }], reason: 'corrected unit price', paymentMethod: 'cash', actor: superAdmin() },
+      {
+        type: 'RevisePurchase',
+        skuId: 'sku-1',
+        supplierId: 'sup-1',
+        unitPrice: '15000',
+        actualQty: '4',
+        receiptPhotoUrl: null,
+        storeSplits: [{ storeId: 'A', qty: '4' }],
+        reason: 'corrected unit price',
+        paymentMethod: 'cash',
+        actor: superAdmin(),
+      },
       clock,
     ).reduce(applyRun, s);
     expect(s.items.get('sku-1')?.unitPrice).toBe('15000');
@@ -518,18 +689,41 @@ describe('run.decide', () => {
     expect(() =>
       decideRun(
         s,
-        { type: 'PurchaseItem', skuId: 'sku-2', supplierId: null, unitPrice: '900', actualQty: '1', receiptPhotoUrl: null, storeSplits: [{ storeId: 'A', qty: '1' }], paymentMethod: 'cash', actor: sa },
+        {
+          type: 'PurchaseItem',
+          skuId: 'sku-2',
+          supplierId: null,
+          unitPrice: '900',
+          actualQty: '1',
+          receiptPhotoUrl: null,
+          storeSplits: [{ storeId: 'A', qty: '1' }],
+          paymentMethod: 'cash',
+          actor: sa,
+        },
         clock,
       ),
     ).toThrow('run.errors.runFrozen');
 
-    s = decideRun(s, { type: 'ReopenRun', reason: 'missed a buy', actor: sa }, clock).reduce(applyRun, s);
+    s = decideRun(s, { type: 'ReopenRun', reason: 'missed a buy', actor: sa }, clock).reduce(
+      applyRun,
+      s,
+    );
     expect(s.status).toBe('amending');
 
     // Now it goes through — this is the line that used to throw.
     s = decideRun(
       s,
-      { type: 'PurchaseItem', skuId: 'sku-2', supplierId: null, unitPrice: '900', actualQty: '1', receiptPhotoUrl: null, storeSplits: [{ storeId: 'A', qty: '1' }], paymentMethod: 'cash', actor: sa },
+      {
+        type: 'PurchaseItem',
+        skuId: 'sku-2',
+        supplierId: null,
+        unitPrice: '900',
+        actualQty: '1',
+        receiptPhotoUrl: null,
+        storeSplits: [{ storeId: 'A', qty: '1' }],
+        paymentMethod: 'cash',
+        actor: sa,
+      },
       clock,
     ).reduce(applyRun, s);
     expect(s.items.get('sku-2')?.unitPrice).toBe('900');
@@ -538,7 +732,17 @@ describe('run.decide', () => {
     expect(() =>
       decideRun(
         s,
-        { type: 'PurchaseItem', skuId: 'sku-1', supplierId: null, unitPrice: '1', actualQty: '1', receiptPhotoUrl: null, storeSplits: [{ storeId: 'A', qty: '1' }], paymentMethod: 'cash', actor: purchaser() },
+        {
+          type: 'PurchaseItem',
+          skuId: 'sku-1',
+          supplierId: null,
+          unitPrice: '1',
+          actualQty: '1',
+          receiptPhotoUrl: null,
+          storeSplits: [{ storeId: 'A', qty: '1' }],
+          paymentMethod: 'cash',
+          actor: purchaser(),
+        },
         clock,
       ),
     ).toThrow('run.errors.runFrozen');
@@ -558,9 +762,9 @@ describe('run.decide', () => {
     // Garbage and impossible dates are rejected (2026-02-31 would roll
     // over to March 3 and silently book the spend in the wrong month).
     for (const bad of ['not-a-date', '2026-13-01', '2026-02-31', '26-01-01']) {
-      expect(() =>
-        decideRun(s, { type: 'ChangeRunDate', runDate: bad, actor: sa }, clock),
-      ).toThrow('run.errors.invalidRunDate');
+      expect(() => decideRun(s, { type: 'ChangeRunDate', runDate: bad, actor: sa }, clock)).toThrow(
+        'run.errors.invalidRunDate',
+      );
     }
 
     const evs = decideRun(s, { type: 'ChangeRunDate', runDate: '2026-07-23', actor: sa }, clock);
@@ -581,7 +785,11 @@ describe('run.decide', () => {
 
   test('RefinalizeRun rejected unless status is amending', () => {
     let s = planAndPurchase();
-    const superAdmin: ActorCtx = { userId: 'sa', memberId: 'sa', permissions: new Set(['run.amend']) };
+    const superAdmin: ActorCtx = {
+      userId: 'sa',
+      memberId: 'sa',
+      permissions: new Set(['run.amend']),
+    };
     expect(() => decideRun(s, { type: 'RefinalizeRun', actor: superAdmin }, clock)).toThrow(
       'run.errors.notRefinalizable',
     );
@@ -622,7 +830,10 @@ describe('run.decide', () => {
   test('CancelRun blocked after finished', () => {
     let s = planAndPurchase();
     s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
-    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(applyRun, s);
+    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
+      applyRun,
+      s,
+    );
     s = decideRun(
       s,
       {
@@ -636,7 +847,10 @@ describe('run.decide', () => {
       },
       clock,
     ).reduce(applyRun, s);
-    s = decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock).reduce(applyRun, s);
+    s = decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock).reduce(
+      applyRun,
+      s,
+    );
     s = decideRun(s, { type: 'FinishRun', actor: purchaser() }, clock).reduce(applyRun, s);
     expect(() =>
       decideRun(s, { type: 'CancelRun', reason: 'oops', actor: purchaser() }, clock),
@@ -880,9 +1094,9 @@ describe('run.reversals', () => {
       memberId: 'm-x',
       permissions: new Set(['run.create']),
     };
-    expect(() =>
-      decideRun(s, { type: 'StartPurchase', actor: noPurchasePerm }, clock),
-    ).toThrow('run.errors.cannotPurchase');
+    expect(() => decideRun(s, { type: 'StartPurchase', actor: noPurchasePerm }, clock)).toThrow(
+      'run.errors.cannotPurchase',
+    );
   });
 
   test('PurchaseItem blocked when run.status === delivering (M3.33 #12)', () => {
@@ -1328,6 +1542,41 @@ describe('run.reversals', () => {
     expect(confirm.payload.status).toBe('ok');
   });
 
+  test('ConfirmStore is blocked after a run is cancelled or finished', () => {
+    let delivering = planAndPurchase();
+    delivering = decideRun(delivering, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(
+      applyRun,
+      delivering,
+    );
+    delivering = decideRun(
+      delivering,
+      { type: 'DeliverToStore', storeId: 'A', actor: purchaser() },
+      clock,
+    ).reduce(applyRun, delivering);
+
+    const cancelled = decideRun(
+      delivering,
+      { type: 'CancelRun', reason: 'delivery cancelled', actor: purchaser() },
+      clock,
+    ).reduce(applyRun, delivering);
+    expect(() =>
+      decideRun(cancelled, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock),
+    ).toThrow('run.errors.notDelivering');
+
+    let finished = decideRun(
+      delivering,
+      { type: 'ConfirmStore', storeId: 'A', actor: confirmer() },
+      clock,
+    ).reduce(applyRun, delivering);
+    finished = decideRun(finished, { type: 'FinishRun', actor: purchaser() }, clock).reduce(
+      applyRun,
+      finished,
+    );
+    expect(() =>
+      decideRun(finished, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock),
+    ).toThrow('run.errors.notDelivering');
+  });
+
   test('UndoPurchase reverts a purchased item back to pending', () => {
     let s = planAndPurchase();
     expect(s.items.get('sku-1')!.status).toBe('purchased');
@@ -1411,11 +1660,7 @@ describe('run.reversals', () => {
       s,
     );
     expect(() =>
-      decideRun(
-        s,
-        { type: 'UndeliverStore', storeId: 'A', reason: '', actor: purchaser() },
-        clock,
-      ),
+      decideRun(s, { type: 'UndeliverStore', storeId: 'A', reason: '', actor: purchaser() }, clock),
     ).toThrow('run.errors.recallReasonRequired');
   });
 });

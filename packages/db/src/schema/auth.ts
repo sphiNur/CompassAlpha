@@ -65,8 +65,12 @@ export const organizations = authSchema.table(
     currency: varchar('currency', { length: 3 }).notNull().default('UZS'),
     taxRatePct: decimal('tax_rate_pct', { precision: 5, scale: 2 }).notNull().default('0'),
     pricesIncludeTax: boolean('prices_include_tax').notNull().default(true),
-    workflow: jsonb('workflow').notNull().default(sql`'{}'::jsonb`),
-    featureFlags: jsonb('feature_flags').notNull().default(sql`'{}'::jsonb`),
+    workflow: jsonb('workflow')
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    featureFlags: jsonb('feature_flags')
+      .notNull()
+      .default(sql`'{}'::jsonb`),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: deletedAt(),
@@ -199,6 +203,7 @@ export const roles = authSchema.table(
      *    80 admin         — workspace owner
      *    60 manager       — store manager (approves orders)
      *    40 purchaser     — runs the market run
+     *    30 cashier       — records sales and daily settlement
      *    20 staff         — front-of-house team
      *
      * Custom roles created by an admin live in the gaps (e.g. 50 for
@@ -217,13 +222,10 @@ export const roles = authSchema.table(
  * Permissions are a global static dictionary �?one row per `(domain, action)`,
  * e.g. `order.adjust`, `run.create`. Roles bind to a subset; policies layer on top.
  */
-export const permissions = authSchema.table(
-  'permissions',
-  {
-    key: varchar('key', { length: 100 }).primaryKey(),
-    description: text('description'),
-  },
-);
+export const permissions = authSchema.table('permissions', {
+  key: varchar('key', { length: 100 }).primaryKey(),
+  description: text('description'),
+});
 
 export const rolePermissions = authSchema.table(
   'role_permissions',

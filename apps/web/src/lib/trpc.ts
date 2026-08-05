@@ -136,6 +136,7 @@ const IDEMPOTENT_MUTATIONS = new Set<string>([
   'run.revisePurchase',
   'run.finish',
   'sales.record',
+  'settlement.save',
   'order.submit',
   // 2026-07-26: all three are already declared `idempotentMutation`
   // server-side, but the middleware short-circuits on "no key = no
@@ -161,11 +162,11 @@ const IDEMPOTENT_MUTATIONS = new Set<string>([
 function genKey(): string {
   // Lightweight ULID-like: 26 chars, lex-sortable. crypto.randomUUID
   // is fine too but the dash format is uglier in logs.
-  const rand =
-    (typeof crypto !== 'undefined' && 'randomUUID' in crypto
+  const rand = (
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
       ? crypto.randomUUID().replace(/-/g, '')
       : Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
-    ).slice(0, 26);
+  ).slice(0, 26);
   return `${Date.now().toString(36)}${rand}`.slice(0, 64);
 }
 
@@ -197,7 +198,8 @@ export function buildTrpcClient() {
             // dedupes; otherwise a fresh per-request key for one-shots.
             const ctxKey = (op.context as { idempotencyKey?: unknown } | undefined)?.idempotencyKey;
             return {
-              'x-idempotency-key': typeof ctxKey === 'string' && ctxKey.length > 0 ? ctxKey : genKey(),
+              'x-idempotency-key':
+                typeof ctxKey === 'string' && ctxKey.length > 0 ? ctxKey : genKey(),
             };
           }
           return {};

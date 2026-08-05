@@ -35,7 +35,9 @@ import { chromium, type ConsoleMessage } from 'playwright';
 // quick-tunnel rotated (P0-4, 2026-05-17).
 const rawBase = process.env.COMPASS_BASE;
 if (!rawBase) {
-  console.error('✖ COMPASS_BASE is required (e.g. https://<tunnel>.trycloudflare.com or http://localhost:3000)');
+  console.error(
+    '✖ COMPASS_BASE is required (e.g. https://<tunnel>.trycloudflare.com or http://localhost:3000)',
+  );
   process.exit(2);
 }
 const BASE = rawBase.replace(/\/$/, '');
@@ -47,7 +49,8 @@ const PRIMARY_NAV_SELECTOR = ':is([data-testid="primary-nav"], nav[aria-label="M
 // "Increase" when its labels became localized. The test id is the durable
 // contract; the two labels keep this smoke compatible with both bundles
 // during a rolling deploy.
-const QTY_INCREMENT_SELECTOR = ':is(button[data-testid="qty-increment"], button[aria-label="Increment"], button[aria-label="Increase"])';
+const QTY_INCREMENT_SELECTOR =
+  ':is(button[data-testid="qty-increment"], button[aria-label="Increment"], button[aria-label="Increase"])';
 
 interface Check {
   name: string;
@@ -88,6 +91,8 @@ const fakeSession = {
     'order.claim',
     'run.create',
     'run.purchase',
+    'prices.view',
+    'settlement.record',
     'delivery.dispatch',
     'delivery.confirm',
     'users.manage',
@@ -107,14 +112,68 @@ const fakeTokens = {
 };
 
 const fakeSkus = [
-  { id: 'sku-apple', categoryId: 'cat-fruit', code: 'APPLE', names: { en: 'Apple' }, unit: 'kg', step: '0.5', imageUrl: null, suggestedQty: null, sortIndex: 0, isArchived: false },
-  { id: 'sku-beef', categoryId: 'cat-meat', code: 'BEEF', names: { en: 'Beef' }, unit: 'kg', step: '0.5', imageUrl: null, suggestedQty: null, sortIndex: 10, isArchived: false },
-  { id: 'sku-knife', categoryId: 'cat-tools', code: 'KNIFE', names: { en: 'Chef Knife' }, unit: 'pcs', step: '1', imageUrl: null, suggestedQty: null, sortIndex: 20, isArchived: false },
+  {
+    id: 'sku-apple',
+    categoryId: 'cat-fruit',
+    code: 'APPLE',
+    names: { en: 'Apple' },
+    unit: 'kg',
+    step: '0.5',
+    imageUrl: null,
+    suggestedQty: null,
+    sortIndex: 0,
+    isArchived: false,
+  },
+  {
+    id: 'sku-beef',
+    categoryId: 'cat-meat',
+    code: 'BEEF',
+    names: { en: 'Beef' },
+    unit: 'kg',
+    step: '0.5',
+    imageUrl: null,
+    suggestedQty: null,
+    sortIndex: 10,
+    isArchived: false,
+  },
+  {
+    id: 'sku-knife',
+    categoryId: 'cat-tools',
+    code: 'KNIFE',
+    names: { en: 'Chef Knife' },
+    unit: 'pcs',
+    step: '1',
+    imageUrl: null,
+    suggestedQty: null,
+    sortIndex: 20,
+    isArchived: false,
+  },
 ];
 const fakeCategories = [
-  { id: 'cat-fruit', slug: 'fruit', names: { en: 'Fruit' }, sortIndex: 0, icon: null, isArchived: false },
-  { id: 'cat-meat', slug: 'meat', names: { en: 'Meat' }, sortIndex: 10, icon: null, isArchived: false },
-  { id: 'cat-tools', slug: 'tools', names: { en: 'Tools' }, sortIndex: 20, icon: null, isArchived: false },
+  {
+    id: 'cat-fruit',
+    slug: 'fruit',
+    names: { en: 'Fruit' },
+    sortIndex: 0,
+    icon: null,
+    isArchived: false,
+  },
+  {
+    id: 'cat-meat',
+    slug: 'meat',
+    names: { en: 'Meat' },
+    sortIndex: 10,
+    icon: null,
+    isArchived: false,
+  },
+  {
+    id: 'cat-tools',
+    slug: 'tools',
+    names: { en: 'Tools' },
+    sortIndex: 20,
+    icon: null,
+    isArchived: false,
+  },
 ];
 
 // In-flight session state we mutate as the smoke clicks around.
@@ -214,7 +273,11 @@ async function run() {
         };
       })();
     `;
-    await route.fulfill({ status: 200, headers: { 'content-type': 'application/javascript' }, body: script });
+    await route.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/javascript' },
+      body: script,
+    });
   });
 
   // Auth.
@@ -227,8 +290,16 @@ async function run() {
           data: {
             environment: { nodeEnv: 'test', releaseChannel: 'development', localRequest: true },
             telegram: { available: true, hasBotToken: true, requiresInitData: true },
-            devPersona: { available: false, enabled: false, reason: 'auth.errors.devBypassDisabled' },
-            nonTelegram: { available: false, enabled: false, reason: 'auth.errors.nonTelegramLoginDisabled' },
+            devPersona: {
+              available: false,
+              enabled: false,
+              reason: 'auth.errors.devBypassDisabled',
+            },
+            nonTelegram: {
+              available: false,
+              enabled: false,
+              reason: 'auth.errors.nonTelegramLoginDisabled',
+            },
           },
         },
       }),
@@ -256,13 +327,25 @@ async function run() {
     r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk([]) }),
   );
   await context.route('**/trpc/catalog.categories*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk(fakeCategories) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: trpcOk(fakeCategories),
+    }),
   );
   await context.route('**/trpc/catalog.skus*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk(fakeSkus) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: trpcOk(fakeSkus),
+    }),
   );
   await context.route('**/trpc/catalog.stores*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk(fakeSession.stores) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: trpcOk(fakeSession.stores),
+    }),
   );
   await context.route('**/trpc/catalog.suppliers*', async (r) =>
     r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk([]) }),
@@ -270,7 +353,11 @@ async function run() {
 
   // Order: dynamic state machine.
   await context.route('**/trpc/order.todaySession*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk(mockSession) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: trpcOk(mockSession),
+    }),
   );
   await context.route('**/trpc/order.todayBatches*', async (r) =>
     r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk([]) }),
@@ -309,7 +396,11 @@ async function run() {
     await r.fulfill({
       status: 200,
       headers: { 'content-type': 'application/json' },
-      body: trpcOk({ sessionId: mockSession.id, lastSeq: mockSession.lastSeq, applied: ['ItemAdjusted'] }),
+      body: trpcOk({
+        sessionId: mockSession.id,
+        lastSeq: mockSession.lastSeq,
+        applied: ['ItemAdjusted'],
+      }),
     });
   });
   await context.route('**/trpc/order.submit', async (r) => {
@@ -347,11 +438,50 @@ async function run() {
     }),
   );
   await context.route('**/trpc/order.sessionDetail*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk(mockSession) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: trpcOk(mockSession),
+    }),
   );
 
   // Run.
   await context.route('**/trpc/run.list*', async (r) =>
+    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk([]) }),
+  );
+  await context.route('**/trpc/run.history*', async (r) =>
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: trpcOk({
+        rows: [],
+        pageInfo: {
+          page: 1,
+          pageSize: 20,
+          totalCount: 0,
+          totalPages: 0,
+          hasPrevious: false,
+          hasNext: false,
+        },
+        summary: { total: '0', cash: '0', transfer: '0' },
+      }),
+    }),
+  );
+  await context.route('**/trpc/settlement.get*', async (r) =>
+    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk(null) }),
+  );
+  await context.route('**/trpc/settlement.businessDate*', async (r) =>
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: trpcOk({
+        storeId: fakeSession.stores[0]!.id,
+        date: '2026-05-01',
+        timezone: 'Asia/Tashkent',
+      }),
+    }),
+  );
+  await context.route('**/trpc/settlement.recent*', async (r) =>
     r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk([]) }),
   );
   await context.route('**/trpc/run.expenseTemplates*', async (r) =>
@@ -389,11 +519,26 @@ async function run() {
     r.fulfill({
       status: 200,
       headers: { 'content-type': 'application/json' },
-      body: trpcOk({ enabled: false, maxBytes: 8388608, allowedContentTypes: ['image/jpeg', 'image/png', 'image/webp'] }),
+      body: trpcOk({
+        enabled: false,
+        maxBytes: 8388608,
+        allowedContentTypes: ['image/jpeg', 'image/png', 'image/webp'],
+      }),
     }),
   );
   await context.route('**/trpc/admin.overview*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk({ memberCount: 1, storeCount: 1, skuCount: 5, runCount: 0, pendingApprovals: 1, ordersThisWeek: 1 }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: trpcOk({
+        memberCount: 1,
+        storeCount: 1,
+        skuCount: 5,
+        runCount: 0,
+        pendingApprovals: 1,
+        ordersThisWeek: 1,
+      }),
+    }),
   );
   // M1.4 (2026-05-06): the store-first nav needs at least one store
   // and one member from these endpoints to drive its drill-down. The
@@ -458,13 +603,25 @@ async function run() {
     r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk([]) }),
   );
   await context.route('**/trpc/system.appConfig*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk({ botUsername: 'CompassSmokeBot' }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: trpcOk({ botUsername: 'CompassSmokeBot' }),
+    }),
   );
   await context.route('**/trpc/admin.purgeByDate*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk({ dryRun: true, total: 0, byTable: {}, date: '2026-05-01' }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: trpcOk({ dryRun: true, total: 0, byTable: {}, date: '2026-05-01' }),
+    }),
   );
   await context.route('**/trpc/admin.purgeAllTestData*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk({ dryRun: true, total: 0, byTable: {}, orgSlug: 'default' }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: trpcOk({ dryRun: true, total: 0, byTable: {}, orgSlug: 'default' }),
+    }),
   );
   await context.route('**/trpc/admin.sessionList*', async (r) =>
     r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk([]) }),
@@ -473,10 +630,29 @@ async function run() {
     r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk([]) }),
   );
   await context.route('**/trpc/admin.purgeSession*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk({ dryRun: true, total: 0, byTable: {}, sessionId: '00000000-0000-0000-0000-000000000000' }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: trpcOk({
+        dryRun: true,
+        total: 0,
+        byTable: {},
+        sessionId: '00000000-0000-0000-0000-000000000000',
+      }),
+    }),
   );
   await context.route('**/trpc/admin.purgeRun*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk({ dryRun: true, total: 0, byTable: {}, runId: '00000000-0000-0000-0000-000000000000', sessionIds: [] }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: trpcOk({
+        dryRun: true,
+        total: 0,
+        byTable: {},
+        runId: '00000000-0000-0000-0000-000000000000',
+        sessionIds: [],
+      }),
+    }),
   );
   await context.route('**/trpc/admin.submissionHistory*', async (r) =>
     r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk([]) }),
@@ -498,7 +674,9 @@ async function run() {
 
   try {
     await page.goto(BASE + '/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
-    await page.waitForFunction(() => document.documentElement.classList.contains('ready'), { timeout: 15_000 });
+    await page.waitForFunction(() => document.documentElement.classList.contains('ready'), {
+      timeout: 15_000,
+    });
     await page.waitForSelector(PRIMARY_NAV_SELECTOR, { timeout: 8_000 });
     record('Auth + Shell ready', true);
 
@@ -548,7 +726,9 @@ async function run() {
     const clickMainAction = async (label: string): Promise<boolean> => {
       const nativeClicked = await page.evaluate(() => {
         const w = window as unknown as { __compassMainButtonClick?: () => boolean };
-        return typeof w.__compassMainButtonClick === 'function' ? w.__compassMainButtonClick() : false;
+        return typeof w.__compassMainButtonClick === 'function'
+          ? w.__compassMainButtonClick()
+          : false;
       });
       if (nativeClicked) return true;
 
@@ -603,9 +783,50 @@ async function run() {
     const runText = await page.evaluate(() => document.body.innerText);
     record(
       'RunPage renders empty state when no approved sessions',
-      runLoaded &&
-        (/No approved sessions to plan/.test(runText) || /No active run/.test(runText)),
+      runLoaded && (/No approved sessions to plan/.test(runText) || /No active run/.test(runText)),
       runText.split('\n').slice(0, 3).join(' / '),
+    );
+
+    // ---- History tab: server search/filter/pagination shell ----
+    await page.click(`${PRIMARY_NAV_SELECTOR} button:has-text("History")`);
+    await page
+      .waitForFunction(
+        () =>
+          document.querySelector('input[placeholder="Search purchases"]') !== null &&
+          /Filters/.test(document.body.innerText),
+        { timeout: 8_000 },
+      )
+      .catch(() => {
+        /* record() below captures the rendered text */
+      });
+    const historySearchCount = await page.locator('input[placeholder="Search purchases"]').count();
+    const historyText = await page.evaluate(() => document.body.innerText);
+    record(
+      'HistoryPage shows search and server-filter controls',
+      historySearchCount > 0 && /Filters/.test(historyText),
+      historyText.split('\n').slice(0, 8).join(' / '),
+    );
+
+    // ---- Daily close tab ----
+    await page.click(`${PRIMARY_NAV_SELECTOR} button:has-text("Close")`);
+    await page
+      .waitForFunction(
+        () =>
+          /Daily close/.test(document.body.innerText) &&
+          /Online \/ transfer revenue/.test(document.body.innerText) &&
+          /Cash on hand/.test(document.body.innerText),
+        { timeout: 8_000 },
+      )
+      .catch(() => {
+        /* record() below captures the rendered text */
+      });
+    const settlementText = await page.evaluate(() => document.body.innerText);
+    record(
+      'SettlementPage shows the grouped daily-close ledger',
+      /Daily close/.test(settlementText) &&
+        /Online \/ transfer revenue/.test(settlementText) &&
+        /Cash on hand/.test(settlementText),
+      settlementText.split('\n').slice(0, 12).join(' / '),
     );
 
     // ---- Confirm tab ----
@@ -617,7 +838,9 @@ async function run() {
           /No active delivery/.test(document.body.innerText),
         { timeout: 8_000 },
       )
-      .catch(() => { /* record() below captures the rendered text */ });
+      .catch(() => {
+        /* record() below captures the rendered text */
+      });
     const confirmText = await page.evaluate(() => document.body.innerText);
     record(
       'ConfirmPage shows nothing-to-confirm empty state',
@@ -682,12 +905,12 @@ async function run() {
       await tileBtn.click();
       await page
         .waitForFunction(
-          () =>
-            /Team/.test(document.body.innerText) &&
-            /Settings/.test(document.body.innerText),
+          () => /Team/.test(document.body.innerText) && /Settings/.test(document.body.innerText),
           { timeout: 8_000 },
         )
-        .catch(() => { /* keep going; record() captures the result */ });
+        .catch(() => {
+          /* keep going; record() captures the result */
+        });
       const storeDetailText = await page.evaluate(() => document.body.innerText);
       record(
         'Store detail shows Team / Settings tabs',
@@ -716,12 +939,16 @@ async function run() {
       // store list → home).
       const back1 = await page.evaluate(() => {
         const w = window as unknown as { __compassBackButtonClick?: () => boolean };
-        return typeof w.__compassBackButtonClick === 'function' ? w.__compassBackButtonClick() : false;
+        return typeof w.__compassBackButtonClick === 'function'
+          ? w.__compassBackButtonClick()
+          : false;
       });
       await page.waitForTimeout(200);
       const back2 = await page.evaluate(() => {
         const w = window as unknown as { __compassBackButtonClick?: () => boolean };
-        return typeof w.__compassBackButtonClick === 'function' ? w.__compassBackButtonClick() : false;
+        return typeof w.__compassBackButtonClick === 'function'
+          ? w.__compassBackButtonClick()
+          : false;
       });
       await page.waitForTimeout(200);
       record('Telegram BackButton drills out of store detail', back1 && back2);
@@ -760,9 +987,13 @@ async function run() {
 
     // Drill into Live activity → expect stat tiles ("PENDING APPROVALS").
     await page.click('button:has-text("Live activity")');
-    await page.waitForFunction(() => /pending approvals/i.test(document.body.innerText), {
-      timeout: 8_000,
-    }).catch(() => { /* fall through */ });
+    await page
+      .waitForFunction(() => /pending approvals/i.test(document.body.innerText), {
+        timeout: 8_000,
+      })
+      .catch(() => {
+        /* fall through */
+      });
     const activityText = await page.evaluate(() => document.body.innerText);
     record(
       'Live activity stat tiles render',
@@ -774,15 +1005,15 @@ async function run() {
     // Operations sub-home (not all the way to Admin home).
     const backed = await page.evaluate(() => {
       const w = window as unknown as { __compassBackButtonClick?: () => boolean };
-      return typeof w.__compassBackButtonClick === 'function' ? w.__compassBackButtonClick() : false;
+      return typeof w.__compassBackButtonClick === 'function'
+        ? w.__compassBackButtonClick()
+        : false;
     });
     record('Telegram BackButton wired in admin sub-pages', backed);
     await page.waitForTimeout(200);
     // Maintenance is super_admin-only and may be hidden for the smoke
     // user — gate the assertion on whether the link is even present.
-    const hasMaint = await page.evaluate(() =>
-      /Maintenance/.test(document.body.innerText),
-    );
+    const hasMaint = await page.evaluate(() => /Maintenance/.test(document.body.innerText));
     if (hasMaint) {
       await page.click('button:has-text("Maintenance")');
       await page.waitForTimeout(300);
@@ -833,7 +1064,11 @@ async function run() {
         // raw JS pageerrors should fail the run.
         !/status of 4\d\d/.test(e),
     );
-    record('zero unexpected console.error', filtered.length === 0, filtered.slice(0, 2).join(' | '));
+    record(
+      'zero unexpected console.error',
+      filtered.length === 0,
+      filtered.slice(0, 2).join(' | '),
+    );
   } finally {
     await browser.close();
   }
@@ -845,7 +1080,9 @@ async function run() {
     const detail = r.detail ? `\x1b[2m — ${r.detail}\x1b[0m` : '';
     console.log(`${tag} ${r.name}${detail}`);
   }
-  console.log(`\n${passed} / ${results.length} passed — ${failed.length} failure${failed.length === 1 ? '' : 's'}.`);
+  console.log(
+    `\n${passed} / ${results.length} passed — ${failed.length} failure${failed.length === 1 ? '' : 's'}.`,
+  );
   if (failed.length > 0) process.exit(1);
 }
 

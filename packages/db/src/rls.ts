@@ -6,7 +6,10 @@
  * GUC so that even a buggy WHERE clause can't leak across tenants.
  */
 import { sql } from 'drizzle-orm';
+import type { PgTransactionConfig } from 'drizzle-orm/pg-core';
 import type { DB } from './client';
+
+export type OrgTransactionOptions = PgTransactionConfig;
 
 export async function setOrgContext(db: DB, orgId: string): Promise<void> {
   // Validates the orgId is a UUID at the SQL layer to prevent injection in SET LOCAL.
@@ -26,6 +29,7 @@ export async function withOrgContext<T>(
   db: DB,
   orgId: string | null,
   fn: (tx: DB) => Promise<T>,
+  options?: OrgTransactionOptions,
 ): Promise<T> {
   return db.transaction(async (tx) => {
     if (orgId) {
@@ -35,5 +39,5 @@ export async function withOrgContext<T>(
     // Drizzle's transaction passes a tx with a compatible query API; we
     // cast through unknown so the inner code path can use the same shape.
     return fn(tx as unknown as DB);
-  });
+  }, options);
 }

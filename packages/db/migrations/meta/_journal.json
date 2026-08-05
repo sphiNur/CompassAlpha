@@ -260,6 +260,20 @@
       "when": 1785369600000,
       "tag": "0036_sku_unit_canonical",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1785888000000,
+      "tag": "0037_store_daily_settlements",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1785974400000,
+      "tag": "0038_history_pagination_indexes",
+      "breakpoints": true
     }
   ]
 }

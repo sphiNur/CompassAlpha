@@ -152,7 +152,7 @@ export function settlePerStore(
 
   for (const sp of splits) {
     const item = itemBySku.get(sp.skuId);
-    if (!item || item.status !== 'purchased' || !item.unitPrice) continue;
+    if (!item || item.status !== 'purchased' || !splitUnitPrice(sp, item)) continue;
     const subtotal = splitSubtotal(sp, item);
     const cur = ensureStore(sp.storeId);
     cur.total += subtotal;

@@ -33,6 +33,7 @@ import { loadSession, type RequestContext, type SessionContext } from '../trpc/c
 import {
   effectivePermissionsForStore,
   getActorStoreIds,
+  getActorStoreIdsForPermission,
 } from '../services/storeScope';
 
 // ---------- bootstrap .env so DATABASE_URL is on the env ---------------
@@ -70,10 +71,7 @@ const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '
  * Bearer-token path — the session shape is what authedProcedure cares
  * about, not how it got loaded.
  */
-function buildCtx(
-  db: ReturnType<typeof getDb>,
-  session: SessionContext,
-): RequestContext {
+function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
   return {
     // hono context is unused by our admin handlers; cast to any so the
     // type doesn't force us to mock the whole Hono surface.
@@ -86,10 +84,19 @@ function buildCtx(
     userAgent: null,
     idempotencyKey: null,
     session,
-    async withOrg(fn) {
-      return withOrgContext(db, session.orgId, fn);
+    async withOrg(fn, options) {
+      return withOrgContext(db, session.orgId, fn, options);
     },
   };
+}
+
+/**
+ * A direct tRPC caller can start its next request in the same JavaScript turn.
+ * Yield once so postgres-js has recycled a transaction that intentionally
+ * rolled back; separate HTTP requests naturally provide this boundary.
+ */
+function settleRolledBackTestTransaction(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 // ---------- one fixture org shared across tests --------------------------
@@ -131,10 +138,56 @@ beforeAll(async () => {
   //    org-agnostic — fresh orgs need their roles inserted explicitly.
   //    We mirror packages/db seed-data.ts ranks.
   const seedRoles = [
-    { slug: 'super_admin', name: 'Super Admin', rank: 100, perms: ['users.manage', 'users.invite', 'users.grant_role', 'users.revoke_role', 'org.admin'] },
-    { slug: 'admin',       name: 'Admin',       rank: 80,  perms: ['users.manage', 'users.invite', 'users.grant_role', 'users.revoke_role', 'org.admin'] },
-    { slug: 'manager',     name: 'Manager',     rank: 60,  perms: ['order.draft', 'order.submit', 'order.approve', 'order.claim', 'order.unapprove', 'reports.view', 'prices.view', 'users.manage', 'inventory.adjust', 'sales.record'] },
-    { slug: 'staff',       name: 'Staff',       rank: 20,  perms: ['order.draft', 'order.submit', 'delivery.confirm', 'sales.record'] },
+    {
+      slug: 'super_admin',
+      name: 'Super Admin',
+      rank: 100,
+      perms: [
+        'users.manage',
+        'users.invite',
+        'users.grant_role',
+        'users.revoke_role',
+        'prices.view',
+        'run.amend',
+        'org.admin',
+      ],
+    },
+    {
+      slug: 'admin',
+      name: 'Admin',
+      rank: 80,
+      perms: [
+        'users.manage',
+        'users.invite',
+        'users.grant_role',
+        'users.revoke_role',
+        'prices.view',
+        'org.admin',
+      ],
+    },
+    {
+      slug: 'manager',
+      name: 'Manager',
+      rank: 60,
+      perms: [
+        'order.draft',
+        'order.submit',
+        'order.approve',
+        'order.claim',
+        'order.unapprove',
+        'reports.view',
+        'prices.view',
+        'users.manage',
+        'inventory.adjust',
+        'sales.record',
+      ],
+    },
+    {
+      slug: 'staff',
+      name: 'Staff',
+      rank: 20,
+      perms: ['order.draft', 'order.submit', 'delivery.confirm', 'sales.record'],
+    },
   ];
   const roleIdBySlug: Record<string, string> = {};
   for (const r of seedRoles) {
@@ -446,90 +499,81 @@ describe('P0 store-manager scope', () => {
 // ---------- C2: store-scoped admin can only act on their stores ----------
 
 describe('C2 store-scoped admin gates', () => {
-  test.skipIf(!SHOULD_RUN)(
-    'manager-of-A cannot invite a member into Store B',
-    async () => {
-      const fx = fix!;
-      const storeA = await makeStore(`A-${Math.random()}`);
-      const storeB = await makeStore(`B-${Math.random()}`);
-      // make a "store-A admin" — manager scoped to A only.
-      const mgrUser = await makeUser('A-Manager');
-      const mgrMember = await makeMember(mgrUser.id);
-      await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
-      const ctx = buildCtx(getDb(), await sessionFor(mgrMember, mgrUser.id));
-      const caller = appRouter.createCaller(ctx);
-      // Try to invite into Store B → must be FORBIDDEN.
-      const targetTg = `${Date.now()}1`.slice(-12);
-      let threw = false;
-      try {
-        await caller.admin.memberInviteByTgId({
-          tgUserId: targetTg,
-          storeIds: [storeB.id],
-        });
-      } catch (err) {
-        threw = true;
-        expect((err as Error).message).toContain('notAdminOfStore');
-      }
-      expect(threw).toBe(true);
-    },
-  );
+  test.skipIf(!SHOULD_RUN)('manager-of-A cannot invite a member into Store B', async () => {
+    const fx = fix!;
+    const storeA = await makeStore(`A-${Math.random()}`);
+    const storeB = await makeStore(`B-${Math.random()}`);
+    // make a "store-A admin" — manager scoped to A only.
+    const mgrUser = await makeUser('A-Manager');
+    const mgrMember = await makeMember(mgrUser.id);
+    await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
+    const ctx = buildCtx(getDb(), await sessionFor(mgrMember, mgrUser.id));
+    const caller = appRouter.createCaller(ctx);
+    // Try to invite into Store B → must be FORBIDDEN.
+    const targetTg = `${Date.now()}1`.slice(-12);
+    let threw = false;
+    try {
+      await caller.admin.memberInviteByTgId({
+        tgUserId: targetTg,
+        storeIds: [storeB.id],
+      });
+    } catch (err) {
+      threw = true;
+      expect((err as Error).message).toContain('notAdminOfStore');
+    }
+    expect(threw).toBe(true);
+  });
 
-  test.skipIf(!SHOULD_RUN)(
-    'manager-of-A cannot grant a role scoped to Store B',
-    async () => {
-      const fx = fix!;
-      const storeA = await makeStore(`A-${Math.random()}`);
-      const storeB = await makeStore(`B-${Math.random()}`);
-      const mgrUser = await makeUser('A-Manager');
-      const mgrMember = await makeMember(mgrUser.id);
-      await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
-      const targetUser = await makeUser('Target');
-      await makeMember(targetUser.id);
-      const ctx = buildCtx(getDb(), await sessionFor(mgrMember, mgrUser.id));
-      const caller = appRouter.createCaller(ctx);
-      let threw = false;
-      try {
-        await caller.admin.grantRole({
-          userId: targetUser.id,
-          roleSlug: 'staff',
-          scopeType: 'store',
-          scopeId: storeB.id,
-        });
-      } catch (err) {
-        threw = true;
-        expect((err as Error).message).toContain('notAdminOfStore');
-      }
-      expect(threw).toBe(true);
-    },
-  );
+  test.skipIf(!SHOULD_RUN)('manager-of-A cannot grant a role scoped to Store B', async () => {
+    const fx = fix!;
+    const storeA = await makeStore(`A-${Math.random()}`);
+    const storeB = await makeStore(`B-${Math.random()}`);
+    const mgrUser = await makeUser('A-Manager');
+    const mgrMember = await makeMember(mgrUser.id);
+    await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
+    const targetUser = await makeUser('Target');
+    await makeMember(targetUser.id);
+    const ctx = buildCtx(getDb(), await sessionFor(mgrMember, mgrUser.id));
+    const caller = appRouter.createCaller(ctx);
+    let threw = false;
+    try {
+      await caller.admin.grantRole({
+        userId: targetUser.id,
+        roleSlug: 'staff',
+        scopeType: 'store',
+        scopeId: storeB.id,
+      });
+    } catch (err) {
+      threw = true;
+      expect((err as Error).message).toContain('notAdminOfStore');
+    }
+    expect(threw).toBe(true);
+  });
 
-  test.skipIf(!SHOULD_RUN)(
-    'store-scoped admin cannot invite an org-tier role',
-    async () => {
-      const fx = fix!;
-      const storeA = await makeStore(`A-${Math.random()}`);
-      const mgrUser = await makeUser('A-Manager');
-      const mgrMember = await makeMember(mgrUser.id);
-      await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
-      const ctx = buildCtx(getDb(), await sessionFor(mgrMember, mgrUser.id));
-      const caller = appRouter.createCaller(ctx);
-      // The actor's role doesn't even include `users.manage` (manager is
-      // rank 30, doesn't carry it), so this throws on the requireAdmin
-      // gate before reaching the org-admin-role check. Either error is
-      // acceptable — both close the same hole.
-      let threw = false;
-      try {
-        await caller.admin.memberInviteByTgId({
-          tgUserId: `${Date.now()}9`.slice(-12),
-          roleSlug: 'admin',
-          storeIds: [storeA.id],
-        });
-      } catch {
-        threw = true;
-      }
-      expect(threw).toBe(true);
-    },
-  );
+  test.skipIf(!SHOULD_RUN)('store-scoped admin cannot invite an org-tier role', async () => {
+    const fx = fix!;
+    const storeA = await makeStore(`A-${Math.random()}`);
+    const mgrUser = await makeUser('A-Manager');
+    const mgrMember = await makeMember(mgrUser.id);
+    await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
+    const ctx = buildCtx(getDb(), await sessionFor(mgrMember, mgrUser.id));
+    const caller = appRouter.createCaller(ctx);
+    // The actor's role doesn't even include `users.manage` (manager is
+    // rank 30, doesn't carry it), so this throws on the requireAdmin
+    // gate before reaching the org-admin-role check. Either error is
+    // acceptable — both close the same hole.
+    let threw = false;
+    try {
+      await caller.admin.memberInviteByTgId({
+        tgUserId: `${Date.now()}9`.slice(-12),
+        roleSlug: 'admin',
+        storeIds: [storeA.id],
+      });
+    } catch {
+      threw = true;
+    }
+    expect(threw).toBe(true);
+  });
 });
 
 // ---------- C1: per-store rank gate --------------------------------------
@@ -592,8 +636,12 @@ describe('D1 memberDetachFromStore', () => {
       const targetUser = await makeUser('Multi-Store');
       const targetMember = await makeMember(targetUser.id);
       // Assign both stores via MSA + role bindings.
-      await db.insert(s.memberStoreAssignments).values({ memberId: targetMember, storeId: storeA.id });
-      await db.insert(s.memberStoreAssignments).values({ memberId: targetMember, storeId: storeB.id });
+      await db
+        .insert(s.memberStoreAssignments)
+        .values({ memberId: targetMember, storeId: storeA.id });
+      await db
+        .insert(s.memberStoreAssignments)
+        .values({ memberId: targetMember, storeId: storeB.id });
       await bindRole(targetMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
       await bindRole(targetMember, fx.staffRoleId, { type: 'store', storeId: storeB.id });
       // Add a per-store override on Store A so we can prove it gets nuked.
@@ -683,7 +731,9 @@ describe('D2 memberTransferStore', () => {
       const targetUser = await makeUser('Transferee');
       const targetMember = await makeMember(targetUser.id);
       const db = getDb();
-      await db.insert(s.memberStoreAssignments).values({ memberId: targetMember, storeId: storeA.id });
+      await db
+        .insert(s.memberStoreAssignments)
+        .values({ memberId: targetMember, storeId: storeA.id });
       await bindRole(targetMember, fx.staffRoleId, { type: 'store', storeId: storeA.id });
 
       const caller = appRouter.createCaller(fx.superAdminCtx);
@@ -711,7 +761,10 @@ describe('D2 memberTransferStore', () => {
 
       // Target side has the staff binding.
       const bBinds = await db
-        .select({ scopeType: s.memberRoleBindings.scopeType, scopeId: s.memberRoleBindings.scopeId })
+        .select({
+          scopeType: s.memberRoleBindings.scopeType,
+          scopeId: s.memberRoleBindings.scopeId,
+        })
         .from(s.memberRoleBindings)
         .where(
           and(
@@ -724,83 +777,74 @@ describe('D2 memberTransferStore', () => {
     },
   );
 
-  test.skipIf(!SHOULD_RUN)(
-    'transfer same-store BAD_REQUEST',
-    async () => {
-      const fx = fix!;
-      const storeA = await makeStore(`A-${Math.random()}`);
-      const targetUser = await makeUser('Self-Transfer');
-      const targetMember = await makeMember(targetUser.id);
-      const caller = appRouter.createCaller(fx.superAdminCtx);
-      let threw = false;
-      try {
-        await caller.admin.memberTransferStore({
-          memberId: targetMember,
-          fromStoreId: storeA.id,
-          toStoreId: storeA.id,
-          mirrorRoles: true,
-        });
-      } catch (err) {
-        threw = true;
-        expect((err as Error).message).toContain('transferSameStore');
-      }
-      expect(threw).toBe(true);
-    },
-  );
+  test.skipIf(!SHOULD_RUN)('transfer same-store BAD_REQUEST', async () => {
+    const fx = fix!;
+    const storeA = await makeStore(`A-${Math.random()}`);
+    const targetUser = await makeUser('Self-Transfer');
+    const targetMember = await makeMember(targetUser.id);
+    const caller = appRouter.createCaller(fx.superAdminCtx);
+    let threw = false;
+    try {
+      await caller.admin.memberTransferStore({
+        memberId: targetMember,
+        fromStoreId: storeA.id,
+        toStoreId: storeA.id,
+        mirrorRoles: true,
+      });
+    } catch (err) {
+      threw = true;
+      expect((err as Error).message).toContain('transferSameStore');
+    }
+    expect(threw).toBe(true);
+  });
 });
 
 // ---------- D3: per-store default role fall-through ----------------------
 
 describe('D3 per-store default role', () => {
-  test.skipIf(!SHOULD_RUN)(
-    'invite without roleSlug picks up the store default',
-    async () => {
-      const fx = fix!;
-      const storeA = await makeStore(`A-${Math.random()}`);
-      // Set storeA's default to "staff".
-      const caller = appRouter.createCaller(fx.superAdminCtx);
+  test.skipIf(!SHOULD_RUN)('invite without roleSlug picks up the store default', async () => {
+    const fx = fix!;
+    const storeA = await makeStore(`A-${Math.random()}`);
+    // Set storeA's default to "staff".
+    const caller = appRouter.createCaller(fx.superAdminCtx);
+    await caller.admin.storeUpdate({
+      storeId: storeA.id,
+      defaultRoleSlug: 'staff',
+    });
+    // Invite a new user with no roleSlug into storeA.
+    const tgUserId = `${Date.now()}3`.slice(-12);
+    const result = await caller.admin.memberInviteByTgId({
+      tgUserId,
+      storeIds: [storeA.id],
+    });
+    // The new member should end up with a store-scoped binding for
+    // "staff" in storeA — that's the fall-through.
+    const db = getDb();
+    const binds = await db
+      .select({ roleSlug: s.roles.slug, scopeId: s.memberRoleBindings.scopeId })
+      .from(s.memberRoleBindings)
+      .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
+      .where(eq(s.memberRoleBindings.memberId, result.memberId));
+    expect(binds.length).toBeGreaterThanOrEqual(1);
+    expect(binds.some((b) => b.roleSlug === 'staff' && b.scopeId === storeA.id)).toBe(true);
+  });
+
+  test.skipIf(!SHOULD_RUN)('admin-tier role rejected as default', async () => {
+    const fx = fix!;
+    const storeA = await makeStore(`A-${Math.random()}`);
+    const caller = appRouter.createCaller(fx.superAdminCtx);
+    let threw = false;
+    try {
       await caller.admin.storeUpdate({
         storeId: storeA.id,
-        defaultRoleSlug: 'staff',
+        defaultRoleSlug: 'admin',
       });
-      // Invite a new user with no roleSlug into storeA.
-      const tgUserId = `${Date.now()}3`.slice(-12);
-      const result = await caller.admin.memberInviteByTgId({
-        tgUserId,
-        storeIds: [storeA.id],
-      });
-      // The new member should end up with a store-scoped binding for
-      // "staff" in storeA — that's the fall-through.
-      const db = getDb();
-      const binds = await db
-        .select({ roleSlug: s.roles.slug, scopeId: s.memberRoleBindings.scopeId })
-        .from(s.memberRoleBindings)
-        .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
-        .where(eq(s.memberRoleBindings.memberId, result.memberId));
-      expect(binds.length).toBeGreaterThanOrEqual(1);
-      expect(binds.some((b) => b.roleSlug === 'staff' && b.scopeId === storeA.id)).toBe(true);
-    },
-  );
-
-  test.skipIf(!SHOULD_RUN)(
-    'admin-tier role rejected as default',
-    async () => {
-      const fx = fix!;
-      const storeA = await makeStore(`A-${Math.random()}`);
-      const caller = appRouter.createCaller(fx.superAdminCtx);
-      let threw = false;
-      try {
-        await caller.admin.storeUpdate({
-          storeId: storeA.id,
-          defaultRoleSlug: 'admin',
-        });
-      } catch (err) {
-        threw = true;
-        expect((err as Error).message).toContain('defaultRoleMustBeStoreTier');
-      }
-      expect(threw).toBe(true);
-    },
-  );
+    } catch (err) {
+      threw = true;
+      expect((err as Error).message).toContain('defaultRoleMustBeStoreTier');
+    }
+    expect(threw).toBe(true);
+  });
 });
 
 // ---------- D4: storeCloneRoles ------------------------------------------
@@ -907,41 +951,38 @@ describe('B2 adminAuditList', () => {
 // other work; these tests lock that in.
 
 describe('M3.1 sales router store-scope', () => {
-  test.skipIf(!SHOULD_RUN)(
-    'staff assigned only to Store A cannot list Store B sales',
-    async () => {
-      const fx = fix!;
-      const storeA = await makeStore(`SalesA-${Math.random()}`);
-      const storeB = await makeStore(`SalesB-${Math.random()}`);
-      // Staff bound to Store A via a store-scoped role binding. The
-      // role itself doesn't matter for sales.list (it's authed-only);
-      // what matters is `getActorStoreIds(member, perms)` only returns
-      // [storeA.id] and `assertActorAssignedToStore(storeB)` must
-      // throw FORBIDDEN.
-      const staffUser = await makeUser('A-Staff');
-      const staffMember = await makeMember(staffUser.id);
-      await bindRole(staffMember, fx.staffRoleId, {
-        type: 'store',
-        storeId: storeA.id,
-      });
-      const ctx = buildCtx(getDb(), await sessionFor(staffMember, staffUser.id));
-      const caller = appRouter.createCaller(ctx);
+  test.skipIf(!SHOULD_RUN)('staff assigned only to Store A cannot list Store B sales', async () => {
+    const fx = fix!;
+    const storeA = await makeStore(`SalesA-${Math.random()}`);
+    const storeB = await makeStore(`SalesB-${Math.random()}`);
+    // Staff bound to Store A via a store-scoped role binding. The
+    // role itself doesn't matter for sales.list (it's authed-only);
+    // what matters is `getActorStoreIds(member, perms)` only returns
+    // [storeA.id] and `assertActorAssignedToStore(storeB)` must
+    // throw FORBIDDEN.
+    const staffUser = await makeUser('A-Staff');
+    const staffMember = await makeMember(staffUser.id);
+    await bindRole(staffMember, fx.staffRoleId, {
+      type: 'store',
+      storeId: storeA.id,
+    });
+    const ctx = buildCtx(getDb(), await sessionFor(staffMember, staffUser.id));
+    const caller = appRouter.createCaller(ctx);
 
-      // POSITIVE: their own store works.
-      const own = await caller.sales.list({ storeId: storeA.id });
-      expect(Array.isArray(own)).toBe(true);
+    // POSITIVE: their own store works.
+    const own = await caller.sales.list({ storeId: storeA.id });
+    expect(Array.isArray(own)).toBe(true);
 
-      // NEGATIVE: foreign store throws notAssignedToStore.
-      let threw = false;
-      try {
-        await caller.sales.list({ storeId: storeB.id });
-      } catch (err) {
-        threw = true;
-        expect((err as Error).message).toContain('notAssignedToStore');
-      }
-      expect(threw).toBe(true);
-    },
-  );
+    // NEGATIVE: foreign store throws notAssignedToStore.
+    let threw = false;
+    try {
+      await caller.sales.list({ storeId: storeB.id });
+    } catch (err) {
+      threw = true;
+      expect((err as Error).message).toContain('notAssignedToStore');
+    }
+    expect(threw).toBe(true);
+  });
 
   test.skipIf(!SHOULD_RUN)(
     'staff with sales.record on a custom role cannot post a sale into a foreign store',
@@ -1292,9 +1333,7 @@ describe('M3.6 notification recipients respect store scope', () => {
       // Lazy import to avoid pulling the service module into every
       // test file's top-level. notify.ts itself is side-effect-free
       // for imports.
-      const { findRecipientsByPermissionInStore } = await import(
-        '../services/notify'
-      );
+      const { findRecipientsByPermissionInStore } = await import('../services/notify');
       const recipients = await findRecipientsByPermissionInStore(
         db,
         fx.orgId,
@@ -1341,11 +1380,7 @@ describe('M3.6 notification recipients respect store scope', () => {
       });
 
       const { findRecipientsByPermission } = await import('../services/notify');
-      const recipients = await findRecipientsByPermission(
-        db,
-        fx.orgId,
-        'order.approve',
-      );
+      const recipients = await findRecipientsByPermission(db, fx.orgId, 'order.approve');
 
       // The unscoped finder returns BOTH managers — same data shape
       // that was leaking to the notify fan-out pre-M3.6.
@@ -1356,84 +1391,80 @@ describe('M3.6 notification recipients respect store scope', () => {
 });
 
 describe('M3.3 manager (rank 60) is blocked from org-wide writes', () => {
-  test.skipIf(!SHOULD_RUN)(
-    'manager cannot skuCreate (catalog write)',
-    async () => {
-      const fx = fix!;
-      const storeA = await makeStore(`OrgA-${Math.random()}`);
-      const mgrUser = await makeUser('A-Mgr-Catalog');
-      const mgrMember = await makeMember(mgrUser.id);
-      await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
-      const ctx = buildCtx(getDb(), await sessionFor(mgrMember, mgrUser.id));
-      const caller = appRouter.createCaller(ctx);
-      let threw = false;
-      try {
-        await caller.admin.skuCreate({
-          names: { en: 'Forbidden SKU', uz: 'Forbidden SKU', ru: 'Forbidden SKU', zh: 'Forbidden SKU' },
-          unit: 'kg',
-          // M3.14: step restricted to '0.5' | '1'. The old '0.1' got
-          // rejected by zod BEFORE the permission check — failing the
-          // test for the wrong reason. Use a valid step so the assertion
-          // exercises the permission boundary as intended.
-          step: '0.5',
-          sortIndex: 999,
-        });
-      } catch (err) {
-        threw = true;
-        expect((err as Error).message).toContain('missingPermission');
-      }
-      expect(threw).toBe(true);
-    },
-  );
+  test.skipIf(!SHOULD_RUN)('manager cannot skuCreate (catalog write)', async () => {
+    const fx = fix!;
+    const storeA = await makeStore(`OrgA-${Math.random()}`);
+    const mgrUser = await makeUser('A-Mgr-Catalog');
+    const mgrMember = await makeMember(mgrUser.id);
+    await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
+    const ctx = buildCtx(getDb(), await sessionFor(mgrMember, mgrUser.id));
+    const caller = appRouter.createCaller(ctx);
+    let threw = false;
+    try {
+      await caller.admin.skuCreate({
+        names: {
+          en: 'Forbidden SKU',
+          uz: 'Forbidden SKU',
+          ru: 'Forbidden SKU',
+          zh: 'Forbidden SKU',
+        },
+        unit: 'kg',
+        // M3.14: step restricted to '0.5' | '1'. The old '0.1' got
+        // rejected by zod BEFORE the permission check — failing the
+        // test for the wrong reason. Use a valid step so the assertion
+        // exercises the permission boundary as intended.
+        step: '0.5',
+        sortIndex: 999,
+      });
+    } catch (err) {
+      threw = true;
+      expect((err as Error).message).toContain('missingPermission');
+    }
+    expect(threw).toBe(true);
+  });
 
-  test.skipIf(!SHOULD_RUN)(
-    'manager cannot roleCreate (role catalog write)',
-    async () => {
-      const fx = fix!;
-      const storeA = await makeStore(`OrgA-${Math.random()}`);
-      const mgrUser = await makeUser('A-Mgr-Role');
-      const mgrMember = await makeMember(mgrUser.id);
-      await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
-      const ctx = buildCtx(getDb(), await sessionFor(mgrMember, mgrUser.id));
-      const caller = appRouter.createCaller(ctx);
-      let threw = false;
-      try {
-        await caller.admin.roleCreate({
-          slug: `mgr-attempt-${Date.now()}`,
-          name: 'Manager-spawned role',
-          rank: 25,
-          permissionKeys: [],
-        });
-      } catch (err) {
-        threw = true;
-        expect((err as Error).message).toContain('missingPermission');
-      }
-      expect(threw).toBe(true);
-    },
-  );
+  test.skipIf(!SHOULD_RUN)('manager cannot roleCreate (role catalog write)', async () => {
+    const fx = fix!;
+    const storeA = await makeStore(`OrgA-${Math.random()}`);
+    const mgrUser = await makeUser('A-Mgr-Role');
+    const mgrMember = await makeMember(mgrUser.id);
+    await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
+    const ctx = buildCtx(getDb(), await sessionFor(mgrMember, mgrUser.id));
+    const caller = appRouter.createCaller(ctx);
+    let threw = false;
+    try {
+      await caller.admin.roleCreate({
+        slug: `mgr-attempt-${Date.now()}`,
+        name: 'Manager-spawned role',
+        rank: 25,
+        permissionKeys: [],
+      });
+    } catch (err) {
+      threw = true;
+      expect((err as Error).message).toContain('missingPermission');
+    }
+    expect(threw).toBe(true);
+  });
 
-  test.skipIf(!SHOULD_RUN)(
-    'manager cannot supplierCreate (org-wide supplier list)',
-    async () => {
-      const fx = fix!;
-      const storeA = await makeStore(`OrgA-${Math.random()}`);
-      const mgrUser = await makeUser('A-Mgr-Supplier');
-      const mgrMember = await makeMember(mgrUser.id);
-      await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
-      const ctx = buildCtx(getDb(), await sessionFor(mgrMember, mgrUser.id));
-      const caller = appRouter.createCaller(ctx);
-      let threw = false;
-      try {
-        await caller.admin.supplierCreate({
-          name: 'Forbidden Supplier',
-        });
-      } catch (err) {
-        threw = true;
-        expect((err as Error).message).toContain('missingPermission');
-      }
-      expect(threw).toBe(true);
-    },
-  );
+  test.skipIf(!SHOULD_RUN)('manager cannot supplierCreate (org-wide supplier list)', async () => {
+    const fx = fix!;
+    const storeA = await makeStore(`OrgA-${Math.random()}`);
+    const mgrUser = await makeUser('A-Mgr-Supplier');
+    const mgrMember = await makeMember(mgrUser.id);
+    await bindRole(mgrMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
+    const ctx = buildCtx(getDb(), await sessionFor(mgrMember, mgrUser.id));
+    const caller = appRouter.createCaller(ctx);
+    let threw = false;
+    try {
+      await caller.admin.supplierCreate({
+        name: 'Forbidden Supplier',
+      });
+    } catch (err) {
+      threw = true;
+      expect((err as Error).message).toContain('missingPermission');
+    }
+    expect(threw).toBe(true);
+  });
 
   test.skipIf(!SHOULD_RUN)(
     'manager-of-A cannot storeUpdate Store B (per-store admin gate)',
@@ -1525,9 +1556,7 @@ describe('M3.2 store-tier purchaser is filtered to bound stores', () => {
       expect(Array.isArray(preview.sessions)).toBe(true);
       // Whatever sessions come back, none can be from a store the
       // purchaser isn't bound to. (`storeB.id` must never appear.)
-      const involvedStoreIds = new Set(
-        preview.perStoreDemand.map((d) => d.storeId),
-      );
+      const involvedStoreIds = new Set(preview.perStoreDemand.map((d) => d.storeId));
       expect(involvedStoreIds.has(storeB.id)).toBe(false);
     },
   );
@@ -1601,6 +1630,856 @@ describe('M3.2 store-tier purchaser is filtered to bound stores', () => {
         expect((err as Error).message).toContain('notAssignedToStore');
       }
       expect(threw).toBe(true);
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'store-scoped run.create.org cannot combine with unrelated store membership',
+    async () => {
+      const fx = fix!;
+      const db = getDb();
+      const suffix = `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+      const storeA = await makeStore(`Run provenance A ${suffix}`);
+      const storeB = await makeStore(`Run provenance B ${suffix}`);
+      await db
+        .insert(s.permissions)
+        .values([
+          { key: 'run.create', description: 'Create runs for a store' },
+          { key: 'run.create.org', description: 'Create runs across an organization' },
+        ])
+        .onConflictDoNothing();
+      const [scopedRole] = await db
+        .insert(s.roles)
+        .values({
+          orgId: fx.orgId,
+          slug: `scoped-run-org-${suffix}`,
+          name: 'Scoped run org regression role',
+          rank: 45,
+          isBuiltIn: false,
+        })
+        .returning();
+      await db.insert(s.rolePermissions).values([
+        { roleId: scopedRole!.id, permissionKey: 'run.create' },
+        { roleId: scopedRole!.id, permissionKey: 'run.create.org' },
+      ]);
+
+      const buyer = await makeUser(`Run provenance buyer ${suffix}`);
+      const buyerMember = await makeMember(buyer.id);
+      await bindRole(buyerMember, scopedRole!.id, { type: 'store', storeId: storeA.id });
+      // Membership in B makes B appear in the actor's generic store set, but
+      // the relevant run.create permission is effective only in A.
+      await bindRole(buyerMember, fx.staffRoleId, { type: 'store', storeId: storeB.id });
+      const date = '2098-12-29';
+      const sessionAId = randomUUID();
+      const sessionBId = randomUUID();
+      await db.insert(s.orderSessionsV).values([
+        {
+          id: sessionAId,
+          orgId: fx.orgId,
+          storeId: storeA.id,
+          initiatedByMemberId: buyerMember,
+          orderDate: date,
+          status: 'approved',
+        },
+        {
+          id: sessionBId,
+          orgId: fx.orgId,
+          storeId: storeB.id,
+          initiatedByMemberId: fx.superAdminMemberId,
+          orderDate: date,
+          status: 'approved',
+        },
+      ]);
+
+      const session = await sessionFor(buyerMember, buyer.id);
+      expect(session.permissions.has('run.create.org')).toBe(true);
+      const caller = appRouter.createCaller(buildCtx(db, session));
+      const preview = await caller.run.previewCreatable({ date });
+      expect(preview.sessions.map((row) => row.id)).toEqual([sessionAId]);
+
+      await expect(caller.run.create({ date, sessionIds: [sessionBId] })).rejects.toThrow(
+        'notAssignedToStore',
+      );
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'whole-run mutations require the command permission in every involved store',
+    async () => {
+      const fx = fix!;
+      const db = getDb();
+      const suffix = `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+      const storeA = await makeStore(`Run mutation A ${suffix}`);
+      const storeB = await makeStore(`Run mutation B ${suffix}`);
+      await db
+        .insert(s.permissions)
+        .values({ key: 'run.purchase', description: 'Purchase a run' })
+        .onConflictDoNothing();
+      const [purchaserRole] = await db
+        .insert(s.roles)
+        .values({
+          orgId: fx.orgId,
+          slug: `run-mutation-${suffix}`,
+          name: 'Run mutation regression role',
+          rank: 45,
+          isBuiltIn: false,
+        })
+        .returning();
+      await db.insert(s.rolePermissions).values({
+        roleId: purchaserRole!.id,
+        permissionKey: 'run.purchase',
+      });
+      const buyer = await makeUser(`Run mutation buyer ${suffix}`);
+      const buyerMember = await makeMember(buyer.id);
+      await bindRole(buyerMember, purchaserRole!.id, { type: 'store', storeId: storeA.id });
+      await bindRole(buyerMember, fx.staffRoleId, { type: 'store', storeId: storeB.id });
+
+      const runId = randomUUID();
+      const sessionBId = randomUUID();
+      const runDate = '2098-12-30';
+      await db.insert(s.marketRunsV).values({
+        id: runId,
+        orgId: fx.orgId,
+        runDate,
+        runIndex: 0,
+        // Keep the synthetic read row terminal so it cannot collide with the
+        // one-live-run partial index. The event stream below is deliberately
+        // planned because that is the command state under test.
+        status: 'finished',
+        sessionIdsJson: [sessionBId],
+      });
+      await db.insert(s.orderSessionsV).values({
+        id: sessionBId,
+        orgId: fx.orgId,
+        storeId: storeB.id,
+        initiatedByMemberId: fx.superAdminMemberId,
+        orderDate: runDate,
+        status: 'archived',
+        runId,
+      });
+      await db.insert(s.events).values({
+        orgId: fx.orgId,
+        streamType: 'run',
+        streamId: runId,
+        seq: 1,
+        type: 'RunPlanned',
+        payload: {
+          orgId: fx.orgId,
+          runDate,
+          runIndex: 0,
+          sessionIds: [sessionBId],
+          plannedItems: [],
+          purchaserMemberId: buyerMember,
+        },
+        actorId: buyer.id,
+      });
+
+      const caller = appRouter.createCaller(buildCtx(db, await sessionFor(buyerMember, buyer.id)));
+      await expect(caller.run.startPurchase({ runId })).rejects.toThrow('notVisible');
+      await settleRolledBackTestTransaction();
+      const started = await db
+        .select({ id: s.events.id })
+        .from(s.events)
+        .where(and(eq(s.events.streamId, runId), eq(s.events.type, 'PurchaseStarted')));
+      expect(started).toHaveLength(0);
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'ejectSession resolves run.eject_session in the target session store',
+    async () => {
+      const fx = fix!;
+      const db = getDb();
+      const suffix = `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+      const storeA = await makeStore(`Run eject A ${suffix}`);
+      const storeB = await makeStore(`Run eject B ${suffix}`);
+      await db
+        .insert(s.permissions)
+        .values({ key: 'run.eject_session', description: 'Eject a session from a run' })
+        .onConflictDoNothing();
+      const [ejectRole] = await db
+        .insert(s.roles)
+        .values({
+          orgId: fx.orgId,
+          slug: `run-eject-${suffix}`,
+          name: 'Run eject regression role',
+          rank: 45,
+          isBuiltIn: false,
+        })
+        .returning();
+      await db.insert(s.rolePermissions).values({
+        roleId: ejectRole!.id,
+        permissionKey: 'run.eject_session',
+      });
+      const actorUser = await makeUser(`Run eject actor ${suffix}`);
+      const actorMember = await makeMember(actorUser.id);
+      await bindRole(actorMember, ejectRole!.id, { type: 'store', storeId: storeA.id });
+      await bindRole(actorMember, fx.staffRoleId, { type: 'store', storeId: storeB.id });
+
+      const runId = randomUUID();
+      const sessionBId = randomUUID();
+      const runDate = '2098-12-31';
+      await db.insert(s.marketRunsV).values({
+        id: runId,
+        orgId: fx.orgId,
+        runDate,
+        runIndex: 0,
+        status: 'finished',
+        sessionIdsJson: [sessionBId],
+      });
+      await db.insert(s.orderSessionsV).values({
+        id: sessionBId,
+        orgId: fx.orgId,
+        storeId: storeB.id,
+        initiatedByMemberId: fx.superAdminMemberId,
+        orderDate: runDate,
+        status: 'archived',
+        runId,
+      });
+
+      const session = await sessionFor(actorMember, actorUser.id);
+      expect(session.permissions.has('run.eject_session')).toBe(true);
+      const caller = appRouter.createCaller(buildCtx(db, session));
+      await expect(
+        caller.run.ejectSession({ runId, sessionId: sessionBId, reason: 'scope regression' }),
+      ).rejects.toThrow('missingPermission');
+    },
+  );
+});
+
+describe('purchase history permission scope', () => {
+  test.skipIf(!SHOULD_RUN)(
+    'paginates and totals only stores where prices.view is effective',
+    async () => {
+      const fx = fix!;
+      const db = getDb();
+      const suffix = `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+      const storeA = await makeStore(`History-A-${suffix}`);
+      const storeB = await makeStore(`History-B-${suffix}`);
+
+      const managerUser = await makeUser(`History manager ${suffix}`);
+      const managerMember = await makeMember(managerUser.id);
+      await bindRole(managerMember, fx.managerRoleId, { type: 'store', storeId: storeA.id });
+      await bindRole(managerMember, fx.staffRoleId, { type: 'store', storeId: storeB.id });
+      await db
+        .insert(s.permissions)
+        .values([
+          { key: 'run.amend', description: 'Amend a settled run' },
+          { key: 'run.create', description: 'Create or cancel a run' },
+        ])
+        .onConflictDoNothing();
+      const [scopedAmendRole] = await db
+        .insert(s.roles)
+        .values({
+          orgId: fx.orgId,
+          slug: `scoped-amend-${suffix}`,
+          name: 'Scoped amend regression role',
+          rank: 55,
+          isBuiltIn: false,
+        })
+        .returning();
+      await db.insert(s.rolePermissions).values([
+        { roleId: scopedAmendRole!.id, permissionKey: 'run.amend' },
+        { roleId: scopedAmendRole!.id, permissionKey: 'run.create' },
+      ]);
+      await bindRole(managerMember, scopedAmendRole!.id, {
+        type: 'store',
+        storeId: storeA.id,
+      });
+      const managerSession = await sessionFor(managerMember, managerUser.id);
+      expect(managerSession.permissions.has('run.amend')).toBe(true);
+      const visibleStores = await withOrgContext(db, fx.orgId, (tx) =>
+        getActorStoreIdsForPermission(tx, managerMember, 'prices.view', managerSession.permissions),
+      );
+      expect(visibleStores).toEqual([storeA.id]);
+      const catalogCaller = appRouter.createCaller(buildCtx(db, managerSession));
+      const priceStores = await catalogCaller.catalog.stores({ permission: 'prices.view' });
+      expect(priceStores.map((store) => store.id)).toEqual([storeA.id]);
+      const assignedStores = await catalogCaller.catalog.stores();
+      expect(new Set(assignedStores.map((store) => store.id))).toEqual(
+        new Set([storeA.id, storeB.id]),
+      );
+
+      const [skuA] = await db
+        .insert(s.skus)
+        .values({
+          orgId: fx.orgId,
+          code: `H-A-${suffix}`,
+          names: { en: `Visible apple ${suffix}` },
+          aliases: {},
+          description: {},
+          unit: 'kg',
+          step: '1',
+        })
+        .returning();
+      const [skuB] = await db
+        .insert(s.skus)
+        .values({
+          orgId: fx.orgId,
+          code: `H-B-${suffix}`,
+          names: { en: `Foreign secret ${suffix}` },
+          aliases: {},
+          description: {},
+          unit: 'kg',
+          step: '1',
+        })
+        .returning();
+      const [skuC] = await db
+        .insert(s.skus)
+        .values({
+          orgId: fx.orgId,
+          code: `H-C-${suffix}`,
+          names: { en: `Visible only pear ${suffix}` },
+          aliases: {},
+          description: {},
+          unit: 'kg',
+          step: '1',
+        })
+        .returning();
+      const [hiddenSupplier] = await db
+        .insert(s.suppliers)
+        .values({
+          orgId: fx.orgId,
+          name: `Hidden supplier ${suffix}`,
+        })
+        .returning();
+      const [visibleSupplier] = await db
+        .insert(s.suppliers)
+        .values({
+          orgId: fx.orgId,
+          name: `Visible supplier ${suffix}`,
+        })
+        .returning();
+      const runId = randomUUID();
+      const sessionAId = randomUUID();
+      const sessionBId = randomUUID();
+      const runDate = '2042-08-05';
+      await db.insert(s.marketRunsV).values({
+        id: runId,
+        orgId: fx.orgId,
+        runDate,
+        runIndex: 0,
+        status: 'finished',
+        actualTotal: '780',
+        actualCashTotal: '550',
+        actualTransferTotal: '230',
+        sessionIdsJson: [sessionAId, sessionBId],
+        finishedAt: new Date('2042-08-05T12:00:00Z'),
+      });
+      await db.insert(s.orderSessionsV).values([
+        {
+          id: sessionAId,
+          orgId: fx.orgId,
+          storeId: storeA.id,
+          orderDate: runDate,
+          status: 'archived',
+          initiatedByMemberId: managerMember,
+          runId,
+        },
+        {
+          id: sessionBId,
+          orgId: fx.orgId,
+          storeId: storeB.id,
+          orderDate: runDate,
+          status: 'archived',
+          initiatedByMemberId: fx.superAdminMemberId,
+          runId,
+        },
+      ]);
+      await db.insert(s.orderItemsV).values([
+        {
+          sessionId: sessionAId,
+          skuId: skuA!.id,
+          contributorMemberId: managerMember,
+          qty: '1',
+        },
+        {
+          // Regression: Store A requested this SKU, but the actual purchase
+          // was allocated only to hidden Store B. Demand visibility must not
+          // expose the purchase's price/supplier/payment metadata.
+          sessionId: sessionAId,
+          skuId: skuB!.id,
+          contributorMemberId: managerMember,
+          qty: '1',
+        },
+        {
+          sessionId: sessionAId,
+          skuId: skuC!.id,
+          contributorMemberId: managerMember,
+          qty: '1',
+        },
+        {
+          sessionId: sessionBId,
+          skuId: skuA!.id,
+          contributorMemberId: fx.superAdminMemberId,
+          qty: '1',
+        },
+        {
+          sessionId: sessionBId,
+          skuId: skuB!.id,
+          contributorMemberId: fx.superAdminMemberId,
+          qty: '2',
+        },
+      ]);
+      await db.insert(s.runItemsV).values([
+        {
+          runId,
+          skuId: skuA!.id,
+          plannedQty: '2',
+          purchasedQty: '2',
+          supplierId: hiddenSupplier!.id,
+          unitPrice: '200',
+          status: 'purchased',
+          paymentMethod: 'transfer',
+          receiptPhotoUrl: `https://hidden.example/${suffix}.jpg`,
+        },
+        {
+          runId,
+          skuId: skuB!.id,
+          plannedQty: '2',
+          purchasedQty: '2',
+          unitPrice: '200',
+          status: 'purchased',
+          paymentMethod: 'cash',
+        },
+        {
+          runId,
+          skuId: skuC!.id,
+          plannedQty: '1',
+          purchasedQty: '1',
+          supplierId: visibleSupplier!.id,
+          unitPrice: '50',
+          status: 'purchased',
+          paymentMethod: 'cash',
+          receiptPhotoUrl: `https://visible.example/${suffix}.jpg`,
+        },
+      ]);
+      await db.insert(s.runItemStoresV).values([
+        {
+          runId,
+          skuId: skuA!.id,
+          storeId: storeA.id,
+          qty: '1',
+          unitPrice: '100',
+          paymentMethod: 'cash',
+        },
+        // Same SKU, hidden store: null overrides inherit the org-wide
+        // run-item values (200/transfer). Store A must never receive those
+        // base values in historyDetail JSON.
+        { runId, skuId: skuA!.id, storeId: storeB.id, qty: '1' },
+        { runId, skuId: skuB!.id, storeId: storeB.id, qty: '2' },
+        { runId, skuId: skuC!.id, storeId: storeA.id, qty: '1' },
+      ]);
+      await db.insert(s.runExpensesV).values({
+        id: randomUUID(),
+        runId,
+        orgId: fx.orgId,
+        label: `Taxi ${suffix}`,
+        qty: '3',
+        unitPrice: '10',
+        storeSplitsJson: [
+          { storeId: storeA.id, qty: '1' },
+          { storeId: storeB.id, qty: '2' },
+        ],
+        paymentMethod: 'transfer',
+        reason: 'history scope fixture',
+        addedByMemberId: fx.superAdminMemberId,
+        addedAt: new Date('2042-08-05T11:00:00Z'),
+      });
+      await db.insert(s.events).values([
+        {
+          orgId: fx.orgId,
+          streamType: 'run',
+          streamId: runId,
+          seq: 1,
+          type: 'RunPlanned',
+          payload: {
+            orgId: fx.orgId,
+            runDate,
+            runIndex: 0,
+            sessionIds: [sessionAId, sessionBId],
+            plannedItems: [
+              { skuId: skuA!.id, qty: '2' },
+              { skuId: skuB!.id, qty: '2' },
+              { skuId: skuC!.id, qty: '1' },
+            ],
+            purchaserMemberId: fx.superAdminMemberId,
+          },
+          actorId: fx.superAdminUserId,
+          occurredAt: new Date('2042-08-05T10:00:00Z'),
+        },
+        {
+          orgId: fx.orgId,
+          streamType: 'run',
+          streamId: runId,
+          seq: 2,
+          type: 'RunFinished',
+          payload: {
+            totalActual: '780',
+            totalCash: '550',
+            totalTransfer: '230',
+          },
+          actorId: fx.superAdminUserId,
+          occurredAt: new Date('2042-08-05T12:00:00Z'),
+        },
+      ]);
+
+      const caller = appRouter.createCaller(buildCtx(db, managerSession));
+      const page = await caller.run.history({
+        dateFrom: runDate,
+        dateTo: runDate,
+        payment: 'mixed',
+        page: 1,
+        pageSize: 10,
+        sort: 'newest',
+      });
+      expect(page.pageInfo.totalCount).toBe(1);
+      expect(page.rows).toHaveLength(1);
+      expect(Number(page.rows[0]!.actualTotal)).toBe(160);
+      expect(Number(page.rows[0]!.actualCashTotal)).toBe(150);
+      expect(Number(page.rows[0]!.actualTransferTotal)).toBe(10);
+      expect(Number(page.summary.total)).toBe(160);
+      expect(page.rows[0]!.storeTotals.map((row) => row.storeId)).toEqual([storeA.id]);
+
+      const cashOnly = await caller.run.history({
+        dateFrom: runDate,
+        dateTo: runDate,
+        payment: 'cash',
+        page: 1,
+        pageSize: 10,
+      });
+      const transferOnly = await caller.run.history({
+        dateFrom: runDate,
+        dateTo: runDate,
+        payment: 'transfer',
+        page: 1,
+        pageSize: 10,
+      });
+      expect(cashOnly.rows).toHaveLength(0);
+      expect(transferOnly.rows).toHaveLength(0);
+
+      const hiddenSearch = await caller.run.history({
+        search: `Foreign secret ${suffix}`,
+        dateFrom: runDate,
+        dateTo: runDate,
+        page: 1,
+        pageSize: 10,
+        sort: 'newest',
+      });
+      expect(hiddenSearch.rows).toHaveLength(0);
+
+      let foreignStoreThrew = false;
+      try {
+        await caller.run.history({ storeId: storeB.id, page: 1, pageSize: 10 });
+      } catch (error) {
+        foreignStoreThrew = true;
+        expect((error as Error).message).toContain('notAssignedToStore');
+      }
+      expect(foreignStoreThrew).toBe(true);
+
+      const detail = await caller.run.historyDetail({ runId });
+      expect(new Set(detail.items.map((item) => item.skuId))).toEqual(
+        new Set([skuA!.id, skuC!.id]),
+      );
+      expect(detail.items.find((item) => item.skuId === skuA!.id)).toMatchObject({
+        plannedQty: '1',
+        purchasedQty: '1',
+        unitPrice: '100.00',
+        paymentMethod: 'cash',
+        supplierId: null,
+        receiptPhotoUrl: null,
+      });
+      expect(detail.items.find((item) => item.skuId === skuC!.id)).toMatchObject({
+        unitPrice: '50.00',
+        paymentMethod: 'cash',
+        supplierId: visibleSupplier!.id,
+        receiptPhotoUrl: `https://visible.example/${suffix}.jpg`,
+      });
+      expect(detail.perStoreDemand).toContainEqual({
+        storeId: storeA.id,
+        skuId: skuB!.id,
+        qty: '1',
+      });
+      expect(new Set(detail.splits.map((split) => split.storeId))).toEqual(new Set([storeA.id]));
+      expect(detail.splits.find((split) => split.skuId === skuA!.id)).toMatchObject({
+        skuId: skuA!.id,
+        storeId: storeA.id,
+        qty: '1.000',
+        unitPrice: '100.00',
+        paymentMethod: 'cash',
+      });
+      expect(JSON.stringify(detail)).not.toContain(hiddenSupplier!.id);
+      expect(JSON.stringify(detail)).not.toContain(`https://hidden.example/${suffix}.jpg`);
+      expect(detail.sessions.map((session) => session.storeId)).toEqual([storeA.id]);
+      expect(detail.expenses).toHaveLength(1);
+      expect(detail.expenses[0]!.qty).toBe('1');
+      expect(detail.expenses[0]!.storeSplits).toEqual([{ storeId: storeA.id, qty: '1' }]);
+      // The flat session contains run.amend only because of a Store-A role.
+      // A settled-run correction requires persisted GLOBAL provenance.
+      expect(detail.canAmend).toBe(false);
+
+      // Live run reads use generic assigned-store visibility, but must return
+      // a Store-A projection instead of the raw A+B aggregate row.
+      const liveReaderUser = await makeUser(`Live run reader ${suffix}`);
+      const liveReaderMember = await makeMember(liveReaderUser.id);
+      await bindRole(liveReaderMember, fx.managerRoleId, {
+        type: 'store',
+        storeId: storeA.id,
+      });
+      const liveReader = appRouter.createCaller(
+        buildCtx(db, await sessionFor(liveReaderMember, liveReaderUser.id)),
+      );
+      const liveRows = await liveReader.run.list();
+      const liveSummary = liveRows.find((row) => row.id === runId);
+      expect(liveSummary).toBeDefined();
+      expect(liveSummary!.sessionIdsJson).toEqual([sessionAId]);
+      expect(Number(liveSummary!.actualTotal)).toBe(150);
+      expect(Number(liveSummary!.actualCashTotal)).toBe(150);
+      expect(Number(liveSummary!.actualTransferTotal)).toBe(0);
+      expect(liveSummary!.storeTotals.map((row) => row.storeId)).toEqual([storeA.id]);
+
+      const liveDetail = await liveReader.run.get({ runId });
+      expect(liveDetail.sessionIdsJson).toEqual([sessionAId]);
+      expect(new Set(liveDetail.items.map((item) => item.skuId))).toEqual(
+        new Set([skuA!.id, skuC!.id]),
+      );
+      expect(liveDetail.items.find((item) => item.skuId === skuA!.id)).toMatchObject({
+        plannedQty: '1',
+        purchasedQty: '1',
+        unitPrice: '100.00',
+        paymentMethod: 'cash',
+        supplierId: null,
+        receiptPhotoUrl: null,
+      });
+      expect(liveDetail.splits.map((split) => split.storeId)).toEqual([storeA.id, storeA.id]);
+      expect(Number(liveDetail.actualTotal)).toBe(150);
+      expect(Number(liveDetail.actualCashTotal)).toBe(150);
+      expect(Number(liveDetail.actualTransferTotal)).toBe(0);
+      expect(liveDetail.sessions.map((session) => session.storeId)).toEqual([storeA.id]);
+      expect(liveDetail.expenses).toHaveLength(1);
+      expect(liveDetail.expenses[0]!.qty).toBe('1');
+      expect(liveDetail.expenses[0]!.storeSplits).toEqual([{ storeId: storeA.id, qty: '1' }]);
+      expect(JSON.stringify(liveDetail)).not.toContain(hiddenSupplier!.id);
+      expect(JSON.stringify(liveDetail)).not.toContain(`https://hidden.example/${suffix}.jpg`);
+
+      let scopedChangeDateError: unknown;
+      try {
+        await caller.run.changeDate({ runId, runDate: '2042-08-06' });
+      } catch (error) {
+        scopedChangeDateError = error;
+      }
+      expect((scopedChangeDateError as Error).message).toContain('cannotAmend');
+      await settleRolledBackTestTransaction();
+      let scopedReopenError: unknown;
+      try {
+        await caller.run.reopen({ runId, reason: 'scoped role must not reopen' });
+      } catch (error) {
+        scopedReopenError = error;
+      }
+      expect((scopedReopenError as Error).message).toContain('cannotAmend');
+      const globalDeniedUser = await makeUser(`History globally denied ${suffix}`);
+      const globalDeniedMember = await makeMember(globalDeniedUser.id);
+      await bindRole(globalDeniedMember, fx.superAdminRoleId, { type: 'global' });
+      await db.insert(s.memberPermissionOverrides).values({
+        memberId: globalDeniedMember,
+        permissionKey: 'run.amend',
+        effect: 'deny',
+        scopeType: 'store',
+        scopeId: storeA.id,
+        grantedBy: fx.superAdminUserId,
+      });
+      const globalDeniedCaller = appRouter.createCaller(
+        buildCtx(db, await sessionFor(globalDeniedMember, globalDeniedUser.id)),
+      );
+      expect((await globalDeniedCaller.run.historyDetail({ runId })).canAmend).toBe(false);
+      await expect(
+        globalDeniedCaller.run.reopen({ runId, reason: 'store deny must win' }),
+      ).rejects.toThrow('cannotAmend');
+
+      const adminPage = await appRouter.createCaller(fx.superAdminCtx).run.history({
+        dateFrom: runDate,
+        dateTo: runDate,
+        page: 1,
+        pageSize: 10,
+        sort: 'newest',
+      });
+      expect(Number(adminPage.summary.total)).toBe(780);
+      expect(new Set(adminPage.rows[0]!.storeTotals.map((row) => row.storeId))).toEqual(
+        new Set([storeA.id, storeB.id]),
+      );
+
+      const superAdminCaller = appRouter.createCaller(fx.superAdminCtx);
+      const superAdminDetail = await superAdminCaller.run.historyDetail({ runId });
+      expect(superAdminDetail.canAmend).toBe(true);
+      expect(superAdminDetail.items.find((item) => item.skuId === skuA!.id)).toMatchObject({
+        unitPrice: '200.00',
+        paymentMethod: 'transfer',
+        supplierId: hiddenSupplier!.id,
+        receiptPhotoUrl: `https://hidden.example/${suffix}.jpg`,
+      });
+      expect(
+        superAdminDetail.splits.find(
+          (split) => split.skuId === skuA!.id && split.storeId === storeB.id,
+        ),
+      ).toMatchObject({ unitPrice: null, paymentMethod: null });
+
+      // Once the global actor reopens the run, every write path must repeat
+      // the persisted-global gate. Domain commands alone only see the flat
+      // permission union and would otherwise let this scoped actor refinalize
+      // or even cancel the amending run.
+      await superAdminCaller.run.reopen({ runId, reason: 'exercise amendment gate' });
+
+      await expect(
+        caller.run.markUnavailable({
+          runId,
+          skuId: skuA!.id,
+          note: 'scoped role must not edit an amended run',
+        }),
+      ).rejects.toThrow('cannotAmend');
+
+      await settleRolledBackTestTransaction();
+
+      await expect(caller.run.refinalize({ runId })).rejects.toThrow('cannotAmend');
+
+      await settleRolledBackTestTransaction();
+
+      await expect(caller.run.cancel({ runId, reason: '' })).rejects.toThrow('cannotAmend');
+
+      const staffUser = await makeUser(`History staff ${suffix}`);
+      const staffMember = await makeMember(staffUser.id);
+      await bindRole(staffMember, fx.staffRoleId, { type: 'store', storeId: storeA.id });
+      const staffCaller = appRouter.createCaller(
+        buildCtx(db, await sessionFor(staffMember, staffUser.id)),
+      );
+      let missingPermissionThrew = false;
+      try {
+        await staffCaller.run.history({ page: 1, pageSize: 10 });
+      } catch (error) {
+        missingPermissionThrew = true;
+        expect((error as Error).message).toContain('missingPermission');
+      }
+      expect(missingPermissionThrew).toBe(true);
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'global prices.view honors a store deny and keeps inactive historical stores',
+    async () => {
+      const fx = fix!;
+      const db = getDb();
+      const globalUser = await makeUser('History global override actor');
+      const globalMember = await makeMember(globalUser.id);
+      await bindRole(globalMember, fx.adminRoleId, { type: 'global' });
+      const inactiveStore = await makeStore(`History inactive ${Math.random()}`);
+      const deniedStore = await makeStore(`History denied ${Math.random()}`);
+      await db
+        .update(s.stores)
+        .set({ isActive: false, deletedAt: new Date() })
+        .where(eq(s.stores.id, inactiveStore.id));
+      await db.insert(s.memberPermissionOverrides).values({
+        memberId: globalMember,
+        permissionKey: 'prices.view',
+        effect: 'deny',
+        scopeType: 'store',
+        scopeId: deniedStore.id,
+        grantedBy: fx.superAdminUserId,
+      });
+
+      const session = await sessionFor(globalMember, globalUser.id);
+      const stores = await withOrgContext(db, fx.orgId, (tx) =>
+        getActorStoreIdsForPermission(tx, globalMember, 'prices.view', session.permissions),
+      );
+      expect(stores).not.toBeNull();
+      expect(stores).toContain(inactiveStore.id);
+      expect(stores).not.toContain(deniedStore.id);
+
+      const catalogCaller = appRouter.createCaller(buildCtx(db, session));
+      const priceStores = await catalogCaller.catalog.stores({ permission: 'prices.view' });
+      expect(priceStores.map((store) => store.id)).toContain(inactiveStore.id);
+      expect(priceStores.map((store) => store.id)).not.toContain(deniedStore.id);
+
+      // No permission input preserves the generic catalog contract:
+      // org.admin sees the whole organization, including a store that has
+      // a permission-specific deny.
+      const unfilteredStores = await catalogCaller.catalog.stores();
+      expect(unfilteredStores.map((store) => store.id)).toContain(deniedStore.id);
+      const allOrgStores = await db
+        .select({ id: s.stores.id })
+        .from(s.stores)
+        .where(eq(s.stores.orgId, fx.orgId));
+      expect(new Set(unfilteredStores.map((store) => store.id))).toEqual(
+        new Set(allOrgStores.map((store) => store.id)),
+      );
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'returns stable database pages with count and next/previous metadata',
+    async () => {
+      const fx = fix!;
+      const db = getDb();
+      const store = await makeStore(`History pages ${Math.random()}`);
+      const runDate = '2043-08-05';
+      const fixtures = Array.from({ length: 11 }, (_, runIndex) => ({
+        runId: randomUUID(),
+        sessionId: randomUUID(),
+        runIndex,
+      }));
+      await db.insert(s.marketRunsV).values(
+        fixtures.map(({ runId, sessionId, runIndex }) => ({
+          id: runId,
+          orgId: fx.orgId,
+          runDate,
+          runIndex,
+          status: 'finished',
+          actualTotal: '0',
+          actualCashTotal: '0',
+          actualTransferTotal: '0',
+          sessionIdsJson: [sessionId],
+          finishedAt: new Date('2043-08-05T12:00:00Z'),
+        })),
+      );
+      await db.insert(s.orderSessionsV).values(
+        fixtures.map(({ runId, sessionId }) => ({
+          id: sessionId,
+          orgId: fx.orgId,
+          storeId: store.id,
+          orderDate: runDate,
+          status: 'archived',
+          initiatedByMemberId: fx.superAdminMemberId,
+          runId,
+        })),
+      );
+
+      const caller = appRouter.createCaller(fx.superAdminCtx);
+      const first = await caller.run.history({
+        dateFrom: runDate,
+        dateTo: runDate,
+        page: 1,
+        pageSize: 10,
+        sort: 'newest',
+      });
+      const second = await caller.run.history({
+        dateFrom: runDate,
+        dateTo: runDate,
+        page: 2,
+        pageSize: 10,
+        sort: 'newest',
+      });
+      expect(first.rows).toHaveLength(10);
+      expect(second.rows).toHaveLength(1);
+      expect(first.rows.map((row) => row.runIndex)).toEqual([10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);
+      expect(second.rows[0]!.runIndex).toBe(0);
+      expect(first.pageInfo).toEqual({
+        page: 1,
+        pageSize: 10,
+        totalCount: 11,
+        totalPages: 2,
+        hasPrevious: false,
+        hasNext: true,
+      });
+      expect(second.pageInfo.hasPrevious).toBe(true);
+      expect(second.pageInfo.hasNext).toBe(false);
     },
   );
 });

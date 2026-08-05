@@ -16,7 +16,11 @@
  * No Postgres needed — pure zod, runs in the fast CI unit job.
  */
 import { describe, expect, test } from 'bun:test';
-import { RunCancelInputSchema, RunReasonOnlyInputSchema } from '@compass/contracts';
+import {
+  RunCancelInputSchema,
+  RunHistoryInputSchema,
+  RunReasonOnlyInputSchema,
+} from '@compass/contracts';
 
 const RUN_ID = '11111111-2222-4333-8444-555555555555';
 
@@ -65,5 +69,37 @@ describe('RunReasonOnlyInputSchema (strict — reopen / undoStartPurchase / undo
   test('accepts a real reason', () => {
     const parsed = RunReasonOnlyInputSchema.parse({ runId: RUN_ID, reason: 'wrong day' });
     expect(parsed.reason).toBe('wrong day');
+  });
+});
+
+describe('RunHistoryInputSchema', () => {
+  test('applies the mobile history page defaults', () => {
+    expect(RunHistoryInputSchema.parse({})).toEqual({
+      sort: 'newest',
+      page: 1,
+      pageSize: 20,
+    });
+  });
+
+  test('trims search and accepts combined filters', () => {
+    const parsed = RunHistoryInputSchema.parse({
+      search: '  beef stall  ',
+      storeId: RUN_ID,
+      dateFrom: '2026-07-01',
+      dateTo: '2026-07-31',
+      payment: 'mixed',
+      sort: 'oldest',
+      page: 2,
+      pageSize: 50,
+    });
+    expect(parsed.search).toBe('beef stall');
+    expect(parsed.page).toBe(2);
+  });
+
+  test('rejects a reversed date range and oversized pages', () => {
+    expect(() =>
+      RunHistoryInputSchema.parse({ dateFrom: '2026-08-02', dateTo: '2026-08-01' }),
+    ).toThrow();
+    expect(() => RunHistoryInputSchema.parse({ pageSize: 51 })).toThrow();
   });
 });

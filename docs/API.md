@@ -14,61 +14,76 @@
 
 ### `auth.*`
 
-| Route | Type | Auth | Notes |
-|---|---|---|---|
-| `auth.telegramLogin` | mutation | public | Verifies Telegram initData → tokens + session. |
-| `auth.me` | query | authed | Returns `{user, member, stores, permissions, roleSlugs}`. |
-| `auth.refresh` | mutation | public | Rotates refresh token. (M1) |
-| `auth.signOut` | mutation | authed | No-op for stateless access tokens; revokes refresh. |
+| Route                | Type     | Auth   | Notes                                                     |
+| -------------------- | -------- | ------ | --------------------------------------------------------- |
+| `auth.telegramLogin` | mutation | public | Verifies Telegram initData → tokens + session.            |
+| `auth.me`            | query    | authed | Returns `{user, member, stores, permissions, roleSlugs}`. |
+| `auth.refresh`       | mutation | public | Rotates refresh token. (M1)                               |
+| `auth.signOut`       | mutation | authed | No-op for stateless access tokens; revokes refresh.       |
 
 ### `catalog.*`
 
-| Route | Type | Permission |
-|---|---|---|
-| `catalog.categories` | query | authed |
-| `catalog.skus` | query | authed |
-| `catalog.stores` | query | authed |
-| `catalog.suppliers` | query | authed |
-| `catalog.skuPriceStats` | query | authed | M1.5 — avg-7d / last-price per SKU for budget estimates. |
+| Route                   | Type  | Permission |
+| ----------------------- | ----- | ---------- | -------------------------------------------------------- |
+| `catalog.categories`    | query | authed     |
+| `catalog.skus`          | query | authed     |
+| `catalog.stores`        | query | authed     |
+| `catalog.suppliers`     | query | authed     |
+| `catalog.skuPriceStats` | query | authed     | M1.5 — avg-7d / last-price per SKU for budget estimates. |
 
 ### `order.*`
 
-| Route | Type | Permission | Notes |
-|---|---|---|---|
-| `order.todaySession` | query | authed | Returns owner's session for `(storeId, date)` or null. |
-| `order.sessionDetail` | query | authed | Single-session view by id (any status). |
-| `order.pendingList` | query | `order.approve` | Approver queue. |
-| `order.adjustItem` | mutation | `order.draft` | Lazy-creates draft on first call. |
-| `order.setNote` | mutation | `order.draft` | Per-line note. |
-| `order.setSessionNote` | mutation | `order.draft` | M1.8 — session-level "其他物品" free-text. |
-| `order.submit` | mutation | `order.submit` | Owner only. |
-| `order.claim` | mutation | `order.claim` | Atomic; CONFLICT if already claimed. |
-| `order.releaseClaim` | mutation | `order.claim` | Only the current claimer. |
-| `order.approve` | mutation | `order.approve` | Clears claim. |
-| `order.reject` | mutation | `order.approve` | Reason required. |
-| `order.withdraw` | mutation | owner | Refused if claimed. |
-| `order.unapprove` | mutation | `order.unapprove` | Refused if in run. M1.7-fix: clears claim (was: transferred). |
+| Route                  | Type     | Permission        | Notes                                                         |
+| ---------------------- | -------- | ----------------- | ------------------------------------------------------------- |
+| `order.todaySession`   | query    | authed            | Returns owner's session for `(storeId, date)` or null.        |
+| `order.sessionDetail`  | query    | authed            | Single-session view by id (any status).                       |
+| `order.pendingList`    | query    | `order.approve`   | Approver queue.                                               |
+| `order.adjustItem`     | mutation | `order.draft`     | Lazy-creates draft on first call.                             |
+| `order.setNote`        | mutation | `order.draft`     | Per-line note.                                                |
+| `order.setSessionNote` | mutation | `order.draft`     | M1.8 — session-level "其他物品" free-text.                    |
+| `order.submit`         | mutation | `order.submit`    | Owner only.                                                   |
+| `order.claim`          | mutation | `order.claim`     | Atomic; CONFLICT if already claimed.                          |
+| `order.releaseClaim`   | mutation | `order.claim`     | Only the current claimer.                                     |
+| `order.approve`        | mutation | `order.approve`   | Clears claim.                                                 |
+| `order.reject`         | mutation | `order.approve`   | Reason required.                                              |
+| `order.withdraw`       | mutation | owner             | Refused if claimed.                                           |
+| `order.unapprove`      | mutation | `order.unapprove` | Refused if in run. M1.7-fix: clears claim (was: transferred). |
 
 ### `run.*`
 
 Mounts at `/trpc/run.*`. All authed; specific perms documented per route.
 
-| Route | Type | Permission | Notes |
-|---|---|---|---|
-| `run.list` | query | authed | Past 50 runs, newest first. |
-| `run.get` | query | authed | Full run + items + splits + per-store demand + `lastPriceBySku` + `sessionNotesByStore` (M1.8). |
-| `run.previewCreatable` | query | authed | Org-wide preview of approved sessions for `date` (default today). Returns `plannedItems`, `perStoreDemand`, `supplierBySku`, `sessionNotesByStore`. |
-| `run.create` | mutation | `run.create` | Spans approved sessions, emits `RunPlanned` + per-session `AttachedToRun`. |
-| `run.startPurchase` / `run.undoStartPurchase` | mutation | `run.purchase` | Stage transitions. |
-| `run.purchaseItem` / `run.revisePurchase` / `run.undoPurchase` | mutation | `run.purchase` | Per-SKU buy + edit + undo. |
-| `run.markUnavailable` / `run.unmarkUnavailable` | mutation | `run.purchase` | Per-SKU N/A toggle. |
-| `run.startDelivery` / `run.undoStartDelivery` | mutation | `run.purchase` | Stage transitions. |
-| `run.deliverToStore` / `run.undeliverStore` | mutation | `delivery.dispatch` | Per-store delivery + recall. |
-| `run.confirmStoreItem` / `run.confirmStore` | mutation | `delivery.confirm` | Receiver-side per-item + final store confirm. |
-| `run.finish` | mutation | `run.finish` | Cascades `Archived` to attached sessions. |
-| `run.cancel` | mutation | `run.create` | Cancels run + ejects sessions. M1.7-fix: synthesizes `run.eject_session` perm during cascade. |
-| `run.ejectSession` | mutation | `run.eject_session` | Single session eject. |
-| `run.setSkuPreferredSupplier` | mutation | `inventory.suppliers.manage` | M1.6 — per-SKU vendor pinning. |
+| Route                                                          | Type     | Permission                                 | Notes                                                                                                                                               |
+| -------------------------------------------------------------- | -------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `run.list`                                                     | query    | authed                                     | Past 50 runs, newest first.                                                                                                                         |
+| `run.get`                                                      | query    | authed                                     | Full run + items + splits + per-store demand + `lastPriceBySku` + `sessionNotesByStore` (M1.8).                                                     |
+| `run.history`                                                  | query    | `prices.view` in the effective store scope | Server-side search, store/date/payment filters, stable pagination, scoped totals and an all-matching-results summary.                               |
+| `run.historyDetail`                                            | query    | `prices.view` in the effective store scope | Historical run detail trimmed to stores the actor may see.                                                                                          |
+| `run.previewCreatable`                                         | query    | authed                                     | Org-wide preview of approved sessions for `date` (default today). Returns `plannedItems`, `perStoreDemand`, `supplierBySku`, `sessionNotesByStore`. |
+| `run.create`                                                   | mutation | `run.create`                               | Spans approved sessions, emits `RunPlanned` + per-session `AttachedToRun`.                                                                          |
+| `run.startPurchase` / `run.undoStartPurchase`                  | mutation | `run.purchase`                             | Stage transitions.                                                                                                                                  |
+| `run.purchaseItem` / `run.revisePurchase` / `run.undoPurchase` | mutation | `run.purchase`                             | Per-SKU buy + edit + undo.                                                                                                                          |
+| `run.markUnavailable` / `run.unmarkUnavailable`                | mutation | `run.purchase`                             | Per-SKU N/A toggle.                                                                                                                                 |
+| `run.startDelivery` / `run.undoStartDelivery`                  | mutation | `run.purchase`                             | Stage transitions.                                                                                                                                  |
+| `run.deliverToStore` / `run.undeliverStore`                    | mutation | `delivery.dispatch`                        | Per-store delivery + recall.                                                                                                                        |
+| `run.confirmStoreItem` / `run.confirmStore`                    | mutation | `delivery.confirm`                         | Receiver-side per-item + final store confirm.                                                                                                       |
+| `run.finish`                                                   | mutation | `run.finish`                               | Cascades `Archived` to attached sessions.                                                                                                           |
+| `run.cancel`                                                   | mutation | `run.create`                               | Cancels run + ejects sessions. M1.7-fix: synthesizes `run.eject_session` perm during cascade.                                                       |
+| `run.ejectSession`                                             | mutation | `run.eject_session`                        | Single session eject.                                                                                                                               |
+| `run.setSkuPreferredSupplier`                                  | mutation | `inventory.suppliers.manage`               | M1.6 — per-SKU vendor pinning.                                                                                                                      |
+
+### `settlement.*`
+
+Daily settlement is a per-store financial ledger. Cashier/manager access is
+resolved for the requested store; a permission held in one store never grants
+access to another.
+
+| Route                     | Type                | Permission          | Notes                                                                                                                                                         |
+| ------------------------- | ------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `settlement.businessDate` | query               | `settlement.record` | Returns the selected store's authoritative current business date and effective timezone; clients must not substitute the device date.                         |
+| `settlement.get`          | query               | `settlement.record` | One store/date record or null; inactive-store history remains readable.                                                                                       |
+| `settlement.recent`       | query               | `settlement.record` | Newest records for one store, with an exclusive date cursor.                                                                                                  |
+| `settlement.save`         | idempotent mutation | `settlement.record` | Creates or corrects one store/date row using `expectedVersion`; corrections require a reason and atomically append a revision that normal APIs cannot update. |
 
 ### `admin.*`
 
@@ -84,19 +99,19 @@ Per-store admin scope enforced via `getActorAdminStoreIds` (C2). Selected:
 
 ### `upload.*`
 
-| Route | Type | Auth | Notes |
-|---|---|---|---|
-| `upload.config` | query | authed | Bucket public base + max bytes. |
+| Route                   | Type     | Auth   | Notes                                                         |
+| ----------------------- | -------- | ------ | ------------------------------------------------------------- |
+| `upload.config`         | query    | authed | Bucket public base + max bytes.                               |
 | `upload.requestPresign` | mutation | authed | SigV4 PUT URL (M1, S3 / MinIO / R2 / Tencent COS). 5 min TTL. |
 
 ### `system.*`
 
-| Route | Type | Auth |
-|---|---|---|
-| `system.health` | query | public |
-| `system.appConfig` | query | public | M1.4 — Telegram bot username for invite share links. |
-| `system.log` | mutation | public | Batched client telemetry ingest. M1.9: rate-limited 60/min/IP. |
-| `system.recentLogs` | query | authed | |
+| Route               | Type     | Auth   |
+| ------------------- | -------- | ------ | -------------------------------------------------------------- |
+| `system.health`     | query    | public |
+| `system.appConfig`  | query    | public | M1.4 — Telegram bot username for invite share links.           |
+| `system.log`        | mutation | public | Batched client telemetry ingest. M1.9: rate-limited 60/min/IP. |
+| `system.recentLogs` | query    | authed |                                                                |
 
 ## WebSocket
 

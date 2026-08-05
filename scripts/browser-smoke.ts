@@ -29,7 +29,9 @@ import { chromium, type ConsoleMessage, type Page } from 'playwright';
 // `node --experimental-strip-types ...`.
 const rawBase = process.env.COMPASS_BASE;
 if (!rawBase) {
-  console.error('✖ COMPASS_BASE is required (e.g. https://<tunnel>.trycloudflare.com or http://localhost:3000)');
+  console.error(
+    '✖ COMPASS_BASE is required (e.g. https://<tunnel>.trycloudflare.com or http://localhost:3000)',
+  );
   process.exit(2);
 }
 const BASE = rawBase.replace(/\/$/, '');
@@ -77,6 +79,8 @@ const fakeSession = {
     'order.claim',
     'run.create',
     'run.purchase',
+    'prices.view',
+    'settlement.record',
     'delivery.dispatch',
     'delivery.confirm',
     'users.manage',
@@ -149,57 +153,60 @@ async function run() {
   // Belt-and-suspenders: also addInitScript so even if the route fails,
   // the global is set early. (The route fulfillment above is the
   // authoritative source.)
-  await context.addInitScript(({ user }) => {
-    const noop = () => {};
-    (window as unknown as { Telegram: unknown }).Telegram = {
-      WebApp: {
-        initData: 'user=' + encodeURIComponent(JSON.stringify(user)) + '&hash=stub',
-        initDataUnsafe: { user },
-        themeParams: {},
-        colorScheme: 'light',
-        viewportHeight: window.innerHeight,
-        isExpanded: true,
-        expand: noop,
-        ready: noop,
-        close: noop,
-        MainButton: {
-          text: '',
-          isVisible: false,
-          isActive: true,
-          show() {
-            this.isVisible = true;
+  await context.addInitScript(
+    ({ user }) => {
+      const noop = () => {};
+      (window as unknown as { Telegram: unknown }).Telegram = {
+        WebApp: {
+          initData: 'user=' + encodeURIComponent(JSON.stringify(user)) + '&hash=stub',
+          initDataUnsafe: { user },
+          themeParams: {},
+          colorScheme: 'light',
+          viewportHeight: window.innerHeight,
+          isExpanded: true,
+          expand: noop,
+          ready: noop,
+          close: noop,
+          MainButton: {
+            text: '',
+            isVisible: false,
+            isActive: true,
+            show() {
+              this.isVisible = true;
+            },
+            hide() {
+              this.isVisible = false;
+            },
+            enable() {
+              this.isActive = true;
+            },
+            disable() {
+              this.isActive = false;
+            },
+            setText(text: string) {
+              // Throw on empty just like the real Telegram WebApp does. This
+              // is the regression check for the WebAppBottomButtonParamInvalid
+              // bug we shipped to prod earlier.
+              if (!text || !text.trim()) {
+                throw new Error('WebAppBottomButtonParamInvalid (test stub)');
+              }
+              this.text = text;
+            },
+            onClick: noop,
+            offClick: noop,
+            setParams: noop,
           },
-          hide() {
-            this.isVisible = false;
-          },
-          enable() {
-            this.isActive = true;
-          },
-          disable() {
-            this.isActive = false;
-          },
-          setText(text: string) {
-            // Throw on empty just like the real Telegram WebApp does. This
-            // is the regression check for the WebAppBottomButtonParamInvalid
-            // bug we shipped to prod earlier.
-            if (!text || !text.trim()) {
-              throw new Error('WebAppBottomButtonParamInvalid (test stub)');
-            }
-            this.text = text;
-          },
-          onClick: noop,
-          offClick: noop,
-          setParams: noop,
+          BackButton: { isVisible: false, show: noop, hide: noop, onClick: noop, offClick: noop },
+          HapticFeedback: { impactOccurred: noop, notificationOccurred: noop },
+          showAlert: noop,
+          showConfirm: noop,
+          setHeaderColor: noop,
+          setBackgroundColor: noop,
         },
-        BackButton: { isVisible: false, show: noop, hide: noop, onClick: noop, offClick: noop },
-        HapticFeedback: { impactOccurred: noop, notificationOccurred: noop },
-        showAlert: noop,
-        showConfirm: noop,
-        setHeaderColor: noop,
-        setBackgroundColor: noop,
-      },
-    };
-  }, { user: fakeUser });
+      };
+    },
+    { user: fakeUser },
+  );
 
   // Stub auth.loginModes, auth.telegramLogin & auth.me at the network layer.
   await context.route('**/trpc/auth.loginModes*', async (route) => {
@@ -211,8 +218,16 @@ async function run() {
           data: {
             environment: { nodeEnv: 'test', releaseChannel: 'development', localRequest: true },
             telegram: { available: true, hasBotToken: true, requiresInitData: true },
-            devPersona: { available: false, enabled: false, reason: 'auth.errors.devBypassDisabled' },
-            nonTelegram: { available: false, enabled: false, reason: 'auth.errors.nonTelegramLoginDisabled' },
+            devPersona: {
+              available: false,
+              enabled: false,
+              reason: 'auth.errors.devBypassDisabled',
+            },
+            nonTelegram: {
+              available: false,
+              enabled: false,
+              reason: 'auth.errors.nonTelegramLoginDisabled',
+            },
           },
         },
       }),
@@ -235,7 +250,12 @@ async function run() {
     });
   });
   // Stub the catalog queries — empty data is fine for a render smoke.
-  for (const path of ['catalog.categories', 'catalog.skus', 'catalog.stores', 'catalog.suppliers']) {
+  for (const path of [
+    'catalog.categories',
+    'catalog.skus',
+    'catalog.stores',
+    'catalog.suppliers',
+  ]) {
     await context.route(`**/trpc/${path}*`, async (route) => {
       await route.fulfill({
         status: 200,
@@ -246,19 +266,90 @@ async function run() {
   }
   // Stub other reads that pages might fire during initial render.
   await context.route('**/trpc/order.todaySession*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: null } }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ result: { data: null } }),
+    }),
   );
   await context.route('**/trpc/order.todayBatches*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: [] } }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ result: { data: [] } }),
+    }),
   );
   await context.route('**/trpc/order.pendingList*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: [] } }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ result: { data: [] } }),
+    }),
   );
   await context.route('**/trpc/run.list*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: [] } }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ result: { data: [] } }),
+    }),
+  );
+  await context.route('**/trpc/run.history*', async (r) =>
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        result: {
+          data: {
+            rows: [],
+            pageInfo: {
+              page: 1,
+              pageSize: 20,
+              totalCount: 0,
+              totalPages: 0,
+              hasPrevious: false,
+              hasNext: false,
+            },
+            summary: { total: '0', cash: '0', transfer: '0' },
+          },
+        },
+      }),
+    }),
+  );
+  await context.route('**/trpc/settlement.get*', async (r) =>
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ result: { data: null } }),
+    }),
+  );
+  await context.route('**/trpc/settlement.businessDate*', async (r) =>
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        result: {
+          data: {
+            storeId: fakeSession.stores[0]?.id,
+            date: '2026-05-01',
+            timezone: 'Asia/Tashkent',
+          },
+        },
+      }),
+    }),
+  );
+  await context.route('**/trpc/settlement.recent*', async (r) =>
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ result: { data: [] } }),
+    }),
   );
   await context.route('**/trpc/run.expenseTemplates*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: [] } }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ result: { data: [] } }),
+    }),
   );
   await context.route('**/trpc/run.previewCreatable*', async (r) =>
     r.fulfill({
@@ -280,70 +371,194 @@ async function run() {
     }),
   );
   await context.route('**/trpc/system.health*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: { status: 'ok', db: true, projectorLag: 0, version: 'smoke' } } }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        result: { data: { status: 'ok', db: true, projectorLag: 0, version: 'smoke' } },
+      }),
+    }),
   );
   await context.route('**/trpc/system.recentLogs*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: [] } }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ result: { data: [] } }),
+    }),
   );
   // upload.config is queried by usePhotoUploader on RunPage + ConfirmPage.
   // Returning enabled:false keeps PhotoCapture in data-URI fallback mode
   // and avoids needing a real bucket during smoke.
   await context.route('**/trpc/upload.config*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: { enabled: false, maxBytes: 8388608, allowedContentTypes: ['image/jpeg', 'image/png', 'image/webp'] } } }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        result: {
+          data: {
+            enabled: false,
+            maxBytes: 8388608,
+            allowedContentTypes: ['image/jpeg', 'image/png', 'image/webp'],
+          },
+        },
+      }),
+    }),
   );
   // Admin tab queries — stub all four to empty/zero so the page renders.
   await context.route('**/trpc/admin.overview*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: { memberCount: 0, storeCount: 0, skuCount: 0, runCount: 0, pendingApprovals: 0, ordersThisWeek: 0 } } }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        result: {
+          data: {
+            memberCount: 0,
+            storeCount: 0,
+            skuCount: 0,
+            runCount: 0,
+            pendingApprovals: 0,
+            ordersThisWeek: 0,
+          },
+        },
+      }),
+    }),
   );
   await context.route('**/trpc/admin.memberList*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: [] } }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ result: { data: [] } }),
+    }),
   );
   await context.route('**/trpc/admin.storeList*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: [] } }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ result: { data: [] } }),
+    }),
   );
   await context.route('**/trpc/admin.roleList*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: [] } }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ result: { data: [] } }),
+    }),
   );
   await context.route('**/trpc/admin.categoryList*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: [] } }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ result: { data: [] } }),
+    }),
   );
   await context.route('**/trpc/admin.skuList*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: [] } }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ result: { data: [] } }),
+    }),
   );
   await context.route('**/trpc/admin.supplierList*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: [] } }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ result: { data: [] } }),
+    }),
   );
   await context.route('**/trpc/admin.recentEvents*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: [] } }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ result: { data: [] } }),
+    }),
   );
   await context.route('**/trpc/system.appConfig*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: { botUsername: 'CompassSmokeBot' } } }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ result: { data: { botUsername: 'CompassSmokeBot' } } }),
+    }),
   );
   // Maintenance purge endpoints — tests don't actually invoke them but
   // stubbing keeps the network noise clean if a future smoke does.
   await context.route('**/trpc/admin.purgeByDate*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: { dryRun: true, total: 0, byTable: {}, date: '2026-05-01' } } }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        result: { data: { dryRun: true, total: 0, byTable: {}, date: '2026-05-01' } },
+      }),
+    }),
   );
   await context.route('**/trpc/admin.purgeAllTestData*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: { dryRun: true, total: 0, byTable: {}, orgSlug: 'default' } } }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        result: { data: { dryRun: true, total: 0, byTable: {}, orgSlug: 'default' } },
+      }),
+    }),
   );
   await context.route('**/trpc/admin.sessionList*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: [] } }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ result: { data: [] } }),
+    }),
   );
   await context.route('**/trpc/admin.runList*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: [] } }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ result: { data: [] } }),
+    }),
   );
   await context.route('**/trpc/admin.purgeSession*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: { dryRun: true, total: 0, byTable: {}, sessionId: '00000000-0000-0000-0000-000000000000' } } }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        result: {
+          data: {
+            dryRun: true,
+            total: 0,
+            byTable: {},
+            sessionId: '00000000-0000-0000-0000-000000000000',
+          },
+        },
+      }),
+    }),
   );
   await context.route('**/trpc/admin.purgeRun*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: { dryRun: true, total: 0, byTable: {}, runId: '00000000-0000-0000-0000-000000000000', sessionIds: [] } } }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        result: {
+          data: {
+            dryRun: true,
+            total: 0,
+            byTable: {},
+            runId: '00000000-0000-0000-0000-000000000000',
+            sessionIds: [],
+          },
+        },
+      }),
+    }),
   );
   await context.route('**/trpc/admin.memberStoreAssignments*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: [] } }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ result: { data: [] } }),
+    }),
   );
   await context.route('**/trpc/admin.submissionHistory*', async (r) =>
-    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: [] } }) }),
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ result: { data: [] } }),
+    }),
   );
 
   // useRealtime opens /ws?token=...; with our stubbed token the real
@@ -397,19 +612,28 @@ async function run() {
       record('BottomNav rendered', false, 'tab bar selector did not appear');
       // Capture diagnostics: which tRPC calls fired, what's currently on screen.
       console.log('\n  --- diagnostic: tRPC calls so far ---');
-      for (const c of trpcCalls) console.log(`    ${c.method} ${new URL(c.url).pathname}  status=${c.status ?? '(no resp)'}`);
+      for (const c of trpcCalls)
+        console.log(
+          `    ${c.method} ${new URL(c.url).pathname}  status=${c.status ?? '(no resp)'}`,
+        );
       const visibleText = await page.evaluate(() => document.body.innerText.slice(0, 500));
       console.log('  --- diagnostic: visible text (first 500 chars) ---');
       console.log('    ' + visibleText.replace(/\n/g, '\n    '));
-      const authState = await page.evaluate(() => window.localStorage.getItem('compass.auth') ?? '(empty)');
+      const authState = await page.evaluate(
+        () => window.localStorage.getItem('compass.auth') ?? '(empty)',
+      );
       console.log('  --- diagnostic: compass.auth localStorage ---');
       console.log('    ' + authState.slice(0, 800));
       const authDebug = await page.evaluate(() =>
-        JSON.stringify((window as unknown as { __compassAuthDebug?: unknown }).__compassAuthDebug ?? null),
+        JSON.stringify(
+          (window as unknown as { __compassAuthDebug?: unknown }).__compassAuthDebug ?? null,
+        ),
       );
       console.log('  --- diagnostic: AuthGate render state ---');
       console.log('    ' + authDebug);
-      const rootHtml = await page.evaluate(() => document.querySelector('#root')?.innerHTML.slice(0, 800) ?? '(no #root)');
+      const rootHtml = await page.evaluate(
+        () => document.querySelector('#root')?.innerHTML.slice(0, 800) ?? '(no #root)',
+      );
       console.log('  --- diagnostic: #root html (first 800 chars) ---');
       console.log('    ' + rootHtml.replace(/\n/g, '\n    '));
       await page.screenshot({ path: 'smoke-failure-shell.png', fullPage: true });
@@ -421,9 +645,7 @@ async function run() {
     // Helper: count errors that AREN'T expected stub-mode noise.
     const realErrorCount = () =>
       consoleErrors.filter(
-        (e) =>
-          !/WebSocket connection to.*\/ws/i.test(e) &&
-          !/HTTP Authentication failed/.test(e),
+        (e) => !/WebSocket connection to.*\/ws/i.test(e) && !/HTTP Authentication failed/.test(e),
       ).length + pageErrors.length;
     for (const tab of tabs) {
       const label = (await tab.textContent())?.replace(/\s+/g, ' ').trim() ?? '?';
@@ -464,7 +686,9 @@ async function run() {
     const detail = r.detail ? `\x1b[2m — ${r.detail}\x1b[0m` : '';
     console.log(`${tag} ${r.name}${detail}`);
   }
-  console.log(`\n${passed} / ${results.length} passed — ${failed.length} failure${failed.length === 1 ? '' : 's'}.`);
+  console.log(
+    `\n${passed} / ${results.length} passed — ${failed.length} failure${failed.length === 1 ? '' : 's'}.`,
+  );
   if (failed.length > 0) process.exit(1);
 }
 

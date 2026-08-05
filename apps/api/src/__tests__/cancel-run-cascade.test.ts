@@ -34,11 +34,7 @@ import {
   decide as decideOrder,
   emptyState as emptyOrderState,
 } from '@compass/domain/order';
-import {
-  applyRun,
-  decideRun,
-  emptyRunState,
-} from '@compass/domain/run';
+import { applyRun, decideRun, emptyRunState } from '@compass/domain/run';
 import { appendEvents, readStream } from '../services/eventStore';
 import { projectOrder } from '../services/orderProjection';
 import { projectRun } from '../services/runProjection';
@@ -83,10 +79,19 @@ function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): Reques
     userAgent: null,
     idempotencyKey: null,
     session,
-    async withOrg(fn) {
-      return withOrgContext(db, session.orgId, fn);
+    async withOrg(fn, options) {
+      return withOrgContext(db, session.orgId, fn, options);
     },
   };
+}
+
+/**
+ * Direct tRPC callers can issue the next request in the same JavaScript turn.
+ * Yield once so postgres-js can recycle the completed test transaction,
+ * matching the natural boundary between HTTP requests.
+ */
+function settleDirectCallerTransaction(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 interface Fixture {
@@ -97,6 +102,7 @@ interface Fixture {
   staffUserId: string;
   /** Has run.create but NOT run.eject_session — the M1.7 case. */
   cancellerCtx: RequestContext;
+  confirmerCtx: RequestContext;
   cancellerUserId: string;
   cancellerMemberId: string;
   slug: string;
@@ -137,9 +143,36 @@ let fix: Fixture | null = null;
   // (run.create without run.create.org) must be bound to a store the run
   // touches. Bind the canceller to the run's store so this fixture models
   // a real purchaser rather than a state run.create itself would reject.
+  await db.insert(s.memberStoreAssignments).values([
+    { memberId: cancellerMember!.id, storeId: store!.id, assignedBy: cancellerUser!.id },
+    { memberId: staffMember!.id, storeId: store!.id, assignedBy: cancellerUser!.id },
+  ]);
+  // Permission-specific scope is resolved from persisted bindings rather
+  // than the flat SessionContext union. Give the canceller run.create in the
+  // concrete store while deliberately withholding run.eject_session.
   await db
-    .insert(s.memberStoreAssignments)
-    .values({ memberId: cancellerMember!.id, storeId: store!.id, assignedBy: cancellerUser!.id });
+    .insert(s.permissions)
+    .values({ key: 'run.create', description: 'Create or cancel a store run' })
+    .onConflictDoNothing();
+  const [cancellerRole] = await db
+    .insert(s.roles)
+    .values({
+      orgId: org!.id,
+      slug: `canceller-${slug}`,
+      name: 'Run canceller',
+      rank: 40,
+    })
+    .returning();
+  await db.insert(s.rolePermissions).values({
+    roleId: cancellerRole!.id,
+    permissionKey: 'run.create',
+  });
+  await db.insert(s.memberRoleBindings).values({
+    memberId: cancellerMember!.id,
+    roleId: cancellerRole!.id,
+    scopeType: 'store',
+    scopeId: store!.id,
+  });
   const [sku] = await db
     .insert(s.skus)
     .values({
@@ -162,6 +195,37 @@ let fix: Fixture | null = null;
     permissions: new Set(['run.create']),
     roleSlugs: new Set(['canceller']),
   };
+  await db
+    .insert(s.permissions)
+    .values({ key: 'delivery.confirm', description: 'Confirm a store delivery' })
+    .onConflictDoNothing();
+  const [confirmerRole] = await db
+    .insert(s.roles)
+    .values({
+      orgId: org!.id,
+      slug: `confirmer-${slug}`,
+      name: 'Delivery confirmer',
+      rank: 20,
+    })
+    .returning();
+  await db.insert(s.rolePermissions).values({
+    roleId: confirmerRole!.id,
+    permissionKey: 'delivery.confirm',
+  });
+  await db.insert(s.memberRoleBindings).values({
+    memberId: staffMember!.id,
+    roleId: confirmerRole!.id,
+    scopeType: 'store',
+    scopeId: store!.id,
+  });
+  const confirmerSession: SessionContext = {
+    userId: staffUser!.id,
+    memberId: staffMember!.id,
+    orgId: org!.id,
+    orgTimezone: 'UTC',
+    permissions: new Set(['delivery.confirm']),
+    roleSlugs: new Set([confirmerRole!.slug]),
+  };
 
   fix = {
     orgId: org!.id,
@@ -170,6 +234,7 @@ let fix: Fixture | null = null;
     staffMemberId: staffMember!.id,
     staffUserId: staffUser!.id,
     cancellerCtx: buildCtx(db, cancellerSession),
+    confirmerCtx: buildCtx(db, confirmerSession),
     cancellerUserId: cancellerUser!.id,
     cancellerMemberId: cancellerMember!.id,
     slug,
@@ -292,11 +357,7 @@ describe.skipIf(!SHOULD_RUN)('cancel-run cascade (PG-gated)', () => {
     // does this for real; we mirror it directly here.
     const allPermsWithEject = new Set([...allPerms, 'run.eject_session']);
     for (const sessionId of sessionIds) {
-      const persisted = (await readStream(
-        db,
-        'order',
-        sessionId,
-      )) as unknown as OrderEvent[];
+      const persisted = (await readStream(db, 'order', sessionId)) as unknown as OrderEvent[];
       let oState = emptyOrderState(sessionId);
       for (const ev of persisted) oState = applyOrder(oState, ev);
       const attach = decideOrder(oState, {
@@ -353,5 +414,88 @@ describe.skipIf(!SHOULD_RUN)('cancel-run cascade (PG-gated)', () => {
       expect(row?.status).toBe('approved');
       expect(row?.runId).toBeNull();
     }
+  });
+
+  test('a delivered run cannot be confirmed after cancellation or receive inventory', async () => {
+    if (!fix) throw new Error('fixture missing');
+    const db = getDb();
+    const runId = randomUUID();
+    const sessionId = randomUUID();
+    const actor = {
+      userId: fix.cancellerUserId,
+      memberId: fix.cancellerMemberId,
+      permissions: new Set(['run.create', 'run.purchase', 'delivery.dispatch', 'run.finish']),
+    };
+    let state = emptyRunState(runId);
+    const emitted: ReturnType<typeof decideRun> = [];
+    const applyCommand = (command: Parameters<typeof decideRun>[1]) => {
+      const events = decideRun(state, command);
+      emitted.push(...events);
+      for (const event of events) state = applyRun(state, event);
+    };
+
+    applyCommand({
+      type: 'PlanRun',
+      orgId: fix.orgId,
+      runDate: '2026-05-03',
+      runIndex: 0,
+      sessionIds: [sessionId],
+      plannedItems: [{ skuId: fix.skuId, qty: '1' }],
+      actor,
+    });
+    applyCommand({ type: 'StartPurchase', actor });
+    applyCommand({
+      type: 'PurchaseItem',
+      skuId: fix.skuId,
+      supplierId: null,
+      unitPrice: '100',
+      actualQty: '1',
+      receiptPhotoUrl: null,
+      storeSplits: [{ storeId: fix.storeId, qty: '1' }],
+      paymentMethod: 'cash',
+      actor,
+    });
+    applyCommand({ type: 'StartDelivery', actor });
+    applyCommand({ type: 'DeliverToStore', storeId: fix.storeId, actor });
+
+    await appendEvents(db, {
+      streamType: 'run',
+      streamId: runId,
+      orgId: fix.orgId,
+      events: emitted.map((event) => ({ ...event })),
+    });
+    await projectRun(db, fix.orgId, emitted);
+    await db.insert(s.orderSessionsV).values({
+      id: sessionId,
+      orgId: fix.orgId,
+      storeId: fix.storeId,
+      initiatedByMemberId: fix.staffMemberId,
+      orderDate: '2026-05-03',
+      status: 'archived',
+      runId,
+    });
+
+    await appRouter.createCaller(fix.cancellerCtx).run.cancel({
+      runId,
+      reason: 'cancel after dispatch',
+    });
+    await settleDirectCallerTransaction();
+
+    await expect(
+      appRouter.createCaller(fix.confirmerCtx).run.confirmStore({
+        runId,
+        storeId: fix.storeId,
+      }),
+    ).rejects.toThrow('run.errors.notDelivering');
+    await settleDirectCallerTransaction();
+
+    const persisted = await readStream(db, 'run', runId);
+    expect(persisted.at(-1)?.type).toBe('RunCancelled');
+    expect(persisted.some((event) => event.type === 'StoreConfirmed')).toBe(false);
+    const inventoryRows = await db
+      .select({ id: s.inventoryMovements.id })
+      .from(s.inventoryMovements)
+      .where(eq(s.inventoryMovements.sourceId, runId));
+    expect(inventoryRows).toHaveLength(0);
   });
 });

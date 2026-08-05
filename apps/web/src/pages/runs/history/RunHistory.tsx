@@ -14,10 +14,11 @@
  * all. Recover it from git if a "last run / month so far" summary is
  * ever wanted back on the run page.
  *
- * Read-only: one run.get query, no mutations. Money math comes from
- * ../lib/settlement (unit-tested).
+ * Detail reads use the store-trimmed `run.historyDetail` query. Money math
+ * comes from ../lib/settlement (unit-tested); only super-admin correction
+ * actions mutate a finished run.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Badge, Button, Card, Input, SectionLabel, Sheet, useToast } from '@compass/ui';
 import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
@@ -73,9 +74,27 @@ export interface HistoryDetailTarget {
   initialStoreId?: string | null;
 }
 
+interface HistoryPagination {
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+  hasPrevious: boolean;
+  hasNext: boolean;
+  onPrevious: () => void;
+  onNext: () => void;
+}
+
 export function RunHistoryPage({
   runs,
   loading,
+  fetching = false,
+  totalCount,
+  summaryTotal,
+  pagination,
+  toolbar,
+  hasSearchOrFilters = false,
+  onClearSearchOrFilters,
   storeById,
   skuById,
   productName,
@@ -84,10 +103,23 @@ export function RunHistoryPage({
 }: {
   runs: RunListRow[];
   loading: boolean;
+  fetching?: boolean;
+  totalCount?: number;
+  summaryTotal?: string;
+  pagination?: HistoryPagination;
+  toolbar?: ReactNode;
+  hasSearchOrFilters?: boolean;
+  onClearSearchOrFilters?: () => void;
   storeById: Map<string, { id: string; name: string; code: string | null }>;
   skuById: Map<
     string,
-    { id: string; names: Record<string, string>; unit: string; step: string; categoryId?: string | null }
+    {
+      id: string;
+      names: Record<string, string>;
+      unit: string;
+      step: string;
+      categoryId?: string | null;
+    }
   >;
   productName: ReturnType<typeof useProductName>;
   i18n: ReturnType<typeof useI18n>;
@@ -105,7 +137,14 @@ export function RunHistoryPage({
 }) {
   const [detailFor, setDetailFor] = useState<HistoryDetailTarget | null>(null);
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
-  const total = runs.reduce((sum, run) => sum + Number(run.actualTotal ?? 0), 0);
+  const total =
+    summaryTotal ?? String(runs.reduce((sum, run) => sum + Number(run.actualTotal ?? 0), 0));
+  const count = totalCount ?? runs.length;
+  const firstResult =
+    pagination && pagination.totalCount > 0 ? (pagination.page - 1) * pagination.pageSize + 1 : 0;
+  const lastResult = pagination
+    ? Math.min(pagination.page * pagination.pageSize, pagination.totalCount)
+    : count;
 
   return (
     <div className="flex flex-col gap-3 px-4 pb-24 pt-3">
@@ -126,13 +165,16 @@ export function RunHistoryPage({
           >
             {i18n.t('common.back')}
           </button>
-          <h1 className="text-h2 font-semibold text-[var(--c-fg)]">{i18n.t('run.history.title')}</h1>
+          <h1 className="text-h2 font-semibold text-[var(--c-fg)]">
+            {i18n.t('run.history.title')}
+          </h1>
         </div>
       ) : null}
-      <Card>
+      {toolbar}
+      <Card className={fetching && !loading ? 'opacity-70 transition-opacity' : undefined}>
         <SectionLabel
           as={onBack ? undefined : 'h1'}
-          meta={`${runs.length} · ${formatMoney(total)} ${currency}`}
+          meta={`${count} · ${formatMoney(total)} ${currency}`}
         >
           {i18n.t('run.history.title')}
         </SectionLabel>
@@ -141,8 +183,15 @@ export function RunHistoryPage({
             {i18n.t('common.loading')}
           </div>
         ) : runs.length === 0 ? (
-          <div className="px-4 py-6 text-center text-body-sm text-[var(--c-fg-muted)]">
-            {i18n.t('run.history.subtitle')}
+          <div className="flex flex-col items-center gap-3 px-4 py-8 text-center text-body-sm text-[var(--c-fg-muted)]">
+            <span>
+              {i18n.t(hasSearchOrFilters ? 'run.history.noMatches' : 'run.history.subtitle')}
+            </span>
+            {hasSearchOrFilters && onClearSearchOrFilters ? (
+              <Button variant="secondary" size="sm" onClick={onClearSearchOrFilters}>
+                {i18n.t('run.history.clearAll')}
+              </Button>
+            ) : null}
           </div>
         ) : (
           <ul className="flex flex-col" role="list">
@@ -221,6 +270,35 @@ export function RunHistoryPage({
           </ul>
         )}
       </Card>
+      {pagination && pagination.totalCount > 0 ? (
+        <div className="flex items-center justify-between gap-2 px-1">
+          <span className="min-w-0 text-label tabular-nums text-[var(--c-fg-muted)]">
+            {i18n.t('run.history.resultRange', {
+              from: firstResult,
+              to: lastResult,
+              total: pagination.totalCount,
+            })}
+          </span>
+          <div className="flex shrink-0 gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={!pagination.hasPrevious || fetching}
+              onClick={pagination.onPrevious}
+            >
+              {i18n.t('run.history.previousPage')}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={!pagination.hasNext || fetching}
+              onClick={pagination.onNext}
+            >
+              {i18n.t('run.history.nextPage')}
+            </Button>
+          </div>
+        </div>
+      ) : null}
       <RunHistoryDetailSheet
         target={detailFor}
         skuById={skuById}
@@ -236,7 +314,7 @@ export function RunHistoryPage({
 /**
  * Drill-down sheet for one historical run.
  *
- * Fetches `run.get` lazily when opened. Shows:
+ * Fetches `run.historyDetail` lazily when opened. Shows:
  *   - Status + total + finished-at timestamp at the top
  *   - Per-item rows: name, qty bought, unit price, line total, supplier
  *   - Per-store breakdown: items received, store-level subtotal
@@ -255,7 +333,13 @@ export function RunHistoryDetailSheet({
   target: HistoryDetailTarget | null;
   skuById: Map<
     string,
-    { id: string; names: Record<string, string>; unit: string; step: string; categoryId?: string | null }
+    {
+      id: string;
+      names: Record<string, string>;
+      unit: string;
+      step: string;
+      categoryId?: string | null;
+    }
   >;
   storeById: Map<string, { id: string; name: string; code: string | null }>;
   productName: ReturnType<typeof useProductName>;
@@ -270,7 +354,6 @@ export function RunHistoryDetailSheet({
   // 2026-07-06: super-admins (run.amend) may reopen a finished run to
   // correct it. The reopen moves it to `amending`; editing continues on
   // the 采购 (Run) tab, and the correction is closed with "完成修改" there.
-  const canAmend = useAuthStore((s) => s.session?.permissions.includes('run.amend') ?? false);
   const toast = useToast();
   const errToast = useErrToast();
   const utils = trpc.useUtils();
@@ -308,15 +391,19 @@ export function RunHistoryDetailSheet({
       void utils.run.list.invalidate();
       void utils.run.history.invalidate();
       void utils.run.get.invalidate();
+      void utils.run.historyDetail.invalidate();
       toast.success(i18n.t('run.date.changed'));
       onClose();
     },
     onError: errToast('common.error'),
   });
-  const detail = trpc.run.get.useQuery(
-    target ? { runId: target.runId } : { runId: '' },
-    { enabled: !!target },
-  );
+  const detail = trpc.run.historyDetail.useQuery(target ? { runId: target.runId } : { runId: '' }, {
+    enabled: !!target,
+  });
+  // The flat session permission list merges grants from every role scope.
+  // Amendment authority is organization-wide and deny-sensitive, so only
+  // trust the per-run answer derived from persisted bindings by the server.
+  const canAmend = detail.data?.canAmend ?? false;
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -335,8 +422,12 @@ export function RunHistoryDetailSheet({
     const purchasedCount = items.filter((i) => i.status === 'purchased').length;
     const unavailableCount = items.filter((i) => i.status === 'unavailable').length;
     for (const it of items) {
-      if (it.status === 'purchased' && it.unitPrice && it.purchasedQty) {
-        const itemSplits = splits.filter((sp) => sp.skuId === it.skuId);
+      const itemSplits = splits.filter((sp) => sp.skuId === it.skuId);
+      if (
+        it.status === 'purchased' &&
+        it.purchasedQty &&
+        (it.unitPrice || itemSplits.some((split) => split.unitPrice))
+      ) {
         const { line, cash, transfer } = settleItemLine(it, itemSplits);
         total += line;
         totalCash += cash;
@@ -394,7 +485,7 @@ export function RunHistoryDetailSheet({
   const activeStoreId =
     selectedStoreId && breakdown?.perStore.has(selectedStoreId) ? selectedStoreId : null;
   const activeStoreTotal =
-    activeStoreId && breakdown ? breakdown.perStore.get(activeStoreId) ?? null : null;
+    activeStoreId && breakdown ? (breakdown.perStore.get(activeStoreId) ?? null) : null;
 
   type HistoryBreakdown = NonNullable<typeof breakdown>;
   type HistoryItem = HistoryBreakdown['items'][number];
@@ -409,18 +500,22 @@ export function RunHistoryDetailSheet({
   const visibleHistoryRows = useMemo<VisibleHistoryRow[]>(() => {
     if (!breakdown) return [];
     if (!activeStoreId) {
-      return breakdown.items.map((item) => ({
-        item,
-        qty: item.purchasedQty,
-        lineTotal:
-          item.status === 'purchased' && item.unitPrice && item.purchasedQty
-            ? breakdown.splits
-                .filter((sp) => sp.skuId === item.skuId)
-                .reduce((sum, sp) => sum + splitSubtotal(sp, item), 0) ||
-              Number(item.unitPrice) * Number(item.purchasedQty)
-            : 0,
-        perStoreSplits: breakdown.splits.filter((sp) => sp.skuId === item.skuId),
-      }));
+      return breakdown.items.map((item) => {
+        const itemSplits = breakdown.splits.filter((split) => split.skuId === item.skuId);
+        const hasVisiblePrice = Boolean(
+          item.unitPrice || itemSplits.some((split) => split.unitPrice),
+        );
+        return {
+          item,
+          qty: item.purchasedQty,
+          lineTotal:
+            item.status === 'purchased' && item.purchasedQty && hasVisiblePrice
+              ? itemSplits.reduce((sum, split) => sum + splitSubtotal(split, item), 0) ||
+                Number(item.unitPrice) * Number(item.purchasedQty)
+              : 0,
+          perStoreSplits: itemSplits,
+        };
+      });
     }
 
     const demandBySku = new Map(
@@ -459,16 +554,16 @@ export function RunHistoryDetailSheet({
 
   const visiblePurchasedCount = activeStoreId
     ? visibleHistoryRows.filter((row) => row.item.status === 'purchased').length
-    : breakdown?.purchasedCount ?? 0;
+    : (breakdown?.purchasedCount ?? 0);
   const visibleUnavailableCount = activeStoreId
     ? visibleHistoryRows.filter((row) => row.item.status === 'unavailable').length
-    : breakdown?.unavailableCount ?? 0;
+    : (breakdown?.unavailableCount ?? 0);
   const headlineTotal = activeStoreTotal?.total ?? breakdown?.total ?? 0;
   const headlineCash = activeStoreTotal?.cash ?? breakdown?.totalCash ?? 0;
   const headlineTransfer = activeStoreTotal?.transfer ?? breakdown?.totalTransfer ?? 0;
-  const headlineStoreCount = activeStoreId ? 1 : breakdown?.perStore.size ?? 0;
+  const headlineStoreCount = activeStoreId ? 1 : (breakdown?.perStore.size ?? 0);
   const activeStoreName = activeStoreId
-    ? storeById.get(activeStoreId)?.name ?? activeStoreId.slice(0, 8)
+    ? (storeById.get(activeStoreId)?.name ?? activeStoreId.slice(0, 8))
     : null;
 
   return (
@@ -476,9 +571,7 @@ export function RunHistoryDetailSheet({
       open={!!target}
       onOpenChange={(open) => !open && onClose()}
       title={
-        target
-          ? `${target.runDate}${target.runIndex > 0 ? ` #${target.runIndex + 1}` : ''}`
-          : ''
+        target ? `${target.runDate}${target.runIndex > 0 ? ` #${target.runIndex + 1}` : ''}` : ''
       }
       description={target?.status ?? undefined}
     >
@@ -496,9 +589,7 @@ export function RunHistoryDetailSheet({
           <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3">
             <div className="flex items-baseline justify-between gap-3">
               <div>
-                <SectionLabel padded={false}>
-                  {i18n.t('run.history.totalLabel')}
-                </SectionLabel>
+                <SectionLabel padded={false}>{i18n.t('run.history.totalLabel')}</SectionLabel>
                 {/* M2.2: headline money unified to text-h2 (17 px)
                     across pages. Was text-h1 (22 px) — only Order's
                     estimate and Admin's sales tiles use text-h2 for
@@ -522,9 +613,7 @@ export function RunHistoryDetailSheet({
                 pure-transfer runs are unambiguous from the lump sum. */}
             {headlineCash > 0 && headlineTransfer > 0 ? (
               <div className="flex items-baseline gap-3 border-t border-[var(--c-divider)] pt-2 text-label">
-                <span className="text-[var(--c-fg-muted)]">
-                  {i18n.t('run.label.paymentCash')}
-                </span>
+                <span className="text-[var(--c-fg-muted)]">{i18n.t('run.label.paymentCash')}</span>
                 <span className="font-mono tabular-nums text-[var(--c-fg)]">
                   {formatMoney(headlineCash)}
                 </span>
@@ -545,9 +634,7 @@ export function RunHistoryDetailSheet({
           {canAmend && target ? (
             <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3">
               <SectionLabel padded={false}>{i18n.t('run.date.label')}</SectionLabel>
-              <p className="text-label text-[var(--c-fg-muted)]">
-                {i18n.t('run.date.hint')}
-              </p>
+              <p className="text-label text-[var(--c-fg-muted)]">{i18n.t('run.date.hint')}</p>
               <Input
                 type="date"
                 value={dateDraft}
@@ -558,9 +645,7 @@ export function RunHistoryDetailSheet({
                 variant="pearl"
                 loading={changeDate.isPending}
                 disabled={!dateDraft || dateDraft === target.runDate}
-                onClick={() =>
-                  changeDate.mutate({ runId: target.runId, runDate: dateDraft })
-                }
+                onClick={() => changeDate.mutate({ runId: target.runId, runDate: dateDraft })}
               >
                 {i18n.t('run.date.change')}
               </Button>
@@ -583,9 +668,7 @@ export function RunHistoryDetailSheet({
                 variant="pearl"
                 loading={reopen.isPending}
                 disabled={reopenReason.trim().length === 0}
-                onClick={() =>
-                  reopen.mutate({ runId: target.runId, reason: reopenReason.trim() })
-                }
+                onClick={() => reopen.mutate({ runId: target.runId, reason: reopenReason.trim() })}
               >
                 {i18n.t('run.amend.reopenButton')}
               </Button>
@@ -656,6 +739,9 @@ export function RunHistoryDetailSheet({
                 const skuName = sku ? productName(sku) : it.skuId.slice(0, 8);
                 const lineTotal = row.lineTotal;
                 const perStoreSplits = row.perStoreSplits;
+                const displayedUnitPrice = activeStoreId
+                  ? (perStoreSplits[0]?.unitPrice ?? it.unitPrice)
+                  : it.unitPrice;
                 const isMulti = !activeStoreId && breakdown.perStore.size > 1;
                 return (
                   <li
@@ -674,14 +760,16 @@ export function RunHistoryDetailSheet({
                     </div>
                     <div className="text-label text-[var(--c-fg-muted)]">
                       {activeStoreId ? (
-                        it.status === 'purchased'
-                          ? `${formatQty(row.qty)} ${unitLabel(sku?.unit)} × ${formatMoney(it.unitPrice)}`
-                          : it.unavailableNote ?? ''
+                        it.status === 'purchased' ? (
+                          `${formatQty(row.qty)} ${unitLabel(sku?.unit)} × ${formatMoney(displayedUnitPrice)}`
+                        ) : (
+                          (it.unavailableNote ?? '')
+                        )
                       ) : (
                         <>
                           {it.status === 'purchased'
-                            ? `${formatQty(it.purchasedQty)} ${unitLabel(sku?.unit)} × ${formatMoney(it.unitPrice)}`
-                            : it.unavailableNote ?? ''}
+                            ? `${formatQty(it.purchasedQty)} ${unitLabel(sku?.unit)}${it.unitPrice ? ` × ${formatMoney(it.unitPrice)}` : ''}`
+                            : (it.unavailableNote ?? '')}
                         </>
                       )}
                     </div>
@@ -697,11 +785,12 @@ export function RunHistoryDetailSheet({
                               key={sp.storeId}
                               className="inline-flex items-center gap-1 rounded-[var(--r-pill)] bg-[var(--c-bg)] px-1.5 py-0.5 text-label ring-1 ring-[var(--c-divider)]"
                             >
-                              <span className="font-medium text-[var(--c-fg)]">
-                                {storeName}
-                              </span>
+                              <span className="font-medium text-[var(--c-fg)]">{storeName}</span>
                               <span className="font-mono tabular-nums text-[var(--c-fg-muted)]">
                                 {formatQty(sp.qty)} {unitLabel(sku?.unit)}
+                                {(sp.unitPrice ?? it.unitPrice)
+                                  ? ` × ${formatMoney(sp.unitPrice ?? it.unitPrice)}`
+                                  : ''}
                               </span>
                             </span>
                           );

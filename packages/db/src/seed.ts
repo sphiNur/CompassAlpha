@@ -62,7 +62,8 @@ async function main() {
     .returning();
 
   const orgRow =
-    org ?? (await db.query.organizations.findFirst({ where: (x, { eq }) => eq(x.slug, 'default') }));
+    org ??
+    (await db.query.organizations.findFirst({ where: (x, { eq }) => eq(x.slug, 'default') }));
   if (!orgRow) throw new Error('failed to find or create default org');
   const orgId = orgRow.id;
 
@@ -87,6 +88,13 @@ async function main() {
         where: (x, { eq, and }) => and(eq(x.orgId, orgId), eq(x.slug, role.slug)),
       }));
     if (!roleRow) continue;
+    // A custom role may legitimately have claimed a future built-in slug
+    // before this release. Never turn that collision into silent privilege
+    // escalation by attaching the built-in permission bundle to it.
+    if (!roleRow.isBuiltIn) {
+      console.warn(`[seed] skip built-in role "${role.slug}": slug belongs to a custom role`);
+      continue;
+    }
 
     if (role.permissions.length) {
       await db
@@ -182,24 +190,132 @@ async function main() {
     step: string;
   };
   const skuRows: SkuSeed[] = [
-    { catSlug: 'meat', code: 'BEEF', names: { en: 'Beef', zh: '牛肉', ru: 'Говядина', uz: "Mol go'shti" }, unit: 'kg', step: '0.5' },
-    { catSlug: 'meat', code: 'LAMB', names: { en: 'Lamb', zh: '羊肉', ru: 'Баранина', uz: "Qo'y go'shti" }, unit: 'kg', step: '0.5' },
-    { catSlug: 'meat', code: 'CHICKEN', names: { en: 'Chicken', zh: '鸡肉', ru: 'Курица', uz: 'Tovuq' }, unit: 'kg', step: '0.5' },
-    { catSlug: 'vegetables', code: 'TOMATO', names: { en: 'Tomato', zh: '番茄', ru: 'Помидор', uz: 'Pomidor' }, unit: 'kg', step: '0.5' },
-    { catSlug: 'vegetables', code: 'CUCUMBER', names: { en: 'Cucumber', zh: '黄瓜', ru: 'Огурец', uz: 'Bodring' }, unit: 'kg', step: '0.5' },
-    { catSlug: 'vegetables', code: 'ONION', names: { en: 'Onion', zh: '洋葱', ru: 'Лук', uz: 'Piyoz' }, unit: 'kg', step: '0.5' },
-    { catSlug: 'vegetables', code: 'POTATO', names: { en: 'Potato', zh: '土豆', ru: 'Картофель', uz: 'Kartoshka' }, unit: 'kg', step: '0.5' },
-    { catSlug: 'fruit', code: 'APPLE', names: { en: 'Apple', zh: '苹果', ru: 'Яблоко', uz: 'Olma' }, unit: 'kg', step: '0.5' },
-    { catSlug: 'fruit', code: 'BANANA', names: { en: 'Banana', zh: '香蕉', ru: 'Банан', uz: 'Banan' }, unit: 'kg', step: '0.5' },
-    { catSlug: 'dairy', code: 'MILK', names: { en: 'Milk', zh: '牛奶', ru: 'Молоко', uz: 'Sut' }, unit: 'L', step: '0.5' },
-    { catSlug: 'dairy', code: 'YOGURT', names: { en: 'Yogurt', zh: '酸奶', ru: 'Йогурт', uz: 'Qatiq' }, unit: 'L', step: '0.5' },
-    { catSlug: 'dairy', code: 'BUTTER', names: { en: 'Butter', zh: '黄油', ru: 'Масло', uz: 'Sariyog' }, unit: 'kg', step: '0.5' },
-    { catSlug: 'kitchen-tools', code: 'KNIFE', names: { en: 'Chef Knife', zh: '主厨刀', ru: 'Поварской нож', uz: 'Oshpaz pichoq' }, unit: 'pcs', step: '1' },
-    { catSlug: 'kitchen-tools', code: 'BOARD', names: { en: 'Cutting Board', zh: '砸板', ru: 'Доска', uz: 'Taxta' }, unit: 'pcs', step: '1' },
-    { catSlug: 'kitchen-tools', code: 'POT', names: { en: 'Stock Pot', zh: '汤锅', ru: 'Кастрюля', uz: 'Qozon' }, unit: 'pcs', step: '1' },
-    { catSlug: 'linen', code: 'TOWEL', names: { en: 'Bath Towel', zh: '浴巾', ru: 'Полотенце', uz: 'Sochiq' }, unit: 'pcs', step: '1' },
-    { catSlug: 'linen', code: 'SHEET', names: { en: 'Bed Sheet', zh: '床单', ru: 'Простыня', uz: 'Choyshab' }, unit: 'pcs', step: '1' },
-    { catSlug: 'linen', code: 'SLIPPER', names: { en: 'Slippers', zh: '拖鞋', ru: 'Тапочки', uz: 'Shippak' }, unit: 'pair', step: '1' },
+    {
+      catSlug: 'meat',
+      code: 'BEEF',
+      names: { en: 'Beef', zh: '牛肉', ru: 'Говядина', uz: "Mol go'shti" },
+      unit: 'kg',
+      step: '0.5',
+    },
+    {
+      catSlug: 'meat',
+      code: 'LAMB',
+      names: { en: 'Lamb', zh: '羊肉', ru: 'Баранина', uz: "Qo'y go'shti" },
+      unit: 'kg',
+      step: '0.5',
+    },
+    {
+      catSlug: 'meat',
+      code: 'CHICKEN',
+      names: { en: 'Chicken', zh: '鸡肉', ru: 'Курица', uz: 'Tovuq' },
+      unit: 'kg',
+      step: '0.5',
+    },
+    {
+      catSlug: 'vegetables',
+      code: 'TOMATO',
+      names: { en: 'Tomato', zh: '番茄', ru: 'Помидор', uz: 'Pomidor' },
+      unit: 'kg',
+      step: '0.5',
+    },
+    {
+      catSlug: 'vegetables',
+      code: 'CUCUMBER',
+      names: { en: 'Cucumber', zh: '黄瓜', ru: 'Огурец', uz: 'Bodring' },
+      unit: 'kg',
+      step: '0.5',
+    },
+    {
+      catSlug: 'vegetables',
+      code: 'ONION',
+      names: { en: 'Onion', zh: '洋葱', ru: 'Лук', uz: 'Piyoz' },
+      unit: 'kg',
+      step: '0.5',
+    },
+    {
+      catSlug: 'vegetables',
+      code: 'POTATO',
+      names: { en: 'Potato', zh: '土豆', ru: 'Картофель', uz: 'Kartoshka' },
+      unit: 'kg',
+      step: '0.5',
+    },
+    {
+      catSlug: 'fruit',
+      code: 'APPLE',
+      names: { en: 'Apple', zh: '苹果', ru: 'Яблоко', uz: 'Olma' },
+      unit: 'kg',
+      step: '0.5',
+    },
+    {
+      catSlug: 'fruit',
+      code: 'BANANA',
+      names: { en: 'Banana', zh: '香蕉', ru: 'Банан', uz: 'Banan' },
+      unit: 'kg',
+      step: '0.5',
+    },
+    {
+      catSlug: 'dairy',
+      code: 'MILK',
+      names: { en: 'Milk', zh: '牛奶', ru: 'Молоко', uz: 'Sut' },
+      unit: 'L',
+      step: '0.5',
+    },
+    {
+      catSlug: 'dairy',
+      code: 'YOGURT',
+      names: { en: 'Yogurt', zh: '酸奶', ru: 'Йогурт', uz: 'Qatiq' },
+      unit: 'L',
+      step: '0.5',
+    },
+    {
+      catSlug: 'dairy',
+      code: 'BUTTER',
+      names: { en: 'Butter', zh: '黄油', ru: 'Масло', uz: 'Sariyog' },
+      unit: 'kg',
+      step: '0.5',
+    },
+    {
+      catSlug: 'kitchen-tools',
+      code: 'KNIFE',
+      names: { en: 'Chef Knife', zh: '主厨刀', ru: 'Поварской нож', uz: 'Oshpaz pichoq' },
+      unit: 'pcs',
+      step: '1',
+    },
+    {
+      catSlug: 'kitchen-tools',
+      code: 'BOARD',
+      names: { en: 'Cutting Board', zh: '砸板', ru: 'Доска', uz: 'Taxta' },
+      unit: 'pcs',
+      step: '1',
+    },
+    {
+      catSlug: 'kitchen-tools',
+      code: 'POT',
+      names: { en: 'Stock Pot', zh: '汤锅', ru: 'Кастрюля', uz: 'Qozon' },
+      unit: 'pcs',
+      step: '1',
+    },
+    {
+      catSlug: 'linen',
+      code: 'TOWEL',
+      names: { en: 'Bath Towel', zh: '浴巾', ru: 'Полотенце', uz: 'Sochiq' },
+      unit: 'pcs',
+      step: '1',
+    },
+    {
+      catSlug: 'linen',
+      code: 'SHEET',
+      names: { en: 'Bed Sheet', zh: '床单', ru: 'Простыня', uz: 'Choyshab' },
+      unit: 'pcs',
+      step: '1',
+    },
+    {
+      catSlug: 'linen',
+      code: 'SLIPPER',
+      names: { en: 'Slippers', zh: '拖鞋', ru: 'Тапочки', uz: 'Shippak' },
+      unit: 'pair',
+      step: '1',
+    },
   ];
 
   for (let i = 0; i < skuRows.length; i++) {

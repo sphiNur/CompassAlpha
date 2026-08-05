@@ -25,6 +25,29 @@ export const RunStatusSchema = z.enum([
 export const PaymentMethodSchema = z.enum(['cash', 'transfer']);
 export type PaymentMethod = z.infer<typeof PaymentMethodSchema>;
 
+/** Server-side purchase-history search + pagination. */
+export const RunHistoryInputSchema = z
+  .object({
+    search: z.string().trim().max(120).optional(),
+    storeId: UuidSchema.optional(),
+    dateFrom: DateStringSchema.optional(),
+    dateTo: DateStringSchema.optional(),
+    payment: z.enum(['cash', 'transfer', 'mixed']).optional(),
+    sort: z.enum(['newest', 'oldest']).default('newest'),
+    page: z.number().int().min(1).default(1),
+    pageSize: z.number().int().min(10).max(50).default(20),
+  })
+  .superRefine((value, ctx) => {
+    if (value.dateFrom && value.dateTo && value.dateFrom > value.dateTo) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['dateTo'],
+        message: 'dateTo must be on or after dateFrom',
+      });
+    }
+  });
+export type RunHistoryInput = z.infer<typeof RunHistoryInputSchema>;
+
 export const StoreSplitSchema = z.object({
   storeId: UuidSchema,
   // Per-store qty must be > 0 — a 0-qty split is meaningless and causes
