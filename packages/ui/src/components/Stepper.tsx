@@ -21,11 +21,14 @@ export function Stepper({ steps, currentIndex, className }: StepperProps) {
         return (
           <li key={s.key} className="flex flex-1 items-center gap-2 last:flex-none">
             <div
+              // Dense tier (28px) circle; the pending state wears the
+              // translucent capsule fill instead of a hairline, like
+              // every other quiet control (capsule pass).
               className={cn(
-                'flex h-7 w-7 items-center justify-center rounded-full text-label font-semibold',
+                'flex h-[var(--control-h-xs)] w-[var(--control-h-xs)] items-center justify-center rounded-full text-label font-semibold',
                 done && 'bg-[var(--c-success)] text-[var(--c-fg-inverse)]',
                 active && 'bg-[var(--c-action)] text-[var(--c-action-fg)] ring-2 ring-[var(--c-action)] ring-offset-2 ring-offset-[var(--c-bg)]',
-                !done && !active && 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)] ring-hairline',
+                !done && !active && 'bg-[var(--c-capsule)] text-[var(--c-fg-muted)]',
               )}
               aria-current={active ? 'step' : undefined}
             >

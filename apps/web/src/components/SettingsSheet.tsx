@@ -138,7 +138,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
                   <span className="flex flex-col items-start text-left">
                     <span>{a.label}</span>
                     {a.hint ? (
-                      <span className="mt-0.5 text-label opacity-80">{a.hint}</span>
+                      <span className="mt-1 text-label opacity-80">{a.hint}</span>
                     ) : null}
                   </span>
                 </Button>
@@ -156,7 +156,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
             <Field label={i18n.t('settings.profile.displayName')}>
               {nameLocked ? (
                 <>
-                  <div className="rounded-[var(--r-pill)] bg-[var(--c-surface)] px-4 py-2 text-h3 ring-hairline">
+                  <div className="flex h-[var(--control-h)] items-center truncate rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-h3">
                     {session?.user.displayName ?? '—'}
                   </div>
                   <p className="mt-1 text-label text-[var(--c-fg-muted)]">
@@ -185,7 +185,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
             </Field>
             {session?.user.tgUsername ? (
               <Field label={i18n.t('settings.profile.username')}>
-                <div className="rounded-[var(--r-pill)] bg-[var(--c-surface)] px-4 py-2 text-h3 ring-hairline">
+                <div className="flex h-[var(--control-h)] items-center truncate rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-h3">
                   @{session.user.tgUsername}
                 </div>
               </Field>

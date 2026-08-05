@@ -510,7 +510,10 @@ function BottomNav({
       style={{
         gridTemplateColumns: `repeat(${visible.length}, minmax(0, 1fr))`,
         paddingBottom: 'var(--app-safe-bottom)',
-        height: 'calc(var(--app-nav-h) + var(--app-safe-bottom))',
+        // + 1px for the border-top: the box is border-box, so without it
+        // the nav row measured 63px against a 64px ladder tier (found by
+        // measuring computed heights during the 2026-07-31 capsule pass).
+        height: 'calc(var(--app-nav-h) + var(--app-safe-bottom) + 1px)',
         // M3.50: block tab switches during in-flight mutations.
         pointerEvents: busy ? 'none' : undefined,
         opacity: busy ? 0.5 : undefined,
@@ -600,10 +603,12 @@ function PageMainButton() {
         onClick={state.onClick}
         aria-busy={busy || undefined}
         className={
-          'flex h-12 w-full min-w-0 items-center justify-center rounded-[var(--r-pill)] px-4 text-h3 font-semibold ' +
+          // CTA tier (48 = --control-h-lg); disabled state wears the
+          // translucent --c-capsule fill like every quiet capsule.
+          'flex h-[var(--control-h-lg)] w-full min-w-0 items-center justify-center rounded-[var(--r-pill)] px-6 text-h3 font-semibold ' +
           (interactable
             ? 'bg-[var(--c-action)] text-[var(--c-action-fg)] active:opacity-80'
-            : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
+            : 'bg-[var(--c-capsule)] text-[var(--c-fg-muted)]')
         }
       >
         <span className="min-w-0 truncate">{state.text}</span>

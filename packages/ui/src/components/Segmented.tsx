@@ -72,13 +72,18 @@ export function Segmented<V extends string>({
   disabled,
 }: SegmentedProps<V>) {
   const isSm = size === 'sm';
+  // Capsule pass (2026-07-31): the frame is a capsule — pill radius,
+  // translucent --c-capsule fill, NO hairline (UI-7: the active fill
+  // already delineates; the fill is the shape, as on Telegram's own
+  // chrome). Options are inner pills on a p-0.5 inset. Heights sit on
+  // the ladder: md = capsule tier (32), sm = dense tier (28).
   return (
     <div
       role="radiogroup"
       aria-label={ariaLabel}
       className={cn(
-        'flex overflow-hidden rounded-[var(--r-utility)] ring-hairline',
-        isSm ? 'h-7' : 'h-[var(--control-h-sm)]',
+        'flex rounded-[var(--r-pill)] bg-[var(--c-capsule)] p-0.5',
+        isSm ? 'h-[var(--control-h-xs)]' : 'h-[var(--capsule-h)]',
         disabled && 'opacity-50 pointer-events-none',
         className,
       )}
@@ -97,12 +102,12 @@ export function Segmented<V extends string>({
               if (!active) onChange(opt.value);
             }}
             className={cn(
-              'press inline-flex items-center justify-center whitespace-nowrap font-medium tabular-nums',
+              'press inline-flex items-center justify-center whitespace-nowrap rounded-[var(--r-pill)] font-medium tabular-nums',
               isSm ? 'px-2 text-label' : 'px-3 text-body-sm',
               equalWidth ? 'flex-1' : 'shrink-0',
               active
                 ? `${activeBg} ${activeFg} font-semibold`
-                : 'bg-[var(--c-surface)] text-[var(--c-fg-muted)]',
+                : 'bg-transparent text-[var(--c-fg-muted)]',
             )}
           >
             {opt.label}

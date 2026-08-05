@@ -316,7 +316,7 @@ export function PeopleSection({
                         <button
                           key={r.bindingId}
                           type="button"
-                          className="press inline-flex items-center gap-1 rounded-full bg-[var(--c-surface-2)] px-2 py-0.5 text-label ring-hairline"
+                          className="press inline-flex items-center gap-1 rounded-[var(--r-pill)] bg-[var(--c-capsule)] px-2 py-0.5 text-label"
                           onClick={() =>
                             nativeConfirm(
                               scopedStoreName
@@ -896,12 +896,12 @@ function RoleCreateSheet({
                   <ul className="mt-1 flex flex-col gap-1">
                     {keys.map((p) => (
                       <li key={p.key}>
-                        <label className="flex cursor-pointer items-start gap-2 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-2 text-label active:opacity-80">
+                        <label className="flex cursor-pointer items-start gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 text-label active:opacity-80">
                           <input
                             type="checkbox"
                             checked={picked.has(p.key)}
                             onChange={() => togglePerm(p.key)}
-                            className="mt-0.5 h-4 w-4"
+                            className="mt-0.5 h-5 w-5"
                           />
                           <div className="min-w-0 flex-1">
                             <div className="font-mono text-label">{p.key}</div>
@@ -1152,12 +1152,12 @@ function RolePermissionsSheet({
                       if (editing) {
                         return (
                           <li key={p.key}>
-                            <label className="flex cursor-pointer items-start gap-2 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-2 text-label active:opacity-80">
+                            <label className="flex cursor-pointer items-start gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 text-label active:opacity-80">
                               <input
                                 type="checkbox"
                                 checked={picked.has(p.key)}
                                 onChange={() => togglePerm(p.key)}
-                                className="mt-0.5 h-4 w-4"
+                                className="mt-0.5 h-5 w-5"
                               />
                               <div className="min-w-0 flex-1">
                                 <div className="font-mono text-label">{p.key}</div>
@@ -1351,7 +1351,7 @@ function InviteHubSheet({
           type="button"
           onClick={handleShare}
           disabled={!botUsername}
-          className="press flex items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 text-left ring-hairline disabled:opacity-50"
+          className="press flex items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3 text-left ring-hairline disabled:opacity-50"
         >
           <span className="text-[var(--c-action)]">
             <IconShare size={20} />
@@ -1375,7 +1375,7 @@ function InviteHubSheet({
           type="button"
           onClick={handleCopy}
           disabled={!botUsername}
-          className="press flex items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 text-left ring-hairline disabled:opacity-50"
+          className="press flex items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3 text-left ring-hairline disabled:opacity-50"
         >
           <span className="text-[var(--c-action)]">
             <IconShare size={20} />
@@ -1397,7 +1397,7 @@ function InviteHubSheet({
         <button
           type="button"
           onClick={onPickManual}
-          className="press flex items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 text-left ring-hairline"
+          className="press flex items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3 text-left ring-hairline"
         >
           <span className="min-w-0 flex-1">
             <span className="block text-body font-semibold text-[var(--c-fg)]">
@@ -1758,7 +1758,7 @@ function ManageMemberSheet({
                       {checked && editable && isGlobalAdmin ? (
                         <button
                           type="button"
-                          className="ml-auto rounded-full bg-[var(--c-surface)] px-2 py-0.5 text-label font-medium text-[var(--c-fg)] ring-hairline active:opacity-80"
+                          className="ml-auto rounded-[var(--r-pill)] bg-[var(--c-capsule)] px-2 py-0.5 text-label font-medium text-[var(--c-fg)] active:opacity-80"
                           onClick={(ev) => {
                             ev.preventDefault();
                             ev.stopPropagation();
@@ -1769,7 +1769,7 @@ function ManageMemberSheet({
                           → {i18n.t('admin.action.transfer')}
                         </button>
                       ) : !editable ? (
-                        <span className="ml-auto text-tiny uppercase tracking-wide text-[var(--c-fg-muted)]">
+                        <span className="ml-auto text-tiny uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
                           read-only
                         </span>
                       ) : null}
@@ -1919,7 +1919,10 @@ function TransferStoreSheet({
               own dedicated i18n pass with all the other admin
               transfer copy. */}
           <Field label={i18n.t('people.transferFrom')}>
-            <div className="rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 py-2 text-h3 ring-hairline">
+            {/* Read-only <Input> lookalike — mirrors the Input primitive's
+                capsule recipe exactly (control-h, r-pill, surface-2 fill,
+                no resting hairline) so it lines up with the Select below. */}
+            <div className="flex h-[var(--control-h)] items-center rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-h3">
               {target.fromStoreName}
             </div>
           </Field>
@@ -2290,13 +2293,16 @@ function ScopeTab({
   title?: string;
   children: React.ReactNode;
 }) {
+  // Capsule pass (2026-07-31): the 32px Telegram capsule — fixed
+  // --capsule-h height (not py-derived), r-pill, text-body-sm, and a
+  // borderless translucent --c-capsule fill when unselected.
   const base =
-    'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-label font-medium ring-hairline';
+    'inline-flex h-[var(--capsule-h)] items-center gap-1.5 whitespace-nowrap rounded-[var(--r-pill)] px-3 text-body-sm font-medium';
   const tone = active
     ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
     : disabled
       ? 'bg-transparent text-[var(--c-fg-muted)] opacity-60'
-      : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]';
+      : 'bg-[var(--c-capsule)] text-[var(--c-fg)]';
   return (
     <button
       type="button"
@@ -2309,9 +2315,12 @@ function ScopeTab({
       {count && count > 0 ? (
         <span
           className={
-            'inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-tiny ' +
+            'inline-flex h-4 min-w-[16px] items-center justify-center rounded-[var(--r-pill)] px-1 text-tiny ' +
+            // On the action-filled active tab the badge inverts (action-fg
+            // fill / action ink). Was a raw translucent-white-on-white
+            // pair — the last non-token colors in this file.
             (active
-              ? 'bg-white/25 text-white'
+              ? 'bg-[var(--c-action-fg)] text-[var(--c-action)]'
               : 'bg-[var(--c-action)] text-[var(--c-action-fg)]')
           }
         >
@@ -2614,7 +2623,7 @@ function GrantRoleSheet({
               type="button"
               disabled={grant.isPending}
               onClick={() => handlePick(r.slug)}
-              className="press flex items-center justify-between rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 text-left ring-hairline"
+              className="press flex items-center justify-between rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3 text-left ring-hairline"
             >
               <div>
                 <div className="text-body font-semibold text-[var(--c-fg)]">

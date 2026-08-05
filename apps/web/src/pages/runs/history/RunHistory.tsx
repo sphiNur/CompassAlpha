@@ -18,7 +18,7 @@
  * ../lib/settlement (unit-tested).
  */
 import { useEffect, useMemo, useState } from 'react';
-import { Badge, Button, Card, Input, SectionLabel, Sheet, useToast } from '@compass/ui';
+import { Badge, Button, Card, Input, SectionLabel, Sheet, pillButtonClass, useToast } from '@compass/ui';
 import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
@@ -122,7 +122,7 @@ export function RunHistoryPage({
           <button
             type="button"
             onClick={onBack}
-            className="rounded-[var(--r-pill)] px-2 py-1 text-label font-semibold text-[var(--c-action)] active:bg-[var(--c-surface-2)]"
+            className="press inline-flex h-[var(--capsule-h)] shrink-0 items-center rounded-[var(--r-pill)] bg-[var(--c-capsule)] px-3 text-body-sm font-medium text-[var(--c-action)]"
           >
             {i18n.t('common.back')}
           </button>
@@ -173,8 +173,8 @@ export function RunHistoryPage({
                   </span>
                 </button>
                 {(run.storeTotals?.length ?? 0) > 0 ? (
-                  <div className="border-t border-[var(--c-divider)] px-4 py-2.5">
-                    <div className="mb-1.5 text-label font-semibold text-[var(--c-fg-muted)]">
+                  <div className="border-t border-[var(--c-divider)] px-4 py-3">
+                    <div className="mb-2 text-label font-semibold text-[var(--c-fg-muted)]">
                       {i18n.t('run.history.storePurchases')}
                     </div>
                     <div className="flex flex-col gap-1">
@@ -199,7 +199,7 @@ export function RunHistoryPage({
                             // (a card inside the history Card). These rows
                             // already sit in the Card's own bordered
                             // region, so a plain row reads cleaner.
-                            className="flex min-h-10 w-full items-center justify-between gap-3 px-3 py-2 text-left active:bg-[var(--c-surface-2)]"
+                            className="flex min-h-[var(--control-h)] w-full items-center justify-between gap-3 px-3 py-2 text-left active:bg-[var(--c-surface-2)]"
                           >
                             <span className="min-w-0 flex-1 truncate text-body-sm font-medium">
                               {storeName}
@@ -593,16 +593,12 @@ export function RunHistoryDetailSheet({
           ) : null}
 
           {storeOptions.length > 1 ? (
-            <div className="flex gap-1 overflow-x-auto rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-1 ring-hairline">
+            <div className="flex gap-1 overflow-x-auto">
               <button
                 type="button"
                 aria-pressed={!activeStoreId}
                 onClick={() => setSelectedStoreId(null)}
-                className={
-                  !activeStoreId
-                    ? 'shrink-0 rounded-[var(--r-pill)] bg-[var(--c-bg)] px-3 py-1.5 text-label font-medium text-[var(--c-fg)] shadow-sm'
-                    : 'shrink-0 rounded-[var(--r-pill)] px-3 py-1.5 text-label font-medium text-[var(--c-fg-muted)]'
-                }
+                className={pillButtonClass(!activeStoreId)}
               >
                 {i18n.t('run.history.allStores')}
               </button>
@@ -616,11 +612,7 @@ export function RunHistoryDetailSheet({
                     type="button"
                     aria-pressed={selected}
                     onClick={() => setSelectedStoreId(storeTotal.storeId)}
-                    className={
-                      selected
-                        ? 'shrink-0 rounded-[var(--r-pill)] bg-[var(--c-bg)] px-3 py-1.5 text-label font-medium text-[var(--c-fg)] shadow-sm'
-                        : 'shrink-0 rounded-[var(--r-pill)] px-3 py-1.5 text-label font-medium text-[var(--c-fg-muted)]'
-                    }
+                    className={pillButtonClass(selected)}
                   >
                     <span className="inline-block max-w-[9rem] truncate align-bottom">
                       {storeName}
@@ -688,14 +680,14 @@ export function RunHistoryDetailSheet({
                     {/* M3.52: per-store chips on history rows. Same
                        visual pattern as the in-run PurchaseRow chips. */}
                     {isMulti && it.status === 'purchased' && perStoreSplits.length > 0 ? (
-                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
                         {perStoreSplits.map((sp) => {
                           const storeName =
                             storeById.get(sp.storeId)?.name ?? sp.storeId.slice(0, 8);
                           return (
                             <span
                               key={sp.storeId}
-                              className="inline-flex items-center gap-1 rounded-[var(--r-pill)] bg-[var(--c-bg)] px-1.5 py-0.5 text-label ring-1 ring-[var(--c-divider)]"
+                              className="inline-flex items-center gap-1 rounded-[var(--r-pill)] bg-[var(--c-capsule)] px-2 py-1 text-label"
                             >
                               <span className="font-medium text-[var(--c-fg)]">
                                 {storeName}

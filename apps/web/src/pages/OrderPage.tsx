@@ -781,7 +781,7 @@ export function OrderPage() {
           />
 
           <div>
-            <SectionLabel padded={false} className="mb-1.5">
+            <SectionLabel padded={false} className="mb-2">
               {i18n.t('order.receipt.submittedItems')}
             </SectionLabel>
             <ReviewList totals={totals} skus={skus} productName={productName} />
@@ -867,7 +867,7 @@ export function OrderPage() {
             <button
               type="button"
               onClick={() => setBatchesOpen(true)}
-              className="press shrink-0 rounded-[var(--r-pill)] px-1.5 py-0.5 text-label tabular-nums text-[var(--c-action)]"
+              className="press inline-flex h-[var(--capsule-h)] shrink-0 items-center whitespace-nowrap rounded-[var(--r-pill)] bg-[var(--c-capsule)] px-3 text-body-sm font-medium tabular-nums text-[var(--c-action)]"
             >
               {i18n.t('order.batches.today', { n: batchesQuery.data!.length })}
             </button>
@@ -1172,10 +1172,11 @@ const SkuRow = memo(function SkuRow({
   i18n: ReturnType<typeof useI18n>;
   onQtyChange: (storeId: string, skuId: string, qty: string) => void;
 }) {
-  // M3.15 (2026-05-16): py-2 → py-1.5 to tighten the SKU row. With
-  // the new QtyControl baseline (h-9 = 36 px), the row sits at ~52 px
-  // instead of the old ~72 px — matches the bottom-nav rhythm. One
-  // more SKU visible per viewport on a 5.5" screen.
+  // M3.15 (2026-05-16): tightened the SKU row from the old ~72 px —
+  // matches the bottom-nav rhythm. One more SKU visible per viewport
+  // on a 5.5" screen. Capsule pass (2026-07-31): py-1.5 → py-2, back
+  // on the 4px grid; with QtyControl's capsule baseline now 32 px the
+  // row sits at ~48 px.
   //
   // M3.55 (2026-05-23): user-requested tweaks for the order surface:
   //   - bumped SKU name from text-body (13 px) → text-h2 (15 px) so
@@ -1192,7 +1193,7 @@ const SkuRow = memo(function SkuRow({
     !!sku.suggestedQty || (otherContribCount > 0 && totalQty > 0);
   const nm = productNameParts(sku);
   return (
-    <li className="flex items-center justify-between border-b border-[var(--c-divider)] px-4 py-1.5 last:border-b-0">
+    <li className="flex items-center justify-between border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0">
       <div className="min-w-0 flex-1 pr-3">
         <NameCell primary={nm.primary} secondary={nm.secondary} size="prominent" />
         {hasSecondaryLine ? (
@@ -1269,7 +1270,7 @@ function BatchStrip({
   return (
     <div>
       {showHeading ? (
-        <SectionLabel padded={false} className="mb-1.5">
+        <SectionLabel padded={false} className="mb-2">
           {i18n.t('order.batches.today', { n: batches.length })}
         </SectionLabel>
       ) : null}
@@ -1280,9 +1281,16 @@ function BatchStrip({
             <li
               key={b.id}
               className={
+                // 2026-07-31: the current row used to be
+                // `bg-[var(--c-action)]/10`, which Tailwind emits NO rule
+                // for — it cannot apply an opacity modifier to an
+                // arbitrary var() color, so the class silently resolved
+                // to nothing and the current batch was indistinguishable
+                // from the rest. --c-info-bg is the real pale-action
+                // tint token (and has a dark-theme override).
                 'flex items-baseline justify-between gap-2 rounded-[var(--r-card)] px-3 py-2 text-label ring-hairline ' +
                 (isCurrent
-                  ? 'bg-[var(--c-action)]/10 ring-1 ring-[var(--c-action)]'
+                  ? 'bg-[var(--c-info-bg)]'
                   : 'bg-[var(--c-surface-2)]')
               }
             >
@@ -1415,7 +1423,7 @@ function ReviewList({
           the total but called out so the staff knows the figure is
           approximate. (Added 2026-05-05.) */}
       {estimate.known > 0 ? (
-        <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 ring-hairline">
+        <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2 ring-hairline">
           <div className="flex items-baseline justify-between gap-2">
             {/* eslint-disable-next-line — M3.13 typography exception:
                 this eyebrow label is paired with a non-eyebrow big-money
@@ -1445,7 +1453,7 @@ function ReviewList({
               {rows.map((r, i) => (
                 <li
                   key={r.name + i}
-                  className="flex items-baseline justify-between border-b border-[var(--c-divider)] px-4 py-2.5 last:border-b-0"
+                  className="flex items-baseline justify-between border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0"
                 >
                   {/* 2026-07-05: match the prominent SKU-name tier used
                       by SkuRow above (the Order surface is the "browse"
@@ -1639,7 +1647,7 @@ function SessionExtrasEditor({
 
   return (
     <section className="mt-2 px-4 pb-4 pt-1">
-      <div className="mb-1.5 flex items-baseline justify-between gap-2">
+      <div className="mb-2 flex items-baseline justify-between gap-2">
         <SectionLabel padded={false}>
           {i18n.t('order.extras.label')}
         </SectionLabel>
@@ -1667,7 +1675,7 @@ function SessionExtrasEditor({
           ))}
         </ul>
       ) : (
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-1">
           {rows.map((row, idx) => (
             <ExtraRowEditor
               key={idx}
@@ -1754,7 +1762,7 @@ function ExtraRowEditor({
                       onChange({ name: s.name });
                       setFocusing(false);
                     }}
-                    className="press flex w-full items-baseline justify-between gap-2 px-3 py-1.5 text-left text-body hover:bg-[var(--c-surface-2)]"
+                    className="press flex w-full items-baseline justify-between gap-2 px-3 py-2 text-left text-body hover:bg-[var(--c-surface-2)]"
                   >
                     <span className="text-[var(--c-fg)]">{s.name}</span>
                     <span className="text-label text-[var(--c-fg-muted)]">
@@ -1788,7 +1796,7 @@ function ExtraRowEditor({
           onChange={(e) =>
             onChange({ unit: e.target.value as (typeof CANONICAL_UNITS)[number] })
           }
-          className="h-9 w-20 rounded-[var(--r-input)] bg-[var(--c-surface)] px-2 text-center text-body text-[var(--c-fg)] ring-hairline focus:outline-none focus:ring-2 focus:ring-[var(--c-action)]"
+          className="h-[var(--control-h-sm)] w-20 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2 text-center text-body-sm font-medium text-[var(--c-fg)] focus:outline-none focus:ring-2 focus:ring-[var(--c-action)]"
         >
           {CANONICAL_UNITS.map((u) => (
             <option key={u} value={u}>
@@ -1801,8 +1809,8 @@ function ExtraRowEditor({
           aria-label={i18n.t('order.extras.remove')}
           onClick={onRemove}
           className={cn(
-            'press inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full',
-            'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)] ring-hairline',
+            'press inline-flex h-[var(--capsule-h)] w-[var(--capsule-h)] shrink-0 items-center justify-center rounded-[var(--r-pill)]',
+            'bg-[var(--c-capsule)] text-[var(--c-fg-muted)]',
             'hover:text-[var(--c-danger)]',
           )}
         >

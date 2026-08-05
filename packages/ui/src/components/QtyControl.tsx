@@ -4,6 +4,7 @@ import { cn } from '../cn';
 import { Sheet, SheetFooter } from './Sheet';
 import { Button } from './Button';
 import { NumberInput } from './NumberInput';
+import { pillButtonClass } from './pill';
 
 interface QtyControlProps {
   value: number;
@@ -138,18 +139,18 @@ export function QtyControl({
   };
 
   const isSmall = size === 'sm';
-  // M3.15 (2026-05-16): slim the +/- buttons. The 44 px (md) baseline
-  // visually outweighed the bottom nav's 22 px icons + 10 px labels,
-  // which the user explicitly likes. New defaults:
-  //   - md → h-9 (36 px) ·  text-body  · still hits iOS touch target
-  //     when the row itself is tappable (it is — the SKU rows below
-  //     wrap the whole row in a press handler).
-  //   - sm → h-7 (28 px) · text-label · for dense lists (ApprovalPage).
+  // Capsule-pass ladder (2026-07-31):
+  //   - md → capsule tier (32 px, was the off-ladder 36) · text-body
+  //   - sm → dense tier (28 px) · text-label — dense lists (ApprovalPage).
+  // Fill is the translucent --c-capsule (no hairline) — the round +/-
+  // reads as a mini chrome capsule, matching Chip/Tab/secondary Button.
   const tone = (active: boolean) =>
     cn(
       'press inline-flex items-center justify-center rounded-full shrink-0',
-      isSmall ? 'h-7 w-7 text-label' : 'h-9 w-9 text-body',
-      'bg-[var(--c-surface-2)] ring-hairline text-[var(--c-fg)]',
+      isSmall
+        ? 'h-[var(--control-h-xs)] w-[var(--control-h-xs)] text-label'
+        : 'h-[var(--capsule-h)] w-[var(--capsule-h)] text-body',
+      'bg-[var(--c-capsule)] text-[var(--c-fg)]',
       active && 'bg-[var(--c-action)] text-[var(--c-action-fg)]',
       disabled && 'opacity-40 pointer-events-none',
     );
@@ -205,7 +206,9 @@ export function QtyControl({
           disabled={disabled}
           className={cn(
             'press flex items-center justify-center font-semibold tabular-nums',
-            isSmall ? 'h-7 w-14 px-1 text-body-sm' : 'h-9 w-16 px-1 text-h3',
+            isSmall
+              ? 'h-[var(--control-h-xs)] w-14 px-1 text-body-sm'
+              : 'h-[var(--capsule-h)] w-16 px-1 text-h3',
             'overflow-hidden whitespace-nowrap',
             showZero && 'text-[var(--c-fg-subtle)] font-normal',
             disabled && 'opacity-40 pointer-events-none',
@@ -383,16 +386,14 @@ function QtyQuickPickSheet({
             .map((p) => {
               const selected = p === current;
               return (
+                // Preset chips ARE the pill family — one source of truth
+                // (capsule pass; was a hand-rolled py-based pill with a
+                // hairline that drifted from Chip/Tab).
                 <button
                   key={p}
                   type="button"
                   onClick={() => onPick(p)}
-                  className={cn(
-                    'press rounded-[var(--r-pill)] px-3 py-1.5 text-label font-medium ring-hairline',
-                    selected
-                      ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                      : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]',
-                  )}
+                  className={pillButtonClass(selected)}
                 >
                   {formatQty(p, step)}
                   {unit ? <span className="ml-1 opacity-70">{unit}</span> : null}

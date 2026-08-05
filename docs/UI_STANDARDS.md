@@ -117,6 +117,66 @@ slot, a date — ask what it tells the user that nothing else on screen already
 does. If the answer is "nothing," don't add it. This rule outranks any instinct to
 "show more."
 
+### UI-11 — Every size is a fixed fraction of the capsule unit
+**Added 2026-07-31 (Telegram-capsule pass).** The app runs inside Telegram, and
+the user's eye calibrates against the chrome Telegram draws one strip above our
+content: the `Close` / `∨ ⋯` capsule buttons, **32px** tall. That is the anchor
+unit **U**. Every element height in the app is a fixed fraction of U, on the 4px
+grid — never a value picked to look right in isolation:
+
+| Tier | px | ×U | Token | Who |
+|---|---|---|---|---|
+| micro | 20 | 5/8 | `h-5` | Badge, Switch track |
+| dense | 28 | 7/8 | `--control-h-xs` | QtyControl sm, Segmented sm, NumberInput sm, Stepper |
+| **capsule** | **32** | **1** | `--capsule-h` = `--control-h-sm` | Chip, Tab, Button sm, SearchInput, Segmented md, NumberInput md, QtyControl md |
+| field | 40 | 5/4 | `--control-h` | Input, Select, Button md |
+| touch | 44 | 11/8 | `--control-h-touch` | **restricted** — see below |
+| CTA | 48 | 3/2 | `--control-h-lg` | Button lg, PageMainButton |
+| header | 56 | 7/4 | `--app-header-h` | web-fallback header |
+| nav | 64 | 2 | `--app-nav-h` | bottom nav |
+
+The **touch** tier is iOS HIG's 44px floor and is not a free choice. It applies
+only to a control that *commits state* inside a *vertically scrolling dense
+list*, where the thumb travels past its neighbours — today, RunViews' per-row
+✓-save and payment-method buttons. Reaching for the 48 CTA tier there would eat
+the dead space that stops an off-by-one-row tap from committing money against the
+wrong SKU (52px row − 44px control = 8px between commit targets; at 48 it drops
+to 4). Everywhere else: field or CTA.
+
+Type follows height, so a control never carries a label out of proportion to its
+box: **20/28 → `text-label` (11) · 32 → `text-body-sm font-medium` (12) ·
+40/48 → `text-h3` (14)**. Horizontal padding follows too: 32 → `px-3`,
+40 → `px-4`/`px-5`, 48 → `px-6`.
+
+- **Don't:** `h-9`, `h-11`, `h-[52px]`, `py-2` standing in for a height, or a new
+  intermediate tier because one screen felt cramped.
+- **Do:** pick the tier that matches the control's role and use its token.
+
+**Spacing** is on the same 4px grid. Tailwind's `0.5` (2px) and `1.5` (6px) steps
+stay available as *inline* nudges between adjacent inline elements; block padding
+uses whole steps. The `2.5` step (10px) is banned outright — it is the
+"split the difference" value people reach for when a block feels a pixel off, and
+it is precisely how the app accumulated `py-2` / `py-2.5` / `py-3` variants of one
+row. **List rows are content-sized, not ladder-sized** — a fixed height would clip
+wrapped Uzbek and Russian labels. Their *padding* is what must be consistent.
+
+### UI-12 — Capsule controls are filled, not outlined
+**Added 2026-07-31.** Telegram's chrome capsules have no border: a translucent
+neutral fill states the shape. Ours match.
+
+- Unselected / secondary capsule control → `bg-[var(--c-capsule)]`, **no**
+  `ring-hairline`, **no** `border`.
+- Selected / primary → `bg-[var(--c-action)] text-[var(--c-action-fg)]`.
+- Form fields (Input, Select, SearchInput, NumberInput, Textarea) →
+  `bg-[var(--c-surface-2)]`, no *resting* ring. Focus rings and
+  invalid/danger rings stay — they signal state, not shape.
+- Shape tokens: interactive → `--r-pill`; container/card/callout → `--r-card`;
+  sheet top edge → `--r-sheet`; tiny square (checkbox) → `--r-utility`. There is
+  no intermediate radius (`--r-capsule` was retired in this pass).
+
+Cards keep their `ring-hairline` — a card is a surface, not a capsule. This rule
+is about controls.
+
 ---
 
 ## Enforcement (CI)
@@ -130,10 +190,12 @@ marker above a line whitelists it.
 |-------|----------|--------|
 | `no-emoji-in-ui` | UI-1 | to add once burn-down completes; allow-list = remaining state-encoding sites |
 | `no-raw-status-enum` | UI-2 | to add with the `statusLabel` helper |
-| `no-hardcoded-oklch` | UI-8 | to add after CC3 token migration |
+| `no-hardcoded-oklch` | UI-8 | **live** (2026-07-31) — bans `[oklch(…)]` / hex color utilities in `apps/web/src` + `packages/ui/src` |
+| `capsule-size-ladder` | UI-11 | **live** (2026-07-31) — bans off-ladder `h-7/h-9/h-11/h-13` and raw Tailwind text-scale classes |
 
-Rules UI-4/5/6/7/10 are design-review rules (not mechanically checkable); they are
-enforced at PR review and by this document.
+Rules UI-4/5/6/7/10/12 are design-review rules (not mechanically checkable — a
+hairline on a *card* is correct and on a *control* is not, which grep can't
+tell apart); they are enforced at PR review and by this document.
 
 ---
 
@@ -151,6 +213,8 @@ Before a screen ships, walk the rules top to bottom:
 - [ ] Tokens only, no hardcoded colors/spacing (UI-8)
 - [ ] All copy localized, sentence case, no mixed language (UI-9)
 - [ ] Every remaining element earns its place (UI-10)
+- [ ] Every height is a ladder tier; type + padding follow it (UI-11)
+- [ ] Controls are filled capsules, not outlined; cards keep their hairline (UI-12)
 
 ---
 

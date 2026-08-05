@@ -42,7 +42,7 @@ export function SectionRow({
         type="button"
         onClick={onClick}
         className={cn(
-          'press flex w-full items-center gap-3 px-4 py-2.5 text-left',
+          'press flex w-full items-center gap-3 px-4 py-3 text-left',
           surfaceClass,
         )}
       >
@@ -119,14 +119,14 @@ export function ListRow({
       <button
         type="button"
         onClick={onClick}
-        className={cn('press flex w-full items-center gap-3 px-4 py-2.5 text-left', surfaceClass, className)}
+        className={cn('press flex w-full items-center gap-3 px-4 py-3 text-left', surfaceClass, className)}
       >
         {inner}
       </button>
     );
   }
   return (
-    <div className={cn('flex w-full items-center gap-3 px-4 py-2.5', surfaceClass, className)}>
+    <div className={cn('flex w-full items-center gap-3 px-4 py-3', surfaceClass, className)}>
       {inner}
     </div>
   );
@@ -183,7 +183,7 @@ export function Tile({ label, value, accent = 'muted', className }: TileProps) {
         : 'text-[var(--c-fg)]';
   return (
     <div className={cn(surfaceClass, 'p-4', className)}>
-      <div className="text-label font-medium uppercase tracking-[0.08em] text-[var(--c-fg-muted)]">
+      <div className="text-label font-medium uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
         {label}
       </div>
       <div

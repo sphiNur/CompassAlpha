@@ -31,8 +31,11 @@ export function Avatar({ src, name, size = 32, className }: AvatarProps) {
     <span
       style={style}
       aria-label={name}
+      // Initials fallback is a flat filled circle — the capsule fill
+      // carries the shape, so no hairline (the <img> branch keeps its
+      // ring because a photo needs an edge against a light surface).
       className={cn(
-        'inline-flex items-center justify-center rounded-full bg-[var(--c-surface-2)] font-semibold text-[var(--c-fg-muted)] ring-hairline',
+        'inline-flex items-center justify-center rounded-full bg-[var(--c-capsule)] font-semibold text-[var(--c-fg-muted)]',
         className,
       )}
     >

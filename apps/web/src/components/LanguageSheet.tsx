@@ -125,7 +125,7 @@ export function LanguageButton({ onClick }: { onClick: () => void }) {
       type="button"
       onClick={onClick}
       aria-label={i18n.t('settings.language.aria')}
-      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--r-pill)] bg-[var(--c-surface-2)] text-body active:opacity-80"
+      className="press flex h-[var(--capsule-h)] w-[var(--capsule-h)] shrink-0 items-center justify-center rounded-[var(--r-pill)] bg-[var(--c-capsule)] text-body-sm"
     >
       🌐
     </button>

@@ -32,11 +32,13 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
     <textarea
       ref={ref}
       rows={rows}
+      // Capsule pass (2026-07-31): flat filled field, no resting
+      // hairline; px-4 aligns the caret gutter with Input's.
       className={cn(
-        'w-full resize-none rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2',
+        'w-full resize-none rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2',
         'text-body leading-snug text-[var(--c-fg)]',
         'placeholder:text-[var(--c-fg-subtle)]',
-        'outline-none ring-hairline',
+        'outline-none',
         'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',
         'focus-visible:ring-offset-[var(--c-bg)]',
         'disabled:opacity-60',

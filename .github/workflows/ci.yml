@@ -215,6 +215,158 @@ jobs:
           fi
           echo "typography: $(echo "$violations" | wc -l) allow-listed exception(s) ✓"
 
+      - name: Capsule size-ladder guard
+        # UI-11 (2026-07-31, Telegram-capsule pass). Every control height
+        # is a fixed fraction of the 32px Telegram chrome capsule:
+        # 20 / 28 / 32 / 40 / 48 / 56 / 64. Before this pass the app had
+        # accumulated h-7, h-9, h-11 and h-[52px] as ad-hoc "looked right
+        # here" heights, which is why a Chip, a QtyControl and a Segmented
+        # sitting in one row were three different sizes.
+        #
+        # Bans the off-ladder Tailwind height steps and the raw Tailwind
+        # text scale (text-xs/sm/base/lg/xl/2xl/3xl) — type is semantic
+        # (text-h2 / text-body / text-label …) so it can shift with the
+        # scale instead of being re-typed per call site. Arbitrary
+        # h-[Npx] is caught separately below.
+        #
+        # h-5 (20, micro tier), h-8 (32), h-10 (40), h-12 (48), h-14 (56),
+        # h-16 (64) are the legal literals; prefer the token
+        # (--control-h-xs / --capsule-h / --control-h / --control-h-lg).
+        # h-11 (44) is banned as a literal on purpose — the 44px `touch`
+        # tier is restricted to state-committing controls in a scrolling
+        # dense list, so it must be spelled --control-h-touch, which
+        # makes the deliberate choice greppable.
+        run: |
+          bad=$(
+            grep -rEn "(^|[\"' ])(h|min-h)-(7|9|11|13)([\"' ]|$)|(^|[\"' ])text-(xs|sm|base|lg|xl|2xl|3xl)([\"' ]|$)" \
+              apps/web/src packages/ui/src \
+              --include='*.tsx' --include='*.ts' 2>/dev/null \
+              | grep -vE "^[^:]+:[0-9]+: *(//|\*|/\*)" \
+              | grep -v 'UI-11 exception' || true
+          )
+          # Arbitrary pixel heights in the CONTROL range (>= 20px) that
+          # aren't a ladder tier. Sub-20px is decorative (dots, drag
+          # handles, hairlines) and not on the control ladder, so the
+          # two-digit prefix deliberately skips it.
+          badpx=$(
+            grep -rEn "h-\[[0-9]{2,}px\]" apps/web/src packages/ui/src \
+              --include='*.tsx' --include='*.ts' 2>/dev/null \
+              | grep -vE "^[^:]+:[0-9]+: *(//|\*|/\*)" \
+              | grep -vE "h-\[(20|28|32|40|44|48|56|64)px\]" \
+              | grep -v 'UI-11 exception' || true
+          )
+          if [ -n "$bad" ] || [ -n "$badpx" ]; then
+            echo "UI-11 size-ladder violation (see docs/UI_STANDARDS.md):"
+            [ -n "$bad" ] && echo "$bad"
+            [ -n "$badpx" ] && echo "$badpx"
+            echo ""
+            echo "Heights are fixed fractions of the 32px Telegram capsule:"
+            echo "  20 micro | 28 --control-h-xs | 32 --capsule-h | 40 --control-h"
+            echo "  48 --control-h-lg | 56 header | 64 nav"
+            echo "Type is semantic: text-h1/h2/h3/body/body-sm/label/tiny."
+            echo "Genuine exception? Add a '// UI-11 exception: <reason>' comment"
+            echo "on the same line."
+            exit 1
+          fi
+          echo "UI-11: every control height is on the capsule ladder ✓"
+
+      - name: Spacing-grid guard
+        # UI-11 (spacing half). The vertical rhythm is 4px, with
+        # Tailwind's 0.5 (2px) and 1.5 (6px) allowed as INLINE nudges
+        # between adjacent inline elements. The `2.5` step (10px) is
+        # neither: it is the "split the difference" value people reach
+        # for when a block feels a pixel off, and it is exactly how the
+        # app ended up with py-2 / py-2.5 / py-3 versions of the same
+        # row. Ban the 10px step so block padding lands on 8 or 12.
+        run: |
+          bad=$(
+            grep -rEn "(^|[\"' ])(p|px|py|m|mx|my|mt|mb|ml|mr|gap|gap-x|gap-y|space-x|space-y)-2\.5([\"' ]|$)" \
+              apps/web/src packages/ui/src \
+              --include='*.tsx' --include='*.ts' 2>/dev/null \
+              | grep -vE "^[^:]+:[0-9]+: *(//|\*|/\*)" \
+              | grep -v 'UI-11 exception' || true
+          )
+          if [ -n "$bad" ]; then
+            echo "UI-11 spacing violation: the 10px (2.5) step is not on the grid."
+            echo "$bad"
+            echo ""
+            echo "Use 2 (8px) or 3 (12px) for block padding. 0.5/1.5 stay"
+            echo "available for inline nudges between inline elements."
+            exit 1
+          fi
+          echo "UI-11: block spacing on the 4px grid ✓"
+
+      - name: Hardcoded-color guard
+        # UI-8 (2026-07-31). Raw oklch()/hex inside a Tailwind arbitrary
+        # value silently breaks dark theme — the literal doesn't move
+        # when the theme swaps. Badge, Banner and Toast each carried
+        # their OWN copy of the status tints this way, drifted against
+        # each other (success bg 95% vs 96%, warn ink 40/35/38%), and
+        # rendered near-black-on-black in the dark theme. They now read
+        # --c-*-bg / --c-*-fg tokens.
+        #
+        # Excludes: tokens.css (where the literals belong), boot.css
+        # (pre-React shell, loads before the token sheet), ErrorBoundary
+        # (var(--x, #hex) fallbacks that must survive a CSS load
+        # failure), and canvas/2D fillStyle (image data, not UI).
+        run: |
+          bad=$(
+            grep -rEn "\[oklch\(|(bg|text|ring|border|fill|stroke|from|to|via)-(white|black)([\"' /]|$)|\[#[0-9a-fA-F]{3,8}\]" \
+              apps/web/src packages/ui/src \
+              --include='*.tsx' --include='*.ts' 2>/dev/null \
+              | grep -vE "^[^:]+:[0-9]+: *(//|\*|/\*)" \
+              | grep -v 'ErrorBoundary.tsx' \
+              | grep -v 'UI-8 exception' || true
+          )
+          if [ -n "$bad" ]; then
+            echo "UI-8 hardcoded-color violation (see docs/UI_STANDARDS.md):"
+            echo "$bad"
+            echo ""
+            echo "Use a token: --c-fg / --c-fg-muted / --c-capsule / --c-surface-2 /"
+            echo "--c-success-bg + --c-success-fg / --c-warn-bg + --c-warning-fg /"
+            echo "--c-danger-bg + --c-danger-fg / --c-scrim(-strong) / --c-on-scrim."
+            echo "Genuine exception? Add a '// UI-8 exception: <reason>' comment"
+            echo "on the same line."
+            exit 1
+          fi
+          echo "UI-8: no hardcoded colors outside the token sheet ✓"
+
+      - name: Dead Tailwind opacity-modifier guard
+        # 2026-07-31. Tailwind v3 cannot apply an opacity modifier to an
+        # arbitrary var() color: for `bg-[var(--c-action)]/10` it emits
+        # NO rule at all. The class looks right in review, passes
+        # type-check, and renders nothing.
+        #
+        # Two shipped bugs found by diffing the built CSS during the
+        # capsule pass:
+        #   - OrderPage's current-batch row was tinted with
+        #     bg-[var(--c-action)]/10 → no tint, current batch
+        #     indistinguishable from the others.
+        #   - Button `danger-ghost` used ring-[var(--c-danger)]/40 → the
+        #     color class vanished but `ring-1` kept its width, so every
+        #     soft-destructive button in Admin drew Tailwind's DEFAULT
+        #     BLUE ring around red text.
+        #
+        # Fix: use a real token for the tint (--c-info-bg /
+        # --c-danger-bg / --c-warn-bg / --c-success-bg / --c-capsule),
+        # which also gets you a dark-theme value.
+        run: |
+          bad=$(
+            grep -rEn "\[var\(--[a-z0-9-]+\)\]/[0-9]+" \
+              apps/web/src packages/ui/src \
+              --include='*.tsx' --include='*.ts' 2>/dev/null \
+              | grep -vE "^[^:]+:[0-9]+: *(//|\*|/\*)" || true
+          )
+          if [ -n "$bad" ]; then
+            echo "Dead Tailwind class: opacity modifier on an arbitrary var() color."
+            echo "$bad"
+            echo ""
+            echo "Tailwind emits no CSS for these. Use a tint token instead:"
+            echo "  --c-capsule / --c-info-bg / --c-warn-bg / --c-success-bg / --c-danger-bg"
+            exit 1
+          fi
+          echo "no dead opacity-modifier classes ✓"
+
       - name: Type-check
         run: pnpm type-check
 

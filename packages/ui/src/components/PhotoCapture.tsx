@@ -114,7 +114,10 @@ export function PhotoCapture({
             <button
               type="button"
               onClick={onClear}
-              className="press absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-[oklch(0%_0_0_/_0.7)] text-white"
+              // Dense tier (28px) + the scrim tokens — this button sits
+              // over an arbitrary photo, so it needs a theme-invariant
+              // veil rather than a surface token (capsule pass).
+              className="press absolute right-2 top-2 inline-flex h-[var(--control-h-xs)] w-[var(--control-h-xs)] items-center justify-center rounded-full bg-[var(--c-scrim-strong)] text-[var(--c-on-scrim)]"
               aria-label={labels.photoRemove}
             >
               ×
@@ -133,7 +136,7 @@ export function PhotoCapture({
             busy && 'opacity-60',
           )}
         >
-          <span className="text-h1" aria-hidden>
+          <span className="text-display" aria-hidden>
             📷
           </span>
           <span className="text-body-sm">{busy ? labels.uploading : labels.photoHint}</span>

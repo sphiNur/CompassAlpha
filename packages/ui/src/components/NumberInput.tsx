@@ -29,10 +29,14 @@ export interface NumberInputProps
 export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(
   function NumberInput({ className, size = 'md', width = 'auto', oneDecimal: _oneDecimal, ...rest }, ref) {
     void _oneDecimal; // reserved for future use; kept on the prop type for clarity
-    // md = --control-h-sm (36px, the compact-control tier); sm = h-8 (32px).
-    const hSize = size === 'sm' ? 'h-8' : 'h-[var(--control-h-sm)]';
+    // Capsule-pass ladder: md = --control-h-sm (32px capsule tier),
+    // sm = --control-h-xs (28px dense tier).
+    const hSize = size === 'sm' ? 'h-[var(--control-h-xs)]' : 'h-[var(--control-h-sm)]';
     const w =
       width === 'narrow' ? 'w-20' : width === 'wide' ? 'w-full' : 'w-full min-w-0';
+    // Capsule pass (2026-07-31): was the one input with a real border +
+    // focus:border treatment — now the same flat filled capsule and
+    // system focus ring as Input/Select/SearchInput.
     return (
       <input
         ref={ref}
@@ -41,9 +45,10 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(
         className={cn(
           hSize,
           w,
-          'min-w-0 rounded-[var(--r-pill)] border border-[var(--c-divider)]',
+          'min-w-0 rounded-[var(--r-pill)]',
           'bg-[var(--c-surface-2)] px-3 text-h3 tabular-nums outline-none',
-          'focus:border-[var(--c-action)]',
+          'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',
+          'focus-visible:ring-offset-[var(--c-bg)]',
           rest.disabled ? 'opacity-50' : '',
           className,
         )}

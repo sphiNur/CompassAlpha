@@ -15,7 +15,7 @@
  * them; RunPage imports the types to hold the useState.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Banner, Button, Input, PhotoCapture, Sheet, useToast } from '@compass/ui';
+import { Banner, Button, Input, PhotoCapture, pillButtonClass, Sheet, useToast } from '@compass/ui';
 import { PaymentMethodChips } from '../../../components/PaymentMethodChips';
 import { useAuthStore } from '../../../stores/authStore';
 import { formatMoney, formatQty } from '../../../lib/format';
@@ -306,7 +306,7 @@ export function PurchaseSheet({
                 onChange({ ...draft, perStorePricing: false });
               }
             }}
-            className="press rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-2 text-label font-semibold text-[var(--c-fg)] ring-hairline"
+            className="press h-[var(--capsule-h)] rounded-[var(--r-pill)] bg-[var(--c-capsule)] px-3 text-body-sm font-medium text-[var(--c-fg)]"
           >
             {/* 2026-07-26: both labels were hard-coded Chinese. */}
             {draft.perStorePricing
@@ -317,7 +317,7 @@ export function PurchaseSheet({
             <label className="block text-label font-semibold text-[var(--c-fg-muted)]">
               {i18n.t('run.action.supplier')}
               <select
-                className="mt-1 h-11 w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-h3 ring-hairline"
+                className="mt-1 h-[var(--control-h)] w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-h3"
                 value={draft.supplierId ?? ''}
                 onChange={(e) => onChange({ ...draft, supplierId: e.target.value || null })}
               >
@@ -387,7 +387,7 @@ export function PurchaseSheet({
                           }}
                           className="text-right"
                         />
-                        <div className="flex rounded-[var(--r-pill)] bg-[var(--c-surface)] p-1 ring-hairline">
+                        <div className="flex rounded-[var(--r-pill)] bg-[var(--c-capsule)] p-1">
                           {(['cash', 'transfer'] as const).map((method) => {
                             const selected =
                               (draft.splitPaymentMethods.get(store.id) ?? draft.paymentMethod) === method;
@@ -401,7 +401,7 @@ export function PurchaseSheet({
                                   onChange({ ...draft, splitPaymentMethods: next });
                                 }}
                                 className={
-                                  'rounded-[var(--r-pill)] px-2 py-1 text-label font-semibold ' +
+                                  'rounded-[var(--r-pill)] px-2 py-1 text-label font-medium ' +
                                   (selected
                                     ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
                                     : 'text-[var(--c-fg-muted)]')
@@ -443,7 +443,7 @@ export function PurchaseSheet({
             <button
               type="button"
               onClick={onUndo}
-              className="w-full rounded-[var(--r-utility)] py-2 text-label font-semibold text-[var(--c-danger)] active:bg-[var(--c-surface-2)]"
+              className="h-[var(--capsule-h)] w-full rounded-[var(--r-pill)] text-body-sm font-medium text-[var(--c-danger)] active:bg-[var(--c-surface-2)]"
             >
               {i18n.t('run.action.undoPurchase')}
             </button>
@@ -738,7 +738,7 @@ export function AddItemSheet({
               shape; the shared fields (qty / price / payment / reason)
               stay populated so a mistaken-mode tap doesn't wipe what
               the user typed. */}
-          <div className="flex gap-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] p-1">
+          <div className="flex h-[var(--capsule-h)] gap-1 rounded-[var(--r-pill)] bg-[var(--c-capsule)] p-1">
             {(['sku', 'expense'] as const).map((m) => {
               const selected = draft.mode === m;
               return (
@@ -763,7 +763,7 @@ export function AddItemSheet({
                     });
                   }}
                   className={
-                    'flex-1 rounded-[var(--r-pill)] px-3 py-1.5 text-label font-medium ' +
+                    'flex-1 rounded-[var(--r-pill)] px-3 text-body-sm font-medium ' +
                     (selected
                       ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
                       : 'text-[var(--c-fg-muted)]')
@@ -780,7 +780,7 @@ export function AddItemSheet({
           {/* 1) Identity section — mode-specific. */}
           {draft.mode === 'sku' ? (
             selectedSku ? (
-              <div className="flex items-center justify-between rounded-md bg-[var(--c-surface-2)] px-3 py-2">
+              <div className="flex items-center justify-between rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2">
                 <div className="min-w-0">
                   <div className="truncate text-body font-semibold">
                     {productName(selectedSku)}
@@ -794,7 +794,7 @@ export function AddItemSheet({
                   onClick={() =>
                     onChange({ ...draft, skuId: null, skuCostMode: 'merge' })
                   }
-                  className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-label text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
+                  className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-capsule)] px-2 py-0.5 text-label text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
                 >
                   {i18n.t('run.action.addItem.changeSku')}
                 </button>
@@ -808,7 +808,7 @@ export function AddItemSheet({
                   placeholder={i18n.t('run.action.addItem.searchPlaceholder')}
                   autoFocus
                 />
-                <ul className="flex max-h-72 flex-col overflow-y-auto rounded-md border border-[var(--c-divider)]">
+                <ul className="flex max-h-72 flex-col overflow-y-auto rounded-[var(--r-card)] ring-hairline">
                   {filteredSkus.length === 0 ? (
                     <li className="px-3 py-2 text-body-sm text-[var(--c-fg-muted)]">
                       {i18n.t('run.action.addItem.noMatch')}
@@ -897,7 +897,7 @@ export function AddItemSheet({
                                 : draft.splits,
                           });
                         }}
-                        className="rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-1 text-label font-medium text-[var(--c-fg)] ring-hairline active:opacity-70"
+                        className="inline-flex h-[var(--capsule-h)] shrink-0 items-center whitespace-nowrap rounded-[var(--r-pill)] bg-[var(--c-capsule)] px-3 text-body-sm font-medium text-[var(--c-fg)] active:opacity-70"
                       >
                         {tpl.label}
                       </button>
@@ -916,7 +916,7 @@ export function AddItemSheet({
               Lists the stores that already have demand so the user
               knows which stores aren't available in the dropdown. */}
           {draft.mode === 'sku' && selectedSku && selectedSkuExisting ? (
-            <div className="rounded-md bg-[var(--c-warning)]/10 px-3 py-2 text-label text-[var(--c-fg)] ring-1 ring-[var(--c-warning)]">
+            <div className="rounded-[var(--r-card)] bg-[var(--c-warn-bg)] px-3 py-2 text-label text-[var(--c-warning-fg)]">
               {i18n.t('run.action.addItem.crossStoreHint', {
                 stores: [...selectedSkuExisting.storeIds]
                   .map((id) => storeById.get(id)?.name ?? id.slice(0, 8))
@@ -927,7 +927,7 @@ export function AddItemSheet({
           {/* 2) Store selection — SKU mode is single-store dropdown,
                  expense mode is multi-store chips with auto-even-split. */}
           {draft.mode === 'sku' && selectedSku && selectedSkuExisting ? (
-            <div className="rounded-md bg-[var(--c-surface-2)] p-2">
+            <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2">
               <div className="mb-1 text-label font-semibold text-[var(--c-fg-muted)]">
                 {i18n.t('run.action.addItem.costModeTitle')}
               </div>
@@ -937,10 +937,10 @@ export function AddItemSheet({
                   disabled={selectedStoreAlreadyHasSku}
                   onClick={() => onChange({ ...draft, skuCostMode: 'merge' })}
                   className={
-                    'rounded-[var(--r-pill)] px-3 py-1.5 text-label font-medium ring-hairline disabled:opacity-40 ' +
+                    'flex min-h-[var(--capsule-h)] items-center justify-center rounded-[var(--r-pill)] px-3 py-1 text-body-sm font-medium disabled:opacity-40 ' +
                     (!skuRecordsAsExpense
                       ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                      : 'bg-[var(--c-bg)] text-[var(--c-fg-muted)]')
+                      : 'bg-[var(--c-capsule)] text-[var(--c-fg-muted)]')
                   }
                 >
                   {i18n.t('run.action.addItem.costModeMerge')}
@@ -951,10 +951,10 @@ export function AddItemSheet({
                     onChange({ ...draft, skuCostMode: 'separateExpense' })
                   }
                   className={
-                    'rounded-[var(--r-pill)] px-3 py-1.5 text-label font-medium ring-hairline ' +
+                    'flex min-h-[var(--capsule-h)] items-center justify-center rounded-[var(--r-pill)] px-3 py-1 text-body-sm font-medium ' +
                     (skuRecordsAsExpense
                       ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                      : 'bg-[var(--c-bg)] text-[var(--c-fg-muted)]')
+                      : 'bg-[var(--c-capsule)] text-[var(--c-fg-muted)]')
                   }
                 >
                   {i18n.t('run.action.addItem.costModeSeparate')}
@@ -973,7 +973,7 @@ export function AddItemSheet({
             <label className="block text-label font-semibold text-[var(--c-fg-muted)]">
               {i18n.t('run.action.addItem.targetStore')}
               <select
-                className="mt-1 h-11 w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-h3 ring-hairline"
+                className="mt-1 h-[var(--control-h)] w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-h3"
                 value={selectedStoreId}
                 onChange={(e) => {
                   const next = new Map<string, string>();
@@ -1027,10 +1027,10 @@ export function AddItemSheet({
                           })
                         }
                         className={
-                          'rounded-[var(--r-pill)] px-3 py-1.5 text-label font-medium ring-hairline ' +
+                          'flex min-h-[var(--capsule-h)] items-center justify-center rounded-[var(--r-pill)] px-3 py-1 text-body-sm font-medium ' +
                           (selected
                             ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                            : 'bg-[var(--c-bg)] text-[var(--c-fg-muted)]')
+                            : 'bg-[var(--c-capsule)] text-[var(--c-fg-muted)]')
                         }
                       >
                         {scope === 'shared'
@@ -1077,12 +1077,7 @@ export function AddItemSheet({
                           splits: evenSplit(nextIds, draft.actualQty),
                         });
                       }}
-                      className={
-                        'rounded-[var(--r-pill)] px-3 py-1 text-label font-medium ' +
-                        (selected
-                          ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                          : 'bg-[var(--c-surface-2)] text-[var(--c-fg)] ring-hairline')
-                      }
+                      className={pillButtonClass(selected)}
                     >
                       {st.name}
                       {selected && draft.splits.size > 1 ? (

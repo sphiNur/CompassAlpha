@@ -171,7 +171,7 @@ export function Sheet({
       <Dialog.Portal>
         <Dialog.Overlay
           className={cn(
-            'fixed inset-0 z-50 bg-[oklch(0%_0_0_/_0.32)]',
+            'fixed inset-0 z-50 bg-[var(--c-scrim)]',
             'data-[state=open]:animate-[fadeIn_var(--t-quick)_var(--easing)]',
             'data-[state=closed]:animate-[fadeOut_var(--t-quick)_var(--easing)]',
           )}
@@ -180,7 +180,7 @@ export function Sheet({
           ref={contentRef}
           className={cn(
             'fixed inset-x-0 bottom-0 z-50 mx-auto flex w-full max-w-[var(--app-sheet-max-w)] flex-col',
-            'rounded-t-[24px] bg-[var(--c-surface)] text-[var(--c-fg)]',
+            'rounded-t-[var(--r-sheet)] bg-[var(--c-surface)] text-[var(--c-fg)]',
             'data-[state=open]:animate-[slideUp_var(--t-base)_var(--easing)]',
             'data-[state=closed]:animate-[slideDown_var(--t-quick)_var(--easing)]',
             'pb-[var(--app-safe-bottom)] outline-none shadow-[var(--shadow-product)] ring-hairline',
@@ -197,13 +197,12 @@ export function Sheet({
           }
         >
           <SheetHeader>
-            {/* Drag handle — slightly bolder + wider than the previous
-                40×4 hairline so first-time users can read it as "this is
-                draggable" without us having to render an explicit Cancel
-                button (2026-05-04). It's still subtle enough to not steal
-                attention from the title. */}
+            {/* Drag handle — wider than the old 40px hairline so
+                first-time users read "draggable" without an explicit
+                Cancel button (2026-05-04). Capsule pass snapped its
+                height from the off-grid 5px to h-1 (4px). */}
             <div
-              className="mx-auto h-[5px] w-12 rounded-full bg-[var(--c-fg-muted)] opacity-40"
+              className="mx-auto h-1 w-12 rounded-full bg-[var(--c-fg-muted)] opacity-40"
               aria-hidden
             />
             {title ? (
