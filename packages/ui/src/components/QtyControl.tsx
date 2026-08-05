@@ -230,6 +230,7 @@ export function QtyControl({
 
         <button
           type="button"
+          data-testid="qty-increment"
           aria-label={labels.increment}
           className={tone(pressing === 'plus')}
           disabled={disabled || value >= max}

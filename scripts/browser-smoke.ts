@@ -34,6 +34,9 @@ if (!rawBase) {
 }
 const BASE = rawBase.replace(/\/$/, '');
 const HEADLESS = process.env.HEADLESS !== '0';
+// `data-testid` is the stable contract. Keep the English aria-label fallback
+// while validating the previous production bundle, which predates it.
+const PRIMARY_NAV_SELECTOR = ':is([data-testid="primary-nav"], nav[aria-label="Main sections"])';
 
 interface Check {
   name: string;
@@ -245,6 +248,9 @@ async function run() {
   await context.route('**/trpc/order.todaySession*', async (r) =>
     r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: null } }) }),
   );
+  await context.route('**/trpc/order.todayBatches*', async (r) =>
+    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: [] } }) }),
+  );
   await context.route('**/trpc/order.pendingList*', async (r) =>
     r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ result: { data: [] } }) }),
   );
@@ -385,7 +391,7 @@ async function run() {
 
     // Auth should resolve (fake telegramLogin) → AuthGate releases → Shell mounts.
     try {
-      await page.waitForSelector('nav[aria-label="Primary"]', { timeout: 8_000 });
+      await page.waitForSelector(PRIMARY_NAV_SELECTOR, { timeout: 8_000 });
       record('BottomNav rendered', true);
     } catch {
       record('BottomNav rendered', false, 'tab bar selector did not appear');
@@ -410,7 +416,7 @@ async function run() {
     }
 
     // Walk every tab. Each click must not produce a JS error.
-    const tabs = await page.$$('nav[aria-label="Primary"] button');
+    const tabs = await page.$$(`${PRIMARY_NAV_SELECTOR} button`);
     record(`BottomNav has tabs (${tabs.length})`, tabs.length >= 1);
     // Helper: count errors that AREN'T expected stub-mode noise.
     const realErrorCount = () =>

@@ -40,6 +40,14 @@ if (!rawBase) {
 }
 const BASE = rawBase.replace(/\/$/, '');
 const HEADLESS = process.env.HEADLESS !== '0';
+// `data-testid` is the stable contract. Keep the English aria-label fallback
+// while validating the previous production bundle, which predates it.
+const PRIMARY_NAV_SELECTOR = ':is([data-testid="primary-nav"], nav[aria-label="Main sections"])';
+// QtyControl's English accessible label was renamed from "Increment" to
+// "Increase" when its labels became localized. The test id is the durable
+// contract; the two labels keep this smoke compatible with both bundles
+// during a rolling deploy.
+const QTY_INCREMENT_SELECTOR = ':is(button[data-testid="qty-increment"], button[aria-label="Increment"], button[aria-label="Increase"])';
 
 interface Check {
   name: string;
@@ -263,6 +271,9 @@ async function run() {
   // Order: dynamic state machine.
   await context.route('**/trpc/order.todaySession*', async (r) =>
     r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk(mockSession) }),
+  );
+  await context.route('**/trpc/order.todayBatches*', async (r) =>
+    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk([]) }),
   );
   await context.route('**/trpc/order.adjustItem', async (r) => {
     const body = await r.request().postDataJSON();
@@ -488,21 +499,21 @@ async function run() {
   try {
     await page.goto(BASE + '/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
     await page.waitForFunction(() => document.documentElement.classList.contains('ready'), { timeout: 15_000 });
-    await page.waitForSelector('nav[aria-label="Primary"]', { timeout: 8_000 });
+    await page.waitForSelector(PRIMARY_NAV_SELECTOR, { timeout: 8_000 });
     record('Auth + Shell ready', true);
 
     // ---- Order page interaction ----
     // BottomNav order tab is the default per Shell's first tab.
     // M1.12: PageHeader was removed — wait for an OrderPage-specific
-    // affordance instead. Increment buttons exist on every SKU card,
+    // affordance instead. The increment control exists on every SKU card,
     // so their presence both confirms render and is robust to whatever
     // copy lands in the sticky context strip.
-    await page.waitForSelector('button[aria-label="Increment"]', { timeout: 8_000 });
+    await page.waitForSelector(QTY_INCREMENT_SELECTOR, { timeout: 8_000 });
     record('OrderPage rendered', true);
 
-    // Find the Apple row's "+" button — qty controls are buttons with
-    // aria-label="Increment".
-    const incButtons = await page.$$('button[aria-label="Increment"]');
+    // Find the Apple row's "+" button through QtyControl's stable test
+    // contract (with older-English-bundle fallbacks above).
+    const incButtons = await page.$$(QTY_INCREMENT_SELECTOR);
     record(`Order page has +/- controls (${incButtons.length})`, incButtons.length >= 3);
 
     // Tap + on the first SKU (Apple, step 0.5 → goes from 0 to 0.5).
@@ -564,7 +575,7 @@ async function run() {
       await page.keyboard.press('Escape');
       await page.waitForTimeout(200);
     }
-    await page.click('nav[aria-label="Primary"] button:has-text("Approve")');
+    await page.click(`${PRIMARY_NAV_SELECTOR} button:has-text("Approve")`);
     await page.waitForTimeout(500);
     const approveText = await page.evaluate(() => document.body.innerText);
     record(
@@ -579,7 +590,7 @@ async function run() {
     );
 
     // ---- Run tab ----
-    await page.click('nav[aria-label="Primary"] button:has-text("Run")');
+    await page.click(`${PRIMARY_NAV_SELECTOR} button:has-text("Run")`);
     const runLoaded = await page
       .waitForFunction(
         () =>
@@ -598,7 +609,7 @@ async function run() {
     );
 
     // ---- Confirm tab ----
-    await page.click('nav[aria-label="Primary"] button:has-text("Confirm")');
+    await page.click(`${PRIMARY_NAV_SELECTOR} button:has-text("Confirm")`);
     await page
       .waitForFunction(
         () =>
@@ -620,7 +631,7 @@ async function run() {
     // Roles & Permissions (promoted from People sub-tab), Catalog
     // (Stores moved out), Operations. People management lives inside
     // Stores → <store> → Team.
-    await page.click('nav[aria-label="Primary"] button:has-text("Admin")');
+    await page.click(`${PRIMARY_NAV_SELECTOR} button:has-text("Admin")`);
     const adminHomeLoaded = await page
       .waitForFunction(
         () =>

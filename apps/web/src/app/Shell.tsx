@@ -505,6 +505,7 @@ function BottomNav({
   const busy = useAppMutating();
   return (
     <nav
+      data-testid="primary-nav"
       className="grid shrink-0 border-t border-[var(--c-divider)] bg-[var(--c-surface)]"
       style={{
         gridTemplateColumns: `repeat(${visible.length}, minmax(0, 1fr))`,

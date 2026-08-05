@@ -42,6 +42,8 @@ out/
 playwright-report/
 test-results/
 .k6/
+# Failure screenshots written by the browser smoke scripts.
+smoke-failure-*.png
 
 # transient prod-repair scripts (one-shot SQL we run via SSH; never commit)
 .repair-*.sql
