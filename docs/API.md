@@ -78,6 +78,14 @@ Daily settlement is a per-store financial ledger. Cashier/manager access is
 resolved for the requested store; a permission held in one store never grants
 access to another.
 
+`settlement.save` stores explained outflows alongside its reporting totals:
+each operating expense has a category, item, amount, optional recipient/vendor,
+and reason; each wage row identifies the person, paid/unpaid status, amount,
+and pay-period/reason. The API derives the three outflow totals from these
+rows, rejects mismatches, and includes the details in every immutable revision.
+Older total-only records are exposed as explicit historical rows rather than
+silently changing their financial value.
+
 | Route                     | Type                | Permission          | Notes                                                                                                                                                         |
 | ------------------------- | ------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `settlement.businessDate` | query               | `settlement.record` | Returns the selected store's authoritative current business date and effective timezone; clients must not substitute the device date.                         |

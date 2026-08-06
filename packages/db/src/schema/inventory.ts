@@ -49,6 +49,26 @@ export const stores = inventorySchema.table(
 );
 
 /**
+ * JSONB shapes stored on a daily close. They deliberately duplicate the
+ * contract's shape so @compass/db remains independent of @compass/contracts.
+ * The API validates every value before it can reach these columns.
+ */
+export type StoreDailySettlementOperatingExpenseItem = {
+  category: 'supplies' | 'utilities' | 'transport' | 'maintenance' | 'rent' | 'other';
+  item: string;
+  amount: string;
+  paidTo: string | null;
+  reason: string;
+};
+
+export type StoreDailySettlementWageItem = {
+  personName: string;
+  status: 'paid' | 'unpaid';
+  amount: string;
+  reason: string;
+};
+
+/**
  * One closing record per store and business date.
  *
  * This is an operational ledger, not a tax-concealment mechanism. The
@@ -79,6 +99,16 @@ export const storeDailySettlements = inventorySchema.table(
       .default('0'),
     wagesPaid: decimal('wages_paid', { precision: 14, scale: 2 }).notNull().default('0'),
     wagesAccrued: decimal('wages_accrued', { precision: 14, scale: 2 }).notNull().default('0'),
+    /** Itemized operating outflows; the API derives operatingExpenses from these rows. */
+    operatingExpenseItems: jsonb('operating_expense_items')
+      .$type<StoreDailySettlementOperatingExpenseItem[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    /** Per-person paid/unpaid wage rows; the API derives both wage totals. */
+    wageItems: jsonb('wage_items')
+      .$type<StoreDailySettlementWageItem[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     nextPurchaseReserve: decimal('next_purchase_reserve', { precision: 14, scale: 2 })
       .notNull()
       .default('0'),

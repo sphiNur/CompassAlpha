@@ -274,6 +274,13 @@
       "when": 1785974400000,
       "tag": "0038_history_pagination_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1785974400001,
+      "tag": "0039_settlement_itemized_expenses",
+      "breakpoints": true
     }
   ]
 }

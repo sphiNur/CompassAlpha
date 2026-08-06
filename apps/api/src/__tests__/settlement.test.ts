@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { eq } from 'drizzle-orm';
+import type { SettlementSaveInput } from '@compass/contracts';
 import { getDb, schema as s, withOrgContext } from '@compass/db';
 import { todayInTz } from '@compass/domain';
 import { logger } from '../infra/log';
@@ -79,8 +80,8 @@ function saveInput(
   storeId: string,
   date: string,
   expectedVersion: number,
-  overrides: Record<string, unknown> = {},
-) {
+  overrides: Partial<SettlementSaveInput> = {},
+): SettlementSaveInput {
   return {
     storeId,
     date,
@@ -89,6 +90,36 @@ function saveInput(
     operatingExpenses: '10',
     wagesPaid: '20',
     wagesAccrued: '5',
+    operatingExpenseItems: [
+      {
+        category: 'utilities',
+        item: 'Kitchen gas',
+        amount: '6.25',
+        paidTo: 'Utility provider',
+        reason: 'Fuel for the kitchen',
+      },
+      {
+        category: 'transport',
+        item: 'Market taxi',
+        amount: '3.75',
+        paidTo: 'Taxi driver',
+        reason: 'Collected market supplies',
+      },
+    ],
+    wageItems: [
+      {
+        personName: 'Ali',
+        status: 'paid',
+        amount: '20',
+        reason: 'Daily kitchen shift',
+      },
+      {
+        personName: 'Dilnoza',
+        status: 'unpaid',
+        amount: '5',
+        reason: 'Ten-day payroll period',
+      },
+    ],
     nextPurchaseReserve: '30',
     priorPurchaseAdjustment: '-2',
     cashOnHand: '40',
@@ -193,6 +224,9 @@ beforeAll(async () => {
     storeId: inactiveStore!.id,
     settlementDate: '2026-07-31',
     onlineRevenue: '1',
+    operatingExpenses: '3',
+    wagesPaid: '4',
+    wagesAccrued: '5',
     createdByMemberId: member!.id,
     updatedByMemberId: member!.id,
   });
@@ -251,6 +285,39 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
     const created = await fx.caller.settlement.save(saveInput(fx.ownStoreId, '2026-08-01', 0));
     expect(created.version).toBe(1);
     expect(created.onlineRevenue).toBe('100.00');
+    expect(created.operatingExpenses).toBe('10.00');
+    expect(created.wagesPaid).toBe('20.00');
+    expect(created.wagesAccrued).toBe('5.00');
+    expect(created.operatingExpenseItems).toEqual([
+      {
+        category: 'utilities',
+        item: 'Kitchen gas',
+        amount: '6.25',
+        paidTo: 'Utility provider',
+        reason: 'Fuel for the kitchen',
+      },
+      {
+        category: 'transport',
+        item: 'Market taxi',
+        amount: '3.75',
+        paidTo: 'Taxi driver',
+        reason: 'Collected market supplies',
+      },
+    ]);
+    expect(created.wageItems).toEqual([
+      {
+        personName: 'Ali',
+        status: 'paid',
+        amount: '20.00',
+        reason: 'Daily kitchen shift',
+      },
+      {
+        personName: 'Dilnoza',
+        status: 'unpaid',
+        amount: '5.00',
+        reason: 'Ten-day payroll period',
+      },
+    ]);
     expect(created.actorName).toBe('Settlement Cashier');
     expect(Number.isNaN(Date.parse(created.updatedAt))).toBe(false);
 
@@ -267,6 +334,116 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
       .where(eq(s.storeDailySettlementRevisions.settlementId, created.id));
     expect(revisions).toHaveLength(1);
     expect(revisions[0]?.version).toBe(1);
+    const snapshot = revisions[0]?.snapshot as {
+      operatingExpenseItems?: unknown;
+      wageItems?: unknown;
+    };
+    expect(snapshot.operatingExpenseItems).toEqual(created.operatingExpenseItems);
+    expect(snapshot.wageItems).toEqual(created.wageItems);
+  });
+
+  test('derives outflow totals from itemized rows and versions detail corrections', async () => {
+    const fx = fixture!;
+    const date = '2026-07-30';
+
+    let mismatch: unknown;
+    try {
+      await fx.caller.settlement.save(
+        saveInput(fx.ownStoreId, date, 0, { operatingExpenses: '11' }),
+      );
+    } catch (error) {
+      mismatch = error;
+    }
+    expect((mismatch as { code?: string }).code).toBe('BAD_REQUEST');
+    expect(await fx.caller.settlement.get({ storeId: fx.ownStoreId, date })).toBeNull();
+
+    const created = await fx.caller.settlement.save(saveInput(fx.ownStoreId, date, 0));
+    const correctedExpenseItems = [
+      {
+        category: 'utilities' as const,
+        item: 'Kitchen gas refill',
+        amount: '5',
+        paidTo: 'Utility provider',
+        reason: 'Fuel for the kitchen',
+      },
+      {
+        category: 'transport' as const,
+        item: 'Market taxi',
+        amount: '5',
+        paidTo: 'Taxi driver',
+        reason: 'Collected market supplies',
+      },
+    ];
+
+    let missingReason: unknown;
+    try {
+      await fx.caller.settlement.save(
+        saveInput(fx.ownStoreId, date, created.version, {
+          operatingExpenseItems: correctedExpenseItems,
+        }),
+      );
+    } catch (error) {
+      missingReason = error;
+    }
+    expect((missingReason as { code?: string }).code).toBe('BAD_REQUEST');
+
+    const corrected = await fx.caller.settlement.save(
+      saveInput(fx.ownStoreId, date, created.version, {
+        operatingExpenseItems: correctedExpenseItems,
+        correctionReason: 'Corrected the detailed gas receipt',
+      }),
+    );
+    expect(corrected.version).toBe(2);
+    expect(corrected.operatingExpenses).toBe('10.00');
+    expect(corrected.operatingExpenseItems[0]?.item).toBe('Kitchen gas refill');
+
+    const revisions = await getDb()
+      .select()
+      .from(s.storeDailySettlementRevisions)
+      .where(eq(s.storeDailySettlementRevisions.settlementId, created.id));
+    expect(revisions.map((revision) => revision.version).sort()).toEqual([1, 2]);
+    const originalSnapshot = revisions.find((revision) => revision.version === 1)?.snapshot as {
+      operatingExpenseItems?: Array<{ item: string }>;
+    };
+    const correctedSnapshot = revisions.find((revision) => revision.version === 2)?.snapshot as {
+      operatingExpenseItems?: Array<{ item: string }>;
+    };
+    expect(revisions.find((revision) => revision.version === 2)?.changedFields).toEqual(
+      expect.arrayContaining(['operatingExpenseItems']),
+    );
+    expect(originalSnapshot.operatingExpenseItems?.[0]?.item).toBe('Kitchen gas');
+    expect(correctedSnapshot.operatingExpenseItems?.[0]?.item).toBe('Kitchen gas refill');
+  });
+
+  test('requires detail for new non-zero outflows but tolerates an unchanged older-client re-save', async () => {
+    const fx = fixture!;
+    const date = '2026-07-29';
+    const input = saveInput(fx.ownStoreId, date, 0) as Record<string, unknown>;
+    delete input.operatingExpenseItems;
+    delete input.wageItems;
+
+    let missingDetails: unknown;
+    try {
+      await fx.caller.settlement.save(input as SettlementSaveInput);
+    } catch (error) {
+      missingDetails = error;
+    }
+    expect((missingDetails as { code?: string }).code).toBe('BAD_REQUEST');
+    expect(await fx.caller.settlement.get({ storeId: fx.ownStoreId, date })).toBeNull();
+
+    const created = await fx.caller.settlement.save(saveInput(fx.ownStoreId, '2026-07-28', 0));
+    const unchangedOlderClientInput = saveInput(
+      fx.ownStoreId,
+      '2026-07-28',
+      created.version,
+    ) as Record<string, unknown>;
+    delete unchangedOlderClientInput.operatingExpenseItems;
+    delete unchangedOlderClientInput.wageItems;
+
+    const noOp = await fx.caller.settlement.save(unchangedOlderClientInput as SettlementSaveInput);
+    expect(noOp.version).toBe(1);
+    expect(noOp.operatingExpenseItems).toEqual(created.operatingExpenseItems);
+    expect(noOp.wageItems).toEqual(created.wageItems);
   });
 
   test('requires a correction reason, preserves no-ops, and rejects stale versions', async () => {
@@ -352,6 +529,24 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
       date: '2026-07-31',
     });
     expect(historical?.onlineRevenue).toBe('1.00');
+    expect(historical?.operatingExpenseItems).toEqual([
+      expect.objectContaining({
+        item: 'Historical operating expense',
+        amount: '3.00',
+      }),
+    ]);
+    expect(historical?.wageItems).toEqual([
+      expect.objectContaining({
+        personName: 'Unspecified recipient (historical total)',
+        status: 'paid',
+        amount: '4.00',
+      }),
+      expect.objectContaining({
+        personName: 'Unspecified recipient (historical total)',
+        status: 'unpaid',
+        amount: '5.00',
+      }),
+    ]);
 
     let error: unknown;
     try {

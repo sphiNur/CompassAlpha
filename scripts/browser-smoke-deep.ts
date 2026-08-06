@@ -814,7 +814,9 @@ async function run() {
         () =>
           /Daily close/.test(document.body.innerText) &&
           /Online \/ transfer revenue/.test(document.body.innerText) &&
-          /Cash on hand/.test(document.body.innerText),
+          /Cash on hand/.test(document.body.innerText) &&
+          /Operating expense details/.test(document.body.innerText) &&
+          /Wage details/.test(document.body.innerText),
         { timeout: 8_000 },
       )
       .catch(() => {
@@ -822,10 +824,14 @@ async function run() {
       });
     const settlementText = await page.evaluate(() => document.body.innerText);
     record(
-      'SettlementPage shows the grouped daily-close ledger',
+      'SettlementPage shows itemized daily-close outflows',
       /Daily close/.test(settlementText) &&
         /Online \/ transfer revenue/.test(settlementText) &&
-        /Cash on hand/.test(settlementText),
+        /Cash on hand/.test(settlementText) &&
+        /Operating expense details/.test(settlementText) &&
+        /Wage details/.test(settlementText) &&
+        /\+ Add expense/.test(settlementText) &&
+        /\+ Add wage/.test(settlementText),
       settlementText.split('\n').slice(0, 12).join(' / '),
     );
 

@@ -365,4 +365,5 @@ jobs:
             apps/api/src/__tests__/store-scoped-admin.test.ts \
             apps/api/src/__tests__/refreshTokens.test.ts \
             apps/api/src/__tests__/cancel-run-cascade.test.ts \
-            apps/api/src/__tests__/rls-isolation.test.ts
+            apps/api/src/__tests__/rls-isolation.test.ts \
+            apps/api/src/__tests__/settlement.test.ts
