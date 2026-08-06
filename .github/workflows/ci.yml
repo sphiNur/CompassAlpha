@@ -67,7 +67,7 @@ jobs:
       JWT_REFRESH_SECRET: ci-test-jwt-refresh-secret-aaaaaaaaaaaaaaaaaa
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: pnpm/action-setup@v4
 
@@ -307,7 +307,7 @@ jobs:
       # Don't skip — we WANT the PG-gated tests to run here.
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: pnpm/action-setup@v4
 
