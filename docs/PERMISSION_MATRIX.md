@@ -83,7 +83,14 @@
 The cashier role is intentionally separate from general staff: cashiers can
 record sales and daily settlement only for stores covered by their role binding.
 Managers and organization administrators can also settle within their effective
-store scope. A store-specific deny override always wins.
+store scope. Operating-expense detail is a stricter store-level action: its
+server-side gate requires an effective role rank of at least manager (60), or a
+persisted global `org.admin` grant. A cashier may record revenue and
+selected-person wages but cannot add, edit, or remove daily operating expenses.
+Total-only closes from before itemization are read-only for every role, so a
+later user can never be recorded as the author of an expense that was not
+originally entered as a line item.
+A store-specific deny override always wins.
 
 ## How a check is evaluated
 

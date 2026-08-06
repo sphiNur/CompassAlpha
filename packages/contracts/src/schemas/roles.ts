@@ -20,8 +20,17 @@
  * Built-in mapping:
  *   super_admin = 100  (org-tier)
  *   admin       = 80   (org-tier; this is the threshold)
- *   manager     = 30   (store-tier)
- *   purchaser   = 25   (store-tier)
- *   staff       = 10   (store-tier)
+ *   manager     = 60   (store-tier)
+ *   purchaser   = 40   (store-tier)
+ *   cashier     = 30   (store-tier)
+ *   staff       = 20   (store-tier)
  */
 export const ADMIN_RANK = 80;
+
+/**
+ * Store-manager threshold. Roles at or above this rank may record and
+ * correct operating-expense details for the concrete store where the role is
+ * effective. Keep this separate from ADMIN_RANK: a manager is store-tier,
+ * not organization-tier.
+ */
+export const MANAGER_RANK = 60;

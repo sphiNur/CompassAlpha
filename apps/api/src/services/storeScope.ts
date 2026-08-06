@@ -57,6 +57,40 @@ export async function getActorStoreIds(
 }
 
 /**
+ * Highest active role rank that applies to one concrete store.
+ *
+ * This deliberately resolves persisted global + same-store bindings rather
+ * than looking at the flattened session role/permission union: a person may
+ * be a manager in Store A and a cashier in Store B. Expired bindings do not
+ * contribute to the result.
+ */
+export async function getActorMaxActiveRoleRankInStore(
+  db: DB,
+  memberId: string,
+  storeId: string,
+): Promise<number> {
+  const now = new Date();
+  const rows = await db
+    .select({ rank: s.roles.rank })
+    .from(s.memberRoleBindings)
+    .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
+    .where(
+      and(
+        eq(s.memberRoleBindings.memberId, memberId),
+        or(
+          eq(s.memberRoleBindings.scopeType, 'global'),
+          and(
+            eq(s.memberRoleBindings.scopeType, 'store'),
+            eq(s.memberRoleBindings.scopeId, storeId),
+          ),
+        ),
+        or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, now)),
+      ),
+    );
+  return rows.reduce((highest, row) => Math.max(highest, row.rank), 0);
+}
+
+/**
  * Return the concrete stores where `permissionKey` is effective, or null
  * when the permission comes from an active GLOBAL binding/override.
  *

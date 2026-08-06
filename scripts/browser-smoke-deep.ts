@@ -255,6 +255,11 @@ async function run() {
           backHandlers.forEach(function(h){ try { h(); } catch (e) {} });
           return true;
         };
+        window.__compassConfirmCount = 0;
+        var showConfirm = function(_message, callback) {
+          window.__compassConfirmCount += 1;
+          if (typeof callback === 'function') callback(true);
+        };
         window.Telegram = {
           WebApp: {
             initData: ${JSON.stringify(initDataString)},
@@ -266,7 +271,7 @@ async function run() {
             MainButton: mainBtn,
             BackButton: backBtn,
             HapticFeedback: { impactOccurred: noop, notificationOccurred: noop },
-            showAlert: noop, showConfirm: noop,
+            showAlert: noop, showConfirm: showConfirm,
             openTelegramLink: noop, openLink: noop,
             setHeaderColor: noop, setBackgroundColor: noop,
           },
@@ -478,7 +483,30 @@ async function run() {
         storeId: fakeSession.stores[0]!.id,
         date: '2026-05-01',
         timezone: 'Asia/Tashkent',
+        canRecordOperatingExpenses: true,
       }),
+    }),
+  );
+  // This intentionally exposes only the minimal store-scoped roster that
+  // settlement.wageRoster returns. The interaction below verifies the wage
+  // picker can filter by responsibility and write the selected employee back
+  // into the wage row without touching an admin-only member directory.
+  await context.route('**/trpc/settlement.wageRoster*', async (r) =>
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: trpcOk([
+        {
+          memberId: 'mem-wage-cashier',
+          displayName: 'Wage Cashier',
+          roles: [{ id: 'role-cashier', slug: 'cashier', name: 'Cashier' }],
+        },
+        {
+          memberId: 'mem-wage-manager',
+          displayName: 'Wage Manager',
+          roles: [{ id: 'role-manager', slug: 'manager', name: 'Manager' }],
+        },
+      ]),
     }),
   );
   await context.route('**/trpc/settlement.recent*', async (r) =>
@@ -835,7 +863,85 @@ async function run() {
       settlementText.split('\n').slice(0, 12).join(' / '),
     );
 
+    // Wage rows must use the current store's employee picker instead of a
+    // free-text recipient. Exercise its responsibility filter and selection
+    // write-back, which is intentionally an on-demand settlement.wageRoster
+    // query rather than the admin employee directory.
+    const addWage = page.locator('button', { hasText: '+ Add wage' }).last();
+    await addWage.click();
+    const wagePicker = page.locator('[role="dialog"]');
+    const pickerLoaded = await wagePicker
+      .getByRole('button', { name: /Wage Cashier/ })
+      .waitFor({ state: 'visible', timeout: 8_000 })
+      .then(() => true)
+      .catch(() => false);
+    record('Wage picker loads current-store employees', pickerLoaded);
+
+    let pickerReady = pickerLoaded;
+    if (pickerReady) {
+      // A cancelled brand-new picker must not strand an invalid blank wage
+      // row in the close. Reopen afterward for the responsibility flow.
+      await page.keyboard.press('Escape');
+      await wagePicker.waitFor({ state: 'detached', timeout: 5_000 }).catch(() => {
+        /* record() below captures an unclosed picker */
+      });
+      const emptyWageRows = await page.getByText('No wage entries recorded.').count();
+      record('Cancelling a new wage picker removes its blank detail', emptyWageRows > 0);
+
+      await addWage.click();
+      pickerReady = await wagePicker
+        .getByRole('button', { name: /Wage Cashier/ })
+        .waitFor({ state: 'visible', timeout: 8_000 })
+        .then(() => true)
+        .catch(() => false);
+    } else {
+      record('Cancelling a new wage picker removes its blank detail', false, 'picker did not load');
+    }
+
+    if (pickerReady) {
+      const roleFilter = wagePicker.locator('select');
+      await roleFilter.selectOption('role-manager');
+      const managerVisible = await wagePicker
+        .getByRole('button', { name: /Wage Manager/ })
+        .waitFor({ state: 'visible', timeout: 5_000 })
+        .then(() => true)
+        .catch(() => false);
+      const cashierHidden = await wagePicker
+        .getByRole('button', { name: /Wage Cashier/ })
+        .waitFor({ state: 'hidden', timeout: 5_000 })
+        .then(() => true)
+        .catch(() => false);
+      const roleFilteredText = await wagePicker.innerText();
+      record(
+        'Wage picker filters employees by responsibility',
+        managerVisible &&
+          cashierHidden &&
+          /Wage Manager/.test(roleFilteredText) &&
+          !/Wage Cashier/.test(roleFilteredText),
+        roleFilteredText.replace(/\s+/g, ' ').slice(0, 180),
+      );
+
+      await roleFilter.selectOption('role-cashier');
+      await wagePicker.getByRole('button', { name: /Wage Cashier/ }).click();
+      await wagePicker.waitFor({ state: 'detached', timeout: 5_000 }).catch(() => {
+        /* the parent-row assertion below captures a failed close */
+      });
+      const selectedWageText = await page.evaluate(() => document.body.innerText);
+      record(
+        'Wage picker writes selected employee into wage detail',
+        /Wage Cashier/.test(selectedWageText) && (await wagePicker.count()) === 0,
+        selectedWageText.split('\n').slice(-12).join(' / '),
+      );
+    } else {
+      record('Wage picker filters employees by responsibility', false, 'picker did not load');
+      record('Wage picker writes selected employee into wage detail', false, 'picker did not load');
+    }
+
     // ---- Confirm tab ----
+    const confirmsBeforeTabChange = await page.evaluate(() => {
+      const w = window as unknown as { __compassConfirmCount?: number };
+      return w.__compassConfirmCount ?? 0;
+    });
     await page.click(`${PRIMARY_NAV_SELECTOR} button:has-text("Confirm")`);
     await page
       .waitForFunction(
@@ -848,6 +954,14 @@ async function run() {
         /* record() below captures the rendered text */
       });
     const confirmText = await page.evaluate(() => document.body.innerText);
+    const confirmsAfterTabChange = await page.evaluate(() => {
+      const w = window as unknown as { __compassConfirmCount?: number };
+      return w.__compassConfirmCount ?? 0;
+    });
+    record(
+      'Unsaved settlement prompts before changing tabs',
+      confirmsAfterTabChange > confirmsBeforeTabChange,
+    );
     record(
       'ConfirmPage shows nothing-to-confirm empty state',
       /Nothing to confirm/.test(confirmText) || /No active delivery/.test(confirmText),

@@ -1519,7 +1519,14 @@ export const en = {
   'settlement.expenses.item': 'Expense item',
   'settlement.expenses.paidTo': 'Paid to / vendor',
   'settlement.expenses.reason': 'Reason for expense',
+  'settlement.expenses.historicalReason':
+    'Historical total only; the original expense reason was not recorded.',
+  'settlement.details.historicalReadOnly': 'Historical total is read-only',
+  'settlement.details.historicalReadOnlyBody':
+    'This close predates detailed entries. Its total is preserved and cannot be itemized or edited.',
   'settlement.expenses.remove': 'Remove',
+  'settlement.expenses.readOnly':
+    'Operating expenses can be reviewed here, but only a store manager or higher role can add, edit, or remove them.',
   'settlement.expenseCategory.supplies': 'Supplies',
   'settlement.expenseCategory.utilities': 'Utilities',
   'settlement.expenseCategory.transport': 'Transport',
@@ -1532,6 +1539,24 @@ export const en = {
   'settlement.wages.empty': 'No wage entries recorded.',
   'settlement.wages.itemNumber': 'Wage {n}',
   'settlement.wages.personName': 'Person receiving / owed',
+  'settlement.wages.employee': 'Employee',
+  'settlement.wages.chooseEmployee': 'Choose employee',
+  'settlement.wages.legacyEmployee':
+    'This historical wage has no linked employee. Select a current store employee before changing wage details.',
+  'settlement.wages.historicalEmployee': 'Unspecified employee (historical total)',
+  'settlement.wages.historicalReason':
+    'Historical total only; the employee detail was not recorded.',
+  'settlement.wages.pickerTitle': 'Choose store employee',
+  'settlement.wages.pickerDescription': 'Only active personnel assigned to this store are shown.',
+  'settlement.wages.roleFilter': 'Responsibility',
+  'settlement.wages.allRoles': 'All responsibilities',
+  'settlement.wages.searchEmployees': 'Search employees',
+  'settlement.wages.rosterError': 'Could not load this storeâ€™s personnel',
+  'settlement.wages.rosterEmptyTitle': 'No active store personnel',
+  'settlement.wages.rosterEmptyBody':
+    'Add or assign personnel to this store in People management before recording wages.',
+  'settlement.wages.noEmployeeMatch': 'No employee matches this responsibility or search.',
+  'settlement.wages.noRole': 'No assigned responsibility',
   'settlement.wages.status': 'Payment status',
   'settlement.wages.status.paid': 'Paid',
   'settlement.wages.status.unpaid': 'Unpaid',
@@ -1573,9 +1598,11 @@ export const en = {
   'settlement.storeRequired.body':
     'Daily close is recorded per store. Choose a specific store instead of All stores.',
   'settlement.errors.invalidMoney': 'Enter a valid amount with up to two decimal places.',
+  'settlement.errors.expensesManagerOnly':
+    'Only a store manager or higher role can record operating expenses.',
   'settlement.errors.invalidDetails': 'Complete every expense and wage entry.',
   'settlement.errors.invalidDetailsBody':
-    'Each row needs a person or expense item, a positive amount, and a reason before this close can be saved.',
+    'Each operating expense needs a positive amount and reason; each wage entry also needs a selected employee.',
   'settlement.errors.detailLimit':
     'Each daily close supports at most {count} expense rows and {count} wage rows.',
   'settlement.errors.stores': 'Could not load stores available for daily close.',

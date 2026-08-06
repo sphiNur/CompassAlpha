@@ -44,7 +44,7 @@ const importSettlementPage = () =>
   import('../pages/SettlementPage').then((m) => ({ default: m.SettlementPage }));
 const SettlementPage = lazy(importSettlementPage);
 import { useAuthStore } from '../stores/authStore';
-import { useNavStore, resolveVisibleTab } from '../stores/navStore';
+import { requestTabChange, resolveVisibleTab, useNavStore } from '../stores/navStore';
 import { useI18n } from '../hooks/useI18n';
 import {
   isInTelegram,
@@ -186,6 +186,12 @@ function ShellInner() {
   const visibleKeys = visible.map((t) => t.key as Tab);
   const tab = resolveVisibleTab(persistedTab, visibleKeys);
   const setTab = setPersistedTab;
+  const requestSetTab = (nextTab: Tab) => {
+    if (nextTab === tab) return;
+    void requestTabChange(nextTab).then((allowed) => {
+      if (allowed) setTab(nextTab);
+    });
+  };
   // If the resolved tab differs from what's persisted (permission
   // lost since last session), write the corrected value back so we
   // don't keep re-resolving on every render.
@@ -463,7 +469,7 @@ function ShellInner() {
           usePageMainButton hook every page already uses. */}
       <PageMainButton />
 
-      <BottomNav visible={visible} tab={tab} setTab={(k) => setTab(k as Tab)} i18n={i18n} />
+      <BottomNav visible={visible} tab={tab} setTab={requestSetTab} i18n={i18n} />
     </div>
   );
 }

@@ -32,6 +32,34 @@ import { persist } from 'zustand/middleware';
 
 export type Tab = 'order' | 'approve' | 'run' | 'history' | 'settlement' | 'confirm' | 'admin';
 
+/**
+ * Pages with an in-progress form can register a guard before the shell
+ * unmounts them on a bottom-tab change. This lives outside Zustand state:
+ * pending confirmation UI must never persist or replay after a reload.
+ */
+type TabChangeGuard = (nextTab: Tab) => boolean | Promise<boolean>;
+const tabChangeGuards = new Set<TabChangeGuard>();
+
+export function registerTabChangeGuard(guard: TabChangeGuard): () => void {
+  tabChangeGuards.add(guard);
+  return () => tabChangeGuards.delete(guard);
+}
+
+/**
+ * Ask mounted pages whether a user-initiated tab change is safe. A guard
+ * error is fail-closed so an exception cannot silently discard a draft.
+ */
+export async function requestTabChange(nextTab: Tab): Promise<boolean> {
+  for (const guard of tabChangeGuards) {
+    try {
+      if (!(await guard(nextTab))) return false;
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
 // Mirror of AdminPage's local types. Kept inline so this file has no
 // dependency on AdminPage.tsx (which is a lazy-loaded chunk).
 export type AdminSection =

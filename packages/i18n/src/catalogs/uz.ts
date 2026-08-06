@@ -1378,7 +1378,14 @@ export const uz = {
   'settlement.expenses.item': 'Xarajat bandi',
   'settlement.expenses.paidTo': 'Oluvchi / yetkazib beruvchi',
   'settlement.expenses.reason': 'Xarajat sababi',
+  'settlement.expenses.historicalReason':
+    'Tarixiy yozuvda faqat jami summa bor; asl xarajat sababi saqlanmagan.',
+  'settlement.details.historicalReadOnly': 'Tarixiy jami faqat ko‘rish uchun',
+  'settlement.details.historicalReadOnlyBody':
+    'Bu kunlik yopish tafsilotlar joriy etilishidan oldin yozilgan. Tarixiy jami saqlanadi va uni qismlarga ajratib yoki o‘zgartirib bo‘lmaydi.',
   'settlement.expenses.remove': 'O‘chirish',
+  'settlement.expenses.readOnly':
+    'Operatsion xarajatlarni bu yerda ko‘rish mumkin, ammo ularni faqat do‘kon menejeri yoki undan yuqori rol qo‘shishi, o‘zgartirishi yoki o‘chirishi mumkin.',
   'settlement.expenseCategory.supplies': 'Materiallar',
   'settlement.expenseCategory.utilities': 'Kommunal xizmatlar',
   'settlement.expenseCategory.transport': 'Transport',
@@ -1391,6 +1398,25 @@ export const uz = {
   'settlement.wages.empty': 'Ish haqi yozuvlari hali kiritilmagan.',
   'settlement.wages.itemNumber': 'Ish haqi {n}',
   'settlement.wages.personName': 'Oluvchi / qarzdor shaxs',
+  'settlement.wages.employee': 'Xodim',
+  'settlement.wages.chooseEmployee': 'Xodimni tanlang',
+  'settlement.wages.legacyEmployee':
+    'Bu tarixiy ish haqi qatori xodimga bog‘lanmagan. Tafsilotni o‘zgartirishdan oldin joriy do‘kon xodimini tanlang.',
+  'settlement.wages.historicalEmployee': 'Xodim ko‘rsatilmagan (tarixiy jami)',
+  'settlement.wages.historicalReason':
+    'Tarixiy yozuvda faqat jami summa bor; xodim ma’lumoti saqlanmagan.',
+  'settlement.wages.pickerTitle': 'Do‘kon xodimini tanlang',
+  'settlement.wages.pickerDescription':
+    'Faqat shu do‘konga biriktirilgan faol xodimlar ko‘rsatiladi.',
+  'settlement.wages.roleFilter': 'Vazifa',
+  'settlement.wages.allRoles': 'Barcha vazifalar',
+  'settlement.wages.searchEmployees': 'Xodimlarni qidirish',
+  'settlement.wages.rosterError': 'Do‘kon xodimlarini yuklab bo‘lmadi',
+  'settlement.wages.rosterEmptyTitle': 'Do‘konda faol xodim yo‘q',
+  'settlement.wages.rosterEmptyBody':
+    'Ish haqini kiritishdan oldin Personnel management orqali xodimlarni bu do‘konga qo‘shing yoki biriktiring.',
+  'settlement.wages.noEmployeeMatch': 'Bu vazifa yoki qidiruvga mos xodim topilmadi.',
+  'settlement.wages.noRole': 'Vazifa biriktirilmagan',
   'settlement.wages.status': "To'lov holati",
   'settlement.wages.status.paid': "To'langan",
   'settlement.wages.status.unpaid': "To'lanmagan",
@@ -1432,9 +1458,11 @@ export const uz = {
   'settlement.storeRequired.body':
     "Kun yakuni har bir do'kon uchun alohida yoziladi. Barcha do'konlar o'rniga aniq bir do'konni tanlang.",
   'settlement.errors.invalidMoney': "Ikki kasrgacha bo'lgan to'g'ri summani kiriting.",
+  'settlement.errors.expensesManagerOnly':
+    'Operatsion xarajatlarni faqat do‘kon menejeri yoki undan yuqori rol kiritishi mumkin.',
   'settlement.errors.invalidDetails': "Har bir xarajat va ish haqi qatorini to'ldiring.",
   'settlement.errors.invalidDetailsBody':
-    "Saqlashdan oldin har bir qatorda shaxs yoki xarajat bandi, musbat summa va sabab bo'lishi kerak.",
+    'Har bir operatsion xarajat uchun musbat summa va sababni kiriting; har bir ish haqi qatori uchun xodimni ham tanlang.',
   'settlement.errors.detailLimit':
     "Har bir kun yakunida ko'pi bilan {count} ta xarajat va {count} ta ish haqi qatori bo'lishi mumkin.",
   'settlement.errors.stores': "Kun yakuni uchun do'konlarni yuklab bo'lmadi.",

@@ -137,7 +137,10 @@ async function run() {
             MainButton: mainBtn,
             BackButton: { isVisible: false, show: noop, hide: noop, onClick: noop, offClick: noop },
             HapticFeedback: { impactOccurred: noop, notificationOccurred: noop },
-            showAlert: noop, showConfirm: noop,
+            showAlert: noop,
+            showConfirm: function(_message, callback) {
+              if (typeof callback === 'function') callback(true);
+            },
             setHeaderColor: noop, setBackgroundColor: noop,
           },
         };
@@ -156,7 +159,10 @@ async function run() {
   await context.addInitScript(
     ({ user }) => {
       const noop = () => {};
-      (window as unknown as { Telegram: unknown }).Telegram = {
+      const smokeWindow = window as unknown as {
+        Telegram: unknown;
+      };
+      smokeWindow.Telegram = {
         WebApp: {
           initData: 'user=' + encodeURIComponent(JSON.stringify(user)) + '&hash=stub',
           initDataUnsafe: { user },
@@ -199,7 +205,9 @@ async function run() {
           BackButton: { isVisible: false, show: noop, hide: noop, onClick: noop, offClick: noop },
           HapticFeedback: { impactOccurred: noop, notificationOccurred: noop },
           showAlert: noop,
-          showConfirm: noop,
+          showConfirm(_message: string, callback?: (confirmed: boolean) => void) {
+            callback?.(true);
+          },
           setHeaderColor: noop,
           setBackgroundColor: noop,
         },
@@ -332,7 +340,33 @@ async function run() {
             storeId: fakeSession.stores[0]?.id,
             date: '2026-05-01',
             timezone: 'Asia/Tashkent',
+            canRecordOperatingExpenses: true,
           },
+        },
+      }),
+    }),
+  );
+  // The wage picker loads this roster only after the user adds a wage row.
+  // Keep its real response shape covered in the lightweight tab-render smoke
+  // as well as the interaction coverage in browser-smoke-deep.ts.
+  await context.route('**/trpc/settlement.wageRoster*', async (r) =>
+    r.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        result: {
+          data: [
+            {
+              memberId: 'mem-wage-cashier',
+              displayName: 'Wage Cashier',
+              roles: [{ id: 'role-cashier', slug: 'cashier', name: 'Cashier' }],
+            },
+            {
+              memberId: 'mem-wage-manager',
+              displayName: 'Wage Manager',
+              roles: [{ id: 'role-manager', slug: 'manager', name: 'Manager' }],
+            },
+          ],
         },
       }),
     }),

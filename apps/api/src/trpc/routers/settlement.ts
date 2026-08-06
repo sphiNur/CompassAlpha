@@ -5,11 +5,13 @@
  * route. The session permission set is flattened for UI affordances and must
  * never be sufficient for a store-scoped financial read or write.
  */
+import { randomUUID } from 'node:crypto';
 import { TRPCError } from '@trpc/server';
-import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
 import {
+  MANAGER_RANK,
   SettlementBusinessDateInputSchema,
   SettlementGetInputSchema,
   type SettlementOperatingExpenseItem,
@@ -17,13 +19,16 @@ import {
   type SettlementSaveInput,
   SettlementSaveInputSchema,
   type SettlementWageItem,
+  SettlementWageRosterInputSchema,
 } from '@compass/contracts';
 import { todayInTz } from '@compass/domain';
 import { authedProcedure, idempotentMutation, router } from '../trpc';
 import {
   assertActorAssignedToStore,
   effectivePermissionsForStore,
+  getActorMaxActiveRoleRankInStore,
 } from '../../services/storeScope';
+import { hasGlobalOrgAdmin } from '../../services/orgAdmin';
 
 type SettlementRow = typeof s.storeDailySettlements.$inferSelect;
 
@@ -49,10 +54,37 @@ const DETAIL_FIELDS = ['operatingExpenseItems', 'wageItems'] as const;
 const CREATED_FIELDS = [...MONEY_FIELDS, ...DETAIL_FIELDS, 'note'] as const;
 const MAX_SETTLEMENT_CENTS = 99_999_999_999_999n;
 
-type OperatingExpenseItem = Omit<SettlementOperatingExpenseItem, 'paidTo'> & {
-  paidTo: string | null;
+type RawOperatingExpenseItem = SettlementRow['operatingExpenseItems'][number];
+type RawWageItem = SettlementRow['wageItems'][number];
+
+/** API output: the row ID is opaque and attribution remains server-only. */
+type OperatingExpenseItem = {
+  id: string | null;
+  amount: string;
+  reason: string;
+  /** True only for a legacy scalar total synthesised for safe display. */
+  isHistorical: boolean;
 };
-type WageItem = SettlementWageItem;
+
+/** API output: memberId may be absent only for untouched historical data. */
+type WageItem = {
+  id: string | null;
+  memberId: string | null;
+  personName: string;
+  status: 'paid' | 'unpaid';
+  amount: string;
+  reason: string;
+  isHistorical: boolean;
+};
+
+/** Deliberately omits rank/permissions: the picker needs only a role label. */
+type WageRosterRole = { id: string; slug: string; name: string };
+type WageRosterRoleWithRank = WageRosterRole & { rank: number };
+type WageRosterMember = {
+  memberId: string;
+  displayName: string;
+  roles: WageRosterRole[];
+};
 
 /**
  * Normalize a contract-validated amount to the same two-decimal shape that
@@ -99,25 +131,189 @@ function sumSettlementItems(values: readonly string[], field: string): string {
   return centsToSettlementMoney(cents);
 }
 
-function normalizeOperatingExpenseItems(
-  items: readonly SettlementOperatingExpenseItem[],
-): OperatingExpenseItem[] {
-  return items.map((item) => ({
-    category: item.category,
-    item: item.item.trim(),
-    amount: normalizeSettlementMoney(item.amount),
-    paidTo: item.paidTo?.trim() || null,
-    reason: item.reason.trim(),
-  }));
+function rawOperatingExpenseItems(row: SettlementRow): RawOperatingExpenseItem[] {
+  return Array.isArray(row.operatingExpenseItems) ? row.operatingExpenseItems : [];
 }
 
-function normalizeWageItems(items: readonly SettlementWageItem[]): WageItem[] {
-  return items.map((item) => ({
-    personName: item.personName.trim(),
-    status: item.status,
-    amount: normalizeSettlementMoney(item.amount),
-    reason: item.reason.trim(),
-  }));
+function rawWageItems(row: SettlementRow): RawWageItem[] {
+  return Array.isArray(row.wageItems) ? row.wageItems : [];
+}
+
+/**
+ * A non-zero scalar with no rows predates itemization. It has no trustworthy
+ * row-level author or reason, so it may be displayed but must never be
+ * backfilled into a newly attributed detail array.
+ */
+function hasLegacyOperatingExpenseTotal(row: SettlementRow | undefined): boolean {
+  return (
+    !!row &&
+    rawOperatingExpenseItems(row).length === 0 &&
+    normalizeSettlementMoney(row.operatingExpenses) !== '0.00'
+  );
+}
+
+function hasLegacyWageTotal(row: SettlementRow | undefined): boolean {
+  return (
+    !!row &&
+    rawWageItems(row).length === 0 &&
+    (normalizeSettlementMoney(row.wagesPaid) !== '0.00' ||
+      normalizeSettlementMoney(row.wagesAccrued) !== '0.00')
+  );
+}
+
+function rawItemId(item: RawOperatingExpenseItem): string | null {
+  return typeof item.id === 'string' ? item.id : null;
+}
+
+function rawMemberId(item: RawWageItem): string | null {
+  return typeof item.memberId === 'string' ? item.memberId : null;
+}
+
+function rawWageItemId(item: RawWageItem): string | null {
+  return typeof item.id === 'string' ? item.id : null;
+}
+
+function rawText(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function sameExpenseValues(item: RawOperatingExpenseItem, amount: string, reason: string): boolean {
+  return normalizeSettlementMoney(item.amount) === amount && rawText(item.reason).trim() === reason;
+}
+
+/**
+ * Keep the original server attribution (and any pre-existing legacy keys)
+ * when a client sends an unchanged row. A fresh expense receives a stable ID
+ * and its original recorder exclusively from the authenticated session.
+ */
+function normalizeOperatingExpenseItems(
+  items: readonly SettlementOperatingExpenseItem[],
+  existingItems: readonly RawOperatingExpenseItem[],
+  actorMemberId: string,
+): RawOperatingExpenseItem[] {
+  const usedExistingIndexes = new Set<number>();
+  return items.map((item) => {
+    const amount = normalizeSettlementMoney(item.amount);
+    const reason = item.reason.trim();
+    let existingIndex = -1;
+
+    if (item.id) {
+      existingIndex = existingItems.findIndex(
+        (existing, index) => !usedExistingIndexes.has(index) && rawItemId(existing) === item.id,
+      );
+      if (existingIndex < 0) detailValidation('operatingExpenseItems', 'unknown-item');
+    } else {
+      // This semantic fallback keeps an older cached client from replacing an
+      // unchanged post-deploy row merely because it does not know the new ID.
+      existingIndex = existingItems.findIndex(
+        (existing, index) =>
+          !usedExistingIndexes.has(index) && sameExpenseValues(existing, amount, reason),
+      );
+    }
+
+    if (existingIndex >= 0) {
+      usedExistingIndexes.add(existingIndex);
+      const existing = existingItems[existingIndex]!;
+      if (!item.id) return existing;
+      return { ...existing, amount, reason };
+    }
+
+    return {
+      id: randomUUID(),
+      amount,
+      reason,
+      enteredByMemberId: actorMemberId,
+    };
+  });
+}
+
+function sameWageValues(item: RawWageItem, input: SettlementWageItem): boolean {
+  const legacyName = input.personName?.trim();
+  const sameRecipient = legacyName
+    ? rawText(item.personName).trim() === legacyName
+    : !!input.memberId && rawMemberId(item) === input.memberId;
+  return (
+    sameRecipient &&
+    item.status === input.status &&
+    normalizeSettlementMoney(item.amount) === normalizeSettlementMoney(input.amount) &&
+    rawText(item.reason).trim() === input.reason.trim()
+  );
+}
+
+/**
+ * A new wage row is always selected by memberId. Existing server-issued IDs
+ * preserve the original member/name snapshot even after a person is renamed,
+ * suspended, or moved to another store. `personName` is accepted only for an
+ * unchanged older-client resave; it can never introduce or alter a recipient.
+ */
+function normalizeWageItems(
+  items: readonly SettlementWageItem[],
+  existingItems: readonly RawWageItem[],
+  rosterByMemberId: ReadonlyMap<string, WageRosterMember>,
+): RawWageItem[] {
+  const usedExistingIndexes = new Set<number>();
+  return items.map((item) => {
+    const amount = normalizeSettlementMoney(item.amount);
+    const reason = item.reason.trim();
+    let existingIndex = -1;
+
+    if (item.id) {
+      existingIndex = existingItems.findIndex(
+        (existing, index) => !usedExistingIndexes.has(index) && rawWageItemId(existing) === item.id,
+      );
+      if (existingIndex < 0) detailValidation('wageItems', 'unknown-item');
+    } else {
+      // Older clients have no server-issued ID. They may retain an unchanged
+      // historical line, but cannot use its free-text name to create/change a
+      // recipient.
+      existingIndex = existingItems.findIndex(
+        (existing, index) => !usedExistingIndexes.has(index) && sameWageValues(existing, item),
+      );
+    }
+
+    if (existingIndex >= 0) {
+      usedExistingIndexes.add(existingIndex);
+      const existing = existingItems[existingIndex]!;
+      if (!item.id) return existing;
+
+      if (!item.memberId) {
+        if (!sameWageValues(existing, item)) {
+          detailValidation('wageItems', 'employee-selection-required');
+        }
+        return existing;
+      }
+
+      // Correcting amount/status/reason for the same person must retain the
+      // original display-name snapshot and remain possible after that person
+      // leaves the store. A different recipient is a real reassignment and
+      // must still be present in today's scoped roster.
+      if (rawMemberId(existing) === item.memberId) {
+        return { ...existing, status: item.status, amount, reason };
+      }
+      const employee = rosterByMemberId.get(item.memberId);
+      if (!employee) detailValidation('wageItems', 'employee-not-in-store');
+      return {
+        ...existing,
+        memberId: item.memberId,
+        personName: employee.displayName,
+        status: item.status,
+        amount,
+        reason,
+      };
+    }
+
+    if (!item.memberId) detailValidation('wageItems', 'employee-selection-required');
+    const employee = rosterByMemberId.get(item.memberId);
+    if (!employee) detailValidation('wageItems', 'employee-not-in-store');
+    return {
+      id: randomUUID(),
+      memberId: item.memberId,
+      personName: employee.displayName,
+      status: item.status,
+      amount,
+      reason,
+    };
+  });
 }
 
 function legacyOperatingExpenseItems(total: string): OperatingExpenseItem[] {
@@ -125,12 +321,10 @@ function legacyOperatingExpenseItems(total: string): OperatingExpenseItem[] {
     ? []
     : [
         {
-          category: 'other',
-          item: 'Historical operating expense',
+          id: null,
           amount: total,
-          paidTo: null,
-          reason:
-            'Imported from a total-only daily close; the original item detail was not recorded.',
+          reason: 'Historical total only; the original expense reason was not recorded.',
+          isHistorical: true,
         },
       ];
 }
@@ -139,32 +333,51 @@ function legacyWageItems(paid: string, unpaid: string): WageItem[] {
   const items: WageItem[] = [];
   if (paid !== '0.00') {
     items.push({
+      id: null,
+      memberId: null,
       personName: 'Unspecified recipient (historical total)',
       status: 'paid',
       amount: paid,
       reason: 'Imported from a total-only daily close; the recipient detail was not recorded.',
+      isHistorical: true,
     });
   }
   if (unpaid !== '0.00') {
     items.push({
+      id: null,
+      memberId: null,
       personName: 'Unspecified recipient (historical total)',
       status: 'unpaid',
       amount: unpaid,
       reason: 'Imported from a total-only daily close; the recipient detail was not recorded.',
+      isHistorical: true,
     });
   }
   return items;
 }
 
-function sameOperatingExpenseItems(
-  left: readonly OperatingExpenseItem[],
-  right: readonly OperatingExpenseItem[],
-): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+/** JSONB does not preserve object-key insertion order; arrays still do. */
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map((item) => stableJson(item)).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const object = value as Record<string, unknown>;
+    return `{${Object.keys(object)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(object[key])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'undefined';
 }
 
-function sameWageItems(left: readonly WageItem[], right: readonly WageItem[]): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+function sameRawOperatingExpenseItems(
+  left: readonly RawOperatingExpenseItem[],
+  right: readonly RawOperatingExpenseItem[],
+): boolean {
+  return stableJson(left) === stableJson(right);
+}
+
+function sameRawWageItems(left: readonly RawWageItem[], right: readonly RawWageItem[]): boolean {
+  return stableJson(left) === stableJson(right);
 }
 
 function missingSettlementPermission(): never {
@@ -172,6 +385,14 @@ function missingSettlementPermission(): never {
     code: 'FORBIDDEN',
     message: 'auth.errors.missingPermission',
     cause: { missingPermission: 'settlement.record' },
+  });
+}
+
+function managerRequiredForOperatingExpenses(): never {
+  throw new TRPCError({
+    code: 'FORBIDDEN',
+    message: 'settlement.errors.expensesManagerOnly',
+    cause: { minimumRoleRank: MANAGER_RANK },
   });
 }
 
@@ -241,29 +462,33 @@ function storedOperatingExpenseItems(row: SettlementRow): OperatingExpenseItem[]
   // row instead of showing a zero total to the editor and risking a deletion
   // on the next save.
   const operatingTotal = normalizeSettlementMoney(row.operatingExpenses);
-  if (row.operatingExpenseItems.length === 0 && operatingTotal !== '0.00') {
+  const rawItems = rawOperatingExpenseItems(row);
+  if (rawItems.length === 0 && operatingTotal !== '0.00') {
     return legacyOperatingExpenseItems(operatingTotal);
   }
-  return row.operatingExpenseItems.map((item) => ({
-    category: item.category,
-    item: item.item,
+  return rawItems.map((item) => ({
+    id: rawItemId(item),
     amount: normalizeSettlementMoney(item.amount),
-    paidTo: item.paidTo ?? null,
-    reason: item.reason,
+    reason: rawText(item.reason),
+    isHistorical: false,
   }));
 }
 
 function storedWageItems(row: SettlementRow): WageItem[] {
   const paidTotal = normalizeSettlementMoney(row.wagesPaid);
   const unpaidTotal = normalizeSettlementMoney(row.wagesAccrued);
-  if (row.wageItems.length === 0 && (paidTotal !== '0.00' || unpaidTotal !== '0.00')) {
+  const rawItems = rawWageItems(row);
+  if (rawItems.length === 0 && (paidTotal !== '0.00' || unpaidTotal !== '0.00')) {
     return legacyWageItems(paidTotal, unpaidTotal);
   }
-  return row.wageItems.map((item) => ({
-    personName: item.personName,
+  return rawItems.map((item) => ({
+    id: rawWageItemId(item),
+    memberId: rawMemberId(item),
+    personName: rawText(item.personName) || 'Historical wage recipient',
     status: item.status,
     amount: normalizeSettlementMoney(item.amount),
-    reason: item.reason,
+    reason: rawText(item.reason),
+    isHistorical: false,
   }));
 }
 
@@ -273,15 +498,28 @@ function storedWageItems(row: SettlementRow): WageItem[] {
  * or stale client. An older client may re-save an unchanged existing close,
  * but it cannot create or alter a non-zero outflow without its explanation.
  */
-function resolveItemizedOutflows(input: SettlementSaveInput, existing: SettlementRow | undefined) {
+function resolveItemizedOutflows(
+  input: SettlementSaveInput,
+  existing: SettlementRow | undefined,
+  actorMemberId: string,
+  rosterByMemberId: ReadonlyMap<string, WageRosterMember>,
+) {
   const submittedOperatingTotal = normalizeSettlementMoney(input.operatingExpenses);
   const submittedPaidTotal = normalizeSettlementMoney(input.wagesPaid);
   const submittedUnpaidTotal = normalizeSettlementMoney(input.wagesAccrued);
 
-  let operatingExpenseItems: OperatingExpenseItem[];
+  const existingOperatingExpenseItems = existing ? rawOperatingExpenseItems(existing) : [];
+  let operatingExpenseItems: RawOperatingExpenseItem[];
   let operatingExpenses: string;
   if (input.operatingExpenseItems !== undefined) {
-    operatingExpenseItems = normalizeOperatingExpenseItems(input.operatingExpenseItems);
+    if (hasLegacyOperatingExpenseTotal(existing)) {
+      detailValidation('operatingExpenseItems', 'historical-total-immutable');
+    }
+    operatingExpenseItems = normalizeOperatingExpenseItems(
+      input.operatingExpenseItems,
+      existingOperatingExpenseItems,
+      actorMemberId,
+    );
     operatingExpenses = sumSettlementItems(
       operatingExpenseItems.map((item) => item.amount),
       'operatingExpenseItems',
@@ -293,8 +531,8 @@ function resolveItemizedOutflows(input: SettlementSaveInput, existing: Settlemen
     if (submittedOperatingTotal !== existing.operatingExpenses) {
       detailValidation('operatingExpenseItems', 'details-required');
     }
-    operatingExpenseItems = storedOperatingExpenseItems(existing);
-    operatingExpenses = existing.operatingExpenses;
+    operatingExpenseItems = existingOperatingExpenseItems;
+    operatingExpenses = normalizeSettlementMoney(existing.operatingExpenses);
   } else {
     if (submittedOperatingTotal !== '0.00') {
       detailValidation('operatingExpenseItems', 'details-required');
@@ -303,11 +541,15 @@ function resolveItemizedOutflows(input: SettlementSaveInput, existing: Settlemen
     operatingExpenseItems = [];
   }
 
-  let wageItems: WageItem[];
+  const existingWageItems = existing ? rawWageItems(existing) : [];
+  let wageItems: RawWageItem[];
   let wagesPaid: string;
   let wagesAccrued: string;
   if (input.wageItems !== undefined) {
-    wageItems = normalizeWageItems(input.wageItems);
+    if (hasLegacyWageTotal(existing)) {
+      detailValidation('wageItems', 'historical-total-immutable');
+    }
+    wageItems = normalizeWageItems(input.wageItems, existingWageItems, rosterByMemberId);
     wagesPaid = sumSettlementItems(
       wageItems.filter((item) => item.status === 'paid').map((item) => item.amount),
       'wageItems',
@@ -326,9 +568,9 @@ function resolveItemizedOutflows(input: SettlementSaveInput, existing: Settlemen
     ) {
       detailValidation('wageItems', 'details-required');
     }
-    wageItems = storedWageItems(existing);
-    wagesPaid = existing.wagesPaid;
-    wagesAccrued = existing.wagesAccrued;
+    wageItems = existingWageItems;
+    wagesPaid = normalizeSettlementMoney(existing.wagesPaid);
+    wagesAccrued = normalizeSettlementMoney(existing.wagesAccrued);
   } else {
     if (submittedPaidTotal !== '0.00' || submittedUnpaidTotal !== '0.00') {
       detailValidation('wageItems', 'details-required');
@@ -392,8 +634,11 @@ function revisionSnapshot(
     operatingExpenses: row.operatingExpenses,
     wagesPaid: row.wagesPaid,
     wagesAccrued: row.wagesAccrued,
-    operatingExpenseItems: storedOperatingExpenseItems(row),
-    wageItems: storedWageItems(row),
+    // Snapshot the persisted JSON, never a display-only virtual legacy row.
+    // This keeps a total-only historical close byte-for-byte truthful even
+    // when an unrelated field is corrected later.
+    operatingExpenseItems: rawOperatingExpenseItems(row),
+    wageItems: rawWageItems(row),
     nextPurchaseReserve: row.nextPurchaseReserve,
     priorPurchaseAdjustment: row.priorPurchaseAdjustment,
     cashOnHand: row.cashOnHand,
@@ -405,6 +650,107 @@ function revisionSnapshot(
     actorDisplayName,
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+/**
+ * Minimal, store-scoped wage roster. It intentionally avoids admin.memberList:
+ * cashiers need this picker, while the admin directory exposes organization-
+ * wide data and requires users.manage. A person belongs to a store through an
+ * explicit assignment or an active store-scoped role binding; global roles by
+ * themselves never make every employee a wage recipient in every store.
+ */
+async function loadWageRoster(tx: DB, orgId: string, storeId: string): Promise<WageRosterMember[]> {
+  const now = new Date();
+  const activeMemberConditions = [
+    eq(s.members.orgId, orgId),
+    eq(s.members.status, 'active'),
+    isNull(s.users.deletedAt),
+  ] as const;
+  const [assignmentRows, scopedRoleRows] = await Promise.all([
+    tx
+      .select({ memberId: s.memberStoreAssignments.memberId })
+      .from(s.memberStoreAssignments)
+      .innerJoin(s.members, eq(s.members.id, s.memberStoreAssignments.memberId))
+      .innerJoin(s.users, eq(s.users.id, s.members.userId))
+      .where(and(eq(s.memberStoreAssignments.storeId, storeId), ...activeMemberConditions)),
+    tx
+      .select({ memberId: s.memberRoleBindings.memberId })
+      .from(s.memberRoleBindings)
+      .innerJoin(s.members, eq(s.members.id, s.memberRoleBindings.memberId))
+      .innerJoin(s.users, eq(s.users.id, s.members.userId))
+      .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
+      .where(
+        and(
+          eq(s.memberRoleBindings.scopeType, 'store'),
+          eq(s.memberRoleBindings.scopeId, storeId),
+          eq(s.roles.orgId, orgId),
+          or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, now)),
+          ...activeMemberConditions,
+        ),
+      ),
+  ]);
+  const memberIds = [...new Set([...assignmentRows, ...scopedRoleRows].map((row) => row.memberId))];
+  if (memberIds.length === 0) return [];
+
+  const [people, roleRows] = await Promise.all([
+    tx
+      .select({ memberId: s.members.id, displayName: s.users.displayName })
+      .from(s.members)
+      .innerJoin(s.users, eq(s.users.id, s.members.userId))
+      .where(and(inArray(s.members.id, memberIds), ...activeMemberConditions)),
+    tx
+      .select({
+        memberId: s.memberRoleBindings.memberId,
+        id: s.roles.id,
+        slug: s.roles.slug,
+        name: s.roles.name,
+        rank: s.roles.rank,
+      })
+      .from(s.memberRoleBindings)
+      .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
+      .where(
+        and(
+          inArray(s.memberRoleBindings.memberId, memberIds),
+          eq(s.roles.orgId, orgId),
+          or(
+            eq(s.memberRoleBindings.scopeType, 'global'),
+            and(
+              eq(s.memberRoleBindings.scopeType, 'store'),
+              eq(s.memberRoleBindings.scopeId, storeId),
+            ),
+          ),
+          or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, now)),
+        ),
+      ),
+  ]);
+
+  const rolesByMember = new Map<string, Map<string, WageRosterRoleWithRank>>();
+  for (const row of roleRows) {
+    const roles = rolesByMember.get(row.memberId) ?? new Map<string, WageRosterRoleWithRank>();
+    roles.set(row.id, { id: row.id, slug: row.slug, name: row.name, rank: row.rank });
+    rolesByMember.set(row.memberId, roles);
+  }
+
+  return people
+    .map((person) => ({
+      memberId: person.memberId,
+      displayName: person.displayName,
+      roles: [...(rolesByMember.get(person.memberId)?.values() ?? [])]
+        .sort((left, right) => right.rank - left.rank || left.name.localeCompare(right.name))
+        .map(({ id, slug, name }) => ({ id, slug, name })),
+    }))
+    .sort((left, right) => left.displayName.localeCompare(right.displayName));
+}
+
+async function canRecordOperatingExpenses(
+  tx: DB,
+  memberId: string,
+  storeId: string,
+): Promise<boolean> {
+  return (
+    (await hasGlobalOrgAdmin(tx, memberId)) ||
+    (await getActorMaxActiveRoleRankInStore(tx, memberId, storeId)) >= MANAGER_RANK
+  );
 }
 
 export const settlementRouter = router({
@@ -423,7 +769,25 @@ export const settlementRouter = router({
           storeId: store.id,
           date: todayInTz(timezone),
           timezone,
+          // UI affordance only; save independently enforces the exact same
+          // store-scoped role threshold.
+          canRecordOperatingExpenses: await canRecordOperatingExpenses(
+            tx,
+            ctx.session!.memberId,
+            store.id,
+          ),
         };
+      });
+    }),
+
+  /** Active personnel in this store, with only their effective store roles. */
+  wageRoster: authedProcedure
+    .input(SettlementWageRosterInputSchema)
+    .query(async ({ ctx, input }) => {
+      return ctx.withOrg(async (tx) => {
+        const store = await authorizeSettlementStore(tx, ctx.session!, input.storeId);
+        if (!store.isActive || store.deletedAt) return [];
+        return loadWageRoster(tx, ctx.session!.orgId, store.id);
       });
     }),
 
@@ -506,7 +870,43 @@ export const settlementRouter = router({
           ),
       });
 
-      const itemizedOutflows = resolveItemizedOutflows(input, existing);
+      const actorCanRecordOperatingExpenses = await canRecordOperatingExpenses(
+        tx,
+        ctx.session!.memberId,
+        store.id,
+      );
+      // Keep the manager boundary dominant for an attempted mutation, even
+      // when the target is also an immutable total-only historical close.
+      if (
+        input.operatingExpenseItems !== undefined &&
+        hasLegacyOperatingExpenseTotal(existing) &&
+        !actorCanRecordOperatingExpenses
+      ) {
+        managerRequiredForOperatingExpenses();
+      }
+
+      const roster = input.wageItems?.some((item) => !!item.memberId)
+        ? await loadWageRoster(tx, ctx.session!.orgId, store.id)
+        : [];
+      const itemizedOutflows = resolveItemizedOutflows(
+        input,
+        existing,
+        ctx.session!.memberId,
+        new Map(roster.map((member) => [member.memberId, member])),
+      );
+      const operatingExpenseItemsChanged = !sameRawOperatingExpenseItems(
+        existing ? rawOperatingExpenseItems(existing) : [],
+        itemizedOutflows.operatingExpenseItems,
+      );
+      const operatingExpensesChanged =
+        itemizedOutflows.operatingExpenses !==
+        (existing ? normalizeSettlementMoney(existing.operatingExpenses) : '0.00');
+      if (
+        (operatingExpenseItemsChanged || operatingExpensesChanged) &&
+        !actorCanRecordOperatingExpenses
+      ) {
+        managerRequiredForOperatingExpenses();
+      }
       const values = {
         onlineRevenue: normalizeSettlementMoney(input.onlineRevenue),
         invoicedCashRevenue: normalizeSettlementMoney(input.invoicedCashRevenue),
@@ -550,14 +950,14 @@ export const settlementRouter = router({
 
         changedFields = MONEY_FIELDS.filter((field) => existing[field] !== values[field]);
         if (
-          !sameOperatingExpenseItems(
-            storedOperatingExpenseItems(existing),
+          !sameRawOperatingExpenseItems(
+            rawOperatingExpenseItems(existing),
             values.operatingExpenseItems,
           )
         ) {
           changedFields.push('operatingExpenseItems');
         }
-        if (!sameWageItems(storedWageItems(existing), values.wageItems)) {
+        if (!sameRawWageItems(rawWageItems(existing), values.wageItems)) {
           changedFields.push('wageItems');
         }
         if ((existing.note ?? null) !== values.note) changedFields.push('note');

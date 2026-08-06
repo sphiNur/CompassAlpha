@@ -78,17 +78,24 @@ Daily settlement is a per-store financial ledger. Cashier/manager access is
 resolved for the requested store; a permission held in one store never grants
 access to another.
 
-`settlement.save` stores explained outflows alongside its reporting totals:
-each operating expense has a category, item, amount, optional recipient/vendor,
-and reason; each wage row identifies the person, paid/unpaid status, amount,
-and pay-period/reason. The API derives the three outflow totals from these
-rows, rejects mismatches, and includes the details in every immutable revision.
-Older total-only records are exposed as explicit historical rows rather than
-silently changing their financial value.
+`settlement.save` stores explained outflows alongside its reporting totals.
+Each operating expense now has only an amount and required reason; only an
+effective store-manager-or-higher role (or a persisted global `org.admin`)
+may add, change, or remove it. The API assigns each new expense a stable ID
+and its original recorder from the authenticated session (not from a client
+field). Each wage row selects an active member of that same store by
+`memberId`; the API assigns a stable row ID and snapshots the person’s display
+name for history. Corrections to that same row retain the historical name even
+after the employee is renamed, suspended, or moved. The API derives the three
+outflow totals from these rows, rejects mismatches, and includes the persisted
+details in every immutable revision. Older total-only records remain explicit,
+read-only historical rows: they cannot be itemized later, because doing so
+would falsely attribute a pre-detail total to the person making the correction.
 
 | Route                     | Type                | Permission          | Notes                                                                                                                                                         |
 | ------------------------- | ------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `settlement.businessDate` | query               | `settlement.record` | Returns the selected store's authoritative current business date and effective timezone; clients must not substitute the device date.                         |
+| `settlement.businessDate` | query               | `settlement.record` | Returns the selected store's authoritative current business date, effective timezone, and the current-store `canRecordOperatingExpenses` capability.          |
+| `settlement.wageRoster`   | query               | `settlement.record` | Minimal active personnel list for the selected store, with only effective roles for the picker; never returns the organization-wide admin directory.          |
 | `settlement.get`          | query               | `settlement.record` | One store/date record or null; inactive-store history remains readable.                                                                                       |
 | `settlement.recent`       | query               | `settlement.record` | Newest records for one store, with an exclusive date cursor.                                                                                                  |
 | `settlement.save`         | idempotent mutation | `settlement.record` | Creates or corrects one store/date row using `expectedVersion`; corrections require a reason and atomically append a revision that normal APIs cannot update. |

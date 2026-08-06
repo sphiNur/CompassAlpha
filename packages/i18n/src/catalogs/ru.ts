@@ -1368,7 +1368,14 @@ export const ru = {
   'settlement.expenses.item': 'Статья расхода',
   'settlement.expenses.paidTo': 'Получатель / поставщик',
   'settlement.expenses.reason': 'Причина расхода',
+  'settlement.expenses.historicalReason':
+    'В исторической записи указана только сумма; исходная причина расхода не сохранена.',
+  'settlement.details.historicalReadOnly': 'Историческая сумма доступна только для просмотра',
+  'settlement.details.historicalReadOnlyBody':
+    'Эта смена закрыта до появления детализации. Историческая сумма сохранена и не может быть разбита на строки или изменена.',
   'settlement.expenses.remove': 'Удалить',
+  'settlement.expenses.readOnly':
+    'Расходы можно просматривать здесь, но добавлять, изменять и удалять их может только менеджер магазина или роль выше.',
   'settlement.expenseCategory.supplies': 'Материалы',
   'settlement.expenseCategory.utilities': 'Коммунальные услуги',
   'settlement.expenseCategory.transport': 'Транспорт',
@@ -1381,6 +1388,25 @@ export const ru = {
   'settlement.wages.empty': 'Записей о зарплате ещё нет.',
   'settlement.wages.itemNumber': 'Зарплата {n}',
   'settlement.wages.personName': 'Получатель / кому должны',
+  'settlement.wages.employee': 'Сотрудник',
+  'settlement.wages.chooseEmployee': 'Выбрать сотрудника',
+  'settlement.wages.legacyEmployee':
+    'У этой исторической записи зарплаты нет связанного сотрудника. Перед изменением выберите текущего сотрудника магазина.',
+  'settlement.wages.historicalEmployee': 'Сотрудник не указан (историческая сумма)',
+  'settlement.wages.historicalReason':
+    'В исторической записи указана только сумма; данные сотрудника не сохранены.',
+  'settlement.wages.pickerTitle': 'Выберите сотрудника магазина',
+  'settlement.wages.pickerDescription':
+    'Показаны только активные сотрудники, назначенные в этот магазин.',
+  'settlement.wages.roleFilter': 'Обязанность',
+  'settlement.wages.allRoles': 'Все обязанности',
+  'settlement.wages.searchEmployees': 'Поиск сотрудников',
+  'settlement.wages.rosterError': 'Не удалось загрузить персонал магазина',
+  'settlement.wages.rosterEmptyTitle': 'Нет активного персонала магазина',
+  'settlement.wages.rosterEmptyBody':
+    'Сначала добавьте или назначьте сотрудников в этот магазин в управлении персоналом.',
+  'settlement.wages.noEmployeeMatch': 'Нет сотрудника, подходящего по обязанности или поиску.',
+  'settlement.wages.noRole': 'Обязанность не назначена',
   'settlement.wages.status': 'Статус выплаты',
   'settlement.wages.status.paid': 'Выплачено',
   'settlement.wages.status.unpaid': 'Не выплачено',
@@ -1422,9 +1448,11 @@ export const ru = {
   'settlement.storeRequired.body':
     'Закрытие дня ведётся отдельно для каждого магазина. Выберите конкретный магазин вместо всех.',
   'settlement.errors.invalidMoney': 'Введите корректную сумму, не более двух знаков после запятой.',
+  'settlement.errors.expensesManagerOnly':
+    'Только менеджер магазина или роль выше может вносить операционные расходы.',
   'settlement.errors.invalidDetails': 'Заполните каждую строку расхода и зарплаты.',
   'settlement.errors.invalidDetailsBody':
-    'Перед сохранением в каждой строке должны быть сотрудник или статья расхода, положительная сумма и причина.',
+    'Для каждого операционного расхода укажите положительную сумму и причину; для каждой зарплаты также выберите сотрудника.',
   'settlement.errors.detailLimit':
     'В одном закрытии дня может быть не более {count} строк расходов и {count} строк зарплаты.',
   'settlement.errors.stores': 'Не удалось загрузить магазины для закрытия дня.',

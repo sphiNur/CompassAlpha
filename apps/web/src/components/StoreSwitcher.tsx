@@ -62,6 +62,33 @@ import { useI18n } from '../hooks/useI18n';
 const NO_STORES: AuthSession['stores'] = [];
 
 /**
+ * A page can veto a global store-context change while it has unsaved local
+ * work. The switcher itself owns the only global trigger, so putting this
+ * small registry here keeps a StoreChip change from silently discarding a
+ * form that already protects its page-local selector.
+ */
+type StoreChangeGuard = (nextStoreId: StoreContext) => boolean | Promise<boolean>;
+const storeChangeGuards = new Set<StoreChangeGuard>();
+
+export function registerStoreChangeGuard(guard: StoreChangeGuard): () => void {
+  storeChangeGuards.add(guard);
+  return () => storeChangeGuards.delete(guard);
+}
+
+export async function requestStoreChange(nextStoreId: StoreContext): Promise<boolean> {
+  for (const guard of storeChangeGuards) {
+    try {
+      if (!(await guard(nextStoreId))) return false;
+    } catch {
+      // A rejected guard must fail closed: preserving an unsaved financial
+      // draft is safer than changing global context without confirmation.
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
  * True iff the actor is allowed to see + use the store picker.
  *
  * M3.5 rule: only `org.admin` holders (super_admin, admin, and any
@@ -110,6 +137,17 @@ export function StorePickerSection({
   if (!canSee) return null;
 
   const stores = session?.stores ?? [];
+  const chooseStore = (nextStoreId: StoreContext) => {
+    if (nextStoreId === currentStoreId) {
+      onClose();
+      return;
+    }
+    void (async () => {
+      if (!(await requestStoreChange(nextStoreId))) return;
+      setCurrentStore(nextStoreId);
+      onClose();
+    })();
+  };
 
   return (
     <section>
@@ -123,10 +161,7 @@ export function StorePickerSection({
           label={i18n.t('storeSwitcher.allOrgStores')}
           hint={i18n.t('storeSwitcher.allOrgHint')}
           selected={currentStoreId === ALL_STORES}
-          onClick={() => {
-            setCurrentStore(ALL_STORES);
-            onClose();
-          }}
+          onClick={() => chooseStore(ALL_STORES)}
         />
         {stores.map((store) => (
           <PickerRow
@@ -134,10 +169,7 @@ export function StorePickerSection({
             label={store.name}
             hint={store.code ?? ''}
             selected={currentStoreId === store.id}
-            onClick={() => {
-              setCurrentStore(store.id);
-              onClose();
-            }}
+            onClick={() => chooseStore(store.id)}
           />
         ))}
       </div>
@@ -252,14 +284,9 @@ export function useStoreContext():
   // NO_STORES (module-level) — never `?? []` inline here. See the
   // constant's docblock: a fresh array per call loops useSyncExternalStore.
   const stores = useAuthStore((s) => s.session?.stores ?? NO_STORES);
-  const isOrgAdmin = useAuthStore((s) =>
-    s.session?.permissions.includes('org.admin') ?? false,
-  );
+  const isOrgAdmin = useAuthStore((s) => s.session?.permissions.includes('org.admin') ?? false);
   if (currentStoreId === ALL_STORES && isOrgAdmin) return { kind: 'all' };
-  if (
-    typeof currentStoreId === 'string' &&
-    stores.some((store) => store.id === currentStoreId)
-  ) {
+  if (typeof currentStoreId === 'string' && stores.some((store) => store.id === currentStoreId)) {
     return { kind: 'specific', storeId: currentStoreId };
   }
   if (stores[0]) return { kind: 'specific', storeId: stores[0].id };

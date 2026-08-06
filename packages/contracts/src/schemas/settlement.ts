@@ -28,22 +28,41 @@ export const SettlementBusinessDateInputSchema = z.object({
   storeId: UuidSchema,
 });
 
-/** A single explained day-to-day operating outflow in a daily close. */
+/** Active personnel available to select for wages in one store. */
+export const SettlementWageRosterInputSchema = z.object({
+  storeId: UuidSchema,
+});
+
+/**
+ * A single explained day-to-day operating outflow in a daily close.
+ *
+ * `id` is assigned by the server when the row is first stored.  It lets the
+ * API retain the immutable audit attribution for an existing row while a
+ * manager corrects its amount or reason.  Clients must never send an actor
+ * identity; the API obtains that from the authenticated session.
+ */
 export const SettlementOperatingExpenseItemSchema = z.object({
-  category: z.enum(['supplies', 'utilities', 'transport', 'maintenance', 'rent', 'other']),
-  item: z.string().trim().min(1).max(160),
+  id: UuidSchema.optional(),
   amount: SettlementMoneySchema.refine((value) => Number(value) > 0, {
     message: 'expense amount must be greater than zero',
   }),
-  /** Vendor, recipient, or employee who received the money, when known. */
-  paidTo: z.string().trim().max(160).nullable().optional(),
   /** Why this outflow was necessary. Required for an auditable close. */
   reason: z.string().trim().min(1).max(500),
 });
 
-/** One person's paid or still-payable wage for this store business date. */
+/**
+ * One store employee's paid or still-payable wage for this business date.
+ * New or changed wage rows must carry `memberId`; the server validates it
+ * against the selected store and snapshots the current display name. The
+ * optional `personName` is retained only so an already-deployed older client
+ * can re-save an untouched historical row. It is never trusted for a new or
+ * changed recipient.
+ */
 export const SettlementWageItemSchema = z.object({
-  personName: z.string().trim().min(1).max(160),
+  /** Stable server-generated identity for preserving a historical wage snapshot. */
+  id: UuidSchema.optional(),
+  memberId: UuidSchema.optional(),
+  personName: z.string().trim().min(1).max(160).optional(),
   status: z.enum(['paid', 'unpaid']),
   amount: SettlementMoneySchema.refine((value) => Number(value) > 0, {
     message: 'wage amount must be greater than zero',

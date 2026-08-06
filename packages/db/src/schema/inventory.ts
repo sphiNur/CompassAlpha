@@ -54,14 +54,28 @@ export const stores = inventorySchema.table(
  * The API validates every value before it can reach these columns.
  */
 export type StoreDailySettlementOperatingExpenseItem = {
-  category: 'supplies' | 'utilities' | 'transport' | 'maintenance' | 'rent' | 'other';
-  item: string;
+  /** Stable server-generated item identity. Missing only on historical rows. */
+  id?: string;
   amount: string;
-  paidTo: string | null;
   reason: string;
+  /** Server-injected original recorder; intentionally not a client input. */
+  enteredByMemberId?: string;
+  /**
+   * Pre-0039 objects can still have category/item/paidTo. Keep them typed so
+   * a correction that does not touch the row can preserve the raw historical
+   * JSON instead of silently discarding prior context.
+   */
+  category?: 'supplies' | 'utilities' | 'transport' | 'maintenance' | 'rent' | 'other';
+  item?: string;
+  paidTo?: string | null;
 };
 
 export type StoreDailySettlementWageItem = {
+  /** Stable server-generated item identity. Missing only on historical rows. */
+  id?: string;
+  /** Selected store member. Historical free-text rows legitimately omit it. */
+  memberId?: string;
+  /** Immutable display-name snapshot resolved by the server on save. */
   personName: string;
   status: 'paid' | 'unpaid';
   amount: string;
