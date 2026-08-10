@@ -20,7 +20,7 @@
     "@hono/trpc-server": "^0.3.4",
     "@t3-oss/env-core": "^0.11.1",
     "@trpc/server": "^11.0.0",
-    "drizzle-orm": "^0.36.4",
+    "drizzle-orm": "^0.45.2",
     "hono": "^4.6.13",
     "ioredis": "^5.4.1",
     "jose": "^5.9.6",
