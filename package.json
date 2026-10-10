@@ -15,7 +15,7 @@
     "lint": "turbo run lint",
     "type-check": "turbo run type-check",
     "test": "turbo run test",
-    "test:e2e": "pnpm --filter @compass/e2e test",
+    "test:e2e": "pnpm --filter @compass/e2e e2e",
     "db:generate": "pnpm --filter @compass/db generate",
     "db:migrate": "pnpm --filter @compass/db migrate",
     "db:studio": "pnpm --filter @compass/db studio",

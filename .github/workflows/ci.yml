@@ -1,6 +1,6 @@
 # CompassAlpha CI (M1.9, 2026-05-07; expanded M1.9-extra 2026-05-07)
 #
-# Two jobs in one file:
+# Three jobs in one file:
 #
 #   1. unit
 #        Migration journal consistency, i18n catalog parity, workspace
@@ -18,6 +18,10 @@
 #     see red within ~60s without paying for a Postgres boot.
 #   - integration is the safety net that catches schema drift, replay
 #     defence, RLS isolation. Worth every second.
+#
+#   3. e2e
+#        Drives the real app in Chromium against a real api and database
+#        (tests/e2e). Runs on every push + PR; ~2min.
 #
 # What we DON'T run here:
 #   - Browser smokes (browser-smoke.ts, browser-smoke-deep.ts) hit the
@@ -370,3 +374,64 @@ jobs:
             apps/api/src/__tests__/settlement.test.ts \
             apps/api/src/__tests__/approver-self-edit.test.ts \
             apps/api/src/__tests__/login-enrolment.test.ts
+
+  # ============ Job 3: the app in a real browser ============
+  e2e:
+    name: end-to-end (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: compass
+          POSTGRES_PASSWORD: compass
+          POSTGRES_DB: compass_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U compass"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # global-setup wipes and rebuilds this database on every run.
+      E2E_DATABASE_URL: postgres://compass:compass@localhost:5432/compass_e2e
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install bun (matches .bun-version)
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install workspace deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm --filter @compass/e2e exec playwright install --with-deps chromium
+
+      - name: Walk the main flow
+        # Real api, real database, web dev server, development login.
+        # Order → approve → buy → deliver → receive → finish → daily close.
+        run: pnpm test:e2e
+
+      - name: Keep the report when it fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            tests/e2e/playwright-report
+            tests/e2e/test-results
+          retention-days: 7
