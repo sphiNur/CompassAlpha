@@ -27,8 +27,8 @@ export function Banner({ className, tone = 'info', title, action, children, ...r
       {...rest}
     >
       <div className="flex-1">
-        {title ? <div className="text-h3 font-semibold">{title}</div> : null}
-        {children ? <div className="text-body-sm opacity-90">{children}</div> : null}
+        {title ? <div className="text-old-h3 font-semibold">{title}</div> : null}
+        {children ? <div className="text-old-body-sm opacity-90">{children}</div> : null}
       </div>
       {action ? <div className="shrink-0">{action}</div> : null}
     </div>

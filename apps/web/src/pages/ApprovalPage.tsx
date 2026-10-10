@@ -274,12 +274,12 @@ export function ApprovalPage() {
 
                           The "has notes" 📝 pill stays — still the only
                           pre-expand signal for a free-text request. */}
-                      <span className="whitespace-nowrap text-label tabular-nums text-[var(--c-fg-muted)]">
+                      <span className="whitespace-nowrap text-old-label tabular-nums text-[var(--c-fg-muted)]">
                         {i18n.t('approval.itemsCount', { n: row.itemCount })}
                       </span>
                       {row.estimatedTotal ? (
                         <span
-                          className="whitespace-nowrap font-mono text-body font-semibold tabular-nums text-[var(--c-fg)]"
+                          className="whitespace-nowrap font-mono text-old-body font-semibold tabular-nums text-[var(--c-fg)]"
                           title={i18n.t('order.review.estimateHint', {
                             known: row.estimatedKnown,
                             unknown: row.estimatedUnknown,
@@ -578,14 +578,14 @@ function SessionItems({
 
   if (detail.isLoading) {
     return (
-      <div className="flex items-center gap-2 border-t border-[var(--c-divider)] px-4 py-3 text-body-sm text-[var(--c-fg-muted)]">
+      <div className="flex items-center gap-2 border-t border-[var(--c-divider)] px-4 py-3 text-old-body-sm text-[var(--c-fg-muted)]">
         <Spinner size={14} /> {i18n.t('approval.items.loading')}
       </div>
     );
   }
   if (detail.isError) {
     return (
-      <div className="border-t border-[var(--c-divider)] px-4 py-3 text-body-sm text-[var(--c-danger)]">
+      <div className="border-t border-[var(--c-divider)] px-4 py-3 text-old-body-sm text-[var(--c-danger)]">
         {i18n.t('approval.items.failed')}
       </div>
     );
@@ -612,7 +612,7 @@ function SessionItems({
   })();
   if (totals.length === 0) {
     return (
-      <div className="border-t border-[var(--c-divider)] px-4 py-3 text-body-sm text-[var(--c-fg-muted)]">
+      <div className="border-t border-[var(--c-divider)] px-4 py-3 text-old-body-sm text-[var(--c-fg-muted)]">
         {i18n.t('common.empty')}
       </div>
     );
@@ -647,7 +647,7 @@ function SessionItems({
           {sessionExtras.map((e, idx) => (
             <li
               key={`${e.name}-${idx}`}
-              className="flex items-baseline justify-between gap-2 text-body"
+              className="flex items-baseline justify-between gap-2 text-old-body"
             >
               <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">{e.name}</span>
               <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
@@ -663,7 +663,7 @@ function SessionItems({
         <SectionLabel padded={false}>
           {i18n.t('order.notes.label')}
         </SectionLabel>
-        <div className="mt-1 whitespace-pre-wrap text-body leading-snug text-[var(--c-fg)]">
+        <div className="mt-1 whitespace-pre-wrap text-old-body leading-snug text-[var(--c-fg)]">
           {sessionNotes}
         </div>
       </div>
@@ -673,11 +673,11 @@ function SessionItems({
         the last 7 days of price history. SKUs with no history skip
         and are flagged. */}
     {estimateTotal.known > 0 ? (
-      <div className="flex items-baseline justify-between gap-2 px-4 py-2 text-label text-[var(--c-fg-muted)]">
+      <div className="flex items-baseline justify-between gap-2 px-4 py-2 text-old-label text-[var(--c-fg-muted)]">
         <span className="font-semibold uppercase tracking-eyebrow">
           {i18n.t('order.review.estimatedTotal')}
         </span>
-        <span className="font-mono text-body font-semibold tabular-nums text-[var(--c-fg)]">
+        <span className="font-mono text-old-body font-semibold tabular-nums text-[var(--c-fg)]">
           ~{formatMoney(estimateTotal.sum)} {currency}
         </span>
       </div>
@@ -700,7 +700,7 @@ function SessionItems({
         const singleRow = isSingleContributor ? rows[0]! : null;
         return (
           <li key={t.skuId} className="border-b border-[var(--c-divider)] py-3 last:border-b-0">
-            <div className="flex items-center justify-between gap-2 text-body">
+            <div className="flex items-center justify-between gap-2 text-old-body">
               <span className="min-w-0 flex-1 truncate font-semibold text-[var(--c-fg)]">
                 {sku ? productName(sku) : t.skuId.slice(0, 8)}
               </span>
@@ -739,7 +739,7 @@ function SessionItems({
                 {rows.map((r) => (
                   <li
                     key={r.contributorMemberId}
-                    className="flex items-center justify-between gap-2 text-label text-[var(--c-fg-muted)]"
+                    className="flex items-center justify-between gap-2 text-old-label text-[var(--c-fg-muted)]"
                   >
                     <span className="truncate">
                       {memberById.get(r.contributorMemberId) ??

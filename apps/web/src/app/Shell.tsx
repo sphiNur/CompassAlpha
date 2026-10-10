@@ -434,7 +434,7 @@ function ShellInner() {
             height: 'calc(var(--app-header-h) + var(--app-safe-top))',
           }}
         >
-          <span className="truncate text-h3 font-semibold">Compass</span>
+          <span className="truncate text-old-h3 font-semibold">Compass</span>
           <StoreChip />
           {/* The only other way into settings (profile, language, the
               page's own menu actions) is Telegram's gear, which does not
@@ -444,7 +444,7 @@ function ShellInner() {
             data-testid="open-settings"
             aria-label={i18n.t('settings.title')}
             onClick={() => setSettingsOpen(true)}
-            className="press justify-self-end truncate text-label text-[var(--c-fg-muted)] underline decoration-dotted underline-offset-4"
+            className="press justify-self-end truncate text-old-label text-[var(--c-fg-muted)] underline decoration-dotted underline-offset-4"
           >
             {session?.member.orgName ?? i18n.t('settings.title')}
           </button>
@@ -543,8 +543,8 @@ function BottomNav({
             <span
               className={
                 active
-                  ? 'max-w-full truncate text-tiny font-semibold leading-none'
-                  : 'max-w-full truncate text-tiny leading-none'
+                  ? 'max-w-full truncate text-old-tiny font-semibold leading-none'
+                  : 'max-w-full truncate text-old-tiny leading-none'
               }
             >
               {i18n.t(t.labelKey as Parameters<typeof i18n.t>[0])}
@@ -606,7 +606,7 @@ function PageMainButton() {
         onClick={state.onClick}
         aria-busy={busy || undefined}
         className={
-          'flex h-12 w-full min-w-0 items-center justify-center rounded-[var(--r-pill)] px-4 text-h3 font-semibold ' +
+          'flex h-12 w-full min-w-0 items-center justify-center rounded-[var(--r-pill)] px-4 text-old-h3 font-semibold ' +
           (interactable
             ? 'bg-[var(--c-action)] text-[var(--c-action-fg)] active:opacity-80'
             : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')

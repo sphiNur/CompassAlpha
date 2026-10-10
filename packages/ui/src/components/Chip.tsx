@@ -59,7 +59,7 @@ export function Chip({ className, selected, children, ...rest }: ChipProps) {
     <button
       type="button"
       {...semantics}
-      // Pill visual (h-8 / rounded-pill / text-label font-medium) lives
+      // Pill visual (h-8 / rounded-pill / text-old-label font-medium) lives
       // in pillButtonClass, shared with Tab. Its `shrink-0
       // whitespace-nowrap` keep chips their natural width so the parent
       // ChipBar (overflow-x-auto) pans horizontally instead of squishing

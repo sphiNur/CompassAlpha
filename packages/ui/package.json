@@ -5,7 +5,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./tokens.css": "./src/tokens.css"
+    "./tokens.css": "./src/tokens.css",
+    "./kit": "./src/kit/index.ts",
+    "./tailwind-preset": "./tailwind-preset.js"
   },
   "scripts": {
     "type-check": "tsc --noEmit"

@@ -194,7 +194,7 @@ export function HistoryPage() {
           ) : null}
           <button
             type="button"
-            className="px-2 py-1 text-label font-semibold text-[var(--c-action)]"
+            className="px-2 py-1 text-old-label font-semibold text-[var(--c-action)]"
             onClick={clearAll}
           >
             {i18n.t('run.history.clearAll')}
@@ -250,7 +250,7 @@ export function HistoryPage() {
           </Field>
 
           <div>
-            <div className="mb-2 text-label font-semibold text-[var(--c-fg-muted)]">
+            <div className="mb-2 text-old-label font-semibold text-[var(--c-fg-muted)]">
               {i18n.t('run.history.dateRange')}
             </div>
             <div className="mb-2 flex flex-wrap gap-2">
@@ -298,7 +298,7 @@ export function HistoryPage() {
               </Field>
             </div>
             {invalidDateRange ? (
-              <div className="mt-1 text-label text-[var(--c-danger)]">
+              <div className="mt-1 text-old-label text-[var(--c-danger)]">
                 {i18n.t('run.history.invalidDateRange')}
               </div>
             ) : null}
@@ -373,7 +373,7 @@ function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }
     <button
       type="button"
       onClick={onRemove}
-      className="inline-flex min-h-8 items-center gap-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 text-label font-medium ring-hairline"
+      className="inline-flex min-h-8 items-center gap-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 text-old-label font-medium ring-hairline"
     >
       <span className="max-w-40 truncate">{label}</span>
       <span aria-hidden className="text-[var(--c-fg-muted)]">

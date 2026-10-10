@@ -208,7 +208,7 @@ export function StoreChip({ className }: { className?: string } = {}) {
    * Styled as a TITLE, not a control.
    *
    * 2026-07-30, from Telegram screenshots: as a pale `--c-surface-2`
-   * pill at `text-label` (11px) this sat between Telegram's Close and
+   * pill at `text-old-label` (11px) this sat between Telegram's Close and
    * ⋯ — solid dark pills roughly twice its height, white glyphs, high
    * contrast — and read as a stray app widget dropped into the title
    * bar rather than the screen's title. It is also the single most
@@ -217,14 +217,14 @@ export function StoreChip({ className }: { className?: string } = {}) {
    *
    * Telegram's own rule is the one to follow: the buttons flanking the
    * bar are pills, the bot title between them is plain text. So: no
-   * fill, no ring, `text-body` semibold at full `--c-fg`. The ▾ stays
+   * fill, no ring, `text-old-body` semibold at full `--c-fg`. The ▾ stays
    * for actors who can switch — it is the only remaining hint that the
    * title is tappable, so it carries that weight alone now.
    *
    * `min-w-0 truncate` + `shrink` so a long store name truncates
    * instead of pushing into either chrome button.
    */
-  const shell = 'inline-flex min-w-0 shrink items-center gap-1 text-body font-semibold';
+  const shell = 'inline-flex min-w-0 shrink items-center gap-1 text-old-body font-semibold';
 
   if (!canSwitch) {
     return (

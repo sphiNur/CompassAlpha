@@ -103,10 +103,10 @@ export function DebugPage() {
   return (
     <div className="flex flex-col gap-3 px-4 py-4 pb-24">
       <header>
-        <h1 className="text-h1 font-semibold leading-[1.15] text-[var(--c-fg)]">
+        <h1 className="text-old-h1 font-semibold leading-[1.15] text-[var(--c-fg)]">
           Debug console
         </h1>
-        <p className="mt-0.5 font-mono text-label text-[var(--c-fg-muted)]">
+        <p className="mt-0.5 font-mono text-old-label text-[var(--c-fg-muted)]">
           session: {sessionId.slice(0, 12)}… · user: {session.user.displayName}
         </p>
       </header>
@@ -173,7 +173,7 @@ export function DebugPage() {
                 {health.error.message}
               </Banner>
             ) : health.data ? (
-              <dl className="grid grid-cols-2 gap-2 font-mono text-label">
+              <dl className="grid grid-cols-2 gap-2 font-mono text-old-label">
                 <dt className="text-[var(--c-fg-muted)]">status</dt>
                 <dd>{health.data.status}</dd>
                 <dt className="text-[var(--c-fg-muted)]">db</dt>
@@ -264,7 +264,7 @@ function LogList({
           key={`${e.clientTs}:${i}`}
           className="rounded-[var(--r-utility)] bg-[var(--c-surface)] px-3 py-2 ring-hairline"
         >
-          <div className="flex items-baseline gap-2 font-mono text-label">
+          <div className="flex items-baseline gap-2 font-mono text-old-label">
             <span className="text-[var(--c-fg-muted)]">
               {new Date(e.clientTs).toLocaleTimeString()}
             </span>
@@ -285,12 +285,12 @@ function LogList({
             {e.action ? <span className="text-[var(--c-fg-muted)]">{e.action}</span> : null}
           </div>
           {e.target ? (
-            <div className="mt-1 truncate font-mono text-label text-[var(--c-fg-subtle)]">
+            <div className="mt-1 truncate font-mono text-old-label text-[var(--c-fg-subtle)]">
               {e.target}
             </div>
           ) : null}
           {e.errorMsg ? (
-            <div className="mt-1 font-mono text-label text-[var(--c-danger)]">{e.errorMsg}</div>
+            <div className="mt-1 font-mono text-old-label text-[var(--c-danger)]">{e.errorMsg}</div>
           ) : null}
         </li>
       ))}
@@ -314,7 +314,7 @@ function ServerRow({
 }) {
   return (
     <div className="rounded-[var(--r-utility)] bg-[var(--c-surface)] px-3 py-2 ring-hairline">
-      <div className="flex items-baseline gap-2 font-mono text-label">
+      <div className="flex items-baseline gap-2 font-mono text-old-label">
         <span className="text-[var(--c-fg-muted)]">
           {new Date(row.createdAt).toLocaleTimeString()}
         </span>
@@ -335,12 +335,12 @@ function ServerRow({
         {row.action ? <span className="text-[var(--c-fg-muted)]">{row.action}</span> : null}
       </div>
       {row.target ? (
-        <div className="mt-1 truncate font-mono text-label text-[var(--c-fg-subtle)]">
+        <div className="mt-1 truncate font-mono text-old-label text-[var(--c-fg-subtle)]">
           {row.target}
         </div>
       ) : null}
       {row.errorMsg ? (
-        <div className="mt-1 font-mono text-label text-[var(--c-danger)]">{row.errorMsg}</div>
+        <div className="mt-1 font-mono text-old-label text-[var(--c-danger)]">{row.errorMsg}</div>
       ) : null}
     </div>
   );

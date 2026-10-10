@@ -10,6 +10,8 @@
  * of what every screen looked like.
  */
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -34,11 +36,17 @@ const main = (): Locator => page.getByRole('main');
 const item = (sku: string): Locator => main().getByRole('listitem').filter({ hasText: sku });
 const sheet = (): Locator => page.getByRole('dialog');
 
+let shot = 0;
 async function evidence(name: string): Promise<void> {
-  await test.info().attach(name, {
-    body: await page.screenshot({ fullPage: true }),
-    contentType: 'image/png',
-  });
+  const body = await page.screenshot({ fullPage: true });
+  await test.info().attach(name, { body, contentType: 'image/png' });
+  // E2E_SHOTS_DIR=<dir> also keeps the pictures on disk, numbered in the
+  // order they were taken: a record of every screen for a design review.
+  const dir = process.env.E2E_SHOTS_DIR;
+  if (dir) {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, `${String(++shot).padStart(2, '0')}-${name}.png`), body);
+  }
 }
 
 test('sign in and confirm a display name', async () => {
@@ -53,6 +61,7 @@ test('sign in and confirm a display name', async () => {
 test('place an order', async () => {
   await tab('order').click();
   // Weighed goods step by half a kilo per tap.
+
   const add = async (sku: string, taps: number, expected: string) => {
     // Taps are debounced into one write. Wait for it to land: while it
     // is in flight the page's main button is disabled, and a tap that
@@ -68,6 +77,7 @@ test('place an order', async () => {
   };
   await add('Apple', 4, '2 kg');
   await add('Beef', 2, '1 kg');
+  await evidence('order-picking');
 
   await expect(mainButton()).toHaveText('Review order (2)');
   await mainButton().click();
@@ -120,6 +130,7 @@ test('buy everything, one item in cash and one by transfer', async () => {
     ).toBeVisible();
   };
   await buy('Apple', '12', 'Cash');
+  await evidence('run-buying');
   await buy('Beef', '90', 'Transfer');
 
   await expect(main()).toContainText('2 bought · 0 n/a · 0 left');
@@ -133,6 +144,7 @@ test('deliver to the store', async () => {
   await mainButton().click();
   await sheet().getByRole('button', { name: 'Start delivery' }).click();
   await expect(main()).toContainText(/Stores\s*0\/1 confirmed/);
+  await evidence('run-delivering');
 
   await main()
     .getByRole('button', { name: /Central Kitchen.*Not delivered/ })
@@ -147,6 +159,7 @@ test('deliver to the store', async () => {
 test('receive the delivery at the store', async () => {
   await tab('confirm').click();
   await expect(main()).toContainText(/Checked\s*0\/2/);
+  await evidence('receiving-unchecked');
   await main().getByRole('button', { name: 'All arrived fine' }).click();
   await expect(main()).toContainText(/Checked\s*2\/2/);
   await expect(item('Apple').getByRole('radio', { name: 'OK' })).toBeChecked();
@@ -178,6 +191,7 @@ test('finish the run and find it in history', async () => {
 
 test('close the day', async () => {
   await tab('settlement').click();
+  await evidence('daily-close-empty');
   await page.getByRole('spinbutton', { name: 'Invoiced cash revenue' }).fill('500000');
   await page.getByRole('spinbutton', { name: 'Online / transfer revenue' }).fill('250000');
   await expect(main()).toContainText(/Total recorded revenue\s*750,000 UZS/);

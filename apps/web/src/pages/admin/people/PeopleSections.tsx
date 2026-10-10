@@ -316,7 +316,7 @@ export function PeopleSection({
                         <button
                           key={r.bindingId}
                           type="button"
-                          className="press inline-flex items-center gap-1 rounded-full bg-[var(--c-surface-2)] px-2 py-0.5 text-label ring-hairline"
+                          className="press inline-flex items-center gap-1 rounded-full bg-[var(--c-surface-2)] px-2 py-0.5 text-old-label ring-hairline"
                           onClick={() =>
                             nativeConfirm(
                               scopedStoreName
@@ -896,7 +896,7 @@ function RoleCreateSheet({
                   <ul className="mt-1 flex flex-col gap-1">
                     {keys.map((p) => (
                       <li key={p.key}>
-                        <label className="flex cursor-pointer items-start gap-2 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-2 text-label active:opacity-80">
+                        <label className="flex cursor-pointer items-start gap-2 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-2 text-old-label active:opacity-80">
                           <input
                             type="checkbox"
                             checked={picked.has(p.key)}
@@ -904,9 +904,9 @@ function RoleCreateSheet({
                             className="mt-0.5 h-4 w-4"
                           />
                           <div className="min-w-0 flex-1">
-                            <div className="font-mono text-label">{p.key}</div>
+                            <div className="font-mono text-old-label">{p.key}</div>
                             {p.description ? (
-                              <div className="mt-0.5 text-label text-[var(--c-fg-muted)]">
+                              <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
                                 {p.description}
                               </div>
                             ) : null}
@@ -1080,11 +1080,11 @@ function RolePermissionsSheet({
       }
     >
       {detail.isLoading ? (
-        <div className="py-8 text-center text-body text-[var(--c-fg-muted)]">
+        <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">
           Loading…
         </div>
       ) : !detail.data ? (
-        <div className="py-8 text-center text-body text-[var(--c-fg-muted)]">
+        <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">
           {i18n.t('people.noRole')}
         </div>
       ) : (
@@ -1134,10 +1134,10 @@ function RolePermissionsSheet({
               </SectionLabel>
             </>
           ) : detail.data.description ? (
-            <p className="text-body-sm text-[var(--c-fg-muted)]">{detail.data.description}</p>
+            <p className="text-old-body-sm text-[var(--c-fg-muted)]">{detail.data.description}</p>
           ) : null}
           {grouped.length === 0 ? (
-            <p className="text-body text-[var(--c-fg-muted)]">
+            <p className="text-old-body text-[var(--c-fg-muted)]">
               {i18n.t('people.noPermsAssigned')}
             </p>
           ) : (
@@ -1152,7 +1152,7 @@ function RolePermissionsSheet({
                       if (editing) {
                         return (
                           <li key={p.key}>
-                            <label className="flex cursor-pointer items-start gap-2 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-2 text-label active:opacity-80">
+                            <label className="flex cursor-pointer items-start gap-2 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-2 text-old-label active:opacity-80">
                               <input
                                 type="checkbox"
                                 checked={picked.has(p.key)}
@@ -1160,9 +1160,9 @@ function RolePermissionsSheet({
                                 className="mt-0.5 h-4 w-4"
                               />
                               <div className="min-w-0 flex-1">
-                                <div className="font-mono text-label">{p.key}</div>
+                                <div className="font-mono text-old-label">{p.key}</div>
                                 {p.description ? (
-                                  <div className="mt-0.5 text-label text-[var(--c-fg-muted)]">
+                                  <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
                                     {p.description}
                                   </div>
                                 ) : null}
@@ -1174,7 +1174,7 @@ function RolePermissionsSheet({
                       return (
                         <li
                           key={p.key}
-                          className="rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-1.5 font-mono text-label"
+                          className="rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-1.5 font-mono text-old-label"
                         >
                           {p.key}
                         </li>
@@ -1258,7 +1258,7 @@ function RoleAssigneesByStore({
       <div className="mt-1 flex flex-col gap-3">
         {grouped.map(([key, bucket]) => (
           <section key={key}>
-            <h4 className="mb-1 text-label font-semibold text-[var(--c-fg-muted)]">
+            <h4 className="mb-1 text-old-label font-semibold text-[var(--c-fg-muted)]">
               {bucket.label} ({bucket.members.length})
             </h4>
             <ul className="flex flex-col gap-1">
@@ -1268,11 +1268,11 @@ function RoleAssigneesByStore({
                   className="flex items-center gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-1.5"
                 >
                   <Avatar src={a.avatarUrl} name={a.displayName} size={24} />
-                  <span className="text-body text-[var(--c-fg)]">
+                  <span className="text-old-body text-[var(--c-fg)]">
                     {a.displayName}
                   </span>
                   {a.tgUsername ? (
-                    <span className="text-label text-[var(--c-fg-muted)]">
+                    <span className="text-old-label text-[var(--c-fg-muted)]">
                       @{a.tgUsername}
                     </span>
                   ) : null}
@@ -1357,10 +1357,10 @@ function InviteHubSheet({
             <IconShare size={20} />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block text-body font-semibold text-[var(--c-fg)]">
+            <span className="block text-old-body font-semibold text-[var(--c-fg)]">
               {i18n.t('people.inviteViaTelegram')}
             </span>
-            <span className="mt-0.5 block text-label text-[var(--c-fg-muted)]">
+            <span className="mt-0.5 block text-old-label text-[var(--c-fg-muted)]">
               {botUsername
                 ? "Pick a contact in Telegram; they'll get the bot link."
                 : 'Bot username not configured.'}
@@ -1381,16 +1381,16 @@ function InviteHubSheet({
             <IconShare size={20} />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block text-body font-semibold text-[var(--c-fg)]">
+            <span className="block text-old-body font-semibold text-[var(--c-fg)]">
               {i18n.t('people.inviteCopyLink')}
             </span>
-            <span className="mt-0.5 block text-label text-[var(--c-fg-muted)]">
+            <span className="mt-0.5 block text-old-label text-[var(--c-fg-muted)]">
               {i18n.t('people.inviteCopyLinkHint')}
             </span>
           </span>
         </button>
 
-        <div className="my-2 text-center text-label uppercase tracking-eyebrow text-[var(--c-fg-subtle)]">
+        <div className="my-2 text-center text-old-label uppercase tracking-eyebrow text-[var(--c-fg-subtle)]">
           {i18n.t('people.inviteOr')}
         </div>
 
@@ -1400,10 +1400,10 @@ function InviteHubSheet({
           className="press flex items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 text-left ring-hairline"
         >
           <span className="min-w-0 flex-1">
-            <span className="block text-body font-semibold text-[var(--c-fg)]">
+            <span className="block text-old-body font-semibold text-[var(--c-fg)]">
               {i18n.t('people.inviteByTgId')}
             </span>
-            <span className="mt-0.5 block text-label text-[var(--c-fg-muted)]">
+            <span className="mt-0.5 block text-old-label text-[var(--c-fg-muted)]">
               {i18n.t('people.inviteByTgIdHint')}
             </span>
           </span>
@@ -1495,7 +1495,7 @@ function ManualInviteSheet({
               placeholder={i18n.t('admin.field.tgUserIdPlaceholder')}
               autoFocus
             />
-            <p className="mt-1 text-label text-[var(--c-fg-muted)]">
+            <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
               {i18n.t('admin.invite.tgIdHint')}
             </p>
           </Field>
@@ -1509,7 +1509,7 @@ function ManualInviteSheet({
           </Field>
           <Field label={i18n.t('admin.field.role')}>
             {rolesQuery.isLoading ? (
-              <div className="flex items-center gap-2 text-body-sm text-[var(--c-fg-muted)]">
+              <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
                 <Spinner size={14} /> {i18n.t('admin.label.loadingRoles')}
               </div>
             ) : (
@@ -1535,7 +1535,7 @@ function ManualInviteSheet({
               }
             >
               {storesQuery.isLoading ? (
-                <div className="flex items-center gap-2 text-body-sm text-[var(--c-fg-muted)]">
+                <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
                   <Spinner size={14} /> {i18n.t('admin.label.loadingStores')}
                 </div>
               ) : eligibleStores.length === 0 ? (
@@ -1562,22 +1562,22 @@ function ManualInviteSheet({
                             })
                           }
                         />
-                        <span className="text-body text-[var(--c-fg)]">{st.name}</span>
+                        <span className="text-old-body text-[var(--c-fg)]">{st.name}</span>
                         {st.code ? (
-                          <span className="text-label text-[var(--c-fg-muted)]">{st.code}</span>
+                          <span className="text-old-label text-[var(--c-fg-muted)]">{st.code}</span>
                         ) : null}
                       </label>
                     );
                   })}
                 </div>
               )}
-              <p className="mt-1 text-label text-[var(--c-fg-muted)]">
+              <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
                 {i18n.t('admin.invite.staffNeedStoreHint')}
                 {!isGlobalAdmin ? ' ' + i18n.t('admin.invite.onlyYourStoresHint') : ''}
               </p>
             </Field>
           ) : (
-            <p className="text-label text-[var(--c-fg-muted)]">
+            <p className="text-old-label text-[var(--c-fg-muted)]">
               {i18n.t('admin.invite.adminBypassHint')}
             </p>
           )}
@@ -1698,14 +1698,14 @@ function ManageMemberSheet({
                 {i18n.t('common.save')}
               </Button>
             </div>
-            <p className="mt-1 text-label text-[var(--c-fg-muted)]">
+            <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
               {i18n.t('people.nameOverrideHint')}
             </p>
           </Field>
 
           <Field label={i18n.t('admin.field.assignedStores')}>
             {storesQuery.isLoading || assignmentsQuery.isLoading ? (
-              <div className="flex items-center gap-2 text-body-sm text-[var(--c-fg-muted)]">
+              <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
                 <Spinner size={14} /> Loading…
               </div>
             ) : (
@@ -1747,9 +1747,9 @@ function ManageMemberSheet({
                           }
                         }}
                       />
-                      <span className="text-body text-[var(--c-fg)]">{st.name}</span>
+                      <span className="text-old-body text-[var(--c-fg)]">{st.name}</span>
                       {st.code ? (
-                        <span className="text-label text-[var(--c-fg-muted)]">{st.code}</span>
+                        <span className="text-old-label text-[var(--c-fg-muted)]">{st.code}</span>
                       ) : null}
                       {/* D2 (2026-05-06): "Transfer..." per assigned
                           row. M1.9 (2026-05-07): gated to global admins
@@ -1758,7 +1758,7 @@ function ManageMemberSheet({
                       {checked && editable && isGlobalAdmin ? (
                         <button
                           type="button"
-                          className="ml-auto rounded-full bg-[var(--c-surface)] px-2 py-0.5 text-label font-medium text-[var(--c-fg)] ring-hairline active:opacity-80"
+                          className="ml-auto rounded-full bg-[var(--c-surface)] px-2 py-0.5 text-old-label font-medium text-[var(--c-fg)] ring-hairline active:opacity-80"
                           onClick={(ev) => {
                             ev.preventDefault();
                             ev.stopPropagation();
@@ -1769,7 +1769,7 @@ function ManageMemberSheet({
                           → {i18n.t('admin.action.transfer')}
                         </button>
                       ) : !editable ? (
-                        <span className="ml-auto text-tiny uppercase tracking-wide text-[var(--c-fg-muted)]">
+                        <span className="ml-auto text-old-tiny uppercase tracking-wide text-[var(--c-fg-muted)]">
                           read-only
                         </span>
                       ) : null}
@@ -1777,13 +1777,13 @@ function ManageMemberSheet({
                   );
                 })}
                 {(storesQuery.data ?? []).length === 0 ? (
-                  <span className="px-2 py-1 text-label text-[var(--c-fg-muted)]">
+                  <span className="px-2 py-1 text-old-label text-[var(--c-fg-muted)]">
                     {i18n.t('people.noStoresInOrg')}
                   </span>
                 ) : null}
               </div>
             )}
-            <p className="mt-1 text-label text-[var(--c-fg-muted)]">
+            <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
               {i18n.t('people.storeScopeHint')}
             </p>
           </Field>
@@ -1919,7 +1919,7 @@ function TransferStoreSheet({
               own dedicated i18n pass with all the other admin
               transfer copy. */}
           <Field label={i18n.t('people.transferFrom')}>
-            <div className="rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 py-2 text-h3 ring-hairline">
+            <div className="rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 py-2 text-old-h3 ring-hairline">
               {target.fromStoreName}
             </div>
           </Field>
@@ -1950,17 +1950,17 @@ function TransferStoreSheet({
               onChange={(e) => setMirrorRoles(e.target.checked)}
             />
             <div className="min-w-0 flex-1">
-              <div className="text-body font-semibold text-[var(--c-fg)]">
+              <div className="text-old-body font-semibold text-[var(--c-fg)]">
                 {i18n.t('people.mirrorRoles')}
               </div>
-              <p className="mt-0.5 text-label text-[var(--c-fg-muted)]">
+              <p className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
                 {i18n.t('people.mirrorRolesHint', { store: target.fromStoreName })}
               </p>
             </div>
           </label>
           <Banner tone="info" title={i18n.t('people.transferWhatTitle')}>
             {i18n.t('people.transferWhatIntro')}
-            <ul className="mt-1 list-disc space-y-0.5 pl-4 text-label">
+            <ul className="mt-1 list-disc space-y-0.5 pl-4 text-old-label">
               <li>
                 {i18n.t('people.transferWhatAdded', { name: target.displayName })}
               </li>
@@ -2144,11 +2144,11 @@ function MemberPermissionsSheet({
       }
     >
       {detail.isLoading || allPerms.isLoading ? (
-        <div className="py-8 text-center text-body text-[var(--c-fg-muted)]">
+        <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">
           <Spinner size={16} />
         </div>
       ) : !detail.data ? (
-        <div className="py-8 text-center text-body text-[var(--c-fg-muted)]">
+        <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">
           —
         </div>
       ) : (
@@ -2221,9 +2221,9 @@ function MemberPermissionsSheet({
                     >
                       <div className="flex items-baseline justify-between gap-2">
                         <div className="min-w-0">
-                          <div className="font-mono text-label">{p.key}</div>
+                          <div className="font-mono text-old-label">{p.key}</div>
                           {p.description ? (
-                            <div className="mt-0.5 text-label text-[var(--c-fg-muted)]">
+                            <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
                               {p.description}
                             </div>
                           ) : null}
@@ -2291,7 +2291,7 @@ function ScopeTab({
   children: React.ReactNode;
 }) {
   const base =
-    'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-label font-medium ring-hairline';
+    'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-old-label font-medium ring-hairline';
   const tone = active
     ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
     : disabled
@@ -2309,7 +2309,7 @@ function ScopeTab({
       {count && count > 0 ? (
         <span
           className={
-            'inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-tiny ' +
+            'inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-old-tiny ' +
             (active
               ? 'bg-white/25 text-white'
               : 'bg-[var(--c-action)] text-[var(--c-action-fg)]')
@@ -2550,7 +2550,7 @@ function GrantRoleSheet({
             ariaLabel={i18n.t('admin.field.scope')}
           />
           {!canGrantGlobal ? (
-            <p className="mt-1 text-label text-[var(--c-fg-muted)]">
+            <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
               {i18n.t('people.globalGrantLockedHint')}
             </p>
           ) : null}
@@ -2576,11 +2576,11 @@ function GrantRoleSheet({
                         checked={checked}
                         onChange={() => toggleStore(st.id)}
                       />
-                      <span className="text-body text-[var(--c-fg)]">
+                      <span className="text-old-body text-[var(--c-fg)]">
                         {st.name}
                       </span>
                       {st.code ? (
-                        <span className="text-label text-[var(--c-fg-muted)]">
+                        <span className="text-old-label text-[var(--c-fg-muted)]">
                           {st.code}
                         </span>
                       ) : null}
@@ -2594,11 +2594,11 @@ function GrantRoleSheet({
 
         {/* Step 2 — role list (filtered by chosen scope + effectiveRank) */}
         {!canSubmit ? (
-          <p className="text-label text-[var(--c-fg-muted)]">
+          <p className="text-old-label text-[var(--c-fg-muted)]">
             {i18n.t('people.pickScopeFirst')}
           </p>
         ) : rolesQuery.isLoading ? (
-          <div className="flex items-center gap-2 text-body-sm text-[var(--c-fg-muted)]">
+          <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
             <Spinner size={14} /> Loading roles…
           </div>
         ) : grantableRoles.length === 0 ? (
@@ -2617,10 +2617,10 @@ function GrantRoleSheet({
               className="press flex items-center justify-between rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 text-left ring-hairline"
             >
               <div>
-                <div className="text-body font-semibold text-[var(--c-fg)]">
+                <div className="text-old-body font-semibold text-[var(--c-fg)]">
                   {r.name}
                 </div>
-                <div className="mt-0.5 text-label text-[var(--c-fg-muted)]">
+                <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
                   {i18n.t('people.rankLine', { rank: r.rank })}
                   {r.description ? ` · ${r.description}` : ''}
                 </div>

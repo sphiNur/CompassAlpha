@@ -515,7 +515,7 @@ export function ActiveRunPanel({
                   onChange={(e) => setItemQuery(e.target.value)}
                   placeholder={i18n.t('run.search.itemsPlaceholder')}
                   aria-label={i18n.t('run.search.itemsPlaceholder')}
-                  className="h-9 w-full rounded-[var(--r-pill)] border border-[var(--c-divider)] bg-[var(--c-surface-2)] px-3 text-body outline-none focus:border-[var(--c-action)]"
+                  className="h-9 w-full rounded-[var(--r-pill)] border border-[var(--c-divider)] bg-[var(--c-surface-2)] px-3 text-old-body outline-none focus:border-[var(--c-action)]"
                 />
               </div>
               <ChipBar
@@ -548,7 +548,7 @@ export function ActiveRunPanel({
             </>
           ) : null}
           {visibleRunItems.length === 0 ? (
-            <p className="px-4 py-6 text-center text-body text-[var(--c-fg-muted)]">
+            <p className="px-4 py-6 text-center text-old-body text-[var(--c-fg-muted)]">
               {i18n.t('run.filter.noMatch')}
             </p>
           ) : null}
@@ -692,8 +692,8 @@ export function ActiveRunPanel({
                  the L1 delivery-stage rail lands in the B3 row pass. */
               const inner = (
                 <>
-                  <span className="shrink-0 truncate text-body font-semibold">{storeName}</span>
-                  <span className="min-w-0 flex-1 truncate text-label text-[var(--c-fg-muted)]">
+                  <span className="shrink-0 truncate text-old-body font-semibold">{storeName}</span>
+                  <span className="min-w-0 flex-1 truncate text-old-label text-[var(--c-fg-muted)]">
                     {i18n.t('run.label.itemsCount', { n: splitsHere.length })} · {subtitle}
                   </span>
                 </>
@@ -1406,7 +1406,7 @@ export function PreviewSummaryCard({
       const qtyUnit = `${formatQty(line.qty)} ${line.unit}`.trim();
       return (
         <li key={line.id} className={`px-2 py-1.5 ${rowBg}`}>
-          <div className="flex min-w-0 items-baseline gap-2 text-body">
+          <div className="flex min-w-0 items-baseline gap-2 text-old-body">
             {line.kind === 'extra' ? (
               <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--c-warning-fg)] ring-hairline">
                 {i18n.t('order.extras.label')}
@@ -1414,7 +1414,7 @@ export function PreviewSummaryCard({
             ) : null}
             <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">{line.name}</span>
             <span
-              className={`shrink-0 font-mono text-label font-semibold tabular-nums ${
+              className={`shrink-0 font-mono text-old-label font-semibold tabular-nums ${
                 line.total === null ? 'text-[var(--c-warning-fg)]' : 'text-[var(--c-fg)]'
               }`}
             >
@@ -1423,7 +1423,7 @@ export function PreviewSummaryCard({
                 : formatMoney(line.total)}
             </span>
           </div>
-          <div className="mt-0.5 flex min-w-0 items-baseline gap-1.5 text-label">
+          <div className="mt-0.5 flex min-w-0 items-baseline gap-1.5 text-old-label">
             {/* flex-1, not a max-w cap: the stall name is the field this
                 whole row exists to surface, so it should take whatever the
                 number leaves rather than give up at 45% while half the row
@@ -1445,7 +1445,7 @@ export function PreviewSummaryCard({
             </span>
           </div>
           {line.note ? (
-            <div className="mt-0.5 whitespace-pre-wrap text-label leading-snug text-[var(--c-fg-muted)]">
+            <div className="mt-0.5 whitespace-pre-wrap text-old-label leading-snug text-[var(--c-fg-muted)]">
               {line.note}
             </div>
           ) : null}
@@ -1459,19 +1459,19 @@ export function PreviewSummaryCard({
         className={`px-2 py-1.5 ${rowBg}`}
       >
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-body">
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-old-body">
             {line.kind === 'extra' ? (
               <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--c-warning-fg)] ring-hairline">
                 {i18n.t('order.extras.label')}
               </span>
             ) : null}
             {nameNode}
-            <span className={`min-w-0 font-mono text-label tabular-nums ${formulaTone}`}>
+            <span className={`min-w-0 font-mono text-old-label tabular-nums ${formulaTone}`}>
               {lineFormula(line)}
             </span>
           </div>
           {line.note ? (
-            <div className="mt-0.5 whitespace-pre-wrap text-label leading-snug text-[var(--c-fg-muted)]">
+            <div className="mt-0.5 whitespace-pre-wrap text-old-label leading-snug text-[var(--c-fg-muted)]">
               {line.note}
             </div>
           ) : null}
@@ -1513,10 +1513,10 @@ export function PreviewSummaryCard({
             onChange={(e) => setFilterText(e.target.value)}
             placeholder={i18n.t('order.search.placeholder')}
             aria-label={i18n.t('order.search.placeholder')}
-            className="h-9 min-w-0 flex-1 rounded-[var(--r-pill)] border border-[var(--c-divider)] bg-[var(--c-surface-2)] px-3 text-body outline-none focus:border-[var(--c-action)]"
+            className="h-9 min-w-0 flex-1 rounded-[var(--r-pill)] border border-[var(--c-divider)] bg-[var(--c-surface-2)] px-3 text-old-body outline-none focus:border-[var(--c-action)]"
           />
           {filtering ? (
-            <span className="shrink-0 font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
+            <span className="shrink-0 font-mono text-old-label tabular-nums text-[var(--c-fg-muted)]">
               {i18n.t('run.preview.filterMatch', { n: matchCount, total: totalCount })}
             </span>
           ) : null}
@@ -1529,7 +1529,7 @@ export function PreviewSummaryCard({
             type="button"
             onClick={() => chooseView(v)}
             className={
-              'press flex-1 rounded-[var(--r-pill)] px-3 py-1.5 text-label font-medium ring-hairline ' +
+              'press flex-1 rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium ring-hairline ' +
               (view === v
                 ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
                 : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]')
@@ -1560,7 +1560,7 @@ export function PreviewSummaryCard({
                 until the run is finished — so this number is
                 systematically low. It says "at least", never "≈", and
                 must never read as "cash to bring". */}
-            <span className="text-label text-[var(--c-fg-muted)]">
+            <span className="text-old-label text-[var(--c-fg-muted)]">
               {i18n.t('run.preview.coverage', {
                 known: previewStats.known,
                 total: previewStats.total,
@@ -1588,13 +1588,13 @@ export function PreviewSummaryCard({
                   // not a control that commits money hundreds of times a
                   // trip. The static counter beside it matches so the row
                   // reads as one band.
-                  className="press flex min-h-9 items-center rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2.5 text-label text-[var(--c-warning-fg)] ring-hairline"
+                  className="press flex min-h-9 items-center rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2.5 text-old-label text-[var(--c-warning-fg)] ring-hairline"
                 >
                   {i18n.t('run.preview.noSupplierCount', { n: previewStats.noSupplier })}
                 </button>
               ) : null}
               {previewStats.total > previewStats.known ? (
-                <span className="flex min-h-9 items-center rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2.5 text-label text-[var(--c-warning-fg)]">
+                <span className="flex min-h-9 items-center rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2.5 text-old-label text-[var(--c-warning-fg)]">
                   {i18n.t('run.preview.unknownPrices', {
                     n: previewStats.total - previewStats.known,
                   })}
@@ -1605,10 +1605,10 @@ export function PreviewSummaryCard({
 
           <div className="flex flex-col gap-1">
             {byStore.map((g) => (
-              <div key={g.storeId} className="flex items-baseline gap-2 text-body-sm">
+              <div key={g.storeId} className="flex items-baseline gap-2 text-old-body-sm">
                 <span className="min-w-0 flex-1 truncate">{g.storeName}</span>
                 {g.unknownCount > 0 ? (
-                  <span className="shrink-0 text-label text-[var(--c-warning-fg)]">
+                  <span className="shrink-0 text-old-label text-[var(--c-warning-fg)]">
                     {i18n.t('run.preview.unknownPrices', { n: g.unknownCount })}
                   </span>
                 ) : null}
@@ -1623,10 +1623,10 @@ export function PreviewSummaryCard({
 
       {filtering && matchCount === 0 ? (
         <div className="px-4 py-6 text-center">
-          <div className="text-body font-semibold text-[var(--c-fg)]">
+          <div className="text-old-body font-semibold text-[var(--c-fg)]">
             {i18n.t('order.search.noMatches.title')}
           </div>
-          <div className="mt-1 text-label text-[var(--c-fg-muted)]">
+          <div className="mt-1 text-old-label text-[var(--c-fg-muted)]">
             {i18n.t('order.search.noMatches.description')}
           </div>
         </div>
@@ -1669,14 +1669,14 @@ export function PreviewSummaryCard({
                   }}
                   className="press flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-[var(--r-utility)] px-2 py-1.5 text-left outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]"
                 >
-                  <span aria-hidden className="shrink-0 font-mono text-label text-[var(--c-fg-muted)]">
+                  <span aria-hidden className="shrink-0 font-mono text-old-label text-[var(--c-fg-muted)]">
                     {open ? '▾' : '▸'}
                   </span>
                   <span className="block min-w-0 flex-1">
-                    <span className="block truncate text-body font-semibold text-[var(--c-fg)]">
+                    <span className="block truncate text-old-body font-semibold text-[var(--c-fg)]">
                       {g.storeName}
                     </span>
-                    <span className="mt-0.5 block truncate font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
+                    <span className="mt-0.5 block truncate font-mono text-old-label tabular-nums text-[var(--c-fg-muted)]">
                       {groupMoneyMeta(g.total, g.unknownCount)}
                     </span>
                   </span>
@@ -1697,7 +1697,7 @@ export function PreviewSummaryCard({
                   i18n.t('run.previewSupplier.unassigned'),
                 ).map((supplier) => (
                   <section key={supplier.supplierId ?? '__unassigned__'}>
-                    <div className="mb-1 flex items-baseline gap-2 px-2 text-label font-semibold text-[var(--c-fg-muted)]">
+                    <div className="mb-1 flex items-baseline gap-2 px-2 text-old-label font-semibold text-[var(--c-fg-muted)]">
                       <span className="min-w-0 flex-1 truncate">{supplier.supplierName}</span>
                       <span className="shrink-0 font-mono font-normal tabular-nums">
                         {groupMoneyMeta(supplier.total, supplier.unknownCount)}
@@ -1721,7 +1721,7 @@ export function PreviewSummaryCard({
                     {i18n.t('order.extras.label')}
                   </SectionLabel>
                   {storeNote ? (
-                    <div className="mt-1 whitespace-pre-wrap text-body-sm italic leading-snug text-[var(--c-fg-muted)]">
+                    <div className="mt-1 whitespace-pre-wrap text-old-body-sm italic leading-snug text-[var(--c-fg-muted)]">
                       {storeNote}
                     </div>
                   ) : null}
@@ -1772,19 +1772,19 @@ export function PreviewSummaryCard({
                   }}
                   className="press flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-[var(--r-utility)] px-2 py-1.5 text-left outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]"
                 >
-                  <span aria-hidden className="shrink-0 font-mono text-label text-[var(--c-fg-muted)]">
+                  <span aria-hidden className="shrink-0 font-mono text-old-label text-[var(--c-fg-muted)]">
                     {open ? '▾' : '▸'}
                   </span>
                   <span className="block min-w-0 flex-1">
-                    <span className="block truncate text-body font-semibold text-[var(--c-fg)]">
+                    <span className="block truncate text-old-body font-semibold text-[var(--c-fg)]">
                       {b.supplierId ? `🛒 ${b.supplierName}` : `❓ ${b.supplierName}`}
                     </span>
                     {b.contactTg ? (
-                      <span className="block text-label text-[var(--c-fg-muted)]">@{b.contactTg}</span>
+                      <span className="block text-old-label text-[var(--c-fg-muted)]">@{b.contactTg}</span>
                     ) : b.contactPhone ? (
-                      <span className="block text-label text-[var(--c-fg-muted)]">{b.contactPhone}</span>
+                      <span className="block text-old-label text-[var(--c-fg-muted)]">{b.contactPhone}</span>
                     ) : null}
-                    <span className="mt-0.5 block truncate font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
+                    <span className="mt-0.5 block truncate font-mono text-old-label tabular-nums text-[var(--c-fg-muted)]">
                       {groupMoneyMeta(b.total, b.unknownCount)}
                     </span>
                   </span>
@@ -1804,7 +1804,7 @@ export function PreviewSummaryCard({
                 </Button>
               </div>
               {open && !b.supplierId ? (
-                <p className="mb-1.5 px-2 text-label text-[var(--c-fg-muted)]">
+                <p className="mb-1.5 px-2 text-old-label text-[var(--c-fg-muted)]">
                   {i18n.t('run.previewSupplier.unassignedHint')}
                 </p>
               ) : null}
@@ -1820,7 +1820,7 @@ export function PreviewSummaryCard({
               <div id={panelId} className={open ? 'flex flex-col gap-2' : 'hidden'}>
                 {b.stores.map((store) => (
                   <div key={store.storeId}>
-                    <div className="mb-1 flex items-baseline gap-2 px-2 text-label font-semibold text-[var(--c-fg-muted)]">
+                    <div className="mb-1 flex items-baseline gap-2 px-2 text-old-label font-semibold text-[var(--c-fg-muted)]">
                       <span>{store.storeName}</span>
                       <span className="ml-auto font-mono font-normal tabular-nums">
                         {groupMoneyMeta(store.total, store.unknownCount)}
@@ -1836,7 +1836,7 @@ export function PreviewSummaryCard({
                         <SectionLabel padded={false}>
                           {i18n.t('order.notes.label')}
                         </SectionLabel>
-                        <div className="mt-1 whitespace-pre-wrap text-body-sm leading-snug text-[var(--c-fg-muted)]">
+                        <div className="mt-1 whitespace-pre-wrap text-old-body-sm leading-snug text-[var(--c-fg-muted)]">
                           {store.legacyNote}
                         </div>
                       </div>
@@ -1919,7 +1919,7 @@ function VendorPickerSheet({
       description={skuName}
     >
       <div className="flex flex-col gap-2 py-3">
-        <p className="px-1 text-label text-[var(--c-fg-muted)]">
+        <p className="px-1 text-old-label text-[var(--c-fg-muted)]">
           {i18n.t('run.previewSupplier.pickVendorHint')}
         </p>
         <button
@@ -1933,7 +1933,7 @@ function VendorPickerSheet({
               : 'bg-[var(--c-surface-2)]')
           }
         >
-          <span className="text-body">
+          <span className="text-old-body">
             {i18n.t('run.previewSupplier.clearVendor')}
           </span>
           {currentSupplierId === null ? <span aria-hidden>✓</span> : null}
@@ -1954,11 +1954,11 @@ function VendorPickerSheet({
               }
             >
               <div className="min-w-0">
-                <div className="text-body font-medium">{sup.name}</div>
+                <div className="text-old-body font-medium">{sup.name}</div>
                 {sup.contactTg ? (
-                  <div className="mt-0.5 text-label opacity-80">@{sup.contactTg}</div>
+                  <div className="mt-0.5 text-old-label opacity-80">@{sup.contactTg}</div>
                 ) : sup.contactPhone ? (
-                  <div className="mt-0.5 text-label opacity-80">{sup.contactPhone}</div>
+                  <div className="mt-0.5 text-old-label opacity-80">{sup.contactPhone}</div>
                 ) : null}
               </div>
               {selected ? <span aria-hidden>✓</span> : null}
@@ -2001,12 +2001,12 @@ export function RunSessionsCard({
             >
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="truncate text-body font-semibold">{storeName}</span>
-                  <span className="shrink-0 text-label text-[var(--c-fg-muted)]">
+                  <span className="truncate text-old-body font-semibold">{storeName}</span>
+                  <span className="shrink-0 text-old-label text-[var(--c-fg-muted)]">
                     {submitter}
                   </span>
                 </div>
-                <div className="truncate text-label text-[var(--c-fg-muted)]">
+                <div className="truncate text-old-label text-[var(--c-fg-muted)]">
                   {i18n.t(
                     sessionRow.extrasCount > 0
                       ? 'run.sessions.stats'

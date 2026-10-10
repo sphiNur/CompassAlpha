@@ -185,7 +185,7 @@ jobs:
           #   - any line preceded by an `// eslint-disable-next-line`
           #     comment (the OrderPage exception)
           violations=$(
-            grep -rn "text-label font-semibold uppercase tracking-eyebrow text-\[var(--c-fg-muted)\]" \
+            grep -rn "text-old-label font-semibold uppercase tracking-eyebrow text-\[var(--c-fg-muted)\]" \
               apps/web/src packages/ui/src 2>/dev/null \
               | grep -v "SectionLabel.tsx" || true
           )
@@ -271,6 +271,7 @@ jobs:
           bun test \
             packages/domain \
             packages/i18n \
+            packages/ui \
             apps/api \
             apps/worker \
             apps/web/src/lib \

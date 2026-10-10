@@ -156,7 +156,7 @@ export function StoresHomeSection({
                 {/* M1.21: store list row rhythm — py-3 matches member
                     cards above. Was py-4 (16 px each side), which felt
                     chunky relative to the rest of the admin surface. */}
-                {/* M3.17: title text-h2 → text-h3 + font-semibold to
+                {/* M3.17: title text-old-h2 → text-old-h3 + font-semibold to
                     match the rest of the app's list-row primary text
                     rhythm. Was the only place admin shouted at h2. */}
                 <button
@@ -165,10 +165,10 @@ export function StoresHomeSection({
                   className="press flex w-full items-start justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-2.5 text-left ring-hairline"
                 >
                   <span className="min-w-0">
-                    <span className="block text-h3 font-semibold text-[var(--c-fg)]">
+                    <span className="block text-old-h3 font-semibold text-[var(--c-fg)]">
                       {i18n.t('admin.label.orgLevel')}
                     </span>
-                    <span className="mt-0.5 block text-label text-[var(--c-fg-muted)]">
+                    <span className="mt-0.5 block text-old-label text-[var(--c-fg-muted)]">
                       {i18n.t('admin.label.orgLevelHint')}
                     </span>
                   </span>
@@ -204,10 +204,10 @@ export function StoresHomeSection({
                     className="press flex w-full items-start justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-2.5 text-left ring-hairline"
                   >
                     <span className="min-w-0">
-                      <span className="block text-h3 font-semibold text-[var(--c-fg)]">
+                      <span className="block text-old-h3 font-semibold text-[var(--c-fg)]">
                         {st.name}
                       </span>
-                      <span className="mt-0.5 block text-label text-[var(--c-fg-muted)]">
+                      <span className="mt-0.5 block text-old-label text-[var(--c-fg-muted)]">
                         {st.code ? `code ${st.code}` : 'no code'}
                         {' · '}
                         {i18n.t('admin.label.memberCount', { n: count })}
@@ -288,7 +288,7 @@ export function StoresHomeSection({
                 placeholder="e.g. Asia/Tashkent"
               />
             </Field>
-            <p className="text-label text-[var(--c-fg-muted)]">
+            <p className="text-old-label text-[var(--c-fg-muted)]">
               {i18n.t('admin.store.createHint')}
             </p>
           </div>
@@ -490,8 +490,8 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
                   }
                 >
                   <div className="flex items-baseline justify-between gap-2">
-                    <span className="truncate text-body font-semibold">{r.name}</span>
-                    <span className="font-mono text-body tabular-nums">
+                    <span className="truncate text-old-body font-semibold">{r.name}</span>
+                    <span className="font-mono text-old-body tabular-nums">
                       {formatQty(r.onHand)} {unitLabel(r.unit)}
                     </span>
                   </div>
@@ -584,7 +584,7 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
           <div className="flex flex-col gap-3 py-3">
             {action.kind === 'stocktake' ? (
               <>
-                <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 text-label text-[var(--c-fg-muted)]">
+                <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 text-old-label text-[var(--c-fg-muted)]">
                   {i18n.t('inventory.sheet.stocktake.systemSays', {
                     qty: formatQty(action.current),
                   })}
@@ -746,10 +746,10 @@ function StoreSalesTab({ storeId }: { storeId: string }) {
           <SectionLabel padded={false}>
             {i18n.t('sales.summary.today')}
           </SectionLabel>
-          <div className="font-mono text-h2 font-semibold tabular-nums">
+          <div className="font-mono text-old-h2 font-semibold tabular-nums">
             {formatQty(summary.count.toString())}
           </div>
-          <div className="text-label text-[var(--c-fg-muted)]">
+          <div className="text-old-label text-[var(--c-fg-muted)]">
             {i18n.t('sales.summary.servings')}
           </div>
         </div>
@@ -757,10 +757,10 @@ function StoreSalesTab({ storeId }: { storeId: string }) {
           <SectionLabel padded={false}>
             {i18n.t('sales.summary.revenue')}
           </SectionLabel>
-          <div className="font-mono text-h2 font-semibold tabular-nums">
+          <div className="font-mono text-old-h2 font-semibold tabular-nums">
             {formatMoney(summary.revenue)}
           </div>
-          <div className="text-label text-[var(--c-fg-muted)]">
+          <div className="text-old-label text-[var(--c-fg-muted)]">
             {session?.member.currency ?? 'UZS'}
           </div>
         </div>
@@ -774,13 +774,13 @@ function StoreSalesTab({ storeId }: { storeId: string }) {
             {i18n.t('sales.form.recordTitle')}
           </SectionLabel>
           {dishOptions.length === 0 ? (
-            <p className="text-label text-[var(--c-fg-muted)]">
+            <p className="text-old-label text-[var(--c-fg-muted)]">
               {i18n.t('sales.form.noDishesYet')}
             </p>
           ) : (
             <>
               <select
-                className="h-10 w-full rounded-[var(--r-pill)] bg-[var(--c-surface)] px-3 text-body ring-hairline"
+                className="h-10 w-full rounded-[var(--r-pill)] bg-[var(--c-surface)] px-3 text-old-body ring-hairline"
                 value={draftDishId}
                 onChange={(e) => setDraftDishId(e.target.value)}
               >
@@ -865,20 +865,20 @@ function StoreSalesTab({ storeId }: { storeId: string }) {
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline gap-2">
-                      <span className="text-label tabular-nums text-[var(--c-fg-muted)]">
+                      <span className="text-old-label tabular-nums text-[var(--c-fg-muted)]">
                         {time}
                       </span>
-                      <span className="truncate text-body font-medium">{name}</span>
+                      <span className="truncate text-old-body font-medium">{name}</span>
                     </div>
                     {lineTotal !== null ? (
-                      <div className="text-label text-[var(--c-fg-muted)]">
+                      <div className="text-old-label text-[var(--c-fg-muted)]">
                         {formatQty(sale.qty)} × {formatMoney(sale.unitPrice)} ={' '}
                         <span className="font-mono tabular-nums text-[var(--c-fg)]">
                           {formatMoney(lineTotal)}
                         </span>
                       </div>
                     ) : (
-                      <div className="text-label text-[var(--c-fg-muted)]">
+                      <div className="text-old-label text-[var(--c-fg-muted)]">
                         {formatQty(sale.qty)} × —
                       </div>
                     )}
@@ -972,7 +972,7 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
 
   if (storesQuery.isLoading || !draft || !store) {
     return (
-      <div className="flex items-center gap-2 px-4 py-6 text-body-sm text-[var(--c-fg-muted)]">
+      <div className="flex items-center gap-2 px-4 py-6 text-old-body-sm text-[var(--c-fg-muted)]">
         <Spinner size={14} /> Loading store…
       </div>
     );
@@ -1026,7 +1026,7 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
       </Field>
       <Field label={i18n.t('admin.field.defaultRole')}>
         {rolesQuery.isLoading ? (
-          <div className="flex items-center gap-2 text-body-sm text-[var(--c-fg-muted)]">
+          <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
             <Spinner size={14} /> Loading roles…
           </div>
         ) : (
@@ -1045,7 +1045,7 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
             ))}
           </Select>
         )}
-        <p className="mt-1 text-label text-[var(--c-fg-muted)]">
+        <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
           {i18n.t('admin.store.defaultRoleHint')}
         </p>
       </Field>
@@ -1242,10 +1242,10 @@ function StoreCloneRolesSheet({
               onChange={(e) => setIncludeMembers(e.target.checked)}
             />
             <div className="min-w-0 flex-1">
-              <div className="text-body font-semibold text-[var(--c-fg)]">
+              <div className="text-old-body font-semibold text-[var(--c-fg)]">
                 {i18n.t('admin.clone.alsoMembers')}
               </div>
-              <p className="mt-0.5 text-label text-[var(--c-fg-muted)]">
+              <p className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
                 {i18n.t('admin.clone.alsoMembersHint')}
               </p>
             </div>

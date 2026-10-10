@@ -55,8 +55,39 @@ export function reportLastReload(): void {
   getLogger().log('info', 'app.boot', {
     action: record?.reason ?? 'unrecorded',
     target: navigation?.type ?? 'unknown',
-    data: record ? { fromBuild: record.fromBuild, msAgo: Date.now() - record.at } : undefined,
+    data: {
+      ...(record ? { fromBuild: record.fromBuild, msAgo: Date.now() - record.at } : {}),
+      textScale: measureTextScale(),
+      viewportWidth: window.innerWidth,
+    },
   });
+}
+
+/**
+ * How much the device enlarges text beyond what the stylesheet asks for.
+ *
+ * An Android WebView multiplies every font size by the phone's "font
+ * size" setting, and nothing in CSS reports or prevents it: a 16px label
+ * is drawn at 20px on a phone set to 1.25. That is how a layout that
+ * fits on the designer's screen truncates in the field. Measured by
+ * asking for 100px text and seeing how tall the line comes out, and
+ * logged at boot so type sizes can be chosen against real devices.
+ *
+ * 1 means no enlargement. null when it cannot be measured.
+ */
+export function measureTextScale(): number | null {
+  try {
+    const probe = document.createElement('span');
+    probe.textContent = '0';
+    probe.style.cssText =
+      'position:absolute;visibility:hidden;font-size:100px;line-height:1;padding:0;border:0';
+    document.body.appendChild(probe);
+    const height = probe.getBoundingClientRect().height;
+    probe.remove();
+    return height > 0 ? Math.round(height) / 100 : null;
+  } catch {
+    return null;
+  }
 }
 
 /** How long the app must sit in the background before an update may

@@ -130,7 +130,7 @@ export function CategoriesSection() {
                     <div className="min-w-0">
                       <CardTitle>{productName({ names }) || c.slug}</CardTitle>
                       {otherLangs ? (
-                        <div className="mt-0.5 truncate text-label text-[var(--c-fg-muted)]">
+                        <div className="mt-0.5 truncate text-old-label text-[var(--c-fg-muted)]">
                           {otherLangs}
                         </div>
                       ) : null}
@@ -446,7 +446,7 @@ export function SkusSection() {
                     <div className="min-w-0">
                       <CardTitle>{primary}</CardTitle>
                       {otherLangs ? (
-                        <div className="mt-0.5 truncate text-label text-[var(--c-fg-muted)]">
+                        <div className="mt-0.5 truncate text-old-label text-[var(--c-fg-muted)]">
                           {otherLangs}
                         </div>
                       ) : null}
@@ -951,7 +951,7 @@ export function ExpenseTemplatesSection() {
           />
         </div>
       </div>
-      <p className="mb-3 text-label text-[var(--c-fg-muted)]">
+      <p className="mb-3 text-old-label text-[var(--c-fg-muted)]">
         {i18n.t('admin.expenseTemplates.intro')}
       </p>
       <DataState
@@ -1153,7 +1153,7 @@ export function ExpenseTemplatesSection() {
                       setDraft({ ...draft, defaultPaymentMethod: m })
                     }
                     className={
-                      'flex-1 rounded-[var(--r-pill)] px-3 py-2 text-label font-medium ring-hairline ' +
+                      'flex-1 rounded-[var(--r-pill)] px-3 py-2 text-old-label font-medium ring-hairline ' +
                       (draft.defaultPaymentMethod === m
                         ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
                         : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
@@ -1440,15 +1440,15 @@ export function DishesSection() {
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline gap-2">
-                      <span className="truncate text-body font-semibold">{name}</span>
+                      <span className="truncate text-old-body font-semibold">{name}</span>
                       {d.code ? (
-                        <span className="text-label text-[var(--c-fg-muted)]">{d.code}</span>
+                        <span className="text-old-label text-[var(--c-fg-muted)]">{d.code}</span>
                       ) : null}
                       {d.isArchived ? (
                         <Badge tone="muted">{i18n.t('common.archived')}</Badge>
                       ) : null}
                     </div>
-                    <div className="text-label text-[var(--c-fg-muted)]">
+                    <div className="text-old-label text-[var(--c-fg-muted)]">
                       {ingCount === 0
                         ? i18n.t('dishes.label.noIngredients')
                         : i18n.t('dishes.label.ingredientCount', { n: ingCount })}
@@ -1573,7 +1573,7 @@ export function DishesSection() {
                 </Button>
               </div>
               {draft.ingredients.length === 0 ? (
-                <p className="text-label text-[var(--c-fg-muted)]">
+                <p className="text-old-label text-[var(--c-fg-muted)]">
                   {i18n.t('dishes.label.noIngredientsHint')}
                 </p>
               ) : (
@@ -1587,7 +1587,7 @@ export function DishesSection() {
                       >
                         <div className="flex items-center gap-2">
                           <select
-                            className="h-9 min-w-0 flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface)] px-3 text-body ring-hairline"
+                            className="h-9 min-w-0 flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface)] px-3 text-old-body ring-hairline"
                             value={ing.skuId}
                             onChange={(e) => {
                               const next = [...draft.ingredients];
@@ -1609,7 +1609,7 @@ export function DishesSection() {
                               setDraft({ ...draft, ingredients: next });
                             }}
                             aria-label={i18n.t('common.remove')}
-                            className="press shrink-0 rounded-[var(--r-pill)] bg-[var(--c-surface)] px-2 py-0.5 text-label text-[var(--c-danger)] ring-hairline"
+                            className="press shrink-0 rounded-[var(--r-pill)] bg-[var(--c-surface)] px-2 py-0.5 text-old-label text-[var(--c-danger)] ring-hairline"
                           >
                             ×
                           </button>
@@ -1628,7 +1628,7 @@ export function DishesSection() {
                             }}
                             placeholder={i18n.t('dishes.field.qtyPlaceholder')}
                           />
-                          <span className="text-label text-[var(--c-fg-muted)]">
+                          <span className="text-old-label text-[var(--c-fg-muted)]">
                             {sku?.unit ?? '—'}
                           </span>
                         </div>

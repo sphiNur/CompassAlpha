@@ -296,7 +296,7 @@ function isVersionConflict(error: unknown): boolean {
 
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 py-1 text-body-sm">
+    <div className="flex items-baseline justify-between gap-3 py-1 text-old-body-sm">
       <span className="text-[var(--c-fg-muted)]">{label}</span>
       <strong className="shrink-0 tabular-nums text-[var(--c-fg)]">{value}</strong>
     </div>
@@ -691,8 +691,8 @@ export function SettlementPage() {
 
   const pageHeading = (
     <div>
-      <h1 className="text-h1 font-semibold text-[var(--c-fg)]">{i18n.t('settlement.title')}</h1>
-      <p className="mt-1 text-body-sm text-[var(--c-fg-muted)]">{i18n.t('settlement.subtitle')}</p>
+      <h1 className="text-old-h1 font-semibold text-[var(--c-fg)]">{i18n.t('settlement.title')}</h1>
+      <p className="mt-1 text-old-body-sm text-[var(--c-fg-muted)]">{i18n.t('settlement.subtitle')}</p>
     </div>
   );
   const storeSelector =
@@ -1054,10 +1054,10 @@ export function SettlementPage() {
               <div className="flex flex-col gap-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <h3 className="text-h3 font-semibold text-[var(--c-fg)]">
+                    <h3 className="text-old-h3 font-semibold text-[var(--c-fg)]">
                       {i18n.t('settlement.expenses.title')}
                     </h3>
-                    <p className="mt-0.5 text-label text-[var(--c-fg-muted)]">
+                    <p className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
                       {i18n.t('settlement.expenses.total', {
                         money: formatMoney(operatingExpenseTotal.value, currency),
                       })}
@@ -1087,7 +1087,7 @@ export function SettlementPage() {
                 ) : null}
 
                 {draft.operatingExpenseItems.length === 0 ? (
-                  <p className="rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-3 py-2 text-body-sm text-[var(--c-fg-muted)]">
+                  <p className="rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-3 py-2 text-old-body-sm text-[var(--c-fg-muted)]">
                     {i18n.t('settlement.expenses.empty')}
                   </p>
                 ) : (
@@ -1100,7 +1100,7 @@ export function SettlementPage() {
                           className="rounded-[var(--r-utility)] bg-[var(--c-surface-2)] p-3 ring-hairline"
                         >
                           <div className="mb-3 flex items-center justify-between gap-3">
-                            <span className="text-label font-semibold text-[var(--c-fg-muted)]">
+                            <span className="text-old-label font-semibold text-[var(--c-fg-muted)]">
                               {i18n.t('settlement.expenses.itemNumber', { n: index + 1 })}
                             </span>
                             {canEditOperatingExpenses ? (
@@ -1139,7 +1139,7 @@ export function SettlementPage() {
                           <div className="mt-3">
                             <Field label={i18n.t('settlement.expenses.reason')}>
                               {expense.isHistorical ? (
-                                <p className="rounded-[var(--r-utility)] bg-[var(--c-surface-3)] px-3 py-2 text-body-sm text-[var(--c-fg-muted)]">
+                                <p className="rounded-[var(--r-utility)] bg-[var(--c-surface-3)] px-3 py-2 text-old-body-sm text-[var(--c-fg-muted)]">
                                   {i18n.t('settlement.expenses.historicalReason')}
                                 </p>
                               ) : (
@@ -1170,10 +1170,10 @@ export function SettlementPage() {
               <div className="flex flex-col gap-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <h3 className="text-h3 font-semibold text-[var(--c-fg)]">
+                    <h3 className="text-old-h3 font-semibold text-[var(--c-fg)]">
                       {i18n.t('settlement.wages.title')}
                     </h3>
-                    <p className="mt-0.5 text-label text-[var(--c-fg-muted)]">
+                    <p className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
                       {i18n.t('settlement.wages.totals', {
                         paid: formatMoney(paidWageTotal.value, currency),
                         unpaid: formatMoney(unpaidWageTotal.value, currency),
@@ -1197,7 +1197,7 @@ export function SettlementPage() {
                 ) : null}
 
                 {draft.wageItems.length === 0 ? (
-                  <p className="rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-3 py-2 text-body-sm text-[var(--c-fg-muted)]">
+                  <p className="rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-3 py-2 text-old-body-sm text-[var(--c-fg-muted)]">
                     {i18n.t('settlement.wages.empty')}
                   </p>
                 ) : (
@@ -1213,7 +1213,7 @@ export function SettlementPage() {
                           className="rounded-[var(--r-utility)] bg-[var(--c-surface-2)] p-3 ring-hairline"
                         >
                           <div className="mb-3 flex items-center justify-between gap-3">
-                            <span className="text-label font-semibold text-[var(--c-fg-muted)]">
+                            <span className="text-old-label font-semibold text-[var(--c-fg-muted)]">
                               {i18n.t('settlement.wages.itemNumber', { n: index + 1 })}
                             </span>
                             {!wage.isHistorical ? (
@@ -1248,7 +1248,7 @@ export function SettlementPage() {
                                 <span aria-hidden>›</span>
                               </Button>
                               {!wage.memberId && wage.personName ? (
-                                <p className="mt-1 text-label text-[var(--c-fg-muted)]">
+                                <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
                                   {i18n.t('settlement.wages.legacyEmployee')}
                                 </p>
                               ) : null}
@@ -1298,7 +1298,7 @@ export function SettlementPage() {
                           <div className="mt-3">
                             <Field label={i18n.t('settlement.wages.reason')}>
                               {wage.isHistorical ? (
-                                <p className="rounded-[var(--r-utility)] bg-[var(--c-surface-3)] px-3 py-2 text-body-sm text-[var(--c-fg-muted)]">
+                                <p className="rounded-[var(--r-utility)] bg-[var(--c-surface-3)] px-3 py-2 text-old-body-sm text-[var(--c-fg-muted)]">
                                   {i18n.t('settlement.wages.historicalReason')}
                                 </p>
                               ) : (
@@ -1455,17 +1455,17 @@ export function SettlementPage() {
                       }}
                     >
                       <span className="min-w-0">
-                        <span className="block text-h3 font-semibold tabular-nums text-[var(--c-fg)]">
+                        <span className="block text-old-h3 font-semibold tabular-nums text-[var(--c-fg)]">
                           {record.date}
                         </span>
-                        <span className="mt-0.5 block text-body-sm text-[var(--c-fg-muted)]">
+                        <span className="mt-0.5 block text-old-body-sm text-[var(--c-fg-muted)]">
                           {i18n.t('settlement.recent.version', { version: record.version })}
                           {record.updatedByName
                             ? ` · ${i18n.t('settlement.recent.updatedBy', { name: record.updatedByName })}`
                             : ''}
                         </span>
                       </span>
-                      <span className="shrink-0 text-label font-semibold text-[var(--c-action)]">
+                      <span className="shrink-0 text-old-label font-semibold text-[var(--c-action)]">
                         {i18n.t('settlement.recent.open')}
                       </span>
                     </button>
@@ -1476,7 +1476,7 @@ export function SettlementPage() {
           ) : (
             <Card>
               <CardBody>
-                <p className="text-body-sm text-[var(--c-fg-muted)]">
+                <p className="text-old-body-sm text-[var(--c-fg-muted)]">
                   {i18n.t('settlement.recent.empty')}
                 </p>
               </CardBody>
@@ -1543,7 +1543,7 @@ export function SettlementPage() {
           !wageRosterQuery.isError &&
           wageRoster.length > 0 &&
           filteredWageRoster.length === 0 ? (
-            <p className="rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-3 py-2 text-body-sm text-[var(--c-fg-muted)]">
+            <p className="rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-3 py-2 text-old-body-sm text-[var(--c-fg-muted)]">
               {i18n.t('settlement.wages.noEmployeeMatch')}
             </p>
           ) : null}
@@ -1559,16 +1559,16 @@ export function SettlementPage() {
                     onClick={() => selectWageEmployee(employee)}
                   >
                     <span className="min-w-0">
-                      <span className="block truncate text-body font-semibold text-[var(--c-fg)]">
+                      <span className="block truncate text-old-body font-semibold text-[var(--c-fg)]">
                         {employee.displayName}
                       </span>
-                      <span className="mt-0.5 block truncate text-label text-[var(--c-fg-muted)]">
+                      <span className="mt-0.5 block truncate text-old-label text-[var(--c-fg-muted)]">
                         {employee.roles.length > 0
                           ? employee.roles.map((role) => role.name).join(' · ')
                           : i18n.t('settlement.wages.noRole')}
                       </span>
                     </span>
-                    <span className="shrink-0 text-label font-semibold text-[var(--c-action)]">
+                    <span className="shrink-0 text-old-label font-semibold text-[var(--c-action)]">
                       {i18n.t('settlement.wages.chooseEmployee')}
                     </span>
                   </button>

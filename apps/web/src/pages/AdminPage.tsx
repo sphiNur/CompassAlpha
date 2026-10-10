@@ -430,17 +430,17 @@ function SectionFrame({
           <button
             type="button"
             onClick={onBack}
-            className="press inline-flex h-9 items-center gap-1 rounded-[var(--r-pill)] px-3 text-body text-[var(--c-action)]"
+            className="press inline-flex h-9 items-center gap-1 rounded-[var(--r-pill)] px-3 text-old-body text-[var(--c-action)]"
             aria-label={i18n.t('admin.aria.back')}
           >
-            <span aria-hidden className="text-h2 leading-none">‹</span>
+            <span aria-hidden className="text-old-h2 leading-none">‹</span>
             {/* was the literal "Admin" */}
             <span>{i18n.t('nav.admin')}</span>
           </button>
         </header>
       )}
       <div className="px-4 pb-2 pt-3">
-        <h1 className="text-h1 font-semibold leading-[1.15] text-[var(--c-fg)]">
+        <h1 className="text-old-h1 font-semibold leading-[1.15] text-[var(--c-fg)]">
           {title}
         </h1>
       </div>
@@ -589,7 +589,7 @@ function WorkspaceSection() {
         <div className="flex flex-col gap-3 py-3">
           <Field label={i18n.t('admin.workspace.currency')}>
             <select
-              className="h-11 w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-h3 ring-hairline"
+              className="h-11 w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3 ring-hairline"
               value={draftCurrency}
               onChange={(e) => setDraftCurrency(e.target.value)}
             >

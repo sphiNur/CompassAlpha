@@ -22,9 +22,9 @@ import { cn } from '../cn';
  * the user started comparing pages side-by-side.
  *
  * Design:
- *   - Default size `md` (h-9, text-body-sm 12 px) — matches the
+ *   - Default size `md` (h-9, text-old-body-sm 12 px) — matches the
  *     M3.15 nav-bar baseline and lives comfortably inside a Field.
- *   - `sm` variant (h-7, text-label 11 px) — for nested-in-row use
+ *   - `sm` variant (h-7, text-old-label 11 px) — for nested-in-row use
  *     like the Permissions matrix (allow/deny/inherit). Acts like
  *     SegBtn but reusable.
  *   - Single hairline ring + a sliding active background (action
@@ -98,7 +98,7 @@ export function Segmented<V extends string>({
             }}
             className={cn(
               'press inline-flex items-center justify-center whitespace-nowrap font-medium tabular-nums',
-              isSm ? 'px-2 text-label' : 'px-3 text-body-sm',
+              isSm ? 'px-2 text-old-label' : 'px-3 text-old-body-sm',
               equalWidth ? 'flex-1' : 'shrink-0',
               active
                 ? `${activeBg} ${activeFg} font-semibold`

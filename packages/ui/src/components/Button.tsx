@@ -40,18 +40,18 @@ const button = cva(
       },
       size: {
         // M2.4 (text), M3.15 (heights, 2026-05-16):
-        //   - sm: h-8 (32) + text-label (11) — compact secondary actions.
-        //   - md: h-10 (40, was 44) + text-h3 (14) — default form / inline
+        //   - sm: h-8 (32) + text-old-label (11) — compact secondary actions.
+        //   - md: h-10 (40, was 44) + text-old-h3 (14) — default form / inline
         //     actions. -4 px brings the row rhythm closer to the bottom
         //     nav (icons + label = ~36 px tall).
-        //   - lg: h-13 (52, was 56) + text-h3 (14, was text-h2 / 15) —
+        //   - lg: h-13 (52, was 56) + text-old-h3 (14, was text-old-h2 / 15) —
         //     sheet-footer commits + page-bottom CTAs. Big enough to
         //     anchor the action without towering over the 64 px nav.
-        sm: 'h-8 px-3 text-label',
-        md: 'h-10 px-5 text-h3',
+        sm: 'h-8 px-3 text-old-label',
+        md: 'h-10 px-5 text-old-h3',
         // h-[52px] — Tailwind's scale jumps 12→14 (48→56), and we want
         // exactly the middle.
-        lg: 'h-[52px] px-7 text-h3',
+        lg: 'h-[52px] px-7 text-old-h3',
       },
       block: {
         true: 'w-full',
