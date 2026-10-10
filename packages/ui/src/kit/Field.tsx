@@ -24,7 +24,7 @@ export const Field = forwardRef<HTMLInputElement, FieldProps>(function Field(
       <label htmlFor={inputId} className="text-label text-ink">
         {label}
       </label>
-      <div className="flex h-control items-center gap-sm rounded-sm bg-surface-sunken px-lg focus-within:ring-2 focus-within:ring-primary">
+      <div className="flex h-control items-center gap-sm rounded-md bg-surface-sunken px-lg focus-within:ring-2 focus-within:ring-primary">
         <input
           ref={ref}
           id={inputId}

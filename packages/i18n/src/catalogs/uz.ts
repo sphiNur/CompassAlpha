@@ -55,6 +55,8 @@ export const uz = {
   'menu.adminHint': "Do'konlar, xodimlar, katalog, hisobotlar",
   'menu.settings': 'Sozlamalar',
   'menu.settingsHint': "Ko'rsatiladigan ism va til",
+  'menu.tile.approve': 'Tasdiq kutmoqda',
+  'menu.tile.buy': 'Xarid qilinadigan buyurtmalar',
 
   // ── 2. Common ──────────────────────────────────────────────────
   'app.update.title': 'Yangi versiya tayyor',

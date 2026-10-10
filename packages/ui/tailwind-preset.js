@@ -24,6 +24,9 @@ export const colors = {
   'warning-ink': '#8A5A1C',
   danger: '#B3261E',
   info: '#2A5B9B',
+  'tint-orange': '#B85C00',
+  'tint-blue': '#1F6FD6',
+  'tint-gray': '#5B5B60',
 };
 
 export const typography = {
@@ -34,7 +37,7 @@ export const typography = {
     letterSpacing: '-0.02em',
     tnum: true,
   },
-  h1: { fontSize: '1.75rem', fontWeight: 700, lineHeight: 1.2, letterSpacing: '-0.02em' },
+  h1: { fontSize: '2.125rem', fontWeight: 700, lineHeight: 1.15, letterSpacing: '-0.02em' },
   h2: { fontSize: '1.25rem', fontWeight: 700, lineHeight: 1.25 },
   body: { fontSize: '1rem', fontWeight: 400, lineHeight: 1.5 },
   label: { fontSize: '0.9375rem', fontWeight: 600, lineHeight: 1.4 },
@@ -43,7 +46,7 @@ export const typography = {
   'money-lg': { fontSize: '1.5rem', fontWeight: 700, lineHeight: 1.15, tnum: true },
 };
 
-export const rounded = { sm: '10px', md: '12px', lg: '20px', pill: '999px' };
+export const rounded = { sm: '12px', md: '22px', lg: '28px', pill: '999px' };
 
 export const spacing = {
   xs: '4px',
@@ -98,7 +101,7 @@ export default {
     // A column of amounts only scans when every digit is the same width.
     ({ addUtilities }) => addUtilities(tabular),
     // Rows of a grouped list are parted by a hairline that starts where
-    // the text starts and runs to the right edge, as in an iOS list. It
+    // the text starts and stops short of the card's right edge, as in iOS. It
     // belongs to the lower row, so the first row has none.
     ({ addComponents }) =>
       addComponents({
@@ -108,7 +111,7 @@ export default {
           position: 'absolute',
           top: '0',
           left: spacing.lg,
-          right: '0',
+          right: spacing.lg,
           height: '1px',
           backgroundColor: colors.line,
         },

@@ -7,6 +7,7 @@ import { OrderPage } from '../pages/OrderPage';
 import { ApprovalPage } from '../pages/ApprovalPage';
 import { ConfirmPage } from '../pages/ConfirmPage';
 import { MenuPage } from '../pages/MenuPage';
+import { usePendingApprovals } from '../hooks/useWaitingCounts';
 // AdminPage is the heaviest screen in the bundle (~5k LoC + the role
 // editor + the audit list etc.). Most users will never open it — the
 // `users.manage` permission gate hides the tab — yet a static import
@@ -48,9 +49,7 @@ import {
   useTelegramSettingsButton,
 } from '../hooks/useTelegram';
 import { useAppMutating } from '../hooks/useAppMutating';
-import { trpc } from '../lib/trpc';
 import { SettingsSheet } from '../components/SettingsSheet';
-import { useStoreContext } from '../components/StoreSwitcher';
 import { PageMenuProvider, usePageMenuRegistration } from './PageMenuContext';
 import { StoreBar } from './StoreBar';
 import { useTelegramChrome } from './useTelegramChrome';
@@ -305,16 +304,4 @@ function PageAction() {
       </Button>
     </ActionBar>
   );
-}
-
-/** Orders waiting for a decision in the current store, for the nav count. */
-function usePendingApprovals(enabled: boolean): number {
-  const ctx = useStoreContext();
-  // Same query and input as the approval screen, so the two share a cache
-  // entry and the realtime invalidation keeps both current.
-  const query = trpc.order.pendingList.useQuery(
-    { status: 'submitted', ...(ctx.kind === 'specific' ? { storeId: ctx.storeId } : {}) },
-    { enabled: enabled && ctx.kind !== 'none' },
-  );
-  return query.data?.length ?? 0;
 }

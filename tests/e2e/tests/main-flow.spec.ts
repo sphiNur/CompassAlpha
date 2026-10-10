@@ -216,6 +216,9 @@ test('finish the run and find it in history', async () => {
 
   // Records are not a daily task: they sit behind the menu.
   await tab('menu').click();
+  // What is waiting is counted at the top; by now, nothing.
+  await expect(page.getByTestId('tile-approve')).toHaveText(/0\s*Waiting for approval/);
+  await expect(page.getByTestId('tile-buy')).toHaveText(/0\s*Orders to buy/);
   await evidence('menu');
   await page.getByTestId('menu-history').click();
   await expect(tab('menu')).toHaveAttribute('aria-current', 'page');

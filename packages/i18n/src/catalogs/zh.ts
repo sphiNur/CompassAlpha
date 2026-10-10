@@ -48,6 +48,8 @@ export const zh = {
   'menu.adminHint': '门店、人员、商品目录、报表',
   'menu.settings': '设置',
   'menu.settingsHint': '显示名称和语言',
+  'menu.tile.approve': '待审批',
+  'menu.tile.buy': '待采购',
 
   // ── 2. Common ──────────────────────────────────────────────────
   'app.update.title': '新版本已就绪',

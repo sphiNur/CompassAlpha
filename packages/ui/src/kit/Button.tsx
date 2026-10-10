@@ -36,7 +36,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       disabled={disabled || busy}
       aria-busy={busy || undefined}
       className={cn(
-        'flex min-w-0 select-none items-center justify-center rounded-md px-xl text-label',
+        'flex min-w-0 select-none items-center justify-center rounded-pill px-xl text-label',
         'outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
         // Disabled keeps its shape and place; only the ink recedes.
         'disabled:bg-surface-sunken disabled:text-secondary',

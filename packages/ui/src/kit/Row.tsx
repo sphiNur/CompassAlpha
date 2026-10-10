@@ -23,6 +23,11 @@ export interface RowProps {
    * its name takes the action colour.
    */
   action?: boolean;
+  /**
+   * Pressing the row picks it rather than opening it (a store in a
+   * list of stores): no chevron.
+   */
+  picks?: boolean;
   disabled?: boolean;
   className?: string;
   'data-testid'?: string;
@@ -42,6 +47,7 @@ export function Row({
   onPress,
   trailing,
   action,
+  picks,
   disabled,
   className,
   ...rest
@@ -60,7 +66,7 @@ export function Row({
       ) : null}
       {/* Says the row opens something. Not on a row that is itself the
           action, nor beside a control that already is one. */}
-      {onPress && !trailing && !action ? (
+      {onPress && !trailing && !action && !picks ? (
         <span aria-hidden data-row-chevron className="shrink-0 text-h2 text-line">
           ›
         </span>

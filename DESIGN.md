@@ -17,6 +17,9 @@ colors:
   warning-ink: "#8A5A1C"
   danger: "#B3261E"
   info: "#2A5B9B"
+  tint-orange: "#B85C00"
+  tint-blue: "#1F6FD6"
+  tint-gray: "#5B5B60"
 typography:
   display:
     fontFamily: system-ui
@@ -27,9 +30,9 @@ typography:
     fontFeature: "tnum"
   h1:
     fontFamily: system-ui
-    fontSize: 1.75rem
+    fontSize: 2.125rem
     fontWeight: 700
-    lineHeight: 1.2
+    lineHeight: 1.15
     letterSpacing: "-0.02em"
   h2:
     fontFamily: system-ui
@@ -65,9 +68,9 @@ typography:
     lineHeight: 1.15
     fontFeature: "tnum"
 rounded:
-  sm: 10px
-  md: 12px
-  lg: 20px
+  sm: 12px
+  md: 22px
+  lg: 28px
   pill: 999px
 spacing:
   xs: 4px
@@ -100,7 +103,7 @@ components:
     backgroundColor: "{colors.primary}"
     textColor: "{colors.on-primary}"
     typography: "{typography.label}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.pill}"
     height: 52px
   button-primary-pressed:
     backgroundColor: "{colors.primary-pressed}"
@@ -108,18 +111,18 @@ components:
     backgroundColor: "{colors.surface-sunken}"
     textColor: "{colors.primary}"
     typography: "{typography.label}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.pill}"
     height: 52px
   button-ghost:
     textColor: "{colors.primary}"
     typography: "{typography.label}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.pill}"
     height: 44px
   button-danger:
     backgroundColor: "{colors.danger}"
     textColor: "{colors.on-primary}"
     typography: "{typography.label}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.pill}"
     height: 52px
   chip-payment-cash:
     backgroundColor: "{colors.surface-sunken}"
@@ -172,16 +175,18 @@ Compass 是采购员与店长**在手机上、边干活边用**的工具：在�
 
 ## iOS 参照
 
-视觉语言借鉴 iOS 自带的「提醒事项」和「备忘录」：安静、分组清楚、内容自己说话。我们运行在 Telegram 的 WebView 里，不是原生应用，所以分成照做的和变通的两类。
+视觉语言照 iOS 自带的「提醒事项」和「备忘录」做，不自创风格。参照图在仓库外的 `design-refs/`（两张 iOS 截图，两张我们自己在真机 Telegram 里的截图）。我们运行在 Telegram 的 WebView 里，不是原生应用，所以分成照做的和变通的两类。
 
 **照做**
 
 | iOS 的做法 | 这里怎么做 |
 |---|---|
-| 分组列表（inset grouped）：灰底上的白色圆角卡片，没有描边 | `page` 用 `neutral` #F2F2F7，`card` 和列表用 `surface` 白色、`rounded.md` 12px，不描边 |
-| 分隔线从文字起点开始，一直到右边缘，不顶到左边 | 列表行之间的发丝线左侧缩进 16px；第一行上方没有线 |
-| 大标题 | 每屏一个 `h1`（28px 粗体），写在内容最上方，直接说这一屏是什么 |
-| 分组标题是粗体的短句，不是小号全大写 | `h2`（20px 粗体） |
+| 分组列表（inset grouped）：灰底上的白色圆角卡片，没有描边 | `page` 用 `neutral` #F2F2F7，`card` 和列表用 `surface` 白色、`rounded.md` 22px（参照图里的圆角），左右各留 20px，不描边 |
+| 分隔线从文字起点开始，两头都不顶到卡片边 | 列表行之间的发丝线左右各缩进 16px；第一行上方没有线 |
+| 大标题 | 每屏一个 `h1`（34px 粗体，左对齐），写在内容最上方，直接说这一屏是什么 |
+| 分组标题在卡片外、左对齐，粗体黑字（参照图里的 "My Lists"、"Previous 7 Days"） | `h2`（20px 粗体） |
+| 彩色计数块：两列，数字在右上，名称在左下 | `Tile`：只用于能数出来的待办（待审批、待采购；签收等做到那一屏时补） |
+| 按钮、分段控件、数量增减是胶囊形 | `rounded.pill` |
 | 系统字体，三档字重 | `system-ui`，在 iPhone 上就是 San Francisco；字重只用 400 / 600 / 700 |
 | 按下去有反馈 | 行按下变灰（`surface-sunken`），主按钮按下变深，次按钮按下加深一档 |
 | 能点开的行右侧有一个 › | 同样；本身就是动作的行（"加一个商品"）不带 ›，文字用 `primary` 色 |
@@ -195,11 +200,12 @@ Compass 是采购员与店长**在手机上、边干活边用**的工具：在�
 |---|---|---|
 | 导航栏，带返回和标题 | 顶部只有当前门店，夹在 Telegram 自己的两个按钮之间 | 屏幕顶部左右两角被 Telegram 的"关闭"和菜单按钮盖住，那里放不了自己的控件；返回用 Telegram 的返回按钮 |
 | 大标题随滚动收进导航栏 | 大标题跟着内容滚走，不收起 | 没有可以收进去的导航栏；用脚本模拟在低端 Android 上会卡顿 |
+| 计数块、列表行、标签栏上的图标 | 没有图标，只有文字和数字 |
 | 底部标签栏：图标加 10px 文字 | 只有文字，13px | 之前的规则：不用图标代替文字。采购员在市场里单手、戴手套操作，文字不需要再解码一次 |
 | 半透明毛玻璃的栏 | 不透明的白色栏加一条发丝线 | `backdrop-filter` 在旧 Android WebView 上要么没有、要么掉帧 |
 | 弹层顶部有一个可以向下拖的小横条 | 没有横条；点遮罩或返回关闭 | 弹层不支持拖动关闭，画一个拖不动的横条是在骗人 |
 | 次要文字 `#8E8E93` | `secondary` #636366 | 我们把次要信息放在正文字号上，`#8E8E93` 在白底只有 3.3:1，户外看不清；#636366 是 5.9:1 |
-| 系统蓝、系统红 | `info` #2A5B9B、`danger` #B3261E | 系统蓝、系统红上面放白字都不到 4.5:1，而"转账"标记正是蓝底白字 |
+| 系统蓝、系统红、系统橙 | `info` #2A5B9B、`danger` #B3261E；计数块用压暗的 `tint-orange` #B85C00、`tint-blue` #1F6FD6、`tint-gray` #5B5B60 | 系统色上面放白字都不到 4.5:1，而"转账"标记和计数块都是色底白字 |
 | 向左滑一行出现"删除" | 点开行，在弹层里删 | 横向手势和 Telegram 的边缘返回手势冲突，而且看不见、发现不了 |
 | 正文 17px | 正文暂定 16px | 等现场 Android 的文字放大数据，见 `docs/REDESIGN.md` 第 4 节 |
 | 深色模式 | 仅浅色 | 不在这次重做范围内 |
@@ -215,7 +221,7 @@ Compass 是采购员与店长**在手机上、边干活边用**的工具：在�
 
 ## Typography
 
-全部使用 `system-ui`（Telegram WebView 的原生字形，零字体加载开销）。8 个字体角色、6 个实际字号（13 / 15 / 16 / 20 / 24 / 28px，另有 32px 的 `display`），禁止临时发明新尺寸。字重只有 400 / 600 / 700 三档。
+全部使用 `system-ui`（Telegram WebView 的原生字形，零字体加载开销）。8 个字体角色、6 个实际字号（13 / 15 / 16 / 20 / 24 / 34px，另有 32px 的 `display`），禁止临时发明新尺寸。字重只有 400 / 600 / 700 三档。
 
 - `display` / `money-lg`：屏级总额（日结现金、采购单金额）。
 - `h1` / `h2`：每屏一个的大标题，与分组标题。
@@ -236,14 +242,14 @@ Compass 是采购员与店长**在手机上、边干活边用**的工具：在�
 
 ## Shapes
 
-- `rounded.sm` 10px：输入框、数量增减、分段控件里的选中项。
-- `rounded.md` 12px：卡片、分组列表、所有按钮、分段控件的轨道。
-- `rounded.lg` 20px：底部弹层的顶角。
-- `rounded.pill` 999px：徽标、付款方式 chip、导航上的待办数量。
+- `rounded.sm` 12px：留给小块的填充面。
+- `rounded.md` 22px：卡片、分组列表、计数块、输入框。
+- `rounded.lg` 28px：底部弹层的顶角。
+- `rounded.pill` 999px：所有按钮、分段控件、数量增减、徽标、付款方式 chip。
 
 ## Components
 
-- `button-primary`：每屏唯一。52px 高，12px 圆角。
+- `button-primary`：每屏唯一。52px 高，胶囊形。
 - `button-secondary` / `button-ghost`：次级与三级动作。secondary 是灰色填充加 `primary` 文字；ghost 只有 `primary` 文字、没有底，只用于"返回/取消"这类不产生数据的动作。
 - `button-danger`：破坏性动作，必须在弹层内二次确认。
 - `row`：最小 56px 高的信息行。左为名称（可带一行同字号、次要色的说明），右为 `money` 金额，中间不允许再塞第三列。文字放不下就换行、行变高，不截断、不缩小。

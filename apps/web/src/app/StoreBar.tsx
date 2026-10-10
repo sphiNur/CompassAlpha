@@ -113,6 +113,7 @@ function StoreButton() {
             title={i18n.t('storeSwitcher.allOrgStores')}
             detail={i18n.t('storeSwitcher.allOrgHint')}
             value={selectedId === ALL_STORES ? current : undefined}
+            picks
             onPress={() => choose(ALL_STORES)}
           />
           {stores.map((store) => (
@@ -120,6 +121,7 @@ function StoreButton() {
               key={store.id}
               title={store.name}
               value={selectedId === store.id ? current : undefined}
+              picks
               onPress={() => choose(store.id)}
             />
           ))}

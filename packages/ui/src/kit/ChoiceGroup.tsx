@@ -40,7 +40,7 @@ export function ChoiceGroup<V extends string>({
       <div
         role="radiogroup"
         aria-label={label}
-        className="flex gap-xs rounded-md bg-surface-sunken p-xs"
+        className="flex gap-xs rounded-pill bg-surface-sunken p-xs"
       >
         {options.map((option) => {
           const chosen = option.value === value;
@@ -53,7 +53,7 @@ export function ChoiceGroup<V extends string>({
               data-choice={option.value}
               onClick={() => onChange(option.value)}
               className={cn(
-                'flex h-tap min-w-0 flex-1 items-center justify-center rounded-sm px-md text-label outline-none',
+                'flex h-tap min-w-0 flex-1 items-center justify-center rounded-pill px-md text-label outline-none',
                 'focus-visible:ring-2 focus-visible:ring-primary',
                 chosen ? 'bg-surface text-primary' : 'text-secondary active:bg-line',
               )}

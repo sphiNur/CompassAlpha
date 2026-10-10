@@ -1,4 +1,5 @@
-import { List, Page, Row } from '@compass/ui/kit';
+import { List, Page, Row, Tile, TileGrid } from '@compass/ui/kit';
+import { useOrdersToBuy, usePendingApprovals } from '../hooks/useWaitingCounts';
 import { useAuthStore } from '../stores/authStore';
 import { useI18n } from '../hooks/useI18n';
 import type { Tab } from '../stores/navStore';
@@ -17,11 +18,8 @@ export function MenuPage({ onOpen, onOpenSettings }: MenuPageProps) {
   const i18n = useI18n();
   const session = useAuthStore((s) => s.session);
   const can = (permission: string) => !!session?.permissions.includes(permission);
-  const go = (
-    <span aria-hidden className="text-body text-secondary">
-      ›
-    </span>
-  );
+  const toApprove = usePendingApprovals(can('order.approve'));
+  const toBuy = useOrdersToBuy(can('run.purchase'));
 
   return (
     <Page>
@@ -30,13 +28,36 @@ export function MenuPage({ onOpen, onOpenSettings }: MenuPageProps) {
         <p className="text-body text-secondary">{session?.user.displayName}</p>
       </header>
 
+      {/* What is waiting, for the work this person does. */}
+      {can('order.approve') || can('run.purchase') ? (
+        <TileGrid>
+          {can('order.approve') ? (
+            <Tile
+              data-testid="tile-approve"
+              tone="orange"
+              label={i18n.t('menu.tile.approve')}
+              count={toApprove}
+              onPress={() => onOpen('approve')}
+            />
+          ) : null}
+          {can('run.purchase') ? (
+            <Tile
+              data-testid="tile-buy"
+              tone="blue"
+              label={i18n.t('menu.tile.buy')}
+              count={toBuy}
+              onPress={() => onOpen('run')}
+            />
+          ) : null}
+        </TileGrid>
+      ) : null}
+
       <List>
         {can('prices.view') ? (
           <Row
             data-testid="menu-history"
             title={i18n.t('menu.history')}
             detail={i18n.t('menu.historyHint')}
-            value={go}
             onPress={() => onOpen('history')}
           />
         ) : null}
@@ -45,7 +66,6 @@ export function MenuPage({ onOpen, onOpenSettings }: MenuPageProps) {
             data-testid="menu-admin"
             title={i18n.t('menu.admin')}
             detail={i18n.t('menu.adminHint')}
-            value={go}
             onPress={() => onOpen('admin')}
           />
         ) : null}
@@ -53,7 +73,6 @@ export function MenuPage({ onOpen, onOpenSettings }: MenuPageProps) {
           data-testid="menu-settings"
           title={i18n.t('menu.settings')}
           detail={i18n.t('menu.settingsHint')}
-          value={go}
           onPress={onOpenSettings}
         />
       </List>

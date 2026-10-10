@@ -48,6 +48,8 @@ export const ru = {
   'menu.adminHint': 'Магазины, сотрудники, каталог, отчёты',
   'menu.settings': 'Настройки',
   'menu.settingsHint': 'Отображаемое имя и язык',
+  'menu.tile.approve': 'Ждут одобрения',
+  'menu.tile.buy': 'Заявки к закупке',
 
   // ── 2. Common ──────────────────────────────────────────────────
   'app.update.title': 'Доступна новая версия',

@@ -75,6 +75,8 @@ export const en = {
   'menu.adminHint': 'Stores, people, catalogue, reports',
   'menu.settings': 'Settings',
   'menu.settingsHint': 'Display name and language',
+  'menu.tile.approve': 'Waiting for approval',
+  'menu.tile.buy': 'Orders to buy',
 
   // ── 2. Common ──────────────────────────────────────────────────
   'app.update.title': 'A new version is ready',
