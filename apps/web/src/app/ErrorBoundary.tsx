@@ -6,6 +6,7 @@
  * (if the client logger is initialized) ship the error to `system.log`.
  */
 import { Component } from 'react';
+import { reloadApp } from '../lib/reload';
 import type { ErrorInfo, ReactNode } from 'react';
 import { createI18n, detectLocale, type Locale } from '@compass/i18n';
 
@@ -154,7 +155,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               } catch {
                 /* ignore */
               }
-              window.location.reload();
+              reloadApp('error-boundary');
             }}
             style={{
               padding: '10px 20px',

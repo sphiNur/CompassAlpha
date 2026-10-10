@@ -113,10 +113,24 @@
   }, 12000);
 
   // ---- 4. Bind buttons (CSP forbids inline onclick=) ------------------------
+  // Same record apps/web/src/lib/reload.ts writes, so the next page load
+  // can report why this one ended.
+  function noteReload() {
+    try {
+      sessionStorage.setItem(
+        'compass.lastReload',
+        JSON.stringify({ reason: 'boot-guard', at: Date.now(), fromBuild: null }),
+      );
+    } catch (_) {
+      /* storage unavailable */
+    }
+  }
+
   function bindButtons() {
     var rl = document.getElementById('boot-reload-btn');
     if (rl)
       rl.addEventListener('click', function () {
+        noteReload();
         location.reload();
       });
     var rs = document.getElementById('boot-reset-btn');
@@ -128,6 +142,7 @@
         } catch (_) {
           /* storage unavailable; just reload */
         }
+        noteReload();
         location.reload();
       });
   }

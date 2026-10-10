@@ -3,7 +3,8 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider, ToastProvider } from '@compass/ui';
 import { initLogger, getLogger } from '@compass/telemetry';
-import { trpc, buildTrpcClient } from '../lib/trpc';
+import { trpc, buildTrpcClient, sendClientLogs } from '../lib/trpc';
+import { reportLastReload } from '../lib/reload';
 import { useTelegramInit } from '../hooks/useTelegram';
 import { useTapGuard } from '../hooks/useTapGuard';
 import { useVersionCheck } from '../hooks/useVersionCheck';
@@ -20,8 +21,12 @@ const isBrowser = typeof window !== 'undefined';
 interface CompassWindow extends Window { __compassLoggerBooted?: boolean }
 const compassWindow = isBrowser ? (window as CompassWindow) : null;
 if (compassWindow && !compassWindow.__compassLoggerBooted) {
-  initLogger({ appVersion: import.meta.env.VITE_BUILD_SHA ?? 'dev' });
+  const logger = initLogger({ appVersion: import.meta.env.VITE_BUILD_SHA ?? 'dev' });
   compassWindow.__compassLoggerBooted = true;
+  // Without a transport every event stayed in the browser: client errors
+  // never reached system.log and the debug page's server tab was empty.
+  logger.setTransport(sendClientLogs);
+  reportLastReload();
 
   window.addEventListener('error', (e) => {
     try {
@@ -39,15 +44,10 @@ if (compassWindow && !compassWindow.__compassLoggerBooted) {
   });
 }
 
-/** Hooks that need ToastProvider but not QueryClient. */
-function ToastConsumers({ children }: { children: ReactNode }) {
-  useVersionCheck();
-  return <>{children}</>;
-}
-
 /** Hooks that need QueryClient (and downstream Toast). */
 function QueryConsumers({ children }: { children: ReactNode }) {
   useRealtime();
+  useVersionCheck();
   return <>{children}</>;
 }
 
@@ -104,8 +104,7 @@ export function App() {
             onboarding screens get it too. */}
         <UiLabelsBridge>
           <ToastProvider>
-            <ToastConsumers>
-              <trpc.Provider client={trpcClient} queryClient={queryClient}>
+            <trpc.Provider client={trpcClient} queryClient={queryClient}>
                 <QueryClientProvider client={queryClient}>
                   <QueryConsumers>
                     <AuthGate>
@@ -113,8 +112,7 @@ export function App() {
                     </AuthGate>
                   </QueryConsumers>
                 </QueryClientProvider>
-              </trpc.Provider>
-            </ToastConsumers>
+            </trpc.Provider>
           </ToastProvider>
         </UiLabelsBridge>
       </ThemeProvider>

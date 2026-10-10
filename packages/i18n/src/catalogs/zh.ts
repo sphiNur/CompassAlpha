@@ -14,6 +14,8 @@ export const zh = {
   'nav.debug': '调试',
 
   // ── 2. Common ──────────────────────────────────────────────────
+  'app.update.title': '新版本已就绪',
+  'app.update.body': '方便的时候点这里刷新',
   'common.cancel': '取消',
   'common.confirm': '确认',
   'common.archive': '归档',

@@ -1,6 +1,7 @@
 import { createTRPCReact, httpLink, loggerLink } from '@trpc/react-query';
 import type { AppRouter } from '@compass/api/src/trpc/router';
 import { useAuthStore, type AuthSession } from '../stores/authStore';
+import { getLogger, type LogEvent } from '@compass/telemetry';
 import { isRefreshRejected } from './networkError';
 
 export const trpc = createTRPCReact<AppRouter>();
@@ -9,6 +10,36 @@ export const trpc = createTRPCReact<AppRouter>();
 // behind nginx). `||` (not `??`) so empty-string falls back to ''
 // rather than becoming '(empty)/trpc'.
 const API_URL = (import.meta.env.VITE_API_URL || '') as string;
+
+/**
+ * Ship client log events to `system.log`. Plain fetch on purpose: this
+ * must not go through authFetch, whose refresh-and-retry path logs.
+ */
+export async function sendClientLogs(events: LogEvent[]): Promise<void> {
+  const token = useAuthStore.getState().accessToken;
+  const res = await fetch(`${API_URL}/trpc/system.log`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ events }),
+    keepalive: true,
+  });
+  // The endpoint is public and treats a stale token as anonymous, so a
+  // non-2xx is about the batch or the server; throwing re-queues it.
+  if (!res.ok) throw new Error(`system.log answered ${res.status}`);
+}
+
+/** Losing the session unmounts the whole app, which looks like a reload
+ *  from the outside. Record why it happened. */
+export function noteSessionCleared(reason: string, status?: number): void {
+  try {
+    getLogger().log('warn', 'auth.cleared', { action: reason, data: { status } });
+  } catch {
+    /* logger not booted */
+  }
+}
 
 /**
  * Single-flight refresh: while a refresh is in-flight, every other 401
@@ -39,7 +70,10 @@ async function refreshAccessToken(): Promise<{
         // user back through telegramLogin. Anything else (5xx, 429) is
         // the server having a moment; keep the session and let the
         // caller's request fail on its own.
-        if (isRefreshRejected(res.status)) useAuthStore.getState().clear();
+        if (isRefreshRejected(res.status)) {
+          noteSessionCleared('refresh-rejected', res.status);
+          useAuthStore.getState().clear();
+        }
         return null;
       }
       const json = (await res.json()) as {

@@ -14,6 +14,8 @@ export const ru = {
   'nav.debug': 'Отладка',
 
   // ── 2. Common ──────────────────────────────────────────────────
+  'app.update.title': 'Доступна новая версия',
+  'app.update.body': 'Нажмите здесь, чтобы обновить, когда будет удобно',
   'common.cancel': 'Отмена',
   'common.archive': 'Архивировать',
   'common.archived': 'в архиве',

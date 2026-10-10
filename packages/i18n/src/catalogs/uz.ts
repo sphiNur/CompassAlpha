@@ -21,6 +21,8 @@ export const uz = {
   'nav.debug': 'Debug',
 
   // ── 2. Common ──────────────────────────────────────────────────
+  'app.update.title': 'Yangi versiya tayyor',
+  'app.update.body': "Qulay paytda yangilash uchun shu yerni bosing",
   'common.cancel': 'Bekor qilish',
   'common.archive': 'Arxivlash',
   'common.archived': 'arxivda',

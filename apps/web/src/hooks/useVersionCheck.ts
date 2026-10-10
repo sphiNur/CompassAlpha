@@ -1,14 +1,23 @@
 /**
  * Polls /health/version and compares the running build's id with the
- * server's. On mismatch (server has shipped a new build), shows a
- * non-dismissable toast that, when tapped, reloads the page so the
- * iPhone Telegram WebView can fetch the new index.html.
+ * server's. On mismatch (server has shipped a new build) it shows a
+ * prompt that stays until tapped, and tapping it reloads.
+ *
+ * It does NOT reload a visible app on its own. It used to, 30 seconds
+ * after the prompt, whatever the user was doing — so every deploy
+ * refreshed the page under everyone online and discarded what they had
+ * typed. The only unasked reload left is for an app that has been in the
+ * background for a while with nothing to lose (see `mayAutoReload`).
  *
  * The build id lives in `<meta name="compass-build">` in index.html and
  * is interpolated by vite.config.ts at build time.
  */
 import { useEffect, useRef } from 'react';
-import { useToast } from '@compass/ui';
+import { useQueryClient } from '@tanstack/react-query';
+import { getSheetCount, useToast } from '@compass/ui';
+import { useI18n } from './useI18n';
+import { outbox } from '../lib/idb';
+import { mayAutoReload, reloadApp } from '../lib/reload';
 
 const POLL_MS = 30_000;
 
@@ -22,16 +31,42 @@ function getRunningBuildId(): string | null {
 
 export function useVersionCheck(): void {
   const toast = useToast();
-  const promptedRef = useRef(false);
+  const i18n = useI18n();
+  const queryClient = useQueryClient();
+  // Read through refs so a language change or a new toast context does
+  // not restart the polling effect.
+  const latest = useRef({ toast, i18n, queryClient });
+  latest.current = { toast, i18n, queryClient };
 
   useEffect(() => {
     const running = getRunningBuildId();
     if (!running) return;
 
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
+    let updateWaiting = false;
+    let hiddenSince: number | null = document.visibilityState === 'hidden' ? Date.now() : null;
+
+    const tryBackgroundReload = async () => {
+      if (!updateWaiting || hiddenSince === null) return;
+      let queuedWrites = 0;
+      try {
+        queuedWrites = await outbox.size();
+      } catch {
+        /* IDB unavailable: nothing can be queued */
+      }
+      const ok = mayAutoReload({
+        hiddenForMs: hiddenSince === null ? null : Date.now() - hiddenSince,
+        openSheets: getSheetCount(),
+        mutationsInFlight: latest.current.queryClient.isMutating(),
+        queuedWrites,
+      });
+      if (ok) reloadApp('update-while-hidden', running);
+    };
 
     const check = async () => {
+      if (updateWaiting) {
+        void tryBackgroundReload();
+        return;
+      }
       try {
         // Bypass any browser cache.
         const url = '/health/version?t=' + Date.now();
@@ -39,33 +74,35 @@ export function useVersionCheck(): void {
         if (!res.ok) return;
         const data = (await res.json()) as { commit?: string };
         const server = data.commit;
-        if (!server || server === running) return;
-        if (promptedRef.current) return;
-        promptedRef.current = true;
-        toast.info(
-          'Tap to reload now',
-          'New version available',
-        );
-        // Auto-reload after 30s in case the user doesn't tap.
-        setTimeout(() => {
-          if (!cancelled) window.location.reload();
-        }, 30_000);
+        if (!server || server === running || updateWaiting) return;
+        updateWaiting = true;
+        const { toast: t, i18n: tr } = latest.current;
+        t.show(tr.t('app.update.body'), {
+          title: tr.t('app.update.title'),
+          ttlMs: 0,
+          onClick: () => reloadApp('update-accepted', running),
+        });
       } catch {
         // Network errors are fine — we'll try again next interval.
       }
     };
 
+    const onVisibility = () => {
+      hiddenSince = document.visibilityState === 'hidden' ? Date.now() : null;
+    };
+
     // Initial check after first paint settles.
-    timer = setTimeout(() => void check(), 5_000);
+    const timer = setTimeout(() => void check(), 5_000);
     const handle = setInterval(() => void check(), POLL_MS);
     const onFocus = () => void check();
     window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
+      clearTimeout(timer);
       clearInterval(handle);
       window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [toast]);
+  }, []);
 }

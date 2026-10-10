@@ -41,6 +41,8 @@ export const en = {
   'nav.debug': 'Debug',
 
   // ── 2. Common ──────────────────────────────────────────────────
+  'app.update.title': 'A new version is ready',
+  'app.update.body': 'Tap here to reload when you are at a good stopping point',
   'common.cancel': 'Cancel',
   'common.confirm': 'Confirm',
   // M2.0b: shared bits used by the dishes editor (and reusable

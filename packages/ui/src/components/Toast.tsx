@@ -18,12 +18,20 @@ interface ToastConfig {
   title?: ReactNode;
   message: ReactNode;
   ttlMs?: number;
+  onClick?: () => void;
 }
 
 interface ToastContextValue {
   show: (
     message: ReactNode,
-    opts?: { tone?: ToastTone; title?: ReactNode; ttlMs?: number },
+    opts?: {
+      tone?: ToastTone;
+      title?: ReactNode;
+      /** 0 keeps the toast up until it is tapped or dismissed. */
+      ttlMs?: number;
+      /** Runs when the toast is tapped, before it is dismissed. */
+      onClick?: () => void;
+    },
   ) => string;
   success: (message: ReactNode, title?: ReactNode) => string;
   error: (message: ReactNode, title?: ReactNode) => string;
@@ -79,10 +87,17 @@ export function ToastProvider({
         title: opts.title,
         message,
         ttlMs: opts.ttlMs ?? defaultTtlMs,
+        onClick: opts.onClick,
       };
       setToasts((prev) => {
         const next = [...prev, config];
-        return next.length > limit ? next.slice(next.length - limit) : next;
+        // Over the limit, the oldest timed toast goes first: one that was
+        // asked to stay must not be pushed out by passing notices.
+        while (next.length > limit) {
+          const drop = next.findIndex((t) => t.ttlMs && t.ttlMs > 0);
+          next.splice(drop === -1 ? 0 : drop, 1);
+        }
+        return next;
       });
       const ttl = config.ttlMs;
       if (ttl && ttl > 0) {
@@ -143,7 +158,10 @@ export function ToastProvider({
           <button
             key={t.id}
             type="button"
-            onClick={() => dismiss(t.id)}
+            onClick={() => {
+              t.onClick?.();
+              dismiss(t.id);
+            }}
             className={cn(
               'press min-w-[200px] max-w-[92vw] rounded-[var(--r-pill)] px-4 py-2.5 text-left',
               TONE[t.tone],
