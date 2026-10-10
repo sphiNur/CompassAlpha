@@ -2752,3 +2752,26 @@ describe('expired role bindings carry no admin authority', () => {
     },
   );
 });
+
+describe('role binding scope is constrained by the database', () => {
+  test.skipIf(!SHOULD_RUN)('rejects a scope the permission checks would ignore', async () => {
+    const db = getDb();
+    const store = await makeStore(`Scope-${Math.random()}`);
+    const user = await makeUser('Scope-Check');
+    const memberId = await makeMember(user.id);
+    const bind = async (scopeType: string, scopeId: string | null): Promise<void> => {
+      await db
+        .insert(s.memberRoleBindings)
+        .values({ memberId, roleId: fix!.staffRoleId, scopeType, scopeId });
+    };
+
+    // 'org' is not a scope: the session would list its permissions while
+    // every scoped check skipped it.
+    await expect(bind('org', fix!.orgId)).rejects.toThrow(/mrb_scope_check/);
+    await expect(bind('global', store.id)).rejects.toThrow(/mrb_scope_check/);
+    await expect(bind('store', null)).rejects.toThrow(/mrb_scope_check/);
+
+    await bind('global', null);
+    await bind('store', store.id);
+  });
+});

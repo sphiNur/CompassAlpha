@@ -253,8 +253,10 @@ export const memberRoleBindings = authSchema.table(
     roleId: uuid('role_id')
       .notNull()
       .references(() => roles.id, { onDelete: 'cascade' }),
+    /** 'global' with a null scopeId, or 'store' with the store's id.
+     *  Enforced by the mrb_scope_check constraint (migration 0040). */
     scopeType: varchar('scope_type', { length: 16 }).notNull().default('global'),
-    scopeId: uuid('scope_id'), // nullable when scopeType='global'
+    scopeId: uuid('scope_id'),
     grantedBy: uuid('granted_by').references(() => users.id),
     expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }),
     createdAt: createdAt(),
