@@ -2620,3 +2620,89 @@ describe('memberSetStatus is rank- and store-gated', () => {
     expect(await statusOf(manager)).toBe('suspended');
   });
 });
+
+describe('memberPermissionSet cannot mint authority the actor lacks', () => {
+  async function callerWith(
+    roleId: string,
+    scope: { type: 'global' } | { type: 'store'; storeId: string },
+  ) {
+    const user = await makeUser('Override-Actor');
+    const memberId = await makeMember(user.id);
+    await bindRole(memberId, roleId, scope);
+    return appRouter.createCaller(buildCtx(getDb(), await sessionFor(memberId, user.id)));
+  }
+
+  async function staffTarget(storeId: string): Promise<string> {
+    const user = await makeUser('Override-Target');
+    const memberId = await makeMember(user.id);
+    await bindRole(memberId, fix!.staffRoleId, { type: 'store', storeId });
+    return memberId;
+  }
+
+  async function codeOf(run: () => Promise<unknown>): Promise<string | undefined> {
+    try {
+      await run();
+      return undefined;
+    } catch (err) {
+      await settleRolledBackTestTransaction();
+      return (err as { code?: string }).code;
+    }
+  }
+
+  test.skipIf(!SHOULD_RUN)(
+    'store manager can allow a key they hold but not one they lack',
+    async () => {
+      const storeA = await makeStore(`A-${Math.random()}`);
+      const manager = await callerWith(fix!.managerRoleId, { type: 'store', storeId: storeA.id });
+      const target = await staffTarget(storeA.id);
+      const base = {
+        memberId: target,
+        effect: 'allow' as const,
+        scopeType: 'store' as const,
+        scopeId: storeA.id,
+      };
+      expect(
+        await codeOf(() => manager.admin.memberPermissionSet({ ...base, permissionKey: 'run.amend' })),
+      ).toBe('FORBIDDEN');
+      expect(
+        await codeOf(() =>
+          manager.admin.memberPermissionSet({ ...base, permissionKey: 'order.approve' }),
+        ),
+      ).toBeUndefined();
+      // Deny only removes authority, so the rank gate alone covers it.
+      expect(
+        await codeOf(() =>
+          manager.admin.memberPermissionSet({
+            ...base,
+            effect: 'deny',
+            permissionKey: 'run.amend',
+          }),
+        ),
+      ).toBeUndefined();
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'admin cannot hand out org.admin or a super-admin-only key; super admin can',
+    async () => {
+      const storeA = await makeStore(`A-${Math.random()}`);
+      const admin = await callerWith(fix!.adminRoleId, { type: 'global' });
+      const target = await staffTarget(storeA.id);
+      const base = { memberId: target, effect: 'allow' as const, scopeType: 'global' as const };
+      for (const permissionKey of ['org.admin', 'run.amend']) {
+        expect(
+          await codeOf(() => admin.admin.memberPermissionSet({ ...base, permissionKey })),
+        ).toBe('FORBIDDEN');
+      }
+      expect(
+        await codeOf(() => admin.admin.memberPermissionSet({ ...base, permissionKey: 'prices.view' })),
+      ).toBeUndefined();
+      const superAdmin = appRouter.createCaller(fix!.superAdminCtx);
+      for (const permissionKey of ['org.admin', 'run.amend']) {
+        expect(
+          await codeOf(() => superAdmin.admin.memberPermissionSet({ ...base, permissionKey })),
+        ).toBeUndefined();
+      }
+    },
+  );
+});

@@ -22,7 +22,8 @@ import {
 import { dateInTz, todayInTz } from '@compass/domain';
 import { authedProcedure, router } from '../trpc';
 import { hub } from '../../realtime/hub';
-import { hasGlobalOrgAdmin } from '../../services/orgAdmin';
+import { hasGlobalOrgAdmin, hasGlobalPermission } from '../../services/orgAdmin';
+import { effectivePermissionsForStore } from '../../services/storeScope';
 
 function requireAdmin(perms: ReadonlySet<string>): void {
   if (!perms.has('users.manage')) {
@@ -2444,6 +2445,40 @@ export const adminRouter = router({
             code: 'FORBIDDEN',
             message: 'auth.errors.cannotGrantEqualOrHigher',
           });
+        }
+        // An allow may only pass on authority the actor holds in that
+        // same scope. Outranking the target is not enough: a manager
+        // could otherwise equip a subordinate (or a second account of
+        // their own) with keys their role was never given, and an admin
+        // could hand out the super-admin-only ones.
+        if (input.effect === 'allow') {
+          const actorHoldsKey =
+            input.scopeType === 'store' && input.scopeId
+              ? (
+                  await effectivePermissionsForStore(
+                    tx,
+                    ctx.session!.memberId,
+                    input.scopeId,
+                    ctx.session!.permissions,
+                  )
+                ).has(input.permissionKey)
+              : await hasGlobalPermission(tx, ctx.session!.memberId, input.permissionKey);
+          if (!actorHoldsKey) {
+            throw new TRPCError({
+              code: 'FORBIDDEN',
+              message: 'auth.errors.missingPermission',
+              cause: { missingPermission: input.permissionKey },
+            });
+          }
+          // `org.admin` is what makes someone an admin, so allowing it
+          // is granting the admin tier. grantRole forbids an admin from
+          // creating another admin; this path must not be a way around it.
+          if (input.permissionKey === 'org.admin' && actorRank <= ADMIN_RANK_THRESHOLD) {
+            throw new TRPCError({
+              code: 'FORBIDDEN',
+              message: 'auth.errors.cannotGrantEqualOrHigher',
+            });
+          }
         }
         // Validate permission key exists in the dictionary.
         const perm = await tx.query.permissions.findFirst({
