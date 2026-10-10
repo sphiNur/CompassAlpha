@@ -30,7 +30,8 @@ import {
 import type { SettlementWageItem } from '@compass/contracts';
 import { trpc } from '../lib/trpc';
 import { registerStoreChangeGuard, useStoreContext } from '../components/StoreSwitcher';
-import { usePageMainButton, getTg, haptic } from '../hooks/useTelegram';
+import { usePageMainButton, haptic } from '../hooks/useTelegram';
+import { confirmNative } from '../lib/confirm';
 import { useI18n } from '../hooks/useI18n';
 import { formatMoney, currencyOf } from '../lib/format';
 import { useAuthStore } from '../stores/authStore';
@@ -338,16 +339,7 @@ function AmountField({
   );
 }
 
-/** Use Telegram's native confirmation sheet when available, with web fallback. */
-function confirmSettlement(message: string): Promise<boolean> {
-  const tg = getTg();
-  if (tg) {
-    return new Promise((resolve) => {
-      tg.showConfirm(message.replace(/\s*\n\s*/g, ' '), resolve);
-    });
-  }
-  return Promise.resolve(confirm(message));
-}
+const confirmSettlement = confirmNative;
 
 function confirmSettlementAction(message: string, onConfirm: () => void): void {
   void confirmSettlement(message).then((confirmed) => {

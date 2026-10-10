@@ -436,9 +436,18 @@ function ShellInner() {
         >
           <span className="truncate text-h3 font-semibold">Compass</span>
           <StoreChip />
-          <span className="justify-self-end truncate text-label text-[var(--c-fg-muted)]">
-            {session?.member.orgName}
-          </span>
+          {/* The only other way into settings (profile, language, the
+              page's own menu actions) is Telegram's gear, which does not
+              exist here. */}
+          <button
+            type="button"
+            data-testid="open-settings"
+            aria-label={i18n.t('settings.title')}
+            onClick={() => setSettingsOpen(true)}
+            className="press justify-self-end truncate text-label text-[var(--c-fg-muted)] underline decoration-dotted underline-offset-4"
+          >
+            {session?.member.orgName ?? i18n.t('settings.title')}
+          </button>
         </header>
       )}
 
@@ -521,6 +530,7 @@ function BottomNav({
           <button
             key={t.key}
             type="button"
+            data-testid={`nav-${t.key}`}
             onClick={() => setTab(t.key as Tab)}
             aria-current={active ? 'page' : undefined}
             disabled={busy}
@@ -591,6 +601,7 @@ function PageMainButton() {
     >
       <button
         type="button"
+        data-testid="page-main-button"
         disabled={!interactable}
         onClick={state.onClick}
         aria-busy={busy || undefined}
