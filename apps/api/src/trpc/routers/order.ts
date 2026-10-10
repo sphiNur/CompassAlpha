@@ -38,6 +38,7 @@ import {
 import { DomainError } from '@compass/domain';
 import { authedProcedure, idempotentMutation, rethrowDomainError, router } from '../trpc';
 import { appendEvents, readStream } from '../../services/eventStore';
+import { isUniqueViolation } from '../../services/pgErrors';
 import { projectOrder } from '../../services/orderProjection';
 import { dispatchOrderEventNotifications } from '../../services/notifyForEvent';
 import { estimateLines, loadSkuPriceStats } from '../../services/priceStats';
@@ -1301,6 +1302,3 @@ async function loadSession(db: import('@compass/db').DB, orgId: string, sessionI
   return row;
 }
 
-function isUniqueViolation(err: unknown): boolean {
-  return Boolean(err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === '23505');
-}

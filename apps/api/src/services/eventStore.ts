@@ -67,7 +67,9 @@ export interface AppendInput {
 
 export async function appendEvents(db: DB, input: AppendInput): Promise<void> {
   if (input.events.length === 0) return;
-  // INSERT will throw P0001/23505 on (stream_id, seq) collision — caller catches.
+  // Two writers on one stream collide on (stream_id, seq): Postgres raises
+  // 23505 and the caller turns it into a CONFLICT with isUniqueViolation
+  // (services/pgErrors), which knows the ORM wraps the driver's error.
   await db.insert(s.events).values(
     input.events.map((e) => ({
       id: randomUUID(),
