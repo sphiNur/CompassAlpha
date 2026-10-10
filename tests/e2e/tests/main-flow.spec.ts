@@ -92,6 +92,8 @@ test('place an order', async () => {
 });
 
 test('approve it', async () => {
+  // The navigation says how many orders are waiting before the tab is opened.
+  await expect(tab('approve')).toHaveText(/Approve\s*1/);
   await tab('approve').click();
   await expect(main().getByRole('heading', { name: 'E2E Admin' })).toBeVisible();
   await main().getByRole('button', { name: 'Claim' }).click();
@@ -101,6 +103,7 @@ test('approve it', async () => {
   await evidence('approval-claimed');
   await main().getByRole('button', { name: 'Approve', exact: true }).click();
   await expect(main().getByRole('heading', { name: 'Inbox is empty' })).toBeVisible();
+  await expect(tab('approve')).toHaveText('Approve');
 });
 
 test('buy everything, one item in cash and one by transfer', async () => {
@@ -181,7 +184,11 @@ test('finish the run and find it in history', async () => {
   await sheet().getByRole('button', { name: 'Finish run' }).click();
   await expect(main().getByRole('heading', { name: 'No approved sessions to plan' })).toBeVisible();
 
-  await tab('history').click();
+  // Records are not a daily task: they sit behind the menu.
+  await tab('menu').click();
+  await evidence('menu');
+  await page.getByTestId('menu-history').click();
+  await expect(tab('menu')).toHaveAttribute('aria-current', 'page');
   await expect(main().getByRole('heading', { level: 1 })).toHaveText(/History\s*1 · 114,000 UZS/);
   await expect(
     main().getByRole('button', { name: /Central Kitchen 2 items 114,000/ }),
