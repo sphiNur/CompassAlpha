@@ -8,7 +8,7 @@
 const DB_NAME = 'compass';
 const DB_VERSION = 1;
 
-interface CompassDb extends IDBDatabase {}
+type CompassDb = IDBDatabase;
 
 let dbPromise: Promise<CompassDb> | null = null;
 

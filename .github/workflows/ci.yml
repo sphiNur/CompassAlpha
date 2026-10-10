@@ -218,12 +218,11 @@ jobs:
       - name: Type-check
         run: pnpm type-check
 
-      # ESLint flat config + plugin wiring (react-hooks, jsx-a11y) and
-      # the cleanup of legacy eslint-disable comment formats are an M2
-      # follow-up. apps/web/eslint.config.js is in place as the starting
-      # point. The per-PR safety net today: type-check above + the
-      # console.log grep below + the migration journal / i18n parity /
-      # typography drift checks already enforced in this same job.
+      - name: Lint
+        # apps/web only for now (the one workspace with a lint script).
+        # react-hooks/rules-of-hooks is enforced; exhaustive-deps is wired
+        # but off — see apps/web/eslint.config.js.
+        run: pnpm lint
 
       - name: No console.log in user-facing code
         # M3.18 (launch hardening): a leftover console.log(tsv) in

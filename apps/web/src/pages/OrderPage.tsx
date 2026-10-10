@@ -1417,7 +1417,7 @@ function ReviewList({
       {estimate.known > 0 ? (
         <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 ring-hairline">
           <div className="flex items-baseline justify-between gap-2">
-            {/* eslint-disable-next-line — M3.13 typography exception:
+            {/* M3.13 typography exception:
                 this eyebrow label is paired with a non-eyebrow big-money
                 value as siblings inside a parent flex row, not a section
                 header. SectionLabel is also flex which would compose
