@@ -22,6 +22,7 @@ import {
 import { dateInTz, todayInTz } from '@compass/domain';
 import { authedProcedure, router } from '../trpc';
 import { hub } from '../../realtime/hub';
+import { hasGlobalOrgAdmin } from '../../services/orgAdmin';
 
 function requireAdmin(perms: ReadonlySet<string>): void {
   if (!perms.has('users.manage')) {
@@ -418,6 +419,65 @@ async function getActorAdminStoreIds(
     return all.map((r) => r.id);
   }
   return [...storeAdminSet];
+}
+
+/**
+ * Gate for suspending / reactivating a member.
+ *
+ *   - An org admin (global `org.admin`) may act on anyone strictly
+ *     below their own org-wide rank.
+ *   - Anyone else must administer EVERY store the target belongs to and
+ *     outrank the target in each. A target with no store at all, or
+ *     with a foot in a store the actor does not manage, is out of reach.
+ */
+async function assertCanSetMemberStatus(
+  tx: import('@compass/db').DB,
+  session: { userId: string; memberId: string; orgId: string },
+  target: { id: string; userId: string },
+): Promise<void> {
+  const { orgId } = session;
+  if (await hasGlobalOrgAdmin(tx, session.memberId)) {
+    const [targetRank, actorRank] = await Promise.all([
+      getActorMaxRank(tx, orgId, target.userId),
+      getActorMaxRank(tx, orgId, session.userId),
+    ]);
+    if (targetRank >= actorRank) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.cannotRevokeEqualOrHigher' });
+    }
+    return;
+  }
+  const [assignments, storeBindings, allowed] = await Promise.all([
+    tx
+      .select({ storeId: s.memberStoreAssignments.storeId })
+      .from(s.memberStoreAssignments)
+      .where(eq(s.memberStoreAssignments.memberId, target.id)),
+    tx
+      .select({ storeId: s.memberRoleBindings.scopeId })
+      .from(s.memberRoleBindings)
+      .where(
+        and(
+          eq(s.memberRoleBindings.memberId, target.id),
+          eq(s.memberRoleBindings.scopeType, 'store'),
+        ),
+      ),
+    getActorAdminStoreIds(tx, orgId, session.userId),
+  ]);
+  const targetStoreIds = new Set<string>();
+  for (const row of [...assignments, ...storeBindings]) {
+    if (row.storeId) targetStoreIds.add(row.storeId);
+  }
+  if (targetStoreIds.size === 0 || [...targetStoreIds].some((id) => !allowed.includes(id))) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'admin.errors.notAdminOfStore' });
+  }
+  for (const storeId of targetStoreIds) {
+    const [targetRank, actorRank] = await Promise.all([
+      getActorMaxRankInStore(tx, orgId, target.userId, storeId),
+      getActorMaxRankInStore(tx, orgId, session.userId, storeId),
+    ]);
+    if (targetRank >= actorRank) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.cannotRevokeEqualOrHigher' });
+    }
+  }
 }
 
 // ---------- input schemas ----------
@@ -969,8 +1029,15 @@ export const adminRouter = router({
             message: 'admin.errors.cannotSuspendSelf',
           });
         }
-        // Last-admin guard for suspend.
+        // Status is org-wide, so the actor needs authority over the
+        // target everywhere the target has any. `users.manage` alone is
+        // held by store managers and used to be the only gate here.
+        await assertCanSetMemberStatus(tx, ctx.session!, member);
+        // Last-admin guard for suspend. Serialised per org: two
+        // concurrent suspends of the last two admins would otherwise
+        // both read a count of 2.
         if (input.status === 'suspended') {
+          await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${orgId}))`);
           const targetMaxRank = await getActorMaxRank(tx, orgId, member.userId);
           if (targetMaxRank >= ADMIN_RANK_THRESHOLD) {
             const adminCount = await countAdminsInOrg(tx, orgId);
@@ -986,6 +1053,7 @@ export const adminRouter = router({
           .update(s.members)
           .set({ status: input.status })
           .where(eq(s.members.id, input.memberId));
+        await auditAdmin(tx, ctx, 'admin.member.setStatus', 'member', input.memberId, input);
         broadcastPeople(orgId);
         return { ok: true };
       });

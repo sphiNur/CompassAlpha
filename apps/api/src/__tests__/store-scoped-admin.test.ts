@@ -2483,3 +2483,140 @@ describe('purchase history permission scope', () => {
     },
   );
 });
+
+describe('memberSetStatus is rank- and store-gated', () => {
+  async function storeManager(storeId: string) {
+    const user = await makeUser('Status-Manager');
+    const memberId = await makeMember(user.id);
+    await bindRole(memberId, fix!.managerRoleId, { type: 'store', storeId });
+    return appRouter.createCaller(buildCtx(getDb(), await sessionFor(memberId, user.id)));
+  }
+
+  async function staffIn(storeIds: string[], roleId = fix!.staffRoleId): Promise<string> {
+    const user = await makeUser('Status-Target');
+    const memberId = await makeMember(user.id);
+    for (const storeId of storeIds) await bindRole(memberId, roleId, { type: 'store', storeId });
+    return memberId;
+  }
+
+  async function statusOf(memberId: string): Promise<string | undefined> {
+    const row = await getDb().query.members.findFirst({
+      where: (m, { eq: eq2 }) => eq2(m.id, memberId),
+    });
+    return row?.status;
+  }
+
+  async function expectForbidden(run: () => Promise<unknown>, memberId: string): Promise<void> {
+    let code: string | undefined;
+    try {
+      await run();
+    } catch (err) {
+      code = (err as { code?: string }).code;
+    }
+    expect(code).toBe('FORBIDDEN');
+    expect(await statusOf(memberId)).toBe('active');
+    await settleRolledBackTestTransaction();
+  }
+
+  test.skipIf(!SHOULD_RUN)('store manager cannot suspend a super admin', async () => {
+    const storeA = await makeStore(`A-${Math.random()}`);
+    const caller = await storeManager(storeA.id);
+    const target = fix!.superAdminMemberId;
+    await expectForbidden(
+      () => caller.admin.memberSetStatus({ memberId: target, status: 'suspended' }),
+      target,
+    );
+  });
+
+  test.skipIf(!SHOULD_RUN)('store manager cannot suspend staff of another store', async () => {
+    const storeA = await makeStore(`A-${Math.random()}`);
+    const storeB = await makeStore(`B-${Math.random()}`);
+    const caller = await storeManager(storeA.id);
+    const target = await staffIn([storeB.id]);
+    await expectForbidden(
+      () => caller.admin.memberSetStatus({ memberId: target, status: 'suspended' }),
+      target,
+    );
+  });
+
+  test.skipIf(!SHOULD_RUN)(
+    'store manager cannot suspend staff who also belong to a store they do not manage',
+    async () => {
+      const storeA = await makeStore(`A-${Math.random()}`);
+      const storeB = await makeStore(`B-${Math.random()}`);
+      const caller = await storeManager(storeA.id);
+      const target = await staffIn([storeA.id, storeB.id]);
+      await expectForbidden(
+        () => caller.admin.memberSetStatus({ memberId: target, status: 'suspended' }),
+        target,
+      );
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)('store manager cannot suspend a peer manager', async () => {
+    const storeA = await makeStore(`A-${Math.random()}`);
+    const caller = await storeManager(storeA.id);
+    const target = await staffIn([storeA.id], fix!.managerRoleId);
+    await expectForbidden(
+      () => caller.admin.memberSetStatus({ memberId: target, status: 'suspended' }),
+      target,
+    );
+  });
+
+  test.skipIf(!SHOULD_RUN)('store manager cannot suspend a member with no store', async () => {
+    const storeA = await makeStore(`A-${Math.random()}`);
+    const caller = await storeManager(storeA.id);
+    const target = await staffIn([]);
+    await expectForbidden(
+      () => caller.admin.memberSetStatus({ memberId: target, status: 'suspended' }),
+      target,
+    );
+  });
+
+  test.skipIf(!SHOULD_RUN)(
+    'store manager can suspend and reactivate lower-ranked staff of their own store, audited',
+    async () => {
+      const storeA = await makeStore(`A-${Math.random()}`);
+      const caller = await storeManager(storeA.id);
+      const target = await staffIn([storeA.id]);
+      await caller.admin.memberSetStatus({ memberId: target, status: 'suspended' });
+      expect(await statusOf(target)).toBe('suspended');
+      await caller.admin.memberSetStatus({ memberId: target, status: 'active' });
+      expect(await statusOf(target)).toBe('active');
+      const audit = await getDb()
+        .select({ inputs: s.policyDecisions.inputs })
+        .from(s.policyDecisions)
+        .where(
+          and(
+            eq(s.policyDecisions.action, 'admin.member.setStatus'),
+            eq(s.policyDecisions.resourceId, target),
+          ),
+        );
+      expect(audit.length).toBe(2);
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)('org admin cannot suspend an equal or higher rank', async () => {
+    const adminUser = await makeUser('Status-Admin');
+    const adminMember = await makeMember(adminUser.id);
+    await bindRole(adminMember, fix!.adminRoleId, { type: 'global' });
+    const caller = appRouter.createCaller(
+      buildCtx(getDb(), await sessionFor(adminMember, adminUser.id)),
+    );
+    const peerUser = await makeUser('Status-Peer-Admin');
+    const peer = await makeMember(peerUser.id);
+    await bindRole(peer, fix!.adminRoleId, { type: 'global' });
+
+    for (const target of [fix!.superAdminMemberId, peer]) {
+      await expectForbidden(
+        () => caller.admin.memberSetStatus({ memberId: target, status: 'suspended' }),
+        target,
+      );
+    }
+
+    const storeA = await makeStore(`A-${Math.random()}`);
+    const manager = await staffIn([storeA.id], fix!.managerRoleId);
+    await caller.admin.memberSetStatus({ memberId: manager, status: 'suspended' });
+    expect(await statusOf(manager)).toBe('suspended');
+  });
+});
