@@ -2765,11 +2765,40 @@ describe('role binding scope is constrained by the database', () => {
         .values({ memberId, roleId: fix!.staffRoleId, scopeType, scopeId });
     };
 
+    /**
+     * The constraint must reject the row. We assert on the failure, but not
+     * on WHERE the driver put the reason: drizzle 0.45 wraps driver errors in
+     * a `DrizzleQueryError` whose `message` is the SQL text, moving the
+     * Postgres detail (constraint name, SQLSTATE) onto `cause`. Walking the
+     * cause chain keeps this test about the constraint rather than about the
+     * current error-wrapping style of the ORM.
+     */
+    const expectScopeRejected = async (p: Promise<void>): Promise<void> => {
+      try {
+        await p;
+      } catch (err) {
+        const seen: string[] = [];
+        let cur: unknown = err;
+        for (let depth = 0; cur && depth < 5; depth += 1) {
+          const e = cur as { message?: string; constraint?: string; code?: string; cause?: unknown };
+          if (e.message) seen.push(e.message);
+          if (e.constraint) seen.push(e.constraint);
+          if (e.code) seen.push(String(e.code));
+          cur = e.cause;
+        }
+        const text = seen.join(' ');
+        // 23514 = check_violation: present no matter how the ORM wraps it.
+        if (text.includes('mrb_scope_check') || text.includes('23514')) return;
+        throw new Error(`expected the scope constraint to reject this row, got: ${text}`);
+      }
+      throw new Error('expected the scope constraint to reject this row, but it was accepted');
+    };
+
     // 'org' is not a scope: the session would list its permissions while
     // every scoped check skipped it.
-    await expect(bind('org', fix!.orgId)).rejects.toThrow(/mrb_scope_check/);
-    await expect(bind('global', store.id)).rejects.toThrow(/mrb_scope_check/);
-    await expect(bind('store', null)).rejects.toThrow(/mrb_scope_check/);
+    await expectScopeRejected(bind('org', fix!.orgId));
+    await expectScopeRejected(bind('global', store.id));
+    await expectScopeRejected(bind('store', null));
 
     await bind('global', null);
     await bind('store', store.id);
