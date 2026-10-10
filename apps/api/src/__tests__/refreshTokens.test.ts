@@ -195,6 +195,33 @@ pgDescribe('refreshTokens service (PG-gated)', () => {
     }
   });
 
+  test('a retry right after a rotation whose response was lost is accepted', async () => {
+    const root = await svc.issueRefresh(db, { userId: testUserId });
+    await svc.consumeRefresh(db, root.id, root.family);
+    // The successor was issued server-side but never reached the client.
+    const lost = await svc.issueRefresh(db, {
+      userId: testUserId,
+      family: root.family,
+      parentId: root.id,
+    });
+    const retry = await svc.consumeRefresh(db, root.id, root.family);
+    expect(retry.userId).toBe(testUserId);
+    const lostRow = await db.query.refreshTokens.findFirst({
+      where: eq(s.refreshTokens.id, lost.id),
+    });
+    expect(lostRow.revokedAt).toBeNull();
+  });
+
+  test('a signed-out token is not revived by the retry leeway', async () => {
+    const root = await svc.issueRefresh(db, { userId: testUserId });
+    await svc.consumeRefresh(db, root.id, root.family);
+    await svc.issueRefresh(db, { userId: testUserId, family: root.family, parentId: root.id });
+    await svc.revokeAllForUser(db, testUserId);
+    await expect(svc.consumeRefresh(db, root.id, root.family)).rejects.toBeInstanceOf(
+      svc.RefreshReplayError,
+    );
+  });
+
   test('consumeRefresh on already-revoked row throws REPLAY and nukes family', async () => {
     const root = await svc.issueRefresh(db, { userId: testUserId });
     // Chain a child token in the same family. After we replay the
@@ -205,8 +232,12 @@ pgDescribe('refreshTokens service (PG-gated)', () => {
       parentId: root.id,
     });
     // Consume parent twice. First succeeds (marks revoked); second
-    // hits the replay path.
+    // hits the replay path once the lost-rotation leeway has passed.
     await svc.consumeRefresh(db, root.id, root.family);
+    await db
+      .update(s.refreshTokens)
+      .set({ revokedAt: new Date(Date.now() - svc.ROTATION_RETRY_LEEWAY_MS - 1_000) })
+      .where(eq(s.refreshTokens.id, root.id));
     let replayErr: unknown = null;
     try {
       await svc.consumeRefresh(db, root.id, root.family);

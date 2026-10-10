@@ -102,6 +102,24 @@ export async function issueRefresh(
   return { token, id, family, expiresAt };
 }
 
+/** How long after a rotation the consumed token may be presented again. */
+export const ROTATION_RETRY_LEEWAY_MS = 60_000;
+
+/**
+ * Is a consumed token being presented again because its successor never
+ * arrived? True only shortly after the rotation, and only while that
+ * successor is still live: a sign-out or a detected replay revokes the
+ * successor too, and then there is nothing benign left to retry.
+ */
+async function isRetryOfLostRotation(db: DB, jti: string, revokedAt: Date): Promise<boolean> {
+  if (Date.now() - revokedAt.getTime() > ROTATION_RETRY_LEEWAY_MS) return false;
+  const successor = await db.query.refreshTokens.findFirst({
+    where: (rt, { eq: eq2, and: and2, isNull: isNull2 }) =>
+      and2(eq2(rt.parentId, jti), isNull2(rt.revokedAt)),
+  });
+  return successor !== undefined;
+}
+
 /**
  * Consume a refresh token: validate it's tracked + active, then mark
  * it revoked. Returns the row's userId on success. Throws
@@ -131,6 +149,14 @@ export async function consumeRefresh(
     throw new RefreshReplayError();
   }
   if (row.revokedAt) {
+    // The client may simply never have received the successor: the
+    // rotation committed, the response was lost on a bad connection,
+    // and it is retrying with the only token it has. Punishing that as
+    // theft signs the user out, and a Mini App that has been open for
+    // more than a day cannot sign back in by itself.
+    if (await isRetryOfLostRotation(db, row.id, row.revokedAt)) {
+      return { userId: row.userId };
+    }
     // Replay! Nuke the entire family — any descendant token is now
     // suspect. Caller turns this into a 401 + tells the client to
     // re-login.

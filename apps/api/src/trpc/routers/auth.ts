@@ -45,9 +45,16 @@ import type { RequestContext } from '../context';
  * everyone behind a misconfigured proxy.
  */
 const AUTH_LIMIT = { window: 60_000, max: 5 } as const;
+/**
+ * Refresh is not a guessing surface: it needs a token we signed. It is
+ * also called by every client every 15 minutes, and a whole restaurant
+ * shares one address behind its Wi-Fi, so the login budget is far too
+ * small for it.
+ */
+const REFRESH_LIMIT = { window: 60_000, max: 60 } as const;
 function enforceRate(scope: string, ip: string | null): void {
   if (!ip) return;
-  if (!checkRate(scope, ip, AUTH_LIMIT)) {
+  if (!checkRate(scope, ip, scope === 'refresh' ? REFRESH_LIMIT : AUTH_LIMIT)) {
     throw new TRPCError({
       code: 'TOO_MANY_REQUESTS',
       message: 'auth.errors.rateLimited',

@@ -41,6 +41,14 @@ export function noteSessionCleared(reason: string, status?: number): void {
   }
 }
 
+function noteRefreshIncomplete(why: string): void {
+  try {
+    getLogger().log('warn', 'auth.refresh', { action: 'incomplete', errorMsg: why });
+  } catch {
+    /* logger not booted */
+  }
+}
+
 /**
  * Single-flight refresh: while a refresh is in-flight, every other 401
  * waits on the same promise instead of triggering parallel refreshes.
@@ -73,6 +81,8 @@ async function refreshAccessToken(): Promise<{
         if (isRefreshRejected(res.status)) {
           noteSessionCleared('refresh-rejected', res.status);
           useAuthStore.getState().clear();
+        } else {
+          noteRefreshIncomplete(`http ${res.status}`);
         }
         return null;
       }
@@ -93,7 +103,8 @@ async function refreshAccessToken(): Promise<{
         session,
       });
       return { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken };
-    } catch {
+    } catch (err) {
+      noteRefreshIncomplete(err instanceof Error ? err.message : 'fetch failed');
       return null;
     } finally {
       refreshInFlight = null;
@@ -137,9 +148,18 @@ async function authFetch(input: RequestInfo | URL, init: RequestInit = {}): Prom
   }
   // refreshAccessToken clears the session itself when the server rejects
   // the refresh token. A refresh that merely failed to complete (offline,
-  // timeout) must not: the original 401 goes back to the caller as-is.
+  // api restarting, throttled) says nothing about the session, so it must
+  // not reach the caller as UNAUTHORIZED: AuthGate drops the session on
+  // an unauthorized `auth.me`, and a mutation would fail outright instead
+  // of going to the offline queue. Surface it as the network failure it is.
+  const hadRefreshToken = !!useAuthStore.getState().refreshToken;
   const refreshed = await refreshAccessToken();
-  if (!refreshed) return res;
+  if (!refreshed) {
+    if (hadRefreshToken && useAuthStore.getState().refreshToken) {
+      throw new TypeError('Failed to fetch (session refresh did not complete)');
+    }
+    return res;
+  }
   token = refreshed.accessToken;
   res = await fetch(input, attach(token));
   return res;
