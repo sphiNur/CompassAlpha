@@ -61,7 +61,7 @@ import {
   type AddItemDraft,
 } from './runs/sheets/RunSheets';
 // Mid-level panels — extracted to runs/components (Phase 4 step 5).
-import { PreviewSummaryCard } from './runs/components/RunPanels';
+import { RunPreview } from './runs/buying/RunPreview';
 import { ActiveRunPanel } from './runs/buying/ActiveRun';
 import { RunOrders } from './runs/buying/RunOrders';
 import { StatusChip } from '@compass/ui/kit';
@@ -1651,7 +1651,7 @@ export function RunPage() {
         </div>
       ) : null}
 
-      <div className={activeRun && activeRun.status !== 'planned' ? 'flex flex-col gap-xl px-page pt-xl' : 'flex flex-col gap-2 px-4 pt-2'}>
+      <div className="flex flex-col gap-xl px-page pt-xl">
         {!activeRun ? (
           <DataState query={previewQuery}>
             {(p) =>
@@ -1661,7 +1661,8 @@ export function RunPage() {
                   description={i18n.t('run.empty.noPlannableBody')}
                 />
               ) : (
-                <PreviewSummaryCard
+                <RunPreview
+                  heading
                   preview={p}
                   skuById={skuById}
                   productName={productName}
@@ -1715,7 +1716,8 @@ export function RunPage() {
           prop: planned-qty from items, store names looked up via
           storeById, supplierBySku straight from run.get (added M3.27). */}
         {activeRun && runDetailQuery.data && activeRun.status === 'planned' ? (
-          <PreviewSummaryCard
+          <RunPreview
+            heading={false}
             preview={{
               date: runDetailQuery.data.runDate,
               sessions: ((runDetailQuery.data.sessionIdsJson as string[] | null) ?? []).map(

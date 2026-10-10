@@ -110,6 +110,13 @@ test('buy everything, one item in cash and one by transfer', async () => {
   await tab('run').click();
   await expect(main().getByRole('heading', { name: 'Ready to plan' })).toBeVisible();
   await evidence('run-preview');
+  // A store's row opens to what that store is getting.
+  await main().getByTestId('preview-group').filter({ hasText: 'Central Kitchen' }).click();
+  await expect(sheet().getByTestId('preview-line')).toHaveCount(2);
+  await expect(sheet().getByRole('button', { name: 'Send list' })).toBeVisible();
+  await evidence('run-preview-store');
+  await page.keyboard.press('Escape');
+  await expect(sheet()).toBeHidden();
   await mainButton().click();
   const toBuy = main().getByTestId('buy-row');
   const bought = main().getByTestId('bought-row');
