@@ -131,6 +131,33 @@ describe('run.decide', () => {
     expect(evs.map((e) => e.type)).toEqual(['PurchaseStarted', 'ItemPurchased']);
   });
 
+  test('PurchaseItem refuses an item that is already bought', () => {
+    const state = planAndPurchase({
+      purchasedQty: '10',
+      storeSplits: [
+        { storeId: 'A', qty: '5' },
+        { storeId: 'B', qty: '5' },
+      ],
+    });
+    expect(() =>
+      decideRun(
+        state,
+        {
+          type: 'PurchaseItem',
+          skuId: 'sku-1',
+          supplierId: 'sup-1',
+          unitPrice: '12000',
+          actualQty: '10',
+          receiptPhotoUrl: null,
+          storeSplits: [{ storeId: 'A', qty: '10' }],
+          paymentMethod: 'cash',
+          actor: purchaser(),
+        },
+        clock,
+      ),
+    ).toThrow('run.errors.itemAlreadyPurchased');
+  });
+
   test('PurchaseItem requires storeSplits to sum exactly to actualQty', () => {
     let s = emptyRunState('r1');
     s = decideRun(
@@ -825,6 +852,52 @@ describe('run.decide', () => {
       clock,
     );
     expect((evs[0]! as { payload: { reason: string | null } }).payload.reason).toBe('市场关门了');
+  });
+
+  test('DeliverToStore is a no-op for a store that is already delivered', () => {
+    let s = planAndPurchase();
+    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
+    const deliver = { type: 'DeliverToStore', storeId: 'A', actor: purchaser() } as const;
+    const first = decideRun(s, deliver, clock);
+    expect(first.map((e) => e.type)).toEqual(['StoreDelivered']);
+    s = first.reduce(applyRun, s);
+    expect(decideRun(s, deliver, clock)).toEqual([]);
+  });
+
+  test('CancelRun is refused once a store has confirmed its delivery', () => {
+    let s = planAndPurchase({
+      storeSplits: [
+        { storeId: 'A', qty: '2' },
+        { storeId: 'B', qty: '2' },
+      ],
+    });
+    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
+    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
+      applyRun,
+      s,
+    );
+    // Delivered but not yet confirmed: still cancellable.
+    expect(
+      decideRun(s, { type: 'CancelRun', reason: '', actor: purchaser() }, clock).map((e) => e.type),
+    ).toEqual(['RunCancelled']);
+    s = decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock).reduce(
+      applyRun,
+      s,
+    );
+    expect(() =>
+      decideRun(s, { type: 'CancelRun', reason: '', actor: purchaser() }, clock),
+    ).toThrow('run.errors.cannotCancelAfterConfirm');
+  });
+
+  test('CancelRun is refused on a run that is already cancelled', () => {
+    let s = planAndPurchase();
+    s = decideRun(s, { type: 'CancelRun', reason: '', actor: purchaser() }, clock).reduce(
+      applyRun,
+      s,
+    );
+    expect(() =>
+      decideRun(s, { type: 'CancelRun', reason: '', actor: purchaser() }, clock),
+    ).toThrow('run.errors.runFrozen');
   });
 
   test('CancelRun blocked after finished', () => {

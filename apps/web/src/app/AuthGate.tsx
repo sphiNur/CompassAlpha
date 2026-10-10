@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Button, Banner, EmptyState, Input, Spinner } from '@compass/ui';
 import { useAuthStore, type AuthSession } from '../stores/authStore';
-import { trpc } from '../lib/trpc';
+import { noteSessionCleared, trpc } from '../lib/trpc';
 import { getTg, haptic } from '../hooks/useTelegram';
 import { useI18n } from '../hooks/useI18n';
 
@@ -129,6 +129,7 @@ export function AuthGate({ children }: AuthGateProps) {
       meUnauthorized.current = !canAutoLogin;
       if (canAutoLogin) loginAttempted.current = false;
       setLoginSession(null);
+      noteSessionCleared('me-rejected');
       clear();
     }
   }, [me.isError, me.error, clear]);

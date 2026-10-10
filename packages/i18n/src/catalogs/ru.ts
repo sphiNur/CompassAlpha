@@ -14,6 +14,8 @@ export const ru = {
   'nav.debug': 'Отладка',
 
   // ── 2. Common ──────────────────────────────────────────────────
+  'app.update.title': 'Доступна новая версия',
+  'app.update.body': 'Нажмите здесь, чтобы обновить, когда будет удобно',
   'common.cancel': 'Отмена',
   'common.archive': 'Архивировать',
   'common.archived': 'в архиве',
@@ -1047,6 +1049,10 @@ export const ru = {
   'run.errors.splitSumMismatch': 'Сумма по магазинам должна совпадать',
   'run.errors.unavailableNoteRequired': 'Опишите причину отсутствия',
   'run.errors.itemNotPending': 'Отметить как отсутствующий можно только ожидающий товар',
+  'run.errors.itemAlreadyPurchased':
+    'Этот товар уже отмечен как купленный — измените существующую запись',
+  'run.errors.cannotCancelAfterConfirm':
+    'Магазин уже подтвердил получение — эту закупку больше нельзя отменить',
   'run.errors.noteTooLong': 'Заметка слишком длинная (до 500 символов)',
   'run.errors.notReadyToDeliver': 'Доставку начинать рано',
   'run.errors.itemsPending': 'Есть необработанные позиции',

@@ -9,6 +9,7 @@
  * Plus an Actions row (Sign out, Reload, Reset session, Copy as JSON) so
  * operators can recover from edge cases without a developer.
  */
+import { reloadApp } from '../lib/reload';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Badge,
@@ -215,7 +216,7 @@ export function DebugPage() {
           >
             Copy live as JSON
           </Button>
-          <Button size="sm" variant="pearl" onClick={() => window.location.reload()}>
+          <Button size="sm" variant="pearl" onClick={() => reloadApp('debug-page')}>
             Reload
           </Button>
           <Button
@@ -229,7 +230,7 @@ export function DebugPage() {
               } catch {
                 /* ignore */
               }
-              window.location.reload();
+              reloadApp('debug-page');
             }}
           >
             Sign out & reset

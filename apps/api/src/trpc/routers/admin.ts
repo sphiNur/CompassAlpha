@@ -9,7 +9,7 @@
  * Out of scope (defer): policy_rules editing, audit log search, export.
  */
 import { TRPCError } from '@trpc/server';
-import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, gte, inArray, isNull, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { schema as s } from '@compass/db';
 import {
@@ -22,6 +22,8 @@ import {
 import { dateInTz, todayInTz } from '@compass/domain';
 import { authedProcedure, router } from '../trpc';
 import { hub } from '../../realtime/hub';
+import { hasGlobalOrgAdmin, hasGlobalPermission } from '../../services/orgAdmin';
+import { effectivePermissionsForStore } from '../../services/storeScope';
 
 function requireAdmin(perms: ReadonlySet<string>): void {
   if (!perms.has('users.manage')) {
@@ -230,6 +232,11 @@ function broadcastPeople(orgId: string): void {
  */
 const ADMIN_RANK_THRESHOLD = ADMIN_RANK;
 
+/** A binding with an expiry in the past grants nothing. */
+function bindingIsLive() {
+  return or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, new Date()));
+}
+
 async function countAdminsInOrg(tx: import('@compass/db').DB, orgId: string): Promise<number> {
   const rows = await tx
     .select({ memberId: s.memberRoleBindings.memberId })
@@ -241,6 +248,7 @@ async function countAdminsInOrg(tx: import('@compass/db').DB, orgId: string): Pr
         eq(s.members.orgId, orgId),
         eq(s.members.status, 'active'),
         gte(s.roles.rank, ADMIN_RANK_THRESHOLD),
+        bindingIsLive(),
       ),
     );
   // Distinct member ids — one member with two admin-level roles still
@@ -259,7 +267,7 @@ async function getActorMaxRank(
     .from(s.memberRoleBindings)
     .innerJoin(s.members, eq(s.members.id, s.memberRoleBindings.memberId))
     .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
-    .where(and(eq(s.members.orgId, orgId), eq(s.members.userId, actorUserId)));
+    .where(and(eq(s.members.orgId, orgId), eq(s.members.userId, actorUserId), bindingIsLive()));
   let max = 0;
   for (const r of rows) {
     if (r.rank > max) max = r.rank;
@@ -307,7 +315,7 @@ async function getActorMaxRankInStore(
     .from(s.memberRoleBindings)
     .innerJoin(s.members, eq(s.members.id, s.memberRoleBindings.memberId))
     .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
-    .where(and(eq(s.members.orgId, orgId), eq(s.members.userId, actorUserId)));
+    .where(and(eq(s.members.orgId, orgId), eq(s.members.userId, actorUserId), bindingIsLive()));
   let max = 0;
   for (const r of rows) {
     const counts = r.scopeType === 'global' || (r.scopeType === 'store' && r.scopeId === storeId);
@@ -356,7 +364,7 @@ async function getActorAdminStoreIds(
       scopeId: s.memberRoleBindings.scopeId,
     })
     .from(s.memberRoleBindings)
-    .where(eq(s.memberRoleBindings.memberId, member.id));
+    .where(and(eq(s.memberRoleBindings.memberId, member.id), bindingIsLive()));
   const roleIds = [...new Set(bindings.map((b) => b.roleId))];
   const rolePerms =
     roleIds.length > 0
@@ -418,6 +426,65 @@ async function getActorAdminStoreIds(
     return all.map((r) => r.id);
   }
   return [...storeAdminSet];
+}
+
+/**
+ * Gate for suspending / reactivating a member.
+ *
+ *   - An org admin (global `org.admin`) may act on anyone strictly
+ *     below their own org-wide rank.
+ *   - Anyone else must administer EVERY store the target belongs to and
+ *     outrank the target in each. A target with no store at all, or
+ *     with a foot in a store the actor does not manage, is out of reach.
+ */
+async function assertCanSetMemberStatus(
+  tx: import('@compass/db').DB,
+  session: { userId: string; memberId: string; orgId: string },
+  target: { id: string; userId: string },
+): Promise<void> {
+  const { orgId } = session;
+  if (await hasGlobalOrgAdmin(tx, session.memberId)) {
+    const [targetRank, actorRank] = await Promise.all([
+      getActorMaxRank(tx, orgId, target.userId),
+      getActorMaxRank(tx, orgId, session.userId),
+    ]);
+    if (targetRank >= actorRank) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.cannotRevokeEqualOrHigher' });
+    }
+    return;
+  }
+  const [assignments, storeBindings, allowed] = await Promise.all([
+    tx
+      .select({ storeId: s.memberStoreAssignments.storeId })
+      .from(s.memberStoreAssignments)
+      .where(eq(s.memberStoreAssignments.memberId, target.id)),
+    tx
+      .select({ storeId: s.memberRoleBindings.scopeId })
+      .from(s.memberRoleBindings)
+      .where(
+        and(
+          eq(s.memberRoleBindings.memberId, target.id),
+          eq(s.memberRoleBindings.scopeType, 'store'),
+        ),
+      ),
+    getActorAdminStoreIds(tx, orgId, session.userId),
+  ]);
+  const targetStoreIds = new Set<string>();
+  for (const row of [...assignments, ...storeBindings]) {
+    if (row.storeId) targetStoreIds.add(row.storeId);
+  }
+  if (targetStoreIds.size === 0 || [...targetStoreIds].some((id) => !allowed.includes(id))) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'admin.errors.notAdminOfStore' });
+  }
+  for (const storeId of targetStoreIds) {
+    const [targetRank, actorRank] = await Promise.all([
+      getActorMaxRankInStore(tx, orgId, target.userId, storeId),
+      getActorMaxRankInStore(tx, orgId, session.userId, storeId),
+    ]);
+    if (targetRank >= actorRank) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.cannotRevokeEqualOrHigher' });
+    }
+  }
 }
 
 // ---------- input schemas ----------
@@ -969,8 +1036,15 @@ export const adminRouter = router({
             message: 'admin.errors.cannotSuspendSelf',
           });
         }
-        // Last-admin guard for suspend.
+        // Status is org-wide, so the actor needs authority over the
+        // target everywhere the target has any. `users.manage` alone is
+        // held by store managers and used to be the only gate here.
+        await assertCanSetMemberStatus(tx, ctx.session!, member);
+        // Last-admin guard for suspend. Serialised per org: two
+        // concurrent suspends of the last two admins would otherwise
+        // both read a count of 2.
         if (input.status === 'suspended') {
+          await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${orgId}))`);
           const targetMaxRank = await getActorMaxRank(tx, orgId, member.userId);
           if (targetMaxRank >= ADMIN_RANK_THRESHOLD) {
             const adminCount = await countAdminsInOrg(tx, orgId);
@@ -986,6 +1060,7 @@ export const adminRouter = router({
           .update(s.members)
           .set({ status: input.status })
           .where(eq(s.members.id, input.memberId));
+        await auditAdmin(tx, ctx, 'admin.member.setStatus', 'member', input.memberId, input);
         broadcastPeople(orgId);
         return { ok: true };
       });
@@ -2376,6 +2451,40 @@ export const adminRouter = router({
             code: 'FORBIDDEN',
             message: 'auth.errors.cannotGrantEqualOrHigher',
           });
+        }
+        // An allow may only pass on authority the actor holds in that
+        // same scope. Outranking the target is not enough: a manager
+        // could otherwise equip a subordinate (or a second account of
+        // their own) with keys their role was never given, and an admin
+        // could hand out the super-admin-only ones.
+        if (input.effect === 'allow') {
+          const actorHoldsKey =
+            input.scopeType === 'store' && input.scopeId
+              ? (
+                  await effectivePermissionsForStore(
+                    tx,
+                    ctx.session!.memberId,
+                    input.scopeId,
+                    ctx.session!.permissions,
+                  )
+                ).has(input.permissionKey)
+              : await hasGlobalPermission(tx, ctx.session!.memberId, input.permissionKey);
+          if (!actorHoldsKey) {
+            throw new TRPCError({
+              code: 'FORBIDDEN',
+              message: 'auth.errors.missingPermission',
+              cause: { missingPermission: input.permissionKey },
+            });
+          }
+          // `org.admin` is what makes someone an admin, so allowing it
+          // is granting the admin tier. grantRole forbids an admin from
+          // creating another admin; this path must not be a way around it.
+          if (input.permissionKey === 'org.admin' && actorRank <= ADMIN_RANK_THRESHOLD) {
+            throw new TRPCError({
+              code: 'FORBIDDEN',
+              message: 'auth.errors.cannotGrantEqualOrHigher',
+            });
+          }
         }
         // Validate permission key exists in the dictionary.
         const perm = await tx.query.permissions.findFirst({

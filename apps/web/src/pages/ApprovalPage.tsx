@@ -31,26 +31,15 @@ import {
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { useI18n, useProductName, useUnitLabel } from '../hooks/useI18n';
-import { getTg, haptic } from '../hooks/useTelegram';
+import { haptic } from '../hooks/useTelegram';
+import { confirmThen } from '../lib/confirm';
 import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
 import { useStoreContext } from '../components/StoreSwitcher';
 
 type ApprovalTab = 'pending' | 'approved' | 'rejected';
 
-/** Telegram-native confirm with a web fallback. Mirrors AdminPage's helper
- *  — iOS Telegram renders `\n\n` literally, so collapse newlines for tg. */
-function confirmAction(message: string, ok: () => void): void {
-  const tg = getTg();
-  if (tg) {
-    const oneLine = message.replace(/\s*\n\s*\n\s*/g, ' — ').replace(/\n/g, ' ');
-    tg.showConfirm(oneLine, (yes: boolean) => {
-      if (yes) ok();
-    });
-  } else if (confirm(message)) {
-    ok();
-  }
-}
+const confirmAction = confirmThen;
 
 export function ApprovalPage() {
   const i18n = useI18n();

@@ -16,6 +16,9 @@ import { describe, it, expect } from 'bun:test';
 import {
   classifyEntry,
   classifyReplayError,
+  countsTowardGiveUp,
+  isOwnEntry,
+  isRetryDue,
   shouldGiveUp,
   MAX_REPLAY_RETRIES,
 } from '../useOfflineQueue';
@@ -85,5 +88,58 @@ describe('shouldGiveUp', () => {
   it('honours a custom cap', () => {
     expect(shouldGiveUp(2, 3)).toBe(false);
     expect(shouldGiveUp(3, 3)).toBe(true);
+  });
+});
+
+describe('isOwnEntry', () => {
+  it('replays an entry only for the user who queued it', () => {
+    expect(isOwnEntry('u1', 'u1')).toBe(true);
+    expect(isOwnEntry('u1', 'u2')).toBe(false);
+  });
+
+  it('replays nothing while signed out', () => {
+    expect(isOwnEntry('u1', undefined)).toBe(false);
+    expect(isOwnEntry(undefined, undefined)).toBe(false);
+  });
+
+  it('keeps replaying entries queued before ownership was recorded', () => {
+    expect(isOwnEntry(undefined, 'u1')).toBe(true);
+  });
+});
+
+describe('countsTowardGiveUp', () => {
+  it('does not blame the entry for a lost request or a lapsed session', () => {
+    expect(countsTowardGiveUp(undefined)).toBe(false);
+    expect(countsTowardGiveUp('UNAUTHORIZED')).toBe(false);
+  });
+
+  it('counts failures the server actually returned', () => {
+    expect(countsTowardGiveUp('INTERNAL_SERVER_ERROR')).toBe(true);
+    expect(countsTowardGiveUp('TOO_MANY_REQUESTS')).toBe(true);
+  });
+});
+
+describe('isRetryDue', () => {
+  const now = 1_000_000;
+
+  it('tries a fresh entry immediately', () => {
+    expect(isRetryDue(0, undefined, now)).toBe(true);
+  });
+
+  it('waits longer after each counted failure, up to five minutes', () => {
+    expect(isRetryDue(1, now - 4_000, now)).toBe(false);
+    expect(isRetryDue(1, now - 5_000, now)).toBe(true);
+    expect(isRetryDue(3, now - 19_000, now)).toBe(false);
+    expect(isRetryDue(3, now - 20_000, now)).toBe(true);
+    expect(isRetryDue(7, now - 299_000, now)).toBe(false);
+    expect(isRetryDue(7, now - 300_000, now)).toBe(true);
+  });
+
+  it('eight page mounts in a row cannot spend the retry budget', () => {
+    let retries = 1;
+    for (let mount = 0; mount < MAX_REPLAY_RETRIES; mount++) {
+      if (isRetryDue(retries, now, now + mount * 500)) retries += 1;
+    }
+    expect(retries).toBe(1);
   });
 });

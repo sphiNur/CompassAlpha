@@ -3,7 +3,7 @@
  *
  * Strategy:
  *   - Ring buffer (200 events) for the live `/debug` view.
- *   - IDB queue for durable batching across reloads/network drops.
+ *   - In-memory queue (capped) handed to the transport the app sets.
  *   - 5 s flush interval + flush on `pagehide`/`online`/`visibilitychange`.
  *   - Dedupe identical events fired within 200 ms.
  */
@@ -27,6 +27,8 @@ const DEFAULTS = {
   storageKey: 'compass.session',
   includeDebug: true,
 };
+
+const MAX_PENDING = 500;
 
 class Logger {
   private config: Required<LoggerConfig>;
@@ -92,6 +94,9 @@ class Logger {
     this.ring.push(evt);
     if (this.ring.length > this.config.bufferLimit) this.ring.shift();
     this.pending.push(evt);
+    // Bounded: with no transport, or a server that stays down, this
+    // would otherwise grow for as long as the page lives.
+    if (this.pending.length > MAX_PENDING) this.pending.shift();
     for (const fn of this.listeners) fn([evt]);
   }
 

@@ -75,12 +75,9 @@ export function usePageMenuRegistration(): PageMenuRegistration | null {
  * mix) write through.
  */
 export function usePageMenu(registration: PageMenuRegistration | null): void {
+  // Outside a provider `ctx` is null and the effect below is a no-op,
+  // which lets pages be tested in isolation without a wrapper.
   const ctx = useContext(PageMenuContext);
-  if (!ctx) {
-    // Outside provider — no-op. Lets pages be testable in isolation
-    // without forcing a wrapper.
-    return;
-  }
   // Stable identity: hash on title + label list + disabled bits +
   // variant mix. Click handlers are kept fresh via ref so consumers
   // don't have to memoise their own closures.
@@ -99,6 +96,7 @@ export function usePageMenu(registration: PageMenuRegistration | null): void {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
+    if (!ctx) return;
     ctx.setRegistration(ref.current);
     return () => ctx.setRegistration(null);
   }, [key]);

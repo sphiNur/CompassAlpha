@@ -8,7 +8,7 @@
 const DB_NAME = 'compass';
 const DB_VERSION = 1;
 
-interface CompassDb extends IDBDatabase {}
+type CompassDb = IDBDatabase;
 
 let dbPromise: Promise<CompassDb> | null = null;
 
@@ -55,6 +55,14 @@ export interface OutboxEntry<P = unknown> {
    * that aren't server-idempotent leave it unset.
    */
   idempotencyKey?: string;
+  /**
+   * Who queued this write. Replay runs under whoever is signed in at the
+   * time, so an entry is only replayed for its own author. Absent on
+   * entries queued before this field existed.
+   */
+  ownerUserId?: string;
+  /** When the last failed replay that counted toward the retry cap ran. */
+  lastAttemptAt?: number;
 }
 
 export const outbox = {

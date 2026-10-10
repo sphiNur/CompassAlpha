@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { schema as s } from '@compass/db';
 import { RecentLogsInputSchema } from '@compass/contracts';
-import { authedProcedure, publicProcedure, router } from '../trpc';
+import { permissionProcedure, publicProcedure, router } from '../trpc';
 import { logger } from '../../infra/log';
 import { checkRate } from '../../services/rateLimit';
 
@@ -85,8 +85,7 @@ export const systemRouter = router({
         logger.warn({ err }, 'system.health: outbox probe failed');
       }
     }
-    const degraded =
-      !dbOk || (outboxOldestSec !== null && outboxOldestSec > 300);
+    const degraded = !dbOk || (outboxOldestSec !== null && outboxOldestSec > 300);
     // M3.8 (2026-05-15): `redis` was previously a hardcoded `true` in
     // the response, but no Redis client is ever instantiated in the
     // codebase. ioredis is in package.json + REDIS_URL is reserved in
@@ -134,9 +133,10 @@ export const systemRouter = router({
     let dropped = 0;
     for (const raw of input.events) {
       const sessionId = clamp(raw.sessionId, 64);
-      const level = typeof raw.level === 'string' && ALLOWED_LEVELS.has(raw.level)
-        ? (raw.level as 'debug' | 'info' | 'warn' | 'error')
-        : 'info';
+      const level =
+        typeof raw.level === 'string' && ALLOWED_LEVELS.has(raw.level)
+          ? (raw.level as 'debug' | 'info' | 'warn' | 'error')
+          : 'info';
       const kind = clamp(raw.kind, 32);
       if (!sessionId || !kind) {
         dropped++;
@@ -151,7 +151,8 @@ export const systemRouter = router({
         kind,
         action: clamp(raw.action, 64),
         target: clamp(raw.target, 200),
-        data: (raw.data && typeof raw.data === 'object' ? (raw.data as Record<string, unknown>) : null),
+        data:
+          raw.data && typeof raw.data === 'object' ? (raw.data as Record<string, unknown>) : null,
         errorMsg: typeof raw.errorMsg === 'string' ? raw.errorMsg.slice(0, 4000) : null,
         errorStack: typeof raw.errorStack === 'string' ? raw.errorStack.slice(0, 8000) : null,
         platform: clamp(raw.platform, 32),
@@ -187,16 +188,19 @@ export const systemRouter = router({
     return { accepted: rows.length, dropped };
   }),
 
-  recentLogs: authedProcedure.input(RecentLogsInputSchema).query(async ({ ctx, input }) => {
-    return ctx.withOrg(async (tx) => {
-      return tx.query.clientLogs.findMany({
-        where: (cl, { eq, and }) =>
-          input.userId
-            ? and(eq(cl.orgId, ctx.session!.orgId), eq(cl.userId, input.userId))
-            : eq(cl.orgId, ctx.session!.orgId),
-        orderBy: (cl, { desc }) => desc(cl.createdAt),
-        limit: input.limit,
+  // Client logs carry other users' stacks and free-form `data`.
+  recentLogs: permissionProcedure('system.logs.view')
+    .input(RecentLogsInputSchema)
+    .query(async ({ ctx, input }) => {
+      return ctx.withOrg(async (tx) => {
+        return tx.query.clientLogs.findMany({
+          where: (cl, { eq, and }) =>
+            input.userId
+              ? and(eq(cl.orgId, ctx.session!.orgId), eq(cl.userId, input.userId))
+              : eq(cl.orgId, ctx.session!.orgId),
+          orderBy: (cl, { desc }) => desc(cl.createdAt),
+          limit: input.limit,
+        });
       });
-    });
-  }),
+    }),
 });

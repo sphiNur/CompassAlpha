@@ -24,3 +24,15 @@ export function isLikelyNetworkError(err: unknown): boolean {
   if (msg.includes('networkerror')) return true;
   return false;
 }
+
+/**
+ * Did the server actually reject the refresh token?
+ *
+ * Only then is the session over. A dropped request, a 5xx from a
+ * restarting api or a 429 says nothing about the token, and signing the
+ * user out for it throws away whatever they had open on a flaky
+ * connection.
+ */
+export function isRefreshRejected(status: number): boolean {
+  return status === 401 || status === 403;
+}

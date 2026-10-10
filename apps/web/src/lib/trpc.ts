@@ -1,6 +1,8 @@
 import { createTRPCReact, httpLink, loggerLink } from '@trpc/react-query';
 import type { AppRouter } from '@compass/api/src/trpc/router';
 import { useAuthStore, type AuthSession } from '../stores/authStore';
+import { getLogger, type LogEvent } from '@compass/telemetry';
+import { isRefreshRejected } from './networkError';
 
 export const trpc = createTRPCReact<AppRouter>();
 
@@ -8,6 +10,44 @@ export const trpc = createTRPCReact<AppRouter>();
 // behind nginx). `||` (not `??`) so empty-string falls back to ''
 // rather than becoming '(empty)/trpc'.
 const API_URL = (import.meta.env.VITE_API_URL || '') as string;
+
+/**
+ * Ship client log events to `system.log`. Plain fetch on purpose: this
+ * must not go through authFetch, whose refresh-and-retry path logs.
+ */
+export async function sendClientLogs(events: LogEvent[]): Promise<void> {
+  const token = useAuthStore.getState().accessToken;
+  const res = await fetch(`${API_URL}/trpc/system.log`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ events }),
+    keepalive: true,
+  });
+  // The endpoint is public and treats a stale token as anonymous, so a
+  // non-2xx is about the batch or the server; throwing re-queues it.
+  if (!res.ok) throw new Error(`system.log answered ${res.status}`);
+}
+
+/** Losing the session unmounts the whole app, which looks like a reload
+ *  from the outside. Record why it happened. */
+export function noteSessionCleared(reason: string, status?: number): void {
+  try {
+    getLogger().log('warn', 'auth.cleared', { action: reason, data: { status } });
+  } catch {
+    /* logger not booted */
+  }
+}
+
+function noteRefreshIncomplete(why: string): void {
+  try {
+    getLogger().log('warn', 'auth.refresh', { action: 'incomplete', errorMsg: why });
+  } catch {
+    /* logger not booted */
+  }
+}
 
 /**
  * Single-flight refresh: while a refresh is in-flight, every other 401
@@ -34,9 +74,16 @@ async function refreshAccessToken(): Promise<{
         body: JSON.stringify({ refreshToken }),
       });
       if (!res.ok) {
-        // 401 / 410 / etc. — refresh token itself is bad. Clear auth so
-        // AuthGate routes the user back through telegramLogin.
-        useAuthStore.getState().clear();
+        // Refresh token itself is bad: clear auth so AuthGate routes the
+        // user back through telegramLogin. Anything else (5xx, 429) is
+        // the server having a moment; keep the session and let the
+        // caller's request fail on its own.
+        if (isRefreshRejected(res.status)) {
+          noteSessionCleared('refresh-rejected', res.status);
+          useAuthStore.getState().clear();
+        } else {
+          noteRefreshIncomplete(`http ${res.status}`);
+        }
         return null;
       }
       const json = (await res.json()) as {
@@ -56,7 +103,8 @@ async function refreshAccessToken(): Promise<{
         session,
       });
       return { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken };
-    } catch {
+    } catch (err) {
+      noteRefreshIncomplete(err instanceof Error ? err.message : 'fetch failed');
       return null;
     } finally {
       refreshInFlight = null;
@@ -71,8 +119,9 @@ async function refreshAccessToken(): Promise<{
  *   2. On a 401 response (UNAUTHORIZED → access token expired),
  *      transparently calls auth.refresh and retries the request once
  *      with the new token.
- *   3. Failure of refresh = clear auth and let AuthGate re-login via
- *      Telegram initData.
+ *   3. A refresh token the server rejects = clear auth and let AuthGate
+ *      re-login via Telegram initData. A refresh that could not reach
+ *      the server leaves the session alone.
  *
  * This is THE missing piece that was causing every mutation to fail
  * with `auth.errors.required` after the 15-minute access-token TTL.
@@ -97,9 +146,18 @@ async function authFetch(input: RequestInfo | URL, init: RequestInit = {}): Prom
   if (url.includes('/auth.refresh') || url.includes('/auth.telegramLogin')) {
     return res;
   }
+  // refreshAccessToken clears the session itself when the server rejects
+  // the refresh token. A refresh that merely failed to complete (offline,
+  // api restarting, throttled) says nothing about the session, so it must
+  // not reach the caller as UNAUTHORIZED: AuthGate drops the session on
+  // an unauthorized `auth.me`, and a mutation would fail outright instead
+  // of going to the offline queue. Surface it as the network failure it is.
+  const hadRefreshToken = !!useAuthStore.getState().refreshToken;
   const refreshed = await refreshAccessToken();
   if (!refreshed) {
-    useAuthStore.getState().clear();
+    if (hadRefreshToken && useAuthStore.getState().refreshToken) {
+      throw new TypeError('Failed to fetch (session refresh did not complete)');
+    }
     return res;
   }
   token = refreshed.accessToken;

@@ -45,9 +45,16 @@ import type { RequestContext } from '../context';
  * everyone behind a misconfigured proxy.
  */
 const AUTH_LIMIT = { window: 60_000, max: 5 } as const;
+/**
+ * Refresh is not a guessing surface: it needs a token we signed. It is
+ * also called by every client every 15 minutes, and a whole restaurant
+ * shares one address behind its Wi-Fi, so the login budget is far too
+ * small for it.
+ */
+const REFRESH_LIMIT = { window: 60_000, max: 60 } as const;
 function enforceRate(scope: string, ip: string | null): void {
   if (!ip) return;
-  if (!checkRate(scope, ip, AUTH_LIMIT)) {
+  if (!checkRate(scope, ip, scope === 'refresh' ? REFRESH_LIMIT : AUTH_LIMIT)) {
     throw new TRPCError({
       code: 'TOO_MANY_REQUESTS',
       message: 'auth.errors.rateLimited',
@@ -647,6 +654,14 @@ export const authRouter = router({
       let user = await ctx.db.query.users.findFirst({
         where: (u, { eq: eq2 }) => eq2(u.tgUserId, BigInt(tg.id)),
       });
+      // A valid Telegram signature only proves who is asking, not that
+      // they belong here. Membership comes from an invite
+      // (admin.memberInviteByTgId) or `compass user grant`, both of which
+      // create the user row up front — so an unknown Telegram id is a
+      // stranger, and gets neither a user row nor a membership.
+      if (!user && !isDevMock) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.noMembership' });
+      }
       if (!user) {
         const [created] = await ctx.db
           .insert(s.users)
@@ -676,25 +691,31 @@ export const authRouter = router({
       }
       if (!user) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
 
-      // Find first member in any org. (M0: single-org default; M2: org picker.)
-      const member = await ctx.db.query.members.findFirst({
-        where: (m, { eq: eq2 }) => eq2(m.userId, user!.id),
-      });
-      if (!member) {
-        // Create membership in 'default' org if it exists.
+      const findActiveMember = () =>
+        ctx.db.query.members.findFirst({
+          where: (m, { eq: eq2, and: and2 }) =>
+            and2(eq2(m.userId, user!.id), eq2(m.status, 'active')),
+        });
+      let ensuredMember = await findActiveMember();
+      if (!ensuredMember) {
+        // Only the local dev mock self-enrols. This used to run for every
+        // caller, which made the bot's audience the org's membership and
+        // quietly re-admitted anyone an admin had removed.
+        if (!isDevMock) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.noMembership' });
+        }
         const defaultOrg = await ctx.db.query.organizations.findFirst({
           where: (o, { eq: eq2 }) => eq2(o.slug, 'default'),
         });
         if (!defaultOrg) {
           throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.noOrg' });
         }
-        const [created] = await ctx.db
+        [ensuredMember] = await ctx.db
           .insert(s.members)
           .values({ orgId: defaultOrg.id, userId: user.id })
           .returning();
-        if (!created) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+        if (!ensuredMember) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
       }
-      const ensuredMember = member ?? (await ctx.db.query.members.findFirst({ where: (m, { eq: eq2 }) => eq2(m.userId, user!.id) }))!;
       if (isDevMock) {
         await ensureDevMockAdminAccess(ctx.db, ensuredMember.id, ensuredMember.orgId);
       }

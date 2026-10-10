@@ -32,6 +32,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { nextSeq, outbox, type OutboxEntry } from '../lib/idb';
+import { useAuthStore } from '../stores/authStore';
 
 type ReplayFn = (entry: OutboxEntry) => Promise<void>;
 
@@ -51,6 +52,51 @@ const globalReplay: Record<string, ReplayFn> = {};
  * almost certainly removed by a newer bundle and would loop forever.
  */
 const STALE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+/**
+ * One flush at a time for the whole app. Order, Run and Confirm each
+ * mount this hook over the SAME IndexedDB store, and a flush started by
+ * one page keeps running after that page unmounts; a per-instance guard
+ * let the next page start a second loop over the same entries.
+ */
+let flushInFlight = false;
+
+/** Should the signed-in user replay this entry? Unstamped (older) entries
+ *  keep their previous behaviour and replay for whoever is signed in. */
+export function isOwnEntry(
+  ownerUserId: string | undefined,
+  currentUserId: string | undefined,
+): boolean {
+  if (!currentUserId) return false;
+  return ownerUserId === undefined || ownerUserId === currentUserId;
+}
+
+/**
+ * Does this failure say anything about the entry itself? No code means
+ * the request never got an answer, and UNAUTHORIZED is about the session.
+ * Neither is a reason to move an entry toward being abandoned.
+ */
+export function countsTowardGiveUp(code: string | undefined): boolean {
+  return code !== undefined && code !== 'UNAUTHORIZED';
+}
+
+const RETRY_BASE_MS = 5_000;
+const RETRY_MAX_MS = 5 * 60_000;
+
+/**
+ * Has enough time passed to try a previously failed entry again? Flushes
+ * fire on every page mount, so without a wait a few tab switches during
+ * a server outage spent the whole retry budget in seconds.
+ */
+export function isRetryDue(
+  retries: number,
+  lastAttemptAt: number | undefined,
+  now: number,
+): boolean {
+  if (retries === 0 || lastAttemptAt === undefined) return true;
+  const wait = Math.min(RETRY_BASE_MS * 2 ** (retries - 1), RETRY_MAX_MS);
+  return now - lastAttemptAt >= wait;
+}
 
 export type EntryAction = 'replay' | 'skip' | 'expire';
 
@@ -144,7 +190,6 @@ export function useOfflineQueue(
   const [online, setOnline] = useState<boolean>(
     typeof navigator !== 'undefined' ? navigator.onLine : true,
   );
-  const flushingRef = useRef(false);
   // Keep the latest onDrop in a ref so the stable flush callback always
   // calls the current handler without needing it in its dep list.
   const onDropRef = useRef(options.onDrop);
@@ -165,12 +210,23 @@ export function useOfflineQueue(
   }, []);
 
   const flush = useCallback(async () => {
-    if (flushingRef.current) return;
+    if (flushInFlight) return;
     if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-    flushingRef.current = true;
+    const currentUserId = useAuthStore.getState().session?.user.id;
+    if (!currentUserId) return;
+    flushInFlight = true;
     try {
       const all = (await outbox.list()).sort((a, b) => a.clientSeq - b.clientSeq);
       for (const entry of all) {
+        const ageMs = Date.now() - entry.enqueuedAt;
+        if (!isOwnEntry(entry.ownerUserId, currentUserId)) {
+          // Queued by someone else on this device. Never send it under
+          // this session; keep it for its author unless it has gone stale.
+          if (classifyEntry(false, ageMs) === 'expire') {
+            await outbox.remove(entry.clientSeq);
+          }
+          continue;
+        }
         const fn = globalReplay[entry.procedure];
         if (!fn) {
           // No live handler for this procedure. Do NOT delete on sight —
@@ -178,12 +234,15 @@ export function useOfflineQueue(
           // owned by a page that isn't mounted right now; leave it for a
           // later flush. Only discard entries old enough to be from a
           // retired bundle, so a truly orphaned entry can't loop forever.
-          if (classifyEntry(false, Date.now() - entry.enqueuedAt) === 'expire') {
+          if (classifyEntry(false, ageMs) === 'expire') {
             await outbox.remove(entry.clientSeq);
             onDropRef.current?.({ procedure: entry.procedure, reason: 'stale' });
           }
           continue;
         }
+        // Still backing off from its last failure: stop here rather than
+        // skip ahead, so later writes can't overtake it.
+        if (!isRetryDue(entry.retries, entry.lastAttemptAt, Date.now())) break;
         try {
           await fn(entry);
           await outbox.remove(entry.clientSeq);
@@ -195,6 +254,9 @@ export function useOfflineQueue(
             onDropRef.current?.({ procedure: entry.procedure, reason: 'rejected' });
             continue;
           }
+          // No answer, or a lapsed session: the entry is not at fault.
+          // Leave it untouched and stop, preserving order for next time.
+          if (!countsTowardGiveUp(code)) break;
           const nextRetries = entry.retries + 1;
           if (shouldGiveUp(nextRetries)) {
             // Transient failures exhausted — abandon this entry so it can't
@@ -203,14 +265,13 @@ export function useOfflineQueue(
             onDropRef.current?.({ procedure: entry.procedure, reason: 'gaveup' });
             continue;
           }
-          // Likely a transient network issue. Bump retries; leave in queue.
-          await outbox.add({ ...entry, retries: nextRetries });
+          await outbox.add({ ...entry, retries: nextRetries, lastAttemptAt: Date.now() });
           // Stop the loop on first transient — preserves order on next attempt.
           break;
         }
       }
     } finally {
-      flushingRef.current = false;
+      flushInFlight = false;
       await refresh();
     }
   }, [refresh]);
@@ -225,6 +286,7 @@ export function useOfflineQueue(
         enqueuedAt: Date.now(),
         retries: 0,
         idempotencyKey,
+        ownerUserId: useAuthStore.getState().session?.user.id,
       });
       await refresh();
       // Try immediately if we're online — if we're offline this will no-op.

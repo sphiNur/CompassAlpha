@@ -9,15 +9,14 @@
  *
  * What this script does:
  *
- *   1. Open a single SERIALIZABLE transaction.
+ *   1. Open a single transaction.
  *   2. TRUNCATE the read-model tables (CASCADE so any FK children
  *      go with them) plus `inventory.price_history` (derived from
  *      ItemPurchased events, regenerated on replay).
- *   3. Stream every event from `domain.events` ordered by
- *      `(stream_type, stream_id, seq)`.
- *   4. For each stream: fold events through the aggregate's `apply*`
- *      reducer, then feed them in *one shot* through the matching
- *      `project*` writer.
+ *   3. Read every event of a stream type from `domain.events` in the
+ *      order it happened across streams (see `replay`).
+ *   4. For each event: fold it through its aggregate's `apply*` reducer,
+ *      then feed it through the matching `project*` writer.
  *   5. Commit the whole thing. If any step throws, the tx rolls back
  *      and the read model is unchanged — the script is fail-safe by
  *      construction.
@@ -56,9 +55,13 @@
  *   - Time bounds: ~50 ms per 1000 events on a warm DB connection.
  */
 import { sql } from 'drizzle-orm';
-import { getDb, schema as s, closeDb } from '@compass/db';
+import { getDb, schema as s, closeDb, type DB } from '@compass/db';
 import { applyRun, emptyRunState, type RunEvent } from '@compass/domain/run';
-import { apply as applyOrder, emptyState as emptyOrderState, type OrderEvent } from '@compass/domain/order';
+import {
+  apply as applyOrder,
+  emptyState as emptyOrderState,
+  type OrderEvent,
+} from '@compass/domain/order';
 import { projectRun } from '../src/services/runProjection';
 import { projectOrder } from '../src/services/orderProjection';
 
@@ -174,114 +177,21 @@ async function main() {
       await tx.execute(sql`TRUNCATE inventory.price_history CASCADE`);
     }
 
-    // ---- Replay run streams ----
     if (opts.type === 'all' || opts.type === 'run') {
-      const runStreams = (await tx.execute(sql`
-        SELECT DISTINCT stream_id::text AS id, org_id::text AS org_id
-        FROM domain.events
-        WHERE stream_type = 'run'
-        ORDER BY stream_id
-      `)) as unknown as Array<{ id: string; org_id: string }>;
-
-      for (const stream of runStreams) {
-        const evts = (await tx.execute(sql`
-          SELECT
-            stream_id::text   AS stream_id,
-            seq::int          AS seq,
-            occurred_at       AS occurred_at,
-            actor_id::text    AS actor_user_id,
-            NULL::text        AS actor_member_id,
-            type              AS type,
-            payload           AS payload
-          FROM domain.events
-          WHERE stream_type = 'run' AND stream_id = ${stream.id}::uuid
-          ORDER BY seq ASC
-        `)) as unknown as Array<{
-          stream_id: string;
-          seq: number;
-          occurred_at: Date;
-          actor_user_id: string | null;
-          actor_member_id: string | null;
-          type: string;
-          payload: unknown;
-        }>;
-
-        const events: RunEvent[] = evts.map(
-          (e) =>
-            ({
-              streamId: e.stream_id,
-              seq: e.seq,
-              occurredAt: new Date(e.occurred_at),
-              actorUserId: e.actor_user_id,
-              actorMemberId: e.actor_member_id,
-              type: e.type,
-              payload: e.payload,
-            }) as unknown as RunEvent,
-        );
-
-        // Sanity-fold through apply to catch corruption early; we
-        // throw out the state, projection is the side-effect we want.
-        let state = emptyRunState(stream.id);
-        for (const e of events) state = applyRun(state, e);
-        void state;
-
-        await projectRun(tx, stream.org_id, events);
-        runStreamsProcessed++;
-      }
+      runStreamsProcessed = await replay<RunEvent, ReturnType<typeof emptyRunState>>(tx, {
+        streamType: 'run',
+        empty: emptyRunState,
+        apply: applyRun,
+        project: projectRun,
+      });
     }
-
-    // ---- Replay order streams ----
     if (opts.type === 'all' || opts.type === 'order') {
-      const orderStreams = (await tx.execute(sql`
-        SELECT DISTINCT stream_id::text AS id, org_id::text AS org_id
-        FROM domain.events
-        WHERE stream_type = 'order'
-        ORDER BY stream_id
-      `)) as unknown as Array<{ id: string; org_id: string }>;
-
-      for (const stream of orderStreams) {
-        const evts = (await tx.execute(sql`
-          SELECT
-            stream_id::text   AS stream_id,
-            seq::int          AS seq,
-            occurred_at       AS occurred_at,
-            actor_id::text    AS actor_user_id,
-            NULL::text        AS actor_member_id,
-            type              AS type,
-            payload           AS payload
-          FROM domain.events
-          WHERE stream_type = 'order' AND stream_id = ${stream.id}::uuid
-          ORDER BY seq ASC
-        `)) as unknown as Array<{
-          stream_id: string;
-          seq: number;
-          occurred_at: Date;
-          actor_user_id: string | null;
-          actor_member_id: string | null;
-          type: string;
-          payload: unknown;
-        }>;
-
-        const events: OrderEvent[] = evts.map(
-          (e) =>
-            ({
-              streamId: e.stream_id,
-              seq: e.seq,
-              occurredAt: new Date(e.occurred_at),
-              actorUserId: e.actor_user_id,
-              actorMemberId: e.actor_member_id,
-              type: e.type,
-              payload: e.payload,
-            }) as unknown as OrderEvent,
-        );
-
-        let state = emptyOrderState(stream.id);
-        for (const e of events) state = applyOrder(state, e);
-        void state;
-
-        await projectOrder(tx, stream.org_id, events);
-        orderStreamsProcessed++;
-      }
+      orderStreamsProcessed = await replay<OrderEvent, ReturnType<typeof emptyOrderState>>(tx, {
+        streamType: 'order',
+        empty: emptyOrderState,
+        apply: applyOrder,
+        project: projectOrder,
+      });
     }
   });
 
@@ -294,6 +204,92 @@ async function main() {
       `runs=${runStreamsProcessed} orders=${orderStreamsProcessed}`,
   );
   await closeDb();
+}
+
+type Tx = Parameters<Parameters<ReturnType<typeof getDb>['transaction']>[0]>[0];
+
+/**
+ * Replay every event of one stream type in the order it happened ACROSS
+ * streams, one event at a time.
+ *
+ * Replaying stream by stream cannot work: the read model carries
+ * invariants that span streams ("one active run per org", "one draft
+ * per member, store and day", "(org, date, index) is unique"), and a
+ * history is only valid in the order it was written. A run that was
+ * finished, then reopened while the next day's run was already planned,
+ * is two `planned` rows at once if its stream is replayed in one go; the
+ * projector's conflict-tolerant insert then drops the run row and the
+ * item rows fail their foreign key.
+ *
+ * There is no global sequence on domain.events, so `occurred_at` is the
+ * clock. A stream's own order always wins: each event sorts by the
+ * latest `occurred_at` seen so far in its stream, which can never place
+ * seq N+1 ahead of seq N even if a clock stepped backwards.
+ */
+async function replay<E extends { streamId: string }, S>(
+  tx: Tx,
+  cfg: {
+    streamType: 'run' | 'order';
+    empty: (streamId: string) => S;
+    apply: (state: S, event: E) => S;
+    project: (db: DB, orgId: string, events: E[]) => Promise<void>;
+  },
+): Promise<number> {
+  const rows = (await tx.execute(sql`
+    SELECT
+      stream_id::text   AS stream_id,
+      org_id::text      AS org_id,
+      seq::int          AS seq,
+      occurred_at       AS occurred_at,
+      actor_id::text    AS actor_user_id,
+      type              AS type,
+      payload           AS payload
+    FROM (
+      SELECT
+        e.*,
+        MAX(occurred_at) OVER (PARTITION BY stream_id ORDER BY seq) AS replay_at
+      FROM domain.events e
+      WHERE stream_type = ${cfg.streamType}
+    ) ordered
+    ORDER BY replay_at, stream_id, seq
+  `)) as unknown as Array<{
+    stream_id: string;
+    org_id: string;
+    seq: number;
+    occurred_at: Date;
+    actor_user_id: string | null;
+    type: string;
+    payload: unknown;
+  }>;
+
+  // Fold through the aggregate as we go: a stream the reducer cannot
+  // follow (seq gap, unknown shape) should stop the rebuild, not be
+  // projected on a guess.
+  const states = new Map<string, S>();
+  for (const row of rows) {
+    const event = {
+      streamId: row.stream_id,
+      seq: row.seq,
+      occurredAt: new Date(row.occurred_at),
+      actorUserId: row.actor_user_id,
+      actorMemberId: null,
+      type: row.type,
+      payload: row.payload,
+    } as unknown as E;
+    try {
+      states.set(
+        row.stream_id,
+        cfg.apply(states.get(row.stream_id) ?? cfg.empty(row.stream_id), event),
+      );
+      await cfg.project(tx as unknown as DB, row.org_id, [event]);
+    } catch (err) {
+      throw new Error(
+        `${cfg.streamType} stream ${row.stream_id} seq ${row.seq} (${row.type}) could not be replayed`,
+        { cause: err },
+      );
+    }
+  }
+  return states.size;
 }
 
 void main().catch((err) => {

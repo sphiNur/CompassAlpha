@@ -41,6 +41,8 @@ export const en = {
   'nav.debug': 'Debug',
 
   // ── 2. Common ──────────────────────────────────────────────────
+  'app.update.title': 'A new version is ready',
+  'app.update.body': 'Tap here to reload when you are at a good stopping point',
   'common.cancel': 'Cancel',
   'common.confirm': 'Confirm',
   // M2.0b: shared bits used by the dishes editor (and reusable
@@ -1169,6 +1171,10 @@ export const en = {
   'run.errors.splitSumMismatch': 'Store split must sum to actual quantity',
   'run.errors.unavailableNoteRequired': 'Please describe why the item is unavailable',
   'run.errors.itemNotPending': 'Only a pending item can be marked unavailable',
+  'run.errors.itemAlreadyPurchased':
+    'This item is already recorded as bought — edit the existing row instead',
+  'run.errors.cannotCancelAfterConfirm':
+    'A store has already confirmed its delivery — this run can no longer be cancelled',
   'run.errors.noteTooLong': 'Note is too long (max 500 characters)',
   'run.errors.notReadyToDeliver': 'Cannot start delivery yet',
   'run.errors.itemsPending': 'Some items are still pending',

@@ -7,18 +7,11 @@
  * and no migration was done. The CI lint step that 2026-05-16's
  * launch-hardening pass added would therefore have been red on day one.
  *
- * This config is the STARTING POINT for incremental lint adoption,
- * not the finished article. CI does NOT yet run `pnpm lint` because
- * the existing codebase has 30+ pre-existing violations (mostly
- * stale `// eslint-disable react-hooks/exhaustive-deps` comments
- * referencing a plugin that was never wired up). Cleaning those up
- * + wiring eslint-plugin-react-hooks is an M2 task — tracked in
- * REMEDIATION_PLAN.md Phase 4. Until then, `pnpm lint` runs locally
- * for whoever wants to clean up incrementally; the CI safety net is
- * type-check + the console.log grep guard + the i18n / migration /
- * typography drift checks.
+ * CI runs `pnpm lint`. react-hooks/rules-of-hooks is enforced;
+ * exhaustive-deps is wired but off (see the note at the rule).
  */
 import js from '@eslint/js';
+import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 
 export default [
@@ -108,7 +101,18 @@ export default [
         process: 'readonly',
       },
     },
+    plugins: { 'react-hooks': reactHooks },
+    // exhaustive-deps is registered but off, so the existing disable
+    // comments for it are "unused" until it is turned on.
+    linterOptions: { reportUnusedDisableDirectives: 'off' },
     rules: {
+      // Hooks called conditionally break React's hook ordering at runtime.
+      'react-hooks/rules-of-hooks': 'error',
+      // Reports 30 sites today, most in the 1500+ line pages. Each fix
+      // changes when an effect or memo re-runs and there are no component
+      // tests to catch a regression, so it stays off until there are.
+      'react-hooks/exhaustive-deps': 'off',
+
       // No raw console.log/debug/info — matches the CI grep guard.
       // console.warn / console.error are still allowed (legitimate
       // warning paths in long-running code).

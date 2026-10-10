@@ -268,6 +268,13 @@ export function decideRun(
       }
       const item = state.items.get(command.skuId);
       if (!item) throw validation('run.errors.itemNotInRun');
+      // A second purchaser, or a stale offline replay, must not record
+      // over a buy that is already on the books: the earlier splits and
+      // price observation would silently stay behind in the read model.
+      // Changing a recorded buy is RevisePurchase's job.
+      if (item.status === 'purchased') {
+        throw preconditionFailed('run.errors.itemAlreadyPurchased');
+      }
       const actual = num(command.actualQty, 'run.errors.invalidQty');
       if (actual <= 0) throw validation('run.errors.qtyMustBePositive');
       const splitSum = command.storeSplits.reduce(
@@ -590,6 +597,10 @@ export function decideRun(
       if (state.status !== 'delivering') {
         throw preconditionFailed('run.errors.notDelivering', { status: state.status });
       }
+      // Already handed over: a retried request (offline replay, double
+      // tap) is a no-op, not a second StoreDelivered and a second
+      // notification to the store.
+      if (state.stores.get(command.storeId)?.deliveredAt) return [];
       return [
         {
           ...baseFor(1),
@@ -741,8 +752,19 @@ export function decideRun(
     case 'CancelRun': {
       assertActive(state);
       if (state.status === 'finished') throw preconditionFailed('run.errors.alreadyFinished');
+      // `amending` is a finished run under correction; `cancelled` is
+      // already terminal. Neither has anything left to cancel.
+      if (state.status === 'cancelled' || state.status === 'amending') {
+        throw preconditionFailed('run.errors.runFrozen', { status: state.status });
+      }
       if (!command.actor.permissions.has('run.create')) {
         throw forbidden('run.errors.cannotCancel');
+      }
+      // A confirmed store has taken the goods into stock. Cancelling
+      // would hand its sessions back as `approved`, to be bought and
+      // received a second time, with nothing reversing the first receipt.
+      for (const store of state.stores.values()) {
+        if (store.confirmedAt) throw preconditionFailed('run.errors.cannotCancelAfterConfirm');
       }
       // M1.7 (2026-05-07): reason is OPTIONAL by user request — most
       // cancels are misclicks; hard-requiring a reason produces "asdf"

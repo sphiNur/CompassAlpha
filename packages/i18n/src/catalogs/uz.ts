@@ -21,6 +21,8 @@ export const uz = {
   'nav.debug': 'Debug',
 
   // ── 2. Common ──────────────────────────────────────────────────
+  'app.update.title': 'Yangi versiya tayyor',
+  'app.update.body': "Qulay paytda yangilash uchun shu yerni bosing",
   'common.cancel': 'Bekor qilish',
   'common.archive': 'Arxivlash',
   'common.archived': 'arxivda',
@@ -1056,6 +1058,10 @@ export const uz = {
   'run.errors.splitSumMismatch': "Do'konlar yig'indisi haqiqiy miqdorga teng bo'lishi kerak",
   'run.errors.unavailableNoteRequired': "Yo'qlik sababini yozing",
   'run.errors.itemNotPending': "Faqat kutilayotgan mahsulotni yo'q deb belgilash mumkin",
+  'run.errors.itemAlreadyPurchased':
+    "Bu mahsulot allaqachon xarid qilingan deb yozilgan — mavjud yozuvni tahrirlang",
+  'run.errors.cannotCancelAfterConfirm':
+    "Do'kon yetkazib berishni allaqachon tasdiqlagan — bu xaridni endi bekor qilib bo'lmaydi",
   'run.errors.noteTooLong': 'Eslatma juda uzun (500 belgi gacha)',
   'run.errors.notReadyToDeliver': "Yetkazishni hali boshlab bo'lmaydi",
   'run.errors.itemsPending': 'Hali ishlanmagan mahsulotlar bor',
