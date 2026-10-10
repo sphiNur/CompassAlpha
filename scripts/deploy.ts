@@ -20,6 +20,7 @@
  *
  * Pipeline:
  *   0. Provenance gates (local) + no-active-run pre-flight (server)
+ *   0.5 Unit tests (local) — a red suite stops here, before shipping
  *   1. Tar local CompassAlpha sources (excl. node_modules / .env / .turbo
  *      / .git / .claude)
  *   2. scp to server
@@ -257,6 +258,29 @@ if (!DRY && !args.has('--allow-active-run')) {
   }
 }
 
+step('0.5. unit tests (before anything is shipped)');
+// This ran AFTER the api restart, so a red suite was reported on a release
+// that was already live. PG-backed tests are skipped here (prod PG isn't
+// reachable from the dev box); CI runs them on every push.
+const tt = spawnSync(
+  'bun',
+  [
+    'test',
+    join(ROOT, 'packages/domain'),
+    join(ROOT, 'packages/i18n'),
+    join(ROOT, 'apps/api'),
+    join(ROOT, 'apps/worker'),
+    join(ROOT, 'apps/web/src/lib'),
+    join(ROOT, 'apps/web/src/hooks'),
+    join(ROOT, 'apps/web/src/pages'),
+  ],
+  { stdio: 'inherit', cwd: ROOT, env: { ...process.env, SKIP_PG_TESTS: '1' } },
+);
+if (tt.status !== 0) {
+  console.error('\x1b[31m✖ unit tests FAILED — nothing was deployed\x1b[0m');
+  process.exit(1);
+}
+
 if (!DRY) {
   step('1. Tar local source');
   // Use --exclude with leading anchored paths so we don't ship 600 MB of node_modules.
@@ -312,7 +336,9 @@ if (!DRY) {
       [
         'export PATH=$HOME/.bun/bin:$PATH',
         'cd /home/ubuntu/compass-alpha',
-        'pnpm install 2>&1 | tail -5',
+        // Frozen: the server must install exactly what CI tested, not
+        // re-resolve and quietly rewrite the lockfile.
+        'pnpm install --frozen-lockfile 2>&1 | tail -5',
       ].join(' && '),
     ),
   );
@@ -383,10 +409,21 @@ if (!DRY) {
         'set -e',
         'cd /home/ubuntu/compass-alpha',
         'DATABASE_URL=$(grep -E "^DATABASE_URL=" .env | head -1 | cut -d= -f2- | sed \'s/^"\\(.*\\)"$/\\1/\')',
-        `psql "$DATABASE_URL" -tAc "SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user"`,
+        `psql "$DATABASE_URL" -tAc "SELECT rolbypassrls::text || ',' || rolsuper::text FROM pg_roles WHERE rolname = current_user"`,
       ].join(' && '),
     );
-    if (out.trim() !== 'f') {
+    const [bypassRls, superuser] = out.trim().split(',');
+    if (superuser === 'true') {
+      // A superuser ignores RLS as completely as BYPASSRLS does, FORCE or
+      // not. Not a hard stop yet: a box provisioned from
+      // docker-compose.prod.yml connects as POSTGRES_USER, which is one,
+      // and aborting would also block the deploy that fixes it.
+      console.log(
+        '  \x1b[31m⚠ DB role is a SUPERUSER — row-level security is not enforced for it.\x1b[0m\n' +
+          '    Connect the app as a plain role (NOSUPERUSER NOBYPASSRLS) that does not own the tables.',
+      );
+    }
+    if (bypassRls !== 'false') {
       console.error(
         `\x1b[31m✖ DB role bypasses RLS (got: ${out.trim()}) — RLS is ineffective.\x1b[0m`,
       );
@@ -395,7 +432,7 @@ if (!DRY) {
       );
       process.exit(1);
     }
-    console.log('  ✓ DB role does not bypass RLS');
+    if (superuser !== 'true') console.log('  ✓ DB role is not a superuser and does not bypass RLS');
   } catch (err) {
     console.log(
       `  \x1b[33m⚠ couldn't verify BYPASSRLS (psql failed): ${(err as Error).message}\x1b[0m`,
@@ -449,25 +486,6 @@ if (!DRY) {
   } catch {
     console.log(`  \x1b[33mbuild-id.txt missing — buildShaPlugin may not have run\x1b[0m`);
   }
-}
-
-step('5.5. domain + integration + web-lib tests (catches schema drift before deploy)');
-// Skip the PG-backed full-lifecycle test in this gate: prod PG isn't
-// reachable from the dev box and dev PG may not be running. The
-// integration coverage already runs on the server when migrations apply.
-const tt = spawnSync(
-  'bun',
-  [
-    'test',
-    join(ROOT, 'packages/domain'),
-    join(ROOT, 'apps/api'),
-    join(ROOT, 'apps/web/src/lib'),
-  ],
-  { stdio: 'inherit', cwd: ROOT, env: { ...process.env, SKIP_PG_TESTS: '1' } },
-);
-if (tt.status !== 0) {
-  console.error('\x1b[31m✖ unit/integration tests FAILED\x1b[0m');
-  process.exit(1);
 }
 
 step('6. server-side smoke');
