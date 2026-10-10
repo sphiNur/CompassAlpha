@@ -58,6 +58,7 @@ import {
 import { DomainError } from '@compass/domain';
 import { authedProcedure, idempotentMutation, rethrowDomainError, router } from '../trpc';
 import { appendEvents, readStream } from '../../services/eventStore';
+import { isUniqueViolation } from '../../services/pgErrors';
 import { projectRun } from '../../services/runProjection';
 import { projectOrder } from '../../services/orderProjection';
 import { hub } from '../../realtime/hub';
@@ -3592,8 +3593,3 @@ async function assertRunPermissionForAllStores(
   throw new TRPCError({ code: 'NOT_FOUND', message: 'run.errors.notVisible' });
 }
 
-function isUniqueViolation(err: unknown): boolean {
-  return Boolean(
-    err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === '23505',
-  );
-}

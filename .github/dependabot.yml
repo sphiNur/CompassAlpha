@@ -56,6 +56,10 @@ updates:
         update-types: ['version-update:semver-major']
       - dependency-name: '@formatjs/intl'
         update-types: ['version-update:semver-major']
+      # Tailwind 4 changes the defaults every not-yet-rebuilt screen
+      # relies on; it moves together with vite once the redesign is done.
+      - dependency-name: 'tailwindcss'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: github-actions
     directory: /

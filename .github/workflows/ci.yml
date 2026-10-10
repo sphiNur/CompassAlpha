@@ -368,6 +368,7 @@ jobs:
         run: |
           bun test \
             apps/api/src/__tests__/full-lifecycle.test.ts \
+            apps/api/src/__tests__/pgErrors.test.ts \
             apps/api/src/__tests__/store-scoped-admin.test.ts \
             apps/api/src/__tests__/refreshTokens.test.ts \
             apps/api/src/__tests__/cancel-run-cascade.test.ts \
