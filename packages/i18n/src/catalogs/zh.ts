@@ -332,7 +332,8 @@ export const zh = {
   'auth.errors.refreshReplayDetected': '检测到可疑登录活动 — 此账户所有设备已退出，请重新登录。',
   'auth.errors.missingPermission': '你没有权限执行此操作。如有疑问请联系管理员。',
   'auth.errors.nameLocked': '名字已锁定 — 仅管理员可修改',
-  'auth.errors.noMembership': '您不属于任何组织',
+  'auth.errors.noMembership':
+    '你还没有被加入任何门店。请让店长或管理员在 Compass 里邀请你。',
   'auth.errors.noOrg': '组织不存在',
   'auth.errors.required': '请先登录',
   'auth.errors.signInFailed': '登录失败',

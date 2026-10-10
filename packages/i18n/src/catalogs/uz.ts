@@ -360,7 +360,8 @@ export const uz = {
   'auth.errors.missingPermission':
     "Bu amalga ruxsatingiz yo'q. Agar bu xato deb hisoblasangiz, administrator bilan bog'laning.",
   'auth.errors.nameLocked': "Ism qulflangan — faqat administrator o'zgartira oladi",
-  'auth.errors.noMembership': "Siz hech bir tashkilotga a'zo emassiz",
+  'auth.errors.noMembership':
+    "Siz hali hech bir do'konga qo'shilmagansiz. Rahbaringizdan sizni Compass'ga taklif qilishini so'rang.",
   'auth.errors.noOrg': 'Tashkilot topilmadi',
   'auth.errors.required': 'Kirish talab qilinadi',
   'auth.errors.signInFailed': 'Kirish bajarilmadi',

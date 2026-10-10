@@ -421,7 +421,8 @@ export const en = {
   'auth.errors.missingPermission':
     "You don't have permission to do that. Ask an admin if you think this is a mistake.",
   'auth.errors.nameLocked': 'Your name is locked — only an administrator can change it',
-  'auth.errors.noMembership': 'You are not a member of any organization',
+  'auth.errors.noMembership':
+    'You have not been added to a store yet. Ask your manager to invite you in Compass.',
   'auth.errors.noOrg': 'Organization not found',
   'auth.errors.required': 'Sign-in required',
   'auth.errors.signInFailed': 'Sign in failed',
