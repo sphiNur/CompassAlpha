@@ -7,7 +7,7 @@
  * the next person reading them can't accidentally widen the heuristic.
  */
 import { describe, it, expect } from 'bun:test';
-import { isLikelyNetworkError } from '../networkError';
+import { isLikelyNetworkError, isRefreshRejected } from '../networkError';
 
 describe('isLikelyNetworkError', () => {
   it('returns true for typical iOS WebView "Load failed" message', () => {
@@ -40,5 +40,18 @@ describe('isLikelyNetworkError', () => {
     // Our heuristic uses "Failed to fetch" specifically, so a stray
     // "fetch" in unrelated copy won't trigger it.
     expect(isLikelyNetworkError({ message: 'could not fetch user' })).toBe(false);
+  });
+});
+
+describe('isRefreshRejected', () => {
+  it('ends the session only when the server refuses the token', () => {
+    expect(isRefreshRejected(401)).toBe(true);
+    expect(isRefreshRejected(403)).toBe(true);
+  });
+
+  it('keeps the session through outages and throttling', () => {
+    for (const status of [429, 500, 502, 503, 504]) {
+      expect(isRefreshRejected(status)).toBe(false);
+    }
   });
 });

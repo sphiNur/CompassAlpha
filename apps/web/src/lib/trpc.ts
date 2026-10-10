@@ -1,6 +1,7 @@
 import { createTRPCReact, httpLink, loggerLink } from '@trpc/react-query';
 import type { AppRouter } from '@compass/api/src/trpc/router';
 import { useAuthStore, type AuthSession } from '../stores/authStore';
+import { isRefreshRejected } from './networkError';
 
 export const trpc = createTRPCReact<AppRouter>();
 
@@ -34,9 +35,11 @@ async function refreshAccessToken(): Promise<{
         body: JSON.stringify({ refreshToken }),
       });
       if (!res.ok) {
-        // 401 / 410 / etc. — refresh token itself is bad. Clear auth so
-        // AuthGate routes the user back through telegramLogin.
-        useAuthStore.getState().clear();
+        // Refresh token itself is bad: clear auth so AuthGate routes the
+        // user back through telegramLogin. Anything else (5xx, 429) is
+        // the server having a moment; keep the session and let the
+        // caller's request fail on its own.
+        if (isRefreshRejected(res.status)) useAuthStore.getState().clear();
         return null;
       }
       const json = (await res.json()) as {
@@ -71,8 +74,9 @@ async function refreshAccessToken(): Promise<{
  *   2. On a 401 response (UNAUTHORIZED → access token expired),
  *      transparently calls auth.refresh and retries the request once
  *      with the new token.
- *   3. Failure of refresh = clear auth and let AuthGate re-login via
- *      Telegram initData.
+ *   3. A refresh token the server rejects = clear auth and let AuthGate
+ *      re-login via Telegram initData. A refresh that could not reach
+ *      the server leaves the session alone.
  *
  * This is THE missing piece that was causing every mutation to fail
  * with `auth.errors.required` after the 15-minute access-token TTL.
@@ -97,11 +101,11 @@ async function authFetch(input: RequestInfo | URL, init: RequestInit = {}): Prom
   if (url.includes('/auth.refresh') || url.includes('/auth.telegramLogin')) {
     return res;
   }
+  // refreshAccessToken clears the session itself when the server rejects
+  // the refresh token. A refresh that merely failed to complete (offline,
+  // timeout) must not: the original 401 goes back to the caller as-is.
   const refreshed = await refreshAccessToken();
-  if (!refreshed) {
-    useAuthStore.getState().clear();
-    return res;
-  }
+  if (!refreshed) return res;
   token = refreshed.accessToken;
   res = await fetch(input, attach(token));
   return res;
