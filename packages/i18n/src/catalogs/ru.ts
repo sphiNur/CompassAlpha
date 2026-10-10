@@ -1047,6 +1047,8 @@ export const ru = {
   'run.errors.splitSumMismatch': 'Сумма по магазинам должна совпадать',
   'run.errors.unavailableNoteRequired': 'Опишите причину отсутствия',
   'run.errors.itemNotPending': 'Отметить как отсутствующий можно только ожидающий товар',
+  'run.errors.itemAlreadyPurchased':
+    'Этот товар уже отмечен как купленный — измените существующую запись',
   'run.errors.noteTooLong': 'Заметка слишком длинная (до 500 символов)',
   'run.errors.notReadyToDeliver': 'Доставку начинать рано',
   'run.errors.itemsPending': 'Есть необработанные позиции',

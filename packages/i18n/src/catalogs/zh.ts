@@ -989,6 +989,8 @@ export const zh = {
   'run.errors.splitSumMismatch': '门店分配总数必须等于实际采购数',
   'run.errors.unavailableNoteRequired': '请说明缺货原因',
   'run.errors.itemNotPending': '只能将待采购物品标记为缺货',
+  'run.errors.itemAlreadyPurchased':
+    '该物品已记录为已采购，请编辑现有记录',
   'run.errors.noteTooLong': '备注过长（最多 500 字符）',
   'run.errors.notReadyToDeliver': '尚未到达配送阶段',
   'run.errors.itemsPending': '仍有商品未处理',

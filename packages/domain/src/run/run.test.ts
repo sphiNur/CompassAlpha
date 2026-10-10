@@ -131,6 +131,33 @@ describe('run.decide', () => {
     expect(evs.map((e) => e.type)).toEqual(['PurchaseStarted', 'ItemPurchased']);
   });
 
+  test('PurchaseItem refuses an item that is already bought', () => {
+    const state = planAndPurchase({
+      purchasedQty: '10',
+      storeSplits: [
+        { storeId: 'A', qty: '5' },
+        { storeId: 'B', qty: '5' },
+      ],
+    });
+    expect(() =>
+      decideRun(
+        state,
+        {
+          type: 'PurchaseItem',
+          skuId: 'sku-1',
+          supplierId: 'sup-1',
+          unitPrice: '12000',
+          actualQty: '10',
+          receiptPhotoUrl: null,
+          storeSplits: [{ storeId: 'A', qty: '10' }],
+          paymentMethod: 'cash',
+          actor: purchaser(),
+        },
+        clock,
+      ),
+    ).toThrow('run.errors.itemAlreadyPurchased');
+  });
+
   test('PurchaseItem requires storeSplits to sum exactly to actualQty', () => {
     let s = emptyRunState('r1');
     s = decideRun(

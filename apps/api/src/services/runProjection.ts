@@ -63,6 +63,22 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
             updatedAt: new Date(),
           })
           .where(and(eq(s.runItemsV.runId, e.streamId), eq(s.runItemsV.skuId, e.payload.skuId)));
+        // Streams written before PurchaseItem refused an already-bought
+        // item can carry a second ItemPurchased for the same SKU. The
+        // aggregate replaces its splits wholesale, so a rebuild has to
+        // drop the stores the later event no longer names.
+        const purchasedStoreIds = e.payload.storeSplits.map((sp) => sp.storeId);
+        await db
+          .delete(s.runItemStoresV)
+          .where(
+            and(
+              eq(s.runItemStoresV.runId, e.streamId),
+              eq(s.runItemStoresV.skuId, e.payload.skuId),
+              purchasedStoreIds.length > 0
+                ? notInArray(s.runItemStoresV.storeId, purchasedStoreIds)
+                : undefined,
+            ),
+          );
         // Persist split rows so delivery+confirm can address each store separately.
         for (const split of e.payload.storeSplits) {
           await db

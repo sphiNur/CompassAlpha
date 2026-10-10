@@ -1169,6 +1169,8 @@ export const en = {
   'run.errors.splitSumMismatch': 'Store split must sum to actual quantity',
   'run.errors.unavailableNoteRequired': 'Please describe why the item is unavailable',
   'run.errors.itemNotPending': 'Only a pending item can be marked unavailable',
+  'run.errors.itemAlreadyPurchased':
+    'This item is already recorded as bought — edit the existing row instead',
   'run.errors.noteTooLong': 'Note is too long (max 500 characters)',
   'run.errors.notReadyToDeliver': 'Cannot start delivery yet',
   'run.errors.itemsPending': 'Some items are still pending',

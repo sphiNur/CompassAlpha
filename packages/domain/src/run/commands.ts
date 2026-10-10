@@ -268,6 +268,13 @@ export function decideRun(
       }
       const item = state.items.get(command.skuId);
       if (!item) throw validation('run.errors.itemNotInRun');
+      // A second purchaser, or a stale offline replay, must not record
+      // over a buy that is already on the books: the earlier splits and
+      // price observation would silently stay behind in the read model.
+      // Changing a recorded buy is RevisePurchase's job.
+      if (item.status === 'purchased') {
+        throw preconditionFailed('run.errors.itemAlreadyPurchased');
+      }
       const actual = num(command.actualQty, 'run.errors.invalidQty');
       if (actual <= 0) throw validation('run.errors.qtyMustBePositive');
       const splitSum = command.storeSplits.reduce(
