@@ -3,15 +3,23 @@ import type { CatalogKey } from './index';
 export const zh = {
   // ── 1. Navigation ──────────────────────────────────────────────
   'nav.order': '下单',
-  'nav.approve': '审核',
+  'nav.approve': '审批',
   'nav.run': '采购',
   'nav.deliver': '配送',
-  'nav.confirm': '验收',
+  'nav.confirm': '签收',
   'nav.history': '历史',
-  'nav.settlement': '结算',
+  'nav.settlement': '日结',
   'nav.admin': '管理',
   'nav.reports': '报表',
   'nav.debug': '调试',
+  'nav.menu': '菜单',
+  'storeSwitcher.current': '当前',
+  'menu.history': '采购记录',
+  'menu.historyHint': '按天、按门店看买了什么',
+  'menu.admin': '管理后台',
+  'menu.adminHint': '门店、人员、商品目录、报表',
+  'menu.settings': '设置',
+  'menu.settingsHint': '显示名称和语言',
 
   // ── 2. Common ──────────────────────────────────────────────────
   'app.update.title': '新版本已就绪',

@@ -3,7 +3,7 @@ import type { CatalogKey } from './index';
 export const ru = {
   // ── 1. Navigation ──────────────────────────────────────────────
   'nav.order': 'Заказ',
-  'nav.approve': 'Согласование',
+  'nav.approve': 'Заявки',
   'nav.run': 'Закупка',
   'nav.deliver': 'Доставка',
   'nav.confirm': 'Приёмка',
@@ -12,6 +12,14 @@ export const ru = {
   'nav.admin': 'Админ',
   'nav.reports': 'Отчёты',
   'nav.debug': 'Отладка',
+  'nav.menu': 'Меню',
+  'storeSwitcher.current': 'Текущий',
+  'menu.history': 'История закупок',
+  'menu.historyHint': 'Что куплено, по дням и магазинам',
+  'menu.admin': 'Администрирование',
+  'menu.adminHint': 'Магазины, сотрудники, каталог, отчёты',
+  'menu.settings': 'Настройки',
+  'menu.settingsHint': 'Отображаемое имя и язык',
 
   // ── 2. Common ──────────────────────────────────────────────────
   'app.update.title': 'Доступна новая версия',
