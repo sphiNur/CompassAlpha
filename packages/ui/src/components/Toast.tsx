@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react';
 import type { ReactNode } from 'react';
+import { useSheetCount } from './Sheet';
 import { cn } from '../cn.js';
 
 export type ToastTone = 'info' | 'success' | 'warn' | 'danger';
@@ -43,11 +44,9 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 
 const TONE: Record<ToastTone, string> = {
   info: 'bg-[var(--c-surface-elevated)] text-[var(--c-fg)] ring-hairline',
-  success:
-    'bg-[oklch(96%_0.06_145)] text-[oklch(35%_0.16_145)] ring-1 ring-[var(--c-success)]',
+  success: 'bg-[oklch(96%_0.06_145)] text-[oklch(35%_0.16_145)] ring-1 ring-[var(--c-success)]',
   warn: 'bg-[oklch(97%_0.07_75)] text-[oklch(38%_0.16_75)] ring-1 ring-[var(--c-warning)]',
-  danger:
-    'bg-[oklch(96%_0.06_25)] text-[var(--c-danger)] ring-1 ring-[var(--c-danger)]',
+  danger: 'bg-[oklch(96%_0.06_25)] text-[var(--c-danger)] ring-1 ring-[var(--c-danger)]',
 };
 
 let counter = 0;
@@ -61,11 +60,7 @@ interface ToastProviderProps {
   limit?: number;
 }
 
-export function ToastProvider({
-  children,
-  defaultTtlMs = 4000,
-  limit = 4,
-}: ToastProviderProps) {
+export function ToastProvider({ children, defaultTtlMs = 4000, limit = 4 }: ToastProviderProps) {
   const [toasts, setToasts] = useState<ToastConfig[]>([]);
   const timersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
@@ -128,6 +123,8 @@ export function ToastProvider({
     [show, dismiss],
   );
 
+  const sheetOpen = useSheetCount() > 0;
+
   return (
     <ToastContext.Provider value={value}>
       {children}
@@ -135,16 +132,19 @@ export function ToastProvider({
         aria-live="polite"
         aria-atomic="true"
         style={{
-          // BOTTOM-anchored: Telegram's top chrome (Close + ⋯ + ⋄)
-          // overlays ~60-80 px and isn't reported via env(safe-area-inset-top),
-          // so a top-anchored toast got cropped. Anchoring at the bottom
-          // also matches iOS toast convention.
+          // Above the shell's pinned bottom (its action bar and
+          // navigation, measured into `--app-bottom-chrome-h`), so a toast
+          // never lands on the button a person is about to press. While
+          // a sheet is open the buttons are the sheet's own, at the
+          // bottom edge, so the toast moves to the top instead, below
+          // whatever Telegram floats there.
           position: 'fixed',
-          // `--app-bottom-chrome-h` is what the shell measures for its
-          // action bar plus navigation, so a toast sits above the
-          // primary button instead of on top of it.
-          bottom:
-            'calc(var(--app-bottom-chrome-h, calc(var(--app-safe-bottom, 0px) + var(--app-nav-h, 64px))) + 12px)',
+          ...(sheetOpen
+            ? { top: 'calc(var(--app-chrome-reserve, var(--app-safe-top, 0px)) + 8px)' }
+            : {
+                bottom:
+                  'calc(var(--app-bottom-chrome-h, calc(var(--app-safe-bottom, 0px) + var(--app-nav-h, 64px))) + 12px)',
+              }),
           left: 0,
           right: 0,
           display: 'flex',

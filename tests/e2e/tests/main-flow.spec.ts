@@ -111,34 +111,44 @@ test('buy everything, one item in cash and one by transfer', async () => {
   await expect(main().getByRole('heading', { name: 'Ready to plan' })).toBeVisible();
   await evidence('run-preview');
   await mainButton().click();
-  await expect(main()).toContainText('0 bought · 0 n/a · 2 left');
+  const toBuy = main().getByTestId('buy-row');
+  const bought = main().getByTestId('bought-row');
+  await expect(toBuy).toHaveCount(2);
 
-  // Prices are entered in thousands of UZS.
-  const buy = async (sku: string, price: string, method: 'Cash' | 'Transfer') => {
-    await main()
-      .getByRole('button', { name: new RegExp(`^Set price ${sku}`) })
-      .click();
-    await item(sku).getByRole('spinbutton', { name: 'unit price' }).fill(price);
-    if (method === 'Transfer') {
-      await item(sku).getByRole('button', { name: 'Payment method: Cash' }).click();
-    }
-    await item(sku)
-      .getByRole('button', { name: `Save purchase: ${sku}` })
-      .click();
-    await expect(
-      item(sku).getByRole('button', { name: new RegExp(`^Bought ${sku}`) }),
-    ).toBeVisible();
-    await expect(
-      item(sku).getByRole('button', { name: `Payment method: ${method}` }),
-    ).toBeVisible();
+  // Prices are typed in thousands of UZS. Nothing has a last price yet,
+  // so each line is opened and priced; the payment method is chosen here
+  // and nowhere earlier.
+  const buy = async (sku: string, price: string, method: 'Cash' | 'Transfer', total: string) => {
+    await toBuy.filter({ hasText: sku }).getByRole('button', { name: 'Set price' }).click();
+    await expect(sheet().getByRole('heading', { name: sku })).toBeVisible();
+    await sheet()
+      .getByRole('textbox', { name: /^Price per/ })
+      .fill(price);
+    await sheet().getByRole('radio', { name: method }).click();
+    await expect(sheet()).toContainText(new RegExp(`Total\\s*${total}`));
+    if (method === 'Transfer') await evidence('run-price-sheet');
+    await sheet().getByTestId('save-purchase').click();
+    await expect(sheet()).toBeHidden();
+    const row = bought.filter({ hasText: sku });
+    await expect(row.locator('[data-money]')).toHaveText(total);
+    await expect(row.locator('[data-payment-method]')).toHaveText(method);
   };
-  await buy('Apple', '12', 'Cash');
+  await buy('Apple', '12', 'Cash', '24,000');
   await evidence('run-buying');
-  await buy('Beef', '90', 'Transfer');
+  await buy('Beef', '90', 'Transfer', '90,000');
 
-  await expect(main()).toContainText('2 bought · 0 n/a · 0 left');
-  await expect(item('Apple')).toContainText('24,000 UZS');
-  await expect(item('Beef')).toContainText('90,000 UZS');
+  await expect(toBuy).toHaveCount(0);
+  // The amount and, under it, how it was paid: one right edge for both.
+  const edges = await bought.evaluateAll((rows) =>
+    rows.map((row) => [
+      Math.round(row.querySelector('[data-money]')!.getBoundingClientRect().right),
+      Math.round(row.querySelector('[data-payment-method]')!.getBoundingClientRect().right),
+    ]),
+  );
+  expect(new Set(edges.flat()).size).toBe(1);
+  await expect(main().getByRole('heading', { name: 'Bought' }).locator('..')).toContainText(
+    '114,000',
+  );
   await evidence('run-purchased');
 });
 

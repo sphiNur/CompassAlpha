@@ -10,8 +10,14 @@ export interface RowProps {
   value?: ReactNode;
   /** Sits under the value. This is where a PaymentChip goes, on every screen. */
   valueNote?: ReactNode;
-  /** Makes the whole row one touch target. */
+  /** Makes the row's name and value one touch target. */
   onPress?: () => void;
+  /**
+   * A control of its own at the right edge, outside the row's touch
+   * target: the one thing that can be done to this row without opening
+   * it. A Button or a Stepper, never a second column of information.
+   */
+  trailing?: ReactNode;
   disabled?: boolean;
   className?: string;
   'data-testid'?: string;
@@ -29,6 +35,7 @@ export function Row({
   value,
   valueNote,
   onPress,
+  trailing,
   disabled,
   className,
   ...rest
@@ -48,6 +55,27 @@ export function Row({
     </>
   );
   const box = cn('flex min-h-row w-full items-center gap-lg bg-surface px-lg py-md', className);
+  if (trailing) {
+    const inner = 'flex min-w-0 flex-1 items-center gap-lg self-stretch text-left outline-none';
+    return (
+      <div role="listitem" data-testid={rest['data-testid']} className={cn(box, 'gap-md')}>
+        {onPress ? (
+          <button
+            type="button"
+            onClick={onPress}
+            disabled={disabled}
+            data-row-open
+            className={cn(inner, 'active:opacity-60 disabled:opacity-60')}
+          >
+            {body}
+          </button>
+        ) : (
+          <span className={inner}>{body}</span>
+        )}
+        <span className="shrink-0">{trailing}</span>
+      </div>
+    );
+  }
   if (onPress) {
     return (
       <div role="listitem">

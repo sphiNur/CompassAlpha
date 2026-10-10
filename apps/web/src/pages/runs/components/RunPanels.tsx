@@ -32,7 +32,7 @@ import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { shareLink } from '../../../lib/telegramLinks';
 import { formatMoney, formatQty } from '../../../lib/format';
-import { useI18n, useUnitLabel } from '../../../hooks/useI18n';
+import { useI18n } from '../../../hooks/useI18n';
 import { haptic, getTg } from '../../../hooks/useTelegram';
 import {
   PerStoreView,
@@ -40,7 +40,6 @@ import {
   PerCategoryView,
   RunExtrasCard,
   ExpensesCard,
-  PurchaseRow,
 } from '../views/RunViews';
 import type {
   ActiveRun,
@@ -62,13 +61,8 @@ import {
   filterSupplierGroups,
 } from '../lib/previewFilter';
 import { groupStoreBySupplier } from '../lib/previewGrouping';
+import { BuyingList } from '../buying/BuyingList';
 import { normalizeQuery } from '../../../lib/searchMatch';
-import {
-  countByStatus,
-  visibleItems,
-  type ItemFilter,
-  type ItemView,
-} from '../lib/itemList';
 
 // formatQty / formatMoney are imported from `../lib/format` —
 // thousand-separator + max-1-decimal display rule applied everywhere.
@@ -181,12 +175,6 @@ export function ActiveRunPanel({
   ) => void;
   paymentBusySkuId: string | null;
 }) {
-  // 2026-07-26: the AGGREGATE view — the default screen during an
-  // actual run — passed the raw canonical unit code down to
-  // PurchaseRow, so the same SKU read "bunch" here and "把" on the
-  // preview card. Same fix as the three grouped views in RunViews.
-  const unitLabel = useUnitLabel();
-
   const involvedStoreIds = useMemo(() => {
     const ids = new Set<string>();
     for (const sp of run.splits) ids.add(sp.storeId);
@@ -218,15 +206,6 @@ export function ActiveRunPanel({
    * render — and the 6-second poll hands back fresh arrays every time,
    * so this recomputed on a timer even when nothing had changed.
    */
-  const splitsBySku = useMemo(() => {
-    const m = new Map<string, typeof run.splits>();
-    for (const sp of run.splits) {
-      const arr = m.get(sp.skuId) ?? [];
-      arr.push(sp);
-      m.set(sp.skuId, arr);
-    }
-    return m;
-  }, [run.splits]);
 
   /**
    * Inverse of `demandBySku` — `storeId → [{ skuId, qty }]`. Powers the
@@ -337,33 +316,6 @@ export function ActiveRunPanel({
    * reopening the page to a list silently hiding 80 rows is worse than
    * retyping four characters.
    */
-  const [itemQuery, setItemQuery] = useState('');
-  const [itemFilter, setItemFilter] = useState<ItemFilter>('all');
-  const itemTokens = useMemo(() => normalizeQuery(itemQuery) ?? [], [itemQuery]);
-  const itemCounts = useMemo(
-    () => countByStatus(run.items, (it) => it.status),
-    [run.items],
-  );
-  const itemListView = useMemo(
-    (): ItemView<ActiveRun['items'][number]> => ({
-      nameOf: (it) => {
-        const sku = skuById.get(it.skuId);
-        return sku ? productName(sku) : it.skuId;
-      },
-      supplierNameOf: (it) => run.supplierBySku?.[it.skuId]?.name ?? null,
-      // Other-language names, so the row is findable in whichever
-      // language the purchaser thinks in — mirrors the preview's
-      // lineHaystack.
-      extraHaystackOf: (it) => Object.values(skuById.get(it.skuId)?.names ?? {}),
-      statusOf: (it) => it.status,
-      idOf: (it) => it.skuId,
-    }),
-    [skuById, productName, run.supplierBySku],
-  );
-  const visibleRunItems = useMemo(
-    () => visibleItems(run.items, itemListView, { tokens: itemTokens, filter: itemFilter }),
-    [run.items, itemListView, itemTokens, itemFilter],
-  );
 
   return (
     <div className="flex flex-col gap-2">
@@ -478,123 +430,21 @@ export function ActiveRunPanel({
         (viewMode === 'perVendor' && !showPerVendor) ||
         (viewMode === 'perCategory' && !showPerCategory)) &&
       plannedOrEditing && run.items.length > 0 ? (
-        <Card>
-          {/* M2.1: SectionLabel (was 3-line ad-hoc div). Same visual,
-              standardised primitive so every section eyebrow renders
-              identically across the app. */}
-          {/* Was run.label.pendingFraction — "{done}/{total} 待办" fed
-              with the PENDING count. Two problems. An x/y fraction
-              beside a section header is read as "x of y done", so a
-              fresh run announced "87/87" (i.e. finished) and a nearly
-              finished one announced "3/87"; and the sibling
-              confirmedFraction twenty lines below uses the identical
-              shape counting the other way. It also folded "bought" and
-              "couldn't get" into one number, so the two outcomes that
-              matter most at handover were indistinguishable.
-
-              Three counts, each labelled, counting in the direction the
-              word implies. */}
-          <SectionLabel
-            meta={i18n.t('run.label.itemsProgress', {
-              bought: run.items.filter((i) => i.status === 'purchased').length,
-              na: run.items.filter((i) => i.status === 'unavailable').length,
-              pending: run.items.filter((i) => i.status === 'pending').length,
-            })}
-          >
-            {i18n.t('run.section.items')}
-          </SectionLabel>
-          {/* Search + filter, only once the list is long enough to need
-              them. Below that threshold the whole list is on one screen
-              and the controls would cost more rows than they save. */}
-          {run.items.length >= 8 ? (
-            <>
-              <div className="px-4 pb-1.5">
-                <input
-                  type="search"
-                  value={itemQuery}
-                  onChange={(e) => setItemQuery(e.target.value)}
-                  placeholder={i18n.t('run.search.itemsPlaceholder')}
-                  aria-label={i18n.t('run.search.itemsPlaceholder')}
-                  className="h-9 w-full rounded-[var(--r-pill)] border border-[var(--c-divider)] bg-[var(--c-surface-2)] px-3 text-old-body outline-none focus:border-[var(--c-action)]"
-                />
-              </div>
-              <ChipBar
-                className="pt-0"
-                ariaLabel={i18n.t('run.filter.ariaLabel')}
-              >
-                <Chip
-                  selected={itemFilter === 'all'}
-                  onClick={() => setItemFilter('all')}
-                >
-                  {i18n.t('run.filter.all', { n: itemCounts.all })}
-                </Chip>
-                <Chip
-                  selected={itemFilter === 'pending'}
-                  onClick={() => setItemFilter('pending')}
-                >
-                  {i18n.t('run.filter.pending', { n: itemCounts.pending })}
-                </Chip>
-                {itemCounts.unavailable > 0 ? (
-                  <Chip
-                    selected={itemFilter === 'unavailable'}
-                    onClick={() => setItemFilter('unavailable')}
-                  >
-                    {i18n.t('run.filter.unavailable', {
-                      n: itemCounts.unavailable,
-                    })}
-                  </Chip>
-                ) : null}
-              </ChipBar>
-            </>
-          ) : null}
-          {visibleRunItems.length === 0 ? (
-            <p className="px-4 py-6 text-center text-old-body text-[var(--c-fg-muted)]">
-              {i18n.t('run.filter.noMatch')}
-            </p>
-          ) : null}
-          <ul className="flex flex-col" role="list">
-            {visibleRunItems.map((it) => {
-              const sku = skuById.get(it.skuId);
-              const skuName = sku ? productName(sku) : it.skuId.slice(0, 8);
-              // M3.52: pluck this SKU's recorded splits for the
-              // per-store breakdown chips shown under purchased rows.
-              // Pending rows fall back to planned demand inside the
-              // row component — so we pass both regardless of status.
-              const actualSplits = (splitsBySku.get(it.skuId) ?? []).map((sp) => ({
-                storeId: sp.storeId,
-                qty: sp.qty,
-                unitPrice: sp.unitPrice,
-                paymentMethod: sp.paymentMethod,
-              }));
-              return (
-                <PurchaseRow
-                  key={it.skuId}
-                  onTogglePriceUnit={onTogglePriceUnit}
-                  item={it}
-                  skuName={skuName}
-                  unit={unitLabel(sku?.unit)}
-                  step={sku?.step ?? '0.1'}
-                  demand={demandBySku.get(it.skuId) ?? []}
-                  storeById={storeById}
-                  actualSplits={actualSplits}
-                  isMultiStoreRun={demandStoreIds.length > 1}
-                  lastPrice={run.lastPriceBySku?.[it.skuId] ?? null}
-                  lastPriceObservedAt={run.lastPriceObservedAtBySku?.[it.skuId] ?? null}
-                  i18n={i18n}
-                  priceInThousands={priceInThousands}
-                  saving={savingSkuId === it.skuId}
-                  onSave={onSavePurchaseInline}
-                  onMarkNa={onMarkNa}
-                  onEdit={onEditPurchased}
-                  onUnmark={onUnmark}
-                  onOpenAdvanced={onOpenAdvancedPurchase}
-                  onSetPaymentMethod={onSetPaymentMethod}
-                  paymentBusy={paymentBusySkuId === it.skuId}
-                />
-              );
-            })}
-          </ul>
-        </Card>
+        <BuyingList
+          run={run}
+          skuById={skuById}
+          storeById={storeById}
+          productName={productName}
+          i18n={i18n}
+          priceInThousands={priceInThousands}
+          onTogglePriceUnit={onTogglePriceUnit}
+          savingSkuId={savingSkuId}
+          onSave={onSavePurchaseInline}
+          onMarkNa={onMarkNa}
+          onEditPurchased={onEditPurchased}
+          onUnmark={onUnmark}
+          onOpenAdvanced={onOpenAdvancedPurchase}
+        />
       ) : null}
 
       {/* M3.31 (2026-05-18, A.1): "其他物品" footer for the aggregate edit
