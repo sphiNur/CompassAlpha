@@ -1049,6 +1049,8 @@ export const ru = {
   'run.errors.itemNotPending': 'Отметить как отсутствующий можно только ожидающий товар',
   'run.errors.itemAlreadyPurchased':
     'Этот товар уже отмечен как купленный — измените существующую запись',
+  'run.errors.cannotCancelAfterConfirm':
+    'Магазин уже подтвердил получение — эту закупку больше нельзя отменить',
   'run.errors.noteTooLong': 'Заметка слишком длинная (до 500 символов)',
   'run.errors.notReadyToDeliver': 'Доставку начинать рано',
   'run.errors.itemsPending': 'Есть необработанные позиции',

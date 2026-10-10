@@ -1058,6 +1058,8 @@ export const uz = {
   'run.errors.itemNotPending': "Faqat kutilayotgan mahsulotni yo'q deb belgilash mumkin",
   'run.errors.itemAlreadyPurchased':
     "Bu mahsulot allaqachon xarid qilingan deb yozilgan — mavjud yozuvni tahrirlang",
+  'run.errors.cannotCancelAfterConfirm':
+    "Do'kon yetkazib berishni allaqachon tasdiqlagan — bu xaridni endi bekor qilib bo'lmaydi",
   'run.errors.noteTooLong': 'Eslatma juda uzun (500 belgi gacha)',
   'run.errors.notReadyToDeliver': "Yetkazishni hali boshlab bo'lmaydi",
   'run.errors.itemsPending': 'Hali ishlanmagan mahsulotlar bor',
