@@ -54,7 +54,8 @@ function anonymousCaller() {
   return appRouter.createCaller(ctx);
 }
 
-const freshTgId = () => BigInt(`7${Date.now()}${Math.floor(Math.random() * 100)}`.slice(0, 12));
+// Random, not clock-derived: two tests in the same second must not share an id.
+const freshTgId = () => BigInt(7_000_000_000 + Math.floor(Math.random() * 2_000_000_000));
 
 describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
   let orgId = '';
@@ -81,6 +82,31 @@ describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
       where: (u, { eq: eq2 }) => eq2(u.tgUserId, tgUserId),
     });
     expect(user).toBeUndefined();
+  });
+
+  test('the refresh token a login returns can actually be refreshed', async () => {
+    const db = getDb();
+    const tgUserId = freshTgId();
+    const [user] = await db
+      .insert(s.users)
+      .values({ tgUserId, displayName: `tg:${tgUserId}` })
+      .returning();
+    await db.insert(s.members).values({ orgId, userId: user!.id, status: 'active' });
+
+    const login = await anonymousCaller().auth.telegramLogin({ initData: signInitData(tgUserId) });
+    // Through the router, so the input schema is part of what is tested.
+    const refreshed = await anonymousCaller().auth.refresh({
+      refreshToken: login.tokens.refreshToken,
+    });
+    expect(refreshed.session.user.id).toBe(user!.id);
+    expect(refreshed.tokens.accessToken.length).toBeGreaterThan(20);
+    expect(refreshed.tokens.refreshToken).not.toBe(login.tokens.refreshToken);
+
+    // And again with the rotated token: the chain keeps working.
+    const again = await anonymousCaller().auth.refresh({
+      refreshToken: refreshed.tokens.refreshToken,
+    });
+    expect(again.session.user.id).toBe(user!.id);
   });
 
   test('an invited member signs in; a removed or suspended one does not come back', async () => {

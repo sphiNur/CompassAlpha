@@ -28,11 +28,17 @@ export function isLikelyNetworkError(err: unknown): boolean {
 /**
  * Did the server actually reject the refresh token?
  *
- * Only then is the session over. A dropped request, a 5xx from a
- * restarting api or a 429 says nothing about the token, and signing the
- * user out for it throws away whatever they had open on a flaky
- * connection.
+ * Then the session is over and the app must go back through sign-in. A
+ * dropped request, a 5xx from a restarting api, a timeout or throttling
+ * says nothing about the token, and signing the user out for it throws
+ * away whatever they had open on a flaky connection.
+ *
+ * Any other 4xx counts as a rejection, not only 401/403: the server
+ * answers 400 to a token it cannot even parse. Treating that as "try
+ * again later" left the client holding a token that could never work,
+ * with every request failing and no way back to sign-in.
  */
 export function isRefreshRejected(status: number): boolean {
-  return status === 401 || status === 403;
+  if (status === 408 || status === 429) return false;
+  return status >= 400 && status < 500;
 }

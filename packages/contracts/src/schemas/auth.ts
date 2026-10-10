@@ -13,8 +13,15 @@ export const NonTelegramLoginInputSchema = z.object({
   locale: LocaleSchema.optional(),
 });
 
+/**
+ * A refresh token is a JWT carrying three UUIDs; ours come out at 296
+ * characters. The cap here used to be 200, so the schema rejected every
+ * token the server itself issued and `auth.refresh` answered 400 to all
+ * of them. Keep the bound generous: it is only there to stop absurd
+ * input, not to describe the token.
+ */
 export const RefreshInputSchema = z.object({
-  refreshToken: z.string().min(20).max(200),
+  refreshToken: z.string().min(20).max(4096),
 });
 
 export const StoreSummarySchema = z.object({
