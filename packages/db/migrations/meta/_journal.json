@@ -281,6 +281,13 @@
       "when": 1785974400001,
       "tag": "0039_settlement_itemized_expenses",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1791640000000,
+      "tag": "0040_role_binding_scope_check",
+      "breakpoints": true
     }
   ]
 }
