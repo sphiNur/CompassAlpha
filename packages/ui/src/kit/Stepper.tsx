@@ -20,7 +20,7 @@ export interface StepperProps {
 
 const CELL =
   'flex size-tap shrink-0 items-center justify-center text-h2 text-ink outline-none ' +
-  'active:bg-surface-sunken focus-visible:bg-surface-sunken disabled:text-line';
+  'active:bg-line focus-visible:bg-line disabled:text-line';
 
 /**
  * Quantity up and down. Each of the three cells is a full 44px target,
@@ -51,7 +51,7 @@ export function Stepper({
       role="group"
       data-testid={rest['data-testid']}
       className={cn(
-        'inline-flex shrink-0 items-stretch overflow-hidden rounded-md border border-line bg-surface',
+        'inline-flex shrink-0 items-stretch overflow-hidden rounded-sm bg-surface-sunken',
         className,
       )}
     >
@@ -71,7 +71,7 @@ export function Stepper({
           data-step="value"
           onClick={onValuePress}
           disabled={disabled}
-          className={cn(valueBox, 'outline-none active:bg-surface-sunken')}
+          className={cn(valueBox, 'outline-none active:bg-line')}
         >
           {shown}
         </button>

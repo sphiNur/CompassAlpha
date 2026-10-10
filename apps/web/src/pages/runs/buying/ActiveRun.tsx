@@ -1,4 +1,4 @@
-import { Button } from '@compass/ui/kit';
+import { List, Row } from '@compass/ui/kit';
 import type { PaymentMethod } from '@compass/ui/kit';
 import type { useI18n } from '../../../hooks/useI18n';
 import type { ActiveRun } from '../types';
@@ -133,14 +133,15 @@ export function ActiveRunPanel({
       />
 
       {editing ? (
-        <div className="flex gap-sm">
-          <Button data-testid="add-item" onClick={onAddItem}>
-            {i18n.t('buy.addItem')}
-          </Button>
-          <Button data-testid="add-expense" onClick={onAddExpense}>
-            {i18n.t('buy.addExpense')}
-          </Button>
-        </div>
+        <List>
+          <Row action data-testid="add-item" title={i18n.t('buy.addItem')} onPress={onAddItem} />
+          <Row
+            action
+            data-testid="add-expense"
+            title={i18n.t('buy.addExpense')}
+            onPress={onAddExpense}
+          />
+        </List>
       ) : null}
     </div>
   );

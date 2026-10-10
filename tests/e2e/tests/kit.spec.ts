@@ -30,8 +30,8 @@ test.describe('component kit follows DESIGN.md', () => {
       }
       return [...out.keys()];
     });
-    // The eight type tokens resolve to five sizes. Anything else is ad hoc.
-    expect(sizes.map(px).sort((a, b) => a - b)).toEqual([13, 15, 16, 18, 24]);
+    // The eight type tokens resolve to six sizes. Anything else is ad hoc.
+    expect(sizes.map(px).sort((a, b) => a - b)).toEqual([13, 15, 16, 20, 24, 28]);
 
     const title = page.getByTestId('kit-row').first().locator('span.text-body').first();
     expect(px(await title.evaluate((el) => getComputedStyle(el).fontSize))).toBe(16);

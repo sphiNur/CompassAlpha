@@ -75,7 +75,10 @@ describe('tailwind preset restates DESIGN.md', () => {
   test('every amount style is tabular', () => {
     const utilities: Record<string, unknown> = {};
     for (const plugin of preset.plugins as Array<(api: unknown) => void>) {
-      plugin({ addUtilities: (u: Record<string, unknown>) => Object.assign(utilities, u) });
+      plugin({
+        addUtilities: (u: Record<string, unknown>) => Object.assign(utilities, u),
+        addComponents: () => {},
+      });
     }
     expect(Object.keys(utilities).sort()).toEqual([
       '.text-display',

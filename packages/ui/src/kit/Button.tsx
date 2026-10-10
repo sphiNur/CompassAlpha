@@ -19,8 +19,8 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const VARIANT: Record<ButtonVariant, string> = {
   primary: 'h-control bg-primary text-on-primary active:bg-primary-pressed',
-  secondary: 'h-control border border-line bg-surface text-ink active:bg-surface-sunken',
-  ghost: 'h-tap bg-neutral text-secondary active:bg-surface-sunken',
+  secondary: 'h-control bg-surface-sunken text-primary active:bg-line',
+  ghost: 'h-tap text-primary active:bg-surface-sunken',
   danger: 'h-control bg-danger text-on-primary active:opacity-90',
 };
 
@@ -36,10 +36,10 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       disabled={disabled || busy}
       aria-busy={busy || undefined}
       className={cn(
-        'flex min-w-0 select-none items-center justify-center rounded-pill px-xl text-label',
+        'flex min-w-0 select-none items-center justify-center rounded-md px-xl text-label',
         'outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
         // Disabled keeps its shape and place; only the ink recedes.
-        'disabled:bg-surface-sunken disabled:text-secondary disabled:border-transparent',
+        'disabled:bg-surface-sunken disabled:text-secondary',
         inline ? 'inline-flex' : 'w-full',
         VARIANT[variant],
         busy && 'animate-pulse',

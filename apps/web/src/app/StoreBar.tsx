@@ -42,7 +42,7 @@ export function StoreBar({ inTelegram }: { inTelegram: boolean }) {
   }
   return (
     <header
-      className="flex shrink-0 items-center border-b border-line bg-surface px-page"
+      className="flex shrink-0 items-center bg-neutral px-page"
       style={{ paddingTop: 'var(--app-safe-top)' }}
     >
       <StoreButton />

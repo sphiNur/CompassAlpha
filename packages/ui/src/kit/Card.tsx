@@ -21,7 +21,7 @@ export function Card({ children, className }: CardProps) {
   }
   return (
     <InsideCard.Provider value={true}>
-      <div className={cn('rounded-md border border-line bg-surface p-lg', className)}>
+      <div className={cn('rounded-md bg-surface p-lg', className)}>
         {children}
       </div>
     </InsideCard.Provider>
@@ -47,7 +47,7 @@ export function List({ children, className }: ListProps) {
       <div
         role="list"
         className={cn(
-          'divide-y divide-line overflow-hidden rounded-md border border-line bg-surface',
+          'inset-separated overflow-hidden rounded-md bg-surface',
           className,
         )}
       >

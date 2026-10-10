@@ -18,6 +18,11 @@ export interface RowProps {
    * it. A Button or a Stepper, never a second column of information.
    */
   trailing?: ReactNode;
+  /**
+   * The row is something to do ("Add an item"), not something to read:
+   * its name takes the action colour.
+   */
+  action?: boolean;
   disabled?: boolean;
   className?: string;
   'data-testid'?: string;
@@ -36,6 +41,7 @@ export function Row({
   valueNote,
   onPress,
   trailing,
+  action,
   disabled,
   className,
   ...rest
@@ -43,13 +49,20 @@ export function Row({
   const body = (
     <>
       <span className="min-w-0 flex-1 text-left">
-        <span className="block text-body text-ink">{title}</span>
+        <span className={cn('block text-body', action ? 'text-primary' : 'text-ink')}>{title}</span>
         {detail ? <span className="block text-body text-secondary">{detail}</span> : null}
       </span>
       {value || valueNote ? (
         <span className="flex shrink-0 flex-col items-end gap-xs">
           {value}
           {valueNote}
+        </span>
+      ) : null}
+      {/* Says the row opens something. Not on a row that is itself the
+          action, nor beside a control that already is one. */}
+      {onPress && !trailing && !action ? (
+        <span aria-hidden data-row-chevron className="shrink-0 text-h2 text-line">
+          ›
         </span>
       ) : null}
     </>
