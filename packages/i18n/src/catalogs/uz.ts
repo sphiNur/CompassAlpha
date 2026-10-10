@@ -10,23 +10,15 @@ import type { CatalogKey } from './index';
 export const uz = {
   // ── 1. Navigation ──────────────────────────────────────────────
   'nav.order': 'Buyurtma',
-  'nav.approve': 'Tasdiq',
+  'nav.approve': 'Tasdiqlash',
   'nav.run': 'Xarid',
   'nav.deliver': 'Yetkazish',
   'nav.confirm': 'Qabul',
   'nav.history': 'Tarix',
-  'nav.settlement': 'Yakun',
+  'nav.settlement': 'Kun yakuni',
   'nav.admin': 'Boshqaruv',
   'nav.reports': 'Hisobotlar',
   'nav.debug': 'Debug',
-  'nav.menu': 'Menyu',
-  'storeSwitcher.current': 'Joriy',
-  'menu.history': 'Xaridlar tarixi',
-  'menu.historyHint': "Nima sotib olingan, kun va do'kon bo'yicha",
-  'menu.admin': 'Boshqaruv paneli',
-  'menu.adminHint': "Do'konlar, xodimlar, katalog, hisobotlar",
-  'menu.settings': 'Sozlamalar',
-  'menu.settingsHint': "Ko'rsatiladigan ism va til",
 
   // ── 2. Common ──────────────────────────────────────────────────
   'app.update.title': 'Yangi versiya tayyor',
