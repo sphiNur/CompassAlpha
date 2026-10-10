@@ -69,19 +69,10 @@ test('an expired access token is refreshed and the app carries on', async ({ pag
     page.getByTestId('primary-nav').or(page.getByRole('heading', { name: 'Welcome to Compass' })),
   ).toBeVisible();
 
-  // The shell is drawn from the stored session before the refresh has
-  // come back, so wait for it rather than expecting it already.
-  await expect.poll(() => calls).toContainEqual({ path: 'auth.refresh', status: 200 });
+  expect(calls).toContainEqual({ path: 'auth.refresh', status: 200 });
   // The session was kept, not silently replaced by a fresh sign-in.
   expect(calls.filter((c) => /Login$/.test(c.path))).toEqual([]);
 
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () => JSON.parse(window.localStorage.getItem('compass.auth')!).state.accessToken,
-      ),
-    )
-    .not.toBe('this.access.token-is-no-good');
   const stored = await page.evaluate(
     () => JSON.parse(window.localStorage.getItem('compass.auth')!).state,
   );

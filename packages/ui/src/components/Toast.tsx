@@ -140,11 +140,8 @@ export function ToastProvider({
           // so a top-anchored toast got cropped. Anchoring at the bottom
           // also matches iOS toast convention.
           position: 'fixed',
-          // `--app-bottom-chrome-h` is what the shell measures for its
-          // action bar plus navigation, so a toast sits above the
-          // primary button instead of on top of it.
           bottom:
-            'calc(var(--app-bottom-chrome-h, calc(var(--app-safe-bottom, 0px) + var(--app-nav-h, 64px))) + 12px)',
+            'calc(var(--app-safe-bottom, 0px) + var(--app-nav-h, 64px) + 12px)',
           left: 0,
           right: 0,
           display: 'flex',
@@ -157,8 +154,7 @@ export function ToastProvider({
           paddingRight: 'max(12px, var(--app-safe-right, 0px))',
         }}
       >
-        {/* One at a time: the newest. A stack buries the screen it reports on. */}
-        {toasts.slice(-1).map((t) => (
+        {toasts.map((t) => (
           <button
             key={t.id}
             type="button"

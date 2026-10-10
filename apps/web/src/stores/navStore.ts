@@ -30,15 +30,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type Tab =
-  | 'order'
-  | 'approve'
-  | 'run'
-  | 'history'
-  | 'settlement'
-  | 'confirm'
-  | 'admin'
-  | 'menu';
+export type Tab = 'order' | 'approve' | 'run' | 'history' | 'settlement' | 'confirm' | 'admin';
 
 /**
  * Pages with an in-progress form can register a guard before the shell
@@ -189,7 +181,7 @@ export const useNavStore = create<NavState>()(
 
         const tab = oneOf(
           p.tab,
-          ['order', 'approve', 'run', 'history', 'settlement', 'confirm', 'admin', 'menu'] as const,
+          ['order', 'approve', 'run', 'history', 'settlement', 'confirm', 'admin'] as const,
           DEFAULTS.tab,
         );
         const adminSection = oneOf(
