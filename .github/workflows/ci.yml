@@ -368,4 +368,5 @@ jobs:
             apps/api/src/__tests__/cancel-run-cascade.test.ts \
             apps/api/src/__tests__/rls-isolation.test.ts \
             apps/api/src/__tests__/settlement.test.ts \
-            apps/api/src/__tests__/approver-self-edit.test.ts
+            apps/api/src/__tests__/approver-self-edit.test.ts \
+            apps/api/src/__tests__/login-enrolment.test.ts
