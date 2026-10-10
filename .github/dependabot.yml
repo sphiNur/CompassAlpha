@@ -45,6 +45,17 @@ updates:
     ignore:
       # Pin Bun via .bun-version — Dependabot doesn't manage that file.
       - dependency-name: '@types/bun'
+      # The Node types must describe the Node that actually runs the
+      # tooling (20). Newer majors type-check calls to APIs that are not
+      # there.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+      # Major versions of the build tool and of the message formatter are
+      # migrations, not updates: each gets planned and done by hand.
+      - dependency-name: 'vite'
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@formatjs/intl'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: github-actions
     directory: /

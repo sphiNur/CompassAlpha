@@ -359,7 +359,8 @@ export const ru = {
   'auth.errors.missingPermission':
     'У вас нет прав на это действие. Если считаете это ошибкой, обратитесь к администратору.',
   'auth.errors.nameLocked': 'Имя зафиксировано — изменить может только администратор',
-  'auth.errors.noMembership': 'Вы не состоите ни в одной организации',
+  'auth.errors.noMembership':
+    'Вас ещё не добавили ни в один магазин. Попросите управляющего пригласить вас в Compass.',
   'auth.errors.noOrg': 'Организация не найдена',
   'auth.errors.required': 'Требуется вход',
   'auth.errors.signInFailed': 'Ошибка входа',
