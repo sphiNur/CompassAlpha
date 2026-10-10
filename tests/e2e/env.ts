@@ -26,3 +26,10 @@ export const WEB_URL = `http://localhost:${WEB_PORT}`;
 
 /** Telegram id of the super admin the run signs in as. */
 export const ADMIN_TG_ID = '900000001';
+
+/**
+ * Not a real bot. It lets a test sign Telegram initData the api will
+ * accept, which is the only way to get a real, refreshable session: the
+ * development logins hand out a placeholder refresh token on purpose.
+ */
+export const BOT_TOKEN = '900000001:e2e-not-a-real-bot-token';

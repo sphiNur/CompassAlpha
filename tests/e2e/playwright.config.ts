@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { API_PORT, API_URL, DATABASE_URL, WEB_PORT, WEB_URL } from './env';
+import { API_PORT, API_URL, BOT_TOKEN, DATABASE_URL, WEB_PORT, WEB_URL } from './env';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -44,6 +44,7 @@ export default defineConfig({
         NODE_ENV: 'development',
         COMPASS_RELEASE_CHANNEL: 'development',
         DEV_MOCK_LOGIN_ENABLED: 'true',
+        TELEGRAM_BOT_TOKEN: BOT_TOKEN,
         FRONTEND_URL: WEB_URL,
         JWT_SECRET: 'e2e-only-access-secret-0123456789abcdef',
         JWT_REFRESH_SECRET: 'e2e-only-refresh-secret-0123456789abcdef',
