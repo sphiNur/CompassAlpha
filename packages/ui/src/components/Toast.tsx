@@ -169,9 +169,9 @@ export function ToastProvider({
             style={{ pointerEvents: 'auto' }}
           >
             {t.title ? (
-              <div className="text-body-sm font-semibold leading-tight">{t.title}</div>
+              <div className="text-old-body-sm font-semibold leading-tight">{t.title}</div>
             ) : null}
-            <div className="text-body-sm leading-snug">{t.message}</div>
+            <div className="text-old-body-sm leading-snug">{t.message}</div>
           </button>
         ))}
       </div>

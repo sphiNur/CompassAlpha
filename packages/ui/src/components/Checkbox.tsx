@@ -108,9 +108,9 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(function Che
       {native}
       {box}
       <span className="flex min-w-0 flex-col">
-        <span className="text-body text-[var(--c-fg)]">{label}</span>
+        <span className="text-old-body text-[var(--c-fg)]">{label}</span>
         {hint ? (
-          <span id={hintId} className="text-label text-[var(--c-fg-muted)]">
+          <span id={hintId} className="text-old-label text-[var(--c-fg-muted)]">
             {hint}
           </span>
         ) : null}

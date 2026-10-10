@@ -725,7 +725,7 @@ export function OrderPage() {
         <StickyPageBar>
           {/* Store moved to Shell's top strip (2026-07-30) — the date is
               the only page-specific thing this strip carried. */}
-          <span className="ml-auto shrink-0 text-label tabular-nums text-[var(--c-fg-muted)]">
+          <span className="ml-auto shrink-0 text-old-label tabular-nums text-[var(--c-fg-muted)]">
             {dateLabel}
           </span>
         </StickyPageBar>
@@ -867,7 +867,7 @@ export function OrderPage() {
             <button
               type="button"
               onClick={() => setBatchesOpen(true)}
-              className="press shrink-0 rounded-[var(--r-pill)] px-1.5 py-0.5 text-label tabular-nums text-[var(--c-action)]"
+              className="press shrink-0 rounded-[var(--r-pill)] px-1.5 py-0.5 text-old-label tabular-nums text-[var(--c-action)]"
             >
               {i18n.t('order.batches.today', { n: batchesQuery.data!.length })}
             </button>
@@ -1178,7 +1178,7 @@ const SkuRow = memo(function SkuRow({
   // more SKU visible per viewport on a 5.5" screen.
   //
   // M3.55 (2026-05-23): user-requested tweaks for the order surface:
-  //   - bumped SKU name from text-body (13 px) → text-h2 (15 px) so
+  //   - bumped SKU name from text-old-body (13 px) → text-old-h2 (15 px) so
   //     the primary content scans easier on phone screens.
   //   - dropped the redundant `{sku.unit}` caption that used to lead
   //     the secondary line. The unit is already shown inside the
@@ -1196,7 +1196,7 @@ const SkuRow = memo(function SkuRow({
       <div className="min-w-0 flex-1 pr-3">
         <NameCell primary={nm.primary} secondary={nm.secondary} size="prominent" />
         {hasSecondaryLine ? (
-          <div className="mt-0.5 text-label leading-tight text-[var(--c-fg-muted)]">
+          <div className="mt-0.5 text-old-label leading-tight text-[var(--c-fg-muted)]">
             {sku.suggestedQty
               ? i18n.t('order.suggested', { qty: sku.suggestedQty })
               : null}
@@ -1280,7 +1280,7 @@ function BatchStrip({
             <li
               key={b.id}
               className={
-                'flex items-baseline justify-between gap-2 rounded-[var(--r-card)] px-3 py-2 text-label ring-hairline ' +
+                'flex items-baseline justify-between gap-2 rounded-[var(--r-card)] px-3 py-2 text-old-label ring-hairline ' +
                 (isCurrent
                   ? 'bg-[var(--c-action)]/10 ring-1 ring-[var(--c-action)]'
                   : 'bg-[var(--c-surface-2)]')
@@ -1402,7 +1402,7 @@ function ReviewList({
 
   if (groups.length === 0) {
     return (
-      <div className="py-6 text-center text-body text-[var(--c-fg-muted)]">
+      <div className="py-6 text-center text-old-body text-[var(--c-fg-muted)]">
         {i18n.t('order.review.empty')}
       </div>
     );
@@ -1423,14 +1423,14 @@ function ReviewList({
                 header. SectionLabel is also flex which would compose
                 awkwardly here. The CI grep guard for inline eyebrow
                 strings allows-lists this single site. */}
-            <span className="text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+            <span className="text-old-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
               {i18n.t('order.review.estimatedTotal')}
             </span>
-            <span className="font-mono text-h2 font-semibold tabular-nums text-[var(--c-fg)]">
+            <span className="font-mono text-old-h2 font-semibold tabular-nums text-[var(--c-fg)]">
               ~{formatMoney(estimate.total)} {currency}
             </span>
           </div>
-          <div className="mt-1 text-label text-[var(--c-fg-muted)]">
+          <div className="mt-1 text-old-label text-[var(--c-fg-muted)]">
             {i18n.t('order.review.estimateHint', {
               known: estimate.known,
               unknown: estimate.unknown,
@@ -1449,12 +1449,12 @@ function ReviewList({
                 >
                   {/* 2026-07-05: match the prominent SKU-name tier used
                       by SkuRow above (the Order surface is the "browse"
-                      tier, text-h2) so the review summary and the pick
+                      tier, text-old-h2) so the review summary and the pick
                       list read at the same size. */}
-                  <span className="truncate pr-3 text-h2 font-semibold text-[var(--c-fg)]">
+                  <span className="truncate pr-3 text-old-h2 font-semibold text-[var(--c-fg)]">
                     {r.name}
                   </span>
-                  <span className="shrink-0 font-mono text-body tabular-nums text-[var(--c-fg-muted)]">
+                  <span className="shrink-0 font-mono text-old-body tabular-nums text-[var(--c-fg-muted)]">
                     {formatQty(r.qty)} {unitLabel(r.unit)}
                   </span>
                 </li>
@@ -1643,7 +1643,7 @@ function SessionExtrasEditor({
         <SectionLabel padded={false}>
           {i18n.t('order.extras.label')}
         </SectionLabel>
-        <span className="text-label text-[var(--c-fg-muted)]">
+        <span className="text-old-label text-[var(--c-fg-muted)]">
           {savingState === 'saving'
             ? i18n.t('order.notes.saving')
             : savingState === 'saved'
@@ -1657,7 +1657,7 @@ function SessionExtrasEditor({
           {cleanedView.map((r, i) => (
             <li
               key={`${r.name}-${i}`}
-              className="flex items-baseline justify-between gap-2 text-body"
+              className="flex items-baseline justify-between gap-2 text-old-body"
             >
               <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">{r.name}</span>
               <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
@@ -1754,10 +1754,10 @@ function ExtraRowEditor({
                       onChange({ name: s.name });
                       setFocusing(false);
                     }}
-                    className="press flex w-full items-baseline justify-between gap-2 px-3 py-1.5 text-left text-body hover:bg-[var(--c-surface-2)]"
+                    className="press flex w-full items-baseline justify-between gap-2 px-3 py-1.5 text-left text-old-body hover:bg-[var(--c-surface-2)]"
                   >
                     <span className="text-[var(--c-fg)]">{s.name}</span>
-                    <span className="text-label text-[var(--c-fg-muted)]">
+                    <span className="text-old-label text-[var(--c-fg-muted)]">
                       ×{s.count}
                     </span>
                   </button>
@@ -1788,7 +1788,7 @@ function ExtraRowEditor({
           onChange={(e) =>
             onChange({ unit: e.target.value as (typeof CANONICAL_UNITS)[number] })
           }
-          className="h-9 w-20 rounded-[var(--r-input)] bg-[var(--c-surface)] px-2 text-center text-body text-[var(--c-fg)] ring-hairline focus:outline-none focus:ring-2 focus:ring-[var(--c-action)]"
+          className="h-9 w-20 rounded-[var(--r-input)] bg-[var(--c-surface)] px-2 text-center text-old-body text-[var(--c-fg)] ring-hairline focus:outline-none focus:ring-2 focus:ring-[var(--c-action)]"
         >
           {CANONICAL_UNITS.map((u) => (
             <option key={u} value={u}>

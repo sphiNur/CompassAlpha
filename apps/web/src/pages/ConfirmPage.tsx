@@ -351,7 +351,7 @@ export function ConfirmPage() {
           {/* 2026-07-30: the receiver is signing for goods at a specific
               store — which the page never named. Now named once, in
               Shell's top strip, on every page including this one. */}
-          <span className="ml-auto truncate text-label tabular-nums text-[var(--c-fg-muted)]">
+          <span className="ml-auto truncate text-old-label tabular-nums text-[var(--c-fg-muted)]">
             {i18n.t('confirm.runOnDate', { date: activeRun.runDate })}
           </span>
         </StickyPageBar>
@@ -386,7 +386,7 @@ export function ConfirmPage() {
                     <div className="flex items-center justify-between gap-3 border-b border-[var(--c-divider)] px-4 py-2">
                       <span
                         className={
-                          'text-label font-semibold tabular-nums ' +
+                          'text-old-label font-semibold tabular-nums ' +
                           (allDecided
                             ? 'text-[var(--c-fg-muted)]'
                             : 'text-[var(--c-warning-fg)]')
@@ -433,7 +433,7 @@ export function ConfirmPage() {
                               secondary={nm?.secondary}
                               size="default"
                             />
-                            <span className="shrink-0 font-mono text-label tabular-nums text-[var(--c-fg-muted)]">
+                            <span className="shrink-0 font-mono text-old-label tabular-nums text-[var(--c-fg-muted)]">
                               {formatQty(it.qty)} {unitLabel(sku?.unit)}
                             </span>
                           </div>
@@ -507,7 +507,7 @@ export function ConfirmPage() {
                             ))}
                           </ChipBar>
                           {it.confirmNote ? (
-                            <div className="text-label text-[var(--c-fg-muted)]">{it.confirmNote}</div>
+                            <div className="text-old-label text-[var(--c-fg-muted)]">{it.confirmNote}</div>
                           ) : null}
                         </li>
                       );

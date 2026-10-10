@@ -138,7 +138,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
                   <span className="flex flex-col items-start text-left">
                     <span>{a.label}</span>
                     {a.hint ? (
-                      <span className="mt-0.5 text-label opacity-80">{a.hint}</span>
+                      <span className="mt-0.5 text-old-label opacity-80">{a.hint}</span>
                     ) : null}
                   </span>
                 </Button>
@@ -156,10 +156,10 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
             <Field label={i18n.t('settings.profile.displayName')}>
               {nameLocked ? (
                 <>
-                  <div className="rounded-[var(--r-pill)] bg-[var(--c-surface)] px-4 py-2 text-h3 ring-hairline">
+                  <div className="rounded-[var(--r-pill)] bg-[var(--c-surface)] px-4 py-2 text-old-h3 ring-hairline">
                     {session?.user.displayName ?? '—'}
                   </div>
-                  <p className="mt-1 text-label text-[var(--c-fg-muted)]">
+                  <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
                     {i18n.t('settings.profile.lockedHint')}
                   </p>
                 </>
@@ -185,7 +185,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
             </Field>
             {session?.user.tgUsername ? (
               <Field label={i18n.t('settings.profile.username')}>
-                <div className="rounded-[var(--r-pill)] bg-[var(--c-surface)] px-4 py-2 text-h3 ring-hairline">
+                <div className="rounded-[var(--r-pill)] bg-[var(--c-surface)] px-4 py-2 text-old-h3 ring-hairline">
                   @{session.user.tgUsername}
                 </div>
               </Field>
@@ -233,7 +233,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
           <SectionLabel as="h3" padded={false} className="mb-2">
             {i18n.t('settings.secondaryLanguage.title')}
           </SectionLabel>
-          <div className="mb-2 text-label text-[var(--c-fg-muted)]">
+          <div className="mb-2 text-old-label text-[var(--c-fg-muted)]">
             {i18n.t('settings.secondaryLanguage.hint')}
           </div>
           <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
@@ -280,7 +280,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
             {i18n.t('settings.about.title')}
           </SectionLabel>
           <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
-            <div className="flex items-baseline justify-between text-label">
+            <div className="flex items-baseline justify-between text-old-label">
               <span className="text-[var(--c-fg-muted)]">
                 {i18n.t('settings.about.workspace')}
               </span>
@@ -289,7 +289,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
               </span>
             </div>
             {(session?.roleSlugs ?? []).length > 0 ? (
-              <div className="flex items-baseline justify-between text-label">
+              <div className="flex items-baseline justify-between text-old-label">
                 <span className="text-[var(--c-fg-muted)]">
                   {i18n.t('settings.about.role')}
                 </span>
@@ -298,7 +298,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
                 </span>
               </div>
             ) : null}
-            <div className="flex items-baseline justify-between text-label">
+            <div className="flex items-baseline justify-between text-old-label">
               <span className="text-[var(--c-fg-muted)]">
                 {i18n.t('settings.about.build')}
               </span>

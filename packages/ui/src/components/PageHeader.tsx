@@ -25,11 +25,11 @@ export function PageHeader({ title, subtitle, actions, className }: PageHeaderPr
       )}
     >
       <div className="min-w-0 flex-1 basis-[14rem]">
-        <h1 className="truncate text-h1 font-semibold leading-[1.15] text-[var(--c-fg)]">
+        <h1 className="truncate text-old-h1 font-semibold leading-[1.15] text-[var(--c-fg)]">
           {title}
         </h1>
         {subtitle ? (
-          <p className="mt-0.5 truncate text-body-sm text-[var(--c-fg-muted)]">
+          <p className="mt-0.5 truncate text-old-body-sm text-[var(--c-fg-muted)]">
             {subtitle}
           </p>
         ) : null}

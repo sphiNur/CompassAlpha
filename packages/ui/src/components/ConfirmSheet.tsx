@@ -113,12 +113,12 @@ export function ConfirmSheet({
       <div className="flex flex-col gap-3 py-3">
         {banner}
         {body ? (
-          <p className="whitespace-pre-line text-body leading-snug text-[var(--c-fg-muted)]">
+          <p className="whitespace-pre-line text-old-body leading-snug text-[var(--c-fg-muted)]">
             {body}
           </p>
         ) : null}
         {requireReason ? (
-          <label className="block text-label font-semibold text-[var(--c-fg-muted)]">
+          <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
             {reasonLabel ?? 'Reason'}
             <Input
               className="mt-1"

@@ -1635,7 +1635,7 @@ export function RunPage() {
                 })
               }
               title={i18n.t('run.action.addItem.title')}
-              className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-action)] px-2.5 py-0.5 text-label font-semibold text-[var(--c-action-fg)] active:opacity-70"
+              className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-action)] px-2.5 py-0.5 text-old-label font-semibold text-[var(--c-action-fg)] active:opacity-70"
             >
               {i18n.t('run.action.addItem.button')}
             </button>
@@ -1650,11 +1650,11 @@ export function RunPage() {
               3 days old and still `purchasing`, with nothing anywhere
               saying so; a purchaser opening the app can't tell an active
               trip from one somebody forgot to close. */}
-          <span className="min-w-0 flex-1 truncate text-body font-semibold tabular-nums text-[var(--c-fg)]">
+          <span className="min-w-0 flex-1 truncate text-old-body font-semibold tabular-nums text-[var(--c-fg)]">
             #{activeRun.runIndex + 1} · {runSubtitle}
           </span>
           {runAgeDays > 0 ? (
-            <span className="shrink-0 whitespace-nowrap rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-label text-[var(--c-warning-fg)]">
+            <span className="shrink-0 whitespace-nowrap rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-old-label text-[var(--c-warning-fg)]">
               {i18n.t('run.label.staleRun', { days: runAgeDays })}
             </span>
           ) : null}

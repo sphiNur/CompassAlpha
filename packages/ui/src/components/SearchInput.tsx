@@ -53,14 +53,14 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
         type="search"
         value={value}
         onChange={onChange}
-        // M3.15 (2026-05-16): h-10 (40 px) → h-9 (36 px), text-body
-        // (13 px) → text-body-sm (12 px). Search lives at the top of
+        // M3.15 (2026-05-16): h-10 (40 px) → h-9 (36 px), text-old-body
+        // (13 px) → text-old-body-sm (12 px). Search lives at the top of
         // OrderPage / AdminPage SKU lists; on a 5–6" Android screen
         // the original 40 px input ate 7% of the viewport before the
         // first row appeared. The 4 px lift gets one extra row on
         // screen and matches the bottom-nav rhythm the user wants.
         className={cn(
-          'h-[var(--control-h-sm)] w-full min-w-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] pl-9 pr-10 text-body-sm',
+          'h-[var(--control-h-sm)] w-full min-w-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] pl-9 pr-10 text-old-body-sm',
           'text-[var(--c-fg)] placeholder:text-[var(--c-fg-subtle)]',
           'outline-none ring-hairline',
           'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',

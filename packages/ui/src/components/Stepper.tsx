@@ -22,7 +22,7 @@ export function Stepper({ steps, currentIndex, className }: StepperProps) {
           <li key={s.key} className="flex flex-1 items-center gap-2 last:flex-none">
             <div
               className={cn(
-                'flex h-7 w-7 items-center justify-center rounded-full text-label font-semibold',
+                'flex h-7 w-7 items-center justify-center rounded-full text-old-label font-semibold',
                 done && 'bg-[var(--c-success)] text-[var(--c-fg-inverse)]',
                 active && 'bg-[var(--c-action)] text-[var(--c-action-fg)] ring-2 ring-[var(--c-action)] ring-offset-2 ring-offset-[var(--c-bg)]',
                 !done && !active && 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)] ring-hairline',
@@ -31,7 +31,7 @@ export function Stepper({ steps, currentIndex, className }: StepperProps) {
             >
               {done ? <span aria-hidden>✓</span> : i + 1}
             </div>
-            <span className={cn('text-body-sm', active ? 'font-semibold text-[var(--c-fg)]' : 'text-[var(--c-fg-muted)]')}>
+            <span className={cn('text-old-body-sm', active ? 'font-semibold text-[var(--c-fg)]' : 'text-[var(--c-fg-muted)]')}>
               {s.label}
             </span>
             {i < steps.length - 1 ? (

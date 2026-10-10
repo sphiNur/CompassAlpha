@@ -34,7 +34,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
       rows={rows}
       className={cn(
         'w-full resize-none rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2',
-        'text-body leading-snug text-[var(--c-fg)]',
+        'text-old-body leading-snug text-[var(--c-fg)]',
         'placeholder:text-[var(--c-fg-subtle)]',
         'outline-none ring-hairline',
         'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',

@@ -339,8 +339,8 @@ export function AuthGate({ children }: AuthGateProps) {
     const showSignInButton = !showBrowserLogin && !showDevLogin;
     return (
       <div className="flex h-full flex-col items-center gap-4 overflow-y-auto px-6 py-8 text-center">
-        <h1 className="text-display font-semibold">Compass</h1>
-        <p className="text-body text-[var(--c-fg-muted)]">{i18n.t('auth.shareThisId')}</p>
+        <h1 className="text-old-display font-semibold">Compass</h1>
+        <p className="text-old-body text-[var(--c-fg-muted)]">{i18n.t('auth.shareThisId')}</p>
         {authWaitTimedOut ? (
           <Banner tone="warn" title="登录等待时间过长">
             {loginDiagnosticText(loginModes.data, loginModes.error?.message)}
@@ -402,15 +402,15 @@ export function AuthGate({ children }: AuthGateProps) {
             }}
           >
             <div className="text-center">
-              <div className="text-h3 font-semibold text-[var(--c-fg)]">
+              <div className="text-old-h3 font-semibold text-[var(--c-fg)]">
                 开发/测试浏览器登录
               </div>
-              <p className="mt-1 text-body-sm text-[var(--c-fg-muted)]">
+              <p className="mt-1 text-old-body-sm text-[var(--c-fg-muted)]">
                 仅限服务端白名单人员，正式发布环境不可用。
               </p>
             </div>
             <label className="block">
-              <span className="mb-1 block text-label font-semibold text-[var(--c-fg-muted)]">
+              <span className="mb-1 block text-old-label font-semibold text-[var(--c-fg-muted)]">
                 Telegram ID
               </span>
               <Input
@@ -423,7 +423,7 @@ export function AuthGate({ children }: AuthGateProps) {
               />
             </label>
             <label className="block">
-              <span className="mb-1 block text-label font-semibold text-[var(--c-fg-muted)]">
+              <span className="mb-1 block text-old-label font-semibold text-[var(--c-fg-muted)]">
                 访问码
               </span>
               <Input
@@ -550,8 +550,8 @@ function DevPersonaPicker({
     <section className="mt-2 flex w-full max-w-sm flex-col gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] p-4 text-left ring-hairline">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-h3 font-semibold text-[var(--c-fg)]">开发测试身份登录</div>
-          <p className="mt-1 text-body-sm text-[var(--c-fg-muted)]">
+          <div className="text-old-h3 font-semibold text-[var(--c-fg)]">开发测试身份登录</div>
+          <p className="mt-1 text-old-body-sm text-[var(--c-fg-muted)]">
             只在本地 development 环境显示，用真实成员权限进入前端。
           </p>
         </div>
@@ -592,17 +592,17 @@ function DevPersonaPicker({
                 className="press w-full rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 text-left ring-hairline disabled:opacity-50"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0 truncate text-body font-semibold text-[var(--c-fg)]">
+                  <div className="min-w-0 truncate text-old-body font-semibold text-[var(--c-fg)]">
                     {persona.displayName}
                   </div>
-                  <div className="shrink-0 rounded-full bg-[var(--c-surface)] px-2 py-0.5 text-label font-semibold text-[var(--c-fg-muted)] ring-hairline">
+                  <div className="shrink-0 rounded-full bg-[var(--c-surface)] px-2 py-0.5 text-old-label font-semibold text-[var(--c-fg-muted)] ring-hairline">
                     {persona.isAdmin ? 'Admin' : `R${persona.maxRank}`}
                   </div>
                 </div>
-                <div className="mt-1 truncate text-body-sm text-[var(--c-fg-muted)]">
+                <div className="mt-1 truncate text-old-body-sm text-[var(--c-fg-muted)]">
                   {persona.orgName} · {roles}
                 </div>
-                <div className="mt-0.5 truncate text-label text-[var(--c-fg-muted)]">
+                <div className="mt-0.5 truncate text-old-label text-[var(--c-fg-muted)]">
                   {stores} · {persona.permissionCount} permissions
                   {persona.tgUserId ? ` · TG ${persona.tgUserId}` : ''}
                 </div>
@@ -648,14 +648,14 @@ function OnboardingScreen() {
   return (
     <div className="flex h-full flex-col px-6 pt-12 pb-8">
       <div className="flex-1 flex flex-col justify-center gap-4">
-        <h1 className="text-h1 font-semibold leading-tight text-[var(--c-fg)]">
+        <h1 className="text-old-h1 font-semibold leading-tight text-[var(--c-fg)]">
           {i18n.t('auth.onboarding.title')}
         </h1>
-        <p className="text-body leading-relaxed text-[var(--c-fg-muted)]">
+        <p className="text-old-body leading-relaxed text-[var(--c-fg-muted)]">
           {i18n.t('auth.onboarding.body')}
         </p>
         <div>
-          <label className="block text-label font-semibold text-[var(--c-fg-muted)]">
+          <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
             {i18n.t('auth.onboarding.nameLabel')}
           </label>
           <Input
@@ -705,14 +705,14 @@ function NoAccessScreen() {
   const tgUserId = tg?.initDataUnsafe?.user?.id;
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
-      <h1 className="text-h1 font-semibold">{i18n.t('auth.noAccess.title')}</h1>
-      <p className="text-body text-[var(--c-fg-muted)]">{i18n.t('auth.noAccess.body')}</p>
-      <p className="text-body-sm text-[var(--c-fg-muted)]">{i18n.t('auth.shareThisId')}</p>
+      <h1 className="text-old-h1 font-semibold">{i18n.t('auth.noAccess.title')}</h1>
+      <p className="text-old-body text-[var(--c-fg-muted)]">{i18n.t('auth.noAccess.body')}</p>
+      <p className="text-old-body-sm text-[var(--c-fg-muted)]">{i18n.t('auth.shareThisId')}</p>
       {tgUserId ? (
         <button
           type="button"
           onClick={() => navigator.clipboard?.writeText(String(tgUserId))}
-          className="press rounded-full bg-[var(--c-surface-2)] px-4 py-2 font-mono text-body ring-hairline"
+          className="press rounded-full bg-[var(--c-surface-2)] px-4 py-2 font-mono text-old-body ring-hairline"
         >
           {tgUserId}
         </button>

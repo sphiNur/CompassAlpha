@@ -101,7 +101,7 @@ export function PhotoCapture({
 
   return (
     <div className={cn('flex flex-col gap-2', className)}>
-      <span className="text-label font-semibold text-[var(--c-fg-muted)]">{effectiveLabel}</span>
+      <span className="text-old-label font-semibold text-[var(--c-fg-muted)]">{effectiveLabel}</span>
       {value ? (
         <div className="relative">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -133,13 +133,13 @@ export function PhotoCapture({
             busy && 'opacity-60',
           )}
         >
-          <span className="text-h1" aria-hidden>
+          <span className="text-old-h1" aria-hidden>
             📷
           </span>
-          <span className="text-body-sm">{busy ? labels.uploading : labels.photoHint}</span>
+          <span className="text-old-body-sm">{busy ? labels.uploading : labels.photoHint}</span>
         </button>
       )}
-      {error ? <span className="text-label text-[var(--c-danger)]">{error}</span> : null}
+      {error ? <span className="text-old-label text-[var(--c-danger)]">{error}</span> : null}
       <input
         ref={inputRef}
         type="file"

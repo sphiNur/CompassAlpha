@@ -74,7 +74,7 @@ export function ActivitySection() {
         )}
       </DataState>
 
-      <h2 className="mt-6 mb-2 text-h2 font-semibold text-[var(--c-fg)]">Recent events</h2>
+      <h2 className="mt-6 mb-2 text-old-h2 font-semibold text-[var(--c-fg)]">Recent events</h2>
       <DataState
         query={eventsQuery}
         emptyWhen={(d) => d.length === 0}
@@ -109,7 +109,7 @@ export function ActivitySection() {
                 >
                   <div className="flex items-baseline justify-between gap-2">
                     <span
-                      className="font-mono text-label font-semibold text-[var(--c-fg)]"
+                      className="font-mono text-old-label font-semibold text-[var(--c-fg)]"
                       title={
                         claimReason === 'override'
                           ? 'Another approver took over this claim — see banner on ApprovalPage'
@@ -123,24 +123,24 @@ export function ActivitySection() {
                         <span
                           className={
                             isIntervention
-                              ? 'ml-1.5 text-tiny font-medium uppercase tracking-wider text-[oklch(35%_0.16_75)]'
-                              : 'ml-1.5 text-tiny font-medium uppercase tracking-wider text-[var(--c-fg-muted)]'
+                              ? 'ml-1.5 text-old-tiny font-medium uppercase tracking-wider text-[oklch(35%_0.16_75)]'
+                              : 'ml-1.5 text-old-tiny font-medium uppercase tracking-wider text-[var(--c-fg-muted)]'
                           }
                         >
                           · {claimReason}
                         </span>
                       ) : null}
                     </span>
-                    <span className="font-mono text-tiny text-[var(--c-fg-muted)]">
+                    <span className="font-mono text-old-tiny text-[var(--c-fg-muted)]">
                       seq {e.seq}
                     </span>
                   </div>
-                  <div className="flex items-baseline justify-between gap-2 text-label text-[var(--c-fg-muted)]">
+                  <div className="flex items-baseline justify-between gap-2 text-old-label text-[var(--c-fg-muted)]">
                     <span className="truncate">
                       {e.actor?.displayName ?? 'system'}
                       {e.actor?.tgUsername ? ` · @${e.actor.tgUsername}` : ''}
                     </span>
-                    <span className="font-mono text-tiny">
+                    <span className="font-mono text-old-tiny">
                       {/* 2026-07-30: `[]` meant "browser locale". */}
                       {dateFmt.dateTime(e.occurredAt)}
                     </span>
@@ -157,7 +157,7 @@ export function ActivitySection() {
           <button
             type="button"
             onClick={() => setShowDebug(!showDebug)}
-            className="press mt-6 inline-flex items-center gap-1 text-label text-[var(--c-fg-muted)]"
+            className="press mt-6 inline-flex items-center gap-1 text-old-label text-[var(--c-fg-muted)]"
           >
             {showDebug ? '▾' : '▸'} Debug console
           </button>
@@ -255,7 +255,7 @@ export function HistorySection() {
                       </Badge>
                     </CardHeader>
                   </button>
-                  <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-2 text-label text-[var(--c-fg-muted)]">
+                  <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-2 text-old-label text-[var(--c-fg-muted)]">
                     <span>
                       {i18n.t('ops.history.skuTotalLine', {
                         n: r.skuCount,
@@ -284,7 +284,7 @@ export function HistorySection() {
                         {r.contributors.map((c) => (
                           <li
                             key={c.memberId}
-                            className="flex items-baseline justify-between text-body"
+                            className="flex items-baseline justify-between text-old-body"
                           >
                             <span className="truncate text-[var(--c-fg)]">
                               {c.displayName ?? c.memberId.slice(0, 6)}
@@ -296,7 +296,7 @@ export function HistorySection() {
                         ))}
                       </ul>
                       {r.rejectReason ? (
-                        <p className="mt-3 text-label text-[var(--c-danger)]">
+                        <p className="mt-3 text-old-label text-[var(--c-danger)]">
                           {i18n.t('ops.history.rejectionReason', {
                             reason: r.rejectReason,
                           })}
@@ -425,13 +425,13 @@ function TargetedPurgeBrowser() {
           type="date"
           value={date}
           onChange={(e) => setDate(e.target.value)}
-          className="h-10 flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 text-body ring-hairline"
+          className="h-10 flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 text-old-body ring-hairline"
         />
         <button
           type="button"
           onClick={() => setTab('orders')}
           className={
-            'press rounded-[var(--r-pill)] px-3 py-1.5 text-label font-medium ring-hairline ' +
+            'press rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium ring-hairline ' +
             (tab === 'orders'
               ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
               : 'bg-transparent text-[var(--c-fg-muted)]')
@@ -443,7 +443,7 @@ function TargetedPurgeBrowser() {
           type="button"
           onClick={() => setTab('runs')}
           className={
-            'press rounded-[var(--r-pill)] px-3 py-1.5 text-label font-medium ring-hairline ' +
+            'press rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium ring-hairline ' +
             (tab === 'runs'
               ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
               : 'bg-transparent text-[var(--c-fg-muted)]')
@@ -477,14 +477,14 @@ function TargetedPurgeBrowser() {
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline gap-2">
-                        <span className="truncate text-body font-semibold text-[var(--c-fg)]">
+                        <span className="truncate text-old-body font-semibold text-[var(--c-fg)]">
                           {label}
                         </span>
                         {sess.isMine ? (
                           <Badge tone="info">{i18n.t('admin.label.you')}</Badge>
                         ) : null}
                       </div>
-                      <div className="mt-0.5 text-label text-[var(--c-fg-muted)]">
+                      <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
                         {i18n.t('ops.purge.sessionMeta', {
                           status: i18n.t(
                             ('order.status.' +
@@ -498,7 +498,7 @@ function TargetedPurgeBrowser() {
                       </div>
                     </div>
                     {inRun ? (
-                      <span className="text-tiny text-[var(--c-fg-muted)]">in&nbsp;run</span>
+                      <span className="text-old-tiny text-[var(--c-fg-muted)]">in&nbsp;run</span>
                     ) : (
                       <Button
                         size="sm"
@@ -545,14 +545,14 @@ function TargetedPurgeBrowser() {
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline gap-2">
-                        <span className="truncate text-body font-semibold text-[var(--c-fg)]">
+                        <span className="truncate text-old-body font-semibold text-[var(--c-fg)]">
                           {label}
                         </span>
                         {r.purchaserIsMe ? (
                           <Badge tone="info">{i18n.t('admin.label.you')}</Badge>
                         ) : null}
                       </div>
-                      <div className="mt-0.5 text-label text-[var(--c-fg-muted)]">
+                      <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
                         {i18n.t('ops.purge.runMeta', {
                           status: i18n.t(
                             ('run.status.' + r.status) as Parameters<typeof i18n.t>[0],
@@ -616,7 +616,7 @@ function TargetedPurgeBrowser() {
       >
         <div className="flex flex-col gap-3 py-3">
           {sessionDryRun.isPending ? (
-            <div className="flex items-center gap-2 text-body-sm text-[var(--c-fg-muted)]">
+            <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
               <Spinner size={14} /> Counting…
             </div>
           ) : sessionTarget?.preview ? (
@@ -659,7 +659,7 @@ function TargetedPurgeBrowser() {
       >
         <div className="flex flex-col gap-3 py-3">
           {runDryRun.isPending ? (
-            <div className="flex items-center gap-2 text-body-sm text-[var(--c-fg-muted)]">
+            <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
               <Spinner size={14} /> Counting…
             </div>
           ) : runTarget?.preview ? (
@@ -681,7 +681,7 @@ function TargetedPurgeBrowser() {
 function CascadePreview({ byTable, total }: { byTable: Record<string, number>; total: number }) {
   return (
     <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
-      <div className="text-body font-semibold text-[var(--c-fg)]">
+      <div className="text-old-body font-semibold text-[var(--c-fg)]">
         {total} rows would be deleted
       </div>
       <ul className="mt-2 flex flex-col gap-1">
@@ -691,7 +691,7 @@ function CascadePreview({ byTable, total }: { byTable: Record<string, number>; t
           .map(([table, n]) => (
             <li
               key={table}
-              className="flex justify-between font-mono text-label text-[var(--c-fg-muted)]"
+              className="flex justify-between font-mono text-old-label text-[var(--c-fg-muted)]"
             >
               <span className="truncate">{table}</span>
               <span className="tabular-nums">{n}</span>
@@ -757,7 +757,7 @@ export function AdminAuditSection() {
             type="button"
             onClick={() => setStoreFilter(null)}
             className={
-              'rounded-full px-3 py-1 text-label font-medium ring-hairline ' +
+              'rounded-full px-3 py-1 text-old-label font-medium ring-hairline ' +
               (storeFilter === null
                 ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
                 : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]')
@@ -771,7 +771,7 @@ export function AdminAuditSection() {
               type="button"
               onClick={() => setStoreFilter(st.id)}
               className={
-                'rounded-full px-3 py-1 text-label font-medium ring-hairline ' +
+                'rounded-full px-3 py-1 text-old-label font-medium ring-hairline ' +
                 (storeFilter === st.id
                   ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
                   : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]')
@@ -822,9 +822,9 @@ export function AdminAuditSection() {
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-baseline gap-2">
                         <Badge tone={tone}>{verb}</Badge>
-                        <span className="text-body font-semibold text-[var(--c-fg)]">{obj}</span>
+                        <span className="text-old-body font-semibold text-[var(--c-fg)]">{obj}</span>
                         {r.resourceId ? (
-                          <span className="font-mono text-label text-[var(--c-fg-muted)]">
+                          <span className="font-mono text-old-label text-[var(--c-fg-muted)]">
                             {r.resourceId.slice(0, 8)}…
                           </span>
                         ) : null}
@@ -836,7 +836,7 @@ export function AdminAuditSection() {
                           </Badge>
                         ) : null}
                       </div>
-                      <div className="mt-1 text-label text-[var(--c-fg-muted)]">
+                      <div className="mt-1 text-old-label text-[var(--c-fg-muted)]">
                         {r.actor?.displayName ?? 'unknown'}
                         {r.actor?.tgUsername ? ` · @${r.actor.tgUsername}` : ''}
                         {' · '}
@@ -849,10 +849,10 @@ export function AdminAuditSection() {
                           like a debugger artifact to non-tech users. */}
                       {isSuperAdmin ? (
                         <details className="mt-2">
-                          <summary className="cursor-pointer text-label font-medium text-[var(--c-fg-muted)]">
+                          <summary className="cursor-pointer text-old-label font-medium text-[var(--c-fg-muted)]">
                             {i18n.t('ops.audit.inputs')}
                           </summary>
-                          <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2 py-1 font-mono text-label text-[var(--c-fg-muted)]">
+                          <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2 py-1 font-mono text-old-label text-[var(--c-fg-muted)]">
                             {JSON.stringify(r.inputs, null, 2)}
                           </pre>
                         </details>
@@ -972,17 +972,17 @@ export function PriceReportSection() {
                 className="flex flex-col gap-1 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2"
               >
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="truncate text-body font-semibold text-[var(--c-fg)]">
+                  <span className="truncate text-old-body font-semibold text-[var(--c-fg)]">
                     {r.name}
                   </span>
-                  <span className="font-mono text-body tabular-nums text-[var(--c-fg)]">
+                  <span className="font-mono text-old-body tabular-nums text-[var(--c-fg)]">
                     {r.last !== null ? formatMoney(r.last) : '—'}{' '}
-                    <span className="text-label font-normal text-[var(--c-fg-muted)]">
+                    <span className="text-old-label font-normal text-[var(--c-fg-muted)]">
                       / {unitLabel(r.unit)}
                     </span>
                   </span>
                 </div>
-                <div className="flex flex-wrap items-baseline gap-3 text-label text-[var(--c-fg-muted)]">
+                <div className="flex flex-wrap items-baseline gap-3 text-old-label text-[var(--c-fg-muted)]">
                   <span>
                     7d avg{' '}
                     <span className="font-mono tabular-nums text-[var(--c-fg)]">
@@ -1241,7 +1241,7 @@ export function FinanceSection() {
               onChange={(e) => setStartDate(e.target.value)}
               aria-label={i18n.t('finance.range.start')}
             />
-            <span className="text-body text-[var(--c-fg-muted)]">—</span>
+            <span className="text-old-body text-[var(--c-fg-muted)]">—</span>
             <Input
               type="date"
               value={endDate}
@@ -1250,7 +1250,7 @@ export function FinanceSection() {
             />
           </div>
         ) : (
-          <div className="text-label tabular-nums text-[var(--c-fg-muted)]">
+          <div className="text-old-label tabular-nums text-[var(--c-fg-muted)]">
             {startDate} → {endDate}
           </div>
         )}
@@ -1261,28 +1261,28 @@ export function FinanceSection() {
         <div className="mb-3 grid grid-cols-3 gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3">
           <div>
             <SectionLabel padded={false}>{i18n.t('run.label.paymentCash')}</SectionLabel>
-            <div className="font-mono text-h2 font-semibold tabular-nums">
+            <div className="font-mono text-old-h2 font-semibold tabular-nums">
               {formatMoney(totalsQuery.data.totalCash)}
             </div>
-            <div className="text-label text-[var(--c-fg-muted)]">
+            <div className="text-old-label text-[var(--c-fg-muted)]">
               {totalsQuery.data.cashLines} {i18n.t('finance.label.lines')}
             </div>
           </div>
           <div>
             <SectionLabel padded={false}>{i18n.t('run.label.paymentTransfer')}</SectionLabel>
-            <div className="font-mono text-h2 font-semibold tabular-nums">
+            <div className="font-mono text-old-h2 font-semibold tabular-nums">
               {formatMoney(totalsQuery.data.totalTransfer)}
             </div>
-            <div className="text-label text-[var(--c-fg-muted)]">
+            <div className="text-old-label text-[var(--c-fg-muted)]">
               {totalsQuery.data.transferLines} {i18n.t('finance.label.lines')}
             </div>
           </div>
           <div>
             <SectionLabel padded={false}>Σ {i18n.t('finance.label.total')}</SectionLabel>
-            <div className="font-mono text-h2 font-semibold tabular-nums">
+            <div className="font-mono text-old-h2 font-semibold tabular-nums">
               {formatMoney(totalsQuery.data.total)}
             </div>
-            <div className="text-label text-[var(--c-fg-muted)]">
+            <div className="text-old-label text-[var(--c-fg-muted)]">
               {totalsQuery.data.runCount} {i18n.t('finance.label.runs')}
             </div>
           </div>
@@ -1342,13 +1342,13 @@ export function FinanceSection() {
                   onClick={() => setExpanded(isOpen ? null : g.date)}
                   className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left active:opacity-80"
                 >
-                  <span className="text-body font-semibold tabular-nums">{g.date}</span>
-                  <span className="font-mono text-body tabular-nums">
+                  <span className="text-old-body font-semibold tabular-nums">{g.date}</span>
+                  <span className="font-mono text-old-body tabular-nums">
                     {formatMoney(g.cash + g.transfer)}
                   </span>
                 </button>
                 {mixed ? (
-                  <div className="flex items-baseline gap-3 px-3 pb-1.5 text-label text-[var(--c-fg-muted)]">
+                  <div className="flex items-baseline gap-3 px-3 pb-1.5 text-old-label text-[var(--c-fg-muted)]">
                     <span>
                       {i18n.t('run.label.paymentCash')} {formatMoney(g.cash)}
                     </span>
@@ -1370,17 +1370,17 @@ export function FinanceSection() {
                           className="flex flex-col gap-0.5 border-b border-[var(--c-divider)] px-3 py-2 last:border-b-0"
                         >
                           <div className="flex items-baseline justify-between gap-2">
-                            <span className="truncate text-body font-medium">
+                            <span className="truncate text-old-body font-medium">
                               {l.paymentMethod === 'transfer'
                                 ? i18n.t('run.label.paymentTransfer') + ' '
                                 : i18n.t('run.label.paymentCash') + ' '}
                               {skuName}
                             </span>
-                            <span className="font-mono text-body tabular-nums">
+                            <span className="font-mono text-old-body tabular-nums">
                               {formatMoney(l.lineTotal)}
                             </span>
                           </div>
-                          <div className="flex items-baseline gap-2 text-label text-[var(--c-fg-muted)]">
+                          <div className="flex items-baseline gap-2 text-old-label text-[var(--c-fg-muted)]">
                             <span>{store}</span>
                             <span>· {supplier}</span>
                             <span className="ml-auto font-mono tabular-nums">
@@ -1415,13 +1415,13 @@ export function FinanceSection() {
                   onClick={() => setExpanded(isOpen ? null : key)}
                   className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left active:opacity-80"
                 >
-                  <span className="truncate text-body font-semibold">{name}</span>
-                  <span className="font-mono text-body tabular-nums">
+                  <span className="truncate text-old-body font-semibold">{name}</span>
+                  <span className="font-mono text-old-body tabular-nums">
                     {formatMoney(g.cash + g.transfer)}
                   </span>
                 </button>
                 {mixed ? (
-                  <div className="flex items-baseline gap-3 px-3 pb-1.5 text-label text-[var(--c-fg-muted)]">
+                  <div className="flex items-baseline gap-3 px-3 pb-1.5 text-old-label text-[var(--c-fg-muted)]">
                     <span>
                       {i18n.t('run.label.paymentCash')} {formatMoney(g.cash)}
                     </span>
@@ -1438,7 +1438,7 @@ export function FinanceSection() {
                       return (
                         <li
                           key={`${l.runId}-${l.skuId}-${l.storeId}-${i}`}
-                          className="flex items-baseline justify-between gap-2 border-b border-[var(--c-divider)] px-3 py-1.5 text-label last:border-b-0"
+                          className="flex items-baseline justify-between gap-2 border-b border-[var(--c-divider)] px-3 py-1.5 text-old-label last:border-b-0"
                         >
                           <span className="truncate">
                             {l.runDate} ·{' '}
@@ -1473,13 +1473,13 @@ export function FinanceSection() {
                   onClick={() => setExpanded(isOpen ? null : g.storeId)}
                   className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left active:opacity-80"
                 >
-                  <span className="truncate text-body font-semibold">{name}</span>
-                  <span className="font-mono text-body tabular-nums">
+                  <span className="truncate text-old-body font-semibold">{name}</span>
+                  <span className="font-mono text-old-body tabular-nums">
                     {formatMoney(g.cash + g.transfer)}
                   </span>
                 </button>
                 {mixed ? (
-                  <div className="flex items-baseline gap-3 px-3 pb-1.5 text-label text-[var(--c-fg-muted)]">
+                  <div className="flex items-baseline gap-3 px-3 pb-1.5 text-old-label text-[var(--c-fg-muted)]">
                     <span>
                       {i18n.t('run.label.paymentCash')} {formatMoney(g.cash)}
                     </span>
@@ -1496,7 +1496,7 @@ export function FinanceSection() {
                       return (
                         <li
                           key={`${l.runId}-${l.skuId}-${l.storeId}-${i}`}
-                          className="flex items-baseline justify-between gap-2 border-b border-[var(--c-divider)] px-3 py-1.5 text-label last:border-b-0"
+                          className="flex items-baseline justify-between gap-2 border-b border-[var(--c-divider)] px-3 py-1.5 text-old-label last:border-b-0"
                         >
                           <span className="truncate">
                             {l.runDate} ·{' '}
@@ -1594,10 +1594,10 @@ export function MaintenanceSection() {
       <Card>
         <div className="flex flex-col gap-3 px-4 py-4">
           <div>
-            <div className="text-h2 font-semibold text-[var(--c-fg)]">
+            <div className="text-old-h2 font-semibold text-[var(--c-fg)]">
               {i18n.t('ops.maint.targetedTitle')}
             </div>
-            <p className="mt-0.5 text-body-sm text-[var(--c-fg-muted)]">
+            <p className="mt-0.5 text-old-body-sm text-[var(--c-fg-muted)]">
               {i18n.t('ops.maint.targetedBody')}
             </p>
           </div>
@@ -1610,10 +1610,10 @@ export function MaintenanceSection() {
         <Card>
           <div className="flex flex-col gap-3 px-4 py-4">
             <div>
-              <div className="text-h2 font-semibold text-[var(--c-fg)]">
+              <div className="text-old-h2 font-semibold text-[var(--c-fg)]">
                 {i18n.t('ops.maint.resetTodayTitle')}
               </div>
-              <p className="mt-0.5 text-body-sm text-[var(--c-fg-muted)]">
+              <p className="mt-0.5 text-old-body-sm text-[var(--c-fg-muted)]">
                 {i18n.t('ops.maint.resetTodayBody', { date: todayIso() })}
               </p>
             </div>
@@ -1634,10 +1634,10 @@ export function MaintenanceSection() {
         <Card>
           <div className="flex flex-col gap-3 px-4 py-4">
             <div>
-              <div className="text-h2 font-semibold text-[var(--c-fg)]">
+              <div className="text-old-h2 font-semibold text-[var(--c-fg)]">
                 {i18n.t('ops.maint.resetDateTitle')}
               </div>
-              <p className="mt-0.5 text-body-sm text-[var(--c-fg-muted)]">
+              <p className="mt-0.5 text-old-body-sm text-[var(--c-fg-muted)]">
                 {i18n.t('ops.maint.resetDateBody')}
               </p>
             </div>
@@ -1646,7 +1646,7 @@ export function MaintenanceSection() {
                 type="date"
                 value={dateInput}
                 onChange={(e) => setDateInput(e.target.value)}
-                className="h-11 flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-h3 ring-hairline"
+                className="h-11 flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3 ring-hairline"
               />
               <Button
                 size="sm"
@@ -1671,10 +1671,10 @@ export function MaintenanceSection() {
           <Card>
             <div className="flex flex-col gap-3 px-4 py-4">
               <div>
-                <div className="text-h2 font-semibold text-[var(--c-fg)]">
+                <div className="text-old-h2 font-semibold text-[var(--c-fg)]">
                   {i18n.t('ops.maint.purgeAllTitle')}
                 </div>
-                <p className="mt-0.5 text-body-sm text-[var(--c-fg-muted)]">
+                <p className="mt-0.5 text-old-body-sm text-[var(--c-fg-muted)]">
                   {i18n.t('ops.maint.purgeAllBody')}
                 </p>
               </div>
@@ -1721,7 +1721,7 @@ export function MaintenanceSection() {
         <div className="flex flex-col gap-3 py-3">
           {datePreview ? (
             <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
-              <div className="text-body font-semibold text-[var(--c-fg)]">
+              <div className="text-old-body font-semibold text-[var(--c-fg)]">
                 {datePreview.total === 0
                   ? `Nothing on ${datePreview.date} — already clean.`
                   : `${datePreview.total} rows from ${datePreview.date}`}
@@ -1734,7 +1734,7 @@ export function MaintenanceSection() {
                     .map(([table, n]) => (
                       <li
                         key={table}
-                        className="flex justify-between font-mono text-label text-[var(--c-fg-muted)]"
+                        className="flex justify-between font-mono text-old-label text-[var(--c-fg-muted)]"
                       >
                         <span className="truncate">{table}</span>
                         <span className="tabular-nums">{n}</span>
@@ -1771,7 +1771,7 @@ export function MaintenanceSection() {
         <div className="flex flex-col gap-3 py-3">
           {allDryRun.data ? (
             <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
-              <div className="text-body font-semibold text-[var(--c-fg)]">
+              <div className="text-old-body font-semibold text-[var(--c-fg)]">
                 {allDryRun.data.total} rows would be deleted
               </div>
               <ul className="mt-2 flex flex-col gap-1">
@@ -1781,7 +1781,7 @@ export function MaintenanceSection() {
                   .map(([table, n]) => (
                     <li
                       key={table}
-                      className="flex justify-between font-mono text-label text-[var(--c-fg-muted)]"
+                      className="flex justify-between font-mono text-old-label text-[var(--c-fg-muted)]"
                     >
                       <span className="truncate">{table}</span>
                       <span className="tabular-nums">{n}</span>
@@ -1789,7 +1789,7 @@ export function MaintenanceSection() {
                   ))}
               </ul>
               {allDryRun.data.total === 0 ? (
-                <p className="mt-2 text-label text-[var(--c-fg-muted)]">
+                <p className="mt-2 text-old-label text-[var(--c-fg-muted)]">
                   {i18n.t('ops.maint.nothingToPurge')}
                 </p>
               ) : null}

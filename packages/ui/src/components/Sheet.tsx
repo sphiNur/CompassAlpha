@@ -207,12 +207,12 @@ export function Sheet({
               aria-hidden
             />
             {title ? (
-              <Dialog.Title className="mt-3 text-center text-h2 font-semibold">
+              <Dialog.Title className="mt-3 text-center text-old-h2 font-semibold">
                 {title}
               </Dialog.Title>
             ) : null}
             {description ? (
-              <Dialog.Description id="sheet-desc" className="mt-1 text-center text-body-sm text-[var(--c-fg-muted)]">
+              <Dialog.Description id="sheet-desc" className="mt-1 text-center text-old-body-sm text-[var(--c-fg-muted)]">
                 {description}
               </Dialog.Description>
             ) : null}

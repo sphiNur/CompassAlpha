@@ -30,16 +30,16 @@
  */
 const fontSizeScale = {
   // Headings — bake weight + tracking (the whole semantic).
-  display: ['24px', { lineHeight: '1.15', letterSpacing: '0', fontWeight: '600' }],
-  h1: ['19px', { lineHeight: '1.2', letterSpacing: '0', fontWeight: '600' }],
-  h2: ['15px', { lineHeight: '1.25', fontWeight: '600' }],
+  'old-display': ['24px', { lineHeight: '1.15', letterSpacing: '0', fontWeight: '600' }],
+  'old-h1': ['19px', { lineHeight: '1.2', letterSpacing: '0', fontWeight: '600' }],
+  'old-h2': ['15px', { lineHeight: '1.25', fontWeight: '600' }],
   // Body and below — size + line-height only. Caller decides weight.
-  h3: ['14px', { lineHeight: '1.3' }],
-  body: ['13px', { lineHeight: '1.4' }],
-  'body-sm': ['12px', { lineHeight: '1.4' }],
-  label: ['11px', { lineHeight: '1.3' }],
-  meta: ['10px', { lineHeight: '1.3' }],
-  tiny: ['9px', { lineHeight: '1.3' }],
+  'old-h3': ['14px', { lineHeight: '1.3' }],
+  'old-body': ['13px', { lineHeight: '1.4' }],
+  'old-body-sm': ['12px', { lineHeight: '1.4' }],
+  'old-label': ['11px', { lineHeight: '1.3' }],
+  'old-meta': ['10px', { lineHeight: '1.3' }],
+  'old-tiny': ['9px', { lineHeight: '1.3' }],
 };
 
 export default {

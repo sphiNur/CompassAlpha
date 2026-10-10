@@ -48,9 +48,9 @@ export function SectionRow({
       >
         {icon ? <span className={cn('shrink-0', iconColor)}>{icon}</span> : null}
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-h3 font-semibold text-[var(--c-fg)]">{label}</span>
+          <span className="block truncate text-old-h3 font-semibold text-[var(--c-fg)]">{label}</span>
           {hint ? (
-            <span className="mt-0.5 block text-label text-[var(--c-fg-muted)]">{hint}</span>
+            <span className="mt-0.5 block text-old-label text-[var(--c-fg-muted)]">{hint}</span>
           ) : null}
         </span>
         <span aria-hidden className="shrink-0 text-[var(--c-fg-subtle)]">
@@ -100,9 +100,9 @@ export function ListRow({
     <>
       {icon ? <span className="shrink-0 text-[var(--c-action)]">{icon}</span> : null}
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-h3 font-semibold text-[var(--c-fg)]">{label}</span>
+        <span className="block truncate text-old-h3 font-semibold text-[var(--c-fg)]">{label}</span>
         {hint ? (
-          <span className="mt-0.5 block truncate text-label text-[var(--c-fg-muted)]">{hint}</span>
+          <span className="mt-0.5 block truncate text-old-label text-[var(--c-fg-muted)]">{hint}</span>
         ) : null}
       </span>
       {badge ? <span className="shrink-0">{badge}</span> : null}
@@ -147,10 +147,10 @@ export interface DetailRowProps {
 export function DetailRow({ label, value, mono, className }: DetailRowProps) {
   return (
     <div className={cn('flex min-w-0 items-baseline justify-between gap-3', className)}>
-      <span className="min-w-0 text-body-sm text-[var(--c-fg-muted)]">{label}</span>
+      <span className="min-w-0 text-old-body-sm text-[var(--c-fg-muted)]">{label}</span>
       <span
         className={cn(
-          'min-w-0 truncate text-right text-body text-[var(--c-fg)]',
+          'min-w-0 truncate text-right text-old-body text-[var(--c-fg)]',
           mono && 'font-mono',
         )}
       >
@@ -183,12 +183,12 @@ export function Tile({ label, value, accent = 'muted', className }: TileProps) {
         : 'text-[var(--c-fg)]';
   return (
     <div className={cn(surfaceClass, 'p-4', className)}>
-      <div className="text-label font-medium uppercase tracking-[0.08em] text-[var(--c-fg-muted)]">
+      <div className="text-old-label font-medium uppercase tracking-[0.08em] text-[var(--c-fg-muted)]">
         {label}
       </div>
       <div
         className={cn(
-          'mt-1 text-display font-semibold leading-tight tabular-nums',
+          'mt-1 text-old-display font-semibold leading-tight tabular-nums',
           valueColor,
         )}
       >
@@ -216,7 +216,7 @@ export function Field({ label, hint, children, className }: FieldProps) {
       <FieldLabel>{label}</FieldLabel>
       <div className="mt-1">{children}</div>
       {hint ? (
-        <span className="mt-1 block text-label text-[var(--c-fg-muted)]">{hint}</span>
+        <span className="mt-1 block text-old-label text-[var(--c-fg-muted)]">{hint}</span>
       ) : null}
     </label>
   );
@@ -224,7 +224,7 @@ export function Field({ label, hint, children, className }: FieldProps) {
 
 /**
  * Field label — the one definition of a form-field label (sentence
- * case, `text-label font-semibold text-fg-muted`). Field uses it; call
+ * case, `text-old-label font-semibold text-fg-muted`). Field uses it; call
  * sites that re-inlined the same span (e.g. ConfirmSheet's reason
  * label) should adopt it so "how a field label looks" lives in one
  * place. Deliberately sentence-case: uppercase eyebrows are
@@ -232,7 +232,7 @@ export function Field({ label, hint, children, className }: FieldProps) {
  */
 export function FieldLabel({ className, children }: { className?: string; children: ReactNode }) {
   return (
-    <span className={cn('block text-label font-semibold text-[var(--c-fg-muted)]', className)}>
+    <span className={cn('block text-old-label font-semibold text-[var(--c-fg-muted)]', className)}>
       {children}
     </span>
   );
@@ -277,11 +277,11 @@ export function PickerRow({ label, hint, selected, disabled, onClick, className 
       )}
     >
       <span className="min-w-0">
-        <span className="block truncate text-body font-semibold">{label}</span>
+        <span className="block truncate text-old-body font-semibold">{label}</span>
         {hint ? (
           <span
             className={cn(
-              'mt-0.5 block truncate text-label',
+              'mt-0.5 block truncate text-old-label',
               selected ? 'opacity-80' : 'text-[var(--c-fg-muted)]',
             )}
           >
@@ -306,11 +306,11 @@ export function PickerRow({ label, hint, selected, disabled, onClick, className 
  * name two incompatible ways.
  *
  * `size` encodes the two deliberate tiers (owner decision, 2026-07-05):
- *   - 'prominent' — text-h2 (15px). Browse/pick surfaces (OrderPage)
+ *   - 'prominent' — text-old-h2 (15px). Browse/pick surfaces (OrderPage)
  *     where the name is the primary thing the user scans (M3.55).
- *   - 'default'   — text-body (13px). Dense/money surfaces (Confirm,
+ *   - 'default'   — text-old-body (13px). Dense/money surfaces (Confirm,
  *     Run) where more rows per screen matters (M2.2).
- * The secondary line is text-label muted in both tiers.
+ * The secondary line is text-old-label muted in both tiers.
  */
 export interface NameCellProps {
   primary: ReactNode;
@@ -323,19 +323,19 @@ export function NameCell({ primary, secondary, size = 'default', className }: Na
   return (
     <div className={cn('min-w-0', className)}>
       {/* No explicit leading on the primary — each tier inherits its
-          size token's line-height (text-h2 → 1.25, text-body → 1.4) so
+          size token's line-height (text-old-h2 → 1.25, text-old-body → 1.4) so
           this matches the hand-rolled markup it replaced byte-for-byte.
           The secondary line stays leading-tight (both originals did). */}
       <div
         className={cn(
           'truncate font-semibold text-[var(--c-fg)]',
-          size === 'prominent' ? 'text-h2' : 'text-body',
+          size === 'prominent' ? 'text-old-h2' : 'text-old-body',
         )}
       >
         {primary}
       </div>
       {secondary ? (
-        <div className="truncate text-label font-normal leading-tight text-[var(--c-fg-subtle)]">
+        <div className="truncate text-old-label font-normal leading-tight text-[var(--c-fg-subtle)]">
           {secondary}
         </div>
       ) : null}

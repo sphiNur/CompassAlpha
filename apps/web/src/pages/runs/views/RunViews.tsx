@@ -40,8 +40,8 @@ import type { ActiveRun } from '../types';
  */
 function GroupCardHeader({ title, meta }: { title: ReactNode; meta: ReactNode }) {
   return (
-    <div className="flex items-baseline justify-between gap-2 px-4 py-1.5 text-label text-[var(--c-fg-muted)]">
-      <span className="truncate text-body font-semibold text-[var(--c-fg)]">{title}</span>
+    <div className="flex items-baseline justify-between gap-2 px-4 py-1.5 text-old-label text-[var(--c-fg-muted)]">
+      <span className="truncate text-old-body font-semibold text-[var(--c-fg)]">{title}</span>
       <span className="tabular-nums">{meta}</span>
     </div>
   );
@@ -129,7 +129,7 @@ export function PerStoreView({
                       {extras.map((e, idx) => (
                         <li
                           key={`${e.name}-${idx}`}
-                          className="flex items-baseline justify-between gap-2 text-body-sm"
+                          className="flex items-baseline justify-between gap-2 text-old-body-sm"
                         >
                           <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">
                             {e.name}
@@ -145,7 +145,7 @@ export function PerStoreView({
                     </ul>
                   ) : null}
                   {storeNote ? (
-                    <div className="mt-1 whitespace-pre-wrap text-body-sm italic leading-snug text-[var(--c-fg-muted)]">
+                    <div className="mt-1 whitespace-pre-wrap text-old-body-sm italic leading-snug text-[var(--c-fg-muted)]">
                       {storeNote}
                     </div>
                   ) : null}
@@ -188,11 +188,11 @@ export function PerStoreView({
                       key={r.skuId}
                       className="flex items-center gap-2 border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0"
                     >
-                      <span aria-hidden className={`shrink-0 text-body ${tone}`}>
+                      <span aria-hidden className={`shrink-0 text-old-body ${tone}`}>
                         {mark}
                       </span>
-                      <span className="min-w-0 flex-1 truncate text-body">{skuName}</span>
-                      <span className="shrink-0 font-mono text-body tabular-nums text-[var(--c-fg-muted)]">
+                      <span className="min-w-0 flex-1 truncate text-old-body">{skuName}</span>
+                      <span className="shrink-0 font-mono text-old-body tabular-nums text-[var(--c-fg-muted)]">
                         {formatQty(r.qty)} {unitLabel(r.sku?.unit)}
                       </span>
                     </li>
@@ -430,8 +430,8 @@ export function PerVendorView({
                         key={r.skuId}
                         className="flex items-center gap-2 border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0"
                       >
-                        <span className="min-w-0 flex-1 truncate text-body">{skuName}</span>
-                        <span className="shrink-0 font-mono text-body tabular-nums text-[var(--c-fg-muted)]">
+                        <span className="min-w-0 flex-1 truncate text-old-body">{skuName}</span>
+                        <span className="shrink-0 font-mono text-old-body tabular-nums text-[var(--c-fg-muted)]">
                           {formatQty(r.plannedQty)} {unitLabel(r.sku?.unit)}
                         </span>
                       </li>
@@ -604,7 +604,7 @@ export function RunExtrasCard({
           const note = (sessionNotesByStore?.[storeId] ?? '').trim();
           return (
             <div key={storeId}>
-              <div className="mb-1 text-label font-semibold text-[var(--c-fg-muted)]">
+              <div className="mb-1 text-old-label font-semibold text-[var(--c-fg-muted)]">
                 {resolveStoreName(storeId)}
               </div>
               {extras.length > 0 ? (
@@ -618,7 +618,7 @@ export function RunExtrasCard({
                     const canRecordExpense = editable && !!onRecordExtraExpense;
                     const inner = (
                       <>
-                        <span aria-hidden className={`shrink-0 text-body ${v.tone}`}>
+                        <span aria-hidden className={`shrink-0 text-old-body ${v.tone}`}>
                           {v.mark}
                         </span>
                         <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">
@@ -637,9 +637,9 @@ export function RunExtrasCard({
                     return (
                       <li
                         key={`${e.sessionId ?? storeId}-${e.idx ?? idx}-${e.name}`}
-                        className="text-body-sm"
+                        className="text-old-body-sm"
                       >
-                        <div className="-mx-2 flex w-[calc(100%+1rem)] items-baseline gap-1 rounded-md px-2 py-0.5">
+                        <div className="-mx-2 flex w-[calc(100%+1rem)] items-baseline gap-1 rounded-[6px] px-2 py-0.5">
                           {canTap ? (
                             <button
                               type="button"
@@ -647,7 +647,7 @@ export function RunExtrasCard({
                               onClick={() =>
                                 onMarkExtraStatus!(e.sessionId!, e.idx!, cycle(status))
                               }
-                              className="flex min-w-0 flex-1 items-baseline gap-2 rounded-md text-left active:bg-[var(--c-surface-2)]"
+                              className="flex min-w-0 flex-1 items-baseline gap-2 rounded-[6px] text-left active:bg-[var(--c-surface-2)]"
                             >
                               {inner}
                             </button>
@@ -660,7 +660,7 @@ export function RunExtrasCard({
                             <button
                               type="button"
                               onClick={() => onRecordExtraExpense!(storeId, e)}
-                              className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2 py-0.5 text-label font-medium text-[var(--c-action)] ring-hairline active:opacity-70"
+                              className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2 py-0.5 text-old-label font-medium text-[var(--c-action)] ring-hairline active:opacity-70"
                             >
                               {i18n.t('run.extras.recordPrice')}
                             </button>
@@ -672,7 +672,7 @@ export function RunExtrasCard({
                 </ul>
               ) : null}
               {note ? (
-                <div className="mt-1 whitespace-pre-wrap text-body-sm italic leading-snug text-[var(--c-fg-muted)]">
+                <div className="mt-1 whitespace-pre-wrap text-old-body-sm italic leading-snug text-[var(--c-fg-muted)]">
                   {note}
                 </div>
               ) : null}
@@ -735,14 +735,14 @@ export function ExpensesCard({
           <button
             type="button"
             onClick={onOpenExpense}
-            className="rounded-[var(--r-pill)] bg-[var(--c-action)] px-2.5 py-1 text-label font-semibold text-[var(--c-action-fg)] active:opacity-70"
+            className="rounded-[var(--r-pill)] bg-[var(--c-action)] px-2.5 py-1 text-old-label font-semibold text-[var(--c-action-fg)] active:opacity-70"
           >
             {i18n.t('run.action.addExpense.button')}
           </button>
         </div>
       ) : null}
       {list.length === 0 ? (
-        <div className="px-4 pb-3 text-body-sm text-[var(--c-fg-muted)]">
+        <div className="px-4 pb-3 text-old-body-sm text-[var(--c-fg-muted)]">
           {i18n.t('run.action.addExpense.scopeSharedHint')}
         </div>
       ) : null}
@@ -766,10 +766,10 @@ export function ExpensesCard({
               className="border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0"
             >
               <div className="flex items-baseline gap-2">
-                <span className="shrink-0 truncate text-body font-semibold">
+                <span className="shrink-0 truncate text-old-body font-semibold">
                   {e.label}
                 </span>
-                <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-1.5 py-0.5 text-label text-[var(--c-fg-muted)] ring-hairline">
+                <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-1.5 py-0.5 text-old-label text-[var(--c-fg-muted)] ring-hairline">
                   {i18n.t(
                     e.storeSplits.length > 1
                       ? 'run.section.sharedExpenses'
@@ -780,12 +780,12 @@ export function ExpensesCard({
                   <span
                     aria-label={i18n.t('run.label.paymentTransfer')}
                     title={i18n.t('run.label.paymentTransfer')}
-                    className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-action)]/15 px-1.5 py-0.5 text-label text-[var(--c-action)] ring-1 ring-[var(--c-action)]"
+                    className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-action)]/15 px-1.5 py-0.5 text-old-label text-[var(--c-action)] ring-1 ring-[var(--c-action)]"
                   >
                     {i18n.t('run.label.paymentTransfer')}
                   </span>
                 ) : null}
-                <span className="min-w-0 flex-1 truncate text-label text-[var(--c-fg-muted)]">
+                <span className="min-w-0 flex-1 truncate text-old-label text-[var(--c-fg-muted)]">
                   {storeNames}
                 </span>
                 {editable ? (
@@ -793,13 +793,13 @@ export function ExpensesCard({
                     type="button"
                     onClick={() => onRemove(e.id, e.label)}
                     aria-label={i18n.t('run.action.removeExpense')}
-                    className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-label text-[var(--c-danger)] active:bg-[var(--c-surface-2)]"
+                    className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-old-label text-[var(--c-danger)] active:bg-[var(--c-surface-2)]"
                   >
                     ✗
                   </button>
                 ) : null}
               </div>
-              <div className="mt-0.5 text-label text-[var(--c-fg-muted)]">
+              <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
                 <span className="font-mono tabular-nums">
                   {formatQty(e.qty)} {e.unitHint ?? ''} × {unitPriceDisplay}
                 </span>
@@ -1023,7 +1023,7 @@ export function PerCategoryView({
  * deleted both numbers and then overflowed the button.
  *
  * Money floor is honest about the worst case: '1,250,000' is 10 glyphs,
- * ui-monospace advances 0.6em, so at text-label (11px) that is 66px and
+ * ui-monospace advances 0.6em, so at text-old-label (11px) that is 66px and
  * fits in 68. No money string is ever clipped.
  */
 const ROW_TRACKS = '1.25rem minmax(0,1fr) minmax(3rem,auto) minmax(4.25rem,auto)';
@@ -1046,7 +1046,7 @@ const ROW_STATIC = 'grid min-w-0 flex-1 items-center gap-x-1.5';
  * is the reasoning already recorded for the existing ✓ button. */
 const ROW_CTRL =
   'flex h-11 w-9 shrink-0 items-center justify-center self-center ' +
-  'rounded-[var(--r-pill)] text-body outline-none ' +
+  'rounded-[var(--r-pill)] text-old-body outline-none ' +
   'focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]';
 
 /* Measured, not eyeballed. --c-action-fg on --c-action is 4.60:1 and
@@ -1095,11 +1095,11 @@ function RowStateCell({ kind, label }: { kind: RowStateKind; label: string }) {
         ) : kind === 'saving' ? (
           <span className="block h-[7px] w-[7px] animate-pulse rounded-full bg-[var(--c-action)] motion-reduce:animate-none" />
         ) : kind === 'unpriced' ? (
-          <span className="block text-body font-semibold text-[var(--c-warning-fg)]">!</span>
+          <span className="block text-old-body font-semibold text-[var(--c-warning-fg)]">!</span>
         ) : kind === 'purchased' ? (
-          <span className="block text-body text-[var(--c-success)]">✓</span>
+          <span className="block text-old-body text-[var(--c-success)]">✓</span>
         ) : (
-          <span className="block text-body text-[var(--c-danger)]">✗</span>
+          <span className="block text-old-body text-[var(--c-danger)]">✗</span>
         )}
       </span>
       <span className="sr-only">{label}</span>
@@ -1512,7 +1512,7 @@ export function PurchaseRow({
         return (
           <span
             key={d.storeId}
-            className="inline-flex items-center gap-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-1.5 py-0.5 text-label ring-1 ring-[var(--c-divider)]"
+            className="inline-flex items-center gap-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-1.5 py-0.5 text-old-label ring-1 ring-[var(--c-divider)]"
           >
             <span className="font-medium text-[var(--c-fg)]">{storeName}</span>
             {singleStore ? null : (
@@ -1641,7 +1641,7 @@ export function PurchaseRow({
                 exactly that suffix. Long-press is the recovery; opening
                 the row is the other. */}
             <span
-              className="min-w-0 truncate text-body font-semibold text-[var(--c-fg)]"
+              className="min-w-0 truncate text-old-body font-semibold text-[var(--c-fg)]"
               title={skuName}
             >
               {skuName}
@@ -1649,7 +1649,7 @@ export function PurchaseRow({
 
             {/* shrink-0 + nowrap: a number never truncates and never
                 wraps. Right-aligned so it lands in a column. */}
-            <span className="shrink-0 whitespace-nowrap text-right text-label text-[var(--c-fg-muted)]">
+            <span className="shrink-0 whitespace-nowrap text-right text-old-label text-[var(--c-fg-muted)]">
               <span className="font-mono tabular-nums">{formatQty(item.plannedQty)}</span>{' '}
               {unit}
             </span>
@@ -1667,7 +1667,7 @@ export function PurchaseRow({
                 notation — nothing / ~ / ? — and the localized phrase
                 still reaches a screen reader and a long-press. */}
             <span
-              className={`shrink-0 whitespace-nowrap text-right font-mono text-label font-semibold tabular-nums ${moneyInk}`}
+              className={`shrink-0 whitespace-nowrap text-right font-mono text-old-label font-semibold tabular-nums ${moneyInk}`}
               title={carried ? rawPriceTitle(lastPrice) : i18n.t('run.price.fillIn')}
             >
               {carried ? (
@@ -1724,16 +1724,16 @@ export function PurchaseRow({
             One row instead of two — meta sits on the same baseline as the
             title in muted 12px so it's scannable but not distracting. */}
         <div className="flex items-baseline gap-2">
-          {/* M2.2: pending-row primary unified to text-body
-              font-semibold (was text-h3 = 15px, mismatched with the
+          {/* M2.2: pending-row primary unified to text-old-body
+              font-semibold (was text-old-h3 = 15px, mismatched with the
               same role on Order/Confirm pages). */}
           {/* Wraps instead of truncating: opening a row is how you read
               a name the collapsed row had to clip, which matters because
               Cyrillic names disambiguate at the end and the ellipsis
               eats that. Was `shrink-0 truncate`, i.e. dead CSS that made
               the qty and price the compressible things instead. */}
-          <span className="min-w-0 break-words text-body font-semibold">{skuName}</span>
-          <span className="min-w-0 flex-1 truncate text-label text-[var(--c-fg-muted)]">
+          <span className="min-w-0 break-words text-old-body font-semibold">{skuName}</span>
+          <span className="min-w-0 flex-1 truncate text-old-label text-[var(--c-fg-muted)]">
             {formatQty(item.plannedQty)} {unit}
             {lastPrice ? (
               <>
@@ -1757,7 +1757,7 @@ export function PurchaseRow({
           <button
             type="button"
             onClick={() => onMarkNa(item.skuId)}
-            className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-label text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
+            className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-old-label text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
           >
             {i18n.t('run.action.markNa')}
           </button>
@@ -1812,7 +1812,7 @@ export function PurchaseRow({
             }}
             aria-label={i18n.t('run.action.actualQtyAriaLabel')}
           />
-          <span className="text-body text-[var(--c-fg-muted)]">×</span>
+          <span className="text-old-body text-[var(--c-fg-muted)]">×</span>
           <NumberInput
             ref={priceRef}
             // Without a step, type="number" defaults to 1 — which makes
@@ -1841,7 +1841,7 @@ export function PurchaseRow({
             type="button"
             onClick={onTogglePriceUnit}
             aria-label={i18n.t('run.label.priceUnitAria')}
-            className="press shrink-0 rounded-[var(--r-utility)] px-1 text-label text-[var(--c-action)] underline decoration-dotted underline-offset-2 active:opacity-70"
+            className="press shrink-0 rounded-[var(--r-utility)] px-1 text-old-label text-[var(--c-action)] underline decoration-dotted underline-offset-2 active:opacity-70"
           >
             {priceInThousands ? `K·${currency}` : currency}
           </button>
@@ -1885,7 +1885,7 @@ export function PurchaseRow({
               // (min-w-9), which costs the price field ~5px instead of
               // ~21px. Do not widen this to min-w-11 without also giving
               // column 3 a floor.
-              'flex h-11 min-w-9 items-center justify-center rounded-[var(--r-pill)] px-1.5 text-label font-medium active:opacity-70 ' +
+              'flex h-11 min-w-9 items-center justify-center rounded-[var(--r-pill)] px-1.5 text-old-label font-medium active:opacity-70 ' +
               (paymentMethod === 'transfer'
                 ? 'bg-[var(--c-action)]/15 text-[var(--c-action)] ring-1 ring-[var(--c-action)]'
                 : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
@@ -1896,7 +1896,7 @@ export function PurchaseRow({
                 ignore the ink token, so 💵 vs 🏦 alone is a weak signal at
                 arm's length in sunlight" — and compensated with container
                 colour. The word is the signal; colour is now reinforcement
-                rather than the only carrier. Two CJK glyphs at text-label
+                rather than the only carrier. Two CJK glyphs at text-old-label
                 fit the same 36 px slot the emoji occupied. */}
             {paymentMethod === 'cash'
               ? i18n.t('run.label.paymentCash')
@@ -1913,7 +1913,7 @@ export function PurchaseRow({
               // above for why the width is deliberately not 44. This is
               // the control that commits money, so it is the last one
               // that should be hard to hit.
-              'flex h-11 min-w-9 items-center justify-center rounded-[var(--r-pill)] px-2.5 text-body font-semibold ' +
+              'flex h-11 min-w-9 items-center justify-center rounded-[var(--r-pill)] px-2.5 text-old-body font-semibold ' +
               (canSave
                 ? 'bg-[var(--c-action)] text-[var(--c-action-fg)] active:opacity-80'
                 : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
@@ -1928,7 +1928,7 @@ export function PurchaseRow({
             truncated when the row runs out of width. Right-aligned under
             the price it belongs to. */}
         {totalHint !== null ? (
-          <div className="mt-1 pr-1 text-right text-label text-[var(--c-fg-muted)]">
+          <div className="mt-1 pr-1 text-right text-old-label text-[var(--c-fg-muted)]">
             ={' '}
             <span className="font-mono font-semibold tabular-nums text-[var(--c-fg)]">
               {formatMoney(totalHint)}
@@ -1957,7 +1957,7 @@ export function PurchaseRow({
               {/* One ink level down: finished work recedes so the eye
                   finds what is left. */}
               <span
-                className="min-w-0 truncate text-body font-semibold text-[var(--c-fg-muted)]"
+                className="min-w-0 truncate text-old-body font-semibold text-[var(--c-fg-muted)]"
                 title={skuName}
               >
                 {skuName}
@@ -1972,7 +1972,7 @@ export function PurchaseRow({
                    "act or this trip is wrong". Shape kept, alarm gone. */
                 <span
                   title={i18n.t('run.label.addedByPurchaser')}
-                  className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-1.5 text-label text-[var(--c-fg-muted)]"
+                  className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-1.5 text-old-label text-[var(--c-fg-muted)]"
                 >
                   <span aria-hidden>+</span>
                   <span className="sr-only">{i18n.t('run.label.addedByPurchaser')}</span>
@@ -1982,7 +1982,7 @@ export function PurchaseRow({
 
             {/* Same track, same meaning as every other state: quantity.
                 Planned while pending, actual once bought. */}
-            <span className="shrink-0 whitespace-nowrap text-right text-label text-[var(--c-fg-muted)]">
+            <span className="shrink-0 whitespace-nowrap text-right text-old-label text-[var(--c-fg-muted)]">
               <span className="font-mono tabular-nums">{formatQty(item.purchasedQty)}</span>{' '}
               {unit}
             </span>
@@ -1995,7 +1995,7 @@ export function PurchaseRow({
                 expanded editor, which is where it gets read (before
                 paying, not after). */}
             <span
-              className="shrink-0 whitespace-nowrap text-right font-mono text-label font-semibold tabular-nums text-[var(--c-fg)]"
+              className="shrink-0 whitespace-nowrap text-right font-mono text-old-label font-semibold tabular-nums text-[var(--c-fg)]"
               title={rawPriceTitle(item.unitPrice)}
             >
               {priceInThousands && item.unitPrice
@@ -2025,7 +2025,7 @@ export function PurchaseRow({
               className={`${ROW_CTRL} ${isTransfer ? CTRL_TRANSFER : CTRL_QUIET}`}
               title={i18n.t('run.label.paymentMethod')}
             >
-              <span className="text-label font-medium">{paymentLabel}</span>
+              <span className="text-old-label font-medium">{paymentLabel}</span>
               <span className="sr-only">{paymentAria}</span>
             </span>
           ) : (
@@ -2045,7 +2045,7 @@ export function PurchaseRow({
                 paymentBusy ? CTRL_OFF : isTransfer ? CTRL_TRANSFER : CTRL_QUIET
               }`}
             >
-              <span className="text-label font-medium">{paymentLabel}</span>
+              <span className="text-old-label font-medium">{paymentLabel}</span>
             </button>
           )}
         </div>
@@ -2072,7 +2072,7 @@ export function PurchaseRow({
               not subtle: --c-fg-subtle is 3.22:1 and the purchaser still
               has to find this row by name when the vendor restocks. */}
           <span
-            className="min-w-0 truncate text-body font-semibold text-[var(--c-fg-muted)] line-through"
+            className="min-w-0 truncate text-old-body font-semibold text-[var(--c-fg-muted)] line-through"
             title={skuName}
           >
             {skuName}
@@ -2080,7 +2080,7 @@ export function PurchaseRow({
 
           {/* The qty stays: what you FAILED to get is a number the
               kitchen needs, and it keeps the column continuous. */}
-          <span className="shrink-0 whitespace-nowrap text-right text-label text-[var(--c-fg-muted)]">
+          <span className="shrink-0 whitespace-nowrap text-right text-old-label text-[var(--c-fg-muted)]">
             <span className="font-mono tabular-nums">{formatQty(item.plannedQty)}</span>{' '}
             {unit}
           </span>
@@ -2092,7 +2092,7 @@ export function PurchaseRow({
               what that ink is for. */}
           <span
             aria-hidden
-            className="shrink-0 text-right font-mono text-label tabular-nums text-[var(--c-fg-subtle)]"
+            className="shrink-0 text-right font-mono text-old-label tabular-nums text-[var(--c-fg-subtle)]"
           >
             —
           </span>
@@ -2117,7 +2117,7 @@ export function PurchaseRow({
           thing a long name deleted. */}
       {item.unavailableNote ? (
         <p
-          className={`${SUBLINE} truncate text-label text-[var(--c-fg-muted)]`}
+          className={`${SUBLINE} truncate text-old-label text-[var(--c-fg-muted)]`}
           title={item.unavailableNote}
         >
           {item.unavailableNote}

@@ -40,7 +40,7 @@ export function CardHeader({ className, children }: { className?: string; childr
 
 export function CardTitle({ className, children }: { className?: string; children: ReactNode }) {
   return (
-    <h3 className={cn('text-h2 font-semibold text-[var(--c-fg)]', className)}>
+    <h3 className={cn('text-old-h2 font-semibold text-[var(--c-fg)]', className)}>
       {children}
     </h3>
   );
@@ -48,7 +48,7 @@ export function CardTitle({ className, children }: { className?: string; childre
 
 export function CardMeta({ className, children }: { className?: string; children: ReactNode }) {
   return (
-    <p className={cn('text-body-sm text-[var(--c-fg-muted)]', className)}>{children}</p>
+    <p className={cn('text-old-body-sm text-[var(--c-fg-muted)]', className)}>{children}</p>
   );
 }
 

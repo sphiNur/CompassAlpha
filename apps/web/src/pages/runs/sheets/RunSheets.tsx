@@ -237,7 +237,7 @@ export function PurchaseSheet({
             <Banner tone="info" title={i18n.t('run.confirm.editPurchase.body')} />
           ) : null}
           <div className="grid grid-cols-2 gap-3">
-            <label className="block text-label font-semibold text-[var(--c-fg-muted)]">
+            <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
               {i18n.t('run.action.actualQty', { unit: sku?.unit ?? '' })}
               <Input
                 className="mt-1"
@@ -249,7 +249,7 @@ export function PurchaseSheet({
                 autoFocus
               />
             </label>
-            <label className="block text-label font-semibold text-[var(--c-fg-muted)]">
+            <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
               {priceInThousands
                 ? i18n.t('run.action.unitPriceUzsThousands')
                 : i18n.t('run.action.unitPriceUzs')}
@@ -276,7 +276,7 @@ export function PurchaseSheet({
               both options are always visible — radio behaviour without
               the OS-styled radio buttons. */}
           <div>
-            <div className="mb-1 text-label font-semibold text-[var(--c-fg-muted)]">
+            <div className="mb-1 text-old-label font-semibold text-[var(--c-fg-muted)]">
               {i18n.t('run.label.paymentMethod')}
             </div>
             <PaymentMethodChips
@@ -306,7 +306,7 @@ export function PurchaseSheet({
                 onChange({ ...draft, perStorePricing: false });
               }
             }}
-            className="press rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-2 text-label font-semibold text-[var(--c-fg)] ring-hairline"
+            className="press rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-2 text-old-label font-semibold text-[var(--c-fg)] ring-hairline"
           >
             {/* 2026-07-26: both labels were hard-coded Chinese. */}
             {draft.perStorePricing
@@ -314,10 +314,10 @@ export function PurchaseSheet({
               : i18n.t('run.purchase.pricingPerStore')}
           </button>
           {suppliers.length > 0 ? (
-            <label className="block text-label font-semibold text-[var(--c-fg-muted)]">
+            <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
               {i18n.t('run.action.supplier')}
               <select
-                className="mt-1 h-11 w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-h3 ring-hairline"
+                className="mt-1 h-11 w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3 ring-hairline"
                 value={draft.supplierId ?? ''}
                 onChange={(e) => onChange({ ...draft, supplierId: e.target.value || null })}
               >
@@ -339,11 +339,11 @@ export function PurchaseSheet({
           />
           <div>
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-label font-semibold text-[var(--c-fg-muted)]">
+              <span className="text-old-label font-semibold text-[var(--c-fg-muted)]">
                 {i18n.t('run.action.allocateAcrossStores')}
               </span>
               <span
-                className={`font-mono text-label tabular-nums ${
+                className={`font-mono text-old-label tabular-nums ${
                   splitMatches ? 'text-[var(--c-success)]' : 'text-[var(--c-warning-fg)]'
                 }`}
               >
@@ -356,7 +356,7 @@ export function PurchaseSheet({
                 return (
                   <li key={store.id} className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
                     <div className="flex items-center gap-2">
-                      <span className="flex-1 truncate text-body">{store.name}</span>
+                      <span className="flex-1 truncate text-old-body">{store.name}</span>
                       <Input
                         type="number"
                         inputMode="decimal"
@@ -401,7 +401,7 @@ export function PurchaseSheet({
                                   onChange({ ...draft, splitPaymentMethods: next });
                                 }}
                                 className={
-                                  'rounded-[var(--r-pill)] px-2 py-1 text-label font-semibold ' +
+                                  'rounded-[var(--r-pill)] px-2 py-1 text-old-label font-semibold ' +
                                   (selected
                                     ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
                                     : 'text-[var(--c-fg-muted)]')
@@ -422,7 +422,7 @@ export function PurchaseSheet({
             </ul>
           </div>
           {draft.isEdit ? (
-            <label className="block text-label font-semibold text-[var(--c-fg-muted)]">
+            <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
               {i18n.t('run.label.reasonForChange')}
               <Input
                 className="mt-1"
@@ -443,7 +443,7 @@ export function PurchaseSheet({
             <button
               type="button"
               onClick={onUndo}
-              className="w-full rounded-[var(--r-utility)] py-2 text-label font-semibold text-[var(--c-danger)] active:bg-[var(--c-surface-2)]"
+              className="w-full rounded-[var(--r-utility)] py-2 text-old-label font-semibold text-[var(--c-danger)] active:bg-[var(--c-surface-2)]"
             >
               {i18n.t('run.action.undoPurchase')}
             </button>
@@ -763,7 +763,7 @@ export function AddItemSheet({
                     });
                   }}
                   className={
-                    'flex-1 rounded-[var(--r-pill)] px-3 py-1.5 text-label font-medium ' +
+                    'flex-1 rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium ' +
                     (selected
                       ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
                       : 'text-[var(--c-fg-muted)]')
@@ -780,12 +780,12 @@ export function AddItemSheet({
           {/* 1) Identity section — mode-specific. */}
           {draft.mode === 'sku' ? (
             selectedSku ? (
-              <div className="flex items-center justify-between rounded-md bg-[var(--c-surface-2)] px-3 py-2">
+              <div className="flex items-center justify-between rounded-[6px] bg-[var(--c-surface-2)] px-3 py-2">
                 <div className="min-w-0">
-                  <div className="truncate text-body font-semibold">
+                  <div className="truncate text-old-body font-semibold">
                     {productName(selectedSku)}
                   </div>
-                  <div className="text-label text-[var(--c-fg-muted)]">
+                  <div className="text-old-label text-[var(--c-fg-muted)]">
                     {selectedSku.unit}
                   </div>
                 </div>
@@ -794,7 +794,7 @@ export function AddItemSheet({
                   onClick={() =>
                     onChange({ ...draft, skuId: null, skuCostMode: 'merge' })
                   }
-                  className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-label text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
+                  className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-old-label text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
                 >
                   {i18n.t('run.action.addItem.changeSku')}
                 </button>
@@ -808,9 +808,9 @@ export function AddItemSheet({
                   placeholder={i18n.t('run.action.addItem.searchPlaceholder')}
                   autoFocus
                 />
-                <ul className="flex max-h-72 flex-col overflow-y-auto rounded-md border border-[var(--c-divider)]">
+                <ul className="flex max-h-72 flex-col overflow-y-auto rounded-[6px] border border-[var(--c-divider)]">
                   {filteredSkus.length === 0 ? (
-                    <li className="px-3 py-2 text-body-sm text-[var(--c-fg-muted)]">
+                    <li className="px-3 py-2 text-old-body-sm text-[var(--c-fg-muted)]">
                       {i18n.t('run.action.addItem.noMatch')}
                     </li>
                   ) : (
@@ -832,10 +832,10 @@ export function AddItemSheet({
                           }
                           className="flex w-full items-baseline justify-between gap-2 px-3 py-2 text-left active:bg-[var(--c-surface-2)]"
                         >
-                          <span className="min-w-0 truncate text-body">
+                          <span className="min-w-0 truncate text-old-body">
                             {productName(sku)}
                           </span>
-                          <span className="shrink-0 text-label text-[var(--c-fg-muted)]">
+                          <span className="shrink-0 text-old-label text-[var(--c-fg-muted)]">
                             {unitLabel(sku.unit)}
                           </span>
                         </button>
@@ -848,7 +848,7 @@ export function AddItemSheet({
           ) : (
             // M3.44: expense mode — free-text label + optional unit hint.
             <>
-              <label className="block text-label font-semibold text-[var(--c-fg-muted)]">
+              <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
                 {i18n.t('run.action.addExpense.labelInput')}
                 <Input
                   className="mt-1"
@@ -858,7 +858,7 @@ export function AddItemSheet({
                   autoFocus
                 />
               </label>
-              <label className="block text-label font-semibold text-[var(--c-fg-muted)]">
+              <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
                 {i18n.t('run.action.addExpense.unitHint')}
                 <Input
                   className="mt-1"
@@ -869,7 +869,7 @@ export function AddItemSheet({
               </label>
               {expenseTemplates.length > 0 ? (
                 <div>
-                  <div className="mb-1 text-label font-semibold text-[var(--c-fg-muted)]">
+                  <div className="mb-1 text-old-label font-semibold text-[var(--c-fg-muted)]">
                     {i18n.t('run.action.addExpense.templates')}
                   </div>
                   <div className="flex flex-wrap gap-1.5">
@@ -897,7 +897,7 @@ export function AddItemSheet({
                                 : draft.splits,
                           });
                         }}
-                        className="rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-1 text-label font-medium text-[var(--c-fg)] ring-hairline active:opacity-70"
+                        className="rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-1 text-old-label font-medium text-[var(--c-fg)] ring-hairline active:opacity-70"
                       >
                         {tpl.label}
                       </button>
@@ -916,7 +916,7 @@ export function AddItemSheet({
               Lists the stores that already have demand so the user
               knows which stores aren't available in the dropdown. */}
           {draft.mode === 'sku' && selectedSku && selectedSkuExisting ? (
-            <div className="rounded-md bg-[var(--c-warning)]/10 px-3 py-2 text-label text-[var(--c-fg)] ring-1 ring-[var(--c-warning)]">
+            <div className="rounded-[6px] bg-[var(--c-warning)]/10 px-3 py-2 text-old-label text-[var(--c-fg)] ring-1 ring-[var(--c-warning)]">
               {i18n.t('run.action.addItem.crossStoreHint', {
                 stores: [...selectedSkuExisting.storeIds]
                   .map((id) => storeById.get(id)?.name ?? id.slice(0, 8))
@@ -927,8 +927,8 @@ export function AddItemSheet({
           {/* 2) Store selection — SKU mode is single-store dropdown,
                  expense mode is multi-store chips with auto-even-split. */}
           {draft.mode === 'sku' && selectedSku && selectedSkuExisting ? (
-            <div className="rounded-md bg-[var(--c-surface-2)] p-2">
-              <div className="mb-1 text-label font-semibold text-[var(--c-fg-muted)]">
+            <div className="rounded-[6px] bg-[var(--c-surface-2)] p-2">
+              <div className="mb-1 text-old-label font-semibold text-[var(--c-fg-muted)]">
                 {i18n.t('run.action.addItem.costModeTitle')}
               </div>
               <div className="grid grid-cols-2 gap-1.5">
@@ -937,7 +937,7 @@ export function AddItemSheet({
                   disabled={selectedStoreAlreadyHasSku}
                   onClick={() => onChange({ ...draft, skuCostMode: 'merge' })}
                   className={
-                    'rounded-[var(--r-pill)] px-3 py-1.5 text-label font-medium ring-hairline disabled:opacity-40 ' +
+                    'rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium ring-hairline disabled:opacity-40 ' +
                     (!skuRecordsAsExpense
                       ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
                       : 'bg-[var(--c-bg)] text-[var(--c-fg-muted)]')
@@ -951,7 +951,7 @@ export function AddItemSheet({
                     onChange({ ...draft, skuCostMode: 'separateExpense' })
                   }
                   className={
-                    'rounded-[var(--r-pill)] px-3 py-1.5 text-label font-medium ring-hairline ' +
+                    'rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium ring-hairline ' +
                     (skuRecordsAsExpense
                       ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
                       : 'bg-[var(--c-bg)] text-[var(--c-fg-muted)]')
@@ -960,7 +960,7 @@ export function AddItemSheet({
                   {i18n.t('run.action.addItem.costModeSeparate')}
                 </button>
               </div>
-              <p className="mt-1 text-label leading-snug text-[var(--c-fg-muted)]">
+              <p className="mt-1 text-old-label leading-snug text-[var(--c-fg-muted)]">
                 {selectedStoreAlreadyHasSku
                   ? i18n.t('run.action.addItem.storeAlreadyHasSkuHint')
                   : skuRecordsAsExpense
@@ -970,10 +970,10 @@ export function AddItemSheet({
             </div>
           ) : null}
           {draft.mode === 'sku' && selectedSku ? (
-            <label className="block text-label font-semibold text-[var(--c-fg-muted)]">
+            <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
               {i18n.t('run.action.addItem.targetStore')}
               <select
-                className="mt-1 h-11 w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-h3 ring-hairline"
+                className="mt-1 h-11 w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3 ring-hairline"
                 value={selectedStoreId}
                 onChange={(e) => {
                   const next = new Map<string, string>();
@@ -1006,7 +1006,7 @@ export function AddItemSheet({
           {draft.mode === 'expense' && draft.label.trim() ? (
             <div>
               <div className="mb-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
-                <div className="mb-1 text-label font-semibold text-[var(--c-fg-muted)]">
+                <div className="mb-1 text-old-label font-semibold text-[var(--c-fg-muted)]">
                   {i18n.t('run.action.addExpense.scopeTitle')}
                 </div>
                 <div className="grid grid-cols-2 gap-1.5">
@@ -1027,7 +1027,7 @@ export function AddItemSheet({
                           })
                         }
                         className={
-                          'rounded-[var(--r-pill)] px-3 py-1.5 text-label font-medium ring-hairline ' +
+                          'rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium ring-hairline ' +
                           (selected
                             ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
                             : 'bg-[var(--c-bg)] text-[var(--c-fg-muted)]')
@@ -1040,19 +1040,19 @@ export function AddItemSheet({
                     );
                   })}
                 </div>
-                <p className="mt-1 text-label leading-snug text-[var(--c-fg-muted)]">
+                <p className="mt-1 text-old-label leading-snug text-[var(--c-fg-muted)]">
                   {draft.expenseScope === 'shared'
                     ? i18n.t('run.action.addExpense.scopeSharedHint')
                     : i18n.t('run.action.addExpense.scopeStoreHint')}
                 </p>
               </div>
               <div className="mb-1 flex items-baseline justify-between gap-2">
-                <span className="text-label font-semibold text-[var(--c-fg-muted)]">
+                <span className="text-old-label font-semibold text-[var(--c-fg-muted)]">
                   {draft.expenseScope === 'shared'
                     ? i18n.t('run.action.addExpense.targetStores')
                     : i18n.t('run.action.addItem.targetStore')}
                 </span>
-                <span className="text-label text-[var(--c-fg-muted)]">
+                <span className="text-old-label text-[var(--c-fg-muted)]">
                   {i18n.t('run.action.addExpense.splitHint', {
                     n: draft.splits.size,
                   })}
@@ -1078,7 +1078,7 @@ export function AddItemSheet({
                         });
                       }}
                       className={
-                        'rounded-[var(--r-pill)] px-3 py-1 text-label font-medium ' +
+                        'rounded-[var(--r-pill)] px-3 py-1 text-old-label font-medium ' +
                         (selected
                           ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
                           : 'bg-[var(--c-surface-2)] text-[var(--c-fg)] ring-hairline')
@@ -1103,7 +1103,7 @@ export function AddItemSheet({
                       splits: evenSplit([...draft.splits.keys()], draft.actualQty),
                     })
                   }
-                  className="mt-2 text-label text-[var(--c-action)] active:opacity-70"
+                  className="mt-2 text-old-label text-[var(--c-action)] active:opacity-70"
                 >
                   {i18n.t('run.action.addExpense.resplitEvenly')}
                 </button>
@@ -1118,7 +1118,7 @@ export function AddItemSheet({
             draft.splits.size > 0) ? (
             <>
               <div className="grid grid-cols-2 gap-3">
-                <label className="block text-label font-semibold text-[var(--c-fg-muted)]">
+                <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
                   {i18n.t('run.action.actualQty', {
                     unit:
                       draft.mode === 'sku'
@@ -1152,7 +1152,7 @@ export function AddItemSheet({
                     }}
                   />
                 </label>
-                <label className="block text-label font-semibold text-[var(--c-fg-muted)]">
+                <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
                   {priceInThousands
                     ? i18n.t('run.action.unitPriceUzsThousands')
                     : i18n.t('run.action.unitPriceUzs')}
@@ -1173,7 +1173,7 @@ export function AddItemSheet({
                 </label>
               </div>
               {totalHint !== null ? (
-                <div className="text-label text-[var(--c-fg-muted)]">
+                <div className="text-old-label text-[var(--c-fg-muted)]">
                   {i18n.t('run.action.addItem.totalHint')}:{' '}
                   <span className="font-mono font-semibold tabular-nums text-[var(--c-fg)]">
                     {formatMoney(totalHint)} {currency}
@@ -1183,7 +1183,7 @@ export function AddItemSheet({
 
               {/* Payment method chips — mirror PurchaseSheet's shape. */}
               <div>
-                <div className="mb-1 text-label font-semibold text-[var(--c-fg-muted)]">
+                <div className="mb-1 text-old-label font-semibold text-[var(--c-fg-muted)]">
                   {i18n.t('run.label.paymentMethod')}
                 </div>
                 <PaymentMethodChips
@@ -1195,7 +1195,7 @@ export function AddItemSheet({
               {/* Reason (required) — the audit gate. The placeholder
                   cues the operator on what's expected (vendor freebie,
                   chef call-in, market deal). */}
-              <label className="block text-label font-semibold text-[var(--c-fg-muted)]">
+              <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
                 {i18n.t('run.action.addItem.reasonLabel')}
                 <Input
                   className="mt-1"
@@ -1209,7 +1209,7 @@ export function AddItemSheet({
                   (2026-07-06: dropped the >200k mandatory gate). */}
               {draft.mode === 'expense' || skuRecordsAsExpense ? (
                 <div>
-                  <div className="mb-1 text-label font-semibold text-[var(--c-fg-muted)]">
+                  <div className="mb-1 text-old-label font-semibold text-[var(--c-fg-muted)]">
                     {i18n.t('run.action.addExpense.receiptOptional')}
                   </div>
                   <PhotoCapture
@@ -1346,11 +1346,11 @@ export function ConfirmSheet({
     >
       {config ? (
         <div className="flex flex-col gap-3 py-3">
-          <p className="whitespace-pre-line text-body leading-snug text-[var(--c-fg-muted)]">
+          <p className="whitespace-pre-line text-old-body leading-snug text-[var(--c-fg-muted)]">
             {config.body}
           </p>
           {showReasonField ? (
-            <label className="block text-label font-semibold text-[var(--c-fg-muted)]">
+            <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
               {i18n.t('run.label.reasonForChange')}
               <Input
                 className="mt-1"
@@ -1367,7 +1367,7 @@ export function ConfirmSheet({
             <button
               type="button"
               onClick={() => setReasonExpanded(true)}
-              className="self-start text-label text-[var(--c-action)] active:opacity-70"
+              className="self-start text-old-label text-[var(--c-action)] active:opacity-70"
             >
               {i18n.t('run.label.addReasonOptional')}
             </button>

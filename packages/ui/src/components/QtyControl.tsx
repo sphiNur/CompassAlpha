@@ -141,14 +141,14 @@ export function QtyControl({
   // M3.15 (2026-05-16): slim the +/- buttons. The 44 px (md) baseline
   // visually outweighed the bottom nav's 22 px icons + 10 px labels,
   // which the user explicitly likes. New defaults:
-  //   - md → h-9 (36 px) ·  text-body  · still hits iOS touch target
+  //   - md → h-9 (36 px) ·  text-old-body  · still hits iOS touch target
   //     when the row itself is tappable (it is — the SKU rows below
   //     wrap the whole row in a press handler).
-  //   - sm → h-7 (28 px) · text-label · for dense lists (ApprovalPage).
+  //   - sm → h-7 (28 px) · text-old-label · for dense lists (ApprovalPage).
   const tone = (active: boolean) =>
     cn(
       'press inline-flex items-center justify-center rounded-full shrink-0',
-      isSmall ? 'h-7 w-7 text-label' : 'h-9 w-9 text-body',
+      isSmall ? 'h-7 w-7 text-old-label' : 'h-9 w-9 text-old-body',
       'bg-[var(--c-surface-2)] ring-hairline text-[var(--c-fg)]',
       active && 'bg-[var(--c-action)] text-[var(--c-action-fg)]',
       disabled && 'opacity-40 pointer-events-none',
@@ -194,8 +194,8 @@ export function QtyControl({
             is what pushed the buttons before. Width tuned per size so
             "9999 kg" still fits inside.
             M3.15 shrinks middle font to match the +/- baseline:
-              md → text-h3 (was text-h2) — sits with the new 36 px button
-              sm → text-body-sm (was text-body) — sits with the 28 px button
+              md → text-old-h3 (was text-old-h2) — sits with the new 36 px button
+              sm → text-old-body-sm (was text-old-body) — sits with the 28 px button
             The middle text is no longer the "biggest thing in the row";
             it now reads as a peer of the surrounding row primary text. */}
         <button
@@ -205,7 +205,7 @@ export function QtyControl({
           disabled={disabled}
           className={cn(
             'press flex items-center justify-center font-semibold tabular-nums',
-            isSmall ? 'h-7 w-14 px-1 text-body-sm' : 'h-9 w-16 px-1 text-h3',
+            isSmall ? 'h-7 w-14 px-1 text-old-body-sm' : 'h-9 w-16 px-1 text-old-h3',
             'overflow-hidden whitespace-nowrap',
             showZero && 'text-[var(--c-fg-subtle)] font-normal',
             disabled && 'opacity-40 pointer-events-none',
@@ -224,7 +224,7 @@ export function QtyControl({
           */}
           <span>{display}</span>
           {unit ? (
-            <span className="ml-0.5 text-label text-[var(--c-fg-muted)]">{unit}</span>
+            <span className="ml-0.5 text-old-label text-[var(--c-fg-muted)]">{unit}</span>
           ) : null}
         </button>
 
@@ -388,7 +388,7 @@ function QtyQuickPickSheet({
                   type="button"
                   onClick={() => onPick(p)}
                   className={cn(
-                    'press rounded-[var(--r-pill)] px-3 py-1.5 text-label font-medium ring-hairline',
+                    'press rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium ring-hairline',
                     selected
                       ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
                       : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]',
@@ -407,7 +407,7 @@ function QtyQuickPickSheet({
             an eyebrow above the input. SectionLabel renders as a
             non-form element, so we keep the eyebrow class string here.
             The CI typography guard allow-lists this comment. */}
-        <label className="block text-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+        <label className="block text-old-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
           {labels.custom}
           <NumberInput
             className="mt-1"
