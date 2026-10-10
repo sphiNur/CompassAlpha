@@ -52,6 +52,10 @@ const EXEMPT_FILES: Array<{ match: string; why: string }> = [
     why: 'operator diagnostics screen, gated on system.logs.view, intentionally English',
   },
   {
+    match: 'pages/KitGallery.tsx',
+    why: 'development-only component gallery (/?kit), never in a production bundle; fixed English sample content that the e2e kit spec asserts on',
+  },
+  {
     match: 'scripts/',
     why: 'not shipped to users',
   },
