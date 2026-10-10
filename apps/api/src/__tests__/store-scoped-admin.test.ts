@@ -2662,7 +2662,9 @@ describe('memberPermissionSet cannot mint authority the actor lacks', () => {
         scopeId: storeA.id,
       };
       expect(
-        await codeOf(() => manager.admin.memberPermissionSet({ ...base, permissionKey: 'run.amend' })),
+        await codeOf(() =>
+          manager.admin.memberPermissionSet({ ...base, permissionKey: 'run.amend' }),
+        ),
       ).toBe('FORBIDDEN');
       expect(
         await codeOf(() =>
@@ -2695,7 +2697,9 @@ describe('memberPermissionSet cannot mint authority the actor lacks', () => {
         ).toBe('FORBIDDEN');
       }
       expect(
-        await codeOf(() => admin.admin.memberPermissionSet({ ...base, permissionKey: 'prices.view' })),
+        await codeOf(() =>
+          admin.admin.memberPermissionSet({ ...base, permissionKey: 'prices.view' }),
+        ),
       ).toBeUndefined();
       const superAdmin = appRouter.createCaller(fix!.superAdminCtx);
       for (const permissionKey of ['org.admin', 'run.amend']) {
@@ -2703,6 +2707,48 @@ describe('memberPermissionSet cannot mint authority the actor lacks', () => {
           await codeOf(() => superAdmin.admin.memberPermissionSet({ ...base, permissionKey })),
         ).toBeUndefined();
       }
+    },
+  );
+});
+
+describe('expired role bindings carry no admin authority', () => {
+  test.skipIf(!SHOULD_RUN)(
+    'a lapsed admin binding neither outranks nor administers anyone',
+    async () => {
+      const db = getDb();
+      const storeA = await makeStore(`A-${Math.random()}`);
+      const user = await makeUser('Lapsed-Admin');
+      const memberId = await makeMember(user.id);
+      await bindRole(memberId, fix!.managerRoleId, { type: 'store', storeId: storeA.id });
+      await db.insert(s.memberRoleBindings).values({
+        memberId,
+        roleId: fix!.adminRoleId,
+        scopeType: 'global',
+        expiresAt: new Date(Date.now() - 60_000),
+      });
+      const caller = appRouter.createCaller(buildCtx(db, await sessionFor(memberId, user.id)));
+
+      // Rank: still only a manager, so a peer manager is out of reach.
+      const peerUser = await makeUser('Peer-Manager');
+      const peer = await makeMember(peerUser.id);
+      await bindRole(peer, fix!.managerRoleId, { type: 'store', storeId: storeA.id });
+      const [peerBinding] = await db
+        .select({ id: s.memberRoleBindings.id })
+        .from(s.memberRoleBindings)
+        .where(eq(s.memberRoleBindings.memberId, peer));
+      await expect(caller.admin.revokeRole({ bindingId: peerBinding!.id })).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+      });
+      await settleRolledBackTestTransaction();
+
+      // Scope: the lapsed global binding does not open other stores.
+      const storeB = await makeStore(`B-${Math.random()}`);
+      await expect(
+        caller.admin.memberInviteByTgId({
+          tgUserId: `${Date.now()}7`.slice(-12),
+          storeIds: [storeB.id],
+        }),
+      ).rejects.toThrow('notAdminOfStore');
     },
   );
 });

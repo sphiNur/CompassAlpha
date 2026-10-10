@@ -9,7 +9,7 @@
  * Out of scope (defer): policy_rules editing, audit log search, export.
  */
 import { TRPCError } from '@trpc/server';
-import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, gte, inArray, isNull, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { schema as s } from '@compass/db';
 import {
@@ -232,6 +232,11 @@ function broadcastPeople(orgId: string): void {
  */
 const ADMIN_RANK_THRESHOLD = ADMIN_RANK;
 
+/** A binding with an expiry in the past grants nothing. */
+function bindingIsLive() {
+  return or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, new Date()));
+}
+
 async function countAdminsInOrg(tx: import('@compass/db').DB, orgId: string): Promise<number> {
   const rows = await tx
     .select({ memberId: s.memberRoleBindings.memberId })
@@ -243,6 +248,7 @@ async function countAdminsInOrg(tx: import('@compass/db').DB, orgId: string): Pr
         eq(s.members.orgId, orgId),
         eq(s.members.status, 'active'),
         gte(s.roles.rank, ADMIN_RANK_THRESHOLD),
+        bindingIsLive(),
       ),
     );
   // Distinct member ids — one member with two admin-level roles still
@@ -261,7 +267,7 @@ async function getActorMaxRank(
     .from(s.memberRoleBindings)
     .innerJoin(s.members, eq(s.members.id, s.memberRoleBindings.memberId))
     .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
-    .where(and(eq(s.members.orgId, orgId), eq(s.members.userId, actorUserId)));
+    .where(and(eq(s.members.orgId, orgId), eq(s.members.userId, actorUserId), bindingIsLive()));
   let max = 0;
   for (const r of rows) {
     if (r.rank > max) max = r.rank;
@@ -309,7 +315,7 @@ async function getActorMaxRankInStore(
     .from(s.memberRoleBindings)
     .innerJoin(s.members, eq(s.members.id, s.memberRoleBindings.memberId))
     .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
-    .where(and(eq(s.members.orgId, orgId), eq(s.members.userId, actorUserId)));
+    .where(and(eq(s.members.orgId, orgId), eq(s.members.userId, actorUserId), bindingIsLive()));
   let max = 0;
   for (const r of rows) {
     const counts = r.scopeType === 'global' || (r.scopeType === 'store' && r.scopeId === storeId);
@@ -358,7 +364,7 @@ async function getActorAdminStoreIds(
       scopeId: s.memberRoleBindings.scopeId,
     })
     .from(s.memberRoleBindings)
-    .where(eq(s.memberRoleBindings.memberId, member.id));
+    .where(and(eq(s.memberRoleBindings.memberId, member.id), bindingIsLive()));
   const roleIds = [...new Set(bindings.map((b) => b.roleId))];
   const rolePerms =
     roleIds.length > 0

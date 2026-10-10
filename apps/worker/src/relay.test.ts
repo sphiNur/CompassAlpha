@@ -41,9 +41,9 @@ describe('assertRelayDelivered', () => {
   });
 
   test('a Bot API rate limit or outage is transient', () => {
-    expect(verdict(429, '{"ok":false,"error_code":429,"description":"retry later"}')?.permanent).toBe(
-      false,
-    );
+    expect(
+      verdict(429, '{"ok":false,"error_code":429,"description":"retry later"}')?.permanent,
+    ).toBe(false);
     expect(verdict(500, '{"ok":false,"error_code":500}')?.permanent).toBe(false);
   });
 });
