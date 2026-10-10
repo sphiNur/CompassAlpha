@@ -269,6 +269,7 @@ jobs:
             packages/domain \
             packages/i18n \
             apps/api \
+            apps/worker \
             apps/web/src/lib \
             apps/web/src/hooks \
             apps/web/src/pages

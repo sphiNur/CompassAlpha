@@ -27,6 +27,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { eq, sql } from 'drizzle-orm';
 import { Bot, GrammyError, HttpError } from 'grammy';
 import { getDb, schema as s, closeDb } from '@compass/db';
+import { assertRelayDelivered, RelayError } from './relay';
 
 (function loadRootEnv() {
   let dir = dirname(fileURLToPath(import.meta.url));
@@ -111,15 +112,6 @@ if (!botDeliveryEnabled) {
       '(need either TG_RELAY_URL+COMPASS_RELAY_KEY or TELEGRAM_BOT_TOKEN). ' +
       'Outbox bot rows will be marked sent without delivery.',
   );
-}
-
-class RelayError extends Error {
-  constructor(
-    public errorCode: number,
-    public description: string,
-  ) {
-    super(`relay ${errorCode}: ${description}`);
-  }
 }
 
 interface OutboxPayload {
@@ -271,7 +263,7 @@ async function deliverBot(payload: OutboxPayload): Promise<boolean> {
     // Permanent errors (user blocked bot, invalid id, bad request) → mark
     // sent so we don't retry endlessly. Anything else is transient.
     if (err instanceof RelayError) {
-      if (err.errorCode === 403 || err.errorCode === 400) {
+      if (err.permanent) {
         console.warn('[worker] permanent relay error', err.errorCode, err.description);
         return true;
       }
@@ -292,6 +284,8 @@ async function deliverBot(payload: OutboxPayload): Promise<boolean> {
     return false;
   }
 }
+
+const RELAY_TIMEOUT_MS = 15_000;
 
 /**
  * Forward a sendMessage call through the Cloudflare Worker relay.
@@ -316,30 +310,12 @@ async function sendViaRelay(
       method: 'sendMessage',
       params: { chat_id: chatId, text, ...opts },
     }),
+    // The send runs inside the outbox row's claim transaction; a relay
+    // that never answers would otherwise park the whole queue behind it.
+    signal: AbortSignal.timeout(RELAY_TIMEOUT_MS),
   });
 
-  type RelayBody = { ok?: boolean; error_code?: number; description?: string };
-  let body: RelayBody | null = null;
-  try {
-    body = (await res.json()) as RelayBody;
-  } catch {
-    // Response wasn't JSON — caller treats as transient.
-    throw new RelayError(res.status, `non-json relay response (http ${res.status})`);
-  }
-
-  // 5xx from CF / Telegram → transient.
-  if (res.status >= 500) {
-    throw new RelayError(res.status, body?.description ?? `http ${res.status}`);
-  }
-  // 4xx from the relay itself (forbidden, bad method) → treat as transient
-  // unless it matches a known permanent Bot API code.
-  if (!res.ok) {
-    throw new RelayError(res.status, body?.description ?? `http ${res.status}`);
-  }
-  // Bot API said no.
-  if (body?.ok === false) {
-    throw new RelayError(body.error_code ?? 0, body.description ?? 'unknown bot api error');
-  }
+  assertRelayDelivered(res.status, await res.text());
 }
 
 /**
