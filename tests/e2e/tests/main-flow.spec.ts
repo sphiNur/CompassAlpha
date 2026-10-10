@@ -149,7 +149,27 @@ test('buy everything, one item in cash and one by transfer', async () => {
   await expect(main().getByRole('heading', { name: 'Bought' }).locator('..')).toContainText(
     '114,000',
   );
+  // The bar over the main button keeps the running split in view.
+  const bar = page.getByTestId('action-bar');
+  await expect(bar).toContainText('24,000 cash · 90,000 transfer');
+  await expect(bar.locator('[data-money]')).toHaveText(/114,000\s*UZS/);
   await evidence('run-purchased');
+
+  // A line recorded as cash by mistake is switched where it is shown.
+  const apple = bought.filter({ hasText: 'Apple' });
+  const pay = async (method: 'Cash' | 'Transfer') => {
+    await apple.click();
+    await sheet().getByRole('radio', { name: method }).click();
+    await expect(sheet().getByRole('radio', { name: method })).toBeChecked();
+    await page.keyboard.press('Escape');
+    await expect(sheet()).toBeHidden();
+    await expect(apple.locator('[data-payment-method]')).toHaveText(method);
+  };
+  await pay('Transfer');
+  await expect(bar).toContainText('0 cash · 114,000 transfer');
+  await evidence('run-bought-sheet-after');
+  await pay('Cash');
+  await expect(bar).toContainText('24,000 cash · 90,000 transfer');
 });
 
 test('deliver to the store', async () => {

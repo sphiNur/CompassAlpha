@@ -273,6 +273,19 @@ interface PageMainButtonState {
   onClick: () => void;
   visible: boolean;
   active: boolean;
+  summary?: PageActionSummary;
+}
+
+/**
+ * One line above the button: what pressing it commits. Plain strings so
+ * the bar can tell when it has changed.
+ */
+export interface PageActionSummary {
+  /** In words: "Cash 24,000 · Transfer 90,000", or what is still missing. */
+  text: string;
+  /** A formatted amount, drawn as money at the right edge. */
+  amount?: string;
+  currency?: string;
 }
 
 let _pageMainButton: PageMainButtonState | null = null;
@@ -302,7 +315,7 @@ export function usePageMainButtonState(): PageMainButtonState | null {
 export function usePageMainButton(
   text: string,
   onClick: () => void,
-  opts?: { visible?: boolean; active?: boolean },
+  opts?: { visible?: boolean; active?: boolean; summary?: PageActionSummary },
 ): void {
   // Keep the click callback in a ref so re-renders don't republish
   // state — we only republish when text/visible/active actually flip.
@@ -311,13 +324,20 @@ export function usePageMainButton(
   const safeText = (text ?? '').trim();
   const wantVisible = opts?.visible !== false && !!safeText;
   const wantActive = opts?.active !== false;
+  const summaryText = opts?.summary?.text ?? null;
+  const summaryAmount = opts?.summary?.amount;
+  const summaryCurrency = opts?.summary?.currency;
   useEffect(() => {
     _setPageMainButton({
       text: safeText,
       onClick: () => onClickRef.current(),
       visible: wantVisible,
       active: wantActive,
+      summary:
+        summaryText === null
+          ? undefined
+          : { text: summaryText, amount: summaryAmount, currency: summaryCurrency },
     });
     return () => _setPageMainButton(null);
-  }, [safeText, wantVisible, wantActive]);
+  }, [safeText, wantVisible, wantActive, summaryText, summaryAmount, summaryCurrency]);
 }

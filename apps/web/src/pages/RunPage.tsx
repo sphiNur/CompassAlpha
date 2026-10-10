@@ -61,7 +61,10 @@ import {
   type AddItemDraft,
 } from './runs/sheets/RunSheets';
 // Mid-level panels — extracted to runs/components (Phase 4 step 5).
-import { ActiveRunPanel, PreviewSummaryCard, RunSessionsCard } from './runs/components/RunPanels';
+import { PreviewSummaryCard } from './runs/components/RunPanels';
+import { ActiveRunPanel } from './runs/buying/ActiveRun';
+import { RunOrders } from './runs/buying/RunOrders';
+import { StatusChip } from '@compass/ui/kit';
 
 function newClientId(): string {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -993,7 +996,7 @@ export function RunPage() {
           return {
             text: i18n.t('run.action.remainingItems', { n: pendingCount }),
             onClick: () => {
-              const next = document.querySelector('[data-run-item-pending]');
+              const next = document.querySelector('[data-testid="buy-row"]');
               next?.scrollIntoView({ block: 'center', behavior: 'smooth' });
             },
             visible: pendingCount > 0,
@@ -1475,9 +1478,24 @@ export function RunPage() {
     mainBtnActive = sheetPrimary.active;
   }
 
+  // While buying, the bar says what has been spent so far and how: the
+  // two figures the purchaser is asked for when the trip ends.
+  const spentSummary =
+    editing && !confirmConfig && !sheetPrimary && finishSummary.total > 0
+      ? {
+          text: i18n.t('buy.cashAndTransfer', {
+            cash: formatMoney(finishSummary.totalCash),
+            transfer: formatMoney(finishSummary.totalTransfer),
+          }) as string,
+          amount: formatMoney(finishSummary.total),
+          currency: session?.member.currency ?? 'UZS',
+        }
+      : undefined;
+
   usePageMainButton(mainBtnText, mainBtnClick, {
     visible: mainBtnVisible,
     active: mainBtnActive,
+    summary: spentSummary,
   });
 
   // M1.12: register the run's "danger zone" actions in Telegram's gear ⚙️.
@@ -1550,14 +1568,40 @@ export function RunPage() {
       ? activeRun.runDate.slice(5)
       : (activeRun?.runDate ?? '');
 
-  const runSubtitle = activeRun
-    ? `${runDateShort} · ${
+  // Something bought that no store ordered. Opens on a catalogue product;
+  // the sheet itself switches to "other spending".
+  const openAddItem = (runId: string) =>
+    setAddItemDraft({
+      mode: 'sku',
+      runId,
+      skuId: null,
+      supplierId: null,
+      skuCostMode: 'merge',
+      // Made now even though the sheet opens on a product: switching it
+      // to spending must not mint a second id for the same entry.
+      expenseId: newClientId(),
+      label: '',
+      unitHint: '',
+      expenseScope: 'shared',
+      actualQty: '',
+      unitPrice: '',
+      splits: new Map(),
+      splitPrices: new Map(),
+      splitPaymentMethods: new Map(),
+      perStorePricing: false,
+      paymentMethod: 'cash',
+      receiptPhotoUrl: null,
+      reason: '',
+    });
+
+  const runTitle = activeRun
+    ? `${
         activeRun.status === 'planned'
           ? i18n.t('run.step.plan')
           : activeRun.status === 'purchasing'
-            ? i18n.t('run.step.purchase')
+            ? i18n.t('buy.title.buying')
             : activeRun.status === 'delivering'
-              ? i18n.t('run.step.deliver')
+              ? i18n.t('buy.title.delivering')
               : activeRun.status === 'finished'
                 ? i18n.t('run.step.done')
                 : activeRun.status === 'amending'
@@ -1577,88 +1621,23 @@ export function RunPage() {
         "#3 · purchasing" tag so the user sees both store-scope and
         run state without losing 60+ px to a redundant header bar. */
     <div className="flex flex-col pb-24">
-      {/* M3.5: store-switcher pill moved to SettingsSheet. Sticky strip
-         now only renders when there's an active run to label.
-
-         2026-07-30: dropped the `--app-chrome-pad-*` inline padding this
-         bar copied from StickyPageBar. Telegram's Close / ⋯ overlay the
-         reserved strip Shell renders above the scroll container; this bar
-         is below that strip and was never underneath them. See the
-         StickyPageBar docblock. */}
       {activeRun ? (
-        <div className="sticky top-0 z-[1] flex min-h-9 items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-2">
-          {/* M3.36 shipped the "×1000" price-mode toggle here as a pill
-              whose entire meaning lived in a `title` attribute. On a
-              touch device there is no hover, so nothing ever revealed
-              what "×千" did — while it defaulted to ON and silently
-              multiplied every price the purchaser typed by 1000. It also
-              cost width in a bar that, inside Telegram, has only ~223 px
-              to work with once the chrome pads are subtracted.
-
-              2026-07-30: the control moved ONTO the price field's unit
-              suffix in PurchaseRow (`K·UZS` / `UZS`). That is where the
-              user is looking when the setting matters, the suffix states
-              the current unit rather than naming an operation, and the
-              sticky bar gets its width back for the run identity. */}
-          {/* M3.41 (2026-05-21): "+ add item" — only shown during
-              purchasing AND when I hold the run claim (C.2 gate). The
-              domain layer enforces the same constraints; gating the UI
-              hides the affordance to avoid a confusing tap-then-fail.
-              The button opens AddItemSheet which collects SKU + qty +
-              price + store split + reason. */}
-          {editing ? (
-            <button
-              type="button"
-              onClick={() =>
-                setAddItemDraft({
-                  mode: 'sku',
-                  runId: activeRun.id,
-                  skuId: null,
-                  supplierId: null,
-                  skuCostMode: 'merge',
-                  // M3.44: pre-generate expense UUID even when opening
-                  // in SKU mode so a mid-flow tab switch to expense
-                  // mode already has the id ready (idempotency).
-                  expenseId: newClientId(),
-                  label: '',
-                  unitHint: '',
-                  expenseScope: 'shared',
-                  actualQty: '',
-                  unitPrice: '',
-                  splits: new Map(),
-                  splitPrices: new Map(),
-                  splitPaymentMethods: new Map(),
-                  perStorePricing: false,
-                  paymentMethod: 'cash',
-                  receiptPhotoUrl: null,
-                  reason: '',
-                })
-              }
-              title={i18n.t('run.action.addItem.title')}
-              className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-action)] px-2.5 py-0.5 text-old-label font-semibold text-[var(--c-action-fg)] active:opacity-70"
-            >
-              {i18n.t('run.action.addItem.button')}
-            </button>
-          ) : null}
-          {/* 2026-07-30 (flow review): this line is the definite article
-              for everything below it — every submission, item and price on
-              the page belongs to THIS run — and it was rendered as the
-              smallest, faintest, right-most element in the bar. Removing
-              the ×千 pill freed the width to give it normal weight.
-
-              The staleness badge is the other half. The run I walked was
-              3 days old and still `purchasing`, with nothing anywhere
-              saying so; a purchaser opening the app can't tell an active
-              trip from one somebody forgot to close. */}
-          <span className="min-w-0 flex-1 truncate text-old-body font-semibold tabular-nums text-[var(--c-fg)]">
-            #{activeRun.runIndex + 1} · {runSubtitle}
-          </span>
+        /* Which step the trip is at, in the size of a page title: every
+           line below belongs to this trip. A trip left open from another
+           day says so, because nothing else on the screen would. */
+        <header className="flex items-start justify-between gap-lg px-page pt-xl">
+          <div className="min-w-0">
+            <h1 className="text-h1 text-ink">{runTitle}</h1>
+            <p className="text-body text-secondary">
+              {i18n.t('buy.runOf', { n: activeRun.runIndex + 1, date: runDateShort })}
+            </p>
+          </div>
           {runAgeDays > 0 ? (
-            <span className="shrink-0 whitespace-nowrap rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-old-label text-[var(--c-warning-fg)]">
+            <StatusChip tone="pending">
               {i18n.t('run.label.staleRun', { days: runAgeDays })}
-            </span>
+            </StatusChip>
           ) : null}
-        </div>
+        </header>
       ) : null}
 
       {/* 2026-07-06: a super-admin is correcting a finished run. Make the
@@ -1672,43 +1651,7 @@ export function RunPage() {
         </div>
       ) : null}
 
-      {/* M3.31 A.2 (2026-05-18): when the run is still mutable
-          (planned/purchasing) and new approved sessions have appeared
-          since the run was created, prompt the purchaser to attach
-          them. Mirrors the "what should I add" reality of midday top-
-          ups — the staff submitted late, the approver waved it
-          through, the purchaser is already at the bazaar. The button
-          merges every available session in one call; the mutation's
-          domain layer guards against duplicates. */}
-      {activeRun &&
-      (activeRun.status === 'planned' || activeRun.status === 'purchasing') &&
-      previewQuery.data?.sessions.length ? (
-        <div className="px-4 pt-2">
-          <Banner
-            tone="info"
-            title={i18n.t('run.attach.banner.title', {
-              n: previewQuery.data.sessions.length,
-            })}
-            action={
-              <Button
-                variant="pearl"
-                size="sm"
-                loading={attachSessions.isPending}
-                onClick={() =>
-                  attachSessions.mutate({
-                    runId: activeRun.id,
-                    sessionIds: previewQuery.data!.sessions.map((s) => s.id),
-                  })
-                }
-              >
-                {i18n.t('run.action.attachSessions')}
-              </Button>
-            }
-          />
-        </div>
-      ) : null}
-
-      <div className="flex flex-col gap-2 px-4 pt-2">
+      <div className={activeRun && activeRun.status !== 'planned' ? 'flex flex-col gap-xl px-page pt-xl' : 'flex flex-col gap-2 px-4 pt-2'}>
         {!activeRun ? (
           <DataState query={previewQuery}>
             {(p) =>
@@ -1732,12 +1675,21 @@ export function RunPage() {
 
         {activeRun &&
         runDetailQuery.data &&
-        (activeRun.status === 'planned' || activeRun.status === 'purchasing') &&
-        (runDetailQuery.data.sessions?.length ?? 0) > 0 ? (
-          <RunSessionsCard
+        (activeRun.status === 'planned' || activeRun.status === 'purchasing') ? (
+          <RunOrders
             sessions={runDetailQuery.data.sessions ?? []}
             storeById={storeById}
             i18n={i18n}
+            // Orders approved after this trip started: staff ordered
+            // late, the purchaser is already at the market.
+            waiting={previewQuery.data?.sessions.length ?? 0}
+            attaching={attachSessions.isPending}
+            onAttach={() =>
+              attachSessions.mutate({
+                runId: activeRun.id,
+                sessionIds: (previewQuery.data?.sessions ?? []).map((s) => s.id),
+              })
+            }
             ejecting={ejectSession.isPending}
             onEject={(sessionRow) => {
               const storeName =
@@ -1810,7 +1762,7 @@ export function RunPage() {
             priceInThousands={priceInThousands}
             onTogglePriceUnit={togglePriceInThousands}
             savingSkuId={inlineSavingSkuId}
-            onSavePurchaseInline={({
+            onSavePurchase={({
               skuId,
               actualQty,
               unitPrice,
@@ -1978,6 +1930,7 @@ export function RunPage() {
                 reason: i18n.t('run.extras.recordExpenseReason'),
               });
             }}
+            onAddItem={() => openAddItem(activeRun.id)}
             onRemoveExpense={(expenseId) =>
               removeExpense.mutate({
                 runId: activeRun.id,
@@ -1985,7 +1938,7 @@ export function RunPage() {
                 reason: '',
               })
             }
-            onOpenExpense={() =>
+            onAddExpense={() =>
               setAddItemDraft({
                 mode: 'expense',
                 runId: activeRun.id,

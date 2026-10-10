@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Spinner, useSheetCount } from '@compass/ui';
-import { ActionBar, BottomNav, Button } from '@compass/ui/kit';
+import { ActionBar, BottomNav, Button, Money } from '@compass/ui/kit';
 import type { NavItem } from '@compass/ui/kit';
 import { OrderPage } from '../pages/OrderPage';
 import { ApprovalPage } from '../pages/ApprovalPage';
@@ -279,7 +279,19 @@ function PageAction() {
 
   if (!state || !state.visible) return null;
   return (
-    <ActionBar className="py-md">
+    <ActionBar
+      className="py-md"
+      summary={
+        state.summary ? (
+          <>
+            <span className="min-w-0 text-body text-secondary">{state.summary.text}</span>
+            {state.summary.amount ? (
+              <Money amount={state.summary.amount} currency={state.summary.currency} />
+            ) : null}
+          </>
+        ) : undefined
+      }
+    >
       <Button
         variant="primary"
         data-testid="page-main-button"

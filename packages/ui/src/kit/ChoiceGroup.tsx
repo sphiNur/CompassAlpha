@@ -11,6 +11,11 @@ export interface ChoiceGroupProps<V extends string> {
   options: Array<ChoiceOption<V>>;
   value: V;
   onChange: (value: V) => void;
+  /**
+   * A switch for how a list is shown, not a field in a form: the label
+   * is kept for screen readers only and the options are 44px tall.
+   */
+  compact?: boolean;
   className?: string;
 }
 
@@ -24,11 +29,12 @@ export function ChoiceGroup<V extends string>({
   options,
   value,
   onChange,
+  compact = false,
   className,
 }: ChoiceGroupProps<V>) {
   return (
     <div className={cn('flex flex-col gap-sm', className)}>
-      <span className="text-label text-ink">{label}</span>
+      {compact ? null : <span className="text-label text-ink">{label}</span>}
       <div role="radiogroup" aria-label={label} className="flex gap-sm">
         {options.map((option) => {
           const chosen = option.value === value;
@@ -41,7 +47,8 @@ export function ChoiceGroup<V extends string>({
               data-choice={option.value}
               onClick={() => onChange(option.value)}
               className={cn(
-                'flex h-control min-w-0 flex-1 items-center justify-center rounded-sm border px-md text-label outline-none',
+                'flex min-w-0 flex-1 items-center justify-center rounded-sm border px-md text-label outline-none',
+                compact ? 'h-tap' : 'h-control',
                 chosen
                   ? 'border-primary bg-surface text-primary ring-1 ring-primary'
                   : 'border-line bg-surface text-secondary active:bg-surface-sunken',
