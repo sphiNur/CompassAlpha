@@ -1,4 +1,5 @@
 /** @type {import('tailwindcss').Config} */
+import designTokens from '@compass/ui/tailwind-preset';
 
 /**
  * Typography scale (M3.14, 2026-05-16 — shrink pass).
@@ -43,6 +44,9 @@ const fontSizeScale = {
 };
 
 export default {
+  // The redesign's tokens (DESIGN.md). Screens that have been rebuilt use
+  // only these; the `old-*` scale below goes away with the last old screen.
+  presets: [designTokens],
   content: [
     './index.html',
     './src/**/*.{ts,tsx}',

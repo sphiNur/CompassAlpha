@@ -270,6 +270,7 @@ const tt = spawnSync(
     join(ROOT, 'packages/i18n'),
     join(ROOT, 'apps/api'),
     join(ROOT, 'apps/worker'),
+    join(ROOT, 'packages/ui'),
     join(ROOT, 'apps/web/src/lib'),
     join(ROOT, 'apps/web/src/hooks'),
     join(ROOT, 'apps/web/src/pages'),

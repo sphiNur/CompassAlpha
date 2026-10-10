@@ -271,6 +271,7 @@ jobs:
           bun test \
             packages/domain \
             packages/i18n \
+            packages/ui \
             apps/api \
             apps/worker \
             apps/web/src/lib \

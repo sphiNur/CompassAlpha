@@ -57,6 +57,38 @@ export function useSheetCount(): number {
   return n;
 }
 
+/**
+ * What every sheet owes the rest of the app while it is open: a place in
+ * the open-sheet count, and a Telegram BackButton that closes it. Shared
+ * by this Sheet and the redesigned one in ../kit so the two can coexist.
+ */
+export function useSheetPresence(open: boolean, onOpenChange: (open: boolean) => void): void {
+  // Track open-state in the global counter + wire Telegram BackButton
+  // to close. Skipped when not in Telegram (web preview just ignores).
+  useEffect(() => {
+    if (!open) return;
+    _bumpSheetCount(1);
+    // Read window.Telegram lazily — the package must not assume the
+    // SDK is loaded (it ships even in non-Telegram contexts like
+    // jest, storybook, the bare web preview).
+    type TgBackButton = {
+      onClick: (cb: () => void) => unknown;
+      offClick: (cb: () => void) => unknown;
+    };
+    const tg =
+      typeof window !== 'undefined'
+        ? ((window as { Telegram?: { WebApp?: { BackButton?: TgBackButton } } }).Telegram?.WebApp ??
+          null)
+        : null;
+    const handler = () => onOpenChange(false);
+    if (tg?.BackButton) tg.BackButton.onClick(handler);
+    return () => {
+      _bumpSheetCount(-1);
+      if (tg?.BackButton) tg.BackButton.offClick(handler);
+    };
+  }, [open, onOpenChange]);
+}
+
 interface SheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -141,30 +173,7 @@ export function Sheet({
     }, deferAutoFocusMs);
     return () => clearTimeout(timer);
   }, [open, disableAutoFocus, deferAutoFocusMs]);
-  // Track open-state in the global counter + wire Telegram BackButton
-  // to close. Skipped when not in Telegram (web preview just ignores).
-  useEffect(() => {
-    if (!open) return;
-    _bumpSheetCount(1);
-    // Read window.Telegram lazily — the package must not assume the
-    // SDK is loaded (it ships even in non-Telegram contexts like
-    // jest, storybook, the bare web preview).
-    type TgBackButton = {
-      onClick: (cb: () => void) => unknown;
-      offClick: (cb: () => void) => unknown;
-    };
-    const tg =
-      typeof window !== 'undefined'
-        ? ((window as { Telegram?: { WebApp?: { BackButton?: TgBackButton } } }).Telegram?.WebApp ??
-          null)
-        : null;
-    const handler = () => onOpenChange(false);
-    if (tg?.BackButton) tg.BackButton.onClick(handler);
-    return () => {
-      _bumpSheetCount(-1);
-      if (tg?.BackButton) tg.BackButton.offClick(handler);
-    };
-  }, [open, onOpenChange]);
+  useSheetPresence(open, onOpenChange);
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>

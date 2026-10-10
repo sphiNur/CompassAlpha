@@ -27,11 +27,24 @@ const bootGuess = detectLocale(
 );
 if (bootGuess !== 'en') preloadCatalog(bootGuess);
 
-createRoot(container).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+// `/?kit` shows the component kit on its own, without signing in. The
+// condition is a build-time constant, so a production bundle contains
+// neither the branch nor the page.
+if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('kit')) {
+  void import('./pages/KitGallery').then(({ KitGallery }) => {
+    createRoot(container).render(
+      <StrictMode>
+        <KitGallery />
+      </StrictMode>,
+    );
+  });
+} else {
+  createRoot(container).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+}
 
 // Tell index.html that React mounted; the splash CSS guard hides any
 // remaining boot error UI.
