@@ -140,14 +140,19 @@ export async function consumeRefresh(
   if (row.expiresAt <= new Date()) {
     throw new RefreshNotFoundError();
   }
-  // Mark consumed. Atomic-ish: another concurrent refresh request on
-  // the same row would race here; the second to flip `revokedAt`
-  // would see the first's update on read and throw replay. Postgres
-  // serializes UPDATEs on the same row.
-  await db
+  // Mark consumed. The read above is not a lock: two requests carrying
+  // the same token can both get this far. The conditional UPDATE lets
+  // exactly one of them flip the row; the other sees no row come back
+  // and is a replay like any other.
+  const consumed = await db
     .update(s.refreshTokens)
     .set({ revokedAt: new Date() })
-    .where(and(eq(s.refreshTokens.id, jti), isNull(s.refreshTokens.revokedAt)));
+    .where(and(eq(s.refreshTokens.id, jti), isNull(s.refreshTokens.revokedAt)))
+    .returning({ id: s.refreshTokens.id });
+  if (consumed.length === 0) {
+    await revokeFamily(db, row.family);
+    throw new RefreshReplayError();
+  }
   return { userId: row.userId };
 }
 

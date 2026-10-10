@@ -179,6 +179,22 @@ pgDescribe('refreshTokens service (PG-gated)', () => {
     expect(row.revokedAt).not.toBeNull();
   });
 
+  test('concurrent consumes of one token: exactly one wins', async () => {
+    const issued = await svc.issueRefresh(db, { userId: testUserId });
+    // Open the pool first. On cold connections the first caller finishes
+    // before the rest have connected and the race never happens.
+    await Promise.all(
+      Array.from({ length: 8 }, () => db.query.users.findFirst({ where: eq(s.users.id, testUserId) })),
+    );
+    const results = await Promise.allSettled(
+      Array.from({ length: 8 }, () => svc.consumeRefresh(db, issued.id, issued.family)),
+    );
+    expect(results.filter((r) => r.status === 'fulfilled').length).toBe(1);
+    for (const r of results) {
+      if (r.status === 'rejected') expect(r.reason).toBeInstanceOf(svc.RefreshReplayError);
+    }
+  });
+
   test('consumeRefresh on already-revoked row throws REPLAY and nukes family', async () => {
     const root = await svc.issueRefresh(db, { userId: testUserId });
     // Chain a child token in the same family. After we replay the
