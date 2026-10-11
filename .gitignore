@@ -47,3 +47,8 @@ smoke-failure-*.png
 
 # transient prod-repair scripts (one-shot SQL we run via SSH; never commit)
 .repair-*.sql
+
+# Deploy bundles made in this checkout on their way to a server.
+/staging-*.tar
+/*.tar
+/*.tar.gz
