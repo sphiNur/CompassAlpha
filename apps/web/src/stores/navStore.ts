@@ -38,7 +38,9 @@ export type Tab =
   | 'settlement'
   | 'confirm'
   | 'admin'
-  | 'menu';
+  | 'menu'
+  | 'orders'
+  | 'purchasing';
 
 /**
  * Pages with an in-progress form can register a guard before the shell
@@ -193,7 +195,18 @@ export const useNavStore = create<NavState>()(
 
         const tab = oneOf(
           p.tab,
-          ['order', 'approve', 'run', 'history', 'settlement', 'confirm', 'admin', 'menu'] as const,
+          [
+            'order',
+            'approve',
+            'run',
+            'history',
+            'settlement',
+            'confirm',
+            'admin',
+            'menu',
+            'orders',
+            'purchasing',
+          ] as const,
           DEFAULTS.tab,
         );
         const adminSection = oneOf(

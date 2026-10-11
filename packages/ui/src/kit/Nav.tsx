@@ -1,8 +1,11 @@
+import type { ReactNode } from 'react';
 import { cn } from '../cn';
 
 export interface NavItem<K extends string = string> {
   key: K;
   label: string;
+  /** Drawn above the word. It never stands in for it. */
+  icon?: ReactNode;
   /** Things waiting for this person on that screen. Zero shows nothing. */
   count?: number;
 }
@@ -51,14 +54,16 @@ export function BottomNav<K extends string>({
               disabled={disabled}
               onClick={() => onSelect(item.key)}
               className={cn(
-                'flex h-tap min-w-0 flex-1 items-center justify-center gap-xs rounded-pill px-xs text-caption outline-none',
+                'relative flex min-h-row min-w-0 flex-1 flex-col items-center justify-center gap-xs rounded-pill px-xs py-xs text-caption outline-none',
                 'focus-visible:bg-surface-sunken',
                 current ? 'bg-surface-sunken text-ink' : 'text-secondary',
               )}
             >
-              <span className="min-w-0 truncate">{item.label}</span>
+              {item.icon}
+              {/* A long word wraps onto a second line; it is never cut short. */}
+              <span className="max-w-full text-center [overflow-wrap:anywhere]">{item.label}</span>
               {item.count ? (
-                <span className="shrink-0 rounded-pill bg-primary px-sm text-on-primary">
+                <span className="absolute end-sm top-xs rounded-pill bg-primary px-sm text-on-primary">
                   {item.count}
                 </span>
               ) : null}

@@ -6,17 +6,11 @@ import type { NavItem } from '@compass/ui/kit';
 import { OrderPage } from '../pages/OrderPage';
 import { ApprovalPage } from '../pages/ApprovalPage';
 import { ConfirmPage } from '../pages/ConfirmPage';
-import { MenuPage } from '../pages/MenuPage';
-import { usePendingApprovals } from '../hooks/useWaitingCounts';
-// AdminPage is the heaviest screen in the bundle (~5k LoC + the role
-// editor + the audit list etc.). Most users will never open it — the
-// `users.manage` permission gate hides the tab — yet a static import
-// puts it in the initial JS chunk every fresh load downloads. Lazy +
-// Suspense splits it out to its own chunk that only admins pay for.
-// (M1.3, 2026-05-06.) The other tabs stay eagerly imported because
-// every authenticated user reaches at least one of them.
-const importAdminPage = () => import('../pages/AdminPage').then((m) => ({ default: m.AdminPage }));
-const AdminPage = lazy(importAdminPage);
+import { TodayPage } from '../destinations/TodayPage';
+import { OrdersPage } from '../destinations/OrdersPage';
+import { PurchasingPage } from '../destinations/PurchasingPage';
+import { ManagePage } from '../destinations/ManagePage';
+import { ManageIcon, OrdersIcon, PurchasingIcon, TodayIcon } from '../destinations/icons';
 // M3.11 (2026-05-16): same treatment for RunPage. ~3.4k LoC + heavy
 // purchase / delivery / confirm sheets + history detail. The
 // `run.purchase` permission gate hides the tab from staff, cashiers,
@@ -26,13 +20,6 @@ const AdminPage = lazy(importAdminPage);
 // (below) keeps the tap-to-open latency snappy for actual purchasers.
 const importRunPage = () => import('../pages/RunPage').then((m) => ({ default: m.RunPage }));
 const RunPage = lazy(importRunPage);
-// 2026-07-30: history is its own tab now. Lazy for the same reason as
-// RunPage — it pulls in the ~800-line history subsystem plus the money
-// settlement helpers. Rollup hoists RunHistory.tsx into a chunk shared
-// with RunPage, so a purchaser who opens both downloads it once.
-const importHistoryPage = () =>
-  import('../pages/HistoryPage').then((m) => ({ default: m.HistoryPage }));
-const HistoryPage = lazy(importHistoryPage);
 // Daily close is a financial, permission-gated surface. Keep its form and
 // recent-ledger query code out of the startup bundle for everyone else.
 const importSettlementPage = () =>
@@ -55,24 +42,46 @@ import { StoreBar } from './StoreBar';
 import { useTelegramChrome } from './useTelegramChrome';
 
 /**
- * The navigation holds the things a person does every day, in the order
- * a day runs: order, approve, buy, receive, close. Each appears only for
- * someone allowed to do it, so most people see two or three, and the
- * menu is always last.
+ * Places to go. They have the navigation under them and are for looking
+ * and choosing. Each appears only for someone with a reason to be there.
  */
-const TASKS: Array<{ key: Tab; permission: string; labelKey: string }> = [
-  { key: 'order', permission: 'order.draft', labelKey: 'nav.order' },
-  { key: 'approve', permission: 'order.approve', labelKey: 'nav.approve' },
-  { key: 'run', permission: 'run.purchase', labelKey: 'nav.run' },
-  { key: 'confirm', permission: 'delivery.confirm', labelKey: 'nav.confirm' },
-  { key: 'settlement', permission: 'settlement.record', labelKey: 'nav.settlement' },
+const DESTINATIONS: Array<{
+  key: Tab;
+  labelKey: string;
+  icon: ReactNode;
+  anyOf: string[] | null;
+}> = [
+  { key: 'menu', labelKey: 'nav.today', icon: <TodayIcon />, anyOf: null },
+  {
+    key: 'orders',
+    labelKey: 'nav.orders',
+    icon: <OrdersIcon />,
+    anyOf: ['order.draft', 'order.approve'],
+  },
+  {
+    key: 'purchasing',
+    labelKey: 'nav.purchasing',
+    icon: <PurchasingIcon />,
+    anyOf: ['run.purchase', 'prices.view'],
+  },
+  {
+    key: 'admin',
+    labelKey: 'nav.manage',
+    icon: <ManageIcon />,
+    anyOf: ['users.manage', 'settlement.record'],
+  },
 ];
 
-/** Reached from the menu, not from the navigation. */
-const BEHIND_MENU: Array<{ key: Tab; permission: string }> = [
-  // `prices.view` is who may see money: purchasers, managers, admins.
-  { key: 'history', permission: 'prices.view' },
-  { key: 'admin', permission: 'users.manage' },
+/**
+ * Things to do. A task takes the whole screen: no navigation, a way back,
+ * and one button. In the order a day runs.
+ */
+const TASKS: Array<{ key: Tab; permission: string }> = [
+  { key: 'order', permission: 'order.draft' },
+  { key: 'approve', permission: 'order.approve' },
+  { key: 'run', permission: 'run.purchase' },
+  { key: 'confirm', permission: 'delivery.confirm' },
+  { key: 'settlement', permission: 'settlement.record' },
 ];
 
 function PageLoading() {
@@ -101,53 +110,28 @@ function ShellInner() {
   // settings sheet, which Telegram's gear opens.
   const pageMenu = usePageMenuRegistration();
 
+  const destinations = DESTINATIONS.filter(
+    (d) => d.anyOf === null || d.anyOf.some((permission) => can(permission)),
+  );
   // Daily close is a part of the product an organisation either uses or
   // does not; having the permission is not enough to be shown it.
   const tasks = TASKS.filter(
     (t) => can(t.permission) && (t.key !== 'settlement' || !!session?.member.dailyClose),
   );
-  const reachable: Tab[] = [
-    'menu',
-    ...tasks.map((t) => t.key),
-    ...BEHIND_MENU.filter((t) => can(t.permission)).map((t) => t.key),
-  ];
+  const reachable: Tab[] = [...destinations.map((d) => d.key), ...tasks.map((t) => t.key)];
 
-  // Warm the AdminPage chunk in the background once we know the user
-  // can see the tab. The static `lazy()` above splits it into a
-  // separate JS chunk so non-admins never download it; this `import()`
-  // call kicks off the fetch idly so when the admin actually taps the
-  // tab, React.lazy resolves synchronously instead of flashing the
-  // Suspense fallback.
-  //
-  // Why we need this: without prefetch, the first tap-into-Admin shows
-  // ~400-1000ms of spinner on slow networks, which (a) feels like a
-  // stutter on Telegram WebApp, and (b) is enough to make the deep
-  // smoke's 400ms post-click waitForTimeout race the chunk download.
-  // We use requestIdleCallback when available so we don't compete with
-  // first-paint work on the entry route.
-  const canAdmin = !!session?.permissions.includes('users.manage');
-  // M3.11: same warmup pattern for RunPage. Trigger when the user
-  // can see the Run tab. Purchasers in production are a small share
-  // of users, so a non-purchaser saves the 60 kB of RunPage chunk
-  // entirely; purchasers get the chunk prefetched right after login.
+  // The buying screen is the heaviest and only purchasers open it: fetch
+  // its code once the page is idle, so the first tap does not wait for it.
   const canRun = !!session?.permissions.includes('run.purchase');
   useEffect(() => {
-    if (!canAdmin && !canRun) return;
+    if (!canRun) return;
     type IdleCB = (cb: () => void) => number;
     const ric = (window as { requestIdleCallback?: IdleCB }).requestIdleCallback;
-    const kick = () => {
-      // Fire both prefetches if applicable. Each is a Promise we
-      // intentionally drop — React.lazy will reuse the same Promise
-      // when the user actually taps in.
-      if (canAdmin) void importAdminPage();
-      if (canRun) void importRunPage();
-    };
+    const kick = () => void importRunPage();
     if (ric) ric(kick);
     else setTimeout(kick, 0);
-  }, [canAdmin, canRun]);
+  }, [canRun]);
 
-  // The tab is remembered across visits. A remembered tab the person
-  // can no longer open resolves to their first one instead of a blank.
   const persistedTab = useNavStore((s) => s.tab);
   const setTab = useNavStore((s) => s.setTab);
   // Decided once per visit, from what was stored when the app opened.
@@ -167,6 +151,12 @@ function ShellInner() {
     landed.current = true;
     if (tab !== persistedTab) setTab(tab);
   }, [tab, persistedTab, setTab]);
+
+  const isTask = tasks.some((t) => t.key === tab);
+  // Where "back" from a task leads: the place it was opened from.
+  const cameFrom = useRef<Tab>('menu');
+  if (!isTask) cameFrom.current = tab;
+
   const go = (next: Tab) => {
     if (next === tab) return;
     // A screen with unsaved work can refuse to be left.
@@ -174,6 +164,7 @@ function ShellInner() {
       if (allowed) setTab(next);
     });
   };
+  const back = () => go(reachable.includes(cameFrom.current) ? cameFrom.current : 'menu');
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   useTelegramSettingsButton(() => setSettingsOpen(true));
@@ -183,38 +174,32 @@ function ShellInner() {
   const inTelegram = isInTelegram();
   useTelegramChrome(inTelegram);
 
-  // History and administration open from the menu, so Telegram's back
-  // arrow returns there. Administration has its own back handling once
-  // inside a section, and an open sheet owns the arrow while it is open.
-  const behindMenu = tab === 'history' || tab === 'admin';
-  const adminAtHome = useNavStore((s) => s.adminSection === 'home');
+  // On a task screen Telegram's own arrow is the way back. An open sheet
+  // owns the arrow while it is open.
   const sheets = useSheetCount();
-  useTelegramBackButton(
-    () => go('menu'),
-    behindMenu && sheets === 0 && (tab !== 'admin' || adminAtHome),
-  );
+  useTelegramBackButton(back, isTask && sheets === 0);
 
+  const openSettings = () => setSettingsOpen(true);
   const pages: Record<Tab, () => ReactNode> = {
+    menu: () => <TodayPage onOpen={go} onOpenSettings={openSettings} />,
+    orders: () => <OrdersPage onOpen={go} />,
+    purchasing: () => <PurchasingPage onOpen={go} />,
+    admin: () => <ManagePage onOpen={go} onOpenSettings={openSettings} />,
     order: () => <OrderPage />,
     approve: () => <ApprovalPage />,
     run: () => lazily(<RunPage />),
     confirm: () => <ConfirmPage />,
     settlement: () => lazily(<SettlementPage />),
-    history: () => lazily(<HistoryPage />),
-    admin: () => lazily(<AdminPage />),
-    menu: () => <MenuPage onOpen={go} onOpenSettings={() => setSettingsOpen(true)} />,
+    // Past purchases are part of Purchasing now; an old stored value lands there.
+    history: () => <PurchasingPage onOpen={go} />,
   };
 
-  const waitingForApproval = usePendingApprovals(can('order.approve'));
   const busy = useAppMutating();
-  const items: Array<NavItem<Tab>> = [
-    { key: 'menu', label: i18n.t('nav.today') as string },
-    ...tasks.map((t) => ({
-      key: t.key,
-      label: i18n.t(t.labelKey as Parameters<typeof i18n.t>[0]) as string,
-      count: t.key === 'approve' ? waitingForApproval : undefined,
-    })),
-  ];
+  const items: Array<NavItem<Tab>> = destinations.map((d) => ({
+    key: d.key,
+    label: i18n.t(d.labelKey as Parameters<typeof i18n.t>[0]) as string,
+    icon: d.icon,
+  }));
 
   return (
     // On a wide screen the app is one centred column: it is a phone tool,
@@ -224,7 +209,12 @@ function ShellInner() {
       style={{ height: 'var(--app-viewport-h, 100dvh)' }}
     >
       <SettingsSheet open={settingsOpen} onOpenChange={setSettingsOpen} pageMenu={pageMenu} />
-      <StoreBar inTelegram={inTelegram} onOpenAccount={() => setSettingsOpen(true)} />
+      <StoreBar
+        inTelegram={inTelegram}
+        onOpenAccount={openSettings}
+        // In Telegram its own arrow does this.
+        onBack={isTask && !inTelegram ? back : undefined}
+      />
 
       <main
         className="min-h-0 flex-1 overflow-y-auto"
@@ -237,17 +227,19 @@ function ShellInner() {
 
       <BottomChrome>
         <PageAction />
-        <BottomNav<Tab>
-          label={i18n.t('nav.primaryAriaLabel') as string}
-          items={items}
-          // History and administration live under the menu.
-          active={behindMenu ? 'menu' : tab}
-          onSelect={(key) => go(key)}
-          // Leaving mid-save would land on a screen that has not seen the
-          // result yet.
-          disabled={busy}
-          className={busy ? 'opacity-60' : undefined}
-        />
+        {/* A task has the whole screen; the navigation is for choosing one. */}
+        {isTask ? null : (
+          <BottomNav<Tab>
+            label={i18n.t('nav.primaryAriaLabel') as string}
+            items={items}
+            active={tab}
+            onSelect={(key) => go(key)}
+            // Leaving mid-save would land on a screen that has not seen the
+            // result yet.
+            disabled={busy}
+            className={busy ? 'opacity-60' : undefined}
+          />
+        )}
       </BottomChrome>
     </div>
   );

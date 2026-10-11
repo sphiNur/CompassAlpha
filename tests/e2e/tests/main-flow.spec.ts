@@ -32,7 +32,14 @@ test.afterAll(async () => {
   await page.close();
 });
 
-const tab = (name: string): Locator => page.getByTestId(`nav-${name}`);
+// The four places to go. Tasks are opened from them and take the whole
+// screen; `leave` is the way back out of one.
+const tab = (name: 'menu' | 'orders' | 'purchasing' | 'admin'): Locator =>
+  page.getByTestId(`nav-${name}`);
+const leave = async (): Promise<void> => {
+  await page.getByTestId('task-back').click();
+  await expect(page.getByTestId('primary-nav')).toBeVisible();
+};
 const mainButton = (): Locator => page.getByTestId('page-main-button');
 const main = (): Locator => page.getByRole('main');
 const item = (sku: string): Locator => main().getByRole('listitem').filter({ hasText: sku });
@@ -60,13 +67,19 @@ test('sign in and confirm a display name', async () => {
   // Someone with several jobs lands on Today, which counts what is waiting.
   await expect(tab('menu')).toHaveAttribute('aria-current', 'page');
   await expect(main().getByRole('heading', { level: 1 })).toHaveText('Today');
-  await expect(page.getByTestId('tile-approve')).toHaveText(/0\s*Waiting for approval/);
-  await expect(page.getByTestId('tile-close')).toHaveText(/1\s*Day to close/);
+  // One thing is waiting, the day to close; nothing with an empty queue is listed.
+  await expect(page.getByTestId('today-hero')).toContainText('1');
+  await expect(page.getByTestId('tile-close')).toContainText('Day to close');
+  await expect(page.getByTestId('tile-approve')).toHaveCount(0);
   await evidence('signed-in');
 });
 
 test('place an order', async () => {
-  await tab('order').click();
+  await tab('orders').click();
+  await expect(mainButton()).toHaveText('New order');
+  await mainButton().click();
+  // A task has the whole screen: the navigation is gone, there is a way back.
+  await expect(page.getByTestId('primary-nav')).toBeHidden();
   await expect(main().getByRole('heading', { level: 1 })).toHaveText('Order');
 
   // A product nobody has asked for shows one button; the stepper appears
@@ -76,7 +89,9 @@ test('place an order', async () => {
     // is in flight the page's main button is disabled, and a tap that
     // arrives in that instant does nothing.
     const saved = page.waitForResponse((res) => res.url().includes('order.adjustItem'));
-    await item(sku).getByRole('button', { name: `Add ${sku}` }).click();
+    await item(sku)
+      .getByRole('button', { name: `Add ${sku}` })
+      .click();
     for (let i = 1; i < taps; i++) {
       await item(sku).getByRole('button', { name: 'Increase' }).click();
     }
@@ -112,8 +127,15 @@ test('place an order', async () => {
 
 test('approve it', async () => {
   // The navigation says how many orders are waiting before the tab is opened.
-  await expect(tab('approve')).toHaveText(/Approve\s*1/);
-  await tab('approve').click();
+  await leave();
+  // The order is listed where orders are, with its state.
+  await expect(main().getByTestId('orders-batch')).toContainText('Submitted');
+  // And Today says it is waiting, with the button that deals with it.
+  await tab('menu').click();
+  await expect(page.getByTestId('today-hero')).toContainText('2');
+  await expect(page.getByTestId('tile-approve')).toContainText(/Waiting for approval\s*1 order/);
+  await evidence('today-with-work');
+  await page.getByTestId('do-approve').click();
   await expect(main().getByRole('heading', { name: 'E2E Admin' })).toBeVisible();
   await main().getByRole('button', { name: 'Claim' }).click();
   await expect(item('Apple').getByRole('button', { name: /^Quantity/ })).toHaveAccessibleName(
@@ -122,11 +144,14 @@ test('approve it', async () => {
   await evidence('approval-claimed');
   await main().getByRole('button', { name: 'Approve', exact: true }).click();
   await expect(main().getByRole('heading', { name: 'Inbox is empty' })).toBeVisible();
-  await expect(tab('approve')).toHaveText('Approve');
 });
 
 test('buy everything, one item in cash and one by transfer', async () => {
-  await tab('run').click();
+  await leave();
+  await expect(page.getByTestId('tile-buy')).toContainText(/Orders to buy\s*1 order/);
+  await tab('purchasing').click();
+  await evidence('purchasing');
+  await page.getByTestId('open-run').click();
   await expect(main().getByRole('heading', { name: 'Ready to plan' })).toBeVisible();
   await evidence('run-preview');
   // A store's row opens to what that store is getting.
@@ -205,7 +230,9 @@ test('spending that is not a product, and correcting a purchase', async () => {
   await main().getByTestId('add-expense').click();
   await sheet().getByRole('textbox', { name: 'What is it?' }).fill('Porter');
   await sheet().getByRole('textbox', { name: 'Quantity' }).fill('1');
-  await sheet().getByRole('textbox', { name: /^Price per/ }).fill('10');
+  await sheet()
+    .getByRole('textbox', { name: /^Price per/ })
+    .fill('10');
   await sheet().getByRole('textbox', { name: 'Why was this added?' }).fill('Carried the beef');
   await expect(sheet()).toContainText(/Total\s*10,000/);
   await evidence('run-add-spending');
@@ -252,9 +279,10 @@ test('deliver to the store', async () => {
 
 test('receive the delivery at the store', async () => {
   // Today says there is something to check in, and how much.
+  await leave();
   await tab('menu').click();
-  await expect(page.getByTestId('tile-receive')).toHaveText(/2\s*Lines to receive/);
-  await page.getByTestId('tile-receive').click();
+  await expect(page.getByTestId('tile-receive')).toContainText(/Delivery to check in\s*2 items/);
+  await page.getByTestId('do-receive').click();
   await expect(main().getByRole('heading', { level: 1 })).toHaveText('Receiving');
   const rows = main().getByTestId('receive-row');
   await expect(rows).toHaveCount(2);
@@ -289,7 +317,9 @@ test('receive the delivery at the store', async () => {
 });
 
 test('finish the run and find it in history', async () => {
-  await tab('run').click();
+  await leave();
+  await expect(page.getByTestId('tile-run')).toContainText('Purchase in progress');
+  await page.getByTestId('do-run').click();
   await expect(main()).toContainText(/Stores\s*1\/1 confirmed/);
   await mainButton().click();
   // The split by payment method is what the purchaser signs off on.
@@ -300,16 +330,10 @@ test('finish the run and find it in history', async () => {
   await sheet().getByRole('button', { name: 'Finish run' }).click();
   await expect(main().getByRole('heading', { name: 'No approved sessions to plan' })).toBeVisible();
 
-  // Records are not a daily task: they sit behind the menu.
-  await tab('menu').click();
-  // What is waiting is counted at the top; by now, nothing.
-  await expect(page.getByTestId('tile-approve')).toHaveText(/0\s*Waiting for approval/);
-  await expect(page.getByTestId('tile-buy')).toHaveText(/0\s*Orders to buy/);
-  await expect(page.getByTestId('tile-receive')).toHaveText(/0\s*Lines to receive/);
-  await evidence('menu');
-  await page.getByTestId('menu-history').click();
-  await expect(tab('menu')).toHaveAttribute('aria-current', 'page');
-  await expect(main().getByRole('heading', { level: 1 })).toHaveText(/History\s*1 · 114,000 UZS/);
+  // What earlier trips bought sits under Purchasing.
+  await leave();
+  await tab('purchasing').click();
+  await expect(main().getByRole('heading', { level: 1 }).first()).toHaveText('Purchasing');
   await expect(
     main().getByRole('button', { name: /Central Kitchen 2 items 114,000/ }),
   ).toBeVisible();
@@ -317,7 +341,8 @@ test('finish the run and find it in history', async () => {
 });
 
 test('close the day', async () => {
-  await tab('settlement').click();
+  await tab('admin').click();
+  await page.getByTestId('manage-close').click();
   await expect(main().getByRole('heading', { level: 1 })).toHaveText('Daily close');
   await evidence('daily-close-empty');
   await page.getByRole('textbox', { name: 'Invoiced cash revenue' }).fill('500000');
@@ -351,8 +376,11 @@ test('close the day', async () => {
   await evidence('daily-close-saved');
 
   // Today no longer says the day is waiting to be closed.
+  await leave();
   await tab('menu').click();
-  await expect(page.getByTestId('tile-close')).toHaveText(/0\s*Day to close/);
+  await expect(page.getByTestId('tile-close')).toHaveCount(0);
+  await expect(page.getByTestId('today-hero')).toContainText('Nothing needs you right now.');
+  await evidence('today-all-done');
 });
 
 test('an organisation that does not use the daily close is not shown it', async () => {
@@ -368,10 +396,11 @@ test('an organisation that does not use the daily close is not shown it', async 
   }
   await page.reload();
   await expect(page.getByTestId('primary-nav')).toBeVisible();
+  // Not under Manage, and not on Today.
+  await tab('admin').click();
+  await expect(page.getByTestId('manage-settings')).toBeVisible();
+  await expect(page.getByTestId('manage-close')).toHaveCount(0);
   await tab('menu').click();
-  await expect(page.getByTestId('tile-approve')).toBeVisible();
-  // Neither the tab, nor the count on Today.
-  await expect(tab('settlement')).toHaveCount(0);
   await expect(page.getByTestId('tile-close')).toHaveCount(0);
   await evidence('today-without-daily-close');
 });

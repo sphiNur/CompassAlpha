@@ -74,3 +74,12 @@ export function useCloseDue(enabled: boolean): number | null {
   return close.data ? 0 : 1;
 }
 
+/** The market run that is planned, being bought for or being delivered. */
+export function useActiveRun(enabled: boolean): { id: string; runDate: string; status: string } | null {
+  const runs = trpc.run.list.useQuery(undefined, { ...FRESH, enabled });
+  const run = runs.data?.find((r) =>
+    ['planned', 'purchasing', 'delivering', 'amending'].includes(r.status),
+  );
+  return run ? { id: run.id, runDate: run.runDate, status: run.status } : null;
+}
+

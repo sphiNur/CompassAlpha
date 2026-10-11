@@ -23,12 +23,16 @@ const NO_STORES: AuthSession['stores'] = [];
 export function StoreBar({
   inTelegram,
   onOpenAccount,
+  onBack,
 }: {
   inTelegram: boolean;
   /** Opens name and language. Telegram has its own button for this. */
   onOpenAccount: () => void;
+  /** On a task screen: leave it. Telegram shows its own back arrow. */
+  onBack?: () => void;
 }) {
   const name = useAuthStore((s) => s.session?.user.displayName);
+  const i18n = useI18n();
   if (inTelegram) {
     // Both sides are padded by the WIDER of Telegram's two overlays, which
     // keeps the name on the screen's centre line rather than centred in
@@ -53,8 +57,21 @@ export function StoreBar({
       className="flex shrink-0 items-center justify-between gap-lg bg-neutral px-page"
       style={{ paddingTop: 'var(--app-safe-top)' }}
     >
+      {onBack ? (
+        <button
+          type="button"
+          data-testid="task-back"
+          onClick={onBack}
+          className="flex h-tap shrink-0 items-center gap-xs text-label text-ink outline-none active:opacity-60"
+        >
+          <span aria-hidden className="rtl:-scale-x-100">
+            ‹
+          </span>
+          {i18n.t('common.back')}
+        </button>
+      ) : null}
       <StoreButton />
-      {name ? (
+      {name && !onBack ? (
         <button
           type="button"
           data-testid="account"
