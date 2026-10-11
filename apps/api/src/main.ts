@@ -17,7 +17,7 @@ import type { ServerWebSocket } from 'bun';
 import { env } from './env';
 import { createApp } from './app';
 import { logger } from './infra/log';
-import { getDb, closeDb } from '@compass/db';
+import { getDb, closeDb, inSystem } from '@compass/db';
 import { verifyAccess } from './infra/jwt';
 import { hub } from './realtime/hub';
 
@@ -30,7 +30,7 @@ interface WSData {
 async function main() {
   const db = getDb(env.DATABASE_URL);
   try {
-    await db.execute(sql`SELECT 1`);
+    await inSystem(db, 'health', (tx) => tx.execute(sql`SELECT 1`));
     logger.info('DB ping ok');
   } catch (err) {
     if (env.NODE_ENV === 'production') {

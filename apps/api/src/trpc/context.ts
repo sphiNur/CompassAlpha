@@ -85,7 +85,21 @@ export async function createContext(_opts: unknown, c: HonoContext): Promise<Req
   };
 }
 
-export async function loadSession(
+/**
+ * Who is making this request and what they may do. The access token names
+ * the organisation, so the lookup runs inside it: a token for one tenant
+ * cannot be made to load a member of another.
+ */
+export function loadSession(
+  db: ReturnType<typeof getDb>,
+  userId: string,
+  orgId: string,
+  memberId: string,
+): Promise<SessionContext | null> {
+  return withOrgContext(db, orgId, (tx) => readSession(tx, userId, orgId, memberId));
+}
+
+async function readSession(
   db: ReturnType<typeof getDb>,
   userId: string,
   orgId: string,

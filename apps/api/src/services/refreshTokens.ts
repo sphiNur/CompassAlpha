@@ -40,7 +40,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { DB } from '@compass/db';
-import { schema as s } from '@compass/db';
+import { inSystem, schema as s } from '@compass/db';
 import { signRefresh } from '../infra/jwt';
 
 export class RefreshReplayError extends Error {
@@ -89,16 +89,18 @@ export async function issueRefresh(
   const family = opts.family ?? randomUUID();
   const expiresAt = new Date(Date.now() + REFRESH_TTL_MS);
   const token = await signRefresh(opts.userId, family, id);
-  await db.insert(s.refreshTokens).values({
-    id,
-    userId: opts.userId,
-    tokenHash: hashToken(token),
-    family,
-    parentId: opts.parentId ?? null,
-    ip: opts.ip ?? null,
-    userAgent: opts.userAgent ?? null,
-    expiresAt,
-  });
+  await inSystem(db, 'auth', (tx) =>
+    tx.insert(s.refreshTokens).values({
+      id,
+      userId: opts.userId,
+      tokenHash: hashToken(token),
+      family,
+      parentId: opts.parentId ?? null,
+      ip: opts.ip ?? null,
+      userAgent: opts.userAgent ?? null,
+      expiresAt,
+    }),
+  );
   return { token, id, family, expiresAt };
 }
 
@@ -113,10 +115,12 @@ export const ROTATION_RETRY_LEEWAY_MS = 60_000;
  */
 async function isRetryOfLostRotation(db: DB, jti: string, revokedAt: Date): Promise<boolean> {
   if (Date.now() - revokedAt.getTime() > ROTATION_RETRY_LEEWAY_MS) return false;
-  const successor = await db.query.refreshTokens.findFirst({
-    where: (rt, { eq: eq2, and: and2, isNull: isNull2 }) =>
-      and2(eq2(rt.parentId, jti), isNull2(rt.revokedAt)),
-  });
+  const successor = await inSystem(db, 'auth', (tx) =>
+    tx.query.refreshTokens.findFirst({
+      where: (rt, { eq: eq2, and: and2, isNull: isNull2 }) =>
+        and2(eq2(rt.parentId, jti), isNull2(rt.revokedAt)),
+    }),
+  );
   return successor !== undefined;
 }
 
@@ -136,9 +140,11 @@ export async function consumeRefresh(
   jti: string,
   family: string,
 ): Promise<{ userId: string }> {
-  const row = await db.query.refreshTokens.findFirst({
-    where: (rt, { eq: eq2 }) => eq2(rt.id, jti),
-  });
+  const row = await inSystem(db, 'auth', (tx) =>
+    tx.query.refreshTokens.findFirst({
+      where: (rt, { eq: eq2 }) => eq2(rt.id, jti),
+    }),
+  );
   if (!row) throw new RefreshNotFoundError();
   // Sanity: the JWT-claimed family must match the DB row's family.
   // If they diverge, the JWT was signed with a different family value
@@ -170,11 +176,13 @@ export async function consumeRefresh(
   // the same token can both get this far. The conditional UPDATE lets
   // exactly one of them flip the row; the other sees no row come back
   // and is a replay like any other.
-  const consumed = await db
-    .update(s.refreshTokens)
-    .set({ revokedAt: new Date() })
-    .where(and(eq(s.refreshTokens.id, jti), isNull(s.refreshTokens.revokedAt)))
-    .returning({ id: s.refreshTokens.id });
+  const consumed = await inSystem(db, 'auth', (tx) =>
+    tx
+      .update(s.refreshTokens)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(s.refreshTokens.id, jti), isNull(s.refreshTokens.revokedAt)))
+      .returning({ id: s.refreshTokens.id }),
+  );
   if (consumed.length === 0) {
     await revokeFamily(db, row.family);
     throw new RefreshReplayError();
@@ -189,10 +197,12 @@ export async function consumeRefresh(
  * revoke just that family.
  */
 export async function revokeAllForUser(db: DB, userId: string): Promise<number> {
-  const result = await db
-    .update(s.refreshTokens)
-    .set({ revokedAt: new Date() })
-    .where(and(eq(s.refreshTokens.userId, userId), isNull(s.refreshTokens.revokedAt)));
+  const result = await inSystem(db, 'auth', (tx) =>
+    tx
+      .update(s.refreshTokens)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(s.refreshTokens.userId, userId), isNull(s.refreshTokens.revokedAt))),
+  );
   // drizzle-postgres returns rowCount on the underlying query result;
   // shape varies by adapter. Fall back to 0 if we can't read it.
   return (result as unknown as { rowCount?: number }).rowCount ?? 0;
@@ -205,10 +215,12 @@ export async function revokeAllForUser(db: DB, userId: string): Promise<number> 
  * action.
  */
 async function revokeFamily(db: DB, family: string): Promise<void> {
-  await db
-    .update(s.refreshTokens)
-    .set({ revokedAt: new Date() })
-    .where(and(eq(s.refreshTokens.family, family), isNull(s.refreshTokens.revokedAt)));
+  await inSystem(db, 'auth', (tx) =>
+    tx
+      .update(s.refreshTokens)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(s.refreshTokens.family, family), isNull(s.refreshTokens.revokedAt))),
+  );
 }
 
 /**
@@ -217,13 +229,10 @@ async function revokeFamily(db: DB, family: string): Promise<void> {
  * which is fine for a single-chain launch. Wire when row count
  * starts mattering for query plans.
  */
-export async function purgeExpiredRefreshTokens(
-  db: DB,
-  graceDays = 7,
-): Promise<number> {
+export async function purgeExpiredRefreshTokens(db: DB, graceDays = 7): Promise<number> {
   const cutoff = new Date(Date.now() - graceDays * 24 * 60 * 60 * 1000);
-  const result = await db
-    .delete(s.refreshTokens)
-    .where(sql`${s.refreshTokens.expiresAt} < ${cutoff}`);
+  const result = await inSystem(db, 'auth', (tx) =>
+    tx.delete(s.refreshTokens).where(sql`${s.refreshTokens.expiresAt} < ${cutoff}`),
+  );
   return (result as unknown as { rowCount?: number }).rowCount ?? 0;
 }

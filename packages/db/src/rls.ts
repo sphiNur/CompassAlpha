@@ -52,7 +52,9 @@ export type SystemReason =
   /** Liveness and readiness checks, which touch no tenant's rows. */
   | 'health'
   /** Schema migrations, seeds and operator scripts. */
-  | 'maintenance';
+  | 'maintenance'
+  /** Client logs and metrics, which can arrive before anyone has signed in. */
+  | 'telemetry';
 
 /**
  * Run `fn` in a transaction that is deliberately not tied to one tenant.
@@ -73,4 +75,18 @@ export async function withSystemContext<T>(
     await tx.execute(sql`SELECT set_config('app.system_context', ${reason}, true)`);
     return fn(tx as unknown as DB);
   }, options);
+}
+
+/**
+ * One statement, deliberately not tied to a tenant. For code whose
+ * statements must each commit by themselves (rotating a refresh token
+ * revokes a family and THEN fails the request; in one transaction the
+ * failure would undo the revocation).
+ */
+export function inSystem<T>(
+  db: DB,
+  reason: SystemReason,
+  statement: (tx: DB) => PromiseLike<T>,
+): Promise<T> {
+  return withSystemContext(db, reason, async (tx) => await statement(tx));
 }
