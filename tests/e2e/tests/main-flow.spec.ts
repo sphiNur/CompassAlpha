@@ -97,10 +97,13 @@ test('sign in and confirm a display name', async () => {
   // Someone with several jobs lands on Today, which counts what is waiting.
   await expect(tab('menu')).toHaveAttribute('aria-current', 'page');
   await expect(main().getByRole('heading', { level: 1 })).toHaveText('Today');
-  // One thing is waiting, the day to close; nothing with an empty queue is listed.
-  await expect(page.getByTestId('today-hero')).toContainText('1');
-  await expect(page.getByTestId('tile-close')).toContainText('Day to close');
-  await expect(page.getByTestId('tile-approve')).toHaveCount(0);
+  // The card is about the day: nothing spent, nothing being bought.
+  await expect(page.getByTestId('today-spend')).toHaveText(/Spent today\s*0\s*UZS/);
+  await expect(page.getByTestId('today-buying')).toHaveText('No purchase today yet');
+  // One thing is waiting, the day to close: a number on that job, and the prompt.
+  await expect(page.getByTestId('quick-close')).toHaveAttribute('data-count', '1');
+  await expect(page.getByTestId('quick-approve')).toHaveAttribute('data-count', '0');
+  await expect(page.getByTestId('do-close')).toBeVisible();
   await evidence('signed-in');
 });
 
@@ -162,8 +165,7 @@ test('approve it', async () => {
   await expect(main().getByTestId('orders-batch')).toContainText('Submitted');
   // And Today says it is waiting, with the button that deals with it.
   await tab('menu').click();
-  await expect(page.getByTestId('today-hero')).toContainText('2');
-  await expect(page.getByTestId('tile-approve')).toHaveText(/1\s*Waiting for approval/);
+  await expect(page.getByTestId('quick-approve')).toHaveText(/Approve\s*1/);
   await evidence('today-with-work');
   await evidenceIn(['zh', 'ru'], 'today-with-work');
   await page.getByTestId('do-approve').click();
@@ -179,7 +181,7 @@ test('approve it', async () => {
 
 test('buy everything, one item in cash and one by transfer', async () => {
   await leave();
-  await expect(page.getByTestId('tile-buy')).toHaveText(/1\s*Orders to buy/);
+  await expect(page.getByTestId('quick-run')).toHaveText(/Buy\s*1/);
   await tab('purchasing').click();
   await evidence('purchasing');
   await page.getByTestId('open-run').click();
@@ -312,7 +314,15 @@ test('receive the delivery at the store', async () => {
   // Today says there is something to check in, and how much.
   await leave();
   await tab('menu').click();
-  await expect(page.getByTestId('tile-receive')).toHaveText(/2\s*Delivery to check in/);
+  await expect(page.getByTestId('quick-confirm')).toHaveText(/Receive\s*2/);
+  // The card has the money that went out, by how it was paid, and where
+  // the purchase stands.
+  await expect(page.getByTestId('today-spend')).toContainText('Cash');
+  await expect(page.getByTestId('today-spend')).toContainText('Transfer');
+  await expect(page.getByTestId('today-spend')).not.toHaveText(/Spent today\s*0\s*UZS/);
+  await expect(page.getByTestId('today-progress')).toContainText('Delivering');
+  await evidence('today-delivering');
+  await evidenceIn(['zh', 'ru'], 'today-delivering');
   await page.getByTestId('do-receive').click();
   await expect(main().getByRole('heading', { level: 1 })).toHaveText('Receiving');
   const rows = main().getByTestId('receive-row');
@@ -349,7 +359,7 @@ test('receive the delivery at the store', async () => {
 
 test('finish the run and find it in history', async () => {
   await leave();
-  await expect(page.getByTestId('tile-run')).toContainText('Purchase in progress');
+  await expect(page.getByTestId('today-progress')).toContainText('Delivering');
   await page.getByTestId('do-run').click();
   await expect(main()).toContainText(/Stores\s*1\/1 confirmed/);
   await mainButton().click();
@@ -409,8 +419,8 @@ test('close the day', async () => {
   // Today no longer says the day is waiting to be closed.
   await leave();
   await tab('menu').click();
-  await expect(page.getByTestId('tile-close')).toHaveCount(0);
-  await expect(page.getByTestId('today-hero')).toContainText('Nothing waiting');
+  await expect(page.getByTestId('quick-close')).toHaveAttribute('data-count', '0');
+  await expect(page.getByTestId('today-buying')).toHaveText('1 purchase finished');
   await evidence('today-all-done');
 });
 
@@ -432,7 +442,8 @@ test('an organisation that does not use the daily close is not shown it', async 
   await expect(page.getByTestId('manage-settings')).toBeVisible();
   await expect(page.getByTestId('manage-close')).toHaveCount(0);
   await tab('menu').click();
-  await expect(page.getByTestId('tile-close')).toHaveCount(0);
+  await expect(page.getByTestId('today-hero')).toBeVisible();
+  await expect(page.getByTestId('quick-close')).toHaveCount(0);
   await evidence('today-without-daily-close');
 });
 

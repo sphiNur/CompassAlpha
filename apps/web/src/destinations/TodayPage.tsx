@@ -4,6 +4,8 @@ import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { useI18n } from '../hooks/useI18n';
 import { useStoreContext } from '../components/StoreSwitcher';
+import { currencyOf, formatMoney } from '../lib/format';
+import { useDay } from '../hooks/useDay';
 import { StoreButton } from '../app/StoreBar';
 import type { Tab } from '../stores/navStore';
 import {
@@ -33,15 +35,13 @@ export interface TodayPageProps {
 interface Waiting {
   key: 'approve' | 'receive' | 'run' | 'buy' | 'close';
   tab: Tab;
-  /** In the summary card: what is counted. */
+  /** What is waiting, in a few words. */
   label: string;
   count: number;
   /** In the prompt card under it. */
   body: string;
   action: string;
   icon: ReactNode;
-  /** The small disc's colours in the summary grid. */
-  disc: string;
 }
 
 function initials(name: string | undefined): string {
@@ -54,12 +54,13 @@ function initials(name: string | undefined): string {
 
 /**
  * The home screen, laid out after the Wise app's: who you are and the
- * main action at the top, a strip of quick actions, one large card that
- * sums up the day, a prompt for the most pressing thing, and what
- * happened lately.
+ * main action at the top, a strip of this person's jobs, one large card
+ * for the day, a prompt for the most pressing thing, and what happened
+ * lately.
  *
- * Only what is waiting is counted; a job with an empty queue has a quick
- * action to start it but no number.
+ * The card answers what an owner opens the app to learn: what today has
+ * cost and how far the buying has got. What is waiting is a number on
+ * the job it belongs to, and one prompt for the first of them.
  */
 export function TodayPage({ onOpen, onOpenSettings }: TodayPageProps) {
   const i18n = useI18n();
@@ -79,6 +80,11 @@ export function TodayPage({ onOpen, onOpenSettings }: TodayPageProps) {
     { enabled: can('order.draft') && !!storeId, refetchOnMount: 'always' },
   );
 
+  const watchesBuying = can('run.purchase') || can('prices.view') || can('delivery.confirm');
+  const day = useDay({ purchases: watchesBuying, prices: can('prices.view') });
+  const currency = currencyOf(session);
+  const closes = can('settlement.record') && !!session?.member.dailyClose;
+
   const waiting: Waiting[] = [];
   if (toApprove > 0) {
     waiting.push({
@@ -89,7 +95,6 @@ export function TodayPage({ onOpen, onOpenSettings }: TodayPageProps) {
       body: i18n.t('today.promo.approveBody') as string,
       action: i18n.t('nav.approve') as string,
       icon: <ApproveIcon />,
-      disc: 'bg-warning text-on-warning',
     });
   }
   if (toReceive > 0) {
@@ -101,7 +106,6 @@ export function TodayPage({ onOpen, onOpenSettings }: TodayPageProps) {
       body: i18n.t('today.promo.receiveBody') as string,
       action: i18n.t('nav.confirm') as string,
       icon: <ReceiveIcon />,
-      disc: 'bg-primary text-on-primary',
     });
   }
   if (activeRun) {
@@ -113,7 +117,6 @@ export function TodayPage({ onOpen, onOpenSettings }: TodayPageProps) {
       body: activeRun.runDate,
       action: i18n.t('today.continue') as string,
       icon: <PurchasingIcon />,
-      disc: 'bg-contrast text-on-contrast',
     });
   } else if (toBuy > 0) {
     waiting.push({
@@ -124,7 +127,6 @@ export function TodayPage({ onOpen, onOpenSettings }: TodayPageProps) {
       body: i18n.t('today.promo.buyBody') as string,
       action: i18n.t('nav.run') as string,
       icon: <PurchasingIcon />,
-      disc: 'bg-contrast text-on-contrast',
     });
   }
   if (closeDue === 1) {
@@ -136,27 +138,48 @@ export function TodayPage({ onOpen, onOpenSettings }: TodayPageProps) {
       body: i18n.t('today.promo.closeBody') as string,
       action: i18n.t('nav.settlement') as string,
       icon: <CloseDayIcon />,
-      disc: 'bg-surface-sunken text-ink',
     });
   }
 
   // The strip of quick actions: every job this person does, the first one
-  // in the accent colour.
-  const quick: Array<{ key: string; label: string; tab: Tab }> = [];
-  if (can('order.draft'))
-    quick.push({ key: 'order', label: i18n.t('nav.order') as string, tab: 'order' });
-  if (can('order.approve')) {
-    quick.push({ key: 'approve', label: i18n.t('nav.approve') as string, tab: 'approve' });
+  // in the accent colour, each with the number waiting in it.
+  const count = (key: Waiting['key']) => waiting.find((w) => w.key === key)?.count ?? 0;
+  const quick: Array<{ key: string; label: string; tab: Tab; count: number }> = [];
+  if (can('order.draft')) {
+    quick.push({ key: 'order', label: i18n.t('nav.order') as string, tab: 'order', count: 0 });
   }
-  if (can('run.purchase'))
-    quick.push({ key: 'run', label: i18n.t('nav.run') as string, tab: 'run' });
+  if (can('order.approve')) {
+    quick.push({
+      key: 'approve',
+      label: i18n.t('nav.approve') as string,
+      tab: 'approve',
+      count: count('approve'),
+    });
+  }
+  if (can('run.purchase')) {
+    quick.push({ key: 'run', label: i18n.t('nav.run') as string, tab: 'run', count: count('buy') });
+  }
   if (can('delivery.confirm')) {
-    quick.push({ key: 'confirm', label: i18n.t('nav.confirm') as string, tab: 'confirm' });
+    quick.push({
+      key: 'confirm',
+      label: i18n.t('nav.confirm') as string,
+      tab: 'confirm',
+      count: count('receive'),
+    });
+  }
+  if (closes) {
+    quick.push({
+      key: 'close',
+      label: i18n.t('nav.settlement') as string,
+      tab: 'settlement',
+      count: count('close'),
+    });
   }
 
   const pressing = waiting.find((w) => w.key !== dismissed) ?? null;
   const offerOrder = !pressing && can('order.draft') && dismissed !== 'order';
   const batches = recent.data ?? [];
+  const ordered = batches.reduce((n, b) => n + b.itemCount, 0);
 
   return (
     <div className="flex flex-col gap-xl px-page pb-xl pt-sm">
@@ -189,59 +212,124 @@ export function TodayPage({ onOpen, onOpenSettings }: TodayPageProps) {
         </div>
       </div>
 
-      {quick.length > 1 ? (
+      {quick.length > 1 || quick.some((q) => q.count > 0) ? (
         <div className="-mx-page flex gap-md overflow-x-auto px-page">
           {quick.map((q, index) => (
             <button
               key={q.key}
               type="button"
               data-testid={`quick-${q.key}`}
+              data-count={q.count}
               onClick={() => onOpen(q.tab)}
               className={
-                'flex h-chip shrink-0 items-center rounded-pill px-lg text-label outline-none active:opacity-70 ' +
+                'flex h-chip shrink-0 items-center gap-sm rounded-pill px-lg text-label outline-none active:opacity-70 ' +
                 (index === 0 ? 'bg-primary text-on-primary' : 'bg-primary-pale text-forest')
               }
             >
               {q.label}
+              {q.count > 0 ? (
+                <span className="rounded-pill bg-warning px-sm text-caption text-on-warning">
+                  {q.count}
+                </span>
+              ) : null}
             </button>
           ))}
         </div>
       ) : null}
 
-      {/* The day in one card. */}
+      {/* The day in one card: what it has cost, and how far the buying is. */}
       <section data-testid="today-hero" className="flex flex-col gap-xl rounded-lg bg-surface p-xl">
         <div>
           <h1 className="text-h2 text-ink">{i18n.t('nav.today')}</h1>
-          <p className="text-body text-secondary">
-            {[i18n.t('today.summary', { n: waiting.length }), session?.member.orgName]
-              .filter(Boolean)
-              .join(' • ')}
-          </p>
+          <p className="text-body text-secondary">{session?.member.orgName}</p>
         </div>
-        {waiting.length > 0 ? (
+
+        {day.spend ? (
+          <div data-testid="today-spend" className="flex flex-col gap-xs">
+            <span className="text-small text-secondary">{i18n.t('today.spent')}</span>
+            <span className="flex flex-wrap items-baseline gap-x-sm text-ink" dir="ltr">
+              <span className="text-display tabular-nums">{formatMoney(day.spend.total)}</span>
+              <span className="text-label text-secondary">{currency}</span>
+            </span>
+            {day.spend.total > 0 ? (
+              <span className="text-small text-secondary">
+                {i18n.t('run.label.paymentCash')}{' '}
+                <span dir="ltr" className="tabular-nums text-ink">
+                  {formatMoney(day.spend.cash)}
+                </span>
+                {' · '}
+                {i18n.t('run.label.paymentTransfer')}{' '}
+                <span dir="ltr" className="tabular-nums text-ink">
+                  {formatMoney(day.spend.transfer)}
+                </span>
+              </span>
+            ) : null}
+          </div>
+        ) : ordered > 0 ? (
+          <div className="flex flex-col gap-xs">
+            <span className="text-small text-secondary">{i18n.t('today.ordered')}</span>
+            <span className="text-display text-ink">
+              {i18n.t('run.label.itemsCount', { n: ordered })}
+            </span>
+          </div>
+        ) : null}
+
+        {day.progress ? (
+          <button
+            type="button"
+            data-testid="today-progress"
+            onClick={() => onOpen(can('run.purchase') ? 'run' : 'confirm')}
+            className="flex flex-col gap-sm text-start outline-none active:opacity-60"
+          >
+            <span className="flex flex-wrap items-baseline justify-between gap-x-lg">
+              <span className="text-label text-ink">
+                {i18n.t(`run.status.${day.progress.status}` as Parameters<typeof i18n.t>[0])}
+              </span>
+              {day.progress.lines > 0 ? (
+                <span className="text-small text-secondary">
+                  {i18n.t('today.bought', { done: day.progress.done, lines: day.progress.lines })}
+                </span>
+              ) : null}
+            </span>
+            <span aria-hidden className="flex h-sm overflow-hidden rounded-pill bg-surface-sunken">
+              <span
+                className="rounded-pill bg-primary"
+                style={{
+                  width: `${day.progress.lines ? (day.progress.done / day.progress.lines) * 100 : 0}%`,
+                }}
+              />
+            </span>
+          </button>
+        ) : watchesBuying ? (
+          <p data-testid="today-buying" className="text-body text-secondary">
+            {day.finished > 0
+              ? i18n.t('today.buyingDone', { n: day.finished })
+              : i18n.t('today.noBuying')}
+          </p>
+        ) : null}
+
+        {/* Each store's share, when looking at all of them at once. */}
+        {day.spend && storeId === null && day.spend.stores.length > 1 ? (
           <div className="grid grid-cols-2 gap-x-lg gap-y-xl">
-            {waiting.map((w) => (
-              <button
-                key={w.key}
-                type="button"
-                data-testid={`tile-${w.key}`}
-                onClick={() => onOpen(w.tab)}
-                className="flex min-w-0 items-center gap-md text-start outline-none active:opacity-60"
-              >
+            {day.spend.stores.map((st) => (
+              <div key={st.storeId} data-testid="today-store" className="flex min-w-0 items-center gap-md">
                 <span
                   aria-hidden
-                  className={`flex size-disc shrink-0 items-center justify-center rounded-pill text-caption ${w.disc}`}
+                  className="flex size-disc shrink-0 items-center justify-center rounded-pill bg-surface-sunken text-caption text-ink"
                 >
-                  {w.count}
+                  {initials(st.name).slice(0, 1)}
                 </span>
-                <span className="min-w-0 flex-1 text-body text-ink">{w.label}</span>
-                <span className="text-secondary">
-                  <ChevronIcon />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-small text-secondary">{st.name}</span>
+                  <span className="block text-money tabular-nums text-ink" dir="ltr">
+                    {formatMoney(st.total)}
+                  </span>
                 </span>
-              </button>
+              </div>
             ))}
           </div>
         ) : null}
+
         {can('prices.view') || can('run.purchase') ? (
           <button
             type="button"
