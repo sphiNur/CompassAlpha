@@ -43,7 +43,7 @@ export const zh = {
   'buy.runOf': '第 {n} 次 · {date}',
   'buy.title.buying': '采购中',
   'buy.title.delivering': '送货中',
-  'nav.menu': '菜单',
+  'nav.today': '今天',
   'storeSwitcher.current': '当前',
   'menu.history': '采购记录',
   'menu.historyHint': '按天、按门店看买了什么',
@@ -53,6 +53,8 @@ export const zh = {
   'menu.settingsHint': '显示名称和语言',
   'menu.tile.approve': '待审批',
   'menu.tile.buy': '待采购',
+  'menu.tile.receive': '待签收',
+  'menu.tile.close': '待日结',
 
   // ── 2. Common ──────────────────────────────────────────────────
   'app.update.title': '新版本已就绪',

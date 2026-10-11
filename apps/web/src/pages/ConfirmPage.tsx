@@ -68,7 +68,8 @@ export function ConfirmPage() {
   const bulkRef = useRef(false);
   const photoUploader = usePhotoUploader('issue');
 
-  const runsQuery = trpc.run.list.useQuery();
+  // Asked again on every visit; Today shares this query for its count.
+  const runsQuery = trpc.run.list.useQuery(undefined, { refetchOnMount: 'always' });
   const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: false });
   const utils = trpc.useUtils();
   // Receivers also confirm from inside the store, often with terrible

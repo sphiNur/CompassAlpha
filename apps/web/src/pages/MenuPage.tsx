@@ -1,5 +1,10 @@
 import { List, Page, Row, Tile, TileGrid } from '@compass/ui/kit';
-import { useOrdersToBuy, usePendingApprovals } from '../hooks/useWaitingCounts';
+import {
+  useCloseDue,
+  useLinesToReceive,
+  useOrdersToBuy,
+  usePendingApprovals,
+} from '../hooks/useWaitingCounts';
 import { useAuthStore } from '../stores/authStore';
 import { useI18n } from '../hooks/useI18n';
 import type { Tab } from '../stores/navStore';
@@ -20,16 +25,23 @@ export function MenuPage({ onOpen, onOpenSettings }: MenuPageProps) {
   const can = (permission: string) => !!session?.permissions.includes(permission);
   const toApprove = usePendingApprovals(can('order.approve'));
   const toBuy = useOrdersToBuy(can('run.purchase'));
+  const toReceive = useLinesToReceive(can('delivery.confirm'));
+  const closeDue = useCloseDue(can('settlement.record'));
+  const anyTile =
+    can('order.approve') ||
+    can('run.purchase') ||
+    can('delivery.confirm') ||
+    closeDue !== null;
 
   return (
     <Page>
       <header>
-        <h1 className="text-h1 text-ink">{session?.member.orgName}</h1>
-        <p className="text-body text-secondary">{session?.user.displayName}</p>
+        <h1 className="text-h1 text-ink">{i18n.t('nav.today')}</h1>
+        <p className="text-body text-secondary">{session?.member.orgName}</p>
       </header>
 
       {/* What is waiting, for the work this person does. */}
-      {can('order.approve') || can('run.purchase') ? (
+      {anyTile ? (
         <TileGrid>
           {can('order.approve') ? (
             <Tile
@@ -47,6 +59,24 @@ export function MenuPage({ onOpen, onOpenSettings }: MenuPageProps) {
               label={i18n.t('menu.tile.buy')}
               count={toBuy}
               onPress={() => onOpen('run')}
+            />
+          ) : null}
+          {can('delivery.confirm') ? (
+            <Tile
+              data-testid="tile-receive"
+              tone="gray"
+              label={i18n.t('menu.tile.receive')}
+              count={toReceive}
+              onPress={() => onOpen('confirm')}
+            />
+          ) : null}
+          {closeDue !== null ? (
+            <Tile
+              data-testid="tile-close"
+              tone="gray"
+              label={i18n.t('menu.tile.close')}
+              count={closeDue}
+              onPress={() => onOpen('settlement')}
             />
           ) : null}
         </TileGrid>

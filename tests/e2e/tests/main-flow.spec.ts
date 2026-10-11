@@ -55,6 +55,11 @@ test('sign in and confirm a display name', async () => {
   await page.getByRole('textbox').fill('E2E Admin');
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByTestId('primary-nav')).toBeVisible();
+  // Someone with several jobs lands on Today, which counts what is waiting.
+  await expect(tab('menu')).toHaveAttribute('aria-current', 'page');
+  await expect(main().getByRole('heading', { level: 1 })).toHaveText('Today');
+  await expect(page.getByTestId('tile-approve')).toHaveText(/0\s*Waiting for approval/);
+  await expect(page.getByTestId('tile-close')).toHaveText(/1\s*Day to close/);
   await evidence('signed-in');
 });
 
@@ -226,6 +231,7 @@ test('finish the run and find it in history', async () => {
   // What is waiting is counted at the top; by now, nothing.
   await expect(page.getByTestId('tile-approve')).toHaveText(/0\s*Waiting for approval/);
   await expect(page.getByTestId('tile-buy')).toHaveText(/0\s*Orders to buy/);
+  await expect(page.getByTestId('tile-receive')).toHaveText(/0\s*Lines to receive/);
   await evidence('menu');
   await page.getByTestId('menu-history').click();
   await expect(tab('menu')).toHaveAttribute('aria-current', 'page');

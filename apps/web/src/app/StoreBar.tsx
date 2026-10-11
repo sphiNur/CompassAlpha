@@ -20,7 +20,15 @@ const NO_STORES: AuthSession['stores'] = [];
  * them, on their row. In a plain browser there is nothing to clear and
  * it is an ordinary 44px bar with the name at the page margin.
  */
-export function StoreBar({ inTelegram }: { inTelegram: boolean }) {
+export function StoreBar({
+  inTelegram,
+  onOpenAccount,
+}: {
+  inTelegram: boolean;
+  /** Opens name and language. Telegram has its own button for this. */
+  onOpenAccount: () => void;
+}) {
+  const name = useAuthStore((s) => s.session?.user.displayName);
   if (inTelegram) {
     // Both sides are padded by the WIDER of Telegram's two overlays, which
     // keeps the name on the screen's centre line rather than centred in
@@ -42,10 +50,20 @@ export function StoreBar({ inTelegram }: { inTelegram: boolean }) {
   }
   return (
     <header
-      className="flex shrink-0 items-center bg-neutral px-page"
+      className="flex shrink-0 items-center justify-between gap-lg bg-neutral px-page"
       style={{ paddingTop: 'var(--app-safe-top)' }}
     >
       <StoreButton />
+      {name ? (
+        <button
+          type="button"
+          data-testid="account"
+          onClick={onOpenAccount}
+          className="flex h-tap min-w-0 items-center text-label text-primary outline-none active:opacity-60"
+        >
+          <span className="truncate">{name}</span>
+        </button>
+      ) : null}
     </header>
   );
 }

@@ -39,7 +39,7 @@ const importSettlementPage = () =>
   import('../pages/SettlementPage').then((m) => ({ default: m.SettlementPage }));
 const SettlementPage = lazy(importSettlementPage);
 import { useAuthStore } from '../stores/authStore';
-import { requestTabChange, resolveVisibleTab, useNavStore } from '../stores/navStore';
+import { requestTabChange, resolveVisibleTab, useNavStore, landingTab } from '../stores/navStore';
 import type { Tab } from '../stores/navStore';
 import { useI18n } from '../hooks/useI18n';
 import {
@@ -103,8 +103,8 @@ function ShellInner() {
 
   const tasks = TASKS.filter((t) => can(t.permission));
   const reachable: Tab[] = [
-    ...tasks.map((t) => t.key),
     'menu',
+    ...tasks.map((t) => t.key),
     ...BEHIND_MENU.filter((t) => can(t.permission)).map((t) => t.key),
   ];
 
@@ -146,8 +146,21 @@ function ShellInner() {
   // can no longer open resolves to their first one instead of a blank.
   const persistedTab = useNavStore((s) => s.tab);
   const setTab = useNavStore((s) => s.setTab);
-  const tab = resolveVisibleTab(persistedTab, reachable);
+  // Decided once per visit, from what was stored when the app opened.
+  const [landing] = useState(() => {
+    const stored = useNavStore.getState();
+    return landingTab(
+      stored.tab,
+      stored.tabAt,
+      tasks.map((t) => t.key),
+      reachable,
+      Date.now(),
+    );
+  });
+  const landed = useRef(false);
+  const tab = resolveVisibleTab(landed.current ? persistedTab : landing, reachable);
   useEffect(() => {
+    landed.current = true;
     if (tab !== persistedTab) setTab(tab);
   }, [tab, persistedTab, setTab]);
   const go = (next: Tab) => {
@@ -191,21 +204,23 @@ function ShellInner() {
   const waitingForApproval = usePendingApprovals(can('order.approve'));
   const busy = useAppMutating();
   const items: Array<NavItem<Tab>> = [
+    { key: 'menu', label: i18n.t('nav.today') as string },
     ...tasks.map((t) => ({
       key: t.key,
       label: i18n.t(t.labelKey as Parameters<typeof i18n.t>[0]) as string,
       count: t.key === 'approve' ? waitingForApproval : undefined,
     })),
-    { key: 'menu', label: i18n.t('nav.menu') as string },
   ];
 
   return (
+    // On a wide screen the app is one centred column: it is a phone tool,
+    // and stretched rows put a name and its amount a hand's width apart.
     <div
-      className="flex min-h-0 flex-col bg-neutral"
+      className="mx-auto flex min-h-0 w-full max-w-md flex-col bg-neutral"
       style={{ height: 'var(--app-viewport-h, 100dvh)' }}
     >
       <SettingsSheet open={settingsOpen} onOpenChange={setSettingsOpen} pageMenu={pageMenu} />
-      <StoreBar inTelegram={inTelegram} />
+      <StoreBar inTelegram={inTelegram} onOpenAccount={() => setSettingsOpen(true)} />
 
       <main
         className="min-h-0 flex-1 overflow-y-auto"

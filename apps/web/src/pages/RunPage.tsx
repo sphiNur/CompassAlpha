@@ -141,7 +141,10 @@ export function RunPage() {
   const [unavailableNote, setUnavailableNote] = useState('');
   const [confirmAction, setConfirmAction] = useState<ConfirmKind | null>(null);
   const [confirmReason, setConfirmReason] = useState('');
-  const previewQuery = trpc.run.previewCreatable.useQuery({});
+  // Asked again on every visit. Today keeps this query warm for its
+  // count, and an order approved since then must not be missing from the
+  // list a purchaser is about to start a trip from.
+  const previewQuery = trpc.run.previewCreatable.useQuery({}, { refetchOnMount: 'always' });
   const runsQuery = trpc.run.list.useQuery();
   const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: false });
   const categoriesQuery = trpc.catalog.categories.useQuery();

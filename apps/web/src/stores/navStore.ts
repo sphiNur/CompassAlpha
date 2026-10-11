@@ -104,6 +104,7 @@ export interface NavState {
   storeFocus: StoreFocus;
   storeSub: StoreSub;
 
+  tabAt: number;
   setTab: (tab: Tab) => void;
   setAdminSection: (s: AdminSection) => void;
   setCatalogSub: (s: CatalogSub) => void;
@@ -119,7 +120,9 @@ export interface NavState {
 }
 
 const DEFAULTS = {
-  tab: 'order' as Tab,
+  tab: 'menu' as Tab,
+  /** When the tab was last chosen, for deciding where a new visit opens. */
+  tabAt: 0,
   adminSection: 'home' as AdminSection,
   catalogSub: null as CatalogSub,
   opsSub: null as OperationsSub,
@@ -131,7 +134,7 @@ export const useNavStore = create<NavState>()(
   persist(
     (set) => ({
       ...DEFAULTS,
-      setTab: (tab) => set({ tab }),
+      setTab: (tab) => set({ tab, tabAt: Date.now() }),
       setAdminSection: (adminSection) => set({ adminSection }),
       setCatalogSub: (catalogSub) => set({ catalogSub }),
       setOpsSub: (opsSub) => set({ opsSub }),
@@ -152,6 +155,7 @@ export const useNavStore = create<NavState>()(
       // Persist only the data — re-derive the actions on rehydrate.
       partialize: (s) => ({
         tab: s.tab,
+        tabAt: s.tabAt,
         adminSection: s.adminSection,
         catalogSub: s.catalogSub,
         opsSub: s.opsSub,
@@ -264,3 +268,27 @@ export function resolveVisibleTab(persisted: Tab, visibleKeys: readonly Tab[]): 
   if (visibleKeys.includes(persisted)) return persisted;
   return visibleKeys[0] ?? 'order';
 }
+
+/** How long a visit is still "the same errand" after the last tab change. */
+const RESUME_WINDOW_MS = 30 * 60 * 1000;
+
+/**
+ * Where the app opens.
+ *
+ * Someone with one job goes straight to it. Someone who was here minutes
+ * ago goes back to where they were: reopening Telegram halfway through a
+ * market trip must not cost them their place. Everyone else starts on
+ * Today, which says what is waiting.
+ */
+export function landingTab(
+  persisted: Tab,
+  persistedAt: number,
+  tasks: readonly Tab[],
+  reachable: readonly Tab[],
+  now: number,
+): Tab {
+  if (tasks.length === 1) return tasks[0]!;
+  if (reachable.includes(persisted) && now - persistedAt < RESUME_WINDOW_MS) return persisted;
+  return 'menu';
+}
+

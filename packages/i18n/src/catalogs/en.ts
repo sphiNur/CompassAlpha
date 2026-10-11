@@ -70,7 +70,7 @@ export const en = {
   'buy.runOf': 'Run {n} · {date}',
   'buy.title.buying': 'Buying',
   'buy.title.delivering': 'Delivering',
-  'nav.menu': 'Menu',
+  'nav.today': 'Today',
   'storeSwitcher.current': 'Current',
   'menu.history': 'Purchase history',
   'menu.historyHint': 'What was bought, by day and store',
@@ -80,6 +80,8 @@ export const en = {
   'menu.settingsHint': 'Display name and language',
   'menu.tile.approve': 'Waiting for approval',
   'menu.tile.buy': 'Orders to buy',
+  'menu.tile.receive': 'Lines to receive',
+  'menu.tile.close': 'Day to close',
 
   // ── 2. Common ──────────────────────────────────────────────────
   'app.update.title': 'A new version is ready',

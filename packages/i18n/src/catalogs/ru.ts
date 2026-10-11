@@ -43,7 +43,7 @@ export const ru = {
   'buy.runOf': 'Закупка {n} · {date}',
   'buy.title.buying': 'Закупка',
   'buy.title.delivering': 'Доставка',
-  'nav.menu': 'Меню',
+  'nav.today': 'Сегодня',
   'storeSwitcher.current': 'Текущий',
   'menu.history': 'История закупок',
   'menu.historyHint': 'Что куплено, по дням и магазинам',
@@ -53,6 +53,8 @@ export const ru = {
   'menu.settingsHint': 'Отображаемое имя и язык',
   'menu.tile.approve': 'Ждут одобрения',
   'menu.tile.buy': 'Заявки к закупке',
+  'menu.tile.receive': 'К приёмке',
+  'menu.tile.close': 'День не закрыт',
 
   // ── 2. Common ──────────────────────────────────────────────────
   'app.update.title': 'Доступна новая версия',

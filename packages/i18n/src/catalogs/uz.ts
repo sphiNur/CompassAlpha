@@ -50,7 +50,7 @@ export const uz = {
   'buy.runOf': '{n}-xarid · {date}',
   'buy.title.buying': 'Xarid',
   'buy.title.delivering': 'Yetkazish',
-  'nav.menu': 'Menyu',
+  'nav.today': 'Bugun',
   'storeSwitcher.current': 'Joriy',
   'menu.history': 'Xaridlar tarixi',
   'menu.historyHint': "Nima sotib olingan, kun va do'kon bo'yicha",
@@ -60,6 +60,8 @@ export const uz = {
   'menu.settingsHint': "Ko'rsatiladigan ism va til",
   'menu.tile.approve': 'Tasdiq kutmoqda',
   'menu.tile.buy': 'Xarid qilinadigan buyurtmalar',
+  'menu.tile.receive': 'Qabul qilinadi',
+  'menu.tile.close': 'Kun yopilmagan',
 
   // ── 2. Common ──────────────────────────────────────────────────
   'app.update.title': 'Yangi versiya tayyor',
