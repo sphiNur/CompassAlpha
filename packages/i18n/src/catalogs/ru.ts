@@ -13,6 +13,8 @@ export const ru = {
   'nav.reports': 'Отчёты',
   'nav.debug': 'Отладка',
   'buy.toBuy': 'Купить',
+  'buy.left': 'Осталось купить: {n}',
+  'buy.allBought': 'Всё куплено',
   'buy.bought': 'Куплено',
   'buy.unavailable': 'Нет в наличии',
   'buy.action.bought': 'Купил',

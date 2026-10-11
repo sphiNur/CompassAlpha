@@ -32,19 +32,14 @@ export interface ListProps {
 }
 
 /**
- * Rows that belong together, separated by hairlines, on one surface.
- * Counts as a card for the nesting rule.
+ * Rows that belong together. They sit on the page itself, as in the
+ * Wise app's lists: no surface under them and no lines between them;
+ * the space around the group is what groups it.
  */
 export function List({ children, className }: ListProps) {
-  const nested = useContext(InsideCard);
-  if (nested && typeof console !== 'undefined') {
-    console.error('kit: a List was rendered inside a Card. A List is already a surface.');
-  }
   return (
-    <InsideCard.Provider value={true}>
-      <div role="list" className={cn('overflow-hidden rounded-lg bg-surface py-xs', className)}>
-        {children}
-      </div>
-    </InsideCard.Provider>
+    <div role="list" className={cn('flex flex-col', className)}>
+      {children}
+    </div>
   );
 }

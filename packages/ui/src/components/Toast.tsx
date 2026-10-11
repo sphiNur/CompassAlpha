@@ -42,11 +42,13 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
+// The Fine palette: a filled capsule, dark for a plain message, the
+// status colours for the rest. No outline; the fill is the tone.
 const TONE: Record<ToastTone, string> = {
-  info: 'bg-[var(--c-surface-elevated)] text-[var(--c-fg)] ring-hairline',
-  success: 'bg-[oklch(96%_0.06_145)] text-[oklch(35%_0.16_145)] ring-1 ring-[var(--c-success)]',
-  warn: 'bg-[oklch(97%_0.07_75)] text-[oklch(38%_0.16_75)] ring-1 ring-[var(--c-warning)]',
-  danger: 'bg-[oklch(96%_0.06_25)] text-[var(--c-danger)] ring-1 ring-[var(--c-danger)]',
+  info: 'bg-contrast text-on-contrast',
+  success: 'bg-contrast text-on-contrast',
+  warn: 'bg-warning text-on-warning',
+  danger: 'bg-danger text-on-danger',
 };
 
 let counter = 0;
@@ -167,15 +169,13 @@ export function ToastProvider({ children, defaultTtlMs = 4000, limit = 4 }: Toas
               dismiss(t.id);
             }}
             className={cn(
-              'press min-w-[200px] max-w-[92vw] rounded-[var(--r-pill)] px-4 py-2.5 text-left',
+              'press max-w-[92vw] rounded-pill px-xl py-md text-start shadow-float',
               TONE[t.tone],
             )}
             style={{ pointerEvents: 'auto' }}
           >
-            {t.title ? (
-              <div className="text-old-body-sm font-semibold leading-tight">{t.title}</div>
-            ) : null}
-            <div className="text-old-body-sm leading-snug">{t.message}</div>
+            {t.title ? <div className="text-label">{t.title}</div> : null}
+            <div className="text-small">{t.message}</div>
           </button>
         ))}
       </div>

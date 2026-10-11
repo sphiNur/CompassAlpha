@@ -40,6 +40,8 @@ export const en = {
   'nav.reports': 'Reports',
   'nav.debug': 'Debug',
   'buy.toBuy': 'To buy',
+  'buy.left': '{n} left to buy',
+  'buy.allBought': 'Everything is bought',
   'buy.bought': 'Bought',
   'buy.unavailable': 'Not available',
   'buy.action.bought': 'Bought',

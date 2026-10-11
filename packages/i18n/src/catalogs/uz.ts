@@ -20,6 +20,8 @@ export const uz = {
   'nav.reports': 'Hisobotlar',
   'nav.debug': 'Debug',
   'buy.toBuy': 'Olish kerak',
+  'buy.left': 'Yana {n} ta qoldi',
+  'buy.allBought': 'Hammasi olindi',
   'buy.bought': 'Olindi',
   'buy.unavailable': 'Topilmadi',
   'buy.action.bought': 'Oldim',

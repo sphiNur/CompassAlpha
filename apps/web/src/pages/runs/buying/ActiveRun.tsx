@@ -88,6 +88,9 @@ export function ActiveRunPanel({
   onCancelRun,
 }: ActiveRunPanelProps) {
   const editing = run.status === 'purchasing' || run.status === 'amending';
+  // Lines decided one way or the other: bought, or not to be had.
+  const done = run.items.filter((item) => item.status !== 'pending').length;
+  const left = run.items.length - done;
 
   return (
     <div className="flex flex-col gap-xl">
@@ -100,6 +103,25 @@ export function ActiveRunPanel({
           deliveringStoreId={deliveringStoreId}
           onRecall={onRecallStore}
         />
+      ) : null}
+
+      {/* What a purchaser looks up for between stalls: how much is left.
+          The one large figure on the screen, with a bar under it. */}
+      {editing && run.items.length > 0 ? (
+        <div data-testid="buying-progress" className="flex flex-col gap-sm">
+          <span className="text-display text-ink">
+            {left > 0 ? i18n.t('buy.left', { n: left }) : i18n.t('buy.allBought')}
+          </span>
+          <span className="text-small text-secondary">
+            {i18n.t('today.bought', { done, lines: run.items.length })}
+          </span>
+          <span aria-hidden className="flex h-sm overflow-hidden rounded-pill bg-surface-sunken">
+            <span
+              className="rounded-pill bg-primary"
+              style={{ width: `${(done / run.items.length) * 100}%` }}
+            />
+          </span>
+        </div>
       ) : null}
 
       {editing && run.items.length > 0 ? (

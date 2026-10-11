@@ -13,6 +13,8 @@ export const zh = {
   'nav.reports': '报表',
   'nav.debug': '调试',
   'buy.toBuy': '还没买',
+  'buy.left': '还剩 {n} 项',
+  'buy.allBought': '都买完了',
   'buy.bought': '已买',
   'buy.unavailable': '没买到',
   'buy.action.bought': '买了',

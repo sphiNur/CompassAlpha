@@ -69,17 +69,25 @@ export function Row({
       {/* Says the row opens something. Not on a row that is itself the
           action, nor beside a control that already is one. */}
       {onPress && !trailing && !action && !picks ? (
-        <span
-          aria-hidden
-          data-row-chevron
-          className="shrink-0 text-h2 text-secondary rtl:-scale-x-100"
-        >
-          ›
+        <span aria-hidden data-row-chevron className="shrink-0 text-forest rtl:-scale-x-100">
+          <svg
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="m9 6 6 6-6 6" />
+          </svg>
         </span>
       ) : null}
     </>
   );
-  const box = cn('flex min-h-row w-full items-center gap-lg px-lg py-md', className);
+  // No side padding: the row is on the page, which has its own margins.
+  const box = cn('flex min-h-row w-full items-center gap-lg py-md', className);
   if (trailing) {
     const inner = 'flex min-w-0 flex-1 items-center gap-lg self-stretch text-start outline-none';
     return (
@@ -111,7 +119,7 @@ export function Row({
           data-testid={rest['data-testid']}
           className={cn(
             box,
-            'outline-none active:bg-surface-sunken focus-visible:bg-surface-sunken disabled:opacity-60',
+            'outline-none active:opacity-60 focus-visible:opacity-60 disabled:opacity-60',
           )}
         >
           {body}
