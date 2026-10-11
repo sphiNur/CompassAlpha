@@ -1,546 +1,454 @@
-/**
- * ApprovalPage — manager queue.
- *
- * Lists submitted sessions enriched with store / member / item-count metadata
- * (single round-trip via `order.pendingList`). Atomically claim → review →
- * approve / reject. Per-card item view uses the dedicated
- * `order.sessionDetail({id})` endpoint.
- */
-import { useMemo, useState } from 'react';
-import {
-  Avatar,
-  Badge,
-  Banner,
-  Button,
-  Card,
-  CardHeader,
-  CardMeta,
-  CardTitle,
-  DataState,
-  EmptyState,
-  Input,
-  QtyControl,
-  SectionLabel,
-  Sheet,
-  Spinner,
-  StickyPageBar,
-  Tab,
-  Tabs,
-  useToast,
-} from '@compass/ui';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useToast } from '@compass/ui';
+import { Button, cn, Field, Sheet, Stepper } from '@compass/ui/kit';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { useI18n, useProductName, useUnitLabel } from '../hooks/useI18n';
-import { haptic } from '../hooks/useTelegram';
+import { haptic, usePageMainButton } from '../hooks/useTelegram';
 import { confirmThen } from '../lib/confirm';
 import { useErrToast } from '../lib/errToast';
-import { formatQty, formatMoney } from '../lib/format';
+import { currencyOf, formatMoney, formatQty } from '../lib/format';
 import { useStoreContext } from '../components/StoreSwitcher';
+import { ChevronIcon, ClockIcon } from '../destinations/icons';
 
 type ApprovalTab = 'pending' | 'approved' | 'rejected';
+const TABS: ApprovalTab[] = ['pending', 'approved', 'rejected'];
 
-const confirmAction = confirmThen;
+function firstLetter(name: string): string {
+  return Array.from(name.trim())[0] ?? '?';
+}
 
+/**
+ * Deciding on orders.
+ *
+ * There is a queue and there is one order. Opening an order is saying "I
+ * am looking at this": it is claimed without a button, and given back
+ * when the approver walks away from it. With a single order waiting,
+ * which is most mornings, the queue is skipped and the order is what
+ * opens. Approving moves on to the next one.
+ *
+ * Laid out after the Wise app: capsules for the three states, rows on
+ * the page with a disc at the start, one large figure for the estimate.
+ */
 export function ApprovalPage() {
   const i18n = useI18n();
   const productName = useProductName();
   const session = useAuthStore((s) => s.session);
+  const currency = currencyOf(session);
   const [tab, setTab] = useState<ApprovalTab>('pending');
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [rejectFor, setRejectFor] = useState<string | null>(null);
-  const [rejectReason, setRejectReason] = useState('');
-  // Store-context comes from the global header picker (added 2026-05-05).
-  // Replaces the local chip-bar filter — same UX outcome but now the
-  // selection follows the user across pages.
-  //   'specific' → filter pendingList by that store
-  //   'all'      → no filter (server still scopes to actor's allowed set)
-  //   'none'     → user has no stores; refuse to query
+  const [openId, setOpenId] = useState<string | null>(null);
+  // Once the approver has asked for the queue, a lone order no longer
+  // opens by itself.
+  const [wantsList, setWantsList] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState('');
   const storeCtx = useStoreContext();
-  /** Filtered to a single store — the chip already names it. */
+  // Looking at one store, the bar above already names it: the row leads
+  // with who sent the order. Across stores, the store is what differs.
   const storeScoped = storeCtx.kind === 'specific';
+  const me = session?.member.memberId;
+  const can = (permission: string) => !!session?.permissions.includes(permission);
 
-  const myStores = session?.stores ?? [];
-
-  // pendingList accepts an optional status filter; we drive the tab
-  // off it. 'pending' on the FE means 'submitted' on the server (the
-  // actual enum value); the other tabs map 1:1.
-  const pendingQuery = trpc.order.pendingList.useQuery(
+  const queue = trpc.order.pendingList.useQuery(
     {
       status: tab === 'pending' ? 'submitted' : tab,
       ...(storeCtx.kind === 'specific' ? { storeId: storeCtx.storeId } : {}),
     },
-    { enabled: storeCtx.kind !== 'none' },
+    { enabled: storeCtx.kind !== 'none', refetchOnMount: 'always' },
   );
-  const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: false });
+  const rows = useMemo(() => queue.data ?? [], [queue.data]);
+  const open = rows.find((r) => r.id === openId) ?? null;
+
+  // The order this approver was asked to be given, and the one they hold.
+  const asked = useRef<string | null>(null);
+  const mine = useRef<string | null>(null);
 
   const utils = trpc.useUtils();
   const toast = useToast();
-  // Audit-found 2026-05-05: every mutation here used to onError ONLY haptic.
-  // Manager taps Approve, network fails, they feel a buzz and assume "done"
-  // since the toast they're used to never appears. Bad. Now every error
-  // path surfaces a toast — domain errors get the i18n'd code translated;
-  // unknown errors get a generic "something went wrong". M1.9 (2026-05-07):
-  // hoisted the regex + handler shape into `lib/errToast.ts` so the same
-  // logic lives in one place and we can't drift across pages.
   const errToast = useErrToast();
+  const refresh = () => void utils.order.pendingList.invalidate();
   const claim = trpc.order.claim.useMutation({
-    onSuccess: () => {
-      void utils.order.pendingList.invalidate();
-      toast.info(i18n.t('approval.toast.claimed'));
-    },
+    onSuccess: refresh,
     onError: errToast('common.error'),
   });
+  const release = trpc.order.releaseClaim.useMutation({ onSuccess: refresh });
   const approve = trpc.order.approve.useMutation({
-    onSuccess: () => {
-      void utils.order.pendingList.invalidate();
+    onSuccess: (_data, input) => {
       haptic('success');
       toast.success(i18n.t('approval.toast.approved'));
+      // On to the next one, if there is one.
+      mine.current = null;
+      setOpenId(rows.find((r) => r.id !== input.sessionId)?.id ?? null);
+      refresh();
     },
     onError: errToast('approval.toast.approveFailed'),
   });
   const reject = trpc.order.reject.useMutation({
-    onSuccess: () => {
-      void utils.order.pendingList.invalidate();
-      setRejectFor(null);
-      setRejectReason('');
+    onSuccess: (_data, input) => {
       haptic('warning');
       toast.info(i18n.t('approval.toast.rejected'));
+      setRejecting(false);
+      setReason('');
+      mine.current = null;
+      setOpenId(rows.find((r) => r.id !== input.sessionId)?.id ?? null);
+      refresh();
     },
     onError: errToast('approval.toast.rejectFailed'),
   });
-  const releaseClaim = trpc.order.releaseClaim.useMutation({
-    onSuccess: () => {
-      void utils.order.pendingList.invalidate();
-      toast.info(i18n.t('approval.toast.released'));
-    },
-    onError: errToast('common.error'),
-  });
   const unapprove = trpc.order.unapprove.useMutation({
     onSuccess: () => {
-      void utils.order.pendingList.invalidate();
       toast.info(i18n.t('approval.toast.unapproved'));
+      setOpenId(null);
+      refresh();
     },
     onError: errToast('common.error'),
   });
 
-  // 2026-07-30 (flow review): `step` was missing from this map while
-  // SessionItems read `Number(sku.step ?? '1')` — and its prop type had
-  // `step?: string`, so TS never complained. Net effect: the approver's
-  // +/- moved in whole units for EVERY SKU. A 0.1 kg-step herb and a
-  // 0.5 kg-step vegetable both jumped by 1 here, while the Order screen
-  // the quantity came from used the real step. `step` is required in the
-  // prop type below now, so the same omission can't come back silently.
-  const skuById = useMemo(() => {
-    const m = new Map<string, { names: Record<string, string>; unit: string; step: string }>();
-    for (const sku of skusQuery.data ?? []) {
-      m.set(sku.id, {
-        names: sku.names as Record<string, string>,
-        unit: sku.unit,
-        step: sku.step,
-      });
+  // A lone waiting order opens by itself.
+  useEffect(() => {
+    if (tab === 'pending' && !wantsList && !openId && rows.length === 1) setOpenId(rows[0]!.id);
+  }, [tab, wantsList, openId, rows]);
+
+  // Opening a waiting order claims it. Asked once per order: if it fails,
+  // the approver sees why and the order stays readable.
+  const claimNow = claim.mutate;
+  useEffect(() => {
+    if (tab !== 'pending' || !open) return;
+    if (open.claimedByMemberId === me) mine.current = open.id;
+    if (!open.claimedByMemberId && asked.current !== open.id) {
+      asked.current = open.id;
+      claimNow({ sessionId: open.id });
     }
-    return m;
-  }, [skusQuery.data]);
+  }, [tab, open, me, claimNow]);
+
+  // Walking away gives it back, so it does not sit claimed by someone
+  // who is no longer looking.
+  const releaseNow = release.mutate;
+  const giveBack = () => {
+    if (mine.current) releaseNow({ sessionId: mine.current });
+    mine.current = null;
+    asked.current = null;
+  };
+  const giveBackRef = useRef(giveBack);
+  giveBackRef.current = giveBack;
+  useEffect(() => () => giveBackRef.current(), []);
+
+  const claimedByMe = !!open && open.claimedByMemberId === me;
+  const claimedByOther = !!open && !!open.claimedByMemberId && open.claimedByMemberId !== me;
+  const deciding = tab === 'pending' && !!open;
+
+  usePageMainButton(
+    i18n.t('approval.approve') as string,
+    () => {
+      if (open) approve.mutate({ sessionId: open.id });
+    },
+    {
+      visible: deciding && !claimedByOther,
+      active: claimedByMe && !approve.isPending && !reject.isPending,
+      ...(open?.estimatedTotal && can('prices.view')
+        ? {
+            summary: {
+              text: i18n.t('order.review.estimatedTotal') as string,
+              amount: formatMoney(open.estimatedTotal),
+              currency,
+            },
+          }
+        : {}),
+    },
+  );
 
   if (!session) return null;
 
-  // M1.11 cleanup (2026-05-08): subtitle dropped — the Tabs row
-  // immediately below + the empty-state Card (when count===0) +
-  // the Card list itself already convey "what state am I in" and
-  // "how many". The redundant "X items" line just compressed the
-  // SKU list further.
-  return (
-    <div className="flex flex-col">
-      {/* M3.5: store-switcher pill moved to SettingsSheet. The sticky
-         band now only carries the approval-state Tabs. */}
-      <StickyPageBar direction="col">
-        {/* 2026-07-30: which store's queue am I looking at? The list is
-            filtered by store context but never said so. On 'all' the chip
-            reads 所有门店, which is equally load-bearing. Answered by the
-            chip in Shell's top strip now (same day) rather than a copy
-            per page — this strip is back to just the state Tabs. */}
-        {/* M1.9-extra (P6, 2026-05-07): real <Tabs> with roving
-            tabindex + ArrowLeft/ArrowRight/Home/End nav. Was
-            `ChipBar`-as-tabs with role=tablist/tab on the buttons
-            but no keyboard-cycle behaviour. */}
-        <Tabs
-          value={tab}
-          onChange={(v) => setTab(v as ApprovalTab)}
-          ariaLabel={i18n.t('approval.tabsAriaLabel')}
-        >
-          <Tab value="pending">{i18n.t('approval.tab.pending')}</Tab>
-          <Tab value="approved">{i18n.t('approval.tab.approved')}</Tab>
-          <Tab value="rejected">{i18n.t('approval.tab.rejected')}</Tab>
-        </Tabs>
-      </StickyPageBar>
+  const toList = () => {
+    giveBack();
+    setWantsList(true);
+    setOpenId(null);
+  };
+  const who = (row: (typeof rows)[number]) =>
+    row.attribDisplayName?.trim() || (i18n.t('approval.unknownReviewer') as string);
+  const store = (row: (typeof rows)[number]) => row.storeName?.trim() || row.storeId.slice(0, 8);
 
-      {myStores.length === 0 &&
-      !session.permissions.includes('users.manage') ? (
-        // Manager dragged of all stores mid-shift, or never assigned.
-        // Don't even fire the query — they'd just see an empty queue
-        // with no explanation.
-        <div className="px-4 py-8">
-          <EmptyState
-            title={i18n.t('auth.noStore.title')}
-            description={i18n.t('auth.noStore.body')}
-          />
-        </div>
-      ) : (
-      <div className="px-4 pt-3">
-      <DataState
-        query={pendingQuery}
-        emptyWhen={(d) => d.length === 0}
-        empty={
-          <EmptyState
-            title={i18n.t('approval.empty.title')}
-            description={i18n.t('approval.empty.body')}
-          />
-        }
-      >
-        {(rows) => (
-          <ul className="flex flex-col gap-2" role="list">
-            {rows.map((row) => {
-              const isClaimedByMe = row.claimedByMemberId === session.member.memberId;
-              const isClaimedByOther =
-                row.claimedByMemberId && row.claimedByMemberId !== session.member.memberId;
-              const isOpen = activeSessionId === row.id;
-              return (
-                <Card key={row.id}>
-                  <CardHeader>
-                    <div className="flex items-center gap-3">
-                      {/* The avatar is the SUBMITTER's photo (`attribAvatarUrl`),
-                          so `name` — which supplies both the alt text and the
-                          initials fallback — has to be the submitter too.
-                          2026-07-30: it was the STORE name, so a screen reader
-                          announced a person's face as "Eden Magic City", and a
-                          submitter without a photo got the store's initials. */}
-                      <Avatar
-                        src={row.attribAvatarUrl}
-                        name={row.attribDisplayName ?? '?'}
-                        size={32}
-                      />
-                      <div className="min-w-0">
-                        {/*
-                          Which name is the headline depends on what the page
-                          has ALREADY told you (2026-07-30).
+  if (open) {
+    const reviewer = open.claimedByDisplayName ?? (i18n.t('approval.unknownReviewer') as string);
+    return (
+      <div className="flex flex-col gap-xl px-page pb-xl pt-sm">
+        {rows.length > 1 || tab !== 'pending' ? (
+          <button
+            type="button"
+            data-testid="approval-list"
+            onClick={toList}
+            className="flex h-chip items-center self-start rounded-pill bg-surface-sunken px-md text-caption text-ink outline-none active:opacity-60"
+          >
+            {i18n.t('approval.allOrders', { n: rows.length })}
+          </button>
+        ) : null}
 
-                          Filtered to one store, the store chip in the sticky
-                          bar names it once — repeating it on every card spent
-                          the title line restating context and pushed the one
-                          thing that differs between cards, WHO submitted,
-                          down into the muted meta. Scoped to one store the
-                          submitter is the headline; on 所有门店 the store is,
-                          because that's what distinguishes the rows.
-                        */}
-                        <CardTitle>
-                          {storeScoped
-                            ? (row.attribDisplayName ?? i18n.t('approval.unknownReviewer'))
-                            : (row.storeName?.trim() ?? row.storeId.slice(0, 8))}
-                        </CardTitle>
-                        <CardMeta>
-                          {/* M1.9-fix (2026-05-07): all 3 segments and the
-                              timestamp locale were hardcoded; non-English
-                              users saw English meta on every card. */}
-                          {storeScoped
-                            ? null
-                            : row.attribDisplayName
-                              ? i18n.t('approval.submittedBy', { name: row.attribDisplayName }) + ' · '
-                              : '— · '}
-                          {row.contributorCount > 1
-                            ? i18n.t('approval.contributorsCount', { n: row.contributorCount }) + ' · '
-                            : ''}
-                          {row.orderDate}
-                          {/* UI-3 (declutter): dropped the standalone HH:MM
-                              time — it wrapped the meta to a second line and
-                              the exact timestamp lives in the detail view. */}
-                        </CardMeta>
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 flex-col items-end gap-1">
-                      {/* M1.11 cleanup (2026-05-08) dropped the
-                          "{itemCount} · {totalQty}" Badge, reasoning that
-                          "the View items expansion + the inline estimate
-                          row already surface count + total".
+        <header>
+          <h1 className="text-h1 text-ink">{storeScoped ? who(open) : store(open)}</h1>
+          <p className="text-body text-secondary">
+            {[
+              storeScoped ? null : who(open),
+              open.orderDate,
+              i18n.t('approval.itemsCount', { n: open.itemCount }),
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </p>
+        </header>
 
-                          2026-07-30 (flow review): that reasoning is
-                          inverted — triage happens BEFORE expanding. With
-                          nothing on the card, an approver had to open every
-                          single one to find out whether it was a 1-line
-                          top-up or an 80-line weekly shop. The count is
-                          back, now paired with the estimated value (the
-                          number the approve decision actually turns on) and
-                          NOT with the old totalQty, which summed kg and pcs
-                          into one meaningless figure.
+        {open.estimatedTotal && can('prices.view') ? (
+          <div className="flex flex-col gap-xs">
+            <span className="text-small text-secondary">
+              {i18n.t('order.review.estimatedTotal')}
+            </span>
+            <span className="flex flex-wrap items-baseline gap-x-sm text-ink" dir="ltr">
+              <span className="text-display tabular-nums">{formatMoney(open.estimatedTotal)}</span>
+              <span className="text-label text-secondary">{currency}</span>
+            </span>
+            <span className="text-small text-secondary">
+              {i18n.t('order.review.estimateHint', {
+                known: open.estimatedKnown,
+                unknown: open.estimatedUnknown,
+              })}
+            </span>
+          </div>
+        ) : null}
 
-                          The "has notes" 📝 pill stays — still the only
-                          pre-expand signal for a free-text request. */}
-                      <span className="whitespace-nowrap text-old-label tabular-nums text-[var(--c-fg-muted)]">
-                        {i18n.t('approval.itemsCount', { n: row.itemCount })}
-                      </span>
-                      {row.estimatedTotal ? (
-                        <span
-                          className="whitespace-nowrap font-mono text-old-body font-semibold tabular-nums text-[var(--c-fg)]"
-                          title={i18n.t('order.review.estimateHint', {
-                            known: row.estimatedKnown,
-                            unknown: row.estimatedUnknown,
-                          })}
-                        >
-                          ~{formatMoney(Number(row.estimatedTotal))}
-                        </span>
-                      ) : null}
-                      {row.notes ? (
-                        <Badge tone="warn" title={i18n.t('order.notes.hasNote')}>
-                          {i18n.t('order.notes.badge')}
-                        </Badge>
-                      ) : null}
-                    </div>
-                  </CardHeader>
+        {tab === 'pending' && claimedByOther ? (
+          <div
+            role="status"
+            className="flex flex-col items-start gap-md rounded-lg bg-warning-pale p-xl"
+          >
+            <p className="text-label text-warning-ink">
+              {i18n.t('order.banner.claimed', { who: reviewer })}
+            </p>
+            <Button
+              inline
+              busy={release.isPending}
+              onClick={() =>
+                confirmThen(i18n.t('approval.confirmTakeover', { who: reviewer }) as string, () => {
+                  asked.current = null;
+                  release.mutate({ sessionId: open.id });
+                })
+              }
+            >
+              {i18n.t('approval.takeOver')}
+            </Button>
+          </div>
+        ) : null}
 
-                  {isClaimedByOther ? (
-                    <div className="px-4 pt-2">
-                      {/* Before 2026-05-18: this banner hardcoded `who: 'reviewer'`
-                          so every claimed-by-other row read literally
-                          "Under review by reviewer" — nobody could tell
-                          WHO was sitting on it. The backend now ships
-                          `claimedByDisplayName` (see order.pendingList).
-                          Fallback to a generic label only when the
-                          claimer's member row was archived. */}
-                      <Banner
-                        tone="warn"
-                        title={
-                          row.previousClaimerDisplayName
-                            ? // M3.22 (2026-05-18): when a previous claimer
-                              // got force-released (override / timeout) and
-                              // someone else picked up the order, show the
-                              // handoff so the next approver knows this is
-                              // not a first-time claim.
-                              i18n.t('order.banner.claimedAfterHandoff', {
-                                who:
-                                  row.claimedByDisplayName ??
-                                  i18n.t('approval.unknownReviewer'),
-                                prev: row.previousClaimerDisplayName,
-                              })
-                            : i18n.t('order.banner.claimed', {
-                                who:
-                                  row.claimedByDisplayName ??
-                                  i18n.t('approval.unknownReviewer'),
-                              })
-                        }
-                        action={
-                          // Take-over escape valve: anyone with `order.approve`
-                          // on this store can release another approver's stale
-                          // claim. Server validates the same permission and
-                          // records `ClaimReleased{reason:'override'}` for
-                          // audit (commands.ts 2026-05-18). Self-release stays
-                          // on the in-row "Release" button below.
-                          session.permissions.includes('order.approve') ? (
-                            <Button
-                              size="sm"
-                              variant="pearl"
-                              loading={
-                                releaseClaim.isPending &&
-                                releaseClaim.variables?.sessionId === row.id
-                              }
-                              onClick={() =>
-                                confirmAction(
-                                  i18n.t('approval.confirmTakeover', {
-                                    who: row.claimedByDisplayName ?? i18n.t('approval.unknownReviewer'),
-                                  }),
-                                  () => releaseClaim.mutate({ sessionId: row.id }),
-                                )
-                              }
-                            >
-                              {i18n.t('approval.takeOver')}
-                            </Button>
-                          ) : undefined
-                        }
-                      />
-                    </div>
-                  ) : null}
+        {open.status === 'rejected' ? (
+          <div role="status" className="rounded-lg bg-danger-pale p-xl">
+            <p className="text-body text-danger-ink">
+              {open.rejectReason || i18n.t('order.status.rejectedNoReason')}
+            </p>
+          </div>
+        ) : null}
 
-                  {row.status === 'rejected' ? (
-                    <div className="px-4 pt-2">
-                      {/* UI-2 (declutter): status is stated once — by the
-                          已拒绝 tab and the danger-tone box. The callout
-                          shows only the reason; previously it doubled
-                          "已拒绝" in both the title and the body line. */}
-                      <Banner tone="danger">
-                        {row.rejectReason
-                          ? row.rejectReason
-                          : i18n.t('order.status.rejectedNoReason')}
-                      </Banner>
-                    </div>
-                  ) : null}
+        <OrderLines
+          sessionId={open.id}
+          storeId={open.storeId}
+          editable={tab === 'pending' && claimedByMe}
+          productName={productName}
+        />
 
-                  <div className="flex flex-wrap items-center gap-2 px-4 py-3">
-                    {tab === 'pending' && !row.claimedByMemberId ? (
-                      <Button
-                        size="sm"
-                        loading={claim.isPending && claim.variables?.sessionId === row.id}
-                        onClick={() => {
-                          claim.mutate({ sessionId: row.id });
-                          setActiveSessionId(row.id);
-                        }}
-                      >
-                        {i18n.t('approval.claim')}
-                      </Button>
-                    ) : null}
-                    {tab === 'pending' && isClaimedByMe ? (
-                      <>
-                        <Button
-                          size="sm"
-                          variant="primary"
-                          loading={approve.isPending && approve.variables?.sessionId === row.id}
-                          onClick={() => approve.mutate({ sessionId: row.id })}
-                        >
-                          {i18n.t('approval.approve')}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="danger"
-                          onClick={() => setRejectFor(row.id)}
-                        >
-                          {i18n.t('approval.reject')}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="pearl"
-                          onClick={() => releaseClaim.mutate({ sessionId: row.id })}
-                        >
-                          {i18n.t('approval.release')}
-                        </Button>
-                      </>
-                    ) : null}
-                    {/* M1.7-fix (2026-05-07, audit HIGH #5): only show
-                        Unapprove if the actor actually has the perm.
-                        Earlier rev rendered for everyone in the
-                        approved tab — managers without
-                        `order.unapprove` would tap and get a 403
-                        toast, which looks like the app is broken. */}
-                    {tab === 'approved' &&
-                    session.permissions.includes('order.unapprove') ? (
-                      <Button
-                        size="sm"
-                        variant="pearl"
-                        loading={
-                          unapprove.isPending && unapprove.variables?.sessionId === row.id
-                        }
-                        onClick={() => unapprove.mutate({ sessionId: row.id })}
-                      >
-                        {i18n.t('approval.unapprove')}
-                      </Button>
-                    ) : null}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setActiveSessionId(isOpen ? null : row.id)}
-                    >
-                      {isOpen ? i18n.t('approval.hideItems') : i18n.t('approval.viewItems')}
-                    </Button>
-                  </div>
-
-                  {isOpen ? (
-                    <SessionItems
-                      sessionId={row.id}
-                      storeId={row.storeId}
-                      skuById={skuById}
-                      productName={productName}
-                      isClaimedByMe={isClaimedByMe}
-                    />
-                  ) : null}
-                </Card>
-              );
-            })}
-          </ul>
-        )}
-      </DataState>
-      </div>
-      )}
-
-      <Sheet
-        open={!!rejectFor}
-        onOpenChange={(open) => {
-          // M3.10: block dismiss while the reject mutation is in flight.
-          // Pre-M3.10 a swipe-down here wiped both rejectFor and
-          // rejectReason in local state; if the mutation then failed,
-          // the operator saw an error toast but their typed reason was
-          // gone and they had to re-author it. Now the sheet stays
-          // pinned until the mutation settles — onSuccess naturally
-          // closes via setRejectFor(null), onError leaves the sheet
-          // open with the reason intact for a quick retry.
-          if (!open && reject.isPending) return;
-          if (!open) {
-            setRejectFor(null);
-            setRejectReason('');
-          }
-        }}
-        title={i18n.t('approval.confirm.reject.title')}
-        description={i18n.t('approval.confirm.reject.body')}
-        // M1.9-fix (2026-05-07): the reason input used to autoFocus on
-        // open, popping the iOS keyboard during slideUp and pushing
-        // the Reject button out of view. We DEFER the autofocus until
-        // after slideUp finishes (~240ms) so focus + keyboard arrive
-        // when the sheet is in its final position — keyboard nav and
-        // screen-reader users still get focus inside the dialog.
-        deferAutoFocusMs={280}
-        footer={
+        {tab === 'pending' && claimedByMe ? (
           <Button
-            block
-            variant="danger"
-            disabled={!rejectReason.trim()}
-            loading={reject.isPending}
-            onClick={() => {
-              if (!rejectFor) return;
-              reject.mutate({ sessionId: rejectFor, reason: rejectReason.trim() });
-            }}
+            variant="secondary"
+            data-testid="approval-reject"
+            disabled={approve.isPending}
+            onClick={() => setRejecting(true)}
           >
             {i18n.t('approval.reject')}
           </Button>
-        }
-      >
-        <div className="py-3">
-          <Input
-            value={rejectReason}
-            onChange={(e) => setRejectReason(e.target.value)}
-            placeholder={i18n.t('approval.confirm.reject.reasonPlaceholder')}
+        ) : null}
+        {tab === 'approved' && can('order.unapprove') ? (
+          <Button
+            variant="secondary"
+            busy={unapprove.isPending}
+            onClick={() => unapprove.mutate({ sessionId: open.id })}
+          >
+            {i18n.t('approval.unapprove')}
+          </Button>
+        ) : null}
+
+        <Sheet
+          open={rejecting}
+          // Stays open while the answer is on its way: a failed rejection
+          // must not take the typed reason with it.
+          onOpenChange={(next) => !next && !reject.isPending && setRejecting(false)}
+          title={i18n.t('approval.confirm.reject.title') as string}
+          actions={
+            <Button
+              variant="danger"
+              data-testid="approval-reject-confirm"
+              disabled={!reason.trim()}
+              busy={reject.isPending}
+              onClick={() => reject.mutate({ sessionId: open.id, reason: reason.trim() })}
+            >
+              {i18n.t('approval.reject')}
+            </Button>
+          }
+        >
+          <Field
+            label={i18n.t('approval.confirm.reject.body') as string}
+            value={reason}
             maxLength={500}
+            placeholder={i18n.t('approval.confirm.reject.reasonPlaceholder') as string}
+            onChange={(e) => setReason(e.target.value)}
           />
+        </Sheet>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-xl px-page pb-xl pt-sm">
+      <h1 className="text-h1 text-ink">{i18n.t('nav.approve')}</h1>
+
+      <div
+        role="tablist"
+        aria-label={i18n.t('approval.tabsAriaLabel') as string}
+        className="-mx-page flex gap-sm overflow-x-auto px-page"
+      >
+        {TABS.map((key) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={tab === key}
+            data-testid={`approval-tab-${key}`}
+            onClick={() => {
+              setTab(key);
+              setOpenId(null);
+              setWantsList(true);
+            }}
+            className={cn(
+              'flex h-pillbtn shrink-0 items-center rounded-pill px-lg text-label outline-none active:opacity-70',
+              tab === key ? 'bg-contrast text-on-contrast' : 'bg-surface text-ink',
+            )}
+          >
+            {i18n.t(`approval.tab.${key}`)}
+          </button>
+        ))}
+      </div>
+
+      {storeCtx.kind === 'none' ? (
+        <div className="flex flex-col gap-xs">
+          <h2 className="text-h2 text-ink">{i18n.t('auth.noStore.title')}</h2>
+          <p className="text-body text-secondary">{i18n.t('auth.noStore.body')}</p>
         </div>
-      </Sheet>
+      ) : queue.isPending ? (
+        <p className="text-body text-secondary">{i18n.t('common.loading')}</p>
+      ) : queue.isError ? (
+        <div className="flex flex-col items-start gap-md">
+          <p className="text-body text-danger">{i18n.t('common.error')}</p>
+          <Button inline onClick={() => void queue.refetch()}>
+            {i18n.t('common.retry')}
+          </Button>
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="flex items-center gap-lg">
+          <span
+            aria-hidden
+            className="flex size-avatar shrink-0 items-center justify-center rounded-pill border border-line text-secondary"
+          >
+            <ClockIcon />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-label text-ink">
+              {tab === 'pending'
+                ? i18n.t('approval.empty.title')
+                : i18n.t('approval.empty.tab', { tab: i18n.t(`approval.tab.${tab}`) })}
+            </h2>
+            {tab === 'pending' ? (
+              <p className="text-small text-secondary">{i18n.t('approval.empty.body')}</p>
+            ) : null}
+          </div>
+        </div>
+      ) : (
+        <ul className="flex flex-col gap-lg">
+          {rows.map((row) => {
+            const lead = storeScoped ? who(row) : store(row);
+            const busyWith =
+              row.claimedByMemberId && row.claimedByMemberId !== me
+                ? i18n.t('order.banner.claimed', {
+                    who: row.claimedByDisplayName ?? i18n.t('approval.unknownReviewer'),
+                  })
+                : null;
+            return (
+              <li key={row.id}>
+                <button
+                  type="button"
+                  data-testid="approval-row"
+                  onClick={() => setOpenId(row.id)}
+                  className="flex w-full items-center gap-lg text-start outline-none active:opacity-60"
+                >
+                  <span
+                    aria-hidden
+                    className="flex size-avatar shrink-0 items-center justify-center rounded-pill bg-surface text-label text-ink"
+                  >
+                    {firstLetter(lead)}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-label text-ink">{lead}</span>
+                    <span className="block text-small text-secondary">
+                      {[
+                        storeScoped ? null : who(row),
+                        i18n.t('approval.itemsCount', { n: row.itemCount }),
+                        row.orderDate,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </span>
+                    {busyWith ? (
+                      <span className="block text-small text-warning-ink">{busyWith}</span>
+                    ) : null}
+                    {row.status === 'rejected' ? (
+                      <span className="block text-small text-danger">
+                        {row.rejectReason || i18n.t('order.status.rejectedNoReason')}
+                      </span>
+                    ) : null}
+                  </span>
+                  {row.estimatedTotal && can('prices.view') ? (
+                    <span className="shrink-0 text-money tabular-nums text-ink" dir="ltr">
+                      {formatMoney(row.estimatedTotal)}{' '}
+                      <span className="text-caption text-secondary">{currency}</span>
+                    </span>
+                  ) : null}
+                  <span className="shrink-0 text-forest">
+                    <ChevronIcon />
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
 
 /**
- * Per-SKU expanded view inside the approval queue. Shows the running
- * total per SKU AND a sub-list of each contributor's qty (per #6 — the
- * manager wants to see who asked for what). Each contributor row has
- * a +/- control so the manager can adjust in place WITHOUT bouncing
- * the order back to draft. The mutation uses `targetMemberId` so the
- * server applies the manager-override path.
+ * What an order asks for. The approver may change a quantity in place
+ * while the order is theirs; the change is made in the name of whoever
+ * asked, so the order does not go back to its author.
  */
-function SessionItems({
+function OrderLines({
   sessionId,
   storeId,
-  skuById,
+  editable,
   productName,
-  isClaimedByMe,
 }: {
   sessionId: string;
   storeId: string;
-  // `step` is REQUIRED (2026-07-30) — see the skuById docblock in the
-  // parent. An optional `step` is how the whole-unit-increment bug hid.
-  skuById: Map<string, { names: Record<string, string>; unit: string; step: string }>;
+  editable: boolean;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
-  isClaimedByMe: boolean;
 }) {
   const i18n = useI18n();
   const unitLabel = useUnitLabel();
-  // M1.21: pull org currency from session for the estimate-total
-  // suffix. Hardcoded "UZS" pre-M1.21 blocked the multi-currency
-  // foundation from M1.17.
-  const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   const detail = trpc.order.sessionDetail.useQuery({ sessionId });
+  const skus = trpc.catalog.skus.useQuery({ includeArchived: false });
   const utils = trpc.useUtils();
   const errToast = useErrToast();
   const adjust = trpc.order.adjustItem.useMutation({
@@ -550,238 +458,132 @@ function SessionItems({
     },
     onError: errToast('order.toast.adjustFailed'),
   });
-  // Member directory lookup so we can show who contributed each row.
-  const membersQuery = trpc.admin.memberList.useQuery(undefined, {
-    // memberList requires users.manage. Managers usually have it; if not,
-    // fall back to showing the bare member id instead of erroring.
-    enabled: isClaimedByMe,
-    retry: false,
-  });
-  const memberById = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const row of membersQuery.data ?? []) m.set(row.memberId, row.displayName);
-    return m;
-  }, [membersQuery.data]);
+  // Names for "who asked for how much". Only people who manage members
+  // may read the list; without it the split is shown without names.
+  const members = trpc.admin.memberList.useQuery(undefined, { enabled: editable, retry: false });
 
-  // skuPriceStats hooked here (BEFORE early returns, fixed 2026-05-05)
-  // so React's hooks-order invariant holds across loading/empty/error
-  // branches. Manager sees estimated budget before approving.
-  // skuIds derived from detail.data so it's stable across renders.
-  const skuIdsForPrice = useMemo(
-    () => (detail.data?.totals ?? []).filter((t) => Number(t.qty) > 0).map((t) => t.skuId),
-    [detail.data],
-  );
-  const priceStats = trpc.catalog.skuPriceStats.useQuery(
-    { skuIds: skuIdsForPrice },
-    { enabled: skuIdsForPrice.length > 0, staleTime: 60_000 },
-  );
-
-  if (detail.isLoading) {
-    return (
-      <div className="flex items-center gap-2 border-t border-[var(--c-divider)] px-4 py-3 text-old-body-sm text-[var(--c-fg-muted)]">
-        <Spinner size={14} /> {i18n.t('approval.items.loading')}
-      </div>
-    );
+  if (detail.isPending) {
+    return <p className="text-body text-secondary">{i18n.t('approval.items.loading')}</p>;
   }
   if (detail.isError) {
-    return (
-      <div className="border-t border-[var(--c-divider)] px-4 py-3 text-old-body-sm text-[var(--c-danger)]">
-        {i18n.t('approval.items.failed')}
-      </div>
-    );
-  }
-  const totals = (detail.data?.totals ?? []).filter((t) => Number(t.qty) > 0);
-  const rawItems = detail.data?.items ?? [];
-  const estimateTotal = (() => {
-    let sum = 0;
-    let known = 0;
-    let unknown = 0;
-    const priceMap = new Map(
-      (priceStats.data ?? []).map((r) => [r.skuId, r.avg7d ?? r.lastPrice]),
-    );
-    for (const t of totals) {
-      const price = priceMap.get(t.skuId);
-      if (price) {
-        sum += Number(price) * Number(t.qty);
-        known++;
-      } else {
-        unknown++;
-      }
-    }
-    return { sum, known, unknown };
-  })();
-  if (totals.length === 0) {
-    return (
-      <div className="border-t border-[var(--c-divider)] px-4 py-3 text-old-body-sm text-[var(--c-fg-muted)]">
-        {i18n.t('common.empty')}
-      </div>
-    );
+    return <p className="text-body text-danger">{i18n.t('approval.items.failed')}</p>;
   }
 
-  // Group raw items by SKU for the breakdown.
-  const rowsBySku = new Map<string, Array<{ contributorMemberId: string; qty: string }>>();
-  for (const it of rawItems) {
+  const skuById = new Map((skus.data ?? []).map((sku) => [sku.id, sku]));
+  const nameOf = new Map((members.data ?? []).map((m) => [m.memberId, m.displayName]));
+  const totals = detail.data.totals.filter((t) => Number(t.qty) > 0);
+  const asks = new Map<string, Array<{ contributorMemberId: string; qty: string }>>();
+  for (const it of detail.data.items) {
     if (Number(it.qty) <= 0) continue;
-    const arr = rowsBySku.get(it.skuId) ?? [];
-    arr.push({ contributorMemberId: it.contributorMemberId, qty: it.qty });
-    rowsBySku.set(it.skuId, arr);
+    asks.set(it.skuId, [...(asks.get(it.skuId) ?? []), it]);
   }
+  const extras = detail.data.extras ?? [];
+  const notes = detail.data.notes ?? null;
 
-  const sessionNotes = detail.data?.notes ?? null;
-  const sessionExtras = detail.data?.extras ?? [];
+  const stepper = (skuId: string, memberId: string, qty: string) => {
+    const sku = skuById.get(skuId);
+    if (!sku) return null;
+    const step = Number(sku.step) || 1;
+    const set = (next: number) =>
+      adjust.mutate({
+        storeId,
+        // The order's own date: without it the server takes today, and an
+        // order sent on an earlier day would be looked up on the wrong one.
+        date: detail.data.orderDate,
+        skuId,
+        qty: String(Math.max(0, Math.round(next * 1000) / 1000)),
+        targetMemberId: memberId,
+      });
+    return (
+      <Stepper
+        value={formatQty(qty)}
+        unit={unitLabel(sku.unit)}
+        disabled={adjust.isPending}
+        onDecrement={() => set(Number(qty) - step)}
+        onIncrement={() => set(Number(qty) + step)}
+      />
+    );
+  };
 
   return (
-    <div className="border-t border-[var(--c-divider)]">
-    {/* Session-level "其他物品" requests. M1.8 carried free-text in
-        `notes`; M3.16-C ships a structured list in `extras`. Both
-        surfaces render side-by-side here (legacy notes from pre-M3.16
-        sessions + new extras from M3.16+ sessions) so the manager
-        sees everything the store asked for in one place. Yellow tint
-        because these are off-catalog and need extra scrutiny. */}
-    {sessionExtras.length > 0 ? (
-      <div className="border-b border-[var(--c-divider)] bg-[var(--c-warn-bg)] px-4 py-2.5">
-        <SectionLabel padded={false}>
-          {i18n.t('order.extras.label')}
-        </SectionLabel>
-        <ul className="mt-1 flex flex-col gap-0.5">
-          {sessionExtras.map((e, idx) => (
-            <li
-              key={`${e.name}-${idx}`}
-              className="flex items-baseline justify-between gap-2 text-old-body"
+    <div className="flex flex-col gap-xl">
+      {extras.length > 0 || notes ? (
+        <section className="flex flex-col gap-sm rounded-lg bg-warning-pale p-xl">
+          <h2 className="text-label text-warning-ink">{i18n.t('order.extras.label')}</h2>
+          {extras.map((e, index) => (
+            <p
+              key={`${e.name}-${index}`}
+              className="flex justify-between gap-lg text-body text-ink"
             >
-              <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">{e.name}</span>
-              <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
+              <span className="min-w-0">{e.name}</span>
+              <span className="shrink-0 tabular-nums" dir="ltr">
                 {e.qty} {unitLabel(e.unit)}
               </span>
-            </li>
+            </p>
           ))}
-        </ul>
-      </div>
-    ) : null}
-    {sessionNotes ? (
-      <div className="border-b border-[var(--c-divider)] bg-[var(--c-warn-bg)] px-4 py-2.5">
-        <SectionLabel padded={false}>
-          {i18n.t('order.notes.label')}
-        </SectionLabel>
-        <div className="mt-1 whitespace-pre-wrap text-old-body leading-snug text-[var(--c-fg)]">
-          {sessionNotes}
-        </div>
-      </div>
-    ) : null}
-    {/* Estimated budget row (added 2026-05-05). Tells the manager
-        roughly how much approval-then-purchase will cost, based on
-        the last 7 days of price history. SKUs with no history skip
-        and are flagged. */}
-    {estimateTotal.known > 0 ? (
-      <div className="flex items-baseline justify-between gap-2 px-4 py-2 text-old-label text-[var(--c-fg-muted)]">
-        <span className="font-semibold uppercase tracking-eyebrow">
-          {i18n.t('order.review.estimatedTotal')}
-        </span>
-        <span className="font-mono text-old-body font-semibold tabular-nums text-[var(--c-fg)]">
-          ~{formatMoney(estimateTotal.sum)} {currency}
-        </span>
-      </div>
-    ) : null}
-    <ul
-      className="flex flex-col px-4 py-2"
-      role="list"
-    >
-      {totals.map((t) => {
-        const sku = skuById.get(t.skuId);
-        const rows = rowsBySku.get(t.skuId) ?? [];
-        // M3.34 (2026-05-19, Q4 cleanup): collapse the contributor
-        // breakdown when there's only ONE contributor. The submitter's
-        // name is already in the order card header; repeating it on
-        // every SKU row was redundant and ate screen space. For a
-        // single-contributor session in claimed mode, the QtyControl
-        // moves up onto the SKU header itself in place of the static
-        // qty span.
-        const isSingleContributor = rows.length === 1;
-        const singleRow = isSingleContributor ? rows[0]! : null;
-        return (
-          <li key={t.skuId} className="border-b border-[var(--c-divider)] py-3 last:border-b-0">
-            <div className="flex items-center justify-between gap-2 text-old-body">
-              <span className="min-w-0 flex-1 truncate font-semibold text-[var(--c-fg)]">
-                {sku ? productName(sku) : t.skuId.slice(0, 8)}
+          {notes ? <p className="whitespace-pre-wrap text-body text-ink">{notes}</p> : null}
+        </section>
+      ) : null}
+
+      {totals.length === 0 ? (
+        <p className="text-body text-secondary">{i18n.t('common.empty')}</p>
+      ) : (
+        <ul className="flex flex-col">
+          {totals.map((t) => {
+            const sku = skuById.get(t.skuId);
+            const name = sku
+              ? productName({ names: sku.names as Record<string, string> })
+              : t.skuId.slice(0, 8);
+            const rows = asks.get(t.skuId) ?? [];
+            const single = rows.length === 1 ? rows[0]! : null;
+            const total = (
+              <span className="text-money tabular-nums text-ink" dir="ltr">
+                {formatQty(t.qty)} {unitLabel(sku?.unit ?? '')}
               </span>
-              {isClaimedByMe && isSingleContributor && sku && singleRow ? (
-                <QtyControl
-                  size="sm"
-                  value={Number(singleRow.qty)}
-                  step={Number(sku.step)}
-                  unit={unitLabel(sku.unit)}
-                  disabled={adjust.isPending}
-                  onChange={(next) =>
-                    adjust.mutate({
-                      storeId,
-                      // 2026-07-30 (flow review): pass the SESSION's date.
-                      // Omitting it made the server default to today, so
-                      // adjusting a session submitted on an earlier day
-                      // looked up the wrong (store, date) row entirely.
-                      date: detail.data?.orderDate,
-                      skuId: t.skuId,
-                      qty: String(next),
-                      targetMemberId: singleRow.contributorMemberId,
-                    })
-                  }
-                />
-              ) : (
-                <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg)]">
-                  {formatQty(t.qty)} {unitLabel(sku?.unit ?? '')}
-                </span>
-              )}
-            </div>
-            {/* Per-contributor breakdown only when 2+ contributors —
-                whether or not claimed. Hiding for single-contributor
-                avoids the noisy repeated submitter name. */}
-            {rows.length > 1 ? (
-              <ul className="mt-1 flex flex-col gap-1 pl-3" role="list">
-                {rows.map((r) => (
-                  <li
-                    key={r.contributorMemberId}
-                    className="flex items-center justify-between gap-2 text-old-label text-[var(--c-fg-muted)]"
+            );
+            return (
+              <li key={t.skuId} data-testid="approval-line" className="flex flex-col gap-sm py-sm">
+                <div className="flex min-h-row items-center gap-lg">
+                  <span
+                    aria-hidden
+                    className="flex size-avatar shrink-0 items-center justify-center rounded-pill bg-surface text-label text-ink"
                   >
-                    <span className="truncate">
-                      {memberById.get(r.contributorMemberId) ??
-                        r.contributorMemberId.slice(0, 6)}
-                    </span>
-                    {isClaimedByMe && sku ? (
-                      <QtyControl
-                        size="sm"
-                        value={Number(r.qty)}
-                        step={Number(sku.step)}
-                        unit={unitLabel(sku.unit)}
-                        disabled={adjust.isPending}
-                        onChange={(next) =>
-                          adjust.mutate({
-                            storeId,
-                            date: detail.data?.orderDate,
-                            skuId: t.skuId,
-                            qty: String(next),
-                            targetMemberId: r.contributorMemberId,
-                          })
-                        }
-                      />
-                    ) : (
-                      <span className="shrink-0 font-mono tabular-nums">
-                        {formatQty(r.qty)} {unitLabel(sku?.unit ?? '')}
-                      </span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </li>
-        );
-      })}
-    </ul>
+                    {firstLetter(name)}
+                  </span>
+                  <span className="min-w-0 flex-1 text-label text-ink">{name}</span>
+                  <span className="shrink-0">
+                    {editable && single
+                      ? (stepper(t.skuId, single.contributorMemberId, single.qty) ?? total)
+                      : total}
+                  </span>
+                </div>
+                {/* Several people asked: each one's share, each changeable. */}
+                {rows.length > 1
+                  ? rows.map((r) => (
+                      <div
+                        key={r.contributorMemberId}
+                        className="flex items-center justify-between gap-lg ps-xxxl"
+                      >
+                        <span className="min-w-0 text-small text-secondary">
+                          {nameOf.get(r.contributorMemberId) ?? r.contributorMemberId.slice(0, 6)}
+                        </span>
+                        <span className="shrink-0">
+                          {editable ? (
+                            stepper(t.skuId, r.contributorMemberId, r.qty)
+                          ) : (
+                            <span className="text-small tabular-nums text-secondary" dir="ltr">
+                              {formatQty(r.qty)} {unitLabel(sku?.unit ?? '')}
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    ))
+                  : null}
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
-
-// ManagerLineEditor removed 2026-05-03: replaced by `<QtyControl size="sm">`
-// from @compass/ui. The inline reimplementation drifted from the
-// canonical +/- control's behavior (haptics, hold-to-repeat, manual
-// entry sheet) — promoting to size="sm" gives ApprovalPage all of those
-// behaviors for free, and any future improvements to QtyControl land
-// here automatically.

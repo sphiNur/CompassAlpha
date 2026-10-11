@@ -827,6 +827,7 @@ export const en = {
   'approval.contributorsCount': '{n, plural, =1 {1 contributor} other {{n} contributors}}',
   'approval.hideItems': 'Hide items',
   'approval.approve': 'Approve',
+  'approval.allOrders': 'All orders ({n})',
   'approval.reject': 'Reject',
   'approval.claim': 'Claim',
   'approval.release': 'Release',

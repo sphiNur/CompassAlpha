@@ -191,13 +191,20 @@ test('approve it', async () => {
   await evidence('today-with-work');
   await evidenceIn(['zh', 'ru'], 'today-with-work');
   await page.getByTestId('do-approve').click();
+  // The only order waiting opens by itself, and opening it is claiming it:
+  // the quantities become changeable without a button for that.
   await expect(main().getByRole('heading', { name: 'E2E Admin' })).toBeVisible();
-  await main().getByRole('button', { name: 'Claim' }).click();
-  await expect(item('Apple').getByRole('button', { name: /^Quantity/ })).toHaveAccessibleName(
-    /^Quantity 2 kg/,
-  );
-  await evidence('approval-claimed');
-  await main().getByRole('button', { name: 'Approve', exact: true }).click();
+  await expect(item('Apple').locator('[data-step="value"]')).toHaveText(/2\s*kg/);
+  await expect(mainButton()).toHaveText('Approve');
+  await evidence('approval-order');
+  await evidenceIn(['zh', 'ru'], 'approval-order', async () => {
+    await page.getByTestId('do-approve').click();
+    await expect(main().locator('[data-step="value"]').first()).toBeVisible();
+  });
+  await page.getByTestId('do-approve').click();
+  await expect(item('Apple').locator('[data-step="value"]')).toHaveText(/2\s*kg/);
+  await mainButton().click();
+  await evidence('approval-empty');
   await expect(main().getByRole('heading', { name: 'Inbox is empty' })).toBeVisible();
 });
 

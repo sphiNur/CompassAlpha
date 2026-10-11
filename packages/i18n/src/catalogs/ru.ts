@@ -732,6 +732,7 @@ export const ru = {
     '{n, plural, one {# участник} few {{n} участника} other {{n} участников}}',
   'approval.hideItems': 'Скрыть',
   'approval.approve': 'Одобрить',
+  'approval.allOrders': 'Все заявки ({n})',
   'approval.reject': 'Отклонить',
   'approval.claim': 'Взять',
   'approval.release': 'Отпустить',

@@ -689,6 +689,7 @@ export const zh = {
   'approval.contributorsCount': '{n} 位贡献者',
   'approval.hideItems': '收起',
   'approval.approve': '通过',
+  'approval.allOrders': '全部 {n} 张',
   'approval.reject': '拒绝',
   'approval.claim': '认领',
   'approval.release': '释放',

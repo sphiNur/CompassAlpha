@@ -738,6 +738,7 @@ export const uz = {
   'approval.contributorsCount': '{n, plural, =1 {1 ishtirokchi} other {{n} ta ishtirokchi}}',
   'approval.hideItems': 'Yashirish',
   'approval.approve': 'Tasdiqlash',
+  'approval.allOrders': 'Barcha buyurtmalar ({n})',
   'approval.reject': 'Rad etish',
   'approval.claim': 'Olish',
   'approval.release': 'Qo‘yib yuborish',

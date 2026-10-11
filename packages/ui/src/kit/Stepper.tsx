@@ -45,7 +45,7 @@ export function Stepper({
       {unit ? <span className="ms-xs text-caption text-secondary">{unit}</span> : null}
     </>
   );
-  const valueBox = 'flex h-tap min-w-row items-center justify-center rounded-pill bg-field px-sm';
+  const valueBox = 'flex h-tap min-w-row items-center justify-center rounded-pill bg-field px-sm text-ink';
   return (
     <div
       role="group"
