@@ -602,7 +602,7 @@ export const ru = {
   'order.review.empty': 'Пока ничего не выбрано.',
   'order.review.reviewSheet.title': 'Проверьте заказ',
   'order.review.estimatedTotal': 'Оценка стоимости',
-  'order.review.estimateHint': '~ среднее за 7 дней · {known} с ценой · {unknown} без цены',
+  'order.review.estimateHint': '~ по последней цене покупки · {known} с ценой · {unknown} без цены',
 
   // ── Прочие позиции (заметка к сессии, M1.8) ──────────────────────
   'order.notes.label': 'Прочее',

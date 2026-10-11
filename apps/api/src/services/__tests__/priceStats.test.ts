@@ -14,6 +14,23 @@ const stat = (skuId: string, price: number): [string, SkuPriceStat] => [
 ];
 
 describe('estimateLines', () => {
+  test('goes by the last price paid, not the average of the week', () => {
+    const moved = new Map<string, SkuPriceStat>([
+      [
+        'tomato',
+        {
+          skuId: 'tomato',
+          lastPrice: 9,
+          lastObservedAt: null,
+          avg7d: 14,
+          avg30d: 15,
+          observations30d: 6,
+        },
+      ],
+    ]);
+    expect(estimateLines([{ skuId: 'tomato', qty: 10 }], moved).total).toBe(90);
+  });
+
   const stats = new Map([stat('apple', 10), stat('beef', 100), stat('salt', 5)]);
   const lines = [
     { skuId: 'apple', qty: 2 },

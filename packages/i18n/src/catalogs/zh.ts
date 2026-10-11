@@ -562,7 +562,7 @@ export const zh = {
   'order.review.empty': '暂未选择任何商品。',
   'order.review.reviewSheet.title': '复核订单',
   'order.review.estimatedTotal': '预计金额',
-  'order.review.estimateHint': '~ 近 7 日均价 · {known} 项有价 · {unknown} 项无价',
+  'order.review.estimateHint': '~ 按上次买入价 · {known} 项有价 · {unknown} 项无价',
 
   // ── 其他物品（会话级备注，M1.8） ──────────────────────────────────
   'order.notes.label': '其他物品',
