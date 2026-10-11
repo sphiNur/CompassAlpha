@@ -30,17 +30,19 @@ import designTokens from '@compass/ui/tailwind-preset';
  *   label 11 · meta 10 (deprecated) · tiny 9
  */
 const fontSizeScale = {
-  // Headings — bake weight + tracking (the whole semantic).
-  'old-display': ['24px', { lineHeight: '1.15', letterSpacing: '0', fontWeight: '600' }],
-  'old-h1': ['19px', { lineHeight: '1.2', letterSpacing: '0', fontWeight: '600' }],
-  'old-h2': ['15px', { lineHeight: '1.25', fontWeight: '600' }],
-  // Body and below — size + line-height only. Caller decides weight.
-  'old-h3': ['14px', { lineHeight: '1.3' }],
-  'old-body': ['13px', { lineHeight: '1.4' }],
-  'old-body-sm': ['12px', { lineHeight: '1.4' }],
-  'old-label': ['11px', { lineHeight: '1.3' }],
-  'old-meta': ['10px', { lineHeight: '1.3' }],
-  'old-tiny': ['9px', { lineHeight: '1.3' }],
+  // The old components, at Fine's sizes until each is rebuilt: the old
+  // scale ran from 9 to 13px, which is the density that was complained
+  // about. Nothing is under Fine's caption size now. See the block at the
+  // end of packages/ui/src/tokens.css.
+  'old-display': ['28px', { lineHeight: '1.15', letterSpacing: '0', fontWeight: '700' }],
+  'old-h1': ['28px', { lineHeight: '1.2', letterSpacing: '0', fontWeight: '700' }],
+  'old-h2': ['22px', { lineHeight: '1.25', fontWeight: '600' }],
+  'old-h3': ['16px', { lineHeight: '1.4' }],
+  'old-body': ['16px', { lineHeight: '1.5' }],
+  'old-body-sm': ['14px', { lineHeight: '1.45' }],
+  'old-label': ['13px', { lineHeight: '1.4' }],
+  'old-meta': ['13px', { lineHeight: '1.4' }],
+  'old-tiny': ['13px', { lineHeight: '1.4' }],
 };
 
 export default {

@@ -12,10 +12,43 @@ const twMerge = extendTailwindMerge({
     classGroups: {
       'font-size': [
         { text: ['display', 'h1', 'h2', 'body', 'label', 'small', 'caption', 'money', 'money-lg'] },
+        // The old components' sizes too. Left out, `text-old-label` was read
+        // as a colour and silently removed the real colour before it: a
+        // primary button lost its text colour and showed dark on dark.
+        {
+          text: [
+            'old-display',
+            'old-h1',
+            'old-h2',
+            'old-h3',
+            'old-body',
+            'old-body-sm',
+            'old-label',
+            'old-meta',
+            'old-tiny',
+          ],
+        },
       ],
     },
     theme: {
-      spacing: ['xs', 'sm', 'md', 'lg', 'page', 'xl', 'xxl', 'xxxl', 'disc', 'round', 'chip', 'pillbtn', 'tap', 'avatar', 'control', 'row'],
+      spacing: [
+        'xs',
+        'sm',
+        'md',
+        'lg',
+        'page',
+        'xl',
+        'xxl',
+        'xxxl',
+        'disc',
+        'round',
+        'chip',
+        'pillbtn',
+        'tap',
+        'avatar',
+        'control',
+        'row',
+      ],
       borderRadius: ['pill'],
     },
   },

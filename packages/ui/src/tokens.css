@@ -307,3 +307,62 @@
 .ring-hairline {
   box-shadow: inset 0 0 0 1px var(--c-divider);
 }
+
+/* ────────────────────────────────────────────────────────────
+ * The old components, on the Fine palette.
+ *
+ * Screens not rebuilt yet (the sections under Manage, and a few sheets)
+ * are still made of the earlier components, which read the variables
+ * above. Until each is rebuilt they take Fine's colours, corners and
+ * type through this block, so that opening one is not a step back into
+ * another product. Fine's own variables already follow light and dark,
+ * so these do too, whatever `data-theme` says.
+ *
+ * Delete this block with the last old component.
+ * ──────────────────────────────────────────────────────────── */
+html:root,
+html:root[data-theme] {
+  --c-bg: rgb(var(--fine-neutral));
+  --c-surface: rgb(var(--fine-surface));
+  --c-surface-2: rgb(var(--fine-surface));
+  --c-surface-elevated: rgb(var(--fine-field));
+  --c-fg: rgb(var(--fine-ink));
+  --c-fg-muted: rgb(var(--fine-secondary));
+  --c-fg-subtle: rgb(var(--fine-secondary));
+  --c-fg-inverse: rgb(var(--fine-neutral));
+  /* Used both as a fill and as the colour of a link: the forest green
+     reads as either, where the lime would vanish as text on white. */
+  --c-action: rgb(var(--fine-forest));
+  --c-action-hover: rgb(var(--fine-forest));
+  --c-action-fg: rgb(var(--fine-primary-pale));
+  --c-success: rgb(var(--fine-forest));
+  --c-warning: rgb(var(--fine-warning));
+  --c-warning-fg: rgb(var(--fine-warning-ink));
+  --c-danger: rgb(var(--fine-danger));
+  --c-info: rgb(var(--fine-secondary));
+  --c-warn-bg: rgb(var(--fine-warning-pale));
+  --c-success-bg: rgb(var(--fine-primary-pale));
+  --c-danger-bg: rgb(var(--fine-danger-pale));
+  --c-info-bg: rgb(var(--fine-surface-sunken));
+  --c-divider: rgb(var(--fine-line) / 0.6);
+  --c-ring: rgb(var(--fine-ink));
+  --r-utility: 12px;
+  --r-capsule: 16px;
+  --r-card: 24px;
+  --control-h: 44px;
+  --control-h-sm: 40px;
+  /* Figures in the same face as everything else; they are tabular where
+     they need to line up. */
+  --font-mono: var(--font-sans);
+  /* The old scale ran from 9 to 13px, which is the density that was
+     complained about. Nothing under Fine's caption size. */
+  --text-display: 28px;
+  --text-h1: 28px;
+  --text-h2: 22px;
+  --text-h3: 16px;
+  --text-body: 16px;
+  --text-body-sm: 14px;
+  --text-label: 13px;
+  --text-meta: 13px;
+  --text-tiny: 13px;
+}

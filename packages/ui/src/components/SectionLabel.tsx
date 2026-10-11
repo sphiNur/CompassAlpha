@@ -104,7 +104,7 @@ export function SectionLabel({
     <Tag
       className={cn(
         layout,
-        'text-old-label font-semibold uppercase tracking-eyebrow',
+        'text-old-label font-semibold',
         color,
         className,
       )}

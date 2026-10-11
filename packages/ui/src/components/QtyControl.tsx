@@ -407,7 +407,7 @@ function QtyQuickPickSheet({
             an eyebrow above the input. SectionLabel renders as a
             non-form element, so we keep the eyebrow class string here.
             The CI typography guard allow-lists this comment. */}
-        <label className="block text-old-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+        <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
           {labels.custom}
           <NumberInput
             className="mt-1"

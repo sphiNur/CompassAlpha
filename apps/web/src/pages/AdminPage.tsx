@@ -179,11 +179,10 @@ export function AdminPage() {
           if (section === 'stores' && storeFocus !== null) {
             setStoreFocus(null);
             setStoreSub('team');
-          } else if (section === 'catalog' && catalogSub) {
-            setCatalogSub(null);
-          } else if (section === 'operations' && opsSub) {
-            setOpsSub(null);
           } else {
+            // Manage lists every catalogue and report screen itself, so
+            // back from one of them is back to Manage, not to a page
+            // that only led on to it.
             // M3.16-B: bundle the home-pop into a single store action
             // so it's one persisted write instead of five.
             resetAdminDrillDown();
@@ -424,26 +423,22 @@ function SectionFrame({
   // to the same page. `isInTelegram()` checks for real initData.
   const inTg = isInTelegram();
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col gap-lg pb-xl pt-sm">
       {inTg ? null : (
-        <header className="flex items-center gap-2 px-2 pt-3 pb-2">
-          <button
-            type="button"
-            onClick={onBack}
-            className="press inline-flex h-9 items-center gap-1 rounded-[var(--r-pill)] px-3 text-old-body text-[var(--c-action)]"
-            aria-label={i18n.t('admin.aria.back')}
-          >
-            <span aria-hidden className="text-old-h2 leading-none">‹</span>
-            {/* was the literal "Admin" */}
-            <span>{i18n.t('nav.admin')}</span>
-          </button>
-        </header>
+        <button
+          type="button"
+          data-testid="manage-back"
+          onClick={onBack}
+          aria-label={i18n.t('admin.aria.back')}
+          className="mx-page flex h-chip items-center gap-xs self-start rounded-pill bg-surface-sunken px-md text-caption text-ink outline-none active:opacity-60"
+        >
+          <span aria-hidden className="rtl:-scale-x-100">
+            ‹
+          </span>
+          <span>{i18n.t('nav.manage')}</span>
+        </button>
       )}
-      <div className="px-4 pb-2 pt-3">
-        <h1 className="text-old-h1 font-semibold leading-[1.15] text-[var(--c-fg)]">
-          {title}
-        </h1>
-      </div>
+      <h1 className="px-page text-h1 text-ink">{title}</h1>
       {children}
     </div>
   );

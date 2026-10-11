@@ -103,6 +103,12 @@ describe('cn understands the tokens', () => {
   test('a type token survives next to a colour token', () => {
     expect(cn('text-body', 'text-secondary')).toBe('text-body text-secondary');
     expect(cn('text-money', 'text-primary')).toBe('text-money text-primary');
+    // The old components' sizes are sizes too: an old button's colour
+    // must survive the size that follows it.
+    expect(cn('text-[var(--c-action-fg)]', 'text-old-label')).toBe(
+      'text-[var(--c-action-fg)] text-old-label',
+    );
+    expect(cn('text-old-body', 'text-old-label')).toBe('text-old-label');
   });
 
   test('a later token of the same kind wins', () => {

@@ -456,6 +456,27 @@ test('finish the run and find it in history', async () => {
   await expect(sheet()).toBeHidden();
 });
 
+test('everything that is set up is one tap from Manage', async () => {
+  await tab('admin').click();
+  await expect(main().getByRole('heading', { level: 1 })).toHaveText('Manage');
+  await evidence('manage');
+  // Each row goes straight to its screen, and back from it is back here:
+  // no page in between that only lists other pages.
+  for (const [row, title, picture] of [
+    ['skus', 'SKUs', 'manage-products'],
+    ['stores', 'Stores', 'manage-stores'],
+    ['permissions', 'Roles & Permissions', 'manage-roles'],
+    ['finance', 'Finance', 'manage-finance'],
+  ] as const) {
+    await page.getByTestId(`manage-${row}`).click();
+    await expect(main().getByRole('heading', { level: 1 })).toHaveText(title);
+    await expect(page.getByTestId('primary-nav')).toBeVisible();
+    await evidence(picture);
+    await page.getByTestId('manage-back').click();
+    await expect(main().getByRole('heading', { level: 1 })).toHaveText('Manage');
+  }
+});
+
 test('close the day', async () => {
   await tab('admin').click();
   await page.getByTestId('manage-close').click();

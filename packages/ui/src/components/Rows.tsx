@@ -183,7 +183,7 @@ export function Tile({ label, value, accent = 'muted', className }: TileProps) {
         : 'text-[var(--c-fg)]';
   return (
     <div className={cn(surfaceClass, 'p-4', className)}>
-      <div className="text-old-label font-medium uppercase tracking-[0.08em] text-[var(--c-fg-muted)]">
+      <div className="text-old-label font-medium text-[var(--c-fg-muted)]">
         {label}
       </div>
       <div
