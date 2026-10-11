@@ -24,15 +24,28 @@ export function StoreBar({
   inTelegram,
   onOpenAccount,
   onBack,
+  bare,
 }: {
   inTelegram: boolean;
   /** Opens name and language. Telegram has its own button for this. */
   onOpenAccount: () => void;
   /** On a task screen: leave it. Telegram shows its own back arrow. */
   onBack?: () => void;
+  /** The screen draws its own header: keep only the strip Telegram covers. */
+  bare?: boolean;
 }) {
   const name = useAuthStore((s) => s.session?.user.displayName);
   const i18n = useI18n();
+  if (bare) {
+    return inTelegram ? (
+      <div
+        className="shrink-0 bg-neutral"
+        style={{ height: 'var(--app-chrome-reserve, calc(var(--app-safe-top) + 36px))' }}
+      />
+    ) : (
+      <div className="shrink-0 bg-neutral" style={{ height: 'var(--app-safe-top)' }} />
+    );
+  }
   if (inTelegram) {
     // Both sides are padded by the WIDER of Telegram's two overlays, which
     // keeps the name on the screen's centre line rather than centred in
@@ -85,7 +98,11 @@ export function StoreBar({
   );
 }
 
-function StoreButton() {
+/**
+ * The current store, and the way to change it. `pill` draws it as the
+ * white floating capsule at the top of Today.
+ */
+export function StoreButton({ pill = false }: { pill?: boolean } = {}) {
   const i18n = useI18n();
   const ctx = useStoreContext();
   const canSwitch = useCanSeeStorePicker();
@@ -135,9 +152,13 @@ function StoreButton() {
         data-testid="current-store"
         aria-label={i18n.t('storeSwitcher.aria')}
         onClick={() => setOpen(true)}
-        className="flex h-tap min-w-0 items-center gap-xs text-label text-ink outline-none active:opacity-60"
+        className={
+          pill
+            ? 'flex min-h-pillbtn min-w-0 items-center gap-sm rounded-pill bg-field px-lg text-label text-ink shadow-float outline-none active:opacity-60'
+            : 'flex h-tap min-w-0 items-center gap-xs text-label text-ink outline-none active:opacity-60'
+        }
       >
-        <span className="truncate">{label}</span>
+        <span className={pill ? 'min-w-0 [overflow-wrap:anywhere]' : 'truncate'}>{label}</span>
         <span aria-hidden className="shrink-0 text-secondary">
           ▾
         </span>

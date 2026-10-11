@@ -13,7 +13,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import postgres from 'postgres';
-import { DATABASE_URL } from '../env';
+import { API_URL, DATABASE_URL } from '../env';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -56,6 +56,36 @@ async function evidence(name: string): Promise<void> {
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, `${String(++shot).padStart(2, '0')}-${name}.png`), body);
   }
+}
+
+/**
+ * The same screen in other languages, for the people who review it: the
+ * flow's assertions read English, so this switches the account's
+ * language, takes the picture, and switches back. Only when pictures are
+ * being kept.
+ */
+async function evidenceIn(locales: string[], name: string): Promise<void> {
+  const dir = process.env.E2E_SHOTS_DIR;
+  if (!dir) return;
+  const setLocale = async (locale: string) => {
+    const token = await page.evaluate(
+      () => JSON.parse(localStorage.getItem('compass.auth') ?? '{}')?.state?.accessToken as string,
+    );
+    const res = await page.request.post(`${API_URL}/trpc/auth.setLocale`, {
+      headers: { authorization: `Bearer ${token}` },
+      data: { locale },
+    });
+    expect(res.ok()).toBe(true);
+    await page.reload();
+    await expect(page.getByTestId('primary-nav')).toBeVisible();
+    await expect(page.getByTestId('today-hero')).toBeVisible();
+  };
+  for (const locale of locales) {
+    await setLocale(locale);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, `${name}.${locale}.png`), await page.screenshot({ fullPage: true }));
+  }
+  await setLocale('en');
 }
 
 test('sign in and confirm a display name', async () => {
@@ -133,8 +163,9 @@ test('approve it', async () => {
   // And Today says it is waiting, with the button that deals with it.
   await tab('menu').click();
   await expect(page.getByTestId('today-hero')).toContainText('2');
-  await expect(page.getByTestId('tile-approve')).toContainText(/Waiting for approval\s*1 order/);
+  await expect(page.getByTestId('tile-approve')).toHaveText(/1\s*Waiting for approval/);
   await evidence('today-with-work');
+  await evidenceIn(['zh', 'ru'], 'today-with-work');
   await page.getByTestId('do-approve').click();
   await expect(main().getByRole('heading', { name: 'E2E Admin' })).toBeVisible();
   await main().getByRole('button', { name: 'Claim' }).click();
@@ -148,7 +179,7 @@ test('approve it', async () => {
 
 test('buy everything, one item in cash and one by transfer', async () => {
   await leave();
-  await expect(page.getByTestId('tile-buy')).toContainText(/Orders to buy\s*1 order/);
+  await expect(page.getByTestId('tile-buy')).toHaveText(/1\s*Orders to buy/);
   await tab('purchasing').click();
   await evidence('purchasing');
   await page.getByTestId('open-run').click();
@@ -281,7 +312,7 @@ test('receive the delivery at the store', async () => {
   // Today says there is something to check in, and how much.
   await leave();
   await tab('menu').click();
-  await expect(page.getByTestId('tile-receive')).toContainText(/Delivery to check in\s*2 items/);
+  await expect(page.getByTestId('tile-receive')).toHaveText(/2\s*Delivery to check in/);
   await page.getByTestId('do-receive').click();
   await expect(main().getByRole('heading', { level: 1 })).toHaveText('Receiving');
   const rows = main().getByTestId('receive-row');
@@ -379,7 +410,7 @@ test('close the day', async () => {
   await leave();
   await tab('menu').click();
   await expect(page.getByTestId('tile-close')).toHaveCount(0);
-  await expect(page.getByTestId('today-hero')).toContainText('Nothing needs you right now.');
+  await expect(page.getByTestId('today-hero')).toContainText('Nothing waiting');
   await evidence('today-all-done');
 });
 

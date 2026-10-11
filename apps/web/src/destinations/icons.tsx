@@ -43,3 +43,49 @@ export const ManageIcon = () => (
     <circle cx="14" cy="17" r="2" />
   </svg>
 );
+
+export const ApproveIcon = () => (
+  <svg {...frame}>
+    <path d="m8 12.5 3 3 5.5-6.5" />
+    <rect x="4" y="4" width="16" height="16" rx="4" />
+  </svg>
+);
+
+export const ReceiveIcon = () => (
+  <svg {...frame}>
+    <path d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5z" />
+    <path d="M4 8.5 12 13l8-4.5M12 13v7" />
+  </svg>
+);
+
+export const CloseDayIcon = () => (
+  <svg {...frame}>
+    <rect x="4" y="5" width="16" height="15" rx="3" />
+    <path d="M4 10h16M9 3v4M15 3v4" />
+  </svg>
+);
+
+export const ClockIcon = () => (
+  <svg {...frame}>
+    <circle cx="12" cy="12" r="8" />
+    <path d="M12 8v4l2.5 2" />
+  </svg>
+);
+
+export const PlusIcon = () => (
+  <svg {...frame}>
+    <path d="M12 6v12M6 12h12" />
+  </svg>
+);
+
+export const ChevronIcon = () => (
+  <svg {...frame} width={18} height={18} className="shrink-0 rtl:-scale-x-100">
+    <path d="m9 6 6 6-6 6" />
+  </svg>
+);
+
+export const DismissIcon = () => (
+  <svg {...frame} width={18} height={18}>
+    <path d="m7 7 10 10M17 7 7 17" />
+  </svg>
+);

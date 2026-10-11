@@ -15,7 +15,7 @@ const twMerge = extendTailwindMerge({
       ],
     },
     theme: {
-      spacing: ['xs', 'sm', 'md', 'lg', 'page', 'xl', 'xxl', 'xxxl', 'tap', 'control', 'row'],
+      spacing: ['xs', 'sm', 'md', 'lg', 'page', 'xl', 'xxl', 'xxxl', 'disc', 'round', 'chip', 'pillbtn', 'tap', 'avatar', 'control', 'row'],
       borderRadius: ['pill'],
     },
   },

@@ -214,6 +214,7 @@ function ShellInner() {
         onOpenAccount={openSettings}
         // In Telegram its own arrow does this.
         onBack={isTask && !inTelegram ? back : undefined}
+        bare={tab === 'menu'}
       />
 
       <main
