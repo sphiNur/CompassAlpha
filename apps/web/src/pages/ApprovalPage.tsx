@@ -205,6 +205,19 @@ export function ApprovalPage() {
               <span className="text-display tabular-nums">{formatMoney(open.estimatedTotal)}</span>
               <span className="text-label text-secondary">{currency}</span>
             </span>
+            {open.estimatedCash && open.estimatedTransfer ? (
+              <span className="text-small text-secondary">
+                {i18n.t('run.label.paymentCash')}{' '}
+                <span dir="ltr" className="tabular-nums text-ink">
+                  {formatMoney(open.estimatedCash)}
+                </span>
+                {' · '}
+                {i18n.t('run.label.paymentTransfer')}{' '}
+                <span dir="ltr" className="tabular-nums text-ink">
+                  {formatMoney(open.estimatedTransfer)}
+                </span>
+              </span>
+            ) : null}
             <span className="text-small text-secondary">
               {i18n.t('order.review.estimateHint', {
                 known: open.estimatedKnown,
@@ -411,9 +424,32 @@ export function ApprovalPage() {
                     ) : null}
                   </span>
                   {row.estimatedTotal && can('prices.view') ? (
-                    <span className="shrink-0 text-money tabular-nums text-ink" dir="ltr">
-                      {formatMoney(row.estimatedTotal)}{' '}
-                      <span className="text-caption text-secondary">{currency}</span>
+                    <span className="flex shrink-0 flex-col items-end">
+                      <span className="text-money tabular-nums text-ink" dir="ltr">
+                        {formatMoney(row.estimatedTotal)}{' '}
+                        <span className="text-caption text-secondary">{currency}</span>
+                      </span>
+                      {/* Nothing is paid yet: this is how each product was
+                          paid the last time it was bought. */}
+                      {row.estimatedCash && row.estimatedTransfer ? (
+                        <span
+                          data-testid="approval-payment-budget"
+                          className="flex flex-col items-end text-small text-secondary"
+                        >
+                          <span>
+                            {i18n.t('run.label.paymentCash')}{' '}
+                            <span dir="ltr" className="tabular-nums">
+                              {formatMoney(row.estimatedCash)}
+                            </span>
+                          </span>
+                          <span>
+                            {i18n.t('run.label.paymentTransfer')}{' '}
+                            <span dir="ltr" className="tabular-nums">
+                              {formatMoney(row.estimatedTransfer)}
+                            </span>
+                          </span>
+                        </span>
+                      ) : null}
                     </span>
                   ) : null}
                   <span className="shrink-0 text-forest">
