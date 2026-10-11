@@ -34,7 +34,13 @@ export interface ConfirmSheetProps {
  * finishing a trip, cancelling it, stepping back a phase, taking a
  * delivery back. One primary button that says what it does.
  */
-export function ConfirmSheet({ config, reason, onReasonChange, onCancel, i18n }: ConfirmSheetProps) {
+export function ConfirmSheet({
+  config,
+  reason,
+  onReasonChange,
+  onCancel,
+  i18n,
+}: ConfirmSheetProps) {
   const [reasonOpen, setReasonOpen] = useState(false);
   // A reason field opened for one question must not be open for the next.
   useEffect(() => {
@@ -83,12 +89,19 @@ export function ConfirmSheet({ config, reason, onReasonChange, onCancel, i18n }:
               label={i18n.t('run.label.reasonForChange') as string}
               value={reason}
               onChange={(e) => onReasonChange(e.target.value)}
-              placeholder={config.reasonPlaceholder ?? (i18n.t('run.label.reasonPlaceholder') as string)}
+              placeholder={
+                config.reasonPlaceholder ?? (i18n.t('run.label.reasonPlaceholder') as string)
+              }
               autoFocus={required}
             />
           ) : null}
           {optional && !reasonOpen ? (
-            <Button variant="ghost" inline className="self-start" onClick={() => setReasonOpen(true)}>
+            <Button
+              variant="ghost"
+              inline
+              className="self-start"
+              onClick={() => setReasonOpen(true)}
+            >
               {i18n.t('run.label.addReasonOptional')}
             </Button>
           ) : null}

@@ -32,11 +32,9 @@ import { trpc, newIdempotencyKey } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton, haptic } from '../hooks/useTelegram';
 import { useI18n, useProductName } from '../hooks/useI18n';
-import { usePhotoUploader } from '../hooks/usePhotoUploader';
 // M3.5: StoreSwitcher pill removed from page chrome; picker lives in
 // SettingsSheet now. RunPage still uses useStoreContext indirectly
 // through other paths if needed.
-import { usePageMenu } from '../app/PageMenuContext';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
@@ -53,7 +51,9 @@ import {
 // tab (pages/HistoryPage.tsx) as of 2026-07-30 — this page no longer
 // imports any of it.
 // Mutation sheets + draft types — extracted to runs/sheets (Phase 4 step 3).
-import { PurchaseSheet, AddItemSheet, type PurchaseDraft, type AddItemDraft } from './runs/sheets/RunSheets';
+import { PurchaseEditor } from './runs/buying/PurchaseEditor';
+import { AddItemEditor } from './runs/buying/AddItemEditor';
+import type { AddItemDraft, PurchaseDraft } from './runs/buying/drafts';
 import { ConfirmSheet } from './runs/buying/ConfirmSheet';
 // Mid-level panels — extracted to runs/components (Phase 4 step 5).
 import { RunPreview } from './runs/buying/RunPreview';
@@ -89,7 +89,6 @@ export function RunPage() {
   const productName = useProductName();
   const session = useAuthStore((s) => s.session);
   const toast = useToast();
-  const photoUploader = usePhotoUploader('receipt');
 
   // Q7(a): `createOpen` is gone with the create sheet — starting a run
   // is the page-level button, not a modal.
@@ -1500,43 +1499,6 @@ export function RunPage() {
     summary: spentSummary,
   });
 
-  // M1.12: register the run's "danger zone" actions in Telegram's gear ⚙️.
-  // M3.29 (2026-05-18): re-added `undoStartPurchase` after the gate
-  // lift. The M1.13 removal assumed plan/purchase had merged and any
-  // undo was equivalent to cancel — now that purchases survive the
-  // revert, "Back to plan" is a real, non-destructive option that
-  // belongs in the menu alongside the delivery undo.
-  usePageMenu(
-    activeRun
-      ? {
-          title: i18n.t('run.title') + ` #${activeRun.runIndex + 1}`,
-          actions: [
-            ...(canUndoStartPurchase
-              ? [
-                  {
-                    label: i18n.t('run.action.undoStartPurchase'),
-                    onClick: () => setConfirmAction('undoStartPurchase'),
-                  },
-                ]
-              : []),
-            ...(canUndoStartDelivery
-              ? [
-                  {
-                    label: i18n.t('run.action.undoStartDelivery'),
-                    onClick: () => setConfirmAction('undoStartDelivery'),
-                  },
-                ]
-              : []),
-            {
-              label: i18n.t('run.action.cancelRun'),
-              variant: 'danger' as const,
-              onClick: () => setConfirmAction('cancel'),
-            },
-          ],
-        }
-      : null,
-  );
-
   if (!session) return null;
 
   // M1.9-extra (P4): adopted shared <PageHeader>. Subtitle folds in
@@ -1998,13 +1960,12 @@ export function RunPage() {
           (Undo start purchase / Undo start delivery / Cancel run)
           now live in Telegram's gear ⚙️ via usePageMenu(). */}
 
-      <PurchaseSheet
+      <PurchaseEditor
         draft={purchaseDraft}
         skuById={skuById}
         storeById={storeById}
         suppliers={suppliersQuery.data ?? []}
         productName={productName}
-        photoUploader={photoUploader}
         i18n={i18n}
         priceInThousands={priceInThousands}
         onCancel={() => setPurchaseDraft(null)}
@@ -2064,7 +2025,7 @@ export function RunPage() {
           store). storeChoices is constrained to stores already in
           the run's scope (matches the domain layer's storeNotInRun
           guard). */}
-      <AddItemSheet
+      <AddItemEditor
         draft={addItemDraft}
         runStoreIds={(() => {
           const ids = new Set<string>();
@@ -2101,7 +2062,6 @@ export function RunPage() {
         expenseTemplates={expenseTemplatesQuery.data ?? []}
         storeById={storeById}
         productName={productName}
-        photoUploader={photoUploader}
         i18n={i18n}
         priceInThousands={priceInThousands}
         onCancel={() => setAddItemDraft(null)}

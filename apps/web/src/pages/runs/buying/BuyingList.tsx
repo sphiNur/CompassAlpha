@@ -203,7 +203,10 @@ export function BuyingList({
       options.push({ value: 'perStore', label: i18n.t('buy.group.store') as string });
     }
     if (options.length === 0) return options;
-    return [{ value: 'aggregate' as Grouping, label: i18n.t('buy.group.none') as string }, ...options];
+    return [
+      { value: 'aggregate' as Grouping, label: i18n.t('buy.group.none') as string },
+      ...options,
+    ];
   }, [run.items, run.supplierBySku, run.perStoreDemand, skuById, i18n]);
   const activeGrouping = groupings.some((g) => g.value === grouping) ? grouping : 'aggregate';
 

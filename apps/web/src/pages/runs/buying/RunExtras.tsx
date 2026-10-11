@@ -142,9 +142,7 @@ export function RequestedExtras({
               <ChoiceGroup<ExtraStatus>
                 label={i18n.t('buy.extraStatus') as string}
                 value={opened.extra.status ?? 'pending'}
-                onChange={(next) =>
-                  onMarkStatus(opened.extra.sessionId!, opened.extra.idx!, next)
-                }
+                onChange={(next) => onMarkStatus(opened.extra.sessionId!, opened.extra.idx!, next)}
                 options={(['pending', 'bought', 'unavailable'] as const).map((value) => ({
                   value,
                   label: statusLabel(value),
@@ -171,7 +169,13 @@ export interface OtherSpendingProps {
  * thing bought off the list. Same row as a bought line, because it is
  * the same fact: what, how much, and how it was paid.
  */
-export function OtherSpending({ expenses, storeById, i18n, editable, onRemove }: OtherSpendingProps) {
+export function OtherSpending({
+  expenses,
+  storeById,
+  i18n,
+  editable,
+  onRemove,
+}: OtherSpendingProps) {
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   const [removing, setRemoving] = useState<string | null>(null);
   const list = expenses ?? [];
@@ -183,7 +187,10 @@ export function OtherSpending({ expenses, storeById, i18n, editable, onRemove }:
     <Section
       title={i18n.t('buy.otherSpending') as string}
       summary={
-        <Money amount={formatMoney(list.reduce((sum, e) => sum + lineOf(e), 0))} currency={currency} />
+        <Money
+          amount={formatMoney(list.reduce((sum, e) => sum + lineOf(e), 0))}
+          currency={currency}
+        />
       }
     >
       <List>

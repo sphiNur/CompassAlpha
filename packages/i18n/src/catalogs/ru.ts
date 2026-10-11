@@ -24,6 +24,8 @@ export const ru = {
   'buy.total': 'Итого',
   'buy.moreOptions': 'По магазинам, поставщик, чек',
   'buy.cashAndTransfer': '{cash} наличными · {transfer} переводом',
+  'buy.chosen': 'Выбрано',
+  'buy.addWhat': 'Что добавить',
   'buy.delivered': 'Доставлено',
   'buy.deliveredAria': 'Доставлено: {store}',
   'buy.sendList': 'Отправить список',

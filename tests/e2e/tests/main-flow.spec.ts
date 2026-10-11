@@ -184,6 +184,41 @@ test('buy everything, one item in cash and one by transfer', async () => {
   await expect(bar).toContainText('24,000 cash · 90,000 transfer');
 });
 
+test('spending that is not a product, and correcting a purchase', async () => {
+  const bar = page.getByTestId('action-bar');
+
+  // A porter: named, shared between the run's stores, paid in cash.
+  await main().getByTestId('add-expense').click();
+  await sheet().getByRole('textbox', { name: 'What is it?' }).fill('Porter');
+  await sheet().getByRole('textbox', { name: 'Quantity' }).fill('1');
+  await sheet().getByRole('textbox', { name: /^Price per/ }).fill('10');
+  await sheet().getByRole('textbox', { name: 'Why was this added?' }).fill('Carried the beef');
+  await expect(sheet()).toContainText(/Total\s*10,000/);
+  await evidence('run-add-spending');
+  await sheet().getByTestId('save-added').click();
+  await expect(sheet()).toBeHidden();
+  const porter = main().getByTestId('spending-row').filter({ hasText: 'Porter' });
+  await expect(porter.locator('[data-money]')).toHaveText('10,000');
+  await expect(porter.locator('[data-payment-method]')).toHaveText('Cash');
+  await expect(bar).toContainText('34,000 cash · 90,000 transfer');
+  await evidence('run-with-spending');
+
+  // Removing it asks first.
+  await porter.click();
+  await sheet().getByRole('button', { name: 'Remove' }).click();
+  await expect(porter).toHaveCount(0);
+  await expect(bar).toContainText('24,000 cash · 90,000 transfer');
+
+  // The full editor: a recorded purchase can only be changed with a reason.
+  await main().getByTestId('bought-row').filter({ hasText: 'Apple' }).click();
+  await sheet().getByRole('button', { name: 'Change quantity or price' }).click();
+  await expect(sheet().getByRole('heading', { name: 'Apple' })).toBeVisible();
+  await expect(sheet().getByTestId('save-full-purchase')).toBeDisabled();
+  await evidence('run-full-editor');
+  await page.keyboard.press('Escape');
+  await expect(sheet()).toBeHidden();
+});
+
 test('deliver to the store', async () => {
   await expect(mainButton()).toHaveText('Start delivery');
   // Starting delivery asks nothing: it can be taken back from this screen

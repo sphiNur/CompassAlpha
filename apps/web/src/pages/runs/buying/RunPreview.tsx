@@ -58,7 +58,12 @@ export interface RunPreviewProps {
     // specific date — preview then spans every approved-not-in-run
     // session regardless of order_date.
     date: string | null;
-    sessions: ReadonlyArray<{ id: string; storeId: string; storeName?: string; orderDate?: string }>;
+    sessions: ReadonlyArray<{
+      id: string;
+      storeId: string;
+      storeName?: string;
+      orderDate?: string;
+    }>;
     plannedItems: ReadonlyArray<{ skuId: string; qty: string }>;
     perStoreDemand: ReadonlyArray<{
       storeId: string;
@@ -66,15 +71,18 @@ export interface RunPreviewProps {
       skuId: string;
       qty: string;
     }>;
-    supplierBySku: Record<string, {
-      id: string;
-      name: string;
-      contactPhone: string | null;
-      contactTg: string | null;
-      defaultPrice?: string | null;
-      lastSeenPrice?: string | null;
-      estimatedUnitPrice?: string | null;
-    } | null>;
+    supplierBySku: Record<
+      string,
+      {
+        id: string;
+        name: string;
+        contactPhone: string | null;
+        contactTg: string | null;
+        defaultPrice?: string | null;
+        lastSeenPrice?: string | null;
+        estimatedUnitPrice?: string | null;
+      } | null
+    >;
     lastPurchasePriceBySku?: Record<string, string>;
     perStoreBudgets?: ReadonlyArray<{
       storeId: string;
@@ -87,12 +95,25 @@ export interface RunPreviewProps {
     /** M3.16-C: per-store structured extras. */
     sessionExtrasByStore?: Record<
       string,
-      Array<{ name: string; qty: string; unit: string; note?: string; sessionId?: string; idx?: number }>
+      Array<{
+        name: string;
+        qty: string;
+        unit: string;
+        note?: string;
+        sessionId?: string;
+        idx?: number;
+      }>
     >;
   };
   skuById: Map<
     string,
-    { id: string; names: Record<string, string>; unit: string; step: string; categoryId?: string | null }
+    {
+      id: string;
+      names: Record<string, string>;
+      unit: string;
+      step: string;
+      categoryId?: string | null;
+    }
   >;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
   i18n: ReturnType<typeof useI18n>;
@@ -115,7 +136,14 @@ export interface RunPreviewProps {
  * what it comes to) and opens into a sheet with its lines and the button
  * that sends them.
  */
-export function RunPreview({ preview, skuById, productName, i18n, toast, heading }: RunPreviewProps) {
+export function RunPreview({
+  preview,
+  skuById,
+  productName,
+  i18n,
+  toast,
+  heading,
+}: RunPreviewProps) {
   const [view, setView] = useState<PreviewView>(() => {
     if (typeof window !== 'undefined') {
       const v = window.localStorage.getItem(PREVIEW_VIEW_STORAGE_KEY);
@@ -350,7 +378,7 @@ export function RunPreview({ preview, skuById, productName, i18n, toast, heading
         // views cannot drift about where an item comes from.
         const supplier =
           line.kind === 'sku' && line.supplierId
-            ? preview.supplierBySku[line.skuId!] ?? null
+            ? (preview.supplierBySku[line.skuId!] ?? null)
             : null;
         const bucket = ensureSupplier(
           supplier?.id ?? null,
@@ -364,14 +392,8 @@ export function RunPreview({ preview, skuById, productName, i18n, toast, heading
         else bucket.total += line.total;
       }
       if (store.legacyNote) {
-        const bucket = ensureSupplier(
-          null,
-          i18n.t('run.previewSupplier.unassigned'),
-          null,
-          null,
-        );
-        ensureSupplierStore(bucket, store.storeId, store.storeName).legacyNote =
-          store.legacyNote;
+        const bucket = ensureSupplier(null, i18n.t('run.previewSupplier.unassigned'), null, null);
+        ensureSupplierStore(bucket, store.storeId, store.storeName).legacyNote = store.legacyNote;
       }
     }
 
@@ -401,8 +423,7 @@ export function RunPreview({ preview, skuById, productName, i18n, toast, heading
    * the vendor share-text uses.
    */
   const previewStats = useMemo(
-    () =>
-      computePreviewStats(byStore, (skuId) => Boolean(preview.supplierBySku[skuId])),
+    () => computePreviewStats(byStore, (skuId) => Boolean(preview.supplierBySku[skuId])),
     [byStore, preview.supplierBySku],
   );
 
@@ -443,9 +464,7 @@ export function RunPreview({ preview, skuById, productName, i18n, toast, heading
       opened = false;
     }
     if (opened) {
-      toast.success(
-        i18n.t(copied ? 'run.previewShare.openedWithCopy' : 'run.previewShare.opened'),
-      );
+      toast.success(i18n.t(copied ? 'run.previewShare.openedWithCopy' : 'run.previewShare.opened'));
       haptic('success');
       return;
     }
@@ -482,14 +501,16 @@ export function RunPreview({ preview, skuById, productName, i18n, toast, heading
     notesLabel: i18n.t('order.notes.label'),
   };
 
-  const buildStoreText = (group: PreviewStoreGroup): string =>
-    buildStoreTextPure(group, shareDeps);
+  const buildStoreText = (group: PreviewStoreGroup): string => buildStoreTextPure(group, shareDeps);
 
   const buildSupplierText = (group: PreviewSupplierGroup): string =>
     buildSupplierTextPure(group, shareDeps);
 
   const buildAllVendorsText = (): string =>
-    bySupplier.map((b) => buildSupplierText(b)).filter(Boolean).join('\n\n');
+    bySupplier
+      .map((b) => buildSupplierText(b))
+      .filter(Boolean)
+      .join('\n\n');
 
   /**
    * Name filter. A group shows only its name and total until it is
@@ -519,9 +540,7 @@ export function RunPreview({ preview, skuById, productName, i18n, toast, heading
   );
   const matchCount =
     view === 'byStore' ? countStoreLines(visibleByStore) : countSupplierLines(visibleBySupplier);
-  const totalCount =
-    view === 'byStore' ? countStoreLines(byStore) : countSupplierLines(bySupplier);
-
+  const totalCount = view === 'byStore' ? countStoreLines(byStore) : countSupplierLines(bySupplier);
 
   const chooseAndClose = (v: PreviewView) => {
     setOpenGroup(null);
@@ -566,8 +585,7 @@ export function RunPreview({ preview, skuById, productName, i18n, toast, heading
       .join(' · ');
 
   // Nothing priced yet is not a total of zero: say nothing rather than "0".
-  const known = (total: number) =>
-    total > 0 ? <Money amount={formatMoney(total)} /> : undefined;
+  const known = (total: number) => (total > 0 ? <Money amount={formatMoney(total)} /> : undefined);
 
   const subheading = (name: string, total: number) => (
     <h3 className="flex items-baseline justify-between gap-lg text-label text-secondary">
@@ -625,9 +643,7 @@ export function RunPreview({ preview, skuById, productName, i18n, toast, heading
               }}
             />
           ) : null}
-          {noPrice > 0 ? (
-            <Row title={i18n.t('run.preview.unknownPrices', { n: noPrice })} />
-          ) : null}
+          {noPrice > 0 ? <Row title={i18n.t('run.preview.unknownPrices', { n: noPrice })} /> : null}
         </List>
       ) : null}
 

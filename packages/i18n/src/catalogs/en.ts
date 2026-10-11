@@ -51,6 +51,8 @@ export const en = {
   'buy.total': 'Total',
   'buy.moreOptions': 'Split by store, supplier, receipt',
   'buy.cashAndTransfer': '{cash} cash · {transfer} transfer',
+  'buy.chosen': 'Chosen',
+  'buy.addWhat': 'What to add',
   'buy.delivered': 'Delivered',
   'buy.deliveredAria': 'Delivered to {store}',
   'buy.sendList': 'Send list',
