@@ -15,15 +15,10 @@ import {
   Banner,
   Button,
   Card,
-  CardHeader,
-  CardMeta,
-  CardTitle,
   DataState,
   EmptyState,
   Field,
   Input,
-  SectionLabel,
-  Select,
   Sheet,
   Spinner,
   Tile,
@@ -33,8 +28,7 @@ import { PAGE_SIZE } from '../../../config/timings';
 import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
-import { formatMoney, formatQty } from '../../../lib/format';
-import { useDateFormat, useI18n, useProductName, useUnitLabel } from '../../../hooks/useI18n';
+import { useDateFormat, useI18n } from '../../../hooks/useI18n';
 import { DebugPage } from '../../DebugPage';
 
 // ============ Activity ============
@@ -176,144 +170,6 @@ export function ActivitySection() {
 // ============ Submission history ============
 
 /**
- * Per-store timeline of submitted orders with outcome + per-contributor
- * breakdown. Read-only — this is the "what did we do recently?" view
- * for managers and admins. Default range: last 30 days.
- */
-export function HistorySection() {
-  const i18n = useI18n();
-  const [storeFilter, setStoreFilter] = useState<string | null>(null);
-  const stores = trpc.admin.storeList.useQuery();
-  const history = trpc.admin.submissionHistory.useQuery({
-    storeId: storeFilter ?? undefined,
-    limit: PAGE_SIZE.list,
-  });
-  const [openId, setOpenId] = useState<string | null>(null);
-
-  return (
-    <div className="px-4 py-3">
-      <div className="mb-3">
-        <Select value={storeFilter ?? ''} onChange={(e) => setStoreFilter(e.target.value || null)}>
-          <option value="">All stores</option>
-          {(stores.data ?? []).map((st) => (
-            <option key={st.id} value={st.id}>
-              {st.name}
-            </option>
-          ))}
-        </Select>
-      </div>
-      <DataState
-        query={history}
-        emptyWhen={(d) => d.length === 0}
-        empty={
-          <EmptyState
-            title={i18n.t('ops.history.emptyTitle')}
-            description={i18n.t('ops.history.emptyBody')}
-          />
-        }
-      >
-        {(rows) => (
-          <ul className="flex flex-col gap-2" role="list">
-            {rows.map((r) => {
-              const isOpen = openId === r.sessionId;
-              const statusTone =
-                r.status === 'approved' || r.status === 'in_run' || r.status === 'archived'
-                  ? 'success'
-                  : r.status === 'rejected'
-                    ? 'danger'
-                    : 'info';
-              return (
-                <Card key={r.sessionId}>
-                  <button
-                    type="button"
-                    onClick={() => setOpenId(isOpen ? null : r.sessionId)}
-                    className="press w-full text-left"
-                  >
-                    <CardHeader>
-                      <div className="min-w-0">
-                        <CardTitle>{r.storeName ?? r.storeId.slice(0, 8)}</CardTitle>
-                        <CardMeta>
-                          {r.orderDate}
-                          {r.submittedAt
-                            ? ` · ${i18n.t('ops.history.submittedAgo', {
-                                when: formatRelative(r.submittedAt, i18n),
-                              })}`
-                            : ''}
-                          {r.submittedByName
-                            ? ` ${i18n.t('ops.history.byWhom', { name: r.submittedByName })}`
-                            : ''}
-                        </CardMeta>
-                      </div>
-                      <Badge tone={statusTone}>
-                        {i18n.t(
-                          ('order.status.' +
-                            (r.status === 'rejected' ? 'rejectedTitle' : r.status)) as Parameters<
-                            typeof i18n.t
-                          >[0],
-                        )}
-                      </Badge>
-                    </CardHeader>
-                  </button>
-                  <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-2 text-old-label text-[var(--c-fg-muted)]">
-                    <span>
-                      {i18n.t('ops.history.skuTotalLine', {
-                        n: r.skuCount,
-                        total: formatQty(r.totalQty),
-                      })}
-                    </span>
-                    {r.contributors.length > 0 ? (
-                      <span>
-                        ·{' '}
-                        {i18n.t('ops.history.contributorCount', {
-                          n: r.contributors.length,
-                        })}
-                      </span>
-                    ) : null}
-                    {r.reviewMinutes !== null ? (
-                      <span>· decided in {r.reviewMinutes} min</span>
-                    ) : null}
-                    {r.decidedByName ? <span>· by {r.decidedByName}</span> : null}
-                  </div>
-                  {isOpen ? (
-                    <div className="border-t border-[var(--c-divider)] px-4 py-2">
-                      <SectionLabel padded={false}>
-                        {i18n.t('ops.history.contributorBreakdown')}
-                      </SectionLabel>
-                      <ul className="mt-2 flex flex-col gap-1">
-                        {r.contributors.map((c) => (
-                          <li
-                            key={c.memberId}
-                            className="flex items-baseline justify-between text-old-body"
-                          >
-                            <span className="truncate text-[var(--c-fg)]">
-                              {c.displayName ?? c.memberId.slice(0, 6)}
-                            </span>
-                            <span className="font-mono tabular-nums text-[var(--c-fg-muted)]">
-                              {c.skuCount} SKU · {formatQty(c.totalQty)}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                      {r.rejectReason ? (
-                        <p className="mt-3 text-old-label text-[var(--c-danger)]">
-                          {i18n.t('ops.history.rejectionReason', {
-                            reason: r.rejectReason,
-                          })}
-                        </p>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </Card>
-              );
-            })}
-          </ul>
-        )}
-      </DataState>
-    </div>
-  );
-}
-
-/**
  * Relative "how long ago" label.
  *
  * 2026-07-30: took the i18n instance as a parameter rather than reading a hook,
@@ -321,16 +177,6 @@ export function HistorySection() {
  * `i18n`). Previously returned hardcoded English — "just now" / "3m ago" —
  * inside an otherwise Chinese activity feed.
  */
-function formatRelative(iso: string, i18n: ReturnType<typeof useI18n>): string {
-  const ms = Date.now() - new Date(iso).getTime();
-  if (ms < 60_000) return i18n.t('time.justNow');
-  const minutes = Math.floor(ms / 60_000);
-  if (minutes < 60) return i18n.t('time.minutesAgo', { n: minutes });
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return i18n.t('time.hoursAgo', { n: hours });
-  const days = Math.floor(hours / 24);
-  return i18n.t('time.daysAgo', { n: days });
-}
 
 // ============ Maintenance ============
 
@@ -821,7 +667,9 @@ export function AdminAuditSection() {
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-baseline gap-2">
                         <Badge tone={tone}>{verb}</Badge>
-                        <span className="text-old-body font-semibold text-[var(--c-fg)]">{obj}</span>
+                        <span className="text-old-body font-semibold text-[var(--c-fg)]">
+                          {obj}
+                        </span>
                         {r.resourceId ? (
                           <span className="font-mono text-old-label text-[var(--c-fg-muted)]">
                             {r.resourceId.slice(0, 8)}…
@@ -867,164 +715,6 @@ export function AdminAuditSection() {
     </div>
   );
 }
-
-/**
- * Price report (added 2026-05-05).
- *
- * Per-SKU table:
- *   - last price seen (with date)
- *   - 7-day mean
- *   - 30-day mean
- *   - delta (last vs 30-day mean) so admin can spot outliers
- *
- * Reads `catalog.skuPriceStats` once for ALL SKUs in the org (no
- * skuIds filter) plus `catalog.skus` for names. Sort: highest 30d mean
- * first — most expensive items are usually the ones the user cares
- * about budgeting.
- *
- * Why this exists: the user wants "use yesterday's prices to budget
- * for tomorrow's purchase". The OrderPage review sheet now uses
- * 7-day avg automatically (downstream of the same endpoint), but
- * admins also want a standalone view to spot anomalies and trends.
- */
-export function PriceReportSection() {
-  const i18n = useI18n();
-  const productName = useProductName();
-  // 2026-07-30 (flow review): the "/ unit" suffix printed the raw canonical
-  // unit next to a localized product name.
-  const unitLabel = useUnitLabel();
-  const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: false });
-  // No skuIds filter → return all SKUs with observations in 30 days.
-  const statsQuery = trpc.catalog.skuPriceStats.useQuery();
-
-  const skuById = useMemo(() => {
-    const m = new Map<string, { id: string; names: Record<string, string>; unit: string }>();
-    for (const sku of skusQuery.data ?? []) {
-      m.set(sku.id, {
-        id: sku.id,
-        names: sku.names as Record<string, string>,
-        unit: sku.unit,
-      });
-    }
-    return m;
-  }, [skusQuery.data]);
-
-  const rows = useMemo(() => {
-    const stats = statsQuery.data ?? [];
-    return stats
-      .map((r) => {
-        const sku = skuById.get(r.skuId);
-        const name = sku ? productName({ names: sku.names }) : r.skuId.slice(0, 8);
-        const last = r.lastPrice ? Number(r.lastPrice) : null;
-        const avg30 = r.avg30d ? Number(r.avg30d) : null;
-        // Delta = (last − avg30) / avg30, signed. Used for the trend
-        // arrow + tone. Skip when either side is unknown.
-        const deltaPct =
-          last !== null && avg30 && avg30 > 0 ? ((last - avg30) / avg30) * 100 : null;
-        return {
-          skuId: r.skuId,
-          name,
-          unit: sku?.unit ?? '',
-          last,
-          lastObservedAt: r.lastObservedAt,
-          avg7d: r.avg7d ? Number(r.avg7d) : null,
-          avg30d: avg30,
-          observations: r.observations30d,
-          deltaPct,
-        };
-      })
-      .sort((a, b) => (b.avg30d ?? 0) - (a.avg30d ?? 0));
-  }, [statsQuery.data, skuById, productName]);
-
-  return (
-    <div className="px-4 py-3">
-      <Banner tone="info" title={i18n.t('ops.price.howTitle')}>
-        {i18n.t('ops.price.howBody')}
-      </Banner>
-      {statsQuery.isLoading || skusQuery.isLoading ? (
-        <div className="mt-4">
-          <Spinner size={16} />
-        </div>
-      ) : rows.length === 0 ? (
-        <EmptyState
-          title={i18n.t('ops.price.emptyTitle')}
-          description={i18n.t('ops.price.emptyBody')}
-        />
-      ) : (
-        <ul className="mt-3 flex flex-col gap-1" role="list">
-          {rows.map((r) => {
-            const tone =
-              r.deltaPct === null
-                ? 'muted'
-                : Math.abs(r.deltaPct) < 5
-                  ? 'muted'
-                  : r.deltaPct > 0
-                    ? 'danger'
-                    : 'success';
-            const arrow =
-              r.deltaPct === null ? '·' : r.deltaPct > 0 ? '▲' : r.deltaPct < 0 ? '▼' : '·';
-            const deltaLabel =
-              r.deltaPct === null ? '—' : `${r.deltaPct > 0 ? '+' : ''}${r.deltaPct.toFixed(1)}%`;
-            return (
-              <li
-                key={r.skuId}
-                className="flex flex-col gap-1 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2"
-              >
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="truncate text-old-body font-semibold text-[var(--c-fg)]">
-                    {r.name}
-                  </span>
-                  <span className="font-mono text-old-body tabular-nums text-[var(--c-fg)]">
-                    {r.last !== null ? formatMoney(r.last) : '—'}{' '}
-                    <span className="text-old-label font-normal text-[var(--c-fg-muted)]">
-                      / {unitLabel(r.unit)}
-                    </span>
-                  </span>
-                </div>
-                <div className="flex flex-wrap items-baseline gap-3 text-old-label text-[var(--c-fg-muted)]">
-                  <span>
-                    7d avg{' '}
-                    <span className="font-mono tabular-nums text-[var(--c-fg)]">
-                      {r.avg7d !== null ? formatMoney(r.avg7d) : '—'}
-                    </span>
-                  </span>
-                  <span>
-                    30d avg{' '}
-                    <span className="font-mono tabular-nums text-[var(--c-fg)]">
-                      {r.avg30d !== null ? formatMoney(r.avg30d) : '—'}
-                    </span>
-                  </span>
-                  <span>{r.observations} obs</span>
-                  <Badge tone={tone}>
-                    {arrow} {deltaLabel}
-                  </Badge>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-// ============ Finance reconciliation (M1.15) ============
-//
-// Three views over the same data set (purchaseLines):
-//   - Daily: per-day totals (cash + transfer) for the picked range,
-//     plus an expandable per-day SKU breakdown.
-//   - By supplier: rolled up totals per supplier, with cash/transfer
-//     split. Empty supplier_id bucketed as "—".
-//   - By store: rolled up totals per destination store.
-//
-// Date picker presets: today / yesterday / this month / last month /
-// custom. The picked range is the input for ALL three tabs (they
-// share the same underlying purchaseLines query, just regrouped client
-// side). This keeps the API surface small (M1.14 + M1.15 introduced
-// only one tRPC namespace: `report`).
-//
-// Permissions: `users.manage` (Admin gate). A future M1.x can split
-// out `finance.view` for accounting-only Telegram accounts.
 
 export function MaintenanceSection() {
   const session = useAuthStore((s) => s.session);

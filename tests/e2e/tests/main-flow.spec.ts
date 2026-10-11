@@ -766,6 +766,35 @@ test('how the organisation writes its money, and spending it repeats', async () 
   await expect(main().getByRole('heading', { level: 1 })).toHaveText('Manage');
 });
 
+test('what things cost, and what became of each order', async () => {
+  await page.getByTestId('manage-priceReport').click();
+  // The two products bought today, each with the last price paid.
+  const prices = main().getByTestId('prices-row');
+  await expect(prices).toHaveCount(2);
+  await expect(prices.filter({ hasText: 'Beef' })).toHaveText(/90,000\s*UZS \/ kg/);
+  await evidence('prices');
+  // Nothing has moved against its own average yet.
+  await main().getByTestId('prices-moved').filter({ hasText: 'Went up' }).click();
+  await expect(main()).toContainText('No matches');
+  await page.getByTestId('manage-back').click();
+
+  await page.getByTestId('manage-history').click();
+  const sent = main().getByTestId('order-history-row');
+  await expect(sent).toHaveCount(1);
+  await expect(sent).toHaveText(/Central Kitchen[\s\S]*E2E Admin · 2 items/);
+  await evidence('order-history');
+  // A row opens to who decided, and who asked for how much.
+  await sent.click();
+  await expect(sheet()).toContainText('Decided by E2E Admin');
+  await expect(sheet().getByTestId('order-history-person')).toHaveText(/E2E Admin\s*2 items/);
+  await evidence('order-history-one');
+  await page.keyboard.press('Escape');
+  await expect(sheet()).toBeHidden();
+
+  await page.getByTestId('manage-back').click();
+  await expect(main().getByRole('heading', { level: 1 })).toHaveText('Manage');
+});
+
 test('what was spent this month, and how it was paid', async () => {
   await page.getByTestId('manage-finance').click();
   // One total for the period, split the way it is checked against the

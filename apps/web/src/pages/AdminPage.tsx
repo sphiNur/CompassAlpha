@@ -43,9 +43,7 @@ import { useI18n } from '../hooks/useI18n';
 // Operations sections — extracted to admin/operations (Phase 5 step 1).
 import {
   ActivitySection,
-  HistorySection,
   AdminAuditSection,
-  PriceReportSection,
   MaintenanceSection,
 } from './admin/operations/OperationsSections';
 // Catalog CRUD sections — extracted to admin/catalog (Phase 5 step 2).
@@ -64,6 +62,7 @@ import { StoresScreen } from '../destinations/manage/StoresScreen';
 import { ProductsScreen } from '../destinations/manage/ProductsScreen';
 import { FinanceScreen } from '../destinations/manage/FinanceScreen';
 import { RolesScreen } from '../destinations/manage/RolesScreen';
+import { OrderHistoryScreen, PricesScreen } from '../destinations/manage/Reports';
 import { OrganisationScreen } from '../destinations/manage/OrganisationScreen';
 import { SpendingTemplates } from '../destinations/manage/SpendingTemplates';
 import { CategoriesScreen, SuppliersScreen } from '../destinations/manage/CatalogueLists';
@@ -200,9 +199,9 @@ export function AdminPage() {
           <OperationsHome onPick={(s) => setOpsSub(s)} isSuperAdmin={isSuperAdmin} />
         ) : null}
         {section === 'operations' && opsSub === 'activity' ? <ActivitySection /> : null}
-        {section === 'operations' && opsSub === 'history' ? <HistorySection /> : null}
+        {section === 'operations' && opsSub === 'history' ? <OrderHistoryScreen /> : null}
         {section === 'operations' && opsSub === 'adminAudit' ? <AdminAuditSection /> : null}
-        {section === 'operations' && opsSub === 'priceReport' ? <PriceReportSection /> : null}
+        {section === 'operations' && opsSub === 'priceReport' ? <PricesScreen /> : null}
         {section === 'operations' && opsSub === 'finance' ? <FinanceScreen /> : null}
         {section === 'operations' && opsSub === 'maintenance' ? <MaintenanceSection /> : null}
       </SectionFrame>
