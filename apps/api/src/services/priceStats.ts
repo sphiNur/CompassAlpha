@@ -100,6 +100,59 @@ export async function loadSkuPriceStats(
       observations30d: a.n30,
     });
   }
+
+  // 2026-10-11: the last price is what a budget is made of (see
+  // estimateLines), so it must not stop existing after 30 days, and it
+  // must be the price of the last PURCHASE rather than of one row: a
+  // purchase split between stores at different prices writes a row per
+  // store at the same instant, and those are weighed by quantity. A
+  // corrected price is a later row, so it replaces the mistake here even
+  // though the mistake stays in the averages above.
+  const latest = (await db.execute(sql`
+    SELECT
+      t.sku_id::text AS sku_id,
+      t.observed_at  AS observed_at,
+      COALESCE(
+        SUM(t.unit_price * t.qty) / NULLIF(SUM(t.qty), 0),
+        AVG(t.unit_price)
+      )::text AS unit_price
+    FROM (
+      SELECT
+        ph.sku_id, ph.unit_price, ph.qty, ph.observed_at,
+        MAX(ph.observed_at) OVER (PARTITION BY ph.sku_id) AS newest
+      FROM inventory.price_history ph
+      WHERE ph.org_id = ${orgId}
+        ${
+          skuIds && skuIds.length > 0
+            ? sql`AND ph.sku_id IN (${sql.join(
+                skuIds.map((id) => sql`${id}::uuid`),
+                sql`, `,
+              )})`
+            : sql``
+        }
+    ) t
+    WHERE t.observed_at = t.newest
+    GROUP BY t.sku_id, t.observed_at
+  `)) as unknown as Array<{ sku_id: string; observed_at: Date | string; unit_price: string }>;
+  for (const r of latest) {
+    const price = Number(r.unit_price);
+    if (!Number.isFinite(price)) continue;
+    const at = r.observed_at instanceof Date ? r.observed_at : new Date(r.observed_at);
+    const stat = out.get(r.sku_id);
+    if (stat) {
+      stat.lastPrice = price;
+      stat.lastObservedAt = at;
+    } else {
+      out.set(r.sku_id, {
+        skuId: r.sku_id,
+        lastPrice: price,
+        lastObservedAt: at,
+        avg7d: null,
+        avg30d: null,
+        observations30d: 0,
+      });
+    }
+  }
   return out;
 }
 
@@ -199,7 +252,11 @@ export function estimateLines(
   for (const line of lines) {
     if (!(line.qty > 0)) continue;
     const stat = stats.get(line.skuId);
-    const price = stat?.avg7d ?? stat?.lastPrice ?? null;
+    // What it cost the last time it was bought. Market prices move by
+    // the day, so an average of the week is a price nobody paid, and it
+    // keeps a mistyped price for a week after the mistake is corrected.
+    // It is also the price the purchasing plan already goes by.
+    const price = stat?.lastPrice ?? null;
     if (price != null) {
       total += price * line.qty;
       known += 1;

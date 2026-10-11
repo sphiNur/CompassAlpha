@@ -1365,7 +1365,8 @@ function ReviewList({
       const qty = Number(t.qty);
       if (!(qty > 0)) continue;
       const stats = priceBySku.get(t.skuId);
-      const price = stats?.avg7d ?? stats?.lastPrice;
+      // The last price paid: the same rule as the server's estimateLines.
+      const price = stats?.lastPrice;
       if (price) {
         total += Number(price) * qty;
         known += 1;

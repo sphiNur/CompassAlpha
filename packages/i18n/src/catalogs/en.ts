@@ -695,7 +695,7 @@ export const en = {
   'order.review.empty': 'Nothing selected yet.',
   'order.review.reviewSheet.title': 'Review your order',
   'order.review.estimatedTotal': 'Estimated total',
-  'order.review.estimateHint': '~7-day avg price · {known} priced · {unknown} unknown',
+  'order.review.estimateHint': '~ at the last price paid · {known} priced · {unknown} unknown',
 
   // ── Session-level "其他物品" / miscellaneous note (M1.8) ──────────
   'order.notes.label': 'Other items',

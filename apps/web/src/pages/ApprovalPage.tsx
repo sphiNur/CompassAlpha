@@ -612,10 +612,9 @@ function SessionItems({
   }
   const totals = (detail.data?.totals ?? []).filter((t) => Number(t.qty) > 0);
   const rawItems = detail.data?.items ?? [];
-  // The same price the estimate below is made of: the 7-day average,
-  // else the last price paid.
+  // The same price the estimate below is made of: the last price paid.
   const priceBySku = new Map(
-    (priceStats.data ?? []).map((r) => [r.skuId, r.avg7d ?? r.lastPrice]),
+    (priceStats.data ?? []).map((r) => [r.skuId, r.lastPrice]),
   );
   const estimateTotal = (() => {
     let sum = 0;

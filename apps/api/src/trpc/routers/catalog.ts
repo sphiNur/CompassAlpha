@@ -119,8 +119,9 @@ export const catalogRouter = router({
    *
    * Powers two surfaces:
    *   1. OrderPage review sheet — staff sees an estimated total before
-   *      submitting. Uses `avg7d` so a freak-sale day a week ago doesn't
-   *      skew tomorrow's expected cost.
+   *      submitting. Uses `lastPrice` (2026-10-11; was `avg7d`): market
+   *      prices move by the day, and an average kept a corrected
+   *      mistake for a week.
    *   2. ApprovalPage cards — manager sees the same estimate alongside
    *      the qty count, so they're not blind-approving budget impact.
    *   3. Admin Operations Price report — per-SKU table with trend.
