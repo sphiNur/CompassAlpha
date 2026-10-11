@@ -36,7 +36,7 @@ function signInitData(tgUserId: bigint): string {
 }
 
 function anonymousCaller() {
-  const db = getDb();
+  const db = getDb(undefined, { system: 'maintenance' });
   const ctx: RequestContext = {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     hono: {} as any,
@@ -61,7 +61,7 @@ describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
   let orgId = '';
 
   beforeAll(async () => {
-    const db = getDb();
+    const db = getDb(undefined, { system: 'maintenance' });
     // The old behaviour only fired when an org with this slug existed.
     await db
       .insert(s.organizations)
@@ -78,14 +78,14 @@ describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
     await expect(
       anonymousCaller().auth.telegramLogin({ initData: signInitData(tgUserId) }),
     ).rejects.toThrow('auth.errors.noMembership');
-    const user = await getDb().query.users.findFirst({
+    const user = await getDb(undefined, { system: 'maintenance' }).query.users.findFirst({
       where: (u, { eq: eq2 }) => eq2(u.tgUserId, tgUserId),
     });
     expect(user).toBeUndefined();
   });
 
   test('the refresh token a login returns can actually be refreshed', async () => {
-    const db = getDb();
+    const db = getDb(undefined, { system: 'maintenance' });
     const tgUserId = freshTgId();
     const [user] = await db
       .insert(s.users)
@@ -110,7 +110,7 @@ describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
   });
 
   test('an invited member signs in; a removed or suspended one does not come back', async () => {
-    const db = getDb();
+    const db = getDb(undefined, { system: 'maintenance' });
     const tgUserId = freshTgId();
     const [user] = await db
       .insert(s.users)

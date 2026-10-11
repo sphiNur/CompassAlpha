@@ -26,7 +26,7 @@ import { getDb, closeDb } from './index';
 })();
 
 async function main() {
-  const db = getDb();
+  const db = getDb(undefined, { system: 'maintenance' });
   const r = await db.execute(
     sql.raw(`SELECT schemaname, tablename FROM pg_tables
              WHERE schemaname NOT IN ('pg_catalog','information_schema','public')

@@ -29,7 +29,7 @@ import { getDb, closeDb } from './index';
 })();
 
 async function main() {
-  const db = getDb();
+  const db = getDb(undefined, { system: 'maintenance' });
   const tables = [
     'auth.organizations',
     'auth.users',

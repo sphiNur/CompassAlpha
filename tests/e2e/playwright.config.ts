@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { API_PORT, API_URL, BOT_TOKEN, DATABASE_URL, WEB_PORT, WEB_URL } from './env';
+import { API_PORT, API_URL, APP_DATABASE_URL, BOT_TOKEN, WEB_PORT, WEB_URL } from './env';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -38,7 +38,10 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,
       env: {
-        DATABASE_URL,
+        DATABASE_URL: APP_DATABASE_URL,
+        // A query with neither a tenant nor a declared system context is a
+        // bug that would leak between customers; here it fails the run.
+        DB_TENANT_PROBE: 'throw',
         PORT: String(API_PORT),
         HOST: '127.0.0.1',
         NODE_ENV: 'development',

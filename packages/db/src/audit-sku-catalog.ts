@@ -146,7 +146,7 @@ function suspiciousLanguageNotes(names: Names): string[] {
 }
 
 async function main() {
-  const db = getDb();
+  const db = getDb(undefined, { system: 'maintenance' });
   const org = await db.query.organizations.findFirst({
     where: (o, { eq: eq2 }) => eq2(o.slug, 'default'),
   });

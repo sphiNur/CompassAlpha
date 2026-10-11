@@ -26,7 +26,8 @@ import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync } from 'node:fs';
 import { eq, sql } from 'drizzle-orm';
 import { Bot, GrammyError, HttpError } from 'grammy';
-import { getDb, schema as s, closeDb } from '@compass/db';
+import { getDb, schema as s, closeDb, inSystem, withSystemContext } from '@compass/db';
+import type { DB } from '@compass/db';
 import { assertRelayDelivered, RelayError } from './relay';
 
 (function loadRootEnv() {
@@ -95,8 +96,7 @@ const botDeliveryEnabled =
   explicitDeliveryToggle === undefined ? relayConfigured : explicitDeliveryToggle === 'true';
 
 // grammY only when no relay is configured — relay path uses plain fetch.
-const bot =
-  botDeliveryEnabled && !relayConfigured && botToken ? new Bot(botToken) : null;
+const bot = botDeliveryEnabled && !relayConfigured && botToken ? new Bot(botToken) : null;
 
 if (!botDeliveryEnabled) {
   console.warn(
@@ -156,7 +156,7 @@ async function processOnce(): Promise<{ sent: number; deferred: number; failed: 
   // Loop one row at a time, each in its own tx, until SKIP LOCKED
   // returns nothing (queue drained for this pass) or we hit 50.
   for (let i = 0; i < 50; i++) {
-    const claimed = await db.transaction(async (tx) => {
+    const claimed = await withSystemContext(db, 'worker', async (tx) => {
       // Atomic claim: pick the oldest unsent row that's due, locking
       // it so concurrent workers skip it. Order by created_at for
       // FIFO fairness — older notifications go out first.
@@ -220,9 +220,11 @@ async function processOnce(): Promise<{ sent: number; deferred: number; failed: 
 
 async function deliverBot(payload: OutboxPayload): Promise<boolean> {
   if (!botDeliveryEnabled) return false;
-  const user = await db.query.users.findFirst({
-    where: (u, { eq: eq2 }) => eq2(u.id, payload.recipientUserId),
-  });
+  const user = await inSystem(db, 'worker', (tx) =>
+    tx.query.users.findFirst({
+      where: (u, { eq: eq2 }) => eq2(u.id, payload.recipientUserId),
+    }),
+  );
   if (!user || !user.tgUserId) {
     console.warn('[worker] bot dispatch: no tgUserId for user', payload.recipientUserId);
     return true; // mark sent — without a TG id we can never deliver, don't loop.
@@ -324,12 +326,8 @@ async function sendViaRelay(
  * of using the module-level db.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-async function deferOutboxTx(
-  tx: Tx,
-  id: string,
-  currentRetries: number,
-): Promise<void> {
+type Tx = DB;
+async function deferOutboxTx(tx: Tx, id: string, currentRetries: number): Promise<void> {
   const next = currentRetries + 1;
   if (next >= MAX_RETRIES) {
     await tx
@@ -393,8 +391,7 @@ let lastIdempotencyCleanup = Date.now();
 //
 // Set CLAIM_TIMEOUT_MINUTES=0 to disable the auto-release task.
 const CLAIM_TIMEOUT_MINUTES = parseInt(process.env.CLAIM_TIMEOUT_MINUTES ?? '30', 10);
-const CLAIM_TIMEOUT_SCAN_MS =
-  parseInt(process.env.CLAIM_TIMEOUT_SCAN_MINUTES ?? '5', 10) * 60_000;
+const CLAIM_TIMEOUT_SCAN_MS = parseInt(process.env.CLAIM_TIMEOUT_SCAN_MINUTES ?? '5', 10) * 60_000;
 let lastClaimTimeoutScan = Date.now();
 
 if (CLAIM_TIMEOUT_MINUTES > 0) {
@@ -420,7 +417,8 @@ async function releaseStaleClaims(): Promise<number> {
   if (CLAIM_TIMEOUT_MINUTES <= 0) return 0;
 
   // Candidate set first — cheap scan, no locks.
-  const candidates = (await db.execute(sql`
+  const candidates = (await inSystem(db, 'worker', (tx) =>
+    tx.execute(sql`
     SELECT id, org_id, last_seq, claimed_by_member_id, claimed_at
     FROM read_model.order_sessions_v
     WHERE status = 'submitted'
@@ -428,7 +426,8 @@ async function releaseStaleClaims(): Promise<number> {
       AND claimed_at < NOW() - (${CLAIM_TIMEOUT_MINUTES}::int * interval '1 minute')
     ORDER BY claimed_at
     LIMIT 100
-  `)) as unknown as Array<{
+  `),
+  )) as unknown as Array<{
     id: string;
     org_id: string;
     last_seq: number;
@@ -440,7 +439,7 @@ async function releaseStaleClaims(): Promise<number> {
   let released = 0;
   for (const row of candidates) {
     try {
-      const ok = await db.transaction(async (tx) => {
+      const ok = await withSystemContext(db, 'worker', async (tx) => {
         // Re-check under row lock — another tx may have already
         // approved / rejected / manually released between our SELECT
         // and now. If so, just skip.
@@ -525,7 +524,8 @@ async function releaseStaleClaims(): Promise<number> {
  */
 async function releaseStaleRunClaims(): Promise<number> {
   if (CLAIM_TIMEOUT_MINUTES <= 0) return 0;
-  const candidates = (await db.execute(sql`
+  const candidates = (await inSystem(db, 'worker', (tx) =>
+    tx.execute(sql`
     SELECT id, org_id, last_seq, claimed_by_member_id, claimed_at
     FROM read_model.market_runs_v
     WHERE status IN ('planned', 'purchasing', 'delivering')
@@ -533,7 +533,8 @@ async function releaseStaleRunClaims(): Promise<number> {
       AND claimed_at < NOW() - (${CLAIM_TIMEOUT_MINUTES}::int * interval '1 minute')
     ORDER BY claimed_at
     LIMIT 100
-  `)) as unknown as Array<{
+  `),
+  )) as unknown as Array<{
     id: string;
     org_id: string;
     last_seq: number;
@@ -545,7 +546,7 @@ async function releaseStaleRunClaims(): Promise<number> {
   let released = 0;
   for (const row of candidates) {
     try {
-      const ok = await db.transaction(async (tx) => {
+      const ok = await withSystemContext(db, 'worker', async (tx) => {
         const fresh = (await tx.execute(sql`
           SELECT last_seq, claimed_by_member_id, claimed_at, status
           FROM read_model.market_runs_v
@@ -628,7 +629,8 @@ async function releaseStaleRunClaims(): Promise<number> {
 async function repairOrphanedSessions(): Promise<number> {
   // Cheap candidate scan — joins sessions to their run row and filters
   // to the orphan condition. 100-row cap keeps any single sweep bounded.
-  const candidates = (await db.execute(sql`
+  const candidates = (await inSystem(db, 'worker', (tx) =>
+    tx.execute(sql`
     SELECT
       sess.id AS session_id,
       sess.org_id,
@@ -641,7 +643,8 @@ async function repairOrphanedSessions(): Promise<number> {
       AND run.status IN ('cancelled', 'finished')
     ORDER BY sess.updated_at
     LIMIT 100
-  `)) as unknown as Array<{
+  `),
+  )) as unknown as Array<{
     session_id: string;
     org_id: string;
     last_seq: number;
@@ -652,7 +655,7 @@ async function repairOrphanedSessions(): Promise<number> {
   let repaired = 0;
   for (const row of candidates) {
     try {
-      const ok = await db.transaction(async (tx) => {
+      const ok = await withSystemContext(db, 'worker', async (tx) => {
         // Re-check under row lock — another tx may have ejected this
         // session between our SELECT and now (e.g. a follow-up manual
         // cancel run cascade ran).
@@ -722,11 +725,13 @@ async function cleanupIdempotencyKeys(): Promise<number> {
   // Delete every row whose expires_at is in the past. The index
   // idem_expires_idx makes this O(matches) not O(table). The DELETE
   // returns deleted rows so we can log a one-line summary.
-  const r = (await db.execute(sql`
+  const r = (await inSystem(db, 'worker', (tx) =>
+    tx.execute(sql`
     DELETE FROM sync.idempotency_keys
     WHERE expires_at < NOW()
     RETURNING key
-  `)) as unknown as Array<{ key: string }>;
+  `),
+  )) as unknown as Array<{ key: string }>;
   return r.length;
 }
 
@@ -760,10 +765,7 @@ async function loop() {
       // M3.20: claim-timeout sweep — see releaseStaleClaims() above.
       // C.2 (M3.38): same cadence now also sweeps run-level claims via
       // releaseStaleRunClaims. Both share CLAIM_TIMEOUT_MINUTES.
-      if (
-        CLAIM_TIMEOUT_MINUTES > 0 &&
-        Date.now() - lastClaimTimeoutScan >= CLAIM_TIMEOUT_SCAN_MS
-      ) {
+      if (CLAIM_TIMEOUT_MINUTES > 0 && Date.now() - lastClaimTimeoutScan >= CLAIM_TIMEOUT_SCAN_MS) {
         try {
           const releasedOrders = await releaseStaleClaims();
           if (releasedOrders > 0) {

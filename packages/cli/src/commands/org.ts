@@ -7,7 +7,7 @@ export function registerOrgCommands(parent: Command): void {
     .command('list')
     .description('List organizations')
     .action(async () => {
-      const db = getDb();
+      const db = getDb(undefined, { system: 'maintenance' });
       const rows = await db.query.organizations.findMany({ orderBy: (o, { asc }) => asc(o.createdAt) });
       console.table(rows.map((r) => ({ id: r.id, slug: r.slug, name: r.name, plan: r.plan })));
       await closeDb();
@@ -20,7 +20,7 @@ export function registerOrgCommands(parent: Command): void {
     .option('--locale <locale>', 'Default locale', 'en')
     .option('--timezone <tz>', 'Default timezone', 'UTC')
     .action(async (slug: string, opts: { name?: string; locale: string; timezone: string }) => {
-      const db = getDb();
+      const db = getDb(undefined, { system: 'maintenance' });
       const [org] = await db
         .insert(s.organizations)
         .values({

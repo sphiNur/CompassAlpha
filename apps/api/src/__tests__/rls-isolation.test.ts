@@ -13,8 +13,9 @@
  *     returns ONLY org A's row.
  *   - Inside `withOrgContext(db, B, ...)`, same SELECT returns ONLY
  *     org B's row.
- *   - WITHOUT a withOrgContext wrapper (raw `db`), both rows are
- *     visible — that's the documented "fail-open when GUC unset"
+ *   - With neither a tenant nor the system context, NO row is visible.
+ *     (Until 2026-10 this was the opposite: both rows were visible,
+ *     the "fail-open when GUC unset"
  *     behavior we lean on for the auth/login bootstrap path. The
  *     visibility test pins this so a future "tighten to fail-closed"
  *     change reveals every code path that depends on it.
@@ -122,7 +123,7 @@ function dummyFixture(): Fixture {
 
 beforeAll(async () => {
   if (!SHOULD_RUN) return;
-  const db = getDb();
+  const db = getDb(undefined, { system: 'maintenance' });
   const roleResult = await db.execute(sql`
     SELECT rolsuper, rolbypassrls
     FROM pg_roles
@@ -453,7 +454,7 @@ async function countUnderEachContext(
     }
     return { aSeen: 1, bSeen: 1, totalSeen: 2 };
   }
-  const db = getDb();
+  const db = getDb(undefined, { system: 'maintenance' });
   const aSeen = await withOrgContext(db, fix.orgA.id, async (tx) => {
     const r = await tx.execute(
       sql.raw(`SELECT COUNT(*)::int AS n FROM ${table} WHERE ${whereClause}`),
@@ -472,10 +473,21 @@ async function countUnderEachContext(
     const rows = Array.isArray(r) ? r : ((r as { rows?: unknown[] }).rows ?? []);
     return Number((rows[0] as { n: number }).n);
   });
-  // Without context — we expect to see both rows (fail-open documented
-  // behavior used by the auth bootstrap path). This is the third side
-  // of the assertion: it reveals if a future tightening to fail-closed
-  // accidentally breaks login.
+  // With neither a tenant nor the system context, nothing is visible.
+  // This used to return both rows: "no tenant set" meant "let it
+  // through", so a query that forgot to set one read every customer's
+  // data. Checked here, for every table that goes through this helper.
+  const noneSeen = await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.system_context', '', true)`);
+    const r = await tx.execute(
+      sql.raw(`SELECT COUNT(*)::int AS n FROM ${table} WHERE ${whereClause}`),
+    );
+    const rows = Array.isArray(r) ? r : ((r as { rows?: unknown[] }).rows ?? []);
+    return Number((rows[0] as { n: number }).n);
+  });
+  expect(noneSeen).toBe(0);
+  // In the system context (this handle is a maintenance one) both rows
+  // are visible: that is what sign-in and the worker run in.
   const totalSeen = await db
     .execute(sql.raw(`SELECT COUNT(*)::int AS n FROM ${table} WHERE ${whereClause}`))
     .then((r) => {
@@ -486,6 +498,27 @@ async function countUnderEachContext(
 }
 
 describe.skipIf(!SHOULD_RUN)('RLS cross-org isolation (PG-gated)', () => {
+  test('a row cannot be written into another organisation', async () => {
+    if (!fix) throw new Error('fixture missing');
+    if (rlsBypassedByCurrentUser) return;
+    const db = getDb(undefined, { system: 'maintenance' });
+    const intoB = withOrgContext(db, fix.orgA.id, (tx) =>
+      tx.insert(s.stores).values({ orgId: fix!.orgB.id, name: 'smuggled', code: 'SMUGGLED' }),
+    );
+    await expect(intoB).rejects.toThrow();
+  });
+
+  test('a row cannot be written with no tenant at all', async () => {
+    if (!fix) throw new Error('fixture missing');
+    if (rlsBypassedByCurrentUser) return;
+    const db = getDb(undefined, { system: 'maintenance' });
+    const orphan = db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT set_config('app.system_context', '', true)`);
+      await tx.insert(s.stores).values({ orgId: fix!.orgA.id, name: 'orphan', code: 'ORPHAN' });
+    });
+    await expect(orphan).rejects.toThrow();
+  });
+
   test('auth.members — A sees only A, B sees only B', async () => {
     if (!fix) throw new Error('fixture missing');
     const r = await countUnderEachContext(

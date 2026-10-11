@@ -25,7 +25,7 @@ import { getDb, closeDb } from './index';
 })();
 
 async function main() {
-  const db = getDb();
+  const db = getDb(undefined, { system: 'maintenance' });
   console.log('All schemas:');
   const schemas = await db.execute(sql.raw(`
     SELECT schemaname, tablename FROM pg_tables

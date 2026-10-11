@@ -19,6 +19,21 @@ if (!/e2e|test/i.test(new URL(databaseUrl).pathname)) {
 }
 
 export const DATABASE_URL = databaseUrl;
+
+/**
+ * What the api under test connects as: a role that owns nothing and
+ * cannot bypass row-level security, like the application's role in
+ * production. The owner in DATABASE_URL is usually a superuser, and a
+ * superuser is exempt from every policy, so a run as the owner would
+ * prove nothing about tenant isolation. global-setup creates the role.
+ */
+export const APP_ROLE = 'compass_e2e_app';
+export const APP_DATABASE_URL = (() => {
+  const url = new URL(databaseUrl);
+  url.username = APP_ROLE;
+  url.password = APP_ROLE;
+  return url.toString();
+})();
 export const API_PORT = Number(process.env.E2E_API_PORT ?? 3100);
 export const WEB_PORT = Number(process.env.E2E_WEB_PORT ?? 5273);
 export const API_URL = `http://localhost:${API_PORT}`;

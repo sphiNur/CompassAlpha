@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { schema as s } from '@compass/db';
+import { inSystem, schema as s } from '@compass/db';
 import { RecentLogsInputSchema } from '@compass/contracts';
 import { permissionProcedure, publicProcedure, router } from '../trpc';
 import { logger } from '../../infra/log';
@@ -65,20 +65,22 @@ export const systemRouter = router({
     let outboxPending = 0;
     let outboxOldestSec: number | null = null;
     try {
-      await ctx.db.execute(sql`SELECT 1`);
+      await inSystem(ctx.db, 'health', (tx) => tx.execute(sql`SELECT 1`));
     } catch (err) {
       logger.error({ err }, 'system.health: db ping failed');
       dbOk = false;
     }
     if (dbOk) {
       try {
-        const r = (await ctx.db.execute(sql`
+        const r = (await inSystem(ctx.db, 'health', (tx) =>
+          tx.execute(sql`
           SELECT
             COUNT(*)::int AS pending,
             EXTRACT(EPOCH FROM (NOW() - MIN(created_at)))::int AS oldest_sec
           FROM sync.outbox
           WHERE sent_at IS NULL
-        `)) as unknown as Array<{ pending: number; oldest_sec: number | null }>;
+        `),
+        )) as unknown as Array<{ pending: number; oldest_sec: number | null }>;
         outboxPending = r[0]?.pending ?? 0;
         outboxOldestSec = r[0]?.oldest_sec ?? null;
       } catch (err) {
@@ -164,7 +166,9 @@ export const systemRouter = router({
     }
 
     if (rows.length > 0) {
-      await ctx.db.insert(s.clientLogs).values(rows);
+      // A log line can arrive before anyone has signed in, so it is not
+      // written inside a tenant.
+      await inSystem(ctx.db, 'telemetry', (tx) => tx.insert(s.clientLogs).values(rows));
     }
 
     // Mirror to pino so they show in `journalctl -u compass-api`.

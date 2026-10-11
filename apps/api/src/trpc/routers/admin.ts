@@ -2057,13 +2057,15 @@ export const adminRouter = router({
    */
   permissionList: authedProcedure.query(async ({ ctx }) => {
     requireAdmin(ctx.session!.permissions);
-    return ctx.db
-      .select({
-        key: s.permissions.key,
-        description: s.permissions.description,
-      })
-      .from(s.permissions)
-      .orderBy(s.permissions.key);
+    return ctx.withOrg((tx) =>
+      tx
+        .select({
+          key: s.permissions.key,
+          description: s.permissions.description,
+        })
+        .from(s.permissions)
+        .orderBy(s.permissions.key),
+    );
   }),
 
   /**
