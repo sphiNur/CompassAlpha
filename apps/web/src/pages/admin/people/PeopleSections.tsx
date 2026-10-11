@@ -36,7 +36,7 @@ import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { matchesAnyString, normalizeQuery } from '../../../lib/searchMatch';
-import { useDateFormat, useI18n } from '../../../hooks/useI18n';
+import { useDateFormat, useI18n, useRoleLabel } from '../../../hooks/useI18n';
 import { getTg } from '../../../hooks/useTelegram';
 import { useStoreContext } from '../../../components/StoreSwitcher';
 import { botLink as makeBotLink, shareLink as makeShareLink } from '../../../lib/telegramLinks';
@@ -96,6 +96,7 @@ export function PeopleSection({
   const errToast = useErrToast();
   const i18n = useI18n();
   const dateFmt = useDateFormat();
+  const roleLabel = useRoleLabel();
   // M1.9: per-key allow/deny override grid is power-user surface — gate
   // the "Permissions" button to global admins only. The 4 built-in
   // roles cover the common cases that store-scoped managers need.
@@ -214,6 +215,7 @@ export function PeopleSection({
             m.tgUsername,
             ...m.roles.map((r) => r.slug),
             ...m.roles.map((r) => r.name),
+            ...m.roles.map((r) => roleLabel(r).name),
           ],
           tokens,
         )),
@@ -222,7 +224,7 @@ export function PeopleSection({
     m.roles
       // Looking at one store, a role held in another store is not said.
       .filter((r) => !here || r.scopeType !== 'store' || r.scopeId === here)
-      .map((r) => r.name);
+      .map((r) => roleLabel(r).name);
   const QUIET =
     'flex h-control w-full items-center justify-center rounded-pill bg-surface-sunken px-lg text-label text-ink outline-none active:opacity-70 disabled:opacity-50';
 
@@ -401,7 +403,7 @@ export function PeopleSection({
                   return (
                     <div key={r.bindingId} className="flex min-h-row items-center gap-lg">
                       <span className="min-w-0 flex-1">
-                        <span className="block text-label text-ink">{r.name}</span>
+                        <span className="block text-label text-ink">{roleLabel(r).name}</span>
                         <span className="block text-small text-secondary">
                           {where ?? i18n.t('people.everyStore')}
                         </span>
@@ -413,7 +415,7 @@ export function PeopleSection({
                         onClick={() =>
                           nativeConfirm(
                             i18n.t('people.confirmRevoke', {
-                              role: where ? `${r.name} · ${where}` : r.name,
+                              role: where ? `${roleLabel(r).name} · ${where}` : roleLabel(r).name,
                               name: openMember.displayName,
                             }),
                             () => revoke.mutate({ bindingId: r.bindingId }),
@@ -570,6 +572,7 @@ export function PeopleSection({
  */
 export function PermissionsSection({ isSuperAdmin }: { isSuperAdmin: boolean }) {
   const i18n = useI18n();
+  const roleLabel = useRoleLabel();
   const session = useAuthStore((s) => s.session);
   const myMaxRank = session?.myMaxRank ?? 0;
   const rolesQuery = trpc.admin.roleList.useQuery();
@@ -631,7 +634,7 @@ export function PermissionsSection({ isSuperAdmin }: { isSuperAdmin: boolean }) 
                     <ListRow
                       label={
                         <span className="flex items-center gap-2">
-                          {r.name}
+                          {roleLabel(r).name}
                           {r.isBuiltIn ? (
                             <Badge tone="muted">{i18n.t('admin.label.builtIn')}</Badge>
                           ) : null}
@@ -1309,6 +1312,7 @@ function ManualInviteSheet({
   pending: boolean;
 }) {
   const i18n = useI18n();
+  const roleLabel = useRoleLabel();
   const rolesQuery = trpc.admin.roleList.useQuery(undefined, { enabled: !!draft });
   const storesQuery = trpc.admin.storeList.useQuery(undefined, { enabled: !!draft });
   // C2 (2026-05-06): a store-scoped admin can only invite into the
@@ -1405,7 +1409,7 @@ function ManualInviteSheet({
                     onClick={() => setDraft({ ...draft, roleSlug: r.slug })}
                     className={capsule(draft.roleSlug === r.slug)}
                   >
-                    {r.name}
+                    {r.slug ? roleLabel(r).name : r.name}
                   </button>
                 ))}
               </div>
@@ -2211,6 +2215,7 @@ function GrantRoleSheet({
   );
   const sessionStores = session?.stores ?? [];
   const i18n = useI18n();
+  const roleLabel = useRoleLabel();
 
   const rolesQuery = trpc.admin.roleList.useQuery(undefined, { enabled: !!target });
   const utils = trpc.useUtils();
@@ -2436,9 +2441,9 @@ function GrantRoleSheet({
                 className="flex min-h-row items-center gap-lg py-sm text-start outline-none active:opacity-60 disabled:opacity-50"
               >
                 <span className="min-w-0 flex-1">
-                  <span className="block text-label text-ink">{r.name}</span>
+                  <span className="block text-label text-ink">{roleLabel(r).name}</span>
                   {r.description ? (
-                    <span className="block text-small text-secondary">{r.description}</span>
+                    <span className="block text-small text-secondary">{roleLabel(r).description}</span>
                   ) : null}
                 </span>
                 <span className="shrink-0 text-forest">

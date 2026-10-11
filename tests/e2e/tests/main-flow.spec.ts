@@ -601,6 +601,37 @@ test('stores and the people in them', async () => {
   await expect(main().getByRole('heading', { level: 1 })).toHaveText('Manage');
 });
 
+test('what was spent this month, and how it was paid', async () => {
+  await page.getByTestId('manage-finance').click();
+  // One total for the period, split the way it is checked against the
+  // cash box and the bank.
+  await expect(main().getByTestId('finance-total')).toHaveText(
+    /Total\s*114,000\s*UZS\s*Cash 24,000 · Transfer 90,000/,
+  );
+  await evidence('finance');
+  // The same money by day; a day opens to the purchases behind it.
+  const days = main().getByTestId('finance-row');
+  await expect(days).toHaveCount(1);
+  await expect(days).toContainText('114,000');
+  await days.click();
+  await expect(sheet().getByTestId('finance-line')).toHaveCount(2);
+  await expect(sheet().getByTestId('finance-line').filter({ hasText: 'Beef' })).toHaveText(
+    /1 kg × 90,000[\s\S]*90,000\s*Transfer/,
+  );
+  await evidence('finance-day');
+  await page.keyboard.press('Escape');
+  await expect(sheet()).toBeHidden();
+  // Or by store.
+  await main().getByTestId('finance-view').filter({ hasText: 'By store' }).click();
+  await expect(main().getByTestId('finance-row')).toContainText('Central Kitchen');
+  // Yesterday there was nothing.
+  await main().getByTestId('finance-period').filter({ hasText: 'Yesterday' }).click();
+  await expect(main()).toContainText('No purchases in this range');
+
+  await page.getByTestId('manage-back').click();
+  await expect(main().getByRole('heading', { level: 1 })).toHaveText('Manage');
+});
+
 test('close the day', async () => {
   await tab('admin').click();
   await page.getByTestId('manage-close').click();

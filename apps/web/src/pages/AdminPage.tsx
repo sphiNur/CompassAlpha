@@ -59,7 +59,6 @@ import {
   HistorySection,
   AdminAuditSection,
   PriceReportSection,
-  FinanceSection,
   MaintenanceSection,
 } from './admin/operations/OperationsSections';
 // Catalog CRUD sections — extracted to admin/catalog (Phase 5 step 2).
@@ -82,6 +81,7 @@ import { StoresScreen } from '../destinations/manage/StoresScreen';
 // People + permissions — extracted to admin/people (Phase 5 step 4).
 import { PermissionsSection } from './admin/people/PeopleSections';
 import { ProductsScreen } from '../destinations/manage/ProductsScreen';
+import { FinanceScreen } from '../destinations/manage/FinanceScreen';
 
 /**
  * AdminPage top-level layout (rewritten 2026-05-06 — round 3, M1.4
@@ -226,7 +226,7 @@ export function AdminPage() {
         {section === 'operations' && opsSub === 'history' ? <HistorySection /> : null}
         {section === 'operations' && opsSub === 'adminAudit' ? <AdminAuditSection /> : null}
         {section === 'operations' && opsSub === 'priceReport' ? <PriceReportSection /> : null}
-        {section === 'operations' && opsSub === 'finance' ? <FinanceSection /> : null}
+        {section === 'operations' && opsSub === 'finance' ? <FinanceScreen /> : null}
         {section === 'operations' && opsSub === 'maintenance' ? <MaintenanceSection /> : null}
       </SectionFrame>
     );

@@ -293,3 +293,44 @@ export function useVendorUnitLabel() {
     };
   }, [i18n, secondaryLocale]);
 }
+
+// The roles every organisation starts with, by the names they are seeded
+// under. A role still carrying its seeded name is shown in the person's
+// language; one an owner has renamed is shown as they wrote it.
+const SEEDED_ROLE_NAMES: Record<string, string> = {
+  super_admin: 'Super Admin',
+  admin: 'Admin',
+  manager: 'Store Manager',
+  purchaser: 'Purchaser',
+  cashier: 'Cashier',
+  staff: 'Store Staff',
+};
+
+/**
+ * A role's name and what it is for, in the app's language.
+ *
+ * Roles live in the database with one name and one description, in
+ * English for the built-in ones, which a store manager in Tashkent does
+ * not read. The built-in ones are translated here by their code; roles
+ * an organisation made itself have no translation and are shown as
+ * written.
+ */
+export function useRoleLabel() {
+  const i18n = useI18n();
+  return useMemo(() => {
+    return (role: {
+      slug: string;
+      name: string;
+      description?: string | null;
+    }): { name: string; description: string | null } => {
+      if (SEEDED_ROLE_NAMES[role.slug] !== role.name) {
+        return { name: role.name, description: role.description ?? null };
+      }
+      const t = (key: string) => i18n.t(key as Parameters<typeof i18n.t>[0]) as string;
+      return {
+        name: t(`role.${role.slug}.name`),
+        description: t(`role.${role.slug}.desc`),
+      };
+    };
+  }, [i18n]);
+}
