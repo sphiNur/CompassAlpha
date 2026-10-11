@@ -35,13 +35,9 @@ export function ChoiceGroup<V extends string>({
   return (
     <div className={cn('flex flex-col gap-sm', className)}>
       {compact ? null : <span className="text-label text-ink">{label}</span>}
-      {/* A segmented control: a sunken track, and the chosen option
-          raised out of it. */}
-      <div
-        role="radiogroup"
-        aria-label={label}
-        className="flex gap-xs rounded-pill bg-surface-sunken p-xs"
-      >
+      {/* The chosen option is ink with the accent as its text: the
+          strongest contrast on the screen, so the choice is never in doubt. */}
+      <div role="radiogroup" aria-label={label} className="flex gap-sm">
         {options.map((option) => {
           const chosen = option.value === value;
           return (
@@ -53,9 +49,9 @@ export function ChoiceGroup<V extends string>({
               data-choice={option.value}
               onClick={() => onChange(option.value)}
               className={cn(
-                'flex h-tap min-w-0 flex-1 items-center justify-center rounded-pill px-md text-label outline-none',
-                'focus-visible:ring-2 focus-visible:ring-primary',
-                chosen ? 'bg-surface text-primary' : 'text-secondary active:bg-line',
+                'flex h-tap min-w-0 flex-1 items-center justify-center rounded-sm px-md text-label outline-none',
+                'focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2',
+                chosen ? 'bg-ink text-primary' : 'bg-surface-sunken text-ink active:bg-line',
               )}
             >
               <span className="truncate">{option.label}</span>

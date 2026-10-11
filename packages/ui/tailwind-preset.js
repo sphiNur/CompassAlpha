@@ -10,43 +10,45 @@
  * `text-[13px]`, no `p-[18px]`.
  */
 export const colors = {
-  primary: '#0F6B4F',
-  'primary-pressed': '#0B523C',
-  'on-primary': '#FFFFFF',
-  ink: '#1C1C1E',
-  secondary: '#636366',
-  neutral: '#F2F2F7',
+  primary: '#A3E635',
+  'primary-pressed': '#8FD11F',
+  'primary-pale': '#E4F7CC',
+  'on-primary': '#10140B',
+  forest: '#1F3A12',
+  ink: '#10140B',
+  secondary: '#454745',
+  neutral: '#EBEEE7',
   surface: '#FFFFFF',
-  'surface-sunken': '#E5E5EA',
-  line: '#D1D1D6',
-  success: '#0F6B4F',
-  warning: '#B4762A',
-  'warning-ink': '#8A5A1C',
-  danger: '#B3261E',
-  info: '#2A5B9B',
-  'tint-orange': '#B85C00',
-  'tint-blue': '#1F6FD6',
-  'tint-gray': '#5B5B60',
+  'surface-sunken': '#DEE3D8',
+  line: '#D5D9D0',
+  success: '#2EAD4B',
+  warning: '#FFD11A',
+  'warning-pale': '#FFF1B8',
+  'warning-ink': '#4A3B1C',
+  danger: '#C8322F',
+  'danger-pale': '#FBE1DF',
+  'danger-ink': '#8E1F1C',
+  'on-danger': '#FFFFFF',
 };
 
 export const typography = {
   display: {
     fontSize: '2rem',
-    fontWeight: 700,
-    lineHeight: 1.15,
-    letterSpacing: '-0.02em',
+    fontWeight: 900,
+    lineHeight: 1.05,
+    letterSpacing: '-0.03em',
     tnum: true,
   },
-  h1: { fontSize: '2.125rem', fontWeight: 700, lineHeight: 1.15, letterSpacing: '-0.02em' },
-  h2: { fontSize: '1.25rem', fontWeight: 700, lineHeight: 1.25 },
+  h1: { fontSize: '1.75rem', fontWeight: 900, lineHeight: 1.1, letterSpacing: '-0.03em' },
+  h2: { fontSize: '1.25rem', fontWeight: 800, lineHeight: 1.2, letterSpacing: '-0.01em' },
   body: { fontSize: '1rem', fontWeight: 400, lineHeight: 1.5 },
-  label: { fontSize: '0.9375rem', fontWeight: 600, lineHeight: 1.4 },
-  caption: { fontSize: '0.8125rem', fontWeight: 500, lineHeight: 1.35, letterSpacing: '0.01em' },
-  money: { fontSize: '1rem', fontWeight: 600, lineHeight: 1.2, tnum: true },
-  'money-lg': { fontSize: '1.5rem', fontWeight: 700, lineHeight: 1.15, tnum: true },
+  label: { fontSize: '1rem', fontWeight: 600, lineHeight: 1.4 },
+  caption: { fontSize: '0.8125rem', fontWeight: 600, lineHeight: 1.35 },
+  money: { fontSize: '1rem', fontWeight: 800, lineHeight: 1.2, tnum: true },
+  'money-lg': { fontSize: '1.5rem', fontWeight: 900, lineHeight: 1.1, tnum: true },
 };
 
-export const rounded = { sm: '12px', md: '22px', lg: '28px', pill: '999px' };
+export const rounded = { sm: '12px', md: '16px', lg: '24px', pill: '999px' };
 
 export const spacing = {
   xs: '4px',
@@ -93,7 +95,7 @@ export default {
       boxShadow: {
         // The one shadow the design allows: under a sheet or a pinned
         // action bar, to separate it from content scrolling beneath.
-        raised: '0 -1px 0 #D1D1D6, 0 -6px 20px rgb(0 0 0 / 0.04)',
+        raised: '0 -8px 24px rgb(16 20 11 / 0.06)',
       },
     },
   },
@@ -113,7 +115,7 @@ export default {
           left: spacing.lg,
           right: spacing.lg,
           height: '1px',
-          backgroundColor: colors.line,
+          backgroundColor: colors.neutral,
         },
       }),
   ],

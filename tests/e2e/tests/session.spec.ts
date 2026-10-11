@@ -66,7 +66,7 @@ test('an expired access token is refreshed and the app carries on', async ({ pag
   // Signed in and showing data: the app proper, or first-run naming if
   // this spec is run on its own against a fresh database.
   await expect(
-    page.getByTestId('primary-nav').or(page.getByRole('heading', { name: 'Welcome to Compass' })),
+    page.getByTestId('primary-nav').or(page.getByRole('heading', { name: 'Welcome to Fine' })),
   ).toBeVisible();
 
   // The shell is drawn from the stored session before the refresh has

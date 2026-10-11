@@ -388,7 +388,7 @@ export const uz = {
   'auth.noAccess.title': 'Ruxsat berilmagan',
   'auth.noAccess.body':
     "Telegram akkauntingiz tanildi, ammo bu tashkilotda hali rolingiz yo'q. Administrator ruxsat berishi kerak.",
-  'auth.onboarding.title': "Compass'ga xush kelibsiz",
+  'auth.onboarding.title': "Fine'ga xush kelibsiz",
   'auth.onboarding.body':
     "Hamkasblar buyurtma kartalari, tasdiqlash navbati va auditda ko'radigan ismingizni tasdiqlang. Keyinchalik faqat administrator o'zgartira oladi.",
   'auth.onboarding.nameLabel': 'Ismingiz',
@@ -409,7 +409,7 @@ export const uz = {
     "Bu amalga ruxsatingiz yo'q. Agar bu xato deb hisoblasangiz, administrator bilan bog'laning.",
   'auth.errors.nameLocked': "Ism qulflangan — faqat administrator o'zgartira oladi",
   'auth.errors.noMembership':
-    "Siz hali hech bir do'konga qo'shilmagansiz. Rahbaringizdan sizni Compass'ga taklif qilishini so'rang.",
+    "Siz hali hech bir do'konga qo'shilmagansiz. Rahbaringizdan sizni Fine'ga taklif qilishini so'rang.",
   'auth.errors.noOrg': 'Tashkilot topilmadi',
   'auth.errors.required': 'Kirish talab qilinadi',
   'auth.errors.signInFailed': 'Kirish bajarilmadi',

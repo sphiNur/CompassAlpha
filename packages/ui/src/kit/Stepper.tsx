@@ -51,7 +51,7 @@ export function Stepper({
       role="group"
       data-testid={rest['data-testid']}
       className={cn(
-        'inline-flex shrink-0 items-stretch overflow-hidden rounded-pill bg-surface-sunken',
+        'inline-flex shrink-0 items-stretch overflow-hidden rounded-sm bg-surface-sunken',
         className,
       )}
     >

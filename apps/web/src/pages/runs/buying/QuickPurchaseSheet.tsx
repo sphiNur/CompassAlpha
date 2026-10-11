@@ -159,7 +159,7 @@ export function QuickPurchaseSheet({
               type="button"
               aria-label={i18n.t('run.label.priceUnitAria') as string}
               onClick={onTogglePriceUnit}
-              className="flex h-tap items-center text-body text-primary underline decoration-dotted underline-offset-4 outline-none"
+              className="flex h-tap items-center text-body text-forest underline decoration-dotted underline-offset-4 outline-none"
             >
               {priceInThousands ? `×1000 ${currency}` : currency}
             </button>

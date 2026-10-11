@@ -15,9 +15,9 @@ export interface TileProps {
 }
 
 const TONE: Record<TileTone, string> = {
-  orange: 'bg-tint-orange',
-  blue: 'bg-tint-blue',
-  gray: 'bg-tint-gray',
+  orange: 'bg-ink',
+  blue: 'bg-ink',
+  gray: 'bg-ink',
 };
 
 /**
@@ -33,8 +33,8 @@ export function Tile({ label, count, tone, onPress, ...rest }: TileProps) {
       data-tile={tone}
       onClick={onPress}
       className={cn(
-        'flex min-w-0 flex-col justify-between gap-sm rounded-md p-lg text-left text-on-primary',
-        'outline-none active:opacity-80 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
+        'flex min-w-0 flex-col justify-between gap-sm rounded-lg p-lg text-left text-primary',
+        'outline-none active:opacity-80 focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2',
         TONE[tone],
       )}
     >

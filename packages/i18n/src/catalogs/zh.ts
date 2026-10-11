@@ -363,7 +363,7 @@ export const zh = {
   'auth.shareThisId': '请将此 Telegram ID 发给管理员以获取访问权限：',
   'auth.noAccess.title': '尚未授权',
   'auth.noAccess.body': '已识别您的 Telegram 账号，但当前组织尚未授予角色，请联系管理员。',
-  'auth.onboarding.title': '欢迎使用 Compass',
+  'auth.onboarding.title': '欢迎使用 Fine',
   'auth.onboarding.body':
     '请确认您的名字 — 同事将在订单卡片、审批队列和审计日志中看到这个名字。设置后只有管理员能修改。',
   'auth.onboarding.nameLabel': '您的名字',
@@ -381,7 +381,7 @@ export const zh = {
   'auth.errors.missingPermission': '你没有权限执行此操作。如有疑问请联系管理员。',
   'auth.errors.nameLocked': '名字已锁定 — 仅管理员可修改',
   'auth.errors.noMembership':
-    '你还没有被加入任何门店。请让店长或管理员在 Compass 里邀请你。',
+    '你还没有被加入任何门店。请让店长或管理员在 Fine 里邀请你。',
   'auth.errors.noOrg': '组织不存在',
   'auth.errors.required': '请先登录',
   'auth.errors.signInFailed': '登录失败',

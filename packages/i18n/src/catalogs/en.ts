@@ -449,7 +449,7 @@ export const en = {
   'auth.noAccess.title': 'Access not granted',
   'auth.noAccess.body':
     'Your Telegram account is recognized but has no role in this organization yet. An administrator must grant you access.',
-  'auth.onboarding.title': 'Welcome to Compass',
+  'auth.onboarding.title': 'Welcome to Fine',
   'auth.onboarding.body':
     'Confirm the name your colleagues will see on order cards, approval queue, and audit log. Only an administrator can change it later.',
   'auth.onboarding.nameLabel': 'Your name',
@@ -470,7 +470,7 @@ export const en = {
     "You don't have permission to do that. Ask an admin if you think this is a mistake.",
   'auth.errors.nameLocked': 'Your name is locked — only an administrator can change it',
   'auth.errors.noMembership':
-    'You have not been added to a store yet. Ask your manager to invite you in Compass.',
+    'You have not been added to a store yet. Ask your manager to invite you in Fine.',
   'auth.errors.noOrg': 'Organization not found',
   'auth.errors.required': 'Sign-in required',
   'auth.errors.signInFailed': 'Sign in failed',

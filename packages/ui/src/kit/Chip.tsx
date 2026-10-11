@@ -14,8 +14,8 @@ export interface PaymentChipProps {
 }
 
 /**
- * How a line was paid. Cash is quiet and transfer is blue, so a list can
- * be scanned for one of them. In a Row it goes in `valueNote`, under the
+ * How a line was paid. Cash is quiet and transfer is ink with the accent,
+ * so a list can be scanned for one of them. In a Row it goes in `valueNote`, under the
  * amount it describes, which puts it at the same place on every screen.
  */
 export function PaymentChip({ method, label, className }: PaymentChipProps) {
@@ -24,7 +24,7 @@ export function PaymentChip({ method, label, className }: PaymentChipProps) {
       data-payment-method={method}
       className={cn(
         CHIP,
-        method === 'transfer' ? 'bg-info text-on-primary' : 'bg-surface-sunken text-ink',
+        method === 'transfer' ? 'bg-ink text-primary' : 'bg-neutral text-ink',
         className,
       )}
     >
@@ -45,22 +45,20 @@ export interface StatusChipProps {
   className?: string;
 }
 
-const DOT: Record<StatusTone, string | null> = {
-  neutral: null,
-  pending: 'bg-warning',
-  done: 'bg-success',
-  problem: 'bg-danger',
+const TONE: Record<StatusTone, string> = {
+  neutral: 'bg-neutral text-ink',
+  pending: 'bg-warning-pale text-warning-ink',
+  done: 'bg-primary-pale text-forest',
+  problem: 'bg-danger-pale text-danger-ink',
 };
 
 /**
- * The state of a thing, in words. The dot repeats the state as a colour
- * for scanning; the text stays ink so it is readable on its own.
+ * The state of a thing, in words. The fill repeats the state as a colour
+ * for scanning a list; each pairing is readable on its own.
  */
 export function StatusChip({ tone = 'neutral', children, className }: StatusChipProps) {
-  const dot = DOT[tone];
   return (
-    <span data-status={tone} className={cn(CHIP, 'bg-surface-sunken text-ink', className)}>
-      {dot ? <span aria-hidden className={cn('size-sm rounded-pill', dot)} /> : null}
+    <span data-status={tone} className={cn(CHIP, TONE[tone], className)}>
       {children}
     </span>
   );

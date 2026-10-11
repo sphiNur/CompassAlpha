@@ -59,7 +59,7 @@ export function StoreBar({
           type="button"
           data-testid="account"
           onClick={onOpenAccount}
-          className="flex h-tap min-w-0 items-center text-label text-primary outline-none active:opacity-60"
+          className="flex h-tap min-w-0 items-center text-label text-forest outline-none active:opacity-60"
         >
           <span className="truncate">{name}</span>
         </button>

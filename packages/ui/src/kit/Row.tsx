@@ -55,7 +55,9 @@ export function Row({
   const body = (
     <>
       <span className="min-w-0 flex-1 text-left">
-        <span className={cn('block text-body', action ? 'text-primary' : 'text-ink')}>{title}</span>
+        <span className={cn('block text-body', action ? 'font-semibold text-forest' : 'text-ink')}>
+          {title}
+        </span>
         {detail ? <span className="block text-body text-secondary">{detail}</span> : null}
       </span>
       {value || valueNote ? (

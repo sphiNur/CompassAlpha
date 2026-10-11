@@ -13,7 +13,7 @@ export interface MoneyProps {
 
 const TONE = {
   ink: 'text-ink',
-  primary: 'text-primary',
+  primary: 'text-forest',
   secondary: 'text-secondary',
   danger: 'text-danger',
 } as const;

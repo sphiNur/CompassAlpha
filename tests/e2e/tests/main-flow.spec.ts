@@ -53,7 +53,7 @@ async function evidence(name: string): Promise<void> {
 
 test('sign in and confirm a display name', async () => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Welcome to Compass' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Welcome to Fine' })).toBeVisible();
   await page.getByRole('textbox').fill('E2E Admin');
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByTestId('primary-nav')).toBeVisible();
