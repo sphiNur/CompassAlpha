@@ -520,10 +520,10 @@ test('everything that is set up is one tap from Manage', async () => {
   // Each row goes straight to its screen, and back from it is back here:
   // no page in between that only lists other pages.
   for (const [row, title, picture] of [
-    ['skus', 'SKUs', 'manage-products'],
-    ['stores', 'Stores', 'manage-stores'],
-    ['permissions', 'Roles & Permissions', 'manage-roles'],
-    ['finance', 'Finance', 'manage-finance'],
+    ['skus', 'Products', 'manage-products'],
+    ['stores', 'Stores and people', 'manage-stores'],
+    ['permissions', 'Roles', 'manage-roles'],
+    ['finance', 'Money spent', 'manage-finance'],
   ] as const) {
     await page.getByTestId(`manage-${row}`).click();
     await expect(main().getByRole('heading', { level: 1 })).toHaveText(title);
@@ -669,7 +669,7 @@ test('stores and the people in them', async () => {
   // Archiving asks first, and leaves for the list, where the store is gone.
   page.once('dialog', (dialog) => void dialog.accept());
   await main().getByTestId('store-archive').click();
-  await expect(main().getByRole('heading', { level: 1 })).toHaveText('Stores');
+  await expect(main().getByRole('heading', { level: 1 })).toHaveText('Stores and people');
   await expect(main().getByTestId('store-row').filter({ hasText: 'Night Market' })).toHaveCount(0);
 
   // Someone new at a store: by their Telegram number, with a role there.

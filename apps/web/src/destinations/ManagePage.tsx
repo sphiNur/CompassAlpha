@@ -6,15 +6,22 @@ import { useI18n } from '../hooks/useI18n';
 import type { Tab } from '../stores/navStore';
 import type { CatalogSub, OperationsSub } from '../pages/admin/shared';
 import {
-  ApproveIcon,
+  BuildingIcon,
   ChevronIcon,
-  ClockIcon,
   CloseDayIcon,
-  ManageIcon,
+  DishIcon,
+  EyeIcon,
   OrdersIcon,
-  PurchasingIcon,
+  PersonIcon,
+  PulseIcon,
+  ReceiptIcon,
   ReceiveIcon,
-  TodayIcon,
+  ShieldIcon,
+  StallIcon,
+  StoreIcon,
+  TagIcon,
+  TrendIcon,
+  WalletIcon,
 } from './icons';
 
 const AdminPage = lazy(() => import('../pages/AdminPage').then((m) => ({ default: m.AdminPage })));
@@ -104,28 +111,28 @@ export function ManagePage({
         },
         {
           key: 'categories',
-          icon: <OrdersIcon />,
+          icon: <TagIcon />,
           title: i18n.t('admin.subsection.categories') as string,
           hint: i18n.t('admin.subsection.categoriesHint') as string,
           open: catalogue('categories'),
         },
         {
           key: 'suppliers',
-          icon: <PurchasingIcon />,
+          icon: <StallIcon />,
           title: i18n.t('admin.subsection.suppliers') as string,
           hint: i18n.t('admin.subsection.suppliersHint') as string,
           open: catalogue('suppliers'),
         },
         {
           key: 'dishes',
-          icon: <OrdersIcon />,
+          icon: <DishIcon />,
           title: i18n.t('admin.subsection.dishes') as string,
           hint: i18n.t('admin.subsection.dishesHint') as string,
           open: catalogue('dishes'),
         },
         {
           key: 'expenseTemplates',
-          icon: <OrdersIcon />,
+          icon: <ReceiptIcon />,
           title: i18n.t('admin.subsection.expenseTemplates') as string,
           hint: i18n.t('admin.subsection.expenseTemplatesHint') as string,
           open: catalogue('expenseTemplates'),
@@ -134,25 +141,25 @@ export function ManagePage({
     });
     groups.push({
       key: 'people',
-      title: i18n.t('admin.section.stores') as string,
+      title: i18n.t('manage.people') as string,
       entries: [
         {
           key: 'stores',
-          icon: <TodayIcon />,
+          icon: <StoreIcon />,
           title: i18n.t('admin.section.stores') as string,
           hint: i18n.t('admin.section.storesHint') as string,
           open: () => setSection('stores'),
         },
         {
           key: 'permissions',
-          icon: <ApproveIcon />,
+          icon: <ShieldIcon />,
           title: i18n.t('admin.section.permissions') as string,
           hint: i18n.t('admin.section.permissionsHint') as string,
           open: () => setSection('permissions'),
         },
         {
           key: 'organization',
-          icon: <ManageIcon />,
+          icon: <BuildingIcon />,
           title: i18n.t('admin.section.organization') as string,
           hint: i18n.t('admin.section.organizationHint') as string,
           open: () => setSection('organization'),
@@ -165,21 +172,21 @@ export function ManagePage({
       entries: [
         {
           key: 'finance',
-          icon: <CloseDayIcon />,
+          icon: <WalletIcon />,
           title: i18n.t('admin.subsection.finance') as string,
           hint: i18n.t('admin.subsection.financeHint') as string,
           open: report('finance'),
         },
         {
           key: 'priceReport',
-          icon: <PurchasingIcon />,
+          icon: <TrendIcon />,
           title: i18n.t('admin.subsection.priceReport') as string,
           hint: i18n.t('admin.subsection.priceReportHint') as string,
           open: report('priceReport'),
         },
         {
           key: 'activity',
-          icon: <ClockIcon />,
+          icon: <PulseIcon />,
           title: i18n.t('admin.subsection.activity') as string,
           hint: i18n.t('admin.subsection.activityHint') as string,
           open: report('activity'),
@@ -193,7 +200,7 @@ export function ManagePage({
         },
         {
           key: 'adminAudit',
-          icon: <ApproveIcon />,
+          icon: <EyeIcon />,
           title: i18n.t('admin.subsection.audit') as string,
           hint: i18n.t('admin.subsection.auditHint') as string,
           open: report('adminAudit'),
@@ -206,7 +213,7 @@ export function ManagePage({
     entries: [
       {
         key: 'settings',
-        icon: <ManageIcon />,
+        icon: <PersonIcon />,
         title: i18n.t('menu.settings') as string,
         hint: i18n.t('menu.settingsHint') as string,
         open: onOpenSettings,
