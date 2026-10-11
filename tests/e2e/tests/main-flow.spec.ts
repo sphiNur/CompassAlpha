@@ -220,6 +220,40 @@ test('close the day', async () => {
   await evidence('daily-close-saved');
 });
 
+test('the next order shows what it should cost, and how it is usually paid', async () => {
+  // Apple was bought in cash and Beef by transfer, so an order for both
+  // can now be budgeted by payment method before anyone approves it.
+  // Prices are remembered for a minute, and a minute ago nothing had
+  // been bought. Opening the app again is what a later order amounts to.
+  await page.reload();
+  await tab('order').click();
+  const add = async (sku: string, taps: number) => {
+    const saved = page.waitForResponse((res) => res.url().includes('order.adjustItem'));
+    for (let i = 0; i < taps; i++) {
+      await item(sku).getByRole('button', { name: 'Increase' }).click();
+    }
+    await saved;
+  };
+  await add('Apple', 2);
+  await add('Beef', 2);
+  await mainButton().click();
+  await sheet().getByRole('button', { name: 'Submit order' }).click();
+  await expect(main().getByRole('status')).toContainText('Submitted · awaiting review');
+
+  await tab('approve').click();
+  await expect(main().getByTestId('approval-payment-budget')).toHaveText(
+    /Cash ~12,000\s*Transfer ~90,000/,
+  );
+  await main().getByRole('button', { name: 'View items' }).click();
+  await expect(item('Apple').getByTestId('approval-line-price')).toHaveText(
+    /~12,000 \/ kg · Cash\s*~12,000/,
+  );
+  await expect(item('Beef').getByTestId('approval-line-price')).toHaveText(
+    /~90,000 \/ kg · Transfer\s*~90,000/,
+  );
+  await evidence('approval-budget');
+});
+
 test('nothing went wrong along the way', () => {
   expect(problems).toEqual([]);
 });
