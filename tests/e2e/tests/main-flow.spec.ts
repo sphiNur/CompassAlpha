@@ -432,8 +432,19 @@ test('finish the run and find it in history', async () => {
   await expect(bought).toBeVisible();
   // The row opens that store's purchase.
   await bought.click();
-  await expect(sheet()).toContainText('Central Kitchen');
+  await expect(sheet().getByTestId('purchase-total')).toHaveText(
+    /Central Kitchen · Total spent\s*114,000\s*UZS\s*Cash 24,000 · Transfer 90,000/,
+  );
+  const boughtLines = sheet().getByTestId('purchase-line');
+  await expect(boughtLines).toHaveCount(2);
+  await expect(boughtLines.filter({ hasText: 'Beef' })).toHaveText(/1 kg × 90,000\s*90,000/);
+  await expect(boughtLines.filter({ hasText: 'Apple' })).toHaveText(/2 kg × 12,000\s*24,000/);
   await evidence('history-detail');
+  // The two corrections are offered to someone who may make them, and
+  // ask for what they need before doing anything.
+  await sheet().getByTestId('purchase-fix-date').click();
+  await expect(sheet().getByTestId('purchase-date-save')).toBeDisabled();
+  await evidence('history-detail-date');
   await page.keyboard.press('Escape');
   await expect(sheet()).toBeHidden();
 });

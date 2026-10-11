@@ -1,20 +1,16 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { cn } from '@compass/ui/kit';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
-import { useI18n, useProductName } from '../hooks/useI18n';
+import { useI18n } from '../hooks/useI18n';
 import { useOrdersToBuy } from '../hooks/useWaitingCounts';
 import { useDay } from '../hooks/useDay';
 import { useStoreContext } from '../components/StoreSwitcher';
 import { currencyOf, formatMoney } from '../lib/format';
 import type { Tab } from '../stores/navStore';
-import type { HistoryDetailTarget } from '../pages/runs/history/RunHistory';
+import { PurchaseDetail } from './PurchaseDetail';
+import type { PurchaseTarget } from './PurchaseDetail';
 import { ChevronIcon, ClockIcon, PlusIcon, PurchasingIcon, SearchIcon } from './icons';
-
-// One purchase opened: what was bought, at what price, for which store.
-const RunHistoryDetailSheet = lazy(() =>
-  import('../pages/runs/history/RunHistory').then((m) => ({ default: m.RunHistoryDetailSheet })),
-);
 
 type Period = 'all' | 7 | 30;
 // A purchase paid partly each way is its own kind: "cash" means all of it.
@@ -144,7 +140,6 @@ export function PurchasingPage({ onOpen }: { onOpen: (tab: Tab) => void }) {
 
 function PastPurchases({ currency }: { currency: string }) {
   const i18n = useI18n();
-  const productName = useProductName();
   const ctx = useStoreContext();
   const storeId = ctx.kind === 'specific' ? ctx.storeId : undefined;
   const [typed, setTyped] = useState('');
@@ -152,7 +147,7 @@ function PastPurchases({ currency }: { currency: string }) {
   const [period, setPeriod] = useState<Period>('all');
   const [payment, setPayment] = useState<Payment>('all');
   const [page, setPage] = useState(1);
-  const [target, setTarget] = useState<HistoryDetailTarget | null>(null);
+  const [target, setTarget] = useState<PurchaseTarget | null>(null);
 
   // Typing does not ask the server on every letter.
   useEffect(() => {
@@ -175,25 +170,7 @@ function PastPurchases({ currency }: { currency: string }) {
     },
     { placeholderData: (previous) => previous, refetchOnMount: 'always' },
   );
-  // Archived products too: a purchase keeps the name of what was bought.
-  const skus = trpc.catalog.skus.useQuery({ includeArchived: true });
   const stores = trpc.catalog.stores.useQuery({ permission: 'prices.view' });
-  const skuById = useMemo(
-    () =>
-      new Map(
-        (skus.data ?? []).map((sku) => [
-          sku.id,
-          {
-            id: sku.id,
-            names: sku.names as Record<string, string>,
-            unit: sku.unit,
-            step: sku.step,
-            categoryId: sku.categoryId ?? null,
-          },
-        ]),
-      ),
-    [skus.data],
-  );
   const storeById = useMemo(
     () => new Map((stores.data ?? []).map((st) => [st.id, st])),
     [stores.data],
@@ -325,8 +302,7 @@ function PastPurchases({ currency }: { currency: string }) {
                           runId: run.id,
                           runIndex: run.runIndex,
                           runDate: run.runDate,
-                          status: run.status,
-                          initialStoreId: share.storeId,
+                          storeId: share.storeId,
                         })
                       }
                       className="flex items-center gap-lg text-start outline-none active:opacity-60"
@@ -390,18 +366,7 @@ function PastPurchases({ currency }: { currency: string }) {
         </div>
       ) : null}
 
-      {target ? (
-        <Suspense fallback={null}>
-          <RunHistoryDetailSheet
-            target={target}
-            skuById={skuById}
-            storeById={storeById}
-            productName={productName}
-            i18n={i18n}
-            onClose={() => setTarget(null)}
-          />
-        </Suspense>
-      ) : null}
+      <PurchaseDetail target={target} onClose={() => setTarget(null)} />
     </section>
   );
 }
