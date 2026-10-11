@@ -65,7 +65,6 @@ import {
 // Catalog CRUD sections — extracted to admin/catalog (Phase 5 step 2).
 import {
   CategoriesSection,
-  SkusSection,
   SuppliersSection,
   ExpenseTemplatesSection,
   DishesSection,
@@ -81,6 +80,7 @@ import {
 import { StoresHomeSection, StoreDetailScreen } from './admin/stores/StoresSections';
 // People + permissions — extracted to admin/people (Phase 5 step 4).
 import { PermissionsSection } from './admin/people/PeopleSections';
+import { ProductsScreen } from '../destinations/manage/ProductsScreen';
 
 /**
  * AdminPage top-level layout (rewritten 2026-05-06 — round 3, M1.4
@@ -212,7 +212,7 @@ export function AdminPage() {
           <CatalogHome onPick={(s) => setCatalogSub(s)} />
         ) : null}
         {section === 'catalog' && catalogSub === 'categories' ? <CategoriesSection /> : null}
-        {section === 'catalog' && catalogSub === 'skus' ? <SkusSection /> : null}
+        {section === 'catalog' && catalogSub === 'skus' ? <ProductsScreen /> : null}
         {section === 'catalog' && catalogSub === 'suppliers' ? <SuppliersSection /> : null}
         {section === 'catalog' && catalogSub === 'dishes' ? <DishesSection /> : null}
         {section === 'catalog' && catalogSub === 'expenseTemplates' ? (

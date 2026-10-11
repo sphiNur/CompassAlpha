@@ -477,6 +477,44 @@ test('everything that is set up is one tap from Manage', async () => {
   }
 });
 
+test('add a product with one name, then archive it', async () => {
+  await page.getByTestId('manage-skus').click();
+  // Products sit under their category, as on the ordering screen.
+  await expect(main().getByTestId('product-row').filter({ hasText: 'Beef' })).toHaveText(
+    /Beef\s*kg · 0\.5 at a time/,
+  );
+  await evidence('products');
+
+  await page.getByTestId('product-new').click();
+  await expect(sheet().getByTestId('product-save')).toBeDisabled();
+  // One name is enough; the other three languages are saved with it.
+  await sheet().getByRole('textbox', { name: 'Name — English' }).fill('Saffron');
+  await sheet().getByTestId('product-unit').filter({ hasText: 'kg' }).click();
+  await evidence('product-new');
+  const created = page.waitForResponse((res) => res.url().includes('admin.skuCreate'));
+  await sheet().getByTestId('product-save').click();
+  expect((await created).ok()).toBe(true);
+  await expect(sheet()).toBeHidden();
+  const saffron = main().getByTestId('product-row').filter({ hasText: 'Saffron' });
+  await expect(saffron).toBeVisible();
+
+  // The row opens the product, with all four names filled in.
+  await saffron.click();
+  await expect(sheet().getByRole('textbox', { name: 'Name — Русский' })).toHaveValue('Saffron');
+  await evidence('product-edit');
+  // Archiving asks first; then the product is gone from the list, and
+  // back when archived ones are asked for.
+  page.once('dialog', (dialog) => void dialog.accept());
+  await sheet().getByTestId('product-archive').click();
+  await expect(sheet()).toBeHidden();
+  await expect(saffron).toHaveCount(0);
+  await main().getByTestId('product-archived').click();
+  await expect(saffron).toContainText('archived');
+
+  await page.getByTestId('manage-back').click();
+  await expect(main().getByRole('heading', { level: 1 })).toHaveText('Manage');
+});
+
 test('close the day', async () => {
   await tab('admin').click();
   await page.getByTestId('manage-close').click();
