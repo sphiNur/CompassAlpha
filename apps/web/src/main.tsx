@@ -3,6 +3,17 @@ import { createRoot } from 'react-dom/client';
 import { detectLocale, preloadCatalog } from '@compass/i18n';
 import { App } from './app/App';
 import './styles/index.css';
+import { useAuthStore } from './stores/authStore';
+
+// For taking pictures of every screen in every language: the flow test
+// reads English, and switches what is shown for the length of a
+// screenshot without reloading or touching the account. Never in a build.
+if (import.meta.env.DEV) {
+  (window as unknown as { __fineShowIn?: (locale: string) => void }).__fineShowIn = (locale) => {
+    const { session, patchSession } = useAuthStore.getState();
+    if (session) patchSession({ ...session, user: { ...session.user, locale } });
+  };
+}
 
 const container = document.getElementById('root');
 if (!container) throw new Error('Root not found');

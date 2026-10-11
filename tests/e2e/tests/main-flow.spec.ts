@@ -13,7 +13,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import postgres from 'postgres';
-import { API_URL, DATABASE_URL } from '../env';
+import { DATABASE_URL } from '../env';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -22,6 +22,36 @@ const problems: string[] = [];
 
 test.beforeAll(async ({ browser }) => {
   page = await browser.newPage();
+  // Only to say where a picture was tapped next; see evidence().
+  if (process.env.E2E_SHOTS_DIR) {
+    await page.addInitScript(() => {
+      const w = window as unknown as {
+        __fineTap?: unknown;
+        __fineTapFor?: string | null;
+        __fineMoved?: boolean;
+      };
+      // A tap after the page scrolled is not where the picture shows it.
+      document.addEventListener('scroll', () => (w.__fineMoved = true), true);
+      document.addEventListener(
+        'pointerdown',
+        (e) => {
+          if (!w.__fineTapFor) return;
+          const el = (e.target as Element).closest('button, a, [role="tab"], label, input');
+          const r = (el ?? (e.target as Element)).getBoundingClientRect();
+          w.__fineTap = {
+            shot: w.__fineTapFor,
+            moved: !!w.__fineMoved,
+            x: r.left / window.innerWidth,
+            y: r.top / window.innerHeight,
+            w: r.width / window.innerWidth,
+            h: r.height / window.innerHeight,
+          };
+          w.__fineTapFor = null;
+        },
+        true,
+      );
+    });
+  }
   page.on('pageerror', (err) => problems.push(`pageerror: ${err.message}`));
   page.on('console', (msg) => {
     if (msg.type() === 'error') problems.push(`console.error: ${msg.text()}`);
@@ -46,58 +76,54 @@ const item = (sku: string): Locator => main().getByRole('listitem').filter({ has
 const sheet = (): Locator => page.getByRole('dialog');
 
 let shot = 0;
+const LOCALES = (process.env.E2E_SHOTS_LOCALES ?? 'zh,ru').split(',').filter(Boolean);
+const taps: Record<string, unknown> = {};
+
+/**
+ * A picture of the screen as it is now, attached to the report.
+ *
+ * E2E_SHOTS_DIR=<dir> also keeps the pictures on disk, numbered in the
+ * order they were taken, for the people who review the design: the same
+ * screen again in each of E2E_SHOTS_LOCALES under <dir>/<locale>/, and in
+ * <dir>/taps.json where on each picture the flow tapped next, which is
+ * what turns the pictures into something that can be clicked through.
+ *
+ * None of that changes what the flow does: the language is switched on
+ * the page only, for the length of a picture, with no reload.
+ */
 async function evidence(name: string): Promise<void> {
   const body = await page.screenshot({ fullPage: true });
   await test.info().attach(name, { body, contentType: 'image/png' });
-  // E2E_SHOTS_DIR=<dir> also keeps the pictures on disk, numbered in the
-  // order they were taken: a record of every screen for a design review.
-  const dir = process.env.E2E_SHOTS_DIR;
-  if (dir) {
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, `${String(++shot).padStart(2, '0')}-${name}.png`), body);
-  }
-}
-
-/**
- * The same screen in other languages, for the people who review it: the
- * flow's assertions read English, so this switches the account's
- * language, takes the picture, and switches back. Only when pictures are
- * being kept.
- */
-async function evidenceIn(
-  locales: string[],
-  name: string,
-  /**
-   * Reloading lands on Today; this gets back to the screen wanted. It is
-   * also run at the end, so the flow carries on from the same screen
-   * whether or not pictures were taken: CI takes none, and must not
-   * depend on a reload that only happens when they are.
-   */
-  open?: () => Promise<void>,
-): Promise<void> {
   const dir = process.env.E2E_SHOTS_DIR;
   if (!dir) return;
-  const setLocale = async (locale: string) => {
-    const token = await page.evaluate(
-      () => JSON.parse(localStorage.getItem('compass.auth') ?? '{}')?.state?.accessToken as string,
-    );
-    const res = await page.request.post(`${API_URL}/trpc/auth.setLocale`, {
-      headers: { authorization: `Bearer ${token}` },
-      data: { locale },
-    });
-    expect(res.ok()).toBe(true);
-    await page.reload();
-    await expect(page.getByTestId('primary-nav')).toBeVisible();
-    await expect(page.getByTestId('today-hero')).toBeVisible();
-  };
-  for (const locale of locales) {
-    await setLocale(locale);
-    await open?.();
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, `${name}.${locale}.png`), await page.screenshot({ fullPage: true }));
+  const file = `${String(++shot).padStart(2, '0')}-${name}.png`;
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, file), body);
+  const showIn = (locale: string) =>
+    page.evaluate((l) => {
+      (window as unknown as { __fineShowIn?: (locale: string) => void }).__fineShowIn?.(l);
+    }, locale);
+  for (const locale of LOCALES) {
+    await showIn(locale);
+    // The catalogue for a language is fetched the first time it is shown.
+    await page.waitForTimeout(250);
+    mkdirSync(join(dir, locale), { recursive: true });
+    writeFileSync(join(dir, locale, file), await page.screenshot({ fullPage: true }));
   }
-  await setLocale('en');
-  await open?.();
+  await showIn('en');
+  await page.waitForTimeout(150);
+  // Where the previous picture was tapped, now that it is known; then
+  // listen for the tap that follows this one.
+  const tapped = await page.evaluate((next) => {
+    const w = window as unknown as { __fineTap?: unknown; __fineTapFor?: string | null };
+    const last = w.__fineTap ?? null;
+    w.__fineTap = null;
+    w.__fineTapFor = next;
+    (w as { __fineMoved?: boolean }).__fineMoved = false;
+    return last;
+  }, file);
+  if (tapped) taps[(tapped as { shot: string }).shot] = tapped;
+  writeFileSync(join(dir, 'taps.json'), JSON.stringify(taps, null, 1));
 }
 
 test('sign in and confirm a display name', async () => {
@@ -130,17 +156,16 @@ test('place an order', async () => {
   await expect(page.getByTestId('primary-nav')).toBeHidden();
   await expect(main().getByRole('heading', { level: 1 })).toHaveText('Order');
 
-  // A product nobody has asked for shows one button; the stepper appears
-  // once it has a quantity. Weighed goods step by half a kilo per tap.
-  const add = async (sku: string, taps: number, expected: string) => {
+  // Every product has its quantity control, at nothing to begin with and
+  // unable to go below it. Weighed goods step by half a kilo per tap.
+  await expect(item('Apple').locator('[data-step="value"]')).toHaveText(/0\s*kg/);
+  await expect(item('Apple').getByRole('button', { name: 'Decrease' })).toBeDisabled();
+  const add = async (sku: string, times: number, expected: string) => {
     // Taps are debounced into one write. Wait for it to land: while it
     // is in flight the page's main button is disabled, and a tap that
     // arrives in that instant does nothing.
     const saved = page.waitForResponse((res) => res.url().includes('order.adjustItem'));
-    await item(sku)
-      .getByRole('button', { name: `Add ${sku}` })
-      .click();
-    for (let i = 1; i < taps; i++) {
+    for (let i = 0; i < times; i++) {
       await item(sku).getByRole('button', { name: 'Increase' }).click();
     }
     await saved;
@@ -149,10 +174,6 @@ test('place an order', async () => {
   await add('Apple', 4, /2\s*kg/ as unknown as string);
   await add('Beef', 2, /1\s*kg/ as unknown as string);
   await evidence('order-picking');
-  await evidenceIn(['zh', 'ru'], 'order-picking', async () => {
-    await page.getByTestId('today-new-order').click();
-    await expect(main().getByTestId('order-row').first()).toBeVisible();
-  });
 
   // The exact amount can be typed instead of tapped.
   const typed = page.waitForResponse((res) => res.url().includes('order.adjustItem'));
@@ -185,15 +206,10 @@ test('approve it', async () => {
   await expect(main().getByTestId('orders-batch')).toContainText('Submitted');
   await expect(main().getByTestId('orders-pending')).toContainText('2 items');
   await evidence('orders-with-work');
-  await evidenceIn(['zh', 'ru'], 'orders-with-work', async () => {
-    await tab('orders').click();
-    await expect(main().getByTestId('orders-batch')).toBeVisible();
-  });
   // And Today says it is waiting, with the button that deals with it.
   await tab('menu').click();
   await expect(page.getByTestId('quick-approve')).toHaveText(/Approve\s*1/);
   await evidence('today-with-work');
-  await evidenceIn(['zh', 'ru'], 'today-with-work');
   await page.getByTestId('do-approve').click();
   // The only order waiting opens by itself, and opening it is claiming it:
   // the quantities become changeable without a button for that.
@@ -201,10 +217,6 @@ test('approve it', async () => {
   await expect(item('Apple').locator('[data-step="value"]')).toHaveText(/2\s*kg/);
   await expect(mainButton()).toHaveText('Approve');
   await evidence('approval-order');
-  await evidenceIn(['zh', 'ru'], 'approval-order', async () => {
-    await page.getByTestId('do-approve').click();
-    await expect(main().locator('[data-step="value"]').first()).toBeVisible();
-  });
   await expect(item('Apple').locator('[data-step="value"]')).toHaveText(/2\s*kg/);
   await mainButton().click();
   await evidence('approval-empty');
@@ -354,7 +366,6 @@ test('receive the delivery at the store', async () => {
   await expect(page.getByTestId('today-spend')).not.toHaveText(/Spent today\s*0\s*UZS/);
   await expect(page.getByTestId('today-progress')).toContainText('Delivering');
   await evidence('today-delivering');
-  await evidenceIn(['zh', 'ru'], 'today-delivering');
   await page.getByTestId('do-receive').click();
   await expect(main().getByRole('heading', { level: 1 })).toHaveText('Receiving');
   const rows = main().getByTestId('receive-row');
@@ -414,10 +425,6 @@ test('finish the run and find it in history', async () => {
   );
   await expect(main().getByTestId('history-total')).toHaveText(/114,000\s*UZS/);
   await evidence('history');
-  await evidenceIn(['zh', 'ru'], 'history', async () => {
-    await tab('purchasing').click();
-    await expect(main().getByTestId('history-store')).toBeVisible();
-  });
   // It was paid both ways, so it is not among the cash-only ones; a second
   // tap takes the filter off. A search for something never bought empties
   // the list too.

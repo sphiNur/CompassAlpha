@@ -20,7 +20,7 @@ import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
 import { matchesNameLike, normalizeQuery } from '../lib/searchMatch';
-import { useI18n, useProductName, useUnitLabel } from '../hooks/useI18n';
+import { useDateFormat, useI18n, useProductName, useUnitLabel } from '../hooks/useI18n';
 
 // M3.34 (2026-05-19): canonical units for the extras editor's unit
 // dropdown — kept in sync with CanonicalUnitSchema in
@@ -41,11 +41,12 @@ const UNIT_STEP: Record<string, string> = {
 const UNIT_IS_INTEGER = new Set(['pcs', 'pack', 'pair', 'bunch', 'roll']);
 import { formatQty, formatMoney } from '../lib/format';
 import { useStoreContext } from '../components/StoreSwitcher';
-import { PlusIcon, SearchIcon } from '../destinations/icons';
+import { SearchIcon } from '../destinations/icons';
 
 export function OrderPage() {
   const i18n = useI18n();
   const productName = useProductName();
+  const dateFmt = useDateFormat();
   // 2026-07-30 (flow review): the Order surface was the ONE place still
   // rendering the raw canonical unit ("kg" / "pcs") while Approval, Run
   // and the extras editor all went through useUnitLabel. Staff saw
@@ -652,9 +653,13 @@ export function OrderPage() {
 
   if (!session) return null;
 
+  const dateLabel = dateFmt.weekdayLong(new Date());
   const heading = (title: string, chip?: React.ReactNode) => (
     <header className="flex items-start justify-between gap-lg">
-      <h1 className="min-w-0 text-h1 text-ink">{title}</h1>
+      <div className="min-w-0">
+        <h1 className="text-h1 text-ink">{title}</h1>
+        <p className="text-body text-secondary">{dateLabel}</p>
+      </div>
       {chip}
     </header>
   );
@@ -1017,10 +1022,10 @@ type SkuRowSku = {
 };
 
 /**
- * One product in the catalogue. A product nobody has asked for shows one
- * button, "Add"; only a product with a quantity grows the − n + control.
- * Most of a long catalogue is zeros, and a column of empty steppers is
- * the density this screen was reported for.
+ * One product in the catalogue, always with its − n + control: the owner
+ * chose that over a separate first button. Most of a long catalogue is
+ * zeros, so a row at zero has the control without colour, and the rows
+ * with a quantity are the ones that stand out.
  *
  * Memoised: a tap rewrites the cached order, which re-renders the page,
  * and without this every one of some two hundred rows would re-render
@@ -1068,27 +1073,18 @@ const SkuRow = memo(function SkuRow({
         {detail ? <span className="block text-small text-secondary">{detail}</span> : null}
       </span>
       <span className="shrink-0">
-        {myQty > 0 ? (
-          <Stepper
-            value={formatQty(String(myQty))}
-            unit={unit}
-            onDecrement={() => set(myQty - step)}
-            onIncrement={() => set(myQty + step)}
-            onValuePress={() => onTypeQty(sku.id, myQty)}
-          />
-        ) : (
-          // The same round plus the stepper ends in, at the same place:
-          // adding a product turns this button into that one.
-          <button
-            type="button"
-            data-testid="order-add"
-            aria-label={i18n.t('order.addAria', { name }) as string}
-            onClick={() => set(step)}
-            className="flex size-tap items-center justify-center rounded-pill bg-surface-sunken text-ink outline-none active:bg-line"
-          >
-            <PlusIcon />
-          </button>
-        )}
+        {/* Always the whole control, the owner's choice over a separate
+            button for the first tap. A product not in the order has it
+            without colour and cannot go below nothing. */}
+        <Stepper
+          value={formatQty(String(myQty))}
+          unit={unit}
+          quiet={myQty === 0}
+          canDecrement={myQty > 0}
+          onDecrement={() => set(myQty - step)}
+          onIncrement={() => set(myQty + step)}
+          onValuePress={() => onTypeQty(sku.id, myQty)}
+        />
       </span>
     </li>
   );

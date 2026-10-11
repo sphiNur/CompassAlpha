@@ -13,6 +13,12 @@ export interface StepperProps {
   onValuePress?: () => void;
   canDecrement?: boolean;
   canIncrement?: boolean;
+  /**
+   * Nothing here yet. The control is all there, but without the accent
+   * and with a faint figure: in a long list where most rows are zero,
+   * colour is left for the rows that have a quantity.
+   */
+  quiet?: boolean;
   disabled?: boolean;
   className?: string;
   'data-testid'?: string;
@@ -40,6 +46,7 @@ export function Stepper({
   onValuePress,
   canDecrement = true,
   canIncrement = true,
+  quiet = false,
   disabled = false,
   className,
   ...rest
@@ -47,7 +54,7 @@ export function Stepper({
   const labels = useUiLabels();
   const shown = (
     <>
-      <span className="text-money">{value}</span>
+      <span className={cn('text-money', quiet && 'text-secondary')}>{value}</span>
       {unit ? <span className="ms-xs text-caption text-secondary">{unit}</span> : null}
     </>
   );
@@ -91,7 +98,7 @@ export function Stepper({
         data-step="up"
         onClick={onIncrement}
         disabled={disabled || !canIncrement}
-        className={cn(CELL, MORE)}
+        className={cn(CELL, quiet ? LESS : MORE)}
       >
         <span aria-hidden>+</span>
       </button>
