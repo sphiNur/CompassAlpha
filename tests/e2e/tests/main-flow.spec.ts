@@ -407,10 +407,35 @@ test('finish the run and find it in history', async () => {
   await leave();
   await tab('purchasing').click();
   await expect(main().getByRole('heading', { level: 1 }).first()).toHaveText('Purchasing');
-  await expect(
-    main().getByRole('button', { name: /Central Kitchen 2 items 114,000/ }),
-  ).toBeVisible();
+  // A day, and under it a row per store: what it bought and how it was paid.
+  const bought = main().getByTestId('history-store');
+  await expect(bought).toHaveText(
+    /Central Kitchen\s*2 items · Cash 24,000 · Transfer 90,000\s*114,000/,
+  );
+  await expect(main().getByTestId('history-total')).toHaveText(/114,000\s*UZS/);
   await evidence('history');
+  await evidenceIn(['zh', 'ru'], 'history', async () => {
+    await tab('purchasing').click();
+    await expect(main().getByTestId('history-store')).toBeVisible();
+  });
+  // It was paid both ways, so it is not among the cash-only ones; a second
+  // tap takes the filter off. A search for something never bought empties
+  // the list too.
+  await main().getByTestId('history-payment').filter({ hasText: 'Cash' }).click();
+  await expect(main()).toContainText('No purchases match these filters.');
+  await main().getByTestId('history-payment').filter({ hasText: 'Mixed' }).click();
+  await expect(bought).toBeVisible();
+  await main().getByTestId('history-payment').filter({ hasText: 'Mixed' }).click();
+  await main().getByRole('searchbox').fill('zzzz');
+  await expect(main()).toContainText('No purchases match these filters.');
+  await main().getByRole('searchbox').fill('');
+  await expect(bought).toBeVisible();
+  // The row opens that store's purchase.
+  await bought.click();
+  await expect(sheet()).toContainText('Central Kitchen');
+  await evidence('history-detail');
+  await page.keyboard.press('Escape');
+  await expect(sheet()).toBeHidden();
 });
 
 test('close the day', async () => {

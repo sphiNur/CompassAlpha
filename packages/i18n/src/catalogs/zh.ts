@@ -86,6 +86,7 @@ export const zh = {
   'orders.none': '今天还没有订单',
   'purchasing.none': '没有待采购的订单',
   'purchasing.past': '以前的采购',
+  'purchasing.noPast': '还没有采购记录',
   'storeSwitcher.current': '当前',
   'menu.history': '采购记录',
   'menu.historyHint': '按天、按门店看买了什么',

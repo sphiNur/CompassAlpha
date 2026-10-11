@@ -93,6 +93,7 @@ export const uz = {
   'orders.none': "Bugun buyurtma yo'q",
   'purchasing.none': "Xarid qilinadigan tasdiqlangan buyurtma yo'q",
   'purchasing.past': 'Oldingi xaridlar',
+  'purchasing.noPast': 'Hali xaridlar yoʻq',
   'storeSwitcher.current': 'Joriy',
   'menu.history': 'Xaridlar tarixi',
   'menu.historyHint': "Nima sotib olingan, kun va do'kon bo'yicha",

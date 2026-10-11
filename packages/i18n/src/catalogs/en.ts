@@ -113,6 +113,7 @@ export const en = {
   'orders.none': 'No orders today',
   'purchasing.none': 'No approved orders to buy',
   'purchasing.past': 'Past purchases',
+  'purchasing.noPast': 'No purchases yet',
   'storeSwitcher.current': 'Current',
   'menu.history': 'Purchase history',
   'menu.historyHint': 'What was bought, by day and store',

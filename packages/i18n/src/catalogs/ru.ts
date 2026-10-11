@@ -86,6 +86,7 @@ export const ru = {
   'orders.none': 'Сегодня заявок нет',
   'purchasing.none': 'Нет одобренных заявок к закупке',
   'purchasing.past': 'Прошлые закупки',
+  'purchasing.noPast': 'Закупок пока нет',
   'storeSwitcher.current': 'Текущий',
   'menu.history': 'История закупок',
   'menu.historyHint': 'Что куплено, по дням и магазинам',
