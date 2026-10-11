@@ -600,8 +600,24 @@ test('stores and the people in them', async () => {
   await expect(sheet()).toBeHidden();
   await page.getByTestId('manage-back').click();
 
+  // A store's own settings: Save lights up only when something differs.
+  await main().getByTestId('store-row').filter({ hasText: 'Night Market' }).click();
+  await page.getByTestId('store-tab-settings').click();
+  await expect(main().getByTestId('store-settings-save')).toBeDisabled();
+  await main().getByRole('textbox', { name: 'Address' }).fill('Chorsu, row 4');
+  await main().getByTestId('store-default-role').filter({ hasText: 'Store Staff' }).click();
+  await evidence('store-settings');
+  await main().getByTestId('store-settings-save').click();
+  await expect(main().getByTestId('store-settings-save')).toBeDisabled();
+  // Archiving asks first, and leaves for the list, where the store is gone.
+  page.once('dialog', (dialog) => void dialog.accept());
+  await main().getByTestId('store-archive').click();
+  await expect(main().getByRole('heading', { level: 1 })).toHaveText('Stores');
+  await expect(main().getByTestId('store-row').filter({ hasText: 'Night Market' })).toHaveCount(0);
+
   // Someone new at a store: by their Telegram number, with a role there.
   await main().getByTestId('store-row').filter({ hasText: 'Central Kitchen' }).click();
+  await page.getByTestId('store-tab-team').click();
   await page.getByTestId('member-invite').click();
   await evidence('invite-ways');
   await sheet().getByTestId('invite-manual').click();

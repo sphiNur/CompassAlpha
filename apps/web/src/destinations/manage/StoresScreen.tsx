@@ -37,6 +37,11 @@ export function StoresScreen({ onPick }: { onPick: (focus: NonNullable<StoreFocu
     onSuccess: () => {
       void utils.admin.storeList.invalidate();
       void utils.catalog.stores.invalidate();
+      // The session lists the stores this person administers. Without
+      // asking for it again, the store just made is read-only to the
+      // person who made it, and cannot be invited into, until they sign
+      // in again.
+      void utils.auth.me.invalidate();
       toast.success(i18n.t('admin.toast.storeCreated'));
       setDraft(null);
     },
