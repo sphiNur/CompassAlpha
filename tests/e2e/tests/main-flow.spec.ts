@@ -661,6 +661,48 @@ test('stores and the people in them', async () => {
   await expect(main().getByRole('heading', { level: 1 })).toHaveText('Manage');
 });
 
+test('a role says what it allows, in words', async () => {
+  await page.getByTestId('manage-permissions').click();
+  // The highest roles first; the one this person holds is not theirs to give.
+  await expect(main().getByTestId('role-row').first()).toHaveText(
+    /Super Admin[\s\S]*not yours to give/,
+  );
+  await evidence('roles');
+  await main().getByTestId('role-row').filter({ hasText: 'Store Manager' }).click();
+  // Sentences, under the part of the work they belong to; no codes.
+  await expect(sheet()).toContainText('Approve or reject orders');
+  await expect(sheet()).not.toContainText('order.approve');
+  await evidence('role');
+  await page.keyboard.press('Escape');
+  await expect(sheet()).toBeHidden();
+
+  // A role of one's own: a name, where it stands, and what it may do.
+  await page.getByTestId('role-new').click();
+  await expect(sheet().getByTestId('role-save')).toBeDisabled();
+  await sheet().getByRole('textbox', { name: 'Name' }).fill('Shift lead');
+  await expect(
+    sheet().getByTestId('role-below').filter({ hasText: 'Store Manager' }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await sheet().getByTestId('role-toggle').filter({ hasText: 'Approve or reject orders' }).click();
+  await sheet().getByTestId('role-toggle').filter({ hasText: 'Check a delivery in' }).click();
+  await evidence('role-new');
+  const made = page.waitForResponse((res) => res.url().includes('admin.roleCreate'));
+  await sheet().getByTestId('role-save').click();
+  expect((await made).ok()).toBe(true);
+  await expect(sheet()).toBeHidden();
+  // It sits just under the role it was placed below, and can be removed.
+  const lead = main().getByTestId('role-row').filter({ hasText: 'Shift lead' });
+  await lead.click();
+  await expect(sheet().getByTestId('role-permission')).toHaveCount(2);
+  page.once('dialog', (dialog) => void dialog.accept());
+  await sheet().getByTestId('role-delete').click();
+  await expect(sheet()).toBeHidden();
+  await expect(lead).toHaveCount(0);
+
+  await page.getByTestId('manage-back').click();
+  await expect(main().getByRole('heading', { level: 1 })).toHaveText('Manage');
+});
+
 test('what was spent this month, and how it was paid', async () => {
   await page.getByTestId('manage-finance').click();
   // One total for the period, split the way it is checked against the

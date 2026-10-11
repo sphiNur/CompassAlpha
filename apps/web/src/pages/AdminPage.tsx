@@ -77,9 +77,9 @@ import {
 import { StoreDetailScreen } from './admin/stores/StoresSections';
 import { StoresScreen } from '../destinations/manage/StoresScreen';
 // People + permissions — extracted to admin/people (Phase 5 step 4).
-import { PermissionsSection } from './admin/people/PeopleSections';
 import { ProductsScreen } from '../destinations/manage/ProductsScreen';
 import { FinanceScreen } from '../destinations/manage/FinanceScreen';
+import { RolesScreen } from '../destinations/manage/RolesScreen';
 import { CategoriesScreen, SuppliersScreen } from '../destinations/manage/CatalogueLists';
 
 /**
@@ -206,7 +206,7 @@ export function AdminPage() {
           />
         ) : null}
         {section === 'permissions' ? (
-          <PermissionsSection isSuperAdmin={isSuperAdmin} />
+          <RolesScreen isSuperAdmin={isSuperAdmin} />
         ) : null}
         {section === 'catalog' && !catalogSub ? (
           <CatalogHome onPick={(s) => setCatalogSub(s)} />

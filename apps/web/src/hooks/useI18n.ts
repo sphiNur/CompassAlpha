@@ -334,3 +334,28 @@ export function useRoleLabel() {
     };
   }, [i18n]);
 }
+
+/**
+ * What a permission allows, said to an owner. Permissions are stored as
+ * codes (`order.approve`) with an English note; both are for the people
+ * who build the product. One the app has no sentence for falls back to
+ * that note, then to the code.
+ */
+export function usePermissionLabel() {
+  const i18n = useI18n();
+  return useMemo(() => {
+    const t = (key: string): string | null => {
+      const said = i18n.t(key as Parameters<typeof i18n.t>[0]) as string;
+      return said === key ? null : said;
+    };
+    return {
+      permission: (key: string, note?: string | null): string =>
+        t(`perm.${key}`) ?? note ?? key,
+      group: (key: string): string => {
+        const ns = key.split('.')[0] ?? '';
+        return t(`permgroup.${ns}`) ?? ns;
+      },
+    };
+  }, [i18n]);
+}
+
