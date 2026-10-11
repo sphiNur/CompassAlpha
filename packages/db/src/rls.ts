@@ -7,6 +7,7 @@
  */
 import { sql } from 'drizzle-orm';
 import type { PgTransactionConfig } from 'drizzle-orm/pg-core';
+import { unprobed } from './client';
 import type { DB } from './client';
 
 export type OrgTransactionOptions = PgTransactionConfig;
@@ -31,7 +32,7 @@ export async function withOrgContext<T>(
   fn: (tx: DB) => Promise<T>,
   options?: OrgTransactionOptions,
 ): Promise<T> {
-  return db.transaction(async (tx) => {
+  return unprobed(db).transaction(async (tx) => {
     if (orgId) {
       await tx.execute(sql`SELECT set_config('app.current_org_id', ${orgId}::text, true)`);
     }
@@ -40,4 +41,52 @@ export async function withOrgContext<T>(
     // cast through unknown so the inner code path can use the same shape.
     return fn(tx as unknown as DB);
   }, options);
+}
+
+/** Why a piece of code is allowed to read or write across tenants. */
+export type SystemReason =
+  /** Finding who is signing in, before it is known which tenant they belong to. */
+  | 'auth'
+  /** Background work that walks every tenant: the outbox, cleanup, metrics. */
+  | 'worker'
+  /** Liveness and readiness checks, which touch no tenant's rows. */
+  | 'health'
+  /** Schema migrations, seeds and operator scripts. */
+  | 'maintenance'
+  /** Client logs and metrics, which can arrive before anyone has signed in. */
+  | 'telemetry';
+
+/**
+ * Run `fn` in a transaction that is deliberately not tied to one tenant.
+ *
+ * This is the only sanctioned way to query across organisations. It sets
+ * `app.system_context`, which the row-level policies will accept in place
+ * of an organisation once they stop accepting "nothing set". Every use is
+ * a place where tenant isolation rests on the code being right, so keep
+ * them few and say why.
+ */
+export async function withSystemContext<T>(
+  db: DB,
+  reason: SystemReason,
+  fn: (tx: DB) => Promise<T>,
+  options?: OrgTransactionOptions,
+): Promise<T> {
+  return unprobed(db).transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('app.system_context', ${reason}, true)`);
+    return fn(tx as unknown as DB);
+  }, options);
+}
+
+/**
+ * One statement, deliberately not tied to a tenant. For code whose
+ * statements must each commit by themselves (rotating a refresh token
+ * revokes a family and THEN fails the request; in one transaction the
+ * failure would undo the revocation).
+ */
+export function inSystem<T>(
+  db: DB,
+  reason: SystemReason,
+  statement: (tx: DB) => PromiseLike<T>,
+): Promise<T> {
+  return withSystemContext(db, reason, async (tx) => await statement(tx));
 }

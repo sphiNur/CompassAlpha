@@ -2,7 +2,7 @@ import { initTRPC, TRPCError } from '@trpc/server';
 import { ZodError } from 'zod';
 import { and, eq, gt } from 'drizzle-orm';
 import { DomainError } from '@compass/domain';
-import { schema as s } from '@compass/db';
+import { schema as s, withOrgContext } from '@compass/db';
 import type { RequestContext } from './context';
 import { logger } from '../infra/log';
 import { checkRate } from '../services/rateLimit';
@@ -57,10 +57,7 @@ const errorLogMiddleware = t.middleware(async (opts) => {
     const tErr = err instanceof TRPCError ? err : null;
     const code = tErr?.code ?? 'UNKNOWN';
     const message = tErr?.message ?? (err instanceof Error ? err.message : String(err));
-    const isServerFault =
-      !tErr ||
-      code === 'INTERNAL_SERVER_ERROR' ||
-      code === 'TIMEOUT';
+    const isServerFault = !tErr || code === 'INTERNAL_SERVER_ERROR' || code === 'TIMEOUT';
     const log = isServerFault ? logger.error.bind(logger) : logger.warn.bind(logger);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ctx = opts.ctx as any;
@@ -189,8 +186,9 @@ const idempotencyMiddleware = t.middleware(async (opts) => {
   const ctx = opts.ctx as any;
   const key: string | null = ctx?.idempotencyKey ?? null;
   const userId: string | null = ctx?.session?.userId ?? null;
+  const orgId: string | null = ctx?.session?.orgId ?? null;
   // No key = no dedupe. Mutation runs normally.
-  if (!key || !userId || opts.type !== 'mutation') {
+  if (!key || !userId || !orgId || opts.type !== 'mutation') {
     return opts.next();
   }
   const db = ctx.db as RequestContext['db'];
@@ -199,10 +197,17 @@ const idempotencyMiddleware = t.middleware(async (opts) => {
   // Look for an existing entry. Match on (key, route, user) so a
   // ULID collision across users / routes can't surface another
   // user's result.
-  const existing = await db.query.idempotencyKeys.findFirst({
-    where: (k, { eq: eq2, and: and2, gt: gt2 }) =>
-      and2(eq2(k.key, key), eq2(k.route, opts.path), eq2(k.userId, userId), gt2(k.expiresAt, now)),
-  });
+  const existing = await withOrgContext(db, orgId, (tx) =>
+    tx.query.idempotencyKeys.findFirst({
+      where: (k, { eq: eq2, and: and2, gt: gt2 }) =>
+        and2(
+          eq2(k.key, key),
+          eq2(k.route, opts.path),
+          eq2(k.userId, userId),
+          gt2(k.expiresAt, now),
+        ),
+    }),
+  );
   if (existing && existing.response !== null && existing.response !== undefined) {
     // M3.9: demoted from info → debug. Cache hits are the GOOD path
     // — they mean idempotency is working. Logging every hit at info
@@ -237,16 +242,18 @@ const idempotencyMiddleware = t.middleware(async (opts) => {
   }
   if (r?.ok === true) {
     try {
-      await db
-        .insert(s.idempotencyKeys)
-        .values({
-          key,
-          route: opts.path,
-          userId,
-          response: (r.data ?? null) as unknown as Record<string, unknown>,
-          expiresAt: new Date(now.getTime() + IDEMPOTENCY_TTL_MS),
-        })
-        .onConflictDoNothing();
+      await withOrgContext(db, orgId, (tx) =>
+        tx
+          .insert(s.idempotencyKeys)
+          .values({
+            key,
+            route: opts.path,
+            userId,
+            response: (r.data ?? null) as unknown as Record<string, unknown>,
+            expiresAt: new Date(now.getTime() + IDEMPOTENCY_TTL_MS),
+          })
+          .onConflictDoNothing(),
+      );
     } catch (cacheErr) {
       // Best-effort cache; failure to cache MUST NOT fail the
       // request. The original mutation succeeded — the worst case

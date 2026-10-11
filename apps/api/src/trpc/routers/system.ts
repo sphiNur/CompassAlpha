@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { schema as s } from '@compass/db';
+import { inSystem, schema as s } from '@compass/db';
 import { RecentLogsInputSchema } from '@compass/contracts';
 import { permissionProcedure, publicProcedure, router } from '../trpc';
 import { logger } from '../../infra/log';
@@ -164,7 +164,9 @@ export const systemRouter = router({
     }
 
     if (rows.length > 0) {
-      await ctx.db.insert(s.clientLogs).values(rows);
+      // A log line can arrive before anyone has signed in, so it is not
+      // written inside a tenant.
+      await inSystem(ctx.db, 'telemetry', (tx) => tx.insert(s.clientLogs).values(rows));
     }
 
     // Mirror to pino so they show in `journalctl -u compass-api`.

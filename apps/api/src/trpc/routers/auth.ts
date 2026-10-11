@@ -2,7 +2,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
-import { schema as s, type DB } from '@compass/db';
+import { inSystem, schema as s, withOrgContext, type DB } from '@compass/db';
 import {
   NonTelegramLoginInputSchema,
   TelegramLoginInputSchema,
@@ -99,7 +99,9 @@ function resultRows<T>(rows: T[] | { rows?: T[] }): T[] {
 }
 
 function releaseChannel(): 'development' | 'staging' | 'production' {
-  return env.COMPASS_RELEASE_CHANNEL ?? (env.NODE_ENV === 'production' ? 'production' : 'development');
+  return (
+    env.COMPASS_RELEASE_CHANNEL ?? (env.NODE_ENV === 'production' ? 'production' : 'development')
+  );
 }
 
 function parseNonTelegramUsers(): Map<string, string> {
@@ -255,11 +257,12 @@ function rethrowDevLoginDatabaseError(err: unknown): never {
 }
 
 async function findDevBypassIdentity(db: DB): Promise<LoginIdentity> {
-  const rows = await db.execute<{
-    user_id: string;
-    member_id: string;
-    org_id: string;
-  }>(sql`
+  const rows = await inSystem(db, 'auth', (tx) =>
+    tx.execute<{
+      user_id: string;
+      member_id: string;
+      org_id: string;
+    }>(sql`
     SELECT
       m.user_id::text AS user_id,
       m.id::text AS member_id,
@@ -281,10 +284,9 @@ async function findDevBypassIdentity(db: DB): Promise<LoginIdentity> {
       u.display_name_locked DESC,
       m.joined_at ASC
     LIMIT 1
-  `);
-  const list = Array.isArray(rows)
-    ? rows
-    : ((rows as { rows?: typeof rows }).rows ?? []);
+  `),
+  );
+  const list = Array.isArray(rows) ? rows : ((rows as { rows?: typeof rows }).rows ?? []);
   const picked = list[0];
   if (!picked) {
     throw new TRPCError({
@@ -300,7 +302,8 @@ async function findDevBypassIdentity(db: DB): Promise<LoginIdentity> {
 }
 
 async function findDevPersonaIdentity(db: DB, memberId: string): Promise<LoginIdentity> {
-  const rows = await db.execute<DevPersonaIdentityRow>(sql`
+  const rows = await inSystem(db, 'auth', (tx) =>
+    tx.execute<DevPersonaIdentityRow>(sql`
     SELECT
       m.user_id::text AS user_id,
       m.id::text AS member_id,
@@ -313,7 +316,8 @@ async function findDevPersonaIdentity(db: DB, memberId: string): Promise<LoginId
       AND u.deleted_at IS NULL
       AND o.deleted_at IS NULL
     LIMIT 1
-  `);
+  `),
+  );
   const picked = resultRows(rows)[0];
   if (!picked) {
     throw new TRPCError({
@@ -328,10 +332,13 @@ async function findDevPersonaIdentity(db: DB, memberId: string): Promise<LoginId
   };
 }
 
-async function ensureDevMockAdminAccess(db: DB, memberId: string, orgId: string): Promise<void> {
+function ensureDevMockAdminAccess(db: DB, memberId: string, orgId: string): Promise<void> {
+  return withOrgContext(db, orgId, (tx) => grantDevMockAdmin(tx, memberId, orgId));
+}
+
+async function grantDevMockAdmin(db: DB, memberId: string, orgId: string): Promise<void> {
   const role = await db.query.roles.findFirst({
-    where: (r, { and: and2, eq: eq2 }) =>
-      and2(eq2(r.orgId, orgId), eq2(r.slug, 'super_admin')),
+    where: (r, { and: and2, eq: eq2 }) => and2(eq2(r.orgId, orgId), eq2(r.slug, 'super_admin')),
   });
   if (!role) {
     throw new TRPCError({
@@ -399,12 +406,7 @@ async function issueLoginResult(
   };
 }
 
-async function issueDevBypassLoginResult(
-  db: DB,
-  userId: string,
-  memberId: string,
-  orgId: string,
-) {
+async function issueDevBypassLoginResult(db: DB, userId: string, memberId: string, orgId: string) {
   const session = await buildSessionPayload(db, userId, memberId, orgId);
   const accessToken = await signAccess({ sub: userId, org: session.member.orgId, mid: memberId });
   const accessExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
@@ -477,7 +479,8 @@ export const authRouter = router({
     assertDevLoginAvailable(ctx);
     let rows: DevPersonaRow[] | { rows?: DevPersonaRow[] };
     try {
-      rows = await ctx.db.execute<DevPersonaRow>(sql`
+      rows = await inSystem(ctx.db, 'auth', (tx) =>
+        tx.execute<DevPersonaRow>(sql`
         SELECT
           u.id::text AS user_id,
           m.id::text AS member_id,
@@ -507,7 +510,8 @@ export const authRouter = router({
           COALESCE(MAX(r.rank), 0) DESC,
           LOWER(u.display_name) ASC
         LIMIT 50
-      `);
+      `),
+      );
     } catch (err) {
       rethrowDevLoginDatabaseError(err);
     }
@@ -545,12 +549,7 @@ export const authRouter = router({
       if (err instanceof TRPCError) throw err;
       rethrowDevLoginDatabaseError(err);
     }
-    return issueDevBypassLoginResult(
-      ctx.db,
-      identity.userId,
-      identity.memberId,
-      identity.orgId,
-    );
+    return issueDevBypassLoginResult(ctx.db, identity.userId, identity.memberId, identity.orgId);
   }),
 
   devPersonaLogin: publicProcedure
@@ -565,12 +564,7 @@ export const authRouter = router({
         if (err instanceof TRPCError) throw err;
         rethrowDevLoginDatabaseError(err);
       }
-      return issueDevBypassLoginResult(
-        ctx.db,
-        identity.userId,
-        identity.memberId,
-        identity.orgId,
-      );
+      return issueDevBypassLoginResult(ctx.db, identity.userId, identity.memberId, identity.orgId);
     }),
 
   /**
@@ -591,19 +585,18 @@ export const authRouter = router({
         });
       }
       if (!isAllowedNonTelegramUser(input.tgUserId, input.accessCode)) {
-        logger.warn(
-          { tgUserId: input.tgUserId, ip: ctx.ip },
-          'auth.nonTelegramLogin rejected',
-        );
+        logger.warn({ tgUserId: input.tgUserId, ip: ctx.ip }, 'auth.nonTelegramLogin rejected');
         throw new TRPCError({
           code: 'UNAUTHORIZED',
           message: 'auth.errors.invalidNonTelegramLogin',
         });
       }
 
-      const user = await ctx.db.query.users.findFirst({
-        where: (u, { eq: eq2 }) => eq2(u.tgUserId, BigInt(input.tgUserId)),
-      });
+      const user = await inSystem(ctx.db, 'auth', (tx) =>
+        tx.query.users.findFirst({
+          where: (u, { eq: eq2 }) => eq2(u.tgUserId, BigInt(input.tgUserId)),
+        }),
+      );
       if (!user) {
         throw new TRPCError({
           code: 'UNAUTHORIZED',
@@ -611,21 +604,25 @@ export const authRouter = router({
         });
       }
 
-      const member = await ctx.db.query.members.findFirst({
-        where: (m, { eq: eq2, and: and2 }) =>
-          and2(eq2(m.userId, user.id), eq2(m.status, 'active')),
-      });
+      const member = await inSystem(ctx.db, 'auth', (tx) =>
+        tx.query.members.findFirst({
+          where: (m, { eq: eq2, and: and2 }) =>
+            and2(eq2(m.userId, user.id), eq2(m.status, 'active')),
+        }),
+      );
       if (!member) {
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'auth.errors.noMembership' });
       }
 
-      await ctx.db
-        .update(s.users)
-        .set({
-          locale: input.locale ?? user.locale ?? 'en',
-          lastSeenAt: new Date(),
-        })
-        .where(eq(s.users.id, user.id));
+      await inSystem(ctx.db, 'auth', (tx) =>
+        tx
+          .update(s.users)
+          .set({
+            locale: input.locale ?? user.locale ?? 'en',
+            lastSeenAt: new Date(),
+          })
+          .where(eq(s.users.id, user.id)),
+      );
 
       return issueLoginResult(ctx.db, user.id, member.id, member.orgId, ctx.ip, ctx.userAgent);
     }),
@@ -641,7 +638,10 @@ export const authRouter = router({
         tg = DEV_MOCK_TG_USER;
       } else {
         if (!env.TELEGRAM_BOT_TOKEN) {
-          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'auth.errors.botTokenMissing' });
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'auth.errors.botTokenMissing',
+          });
         }
         const result = verifyInitData(input.initData, env.TELEGRAM_BOT_TOKEN);
         if (!result.ok || !result.user) {
@@ -651,9 +651,11 @@ export const authRouter = router({
       }
 
       // Upsert user.
-      let user = await ctx.db.query.users.findFirst({
-        where: (u, { eq: eq2 }) => eq2(u.tgUserId, BigInt(tg.id)),
-      });
+      let user = await inSystem(ctx.db, 'auth', (tx) =>
+        tx.query.users.findFirst({
+          where: (u, { eq: eq2 }) => eq2(u.tgUserId, BigInt(tg.id)),
+        }),
+      );
       // A valid Telegram signature only proves who is asking, not that
       // they belong here. Membership comes from an invite
       // (admin.memberInviteByTgId) or `compass user grant`, both of which
@@ -663,39 +665,51 @@ export const authRouter = router({
         throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.noMembership' });
       }
       if (!user) {
-        const [created] = await ctx.db
-          .insert(s.users)
-          .values({
-            tgUserId: BigInt(tg.id),
-            tgUsername: tg.username ?? null,
-            displayName: [tg.first_name, tg.last_name].filter(Boolean).join(' ') || tg.username || `user-${tg.id}`,
-            avatarUrl: tg.photo_url ?? null,
-            locale: input.locale ?? tg.language_code ?? 'en',
-            // A local mock is not a person who needs onboarding. Marking it
-            // locked avoids creating an otherwise invisible first-run form
-            // in browser automation.
-            displayNameLocked: isDevMock,
-          })
-          .returning();
+        const [created] = await inSystem(ctx.db, 'auth', (tx) =>
+          tx
+            .insert(s.users)
+            .values({
+              tgUserId: BigInt(tg.id),
+              tgUsername: tg.username ?? null,
+              displayName:
+                [tg.first_name, tg.last_name].filter(Boolean).join(' ') ||
+                tg.username ||
+                `user-${tg.id}`,
+              avatarUrl: tg.photo_url ?? null,
+              locale: input.locale ?? tg.language_code ?? 'en',
+              // A local mock is not a person who needs onboarding. Marking it
+              // locked avoids creating an otherwise invisible first-run form
+              // in browser automation.
+              displayNameLocked: isDevMock,
+            })
+            .returning(),
+        );
         user = created;
       } else {
-        await ctx.db
-          .update(s.users)
-          .set({
-            tgUsername: tg.username ?? user.tgUsername,
-            avatarUrl: tg.photo_url ?? user.avatarUrl,
-            locale: input.locale ?? user.locale ?? tg.language_code ?? 'en',
-            lastSeenAt: new Date(),
-          })
-          .where(eq(s.users.id, user.id));
+        // Read through a constant: `user` is reassigned above, so inside the
+        // callback the compiler no longer knows it is set.
+        const known = user;
+        await inSystem(ctx.db, 'auth', (tx) =>
+          tx
+            .update(s.users)
+            .set({
+              tgUsername: tg.username ?? known.tgUsername,
+              avatarUrl: tg.photo_url ?? known.avatarUrl,
+              locale: input.locale ?? known.locale ?? tg.language_code ?? 'en',
+              lastSeenAt: new Date(),
+            })
+            .where(eq(s.users.id, known.id)),
+        );
       }
       if (!user) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
 
       const findActiveMember = () =>
-        ctx.db.query.members.findFirst({
-          where: (m, { eq: eq2, and: and2 }) =>
-            and2(eq2(m.userId, user!.id), eq2(m.status, 'active')),
-        });
+        inSystem(ctx.db, 'auth', (tx) =>
+          tx.query.members.findFirst({
+            where: (m, { eq: eq2, and: and2 }) =>
+              and2(eq2(m.userId, user!.id), eq2(m.status, 'active')),
+          }),
+        );
       let ensuredMember = await findActiveMember();
       if (!ensuredMember) {
         // Only the local dev mock self-enrols. This used to run for every
@@ -704,16 +718,17 @@ export const authRouter = router({
         if (!isDevMock) {
           throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.noMembership' });
         }
-        const defaultOrg = await ctx.db.query.organizations.findFirst({
-          where: (o, { eq: eq2 }) => eq2(o.slug, 'default'),
-        });
+        const defaultOrg = await inSystem(ctx.db, 'auth', (tx) =>
+          tx.query.organizations.findFirst({
+            where: (o, { eq: eq2 }) => eq2(o.slug, 'default'),
+          }),
+        );
         if (!defaultOrg) {
           throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.noOrg' });
         }
-        [ensuredMember] = await ctx.db
-          .insert(s.members)
-          .values({ orgId: defaultOrg.id, userId: user.id })
-          .returning();
+        [ensuredMember] = await inSystem(ctx.db, 'auth', (tx) =>
+          tx.insert(s.members).values({ orgId: defaultOrg.id, userId: user.id }).returning(),
+        );
         if (!ensuredMember) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
       }
       if (isDevMock) {
@@ -751,9 +766,11 @@ export const authRouter = router({
   completeOnboarding: authedProcedure
     .input(CompleteOnboardingInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const user = await ctx.db.query.users.findFirst({
-        where: (u, { eq: eq2 }) => eq2(u.id, ctx.session.userId),
-      });
+      const user = await inSystem(ctx.db, 'auth', (tx) =>
+        tx.query.users.findFirst({
+          where: (u, { eq: eq2 }) => eq2(u.id, ctx.session.userId),
+        }),
+      );
       if (!user) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'auth.errors.userMissing' });
       }
@@ -774,14 +791,16 @@ export const authRouter = router({
           message: 'auth.errors.nameLocked',
         });
       }
-      await ctx.db
-        .update(s.users)
-        .set({
-          displayName: input.displayName,
-          displayNameLocked: true,
-          updatedAt: new Date(),
-        })
-        .where(eq(s.users.id, ctx.session.userId));
+      await inSystem(ctx.db, 'auth', (tx) =>
+        tx
+          .update(s.users)
+          .set({
+            displayName: input.displayName,
+            displayNameLocked: true,
+            updatedAt: new Date(),
+          })
+          .where(eq(s.users.id, ctx.session.userId)),
+      );
       return buildSessionPayload(
         ctx.db,
         ctx.session.userId,
@@ -807,10 +826,12 @@ export const authRouter = router({
   setLocale: authedProcedure
     .input(z.object({ locale: z.enum(['en', 'zh', 'ru', 'uz']) }))
     .mutation(async ({ ctx, input }) => {
-      await ctx.db
-        .update(s.users)
-        .set({ locale: input.locale, updatedAt: new Date() })
-        .where(eq(s.users.id, ctx.session.userId));
+      await inSystem(ctx.db, 'auth', (tx) =>
+        tx
+          .update(s.users)
+          .set({ locale: input.locale, updatedAt: new Date() })
+          .where(eq(s.users.id, ctx.session.userId)),
+      );
       return buildSessionPayload(
         ctx.db,
         ctx.session.userId,
@@ -837,10 +858,12 @@ export const authRouter = router({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      await ctx.db
-        .update(s.users)
-        .set({ secondaryLocale: input.secondaryLocale, updatedAt: new Date() })
-        .where(eq(s.users.id, ctx.session.userId));
+      await inSystem(ctx.db, 'auth', (tx) =>
+        tx
+          .update(s.users)
+          .set({ secondaryLocale: input.secondaryLocale, updatedAt: new Date() })
+          .where(eq(s.users.id, ctx.session.userId)),
+      );
       return buildSessionPayload(
         ctx.db,
         ctx.session.userId,
@@ -946,16 +969,19 @@ export const authRouter = router({
       );
     }
 
-    const user = await ctx.db.query.users.findFirst({
-      where: (u, { eq: eq2 }) => eq2(u.id, claims.sub),
-    });
+    const user = await inSystem(ctx.db, 'auth', (tx) =>
+      tx.query.users.findFirst({
+        where: (u, { eq: eq2 }) => eq2(u.id, claims.sub),
+      }),
+    );
     if (!user) {
       throw new TRPCError({ code: 'UNAUTHORIZED', message: 'auth.errors.userMissing' });
     }
-    const member = await ctx.db.query.members.findFirst({
-      where: (m, { eq: eq2, and: and2 }) =>
-        and2(eq2(m.userId, user.id), eq2(m.status, 'active')),
-    });
+    const member = await inSystem(ctx.db, 'auth', (tx) =>
+      tx.query.members.findFirst({
+        where: (m, { eq: eq2, and: and2 }) => and2(eq2(m.userId, user.id), eq2(m.status, 'active')),
+      }),
+    );
     if (!member) {
       throw new TRPCError({ code: 'UNAUTHORIZED', message: 'auth.errors.noMembership' });
     }
@@ -989,15 +1015,33 @@ export const authRouter = router({
   }),
 });
 
-async function buildSessionPayload(
+/**
+ * Everything the client needs to know about who is signed in. Read inside
+ * the member's own organisation: by this point the tenant is known, so
+ * nothing here has a reason to see another one.
+ */
+function buildSessionPayload(
+  db: DB,
+  userId: string,
+  memberId: string,
+  orgId: string,
+): Promise<Session> {
+  return withOrgContext(db, orgId, (tx) => readSessionPayload(tx, userId, memberId, orgId));
+}
+
+async function readSessionPayload(
   db: DB,
   userId: string,
   memberId: string,
   orgId: string,
 ): Promise<Session> {
   const user = await db.query.users.findFirst({ where: (u, { eq: eq2 }) => eq2(u.id, userId) });
-  const org = await db.query.organizations.findFirst({ where: (o, { eq: eq2 }) => eq2(o.id, orgId) });
-  const member = await db.query.members.findFirst({ where: (m, { eq: eq2 }) => eq2(m.id, memberId) });
+  const org = await db.query.organizations.findFirst({
+    where: (o, { eq: eq2 }) => eq2(o.id, orgId),
+  });
+  const member = await db.query.members.findFirst({
+    where: (m, { eq: eq2 }) => eq2(m.id, memberId),
+  });
   if (!user || !org || !member) {
     throw new TRPCError({ code: 'NOT_FOUND', message: 'auth.errors.sessionStale' });
   }
@@ -1016,10 +1060,7 @@ async function buildSessionPayload(
     .where(
       and(
         eq(s.memberRoleBindings.memberId, memberId),
-        or(
-          isNull(s.memberRoleBindings.expiresAt),
-          gt(s.memberRoleBindings.expiresAt, new Date()),
-        ),
+        or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, new Date())),
       ),
     );
   // `super_admin` is used by a handful of destructive maintenance gates;
@@ -1061,9 +1102,7 @@ async function buildSessionPayload(
   // so it can only originate from a global role binding.
   const permKeys = new Set(
     perms
-      .filter(
-        (p) => p.permissionKey !== 'org.admin' || globalRoleIds.has(p.roleId),
-      )
+      .filter((p) => p.permissionKey !== 'org.admin' || globalRoleIds.has(p.roleId))
       .map((p) => p.permissionKey),
   );
 
@@ -1133,7 +1172,13 @@ async function buildSessionPayload(
   // staff see ONLY stores they're explicitly assigned to. This is the
   // multi-store isolation guarantee — prevents store A's staff from
   // seeing store B's data in their session.stores list.
-  let storeRows: Array<{ id: string; name: string; code: string | null; isActive: boolean; sortIndex: number }>;
+  let storeRows: Array<{
+    id: string;
+    name: string;
+    code: string | null;
+    isActive: boolean;
+    sortIndex: number;
+  }>;
   if (isOrgAdmin) {
     storeRows = await db
       .select({
@@ -1164,10 +1209,7 @@ async function buildSessionPayload(
           sortIndex: s.stores.sortIndex,
         })
         .from(s.stores)
-        .innerJoin(
-          s.memberStoreAssignments,
-          eq(s.memberStoreAssignments.storeId, s.stores.id),
-        )
+        .innerJoin(s.memberStoreAssignments, eq(s.memberStoreAssignments.storeId, s.stores.id))
         .where(
           and(
             eq(s.stores.orgId, orgId),
@@ -1184,10 +1226,7 @@ async function buildSessionPayload(
           sortIndex: s.stores.sortIndex,
         })
         .from(s.stores)
-        .innerJoin(
-          s.memberRoleBindings,
-          eq(s.memberRoleBindings.scopeId, s.stores.id),
-        )
+        .innerJoin(s.memberRoleBindings, eq(s.memberRoleBindings.scopeId, s.stores.id))
         .where(
           and(
             eq(s.stores.orgId, orgId),
@@ -1223,11 +1262,7 @@ async function buildSessionPayload(
   // grant of any of those perms means "admin everywhere" — we resolve
   // that to the full active-store list for the org so the FE can use
   // a uniform `Set<storeId>` lookup without special-casing.
-  const ADMIN_PERM_KEYS = new Set([
-    'users.manage',
-    'users.invite',
-    'users.grant_role',
-  ]);
+  const ADMIN_PERM_KEYS = new Set(['users.manage', 'users.invite', 'users.grant_role']);
   const rolePermsByRole = new Map<string, Set<string>>();
   for (const rp of perms) {
     const set = rolePermsByRole.get(rp.roleId) ?? new Set<string>();
@@ -1241,7 +1276,10 @@ async function buildSessionPayload(
     if (!rolePerms) continue;
     let grantsAdmin = false;
     for (const k of ADMIN_PERM_KEYS) {
-      if (rolePerms.has(k)) { grantsAdmin = true; break; }
+      if (rolePerms.has(k)) {
+        grantsAdmin = true;
+        break;
+      }
     }
     if (!grantsAdmin) continue;
     if (b.scopeType === 'global') isGlobalAdminPerm = true;
@@ -1265,10 +1303,11 @@ async function buildSessionPayload(
       // actor BELONGS to (read-side). The admin set below is ALL
       // active stores in the org — what an org-wide admin can manage,
       // regardless of where they're personally assigned.
-      (await db
-        .select({ id: s.stores.id })
-        .from(s.stores)
-        .where(and(eq(s.stores.orgId, orgId), eq(s.stores.isActive, true)))
+      (
+        await db
+          .select({ id: s.stores.id })
+          .from(s.stores)
+          .where(and(eq(s.stores.orgId, orgId), eq(s.stores.isActive, true)))
       ).map((r) => r.id)
     : [...storeAdminSet];
 
@@ -1291,9 +1330,7 @@ async function buildSessionPayload(
       // unset (default — single-language UI). Otherwise one of the
       // 4-locale enum, drives product-name rendering and per-vendor
       // copy-template language.
-      secondaryLocale: (user.secondaryLocale ?? null) as
-        | Session['user']['locale']
-        | null,
+      secondaryLocale: (user.secondaryLocale ?? null) as Session['user']['locale'] | null,
       tgUsername: user.tgUsername,
     },
     member: {
