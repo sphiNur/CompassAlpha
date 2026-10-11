@@ -42,7 +42,7 @@ export function registerUserCommands(parent: Command): void {
         tgUserIdRaw: string,
         opts: { role: string; org: string; scope: 'global' | 'store'; scopeId?: string },
       ) => {
-        const db = getDb();
+        const db = getDb(undefined, { system: 'maintenance' });
         const tgUserId = BigInt(tgUserIdRaw);
         let user = await db.query.users.findFirst({
           where: (u, { eq: eq2 }) => eq2(u.tgUserId, tgUserId),
@@ -117,7 +117,7 @@ export function registerUserCommands(parent: Command): void {
     .description('List users in an organization')
     .requiredOption('--org <slug>', 'Org slug')
     .action(async (opts: { org: string }) => {
-      const db = getDb();
+      const db = getDb(undefined, { system: 'maintenance' });
       const org = await db.query.organizations.findFirst({
         where: (o, { eq: eq2 }) => eq2(o.slug, opts.org),
       });

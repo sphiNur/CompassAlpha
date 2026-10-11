@@ -112,7 +112,7 @@ let fix: Fixture | null = null;
 
 (SHOULD_RUN ? beforeAll : beforeAll.bind(null))(async () => {
   if (!SHOULD_RUN) return;
-  const db = getDb();
+  const db = getDb(undefined, { system: 'maintenance' });
   const slug = `cancel-${Date.now()}`;
   const [org] = await db
     .insert(s.organizations)
@@ -249,7 +249,7 @@ afterAll(() => {
 describe.skipIf(!SHOULD_RUN)('cancel-run cascade (PG-gated)', () => {
   test('cancel ejects all attached sessions even when actor lacks run.eject_session', async () => {
     if (!fix) throw new Error('fixture missing');
-    const db = getDb();
+    const db = getDb(undefined, { system: 'maintenance' });
     const allPerms = new Set([
       'order.draft',
       'order.submit',
@@ -418,7 +418,7 @@ describe.skipIf(!SHOULD_RUN)('cancel-run cascade (PG-gated)', () => {
 
   test('a delivered run cannot be confirmed after cancellation or receive inventory', async () => {
     if (!fix) throw new Error('fixture missing');
-    const db = getDb();
+    const db = getDb(undefined, { system: 'maintenance' });
     const runId = randomUUID();
     const sessionId = randomUUID();
     const actor = {

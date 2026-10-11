@@ -82,7 +82,7 @@ async function main() {
   console.log(c.dim(`  source: packages/db/src/catalog-uzbek.ts`));
   console.log(c.dim(`  cats: ${CATEGORIES.length} · skus: ${SKUS.length}`));
 
-  const db = getDb();
+  const db = getDb(undefined, { system: 'maintenance' });
 
   // --- Find target org ------------------------------------------------------
   const org = await db.query.organizations.findFirst({

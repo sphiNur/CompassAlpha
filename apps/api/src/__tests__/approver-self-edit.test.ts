@@ -112,7 +112,7 @@ let fix: Fixture | null = null;
 
 beforeAll(async () => {
   if (!SHOULD_RUN) return;
-  const db = getDb();
+  const db = getDb(undefined, { system: 'maintenance' });
   const slug = `selfedit-${Date.now()}`;
 
   const [org] = await db
@@ -211,7 +211,7 @@ beforeAll(async () => {
 describe.skipIf(!SHOULD_RUN)('approver editing their own submission (PG-gated)', () => {
   test('edits the claimed submitted session in place — never lazy-creates a phantom draft', async () => {
     if (!fix) throw new Error('fixture missing');
-    const db = getDb();
+    const db = getDb(undefined, { system: 'maintenance' });
     const caller = appRouter.createCaller(fix.ctx);
 
     const sessionsBefore = await db

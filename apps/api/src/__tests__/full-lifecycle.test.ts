@@ -84,7 +84,7 @@ const allPerms = new Set([
 
 describe('full lifecycle (PG)', () => {
   test.skipIf(!SHOULD_RUN)('order → submit → claim → approve → run → purchase → deliver → confirm → finish', async () => {
-    const db = getDb();
+    const db = getDb(undefined, { system: 'maintenance' });
 
     // ---- Setup org + members + skus + store ----
     const [org] = await db

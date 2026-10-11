@@ -4,22 +4,45 @@ import * as schema from './schema/index';
 
 export type DB = ReturnType<typeof drizzle<typeof schema>>;
 
-let _client: ReturnType<typeof postgres> | null = null;
-let _db: DB | null = null;
+// One pool per kind of handle. A process normally has one; a test process
+// has both, the plain handle for the code under test and the maintenance
+// one for building fixtures.
+type Kind = 'app' | 'maintenance';
+const pools = new Map<Kind, { client: ReturnType<typeof postgres>; db: DB }>();
 
-export function getDb(url?: string): DB {
-  if (_db) return _db;
+export interface GetDbOptions {
+  /**
+   * Open every connection already in the system context, so that plain
+   * queries on the handle cross tenants. For processes that are
+   * maintenance from start to finish: the seed, the CLI, and test
+   * fixtures. Never for a server: there, each tenant-less query must say
+   * so on its own (`withSystemContext`), and this would say it for all
+   * of them. `withOrgContext` still narrows to one tenant on such a handle.
+   */
+  system?: 'maintenance';
+}
+
+export function getDb(url?: string, options: GetDbOptions = {}): DB {
+  const kind: Kind = options.system ? 'maintenance' : 'app';
+  const existing = pools.get(kind);
+  if (existing) return existing.db;
   const connectionString = url ?? process.env.DATABASE_URL;
   if (!connectionString) throw new Error('DATABASE_URL not set');
-  _client = postgres(connectionString, {
+  const client = postgres(connectionString, {
     max: 20,
     idle_timeout: 30,
     connect_timeout: 10,
     prepare: false,
+    ...(options.system
+      ? { connection: { 'app.system_context': options.system } as Record<string, string> }
+      : {}),
   });
-  const raw = drizzle(_client, { schema, logger: process.env.DB_DEBUG === '1' });
-  _db = probed(raw);
-  return _db;
+  const raw = drizzle(client, { schema, logger: process.env.DB_DEBUG === '1' });
+  // A maintenance handle is tenant-less by declaration; there is nothing
+  // for the probe to find on it.
+  const db = options.system ? raw : probed(raw);
+  pools.set(kind, { client, db });
+  return db;
 }
 
 /**
@@ -122,11 +145,9 @@ export function unprobed(db: DB): DB {
 }
 
 export async function closeDb(): Promise<void> {
-  if (_client) {
-    await _client.end({ timeout: 5 });
-    _client = null;
-    _db = null;
-  }
+  const open = [...pools.values()];
+  pools.clear();
+  await Promise.all(open.map(({ client }) => client.end({ timeout: 5 })));
 }
 
 export { schema };

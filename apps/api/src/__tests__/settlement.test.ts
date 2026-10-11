@@ -71,7 +71,7 @@ interface Fixture {
 let fixture: Fixture | null = null;
 
 function buildCtx(session: SessionContext): RequestContext {
-  const db = getDb();
+  const db = getDb(undefined, { system: 'maintenance' });
   return {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     hono: {} as any,
@@ -137,7 +137,7 @@ function saveInput(
 
 beforeAll(async () => {
   if (!SHOULD_RUN) return;
-  const db = getDb();
+  const db = getDb(undefined, { system: 'maintenance' });
   const suffix = `${Date.now()}-${Math.floor(Math.random() * 100_000)}`;
   const [org] = await db
     .insert(s.organizations)
@@ -605,7 +605,7 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
 
   test('preserves a linked wage snapshot when that employee is later renamed or suspended', async () => {
     const fx = fixture!;
-    const db = getDb();
+    const db = getDb(undefined, { system: 'maintenance' });
     const [employeeUser] = await db
       .insert(s.users)
       .values({
@@ -725,7 +725,7 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
     expect(read?.id).toBe(created.id);
     expect(read?.updatedByName).toBe('Settlement Manager');
 
-    const revisions = await getDb()
+    const revisions = await getDb(undefined, { system: 'maintenance' })
       .select()
       .from(s.storeDailySettlementRevisions)
       .where(eq(s.storeDailySettlementRevisions.settlementId, created.id));
@@ -800,7 +800,7 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
     expect(corrected.operatingExpenseItems[0]?.reason).toBe('Corrected kitchen gas receipt');
     expect(corrected.operatingExpenseItems[0]?.id).toBe(created.operatingExpenseItems[0]?.id);
 
-    const revisions = await getDb()
+    const revisions = await getDb(undefined, { system: 'maintenance' })
       .select()
       .from(s.storeDailySettlementRevisions)
       .where(eq(s.storeDailySettlementRevisions.settlementId, created.id));
@@ -856,7 +856,7 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
     expect(updated.operatingExpenseItems[0]?.id).toBe(created.operatingExpenseItems[0]?.id);
     expect(updated.operatingExpenseItems[2]).not.toHaveProperty('enteredByMemberId');
 
-    const revision = await getDb().query.storeDailySettlementRevisions.findFirst({
+    const revision = await getDb(undefined, { system: 'maintenance' }).query.storeDailySettlementRevisions.findFirst({
       where: (row, { and: and2, eq: eq2 }) =>
         and2(eq2(row.settlementId, created.id), eq2(row.version, 2)),
     });
@@ -914,7 +914,7 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
   test('preserves raw legacy totals when an unrelated field is corrected', async () => {
     const fx = fixture!;
     const date = '2026-07-22';
-    const [legacy] = await getDb()
+    const [legacy] = await getDb(undefined, { system: 'maintenance' })
       .insert(s.storeDailySettlements)
       .values({
         orgId: fx.orgId,
@@ -942,11 +942,11 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
       expect.objectContaining({ amount: '3.00', isHistorical: true }),
     ]);
 
-    const raw = await getDb().query.storeDailySettlements.findFirst({
+    const raw = await getDb(undefined, { system: 'maintenance' }).query.storeDailySettlements.findFirst({
       where: (row, { eq: eq2 }) => eq2(row.id, legacy!.id),
     });
     expect(raw?.operatingExpenseItems).toEqual([]);
-    const revision = await getDb().query.storeDailySettlementRevisions.findFirst({
+    const revision = await getDb(undefined, { system: 'maintenance' }).query.storeDailySettlementRevisions.findFirst({
       where: (row, { and: and2, eq: eq2 }) =>
         and2(eq2(row.settlementId, legacy!.id), eq2(row.version, 2)),
     });
@@ -959,7 +959,7 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
   test('does not let a cashier clear a legacy scalar-only operating expense', async () => {
     const fx = fixture!;
     const date = '2026-07-19';
-    const [legacy] = await getDb()
+    const [legacy] = await getDb(undefined, { system: 'maintenance' })
       .insert(s.storeDailySettlements)
       .values({
         orgId: fx.orgId,
@@ -990,7 +990,7 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
     expect((error as { code?: string }).code).toBe('FORBIDDEN');
     expect((error as Error).message).toBe('settlement.errors.expensesManagerOnly');
 
-    const raw = await getDb().query.storeDailySettlements.findFirst({
+    const raw = await getDb(undefined, { system: 'maintenance' }).query.storeDailySettlements.findFirst({
       where: (row, { eq: eq2 }) => eq2(row.id, legacy!.id),
     });
     expect(raw?.operatingExpenses).toBe('3.00');
@@ -1000,7 +1000,7 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
   test('does not backfill or newly attribute total-only historical outflows', async () => {
     const fx = fixture!;
     const date = '2026-07-17';
-    const [legacy] = await getDb()
+    const [legacy] = await getDb(undefined, { system: 'maintenance' })
       .insert(s.storeDailySettlements)
       .values({
         orgId: fx.orgId,
@@ -1058,7 +1058,7 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
     }
     expect((wageError as { code?: string }).code).toBe('BAD_REQUEST');
 
-    const raw = await getDb().query.storeDailySettlements.findFirst({
+    const raw = await getDb(undefined, { system: 'maintenance' }).query.storeDailySettlements.findFirst({
       where: (row, { eq: eq2 }) => eq2(row.id, legacy!.id),
     });
     expect(raw?.operatingExpenses).toBe('3.00');

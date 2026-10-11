@@ -125,7 +125,7 @@ pgDescribe('refreshTokens service (PG-gated)', () => {
     const dbMod = await import('@compass/db');
     s = dbMod.schema;
     closeTestDb = dbMod.closeDb;
-    db = dbMod.getDb();
+    db = dbMod.getDb(undefined, { system: 'maintenance' });
     // Insert a test user to satisfy refresh_tokens.user_id FK.
     const tgUserId = BigInt(Date.now());
     const [u] = await db

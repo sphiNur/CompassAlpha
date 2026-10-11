@@ -65,20 +65,22 @@ export const systemRouter = router({
     let outboxPending = 0;
     let outboxOldestSec: number | null = null;
     try {
-      await ctx.db.execute(sql`SELECT 1`);
+      await inSystem(ctx.db, 'health', (tx) => tx.execute(sql`SELECT 1`));
     } catch (err) {
       logger.error({ err }, 'system.health: db ping failed');
       dbOk = false;
     }
     if (dbOk) {
       try {
-        const r = (await ctx.db.execute(sql`
+        const r = (await inSystem(ctx.db, 'health', (tx) =>
+          tx.execute(sql`
           SELECT
             COUNT(*)::int AS pending,
             EXTRACT(EPOCH FROM (NOW() - MIN(created_at)))::int AS oldest_sec
           FROM sync.outbox
           WHERE sent_at IS NULL
-        `)) as unknown as Array<{ pending: number; oldest_sec: number | null }>;
+        `),
+        )) as unknown as Array<{ pending: number; oldest_sec: number | null }>;
         outboxPending = r[0]?.pending ?? 0;
         outboxOldestSec = r[0]?.oldest_sec ?? null;
       } catch (err) {
