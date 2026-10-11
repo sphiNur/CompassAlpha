@@ -726,6 +726,46 @@ test('a role says what it allows, in words', async () => {
   await expect(main().getByRole('heading', { level: 1 })).toHaveText('Manage');
 });
 
+test('how the organisation writes its money, and spending it repeats', async () => {
+  await page.getByTestId('manage-organization').click();
+  await expect(main().getByTestId('org-name')).toHaveText('Default Organization');
+  // Save lights up only when something differs from what is stored.
+  await expect(main().getByTestId('org-save')).toBeDisabled();
+  await expect(main().getByTestId('org-currency').filter({ hasText: 'UZS' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  // Whether prices include tax is only asked once there is a tax.
+  await expect(main().getByTestId('org-tax-inclusive')).toHaveCount(0);
+  await main().getByRole('textbox', { name: 'Tax rate' }).fill('12');
+  await expect(main().getByTestId('org-tax-inclusive')).toHaveCount(2);
+  await evidence('organisation');
+  await main().getByTestId('org-save').click();
+  await expect(main().getByTestId('org-save')).toBeDisabled();
+  // Back to none, so the rest of the day is as it was.
+  await main().getByRole('textbox', { name: 'Tax rate' }).fill('0');
+  await main().getByTestId('org-save').click();
+  await expect(main().getByTestId('org-save')).toBeDisabled();
+  await page.getByTestId('manage-back').click();
+
+  await page.getByTestId('manage-expenseTemplates').click();
+  await page.getByTestId('template-new').click();
+  await expect(sheet().getByTestId('template-save')).toBeDisabled();
+  await sheet().getByRole('textbox', { name: 'Name' }).fill('Porter');
+  await sheet().getByRole('textbox', { name: 'Default unit price' }).fill('10000');
+  await evidence('template-new');
+  await sheet().getByTestId('template-save').click();
+  await expect(sheet()).toBeHidden();
+  // The row says what one use of it comes to and how it is usually paid.
+  await expect(main().getByTestId('template-row').filter({ hasText: 'Porter' })).toHaveText(
+    /Porter\s*1\s*×\s*10,000\s*10,000\s*UZS\s*Cash/,
+  );
+  await evidence('templates');
+
+  await page.getByTestId('manage-back').click();
+  await expect(main().getByRole('heading', { level: 1 })).toHaveText('Manage');
+});
+
 test('what was spent this month, and how it was paid', async () => {
   await page.getByTestId('manage-finance').click();
   // One total for the period, split the way it is checked against the

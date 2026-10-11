@@ -88,6 +88,7 @@ export const zh = {
   'orders.none': '今天还没有订单',
   'purchasing.none': '没有待采购的订单',
   'purchasing.past': '以前的采购',
+  'templates.hint': '反复出现的支出：搬运、打车、停车。',
   'perms.title': '{name} 能做什么',
   'perms.byRole': '按角色',
   'perms.allow': '允许',

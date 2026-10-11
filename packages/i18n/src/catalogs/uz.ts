@@ -95,6 +95,7 @@ export const uz = {
   'orders.none': "Bugun buyurtma yo'q",
   'purchasing.none': "Xarid qilinadigan tasdiqlangan buyurtma yo'q",
   'purchasing.past': 'Oldingi xaridlar',
+  'templates.hint': 'Takrorlanadigan xarajatlar uchun: yuk tashuvchi, taksi, toʻxtash joyi.',
   'perms.title': '{name} nima qila oladi',
   'perms.byRole': 'Rol boʻyicha',
   'perms.allow': 'Ruxsat',

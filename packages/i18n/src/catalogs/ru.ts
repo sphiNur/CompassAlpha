@@ -88,6 +88,7 @@ export const ru = {
   'orders.none': 'Сегодня заявок нет',
   'purchasing.none': 'Нет одобренных заявок к закупке',
   'purchasing.past': 'Прошлые закупки',
+  'templates.hint': 'Для повторяющихся расходов: грузчик, такси, парковка.',
   'perms.title': 'Что разрешено: {name}',
   'perms.byRole': 'Как в роли',
   'perms.allow': 'Разрешить',

@@ -115,6 +115,7 @@ export const en = {
   'orders.none': 'No orders today',
   'purchasing.none': 'No approved orders to buy',
   'purchasing.past': 'Past purchases',
+  'templates.hint': 'For spending that repeats: a porter, a taxi, parking.',
   'perms.title': 'What {name} may do',
   'perms.byRole': 'As the role says',
   'perms.allow': 'Allow',

@@ -24,35 +24,22 @@
  *
  * Self-protection rules are server-side; the FE just gives the UI.
  */
-import { useEffect, useState } from 'react';
 import {
-  Banner,
-  Button,
-  Card,
-  DetailRow,
   EmptyState,
-  Field,
   IconActivity,
   IconCatalog,
   IconMaintenance,
   IconPeople,
   IconShield,
   IconWorkspace,
-  Input,
   ListRow,
   SectionRow,
-  Sheet,
-  Switch,
   useSheetCount,
-  useToast,
 } from '@compass/ui';
-import { trpc } from '../lib/trpc';
-import { useErrToast } from '../lib/errToast';
 import { useAuthStore } from '../stores/authStore';
 import { useNavStore } from '../stores/navStore';
 import { isInTelegram, useTelegramBackButton } from '../hooks/useTelegram';
 import { useI18n } from '../hooks/useI18n';
-import { LanguageSheet } from '../components/LanguageSheet';
 // Operations sections — extracted to admin/operations (Phase 5 step 1).
 import {
   ActivitySection,
@@ -62,10 +49,7 @@ import {
   MaintenanceSection,
 } from './admin/operations/OperationsSections';
 // Catalog CRUD sections — extracted to admin/catalog (Phase 5 step 2).
-import {
-  ExpenseTemplatesSection,
-  DishesSection,
-} from './admin/catalog/CatalogSections';
+import { DishesSection } from './admin/catalog/CatalogSections';
 import {
   type AdminSection,
   type CatalogSub,
@@ -80,6 +64,8 @@ import { StoresScreen } from '../destinations/manage/StoresScreen';
 import { ProductsScreen } from '../destinations/manage/ProductsScreen';
 import { FinanceScreen } from '../destinations/manage/FinanceScreen';
 import { RolesScreen } from '../destinations/manage/RolesScreen';
+import { OrganisationScreen } from '../destinations/manage/OrganisationScreen';
+import { SpendingTemplates } from '../destinations/manage/SpendingTemplates';
 import { CategoriesScreen, SuppliersScreen } from '../destinations/manage/CatalogueLists';
 
 /**
@@ -189,7 +175,7 @@ export function AdminPage() {
           }
         }}
       >
-        {section === 'organization' ? <WorkspaceSection /> : null}
+        {section === 'organization' ? <OrganisationScreen /> : null}
         {section === 'stores' && storeFocus === null ? (
           <StoresScreen
             onPick={(focus) => {
@@ -199,15 +185,9 @@ export function AdminPage() {
           />
         ) : null}
         {section === 'stores' && storeFocus !== null ? (
-          <StoreDetailScreen
-            focus={storeFocus}
-            sub={storeSub}
-            onSubChange={setStoreSub}
-          />
+          <StoreDetailScreen focus={storeFocus} sub={storeSub} onSubChange={setStoreSub} />
         ) : null}
-        {section === 'permissions' ? (
-          <RolesScreen isSuperAdmin={isSuperAdmin} />
-        ) : null}
+        {section === 'permissions' ? <RolesScreen isSuperAdmin={isSuperAdmin} /> : null}
         {section === 'catalog' && !catalogSub ? (
           <CatalogHome onPick={(s) => setCatalogSub(s)} />
         ) : null}
@@ -215,9 +195,7 @@ export function AdminPage() {
         {section === 'catalog' && catalogSub === 'skus' ? <ProductsScreen /> : null}
         {section === 'catalog' && catalogSub === 'suppliers' ? <SuppliersScreen /> : null}
         {section === 'catalog' && catalogSub === 'dishes' ? <DishesSection /> : null}
-        {section === 'catalog' && catalogSub === 'expenseTemplates' ? (
-          <ExpenseTemplatesSection />
-        ) : null}
+        {section === 'catalog' && catalogSub === 'expenseTemplates' ? <SpendingTemplates /> : null}
         {section === 'operations' && !opsSub ? (
           <OperationsHome onPick={(s) => setOpsSub(s)} isSuperAdmin={isSuperAdmin} />
         ) : null}
@@ -291,24 +269,18 @@ function titleForSection(
   }
   if (section === 'catalog' && catalogSub === 'categories')
     return i18n.t('admin.subsection.categories');
-  if (section === 'catalog' && catalogSub === 'skus')
-    return i18n.t('admin.subsection.skus');
+  if (section === 'catalog' && catalogSub === 'skus') return i18n.t('admin.subsection.skus');
   if (section === 'catalog' && catalogSub === 'suppliers')
     return i18n.t('admin.subsection.suppliers');
-  if (section === 'catalog' && catalogSub === 'dishes')
-    return i18n.t('admin.subsection.dishes');
+  if (section === 'catalog' && catalogSub === 'dishes') return i18n.t('admin.subsection.dishes');
   if (section === 'catalog' && catalogSub === 'expenseTemplates')
     return i18n.t('admin.subsection.expenseTemplates');
-  if (section === 'operations' && opsSub === 'activity')
-    return i18n.t('admin.subsection.activity');
-  if (section === 'operations' && opsSub === 'history')
-    return i18n.t('admin.subsection.history');
-  if (section === 'operations' && opsSub === 'adminAudit')
-    return i18n.t('admin.subsection.audit');
+  if (section === 'operations' && opsSub === 'activity') return i18n.t('admin.subsection.activity');
+  if (section === 'operations' && opsSub === 'history') return i18n.t('admin.subsection.history');
+  if (section === 'operations' && opsSub === 'adminAudit') return i18n.t('admin.subsection.audit');
   if (section === 'operations' && opsSub === 'priceReport')
     return i18n.t('admin.subsection.priceReport');
-  if (section === 'operations' && opsSub === 'finance')
-    return i18n.t('admin.subsection.finance');
+  if (section === 'operations' && opsSub === 'finance') return i18n.t('admin.subsection.finance');
   if (section === 'operations' && opsSub === 'maintenance')
     return i18n.t('admin.subsection.maintenance');
   switch (section) {
@@ -448,193 +420,6 @@ function SectionFrame({
 // @compass/ui — see packages/ui/src/components/Rows.tsx. Any future
 // styling tweaks should land there so all pages benefit.
 
-// ============ Workspace ============
-
-function WorkspaceSection() {
-  const session = useAuthStore((s) => s.session);
-  const patchSession = useAuthStore((s) => s.patchSession);
-  const i18n = useI18n();
-  const toast = useToast();
-  const errToast = useErrToast();
-  // Language picker moved here from OrderPage (2026-05-05). Telegram's
-  // gear button in the bot's overflow menu also opens this — but on
-  // the web preview where the gear isn't rendered, this row is the
-  // path. Available to anyone who can reach the Admin tab.
-  const [langSheetOpen, setLangSheetOpen] = useState(false);
-  // M1.17: financial settings sheet (currency + tax + tax-inclusive).
-  const [financeSheetOpen, setFinanceSheetOpen] = useState(false);
-  // Map locale codes to native labels for the read-out.
-  const localeLabels: Record<string, string> = {
-    en: 'English',
-    zh: '中文',
-    ru: 'Русский',
-    uz: "O'zbekcha",
-  };
-  const currentLocale = session?.user.locale ?? 'en';
-  const currency = session?.member.currency ?? 'UZS';
-  const taxRatePct = session?.member.taxRatePct ?? '0';
-  const pricesIncludeTax = session?.member.pricesIncludeTax ?? true;
-  const isAdmin = session?.permissions.includes('users.manage') ?? false;
-
-  // Local form draft inside the sheet so we can cancel without
-  // affecting the source of truth on the auth store.
-  const [draftCurrency, setDraftCurrency] = useState<string>(currency);
-  const [draftTax, setDraftTax] = useState<string>(taxRatePct);
-  const [draftInclTax, setDraftInclTax] = useState<boolean>(pricesIncludeTax);
-  useEffect(() => {
-    if (!financeSheetOpen) return;
-    setDraftCurrency(currency);
-    setDraftTax(taxRatePct);
-    setDraftInclTax(pricesIncludeTax);
-  }, [financeSheetOpen, currency, taxRatePct, pricesIncludeTax]);
-
-  const orgFinanceUpdate = trpc.admin.orgFinanceUpdate.useMutation({
-    onSuccess: () => {
-      if (session) {
-        patchSession({
-          ...session,
-          member: {
-            ...session.member,
-            currency: draftCurrency,
-            taxRatePct: draftTax,
-            pricesIncludeTax: draftInclTax,
-          },
-        });
-      }
-      toast.success(i18n.t('common.saved'));
-      setFinanceSheetOpen(false);
-    },
-    onError: errToast('common.error'),
-  });
-
-  return (
-    <div className="px-4 py-3">
-      <LanguageSheet open={langSheetOpen} onOpenChange={setLangSheetOpen} />
-      <Card>
-        <div className="flex flex-col gap-3 px-4 py-3">
-          {/* M1.7-fix (2026-05-07, audit HIGH #7): these labels were
-              hardcoded English — the M1.6 admin-i18n pass missed
-              this card. Now they go through i18n.t. */}
-          <DetailRow label={i18n.t('admin.workspace.name')} value={session?.member.orgName ?? '—'} />
-          {/* M1.9 (2026-05-07): the `slug` row is internal infrastructure
-              ("acme-restaurants" type identifier). Showing it raw to
-              the chain owner adds noise without value. Kept the field
-              in i18n catalogs in case super_admin tooling wants it. */}
-          <DetailRow label={i18n.t('admin.workspace.yourRole')} value={[...(session?.roleSlugs ?? [])].join(', ') || '—'} />
-          <DetailRow
-            label={i18n.t('admin.workspace.telegram')}
-            value={session?.user.tgUsername ? `@${session.user.tgUsername}` : '—'}
-          />
-          {/* M1.17: read-out of the new financial trio so anyone with
-              Admin access can see the active settings at a glance. The
-              edit affordance is the ListRow below (admin-only). */}
-          <DetailRow
-            label={i18n.t('admin.workspace.currency')}
-            value={currency}
-          />
-          <DetailRow
-            label={i18n.t('admin.workspace.taxRate')}
-            value={Number(taxRatePct) > 0 ? `${taxRatePct}%` : '—'}
-          />
-        </div>
-      </Card>
-      <div className="mt-3 flex flex-col gap-2">
-        <ListRow
-          label={i18n.t('settings.language.title')}
-          hint={localeLabels[currentLocale] ?? currentLocale}
-          onClick={() => setLangSheetOpen(true)}
-        />
-        {/* M1.17: financial settings editor (admin-only). */}
-        {isAdmin ? (
-          <ListRow
-            label={i18n.t('admin.workspace.financeRow')}
-            hint={i18n.t('admin.workspace.financeRowHint', {
-              currency,
-              tax: Number(taxRatePct) > 0 ? `${taxRatePct}%` : '0%',
-            })}
-            onClick={() => setFinanceSheetOpen(true)}
-          />
-        ) : null}
-      </div>
-
-      {/* Financial settings editor sheet. M1.17. */}
-      <Sheet
-        open={financeSheetOpen}
-        onOpenChange={(open) => !open && setFinanceSheetOpen(false)}
-        title={i18n.t('admin.workspace.financeSheet.title')}
-        description={i18n.t('admin.workspace.financeSheet.description')}
-        footer={
-          // M3.49: sheets always render their own footer button — the
-          // in-page PageMainButton is behind any open sheet.
-          <Button
-            block
-            loading={orgFinanceUpdate.isPending}
-            onClick={() =>
-              orgFinanceUpdate.mutate({
-                currency: draftCurrency,
-                taxRatePct: draftTax,
-                pricesIncludeTax: draftInclTax,
-              })
-            }
-          >
-            {i18n.t('common.save')}
-          </Button>
-        }
-      >
-        <div className="flex flex-col gap-3 py-3">
-          <Field label={i18n.t('admin.workspace.currency')}>
-            <select
-              className="h-11 w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3 ring-hairline"
-              value={draftCurrency}
-              onChange={(e) => setDraftCurrency(e.target.value)}
-            >
-              {/* Limited to four ISO codes for launch — UZS (default),
-                  RUB / KZT (neighbouring markets), USD (cross-border
-                  contracts). Free-form input is rejected server-side
-                  via /^[A-Z]{3}$/, so adding codes is one-liner. */}
-              <option value="UZS">UZS — Uzbek so&apos;m</option>
-              <option value="RUB">RUB — Russian ruble</option>
-              <option value="KZT">KZT — Kazakhstani tenge</option>
-              <option value="USD">USD — US dollar</option>
-            </select>
-          </Field>
-          <Field
-            label={i18n.t('admin.workspace.taxRate')}
-            hint={i18n.t('admin.workspace.taxRateHint')}
-          >
-            <Input
-              type="number"
-              inputMode="decimal"
-              step="0.01"
-              min="0"
-              max="50"
-              value={draftTax}
-              onChange={(e) => setDraftTax(e.target.value)}
-              placeholder="0"
-            />
-          </Field>
-          <Field label={i18n.t('admin.workspace.pricesIncludeTax')}>
-            <Switch
-              checked={draftInclTax}
-              onChange={(e) => setDraftInclTax(e.target.checked)}
-              label={
-                draftInclTax
-                  ? i18n.t('admin.workspace.pricesIncludeTaxOn')
-                  : i18n.t('admin.workspace.pricesIncludeTaxOff')
-              }
-            />
-          </Field>
-          <Banner tone="info" title={i18n.t('admin.workspace.financeSheet.warning')} />
-        </div>
-      </Sheet>
-    </div>
-  );
-}
-
-// DetailRow removed — imported from @compass/ui.
-
-// ============ Catalog ============
-
 function CatalogHome({ onPick }: { onPick: (s: CatalogSub) => void }) {
   const i18n = useI18n();
   // M1.4 (2026-05-06): Stores moved out of Catalog into its own
@@ -676,4 +461,3 @@ function CatalogHome({ onPick }: { onPick: (s: CatalogSub) => void }) {
     </ul>
   );
 }
-
