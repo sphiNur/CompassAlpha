@@ -497,6 +497,19 @@ export function RunHistoryDetailSheet({
     perStoreSplits: HistorySplit[];
   };
 
+  const linePayment = (
+    item: Parameters<typeof settleItemLine>[0],
+    itemSplits: Parameters<typeof settleItemLine>[1],
+  ): string => {
+    const { cash, transfer } = settleItemLine(item, itemSplits);
+    const cashLabel = i18n.t('run.label.paymentCash') as string;
+    const transferLabel = i18n.t('run.label.paymentTransfer') as string;
+    if (cash > 0 && transfer > 0) {
+      return `${cashLabel} ${formatMoney(cash)} · ${transferLabel} ${formatMoney(transfer)}`;
+    }
+    return transfer > 0 || item.paymentMethod === 'transfer' ? transferLabel : cashLabel;
+  };
+
   const visibleHistoryRows = useMemo<VisibleHistoryRow[]>(() => {
     if (!breakdown) return [];
     if (!activeStoreId) {
@@ -758,20 +771,32 @@ export function RunHistoryDetailSheet({
                         <Badge tone="danger">{i18n.t('run.action.markNa')}</Badge>
                       )}
                     </div>
-                    <div className="text-old-label text-[var(--c-fg-muted)]">
-                      {activeStoreId ? (
-                        it.status === 'purchased' ? (
-                          `${formatQty(row.qty)} ${unitLabel(sku?.unit)} × ${formatMoney(displayedUnitPrice)}`
+                    <div className="flex items-baseline justify-between gap-2 text-old-label text-[var(--c-fg-muted)]">
+                      <span className="min-w-0">
+                        {activeStoreId ? (
+                          it.status === 'purchased' ? (
+                            `${formatQty(row.qty)} ${unitLabel(sku?.unit)} × ${formatMoney(displayedUnitPrice)}`
+                          ) : (
+                            (it.unavailableNote ?? '')
+                          )
                         ) : (
-                          (it.unavailableNote ?? '')
-                        )
-                      ) : (
-                        <>
-                          {it.status === 'purchased'
-                            ? `${formatQty(it.purchasedQty)} ${unitLabel(sku?.unit)}${it.unitPrice ? ` × ${formatMoney(it.unitPrice)}` : ''}`
-                            : (it.unavailableNote ?? '')}
-                        </>
-                      )}
+                          <>
+                            {it.status === 'purchased'
+                              ? `${formatQty(it.purchasedQty)} ${unitLabel(sku?.unit)}${it.unitPrice ? ` × ${formatMoney(it.unitPrice)}` : ''}`
+                              : (it.unavailableNote ?? '')}
+                          </>
+                        )}
+                      </span>
+                      {/* 2026-10-11: how each line was paid. A line paid
+                         both ways says how much of each. */}
+                      {it.status === 'purchased' ? (
+                        <span
+                          data-testid="history-line-payment"
+                          className="shrink-0 font-medium text-[var(--c-fg)]"
+                        >
+                          {linePayment(it, perStoreSplits)}
+                        </span>
+                      ) : null}
                     </div>
                     {/* M3.52: per-store chips on history rows. Same
                        visual pattern as the in-run PurchaseRow chips. */}

@@ -187,6 +187,21 @@ test('finish the run and find it in history', async () => {
     main().getByRole('button', { name: /Central Kitchen 2 items 114,000/ }),
   ).toBeVisible();
   await evidence('history');
+
+  // Every bought line says how it was paid.
+  await main()
+    .getByRole('button', { name: /Central Kitchen 2 items 114,000/ })
+    .click();
+  const paid = page.getByTestId('history-line-payment');
+  await expect(paid).toHaveCount(2);
+  await expect(
+    page.getByRole('listitem').filter({ hasText: 'Beef' }).getByTestId('history-line-payment'),
+  ).toHaveText('Transfer');
+  await expect(
+    page.getByRole('listitem').filter({ hasText: 'Apple' }).getByTestId('history-line-payment'),
+  ).toHaveText('Cash');
+  await evidence('history-detail');
+  await page.keyboard.press('Escape');
 });
 
 test('close the day', async () => {
