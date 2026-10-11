@@ -1922,8 +1922,11 @@ export const adminRouter = router({
         });
       }
       // Last-admin guard. If the target is admin-level and they're
-      // the only admin, refuse.
+      // the only admin, refuse. Serialised per org, as in
+      // memberSetStatus: two concurrent removals of the last two admins
+      // would otherwise both read a count of 2 and both go through.
       if (targetMaxRank >= ADMIN_RANK_THRESHOLD) {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${orgId}))`);
         const adminCount = await countAdminsInOrg(tx, orgId);
         if (adminCount <= 1) {
           throw new TRPCError({
@@ -2870,6 +2873,10 @@ export const adminRouter = router({
       // org could end up with no manageable admin (only super_admin
       // could fix from CLI) — a real footgun for a SaaS rollout.
       if (targetRank >= ADMIN_RANK_THRESHOLD) {
+        // Serialised per org, for the same reason as in memberSetStatus
+        // and memberRemove: the count must not be read by two requests
+        // at once.
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${orgId}))`);
         const adminCount = await countAdminsInOrg(tx, orgId);
         // The target is currently counted; the revoke would remove
         // them — so we need >1 to still have ≥1 left after.
