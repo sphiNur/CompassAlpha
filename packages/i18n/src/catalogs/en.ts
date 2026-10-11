@@ -1416,6 +1416,7 @@ export const en = {
   'admin.field.code': 'Code',
   'admin.field.address': 'Address',
   'admin.field.timezone': 'Timezone',
+  'admin.field.timezonePlaceholder': 'e.g. Asia/Tashkent',
   'admin.field.phone': 'Phone',
   'admin.field.notes': 'Notes',
   'admin.field.tgUsername': 'Telegram username',

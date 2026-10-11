@@ -1276,6 +1276,7 @@ export const ru = {
   'admin.field.code': 'Код',
   'admin.field.address': 'Адрес',
   'admin.field.timezone': 'Часовой пояс',
+  'admin.field.timezonePlaceholder': 'напр. Asia/Tashkent',
   'admin.field.phone': 'Телефон',
   'admin.field.notes': 'Заметки',
   'admin.field.tgUsername': 'Имя в Telegram',

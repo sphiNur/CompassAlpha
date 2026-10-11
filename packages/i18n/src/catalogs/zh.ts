@@ -1215,6 +1215,7 @@ export const zh = {
   'admin.field.code': '编号',
   'admin.field.address': '地址',
   'admin.field.timezone': '时区',
+  'admin.field.timezonePlaceholder': '例如 Asia/Tashkent',
   'admin.field.phone': '电话',
   'admin.field.notes': '备注',
   'admin.field.tgUsername': 'Telegram 用户名',

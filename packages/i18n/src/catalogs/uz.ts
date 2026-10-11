@@ -1285,6 +1285,7 @@ export const uz = {
   'admin.field.code': 'Kod',
   'admin.field.address': 'Manzil',
   'admin.field.timezone': 'Vaqt zonasi',
+  'admin.field.timezonePlaceholder': 'masalan Asia/Tashkent',
   'admin.field.phone': 'Telefon',
   'admin.field.notes': 'Izohlar',
   'admin.field.tgUsername': 'Telegram nomi',

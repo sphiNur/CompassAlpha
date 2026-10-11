@@ -213,7 +213,7 @@ export function StoresScreen({ onPick }: { onPick: (focus: NonNullable<StoreFocu
                   label={i18n.t('admin.field.timezone') as string}
                   value={draft.timezone}
                   maxLength={64}
-                  placeholder="Asia/Tashkent"
+                  placeholder={i18n.t('admin.field.timezonePlaceholder') as string}
                   onChange={(e) => setDraft({ ...draft, timezone: e.target.value })}
                 />
               </>
