@@ -18,10 +18,10 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const VARIANT: Record<ButtonVariant, string> = {
-  primary: 'h-control bg-primary text-on-primary active:bg-primary-pressed',
-  secondary: 'h-control bg-surface-sunken text-ink active:bg-line',
-  ghost: 'h-tap text-ink active:bg-surface-sunken',
-  danger: 'h-control bg-danger text-on-danger active:opacity-90',
+  primary: 'min-h-control py-sm bg-primary text-on-primary active:bg-primary-pressed',
+  secondary: 'min-h-control py-sm bg-surface-sunken text-ink active:bg-line',
+  ghost: 'min-h-tap py-xs text-ink active:bg-surface-sunken',
+  danger: 'min-h-control py-sm bg-danger text-on-danger active:opacity-90',
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
@@ -46,7 +46,10 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         className,
       )}
     >
-      <span className="min-w-0 truncate">{children}</span>
+      {/* A label that does not fit goes onto a second line and the button
+          grows with it. It is never cut short: a button whose last word
+          is missing is a button nobody dares press. */}
+      <span className="min-w-0 text-center">{children}</span>
     </button>
   );
 });

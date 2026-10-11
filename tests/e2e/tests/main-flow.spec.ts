@@ -91,9 +91,66 @@ const taps: Record<string, unknown> = {};
  * None of that changes what the flow does: the language is switched on
  * the page only, for the length of a picture, with no reload.
  */
+/**
+ * Every screen the flow stops at, again with each piece of text 40% longer
+ * and the page read right to left: what Russian, Turkish or Uyghur will
+ * do to it before anyone has translated a word. The text is put back
+ * afterwards, so the flow goes on as if nothing happened.
+ *
+ * Two things are looked for. Something sticking out past the edge of the
+ * screen (outside a strip that is meant to scroll sideways), and text
+ * that has been cut off rather than wrapped.
+ */
+const stretched: Record<string, string[]> = {};
+async function stretch(name: string): Promise<void> {
+  const found = await page.evaluate(() => {
+    const scrolls = (el: Element | null): boolean => {
+      for (let e = el; e && e !== document.body; e = e.parentElement) {
+        const x = getComputedStyle(e).overflowX;
+        if (x === 'auto' || x === 'scroll') return true;
+      }
+      return false;
+    };
+    const say = (el: Element) =>
+      `${el.tagName.toLowerCase()}${el.getAttribute('data-testid') ? `[${el.getAttribute('data-testid')}]` : ''} "${(el.textContent ?? '').trim().slice(0, 30)}"`;
+    const texts: Array<[Text, string]> = [];
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      const node = walker.currentNode as Text;
+      const value = node.nodeValue ?? '';
+      // Words are made longer; figures are not, a price does not grow in translation.
+      if (!/\p{L}/u.test(value) || node.parentElement?.closest('script, style')) continue;
+      texts.push([node, value]);
+      const trimmed = value.trim();
+      node.nodeValue = `${value} ${trimmed.slice(0, Math.ceil(trimmed.length * 0.4))}`;
+    }
+    const root = document.documentElement;
+    const dir = root.getAttribute('dir');
+    root.setAttribute('dir', 'rtl');
+    const out: string[] = [];
+    const width = window.innerWidth;
+    for (const el of document.body.querySelectorAll('*')) {
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) continue;
+      if ((r.right > width + 1 || r.left < -1) && !scrolls(el)) out.push(`sticks out: ${say(el)}`);
+      const style = getComputedStyle(el);
+      const cuts = style.overflowX === 'hidden' || style.overflowX === 'clip';
+      if (cuts && el.scrollWidth > el.clientWidth + 1 && (el.textContent ?? '').trim()) {
+        out.push(`cut off: ${say(el)}`);
+      }
+    }
+    for (const [node, value] of texts) node.nodeValue = value;
+    if (dir === null) root.removeAttribute('dir');
+    else root.setAttribute('dir', dir);
+    return [...new Set(out)].slice(0, 12);
+  });
+  if (found.length > 0) stretched[name] = found;
+}
+
 async function evidence(name: string): Promise<void> {
   const body = await page.screenshot({ fullPage: true });
   await test.info().attach(name, { body, contentType: 'image/png' });
+  await stretch(name);
   const dir = process.env.E2E_SHOTS_DIR;
   if (!dir) return;
   const file = `${String(++shot).padStart(2, '0')}-${name}.png`;
@@ -920,6 +977,10 @@ test('an organisation that does not use the daily close is not shown it', async 
   await expect(page.getByTestId('today-hero')).toBeVisible();
   await expect(page.getByTestId('quick-close')).toHaveCount(0);
   await evidence('today-without-daily-close');
+});
+
+test('no screen breaks when its words are longer or read right to left', () => {
+  expect(stretched).toEqual({});
 });
 
 test('nothing went wrong along the way', () => {

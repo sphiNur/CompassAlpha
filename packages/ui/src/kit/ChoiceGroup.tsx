@@ -49,14 +49,14 @@ export function ChoiceGroup<V extends string>({
               data-choice={option.value}
               onClick={() => onChange(option.value)}
               className={cn(
-                'flex h-tap min-w-0 flex-1 items-center justify-center rounded-pill px-md text-label outline-none',
+                'flex min-h-tap min-w-0 flex-1 items-center justify-center rounded-pill px-md py-xs text-label outline-none',
                 'focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2',
                 chosen
                   ? 'bg-contrast text-on-contrast'
                   : 'bg-surface-sunken text-ink active:bg-line',
               )}
             >
-              <span className="truncate">{option.label}</span>
+              <span className="min-w-0 text-center">{option.label}</span>
             </button>
           );
         })}
