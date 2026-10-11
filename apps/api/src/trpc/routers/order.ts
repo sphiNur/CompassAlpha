@@ -373,6 +373,12 @@ export const orderRouter = router({
           const v = Number(it.qty);
           if (v > 0) totalBySku.set(it.skuId, (totalBySku.get(it.skuId) ?? 0) + v);
         }
+        // 2026-10-11: how each product was last paid, so the approver
+        // reads a line as "about this much, in cash". Null when it has
+        // never been bought: there is nothing to go on.
+        const usualPayment = await loadSkuUsualPayment(tx, ctx.session!.orgId, [
+          ...totalBySku.keys(),
+        ]);
         return {
           id: session.id,
           storeId: session.storeId,
@@ -403,6 +409,10 @@ export const orderRouter = router({
           totals: [...totalBySku.entries()].map(([skuId, qty]) => ({
             skuId,
             qty: qty.toFixed(3).replace(/\.?0+$/, ''),
+            usualPayment:
+              usualPayment.byStoreSku.get(`${session.storeId}:${skuId}`) ??
+              usualPayment.bySku.get(skuId) ??
+              null,
           })),
           items: items.map((i) => ({
             skuId: i.skuId,

@@ -262,6 +262,7 @@ export function ApprovalPage() {
           sessionId={open.id}
           storeId={open.storeId}
           editable={tab === 'pending' && claimedByMe}
+          showPrices={can('prices.view')}
           productName={productName}
         />
 
@@ -474,11 +475,14 @@ function OrderLines({
   sessionId,
   storeId,
   editable,
+  showPrices,
   productName,
 }: {
   sessionId: string;
   storeId: string;
   editable: boolean;
+  /** Whether this person may see what things cost. */
+  showPrices: boolean;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
 }) {
   const i18n = useI18n();
@@ -497,6 +501,14 @@ function OrderLines({
   // Names for "who asked for how much". Only people who manage members
   // may read the list; without it the split is shown without names.
   const members = trpc.admin.memberList.useQuery(undefined, { enabled: editable, retry: false });
+  // What each line should cost: the price the estimate above is made of.
+  const pricedSkuIds = (detail.data?.totals ?? [])
+    .filter((t) => Number(t.qty) > 0)
+    .map((t) => t.skuId);
+  const prices = trpc.catalog.skuPriceStats.useQuery(
+    { skuIds: pricedSkuIds },
+    { enabled: showPrices && pricedSkuIds.length > 0 },
+  );
 
   if (detail.isPending) {
     return <p className="text-body text-secondary">{i18n.t('approval.items.loading')}</p>;
@@ -507,6 +519,9 @@ function OrderLines({
 
   const skuById = new Map((skus.data ?? []).map((sku) => [sku.id, sku]));
   const nameOf = new Map((members.data ?? []).map((m) => [m.memberId, m.displayName]));
+  const priceOf = new Map(
+    (prices.data ?? []).map((p) => [p.skuId, Number(p.avg7d ?? p.lastPrice ?? 0) || null]),
+  );
   const totals = detail.data.totals.filter((t) => Number(t.qty) > 0);
   const asks = new Map<string, Array<{ contributorMemberId: string; qty: string }>>();
   for (const it of detail.data.items) {
@@ -572,6 +587,7 @@ function OrderLines({
               : t.skuId.slice(0, 8);
             const rows = asks.get(t.skuId) ?? [];
             const single = rows.length === 1 ? rows[0]! : null;
+            const price = priceOf.get(t.skuId) ?? null;
             const total = (
               <span className="text-money tabular-nums text-ink" dir="ltr">
                 {formatQty(t.qty)} {unitLabel(sku?.unit ?? '')}
@@ -587,6 +603,36 @@ function OrderLines({
                       : total}
                   </span>
                 </div>
+                {/* What one costs, how it is usually paid, and what the
+                    line comes to. Nothing is paid yet: the method is how
+                    the product was paid the last time it was bought. */}
+                {showPrices && (price || t.usualPayment) ? (
+                  <div
+                    data-testid="approval-line-price"
+                    className="-mt-sm flex items-baseline justify-between gap-lg text-small text-secondary"
+                  >
+                    <span className="min-w-0">
+                      {price ? (
+                        <span dir="ltr" className="tabular-nums">
+                          {formatMoney(price)} / {unitLabel(sku?.unit ?? '')}
+                        </span>
+                      ) : null}
+                      {price && t.usualPayment ? ' · ' : null}
+                      {t.usualPayment
+                        ? i18n.t(
+                            t.usualPayment === 'transfer'
+                              ? 'run.label.paymentTransfer'
+                              : 'run.label.paymentCash',
+                          )
+                        : null}
+                    </span>
+                    {price ? (
+                      <span className="shrink-0 tabular-nums text-ink" dir="ltr">
+                        {formatMoney(price * Number(t.qty))}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
                 {/* Several people asked: each one's share, each changeable. */}
                 {rows.length > 1
                   ? rows.map((r) => (

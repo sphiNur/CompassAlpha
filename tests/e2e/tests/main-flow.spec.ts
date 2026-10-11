@@ -964,6 +964,44 @@ test('close the day', async () => {
   await evidence('today-all-done');
 });
 
+test('the next order shows what it should cost, and how it is usually paid', async () => {
+  // Apple was bought in cash and Beef by transfer, so an order for both
+  // can now be budgeted by payment method before anyone approves it.
+  // Prices are remembered for a minute, and a minute ago nothing had been
+  // bought; opening the app again is what a later order amounts to.
+  await page.reload();
+  await tab('orders').click();
+  await page.getByTestId('orders-new').click();
+  const add = async (sku: string, times: number) => {
+    const saved = page.waitForResponse((res) => res.url().includes('order.adjustItem'));
+    for (let i = 0; i < times; i++) {
+      await item(sku).getByRole('button', { name: 'Increase' }).click();
+    }
+    await saved;
+  };
+  await add('Apple', 2);
+  await add('Beef', 2);
+  await mainButton().click();
+  await sheet().getByTestId('order-submit').click();
+  await expect(main().getByRole('status')).toContainText('Submitted · awaiting review');
+  await leave();
+
+  await tab('menu').click();
+  await page.getByTestId('do-approve').click();
+  await expect(main().getByRole('heading', { name: 'E2E Admin' })).toBeVisible();
+  await expect(main()).toContainText(/Cash\s*12,000\s*·\s*Transfer\s*90,000/);
+  const priced = main().getByTestId('approval-line');
+  await expect(priced.filter({ hasText: 'Apple' }).getByTestId('approval-line-price')).toHaveText(
+    /12,000 \/ kg · Cash\s*12,000/,
+  );
+  await expect(priced.filter({ hasText: 'Beef' }).getByTestId('approval-line-price')).toHaveText(
+    /90,000 \/ kg · Transfer\s*90,000/,
+  );
+  await evidence('approval-budget');
+  // Left waiting: leaving the order gives it back for someone else.
+  await leave();
+});
+
 test('an organisation that does not use the daily close is not shown it', async () => {
   const sql = postgres(DATABASE_URL, { max: 1, onnotice: () => {} });
   try {
