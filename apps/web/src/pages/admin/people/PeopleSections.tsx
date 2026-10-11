@@ -1,38 +1,20 @@
 /**
- * Admin → People & Permissions — extracted verbatim from AdminPage.tsx
- * (Phase 5 step 4, FRONTEND_AUDIT_2026-07.md admin split).
+ * The people of a store (or of no store), and the sheets for what can be
+ * done about one of them: inviting, granting a role, changing the stores
+ * they work at, moving them, and exceptions to what their roles allow.
  *
- *   - PeopleSection          member directory (also mounted by the
- *                            store Team tab in admin/stores)
- *   - PermissionsSection     role list + RoleAssigneesByStore
- *   - Role / invite / manage / transfer / member-permission sheets +
- *     ScopeTab + GrantRoleSheet (internal)
- *
- * The audit's PermissionMatrix consolidation (3 hand-rolled matrices)
- * lands on top of this split as its own pass.
+ * `PeopleSection` is mounted by a store's People tab. Roles themselves
+ * are in destinations/manage/RolesScreen.
  */
 import { useEffect, useMemo, useState } from 'react';
-import {
-  Badge,
-  Banner,
-  Button,
-  Checkbox,
-  Field,
-  Input,
-  SectionLabel,
-  Segmented,
-  Select,
-  Sheet,
-  Spinner,
-  useToast,
-} from '@compass/ui';
+import { useToast } from '@compass/ui';
 import { ADMIN_RANK } from '@compass/contracts';
 import { STALE } from '../../../config/timings';
 import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { matchesAnyString, normalizeQuery } from '../../../lib/searchMatch';
-import { useDateFormat, useI18n, useRoleLabel } from '../../../hooks/useI18n';
+import { useDateFormat, useI18n, usePermissionLabel, useRoleLabel } from '../../../hooks/useI18n';
 import { getTg } from '../../../hooks/useTelegram';
 import { useStoreContext } from '../../../components/StoreSwitcher';
 import { botLink as makeBotLink, shareLink as makeShareLink } from '../../../lib/telegramLinks';
@@ -433,6 +415,7 @@ export function PeopleSection({
               {isGlobalAdminPeople ? (
                 <button
                   type="button"
+                  data-testid="member-permissions"
                   className={QUIET}
                   onClick={() => {
                     setOpenId(null);
@@ -915,119 +898,100 @@ function ManageMemberSheet({
     storeName: string;
   } | null>(null);
 
+  const pending = assignMut.isPending || unassignMut.isPending;
+  const allStores = storesQuery.data ?? [];
+  // Moving someone is for whoever administers every store; a store
+  // manager takes them out of one store and puts them in another.
+  const movable = isGlobalAdmin
+    ? allStores.filter((st) => assignedIds.has(st.id) && adminStoreIds.has(st.id))
+    : [];
+
   return (
-    <Sheet
+    <KitSheet
       open={open}
       onOpenChange={(o) => !o && onClose()}
       title={target?.displayName ?? i18n.t('people.memberFallback')}
-      description={i18n.t('people.editMemberHint')}
     >
       {target ? (
-        <div className="flex flex-col gap-4 py-3">
-          <Field label={i18n.t('admin.field.displayNameOverride')}>
-            <div className="flex gap-2">
-              <Input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                maxLength={200}
-                placeholder="display name"
-              />
-              <Button
-                size="sm"
-                loading={renameMut.isPending}
-                disabled={!name.trim() || name.trim() === target.displayName}
+        <div className="flex flex-col gap-xl">
+          <div className="flex flex-col gap-sm">
+            <KitField
+              label={i18n.t('admin.field.displayNameOverride')}
+              value={name}
+              maxLength={200}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <p className="text-small text-secondary">{i18n.t('people.nameOverrideHint')}</p>
+            {name.trim() && name.trim() !== target.displayName ? (
+              <KitButton
+                variant="secondary"
+                data-testid="member-rename"
+                busy={renameMut.isPending}
                 onClick={() =>
                   renameMut.mutate({ memberId: target.memberId, displayName: name.trim() })
                 }
               >
                 {i18n.t('common.save')}
-              </Button>
-            </div>
-            <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
-              {i18n.t('people.nameOverrideHint')}
-            </p>
-          </Field>
+              </KitButton>
+            ) : null}
+          </div>
 
-          <Field label={i18n.t('admin.field.assignedStores')}>
+          {/* Each capsule is a store; a filled one is a store this person
+              works at. A tap changes it there and then. */}
+          <div className="flex flex-col gap-sm">
+            <span className="text-label text-ink">{i18n.t('admin.field.assignedStores')}</span>
             {storesQuery.isLoading || assignmentsQuery.isLoading ? (
-              <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
-                <Spinner size={14} /> Loading…
-              </div>
+              <p className="text-small text-secondary">{i18n.t('common.loading')}</p>
+            ) : allStores.length === 0 ? (
+              <p className="text-small text-secondary">{i18n.t('people.noStoresInOrg')}</p>
             ) : (
-              <div className="flex flex-col gap-1.5 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
-                {(storesQuery.data ?? []).map((st) => {
-                  const checked = assignedIds.has(st.id);
-                  const pending = assignMut.isPending || unassignMut.isPending;
-                  // C2: stores you don't administer are visible (so
-                  // you see the full picture) but the checkbox is
-                  // disabled. The server would reject anyway.
-                  const editable = adminStoreIds.has(st.id);
+              <div className="flex flex-wrap gap-sm">
+                {allStores.map((st) => {
+                  const on = assignedIds.has(st.id);
                   return (
-                    <label
+                    <button
                       key={st.id}
-                      className={
-                        'press flex items-center gap-2 rounded-[var(--r-utility)] px-2 py-1.5 ' +
-                        (editable ? 'cursor-pointer' : 'cursor-not-allowed opacity-60')
+                      type="button"
+                      aria-pressed={on}
+                      data-testid="member-store"
+                      // Only in a store this person administers.
+                      disabled={pending || !adminStoreIds.has(st.id)}
+                      onClick={() =>
+                        (on ? unassignMut : assignMut).mutate({
+                          memberId: target.memberId,
+                          storeId: st.id,
+                        })
                       }
-                      title={editable ? undefined : "You don't administer this store"}
+                      className={capsule(on)}
                     >
-                      <Checkbox
-                        checked={checked}
-                        disabled={pending || !editable}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            assignMut.mutate({
-                              memberId: target.memberId,
-                              storeId: st.id,
-                            });
-                          } else {
-                            unassignMut.mutate({
-                              memberId: target.memberId,
-                              storeId: st.id,
-                            });
-                          }
-                        }}
-                      />
-                      <span className="text-old-body text-[var(--c-fg)]">{st.name}</span>
-                      {st.code ? (
-                        <span className="text-old-label text-[var(--c-fg-muted)]">{st.code}</span>
-                      ) : null}
-                      {/* D2 (2026-05-06): "Transfer..." per assigned
-                          row. M1.9 (2026-05-07): gated to global admins
-                          only — store-scoped managers should use the
-                          unassign+reassign workflow on this same grid. */}
-                      {checked && editable && isGlobalAdmin ? (
-                        <button
-                          type="button"
-                          className="ml-auto rounded-full bg-[var(--c-surface)] px-2 py-0.5 text-old-label font-medium text-[var(--c-fg)] ring-hairline active:opacity-80"
-                          onClick={(ev) => {
-                            ev.preventDefault();
-                            ev.stopPropagation();
-                            setTransferFrom({ storeId: st.id, storeName: st.name });
-                          }}
-                          title={i18n.t('people.transferTooltip')}
-                        >
-                          → {i18n.t('admin.action.transfer')}
-                        </button>
-                      ) : !editable ? (
-                        <span className="ml-auto text-old-tiny uppercase tracking-wide text-[var(--c-fg-muted)]">
-                          read-only
-                        </span>
-                      ) : null}
-                    </label>
+                      {st.name}
+                    </button>
                   );
                 })}
-                {(storesQuery.data ?? []).length === 0 ? (
-                  <span className="px-2 py-1 text-old-label text-[var(--c-fg-muted)]">
-                    {i18n.t('people.noStoresInOrg')}
-                  </span>
-                ) : null}
               </div>
             )}
-            <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
-              {i18n.t('people.storeScopeHint')}
-            </p>
-          </Field>
+            <p className="text-small text-secondary">{i18n.t('people.storeScopeHint')}</p>
+          </div>
+
+          {movable.length > 0 ? (
+            <div className="flex flex-col gap-sm">
+              <span className="text-label text-ink">{i18n.t('people.transferTitle')}</span>
+              <div className="flex flex-wrap gap-sm">
+                {movable.map((st) => (
+                  <button
+                    key={st.id}
+                    type="button"
+                    data-testid="member-transfer"
+                    onClick={() => setTransferFrom({ storeId: st.id, storeName: st.name })}
+                    className="flex h-pillbtn shrink-0 items-center rounded-pill bg-surface-sunken px-lg text-label text-ink outline-none active:opacity-70"
+                  >
+                    {i18n.t('people.transferOutOf', { store: st.name })}
+                  </button>
+                ))}
+              </div>
+              <p className="text-small text-secondary">{i18n.t('people.transferTooltip')}</p>
+            </div>
+          ) : null}
         </div>
       ) : null}
       {target && transferFrom ? (
@@ -1041,7 +1005,7 @@ function ManageMemberSheet({
           onClose={() => setTransferFrom(null)}
         />
       ) : null}
-    </Sheet>
+    </KitSheet>
   );
 }
 
@@ -1119,17 +1083,16 @@ function TransferStoreSheet({
   });
 
   return (
-    <Sheet
+    <KitSheet
       open={open}
       onOpenChange={(o) => !o && !transferMut.isPending && onClose()}
-      title={i18n.t('people.transferTitle')}
-      description={target ? i18n.t('people.transferMoving', { name: target.displayName }) : ''}
-      footer={
+      title={target ? i18n.t('people.transferMoving', { name: target.displayName }) : ''}
+      actions={
         target ? (
-          <Button
-            block
-            size="lg"
-            loading={transferMut.isPending}
+          <KitButton
+            variant="primary"
+            data-testid="transfer-go"
+            busy={transferMut.isPending}
             disabled={!toStoreId}
             onClick={() =>
               transferMut.mutate({
@@ -1141,68 +1104,75 @@ function TransferStoreSheet({
             }
           >
             {i18n.t('people.transferAction')}
-          </Button>
+          </KitButton>
         ) : undefined
       }
     >
       {target ? (
-        <div className="flex flex-col gap-3 py-3">
-          {/* M1.21-C: this TransferSheet uses From/To as spatial
-              labels (source store / destination store), not date
-              range. Leave English here until the sheet gets its
-              own dedicated i18n pass with all the other admin
-              transfer copy. */}
-          <Field label={i18n.t('people.transferFrom')}>
-            <div className="rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 py-2 text-old-h3 ring-hairline">
-              {target.fromStoreName}
-            </div>
-          </Field>
-          <Field label={`${i18n.t('people.transferTo')} *`}>
+        <div className="flex flex-col gap-xl">
+          <div className="flex flex-col gap-xs">
+            <span className="text-small text-secondary">{i18n.t('people.transferFrom')}</span>
+            <span className="text-label text-ink">{target.fromStoreName}</span>
+          </div>
+
+          <div className="flex flex-col gap-sm">
+            <span className="text-label text-ink">{i18n.t('people.transferTo')}</span>
             {destinationStores.length === 0 ? (
-              <Banner tone="warn" title={i18n.t('people.transferNoDestTitle')}>
-                {i18n.t('people.transferNoDestBody')}
-              </Banner>
-            ) : (
-              <Select value={toStoreId} onChange={(e) => setToStoreId(e.target.value)}>
-                <option value="">— pick a destination store —</option>
-                {destinationStores.map((st) => (
-                  <option key={st.id} value={st.id}>
-                    {st.name}
-                  </option>
-                ))}
-              </Select>
-            )}
-          </Field>
-          <label className="press flex cursor-pointer items-start gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 ring-hairline">
-            <input
-              type="checkbox"
-              className="mt-0.5 h-5 w-5"
-              checked={mirrorRoles}
-              onChange={(e) => setMirrorRoles(e.target.checked)}
-            />
-            <div className="min-w-0 flex-1">
-              <div className="text-old-body font-semibold text-[var(--c-fg)]">
-                {i18n.t('people.mirrorRoles')}
+              <div role="status" className="rounded-lg bg-warning-pale p-xl">
+                <p className="text-label text-warning-ink">
+                  {i18n.t('people.transferNoDestTitle')}
+                </p>
+                <p className="text-small text-warning-ink">{i18n.t('people.transferNoDestBody')}</p>
               </div>
-              <p className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
-                {i18n.t('people.mirrorRolesHint', { store: target.fromStoreName })}
-              </p>
-            </div>
-          </label>
-          <Banner tone="info" title={i18n.t('people.transferWhatTitle')}>
-            {i18n.t('people.transferWhatIntro')}
-            <ul className="mt-1 list-disc space-y-0.5 pl-4 text-old-label">
-              <li>{i18n.t('people.transferWhatAdded', { name: target.displayName })}</li>
-              <li>
-                {i18n.t(mirrorRoles ? 'people.transferWhatMirrored' : 'people.transferWhatNoRoles')}
-              </li>
-              <li>{i18n.t('people.transferWhatRemoved', { store: target.fromStoreName })}</li>
-            </ul>
-            {i18n.t('people.transferWhatOutro')}
-          </Banner>
+            ) : (
+              <div className="flex flex-wrap gap-sm">
+                {destinationStores.map((st) => (
+                  <button
+                    key={st.id}
+                    type="button"
+                    aria-pressed={toStoreId === st.id}
+                    data-testid="transfer-to"
+                    onClick={() => setToStoreId(st.id)}
+                    className={capsule(toStoreId === st.id)}
+                  >
+                    {st.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-sm">
+            <button
+              type="button"
+              aria-pressed={mirrorRoles}
+              data-testid="transfer-mirror"
+              onClick={() => setMirrorRoles(!mirrorRoles)}
+              className={capsule(mirrorRoles) + ' self-start'}
+            >
+              {i18n.t('people.mirrorRoles')}
+            </button>
+            <p className="text-small text-secondary">
+              {i18n.t('people.mirrorRolesHint', { store: target.fromStoreName })}
+            </p>
+          </div>
+
+          {/* What pressing the button will do, in order. */}
+          <div className="flex flex-col gap-xs rounded-lg bg-surface p-xl">
+            <span className="text-label text-ink">{i18n.t('people.transferWhatTitle')}</span>
+            <span className="text-small text-secondary">
+              {i18n.t('people.transferWhatAdded', { name: target.displayName })}
+            </span>
+            <span className="text-small text-secondary">
+              {i18n.t(mirrorRoles ? 'people.transferWhatMirrored' : 'people.transferWhatNoRoles')}
+            </span>
+            <span className="text-small text-secondary">
+              {i18n.t('people.transferWhatRemoved', { store: target.fromStoreName })}
+            </span>
+          </div>
         </div>
       ) : null}
-    </Sheet>
+    </KitSheet>
   );
 }
 
@@ -1237,6 +1207,7 @@ function MemberPermissionsSheet({
   onClose: () => void;
 }) {
   const i18n = useI18n();
+  const say = usePermissionLabel();
   const utils = trpc.useUtils();
   const errToast = useErrToast();
   const session = useAuthStore((s) => s.session);
@@ -1264,11 +1235,6 @@ function MemberPermissionsSheet({
   useEffect(() => {
     if (target) setScope({ kind: 'global' });
   }, [target]);
-
-  const editableStoreTabs = useMemo(
-    () => (target?.stores ?? []).filter((st) => adminStoreIds.has(st.id)),
-    [target, adminStoreIds],
-  );
 
   const set = trpc.admin.memberPermissionSet.useMutation({
     onSuccess: () => {
@@ -1343,192 +1309,119 @@ function MemberPermissionsSheet({
     }
   };
 
+  const MODES = [
+    ['role', 'perms.byRole'],
+    ['allow', 'perms.allow'],
+    ['deny', 'perms.deny'],
+  ] as const;
+
   return (
-    <Sheet
+    <KitSheet
       open={open}
       onOpenChange={(o) => !o && onClose()}
-      title={target ? `Permissions — ${target.displayName}` : 'Permissions'}
-      description={
-        detail.data
-          ? i18n.t('people.effectiveOverridesLine', {
-              eff: detail.data.effective.length,
-              ov: detail.data.overrides.length,
-            })
-          : undefined
-      }
+      title={target ? i18n.t('perms.title', { name: target.displayName }) : ''}
     >
       {detail.isLoading || allPerms.isLoading ? (
-        <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">
-          <Spinner size={16} />
-        </div>
-      ) : !detail.data ? (
-        <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">—</div>
-      ) : (
-        <div className="flex flex-col gap-3 py-3">
-          {/* Scope tabs (A2, 2026-05-06). 'Global' is always present;
-              store tabs appear only when the member belongs to that
-              store AND the actor administers it. The little dot on
-              each tab counts overrides scoped to that tab. */}
-          {(editableStoreTabs.length > 0 || (target?.stores ?? []).length > 0) && (
-            <div className="flex flex-wrap gap-1">
-              <ScopeTab
-                active={scope.kind === 'global'}
-                onClick={() => setScope({ kind: 'global' })}
-                count={overrideByScopeKey.get('global')?.size ?? 0}
-              >
-                {i18n.t('people.scopeGlobal')}
-              </ScopeTab>
-              {(target?.stores ?? []).map((st) => {
-                const editable = adminStoreIds.has(st.id);
-                const isActive = scope.kind === 'store' && scope.storeId === st.id;
-                const tabCount = overrideByScopeKey.get(`store:${st.id}`)?.size ?? 0;
+        <p className="text-body text-secondary">{i18n.t('common.loading')}</p>
+      ) : !detail.data ? null : (
+        <div className="flex flex-col gap-xl">
+          {/* Where the exception holds: everywhere, or in one store this
+              person works at. A number says how many are set there. */}
+          {(target?.stores ?? []).length > 0 ? (
+            <div className="flex flex-wrap gap-sm">
+              {[
+                { key: 'global', label: i18n.t('people.everyStore'), store: null, may: true },
+                ...(target?.stores ?? []).map((st) => ({
+                  key: `store:${st.id}`,
+                  label: st.name,
+                  store: st,
+                  may: adminStoreIds.has(st.id),
+                })),
+              ].map((tab) => {
+                const n = overrideByScopeKey.get(tab.key)?.size ?? 0;
                 return (
-                  <ScopeTab
-                    key={st.id}
-                    active={isActive}
-                    disabled={!editable}
+                  <button
+                    key={tab.key}
+                    type="button"
+                    aria-pressed={currentScopeKey === tab.key}
+                    data-testid="perms-scope"
+                    disabled={!tab.may}
                     onClick={() =>
-                      editable &&
-                      setScope({
-                        kind: 'store',
-                        storeId: st.id,
-                        storeName: st.name,
-                      })
+                      setScope(
+                        tab.store
+                          ? { kind: 'store', storeId: tab.store.id, storeName: tab.store.name }
+                          : { kind: 'global' },
+                      )
                     }
-                    count={tabCount}
-                    title={editable ? undefined : "You don't administer this store — read-only"}
+                    className={capsule(currentScopeKey === tab.key)}
                   >
-                    {st.name}
-                  </ScopeTab>
+                    {tab.label}
+                    {n > 0 ? <span className="ms-sm tabular-nums">{n}</span> : null}
+                  </button>
                 );
               })}
             </div>
-          )}
-          <Banner tone="info" title={i18n.t('people.overridesHowTitle')}>
+          ) : null}
+          <p className="text-small text-secondary">
             {scope.kind === 'global'
               ? i18n.t('people.overridesHowGlobal')
               : i18n.t('people.overridesHowStore', { store: scope.storeName })}
-          </Banner>
+          </p>
+
+          {/* Each sentence sits right on its three choices, with room
+              before the next sentence, so it is plain which choices
+              belong to which. */}
           {grouped.map(([ns, keys]) => (
-            <div key={ns}>
-              <SectionLabel padded={false}>{ns}</SectionLabel>
-              <ul className="mt-1 flex flex-col gap-1">
-                {keys.map((p) => {
-                  const override = overrideByKey.get(p.key) ?? null;
-                  const fromRole = roleKeys.has(p.key);
-                  const mode: 'role' | 'allow' | 'deny' = override ?? 'role';
-                  return (
-                    <li
-                      key={p.key}
-                      className="flex flex-col gap-1 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2"
-                    >
-                      <div className="flex items-baseline justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="font-mono text-old-label">{p.key}</div>
-                          {p.description ? (
-                            <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
-                              {p.description}
-                            </div>
-                          ) : null}
-                        </div>
-                        {fromRole ? <Badge tone="muted">from role</Badge> : null}
-                      </div>
-                      {/* M3.17 (2026-05-16): migrated from local SegBtn
-                          to the shared <Segmented> primitive. Per-option
-                          activeBg drives the allow=green / deny=red /
-                          inherit=action coloring that the old SegBtn
-                          baked in via a `tone` prop. */}
-                      <Segmented<'role' | 'allow' | 'deny'>
-                        size="sm"
-                        value={mode}
-                        options={[
-                          { value: 'role', label: 'From role' },
-                          {
-                            value: 'allow',
-                            label: 'Allow',
-                            activeBg: 'bg-[var(--c-success)]',
-                          },
-                          {
-                            value: 'deny',
-                            label: 'Deny',
-                            activeBg: 'bg-[var(--c-danger)]',
-                          },
-                        ]}
-                        onChange={(next) => handleSet(p.key, next)}
-                      />
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
+            <section key={ns} className="flex flex-col gap-xl">
+              <h3 className="text-small text-secondary">{say.group(ns)}</h3>
+              {keys.map((p) => {
+                const mode: 'role' | 'allow' | 'deny' = overrideByKey.get(p.key) ?? 'role';
+                return (
+                  <div key={p.key} data-testid="perms-row" className="flex flex-col gap-xs">
+                    <span className="text-body text-ink">
+                      {say.permission(p.key, p.description)}
+                      {roleKeys.has(p.key) ? (
+                        <span className="text-small text-secondary">
+                          {' · '}
+                          {i18n.t('perms.roleHas')}
+                        </span>
+                      ) : null}
+                    </span>
+                    <div role="radiogroup" className="flex flex-wrap gap-sm">
+                      {MODES.map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          role="radio"
+                          aria-checked={mode === value}
+                          data-testid={`perms-${value}`}
+                          disabled={set.isPending || revoke.isPending}
+                          onClick={() => handleSet(p.key, value)}
+                          className={
+                            'flex h-chip shrink-0 items-center rounded-pill px-md text-caption outline-none active:opacity-70 disabled:opacity-60 ' +
+                            (mode !== value
+                              ? 'bg-surface text-ink'
+                              : value === 'deny'
+                                ? 'bg-danger text-on-danger'
+                                : value === 'allow'
+                                  ? 'bg-primary text-on-primary'
+                                  : 'bg-contrast text-on-contrast')
+                          }
+                        >
+                          {i18n.t(label)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </section>
           ))}
         </div>
       )}
-    </Sheet>
+    </KitSheet>
   );
 }
-
-/**
- * ScopeTab — tab pill for the per-store permission-override tabs (A2,
- * 2026-05-06). Mirrors the visual language of the segmented buttons
- * but in tab-bar form. Shows a small count chip when the tab has at
- * least one override scoped to it. `disabled` greys it out for stores
- * the actor doesn't administer (the tab still renders so the operator
- * sees the full member-store list, but it's read-only-style).
- */
-function ScopeTab({
-  active,
-  disabled,
-  count,
-  onClick,
-  title,
-  children,
-}: {
-  active: boolean;
-  disabled?: boolean;
-  count?: number;
-  onClick: () => void;
-  title?: string;
-  children: React.ReactNode;
-}) {
-  const base =
-    'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-old-label font-medium ring-hairline';
-  const tone = active
-    ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-    : disabled
-      ? 'bg-transparent text-[var(--c-fg-muted)] opacity-60'
-      : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]';
-  return (
-    <button
-      type="button"
-      onClick={disabled ? undefined : onClick}
-      disabled={disabled}
-      title={title}
-      className={`${base} ${tone}`}
-    >
-      <span>{children}</span>
-      {count && count > 0 ? (
-        <span
-          className={
-            'inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-old-tiny ' +
-            (active ? 'bg-white/25 text-white' : 'bg-[var(--c-action)] text-[var(--c-action-fg)]')
-          }
-        >
-          {count}
-        </span>
-      ) : null}
-    </button>
-  );
-}
-
-// M3.17 (2026-05-16): the local SegBtn helper was retired — both
-// callers (Permissions matrix + Grant Role scope) now use the shared
-// <Segmented> primitive from @compass/ui.
-
-// ADMIN_RANK is imported from `@compass/contracts` (see top of file).
-// Single source of truth for the org-tier threshold — the M1.5 audit
-// found this constant duplicated in 4 places (server gate + 3 FE
-// usages) which was a drift hazard.
 
 /**
  * GrantRoleSheet — two-step picker.
@@ -1801,7 +1694,9 @@ function GrantRoleSheet({
                 <span className="min-w-0 flex-1">
                   <span className="block text-label text-ink">{roleLabel(r).name}</span>
                   {r.description ? (
-                    <span className="block text-small text-secondary">{roleLabel(r).description}</span>
+                    <span className="block text-small text-secondary">
+                      {roleLabel(r).description}
+                    </span>
                   ) : null}
                 </span>
                 <span className="shrink-0 text-forest">

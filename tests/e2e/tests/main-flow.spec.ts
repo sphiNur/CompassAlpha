@@ -650,6 +650,29 @@ test('stores and the people in them', async () => {
   page.once('dialog', (dialog) => void dialog.accept());
   await sheet().getByTestId('member-revoke').first().click();
   await expect(sheet().getByTestId('member-revoke')).toHaveCount(1);
+  // An exception for this one person, on top of what her roles allow:
+  // said in the same sentences as a role, with three choices each.
+  await sheet().getByTestId('member-permissions').click();
+  await expect(sheet().getByRole('heading', { name: 'What Dilnoza may do' })).toBeVisible();
+  const approving = sheet()
+    .getByTestId('perms-row')
+    .filter({ hasText: 'Approve or reject orders' });
+  await expect(approving.getByTestId('perms-role')).toHaveAttribute('aria-checked', 'true');
+  await approving.getByTestId('perms-allow').click();
+  await expect(approving.getByTestId('perms-allow')).toHaveAttribute('aria-checked', 'true');
+  await evidence('person-permissions');
+  await page.keyboard.press('Escape');
+  await expect(sheet()).toBeHidden();
+  // The stores she works at are capsules; the filled one is hers.
+  await dilnoza.click();
+  await sheet().getByTestId('member-manage').click();
+  await expect(
+    sheet().getByTestId('member-store').filter({ hasText: 'Central Kitchen' }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await evidence('person-stores');
+  await page.keyboard.press('Escape');
+  await expect(sheet()).toBeHidden();
+  await dilnoza.click();
   // And out of the organisation altogether.
   page.once('dialog', (dialog) => void dialog.accept());
   await sheet().getByTestId('member-remove').click();
