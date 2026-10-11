@@ -554,6 +554,47 @@ test('stores and the people in them', async () => {
   await evidence('person');
   await page.keyboard.press('Escape');
   await expect(sheet()).toBeHidden();
+  await page.getByTestId('manage-back').click();
+
+  // Someone new at a store: by their Telegram number, with a role there.
+  await main().getByTestId('store-row').filter({ hasText: 'Central Kitchen' }).click();
+  await page.getByTestId('member-invite').click();
+  await evidence('invite-ways');
+  await sheet().getByTestId('invite-manual').click();
+  await expect(sheet().getByTestId('invite-submit')).toBeDisabled();
+  await sheet().getByRole('textbox', { name: 'Telegram user ID' }).fill('700100200');
+  await sheet().getByRole('textbox', { name: 'Display name' }).fill('Dilnoza');
+  await sheet().getByTestId('invite-role').filter({ hasText: 'Store Staff' }).click();
+  await sheet().getByTestId('invite-store').filter({ hasText: 'Central Kitchen' }).click();
+  await evidence('invite-by-id');
+  await sheet().getByTestId('invite-submit').click();
+  await expect(sheet()).toBeHidden();
+  const dilnoza = main().getByTestId('member-row').filter({ hasText: 'Dilnoza' });
+  await expect(dilnoza).toContainText('Store Staff');
+
+  // A second role, at the store being looked at, in two taps.
+  await dilnoza.click();
+  await sheet().getByTestId('member-grant').click();
+  await expect(
+    sheet().getByTestId('grant-store').filter({ hasText: 'Central Kitchen' }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await evidence('grant-role');
+  await sheet().getByTestId('grant-role').filter({ hasText: 'Purchaser' }).click();
+  await expect(sheet()).toBeHidden();
+  await expect(dilnoza).toContainText('Purchaser');
+
+  // Revoking one asks first, and the person's sheet shows it gone.
+  await dilnoza.click();
+  await expect(sheet().getByTestId('member-revoke')).toHaveCount(2);
+  await evidence('person-with-roles');
+  page.once('dialog', (dialog) => void dialog.accept());
+  await sheet().getByTestId('member-revoke').first().click();
+  await expect(sheet().getByTestId('member-revoke')).toHaveCount(1);
+  // And out of the organisation altogether.
+  page.once('dialog', (dialog) => void dialog.accept());
+  await sheet().getByTestId('member-remove').click();
+  await expect(sheet()).toBeHidden();
+  await expect(dilnoza).toHaveCount(0);
 
   await page.getByTestId('manage-back').click();
   await page.getByTestId('manage-back').click();

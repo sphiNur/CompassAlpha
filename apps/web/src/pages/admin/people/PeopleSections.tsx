@@ -21,8 +21,6 @@ import {
   DataState,
   EmptyState,
   Field,
-  IconChevronRight,
-  IconShare,
   Input,
   ListRow,
   SectionLabel,
@@ -43,7 +41,12 @@ import { getTg } from '../../../hooks/useTelegram';
 import { useStoreContext } from '../../../components/StoreSwitcher';
 import { botLink as makeBotLink, shareLink as makeShareLink } from '../../../lib/telegramLinks';
 import { nativeConfirm } from '../shared';
-import { Button as KitButton, Sheet as KitSheet, StatusChip } from '@compass/ui/kit';
+import {
+  Button as KitButton,
+  Field as KitField,
+  Sheet as KitSheet,
+  StatusChip,
+} from '@compass/ui/kit';
 import { ChevronIcon, ClockIcon, PlusIcon, SearchIcon } from '../../../destinations/icons';
 
 // ============ People ============
@@ -76,6 +79,11 @@ interface InviteDraft {
  *     with no store assignments (admin / super_admin org-level
  *     operators). Used by the Stores → Org-level pseudo-store entry.
  */
+/** One choice among several, as a capsule; the chosen one filled dark. */
+const capsule = (on: boolean) =>
+  'flex h-pillbtn shrink-0 items-center rounded-pill px-lg text-label outline-none active:opacity-70 disabled:opacity-40 ' +
+  (on ? 'bg-contrast text-on-contrast' : 'bg-surface text-ink');
+
 export function PeopleSection({
   lockMode,
 }: {
@@ -1209,7 +1217,7 @@ function InviteHubSheet({
 
   const botUsername = cfgQuery.data?.botUsername?.replace(/^@/, '') ?? null;
   const botLink = makeBotLink(botUsername);
-  const message = `Join our Compass workspace "${session?.member.orgName ?? ''}" — open this bot, send /id, then ask me to add you.`;
+  const message = i18n.t('people.inviteMessage', { org: session?.member.orgName ?? '' });
   const shareUrl = makeShareLink({ url: botLink, text: message });
 
   const handleShare = () => {
@@ -1236,79 +1244,56 @@ function InviteHubSheet({
   };
 
   return (
-    <Sheet
+    <KitSheet
       open={open}
       onOpenChange={(o) => !o && onClose()}
       title={i18n.t('people.inviteTitle')}
-      description={i18n.t('people.inviteHint')}
     >
-      <div className="flex flex-col gap-2 py-3">
-        <button
-          type="button"
-          onClick={handleShare}
-          disabled={!botUsername}
-          className="press flex items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 text-left ring-hairline disabled:opacity-50"
-        >
-          <span className="text-[var(--c-action)]">
-            <IconShare size={20} />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-old-body font-semibold text-[var(--c-fg)]">
-              {i18n.t('people.inviteViaTelegram')}
+      <div className="flex flex-col">
+        {[
+          {
+            key: 'share',
+            title: i18n.t('people.inviteViaTelegram'),
+            hint: botUsername
+              ? i18n.t('people.inviteViaTelegramHint')
+              : i18n.t('people.inviteNoBot'),
+            onClick: handleShare,
+            disabled: !botUsername,
+          },
+          {
+            key: 'copy',
+            title: i18n.t('people.inviteCopyLink'),
+            hint: i18n.t('people.inviteCopyLinkHint'),
+            onClick: () => void handleCopy(),
+            disabled: !botUsername,
+          },
+          {
+            key: 'manual',
+            title: i18n.t('people.inviteByTgId'),
+            hint: i18n.t('people.inviteByTgIdHint'),
+            onClick: onPickManual,
+            disabled: false,
+          },
+        ].map((way) => (
+          <button
+            key={way.key}
+            type="button"
+            data-testid={`invite-${way.key}`}
+            onClick={way.onClick}
+            disabled={way.disabled}
+            className="flex min-h-row items-center gap-lg py-md text-start outline-none active:opacity-60 disabled:opacity-50"
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block text-label text-ink">{way.title}</span>
+              <span className="block text-small text-secondary">{way.hint}</span>
             </span>
-            <span className="mt-0.5 block text-old-label text-[var(--c-fg-muted)]">
-              {botUsername
-                ? "Pick a contact in Telegram; they'll get the bot link."
-                : 'Bot username not configured.'}
+            <span className="shrink-0 text-forest">
+              <ChevronIcon />
             </span>
-          </span>
-          <span aria-hidden className="shrink-0 text-[var(--c-fg-subtle)]">
-            <IconChevronRight size={16} />
-          </span>
-        </button>
-
-        <button
-          type="button"
-          onClick={handleCopy}
-          disabled={!botUsername}
-          className="press flex items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 text-left ring-hairline disabled:opacity-50"
-        >
-          <span className="text-[var(--c-action)]">
-            <IconShare size={20} />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-old-body font-semibold text-[var(--c-fg)]">
-              {i18n.t('people.inviteCopyLink')}
-            </span>
-            <span className="mt-0.5 block text-old-label text-[var(--c-fg-muted)]">
-              {i18n.t('people.inviteCopyLinkHint')}
-            </span>
-          </span>
-        </button>
-
-        <div className="my-2 text-center text-old-label uppercase tracking-eyebrow text-[var(--c-fg-subtle)]">
-          {i18n.t('people.inviteOr')}
-        </div>
-
-        <button
-          type="button"
-          onClick={onPickManual}
-          className="press flex items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 text-left ring-hairline"
-        >
-          <span className="min-w-0 flex-1">
-            <span className="block text-old-body font-semibold text-[var(--c-fg)]">
-              {i18n.t('people.inviteByTgId')}
-            </span>
-            <span className="mt-0.5 block text-old-label text-[var(--c-fg-muted)]">
-              {i18n.t('people.inviteByTgIdHint')}
-            </span>
-          </span>
-          <span aria-hidden className="shrink-0 text-[var(--c-fg-subtle)]">
-            <IconChevronRight size={16} />
-          </span>
-        </button>
+          </button>
+        ))}
       </div>
-    </Sheet>
+    </KitSheet>
   );
 }
 
@@ -1366,119 +1351,122 @@ function ManualInviteSheet({
   const hasStore = (draft?.storeIds.length ?? 0) > 0;
   const canSubmit = tgIdValid && (!requiresStore || hasStore);
   return (
-    <Sheet
+    <KitSheet
       open={!!draft}
       onOpenChange={(open) => !open && !pending && setDraft(null)}
       title={i18n.t('admin.invite.byTgId.title')}
-      description={i18n.t('admin.invite.byTgId.description')}
-      footer={
-        <Button block size="lg" loading={pending} disabled={!canSubmit} onClick={onSubmit}>
+      actions={
+        <KitButton
+          variant="primary"
+          data-testid="invite-submit"
+          busy={pending}
+          disabled={!canSubmit}
+          onClick={onSubmit}
+        >
           {i18n.t('admin.invite.byTgId.submit')}
-        </Button>
+        </KitButton>
       }
     >
       {draft ? (
-        <div className="flex flex-col gap-3 py-3">
-          <Field label={i18n.t('admin.field.tgUserId')}>
-            <Input
+        <div className="flex flex-col gap-xl">
+          <div className="flex flex-col gap-sm">
+            <KitField
+              label={i18n.t('admin.field.tgUserId')}
               value={draft.tgUserId}
-              onChange={(e) =>
-                setDraft({ ...draft, tgUserId: e.target.value.replace(/\D/g, '').slice(0, 15) })
-              }
               inputMode="numeric"
               maxLength={15}
               placeholder={i18n.t('admin.field.tgUserIdPlaceholder')}
-              autoFocus
-            />
-            <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
-              {i18n.t('admin.invite.tgIdHint')}
-            </p>
-          </Field>
-          <Field label={i18n.t('admin.field.displayName')}>
-            <Input
-              value={draft.displayName}
-              onChange={(e) => setDraft({ ...draft, displayName: e.target.value })}
-              maxLength={200}
-              placeholder={i18n.t('admin.field.displayNamePlaceholder')}
-            />
-          </Field>
-          <Field label={i18n.t('admin.field.role')}>
-            {rolesQuery.isLoading ? (
-              <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
-                <Spinner size={14} /> {i18n.t('admin.label.loadingRoles')}
-              </div>
-            ) : (
-              <Select
-                value={draft.roleSlug}
-                onChange={(e) => setDraft({ ...draft, roleSlug: e.target.value })}
-              >
-                <option value="">{i18n.t('admin.invite.noRoleYet')}</option>
-                {sortedRoles.map((r) => (
-                  <option key={r.id} value={r.slug}>
-                    {r.name}
-                  </option>
-                ))}
-              </Select>
-            )}
-          </Field>
-          {requiresStore ? (
-            <Field
-              label={
-                hasStore
-                  ? i18n.t('admin.field.storesSelected', { n: draft.storeIds.length })
-                  : i18n.t('admin.field.storesPickAtLeastOne')
+              onChange={(e) =>
+                setDraft({ ...draft, tgUserId: e.target.value.replace(/\D/g, '').slice(0, 15) })
               }
-            >
+            />
+            <p className="text-small text-secondary">{i18n.t('admin.invite.tgIdHint')}</p>
+          </div>
+          <KitField
+            label={i18n.t('admin.field.displayName')}
+            value={draft.displayName}
+            maxLength={200}
+            placeholder={i18n.t('admin.field.displayNamePlaceholder')}
+            onChange={(e) => setDraft({ ...draft, displayName: e.target.value })}
+          />
+
+          <div className="flex flex-col gap-sm">
+            <span className="text-label text-ink">{i18n.t('admin.field.role')}</span>
+            {rolesQuery.isLoading ? (
+              <p className="text-small text-secondary">{i18n.t('admin.label.loadingRoles')}</p>
+            ) : (
+              <div className="flex flex-wrap gap-sm">
+                {[{ slug: '', name: i18n.t('admin.invite.noRoleYet') }, ...sortedRoles].map((r) => (
+                  <button
+                    key={r.slug || 'none'}
+                    type="button"
+                    aria-pressed={draft.roleSlug === r.slug}
+                    data-testid="invite-role"
+                    onClick={() => setDraft({ ...draft, roleSlug: r.slug })}
+                    className={capsule(draft.roleSlug === r.slug)}
+                  >
+                    {r.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {requiresStore ? (
+            <div className="flex flex-col gap-sm">
+              <span className="text-label text-ink">
+                {hasStore
+                  ? i18n.t('admin.field.storesSelected', { n: draft.storeIds.length })
+                  : i18n.t('admin.field.storesPickAtLeastOne')}
+              </span>
               {storesQuery.isLoading ? (
-                <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
-                  <Spinner size={14} /> {i18n.t('admin.label.loadingStores')}
-                </div>
+                <p className="text-small text-secondary">{i18n.t('admin.label.loadingStores')}</p>
               ) : eligibleStores.length === 0 ? (
-                <Banner tone="warn" title={i18n.t('admin.banner.noStoresToInviteInto.title')}>
-                  {i18n.t('admin.banner.noStoresToInviteInto.body')}
-                </Banner>
+                <div role="status" className="rounded-lg bg-warning-pale p-xl">
+                  <p className="text-label text-warning-ink">
+                    {i18n.t('admin.banner.noStoresToInviteInto.title')}
+                  </p>
+                  <p className="text-small text-warning-ink">
+                    {i18n.t('admin.banner.noStoresToInviteInto.body')}
+                  </p>
+                </div>
               ) : (
-                <div className="flex flex-col gap-1.5 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
+                <div className="flex flex-wrap gap-sm">
                   {eligibleStores.map((st) => {
                     const checked = draft.storeIds.includes(st.id);
                     return (
-                      <label
+                      <button
                         key={st.id}
-                        className="press flex cursor-pointer items-center gap-2 rounded-[var(--r-utility)] px-2 py-1.5"
+                        type="button"
+                        aria-pressed={checked}
+                        data-testid="invite-store"
+                        onClick={() =>
+                          setDraft({
+                            ...draft,
+                            storeIds: checked
+                              ? draft.storeIds.filter((id) => id !== st.id)
+                              : [...draft.storeIds, st.id],
+                          })
+                        }
+                        className={capsule(checked)}
                       >
-                        <Checkbox
-                          checked={checked}
-                          onChange={(e) =>
-                            setDraft({
-                              ...draft,
-                              storeIds: e.target.checked
-                                ? [...draft.storeIds, st.id]
-                                : draft.storeIds.filter((id) => id !== st.id),
-                            })
-                          }
-                        />
-                        <span className="text-old-body text-[var(--c-fg)]">{st.name}</span>
-                        {st.code ? (
-                          <span className="text-old-label text-[var(--c-fg-muted)]">{st.code}</span>
-                        ) : null}
-                      </label>
+                        {st.name}
+                      </button>
                     );
                   })}
                 </div>
               )}
-              <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
+              <p className="text-small text-secondary">
                 {i18n.t('admin.invite.staffNeedStoreHint')}
                 {!isGlobalAdmin ? ' ' + i18n.t('admin.invite.onlyYourStoresHint') : ''}
               </p>
-            </Field>
+            </div>
           ) : (
-            <p className="text-old-label text-[var(--c-fg-muted)]">
-              {i18n.t('admin.invite.adminBypassHint')}
-            </p>
+            <p className="text-small text-secondary">{i18n.t('admin.invite.adminBypassHint')}</p>
           )}
         </div>
       ) : null}
-    </Sheet>
+    </KitSheet>
   );
 }
 
@@ -2358,107 +2346,109 @@ function GrantRoleSheet({
   const canSubmit = scopeMode === 'global' ? canGrantGlobal : selectedStoreIds.size > 0;
 
   return (
-    <Sheet
+    <KitSheet
       open={!!target}
-      onOpenChange={(open) => !open && onClose()}
-      title={i18n.t('people.grantRoleTitle')}
-      description={target ? i18n.t('people.grantRoleTo', { name: target.displayName }) : ''}
+      onOpenChange={(open) => !open && !grant.isPending && onClose()}
+      title={target ? i18n.t('people.grantRoleTo', { name: target.displayName }) : ''}
     >
-      <div className="flex flex-col gap-3 py-3">
-        {/* Step 1 — scope */}
-        {/* M3.17 (2026-05-16): SegBtn → Segmented. The "Globally" option
-            is greyed-out via the disabled prop when the actor isn't an
-            org-admin; the click handler short-circuits. */}
-        <Field label={i18n.t('admin.field.scope')}>
-          <Segmented<'store' | 'global'>
-            value={scopeMode}
-            options={[
-              { value: 'store', label: 'In specific store(s)' },
-              {
-                value: 'global',
-                label: i18n.t(
-                  canGrantGlobal ? 'people.grantGlobally' : 'people.grantGloballyLocked',
-                ),
-              },
-            ]}
-            onChange={(next) => {
-              if (next === 'global' && !canGrantGlobal) return;
-              setScopeMode(next);
-            }}
-            ariaLabel={i18n.t('admin.field.scope')}
-          />
+      <div className="flex flex-col gap-xl">
+        {/* Where the role holds. "Every store" is only offered to someone
+            who administers every store; the server checks the same. */}
+        <div className="flex flex-col gap-sm">
+          <span className="text-label text-ink">{i18n.t('admin.field.scope')}</span>
+          <div className="flex flex-wrap gap-sm">
+            <button
+              type="button"
+              aria-pressed={scopeMode === 'store'}
+              data-testid="grant-scope-store"
+              onClick={() => setScopeMode('store')}
+              className={capsule(scopeMode === 'store')}
+            >
+              {i18n.t('people.grantInStores')}
+            </button>
+            <button
+              type="button"
+              aria-pressed={scopeMode === 'global'}
+              data-testid="grant-scope-global"
+              disabled={!canGrantGlobal}
+              onClick={() => setScopeMode('global')}
+              className={capsule(scopeMode === 'global')}
+            >
+              {i18n.t('people.everyStore')}
+            </button>
+          </div>
           {!canGrantGlobal ? (
-            <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
-              {i18n.t('people.globalGrantLockedHint')}
-            </p>
+            <p className="text-small text-secondary">{i18n.t('people.globalGrantLockedHint')}</p>
           ) : null}
-        </Field>
+        </div>
 
-        {/* Store multi-select (visible in store mode) */}
         {scopeMode === 'store' ? (
-          <Field label={i18n.t('admin.field.stores')}>
+          <div className="flex flex-col gap-sm">
+            <span className="text-label text-ink">{i18n.t('admin.field.stores')}</span>
             {eligibleStores.length === 0 ? (
-              <Banner tone="warn" title={i18n.t('people.noGrantStoresTitle')}>
-                {i18n.t('people.noGrantStoresBody')}
-              </Banner>
+              <div role="status" className="rounded-lg bg-warning-pale p-xl">
+                <p className="text-label text-warning-ink">{i18n.t('people.noGrantStoresTitle')}</p>
+                <p className="text-small text-warning-ink">{i18n.t('people.noGrantStoresBody')}</p>
+              </div>
             ) : (
-              <div className="flex flex-col gap-1.5 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
-                {eligibleStores.map((st) => {
-                  const checked = selectedStoreIds.has(st.id);
-                  return (
-                    <label
-                      key={st.id}
-                      className="press flex cursor-pointer items-center gap-2 rounded-[var(--r-utility)] px-2 py-1.5"
-                    >
-                      <Checkbox checked={checked} onChange={() => toggleStore(st.id)} />
-                      <span className="text-old-body text-[var(--c-fg)]">{st.name}</span>
-                      {st.code ? (
-                        <span className="text-old-label text-[var(--c-fg-muted)]">{st.code}</span>
-                      ) : null}
-                    </label>
-                  );
-                })}
+              <div className="flex flex-wrap gap-sm">
+                {eligibleStores.map((st) => (
+                  <button
+                    key={st.id}
+                    type="button"
+                    aria-pressed={selectedStoreIds.has(st.id)}
+                    data-testid="grant-store"
+                    onClick={() => toggleStore(st.id)}
+                    className={capsule(selectedStoreIds.has(st.id))}
+                  >
+                    {st.name}
+                  </button>
+                ))}
               </div>
             )}
-          </Field>
+          </div>
         ) : null}
 
-        {/* Step 2 — role list (filtered by chosen scope + effectiveRank) */}
-        {!canSubmit ? (
-          <p className="text-old-label text-[var(--c-fg-muted)]">
-            {i18n.t('people.pickScopeFirst')}
-          </p>
-        ) : rolesQuery.isLoading ? (
-          <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
-            <Spinner size={14} /> Loading roles…
-          </div>
-        ) : grantableRoles.length === 0 ? (
-          <Banner tone="warn" title={i18n.t('people.noGrantableTitle')}>
-            {scopeMode === 'global'
-              ? i18n.t('people.noGrantableGlobal', { rank: effectiveRank })
-              : i18n.t('people.noGrantableStore', { rank: effectiveRank })}
-          </Banner>
-        ) : (
-          grantableRoles.map((r) => (
-            <button
-              key={r.id}
-              type="button"
-              disabled={grant.isPending}
-              onClick={() => handlePick(r.slug)}
-              className="press flex items-center justify-between rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 text-left ring-hairline"
-            >
-              <div>
-                <div className="text-old-body font-semibold text-[var(--c-fg)]">{r.name}</div>
-                <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
-                  {i18n.t('people.rankLine', { rank: r.rank })}
-                  {r.description ? ` · ${r.description}` : ''}
-                </div>
-              </div>
-              {r.isBuiltIn ? <Badge tone="muted">{i18n.t('admin.label.builtIn')}</Badge> : null}
-            </button>
-          ))
-        )}
+        {/* The roles this person may be given there. Tapping one grants it. */}
+        <div className="flex flex-col gap-sm">
+          <span className="text-label text-ink">{i18n.t('people.roles')}</span>
+          {!canSubmit ? (
+            <p className="text-small text-secondary">{i18n.t('people.pickScopeFirst')}</p>
+          ) : rolesQuery.isLoading ? (
+            <p className="text-small text-secondary">{i18n.t('admin.label.loadingRoles')}</p>
+          ) : grantableRoles.length === 0 ? (
+            <div role="status" className="rounded-lg bg-warning-pale p-xl">
+              <p className="text-label text-warning-ink">{i18n.t('people.noGrantableTitle')}</p>
+              <p className="text-small text-warning-ink">
+                {scopeMode === 'global'
+                  ? i18n.t('people.noGrantableGlobal', { rank: effectiveRank })
+                  : i18n.t('people.noGrantableStore', { rank: effectiveRank })}
+              </p>
+            </div>
+          ) : (
+            grantableRoles.map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                data-testid="grant-role"
+                disabled={grant.isPending}
+                onClick={() => void handlePick(r.slug)}
+                className="flex min-h-row items-center gap-lg py-sm text-start outline-none active:opacity-60 disabled:opacity-50"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block text-label text-ink">{r.name}</span>
+                  {r.description ? (
+                    <span className="block text-small text-secondary">{r.description}</span>
+                  ) : null}
+                </span>
+                <span className="shrink-0 text-forest">
+                  <ChevronIcon />
+                </span>
+              </button>
+            ))
+          )}
+        </div>
       </div>
-    </Sheet>
+    </KitSheet>
   );
 }
