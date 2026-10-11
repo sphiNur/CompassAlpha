@@ -45,7 +45,7 @@ describe('a real sequence collision in the event store (PG)', () => {
    * sequence number to one stream twice, for real.
    */
   test.skipIf(!SHOULD_RUN)('is recognised as a unique violation', async () => {
-    const db = getDb();
+    const db = getDb(undefined, { system: 'maintenance' });
     const [org] = await db
       .insert(s.organizations)
       .values({ slug: `pgerr-${randomUUID().slice(0, 8)}`, name: 'PG error probe' })

@@ -1,9 +1,21 @@
 -- Row-Level Security policies. Run AFTER drizzle-generated DDL.
 -- Idempotent: each policy is dropped+recreated.
 
--- Helper: returns NULL if context not set, else org id as uuid.
+-- Helper: returns NULL if no tenant is set, else the org id as uuid.
 CREATE OR REPLACE FUNCTION app_current_org() RETURNS uuid AS $$
   SELECT NULLIF(current_setting('app.current_org_id', true), '')::uuid
+$$ LANGUAGE SQL STABLE;
+
+-- True inside a transaction (or on a connection) that has declared itself
+-- tenant-less on purpose: sign-in, the worker, health checks, migrations.
+-- The application sets it with withSystemContext(); see packages/db/src/rls.ts.
+--
+-- Policies used to read `... OR app_current_org() IS NULL`, which let every
+-- row through whenever no tenant was set, so a query that merely forgot to
+-- set one could read another customer's data. Now nothing is visible
+-- unless a tenant is set or this returns true.
+CREATE OR REPLACE FUNCTION app_is_system() RETURNS boolean AS $$
+  SELECT coalesce(current_setting('app.system_context', true), '') <> ''
 $$ LANGUAGE SQL STABLE;
 
 -- Org self-row policy.
@@ -11,7 +23,7 @@ ALTER TABLE auth.organizations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE auth.organizations FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS org_self ON auth.organizations;
 CREATE POLICY org_self ON auth.organizations
-  USING (id = app_current_org() OR app_current_org() IS NULL);
+  USING (id = app_current_org() OR app_is_system());
 
 -- Tables with their own org_id column.
 DO $$
@@ -45,7 +57,7 @@ BEGIN
     EXECUTE format('ALTER TABLE %s FORCE ROW LEVEL SECURITY', t);
     EXECUTE format('DROP POLICY IF EXISTS org_isolation ON %s', t);
     EXECUTE format(
-      'CREATE POLICY org_isolation ON %s USING (org_id = app_current_org() OR app_current_org() IS NULL)',
+      'CREATE POLICY org_isolation ON %s USING (org_id = app_current_org() OR app_is_system())',
       t
     );
   END LOOP;
@@ -59,7 +71,7 @@ ALTER TABLE auth.role_permissions FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS org_isolation ON auth.role_permissions;
 CREATE POLICY org_isolation ON auth.role_permissions
   USING (
-    app_current_org() IS NULL
+    app_is_system()
     OR EXISTS (
       SELECT 1 FROM auth.roles r
       WHERE r.id = role_permissions.role_id AND r.org_id = app_current_org()
@@ -72,7 +84,7 @@ ALTER TABLE auth.member_role_bindings FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS org_isolation ON auth.member_role_bindings;
 CREATE POLICY org_isolation ON auth.member_role_bindings
   USING (
-    app_current_org() IS NULL
+    app_is_system()
     OR EXISTS (
       SELECT 1 FROM auth.roles r
       WHERE r.id = member_role_bindings.role_id AND r.org_id = app_current_org()
@@ -84,7 +96,7 @@ ALTER TABLE inventory.store_supplier_prefs FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS org_isolation ON inventory.store_supplier_prefs;
 CREATE POLICY org_isolation ON inventory.store_supplier_prefs
   USING (
-    app_current_org() IS NULL
+    app_is_system()
     OR EXISTS (
       SELECT 1 FROM inventory.stores s
       WHERE s.id = store_supplier_prefs.store_id AND s.org_id = app_current_org()
@@ -96,7 +108,7 @@ ALTER TABLE inventory.sku_supplier_links FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS org_isolation ON inventory.sku_supplier_links;
 CREATE POLICY org_isolation ON inventory.sku_supplier_links
   USING (
-    app_current_org() IS NULL
+    app_is_system()
     OR EXISTS (
       SELECT 1 FROM inventory.skus k
       WHERE k.id = sku_supplier_links.sku_id AND k.org_id = app_current_org()
@@ -108,7 +120,7 @@ ALTER TABLE read_model.order_items_v FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS org_isolation ON read_model.order_items_v;
 CREATE POLICY org_isolation ON read_model.order_items_v
   USING (
-    app_current_org() IS NULL
+    app_is_system()
     OR EXISTS (
       SELECT 1 FROM read_model.order_sessions_v s
       WHERE s.id = order_items_v.session_id AND s.org_id = app_current_org()
@@ -120,7 +132,7 @@ ALTER TABLE read_model.run_items_v FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS org_isolation ON read_model.run_items_v;
 CREATE POLICY org_isolation ON read_model.run_items_v
   USING (
-    app_current_org() IS NULL
+    app_is_system()
     OR EXISTS (
       SELECT 1 FROM read_model.market_runs_v r
       WHERE r.id = run_items_v.run_id AND r.org_id = app_current_org()
@@ -132,7 +144,7 @@ ALTER TABLE read_model.run_item_stores_v FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS org_isolation ON read_model.run_item_stores_v;
 CREATE POLICY org_isolation ON read_model.run_item_stores_v
   USING (
-    app_current_org() IS NULL
+    app_is_system()
     OR EXISTS (
       SELECT 1 FROM read_model.market_runs_v r
       WHERE r.id = run_item_stores_v.run_id AND r.org_id = app_current_org()
@@ -150,7 +162,7 @@ ALTER TABLE auth.member_store_assignments FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS org_isolation ON auth.member_store_assignments;
 CREATE POLICY org_isolation ON auth.member_store_assignments
   USING (
-    app_current_org() IS NULL
+    app_is_system()
     OR EXISTS (
       SELECT 1 FROM auth.members m
       WHERE m.id = member_store_assignments.member_id
@@ -163,7 +175,7 @@ ALTER TABLE auth.member_permission_overrides FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS org_isolation ON auth.member_permission_overrides;
 CREATE POLICY org_isolation ON auth.member_permission_overrides
   USING (
-    app_current_org() IS NULL
+    app_is_system()
     OR EXISTS (
       SELECT 1 FROM auth.members m
       WHERE m.id = member_permission_overrides.member_id
@@ -177,7 +189,7 @@ DROP POLICY IF EXISTS org_isolation ON domain.policy_decisions;
 CREATE POLICY org_isolation ON domain.policy_decisions
   USING (
     org_id = app_current_org()
-    OR app_current_org() IS NULL
+    OR app_is_system()
   );
 
 ALTER TABLE domain.snapshots ENABLE ROW LEVEL SECURITY;
@@ -185,7 +197,7 @@ ALTER TABLE domain.snapshots FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS org_isolation ON domain.snapshots;
 CREATE POLICY org_isolation ON domain.snapshots
   USING (
-    app_current_org() IS NULL
+    app_is_system()
     OR EXISTS (
       SELECT 1 FROM domain.events e
       WHERE e.stream_id = snapshots.stream_id

@@ -26,7 +26,7 @@ import { getDb, closeDb } from './index';
 })();
 
 async function main() {
-  const db = getDb();
+  const db = getDb(undefined, { system: 'maintenance' });
   console.log('Sample SKU rows (first 5):');
   const r = await db.execute(
     sql.raw(`SELECT code, names FROM inventory.skus ORDER BY sort_index LIMIT 5`),

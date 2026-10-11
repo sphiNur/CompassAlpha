@@ -40,7 +40,7 @@ import { getDb, closeDb } from './index';
 const APPLY = process.argv.includes('--apply');
 
 async function main() {
-  const db = getDb();
+  const db = getDb(undefined, { system: 'maintenance' });
   const before = await db.execute(
     sql.raw(`SELECT COUNT(*)::int AS n FROM sync.outbox WHERE sent_at IS NULL`),
   );

@@ -203,7 +203,7 @@ async function main() {
   console.log(c.bold(c.red('CompassAlpha — HARD DELETE fake data')));
   console.log(c.dim(`  mode: ${APPLY ? c.red('APPLY (writes!)') : 'DRY-RUN (no writes)'}`));
 
-  const db = getDb();
+  const db = getDb(undefined, { system: 'maintenance' });
 
   // Sanity check: count what's about to die.
   console.log(c.cyan('\n▶ Pre-wipe row counts:'));

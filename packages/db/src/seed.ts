@@ -41,7 +41,7 @@ import { PERMISSIONS, BUILTIN_ROLES } from './seed-data';
 })();
 
 async function main() {
-  const db = getDb();
+  const db = getDb(undefined, { system: 'maintenance' });
   console.log('[seed] Permissions catalog...');
   await db
     .insert(s.permissions)

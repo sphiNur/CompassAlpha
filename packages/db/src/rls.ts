@@ -34,7 +34,11 @@ export async function withOrgContext<T>(
 ): Promise<T> {
   return unprobed(db).transaction(async (tx) => {
     if (orgId) {
-      await tx.execute(sql`SELECT set_config('app.current_org_id', ${orgId}::text, true)`);
+      // Also drop any system context the connection carries (a maintenance
+      // handle has one for its whole life): inside here, only this tenant.
+      await tx.execute(
+        sql`SELECT set_config('app.current_org_id', ${orgId}::text, true), set_config('app.system_context', '', true)`,
+      );
     }
     // PgTransaction is structurally similar to DB but lacks `$client`.
     // Drizzle's transaction passes a tx with a compatible query API; we
