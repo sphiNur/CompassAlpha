@@ -64,7 +64,12 @@ async function evidence(name: string): Promise<void> {
  * language, takes the picture, and switches back. Only when pictures are
  * being kept.
  */
-async function evidenceIn(locales: string[], name: string): Promise<void> {
+async function evidenceIn(
+  locales: string[],
+  name: string,
+  /** Reloading lands on Today; this gets back to the screen wanted. */
+  open?: () => Promise<void>,
+): Promise<void> {
   const dir = process.env.E2E_SHOTS_DIR;
   if (!dir) return;
   const setLocale = async (locale: string) => {
@@ -82,6 +87,7 @@ async function evidenceIn(locales: string[], name: string): Promise<void> {
   };
   for (const locale of locales) {
     await setLocale(locale);
+    await open?.();
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, `${name}.${locale}.png`), await page.screenshot({ fullPage: true }));
   }
@@ -109,8 +115,11 @@ test('sign in and confirm a display name', async () => {
 
 test('place an order', async () => {
   await tab('orders').click();
-  await expect(mainButton()).toHaveText('New order');
-  await mainButton().click();
+  // What can be started is the card at the top; nothing has been ordered yet.
+  await expect(main().getByRole('heading', { level: 1 })).toHaveText('Orders');
+  await expect(main()).toContainText('No orders today');
+  await evidence('orders-empty');
+  await page.getByTestId('orders-new').click();
   // A task has the whole screen: the navigation is gone, there is a way back.
   await expect(page.getByTestId('primary-nav')).toBeHidden();
   await expect(main().getByRole('heading', { level: 1 })).toHaveText('Order');
@@ -163,6 +172,12 @@ test('approve it', async () => {
   await leave();
   // The order is listed where orders are, with its state.
   await expect(main().getByTestId('orders-batch')).toContainText('Submitted');
+  await expect(main().getByTestId('orders-pending')).toContainText('2 items');
+  await evidence('orders-with-work');
+  await evidenceIn(['zh', 'ru'], 'orders-with-work', async () => {
+    await tab('orders').click();
+    await expect(main().getByTestId('orders-batch')).toBeVisible();
+  });
   // And Today says it is waiting, with the button that deals with it.
   await tab('menu').click();
   await expect(page.getByTestId('quick-approve')).toHaveText(/Approve\s*1/);
