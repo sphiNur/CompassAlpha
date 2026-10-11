@@ -41,11 +41,7 @@ import { useNavStore } from '../stores/navStore';
 import { isInTelegram, useTelegramBackButton } from '../hooks/useTelegram';
 import { useI18n } from '../hooks/useI18n';
 // Operations sections — extracted to admin/operations (Phase 5 step 1).
-import {
-  ActivitySection,
-  AdminAuditSection,
-  MaintenanceSection,
-} from './admin/operations/OperationsSections';
+import { MaintenanceSection } from './admin/operations/OperationsSections';
 // Catalog CRUD sections — extracted to admin/catalog (Phase 5 step 2).
 import { DishesSection } from './admin/catalog/CatalogSections';
 import {
@@ -62,6 +58,7 @@ import { StoresScreen } from '../destinations/manage/StoresScreen';
 import { ProductsScreen } from '../destinations/manage/ProductsScreen';
 import { FinanceScreen } from '../destinations/manage/FinanceScreen';
 import { RolesScreen } from '../destinations/manage/RolesScreen';
+import { ActivityScreen, AuditScreen } from '../destinations/manage/Logs';
 import { OrderHistoryScreen, PricesScreen } from '../destinations/manage/Reports';
 import { OrganisationScreen } from '../destinations/manage/OrganisationScreen';
 import { SpendingTemplates } from '../destinations/manage/SpendingTemplates';
@@ -198,9 +195,9 @@ export function AdminPage() {
         {section === 'operations' && !opsSub ? (
           <OperationsHome onPick={(s) => setOpsSub(s)} isSuperAdmin={isSuperAdmin} />
         ) : null}
-        {section === 'operations' && opsSub === 'activity' ? <ActivitySection /> : null}
+        {section === 'operations' && opsSub === 'activity' ? <ActivityScreen /> : null}
         {section === 'operations' && opsSub === 'history' ? <OrderHistoryScreen /> : null}
-        {section === 'operations' && opsSub === 'adminAudit' ? <AdminAuditSection /> : null}
+        {section === 'operations' && opsSub === 'adminAudit' ? <AuditScreen /> : null}
         {section === 'operations' && opsSub === 'priceReport' ? <PricesScreen /> : null}
         {section === 'operations' && opsSub === 'finance' ? <FinanceScreen /> : null}
         {section === 'operations' && opsSub === 'maintenance' ? <MaintenanceSection /> : null}

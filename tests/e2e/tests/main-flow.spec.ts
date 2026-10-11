@@ -795,6 +795,36 @@ test('what things cost, and what became of each order', async () => {
   await expect(main().getByRole('heading', { level: 1 })).toHaveText('Manage');
 });
 
+test('what has been happening, said as sentences', async () => {
+  await page.getByTestId('manage-activity').click();
+  await expect(main().getByTestId('activity-figure')).toHaveCount(6);
+  // What people did today, in words; the system's own names for these
+  // (order.Submitted, market_run.RunFinished) are not shown.
+  const events = main().getByTestId('activity-event');
+  await expect(events.filter({ hasText: 'Finished a purchase' })).toHaveCount(1);
+  await expect(events.filter({ hasText: 'Sent an order' }).first()).toContainText('E2E Admin');
+  await expect(main()).not.toContainText('RunFinished');
+  await evidence('activity');
+  await page.getByTestId('manage-back').click();
+
+  // And who changed what in the set-up.
+  await page.getByTestId('manage-adminAudit').click();
+  const changes = main().getByTestId('audit-row');
+  await expect(changes.filter({ hasText: 'Made a role' })).toHaveCount(1);
+  await expect(changes.filter({ hasText: 'Added a store' })).toHaveCount(1);
+  // Not one of today's changes is left as the server's own name for it.
+  await expect(main()).not.toContainText('admin.');
+  await evidence('audit');
+  // Whoever looks after the installation can open a change to what was sent.
+  await changes.filter({ hasText: 'Added a product' }).click();
+  await expect(sheet()).toContainText('Saffron');
+  await page.keyboard.press('Escape');
+  await expect(sheet()).toBeHidden();
+
+  await page.getByTestId('manage-back').click();
+  await expect(main().getByRole('heading', { level: 1 })).toHaveText('Manage');
+});
+
 test('what was spent this month, and how it was paid', async () => {
   await page.getByTestId('manage-finance').click();
   // One total for the period, split the way it is checked against the
