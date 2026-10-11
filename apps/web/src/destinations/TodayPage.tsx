@@ -38,9 +38,8 @@ interface Waiting {
   /** What is waiting, in a few words. */
   label: string;
   count: number;
-  /** In the prompt card under it. */
+  /** Why it matters, in a sentence. */
   body: string;
-  action: string;
   icon: ReactNode;
 }
 
@@ -55,12 +54,11 @@ function initials(name: string | undefined): string {
 /**
  * The home screen, laid out after the Wise app's: who you are and the
  * main action at the top, a strip of this person's jobs, one large card
- * for the day, a prompt for the most pressing thing, and what happened
- * lately.
+ * for the day, everything that is waiting, and what happened lately.
  *
  * The card answers what an owner opens the app to learn: what today has
  * cost and how far the buying has got. What is waiting is a number on
- * the job it belongs to, and one prompt for the first of them.
+ * the job it belongs to and a row each under the card.
  */
 export function TodayPage({ onOpen, onOpenSettings }: TodayPageProps) {
   const i18n = useI18n();
@@ -68,7 +66,7 @@ export function TodayPage({ onOpen, onOpenSettings }: TodayPageProps) {
   const can = (permission: string) => !!session?.permissions.includes(permission);
   const ctx = useStoreContext();
   const storeId = ctx.kind === 'specific' ? ctx.storeId : null;
-  const [dismissed, setDismissed] = useState<string | null>(null);
+  const [dismissed, setDismissed] = useState(false);
 
   const toApprove = usePendingApprovals(can('order.approve'));
   const toBuy = useOrdersToBuy(can('run.purchase'));
@@ -93,7 +91,6 @@ export function TodayPage({ onOpen, onOpenSettings }: TodayPageProps) {
       label: i18n.t('menu.tile.approve') as string,
       count: toApprove,
       body: i18n.t('today.promo.approveBody') as string,
-      action: i18n.t('nav.approve') as string,
       icon: <ApproveIcon />,
     });
   }
@@ -104,7 +101,6 @@ export function TodayPage({ onOpen, onOpenSettings }: TodayPageProps) {
       label: i18n.t('today.delivery') as string,
       count: toReceive,
       body: i18n.t('today.promo.receiveBody') as string,
-      action: i18n.t('nav.confirm') as string,
       icon: <ReceiveIcon />,
     });
   }
@@ -115,7 +111,6 @@ export function TodayPage({ onOpen, onOpenSettings }: TodayPageProps) {
       label: i18n.t('today.runInProgress') as string,
       count: 1,
       body: activeRun.runDate,
-      action: i18n.t('today.continue') as string,
       icon: <PurchasingIcon />,
     });
   } else if (toBuy > 0) {
@@ -125,7 +120,6 @@ export function TodayPage({ onOpen, onOpenSettings }: TodayPageProps) {
       label: i18n.t('menu.tile.buy') as string,
       count: toBuy,
       body: i18n.t('today.promo.buyBody') as string,
-      action: i18n.t('nav.run') as string,
       icon: <PurchasingIcon />,
     });
   }
@@ -136,7 +130,6 @@ export function TodayPage({ onOpen, onOpenSettings }: TodayPageProps) {
       label: i18n.t('menu.tile.close') as string,
       count: 1,
       body: i18n.t('today.promo.closeBody') as string,
-      action: i18n.t('nav.settlement') as string,
       icon: <CloseDayIcon />,
     });
   }
@@ -176,8 +169,7 @@ export function TodayPage({ onOpen, onOpenSettings }: TodayPageProps) {
     });
   }
 
-  const pressing = waiting.find((w) => w.key !== dismissed) ?? null;
-  const offerOrder = !pressing && can('order.draft') && dismissed !== 'order';
+  const offerOrder = can('order.draft') && !dismissed;
   const batches = recent.data ?? [];
   const ordered = batches.reduce((n, b) => n + b.itemCount, 0);
 
@@ -342,37 +334,69 @@ export function TodayPage({ onOpen, onOpenSettings }: TodayPageProps) {
         ) : null}
       </section>
 
-      {/* The one thing to do next, said in a sentence. */}
-      {pressing || offerOrder ? (
+      {/* Everything waiting for this person, each one a way in. Not one
+          prompt at a time: a purchaser opens this many times a day to act,
+          and a job that is hidden behind another is a job forgotten. */}
+      {waiting.length > 0 ? (
+        <section data-testid="today-waiting" className="flex flex-col gap-lg">
+          <h2 className="text-h2 text-ink">{i18n.t('today.waiting')}</h2>
+          <div className="flex flex-col gap-xl rounded-lg bg-surface p-xl">
+            {waiting.map((w) => (
+              <button
+                key={w.key}
+                type="button"
+                data-testid={`do-${w.key}`}
+                onClick={() => onOpen(w.tab)}
+                className="flex items-center gap-lg text-start outline-none active:opacity-60"
+              >
+                <span
+                  aria-hidden
+                  className="flex size-avatar shrink-0 items-center justify-center rounded-pill border border-line text-ink"
+                >
+                  {w.icon}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-label text-ink">{w.label}</span>
+                  <span className="block text-small text-secondary">{w.body}</span>
+                </span>
+                {w.key !== 'run' && w.key !== 'close' ? (
+                  <span className="shrink-0 rounded-pill bg-warning px-sm text-caption text-on-warning">
+                    {w.count}
+                  </span>
+                ) : null}
+                <span className="shrink-0 text-forest">
+                  <ChevronIcon />
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : offerOrder ? (
         <section className="relative flex gap-lg rounded-lg bg-surface p-xl">
           <span
             aria-hidden
             className="flex size-avatar shrink-0 items-center justify-center rounded-pill border border-line text-ink"
           >
-            {pressing ? pressing.icon : <PlusIcon />}
+            <PlusIcon />
           </span>
           <div className="flex min-w-0 flex-1 flex-col items-start gap-sm pe-xl">
             <div>
-              <h2 className="text-label text-forest">
-                {pressing ? pressing.label : i18n.t('today.promo.orderTitle')}
-              </h2>
-              <p className="text-small text-secondary">
-                {pressing ? pressing.body : i18n.t('today.promo.orderBody')}
-              </p>
+              <h2 className="text-label text-forest">{i18n.t('today.promo.orderTitle')}</h2>
+              <p className="text-small text-secondary">{i18n.t('today.promo.orderBody')}</p>
             </div>
             <button
               type="button"
-              data-testid={pressing ? `do-${pressing.key}` : 'do-order'}
-              onClick={() => onOpen(pressing ? pressing.tab : 'order')}
+              data-testid="do-order"
+              onClick={() => onOpen('order')}
               className="flex h-chip items-center rounded-pill bg-primary px-lg text-label text-on-primary outline-none active:bg-primary-pressed"
             >
-              {pressing ? pressing.action : i18n.t('orders.new')}
+              {i18n.t('orders.new')}
             </button>
           </div>
           <button
             type="button"
             aria-label={i18n.t('today.dismiss') as string}
-            onClick={() => setDismissed(pressing ? pressing.key : 'order')}
+            onClick={() => setDismissed(true)}
             className="absolute end-md top-md flex size-round items-center justify-center rounded-pill bg-surface-sunken text-ink outline-none active:opacity-60"
           >
             <DismissIcon />
