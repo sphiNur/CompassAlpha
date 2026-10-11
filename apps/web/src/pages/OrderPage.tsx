@@ -20,7 +20,7 @@ import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
 import { matchesNameLike, normalizeQuery } from '../lib/searchMatch';
-import { useDateFormat, useI18n, useProductName, useUnitLabel } from '../hooks/useI18n';
+import { useI18n, useProductName, useUnitLabel } from '../hooks/useI18n';
 
 // M3.34 (2026-05-19): canonical units for the extras editor's unit
 // dropdown — kept in sync with CanonicalUnitSchema in
@@ -41,7 +41,7 @@ const UNIT_STEP: Record<string, string> = {
 const UNIT_IS_INTEGER = new Set(['pcs', 'pack', 'pair', 'bunch', 'roll']);
 import { formatQty, formatMoney } from '../lib/format';
 import { useStoreContext } from '../components/StoreSwitcher';
-import { SearchIcon } from '../destinations/icons';
+import { PlusIcon, SearchIcon } from '../destinations/icons';
 
 export function OrderPage() {
   const i18n = useI18n();
@@ -52,7 +52,6 @@ export function OrderPage() {
   // "0.5 kg" here and "0.5 公斤" on every downstream screen. Memoized by
   // locale, so passing it into the React.memo'd SkuRow is memo-safe.
   const unitLabel = useUnitLabel();
-  const dateFmt = useDateFormat();
   const session = useAuthStore((s) => s.session);
   const orgCurrency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   // Language picker — accessible from every page's header so staff
@@ -653,13 +652,9 @@ export function OrderPage() {
 
   if (!session) return null;
 
-  const dateLabel = dateFmt.weekdayLong(new Date());
   const heading = (title: string, chip?: React.ReactNode) => (
     <header className="flex items-start justify-between gap-lg">
-      <div className="min-w-0">
-        <h1 className="text-h1 text-ink">{title}</h1>
-        <p className="text-body text-secondary">{dateLabel}</p>
-      </div>
+      <h1 className="min-w-0 text-h1 text-ink">{title}</h1>
       {chip}
     </header>
   );
@@ -1068,17 +1063,6 @@ const SkuRow = memo(function SkuRow({
     .join(' · ');
   return (
     <li data-testid="order-row" className="flex min-h-row items-center gap-lg py-sm">
-      {/* Where the Wise app has a flag: the product's first letter, filled
-          once it is in the order. */}
-      <span
-        aria-hidden
-        className={cn(
-          'flex size-avatar shrink-0 items-center justify-center rounded-pill text-label',
-          myQty > 0 ? 'bg-primary text-on-primary' : 'bg-surface text-ink',
-        )}
-      >
-        {Array.from(name.trim())[0] ?? ''}
-      </span>
       <span className="min-w-0 flex-1">
         <span className="block text-label text-ink">{name}</span>
         {detail ? <span className="block text-small text-secondary">{detail}</span> : null}
@@ -1093,14 +1077,16 @@ const SkuRow = memo(function SkuRow({
             onValuePress={() => onTypeQty(sku.id, myQty)}
           />
         ) : (
+          // The same round plus the stepper ends in, at the same place:
+          // adding a product turns this button into that one.
           <button
             type="button"
             data-testid="order-add"
             aria-label={i18n.t('order.addAria', { name }) as string}
             onClick={() => set(step)}
-            className="flex h-tap items-center rounded-pill bg-primary-pale px-lg text-label text-forest outline-none active:opacity-70"
+            className="flex size-tap items-center justify-center rounded-pill bg-surface-sunken text-ink outline-none active:bg-line"
           >
-            {i18n.t('order.add')}
+            <PlusIcon />
           </button>
         )}
       </span>

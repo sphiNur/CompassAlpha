@@ -252,7 +252,6 @@ export function PurchaseDetail({
                       data-testid="purchase-line"
                       className="flex min-h-row items-center gap-lg py-sm"
                     >
-                      <Disc name={name} />
                       <span className="min-w-0 flex-1">
                         <span className="block text-label text-ink">{name}</span>
                         <span className="block text-small text-secondary" dir="ltr">
@@ -301,7 +300,6 @@ export function PurchaseDetail({
                     data-testid="purchase-spending"
                     className="flex min-h-row items-center gap-lg py-sm"
                   >
-                    <Disc name={ex.label} />
                     <span className="min-w-0 flex-1">
                       <span className="block text-label text-ink">{ex.label}</span>
                       <span className="block text-small text-secondary" dir="ltr">

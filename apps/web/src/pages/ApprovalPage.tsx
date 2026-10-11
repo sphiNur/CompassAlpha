@@ -544,12 +544,6 @@ function OrderLines({
             return (
               <li key={t.skuId} data-testid="approval-line" className="flex flex-col gap-sm py-sm">
                 <div className="flex min-h-row items-center gap-lg">
-                  <span
-                    aria-hidden
-                    className="flex size-avatar shrink-0 items-center justify-center rounded-pill bg-surface text-label text-ink"
-                  >
-                    {firstLetter(name)}
-                  </span>
                   <span className="min-w-0 flex-1 text-label text-ink">{name}</span>
                   <span className="shrink-0">
                     {editable && single
@@ -562,7 +556,7 @@ function OrderLines({
                   ? rows.map((r) => (
                       <div
                         key={r.contributorMemberId}
-                        className="flex items-center justify-between gap-lg ps-xxxl"
+                        className="flex items-center justify-between gap-lg ps-lg"
                       >
                         <span className="min-w-0 text-small text-secondary">
                           {nameOf.get(r.contributorMemberId) ?? r.contributorMemberId.slice(0, 6)}

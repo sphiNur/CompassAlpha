@@ -18,9 +18,15 @@ export interface StepperProps {
   'data-testid'?: string;
 }
 
+// Each end is a round button of its own, a full 44px target.
 const CELL =
-  'flex size-tap shrink-0 items-center justify-center text-h2 text-ink outline-none ' +
-  'active:bg-line focus-visible:bg-line disabled:text-line';
+  'flex size-tap shrink-0 items-center justify-center rounded-pill text-h2 outline-none ' +
+  'disabled:opacity-40';
+// Taking away is the quiet one; adding carries the accent, so a row that
+// has a quantity is the row with colour in it.
+const LESS = 'bg-surface-sunken text-ink active:bg-line focus-visible:bg-line';
+const MORE =
+  'bg-primary text-on-primary active:bg-primary-pressed focus-visible:bg-primary-pressed';
 
 /**
  * Quantity up and down. Each of the three cells is a full 44px target,
@@ -45,16 +51,14 @@ export function Stepper({
       {unit ? <span className="ms-xs text-caption text-secondary">{unit}</span> : null}
     </>
   );
-  const valueBox = 'flex h-tap min-w-row items-center justify-center rounded-pill bg-field px-sm text-ink';
+  // The figure stands between them on the page itself, no box around it.
+  const valueBox = 'flex h-tap min-w-row items-center justify-center rounded-pill px-sm text-ink';
   return (
     <div
       role="group"
       dir="ltr"
       data-testid={rest['data-testid']}
-      className={cn(
-        'inline-flex shrink-0 items-stretch overflow-hidden rounded-pill bg-surface-sunken p-xs',
-        className,
-      )}
+      className={cn('inline-flex shrink-0 items-center gap-xs', className)}
     >
       <button
         type="button"
@@ -62,7 +66,7 @@ export function Stepper({
         data-step="down"
         onClick={onDecrement}
         disabled={disabled || !canDecrement}
-        className={CELL}
+        className={cn(CELL, LESS)}
       >
         <span aria-hidden>−</span>
       </button>
@@ -72,7 +76,7 @@ export function Stepper({
           data-step="value"
           onClick={onValuePress}
           disabled={disabled}
-          className={cn(valueBox, 'outline-none active:bg-line')}
+          className={cn(valueBox, 'outline-none active:bg-surface-sunken')}
         >
           {shown}
         </button>
@@ -87,7 +91,7 @@ export function Stepper({
         data-step="up"
         onClick={onIncrement}
         disabled={disabled || !canIncrement}
-        className={CELL}
+        className={cn(CELL, MORE)}
       >
         <span aria-hidden>+</span>
       </button>
