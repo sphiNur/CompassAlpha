@@ -51,6 +51,8 @@ export const en = {
   'buy.total': 'Total',
   'buy.moreOptions': 'Split by store, supplier, receipt',
   'buy.cashAndTransfer': '{cash} cash · {transfer} transfer',
+  'buy.delivered': 'Delivered',
+  'buy.deliveredAria': 'Delivered to {store}',
   'buy.sendList': 'Send list',
   'buy.noStall': 'No usual stall',
   'buy.noStallHint': 'These have no usual stall. Open one to pick it.',

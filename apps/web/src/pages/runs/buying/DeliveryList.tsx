@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { EmptyState, List, Row, Section, StatusChip } from '@compass/ui/kit';
+import { Button, EmptyState, List, Row, Section, StatusChip } from '@compass/ui/kit';
 import type { StatusTone } from '@compass/ui/kit';
 import type { useI18n } from '../../../hooks/useI18n';
 import type { ActiveRun } from '../types';
@@ -17,17 +17,29 @@ export interface DeliveryListProps {
   run: ActiveRun;
   storeById: Map<string, { name: string }>;
   i18n: I18n;
-  onDeliver: (storeId: string, storeName: string) => void;
+  onDeliver: (storeId: string) => void;
+  /** The store whose "delivered" is being saved right now. */
+  deliveringStoreId: string | null;
   onRecall: (storeId: string, storeName: string) => void;
 }
 
 /**
  * The stores of a trip and how far each has got: not delivered, waiting
- * for the store to check it in, checked in. Tapping a store moves it one
- * step (deliver, or take a delivery back); a store that has checked its
- * goods in is settled and no longer opens.
+ * for the store to check it in, checked in.
+ *
+ * A trip usually goes to three or four stores, so handing over is one
+ * tap on the store's own button with no confirmation. A delivered store
+ * opens to take the delivery back, until the store has checked its goods
+ * in; after that the row is settled and no longer opens.
  */
-export function DeliveryList({ run, storeById, i18n, onDeliver, onRecall }: DeliveryListProps) {
+export function DeliveryList({
+  run,
+  storeById,
+  i18n,
+  onDeliver,
+  deliveringStoreId,
+  onRecall,
+}: DeliveryListProps) {
   // Grouped once: a trip is some 260 lines over a handful of stores, and
   // the six-second refresh hands back new arrays every time.
   const stores = useMemo(() => {
@@ -80,14 +92,25 @@ export function DeliveryList({ run, storeById, i18n, onDeliver, onRecall }: Deli
               title={name}
               detail={i18n.t('run.label.itemsCount', { n: lines })}
               value={
-                <StatusChip tone={TONE[stage]}>
-                  {i18n.t(`run.deliveryStage.${stage}` as Parameters<I18n['t']>[0])}
-                </StatusChip>
+                stage === 'pending' ? undefined : (
+                  <StatusChip tone={TONE[stage]}>
+                    {i18n.t(`run.deliveryStage.${stage}` as Parameters<I18n['t']>[0])}
+                  </StatusChip>
+                )
               }
-              onPress={
-                stage === 'confirmed'
-                  ? undefined
-                  : () => (stage === 'pending' ? onDeliver(storeId, name) : onRecall(storeId, name))
+              onPress={stage === 'delivered' ? () => onRecall(storeId, name) : undefined}
+              trailing={
+                stage === 'pending' ? (
+                  <Button
+                    inline
+                    data-testid="deliver-store"
+                    busy={deliveringStoreId === storeId}
+                    aria-label={i18n.t('buy.deliveredAria', { store: name }) as string}
+                    onClick={() => onDeliver(storeId)}
+                  >
+                    {i18n.t('buy.delivered')}
+                  </Button>
+                ) : undefined
               }
             />
           );

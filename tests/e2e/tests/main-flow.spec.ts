@@ -186,15 +186,15 @@ test('buy everything, one item in cash and one by transfer', async () => {
 
 test('deliver to the store', async () => {
   await expect(mainButton()).toHaveText('Start delivery');
+  // Starting delivery asks nothing: it can be taken back from this screen
+  // until a store has checked its goods in.
   await mainButton().click();
-  await sheet().getByRole('button', { name: 'Start delivery' }).click();
   await expect(main()).toContainText(/Stores\s*0\/1 confirmed/);
+  await expect(main().getByTestId('run-back-to-buying')).toBeVisible();
   await evidence('run-delivering');
 
-  await main()
-    .getByRole('button', { name: /Central Kitchen.*Not delivered/ })
-    .click();
-  await sheet().getByRole('button', { name: 'Confirm delivery' }).click();
+  // One tap per store.
+  await main().getByRole('button', { name: 'Delivered to Central Kitchen' }).click();
   await expect(
     main().getByRole('button', { name: /Central Kitchen.*Awaiting confirm/ }),
   ).toBeVisible();

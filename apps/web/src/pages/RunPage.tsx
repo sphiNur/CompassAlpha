@@ -1008,7 +1008,11 @@ export function RunPage() {
         }
         return {
           text: i18n.t('run.action.startDelivery'),
-          onClick: () => setConfirmAction('startDelivery'),
+          // No confirmation: until a store has checked its goods in this
+          // can be taken back, from the row under the delivery list.
+          onClick: () => {
+            if (!startDelivery.isPending) startDelivery.mutate({ runId: activeRun.id });
+          },
           visible: true,
           active: true,
         };
@@ -1904,8 +1908,10 @@ export function RunPage() {
                 paymentMethod: 'cash',
               });
             }}
-            onDeliverStore={(storeId, storeName) =>
-              setConfirmAction({ kind: 'deliverStore', storeId, storeName })
+            onDeliverStore={(storeId) =>
+              // One tap per store, no confirmation: a run goes to three or
+              // four of them, and a wrong tap is undone from the same row.
+              deliverToStore.mutate({ runId: activeRun.id, storeId })
             }
             onRecallStore={(storeId, storeName) =>
               setConfirmAction({ kind: 'recallDelivery', storeId, storeName })
@@ -1936,6 +1942,16 @@ export function RunPage() {
               });
             }}
             onAddItem={() => openAddItem(activeRun.id)}
+            deliveringStoreId={
+              deliverToStore.isPending ? (deliverToStore.variables?.storeId ?? null) : null
+            }
+            onBackToPlan={
+              canUndoStartPurchase ? () => setConfirmAction('undoStartPurchase') : undefined
+            }
+            onBackToBuying={
+              canUndoStartDelivery ? () => setConfirmAction('undoStartDelivery') : undefined
+            }
+            onCancelRun={() => setConfirmAction('cancel')}
             onRemoveExpense={(expenseId) =>
               removeExpense.mutate({
                 runId: activeRun.id,

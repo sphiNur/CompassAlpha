@@ -28,7 +28,7 @@ export interface ActiveRunPanelProps {
   paymentBusySkuId: string | null;
   onUnmark: (skuId: string, skuName: string) => void;
   onOpenAdvancedPurchase: (item: Item) => void;
-  onDeliverStore: (storeId: string, storeName: string) => void;
+  onDeliverStore: (storeId: string) => void;
   onRecallStore: (storeId: string, storeName: string) => void;
   onMarkExtraStatus: (
     sessionId: string,
@@ -42,6 +42,12 @@ export interface ActiveRunPanelProps {
   onRemoveExpense: (expenseId: string) => void;
   onAddItem: () => void;
   onAddExpense: () => void;
+  /** The store whose "delivered" is being saved right now. */
+  deliveringStoreId: string | null;
+  /** Each is present only while the step can still be taken back. */
+  onBackToPlan?: () => void;
+  onBackToBuying?: () => void;
+  onCancelRun: () => void;
 }
 
 /**
@@ -76,6 +82,10 @@ export function ActiveRunPanel({
   onRemoveExpense,
   onAddItem,
   onAddExpense,
+  deliveringStoreId,
+  onBackToPlan,
+  onBackToBuying,
+  onCancelRun,
 }: ActiveRunPanelProps) {
   const editing = run.status === 'purchasing' || run.status === 'amending';
 
@@ -87,6 +97,7 @@ export function ActiveRunPanel({
           storeById={storeById}
           i18n={i18n}
           onDeliver={onDeliverStore}
+          deliveringStoreId={deliveringStoreId}
           onRecall={onRecallStore}
         />
       ) : null}
@@ -140,6 +151,33 @@ export function ActiveRunPanel({
             data-testid="add-expense"
             title={i18n.t('buy.addExpense')}
             onPress={onAddExpense}
+          />
+        </List>
+      ) : null}
+
+      {/* Stepping back, and giving the trip up. These used to live only in
+          Telegram's own menu, where nobody looked and a browser cannot
+          reach. Each asks before it does anything. */}
+      {run.status !== 'finished' ? (
+        <List>
+          {onBackToPlan ? (
+            <Row
+              data-testid="run-back-to-plan"
+              title={i18n.t('run.action.undoStartPurchase')}
+              onPress={onBackToPlan}
+            />
+          ) : null}
+          {onBackToBuying ? (
+            <Row
+              data-testid="run-back-to-buying"
+              title={i18n.t('run.action.undoStartDelivery')}
+              onPress={onBackToBuying}
+            />
+          ) : null}
+          <Row
+            data-testid="run-cancel"
+            title={<span className="text-danger">{i18n.t('run.action.cancelRun')}</span>}
+            onPress={onCancelRun}
           />
         </List>
       ) : null}

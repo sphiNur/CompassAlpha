@@ -31,6 +31,8 @@ export const uz = {
   'buy.total': 'Jami',
   'buy.moreOptions': "Do'konlar bo'yicha, ta'minotchi, chek",
   'buy.cashAndTransfer': "{cash} naqd · {transfer} o'tkazma",
+  'buy.delivered': 'Yetkazildi',
+  'buy.deliveredAria': '{store}ga yetkazildi',
   'buy.sendList': "Ro'yxatni yuborish",
   'buy.noStall': "Doimiy rasta yo'q",
   'buy.noStallHint': "Bu mahsulotlarning doimiy rastasi yo'q. Tanlash uchun mahsulotni oching.",

@@ -24,6 +24,8 @@ export const ru = {
   'buy.total': 'Итого',
   'buy.moreOptions': 'По магазинам, поставщик, чек',
   'buy.cashAndTransfer': '{cash} наличными · {transfer} переводом',
+  'buy.delivered': 'Доставлено',
+  'buy.deliveredAria': 'Доставлено: {store}',
   'buy.sendList': 'Отправить список',
   'buy.noStall': 'Без постоянной точки',
   'buy.noStallHint': 'У этих товаров нет постоянной точки. Откройте товар, чтобы выбрать.',
