@@ -501,8 +501,16 @@ test('finish the run and find it in history', async () => {
   );
   const boughtLines = sheet().getByTestId('purchase-line');
   await expect(boughtLines).toHaveCount(2);
-  await expect(boughtLines.filter({ hasText: 'Beef' })).toHaveText(/1 kg × 90,000\s*90,000/);
-  await expect(boughtLines.filter({ hasText: 'Apple' })).toHaveText(/2 kg × 12,000\s*24,000/);
+  // Every line says how it was paid, under its amount.
+  await expect(boughtLines.filter({ hasText: 'Beef' })).toHaveText(
+    /1 kg × 90,000\s*90,000\s*Transfer/,
+  );
+  await expect(boughtLines.filter({ hasText: 'Apple' })).toHaveText(
+    /2 kg × 12,000\s*24,000\s*Cash/,
+  );
+  await expect(
+    boughtLines.filter({ hasText: 'Beef' }).locator('[data-payment-method="transfer"]'),
+  ).toBeVisible();
   await evidence('history-detail');
   // The two corrections are offered to someone who may make them, and
   // ask for what they need before doing anything.

@@ -42,6 +42,23 @@ function Disc({ name }: { name: string }) {
  * Two corrections live at the bottom for those the server says may make
  * them: the day the spend is booked under, and reopening the purchase.
  */
+/** The ways one line was paid; `part` is set only when it took both. */
+function paidBy(
+  item: Parameters<typeof settleItemLine>[0],
+  own: Parameters<typeof settleItemLine>[1],
+): Array<{ method: 'cash' | 'transfer'; part: number | null }> {
+  const { cash, transfer } = settleItemLine(item, own);
+  if (cash > 0 && transfer > 0) {
+    return [
+      { method: 'cash', part: cash },
+      { method: 'transfer', part: transfer },
+    ];
+  }
+  return [
+    { method: transfer > 0 || item.paymentMethod === 'transfer' ? 'transfer' : 'cash', part: null },
+  ];
+}
+
 export function PurchaseDetail({
   target,
   onClose,
@@ -277,8 +294,22 @@ export function PurchaseDetail({
                           : null}
                       </span>
                       {got ? (
-                        <span className="shrink-0 text-money tabular-nums text-ink" dir="ltr">
-                          {formatMoney(amount)}
+                        <span className="flex shrink-0 flex-col items-end gap-xs">
+                          <span className="text-money tabular-nums text-ink" dir="ltr">
+                            {formatMoney(amount)}
+                          </span>
+                          {/* How it was paid. Part cash and part transfer says how much of each. */}
+                          {paidBy(item, own).map(({ method, part }) => (
+                            <PaymentChip
+                              key={method}
+                              method={method}
+                              label={`${i18n.t(
+                                method === 'transfer'
+                                  ? 'run.label.paymentTransfer'
+                                  : 'run.label.paymentCash',
+                              )}${part === null ? '' : ` ${formatMoney(part)}`}`}
+                            />
+                          ))}
                         </span>
                       ) : (
                         <StatusChip tone="problem">{i18n.t('run.action.markNa')}</StatusChip>
