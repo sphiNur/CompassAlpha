@@ -95,6 +95,7 @@ export const uz = {
   'orders.none': "Bugun buyurtma yo'q",
   'purchasing.none': "Xarid qilinadigan tasdiqlangan buyurtma yo'q",
   'purchasing.past': 'Oldingi xaridlar',
+  'catalog.category.confirmArchive': '«{name}» toifasini arxivlaysizmi?',
   'role.super_admin.name': 'Bosh administrator',
   'role.super_admin.desc': 'Toʻliq ruxsat, tizim vositalari bilan',
   'role.admin.name': 'Administrator',

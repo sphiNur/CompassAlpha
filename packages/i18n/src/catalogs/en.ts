@@ -115,6 +115,7 @@ export const en = {
   'orders.none': 'No orders today',
   'purchasing.none': 'No approved orders to buy',
   'purchasing.past': 'Past purchases',
+  'catalog.category.confirmArchive': 'Archive category "{name}"?',
   'role.super_admin.name': 'Super Admin',
   'role.super_admin.desc': 'Full access including impersonation and test-data purge',
   'role.admin.name': 'Admin',

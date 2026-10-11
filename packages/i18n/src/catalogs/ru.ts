@@ -88,6 +88,7 @@ export const ru = {
   'orders.none': 'Сегодня заявок нет',
   'purchasing.none': 'Нет одобренных заявок к закупке',
   'purchasing.past': 'Прошлые закупки',
+  'catalog.category.confirmArchive': 'Архивировать категорию «{name}»?',
   'role.super_admin.name': 'Суперадминистратор',
   'role.super_admin.desc': 'Полный доступ, включая системные инструменты',
   'role.admin.name': 'Администратор',

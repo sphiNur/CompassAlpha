@@ -515,6 +515,50 @@ test('add a product with one name, then archive it', async () => {
   await expect(main().getByRole('heading', { level: 1 })).toHaveText('Manage');
 });
 
+test('a category and a supplier, each from a name', async () => {
+  await page.getByTestId('manage-categories').click();
+  // A category says how many products it holds.
+  await expect(main().getByTestId('category-row').filter({ hasText: 'Meat' })).toContainText(
+    '3 items',
+  );
+  await page.getByTestId('category-new').click();
+  await expect(sheet().getByTestId('category-save')).toBeDisabled();
+  // No code to invent: one name, and the rest is made from it.
+  await sheet().getByRole('textbox', { name: 'Name — English' }).fill('Spices');
+  await evidence('category-new');
+  const created = page.waitForResponse((res) => res.url().includes('admin.categoryCreate'));
+  await sheet().getByTestId('category-save').click();
+  expect((await created).ok()).toBe(true);
+  await expect(sheet()).toBeHidden();
+  await expect(main().getByTestId('category-row').filter({ hasText: 'Spices' })).toContainText(
+    '0 items',
+  );
+  await evidence('categories');
+  await page.getByTestId('manage-back').click();
+
+  await page.getByTestId('manage-suppliers').click();
+  await page.getByTestId('supplier-new').click();
+  await sheet().getByRole('textbox', { name: 'Name', exact: true }).fill('Ali aka');
+  await sheet().getByRole('textbox', { name: 'Phone' }).fill('+998 90 123 45 67');
+  await evidence('supplier-new');
+  await sheet().getByTestId('supplier-save').click();
+  await expect(sheet()).toBeHidden();
+  const ali = main().getByTestId('supplier-row').filter({ hasText: 'Ali aka' });
+  await expect(ali).toContainText('+998 90 123 45 67');
+  await evidence('suppliers');
+  // Archiving asks first; the supplier is back when archived ones are shown.
+  await ali.click();
+  page.once('dialog', (dialog) => void dialog.accept());
+  await sheet().getByTestId('supplier-archive').click();
+  await expect(sheet()).toBeHidden();
+  await expect(ali).toHaveCount(0);
+  await main().getByTestId('supplier-archived').click();
+  await expect(ali).toContainText('archived');
+
+  await page.getByTestId('manage-back').click();
+  await expect(main().getByRole('heading', { level: 1 })).toHaveText('Manage');
+});
+
 test('stores and the people in them', async () => {
   await page.getByTestId('manage-stores').click();
   await expect(

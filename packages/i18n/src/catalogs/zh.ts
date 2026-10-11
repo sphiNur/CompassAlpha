@@ -88,6 +88,7 @@ export const zh = {
   'orders.none': '今天还没有订单',
   'purchasing.none': '没有待采购的订单',
   'purchasing.past': '以前的采购',
+  'catalog.category.confirmArchive': '归档分类“{name}”？',
   'role.super_admin.name': '超级管理员',
   'role.super_admin.desc': '全部权限，包括系统工具',
   'role.admin.name': '管理员',
