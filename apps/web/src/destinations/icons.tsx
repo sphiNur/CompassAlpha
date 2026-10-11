@@ -89,3 +89,10 @@ export const DismissIcon = () => (
     <path d="m7 7 10 10M17 7 7 17" />
   </svg>
 );
+
+export const SearchIcon = () => (
+  <svg {...frame}>
+    <circle cx="11" cy="11" r="6" />
+    <path d="m20 20-4.5-4.5" />
+  </svg>
+);

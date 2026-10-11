@@ -143,6 +143,12 @@ test('place an order', async () => {
   await add('Apple', 4, /2\s*kg/ as unknown as string);
   await add('Beef', 2, /1\s*kg/ as unknown as string);
   await evidence('order-picking');
+  await evidenceIn(['zh', 'ru'], 'order-picking', async () => {
+    await page.getByTestId('today-new-order').click();
+    await expect(main().getByTestId('order-row').first()).toBeVisible();
+  });
+  await page.getByTestId('today-new-order').click();
+  await expect(main().getByTestId('order-row').first()).toBeVisible();
 
   // The exact amount can be typed instead of tapped.
   const typed = page.waitForResponse((res) => res.url().includes('order.adjustItem'));
@@ -170,6 +176,7 @@ test('place an order', async () => {
 test('approve it', async () => {
   // The navigation says how many orders are waiting before the tab is opened.
   await leave();
+  await tab('orders').click();
   // The order is listed where orders are, with its state.
   await expect(main().getByTestId('orders-batch')).toContainText('Submitted');
   await expect(main().getByTestId('orders-pending')).toContainText('2 items');

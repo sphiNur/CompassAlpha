@@ -41,6 +41,7 @@ const UNIT_STEP: Record<string, string> = {
 const UNIT_IS_INTEGER = new Set(['pcs', 'pack', 'pair', 'bunch', 'roll']);
 import { formatQty, formatMoney } from '../lib/format';
 import { useStoreContext } from '../components/StoreSwitcher';
+import { SearchIcon } from '../destinations/icons';
 
 export function OrderPage() {
   const i18n = useI18n();
@@ -92,7 +93,6 @@ export function OrderPage() {
   // M1.10 (2026-05-08): cross-language SKU search. Lives above the
   // category chip-bar; queries match across uz/ru/en/zh names + code.
   const [searchQuery, setSearchQuery] = useState('');
-  const [categoriesOpen, setCategoriesOpen] = useState(false);
   /** The product whose exact quantity is being typed, and what is typed. */
   const [typing, setTyping] = useState<{ skuId: string; value: string } | null>(null);
 
@@ -843,32 +843,59 @@ export function OrderPage() {
         </div>
       ) : null}
 
-      <div className="flex flex-col gap-sm">
-        <Field
-          type="search"
-          label={i18n.t('order.search.placeholder') as string}
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
-        <List>
-          {categories.length > 1 ? (
-            <Row
-              data-testid="order-category"
-              title={i18n.t('order.categoriesAriaLabel')}
-              detail={
-                activeCategory ? categoryName(activeCategory) : i18n.t('order.categories.all')
-              }
-              onPress={() => setCategoriesOpen(true)}
-            />
-          ) : null}
-          {batches.length > 1 ? (
-            <Row
-              data-testid="order-batches"
-              title={i18n.t('order.batches.today', { n: batches.length })}
-              onPress={() => setBatchesOpen(true)}
-            />
-          ) : null}
-        </List>
+      <div className="flex flex-col gap-lg">
+        {/* The search field, as the Wise app draws one: a capsule with an
+            edge, the glass at the start. */}
+        <label className="flex h-control items-center gap-md rounded-pill bg-field px-lg text-secondary ring-1 ring-inset ring-secondary focus-within:ring-2 focus-within:ring-ink">
+          <SearchIcon />
+          <input
+            type="search"
+            aria-label={i18n.t('order.search.placeholder') as string}
+            placeholder={i18n.t('order.search.placeholder') as string}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="h-full min-w-0 flex-1 bg-transparent text-body text-ink outline-none placeholder:text-secondary"
+          />
+        </label>
+        {/* Categories as a strip of capsules, the chosen one filled dark:
+            one tap to narrow, where a sheet took three. */}
+        {categories.length > 1 ? (
+          <div
+            role="tablist"
+            aria-label={i18n.t('order.categoriesAriaLabel') as string}
+            className="-mx-page flex gap-sm overflow-x-auto px-page"
+          >
+            {[
+              { id: null as string | null },
+              ...categories.map((c) => ({ id: c.id as string | null })),
+            ].map((c) => (
+              <button
+                key={c.id ?? 'all'}
+                type="button"
+                role="tab"
+                aria-selected={activeCategory === c.id}
+                data-testid="order-category"
+                onClick={() => setActiveCategory(c.id)}
+                className={cn(
+                  'flex h-pillbtn shrink-0 items-center rounded-pill px-lg text-label outline-none active:opacity-70',
+                  activeCategory === c.id ? 'bg-contrast text-on-contrast' : 'bg-surface text-ink',
+                )}
+              >
+                {c.id ? categoryName(c.id) : i18n.t('order.categories.all')}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {batches.length > 1 ? (
+          <button
+            type="button"
+            data-testid="order-batches"
+            onClick={() => setBatchesOpen(true)}
+            className="flex h-chip items-center self-start rounded-pill bg-surface-sunken px-md text-caption text-ink outline-none active:opacity-60"
+          >
+            {i18n.t('order.batches.today', { n: batches.length })}
+          </button>
+        ) : null}
       </div>
 
       {skusQuery.isPending ? (
@@ -897,11 +924,11 @@ export function OrderPage() {
         />
       ) : (
         groups.map((group) => (
-          <Section
-            key={group.id ?? 'rest'}
-            title={searching || activeCategory ? undefined : categoryName(group.id)}
-          >
-            <List>
+          <section key={group.id ?? 'rest'} className="flex flex-col gap-sm">
+            {searching || activeCategory ? null : (
+              <h2 className="text-body text-secondary">{categoryName(group.id)}</h2>
+            )}
+            <ul className="flex flex-col">
               {group.rows.map((sku) => (
                 <SkuRow
                   key={sku.id}
@@ -920,51 +947,12 @@ export function OrderPage() {
                   onTypeQty={onTypeQty}
                 />
               ))}
-            </List>
-          </Section>
+            </ul>
+          </section>
         ))
       )}
 
       {extrasFor(false)}
-
-      <Sheet
-        open={categoriesOpen}
-        onOpenChange={setCategoriesOpen}
-        title={i18n.t('order.categoriesAriaLabel') as string}
-      >
-        <List>
-          <Row
-            picks
-            title={i18n.t('order.categories.all')}
-            value={
-              activeCategory === null ? (
-                <StatusChip tone="done">{i18n.t('buy.chosen')}</StatusChip>
-              ) : undefined
-            }
-            onPress={() => {
-              setActiveCategory(null);
-              setCategoriesOpen(false);
-            }}
-          />
-          {categories.map((c) => (
-            <Row
-              key={c.id}
-              picks
-              data-testid="order-category-option"
-              title={categoryName(c.id)}
-              value={
-                activeCategory === c.id ? (
-                  <StatusChip tone="done">{i18n.t('buy.chosen')}</StatusChip>
-                ) : undefined
-              }
-              onPress={() => {
-                setActiveCategory(c.id);
-                setCategoriesOpen(false);
-              }}
-            />
-          ))}
-        </List>
-      </Sheet>
 
       {batchesSheet}
 
@@ -1079,12 +1067,24 @@ const SkuRow = memo(function SkuRow({
     .filter(Boolean)
     .join(' · ');
   return (
-    <Row
-      data-testid="order-row"
-      title={name}
-      detail={detail || undefined}
-      trailing={
-        myQty > 0 ? (
+    <li data-testid="order-row" className="flex min-h-row items-center gap-lg py-sm">
+      {/* Where the Wise app has a flag: the product's first letter, filled
+          once it is in the order. */}
+      <span
+        aria-hidden
+        className={cn(
+          'flex size-avatar shrink-0 items-center justify-center rounded-pill text-label',
+          myQty > 0 ? 'bg-primary text-on-primary' : 'bg-surface text-ink',
+        )}
+      >
+        {Array.from(name.trim())[0] ?? ''}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-label text-ink">{name}</span>
+        {detail ? <span className="block text-small text-secondary">{detail}</span> : null}
+      </span>
+      <span className="shrink-0">
+        {myQty > 0 ? (
           <Stepper
             value={formatQty(String(myQty))}
             unit={unit}
@@ -1093,17 +1093,18 @@ const SkuRow = memo(function SkuRow({
             onValuePress={() => onTypeQty(sku.id, myQty)}
           />
         ) : (
-          <Button
-            inline
+          <button
+            type="button"
             data-testid="order-add"
             aria-label={i18n.t('order.addAria', { name }) as string}
             onClick={() => set(step)}
+            className="flex h-tap items-center rounded-pill bg-primary-pale px-lg text-label text-forest outline-none active:opacity-70"
           >
             {i18n.t('order.add')}
-          </Button>
-        )
-      }
-    />
+          </button>
+        )}
+      </span>
+    </li>
   );
 });
 
