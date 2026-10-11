@@ -69,7 +69,7 @@ export function ActionBar({ summary, children, className }: ActionBarProps) {
     <div
       data-testid="action-bar"
       className={cn(
-        'flex shrink-0 flex-col gap-sm bg-surface px-page py-lg shadow-raised',
+        'flex shrink-0 flex-col gap-sm bg-neutral px-page py-lg shadow-raised',
         className,
       )}
     >

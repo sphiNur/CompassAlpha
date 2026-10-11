@@ -28,12 +28,12 @@ export function Sheet({ open, onOpenChange, title, children, actions, keepFocus 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-ink/40" />
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/50" />
         <Dialog.Content
           aria-describedby={undefined}
           onOpenAutoFocus={keepFocus ? (e) => e.preventDefault() : undefined}
           className={cn(
-            'fixed inset-x-0 bottom-0 z-50 flex max-h-[90dvh] flex-col rounded-t-lg bg-surface text-ink',
+            'fixed inset-x-0 bottom-0 z-50 flex max-h-[90dvh] flex-col rounded-t-lg bg-neutral text-ink',
             'shadow-raised outline-none',
             'data-[state=open]:animate-[slideUp_var(--t-base)_var(--easing)]',
           )}

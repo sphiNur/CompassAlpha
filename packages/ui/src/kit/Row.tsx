@@ -54,11 +54,11 @@ export function Row({
 }: RowProps) {
   const body = (
     <>
-      <span className="min-w-0 flex-1 text-left">
-        <span className={cn('block text-body', action ? 'font-semibold text-forest' : 'text-ink')}>
+      <span className="min-w-0 flex-1 text-start">
+        <span className={cn('block', action ? 'text-label text-forest' : 'text-label text-ink')}>
           {title}
         </span>
-        {detail ? <span className="block text-body text-secondary">{detail}</span> : null}
+        {detail ? <span className="block text-small text-secondary">{detail}</span> : null}
       </span>
       {value || valueNote ? (
         <span className="flex shrink-0 flex-col items-end gap-xs">
@@ -69,15 +69,19 @@ export function Row({
       {/* Says the row opens something. Not on a row that is itself the
           action, nor beside a control that already is one. */}
       {onPress && !trailing && !action && !picks ? (
-        <span aria-hidden data-row-chevron className="shrink-0 text-h2 text-line">
+        <span
+          aria-hidden
+          data-row-chevron
+          className="shrink-0 text-h2 text-secondary rtl:-scale-x-100"
+        >
           ›
         </span>
       ) : null}
     </>
   );
-  const box = cn('flex min-h-row w-full items-center gap-lg bg-surface px-lg py-md', className);
+  const box = cn('flex min-h-row w-full items-center gap-lg px-lg py-md', className);
   if (trailing) {
-    const inner = 'flex min-w-0 flex-1 items-center gap-lg self-stretch text-left outline-none';
+    const inner = 'flex min-w-0 flex-1 items-center gap-lg self-stretch text-start outline-none';
     return (
       <div role="listitem" data-testid={rest['data-testid']} className={cn(box, 'gap-md')}>
         {onPress ? (

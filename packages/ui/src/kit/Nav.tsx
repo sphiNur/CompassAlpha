@@ -34,33 +34,38 @@ export function BottomNav<K extends string>({
     <nav
       aria-label={label}
       data-testid="primary-nav"
-      className={cn('flex shrink-0 gap-xs bg-surface px-sm pt-sm', className)}
+      className={cn('shrink-0 bg-neutral px-page pt-sm', className)}
       // The lit item is a filled shape, so it needs air under it as well.
       style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 8px)' }}
     >
-      {items.map((item) => {
-        const current = item.key === active;
-        return (
-          <button
-            key={item.key}
-            type="button"
-            data-testid={`nav-${item.key}`}
-            aria-current={current ? 'page' : undefined}
-            disabled={disabled}
-            onClick={() => onSelect(item.key)}
-            className={cn(
-              'flex h-tap min-w-0 flex-1 items-center justify-center gap-xs rounded-sm px-xs text-caption outline-none',
-              'focus-visible:bg-surface-sunken',
-              current ? 'bg-primary-pale text-ink' : 'text-secondary',
-            )}
-          >
-            <span className="min-w-0 truncate">{item.label}</span>
-            {item.count ? (
-              <span className="shrink-0 rounded-pill bg-ink px-sm text-primary">{item.count}</span>
-            ) : null}
-          </button>
-        );
-      })}
+      {/* A floating bar: its own rounded shape, clear of the screen's edges. */}
+      <div className="flex gap-xs rounded-pill bg-surface p-xs">
+        {items.map((item) => {
+          const current = item.key === active;
+          return (
+            <button
+              key={item.key}
+              type="button"
+              data-testid={`nav-${item.key}`}
+              aria-current={current ? 'page' : undefined}
+              disabled={disabled}
+              onClick={() => onSelect(item.key)}
+              className={cn(
+                'flex h-tap min-w-0 flex-1 items-center justify-center gap-xs rounded-pill px-xs text-caption outline-none',
+                'focus-visible:bg-surface-sunken',
+                current ? 'bg-surface-sunken text-ink' : 'text-secondary',
+              )}
+            >
+              <span className="min-w-0 truncate">{item.label}</span>
+              {item.count ? (
+                <span className="shrink-0 rounded-pill bg-primary px-sm text-on-primary">
+                  {item.count}
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
     </nav>
   );
 }

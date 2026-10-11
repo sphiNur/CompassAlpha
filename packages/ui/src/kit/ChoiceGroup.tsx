@@ -49,9 +49,11 @@ export function ChoiceGroup<V extends string>({
               data-choice={option.value}
               onClick={() => onChange(option.value)}
               className={cn(
-                'flex h-tap min-w-0 flex-1 items-center justify-center rounded-sm px-md text-label outline-none',
+                'flex h-tap min-w-0 flex-1 items-center justify-center rounded-pill px-md text-label outline-none',
                 'focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2',
-                chosen ? 'bg-ink text-primary' : 'bg-surface-sunken text-ink active:bg-line',
+                chosen
+                  ? 'bg-contrast text-on-contrast'
+                  : 'bg-surface-sunken text-ink active:bg-line',
               )}
             >
               <span className="truncate">{option.label}</span>

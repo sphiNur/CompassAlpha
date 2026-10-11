@@ -24,7 +24,7 @@ export const Field = forwardRef<HTMLInputElement, FieldProps>(function Field(
       <label htmlFor={inputId} className="text-label text-ink">
         {label}
       </label>
-      <div className="flex h-control items-center gap-sm rounded-sm bg-surface px-lg ring-1 ring-inset ring-ink focus-within:ring-2">
+      <div className="flex h-control items-center gap-sm rounded-md bg-field px-lg ring-1 ring-inset ring-secondary focus-within:ring-2 focus-within:ring-ink">
         <input
           ref={ref}
           id={inputId}
@@ -32,7 +32,7 @@ export const Field = forwardRef<HTMLInputElement, FieldProps>(function Field(
           {...rest}
           className={cn(
             'h-full min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-secondary',
-            numeric ? 'text-right text-money' : 'text-body',
+            numeric ? 'text-end text-money' : 'text-body',
           )}
         />
         {suffix ? <span className="shrink-0 text-body text-secondary">{suffix}</span> : null}

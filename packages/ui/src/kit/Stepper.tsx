@@ -42,16 +42,17 @@ export function Stepper({
   const shown = (
     <>
       <span className="text-money">{value}</span>
-      {unit ? <span className="ml-xs text-caption text-secondary">{unit}</span> : null}
+      {unit ? <span className="ms-xs text-caption text-secondary">{unit}</span> : null}
     </>
   );
-  const valueBox = 'flex h-tap min-w-row items-center justify-center border-x border-line px-sm';
+  const valueBox = 'flex h-tap min-w-row items-center justify-center rounded-pill bg-field px-sm';
   return (
     <div
       role="group"
+      dir="ltr"
       data-testid={rest['data-testid']}
       className={cn(
-        'inline-flex shrink-0 items-stretch overflow-hidden rounded-sm bg-surface-sunken',
+        'inline-flex shrink-0 items-stretch overflow-hidden rounded-pill bg-surface-sunken p-xs',
         className,
       )}
     >

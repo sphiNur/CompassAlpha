@@ -24,7 +24,7 @@ export function PaymentChip({ method, label, className }: PaymentChipProps) {
       data-payment-method={method}
       className={cn(
         CHIP,
-        method === 'transfer' ? 'bg-ink text-primary' : 'bg-neutral text-ink',
+        method === 'transfer' ? 'bg-contrast text-on-contrast' : 'bg-surface-sunken text-ink',
         className,
       )}
     >
@@ -46,7 +46,7 @@ export interface StatusChipProps {
 }
 
 const TONE: Record<StatusTone, string> = {
-  neutral: 'bg-neutral text-ink',
+  neutral: 'bg-surface-sunken text-ink',
   pending: 'bg-warning-pale text-warning-ink',
   done: 'bg-primary-pale text-forest',
   problem: 'bg-danger-pale text-danger-ink',

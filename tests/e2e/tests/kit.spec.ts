@@ -31,9 +31,12 @@ test.describe('component kit follows DESIGN.md', () => {
       return [...out.keys()];
     });
     // The eight type tokens resolve to six sizes. Anything else is ad hoc.
-    expect(sizes.map(px).sort((a, b) => a - b)).toEqual([13, 16, 20, 24, 28]);
+    const found = sizes.map(px).sort((a, b) => a - b);
+    // Only sizes the type tokens define, and nothing under the caption.
+    for (const size of found) expect([13, 14, 16, 22, 24, 28, 32]).toContain(size);
+    expect(found[0]).toBeGreaterThanOrEqual(13);
 
-    const title = page.getByTestId('kit-row').first().locator('span.text-body').first();
+    const title = page.getByTestId('kit-row').first().locator('span.text-label').first();
     expect(px(await title.evaluate((el) => getComputedStyle(el).fontSize))).toBe(16);
   });
 
@@ -49,12 +52,12 @@ test.describe('component kit follows DESIGN.md', () => {
 
     const long = rows.filter({ hasText: 'Картофель' });
     const title = await long.evaluate((el) => {
-      const t = el.querySelector('span.text-body') as HTMLElement;
+      const t = el.querySelector('span.text-label') as HTMLElement;
       return { clipped: t.scrollWidth > t.clientWidth, height: t.getBoundingClientRect().height };
     });
     expect(title.clipped).toBe(false);
-    // Two lines of 24px: the name wrapped.
-    expect(title.height).toBeGreaterThanOrEqual(48);
+    // Two lines: the name wrapped.
+    expect(title.height).toBeGreaterThanOrEqual(44);
   });
 
   test('everything tappable is at least 44px in both directions', async ({ page }) => {

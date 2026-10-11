@@ -1,7 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import preset, { colors, rounded, sizes, spacing, typography } from '../../../tailwind-preset.js';
+import preset, {
+  colors,
+  colorsDark,
+  rounded,
+  sizes,
+  spacing,
+  typography,
+} from '../../../tailwind-preset.js';
 import { cn } from '../../cn';
 
 /**
@@ -41,6 +48,10 @@ const doc = frontMatter();
 describe('tailwind preset restates DESIGN.md', () => {
   test('colours', () => {
     expect(colors).toEqual(doc.colors as Record<string, string>);
+    expect(colorsDark).toEqual(doc['colors-dark'] as Record<string, string>);
+    // A token defined for one theme only would keep its light value on a
+    // dark page, or have none at all.
+    expect(Object.keys(colorsDark).sort()).toEqual(Object.keys(colors).sort());
   });
 
   test('spacing and radii', () => {
@@ -77,7 +88,7 @@ describe('tailwind preset restates DESIGN.md', () => {
     for (const plugin of preset.plugins as Array<(api: unknown) => void>) {
       plugin({
         addUtilities: (u: Record<string, unknown>) => Object.assign(utilities, u),
-        addComponents: () => {},
+        addBase: () => {},
       });
     }
     expect(Object.keys(utilities).sort()).toEqual([

@@ -42,10 +42,7 @@ export function List({ children, className }: ListProps) {
   }
   return (
     <InsideCard.Provider value={true}>
-      <div
-        role="list"
-        className={cn('inset-separated overflow-hidden rounded-lg bg-surface', className)}
-      >
+      <div role="list" className={cn('overflow-hidden rounded-lg bg-surface py-xs', className)}>
         {children}
       </div>
     </InsideCard.Provider>

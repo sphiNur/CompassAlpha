@@ -26,6 +26,9 @@ export default defineConfig({
     baseURL: WEB_URL,
     // Assertions read the English catalog.
     locale: 'en-US',
+    // E2E_COLOR_SCHEME=dark runs the same flow on the dark palette, for
+    // the screenshots; assertions do not depend on colour.
+    colorScheme: process.env.E2E_COLOR_SCHEME === 'dark' ? 'dark' : 'light',
     timezoneId: 'Asia/Tashkent',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',

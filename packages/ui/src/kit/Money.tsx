@@ -24,9 +24,9 @@ const TONE = {
  */
 export function Money({ amount, currency, size = 'md', tone = 'ink', className }: MoneyProps) {
   return (
-    <span className={cn('whitespace-nowrap', TONE[tone], className)} data-money>
+    <span className={cn('whitespace-nowrap', TONE[tone], className)} data-money dir="ltr">
       <span className={size === 'lg' ? 'text-money-lg' : 'text-money'}>{amount}</span>
-      {currency ? <span className="ml-xs text-caption text-secondary">{currency}</span> : null}
+      {currency ? <span className="ms-xs text-caption text-secondary">{currency}</span> : null}
     </span>
   );
 }
