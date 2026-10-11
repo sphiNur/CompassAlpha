@@ -71,7 +71,8 @@ export function AddItemEditor({
   const unitLabel = useUnitLabel();
   const [search, setSearch] = useState('');
   const [price, setPrice] = useState('');
-  const sharedInitialised = useRef<string | null>(null);
+  // The entry whose stores the person has chosen for themselves.
+  const storesChosenFor = useRef<string | null>(null);
 
   useEffect(() => {
     if (!draft) {
@@ -120,8 +121,15 @@ export function AddItemEditor({
     return next;
   };
 
-  // New spending starts shared between every store of the run. Done once
-  // per entry, so that deselecting a store afterwards sticks.
+  // New spending starts shared between every store of the run, until the
+  // person chooses stores themselves; deselecting one then sticks.
+  //
+  // Not "done once per entry": every field here writes the whole draft it
+  // was rendered with, so a letter typed in the instant this default lands
+  // writes back a draft from before it, with no stores. Marking the entry
+  // as done at that point left it without stores for good, and with no
+  // stores the quantity and price fields never appear. So it is applied
+  // again whenever the stores are empty and nobody emptied them.
   useEffect(() => {
     if (
       !draft ||
@@ -129,11 +137,10 @@ export function AddItemEditor({
       draft.expenseScope !== 'shared' ||
       draft.splits.size > 0 ||
       stores.length === 0 ||
-      sharedInitialised.current === draft.expenseId
+      storesChosenFor.current === draft.expenseId
     ) {
       return;
     }
-    sharedInitialised.current = draft.expenseId;
     onChange({
       ...draft,
       splits: split(
@@ -385,7 +392,8 @@ export function AddItemEditor({
                 <ChoiceGroup<AddItemDraft['expenseScope']>
                   label={i18n.t('run.action.addExpense.scopeTitle') as string}
                   value={draft.expenseScope}
-                  onChange={(expenseScope) =>
+                  onChange={(expenseScope) => {
+                    storesChosenFor.current = draft.expenseId;
                     onChange({
                       ...draft,
                       expenseScope,
@@ -396,8 +404,8 @@ export function AddItemEditor({
                               draft.actualQty,
                             )
                           : new Map(),
-                    })
-                  }
+                    });
+                  }}
                   options={[
                     {
                       value: 'shared',
@@ -425,6 +433,7 @@ export function AddItemEditor({
                           )
                         }
                         onPress={() => {
+                          storesChosenFor.current = draft.expenseId;
                           const ids =
                             draft.expenseScope === 'store'
                               ? [st.id]
