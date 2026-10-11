@@ -288,6 +288,26 @@ export function ApprovalPage() {
                           ~{formatMoney(Number(row.estimatedTotal))}
                         </span>
                       ) : null}
+                      {/* 2026-10-11: the budget by payment method. Nothing
+                          is paid yet; this is how each product was paid
+                          the last time it was bought. One under the other:
+                          side by side they are wider than the card leaves
+                          room for on a phone. */}
+                      {row.estimatedTotal && row.estimatedCash && row.estimatedTransfer ? (
+                        <span
+                          data-testid="approval-payment-budget"
+                          className="flex flex-col items-end text-old-label tabular-nums text-[var(--c-fg-muted)]"
+                        >
+                          <span className="whitespace-nowrap">
+                            {i18n.t('run.label.paymentCash')} ~
+                            {formatMoney(Number(row.estimatedCash))}
+                          </span>
+                          <span className="whitespace-nowrap">
+                            {i18n.t('run.label.paymentTransfer')} ~
+                            {formatMoney(Number(row.estimatedTransfer))}
+                          </span>
+                        </span>
+                      ) : null}
                       {row.notes ? (
                         <Badge tone="warn" title={i18n.t('order.notes.hasNote')}>
                           {i18n.t('order.notes.badge')}
