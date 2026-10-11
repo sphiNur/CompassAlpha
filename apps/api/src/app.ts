@@ -6,7 +6,7 @@ import { cors } from 'hono/cors';
 import { serveStatic } from 'hono/bun';
 import { trpcServer } from '@hono/trpc-server';
 import { sql } from 'drizzle-orm';
-import { getDb } from '@compass/db';
+import { getDb, inSystem } from '@compass/db';
 import { env } from './env';
 import { logger } from './infra/log';
 import { appRouter } from './trpc/router';
@@ -159,10 +159,7 @@ export function createApp() {
         ].join('; '),
       );
       if (env.NODE_ENV === 'production') {
-        c.header(
-          'Strict-Transport-Security',
-          'max-age=31536000; includeSubDomains; preload',
-        );
+        c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
       }
     }
   });
@@ -227,13 +224,10 @@ export function createApp() {
   app.get('/health/ready', async (c) => {
     const dbStart = Date.now();
     try {
-      await getDb(env.DATABASE_URL).execute(sql`SELECT 1`);
+      await inSystem(getDb(env.DATABASE_URL), 'health', (tx) => tx.execute(sql`SELECT 1`));
     } catch (err) {
       logger.error({ err }, '/health/ready DB ping failed');
-      return c.json(
-        { status: 'down', component: 'db', error: (err as Error).message },
-        503,
-      );
+      return c.json({ status: 'down', component: 'db', error: (err as Error).message }, 503);
     }
     const dbMs = Date.now() - dbStart;
 
@@ -242,10 +236,12 @@ export function createApp() {
     // try/catch because the table might be empty in fresh prod.
     let projectorLagMs: number | null = null;
     try {
-      const r = await getDb(env.DATABASE_URL).execute(sql`
+      const r = await inSystem(getDb(env.DATABASE_URL), 'health', (tx) =>
+        tx.execute(sql`
         SELECT EXTRACT(EPOCH FROM (NOW() - MAX(last_event_occurred_at))) * 1000 AS lag_ms
         FROM domain.projector_cursors
-      `);
+      `),
+      );
       const lag = (r as unknown as Array<{ lag_ms: number | null }>)[0]?.lag_ms;
       projectorLagMs = lag != null ? Math.max(0, Math.round(lag)) : null;
     } catch {
