@@ -67,7 +67,12 @@ async function evidence(name: string): Promise<void> {
 async function evidenceIn(
   locales: string[],
   name: string,
-  /** Reloading lands on Today; this gets back to the screen wanted. */
+  /**
+   * Reloading lands on Today; this gets back to the screen wanted. It is
+   * also run at the end, so the flow carries on from the same screen
+   * whether or not pictures were taken: CI takes none, and must not
+   * depend on a reload that only happens when they are.
+   */
   open?: () => Promise<void>,
 ): Promise<void> {
   const dir = process.env.E2E_SHOTS_DIR;
@@ -92,6 +97,7 @@ async function evidenceIn(
     writeFileSync(join(dir, `${name}.${locale}.png`), await page.screenshot({ fullPage: true }));
   }
   await setLocale('en');
+  await open?.();
 }
 
 test('sign in and confirm a display name', async () => {
@@ -147,8 +153,6 @@ test('place an order', async () => {
     await page.getByTestId('today-new-order').click();
     await expect(main().getByTestId('order-row').first()).toBeVisible();
   });
-  await page.getByTestId('today-new-order').click();
-  await expect(main().getByTestId('order-row').first()).toBeVisible();
 
   // The exact amount can be typed instead of tapped.
   const typed = page.waitForResponse((res) => res.url().includes('order.adjustItem'));
@@ -201,7 +205,6 @@ test('approve it', async () => {
     await page.getByTestId('do-approve').click();
     await expect(main().locator('[data-step="value"]').first()).toBeVisible();
   });
-  await page.getByTestId('do-approve').click();
   await expect(item('Apple').locator('[data-step="value"]')).toHaveText(/2\s*kg/);
   await mainButton().click();
   await evidence('approval-empty');
