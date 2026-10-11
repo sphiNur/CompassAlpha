@@ -8,13 +8,14 @@
  *
  * Skipped when DATABASE_URL is unset OR SKIP_PG_TESTS=1.
  */
-import { beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { createHmac } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { getDb, schema as s, withOrgContext } from '@compass/db';
 import { env } from '../env';
 import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
+import { loadSession } from '../trpc/context';
 import type { RequestContext } from '../trpc/context';
 
 const SHOULD_RUN =
@@ -36,7 +37,11 @@ function signInitData(tgUserId: bigint): string {
 }
 
 function anonymousCaller() {
-  const db = getDb(undefined, { system: 'maintenance' });
+  // The code under test gets the handle the server uses: no tenant, no
+  // system context, row-level security in force. Handing it the fixture
+  // handle would let every query through and prove nothing about whether
+  // sign-in still works once the policies refuse tenant-less queries.
+  const db = getDb();
   const ctx: RequestContext = {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     hono: {} as any,
@@ -59,6 +64,18 @@ const freshTgId = () => BigInt(7_000_000_000 + Math.floor(Math.random() * 2_000_
 
 describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
   let orgId = '';
+
+  // Any query the sign-in path issues with neither a tenant nor a declared
+  // system context fails this file outright, instead of quietly returning
+  // nothing, which is what the tightened policies make it do in production.
+  const probeBefore = process.env.DB_TENANT_PROBE;
+  beforeAll(() => {
+    process.env.DB_TENANT_PROBE = 'throw';
+  });
+  afterAll(() => {
+    if (probeBefore === undefined) delete process.env.DB_TENANT_PROBE;
+    else process.env.DB_TENANT_PROBE = probeBefore;
+  });
 
   beforeAll(async () => {
     const db = getDb(undefined, { system: 'maintenance' });
@@ -137,5 +154,53 @@ describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
     );
     const members = await db.select().from(s.members).where(eq(s.members.userId, user!.id));
     expect(members.length).toBe(0);
+  });
+
+  /**
+   * The whole of "my session ran out, I open the app again": sign in,
+   * make a request, lose the session, sign in again. Every lookup on the
+   * way happens before the server knows the tenant (who is this Telegram
+   * user? which organisation are they in?) or just after (load their
+   * roles), so this is the path that breaks first if tenant-less queries
+   * are refused and one of them was not marked as a system lookup.
+   */
+  test('a member whose session has expired can sign in again', async () => {
+    const fixtures = getDb(undefined, { system: 'maintenance' });
+    const tgUserId = freshTgId();
+    const [user] = await fixtures
+      .insert(s.users)
+      .values({ tgUserId, displayName: `tg:${tgUserId}` })
+      .returning();
+    const [member] = await fixtures
+      .insert(s.members)
+      .values({ orgId, userId: user!.id, status: 'active' })
+      .returning();
+    const initData = signInitData(tgUserId);
+
+    const first = await anonymousCaller().auth.telegramLogin({ initData });
+    expect(first.session.member.memberId).toBe(member!.id);
+
+    // What every later request does with the access token: load the member
+    // and their permissions, on the server's own handle.
+    const loaded = await loadSession(getDb(), user!.id, orgId, member!.id);
+    expect(loaded?.memberId).toBe(member!.id);
+
+    // The session is gone: every refresh token revoked, as after expiry or
+    // a sign-out elsewhere.
+    await fixtures
+      .update(s.refreshTokens)
+      .set({ revokedAt: new Date() })
+      .where(eq(s.refreshTokens.userId, user!.id));
+    await expect(
+      anonymousCaller().auth.refresh({ refreshToken: first.tokens.refreshToken }),
+    ).rejects.toThrow();
+
+    const again = await anonymousCaller().auth.telegramLogin({ initData });
+    expect(again.session.member.memberId).toBe(member!.id);
+    expect(again.session.member.orgId).toBe(orgId);
+    const refreshed = await anonymousCaller().auth.refresh({
+      refreshToken: again.tokens.refreshToken,
+    });
+    expect(refreshed.session.user.id).toBe(user!.id);
   });
 });
