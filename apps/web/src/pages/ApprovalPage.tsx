@@ -520,7 +520,7 @@ function OrderLines({
   const skuById = new Map((skus.data ?? []).map((sku) => [sku.id, sku]));
   const nameOf = new Map((members.data ?? []).map((m) => [m.memberId, m.displayName]));
   const priceOf = new Map(
-    (prices.data ?? []).map((p) => [p.skuId, Number(p.avg7d ?? p.lastPrice ?? 0) || null]),
+    (prices.data ?? []).map((p) => [p.skuId, Number(p.lastPrice ?? 0) || null]),
   );
   const totals = detail.data.totals.filter((t) => Number(t.qty) > 0);
   const asks = new Map<string, Array<{ contributorMemberId: string; qty: string }>>();

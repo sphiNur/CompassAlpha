@@ -879,7 +879,7 @@ export const uz = {
   'order.review.empty': 'Hozircha hech narsa tanlanmagan.',
   'order.review.reviewSheet.title': "Buyurtmani ko'rib chiqing",
   'order.review.estimatedTotal': 'Taxminiy summa',
-  'order.review.estimateHint': "~ 7 kunlik o'rtacha narx · {known} narxli · {unknown} narxsiz",
+  'order.review.estimateHint': "~ oxirgi xarid narxi bo'yicha · {known} narxli · {unknown} narxsiz",
 
   // ── Boshqa narsalar (sessiya darajasidagi izoh, M1.8) ────────────
   'order.notes.label': 'Boshqa narsalar',

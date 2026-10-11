@@ -1162,7 +1162,7 @@ function OrderLines({
   );
   const cost = useMemo(() => {
     const priceBySku = new Map<string, string | null>();
-    for (const r of priceStats.data ?? []) priceBySku.set(r.skuId, r.avg7d ?? r.lastPrice);
+    for (const r of priceStats.data ?? []) priceBySku.set(r.skuId, r.lastPrice);
     let total = 0;
     let known = 0;
     for (const t of lines) {
