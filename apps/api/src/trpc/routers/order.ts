@@ -41,7 +41,11 @@ import { appendEvents, readStream } from '../../services/eventStore';
 import { isUniqueViolation } from '../../services/pgErrors';
 import { projectOrder } from '../../services/orderProjection';
 import { dispatchOrderEventNotifications } from '../../services/notifyForEvent';
-import { estimateLines, loadSkuPriceStats } from '../../services/priceStats';
+import {
+  estimateLines,
+  loadSkuPriceStats,
+  loadSkuUsualPayment,
+} from '../../services/priceStats';
 import {
   assertActorAssignedToStore,
   effectivePermissionsForStore,
@@ -369,6 +373,12 @@ export const orderRouter = router({
           const v = Number(it.qty);
           if (v > 0) totalBySku.set(it.skuId, (totalBySku.get(it.skuId) ?? 0) + v);
         }
+        // 2026-10-11: how each product was last paid, so the approver
+        // reads a line as "about this much, in cash". Null when it has
+        // never been bought: there is nothing to go on.
+        const usualPayment = await loadSkuUsualPayment(tx, ctx.session!.orgId, [
+          ...totalBySku.keys(),
+        ]);
         return {
           id: session.id,
           storeId: session.storeId,
@@ -399,6 +409,10 @@ export const orderRouter = router({
           totals: [...totalBySku.entries()].map(([skuId, qty]) => ({
             skuId,
             qty: qty.toFixed(3).replace(/\.?0+$/, ''),
+            usualPayment:
+              usualPayment.byStoreSku.get(`${session.storeId}:${skuId}`) ??
+              usualPayment.bySku.get(skuId) ??
+              null,
           })),
           items: items.map((i) => ({
             skuId: i.skuId,
@@ -561,16 +575,19 @@ export const orderRouter = router({
         allSkuIds.size > 0
           ? await loadSkuPriceStats(tx, ctx.session!.orgId, [...allSkuIds])
           : new Map();
-      const estimateBySession = new Map<
-        string,
-        { total: number; known: number; unknown: number }
-      >();
+      // 2026-10-11: and how much of it is likely cash and how much
+      // transfer, by how each product was last paid. One more scan for
+      // the whole page.
+      const usualPayment = await loadSkuUsualPayment(tx, ctx.session!.orgId, [...allSkuIds]);
+      const storeIdBySession = new Map(sessions.map((sess) => [sess.id, sess.storeId]));
+      const estimateBySession = new Map<string, ReturnType<typeof estimateLines>>();
       for (const [sessionId, skuTotals] of skuTotalsBySession) {
         estimateBySession.set(
           sessionId,
           estimateLines(
             [...skuTotals.entries()].map(([skuId, qty]) => ({ skuId, qty })),
             priceStats,
+            { usual: usualPayment, storeId: storeIdBySession.get(sessionId) ?? '' },
           ),
         );
       }
@@ -581,7 +598,13 @@ export const orderRouter = router({
           totalQty: 0,
           contributors: new Set<string>(),
         };
-        const est = estimateBySession.get(sess.id) ?? { total: 0, known: 0, unknown: 0 };
+        const est = estimateBySession.get(sess.id) ?? {
+          total: 0,
+          known: 0,
+          unknown: 0,
+          cash: 0,
+          transfer: 0,
+        };
         const store = storeById.get(sess.storeId);
         const attribMemberId = sess.submittedByMemberId ?? sess.initiatedByMemberId;
         const member = attribMemberId ? memberById.get(attribMemberId) : null;
@@ -624,6 +647,9 @@ export const orderRouter = router({
           estimatedTotal: est.known > 0 ? est.total.toFixed(2) : null,
           estimatedKnown: est.known,
           estimatedUnknown: est.unknown,
+          /** The same total, split by how each product was last paid. */
+          estimatedCash: est.known > 0 ? est.cash.toFixed(2) : null,
+          estimatedTransfer: est.known > 0 ? est.transfer.toFixed(2) : null,
         };
       });
     });

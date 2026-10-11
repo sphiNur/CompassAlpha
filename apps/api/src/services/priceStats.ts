@@ -13,7 +13,7 @@
  * query shape. Volume is bounded by 30 days of observations for the SKUs
  * on screen.
  */
-import { and, eq, gte, inArray } from 'drizzle-orm';
+import { and, eq, gte, inArray, sql } from 'drizzle-orm';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
 
@@ -113,13 +113,89 @@ export async function loadSkuPriceStats(
  * callers can be honest about the estimate's coverage instead of
  * presenting a partial sum as complete.
  */
+export type PaymentMethod = 'cash' | 'transfer';
+
+/** How each product was paid for the last time it was bought. */
+export interface SkuUsualPayment {
+  /** `${storeId}:${skuId}` → that store's own last purchase of it. */
+  byStoreSku: Map<string, PaymentMethod>;
+  /** skuId → the last purchase of it for any store. */
+  bySku: Map<string, PaymentMethod>;
+}
+
+/**
+ * Nothing says how an order WILL be paid: the purchaser picks cash or
+ * transfer per line at the market. What can be said before that is how
+ * each product was paid the last time, which is what a budget needs.
+ */
+export async function loadSkuUsualPayment(
+  db: DB,
+  orgId: string,
+  skuIds: string[],
+): Promise<SkuUsualPayment> {
+  const out: SkuUsualPayment = { byStoreSku: new Map(), bySku: new Map() };
+  if (skuIds.length === 0) return out;
+  // Newest first within each (store, product); the first row of a product
+  // overall is therefore its newest for any store.
+  const rows = (await db.execute(sql`
+    SELECT DISTINCT ON (ris.store_id, ri.sku_id)
+      ris.store_id::text AS store_id,
+      ri.sku_id::text    AS sku_id,
+      COALESCE(ris.payment_method, ri.payment_method, 'cash') AS payment_method,
+      mr.run_date::text  AS run_date,
+      mr.run_index       AS run_index
+    FROM read_model.market_runs_v mr
+    INNER JOIN read_model.run_items_v ri
+      ON ri.run_id = mr.id
+    INNER JOIN read_model.run_item_stores_v ris
+      ON ris.run_id = ri.run_id AND ris.sku_id = ri.sku_id
+    WHERE mr.org_id = ${orgId}
+      AND ri.status = 'purchased'
+      AND mr.status IN ('purchasing', 'delivering', 'finished', 'amending')
+      AND ri.sku_id IN (${sql.join(
+        skuIds.map((id) => sql`${id}::uuid`),
+        sql`, `,
+      )})
+    ORDER BY ris.store_id, ri.sku_id, mr.run_date DESC, mr.run_index DESC
+  `)) as unknown as Array<{
+    store_id: string;
+    sku_id: string;
+    payment_method: string;
+    run_date: string;
+    run_index: number;
+  }>;
+  const newest = new Map<string, { runDate: string; runIndex: number }>();
+  for (const r of rows) {
+    const method: PaymentMethod = r.payment_method === 'transfer' ? 'transfer' : 'cash';
+    out.byStoreSku.set(`${r.store_id}:${r.sku_id}`, method);
+    const seen = newest.get(r.sku_id);
+    if (
+      !seen ||
+      r.run_date > seen.runDate ||
+      (r.run_date === seen.runDate && r.run_index > seen.runIndex)
+    ) {
+      newest.set(r.sku_id, { runDate: r.run_date, runIndex: r.run_index });
+      out.bySku.set(r.sku_id, method);
+    }
+  }
+  return out;
+}
+
+/**
+ * `cash` and `transfer` split `total` by how each product was last paid:
+ * the ordering store's own last purchase, else anyone's, else cash, which
+ * is what a purchase is recorded as unless the purchaser says otherwise.
+ */
 export function estimateLines(
   lines: Array<{ skuId: string; qty: number }>,
   stats: Map<string, SkuPriceStat>,
-): { total: number; known: number; unknown: number } {
+  paid?: { usual: SkuUsualPayment; storeId: string },
+): { total: number; known: number; unknown: number; cash: number; transfer: number } {
   let total = 0;
   let known = 0;
   let unknown = 0;
+  let cash = 0;
+  let transfer = 0;
   for (const line of lines) {
     if (!(line.qty > 0)) continue;
     const stat = stats.get(line.skuId);
@@ -127,9 +203,15 @@ export function estimateLines(
     if (price != null) {
       total += price * line.qty;
       known += 1;
+      const method =
+        paid?.usual.byStoreSku.get(`${paid.storeId}:${line.skuId}`) ??
+        paid?.usual.bySku.get(line.skuId) ??
+        'cash';
+      if (method === 'transfer') transfer += price * line.qty;
+      else cash += price * line.qty;
     } else {
       unknown += 1;
     }
   }
-  return { total, known, unknown };
+  return { total, known, unknown, cash, transfer };
 }

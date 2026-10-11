@@ -288,6 +288,26 @@ export function ApprovalPage() {
                           ~{formatMoney(Number(row.estimatedTotal))}
                         </span>
                       ) : null}
+                      {/* 2026-10-11: the budget by payment method. Nothing
+                          is paid yet; this is how each product was paid
+                          the last time it was bought. One under the other:
+                          side by side they are wider than the card leaves
+                          room for on a phone. */}
+                      {row.estimatedTotal && row.estimatedCash && row.estimatedTransfer ? (
+                        <span
+                          data-testid="approval-payment-budget"
+                          className="flex flex-col items-end text-old-label tabular-nums text-[var(--c-fg-muted)]"
+                        >
+                          <span className="whitespace-nowrap">
+                            {i18n.t('run.label.paymentCash')} ~
+                            {formatMoney(Number(row.estimatedCash))}
+                          </span>
+                          <span className="whitespace-nowrap">
+                            {i18n.t('run.label.paymentTransfer')} ~
+                            {formatMoney(Number(row.estimatedTransfer))}
+                          </span>
+                        </span>
+                      ) : null}
                       {row.notes ? (
                         <Badge tone="warn" title={i18n.t('order.notes.hasNote')}>
                           {i18n.t('order.notes.badge')}
@@ -592,13 +612,16 @@ function SessionItems({
   }
   const totals = (detail.data?.totals ?? []).filter((t) => Number(t.qty) > 0);
   const rawItems = detail.data?.items ?? [];
+  // The same price the estimate below is made of: the 7-day average,
+  // else the last price paid.
+  const priceBySku = new Map(
+    (priceStats.data ?? []).map((r) => [r.skuId, r.avg7d ?? r.lastPrice]),
+  );
   const estimateTotal = (() => {
     let sum = 0;
     let known = 0;
     let unknown = 0;
-    const priceMap = new Map(
-      (priceStats.data ?? []).map((r) => [r.skuId, r.avg7d ?? r.lastPrice]),
-    );
+    const priceMap = priceBySku;
     for (const t of totals) {
       const price = priceMap.get(t.skuId);
       if (price) {
@@ -698,6 +721,7 @@ function SessionItems({
         // qty span.
         const isSingleContributor = rows.length === 1;
         const singleRow = isSingleContributor ? rows[0]! : null;
+        const unitPrice = Number(priceBySku.get(t.skuId) ?? 0) || null;
         return (
           <li key={t.skuId} className="border-b border-[var(--c-divider)] py-3 last:border-b-0">
             <div className="flex items-center justify-between gap-2 text-old-body">
@@ -731,6 +755,33 @@ function SessionItems({
                 </span>
               )}
             </div>
+            {/* 2026-10-11: what one costs, how it is usually paid, and
+                what the line comes to. A line of its own under the name,
+                holding only figures and one word, so a long product name
+                in any language has nothing to share its line with. */}
+            {unitPrice || t.usualPayment ? (
+              <div
+                data-testid="approval-line-price"
+                className="mt-0.5 flex items-baseline justify-between gap-2 text-old-label tabular-nums text-[var(--c-fg-muted)]"
+              >
+                <span className="min-w-0">
+                  {unitPrice ? `~${formatMoney(unitPrice)} / ${unitLabel(sku?.unit ?? '')}` : null}
+                  {unitPrice && t.usualPayment ? ' · ' : null}
+                  {t.usualPayment
+                    ? i18n.t(
+                        t.usualPayment === 'transfer'
+                          ? 'run.label.paymentTransfer'
+                          : 'run.label.paymentCash',
+                      )
+                    : null}
+                </span>
+                {unitPrice ? (
+                  <span className="shrink-0 font-mono">
+                    ~{formatMoney(unitPrice * Number(t.qty))}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
             {/* Per-contributor breakdown only when 2+ contributors —
                 whether or not claimed. Hiding for single-contributor
                 avoids the noisy repeated submitter name. */}
