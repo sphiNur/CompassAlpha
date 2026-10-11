@@ -82,6 +82,7 @@ export const ru = {
   'common.close': 'Закрыть',
   'common.retry': 'Повторить',
   'common.loading': 'Загрузка…',
+  'common.done': 'Готово',
   'common.errorUnknown': 'Неизвестная ошибка',
   'qty.decrement': 'Уменьшить',
   'qty.increment': 'Увеличить',

@@ -101,7 +101,11 @@ function ShellInner() {
   // settings sheet, which Telegram's gear opens.
   const pageMenu = usePageMenuRegistration();
 
-  const tasks = TASKS.filter((t) => can(t.permission));
+  // Daily close is a part of the product an organisation either uses or
+  // does not; having the permission is not enough to be shown it.
+  const tasks = TASKS.filter(
+    (t) => can(t.permission) && (t.key !== 'settlement' || !!session?.member.dailyClose),
+  );
   const reachable: Tab[] = [
     'menu',
     ...tasks.map((t) => t.key),

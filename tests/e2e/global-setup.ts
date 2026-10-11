@@ -37,6 +37,19 @@ export default async function globalSetup(): Promise<void> {
   pnpm(['--filter', '@compass/db', 'seed']);
   pnpm(['compass', 'user', 'grant', ADMIN_TG_ID, '--role', 'super_admin', '--org', 'default']);
 
+  // The test organisation uses the daily close, as the one in production
+  // does; a brand-new organisation would not have it.
+  const flags = postgres(DATABASE_URL, { max: 1, onnotice: () => {} });
+  try {
+    await flags.unsafe(`
+      UPDATE auth.organizations
+      SET feature_flags = jsonb_set(feature_flags, '{dailyClose}', 'true'::jsonb)
+      WHERE slug = 'default'
+    `);
+  } finally {
+    await flags.end({ timeout: 5 });
+  }
+
   // The role the api runs as; see APP_DATABASE_URL.
   const owner = postgres(DATABASE_URL, { max: 1, onnotice: () => {} });
   try {

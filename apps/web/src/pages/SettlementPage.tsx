@@ -7,26 +7,20 @@
  * cash from other modules or silently overwrites an existing close.
  */
 import { useEffect, useMemo, useState } from 'react';
+import { useToast } from '@compass/ui';
 import {
-  Banner,
   Button,
-  Card,
-  CardBody,
-  CardHeader,
-  CardMeta,
-  CardTitle,
+  ChoiceGroup,
   EmptyState,
+  ErrorState,
   Field,
-  Input,
-  NumberInput,
-  SearchInput,
-  SectionLabel,
-  Select,
+  List,
+  Money,
+  Row,
+  Section,
   Sheet,
-  Spinner,
-  Textarea,
-  useToast,
-} from '@compass/ui';
+  StatusChip,
+} from '@compass/ui/kit';
 import type { SettlementWageItem } from '@compass/contracts';
 import { trpc } from '../lib/trpc';
 import { registerStoreChangeGuard, useStoreContext } from '../components/StoreSwitcher';
@@ -294,49 +288,11 @@ function isVersionConflict(error: unknown): boolean {
   return candidate.data?.code === 'CONFLICT' || candidate.message === 'order.errors.staleSeq';
 }
 
-function SummaryRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-baseline justify-between gap-3 py-1 text-old-body-sm">
-      <span className="text-[var(--c-fg-muted)]">{label}</span>
-      <strong className="shrink-0 tabular-nums text-[var(--c-fg)]">{value}</strong>
-    </div>
-  );
-}
-
 function formatSignedMoney(value: number, currency: string): string {
   const formatted = formatMoney(Math.abs(value), currency);
   if (value > 0) return `+${formatted}`;
   if (value < 0) return `−${formatted}`;
   return formatted;
-}
-
-function AmountField({
-  label,
-  value,
-  signed = false,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  signed?: boolean;
-  onChange: (value: string) => void;
-}) {
-  const valid = isMoney(value, signed);
-  return (
-    <Field label={label}>
-      <NumberInput
-        value={value}
-        min={signed ? '-999999999999.99' : '0'}
-        max="999999999999.99"
-        step="0.01"
-        placeholder="0"
-        aria-label={label}
-        aria-invalid={!valid || undefined}
-        className={!valid ? 'border-[var(--c-danger)]' : undefined}
-        onChange={(event) => onChange(event.target.value)}
-      />
-    </Field>
-  );
 }
 
 const confirmSettlement = confirmNative;
@@ -372,6 +328,9 @@ export function SettlementPage() {
   const [newWagePickerFor, setNewWagePickerFor] = useState<string | null>(null);
   const [wageRoleFilter, setWageRoleFilter] = useState('');
   const [wageSearch, setWageSearch] = useState('');
+  /** The expense or wage line open for editing; `NEWEST` is the one just added. */
+  const [editExpense, setEditExpense] = useState<string | null>(null);
+  const [editWage, setEditWage] = useState<string | null>(null);
   const utils = trpc.useUtils();
 
   const businessDateQuery = trpc.settlement.businessDate.useQuery(
@@ -569,13 +528,6 @@ export function SettlementPage() {
   const canEditOperatingExpenses =
     canRecordOperatingExpenses && !hasHistoricalOperatingExpenseTotal;
   const wageRoster = (wageRosterQuery.data ?? []) as WageRosterMember[];
-  const wageRoleOptions = useMemo(() => {
-    const byId = new Map<string, WageRosterMember['roles'][number]>();
-    for (const employee of wageRoster) {
-      for (const role of employee.roles) byId.set(role.id, role);
-    }
-    return [...byId.values()].sort((left, right) => left.name.localeCompare(right.name));
-  }, [wageRoster]);
   const filteredWageRoster = useMemo(() => {
     const query = wageSearch.trim().toLocaleLowerCase();
     return wageRoster.filter((employee) => {
@@ -679,6 +631,12 @@ export function SettlementPage() {
       ? i18n.t('settlement.save.update')
       : i18n.t('settlement.save.new');
   usePageMainButton(mainButtonText, save, {
+    // What the day comes to, over the button that records it.
+    summary: {
+      text: i18n.t('settlement.summary.totalRevenue') as string,
+      amount: formatMoney(summary.totalRevenue),
+      currency,
+    },
     visible:
       !!currentStoreId &&
       currentStoreId === requestedStoreId &&
@@ -689,124 +647,62 @@ export function SettlementPage() {
 
   if (!session) return null;
 
-  const pageHeading = (
-    <div>
-      <h1 className="text-old-h1 font-semibold text-[var(--c-fg)]">{i18n.t('settlement.title')}</h1>
-      <p className="mt-1 text-old-body-sm text-[var(--c-fg-muted)]">{i18n.t('settlement.subtitle')}</p>
+  const heading = (
+    <header className="flex items-start justify-between gap-lg">
+      <h1 className="text-h1 text-ink">{i18n.t('settlement.title')}</h1>
+      {existing ? (
+        <StatusChip tone="pending">
+          {i18n.t('settlement.recent.version', { version: existing.version })}
+        </StatusChip>
+      ) : null}
+    </header>
+  );
+  const frame = (content: React.ReactNode) => (
+    <div className="flex flex-col gap-xl px-page py-xl">
+      {heading}
+      {content}
     </div>
   );
-  const storeSelector =
-    eligibleStores.length > 1 && currentStoreId ? (
-      <Field label={i18n.t('settlement.store.label')}>
-        <Select
-          value={currentStoreId}
-          aria-label={i18n.t('settlement.store.label')}
-          onChange={(event) => {
-            const nextStoreId = event.target.value;
-            if (nextStoreId === currentStoreId) return;
-            confirmDiscardChanges(() => setCurrentStore(nextStoreId));
-          }}
-        >
-          {eligibleStores.map((store) => (
-            <option key={store.id} value={store.id}>
-              {store.name}
-            </option>
-          ))}
-        </Select>
-      </Field>
-    ) : null;
+  const waiting = <p className="text-body text-secondary">{i18n.t('common.loading')}</p>;
 
-  if (storesQuery.isPending) {
-    return (
-      <div className="flex flex-col gap-3 px-4 pb-4 pt-3">
-        {pageHeading}
-        <div className="flex justify-center py-8">
-          <Spinner size={20} />
-        </div>
-      </div>
-    );
-  }
-
+  if (storesQuery.isPending) return frame(waiting);
   if (storesQuery.isError) {
-    return (
-      <div className="flex flex-col gap-3 px-4 pb-4 pt-3">
-        {pageHeading}
-        <Banner
-          tone="danger"
-          title={i18n.t('settlement.errors.stores')}
-          action={
-            <Button size="sm" variant="pearl" onClick={() => void storesQuery.refetch()}>
-              {i18n.t('settlement.action.refresh')}
-            </Button>
-          }
-        />
-      </div>
+    return frame(
+      <ErrorState
+        title={i18n.t('settlement.errors.stores') as string}
+        retryLabel={i18n.t('settlement.action.refresh') as string}
+        onRetry={() => void storesQuery.refetch()}
+      />,
     );
   }
-
   if (!currentStoreId) {
-    return (
-      <div className="flex flex-col gap-3 px-4 pb-4 pt-3">
-        {pageHeading}
-        <EmptyState
-          title={i18n.t('settlement.noEligibleStores.title')}
-          description={i18n.t('settlement.noEligibleStores.body')}
-        />
-      </div>
+    return frame(
+      <EmptyState
+        title={i18n.t('settlement.noEligibleStores.title') as string}
+        hint={i18n.t('settlement.noEligibleStores.body') as string}
+        action={null}
+      />,
     );
   }
-
-  // Do not render Store A's form under Store B's shell label even for the
-  // single paint before the synchronization effect updates global context.
-  if (currentStoreId !== requestedStoreId) {
-    return (
-      <div className="flex flex-col gap-3 px-4 pb-4 pt-3">
-        {pageHeading}
-        <div className="flex justify-center py-8">
-          <Spinner size={20} />
-        </div>
-      </div>
-    );
-  }
-
+  // Never one store's form under another store's name, not even for the
+  // single paint before the two are brought back in line.
+  if (currentStoreId !== requestedStoreId) return frame(waiting);
   if (!businessDate) {
-    return (
-      <div className="flex flex-col gap-3 px-4 pb-4 pt-3">
-        {pageHeading}
-        {storeSelector}
-        {businessDateQuery.isError ? (
-          <Banner
-            tone="danger"
-            title={i18n.t('settlement.errors.businessDate')}
-            action={
-              <Button size="sm" variant="pearl" onClick={() => void businessDateQuery.refetch()}>
-                {i18n.t('settlement.action.refresh')}
-              </Button>
-            }
-          />
-        ) : (
-          <div className="flex justify-center py-8">
-            <Spinner size={20} />
-          </div>
-        )}
-      </div>
+    return frame(
+      businessDateQuery.isError ? (
+        <ErrorState
+          title={i18n.t('settlement.errors.businessDate') as string}
+          retryLabel={i18n.t('settlement.action.refresh') as string}
+          onRetry={() => void businessDateQuery.refetch()}
+        />
+      ) : (
+        waiting
+      ),
     );
   }
-
-  // Query caches can resolve a different store/date before the draft-reset
-  // effect runs. Do not briefly render any prior form under this context, and
-  // do not offer an empty form while the selected close is still loading.
-  if (!draftSynchronized) {
-    return (
-      <div className="flex flex-col gap-3 px-4 pb-4 pt-3">
-        {pageHeading}
-        {storeSelector}
-        <div className="flex justify-center py-8" aria-label={i18n.t('settlement.title')}>
-          <Spinner size={20} />
-        </div>
-      </div>
-    );
-  }
+  // A cached answer for another store or date can arrive first. Show
+  // neither that nor an empty form while the right record is loading.
+  if (!draftSynchronized) return frame(waiting);
 
   const setMoney = (field: (typeof DIRECT_MONEY_FIELDS)[number], value: string) => {
     setDraft((current) => ({ ...current, [field]: value }));
@@ -960,624 +856,457 @@ export function SettlementPage() {
     setWageSearch('');
   };
 
-  return (
-    <div className="flex flex-col gap-3 pb-4">
-      <div className="flex flex-col gap-3 px-4 pt-3">
-        {pageHeading}
-        {storeSelector}
+  const NEWEST = '__newest__';
+  const openExpense =
+    editExpense === NEWEST
+      ? draft.operatingExpenseItems[draft.operatingExpenseItems.length - 1]
+      : draft.operatingExpenseItems.find((item) => item.id === editExpense);
+  const openWage = draft.wageItems.find((item) => item.id === editWage);
 
-        <Field
-          label={i18n.t('settlement.date.label')}
-          hint={i18n.t('settlement.date.timezone', { timezone: businessDate.timezone })}
-        >
-          <Input
-            type="date"
-            value={date}
-            max={businessDate.date}
-            aria-label={i18n.t('settlement.date.label')}
-            invalid={!dateValid}
-            onChange={(event) => {
-              const nextDate = event.target.value;
-              if (nextDate === date) return;
-              confirmDiscardChanges(() => setDate(nextDate));
-            }}
-          />
-        </Field>
+  const moneyField = (field: (typeof DIRECT_MONEY_FIELDS)[number], labelKey: string) => (
+    <Field
+      numeric
+      label={i18n.t(labelKey as Parameters<typeof i18n.t>[0]) as string}
+      value={draft[field]}
+      placeholder="0"
+      onChange={(event) => setMoney(field, event.target.value)}
+      onFocus={(event) => event.currentTarget.select()}
+      suffix={currency}
+    />
+  );
 
-        {closeQuery.isPending ? (
-          <div className="flex justify-center py-4" aria-label={i18n.t('settlement.title')}>
-            <Spinner size={20} />
-          </div>
-        ) : null}
+  // A line opened and left blank was a slip, not an entry.
+  const closeExpense = () => {
+    const item = openExpense;
+    setEditExpense(null);
+    if (item && !item.amount.trim() && !item.reason.trim()) {
+      setDraft((current) => ({
+        ...current,
+        operatingExpenseItems: current.operatingExpenseItems.filter((e) => e.id !== item.id),
+      }));
+    }
+  };
+  const wageName = (wage: WageItemDraft): string =>
+    wage.isHistorical
+      ? (i18n.t('settlement.wages.historicalEmployee') as string)
+      : wage.personName || (i18n.t('settlement.wages.chooseEmployee') as string);
+  const wageStatus = (status: WageItemDraft['status']): string =>
+    i18n.t(
+      status === 'paid' ? 'settlement.wages.status.paid' : 'settlement.wages.status.unpaid',
+    ) as string;
+  const amountOf = (value: string) =>
+    (moneyToCents(value) ?? 0n) > 0n ? <Money amount={formatMoney(value)} /> : undefined;
+  const pickerQuery = wageSearch.trim().toLocaleLowerCase();
+  const pickable = filteredWageRoster.filter(
+    (employee) =>
+      !pickerQuery ||
+      employee.displayName.toLocaleLowerCase().includes(pickerQuery) ||
+      employee.roles.some((role) => role.name.toLocaleLowerCase().includes(pickerQuery)),
+  );
 
-        {closeQuery.isError ? (
-          <Banner
-            tone="danger"
-            title={i18n.t('settlement.errors.save')}
-            action={
-              <Button size="sm" variant="pearl" onClick={refreshRecord}>
-                {i18n.t('settlement.action.refresh')}
-              </Button>
-            }
-          />
-        ) : null}
-
-        {versionConflict ? (
-          <Banner
-            tone="warn"
-            title={i18n.t('settlement.errors.versionConflict')}
-            action={
-              <Button size="sm" variant="pearl" onClick={refreshRecord}>
-                {i18n.t('settlement.action.refresh')}
-              </Button>
-            }
-          >
-            {i18n.t('settlement.errors.versionConflictBody')}
-          </Banner>
-        ) : null}
-
-        {existing ? (
-          <Banner tone="info" title={i18n.t('settlement.editing.title')}>
-            {i18n.t('settlement.editing.body')}
-          </Banner>
-        ) : null}
-
-        <section className="flex flex-col gap-2">
-          <SectionLabel as="h2">{i18n.t('settlement.group.revenue')}</SectionLabel>
-          <Card>
-            <CardBody className="flex flex-col gap-3">
-              <CardMeta>{i18n.t('settlement.field.amountHint')}</CardMeta>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <AmountField
-                  label={i18n.t('settlement.field.onlineRevenue')}
-                  value={draft.onlineRevenue}
-                  onChange={(value) => setMoney('onlineRevenue', value)}
-                />
-                <AmountField
-                  label={i18n.t('settlement.field.invoicedCashRevenue')}
-                  value={draft.invoicedCashRevenue}
-                  onChange={(value) => setMoney('invoicedCashRevenue', value)}
-                />
-              </div>
-            </CardBody>
-          </Card>
-        </section>
-
-        <section className="flex flex-col gap-2">
-          <SectionLabel as="h2">{i18n.t('settlement.group.costs')}</SectionLabel>
-          <Card>
-            <CardBody className="flex flex-col gap-5">
-              <Banner tone="info" title={i18n.t('settlement.costs.autoTotalTitle')}>
-                {i18n.t('settlement.costs.autoTotalHint')}
-              </Banner>
-
-              <div className="flex flex-col gap-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <h3 className="text-old-h3 font-semibold text-[var(--c-fg)]">
-                      {i18n.t('settlement.expenses.title')}
-                    </h3>
-                    <p className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
-                      {i18n.t('settlement.expenses.total', {
-                        money: formatMoney(operatingExpenseTotal.value, currency),
-                      })}
-                    </p>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={
-                      !canEditOperatingExpenses ||
-                      draft.operatingExpenseItems.length >= MAX_DETAIL_ITEMS
-                    }
-                    onClick={addOperatingExpense}
-                  >
-                    {i18n.t('settlement.expenses.add')}
-                  </Button>
-                </div>
-
-                {hasHistoricalOperatingExpenseTotal ? (
-                  <Banner tone="info" title={i18n.t('settlement.details.historicalReadOnly')}>
-                    {i18n.t('settlement.details.historicalReadOnlyBody')}
-                  </Banner>
-                ) : !canRecordOperatingExpenses ? (
-                  <Banner tone="info" title={i18n.t('settlement.errors.expensesManagerOnly')}>
-                    {i18n.t('settlement.expenses.readOnly')}
-                  </Banner>
-                ) : null}
-
-                {draft.operatingExpenseItems.length === 0 ? (
-                  <p className="rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-3 py-2 text-old-body-sm text-[var(--c-fg-muted)]">
-                    {i18n.t('settlement.expenses.empty')}
-                  </p>
-                ) : (
-                  <div className="flex flex-col gap-3">
-                    {draft.operatingExpenseItems.map((expense, index) => {
-                      const valid = isValidOperatingExpense(expense);
-                      return (
-                        <div
-                          key={expense.id}
-                          className="rounded-[var(--r-utility)] bg-[var(--c-surface-2)] p-3 ring-hairline"
-                        >
-                          <div className="mb-3 flex items-center justify-between gap-3">
-                            <span className="text-old-label font-semibold text-[var(--c-fg-muted)]">
-                              {i18n.t('settlement.expenses.itemNumber', { n: index + 1 })}
-                            </span>
-                            {canEditOperatingExpenses ? (
-                              <Button
-                                size="sm"
-                                variant="danger-ghost"
-                                aria-label={i18n.t('settlement.expenses.remove')}
-                                onClick={() => removeOperatingExpense(expense.id)}
-                              >
-                                {i18n.t('settlement.expenses.remove')}
-                              </Button>
-                            ) : null}
-                          </div>
-                          <Field label={i18n.t('settlement.expenses.amount')}>
-                            <NumberInput
-                              value={expense.amount}
-                              min="0.01"
-                              max="999999999999.99"
-                              step="0.01"
-                              placeholder="0"
-                              readOnly={!canEditOperatingExpenses}
-                              aria-invalid={(moneyToCents(expense.amount) ?? 0n) <= 0n || undefined}
-                              className={
-                                (moneyToCents(expense.amount) ?? 0n) <= 0n
-                                  ? 'border-[var(--c-danger)]'
-                                  : undefined
-                              }
-                              onChange={(event) =>
-                                updateOperatingExpense(expense.id, {
-                                  amount: event.currentTarget.value,
-                                  isHistorical: false,
-                                })
-                              }
-                            />
-                          </Field>
-                          <div className="mt-3">
-                            <Field label={i18n.t('settlement.expenses.reason')}>
-                              {expense.isHistorical ? (
-                                <p className="rounded-[var(--r-utility)] bg-[var(--c-surface-3)] px-3 py-2 text-old-body-sm text-[var(--c-fg-muted)]">
-                                  {i18n.t('settlement.expenses.historicalReason')}
-                                </p>
-                              ) : (
-                                <Textarea
-                                  value={expense.reason}
-                                  maxLength={500}
-                                  readOnly={!canEditOperatingExpenses}
-                                  invalid={!valid && expense.reason.trim().length === 0}
-                                  onChange={(event) =>
-                                    updateOperatingExpense(expense.id, {
-                                      reason: event.currentTarget.value,
-                                      isHistorical: false,
-                                    })
-                                  }
-                                />
-                              )}
-                            </Field>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              <div className="border-t border-[var(--c-divider)]" />
-
-              <div className="flex flex-col gap-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <h3 className="text-old-h3 font-semibold text-[var(--c-fg)]">
-                      {i18n.t('settlement.wages.title')}
-                    </h3>
-                    <p className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
-                      {i18n.t('settlement.wages.totals', {
-                        paid: formatMoney(paidWageTotal.value, currency),
-                        unpaid: formatMoney(unpaidWageTotal.value, currency),
-                      })}
-                    </p>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={hasHistoricalWageTotal || draft.wageItems.length >= MAX_DETAIL_ITEMS}
-                    onClick={addWageItem}
-                  >
-                    {i18n.t('settlement.wages.add')}
-                  </Button>
-                </div>
-
-                {hasHistoricalWageTotal ? (
-                  <Banner tone="info" title={i18n.t('settlement.details.historicalReadOnly')}>
-                    {i18n.t('settlement.details.historicalReadOnlyBody')}
-                  </Banner>
-                ) : null}
-
-                {draft.wageItems.length === 0 ? (
-                  <p className="rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-3 py-2 text-old-body-sm text-[var(--c-fg-muted)]">
-                    {i18n.t('settlement.wages.empty')}
-                  </p>
-                ) : (
-                  <div className="flex flex-col gap-3">
-                    {draft.wageItems.map((wage, index) => {
-                      const valid = isValidWageItem(wage, wageSelectionRequired);
-                      const displayedEmployee = wage.isHistorical
-                        ? i18n.t('settlement.wages.historicalEmployee')
-                        : wage.personName || i18n.t('settlement.wages.chooseEmployee');
-                      return (
-                        <div
-                          key={wage.id}
-                          className="rounded-[var(--r-utility)] bg-[var(--c-surface-2)] p-3 ring-hairline"
-                        >
-                          <div className="mb-3 flex items-center justify-between gap-3">
-                            <span className="text-old-label font-semibold text-[var(--c-fg-muted)]">
-                              {i18n.t('settlement.wages.itemNumber', { n: index + 1 })}
-                            </span>
-                            {!wage.isHistorical ? (
-                              <Button
-                                size="sm"
-                                variant="danger-ghost"
-                                aria-label={i18n.t('settlement.wages.remove')}
-                                onClick={() => removeWageItem(wage.id)}
-                              >
-                                {i18n.t('settlement.wages.remove')}
-                              </Button>
-                            ) : null}
-                          </div>
-                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                            <Field label={i18n.t('settlement.wages.employee')}>
-                              <Button
-                                type="button"
-                                variant="secondary"
-                                className="w-full justify-between text-left"
-                                aria-invalid={
-                                  (wageSelectionRequired && !wage.memberId) || undefined
-                                }
-                                disabled={wage.isHistorical}
-                                onClick={() => {
-                                  setWagePickerFor(wage.id);
-                                  setNewWagePickerFor(null);
-                                  setWageRoleFilter('');
-                                  setWageSearch('');
-                                }}
-                              >
-                                <span className="min-w-0 truncate">{displayedEmployee}</span>
-                                <span aria-hidden>›</span>
-                              </Button>
-                              {!wage.memberId && wage.personName ? (
-                                <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
-                                  {i18n.t('settlement.wages.legacyEmployee')}
-                                </p>
-                              ) : null}
-                            </Field>
-                            <Field label={i18n.t('settlement.wages.status')}>
-                              <Select
-                                value={wage.status}
-                                disabled={wage.isHistorical}
-                                onChange={(event) =>
-                                  updateWageItem(wage.id, {
-                                    status: event.currentTarget.value as WageItemDraft['status'],
-                                    isHistorical: false,
-                                  })
-                                }
-                              >
-                                <option value="paid">
-                                  {i18n.t('settlement.wages.status.paid')}
-                                </option>
-                                <option value="unpaid">
-                                  {i18n.t('settlement.wages.status.unpaid')}
-                                </option>
-                              </Select>
-                            </Field>
-                            <Field label={i18n.t('settlement.wages.amount')}>
-                              <NumberInput
-                                value={wage.amount}
-                                min="0.01"
-                                max="999999999999.99"
-                                step="0.01"
-                                placeholder="0"
-                                readOnly={wage.isHistorical}
-                                aria-invalid={(moneyToCents(wage.amount) ?? 0n) <= 0n || undefined}
-                                className={
-                                  (moneyToCents(wage.amount) ?? 0n) <= 0n
-                                    ? 'border-[var(--c-danger)]'
-                                    : undefined
-                                }
-                                onChange={(event) =>
-                                  updateWageItem(wage.id, {
-                                    amount: event.currentTarget.value,
-                                    isHistorical: false,
-                                  })
-                                }
-                              />
-                            </Field>
-                          </div>
-                          <div className="mt-3">
-                            <Field label={i18n.t('settlement.wages.reason')}>
-                              {wage.isHistorical ? (
-                                <p className="rounded-[var(--r-utility)] bg-[var(--c-surface-3)] px-3 py-2 text-old-body-sm text-[var(--c-fg-muted)]">
-                                  {i18n.t('settlement.wages.historicalReason')}
-                                </p>
-                              ) : (
-                                <Textarea
-                                  value={wage.reason}
-                                  maxLength={500}
-                                  invalid={!valid && wage.reason.trim().length === 0}
-                                  onChange={(event) =>
-                                    updateWageItem(wage.id, {
-                                      reason: event.currentTarget.value,
-                                      isHistorical: false,
-                                    })
-                                  }
-                                />
-                              )}
-                            </Field>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </CardBody>
-          </Card>
-        </section>
-
-        <section className="flex flex-col gap-2">
-          <SectionLabel as="h2">{i18n.t('settlement.group.procurement')}</SectionLabel>
-          <Card>
-            <CardBody className="flex flex-col gap-3">
-              <AmountField
-                label={i18n.t('settlement.field.nextPurchaseReserve')}
-                value={draft.nextPurchaseReserve}
-                onChange={(value) => setMoney('nextPurchaseReserve', value)}
-              />
-              <AmountField
-                label={i18n.t('settlement.field.priorPurchaseAdjustment')}
-                value={draft.priorPurchaseAdjustment}
-                signed
-                onChange={(value) => setMoney('priorPurchaseAdjustment', value)}
-              />
-              <Banner tone="info" title={i18n.t('settlement.purchaseAdjustment.positive')}>
-                {i18n.t('settlement.purchaseAdjustment.help')}
-                <span className="mt-1 block">
-                  {i18n.t('settlement.purchaseAdjustment.negative')}
-                </span>
-              </Banner>
-            </CardBody>
-          </Card>
-        </section>
-
-        <section className="flex flex-col gap-2">
-          <SectionLabel as="h2">{i18n.t('settlement.group.cash')}</SectionLabel>
-          <Card>
-            <CardBody>
-              <AmountField
-                label={i18n.t('settlement.field.cashOnHand')}
-                value={draft.cashOnHand}
-                onChange={(value) => setMoney('cashOnHand', value)}
-              />
-            </CardBody>
-          </Card>
-        </section>
-
-        <Card>
-          <CardBody className="flex flex-col gap-3">
-            <Field label={i18n.t('settlement.field.note')}>
-              <Textarea
-                value={draft.note}
-                maxLength={1000}
-                placeholder={i18n.t('settlement.note.placeholder')}
-                onChange={(event) =>
-                  setDraft((current) => ({ ...current, note: event.target.value }))
-                }
-              />
-            </Field>
-            {needsCorrectionReason ? (
-              <Field
-                label={i18n.t('settlement.field.correctionReason')}
-                hint={i18n.t('settlement.correction.required')}
-              >
-                <Textarea
-                  value={draft.correctionReason}
-                  maxLength={500}
-                  invalid={!correctionReady}
-                  placeholder={i18n.t('settlement.correction.placeholder')}
-                  onChange={(event) =>
-                    setDraft((current) => ({ ...current, correctionReason: event.target.value }))
-                  }
-                />
-              </Field>
-            ) : null}
-          </CardBody>
-        </Card>
-
-        {invalidMoney ? (
-          <Banner tone="warn" title={i18n.t('settlement.errors.invalidMoney')} />
-        ) : null}
-        {invalidDetails ? (
-          <Banner tone="warn" title={i18n.t('settlement.errors.invalidDetails')}>
-            {i18n.t('settlement.errors.invalidDetailsBody')}
-          </Banner>
-        ) : null}
-
-        <Card>
-          <CardHeader>
-            <CardTitle>{i18n.t('settlement.summary.title')}</CardTitle>
-          </CardHeader>
-          <CardBody>
-            <SummaryRow
-              label={i18n.t('settlement.summary.totalRevenue')}
-              value={formatMoney(summary.totalRevenue, currency)}
-            />
-            <SummaryRow
-              label={i18n.t('settlement.summary.paidOutflows')}
-              value={formatMoney(summary.paidOutflows, currency)}
-            />
-            <SummaryRow
-              label={i18n.t('settlement.summary.futureCommitments')}
-              value={formatMoney(summary.futureCommitments, currency)}
-            />
-            <SummaryRow
-              label={i18n.t('settlement.summary.priorPurchaseAdjustment')}
-              value={formatSignedMoney(summary.priorPurchaseAdjustment, currency)}
-            />
-            <SummaryRow
-              label={i18n.t('settlement.summary.endingCash')}
-              value={formatMoney(summary.endingCash, currency)}
-            />
-          </CardBody>
-        </Card>
-
-        <section className="flex flex-col gap-2">
-          <SectionLabel as="h2">{i18n.t('settlement.recent.title')}</SectionLabel>
-          {recentQuery.isPending ? (
-            <div className="flex justify-center py-3">
-              <Spinner size={18} />
-            </div>
-          ) : recentQuery.data?.length ? (
-            <ul className="flex flex-col gap-2" role="list">
-              {recentQuery.data.map((record) => (
-                <li key={record.id}>
-                  <Card interactive>
-                    <button
-                      type="button"
-                      className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
-                      onClick={() => {
-                        if (record.date === date) return;
-                        confirmDiscardChanges(() => {
-                          haptic('light');
-                          setDate(record.date);
-                        });
-                      }}
-                    >
-                      <span className="min-w-0">
-                        <span className="block text-old-h3 font-semibold tabular-nums text-[var(--c-fg)]">
-                          {record.date}
-                        </span>
-                        <span className="mt-0.5 block text-old-body-sm text-[var(--c-fg-muted)]">
-                          {i18n.t('settlement.recent.version', { version: record.version })}
-                          {record.updatedByName
-                            ? ` · ${i18n.t('settlement.recent.updatedBy', { name: record.updatedByName })}`
-                            : ''}
-                        </span>
-                      </span>
-                      <span className="shrink-0 text-old-label font-semibold text-[var(--c-action)]">
-                        {i18n.t('settlement.recent.open')}
-                      </span>
-                    </button>
-                  </Card>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <Card>
-              <CardBody>
-                <p className="text-old-body-sm text-[var(--c-fg-muted)]">
-                  {i18n.t('settlement.recent.empty')}
-                </p>
-              </CardBody>
-            </Card>
-          )}
-        </section>
-      </div>
-
-      <Sheet
-        open={!!wagePickerFor}
-        onOpenChange={(open) => {
-          if (open) return;
-          closeWagePicker();
+  return frame(
+    <>
+      <Field
+        type="date"
+        label={i18n.t('settlement.date.label') as string}
+        value={date}
+        max={businessDate.date}
+        onChange={(event) => {
+          const nextDate = event.target.value;
+          if (nextDate === date) return;
+          confirmDiscardChanges(() => setDate(nextDate));
         }}
-        title={i18n.t('settlement.wages.pickerTitle')}
-        description={i18n.t('settlement.wages.pickerDescription')}
-      >
-        <div className="flex flex-col gap-3 py-2">
-          <Field label={i18n.t('settlement.wages.roleFilter')}>
-            <Select
-              value={wageRoleFilter}
-              onChange={(event) => setWageRoleFilter(event.currentTarget.value)}
-            >
-              <option value="">{i18n.t('settlement.wages.allRoles')}</option>
-              {wageRoleOptions.map((role) => (
-                <option key={role.id} value={role.id}>
-                  {role.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <SearchInput
-            value={wageSearch}
-            placeholder={i18n.t('settlement.wages.searchEmployees')}
-            aria-label={i18n.t('settlement.wages.searchEmployees')}
-            clearAriaLabel={i18n.t('common.clear')}
-            onChange={(event) => setWageSearch(event.currentTarget.value)}
-            onClear={() => setWageSearch('')}
-          />
+      />
 
-          {wageRosterQuery.isPending ? (
-            <div className="flex justify-center py-5">
-              <Spinner size={20} />
-            </div>
-          ) : null}
-          {wageRosterQuery.isError ? (
-            <Banner
-              tone="danger"
-              title={i18n.t('settlement.wages.rosterError')}
-              action={
-                <Button size="sm" variant="pearl" onClick={() => void wageRosterQuery.refetch()}>
-                  {i18n.t('settlement.action.refresh')}
-                </Button>
+      {closeQuery.isError ? (
+        <ErrorState
+          title={i18n.t('settlement.errors.save') as string}
+          retryLabel={i18n.t('settlement.action.refresh') as string}
+          onRetry={refreshRecord}
+        />
+      ) : null}
+      {/* Someone else saved this day in the meantime. Their version has to
+          be loaded before anything can be saved over it. */}
+      {versionConflict ? (
+        <ErrorState
+          title={i18n.t('settlement.errors.versionConflict') as string}
+          detail={i18n.t('settlement.errors.versionConflictBody') as string}
+          retryLabel={i18n.t('settlement.action.refresh') as string}
+          onRetry={refreshRecord}
+        />
+      ) : null}
+
+      <Section title={i18n.t('settlement.group.revenue') as string}>
+        {moneyField('invoicedCashRevenue', 'settlement.field.invoicedCashRevenue')}
+        {moneyField('onlineRevenue', 'settlement.field.onlineRevenue')}
+      </Section>
+
+      <Section
+        title={i18n.t('settlement.field.operatingExpenses') as string}
+        summary={<Money amount={formatMoney(operatingExpenseTotal.value)} currency={currency} />}
+      >
+        {hasHistoricalOperatingExpenseTotal ? (
+          <p className="text-body text-secondary">
+            {i18n.t('settlement.details.historicalReadOnlyBody')}
+          </p>
+        ) : !canRecordOperatingExpenses ? (
+          <p className="text-body text-secondary">{i18n.t('settlement.expenses.readOnly')}</p>
+        ) : null}
+        <List>
+          {draft.operatingExpenseItems.map((expense) => (
+            <Row
+              key={expense.id}
+              data-testid="close-expense"
+              title={
+                expense.isHistorical
+                  ? i18n.t('settlement.expenses.historicalReason')
+                  : expense.reason.trim() || i18n.t('settlement.expenses.reason')
+              }
+              value={amountOf(expense.amount)}
+              onPress={
+                canEditOperatingExpenses && !expense.isHistorical
+                  ? () => setEditExpense(expense.id)
+                  : undefined
               }
             />
-          ) : null}
-          {!wageRosterQuery.isPending && !wageRosterQuery.isError && wageRoster.length === 0 ? (
-            <EmptyState
-              title={i18n.t('settlement.wages.rosterEmptyTitle')}
-              description={i18n.t('settlement.wages.rosterEmptyBody')}
+          ))}
+          {canEditOperatingExpenses && draft.operatingExpenseItems.length < MAX_DETAIL_ITEMS ? (
+            <Row
+              action
+              data-testid="close-add-expense"
+              title={i18n.t('settlement.expenses.add')}
+              onPress={() => {
+                addOperatingExpense();
+                setEditExpense(NEWEST);
+              }}
             />
           ) : null}
-          {!wageRosterQuery.isPending &&
-          !wageRosterQuery.isError &&
-          wageRoster.length > 0 &&
-          filteredWageRoster.length === 0 ? (
-            <p className="rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-3 py-2 text-old-body-sm text-[var(--c-fg-muted)]">
-              {i18n.t('settlement.wages.noEmployeeMatch')}
-            </p>
+        </List>
+      </Section>
+
+      <Section
+        title={i18n.t('settlement.wages.title') as string}
+        summary={
+          <span className="text-body text-secondary">
+            {i18n.t('settlement.wages.totals', {
+              paid: formatMoney(paidWageTotal.value, currency),
+              unpaid: formatMoney(unpaidWageTotal.value, currency),
+            })}
+          </span>
+        }
+      >
+        {hasHistoricalWageTotal ? (
+          <p className="text-body text-secondary">
+            {i18n.t('settlement.details.historicalReadOnlyBody')}
+          </p>
+        ) : null}
+        <List>
+          {draft.wageItems.map((wage) => (
+            <Row
+              key={wage.id}
+              data-testid="close-wage"
+              title={wageName(wage)}
+              detail={[wageStatus(wage.status), wage.isHistorical ? null : wage.reason.trim()]
+                .filter(Boolean)
+                .join(' · ')}
+              value={amountOf(wage.amount)}
+              onPress={wage.isHistorical ? undefined : () => setEditWage(wage.id)}
+            />
+          ))}
+          {!hasHistoricalWageTotal && draft.wageItems.length < MAX_DETAIL_ITEMS ? (
+            <Row
+              action
+              data-testid="close-add-wage"
+              title={i18n.t('settlement.wages.add')}
+              onPress={addWageItem}
+            />
           ) : null}
-          {!wageRosterQuery.isPending &&
-          !wageRosterQuery.isError &&
-          filteredWageRoster.length > 0 ? (
-            <ul className="flex flex-col gap-2" role="list">
-              {filteredWageRoster.map((employee) => (
-                <li key={employee.memberId}>
-                  <button
-                    type="button"
-                    className="flex w-full items-center justify-between gap-3 rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-3 py-3 text-left ring-hairline transition-colors hover:bg-[var(--c-surface-3)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--c-ring)]"
-                    onClick={() => selectWageEmployee(employee)}
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate text-old-body font-semibold text-[var(--c-fg)]">
-                        {employee.displayName}
-                      </span>
-                      <span className="mt-0.5 block truncate text-old-label text-[var(--c-fg-muted)]">
-                        {employee.roles.length > 0
-                          ? employee.roles.map((role) => role.name).join(' · ')
-                          : i18n.t('settlement.wages.noRole')}
-                      </span>
-                    </span>
-                    <span className="shrink-0 text-old-label font-semibold text-[var(--c-action)]">
-                      {i18n.t('settlement.wages.chooseEmployee')}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      </Sheet>
-    </div>
+        </List>
+      </Section>
+
+      <Section title={i18n.t('settlement.group.procurement') as string}>
+        {moneyField('nextPurchaseReserve', 'settlement.field.nextPurchaseReserve')}
+        {moneyField('priorPurchaseAdjustment', 'settlement.field.priorPurchaseAdjustment')}
+        {/* The one field that may be negative; say which way is which. */}
+        <p className="text-body text-secondary">
+          {i18n.t('settlement.purchaseAdjustment.positive')}{' '}
+          {i18n.t('settlement.purchaseAdjustment.negative')}
+        </p>
+      </Section>
+
+      <Section title={i18n.t('settlement.group.cash') as string}>
+        {moneyField('cashOnHand', 'settlement.field.cashOnHand')}
+      </Section>
+
+      <Section>
+        <Field
+          label={i18n.t('settlement.field.note') as string}
+          value={draft.note}
+          maxLength={1000}
+          placeholder={i18n.t('settlement.note.placeholder') as string}
+          onChange={(event) => setDraft((current) => ({ ...current, note: event.target.value }))}
+        />
+        {/* A saved close is a record; changing it has to say why. */}
+        {needsCorrectionReason ? (
+          <Field
+            label={i18n.t('settlement.field.correctionReason') as string}
+            value={draft.correctionReason}
+            maxLength={500}
+            placeholder={i18n.t('settlement.correction.placeholder') as string}
+            onChange={(event) =>
+              setDraft((current) => ({ ...current, correctionReason: event.target.value }))
+            }
+          />
+        ) : null}
+        {invalidMoney ? (
+          <p role="alert" className="text-body text-warning-ink">
+            {i18n.t('settlement.errors.invalidMoney')}
+          </p>
+        ) : null}
+        {invalidDetails ? (
+          <p role="alert" className="text-body text-warning-ink">
+            {i18n.t('settlement.errors.invalidDetailsBody')}
+          </p>
+        ) : null}
+      </Section>
+
+      <Section title={i18n.t('settlement.summary.title') as string}>
+        <List>
+          <Row
+            title={i18n.t('settlement.summary.totalRevenue')}
+            value={<Money amount={formatMoney(summary.totalRevenue)} currency={currency} />}
+          />
+          <Row
+            title={i18n.t('settlement.summary.paidOutflows')}
+            value={<Money amount={formatMoney(summary.paidOutflows)} currency={currency} />}
+          />
+          <Row
+            title={i18n.t('settlement.summary.futureCommitments')}
+            value={<Money amount={formatMoney(summary.futureCommitments)} currency={currency} />}
+          />
+          <Row
+            title={i18n.t('settlement.summary.priorPurchaseAdjustment')}
+            value={<Money amount={formatSignedMoney(summary.priorPurchaseAdjustment, currency)} />}
+          />
+          <Row
+            title={i18n.t('settlement.summary.endingCash')}
+            value={<Money amount={formatMoney(summary.endingCash)} currency={currency} />}
+          />
+        </List>
+      </Section>
+
+      {recentQuery.data?.length ? (
+        <Section title={i18n.t('settlement.recent.title') as string}>
+          <List>
+            {recentQuery.data.map((record) => (
+              <Row
+                key={record.id}
+                data-testid="close-recent"
+                title={record.date}
+                detail={[
+                  i18n.t('settlement.recent.version', { version: record.version }),
+                  record.updatedByName
+                    ? i18n.t('settlement.recent.updatedBy', { name: record.updatedByName })
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+                onPress={
+                  record.date === date
+                    ? undefined
+                    : () => confirmDiscardChanges(() => setDate(record.date))
+                }
+              />
+            ))}
+          </List>
+        </Section>
+      ) : null}
+
+      {openExpense ? (
+        <Sheet
+          open
+          onOpenChange={(open) => !open && closeExpense()}
+          title={i18n.t('settlement.field.operatingExpenses') as string}
+          actions={
+            <>
+              <Button variant="primary" data-testid="close-expense-done" onClick={closeExpense}>
+                {i18n.t('common.done')}
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setEditExpense(null);
+                  removeOperatingExpense(openExpense.id);
+                }}
+              >
+                <span className="text-danger">{i18n.t('settlement.expenses.remove')}</span>
+              </Button>
+            </>
+          }
+        >
+          <div className="flex flex-col gap-lg">
+            <Field
+              numeric
+              label={i18n.t('settlement.expenses.amount') as string}
+              value={openExpense.amount}
+              placeholder="0"
+              onChange={(event) =>
+                updateOperatingExpense(openExpense.id, {
+                  amount: event.target.value,
+                  isHistorical: false,
+                })
+              }
+              suffix={currency}
+            />
+            <Field
+              label={i18n.t('settlement.expenses.reason') as string}
+              value={openExpense.reason}
+              maxLength={500}
+              onChange={(event) =>
+                updateOperatingExpense(openExpense.id, {
+                  reason: event.target.value,
+                  isHistorical: false,
+                })
+              }
+            />
+          </div>
+        </Sheet>
+      ) : null}
+
+      {openWage && !wagePickerFor ? (
+        <Sheet
+          open
+          onOpenChange={(open) => !open && setEditWage(null)}
+          title={wageName(openWage)}
+          keepFocus
+          actions={
+            <>
+              <Button
+                variant="primary"
+                data-testid="close-wage-done"
+                onClick={() => setEditWage(null)}
+              >
+                {i18n.t('common.done')}
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setEditWage(null);
+                  removeWageItem(openWage.id);
+                }}
+              >
+                <span className="text-danger">{i18n.t('settlement.wages.remove')}</span>
+              </Button>
+            </>
+          }
+        >
+          <div className="flex flex-col gap-lg">
+            <List>
+              <Row
+                title={i18n.t('settlement.wages.employee')}
+                detail={
+                  !openWage.memberId && openWage.personName
+                    ? i18n.t('settlement.wages.legacyEmployee')
+                    : wageName(openWage)
+                }
+                onPress={() => {
+                  setWagePickerFor(openWage.id);
+                  setNewWagePickerFor(null);
+                  setWageSearch('');
+                }}
+              />
+            </List>
+            <ChoiceGroup<WageItemDraft['status']>
+              label={i18n.t('settlement.wages.status') as string}
+              value={openWage.status}
+              onChange={(status) => updateWageItem(openWage.id, { status, isHistorical: false })}
+              options={[
+                { value: 'paid', label: wageStatus('paid') },
+                { value: 'unpaid', label: wageStatus('unpaid') },
+              ]}
+            />
+            <Field
+              numeric
+              label={i18n.t('settlement.wages.amount') as string}
+              value={openWage.amount}
+              placeholder="0"
+              onChange={(event) =>
+                updateWageItem(openWage.id, { amount: event.target.value, isHistorical: false })
+              }
+              suffix={currency}
+            />
+            <Field
+              label={i18n.t('settlement.wages.reason') as string}
+              value={openWage.reason}
+              maxLength={500}
+              onChange={(event) =>
+                updateWageItem(openWage.id, { reason: event.target.value, isHistorical: false })
+              }
+            />
+          </div>
+        </Sheet>
+      ) : null}
+
+      {wagePickerFor ? (
+        <Sheet
+          open
+          onOpenChange={(open) => !open && closeWagePicker()}
+          title={i18n.t('settlement.wages.pickerTitle') as string}
+        >
+          <div className="flex flex-col gap-lg">
+            <Field
+              type="search"
+              label={i18n.t('settlement.wages.searchEmployees') as string}
+              value={wageSearch}
+              onChange={(event) => setWageSearch(event.target.value)}
+            />
+            {wageRosterQuery.isPending ? waiting : null}
+            {wageRosterQuery.isError ? (
+              <ErrorState
+                title={i18n.t('settlement.wages.rosterError') as string}
+                retryLabel={i18n.t('settlement.action.refresh') as string}
+                onRetry={() => void wageRosterQuery.refetch()}
+              />
+            ) : null}
+            {!wageRosterQuery.isPending && !wageRosterQuery.isError && wageRoster.length === 0 ? (
+              <EmptyState
+                title={i18n.t('settlement.wages.rosterEmptyTitle') as string}
+                hint={i18n.t('settlement.wages.rosterEmptyBody') as string}
+                action={null}
+              />
+            ) : null}
+            {wageRoster.length > 0 && pickable.length === 0 ? (
+              <p className="text-body text-secondary">
+                {i18n.t('settlement.wages.noEmployeeMatch')}
+              </p>
+            ) : null}
+            {pickable.length > 0 ? (
+              <List>
+                {pickable.map((employee) => (
+                  <Row
+                    key={employee.memberId}
+                    picks
+                    data-testid="close-employee"
+                    title={employee.displayName}
+                    detail={
+                      employee.roles.length > 0
+                        ? employee.roles.map((role) => role.name).join(' · ')
+                        : i18n.t('settlement.wages.noRole')
+                    }
+                    onPress={() => {
+                      const id = wagePickerFor;
+                      selectWageEmployee(employee);
+                      // Straight on to the amount: the person was the first
+                      // question, not the whole entry.
+                      setEditWage(id);
+                    }}
+                  />
+                ))}
+              </List>
+            ) : null}
+          </div>
+        </Sheet>
+      ) : null}
+    </>,
   );
 }

@@ -89,6 +89,7 @@ export const uz = {
   'common.close': 'Yopish',
   'common.retry': 'Qayta urinish',
   'common.loading': 'Yuklanmoqda…',
+  'common.done': 'Tayyor',
   'common.errorUnknown': "Noma'lum xato",
   'qty.decrement': 'Kamaytirish',
   'qty.increment': 'Oshirish',

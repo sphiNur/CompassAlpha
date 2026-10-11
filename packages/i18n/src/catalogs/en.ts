@@ -111,6 +111,7 @@ export const en = {
   'common.close': 'Close',
   'common.retry': 'Retry',
   'common.loading': 'Loading…',
+  'common.done': 'Done',
   'common.errorUnknown': 'Unknown error',
   // 2026-07-30: QtyControl lives in @compass/ui (no i18n dep) and had
   // these frozen in English. Bridged via app/UiLabelsBridge.tsx.

@@ -12,6 +12,8 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import postgres from 'postgres';
+import { DATABASE_URL } from '../env';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -304,18 +306,62 @@ test('finish the run and find it in history', async () => {
 
 test('close the day', async () => {
   await tab('settlement').click();
+  await expect(main().getByRole('heading', { level: 1 })).toHaveText('Daily close');
   await evidence('daily-close-empty');
-  await page.getByRole('spinbutton', { name: 'Invoiced cash revenue' }).fill('500000');
-  await page.getByRole('spinbutton', { name: 'Online / transfer revenue' }).fill('250000');
-  await expect(main()).toContainText(/Total recorded revenue\s*750,000 UZS/);
+  await page.getByRole('textbox', { name: 'Invoiced cash revenue' }).fill('500000');
+  await page.getByRole('textbox', { name: 'Online / transfer revenue' }).fill('250000');
+
+  // An expense is a line with an amount and what it was for.
+  await main().getByTestId('close-add-expense').click();
+  await sheet().getByRole('textbox', { name: 'Amount' }).fill('30000');
+  await sheet().getByRole('textbox', { name: 'Reason for expense' }).fill('Gas cylinder');
+  await evidence('daily-close-expense');
+  await sheet().getByTestId('close-expense-done').click();
+  await expect(sheet()).toBeHidden();
+  const expense = main().getByTestId('close-expense');
+  await expect(expense).toContainText('Gas cylinder');
+  await expect(expense.locator('[data-money]')).toHaveText('30,000');
+
+  // The bar over the button says what the day comes to.
+  const bar = page.getByTestId('action-bar');
+  await expect(bar).toContainText('Total recorded revenue');
+  await expect(bar.locator('[data-money]')).toHaveText(/750,000\s*UZS/);
   await expect(mainButton()).toHaveText('Save daily close');
   await mainButton().click();
 
-  await expect(
-    main().getByRole('button', { name: /Version 1 · Updated by E2E Admin/ }),
-  ).toBeVisible();
-  await expect(main().getByRole('status').first()).toContainText('Editing an existing close');
+  // Saved: it is now a record with a version, and changing it is a correction.
+  await expect(main().getByTestId('close-recent')).toContainText(
+    /Version 1 · Updated by E2E Admin/,
+  );
+  await expect(main().locator('header [data-status]')).toHaveText('Version 1');
+  await expect(mainButton()).toHaveText('Save correction');
+  await expect(mainButton()).toBeDisabled();
   await evidence('daily-close-saved');
+
+  // Today no longer says the day is waiting to be closed.
+  await tab('menu').click();
+  await expect(page.getByTestId('tile-close')).toHaveText(/0\s*Day to close/);
+});
+
+test('an organisation that does not use the daily close is not shown it', async () => {
+  const sql = postgres(DATABASE_URL, { max: 1, onnotice: () => {} });
+  try {
+    await sql`
+      UPDATE auth.organizations
+      SET feature_flags = jsonb_set(feature_flags, '{dailyClose}', 'false'::jsonb)
+      WHERE slug = 'default'
+    `;
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+  await page.reload();
+  await expect(page.getByTestId('primary-nav')).toBeVisible();
+  await tab('menu').click();
+  await expect(page.getByTestId('tile-approve')).toBeVisible();
+  // Neither the tab, nor the count on Today.
+  await expect(tab('settlement')).toHaveCount(0);
+  await expect(page.getByTestId('tile-close')).toHaveCount(0);
+  await evidence('today-without-daily-close');
 });
 
 test('nothing went wrong along the way', () => {

@@ -82,6 +82,7 @@ export const zh = {
   'common.close': '关闭',
   'common.retry': '重试',
   'common.loading': '加载中…',
+  'common.done': '完成',
   'common.errorUnknown': '未知错误',
   'qty.decrement': '减少',
   'qty.increment': '增加',

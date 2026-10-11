@@ -46,6 +46,11 @@ export const MemberSummarySchema = z.object({
   currency: z.string().length(3).optional(),
   taxRatePct: z.string().optional(),
   pricesIncludeTax: z.boolean().optional(),
+  /**
+   * Parts of the product this organisation has switched on. Daily close
+   * is off unless the organisation was already using it.
+   */
+  dailyClose: z.boolean().optional(),
 });
 
 export const SessionSchema = z.object({

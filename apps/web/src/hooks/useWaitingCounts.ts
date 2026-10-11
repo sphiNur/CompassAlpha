@@ -69,7 +69,8 @@ export function useCloseDue(enabled: boolean): number | null {
     { storeId: storeId ?? '', date: date ?? '' },
     { ...FRESH, enabled: enabled && !!storeId && !!date },
   );
-  if (!storeId || !date || close.isLoading) return null;
+  // Switched off means no answer, whatever an earlier visit left cached.
+  if (!enabled || !storeId || !date || close.isLoading) return null;
   return close.data ? 0 : 1;
 }
 

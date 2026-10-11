@@ -30,6 +30,8 @@ export interface AuthSession {
     currency?: string;
     taxRatePct?: string;
     pricesIncludeTax?: boolean;
+    /** Whether this organisation uses the daily close. */
+    dailyClose?: boolean;
   };
   /** Only stores this member is assigned to (admins see all org stores). */
   stores: Array<{ id: string; name: string; code: string | null; isActive: boolean }>;

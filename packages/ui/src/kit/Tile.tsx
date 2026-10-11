@@ -46,5 +46,10 @@ export function Tile({ label, count, tone, onPress, ...rest }: TileProps) {
 
 /** Tiles side by side, two to a row. */
 export function TileGrid({ children }: { children: ReactNode }) {
-  return <div className="grid grid-cols-2 gap-md">{children}</div>;
+  // An odd one out takes the full width instead of leaving a hole.
+  return (
+    <div className="grid grid-cols-2 gap-md [&>*:last-child:nth-child(odd)]:col-span-2">
+      {children}
+    </div>
+  );
 }

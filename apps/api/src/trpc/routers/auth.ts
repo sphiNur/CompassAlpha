@@ -1347,6 +1347,7 @@ async function readSessionPayload(
       currency: org.currency ?? 'UZS',
       taxRatePct: org.taxRatePct ?? '0',
       pricesIncludeTax: org.pricesIncludeTax ?? true,
+      dailyClose: (org.featureFlags as { dailyClose?: unknown } | null)?.dailyClose === true,
     },
     stores: storeRows.map((st) => ({
       id: st.id,

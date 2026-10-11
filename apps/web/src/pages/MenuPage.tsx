@@ -26,7 +26,7 @@ export function MenuPage({ onOpen, onOpenSettings }: MenuPageProps) {
   const toApprove = usePendingApprovals(can('order.approve'));
   const toBuy = useOrdersToBuy(can('run.purchase'));
   const toReceive = useLinesToReceive(can('delivery.confirm'));
-  const closeDue = useCloseDue(can('settlement.record'));
+  const closeDue = useCloseDue(can('settlement.record') && !!session?.member.dailyClose);
   const anyTile =
     can('order.approve') ||
     can('run.purchase') ||
