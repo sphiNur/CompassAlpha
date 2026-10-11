@@ -515,6 +515,51 @@ test('add a product with one name, then archive it', async () => {
   await expect(main().getByRole('heading', { level: 1 })).toHaveText('Manage');
 });
 
+test('stores and the people in them', async () => {
+  await page.getByTestId('manage-stores').click();
+  await expect(
+    main().getByTestId('store-row').filter({ hasText: 'Central Kitchen' }),
+  ).toBeVisible();
+  await evidence('stores');
+
+  // A new store needs a name and nothing else.
+  await page.getByTestId('store-new').click();
+  await expect(sheet().getByTestId('store-save')).toBeDisabled();
+  await sheet().getByRole('textbox', { name: 'Name' }).fill('Night Market');
+  await evidence('store-new');
+  await sheet().getByTestId('store-save').click();
+  await expect(sheet()).toBeHidden();
+  const market = main().getByTestId('store-row').filter({ hasText: 'Night Market' });
+  await expect(market).toContainText('0 members');
+
+  // A store opens on its people; nobody works at the new one yet.
+  await market.click();
+  await expect(main().getByRole('heading', { level: 1 })).toHaveText('Night Market');
+  await expect(page.getByTestId('store-tab-team')).toHaveAttribute('aria-selected', 'true');
+  await expect(main().getByTestId('member-row')).toHaveCount(0);
+  await evidence('store-people-empty');
+  await page.getByTestId('manage-back').click();
+
+  // The people who belong to no store are the first row. One person
+  // opens to what they hold and what can be done about them; nothing
+  // can be done to oneself beyond roles.
+  await page.getByTestId('store-row-org').click();
+  const me = main().getByTestId('member-row').filter({ hasText: 'E2E Admin' });
+  await expect(me).toContainText('you');
+  await evidence('people');
+  await me.click();
+  await expect(sheet()).toContainText('Every store');
+  await expect(sheet().getByTestId('member-grant')).toBeVisible();
+  await expect(sheet().getByTestId('member-remove')).toHaveCount(0);
+  await evidence('person');
+  await page.keyboard.press('Escape');
+  await expect(sheet()).toBeHidden();
+
+  await page.getByTestId('manage-back').click();
+  await page.getByTestId('manage-back').click();
+  await expect(main().getByRole('heading', { level: 1 })).toHaveText('Manage');
+});
+
 test('close the day', async () => {
   await tab('admin').click();
   await page.getByTestId('manage-close').click();

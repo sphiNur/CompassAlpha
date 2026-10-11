@@ -17,10 +17,6 @@ import {
   Badge,
   Banner,
   Button,
-  Card,
-  CardHeader,
-  CardMeta,
-  CardTitle,
   Checkbox,
   DataState,
   EmptyState,
@@ -29,7 +25,6 @@ import {
   IconShare,
   Input,
   ListRow,
-  SearchInput,
   SectionLabel,
   Segmented,
   Select,
@@ -48,6 +43,8 @@ import { getTg } from '../../../hooks/useTelegram';
 import { useStoreContext } from '../../../components/StoreSwitcher';
 import { botLink as makeBotLink, shareLink as makeShareLink } from '../../../lib/telegramLinks';
 import { nativeConfirm } from '../shared';
+import { Button as KitButton, Sheet as KitSheet, StatusChip } from '@compass/ui/kit';
+import { ChevronIcon, ClockIcon, PlusIcon, SearchIcon } from '../../../destinations/icons';
 
 // ============ People ============
 
@@ -105,19 +102,23 @@ export function PeopleSection({
   const fallbackCtx = useStoreContext();
   const storeCtx =
     lockMode?.kind === 'store'
-      ? ({ kind: 'specific' as const, storeId: lockMode.storeId })
+      ? { kind: 'specific' as const, storeId: lockMode.storeId }
       : lockMode?.kind === 'org-level'
-        ? ({ kind: 'org-level' as const })
+        ? { kind: 'org-level' as const }
         : fallbackCtx;
   // Note: the previous internal tabs (Members | Roles) are gone — Roles
   // & Permissions is now its own top-level sub-section under People.
   // This screen is purely the members directory.
-  const [grantFor, setGrantFor] = useState<
-    { userId: string; displayName: string; defaultStoreId?: string | null } | null
-  >(null);
-  const [manageFor, setManageFor] = useState<
-    { memberId: string; userId: string; displayName: string } | null
-  >(null);
+  const [grantFor, setGrantFor] = useState<{
+    userId: string;
+    displayName: string;
+    defaultStoreId?: string | null;
+  } | null>(null);
+  const [manageFor, setManageFor] = useState<{
+    memberId: string;
+    userId: string;
+    displayName: string;
+  } | null>(null);
   // Member-permission overrides editor target (added 2026-05-05).
   // Tap "Permissions" button on a member card → opens
   // MemberPermissionsSheet with the role-derived baseline grayed out
@@ -126,29 +127,14 @@ export function PeopleSection({
   // 2026-05-06: now also carries `stores` for the per-store override
   // tabs (A2). Pulled from the member-list row at click time so the
   // sheet doesn't need a second query for them.
-  const [permsFor, setPermsFor] = useState<
-    {
-      memberId: string;
-      displayName: string;
-      stores: Array<{ id: string; name: string }>;
-    } | null
-  >(null);
+  const [permsFor, setPermsFor] = useState<{
+    memberId: string;
+    displayName: string;
+    stores: Array<{ id: string; name: string }>;
+  } | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [manualDraft, setManualDraft] = useState<InviteDraft | null>(null);
-  // M1.11: per-member overflow menu (Permissions / Suspend / Reactivate /
-  // Remove-from-store / Remove-from-org). Demotes a 5–6-button action
-  // strip — which was wrapping onto two rows on a 390px-wide iPhone — to
-  // a single ⋯ button, opening a Sheet with the conditional rows below.
-  // Shape mirrors the member row so every conditional in the old strip
-  // still works without extra queries.
-  const [memberMenuFor, setMemberMenuFor] = useState<{
-    memberId: string;
-    userId: string;
-    displayName: string;
-    status: 'active' | 'suspended';
-    stores: Array<{ id: string; name: string }>;
-    isSelf: boolean;
-  } | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
 
   const setStatus = trpc.admin.memberSetStatus.useMutation({
     onSuccess: () => {
@@ -191,9 +177,7 @@ export function PeopleSection({
     onSuccess: (data) => {
       void utils.admin.memberList.invalidate();
       toast[data.created ? 'success' : 'info'](
-        data.created
-          ? i18n.t('admin.toast.memberAdded')
-          : i18n.t('admin.toast.userExists'),
+        data.created ? i18n.t('admin.toast.memberAdded') : i18n.t('admin.toast.userExists'),
       );
       setManualDraft(null);
     },
@@ -204,400 +188,337 @@ export function PeopleSection({
   const [searchQuery, setSearchQuery] = useState('');
   const tokens = useMemo(() => normalizeQuery(searchQuery), [searchQuery]);
 
+  // The member whose sheet is open, read from the list so that it shows
+  // a role the moment it is granted or revoked.
+  const openMember = membersQuery.data?.find((m) => m.memberId === openId) ?? null;
+  const here = storeCtx.kind === 'specific' ? storeCtx.storeId : null;
+  const visible = (membersQuery.data ?? []).filter(
+    (m) =>
+      (storeCtx.kind === 'specific'
+        ? m.stores.some((st) => st.id === storeCtx.storeId)
+        : storeCtx.kind === 'org-level'
+          ? m.stores.length === 0
+          : true) &&
+      (!tokens ||
+        matchesAnyString(
+          [
+            m.displayName,
+            m.tgUsername,
+            ...m.roles.map((r) => r.slug),
+            ...m.roles.map((r) => r.name),
+          ],
+          tokens,
+        )),
+  );
+  const roleNames = (m: (typeof visible)[number]) =>
+    m.roles
+      // Looking at one store, a role held in another store is not said.
+      .filter((r) => !here || r.scopeType !== 'store' || r.scopeId === here)
+      .map((r) => r.name);
+  const QUIET =
+    'flex h-control w-full items-center justify-center rounded-pill bg-surface-sunken px-lg text-label text-ink outline-none active:opacity-70 disabled:opacity-50';
+
   return (
-    <div className="px-4 py-3">
-      <div className="mb-3 flex items-center gap-2">
-        <SearchInput
+    <div className="flex flex-col gap-xl px-page pt-sm">
+      <button
+        type="button"
+        data-testid="member-invite"
+        onClick={() => setInviteOpen(true)}
+        className="flex items-center gap-lg rounded-lg border border-dashed border-line p-xl text-start outline-none active:opacity-60"
+      >
+        <span
+          aria-hidden
+          className="flex size-avatar shrink-0 items-center justify-center rounded-pill bg-primary text-on-primary"
+        >
+          <PlusIcon />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-label text-ink">{i18n.t('people.invite')}</span>
+          <span className="block text-small text-secondary">{i18n.t('people.inviteHow')}</span>
+        </span>
+        <span className="shrink-0 text-forest">
+          <ChevronIcon />
+        </span>
+      </button>
+
+      <label className="flex h-control items-center gap-md rounded-pill bg-field px-lg text-secondary ring-1 ring-inset ring-secondary focus-within:ring-2 focus-within:ring-ink">
+        <SearchIcon />
+        <input
+          type="search"
+          aria-label={i18n.t('admin.search.peoplePlaceholder')}
+          placeholder={i18n.t('admin.search.peoplePlaceholder')}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          onClear={() => setSearchQuery('')}
-          placeholder={i18n.t('admin.search.peoplePlaceholder')}
-          clearAriaLabel={i18n.t('common.clear')}
+          className="h-full min-w-0 flex-1 bg-transparent text-body text-ink outline-none placeholder:text-secondary"
         />
-        <Button size="sm" onClick={() => setInviteOpen(true)}>
-          {i18n.t('admin.action.invite')}
-        </Button>
-      </div>
+      </label>
 
-      <DataState
-        query={membersQuery}
-        emptyWhen={(d) => d.length === 0}
-        empty={
-          <EmptyState
-            title={i18n.t('admin.empty.members.title')}
-            description={i18n.t('admin.empty.members.description')}
-          />
-        }
-      >
-        {(rawRows) => {
-          // Apply search across displayName + tgUsername + role slugs/names.
-          // Then the existing storeCtx-based filtering takes over below.
-          const rows = tokens
-            ? rawRows.filter((m) =>
-                matchesAnyString(
-                  [
-                    m.displayName,
-                    m.tgUsername,
-                    ...m.roles.map((r) => r.slug),
-                    ...m.roles.map((r) => r.name),
-                  ],
-                  tokens,
-                ),
-              )
-            : rawRows;
-          // Filter / group by store context (added 2026-05-05).
-          const renderCard = (m: (typeof rows)[number]) => {
+      {membersQuery.isPending ? (
+        <p className="text-body text-secondary">{i18n.t('common.loading')}</p>
+      ) : membersQuery.isError ? (
+        <p className="text-body text-danger">{i18n.t('common.error')}</p>
+      ) : visible.length === 0 ? (
+        <div className="flex items-center gap-lg">
+          <span
+            aria-hidden
+            className="flex size-avatar shrink-0 items-center justify-center rounded-pill border border-line text-secondary"
+          >
+            <ClockIcon />
+          </span>
+          <span className="text-label text-secondary">
+            {tokens
+              ? i18n.t('admin.search.noMatches.title')
+              : storeCtx.kind === 'org-level'
+                ? i18n.t('people.orgLevelEmptyTitle')
+                : i18n.t('admin.empty.noStoresInThisStore.title')}
+          </span>
+        </div>
+      ) : (
+        <ul className="flex flex-col">
+          {visible.map((m) => {
             const isSelf = m.userId === session?.user.id;
+            const roles = roleNames(m);
             return (
-              <Card key={m.memberId}>
-                <CardHeader>
-                  <div className="flex min-w-0 items-center gap-3">
-                    <Avatar src={m.avatarUrl} name={m.displayName} size={36} />
-                    <div className="min-w-0">
-                      <CardTitle>
-                        {m.displayName}
-                        {/* 2026-07-30 (flow review): these four strings were
-                            English literals even though admin.label.you /
-                            .noTelegram / .neverSeen have existed in all four
-                            catalogs for months — translated and wired up
-                            nowhere. The date also read the browser locale. */}
-                        {isSelf ? ` · ${i18n.t('admin.label.you')}` : ''}
-                      </CardTitle>
-                      <CardMeta>
-                        {m.tgUsername
-                          ? `@${m.tgUsername}`
-                          : i18n.t('admin.label.noTelegram')}
-                        {m.lastSeenAt
-                          ? ` · ${i18n.t('admin.label.seen', {
-                              date: dateFmt.date(m.lastSeenAt),
-                            })}`
-                          : ` · ${i18n.t('admin.label.neverSeen')}`}
-                      </CardMeta>
-                    </div>
-                  </div>
-                  {/* UIUX-B1: 'active' is the silent default (L1 — no
-                      unearned green); only the exception renders. */}
-                  {m.status !== 'active' ? <Badge tone="warn">{m.status}</Badge> : null}
-                </CardHeader>
-                {/* Store-affiliation chips (added 2026-05-05). Empty
-                    array is rendered as "no store" hint so admins can
-                    spot org-level members at a glance.
-                    M3.17 (2026-05-16): inline pill spans → <Badge>.
-                    Same visual rhythm as the "active" status badge in
-                    the header above. */}
-                {m.stores.length > 0 ? (
-                  <div className="flex flex-wrap gap-1 px-4 pt-2 pb-1">
-                    {m.stores.map((st) => (
-                      <Badge key={st.id} tone="info">
-                        {st.name}
-                      </Badge>
-                    ))}
-                  </div>
-                ) : null}
-                {/* M1.11: dropped the "no store · org-level" hint row
-                    (technical jargon) AND the "No roles" empty strip.
-                    The chip container only renders when there are
-                    actual chips to show — empty cards no longer waste
-                    a row of muted-fg label space. */}
-                {m.roles.length > 0 ? (
-                <div className="flex flex-wrap gap-1 px-4">
-                  {
-                    // Per-store role chips (added 2026-05-06). For
-                    // scope='store' we suffix the store's name so the
-                    // operator can tell "Manager of Store A" apart from
-                    // "Manager of Store B" at a glance. Global bindings
-                    // render as just the role name (no scope label).
-                    m.roles.map((r) => {
-                      const scopedStoreName =
-                        r.scopeType === 'store' && r.scopeId
-                          ? m.stores.find((st) => st.id === r.scopeId)?.name ?? null
-                          : null;
-                      return (
-                        <button
-                          key={r.bindingId}
-                          type="button"
-                          className="press inline-flex items-center gap-1 rounded-full bg-[var(--c-surface-2)] px-2 py-0.5 text-old-label ring-hairline"
-                          onClick={() =>
-                            nativeConfirm(
-                              scopedStoreName
-                                ? `Revoke "${r.name}" in ${scopedStoreName} from ${m.displayName}?`
-                                : `Revoke "${r.name}" from ${m.displayName}?`,
-                              () => revoke.mutate({ bindingId: r.bindingId }),
-                            )
-                          }
-                          title={i18n.t('people.tapToRevoke')}
-                        >
-                          <span className="font-semibold">{r.name}</span>
-                          {scopedStoreName ? (
-                            <span className="text-[var(--c-fg-muted)]">
-                              · {scopedStoreName}
-                            </span>
-                          ) : null}
-                          <span className="text-[var(--c-fg-muted)]">×</span>
-                        </button>
-                      );
-                    })
-                  }
-                </div>
-                ) : null}
-                {/* M1.11: action row demoted from 5–6 buttons (which
-                    wrapped onto 2 lines on a 390px iPhone) to two
-                    primary inline actions + a ⋯ overflow trigger.
-                    Permissions / Suspend / Reactivate / Remove-store /
-                    Remove-org all live in the member-menu sheet at the
-                    page level (state: memberMenuFor). */}
-                <div className="mt-2 flex items-center gap-2 border-t border-[var(--c-divider)] px-4 py-2">
-                  <Button
-                    size="sm"
-                    variant="pearl"
-                    onClick={() =>
-                      setManageFor({
-                        memberId: m.memberId,
-                        userId: m.userId,
-                        displayName: m.displayName,
-                      })
-                    }
+              <li key={m.memberId}>
+                <button
+                  type="button"
+                  data-testid="member-row"
+                  onClick={() => setOpenId(m.memberId)}
+                  className="flex min-h-row w-full items-center gap-lg py-sm text-start outline-none active:opacity-60"
+                >
+                  <span
+                    aria-hidden
+                    className="flex size-avatar shrink-0 items-center justify-center overflow-hidden rounded-pill bg-surface text-label text-ink"
                   >
-                    {i18n.t('admin.action.manage')}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="pearl"
-                    onClick={() =>
-                      setGrantFor({
-                        userId: m.userId,
-                        displayName: m.displayName,
-                        // When the StoreSwitcher is on a specific store, pre-
-                        // select that store in the grant sheet (A1, 2026-05-06).
-                        // 'all' / 'none' kinds leave the picker empty so the
-                        // operator picks consciously.
-                        defaultStoreId:
-                          storeCtx.kind === 'specific' ? storeCtx.storeId : null,
-                      })
-                    }
-                  >
-                    {i18n.t('admin.action.grantRole')}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="pearl"
-                    aria-label={i18n.t('admin.action.moreActions')}
-                    onClick={() =>
-                      setMemberMenuFor({
-                        memberId: m.memberId,
-                        userId: m.userId,
-                        displayName: m.displayName,
-                        status: m.status as 'active' | 'suspended',
-                        stores: m.stores.map((st) => ({ id: st.id, name: st.name })),
-                        isSelf,
-                      })
-                    }
-                  >
-                    ⋯
-                  </Button>
-                </div>
-              </Card>
+                    {m.avatarUrl ? (
+                      <img src={m.avatarUrl} alt="" className="size-full object-cover" />
+                    ) : (
+                      (Array.from(m.displayName.trim())[0] ?? '')
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-label text-ink">
+                      {m.displayName}
+                      {isSelf ? ` · ${i18n.t('admin.label.you')}` : ''}
+                    </span>
+                    <span className="block text-small text-secondary">
+                      {roles.length > 0 ? roles.join(' · ') : i18n.t('people.noRole')}
+                    </span>
+                  </span>
+                  {/* Active is the silent default; only the exception says so. */}
+                  {m.status !== 'active' ? (
+                    <StatusChip tone="pending">{i18n.t('people.suspended')}</StatusChip>
+                  ) : null}
+                  <span className="shrink-0 text-forest">
+                    <ChevronIcon />
+                  </span>
+                </button>
+              </li>
             );
-          };
-
-          // Specific store: only show members assigned there.
-          if (storeCtx.kind === 'specific') {
-            const filtered = rows.filter((m) =>
-              m.stores.some((s) => s.id === storeCtx.storeId),
-            );
-            if (filtered.length === 0) {
-              return (
-                <EmptyState
-                  title={i18n.t('admin.empty.noStoresInThisStore.title')}
-                  description={i18n.t('admin.empty.noStoresInThisStore.description')}
-                />
-              );
-            }
-            return (
-              <ul className="flex flex-col gap-2" role="list">
-                {filtered.map(renderCard)}
-              </ul>
-            );
-          }
-
-          // M1.4: org-level pseudo-store. Show only members with no
-          // store assignments (admin / super_admin operators).
-          if (storeCtx.kind === 'org-level') {
-            const orgOnly = rows.filter((m) => m.stores.length === 0);
-            if (orgOnly.length === 0) {
-              return (
-                <EmptyState
-                  title={i18n.t('people.orgLevelEmptyTitle')}
-                  description={i18n.t('people.orgLevelEmptyBody')}
-                />
-              );
-            }
-            return (
-              <ul className="flex flex-col gap-2" role="list">
-                {orgOnly.map(renderCard)}
-              </ul>
-            );
-          }
-
-          // ALL view: group by store. Members appear once per store
-          // they belong to. Members with no stores (admins, super-
-          // admins) get a separate "Org-level" section at the top.
-          const orgLevel = rows.filter((m) => m.stores.length === 0);
-          // Build store → members map. Every (store, member) pair where
-          // the member is in that store contributes one entry.
-          const byStore = new Map<
-            string,
-            { name: string; members: typeof rows }
-          >();
-          for (const m of rows) {
-            for (const st of m.stores) {
-              const bucket = byStore.get(st.id) ?? { name: st.name, members: [] };
-              bucket.members.push(m);
-              byStore.set(st.id, bucket);
-            }
-          }
-          const storeSections = [...byStore.entries()].sort((a, b) =>
-            a[1].name.localeCompare(b[1].name),
-          );
-          return (
-            <div className="flex flex-col gap-4">
-              {orgLevel.length > 0 ? (
-                <section>
-                  <SectionLabel as="h3" padded={false} className="mb-2">
-                    Org-level ({orgLevel.length})
-                  </SectionLabel>
-                  <ul className="flex flex-col gap-2" role="list">
-                    {orgLevel.map(renderCard)}
-                  </ul>
-                </section>
-              ) : null}
-              {storeSections.map(([storeId, bucket]) => (
-                <section key={storeId}>
-                  <SectionLabel as="h3" padded={false} className="mb-2">
-                    {bucket.name} ({bucket.members.length})
-                  </SectionLabel>
-                  <ul className="flex flex-col gap-2" role="list">
-                    {bucket.members.map(renderCard)}
-                  </ul>
-                </section>
-              ))}
-            </div>
-          );
-        }}
-      </DataState>
+          })}
+        </ul>
+      )}
 
       <GrantRoleSheet target={grantFor} onClose={() => setGrantFor(null)} />
       <ManageMemberSheet target={manageFor} onClose={() => setManageFor(null)} />
       <MemberPermissionsSheet target={permsFor} onClose={() => setPermsFor(null)} />
 
-      {/* M1.11: per-member overflow menu. Houses the conditional
-          actions that used to live as inline buttons in each card's
-          action strip. Visibility rules mirror the prior conditionals
-          1:1 — no behavior change, just spatial demotion. */}
-      <Sheet
-        open={memberMenuFor !== null}
-        onOpenChange={(o) => !o && setMemberMenuFor(null)}
-        title={memberMenuFor?.displayName ?? ''}
-      >
-        {memberMenuFor ? (
-          <div className="flex flex-col gap-2 py-3">
-            {isGlobalAdminPeople ? (
-              <Button
-                block
-                variant="pearl"
+      {/* One person: what they hold, and everything that can be done
+          about them. It used to be three buttons on every card and a
+          fourth that opened a menu. */}
+      <KitSheet
+        open={!!openMember}
+        onOpenChange={(next) => !next && setOpenId(null)}
+        title={openMember?.displayName ?? ''}
+        actions={
+          openMember ? (
+            <>
+              <KitButton
+                variant="primary"
+                data-testid="member-grant"
                 onClick={() => {
-                  const target = memberMenuFor;
-                  setMemberMenuFor(null);
-                  setPermsFor({
-                    memberId: target.memberId,
-                    displayName: target.displayName,
-                    stores: target.stores,
+                  setOpenId(null);
+                  setGrantFor({
+                    userId: openMember.userId,
+                    displayName: openMember.displayName,
+                    defaultStoreId: here,
                   });
                 }}
               >
-                {i18n.t('admin.action.permissions')}
-              </Button>
-            ) : null}
-            {!memberMenuFor.isSelf && memberMenuFor.status === 'active' ? (
-              <Button
-                block
-                variant="pearl"
+                {i18n.t('admin.action.grantRole')}
+              </KitButton>
+              <button
+                type="button"
+                data-testid="member-manage"
+                className={QUIET}
                 onClick={() => {
-                  const target = memberMenuFor;
-                  setMemberMenuFor(null);
-                  nativeConfirm(
-                    i18n.t('admin.confirm.suspend', { name: target.displayName }),
-                    () => setStatus.mutate({ memberId: target.memberId, status: 'suspended' }),
+                  setOpenId(null);
+                  setManageFor({
+                    memberId: openMember.memberId,
+                    userId: openMember.userId,
+                    displayName: openMember.displayName,
+                  });
+                }}
+              >
+                {i18n.t('admin.action.manage')}
+              </button>
+            </>
+          ) : undefined
+        }
+      >
+        {openMember ? (
+          <div className="flex flex-col gap-xl">
+            <p className="text-body text-secondary">
+              {[
+                openMember.tgUsername
+                  ? `@${openMember.tgUsername}`
+                  : i18n.t('admin.label.noTelegram'),
+                openMember.lastSeenAt
+                  ? i18n.t('admin.label.seen', { date: dateFmt.date(openMember.lastSeenAt) })
+                  : i18n.t('admin.label.neverSeen'),
+                ...openMember.stores.map((st) => st.name),
+              ].join(' · ')}
+            </p>
+
+            <section className="flex flex-col gap-sm">
+              <h3 className="text-body text-secondary">{i18n.t('people.roles')}</h3>
+              {openMember.roles.length === 0 ? (
+                <p className="text-label text-secondary">{i18n.t('people.noRole')}</p>
+              ) : (
+                openMember.roles.map((r) => {
+                  const where =
+                    r.scopeType === 'store' && r.scopeId
+                      ? (openMember.stores.find((st) => st.id === r.scopeId)?.name ?? null)
+                      : null;
+                  return (
+                    <div key={r.bindingId} className="flex min-h-row items-center gap-lg">
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-label text-ink">{r.name}</span>
+                        <span className="block text-small text-secondary">
+                          {where ?? i18n.t('people.everyStore')}
+                        </span>
+                      </span>
+                      <button
+                        type="button"
+                        data-testid="member-revoke"
+                        disabled={revoke.isPending}
+                        onClick={() =>
+                          nativeConfirm(
+                            i18n.t('people.confirmRevoke', {
+                              role: where ? `${r.name} · ${where}` : r.name,
+                              name: openMember.displayName,
+                            }),
+                            () => revoke.mutate({ bindingId: r.bindingId }),
+                          )
+                        }
+                        className="flex h-pillbtn shrink-0 items-center rounded-pill bg-surface-sunken px-lg text-label text-ink outline-none active:opacity-70 disabled:opacity-50"
+                      >
+                        {i18n.t('people.revoke')}
+                      </button>
+                    </div>
                   );
-                }}
-              >
-                {i18n.t('admin.action.suspend')}
-              </Button>
-            ) : null}
-            {!memberMenuFor.isSelf && memberMenuFor.status === 'suspended' ? (
-              <Button
-                block
-                variant="pearl"
-                onClick={() => {
-                  const target = memberMenuFor;
-                  setMemberMenuFor(null);
-                  setStatus.mutate({ memberId: target.memberId, status: 'active' });
-                }}
-              >
-                {i18n.t('admin.action.reactivate')}
-              </Button>
-            ) : null}
-            {/* D1 (2026-05-06): "Remove from this store" — visible
-                only when the StoreSwitcher is on a single store AND
-                the member belongs to it. */}
-            {!memberMenuFor.isSelf &&
-            storeCtx.kind === 'specific' &&
-            memberMenuFor.stores.some((st) => st.id === storeCtx.storeId) ? (
-              <Button
-                block
-                variant="pearl"
-                onClick={() => {
-                  if (storeCtx.kind !== 'specific') return;
-                  const target = memberMenuFor;
-                  const storeName =
-                    target.stores.find((st) => st.id === storeCtx.storeId)?.name ??
-                    i18n.t('admin.label.thisStore');
-                  setMemberMenuFor(null);
-                  nativeConfirm(
-                    i18n.t('admin.confirm.removeFromStore', {
-                      name: target.displayName,
-                      store: storeName,
-                    }),
-                    () =>
-                      detachFromStore.mutate({
-                        memberId: target.memberId,
-                        storeId: storeCtx.storeId,
-                      }),
-                  );
-                }}
-              >
-                {i18n.t('admin.action.removeFromStore')}
-              </Button>
-            ) : null}
-            {!memberMenuFor.isSelf ? (
-              <Button
-                block
-                variant="danger"
-                onClick={() => {
-                  const target = memberMenuFor;
-                  setMemberMenuFor(null);
-                  nativeConfirm(
-                    i18n.t('admin.confirm.removeFromOrg', { name: target.displayName }),
-                    () => remove.mutate({ memberId: target.memberId }),
-                  );
-                }}
-              >
-                {i18n.t('admin.action.removeFromOrg')}
-              </Button>
-            ) : null}
+                })
+              )}
+            </section>
+
+            {/* The rarer things, and the ones that cannot be done to
+                oneself. Each asks before it does anything. */}
+            <section className="flex flex-col gap-sm">
+              {isGlobalAdminPeople ? (
+                <button
+                  type="button"
+                  className={QUIET}
+                  onClick={() => {
+                    setOpenId(null);
+                    setPermsFor({
+                      memberId: openMember.memberId,
+                      displayName: openMember.displayName,
+                      stores: openMember.stores.map((st) => ({ id: st.id, name: st.name })),
+                    });
+                  }}
+                >
+                  {i18n.t('admin.action.permissions')}
+                </button>
+              ) : null}
+              {openMember.userId !== session?.user.id ? (
+                <>
+                  {openMember.status === 'active' ? (
+                    <button
+                      type="button"
+                      data-testid="member-suspend"
+                      className={QUIET}
+                      onClick={() =>
+                        nativeConfirm(
+                          i18n.t('admin.confirm.suspend', { name: openMember.displayName }),
+                          () =>
+                            setStatus.mutate({
+                              memberId: openMember.memberId,
+                              status: 'suspended',
+                            }),
+                        )
+                      }
+                    >
+                      {i18n.t('admin.action.suspend')}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      data-testid="member-reactivate"
+                      className={QUIET}
+                      onClick={() =>
+                        setStatus.mutate({ memberId: openMember.memberId, status: 'active' })
+                      }
+                    >
+                      {i18n.t('admin.action.reactivate')}
+                    </button>
+                  )}
+                  {here && openMember.stores.some((st) => st.id === here) ? (
+                    <button
+                      type="button"
+                      data-testid="member-detach"
+                      className={QUIET}
+                      onClick={() => {
+                        const target = openMember;
+                        nativeConfirm(
+                          i18n.t('admin.confirm.removeFromStore', {
+                            name: target.displayName,
+                            store:
+                              target.stores.find((st) => st.id === here)?.name ??
+                              i18n.t('admin.label.thisStore'),
+                          }),
+                          () => {
+                            setOpenId(null);
+                            detachFromStore.mutate({ memberId: target.memberId, storeId: here });
+                          },
+                        );
+                      }}
+                    >
+                      {i18n.t('admin.action.removeFromStore')}
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    data-testid="member-remove"
+                    className={QUIET}
+                    onClick={() => {
+                      const target = openMember;
+                      nativeConfirm(
+                        i18n.t('admin.confirm.removeFromOrg', { name: target.displayName }),
+                        () => {
+                          setOpenId(null);
+                          remove.mutate({ memberId: target.memberId });
+                        },
+                      );
+                    }}
+                  >
+                    <span className="text-danger">{i18n.t('admin.action.removeFromOrg')}</span>
+                  </button>
+                </>
+              ) : null}
+            </section>
           </div>
         ) : null}
-      </Sheet>
+      </KitSheet>
       <InviteHubSheet
         open={inviteOpen}
         onClose={() => setInviteOpen(false)}
@@ -669,9 +590,7 @@ export function PermissionsSection({ isSuperAdmin }: { isSuperAdmin: boolean }) 
         {i18n.t('people.permsHowBody', { rank: myMaxRank })}
       </Banner>
       <div className="mt-3 flex items-center justify-between">
-        <SectionLabel padded={false}>
-          {i18n.t('people.rolesHeading')}
-        </SectionLabel>
+        <SectionLabel padded={false}>{i18n.t('people.rolesHeading')}</SectionLabel>
         {isGlobalAdmin ? (
           <Button size="sm" onClick={() => setCreateOpen(true)}>
             + {i18n.t('people.newRoleButton')}
@@ -705,14 +624,18 @@ export function PermissionsSection({ isSuperAdmin }: { isSuperAdmin: boolean }) 
                       label={
                         <span className="flex items-center gap-2">
                           {r.name}
-                          {r.isBuiltIn ? <Badge tone="muted">{i18n.t('admin.label.builtIn')}</Badge> : null}
+                          {r.isBuiltIn ? (
+                            <Badge tone="muted">{i18n.t('admin.label.builtIn')}</Badge>
+                          ) : null}
                         </span>
                       }
                       hint={subtitle}
                       badge={
                         // UIUX-B1: 'grantable' is the common case → silent;
                         // only the blocking state earns a badge.
-                        grantable ? null : <Badge tone="warn">{i18n.t('people.rankOutranksYou')}</Badge>
+                        grantable ? null : (
+                          <Badge tone="warn">{i18n.t('people.rankOutranksYou')}</Badge>
+                        )
                       }
                       onClick={() => setDrilldownSlug(r.slug)}
                     />
@@ -876,23 +799,21 @@ function RoleCreateSheet({
           <Input
             type="number"
             value={String(rank)}
-            onChange={(e) => setRank(Math.max(1, Math.min(myMaxRank - 1, Number(e.target.value) || 0)))}
+            onChange={(e) =>
+              setRank(Math.max(1, Math.min(myMaxRank - 1, Number(e.target.value) || 0)))
+            }
           />
         </Field>
         <div>
           {/* M2.1: SectionLabel (was ad-hoc eyebrow). */}
-          <SectionLabel className="mb-2 px-0">
-            Permissions ({picked.size})
-          </SectionLabel>
+          <SectionLabel className="mb-2 px-0">Permissions ({picked.size})</SectionLabel>
           {permsQuery.isLoading ? (
             <Spinner size={16} />
           ) : (
             <ul className="flex flex-col gap-3">
               {grouped.map(([ns, keys]) => (
                 <li key={ns}>
-                  <SectionLabel padded={false}>
-                    {ns}
-                  </SectionLabel>
+                  <SectionLabel padded={false}>{ns}</SectionLabel>
                   <ul className="mt-1 flex flex-col gap-1">
                     {keys.map((p) => (
                       <li key={p.key}>
@@ -1067,8 +988,7 @@ function RolePermissionsSheet({
                 onClick={() => {
                   nativeConfirm(
                     i18n.t('people.confirmDeleteRole', { name: detail.data!.name }),
-                    () =>
-                    remove.mutate({ roleId: detail.data!.id }),
+                    () => remove.mutate({ roleId: detail.data!.id }),
                   );
                 }}
               >
@@ -1080,9 +1000,7 @@ function RolePermissionsSheet({
       }
     >
       {detail.isLoading ? (
-        <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">
-          Loading…
-        </div>
+        <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">Loading…</div>
       ) : !detail.data ? (
         <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">
           {i18n.t('people.noRole')}
@@ -1092,11 +1010,7 @@ function RolePermissionsSheet({
           {editing ? (
             <>
               <Field label={`${i18n.t('admin.field.name')} *`}>
-                <Input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  maxLength={100}
-                />
+                <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} />
               </Field>
               <Field label={i18n.t('admin.field.description')}>
                 <Input
@@ -1106,10 +1020,7 @@ function RolePermissionsSheet({
                 />
               </Field>
               {isBuiltIn ? (
-                <Banner
-                  tone="info"
-                  title={i18n.t('people.builtInLocked', { rank })}
-                >
+                <Banner tone="info" title={i18n.t('people.builtInLocked', { rank })}>
                   {i18n.t('people.builtInRankBody')}
                 </Banner>
               ) : (
@@ -1118,20 +1029,13 @@ function RolePermissionsSheet({
                     type="number"
                     value={String(rank)}
                     onChange={(e) =>
-                      setRank(
-                        Math.max(
-                          1,
-                          Math.min(myMaxRank - 1, Number(e.target.value) || 0),
-                        ),
-                      )
+                      setRank(Math.max(1, Math.min(myMaxRank - 1, Number(e.target.value) || 0)))
                     }
                   />
                 </Field>
               )}
               {/* M2.1: SectionLabel (was ad-hoc eyebrow div). */}
-              <SectionLabel className="px-0">
-                Permissions ({picked.size})
-              </SectionLabel>
+              <SectionLabel className="px-0">Permissions ({picked.size})</SectionLabel>
             </>
           ) : detail.data.description ? (
             <p className="text-old-body-sm text-[var(--c-fg-muted)]">{detail.data.description}</p>
@@ -1144,9 +1048,7 @@ function RolePermissionsSheet({
             <ul className="flex flex-col gap-3">
               {grouped.map(([ns, keys]) => (
                 <li key={ns}>
-                  <SectionLabel padded={false}>
-                    {ns}
-                  </SectionLabel>
+                  <SectionLabel padded={false}>{ns}</SectionLabel>
                   <ul className="mt-1 flex flex-col gap-1">
                     {keys.map((p) => {
                       if (editing) {
@@ -1252,9 +1154,7 @@ function RoleAssigneesByStore({
 
   return (
     <div className="mt-2 border-t border-[var(--c-divider)] pt-3">
-      <SectionLabel padded={false}>
-        Assignees · {assignees.length}
-      </SectionLabel>
+      <SectionLabel padded={false}>Assignees · {assignees.length}</SectionLabel>
       <div className="mt-1 flex flex-col gap-3">
         {grouped.map(([key, bucket]) => (
           <section key={key}>
@@ -1268,13 +1168,9 @@ function RoleAssigneesByStore({
                   className="flex items-center gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-1.5"
                 >
                   <Avatar src={a.avatarUrl} name={a.displayName} size={24} />
-                  <span className="text-old-body text-[var(--c-fg)]">
-                    {a.displayName}
-                  </span>
+                  <span className="text-old-body text-[var(--c-fg)]">{a.displayName}</span>
                   {a.tgUsername ? (
-                    <span className="text-old-label text-[var(--c-fg-muted)]">
-                      @{a.tgUsername}
-                    </span>
+                    <span className="text-old-label text-[var(--c-fg-muted)]">@{a.tgUsername}</span>
                   ) : null}
                 </li>
               ))}
@@ -1458,8 +1354,7 @@ function ManualInviteSheet({
     [rolesQuery.data, isGlobalAdmin],
   );
   const eligibleStores = useMemo(
-    () =>
-      (storesQuery.data ?? []).filter((st) => adminStoreIds.has(st.id)),
+    () => (storesQuery.data ?? []).filter((st) => adminStoreIds.has(st.id)),
     [storesQuery.data, adminStoreIds],
   );
 
@@ -1724,11 +1619,7 @@ function ManageMemberSheet({
                         'press flex items-center gap-2 rounded-[var(--r-utility)] px-2 py-1.5 ' +
                         (editable ? 'cursor-pointer' : 'cursor-not-allowed opacity-60')
                       }
-                      title={
-                        editable
-                          ? undefined
-                          : "You don't administer this store"
-                      }
+                      title={editable ? undefined : "You don't administer this store"}
                     >
                       <Checkbox
                         checked={checked}
@@ -1860,9 +1751,7 @@ function TransferStoreSheet({
   // and (rare) inactive stores that may sneak into session.stores.
   const destinationStores = useMemo(() => {
     if (!target) return [];
-    return sessionStores.filter(
-      (st) => adminStoreIds.has(st.id) && st.id !== target.fromStoreId,
-    );
+    return sessionStores.filter((st) => adminStoreIds.has(st.id) && st.id !== target.fromStoreId);
   }, [sessionStores, adminStoreIds, target]);
 
   const transferMut = trpc.admin.memberTransferStore.useMutation({
@@ -1870,12 +1759,9 @@ function TransferStoreSheet({
       void utils.admin.memberList.invalidate();
       void utils.admin.memberStoreAssignments.invalidate();
       const parts = [i18n.t('people.toastTransferred')];
-      if (data.mirrored > 0)
-        parts.push(i18n.t('people.toastRolesMirrored', { n: data.mirrored }));
+      if (data.mirrored > 0) parts.push(i18n.t('people.toastRolesMirrored', { n: data.mirrored }));
       if (data.revokedBindings > 0)
-        parts.push(
-          i18n.t('people.toastFromSideRevoked', { n: data.revokedBindings }),
-        );
+        parts.push(i18n.t('people.toastFromSideRevoked', { n: data.revokedBindings }));
       toast.success(parts.join(' · '));
       onClose();
     },
@@ -1887,9 +1773,7 @@ function TransferStoreSheet({
       open={open}
       onOpenChange={(o) => !o && !transferMut.isPending && onClose()}
       title={i18n.t('people.transferTitle')}
-      description={
-        target ? i18n.t('people.transferMoving', { name: target.displayName }) : ''
-      }
+      description={target ? i18n.t('people.transferMoving', { name: target.displayName }) : ''}
       footer={
         target ? (
           <Button
@@ -1929,10 +1813,7 @@ function TransferStoreSheet({
                 {i18n.t('people.transferNoDestBody')}
               </Banner>
             ) : (
-              <Select
-                value={toStoreId}
-                onChange={(e) => setToStoreId(e.target.value)}
-              >
+              <Select value={toStoreId} onChange={(e) => setToStoreId(e.target.value)}>
                 <option value="">— pick a destination store —</option>
                 {destinationStores.map((st) => (
                   <option key={st.id} value={st.id}>
@@ -1961,19 +1842,11 @@ function TransferStoreSheet({
           <Banner tone="info" title={i18n.t('people.transferWhatTitle')}>
             {i18n.t('people.transferWhatIntro')}
             <ul className="mt-1 list-disc space-y-0.5 pl-4 text-old-label">
+              <li>{i18n.t('people.transferWhatAdded', { name: target.displayName })}</li>
               <li>
-                {i18n.t('people.transferWhatAdded', { name: target.displayName })}
+                {i18n.t(mirrorRoles ? 'people.transferWhatMirrored' : 'people.transferWhatNoRoles')}
               </li>
-              <li>
-                {i18n.t(
-                  mirrorRoles
-                    ? 'people.transferWhatMirrored'
-                    : 'people.transferWhatNoRoles',
-                )}
-              </li>
-              <li>
-                {i18n.t('people.transferWhatRemoved', { store: target.fromStoreName })}
-              </li>
+              <li>{i18n.t('people.transferWhatRemoved', { store: target.fromStoreName })}</li>
             </ul>
             {i18n.t('people.transferWhatOutro')}
           </Banner>
@@ -2003,16 +1876,14 @@ function MemberPermissionsSheet({
   target,
   onClose,
 }: {
-  target:
-    | {
-        memberId: string;
-        displayName: string;
-        /** The stores this member belongs to (for the per-store
-         *  override tabs added 2026-05-06 in A2). Pass an empty
-         *  array if the member is org-level. */
-        stores: Array<{ id: string; name: string }>;
-      }
-    | null;
+  target: {
+    memberId: string;
+    displayName: string;
+    /** The stores this member belongs to (for the per-store
+     *  override tabs added 2026-05-06 in A2). Pass an empty
+     *  array if the member is org-level. */
+    stores: Array<{ id: string; name: string }>;
+  } | null;
   onClose: () => void;
 }) {
   const i18n = useI18n();
@@ -2036,9 +1907,7 @@ function MemberPermissionsSheet({
    * (A store-scoped admin shouldn't see — let alone be able to edit —
    * overrides for a store they don't run; the server enforces too.)
    */
-  type Scope =
-    | { kind: 'global' }
-    | { kind: 'store'; storeId: string; storeName: string };
+  type Scope = { kind: 'global' } | { kind: 'store'; storeId: string; storeName: string };
   const [scope, setScope] = useState<Scope>({ kind: 'global' });
   // Reset scope when sheet opens for a new target. Default to 'global'
   // so the operator lands on the familiar surface.
@@ -2047,8 +1916,7 @@ function MemberPermissionsSheet({
   }, [target]);
 
   const editableStoreTabs = useMemo(
-    () =>
-      (target?.stores ?? []).filter((st) => adminStoreIds.has(st.id)),
+    () => (target?.stores ?? []).filter((st) => adminStoreIds.has(st.id)),
     [target, adminStoreIds],
   );
 
@@ -2087,14 +1955,10 @@ function MemberPermissionsSheet({
     return m;
   }, [detail.data]);
 
-  const currentScopeKey =
-    scope.kind === 'global' ? 'global' : `store:${scope.storeId}`;
+  const currentScopeKey = scope.kind === 'global' ? 'global' : `store:${scope.storeId}`;
   const overrideByKey = overrideByScopeKey.get(currentScopeKey) ?? new Map();
 
-  const roleKeys = useMemo(
-    () => new Set(detail.data?.roleKeys ?? []),
-    [detail.data],
-  );
+  const roleKeys = useMemo(() => new Set(detail.data?.roleKeys ?? []), [detail.data]);
 
   const grouped = useMemo(() => {
     const m = new Map<string, Array<{ key: string; description: string | null }>>();
@@ -2148,9 +2012,7 @@ function MemberPermissionsSheet({
           <Spinner size={16} />
         </div>
       ) : !detail.data ? (
-        <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">
-          —
-        </div>
+        <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">—</div>
       ) : (
         <div className="flex flex-col gap-3 py-3">
           {/* Scope tabs (A2, 2026-05-06). 'Global' is always present;
@@ -2168,10 +2030,8 @@ function MemberPermissionsSheet({
               </ScopeTab>
               {(target?.stores ?? []).map((st) => {
                 const editable = adminStoreIds.has(st.id);
-                const isActive =
-                  scope.kind === 'store' && scope.storeId === st.id;
-                const tabCount =
-                  overrideByScopeKey.get(`store:${st.id}`)?.size ?? 0;
+                const isActive = scope.kind === 'store' && scope.storeId === st.id;
+                const tabCount = overrideByScopeKey.get(`store:${st.id}`)?.size ?? 0;
                 return (
                   <ScopeTab
                     key={st.id}
@@ -2186,11 +2046,7 @@ function MemberPermissionsSheet({
                       })
                     }
                     count={tabCount}
-                    title={
-                      editable
-                        ? undefined
-                        : "You don't administer this store — read-only"
-                    }
+                    title={editable ? undefined : "You don't administer this store — read-only"}
                   >
                     {st.name}
                   </ScopeTab>
@@ -2205,15 +2061,12 @@ function MemberPermissionsSheet({
           </Banner>
           {grouped.map(([ns, keys]) => (
             <div key={ns}>
-              <SectionLabel padded={false}>
-                {ns}
-              </SectionLabel>
+              <SectionLabel padded={false}>{ns}</SectionLabel>
               <ul className="mt-1 flex flex-col gap-1">
                 {keys.map((p) => {
                   const override = overrideByKey.get(p.key) ?? null;
                   const fromRole = roleKeys.has(p.key);
-                  const mode: 'role' | 'allow' | 'deny' =
-                    override ?? 'role';
+                  const mode: 'role' | 'allow' | 'deny' = override ?? 'role';
                   return (
                     <li
                       key={p.key}
@@ -2228,9 +2081,7 @@ function MemberPermissionsSheet({
                             </div>
                           ) : null}
                         </div>
-                        {fromRole ? (
-                          <Badge tone="muted">from role</Badge>
-                        ) : null}
+                        {fromRole ? <Badge tone="muted">from role</Badge> : null}
                       </div>
                       {/* M3.17 (2026-05-16): migrated from local SegBtn
                           to the shared <Segmented> primitive. Per-option
@@ -2310,9 +2161,7 @@ function ScopeTab({
         <span
           className={
             'inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-old-tiny ' +
-            (active
-              ? 'bg-white/25 text-white'
-              : 'bg-[var(--c-action)] text-[var(--c-action-fg)]')
+            (active ? 'bg-white/25 text-white' : 'bg-[var(--c-action)] text-[var(--c-action-fg)]')
           }
         >
           {count}
@@ -2362,9 +2211,7 @@ function GrantRoleSheet({
   target,
   onClose,
 }: {
-  target:
-    | { userId: string; displayName: string; defaultStoreId?: string | null }
-    | null;
+  target: { userId: string; displayName: string; defaultStoreId?: string | null } | null;
   onClose: () => void;
 }) {
   const session = useAuthStore((s) => s.session);
@@ -2443,9 +2290,7 @@ function GrantRoleSheet({
   const grantableRoles = useMemo(() => {
     return [...(rolesQuery.data ?? [])]
       .filter((r) => r.rank < effectiveRank)
-      .filter((r) =>
-        scopeMode === 'global' ? r.rank >= ADMIN_RANK : r.rank < ADMIN_RANK,
-      )
+      .filter((r) => (scopeMode === 'global' ? r.rank >= ADMIN_RANK : r.rank < ADMIN_RANK))
       .sort((a, b) => b.rank - a.rank);
   }, [rolesQuery.data, effectiveRank, scopeMode]);
 
@@ -2468,13 +2313,13 @@ function GrantRoleSheet({
           scopeType: 'global',
         });
         toast[data.granted ? 'success' : 'info'](
-          i18n.t(
-            data.granted ? 'people.toastRoleGranted' : 'people.toastRoleAlready',
-          ),
+          i18n.t(data.granted ? 'people.toastRoleGranted' : 'people.toastRoleAlready'),
         );
         void utils.admin.memberList.invalidate();
         onClose();
-      } catch {/* error toast already shown */}
+      } catch {
+        /* error toast already shown */
+      }
       return;
     }
     // Store fan-out. We loop sequentially so a mid-run server error
@@ -2501,9 +2346,7 @@ function GrantRoleSheet({
     if (createdCount > 0) {
       toast.success(
         i18n.t('people.toastGrantedInStores', { n: createdCount }) +
-          (skipped > 0
-            ? ` ${i18n.t('people.toastAlreadyHad', { n: skipped })}`
-            : ''),
+          (skipped > 0 ? ` ${i18n.t('people.toastAlreadyHad', { n: skipped })}` : ''),
       );
     } else if (skipped > 0) {
       toast.info(i18n.t('people.toastAlreadyEverywhere'));
@@ -2512,19 +2355,14 @@ function GrantRoleSheet({
     onClose();
   };
 
-  const canSubmit =
-    scopeMode === 'global'
-      ? canGrantGlobal
-      : selectedStoreIds.size > 0;
+  const canSubmit = scopeMode === 'global' ? canGrantGlobal : selectedStoreIds.size > 0;
 
   return (
     <Sheet
       open={!!target}
       onOpenChange={(open) => !open && onClose()}
       title={i18n.t('people.grantRoleTitle')}
-      description={
-        target ? i18n.t('people.grantRoleTo', { name: target.displayName }) : ''
-      }
+      description={target ? i18n.t('people.grantRoleTo', { name: target.displayName }) : ''}
     >
       <div className="flex flex-col gap-3 py-3">
         {/* Step 1 — scope */}
@@ -2572,17 +2410,10 @@ function GrantRoleSheet({
                       key={st.id}
                       className="press flex cursor-pointer items-center gap-2 rounded-[var(--r-utility)] px-2 py-1.5"
                     >
-                      <Checkbox
-                        checked={checked}
-                        onChange={() => toggleStore(st.id)}
-                      />
-                      <span className="text-old-body text-[var(--c-fg)]">
-                        {st.name}
-                      </span>
+                      <Checkbox checked={checked} onChange={() => toggleStore(st.id)} />
+                      <span className="text-old-body text-[var(--c-fg)]">{st.name}</span>
                       {st.code ? (
-                        <span className="text-old-label text-[var(--c-fg-muted)]">
-                          {st.code}
-                        </span>
+                        <span className="text-old-label text-[var(--c-fg-muted)]">{st.code}</span>
                       ) : null}
                     </label>
                   );
@@ -2617,9 +2448,7 @@ function GrantRoleSheet({
               className="press flex items-center justify-between rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 text-left ring-hairline"
             >
               <div>
-                <div className="text-old-body font-semibold text-[var(--c-fg)]">
-                  {r.name}
-                </div>
+                <div className="text-old-body font-semibold text-[var(--c-fg)]">{r.name}</div>
                 <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
                   {i18n.t('people.rankLine', { rank: r.rank })}
                   {r.description ? ` · ${r.description}` : ''}
@@ -2633,4 +2462,3 @@ function GrantRoleSheet({
     </Sheet>
   );
 }
-

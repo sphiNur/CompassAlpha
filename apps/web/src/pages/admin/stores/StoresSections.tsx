@@ -10,15 +10,12 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Badge,
   Banner,
   Button,
-  DataState,
   EmptyState,
   Field,
   Input,
   SectionLabel,
-  Segmented,
   Select,
   Sheet,
   Spinner,
@@ -54,251 +51,6 @@ interface StoreDraft {
 // ============ Stores (M1.4 store-first) ============
 
 /**
- * StoresHomeSection (M1.4, 2026-05-06).
- *
- * Top-level list of all stores the actor can administer, plus a
- * pseudo-store at the top that buckets org-level members (admin /
- * super_admin without store assignments). Each tile shows the store's
- * basic info, member count, and default role hint. Tap a tile → drill
- * into StoreDetailScreen.
- *
- * Why this replaced "Catalog → Stores":
- *   - Stores aren't catalog data; they're org structure.
- *   - The whole point of M1.4 is "store as the unit of nav" — staff
- *     management lives inside a store, not in a flat People list.
- *
- * Member count: derived FE-side from `admin.memberList`. We could add
- * a dedicated endpoint, but the member list is already cached for
- * other admin views and N here is small (≤ a few hundred members per
- * org for the foreseeable future).
- */
-export function StoresHomeSection({
-  onPickStore,
-}: {
-  onPickStore: (focus: StoreFocus) => void;
-}) {
-  const storesQuery = trpc.admin.storeList.useQuery();
-  const membersQuery = trpc.admin.memberList.useQuery();
-  const utils = trpc.useUtils();
-  const toast = useToast();
-  const errToast = useErrToast();
-  const i18n = useI18n();
-  // Lightweight create-only sheet: create flow needs name/code/address/
-  // timezone but NOT default-role/archive (those land in Settings tab
-  // after creation). Keeping it a sheet rather than inline because
-  // creation is a transient one-shot, not edit-in-place.
-  const [createDraft, setCreateDraft] = useState<{
-    name: string;
-    code: string;
-    address: string;
-    timezone: string;
-  } | null>(null);
-
-  const create = trpc.admin.storeCreate.useMutation({
-    onSuccess: () => {
-      void utils.admin.storeList.invalidate();
-      toast.success(i18n.t('admin.toast.storeCreated'));
-      setCreateDraft(null);
-    },
-    onError: errToast('common.error'),
-  });
-
-  // Aggregate member counts per store from the cached memberList.
-  const memberCounts = useMemo(() => {
-    const byStore = new Map<string, number>();
-    let orgLevel = 0;
-    for (const m of membersQuery.data ?? []) {
-      if (m.stores.length === 0) {
-        orgLevel++;
-      } else {
-        for (const st of m.stores) {
-          byStore.set(st.id, (byStore.get(st.id) ?? 0) + 1);
-        }
-      }
-    }
-    return { byStore, orgLevel };
-  }, [membersQuery.data]);
-
-  return (
-    <div className="px-4 py-3">
-      <div className="mb-3">
-        <Button
-          size="sm"
-          onClick={() =>
-            setCreateDraft({ name: '', code: '', address: '', timezone: '' })
-          }
-        >
-          + {i18n.t('admin.store.new')}
-        </Button>
-      </div>
-      <DataState
-        query={storesQuery}
-        emptyWhen={(d) => d.length === 0 && memberCounts.orgLevel === 0}
-        empty={
-          <EmptyState
-            title={i18n.t('admin.store.emptyTitle')}
-            description={i18n.t('admin.store.emptyBody')}
-          />
-        }
-      >
-        {(rows) => (
-          <ul className="flex flex-col gap-2" role="list">
-            {/* Org-level pseudo-store (only if there are admin/super-
-                admin members not in any store; otherwise skipped to
-                avoid noise). */}
-            {/* Tiles are flat <button>s rather than <Card> wrappers
-                because nesting block elements (<header><h3>) inside a
-                <button> is invalid HTML — Chrome's parser hoists them
-                out and splits the click target. We replicate the Card
-                visual instead. */}
-            {memberCounts.orgLevel > 0 ? (
-              <li>
-                {/* M1.21: store list row rhythm — py-3 matches member
-                    cards above. Was py-4 (16 px each side), which felt
-                    chunky relative to the rest of the admin surface. */}
-                {/* M3.17: title text-old-h2 → text-old-h3 + font-semibold to
-                    match the rest of the app's list-row primary text
-                    rhythm. Was the only place admin shouted at h2. */}
-                <button
-                  type="button"
-                  onClick={() => onPickStore({ kind: 'org-level' })}
-                  className="press flex w-full items-start justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-2.5 text-left ring-hairline"
-                >
-                  <span className="min-w-0">
-                    <span className="block text-old-h3 font-semibold text-[var(--c-fg)]">
-                      {i18n.t('admin.label.orgLevel')}
-                    </span>
-                    <span className="mt-0.5 block text-old-label text-[var(--c-fg-muted)]">
-                      {i18n.t('admin.label.orgLevelHint')}
-                    </span>
-                  </span>
-                  <Badge tone="muted">
-                    {i18n.t('admin.label.memberCount', {
-                      n: memberCounts.orgLevel,
-                    })}
-                  </Badge>
-                </button>
-              </li>
-            ) : null}
-            {rows.map((st) => {
-              const count = memberCounts.byStore.get(st.id) ?? 0;
-              return (
-                <li key={st.id}>
-                  {/* M1.11: Stores home tile slimmed from 3 muted-meta
-                      info rows to one. Dropped: timezone (rarely
-                      consulted from this view), default-role (lives in
-                      the store-detail page), and the "view-only" tag
-                      since the chevron action will reveal that anyway.
-                      Kept: code (the primary identifier) + member
-                      count. py-4 → py-3 to match the rest of the
-                      member-card rhythm. */}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onPickStore({
-                        kind: 'store',
-                        storeId: st.id,
-                        storeName: st.name,
-                      })
-                    }
-                    className="press flex w-full items-start justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-2.5 text-left ring-hairline"
-                  >
-                    <span className="min-w-0">
-                      <span className="block text-old-h3 font-semibold text-[var(--c-fg)]">
-                        {st.name}
-                      </span>
-                      <span className="mt-0.5 block text-old-label text-[var(--c-fg-muted)]">
-                        {st.code ? `code ${st.code}` : 'no code'}
-                        {' · '}
-                        {i18n.t('admin.label.memberCount', { n: count })}
-                      </span>
-                    </span>
-                    {/* UIUX-B1: active is the silent default; only the
-                        exception (paused) earns ink. */}
-                    {!st.isActive ? <Badge tone="muted">paused</Badge> : null}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </DataState>
-
-      <Sheet
-        open={!!createDraft}
-        onOpenChange={(open) => !open && setCreateDraft(null)}
-        title={i18n.t('admin.store.new')}
-        footer={
-          <Button
-            block
-            loading={create.isPending}
-            disabled={!createDraft?.name.trim()}
-            onClick={() => {
-              if (!createDraft) return;
-              create.mutate({
-                name: createDraft.name,
-                code: createDraft.code || null,
-                address: createDraft.address || null,
-                timezone: createDraft.timezone || null,
-              });
-            }}
-          >
-            {i18n.t('common.create')}
-          </Button>
-        }
-      >
-        {createDraft ? (
-          <div className="flex flex-col gap-3 py-3">
-            <Field label={`${i18n.t('admin.field.name')} *`}>
-              <Input
-                value={createDraft.name}
-                onChange={(e) =>
-                  setCreateDraft({ ...createDraft, name: e.target.value })
-                }
-                maxLength={200}
-                autoFocus
-              />
-            </Field>
-            <Field label={i18n.t('admin.field.code')}>
-              <Input
-                value={createDraft.code}
-                onChange={(e) =>
-                  setCreateDraft({ ...createDraft, code: e.target.value })
-                }
-                maxLength={32}
-                placeholder="optional internal code"
-              />
-            </Field>
-            <Field label={i18n.t('admin.field.address')}>
-              <Input
-                value={createDraft.address}
-                onChange={(e) =>
-                  setCreateDraft({ ...createDraft, address: e.target.value })
-                }
-                maxLength={500}
-              />
-            </Field>
-            <Field label={i18n.t('admin.field.timezone')}>
-              <Input
-                value={createDraft.timezone}
-                onChange={(e) =>
-                  setCreateDraft({ ...createDraft, timezone: e.target.value })
-                }
-                maxLength={64}
-                placeholder="e.g. Asia/Tashkent"
-              />
-            </Field>
-            <p className="text-old-label text-[var(--c-fg-muted)]">
-              {i18n.t('admin.store.createHint')}
-            </p>
-          </div>
-        ) : null}
-      </Sheet>
-    </div>
-  );
-}
-
-/**
  * StoreDetailScreen (M1.4, 2026-05-06).
  *
  * Per-store detail page. Tab bar at the top:
@@ -331,27 +83,39 @@ export function StoreDetailScreen({
         // migrated from local SegBtn → shared <Segmented>. M2.0a +
         // M2.0c notes preserved: Inventory shows on-hand + stocktake,
         // Sales records dish sales (auto-deducts via recipe BOM).
-        <div className="px-4 pb-1 pt-1">
-          <Segmented<StoreSub>
-            value={effectiveSub}
-            options={[
-              { value: 'team', label: i18n.t('admin.store.tabTeam') },
-              { value: 'inventory', label: i18n.t('admin.store.tabInventory') },
-              { value: 'sales', label: i18n.t('admin.store.tabSales') },
-              { value: 'settings', label: i18n.t('admin.store.tabSettings') },
-            ]}
-            onChange={onSubChange}
-            ariaLabel={i18n.t('admin.store.sectionAria')}
-          />
+        <div
+          role="tablist"
+          aria-label={i18n.t('admin.store.sectionAria')}
+          className="flex gap-sm overflow-x-auto px-page"
+        >
+          {(
+            [
+              ['team', 'admin.store.tabTeam'],
+              ['inventory', 'admin.store.tabInventory'],
+              ['sales', 'admin.store.tabSales'],
+              ['settings', 'admin.store.tabSettings'],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={effectiveSub === value}
+              data-testid={`store-tab-${value}`}
+              onClick={() => onSubChange(value)}
+              className={
+                'flex h-pillbtn shrink-0 items-center rounded-pill px-lg text-label outline-none active:opacity-70 ' +
+                (effectiveSub === value ? 'bg-contrast text-on-contrast' : 'bg-surface text-ink')
+              }
+            >
+              {i18n.t(label)}
+            </button>
+          ))}
         </div>
       ) : null}
       {effectiveSub === 'team' ? (
         <PeopleSection
-          lockMode={
-            isOrgLevel
-              ? { kind: 'org-level' }
-              : { kind: 'store', storeId: focus.storeId }
-          }
+          lockMode={isOrgLevel ? { kind: 'org-level' } : { kind: 'store', storeId: focus.storeId }}
         />
       ) : null}
       {effectiveSub === 'inventory' && focus.kind === 'store' ? (
@@ -538,9 +302,7 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
             ? i18n.t('inventory.sheet.stocktake.title')
             : i18n.t('inventory.sheet.wastage.title')
         }
-        description={
-          action ? productName({ names: skuById.get(action.skuId)?.names ?? {} }) : ''
-        }
+        description={action ? productName({ names: skuById.get(action.skuId)?.names ?? {} }) : ''}
         footer={
           // 2026-07-30: dropped `!getTg() &&` — same defect as the dish
           // editor. `getTg()` is truthy in any browser (the Telegram SDK
@@ -743,9 +505,7 @@ function StoreSalesTab({ storeId }: { storeId: string }) {
       {/* Today summary tile. */}
       <div className="grid grid-cols-2 gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
         <div>
-          <SectionLabel padded={false}>
-            {i18n.t('sales.summary.today')}
-          </SectionLabel>
+          <SectionLabel padded={false}>{i18n.t('sales.summary.today')}</SectionLabel>
           <div className="font-mono text-old-h2 font-semibold tabular-nums">
             {formatQty(summary.count.toString())}
           </div>
@@ -754,9 +514,7 @@ function StoreSalesTab({ storeId }: { storeId: string }) {
           </div>
         </div>
         <div>
-          <SectionLabel padded={false}>
-            {i18n.t('sales.summary.revenue')}
-          </SectionLabel>
+          <SectionLabel padded={false}>{i18n.t('sales.summary.revenue')}</SectionLabel>
           <div className="font-mono text-old-h2 font-semibold tabular-nums">
             {formatMoney(summary.revenue)}
           </div>
@@ -770,9 +528,7 @@ function StoreSalesTab({ storeId }: { storeId: string }) {
       {canRecord ? (
         <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
           {/* M2.1: SectionLabel (was ad-hoc eyebrow). */}
-          <SectionLabel className="px-0 py-0">
-            {i18n.t('sales.form.recordTitle')}
-          </SectionLabel>
+          <SectionLabel className="px-0 py-0">{i18n.t('sales.form.recordTitle')}</SectionLabel>
           {dishOptions.length === 0 ? (
             <p className="text-old-label text-[var(--c-fg-muted)]">
               {i18n.t('sales.form.noDishesYet')}
@@ -788,9 +544,7 @@ function StoreSalesTab({ storeId }: { storeId: string }) {
                 {dishOptions.map((d) => {
                   const label = productName({ names: d.names });
                   const suffix =
-                    d.ingredientCount === 0
-                      ? ` (${i18n.t('sales.form.noRecipe')})`
-                      : '';
+                    d.ingredientCount === 0 ? ` (${i18n.t('sales.form.noRecipe')})` : '';
                   return (
                     <option key={d.id} value={d.id} disabled={d.ingredientCount === 0}>
                       {label}
@@ -833,9 +587,7 @@ function StoreSalesTab({ storeId }: { storeId: string }) {
       {/* Today's sales list. */}
       <div>
         {/* M2.1: SectionLabel (was ad-hoc eyebrow). */}
-        <SectionLabel className="mb-2 px-0">
-          {i18n.t('sales.list.title')}
-        </SectionLabel>
+        <SectionLabel className="mb-2 px-0">{i18n.t('sales.list.title')}</SectionLabel>
         {salesQuery.isLoading ? (
           <div className="py-4 text-center">
             <Spinner size={16} />
@@ -849,9 +601,7 @@ function StoreSalesTab({ storeId }: { storeId: string }) {
           <ul className="flex flex-col gap-1" role="list">
             {sales.map((sale) => {
               const dish = dishById.get(sale.dishId);
-              const name = dish
-                ? productName({ names: dish.names })
-                : sale.dishId.slice(0, 8);
+              const name = dish ? productName({ names: dish.names }) : sale.dishId.slice(0, 8);
               // 2026-07-30: `undefined` meant "browser locale".
               const time = dateFmt.time(sale.occurredAt);
               const lineTotal =
@@ -1032,9 +782,7 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
         ) : (
           <Select
             value={draft.defaultRoleSlug}
-            onChange={(e) =>
-              setDraft({ ...draft, defaultRoleSlug: e.target.value })
-            }
+            onChange={(e) => setDraft({ ...draft, defaultRoleSlug: e.target.value })}
             disabled={!canAdmin}
           >
             <option value="">{i18n.t('admin.store.noDefaultRole')}</option>
@@ -1068,9 +816,7 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
               address: draft.address || null,
               timezone: draft.timezone || null,
               isActive: draft.isActive,
-              defaultRoleSlug: draft.defaultRoleSlug
-                ? draft.defaultRoleSlug
-                : null,
+              defaultRoleSlug: draft.defaultRoleSlug ? draft.defaultRoleSlug : null,
             });
           }}
         >
@@ -1080,10 +826,7 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
             admin stores; per-store managers shouldn't trigger this
             org-wide write). */}
         {isGlobalAdmin && adminStoreIds.size >= 2 ? (
-          <Button
-            variant="pearl"
-            onClick={() => setCloneOpen(true)}
-          >
+          <Button variant="pearl" onClick={() => setCloneOpen(true)}>
             {i18n.t('admin.action.cloneRoles')}
           </Button>
         ) : null}
@@ -1091,9 +834,8 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
           <Button
             variant="danger-ghost"
             onClick={() =>
-              nativeConfirm(
-                i18n.t('admin.store.confirmArchive', { name: store.name }),
-                () => remove.mutate({ storeId }),
+              nativeConfirm(i18n.t('admin.store.confirmArchive', { name: store.name }), () =>
+                remove.mutate({ storeId }),
               )
             }
           >
@@ -1161,9 +903,7 @@ function StoreCloneRolesSheet({
 
   const sourceCandidates = useMemo(() => {
     if (!target) return [];
-    return sessionStores.filter(
-      (st) => adminStoreIds.has(st.id) && st.id !== target.targetStoreId,
-    );
+    return sessionStores.filter((st) => adminStoreIds.has(st.id) && st.id !== target.targetStoreId);
   }, [sessionStores, adminStoreIds, target]);
 
   const cloneMut = trpc.admin.storeCloneRoles.useMutation({
@@ -1172,13 +912,10 @@ function StoreCloneRolesSheet({
       void utils.admin.memberList.invalidate();
       const parts = [i18n.t('admin.clone.toastCloned', { n: data.cloned })];
       if (data.skippedExisting > 0)
-        parts.push(
-          i18n.t('admin.clone.toastAlreadyExisted', { n: data.skippedExisting }),
-        );
+        parts.push(i18n.t('admin.clone.toastAlreadyExisted', { n: data.skippedExisting }));
       if (data.skippedRank > 0)
         parts.push(i18n.t('admin.clone.toastSkippedRank', { n: data.skippedRank }));
-      if (data.assigned > 0)
-        parts.push(i18n.t('admin.clone.toastAssigned', { n: data.assigned }));
+      if (data.assigned > 0) parts.push(i18n.t('admin.clone.toastAssigned', { n: data.assigned }));
       toast.success(parts.join(' · '));
       onClose();
     },
@@ -1190,9 +927,7 @@ function StoreCloneRolesSheet({
       open={open}
       onOpenChange={(o) => !o && !cloneMut.isPending && onClose()}
       title={i18n.t('admin.clone.title')}
-      description={
-        target ? i18n.t('admin.clone.target', { store: target.targetStoreName }) : ''
-      }
+      description={target ? i18n.t('admin.clone.target', { store: target.targetStoreName }) : ''}
       footer={
         target ? (
           <Button
@@ -1221,10 +956,7 @@ function StoreCloneRolesSheet({
                 {i18n.t('admin.clone.noSourceBody')}
               </Banner>
             ) : (
-              <Select
-                value={sourceStoreId}
-                onChange={(e) => setSourceStoreId(e.target.value)}
-              >
+              <Select value={sourceStoreId} onChange={(e) => setSourceStoreId(e.target.value)}>
                 <option value="">— pick a source store —</option>
                 {sourceCandidates.map((st) => (
                   <option key={st.id} value={st.id}>
@@ -1258,4 +990,3 @@ function StoreCloneRolesSheet({
     </Sheet>
   );
 }
-

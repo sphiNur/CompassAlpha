@@ -77,7 +77,8 @@ import {
   type StoreSub,
 } from './admin/shared';
 // Stores sections — extracted to admin/stores (Phase 5 step 3).
-import { StoresHomeSection, StoreDetailScreen } from './admin/stores/StoresSections';
+import { StoreDetailScreen } from './admin/stores/StoresSections';
+import { StoresScreen } from '../destinations/manage/StoresScreen';
 // People + permissions — extracted to admin/people (Phase 5 step 4).
 import { PermissionsSection } from './admin/people/PeopleSections';
 import { ProductsScreen } from '../destinations/manage/ProductsScreen';
@@ -191,8 +192,8 @@ export function AdminPage() {
       >
         {section === 'organization' ? <WorkspaceSection /> : null}
         {section === 'stores' && storeFocus === null ? (
-          <StoresHomeSection
-            onPickStore={(focus) => {
+          <StoresScreen
+            onPick={(focus) => {
               setStoreFocus(focus);
               setStoreSub('team');
             }}
