@@ -940,7 +940,7 @@ export const zh = {
   'run.label.paymentTransfer': '转账',
   'run.action.unmarkUnavailableAriaLabel': '改为可购：{name}',
   'run.reason.paymentMethodChanged': '在列表中更正付款方式',
-  'run.confirm.finish.paymentBreakdown': '💵 现金 {cash} · 🏦 转账 {transfer}',
+  'run.confirm.finish.paymentBreakdown': '现金 {cash} · 转账 {transfer}',
   'run.confirm.cancel.title': '取消整张采购单?',
   'run.confirm.cancel.body':
     '本次采购作废，所有订单退回到「已审核」状态。已记录的采购数据保留在审计日志，但不再继续配送。',

@@ -53,13 +53,8 @@ import {
 // tab (pages/HistoryPage.tsx) as of 2026-07-30 — this page no longer
 // imports any of it.
 // Mutation sheets + draft types — extracted to runs/sheets (Phase 4 step 3).
-import {
-  PurchaseSheet,
-  AddItemSheet,
-  ConfirmSheet,
-  type PurchaseDraft,
-  type AddItemDraft,
-} from './runs/sheets/RunSheets';
+import { PurchaseSheet, AddItemSheet, type PurchaseDraft, type AddItemDraft } from './runs/sheets/RunSheets';
+import { ConfirmSheet } from './runs/buying/ConfirmSheet';
 // Mid-level panels — extracted to runs/components (Phase 4 step 5).
 import { RunPreview } from './runs/buying/RunPreview';
 import { ActiveRunPanel } from './runs/buying/ActiveRun';

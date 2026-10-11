@@ -1002,7 +1002,7 @@ export const uz = {
   'run.label.paymentTransfer': "O'tkazma",
   'run.action.unmarkUnavailableAriaLabel': 'Yana mavjud deb belgilash: {name}',
   'run.reason.paymentMethodChanged': "Ro'yxatda to'lov usuli tuzatildi",
-  'run.confirm.finish.paymentBreakdown': "💵 naqd {cash} · 🏦 o'tkazma {transfer}",
+  'run.confirm.finish.paymentBreakdown': "naqd {cash} · o'tkazma {transfer}",
   'run.confirm.cancel.title': 'Butun xaridni bekor qilamizmi?',
   'run.confirm.cancel.body':
     "Xarid to'xtaydi, buyurtmalar «tasdiqlangan»ga qaytadi. Yozilgan xaridlar auditda qoladi, ammo yetkazilmaydi.",

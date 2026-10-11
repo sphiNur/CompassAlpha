@@ -1107,7 +1107,7 @@ export const en = {
   'run.label.paymentTransfer': 'Transfer',
   'run.action.unmarkUnavailableAriaLabel': 'Mark available again: {name}',
   'run.reason.paymentMethodChanged': 'Payment method corrected on the row',
-  'run.confirm.finish.paymentBreakdown': '💵 cash {cash} · 🏦 transfer {transfer}',
+  'run.confirm.finish.paymentBreakdown': 'cash {cash} · transfer {transfer}',
   'run.confirm.cancel.title': 'Cancel the entire run?',
   'run.confirm.cancel.body':
     'This stops the run and unlocks all sessions back to "approved". Already-recorded purchases stay in the audit log but are not delivered.',
