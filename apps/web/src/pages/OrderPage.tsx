@@ -1,22 +1,18 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Button as OldButton, cn, Input, NumberInput, SectionLabel, useToast } from '@compass/ui';
 import {
-  Banner,
   Button,
-  ChipBar,
-  Chip,
-  cn,
-  DataState,
   EmptyState,
-  Input,
-  NameCell,
-  NumberInput,
-  QtyControl,
-  SearchInput,
-  SectionLabel,
+  Field,
+  List,
+  Money,
+  Row,
+  Section,
   Sheet,
-  StickyPageBar,
-  useToast,
-} from '@compass/ui';
+  StatusChip,
+  Stepper,
+} from '@compass/ui/kit';
+import type { StatusTone } from '@compass/ui/kit';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton, haptic } from '../hooks/useTelegram';
@@ -24,13 +20,7 @@ import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
 import { matchesNameLike, normalizeQuery } from '../lib/searchMatch';
-import {
-  useDateFormat,
-  useI18n,
-  useProductName,
-  useProductNameParts,
-  useUnitLabel,
-} from '../hooks/useI18n';
+import { useDateFormat, useI18n, useProductName, useUnitLabel } from '../hooks/useI18n';
 
 // M3.34 (2026-05-19): canonical units for the extras editor's unit
 // dropdown — kept in sync with CanonicalUnitSchema in
@@ -55,7 +45,6 @@ import { useStoreContext } from '../components/StoreSwitcher';
 export function OrderPage() {
   const i18n = useI18n();
   const productName = useProductName();
-  const productNameParts = useProductNameParts();
   // 2026-07-30 (flow review): the Order surface was the ONE place still
   // rendering the raw canonical unit ("kg" / "pcs") while Approval, Run
   // and the extras editor all went through useUnitLabel. Staff saw
@@ -103,6 +92,9 @@ export function OrderPage() {
   // M1.10 (2026-05-08): cross-language SKU search. Lives above the
   // category chip-bar; queries match across uz/ru/en/zh names + code.
   const [searchQuery, setSearchQuery] = useState('');
+  const [categoriesOpen, setCategoriesOpen] = useState(false);
+  /** The product whose exact quantity is being typed, and what is typed. */
+  const [typing, setTyping] = useState<{ skuId: string; value: string } | null>(null);
 
   const categoriesQuery = trpc.catalog.categories.useQuery();
   const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: false });
@@ -121,14 +113,17 @@ export function OrderPage() {
   // Replay map for the offline outbox. The hook calls back into our
   // tRPC client when network returns; we use the imperative .mutate()
   // form so the in-memory mutation state stays the same.
-  const offline = useOfflineQueue({
-    'order.adjustItem': async (entry) => {
-      await utils.client.order.adjustItem.mutate(
-        entry.input as Parameters<typeof utils.client.order.adjustItem.mutate>[0],
-      );
-      void utils.order.todaySession.invalidate();
+  const offline = useOfflineQueue(
+    {
+      'order.adjustItem': async (entry) => {
+        await utils.client.order.adjustItem.mutate(
+          entry.input as Parameters<typeof utils.client.order.adjustItem.mutate>[0],
+        );
+        void utils.order.todaySession.invalidate();
+      },
     },
-  }, { onDrop: () => toast.error(i18n.t('run.toast.syncFailed')) });
+    { onDrop: () => toast.error(i18n.t('run.toast.syncFailed')) },
+  );
   // OPTIMISTIC ADJUST — fire-and-forget pattern.
   //
   // Why no onSettled invalidate? Because invalidate triggers a refetch
@@ -502,28 +497,20 @@ export function OrderPage() {
   });
 
   const skus = skusQuery.data ?? [];
-  const filteredSkus = useMemo(
-    () => {
-      // Two filters compose: category chip + cross-language search.
-      // Apply category first (cheap object-key compare) then search
-      // (string match across 4 lang fields + code) so we walk the
-      // smaller set on the second pass.
-      let out = activeCategory
-        ? skus.filter((s) => s.categoryId === activeCategory)
-        : skus;
-      const tokens = normalizeQuery(searchQuery);
-      if (tokens) {
-        out = out.filter((s) =>
-          matchesNameLike(
-            { names: s.names as Record<string, string> | null, code: s.code },
-            tokens,
-          ),
-        );
-      }
-      return out;
-    },
-    [skus, activeCategory, searchQuery],
-  );
+  const filteredSkus = useMemo(() => {
+    // Two filters compose: category chip + cross-language search.
+    // Apply category first (cheap object-key compare) then search
+    // (string match across 4 lang fields + code) so we walk the
+    // smaller set on the second pass.
+    let out = activeCategory ? skus.filter((s) => s.categoryId === activeCategory) : skus;
+    const tokens = normalizeQuery(searchQuery);
+    if (tokens) {
+      out = out.filter((s) =>
+        matchesNameLike({ names: s.names as Record<string, string> | null, code: s.code }, tokens),
+      );
+    }
+    return out;
+  }, [skus, activeCategory, searchQuery]);
 
   const items = sessionQuery.data?.items ?? [];
   const totals = sessionQuery.data?.totals ?? [];
@@ -577,8 +564,7 @@ export function OrderPage() {
   //   - sheet open + pending          → "Submitting…"  (disabled)
   // No buttons inside the sheet body — the MainButton IS the action.
   // The sheet handles its own dismissal via tap-outside / swipe-down.
-  const canSubmit =
-    sessionStatus === 'draft' || sessionStatus === 'rejected';
+  const canSubmit = sessionStatus === 'draft' || sessionStatus === 'rejected';
 
   let mainButtonText: string;
   if (submit.isPending) {
@@ -631,10 +617,7 @@ export function OrderPage() {
       toast.info(i18n.t('order.toast.syncing'));
       return;
     }
-    submit.mutate(
-      { sessionId: sid },
-      { onSuccess: () => setReviewOpen(false) },
-    );
+    submit.mutate({ sessionId: sid }, { onSuccess: () => setReviewOpen(false) });
   }, [
     canSubmit,
     selectedCount,
@@ -658,487 +641,390 @@ export function OrderPage() {
       }
     },
     {
-      visible: canSubmit && selectedCount > 0,
+      visible: canSubmit && selectedCount > 0 && !reviewOpen,
       active: selectedCount > 0 && !submit.isPending,
     },
   );
 
+  const onTypeQty = useCallback(
+    (skuId: string, current: number) => setTyping({ skuId, value: current ? String(current) : '' }),
+    [],
+  );
+
   if (!session) return null;
+
+  const dateLabel = dateFmt.weekdayLong(new Date());
+  const heading = (title: string, chip?: React.ReactNode) => (
+    <header className="flex items-start justify-between gap-lg">
+      <div className="min-w-0">
+        <h1 className="text-h1 text-ink">{title}</h1>
+        <p className="text-body text-secondary">{dateLabel}</p>
+      </div>
+      {chip}
+    </header>
+  );
+
   if (!currentStoreId) {
-    // Three failure modes:
-    //   1. storeCtx.kind === 'none'   — user has no store assignments
-    //   2. storeCtx.kind === 'all'    — admin viewing aggregate; OrderPage
-    //                                    needs a specific store, prompt them
-    //   3. currentStoreId fell to null somehow — same as case 1 in practice
     return (
-      /* M3.5: the inline store-picker strip is gone — the picker now
-         lives in SettingsSheet, reachable via Telegram's gear button.
-         Empty-state copy was updated to point users at Settings. */
-      <div className="flex flex-col">
-        {storeCtx.kind === 'none' ? (
-          <EmptyState
-            title={i18n.t('auth.noStore.title')}
-            description={i18n.t('auth.noStore.body')}
-          />
-        ) : (
-          <EmptyState
-            title={i18n.t('storeSwitcher.pickPrompt.title')}
-            description={i18n.t('storeSwitcher.pickPrompt.body')}
-          />
-        )}
+      <div className="flex flex-col gap-xl px-page py-xl">
+        {heading(i18n.t('nav.order') as string)}
+        <EmptyState
+          title={
+            i18n.t(
+              storeCtx.kind === 'none' ? 'auth.noStore.title' : 'storeSwitcher.pickPrompt.title',
+            ) as string
+          }
+          hint={
+            i18n.t(
+              storeCtx.kind === 'none' ? 'auth.noStore.body' : 'storeSwitcher.pickPrompt.body',
+            ) as string
+          }
+          action={null}
+        />
       </div>
     );
   }
 
-  // 2026-07-30 (flow review): was `toLocaleDateString(undefined, …)`, i.e.
-  // the BROWSER's locale, so the review sheet's subtitle read
-  // "Thursday, July 30" above a Chinese item list.
-  const dateLabel = dateFmt.weekdayLong(new Date());
+  const batches = batchesQuery.data ?? [];
+  const batchesRow =
+    batches.length > 1 ? (
+      <List>
+        <Row
+          data-testid="order-batches"
+          title={i18n.t('order.batches.today', { n: batches.length })}
+          onPress={() => setBatchesOpen(true)}
+        />
+      </List>
+    ) : null;
+  const batchesSheet = (
+    <Sheet
+      open={batchesOpen}
+      onOpenChange={setBatchesOpen}
+      title={i18n.t('order.batches.today', { n: batches.length }) as string}
+    >
+      <BatchList
+        batches={batches}
+        currentId={sessionQuery.data?.id ?? ''}
+        i18n={i18n}
+        currency={orgCurrency}
+      />
+    </Sheet>
+  );
+  const extrasFor = (locked: boolean) =>
+    sessionQuery.data?.id && sessionQuery.data.id !== 'optimistic' ? (
+      <SessionExtrasEditor
+        sessionId={sessionQuery.data.id}
+        storeId={currentStoreId}
+        // Rows saved before units were a fixed list may carry free text;
+        // anything unrecognised becomes kg, which the person can change.
+        initialValue={(sessionQuery.data.extras ?? []).map((r) => ({
+          ...r,
+          unit: (CANONICAL_UNITS as readonly string[]).includes(r.unit)
+            ? (r.unit as (typeof CANONICAL_UNITS)[number])
+            : 'kg',
+        }))}
+        isReadOnly={locked}
+        onSave={async (next) => {
+          if (locked) return;
+          await setSessionExtras.mutateAsync({ sessionId: sessionQuery.data!.id, extras: next });
+          utils.order.todaySession.setData({ storeId: currentStoreId }, (old) =>
+            old ? { ...old, extras: next } : old,
+          );
+        }}
+      />
+    ) : null;
 
   /**
-   * SUBMITTED-BATCH RECEIPT (2026-07-30).
-   *
-   * Before this, submitting left you on the same 244-row catalog with every
-   * row disabled — ~12,000 px of greyed-out list — and the review sheet's
-   * only entry point was the main button, which hides itself once
-   * `canSubmit` goes false. So after pressing Submit there was literally no
-   * way to see what you had just sent.
-   *
-   * The catalog is a tool for *choosing*; once the choice is made it's
-   * noise. This replaces it with the receipt: what you sent, what it's
-   * worth, where it is in the pipeline, and the two things you might now
-   * want — take it back, or start another batch.
-   *
-   * `ReviewList` is reused deliberately: the pre-submit preview and the
-   * post-submit receipt should be the same object, so nothing looks like it
-   * changed in transit.
+   * After sending: what was sent and where it has got to. The catalogue
+   * is a tool for choosing; once the choice is made it is 240 greyed-out
+   * rows. From here the order can be taken back while nobody has picked
+   * it up, or another batch started.
    */
   if (isReadOnly && sessionQuery.data) {
     const locked = sessionQuery.data;
     const claimedByOther =
       !!locked.claimedByMemberId && locked.claimedByMemberId !== session.member.memberId;
-    // Withdraw is only offered while nobody has picked the batch up. The
-    // server enforces the same rule; hiding it avoids a tap-then-403.
     const canWithdraw = sessionStatus === 'submitted' && !claimedByOther;
+    const tone: StatusTone =
+      sessionStatus === 'approved' || sessionStatus === 'in_run' ? 'done' : 'pending';
+    const state = claimedByOther
+      ? i18n.t('order.banner.claimed', {
+          who: locked.claimedByDisplayName ?? i18n.t('approval.unknownReviewer'),
+        })
+      : sessionStatus === 'submitted'
+        ? i18n.t('order.status.submitted')
+        : sessionStatus === 'approved'
+          ? i18n.t('order.banner.approved.title')
+          : sessionStatus === 'in_run'
+            ? i18n.t('order.banner.inRun.title')
+            : i18n.t('order.status.archived');
     return (
-      <div className="flex flex-col pb-4">
-        <StickyPageBar>
-          {/* Store moved to Shell's top strip (2026-07-30) — the date is
-              the only page-specific thing this strip carried. */}
-          <span className="ml-auto shrink-0 text-old-label tabular-nums text-[var(--c-fg-muted)]">
-            {dateLabel}
-          </span>
-        </StickyPageBar>
-
-        <div className="flex flex-col gap-3 px-4 pt-3">
-          <BatchStrip
-            batches={batchesQuery.data ?? []}
-            currentId={locked.id}
-            i18n={i18n}
-            currency={orgCurrency}
-          />
-          {claimedByOther ? (
-            <Banner
-              tone="warn"
-              title={i18n.t('order.banner.claimed', {
-                who: locked.claimedByDisplayName ?? i18n.t('approval.unknownReviewer'),
-              })}
-            />
-          ) : sessionStatus === 'submitted' ? (
-            <Banner
-              tone="info"
-              title={i18n.t('order.status.submitted')}
-              action={
-                canWithdraw ? (
-                  <Button
-                    size="sm"
-                    variant="pearl"
-                    loading={withdraw.isPending}
-                    onClick={() => withdraw.mutate({ sessionId: locked.id })}
-                  >
-                    {i18n.t('order.withdraw')}
-                  </Button>
-                ) : undefined
-              }
-            />
-          ) : sessionStatus === 'approved' ? (
-            <Banner tone="success" title={i18n.t('order.banner.approved.title')}>
-              {i18n.t('order.banner.approved.body')}
-            </Banner>
+      <div className="flex flex-col gap-xl px-page py-xl">
+        {heading(i18n.t('nav.order') as string)}
+        <div role="status" className="flex flex-col gap-sm">
+          <StatusChip tone={tone} className="self-start">
+            {state}
+          </StatusChip>
+          {sessionStatus === 'approved' ? (
+            <p className="text-body text-secondary">{i18n.t('order.banner.approved.body')}</p>
           ) : sessionStatus === 'in_run' ? (
-            <Banner tone="info" title={i18n.t('order.banner.inRun.title')}>
-              {i18n.t('order.banner.inRun.body')}
-            </Banner>
-          ) : (
-            <Banner tone="info" title={i18n.t('order.status.archived')} />
-          )}
-
-          <BatchStrip
-            batches={batchesQuery.data ?? []}
-            currentId={locked.id}
-            i18n={i18n}
-            currency={orgCurrency}
-          />
-
-          <div>
-            <SectionLabel padded={false} className="mb-1.5">
-              {i18n.t('order.receipt.submittedItems')}
-            </SectionLabel>
-            <ReviewList totals={totals} skus={skus} productName={productName} />
-          </div>
+            <p className="text-body text-secondary">{i18n.t('order.banner.inRun.body')}</p>
+          ) : null}
         </div>
-
-        {/* Extras render read-only through the same editor the draft uses,
-            so an off-catalog request the store made still shows up on the
-            receipt instead of silently disappearing after submit. */}
-        {locked.id !== 'optimistic' ? (
-          <SessionExtrasEditor
-            sessionId={locked.id}
-            storeId={currentStoreId}
-            initialValue={(locked.extras ?? []).map((r) => ({
-              ...r,
-              unit: (CANONICAL_UNITS as readonly string[]).includes(r.unit)
-                ? (r.unit as (typeof CANONICAL_UNITS)[number])
-                : 'kg',
-            }))}
-            isReadOnly
-            onSave={async () => {
-              /* read-only — never called */
-            }}
+        {batchesRow}
+        <Section title={i18n.t('order.receipt.submittedItems') as string}>
+          <OrderLines totals={totals} skus={skus} productName={productName} />
+        </Section>
+        {extrasFor(true)}
+        <List>
+          <Row
+            action
+            data-testid="order-new-batch"
+            title={i18n.t('order.batches.newBatch')}
+            onPress={startNewBatch}
           />
-        ) : null}
-
-        <div className="px-4 pt-4">
-          <Button block size="lg" variant="pearl" onClick={startNewBatch}>
-            {i18n.t('order.batches.newBatch')}
-          </Button>
-        </div>
+          {canWithdraw ? (
+            <Row
+              data-testid="order-withdraw"
+              title={i18n.t('order.withdraw')}
+              disabled={withdraw.isPending}
+              onPress={() => withdraw.mutate({ sessionId: locked.id })}
+            />
+          ) : null}
+        </List>
+        {batchesSheet}
       </div>
     );
   }
 
+  const categories = categoriesQuery.data ?? [];
+  const categoryName = (id: string | null): string => {
+    const category = id ? categories.find((c) => c.id === id) : undefined;
+    return category
+      ? productName({ names: category.names as Record<string, string> })
+      : (i18n.t('run.view.uncategorized') as string);
+  };
+  const searching = !!normalizeQuery(searchQuery);
+  // Under a heading per category, unless the list has been narrowed: a
+  // search or a chosen category is already the answer to "which ones".
+  const groups: Array<{ id: string | null; rows: typeof filteredSkus }> = [];
+  if (searching || activeCategory) {
+    groups.push({ id: null, rows: filteredSkus });
+  } else {
+    const byCategory = new Map<string | null, typeof filteredSkus>();
+    for (const sku of filteredSkus) {
+      const key = categories.some((c) => c.id === sku.categoryId) ? sku.categoryId : null;
+      const rows = byCategory.get(key) ?? [];
+      rows.push(sku);
+      byCategory.set(key, rows);
+    }
+    for (const c of categories) {
+      const rows = byCategory.get(c.id);
+      if (rows) groups.push({ id: c.id, rows });
+    }
+    const rest = byCategory.get(null);
+    if (rest) groups.push({ id: null, rows: rest });
+  }
+  const typingSku = typing ? skus.find((s) => s.id === typing.skuId) : undefined;
+  const typedOk = !!typing && /^\d+(?:[.,]\d+)?$/.test(typing.value.trim() || '0');
+
   return (
-    <div className="flex flex-col">
-      {/* M3.12-B (2026-05-16): the [date · selectedCount] row is gone.
-          Both halves of the strip were redundant:
-          - Date appears in the Telegram chrome (bot title bar shows
-            the current view; users already orient by it).
-          - Selected count is duplicated on the MainButton label
-            ("Review Order (N)") which is always at the bottom of the
-            screen and updates live. Showing the same number twice
-            (top-right pill + MainButton) was visual stutter.
-          The sticky strip now carries only the SearchInput + category
-          ChipBar — the actual filters the user interacts with. */}
-      <StickyPageBar direction="col">
-        {/* 2026-07-30 (flow review): the store you are ordering for was
-            stated NOWHERE on this page. See the StoreChip docblock —
-            with the picker two taps deep in Telegram's overflow and the
-            selection persisted, an owner could spend a day ordering into
-            the wrong store with no cue at all.
+    <div className="flex flex-col gap-xl px-page py-xl">
+      {heading(i18n.t('nav.order') as string)}
 
-            Later the same day: the chip moved OUT of here and into
-            Shell's top strip, centered in the slot Telegram leaves
-            between its Close and ⋯ buttons. It is page-independent
-            context, so one instance in the shell beats a copy in each
-            page's sticky bar — and Run / Admin, which never had one,
-            get it for free. What stays here is the batch count, which
-            IS page state.
-
-            Losing the chip left the batch count alone on a row of its
-            own, `ml-auto` pinning it to the right edge with a hand's
-            width of nothing beside it. It rides the search row now:
-            one less row on a 375-px screen, and "field + trailing
-            action" is a shape people already read. */}
-        <div className="flex items-center gap-2">
-          <SearchInput
-            className="flex-1"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onClear={() => setSearchQuery('')}
-            placeholder={i18n.t('order.search.placeholder')}
-            clearAriaLabel={i18n.t('common.clear')}
-            aria-label={i18n.t('order.search.placeholder')}
-          />
-          {/* Batch count stays visible while drafting too — otherwise
-              "再报一批" drops you into an empty catalog identical to a
-              first-of-the-day order, with nothing saying the earlier
-              batches exist. */}
-          {(batchesQuery.data?.length ?? 0) > 1 ? (
-            <button
-              type="button"
-              onClick={() => setBatchesOpen(true)}
-              className="press shrink-0 rounded-[var(--r-pill)] px-1.5 py-0.5 text-old-label tabular-nums text-[var(--c-action)]"
-            >
-              {i18n.t('order.batches.today', { n: batchesQuery.data!.length })}
-            </button>
-          ) : null}
-        </div>
-        <ChipBar ariaLabel={i18n.t('order.categoriesAriaLabel')} className="-mx-4 px-4 py-0">
-          <Chip
-            selected={activeCategory === null}
-            onClick={() => {
-              // M3.10 (2026-05-16): tapping "All" after a category
-              // filter previously left any active search query in
-              // place. If the user had typed "tomato" while looking
-              // at Fruits and then tapped All to "reset", the search
-              // still filtered the (now-broader) list and they often
-              // saw an empty result with no obvious way to clear.
-              // Clearing search alongside the category reset matches
-              // the natural "show me everything" intent.
-              setActiveCategory(null);
-              setSearchQuery('');
-            }}
-          >
-            {i18n.t('order.categories.all')}
-          </Chip>
-          <DataState query={categoriesQuery}>
-            {(cats) =>
-              cats.map((c) => (
-                <Chip
-                  key={c.id}
-                  selected={activeCategory === c.id}
-                  onClick={() => setActiveCategory(c.id)}
-                >
-                  {productName({ names: c.names as Record<string, string> })}
-                </Chip>
-              ))
-            }
-          </DataState>
-        </ChipBar>
-      </StickyPageBar>
-
-      {/* Status banners — only render the wrapper when at least one
-          banner condition is true, so the empty-state draft view has
-          zero chrome between sticky filters and the SKU list. M1.11:
-          single section with `gap-2` replaces 4 individually-padded
-          shells. */}
-      {(sessionStatus &&
-        (sessionStatus === 'rejected' ||
-          sessionStatus === 'approved' ||
-          sessionStatus === 'in_run' ||
-          (sessionStatus === 'submitted' && !sessionQuery.data?.claimedByMemberId))) ||
-      (sessionQuery.data?.claimedByMemberId &&
-        sessionQuery.data.claimedByMemberId !== session.member.memberId) ? (
-        <div className="flex flex-col gap-2 px-4 pt-2">
-          {sessionQuery.data?.claimedByMemberId &&
-          sessionQuery.data.claimedByMemberId !== session.member.memberId ? (
-            <Banner tone="warn" title={i18n.t('order.banner.claimed', { who: 'manager' })} />
-          ) : null}
-          {sessionStatus === 'rejected' ? (
-            <Banner
-              tone="danger"
-              title={i18n.t('order.status.rejected', { reason: sessionQuery.data?.rejectReason ?? '—' })}
-              action={
-                <Button
-                  size="sm"
-                  variant="pearl"
-                  loading={withdraw.isPending}
-                  onClick={() => sessionQuery.data && withdraw.mutate({ sessionId: sessionQuery.data.id })}
-                >
-                  {i18n.t('order.withdraw')}
-                </Button>
-              }
-            />
-          ) : null}
-          {sessionStatus === 'submitted' && !sessionQuery.data?.claimedByMemberId ? (
-            <Banner
-              tone="info"
-              title={i18n.t('order.status.submitted')}
-              action={
-                <Button
-                  size="sm"
-                  variant="pearl"
-                  loading={withdraw.isPending}
-                  onClick={() => sessionQuery.data && withdraw.mutate({ sessionId: sessionQuery.data.id })}
-                >
-                  {i18n.t('order.withdraw')}
-                </Button>
-              }
-            />
-          ) : null}
-          {sessionStatus === 'approved' ? (
-            <Banner tone="success" title={i18n.t('order.banner.approved.title')}>
-              {i18n.t('order.banner.approved.body')}
-            </Banner>
-          ) : null}
-          {sessionStatus === 'in_run' ? (
-            <Banner tone="info" title={i18n.t('order.banner.inRun.title')}>
-              {i18n.t('order.banner.inRun.body')}
-            </Banner>
-          ) : null}
+      {sessionStatus === 'rejected' ? (
+        <div role="status" className="flex flex-col gap-sm">
+          <StatusChip tone="problem" className="self-start">
+            {i18n.t('order.status.rejectedTitle')}
+          </StatusChip>
+          <p className="text-body text-secondary">
+            {sessionQuery.data?.rejectReason || i18n.t('order.status.rejectedNoReason')}
+          </p>
         </div>
       ) : null}
 
-      <DataState
-        query={skusQuery}
-        emptyWhen={(d) => d.length === 0}
-        empty={<EmptyState title={i18n.t('order.empty.title')} description={i18n.t('order.empty.description')} />}
-      >
-        {() => (
-          <ul className="flex flex-col" role="list">
-            {filteredSkus.length === 0 && (searchQuery || activeCategory) ? (
-              <li className="px-4 py-8">
-                <EmptyState
-                  title={i18n.t('order.search.noMatches.title')}
-                  description={i18n.t('order.search.noMatches.description')}
-                />
-              </li>
-            ) : null}
-            {filteredSkus.map((sku) => (
-              <SkuRow
-                key={sku.id}
-                sku={sku}
-                myQty={myQtyBySku.get(sku.id) ?? 0}
-                totalQty={totalQtyBySku.get(sku.id) ?? 0}
-                otherContribCount={
-                  (contributorsBySku.get(sku.id) ?? [])
-                    .filter((c) => c.memberId !== myMemberId).length
-                }
-                isReadOnly={isReadOnly}
-                storeId={currentStoreId}
-                productNameParts={productNameParts}
-                unitLabel={unitLabel}
-                i18n={i18n}
-                onQtyChange={handleQtyChange}
-              />
-            ))}
-          </ul>
-        )}
-      </DataState>
-
-      {/* Session-level "其他物品" structured extras (M3.16-C,
-          2026-05-16). Replaces the M1.8 free-text textarea with a
-          structured list of {name, qty, unit, note?} rows. Sits at
-          the bottom of the SKU list so it's the last thing the staff
-          sees before reviewing — natural placement for "and these
-          items aren't in the catalog". Read-only once the session
-          leaves draft (shown read-only on Approval / Run pages).
-          We render it only when a session row exists; before the
-          user adds their first item there's no stream yet, and
-          adding an extra alone wouldn't carry meaning. */}
-      {sessionQuery.data?.id && sessionQuery.data.id !== 'optimistic' ? (
-        <SessionExtrasEditor
-          sessionId={sessionQuery.data.id}
-          storeId={currentStoreId ?? ''}
-          // M3.34 (2026-05-19): coerce server-side extras into the
-          // canonical-unit shape. Rows submitted pre-M3.34 may carry
-          // free-text like "kgs" or "公斤" — map to 'kg' so the
-          // dropdown can render them and re-saving lands a canonical
-          // value. Anything we can't match falls back to 'kg' (the
-          // most-common SKU unit) which the user can then change.
-          initialValue={(sessionQuery.data.extras ?? []).map((r) => ({
-            ...r,
-            unit: (CANONICAL_UNITS as readonly string[]).includes(r.unit)
-              ? (r.unit as (typeof CANONICAL_UNITS)[number])
-              : 'kg',
-          }))}
-          isReadOnly={isReadOnly}
-          onSave={async (extras) => {
-            await setSessionExtras.mutateAsync({
-              sessionId: sessionQuery.data!.id,
-              extras,
-            });
-            // Optimistic cache write so the editor doesn't flicker
-            // on next refetch.
-            utils.order.todaySession.setData(
-              { storeId: currentStoreId ?? '' },
-              (old) => (old ? { ...old, extras } : old),
-            );
-          }}
+      <div className="flex flex-col gap-sm">
+        <Field
+          type="search"
+          label={i18n.t('order.search.placeholder') as string}
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
         />
-      ) : null}
+        <List>
+          {categories.length > 1 ? (
+            <Row
+              data-testid="order-category"
+              title={i18n.t('order.categoriesAriaLabel')}
+              detail={
+                activeCategory ? categoryName(activeCategory) : i18n.t('order.categories.all')
+              }
+              onPress={() => setCategoriesOpen(true)}
+            />
+          ) : null}
+          {batches.length > 1 ? (
+            <Row
+              data-testid="order-batches"
+              title={i18n.t('order.batches.today', { n: batches.length })}
+              onPress={() => setBatchesOpen(true)}
+            />
+          ) : null}
+        </List>
+      </div>
 
-      {/* An in-page "Review order (N)" fallback used to live here, gated on
-          `!getTg()` — "only outside Telegram, where there's no MainButton".
-          Deleted 2026-07-30. It never rendered (getTg() is truthy in any
-          browser: the SDK is a static script tag), and it MUST not: since
-          M3.49 the in-DOM <PageMainButton /> in Shell renders in every
-          environment and already carries this exact action. Reviving the
-          branch by "fixing" its predicate would just show the button
-          twice. The other five sites that conflated SDK-present with
-          inside-Telegram needed real fixes; this one needed deleting. */}
+      {skusQuery.isPending ? (
+        <p className="text-body text-secondary">{i18n.t('common.loading')}</p>
+      ) : skus.length === 0 ? (
+        <EmptyState
+          title={i18n.t('order.empty.title') as string}
+          hint={i18n.t('order.empty.description') as string}
+          action={null}
+        />
+      ) : filteredSkus.length === 0 ? (
+        <EmptyState
+          title={i18n.t('order.search.noMatches.title') as string}
+          hint={i18n.t('order.search.noMatches.description') as string}
+          action={
+            <Button
+              inline
+              onClick={() => {
+                setSearchQuery('');
+                setActiveCategory(null);
+              }}
+            >
+              {i18n.t('common.clear')}
+            </Button>
+          }
+        />
+      ) : (
+        groups.map((group) => (
+          <Section
+            key={group.id ?? 'rest'}
+            title={searching || activeCategory ? undefined : categoryName(group.id)}
+          >
+            <List>
+              {group.rows.map((sku) => (
+                <SkuRow
+                  key={sku.id}
+                  sku={sku}
+                  name={productName({ names: sku.names as Record<string, string> })}
+                  myQty={myQtyBySku.get(sku.id) ?? 0}
+                  totalQty={totalQtyBySku.get(sku.id) ?? 0}
+                  otherContribCount={
+                    (contributorsBySku.get(sku.id) ?? []).filter((c) => c.memberId !== myMemberId)
+                      .length
+                  }
+                  storeId={currentStoreId}
+                  unit={unitLabel(sku.unit)}
+                  i18n={i18n}
+                  onQtyChange={handleQtyChange}
+                  onTypeQty={onTypeQty}
+                />
+              ))}
+            </List>
+          </Section>
+        ))
+      )}
 
-      {/* Review sheet — preview of what's being submitted. No buttons in
-          the body: inside Telegram the MainButton text changes from
-          "Review Order (N)" to "Submit order" while open, and that's the
-          submit trigger. Tap-outside / swipe-down dismisses the sheet.
-          Outside Telegram (rare — web preview) we render a single
-          fallback button in the footer since there's no MainButton. */}
-      {/* Today's batches, reachable while drafting. Without this the count
-          above was informational only: you could see that an earlier batch
-          existed but not what was in it or where it had got to. */}
+      {extrasFor(false)}
+
       <Sheet
-        open={batchesOpen}
-        onOpenChange={setBatchesOpen}
-        title={i18n.t('order.batches.today', { n: batchesQuery.data?.length ?? 0 })}
+        open={categoriesOpen}
+        onOpenChange={setCategoriesOpen}
+        title={i18n.t('order.categoriesAriaLabel') as string}
       >
-        <div className="py-3">
-          <BatchStrip
-            batches={batchesQuery.data ?? []}
-            currentId={sessionQuery.data?.id ?? ''}
-            i18n={i18n}
-            currency={orgCurrency}
-            showHeading={false}
+        <List>
+          <Row
+            picks
+            title={i18n.t('order.categories.all')}
+            value={
+              activeCategory === null ? (
+                <StatusChip tone="done">{i18n.t('buy.chosen')}</StatusChip>
+              ) : undefined
+            }
+            onPress={() => {
+              setActiveCategory(null);
+              setCategoriesOpen(false);
+            }}
           />
-        </div>
+          {categories.map((c) => (
+            <Row
+              key={c.id}
+              picks
+              data-testid="order-category-option"
+              title={categoryName(c.id)}
+              value={
+                activeCategory === c.id ? (
+                  <StatusChip tone="done">{i18n.t('buy.chosen')}</StatusChip>
+                ) : undefined
+              }
+              onPress={() => {
+                setActiveCategory(c.id);
+                setCategoriesOpen(false);
+              }}
+            />
+          ))}
+        </List>
       </Sheet>
+
+      {batchesSheet}
+
+      {/* The exact amount, for when tapping + twenty times is not it. */}
+      {typing && typingSku ? (
+        <Sheet
+          open
+          onOpenChange={(open) => !open && setTyping(null)}
+          title={productName({ names: typingSku.names as Record<string, string> })}
+          actions={
+            <Button
+              variant="primary"
+              data-testid="order-qty-save"
+              disabled={!typedOk}
+              onClick={() => {
+                const qty = Number((typing.value.trim() || '0').replace(',', '.'));
+                handleQtyChange(currentStoreId, typing.skuId, String(qty));
+                setTyping(null);
+              }}
+            >
+              {i18n.t('common.save')}
+            </Button>
+          }
+        >
+          <Field
+            numeric
+            label={i18n.t('buy.qty') as string}
+            value={typing.value}
+            placeholder="0"
+            onChange={(e) => setTyping({ skuId: typing.skuId, value: e.target.value })}
+            suffix={unitLabel(typingSku.unit)}
+          />
+        </Sheet>
+      ) : null}
 
       <Sheet
         open={reviewOpen}
         onOpenChange={(open) => !open && !submit.isPending && setReviewOpen(false)}
-        title={i18n.t('order.review.title')}
-        description={
-          dateLabel + ' · ' + i18n.t('order.review.itemsCount', { n: selectedCount })
-        }
-        footer={
-          // M3.49: in-page PageMainButton sits behind any open sheet —
-          // we must render the sheet's own footer button so the user
-          // has something to tap.
+        title={i18n.t('order.review.title') as string}
+        actions={
           <Button
-            block
-            size="lg"
-            loading={submit.isPending}
+            variant="primary"
+            data-testid="order-submit"
+            busy={submit.isPending}
             disabled={selectedCount === 0}
             onClick={() => {
               if (!sessionQuery.data) return;
               void handleSubmit();
             }}
           >
-            {submit.isPending
-              ? i18n.t('order.action.submitting')
-              : i18n.t('order.action.submitOrder')}
+            {i18n.t('order.action.submitOrder')}
           </Button>
         }
       >
-        <ReviewList totals={totals} skus={skus} productName={productName} />
+        <OrderLines totals={totals} skus={skus} productName={productName} estimate />
       </Sheet>
     </div>
   );
 }
 
-/**
- * Memoized SKU row (M3.10, 2026-05-16).
- *
- * Previously the SKU list was inline `filteredSkus.map(sku => <li>…</li>)`
- * inside OrderPage. Tapping +/- on any one row updated the tRPC cache
- * via `utils.order.todaySession.setData`, which triggered a parent
- * re-render — which then re-rendered ALL 187 rows in production
- * (~2-3 ms each on slow iOS WebView = 400-500 ms of work for a single
- * tap).
- *
- * Pulling the row into `React.memo` short-circuits all unaffected
- * rows. The memo compares props shallowly; only the one row whose
- * `myQty` / `totalQty` / `otherContribCount` changed re-renders. Other
- * rows skip render entirely when the parent re-renders for unrelated
- * reasons (search input typing, banner state change, etc.).
- *
- * Stability requirements for the props (so memo isn't busted):
- *   - `productName`: useProductName() now memoizes by locale (M3.10
- *     hook fix) so its reference is stable across renders.
- *   - `onQtyChange`: already useCallback'd at handleQtyChange.
- *   - `i18n`: useI18n() returns a useMemo'd object per locale.
- *   - Other props are primitives or stable references.
- */
 type SkuRowSku = {
   id: string;
   names: Record<string, string>;
@@ -1147,113 +1033,87 @@ type SkuRowSku = {
   suggestedQty?: string | number | null;
 };
 
+/**
+ * One product in the catalogue. A product nobody has asked for shows one
+ * button, "Add"; only a product with a quantity grows the − n + control.
+ * Most of a long catalogue is zeros, and a column of empty steppers is
+ * the density this screen was reported for.
+ *
+ * Memoised: a tap rewrites the cached order, which re-renders the page,
+ * and without this every one of some two hundred rows would re-render
+ * with it. Every prop is a primitive or a stable reference for that reason.
+ */
 const SkuRow = memo(function SkuRow({
   sku,
+  name,
   myQty,
   totalQty,
   otherContribCount,
-  isReadOnly,
   storeId,
-  productNameParts,
-  unitLabel,
+  unit,
   i18n,
   onQtyChange,
+  onTypeQty,
 }: {
   sku: SkuRowSku;
+  name: string;
   myQty: number;
   totalQty: number;
   otherContribCount: number;
-  isReadOnly: boolean;
   storeId: string;
-  productNameParts: (item: {
-    names: Record<string, string> | null | undefined;
-  }) => { primary: string; secondary: string | null };
-  unitLabel: (unit: string | null | undefined) => string;
+  unit: string;
   i18n: ReturnType<typeof useI18n>;
   onQtyChange: (storeId: string, skuId: string, qty: string) => void;
+  onTypeQty: (skuId: string, current: number) => void;
 }) {
-  // M3.15 (2026-05-16): py-2 → py-1.5 to tighten the SKU row. With
-  // the new QtyControl baseline (h-9 = 36 px), the row sits at ~52 px
-  // instead of the old ~72 px — matches the bottom-nav rhythm. One
-  // more SKU visible per viewport on a 5.5" screen.
-  //
-  // M3.55 (2026-05-23): user-requested tweaks for the order surface:
-  //   - bumped SKU name from text-old-body (13 px) → text-old-h2 (15 px) so
-  //     the primary content scans easier on phone screens.
-  //   - dropped the redundant `{sku.unit}` caption that used to lead
-  //     the secondary line. The unit is already shown inside the
-  //     QtyControl pill on the right ("3 kg") so duplicating it here
-  //     stole vertical real estate without adding info.
-  //   - the secondary line now hides entirely when there's no
-  //     suggested qty AND no cross-staff contribution count — most
-  //     rows on a fresh order are exactly that case, so the row
-  //     collapses to a single line.
-  const hasSecondaryLine =
-    !!sku.suggestedQty || (otherContribCount > 0 && totalQty > 0);
-  const nm = productNameParts(sku);
+  const step = Number(sku.step) || 1;
+  const set = (next: number) =>
+    onQtyChange(storeId, sku.id, String(Math.max(0, Math.round(next * 1000) / 1000)));
+  // Someone else at this store has asked for it too: say what the store's
+  // total is, since "my 2" and "the store's 5" are different facts.
+  const shared = otherContribCount > 0 && totalQty > 0;
+  const detail = [
+    sku.suggestedQty ? i18n.t('order.suggested', { qty: sku.suggestedQty }) : null,
+    shared ? i18n.t('order.totalQty', { qty: formatQty(String(totalQty)), unit }) : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
   return (
-    <li className="flex items-center justify-between border-b border-[var(--c-divider)] px-4 py-1.5 last:border-b-0">
-      <div className="min-w-0 flex-1 pr-3">
-        <NameCell primary={nm.primary} secondary={nm.secondary} size="prominent" />
-        {hasSecondaryLine ? (
-          <div className="mt-0.5 text-old-label leading-tight text-[var(--c-fg-muted)]">
-            {sku.suggestedQty
-              ? i18n.t('order.suggested', { qty: sku.suggestedQty })
-              : null}
-            {sku.suggestedQty && otherContribCount > 0 && totalQty > 0
-              ? ' · '
-              : null}
-            {otherContribCount > 0 && totalQty > 0 ? (
-              <>
-                <span className="font-semibold text-[var(--c-fg)]">
-                  {i18n.t('order.totalQty', { qty: totalQty, unit: unitLabel(sku.unit) })}
-                </span>
-                {' '}
-                ({otherContribCount + (myQty > 0 ? 1 : 0)})
-              </>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-      <QtyControl
-        value={myQty}
-        step={Number(sku.step)}
-        unit={unitLabel(sku.unit)}
-        disabled={isReadOnly}
-        onChange={(next) => onQtyChange(storeId, sku.id, String(next))}
-        // M3.55 (2026-05-23): show the SKU name in the qty quick-pick
-        // sheet title. Without this the popup was a context-less "Set
-        // quantity" — when the user mis-tapped a row, they couldn't
-        // tell they'd opened the wrong SKU's picker. Now the title
-        // reads e.g. "玉米淀粉" so a wrong row is obvious instantly.
-        pickTitle={nm.primary}
-      />
-    </li>
+    <Row
+      data-testid="order-row"
+      title={name}
+      detail={detail || undefined}
+      trailing={
+        myQty > 0 ? (
+          <Stepper
+            value={formatQty(String(myQty))}
+            unit={unit}
+            onDecrement={() => set(myQty - step)}
+            onIncrement={() => set(myQty + step)}
+            onValuePress={() => onTypeQty(sku.id, myQty)}
+          />
+        ) : (
+          <Button
+            inline
+            data-testid="order-add"
+            aria-label={i18n.t('order.addAria', { name }) as string}
+            onClick={() => set(step)}
+          >
+            {i18n.t('order.add')}
+          </Button>
+        )
+      }
+    />
   );
 });
 
-/**
- * "Today's batches" strip (2026-07-30).
- *
- * M3.32 gave a (member, store, day) several sessions; the Order page only
- * ever showed one of them, so submitting a batch and starting another made
- * the first disappear with no trace. This is the trace: one chip per batch,
- * the one you're looking at marked, so "did my morning order go through?"
- * is answerable without leaving the page.
- *
- * Renders nothing for a single batch — with one chip the strip would just
- * restate the receipt below it.
- */
-function BatchStrip({
+/** Today's batches for this person at this store, and where each has got to. */
+function BatchList({
   batches,
   currentId,
   i18n,
   currency,
-  showHeading = true,
 }: {
-  /** The sheet that can host this strip supplies its own title, so it
-   *  turns the internal heading off rather than stating "今日 N 批" twice. */
-  showHeading?: boolean;
   batches: Array<{
     id: string;
     status: string;
@@ -1265,228 +1125,117 @@ function BatchStrip({
   i18n: ReturnType<typeof useI18n>;
   currency: string;
 }) {
-  if (batches.length < 2) return null;
   return (
-    <div>
-      {showHeading ? (
-        <SectionLabel padded={false} className="mb-1.5">
-          {i18n.t('order.batches.today', { n: batches.length })}
-        </SectionLabel>
-      ) : null}
-      <ul className="flex flex-col gap-1" role="list">
-        {batches.map((b) => {
-          const isCurrent = b.id === currentId;
-          return (
-            <li
-              key={b.id}
-              className={
-                'flex items-baseline justify-between gap-2 rounded-[var(--r-card)] px-3 py-2 text-old-label ring-hairline ' +
-                (isCurrent
-                  ? 'bg-[var(--c-action)]/10 ring-1 ring-[var(--c-action)]'
-                  : 'bg-[var(--c-surface-2)]')
-              }
-            >
-              <span className="min-w-0 truncate">
-                <span className="font-semibold text-[var(--c-fg)]">
-                  {i18n.t('order.batches.batchLabel', { n: b.batchNumber })}
-                </span>{' '}
-                <span className="text-[var(--c-fg-muted)]">
-                  {i18n.t(
-                    ('order.status.' + b.status) as Parameters<typeof i18n.t>[0],
-                    { reason: '' },
-                  )}
-                </span>
-                {isCurrent ? (
-                  <span className="text-[var(--c-action)]">
-                    {' · '}
-                    {i18n.t('order.batches.viewing')}
-                  </span>
-                ) : null}
-              </span>
-              <span className="shrink-0 whitespace-nowrap tabular-nums text-[var(--c-fg-muted)]">
-                {i18n.t('approval.itemsCount', { n: b.itemCount })}
-                {b.estimatedTotal
-                  ? ` · ~${formatMoney(Number(b.estimatedTotal))} ${currency}`
-                  : ''}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-}
-
-interface ReviewTotal {
-  skuId: string;
-  qty: string;
-}
-
-function ReviewList({
-  totals,
-  skus,
-  productName,
-}: {
-  totals: ReviewTotal[];
-  skus: Array<{ id: string; categoryId: string | null; names: unknown; unit: string; step: string }>;
-  productName: (item: { names: Record<string, string> | null | undefined }) => string;
-}) {
-  const i18n = useI18n();
-  // 2026-07-30 (flow review): was printing the raw canonical unit, so the
-  // last screen before Submit read "0.5 kg" while Approval showed "0.5 公斤".
-  const unitLabel = useUnitLabel();
-  // M1.21: org-wide currency for the estimate suffix.
-  const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
-  // Pull avg-7d price stats for the SKUs being reviewed so we can show
-  // an estimated total (added 2026-05-05). The API is keyed by skuId
-  // and uses 7-day mean to avoid one freak-sale day skewing tomorrow's
-  // expected cost. Stats might be null for new SKUs with no purchase
-  // history yet — those rows just don't contribute to the estimate.
-  const skuIds = useMemo(
-    () => totals.filter((t) => Number(t.qty) > 0).map((t) => t.skuId),
-    [totals],
-  );
-  const priceStats = trpc.catalog.skuPriceStats.useQuery(
-    { skuIds },
-    { enabled: skuIds.length > 0, staleTime: 60_000 },
-  );
-  const priceBySku = useMemo(() => {
-    const m = new Map<string, { avg7d: string | null; lastPrice: string | null }>();
-    for (const r of priceStats.data ?? []) {
-      m.set(r.skuId, { avg7d: r.avg7d, lastPrice: r.lastPrice });
-    }
-    return m;
-  }, [priceStats.data]);
-  const estimate = useMemo(() => {
-    let total = 0;
-    let known = 0;
-    let unknown = 0;
-    for (const t of totals) {
-      const qty = Number(t.qty);
-      if (!(qty > 0)) continue;
-      const stats = priceBySku.get(t.skuId);
-      const price = stats?.avg7d ?? stats?.lastPrice;
-      if (price) {
-        total += Number(price) * qty;
-        known += 1;
-      } else {
-        unknown += 1;
-      }
-    }
-    return { total, known, unknown };
-  }, [totals, priceBySku]);
-  // Show the AGGREGATE qty per SKU (sum across all contributors). Group
-  // by category. Items without a known SKU fall under "Other".
-  const skuById = useMemo(() => {
-    const m = new Map<string, (typeof skus)[number]>();
-    for (const s of skus) m.set(s.id, s);
-    return m;
-  }, [skus]);
-
-  const groups = useMemo(() => {
-    const byCat = new Map<string | null, Array<{ name: string; qty: string; unit: string }>>();
-    for (const t of totals) {
-      if (Number(t.qty) <= 0) continue;
-      const sku = skuById.get(t.skuId);
-      if (!sku) continue;
-      const arr = byCat.get(sku.categoryId) ?? [];
-      arr.push({
-        name: productName({ names: sku.names as Record<string, string> }),
-        qty: t.qty,
-        unit: sku.unit,
-      });
-      byCat.set(sku.categoryId, arr);
-    }
-    return [...byCat.entries()];
-  }, [totals, skuById, productName]);
-
-  if (groups.length === 0) {
-    return (
-      <div className="py-6 text-center text-old-body text-[var(--c-fg-muted)]">
-        {i18n.t('order.review.empty')}
-      </div>
-    );
-  }
-  return (
-    <div className="flex flex-col gap-3 py-3">
-      {/* Estimated cost banner — shown when we have any price history
-          to base the estimate on. Uses avg-7d mean per SKU. SKUs
-          without history fall under "unknown" and are skipped from
-          the total but called out so the staff knows the figure is
-          approximate. (Added 2026-05-05.) */}
-      {estimate.known > 0 ? (
-        <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 ring-hairline">
-          <div className="flex items-baseline justify-between gap-2">
-            {/* M3.13 typography exception:
-                this eyebrow label is paired with a non-eyebrow big-money
-                value as siblings inside a parent flex row, not a section
-                header. SectionLabel is also flex which would compose
-                awkwardly here. The CI grep guard for inline eyebrow
-                strings allows-lists this single site. */}
-            <span className="text-old-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
-              {i18n.t('order.review.estimatedTotal')}
-            </span>
-            <span className="font-mono text-old-h2 font-semibold tabular-nums text-[var(--c-fg)]">
-              ~{formatMoney(estimate.total)} {currency}
-            </span>
-          </div>
-          <div className="mt-1 text-old-label text-[var(--c-fg-muted)]">
-            {i18n.t('order.review.estimateHint', {
-              known: estimate.known,
-              unknown: estimate.unknown,
-            })}
-          </div>
-        </div>
-      ) : null}
-      <ul className="flex flex-col gap-3" role="list">
-        {groups.map(([catId, rows]) => (
-          <li key={catId ?? 'other'}>
-            <ul className="flex flex-col rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline">
-              {rows.map((r, i) => (
-                <li
-                  key={r.name + i}
-                  className="flex items-baseline justify-between border-b border-[var(--c-divider)] px-4 py-2.5 last:border-b-0"
-                >
-                  {/* 2026-07-05: match the prominent SKU-name tier used
-                      by SkuRow above (the Order surface is the "browse"
-                      tier, text-old-h2) so the review summary and the pick
-                      list read at the same size. */}
-                  <span className="truncate pr-3 text-old-h2 font-semibold text-[var(--c-fg)]">
-                    {r.name}
-                  </span>
-                  <span className="shrink-0 font-mono text-old-body tabular-nums text-[var(--c-fg-muted)]">
-                    {formatQty(r.qty)} {unitLabel(r.unit)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </li>
-        ))}
-      </ul>
-    </div>
+    <List>
+      {batches.map((b) => (
+        <Row
+          key={b.id}
+          data-testid="order-batch"
+          title={
+            b.id === currentId
+              ? `${i18n.t('order.batches.batchLabel', { n: b.batchNumber })} · ${i18n.t('order.batches.viewing')}`
+              : i18n.t('order.batches.batchLabel', { n: b.batchNumber })
+          }
+          detail={[
+            i18n.t(`order.status.${b.status}` as Parameters<typeof i18n.t>[0], { reason: '' }),
+            i18n.t('approval.itemsCount', { n: b.itemCount }),
+          ].join(' · ')}
+          value={
+            b.estimatedTotal ? (
+              <Money amount={formatMoney(Number(b.estimatedTotal))} currency={currency} />
+            ) : undefined
+          }
+        />
+      ))}
+    </List>
   );
 }
 
 /**
- * Session-level structured "其他物品" extras editor (M3.16-C,
- * 2026-05-16). Replaces SessionNotesEditor / the free-text textarea.
- *
- * Data shape: each extra is { name, qty, unit, note? }. The editor
- * holds the full list locally, mutates it on each row edit, and fires
- * a single setSessionExtras mutation 700 ms after the last keystroke
- * (or immediately on row add / remove). The mutation always sends the
- * WHOLE list — atomic-replace semantics match the domain event.
- *
- * Why a separate component:
- *   - Local rows array means typing doesn't wait for the server.
- *   - Suggestion query is per-row but identical per editor mount;
- *     the dropdown state is scoped inside the row component.
- *   - Stays mounted across refetches; adopts the server array into
- *     local state only when local is clean.
- *
- * Read-only mode: collapses each row to a one-line "name · qty unit"
- * read. Hidden entirely when no extras (read-only + empty list).
+ * The lines of an order, by category: what is about to be sent, and
+ * afterwards what was. The same list in both places, so nothing looks
+ * as if it changed on the way.
  */
+function OrderLines({
+  totals,
+  skus,
+  productName,
+  estimate = false,
+}: {
+  totals: Array<{ skuId: string; qty: string }>;
+  skus: Array<{ id: string; categoryId: string | null; names: unknown; unit: string }>;
+  productName: (item: { names: Record<string, string> | null | undefined }) => string;
+  /** Show what it is likely to cost, from recent prices. */
+  estimate?: boolean;
+}) {
+  const i18n = useI18n();
+  const unitLabel = useUnitLabel();
+  const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
+  const lines = useMemo(() => totals.filter((t) => Number(t.qty) > 0), [totals]);
+  const skuIds = useMemo(() => lines.map((t) => t.skuId), [lines]);
+  const priceStats = trpc.catalog.skuPriceStats.useQuery(
+    { skuIds },
+    { enabled: estimate && skuIds.length > 0, staleTime: 60_000 },
+  );
+  const cost = useMemo(() => {
+    const priceBySku = new Map<string, string | null>();
+    for (const r of priceStats.data ?? []) priceBySku.set(r.skuId, r.avg7d ?? r.lastPrice);
+    let total = 0;
+    let known = 0;
+    for (const t of lines) {
+      const price = priceBySku.get(t.skuId);
+      if (!price) continue;
+      total += Number(price) * Number(t.qty);
+      known += 1;
+    }
+    return { total, known, unknown: lines.length - known };
+  }, [lines, priceStats.data]);
+  const skuById = useMemo(() => new Map(skus.map((s) => [s.id, s])), [skus]);
+
+  if (lines.length === 0) {
+    return <p className="text-body text-secondary">{i18n.t('order.review.empty')}</p>;
+  }
+  return (
+    <div className="flex flex-col gap-lg">
+      {/* Only lines with a recent price are in the sum, so it is a floor. */}
+      {estimate && cost.known > 0 ? (
+        <div className="flex flex-col gap-xs">
+          <div className="flex items-baseline justify-between gap-lg">
+            <span className="text-body text-secondary">
+              {i18n.t('order.review.estimatedTotal')}
+            </span>
+            <Money amount={formatMoney(cost.total)} currency={currency} size="lg" />
+          </div>
+          <p className="text-body text-secondary">
+            {i18n.t('order.review.estimateHint', { known: cost.known, unknown: cost.unknown })}
+          </p>
+        </div>
+      ) : null}
+      <List>
+        {lines.map((t) => {
+          const sku = skuById.get(t.skuId);
+          return (
+            <Row
+              key={t.skuId}
+              data-testid="order-line"
+              title={
+                sku
+                  ? productName({ names: sku.names as Record<string, string> })
+                  : t.skuId.slice(0, 8)
+              }
+              value={
+                <span className="text-money text-ink">
+                  {formatQty(t.qty)} {unitLabel(sku?.unit)}
+                </span>
+              }
+            />
+          );
+        })}
+      </List>
+    </div>
+  );
+}
+
 interface ExtraDraft {
   name: string;
   qty: string;
@@ -1513,9 +1262,7 @@ function SessionExtrasEditor({
 }) {
   const i18n = useI18n();
   const unitLabel = useUnitLabel();
-  const [rows, setRows] = useState<ExtraDraft[]>(() =>
-    initialValue.map((r) => ({ ...r })),
-  );
+  const [rows, setRows] = useState<ExtraDraft[]>(() => initialValue.map((r) => ({ ...r })));
   const lastSavedRef = useRef<string>(JSON.stringify(initialValue));
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [savingState, setSavingState] = useState<'idle' | 'saving' | 'saved'>('idle');
@@ -1640,9 +1387,7 @@ function SessionExtrasEditor({
   return (
     <section className="mt-2 px-4 pb-4 pt-1">
       <div className="mb-1.5 flex items-baseline justify-between gap-2">
-        <SectionLabel padded={false}>
-          {i18n.t('order.extras.label')}
-        </SectionLabel>
+        <SectionLabel padded={false}>{i18n.t('order.extras.label')}</SectionLabel>
         <span className="text-old-label text-[var(--c-fg-muted)]">
           {savingState === 'saving'
             ? i18n.t('order.notes.saving')
@@ -1677,7 +1422,7 @@ function SessionExtrasEditor({
               onRemove={() => removeRow(idx)}
             />
           ))}
-          <Button
+          <OldButton
             size="sm"
             variant="pearl"
             onClick={addRow}
@@ -1685,7 +1430,7 @@ function SessionExtrasEditor({
             className="self-start"
           >
             {i18n.t('order.extras.add')}
-          </Button>
+          </OldButton>
         </div>
       )}
     </section>
@@ -1757,9 +1502,7 @@ function ExtraRowEditor({
                     className="press flex w-full items-baseline justify-between gap-2 px-3 py-1.5 text-left text-old-body hover:bg-[var(--c-surface-2)]"
                   >
                     <span className="text-[var(--c-fg)]">{s.name}</span>
-                    <span className="text-old-label text-[var(--c-fg-muted)]">
-                      ×{s.count}
-                    </span>
+                    <span className="text-old-label text-[var(--c-fg-muted)]">×{s.count}</span>
                   </button>
                 </li>
               ))}
@@ -1785,9 +1528,7 @@ function ExtraRowEditor({
           // aggregation + i18n. Labels go through useUnitLabel so the
           // visible option text matches the rest of the UI in the
           // user's locale.
-          onChange={(e) =>
-            onChange({ unit: e.target.value as (typeof CANONICAL_UNITS)[number] })
-          }
+          onChange={(e) => onChange({ unit: e.target.value as (typeof CANONICAL_UNITS)[number] })}
           className="h-9 w-20 rounded-[var(--r-input)] bg-[var(--c-surface)] px-2 text-center text-old-body text-[var(--c-fg)] ring-hairline focus:outline-none focus:ring-2 focus:ring-[var(--c-action)]"
         >
           {CANONICAL_UNITS.map((u) => (

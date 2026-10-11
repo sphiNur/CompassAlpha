@@ -31,6 +31,8 @@ export const uz = {
   'buy.total': 'Jami',
   'buy.moreOptions': "Do'konlar bo'yicha, ta'minotchi, chek",
   'buy.cashAndTransfer': "{cash} naqd · {transfer} o'tkazma",
+  'order.add': "Qo'shish",
+  'order.addAria': "{name} qo'shish",
   'receive.title': 'Qabul qilish',
   'receive.allArrived': 'Hammasi keldi',
   'receive.confirmWithIssues': 'Tasdiqlash, muammoli: {n}',

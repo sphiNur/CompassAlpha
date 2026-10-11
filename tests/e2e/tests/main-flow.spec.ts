@@ -67,34 +67,46 @@ test('sign in and confirm a display name', async () => {
 
 test('place an order', async () => {
   await tab('order').click();
-  // Weighed goods step by half a kilo per tap.
+  await expect(main().getByRole('heading', { level: 1 })).toHaveText('Order');
 
+  // A product nobody has asked for shows one button; the stepper appears
+  // once it has a quantity. Weighed goods step by half a kilo per tap.
   const add = async (sku: string, taps: number, expected: string) => {
     // Taps are debounced into one write. Wait for it to land: while it
     // is in flight the page's main button is disabled, and a tap that
     // arrives in that instant does nothing.
     const saved = page.waitForResponse((res) => res.url().includes('order.adjustItem'));
-    for (let i = 0; i < taps; i++) {
+    await item(sku).getByRole('button', { name: `Add ${sku}` }).click();
+    for (let i = 1; i < taps; i++) {
       await item(sku).getByRole('button', { name: 'Increase' }).click();
     }
     await saved;
-    await expect(item(sku).getByRole('button', { name: /^Quantity/ })).toHaveAccessibleName(
-      `Quantity ${expected} — tap to choose`,
-    );
+    await expect(item(sku).locator('[data-step="value"]')).toHaveText(expected);
   };
-  await add('Apple', 4, '2 kg');
-  await add('Beef', 2, '1 kg');
+  await add('Apple', 4, /2\s*kg/ as unknown as string);
+  await add('Beef', 2, /1\s*kg/ as unknown as string);
   await evidence('order-picking');
+
+  // The exact amount can be typed instead of tapped.
+  const typed = page.waitForResponse((res) => res.url().includes('order.adjustItem'));
+  await item('Apple').locator('[data-step="value"]').click();
+  await sheet().getByRole('textbox', { name: 'Quantity' }).fill('2');
+  await sheet().getByTestId('order-qty-save').click();
+  await typed;
+  await expect(sheet()).toBeHidden();
 
   await expect(mainButton()).toHaveText('Review order (2)');
   await mainButton().click();
-  await expect(sheet().getByRole('listitem').filter({ hasText: 'Apple' }).last()).toHaveText(
-    /Apple\s*2 kg/,
-  );
+  const lines = sheet().getByTestId('order-line');
+  await expect(lines).toHaveCount(2);
+  await expect(lines.filter({ hasText: 'Apple' })).toHaveText(/Apple\s*2 kg/);
   await evidence('order-review');
-  await sheet().getByRole('button', { name: 'Submit order' }).click();
+  await sheet().getByTestId('order-submit').click();
 
+  // Sent: the catalogue gives way to what was sent and where it has got to.
   await expect(main().getByRole('status')).toContainText('Submitted · awaiting review');
+  await expect(main().getByTestId('order-line')).toHaveCount(2);
+  await expect(main().getByTestId('order-withdraw')).toBeVisible();
   await evidence('order-submitted');
 });
 

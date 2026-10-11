@@ -24,6 +24,8 @@ export const zh = {
   'buy.total': '合计',
   'buy.moreOptions': '按门店分摊、供应商、小票',
   'buy.cashAndTransfer': '现金 {cash} · 转账 {transfer}',
+  'order.add': '加',
+  'order.addAria': '加{name}',
   'receive.title': '签收',
   'receive.allArrived': '全部到齐',
   'receive.confirmWithIssues': '确认，{n} 项有问题',
