@@ -237,16 +237,41 @@ test('deliver to the store', async () => {
 });
 
 test('receive the delivery at the store', async () => {
-  await tab('confirm').click();
-  await expect(main()).toContainText(/Checked\s*0\/2/);
+  // Today says there is something to check in, and how much.
+  await tab('menu').click();
+  await expect(page.getByTestId('tile-receive')).toHaveText(/2\s*Lines to receive/);
+  await page.getByTestId('tile-receive').click();
+  await expect(main().getByRole('heading', { level: 1 })).toHaveText('Receiving');
+  const rows = main().getByTestId('receive-row');
+  await expect(rows).toHaveCount(2);
   await evidence('receiving-unchecked');
-  await main().getByRole('button', { name: 'All arrived fine' }).click();
-  await expect(main()).toContainText(/Checked\s*2\/2/);
-  await expect(item('Apple').getByRole('radio', { name: 'OK' })).toBeChecked();
-  await evidence('receiving-checked');
-  await expect(mainButton()).toHaveText('Confirm store');
+
+  // Something is wrong with one line: open it, say what, and the main
+  // button says so before anything is confirmed.
+  await rows.filter({ hasText: 'Beef' }).click();
+  await sheet().getByTestId('verdict-short').click();
+  await expect(sheet().getByTestId('save-verdict')).toBeDisabled();
+  await sheet().getByRole('textbox', { name: 'What is wrong' }).fill('Only 800 g');
+  await evidence('receiving-problem-sheet');
+  await sheet().getByTestId('save-verdict').click();
+  await expect(sheet()).toBeHidden();
+  await expect(rows.filter({ hasText: 'Beef' })).toContainText('Short qty');
+  await expect(mainButton()).toHaveText('Confirm, 1 with a problem');
+
+  // It was fine after all.
+  await rows.filter({ hasText: 'Beef' }).click();
+  await sheet().getByTestId('verdict-ok').click();
+  await sheet().getByTestId('save-verdict').click();
+  await expect(sheet()).toBeHidden();
+
+  // One tap: the line nobody opened is recorded as fine, and the store
+  // is confirmed.
+  await expect(mainButton()).toHaveText('Everything arrived');
   await mainButton().click();
   await expect(mainButton()).toBeHidden();
+  await expect(main()).toContainText('Received');
+  await expect(rows.filter({ hasText: 'Apple' })).toContainText('OK');
+  await evidence('receiving-checked');
 });
 
 test('finish the run and find it in history', async () => {
