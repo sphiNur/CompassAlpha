@@ -28,6 +28,7 @@ import {
   GUESS_DAYS,
 } from '../lib/priceState';
 import { proportionalSplitQty } from '../lib/splitQty';
+import { PriceInFull, PriceUnitSwitch } from '../components/PriceUnit';
 import type { ActiveRun } from '../types';
 
 /**
@@ -1792,7 +1793,7 @@ export function PurchaseRow({
                price stays the single flexible track, which keeps the
                payment-button note below accurate. */}
         <div className="mt-1.5 grid items-center gap-1.5"
-             style={{ gridTemplateColumns: '4.5rem auto minmax(4.25rem,1fr) auto auto auto' }}>
+             style={{ gridTemplateColumns: '4.5rem auto minmax(4.25rem,1fr) auto auto' }}>
           {/* 2026-07-26 keyboard pass. Both fields arrive PRE-FILLED
               (qty from planned, price from the last observed market
               price), so a tap that appends instead of replacing is the
@@ -1834,17 +1835,9 @@ export function PurchaseRow({
             placeholder={i18n.t('run.action.unitPriceAriaLabel')}
             aria-label={i18n.t('run.action.unitPriceAriaLabel')}
           />
-          {/* The unit suffix IS the toggle (2026-07-30). It already had to
-              be here to disambiguate "20" from "20,000"; making it tappable
-              costs no layout and puts the control at the point of use. */}
-          <button
-            type="button"
-            onClick={onTogglePriceUnit}
-            aria-label={i18n.t('run.label.priceUnitAria')}
-            className="press shrink-0 rounded-[var(--r-utility)] px-1 text-old-label text-[var(--c-action)] underline decoration-dotted underline-offset-2 active:opacity-70"
-          >
-            {priceInThousands ? `K·${currency}` : currency}
-          </button>
+          {/* The unit used to sit here as a small dotted suffix that was
+              also the toggle. It now lives on the line below, as a switch
+              showing both units (2026-10-11): people did not find it. */}
           {/* M1.14: payment-method toggle. Defaults to cash; tap to flip
               to transfer. Sits before ✓ save so the muscle memory is
               "set method → confirm".
@@ -1927,15 +1920,34 @@ export function PurchaseRow({
             that's 30,000 som" — so it must never be the thing that gets
             truncated when the row runs out of width. Right-aligned under
             the price it belongs to. */}
-        {totalHint !== null ? (
-          <div className="mt-1 pr-1 text-right text-old-label text-[var(--c-fg-muted)]">
-            ={' '}
-            <span className="font-mono font-semibold tabular-nums text-[var(--c-fg)]">
-              {formatMoney(totalHint)}
-            </span>{' '}
-            {currency}
+        {
+          <div className="mt-1 flex flex-wrap items-center justify-end gap-x-2 gap-y-1 pr-1 text-right text-old-label text-[var(--c-fg-muted)]">
+            {/* 2026-10-11: the unit, switchable and impossible to miss, and
+                the price as it will be saved — the total alone hides a
+                ×1000 slip whenever the quantity is not 1. */}
+            <PriceUnitSwitch
+              priceInThousands={priceInThousands}
+              onToggle={onTogglePriceUnit}
+              currency={currency}
+              ariaLabel={i18n.t('run.label.priceUnitAria')}
+            />
+            <PriceInFull
+              typed={price}
+              priceInThousands={priceInThousands}
+              currency={currency}
+              unit={unit}
+            />
+            {totalHint !== null ? (
+              <span>
+                ={' '}
+                <span className="font-mono font-semibold tabular-nums text-[var(--c-fg)]">
+                  {formatMoney(totalHint)}
+                </span>{' '}
+                {currency}
+              </span>
+            ) : null}
           </div>
-        ) : null}
+        }
       </li>
     );
   }

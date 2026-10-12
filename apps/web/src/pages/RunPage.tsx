@@ -27,7 +27,16 @@
  * goes into the audit log.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Banner, Button, DataState, EmptyState, Input, Sheet, useToast } from '@compass/ui';
+import {
+  Banner,
+  Button,
+  ConfirmSheet as PriceCheckSheet,
+  DataState,
+  EmptyState,
+  Input,
+  Sheet,
+  useToast,
+} from '@compass/ui';
 import { trpc, newIdempotencyKey } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton, haptic } from '../hooks/useTelegram';
@@ -60,6 +69,7 @@ import {
   type PurchaseDraft,
   type AddItemDraft,
 } from './runs/sheets/RunSheets';
+import { isUnusualPrice } from './runs/lib/priceMath';
 // Mid-level panels — extracted to runs/components (Phase 4 step 5).
 import { ActiveRunPanel, PreviewSummaryCard, RunSessionsCard } from './runs/components/RunPanels';
 
@@ -90,6 +100,7 @@ export function RunPage() {
   const i18n = useI18n();
   const productName = useProductName();
   const session = useAuthStore((s) => s.session);
+  const currency = session?.member.currency ?? 'UZS';
   const toast = useToast();
   const photoUploader = usePhotoUploader('receipt');
 
@@ -836,6 +847,35 @@ export function RunPage() {
    * outside Telegram) calls the same function. Keeping the math in one
    * place avoids the "two save buttons disagree" bug.
    */
+  /**
+   * 2026-10-11: a price 5× away from the last one paid is asked about
+   * once before it is saved. Not a block — the purchaser is the one who
+   * knows — but the two figures are put side by side, which is all it
+   * takes to see a wrong unit or a slipped zero. Every way of recording
+   * a purchase goes through here. `lastPriceBySku` leaves this run's own
+   * entries out, so correcting a mistake is compared with the last trip
+   * and not with the mistake.
+   */
+  const [priceCheck, setPriceCheck] = useState<{
+    name: string;
+    last: string;
+    next: string;
+    run: () => void;
+  } | null>(null);
+  const withPriceCheck = useCallback(
+    (skuId: string, prices: Array<string | undefined>, run: () => void) => {
+      const last = runDetailQuery.data?.lastPriceBySku?.[skuId];
+      const odd = prices.find((p) => !!p && isUnusualPrice(p, last));
+      if (!last || !odd) {
+        run();
+        return;
+      }
+      const sku = skuById.get(skuId);
+      setPriceCheck({ name: sku ? productName(sku) : '', last, next: odd, run });
+    },
+    [runDetailQuery.data?.lastPriceBySku, skuById, productName],
+  );
+
   const submitPurchaseDraft = useCallback(
     (d: PurchaseDraft) => {
       const payload = {
@@ -859,13 +899,19 @@ export function RunPage() {
           })),
         paymentMethod: d.paymentMethod,
       };
-      if (d.isEdit) {
-        revisePurchase.mutate({ ...payload, reason: d.reason });
-      } else {
-        purchaseItem.mutate(payload);
-      }
+      withPriceCheck(
+        d.skuId,
+        [d.unitPrice, ...payload.storeSplits.map((sp) => ('unitPrice' in sp ? sp.unitPrice : undefined))],
+        () => {
+          if (d.isEdit) {
+            revisePurchase.mutate({ ...payload, reason: d.reason });
+          } else {
+            purchaseItem.mutate(payload);
+          }
+        },
+      );
     },
-    [purchaseItem, revisePurchase],
+    [purchaseItem, revisePurchase, withPriceCheck],
   );
 
   /**
@@ -1824,6 +1870,7 @@ export function RunPage() {
               // M1.14: paymentMethod comes from the in-row toggle
               // (defaults to 'cash'; user can flip to 'transfer' before
               // saving for the relatively rare transfer items).
+              withPriceCheck(skuId, [unitPrice], () => {
               setInlineSavingSkuId(skuId);
               purchaseItem.mutate({
                 runId: activeRun.id,
@@ -1846,6 +1893,7 @@ export function RunPage() {
                 receiptPhotoUrl: null,
                 storeSplits,
                 paymentMethod,
+              });
               });
             }}
             onMarkNa={(skuId) => setUnavailableFor({ runId: activeRun.id, skuId })}
@@ -2038,6 +2086,7 @@ export function RunPage() {
         photoUploader={photoUploader}
         i18n={i18n}
         priceInThousands={priceInThousands}
+        onTogglePriceUnit={togglePriceInThousands}
         onCancel={() => setPurchaseDraft(null)}
         // Undo moved off the purchased row (where it sat one row-pitch
         // from a money-committing ✓) into this sheet. Same ConfirmSheet
@@ -2057,34 +2106,7 @@ export function RunPage() {
             : undefined
         }
         onChange={setPurchaseDraft}
-        onSubmit={(d) => {
-          const payload = {
-            runId: d.runId,
-            skuId: d.skuId,
-            supplierId: d.supplierId,
-            unitPrice: d.unitPrice,
-            actualQty: d.actualQty,
-            receiptPhotoUrl: d.receiptPhotoUrl,
-            storeSplits: [...d.splits.entries()]
-              .filter(([, q]) => Number(q) > 0)
-              .map(([storeId, qty]) => ({
-                storeId,
-                qty,
-                ...(d.perStorePricing
-                  ? {
-                      unitPrice: d.splitPrices.get(storeId) || d.unitPrice,
-                      paymentMethod: d.splitPaymentMethods.get(storeId) ?? d.paymentMethod,
-                    }
-                  : {}),
-              })),
-            paymentMethod: d.paymentMethod,
-          };
-          if (d.isEdit) {
-            revisePurchase.mutate({ ...payload, reason: d.reason });
-          } else {
-            purchaseItem.mutate(payload);
-          }
-        }}
+        onSubmit={submitPurchaseDraft}
         submitting={purchaseItem.isPending || revisePurchaseBusyForSheet}
       />
 
@@ -2135,9 +2157,15 @@ export function RunPage() {
         photoUploader={photoUploader}
         i18n={i18n}
         priceInThousands={priceInThousands}
+        onTogglePriceUnit={togglePriceInThousands}
         onCancel={() => setAddItemDraft(null)}
         onChange={setAddItemDraft}
-        onSubmit={(d) => {
+        onSubmit={function save(d: AddItemDraft, priceChecked?: boolean) {
+          // Expenses have no last price to compare with; products do.
+          if (!priceChecked && d.mode === 'sku' && d.skuId) {
+            withPriceCheck(d.skuId, [d.unitPrice], () => save(d, true));
+            return;
+          }
           const storeSplits = [...d.splits.entries()]
             .filter(([, q]) => Number(q) > 0)
             .map(([storeId, qty]) => ({ storeId, qty }));
@@ -2262,6 +2290,29 @@ export function RunPage() {
           purchaseItem.isPending ||
           revisePurchase.isPending
         }
+      />
+      <PriceCheckSheet
+        open={!!priceCheck}
+        title={i18n.t('run.price.check.title')}
+        body={
+          priceCheck
+            ? i18n.t('run.price.check.body', {
+                name: priceCheck.name,
+                last: formatMoney(priceCheck.last),
+                next: formatMoney(priceCheck.next),
+                currency,
+              })
+            : ''
+        }
+        confirmLabel={i18n.t('run.price.check.confirm')}
+        cancelLabel={i18n.t('run.price.check.fix')}
+        showCancelInSheet
+        onConfirm={() => {
+          const go = priceCheck?.run;
+          setPriceCheck(null);
+          go?.();
+        }}
+        onCancel={() => setPriceCheck(null)}
       />
 
       {/* Mark-unavailable sheet — primary action handled by MainButton

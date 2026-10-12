@@ -24,6 +24,7 @@ import { useUnitLabel } from '../../../hooks/useI18n';
 import type { useI18n } from '../../../hooks/useI18n';
 import { toDisplayPrice, fromDisplayPrice } from '../lib/priceMath';
 import { evenSplitQty } from '../lib/splitQty';
+import { PriceInFull, PriceUnitSwitch } from '../components/PriceUnit';
 
 /**
  * M3.41 + M3.44 (2026-05-21 / 2026-05-22): draft state for the "+ add"
@@ -108,6 +109,7 @@ interface PurchaseSheetProps {
   /** M3.36: when true, display + accept price in thousands. Draft
    *  always stores raw UZS — only the visible input value is divided. */
   priceInThousands: boolean;
+  onTogglePriceUnit: () => void;
   onCancel: () => void;
   onChange: (d: PurchaseDraft | null) => void;
   onSubmit: (d: PurchaseDraft) => void;
@@ -128,6 +130,7 @@ export function PurchaseSheet({
   photoUploader,
   i18n,
   priceInThousands,
+  onTogglePriceUnit,
   onCancel,
   onChange,
   onSubmit,
@@ -135,6 +138,8 @@ export function PurchaseSheet({
   onUndo,
 }: PurchaseSheetProps) {
   const toast = useToast();
+  const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
+  const unitLabel = useUnitLabel();
   const sku = draft ? skuById.get(draft.skuId) : null;
   const candidateStores = useMemo(() => [...storeById.values()], [storeById]);
 
@@ -271,6 +276,23 @@ export function PurchaseSheet({
                 }}
               />
             </label>
+          </div>
+          {/* Which unit the price is in, and what it comes to. See PriceUnit.tsx. */}
+          <div className="flex items-center justify-between gap-2 text-old-label text-[var(--c-fg-muted)]">
+            <PriceUnitSwitch
+              priceInThousands={priceInThousands}
+              onToggle={onTogglePriceUnit}
+              currency={currency}
+              ariaLabel={i18n.t('run.label.priceUnitAria')}
+            />
+            <span className="min-w-0 text-right">
+              <PriceInFull
+                typed={priceInput}
+                priceInThousands={priceInThousands}
+                currency={currency}
+                unit={sku?.unit ? unitLabel(sku.unit) : undefined}
+              />
+            </span>
           </div>
           {/* M1.14: payment method picker. Two-segment chip group so
               both options are always visible — radio behaviour without
@@ -491,6 +513,7 @@ export function AddItemSheet({
   photoUploader,
   i18n,
   priceInThousands,
+  onTogglePriceUnit,
   onCancel,
   onChange,
   onSubmit,
@@ -539,6 +562,7 @@ export function AddItemSheet({
   photoUploader: import('@compass/ui').PhotoUploader | undefined;
   i18n: ReturnType<typeof useI18n>;
   priceInThousands: boolean;
+  onTogglePriceUnit: () => void;
   onCancel: () => void;
   onChange: (d: AddItemDraft | null) => void;
   onSubmit: (d: AddItemDraft) => void;
@@ -1171,6 +1195,21 @@ export function AddItemSheet({
                     }}
                   />
                 </label>
+              </div>
+              <div className="flex items-center justify-between gap-2 text-old-label text-[var(--c-fg-muted)]">
+                <PriceUnitSwitch
+                  priceInThousands={priceInThousands}
+                  onToggle={onTogglePriceUnit}
+                  currency={currency}
+                  ariaLabel={i18n.t('run.label.priceUnitAria')}
+                />
+                <span className="min-w-0 text-right">
+                  <PriceInFull
+                    typed={priceInput}
+                    priceInThousands={priceInThousands}
+                    currency={currency}
+                  />
+                </span>
               </div>
               {totalHint !== null ? (
                 <div className="text-old-label text-[var(--c-fg-muted)]">
