@@ -108,7 +108,7 @@ export const uz = {
   'ops.audit.inputs': 'kirish maʼlumotlari',
   'ops.price.howTitle': "Buni qanday o'qish kerak",
   'ops.price.howBody':
-    "Tashkilot bo'ylab oxirgi 30 kunlik narx kuzatuvlari. Oxirgi ustun — 30 kunlik o'rtachaga nisbatan o'zgarish: yashil arzonroq, qizil sakrash. Ertangi kun uchun 7 kunlik o'rtachani oling; 30 kunlik haftalik tebranishlarni tekislaydi.",
+    "Tashkilot bo'ylab oxirgi 30 kunlik narx kuzatuvlari. Oxirgi ustun — 30 kunlik o'rtachaga nisbatan o'zgarish: yashil arzonroq, qizil sakrash. Buyurtma byudjeti oxirgi xarid narxi bo'yicha hisoblanadi; 7 va 30 kunlik o'rtachalar narx qanday o'zgarganini ko'rsatadi.",
   'ops.price.emptyTitle': "Hozircha narx ma'lumoti yo'q",
   'ops.price.emptyBody': "Xaridchi birinchi xaridni kiritgach, narxlar shu yerda paydo bo'ladi.",
   'ops.maint.superOnlyTitle': 'Faqat super-administrator',
