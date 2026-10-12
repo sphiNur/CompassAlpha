@@ -35,6 +35,8 @@ export type RunCommand =
        * to cash) so audit always knows which money path each item took.
        */
       paymentMethod: 'cash' | 'transfer';
+      /** The purchaser confirmed a price far from the last one paid. */
+      priceConfirmed?: boolean;
       actor: ActorCtx;
     }
   | { type: 'MarkUnavailable'; skuId: string; note: string; actor: ActorCtx }
@@ -72,6 +74,8 @@ export type RunCommand =
        *  realised they actually wired the supplier instead of paying
        *  cash). Required so the form always submits the current choice. */
       paymentMethod: 'cash' | 'transfer';
+      /** The purchaser confirmed a price far from the last one paid. */
+      priceConfirmed?: boolean;
       actor: ActorCtx;
     }
   | { type: 'UnmarkUnavailable'; skuId: string; reason: string; actor: ActorCtx }
@@ -115,6 +119,8 @@ export type RunCommand =
       storeSplits: StoreSplitCommand[];
       paymentMethod: 'cash' | 'transfer';
       reason: string;
+      /** The purchaser confirmed a price far from the last one paid. */
+      priceConfirmed?: boolean;
       actor: ActorCtx;
     }
   // ---- Off-catalog expenses (M3.44, 2026-05-22) ----------------------
@@ -300,6 +306,7 @@ export function decideRun(
           receiptPhotoUrl: command.receiptPhotoUrl,
           storeSplits: command.storeSplits,
           paymentMethod: command.paymentMethod,
+          ...(command.priceConfirmed ? { priceConfirmed: true as const } : {}),
         },
       });
       return events;
@@ -402,6 +409,7 @@ export function decideRun(
           paymentMethod: command.paymentMethod,
           reason,
           byMemberId: command.actor.memberId,
+          ...(command.priceConfirmed ? { priceConfirmed: true as const } : {}),
         },
       });
       return events;
@@ -932,6 +940,7 @@ export function decideRun(
             storeSplits: command.storeSplits,
             reason,
             paymentMethod: command.paymentMethod,
+            ...(command.priceConfirmed ? { priceConfirmed: true as const } : {}),
           },
         },
       ];

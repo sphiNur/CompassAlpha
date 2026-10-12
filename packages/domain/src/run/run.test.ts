@@ -131,6 +131,35 @@ describe('run.decide', () => {
     expect(evs.map((e) => e.type)).toEqual(['PurchaseStarted', 'ItemPurchased']);
   });
 
+  test('a confirmed unusual price is on the record, and only then', () => {
+    const state = planAndPurchase({
+      purchasedQty: '10',
+      storeSplits: [{ storeId: 'A', qty: '10' }],
+    });
+    const revise = (priceConfirmed?: boolean) =>
+      decideRun(
+        state,
+        {
+          type: 'RevisePurchase',
+          skuId: 'sku-1',
+          supplierId: 'sup-1',
+          unitPrice: '1200000',
+          actualQty: '10',
+          receiptPhotoUrl: null,
+          storeSplits: [{ storeId: 'A', qty: '10' }],
+          paymentMethod: 'cash',
+          reason: 'the price went up',
+          ...(priceConfirmed === undefined ? {} : { priceConfirmed }),
+          actor: purchaser(),
+        },
+        clock,
+      )[0]!.payload;
+    expect(revise(true)).toMatchObject({ priceConfirmed: true });
+    // Not confirmed is not written at all: events keep their old shape.
+    expect('priceConfirmed' in revise(false)).toBe(false);
+    expect('priceConfirmed' in revise()).toBe(false);
+  });
+
   test('PurchaseItem refuses an item that is already bought', () => {
     const state = planAndPurchase({
       purchasedQty: '10',

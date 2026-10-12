@@ -58,6 +58,12 @@ export type RunEvent =
          * since the original system had no concept of transfers.
          */
         paymentMethod?: 'cash' | 'transfer';
+        /**
+         * The price was 5× or more away from the last one paid and the
+         * purchaser, shown both, said it is right. Absent otherwise,
+         * and on every event from before 2026-10.
+         */
+        priceConfirmed?: true;
       };
     })
   | (BaseEvent & {
@@ -177,6 +183,12 @@ export type RunEvent =
         // realised they paid by transfer not cash). Optional for
         // legacy events — applyRun defaults to 'cash'.
         paymentMethod?: 'cash' | 'transfer';
+        /**
+         * The price was 5× or more away from the last one paid and the
+         * purchaser, shown both, said it is right. Absent otherwise,
+         * and on every event from before 2026-10.
+         */
+        priceConfirmed?: true;
       };
     })
   | (BaseEvent & {
@@ -284,6 +296,12 @@ export type RunEvent =
         /** Free-text — why this SKU wasn't on the original order. ≤500. */
         reason: string;
         byMemberId: string;
+        /**
+         * The price was 5× or more away from the last one paid and the
+         * purchaser, shown both, said it is right. Absent otherwise,
+         * and on every event from before 2026-10.
+         */
+        priceConfirmed?: true;
       };
     })
   // ---- Off-catalog expenses (M3.44, 2026-05-22) -----------------------

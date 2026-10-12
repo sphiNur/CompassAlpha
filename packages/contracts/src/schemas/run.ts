@@ -105,6 +105,13 @@ export const PurchaseItemInputSchema = z.object({
   receiptPhotoUrl: z.string().max(300_000).nullable(),
   storeSplits: z.array(StoreSplitSchema).min(1),
   paymentMethod: PaymentMethodSchema,
+  /**
+   * The price is far from the last one paid (5× or more) and the
+   * purchaser was shown both figures and said it is right. Recorded on
+   * the event; never a condition for accepting the purchase — a refusal
+   * would drop a purchase replayed from the offline queue.
+   */
+  priceConfirmed: z.boolean().optional(),
   expectedSeq: z.number().int().optional(),
 });
 
@@ -125,6 +132,8 @@ export const AddPurchaserItemInputSchema = z.object({
   storeSplits: z.array(StoreSplitSchema).min(1),
   paymentMethod: PaymentMethodSchema,
   reason: z.string().trim().min(1).max(500),
+  /** See PurchaseItemInputSchema. */
+  priceConfirmed: z.boolean().optional(),
   expectedSeq: z.number().int().optional(),
 });
 
