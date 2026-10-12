@@ -5,12 +5,12 @@
  * so in a tap. A line with something wrong is opened and marked first;
  * the button then reads "Confirm, 1 with a problem".
  *
- * Each line still gets its own recorded verdict. Pressing the button
- * writes "OK" for every line not yet looked at and then confirms the
- * store, so the record distinguishes "said to be fine" from "never
- * asked", which an implicit default did not.
+ * Each line still gets its own recorded verdict: confirming the store
+ * makes the server write "OK" for every line not yet looked at, in the
+ * same request. That is one round-trip for the whole delivery — it was
+ * one per line, in series, which is a long wait on a store's wifi.
  */
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { DataState, useToast } from '@compass/ui';
 import { Button, EmptyState, Field, List, Row, Section, Sheet, StatusChip } from '@compass/ui/kit';
 import type { StatusTone } from '@compass/ui/kit';
@@ -47,10 +47,6 @@ export function ConfirmPage() {
   const [openSku, setOpenSku] = useState<string | null>(null);
   const [choice, setChoice] = useState<DecisionStatus>('ok');
   const [note, setNote] = useState('');
-  // One summary toast for the whole delivery instead of one per line. A
-  // ref, because the mutation's onSuccess reads it outside a render.
-  const [receiving, setReceiving] = useState(false);
-  const bulkRef = useRef(false);
 
   const runsQuery = trpc.run.list.useQuery(undefined, { refetchOnMount: 'always' });
   const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: false });
@@ -121,18 +117,19 @@ export function ConfirmPage() {
     });
   };
 
+  // Two people writing to the same run at the same moment (a receiver
+  // here, the purchaser delivering next door) collide on the run's event
+  // sequence and one is refused. Nothing was written, so asking again is
+  // safe, and it is what the person would do by hand.
+  const retryStaleSeq = (failures: number, err: unknown): boolean =>
+    failures < 3 && (err as { message?: string } | null)?.message === 'run.errors.staleSeq';
   const confirmItem = trpc.run.confirmStoreItem.useMutation({
+    retry: retryStaleSeq,
+    retryDelay: 300,
     onSuccess: (_data, vars) => {
       void utils.run.get.invalidate();
       setOpenSku(null);
       setNote('');
-      // Bug fix: previously this said "Issue noted" for EVERY confirm,
-      // including the most common "ok" case — confusing. The toast now
-      // matches what actually happened.
-      //
-      // 2026-07-30: during the bulk "mark all OK" loop, stay silent — the
-      // loop toasts once when it finishes rather than N times.
-      if (bulkRef.current) return;
       if (vars.status === 'ok') {
         haptic('success');
         toast.success(i18n.t('confirm.toast.markedOk'));
@@ -155,6 +152,8 @@ export function ConfirmPage() {
     },
   });
   const confirmStore = trpc.run.confirmStore.useMutation({
+    retry: retryStaleSeq,
+    retryDelay: 300,
     onSuccess: () => {
       void utils.run.get.invalidate();
       haptic('success');
@@ -170,8 +169,15 @@ export function ConfirmPage() {
     },
   });
 
-  const myItems = (detailQuery.data?.splits ?? []).filter((sp) => sp.storeId === currentStoreId);
-  const undecided = myItems.filter((sp) => sp.confirmStatus == null);
+  // Only what has been handed over. A store's lines used to be listed
+  // as soon as the run was out for delivery, and the server refused every
+  // verdict on them until the purchaser had reached that store.
+  const storeSplits = (detailQuery.data?.splits ?? []).filter(
+    (sp) => sp.storeId === currentStoreId,
+  );
+  const myItems = storeSplits.filter((sp) => !!sp.deliveredAt);
+  /** Bought for this store, still on its way. */
+  const onTheWay = storeSplits.length > 0 && myItems.length === 0;
   const problems = myItems.filter((sp) => sp.confirmStatus != null && sp.confirmStatus !== 'ok');
   // Hidden only once the confirmation has landed: a button that hides on
   // tap but before the answer invites a second tap.
@@ -184,45 +190,20 @@ export function ConfirmPage() {
   const statusLabel = (status: DecisionStatus): string =>
     i18n.t(`confirm.status.${status}` as Parameters<typeof i18n.t>[0]) as string;
 
-  /**
-   * The main action: everything not yet looked at is recorded as fine,
-   * then the store is confirmed. One line at a time, because every event
-   * lands on the same run and concurrent appends would collide.
-   */
-  const receiveAll = async () => {
-    if (!activeRun || !currentStoreId || storeConfirmed || receiving) return;
-    setReceiving(true);
-    bulkRef.current = true;
-    try {
-      for (const it of undecided) {
-        writeOptimisticItemConfirm(it.runId, it.skuId, it.storeId, 'ok', null, null);
-        await confirmItem.mutateAsync({
-          runId: it.runId,
-          skuId: it.skuId,
-          storeId: it.storeId,
-          status: 'ok',
-          note: null,
-          photoUrl: null,
-        });
-      }
-      await confirmStore.mutateAsync({ runId: activeRun.id, storeId: currentStoreId });
-    } catch {
-      // Each mutation reports its own failure (or queues itself while
-      // offline). Stop here rather than pile requests on a dead network.
-    } finally {
-      bulkRef.current = false;
-      setReceiving(false);
-    }
+  /** The main action: the store is confirmed, and with it every line not yet looked at. */
+  const receiveAll = () => {
+    if (!activeRun || !currentStoreId || storeConfirmed || confirmStore.isPending) return;
+    confirmStore.mutate({ runId: activeRun.id, storeId: currentStoreId });
   };
 
   usePageMainButton(
     problems.length > 0
       ? (i18n.t('receive.confirmWithIssues', { n: problems.length }) as string)
       : (i18n.t('receive.allArrived') as string),
-    () => void receiveAll(),
+    receiveAll,
     {
       visible: !!activeRun && myItems.length > 0 && !storeConfirmed,
-      active: !receiving && !confirmStore.isPending && !confirmItem.isPending,
+      active: !confirmStore.isPending && !confirmItem.isPending,
     },
   );
 
@@ -286,7 +267,13 @@ export function ConfirmPage() {
       ) : (
         <DataState query={detailQuery}>
           {() =>
-            myItems.length === 0 ? (
+            onTheWay ? (
+              <EmptyState
+                title={i18n.t('confirm.empty.nothingToConfirm') as string}
+                hint={i18n.t('confirm.empty.nothingDesc') as string}
+                action={null}
+              />
+            ) : myItems.length === 0 ? (
               <EmptyState title={i18n.t('confirm.empty.noItems') as string} action={null} />
             ) : (
               <Section

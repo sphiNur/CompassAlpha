@@ -451,9 +451,18 @@ test('receive the delivery at the store', async () => {
 
   // One tap: the line nobody opened is recorded as fine, and the store
   // is confirmed.
+  // And one request, however many lines there are.
+  const sent: string[] = [];
+  const watch = (req: { url(): string; method(): string }): void => {
+    if (req.method() === 'POST' && req.url().includes('run.confirmStore')) sent.push(req.url());
+  };
+  page.on('request', watch);
   await expect(mainButton()).toHaveText('Everything arrived');
   await mainButton().click();
   await expect(mainButton()).toBeHidden();
+  page.off('request', watch);
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).not.toContain('confirmStoreItem');
   await expect(main()).toContainText('Received');
   await expect(rows.filter({ hasText: 'Apple' })).toContainText('OK');
   await evidence('receiving-checked');
