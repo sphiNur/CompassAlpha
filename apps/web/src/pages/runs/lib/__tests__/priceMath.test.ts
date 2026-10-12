@@ -5,7 +5,7 @@
  * validation and the operator's save silently bounces.
  */
 import { describe, it, expect } from 'bun:test';
-import { toDisplayPrice, fromDisplayPrice } from '../priceMath';
+import { toDisplayPrice, fromDisplayPrice, isUnusualPrice } from '../priceMath';
 
 describe('toDisplayPrice', () => {
   it('divides by 1000 in thousands mode', () => {
@@ -42,5 +42,27 @@ describe('fromDisplayPrice', () => {
 
   it('round-trips with toDisplayPrice', () => {
     expect(fromDisplayPrice(toDisplayPrice('147500', true), true)).toBe('147500');
+  });
+});
+
+describe('isUnusualPrice', () => {
+  it('catches a wrong unit and a slipped zero, in both directions', () => {
+    expect(isUnusualPrice('3000000', '30000')).toBe(true);
+    expect(isUnusualPrice('30', '30000')).toBe(true);
+    expect(isUnusualPrice('3000', '30000')).toBe(true);
+    expect(isUnusualPrice('150000', '30000')).toBe(true);
+  });
+
+  it('lets an ordinary market move through', () => {
+    expect(isUnusualPrice('30000', '30000')).toBe(false);
+    expect(isUnusualPrice('45000', '30000')).toBe(false);
+    expect(isUnusualPrice('8000', '30000')).toBe(false);
+  });
+
+  it('has nothing to say without a last price or a number', () => {
+    expect(isUnusualPrice('30000', null)).toBe(false);
+    expect(isUnusualPrice('30000', '')).toBe(false);
+    expect(isUnusualPrice('', '30000')).toBe(false);
+    expect(isUnusualPrice('abc', '30000')).toBe(false);
   });
 });

@@ -116,6 +116,8 @@ test('buy everything, one item in cash and one by transfer', async () => {
       .getByRole('button', { name: new RegExp(`^Set price ${sku}`) })
       .click();
     await item(sku).getByRole('spinbutton', { name: 'unit price' }).fill(price);
+    // The row writes the price out in full: "12" is twelve thousand.
+    await expect(item(sku).getByTestId('price-in-full')).toContainText(`${price},000 UZS`);
     if (method === 'Transfer') {
       await item(sku).getByRole('button', { name: 'Payment method: Cash' }).click();
     }
@@ -252,6 +254,42 @@ test('the next order shows what it should cost, and how it is usually paid', asy
     /~90,000 \/ kg · Transfer\s*~90,000/,
   );
   await evidence('approval-budget');
+});
+
+test('a price typed in the wrong unit is asked about before it is saved', async () => {
+  // The order from the last test is approved and bought. Apple cost
+  // 12,000 last time; typing the full "12000" while the unit is
+  // thousands would record twelve million.
+  await main().getByRole('button', { name: 'Claim' }).click();
+  await main().getByRole('button', { name: 'Approve', exact: true }).click();
+  await expect(main().getByRole('heading', { name: 'Inbox is empty' })).toBeVisible();
+  await tab('run').click();
+  await mainButton().click();
+  await expect(main()).toContainText('0 bought · 0 n/a · 2 left');
+
+  // The row carries last time's price; opening it is how a new one is typed.
+  await item('Apple').getByRole('button').first().click();
+  const price = item('Apple').getByRole('spinbutton', { name: 'unit price' });
+  await price.fill('12000');
+  await expect(item('Apple').getByTestId('price-in-full')).toContainText('12,000,000 UZS');
+  await item('Apple').getByRole('button', { name: 'Save purchase: Apple' }).click();
+  await expect(sheet()).toContainText('Is this price right?');
+  await expect(sheet()).toContainText('last time 12,000 UZS, this time 12,000,000 UZS');
+  await evidence('price-check');
+  await sheet().getByRole('button', { name: 'Change the price' }).click();
+  await expect(main()).toContainText('0 bought · 0 n/a · 2 left');
+
+  // The unit can be switched where the price is typed, and the figure
+  // keeps meaning the same money.
+  await item('Apple').getByTestId('price-unit-switch').click();
+  await expect(price).toHaveValue('12000000');
+  await item('Apple').getByTestId('price-unit-switch').click();
+  await expect(price).toHaveValue('12000');
+
+  await price.fill('13');
+  await item('Apple').getByRole('button', { name: 'Save purchase: Apple' }).click();
+  await expect(item('Apple').getByRole('button', { name: /^Bought Apple/ })).toBeVisible();
+  await expect(main()).toContainText('1 bought · 0 n/a · 1 left');
 });
 
 test('nothing went wrong along the way', () => {
