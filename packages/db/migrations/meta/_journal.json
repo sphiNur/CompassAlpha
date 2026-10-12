@@ -288,6 +288,13 @@
       "when": 1791640000000,
       "tag": "0040_role_binding_scope_check",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1791700000000,
+      "tag": "0041_price_history_superseded",
+      "breakpoints": true
     }
   ]
 }
