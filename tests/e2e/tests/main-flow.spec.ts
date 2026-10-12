@@ -146,6 +146,13 @@ test('deliver to the store', async () => {
   await expect(main()).toContainText(/Stores\s*0\/1 confirmed/);
   await evidence('run-delivering');
 
+  // Until the goods are handed over the store has nothing to check: the
+  // lines used to be listed here, and every answer on them was refused.
+  await tab('confirm').click();
+  await expect(main().getByRole('heading', { name: 'Nothing to confirm' })).toBeVisible();
+  await expect(mainButton()).toBeHidden();
+  await tab('run').click();
+
   await main()
     .getByRole('button', { name: /Central Kitchen.*Not delivered/ })
     .click();
@@ -160,6 +167,12 @@ test('receive the delivery at the store', async () => {
   await tab('confirm').click();
   await expect(main()).toContainText(/Checked\s*0\/2/);
   await evidence('receiving-unchecked');
+  // Signing for a whole delivery is one request, however many lines.
+  const sent: string[] = [];
+  const watch = (req: { url(): string; method(): string }): void => {
+    if (req.method() === 'POST' && req.url().includes('run.confirmStore')) sent.push(req.url());
+  };
+  page.on('request', watch);
   await main().getByRole('button', { name: 'All arrived fine' }).click();
   await expect(main()).toContainText(/Checked\s*2\/2/);
   await expect(item('Apple').getByRole('radio', { name: 'OK' })).toBeChecked();
@@ -167,6 +180,13 @@ test('receive the delivery at the store', async () => {
   await expect(mainButton()).toHaveText('Confirm store');
   await mainButton().click();
   await expect(mainButton()).toBeHidden();
+  page.off('request', watch);
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).not.toContain('confirmStoreItem');
+  // And each line is on record as received in order.
+  await page.reload();
+  await expect(item('Apple').getByRole('radio', { name: 'OK' })).toBeChecked();
+  await expect(item('Beef').getByRole('radio', { name: 'OK' })).toBeChecked();
 });
 
 test('finish the run and find it in history', async () => {

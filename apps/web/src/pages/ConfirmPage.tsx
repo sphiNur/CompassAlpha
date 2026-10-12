@@ -8,7 +8,7 @@
  * For M1 the photo capture stub is a text URL; full S3 upload + image picker
  * lands in M1 follow-ups (PhotoCapture component).
  */
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Button,
   Card,
@@ -59,13 +59,13 @@ export function ConfirmPage() {
   } | null>(null);
   const [issueNote, setIssueNote] = useState('');
   const [issuePhoto, setIssuePhoto] = useState<string | null>(null);
-  // 2026-07-30: bulk "mark everything OK" runs N confirmStoreItem calls in
-  // series. `markingAll` disables the trigger; `bulkRef` suppresses the
-  // per-item success toast so the receiver gets one summary toast instead of
-  // a stack of N. A ref (not state) because confirmItem.onSuccess reads it
-  // outside React's render cycle.
-  const [markingAll, setMarkingAll] = useState(false);
-  const bulkRef = useRef(false);
+  // 2026-10-11: "all arrived fine" no longer sends anything by itself.
+  // It used to fire one confirmStoreItem per line, in series — 30 lines
+  // was 30 round-trips on store wifi before the receiver could sign.
+  // The server already records an OK for every line without a verdict
+  // when the store is confirmed (domain ConfirmStore), so the answer
+  // only has to be held here until that one request goes.
+  const [restOk, setRestOk] = useState(false);
   const photoUploader = usePhotoUploader('issue');
 
   const runsQuery = trpc.run.list.useQuery();
@@ -135,7 +135,15 @@ export function ConfirmPage() {
     });
   };
 
+  // Two people writing to the same run at the same moment (a receiver
+  // here, the purchaser delivering next door) collide on the run's event
+  // sequence and one is refused with CONFLICT. Nothing was written, so
+  // asking again is safe, and it is what the person would do by hand.
+  const retryStaleSeq = (failures: number, err: unknown): boolean =>
+    failures < 3 && (err as { message?: string } | null)?.message === 'run.errors.staleSeq';
   const confirmItem = trpc.run.confirmStoreItem.useMutation({
+    retry: retryStaleSeq,
+    retryDelay: 300,
     onSuccess: (_data, vars) => {
       void utils.run.get.invalidate();
       setIssueOpen(null);
@@ -145,9 +153,6 @@ export function ConfirmPage() {
       // including the most common "ok" case — confusing. The toast now
       // matches what actually happened.
       //
-      // 2026-07-30: during the bulk "mark all OK" loop, stay silent — the
-      // loop toasts once when it finishes rather than N times.
-      if (bulkRef.current) return;
       if (vars.status === 'ok') {
         haptic('success');
         toast.success(i18n.t('confirm.toast.markedOk'));
@@ -171,6 +176,8 @@ export function ConfirmPage() {
     },
   });
   const confirmStore = trpc.run.confirmStore.useMutation({
+    retry: retryStaleSeq,
+    retryDelay: 300,
     onSuccess: () => {
       void utils.run.get.invalidate();
       haptic('success');
@@ -186,9 +193,16 @@ export function ConfirmPage() {
     },
   });
 
-  const myItems = (detailQuery.data?.splits ?? []).filter(
+  // 2026-10-11: only what has actually been handed over. The page used
+  // to list a store's lines as soon as the run was out for delivery, and
+  // every verdict on them was refused by the server ("store not
+  // delivered yet") until the purchaser reached that store.
+  const storeSplits = (detailQuery.data?.splits ?? []).filter(
     (sp) => sp.storeId === currentStoreId,
   );
+  const myItems = storeSplits.filter((sp) => !!sp.deliveredAt);
+  /** Bought for this store, still on its way. */
+  const onTheWay = storeSplits.length > 0 && myItems.length === 0;
   /**
    * 2026-07-30 (flow review) — the receiving check used to be a no-op.
    *
@@ -207,9 +221,9 @@ export function ConfirmPage() {
    * "全部标记正常" is an explicit, auditable bulk action instead of a
    * disguised default.
    */
-  const decidedCount = myItems.filter((sp) => sp.confirmStatus != null).length;
   const undecided = myItems.filter((sp) => sp.confirmStatus == null);
-  const allDecided = myItems.length > 0 && undecided.length === 0;
+  const decidedCount = restOk ? myItems.length : myItems.length - undecided.length;
+  const allDecided = myItems.length > 0 && (restOk || undecided.length === 0);
   /** True once the store-level confirmation has actually landed. The
    *  Confirm Store button must hide AFTER this, otherwise repeated taps
    *  used to fire repeated `confirmStore.mutate` calls — the user
@@ -217,44 +231,20 @@ export function ConfirmPage() {
   const storeConfirmed = myItems.length > 0 && myItems.every((s) => !!s.confirmedAt);
 
   /**
-   * Bulk "everything arrived correctly" path. Fires one confirmStoreItem
-   * per undecided line, SEQUENTIALLY — every event lands on the same run
-   * stream, so concurrent appends would race the `(streamId, seq)` UNIQUE
-   * constraint exactly like the order-adjust burst did before M3.x added
-   * per-store serialization. A receiving split is a handful of lines, so
-   * serial round-trips are cheap.
+   * "Everything else arrived correctly." Held on this screen and sent
+   * with the store confirmation, as one request. Lines given a problem
+   * verdict keep it; only the ones still without a verdict become OK.
    */
-  const markAllOk = async () => {
-    if (storeConfirmed || markingAll) return;
-    const targets = undecided;
-    if (targets.length === 0) return;
-    setMarkingAll(true);
-    bulkRef.current = true;
+  const markAllOk = () => {
+    if (storeConfirmed || undecided.length === 0) return;
     haptic('light');
-    let done = 0;
-    try {
-      for (const it of targets) {
-        writeOptimisticItemConfirm(it.runId, it.skuId, it.storeId, 'ok', null, null);
-        await confirmItem.mutateAsync({
-          runId: it.runId,
-          skuId: it.skuId,
-          storeId: it.storeId,
-          status: 'ok',
-          note: null,
-          photoUrl: null,
-        });
-        done += 1;
-      }
-      haptic('success');
-      toast.success(i18n.t('confirm.toast.allMarkedOk', { n: done }));
-    } catch {
-      // confirmItem's own onError already toasts / enqueues offline.
-      // Stop the loop so we don't pile failures on a dead network.
-    } finally {
-      bulkRef.current = false;
-      setMarkingAll(false);
-    }
+    setRestOk(true);
   };
+  // A different run or store is a different delivery to look at.
+  const activeRunId = activeRun?.id;
+  useEffect(() => {
+    setRestOk(false);
+  }, [activeRunId, currentStoreId]);
 
   // MainButton dispatch — when the issue sheet is open it takes over
   // and drives Save. Otherwise it acts as Confirm Store.
@@ -300,7 +290,7 @@ export function ConfirmPage() {
           ? i18n.t('confirm.confirmStore')
           : i18n.t('confirm.confirmStoreBlocked', { n: undecided.length });
     mainBtnVisible = !!activeRun && myItems.length > 0 && !storeConfirmed;
-    mainBtnActive = allDecided && !confirmStore.isPending && !markingAll;
+    mainBtnActive = allDecided && !confirmStore.isPending;
     mainBtnClick = () => {
       if (!activeRun || !currentStoreId) return;
       if (storeConfirmed || confirmStore.isPending) return;
@@ -368,7 +358,14 @@ export function ConfirmPage() {
           {() => (
             <>
               {!myItems.length ? (
-                <EmptyState title={i18n.t('confirm.empty.noItems')} />
+                onTheWay ? (
+                  <EmptyState
+                    title={i18n.t('confirm.empty.nothingToConfirm')}
+                    description={i18n.t('confirm.empty.nothingDesc')}
+                  />
+                ) : (
+                  <EmptyState title={i18n.t('confirm.empty.noItems')} />
+                )
               ) : (
                 <Card>
                   {/* UIUX-B1 (2026-07-06): CardHeader/CardTitle deleted —
@@ -401,8 +398,7 @@ export function ConfirmPage() {
                         <Button
                           size="sm"
                           variant="pearl"
-                          loading={markingAll}
-                          onClick={() => void markAllOk()}
+                          onClick={markAllOk}
                         >
                           {i18n.t('confirm.markAllOk')}
                         </Button>
@@ -419,7 +415,8 @@ export function ConfirmPage() {
                       // "everything is fine" — the exact claim the step exists
                       // to obtain from them. null now means null: no chip is
                       // selected until they choose one.
-                      const effectiveStatus = it.confirmStatus as DecisionStatus | null;
+                      const effectiveStatus =
+                        (it.confirmStatus as DecisionStatus | null) ?? (restOk ? 'ok' : null);
                       return (
                         <li
                           key={`${it.runId}:${it.skuId}`}
