@@ -309,6 +309,8 @@ test('buy everything, one item in cash and one by transfer', async () => {
     await sheet()
       .getByRole('textbox', { name: /^Price per/ })
       .fill(price);
+    // The price is written out in full: "12" is twelve thousand.
+    await expect(sheet().getByTestId('price-in-full')).toHaveText(new RegExp(`${price},000`));
     await sheet().getByRole('radio', { name: method }).click();
     await expect(sheet()).toContainText(new RegExp(`Total\\s*${total}`));
     if (method === 'Transfer') await evidence('run-price-sheet');
@@ -1000,6 +1002,44 @@ test('the next order shows what it should cost, and how it is usually paid', asy
   await evidence('approval-budget');
   // Left waiting: leaving the order gives it back for someone else.
   await leave();
+});
+
+test('a price typed in the wrong unit is asked about before it is saved', async () => {
+  // The order from the last test is approved and bought. Apple cost
+  // 12,000 last time; typing the full "12000" while the unit is
+  // thousands would record twelve million.
+  await tab('menu').click();
+  await page.getByTestId('do-approve').click();
+  await expect(mainButton()).toHaveText('Approve');
+  await mainButton().click();
+  await expect(main().getByRole('heading', { name: 'Inbox is empty' })).toBeVisible();
+  await leave();
+  await tab('purchasing').click();
+  await page.getByTestId('open-run').click();
+  await mainButton().click();
+  const apple = main().getByTestId('buy-row').filter({ hasText: 'Apple' });
+  await apple.getByRole('button').first().click();
+  await expect(sheet().getByRole('heading', { name: 'Apple' })).toBeVisible();
+
+  const price = sheet().getByRole('textbox', { name: /^Price per/ });
+  await price.fill('12000');
+  await expect(sheet().getByTestId('price-in-full')).toHaveText(/12,000,000/);
+  // Both units are on show, and switching keeps the money the same.
+  const units = sheet().getByRole('radiogroup', { name: 'Price unit' });
+  await expect(units.getByRole('radio', { name: '×1000 UZS' })).toBeChecked();
+  await units.getByRole('radio', { name: 'UZS', exact: true }).click();
+  await expect(price).toHaveValue('12000000');
+  await units.getByRole('radio', { name: '×1000 UZS' }).click();
+  await expect(price).toHaveValue('12000');
+  await evidence('run-price-unit');
+
+  await sheet().getByTestId('save-purchase').click();
+  const check = page.getByRole('dialog').filter({ hasText: 'Is this price right?' });
+  await expect(check).toContainText('last time 12,000 UZS, this time 12,000,000 UZS');
+  await evidence('run-price-check');
+  await check.getByRole('button', { name: 'Cancel' }).click();
+  await expect(check).toBeHidden();
+  await expect(main().getByTestId('bought-row')).toHaveCount(0);
 });
 
 test('an organisation that does not use the daily close is not shown it', async () => {

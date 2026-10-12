@@ -55,6 +55,7 @@ import { PurchaseEditor } from './runs/buying/PurchaseEditor';
 import { AddItemEditor } from './runs/buying/AddItemEditor';
 import type { AddItemDraft, PurchaseDraft } from './runs/buying/drafts';
 import { ConfirmSheet } from './runs/buying/ConfirmSheet';
+import { isUnusualPrice } from './runs/lib/priceMath';
 // Mid-level panels — extracted to runs/components (Phase 4 step 5).
 import { RunPreview } from './runs/buying/RunPreview';
 import { ActiveRunPanel } from './runs/buying/ActiveRun';
@@ -836,6 +837,35 @@ export function RunPage() {
    * outside Telegram) calls the same function. Keeping the math in one
    * place avoids the "two save buttons disagree" bug.
    */
+  /**
+   * A price 5× away from the last one paid is asked about once before
+   * it is saved. Not a block — the purchaser is the one who knows — but
+   * the two figures are put side by side, which is all it takes to see
+   * a wrong unit or a slipped zero. Every way of recording a purchase
+   * goes through here. `lastPriceBySku` leaves this run's own entries
+   * out, so correcting a mistake is compared with the last trip and not
+   * with the mistake.
+   */
+  const [priceCheck, setPriceCheck] = useState<{
+    name: string;
+    last: string;
+    next: string;
+    run: () => void;
+  } | null>(null);
+  const withPriceCheck = useCallback(
+    (skuId: string, prices: Array<string | undefined>, run: () => void) => {
+      const last = runDetailQuery.data?.lastPriceBySku?.[skuId];
+      const odd = prices.find((p) => !!p && isUnusualPrice(p, last));
+      if (!last || !odd) {
+        run();
+        return;
+      }
+      const sku = skuById.get(skuId);
+      setPriceCheck({ name: sku ? productName(sku) : '', last, next: odd, run });
+    },
+    [runDetailQuery.data?.lastPriceBySku, skuById, productName],
+  );
+
   const submitPurchaseDraft = useCallback(
     (d: PurchaseDraft) => {
       const payload = {
@@ -859,13 +889,22 @@ export function RunPage() {
           })),
         paymentMethod: d.paymentMethod,
       };
-      if (d.isEdit) {
-        revisePurchase.mutate({ ...payload, reason: d.reason });
-      } else {
-        purchaseItem.mutate(payload);
-      }
+      withPriceCheck(
+        d.skuId,
+        [
+          d.unitPrice,
+          ...payload.storeSplits.map((sp) => ('unitPrice' in sp ? sp.unitPrice : undefined)),
+        ],
+        () => {
+          if (d.isEdit) {
+            revisePurchase.mutate({ ...payload, reason: d.reason });
+          } else {
+            purchaseItem.mutate(payload);
+          }
+        },
+      );
     },
-    [purchaseItem, revisePurchase],
+    [purchaseItem, revisePurchase, withPriceCheck],
   );
 
   /**
@@ -1742,28 +1781,30 @@ export function RunPage() {
               // M1.14: paymentMethod comes from the in-row toggle
               // (defaults to 'cash'; user can flip to 'transfer' before
               // saving for the relatively rare transfer items).
-              setInlineSavingSkuId(skuId);
-              purchaseItem.mutate({
-                runId: activeRun.id,
-                skuId,
-                // 2026-07-26: was hard-coded null, so every inline save wrote
-                // price_history.supplier_id = NULL (runProjection.ts:678 takes
-                // it straight off the event payload). That made "what did I pay
-                // for this at THIS stall last time" permanently unanswerable —
-                // the only price history we had was per-SKU-global.
-                //
-                // Only the by-stall view supplies it (see PerVendorView's
-                // onSave wrapper). The aggregate / by-store / by-category views
-                // have no stall context, and a SKU's *preferred* supplier is a
-                // guess about where the purchase happened — recording a guess
-                // would poison the very history this is meant to build, so
-                // those paths still send null. A gap beats a lie.
-                supplierId: supplierId ?? null,
-                unitPrice,
-                actualQty,
-                receiptPhotoUrl: null,
-                storeSplits,
-                paymentMethod,
+              withPriceCheck(skuId, [unitPrice], () => {
+                setInlineSavingSkuId(skuId);
+                purchaseItem.mutate({
+                  runId: activeRun.id,
+                  skuId,
+                  // 2026-07-26: was hard-coded null, so every inline save wrote
+                  // price_history.supplier_id = NULL (runProjection.ts:678 takes
+                  // it straight off the event payload). That made "what did I pay
+                  // for this at THIS stall last time" permanently unanswerable —
+                  // the only price history we had was per-SKU-global.
+                  //
+                  // Only the by-stall view supplies it (see PerVendorView's
+                  // onSave wrapper). The aggregate / by-store / by-category views
+                  // have no stall context, and a SKU's *preferred* supplier is a
+                  // guess about where the purchase happened — recording a guess
+                  // would poison the very history this is meant to build, so
+                  // those paths still send null. A gap beats a lie.
+                  supplierId: supplierId ?? null,
+                  unitPrice,
+                  actualQty,
+                  receiptPhotoUrl: null,
+                  storeSplits,
+                  paymentMethod,
+                });
               });
             }}
             onMarkNa={(skuId) => setUnavailableFor({ runId: activeRun.id, skuId })}
@@ -1968,6 +2009,7 @@ export function RunPage() {
         productName={productName}
         i18n={i18n}
         priceInThousands={priceInThousands}
+        onTogglePriceUnit={togglePriceInThousands}
         onCancel={() => setPurchaseDraft(null)}
         // Undo moved off the purchased row (where it sat one row-pitch
         // from a money-committing ✓) into this sheet. Same ConfirmSheet
@@ -1987,34 +2029,7 @@ export function RunPage() {
             : undefined
         }
         onChange={setPurchaseDraft}
-        onSubmit={(d) => {
-          const payload = {
-            runId: d.runId,
-            skuId: d.skuId,
-            supplierId: d.supplierId,
-            unitPrice: d.unitPrice,
-            actualQty: d.actualQty,
-            receiptPhotoUrl: d.receiptPhotoUrl,
-            storeSplits: [...d.splits.entries()]
-              .filter(([, q]) => Number(q) > 0)
-              .map(([storeId, qty]) => ({
-                storeId,
-                qty,
-                ...(d.perStorePricing
-                  ? {
-                      unitPrice: d.splitPrices.get(storeId) || d.unitPrice,
-                      paymentMethod: d.splitPaymentMethods.get(storeId) ?? d.paymentMethod,
-                    }
-                  : {}),
-              })),
-            paymentMethod: d.paymentMethod,
-          };
-          if (d.isEdit) {
-            revisePurchase.mutate({ ...payload, reason: d.reason });
-          } else {
-            purchaseItem.mutate(payload);
-          }
-        }}
+        onSubmit={submitPurchaseDraft}
         submitting={purchaseItem.isPending || revisePurchaseBusyForSheet}
       />
 
@@ -2064,9 +2079,15 @@ export function RunPage() {
         productName={productName}
         i18n={i18n}
         priceInThousands={priceInThousands}
+        onTogglePriceUnit={togglePriceInThousands}
         onCancel={() => setAddItemDraft(null)}
         onChange={setAddItemDraft}
-        onSubmit={(d) => {
+        onSubmit={function save(d: AddItemDraft, priceChecked?: boolean) {
+          // Expenses have no last price to compare with; products do.
+          if (!priceChecked && d.mode === 'sku' && d.skuId) {
+            withPriceCheck(d.skuId, [d.unitPrice], () => save(d, true));
+            return;
+          }
           const storeSplits = [...d.splits.entries()]
             .filter(([, q]) => Number(q) > 0)
             .map(([storeId, qty]) => ({ storeId, qty }));
@@ -2191,6 +2212,34 @@ export function RunPage() {
           purchaseItem.isPending ||
           revisePurchase.isPending
         }
+      />
+      <ConfirmSheet
+        config={
+          priceCheck
+            ? {
+                title: i18n.t('run.price.check.title') as string,
+                body: i18n.t('run.price.check.body', {
+                  name: priceCheck.name,
+                  last: formatMoney(priceCheck.last),
+                  next: formatMoney(priceCheck.next),
+                  currency: session?.member.currency ?? 'UZS',
+                }) as string,
+                confirmLabel: i18n.t('run.price.check.confirm') as string,
+                danger: false,
+                requireReason: false,
+                isPending: false,
+                run: () => {
+                  const go = priceCheck.run;
+                  setPriceCheck(null);
+                  go();
+                },
+              }
+            : null
+        }
+        reason=""
+        onReasonChange={() => {}}
+        onCancel={() => setPriceCheck(null)}
+        i18n={i18n}
       />
 
       {/* Mark-unavailable sheet — primary action handled by MainButton

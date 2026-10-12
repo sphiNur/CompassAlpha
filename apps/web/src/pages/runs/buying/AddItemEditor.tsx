@@ -7,6 +7,7 @@ import { useUnitLabel } from '../../../hooks/useI18n';
 import { formatMoney, formatQty } from '../../../lib/format';
 import { matchesNameLike, normalizeQuery } from '../../../lib/searchMatch';
 import { fromDisplayPrice, toDisplayPrice } from '../lib/priceMath';
+import { PriceUnit } from './PriceUnit';
 import { evenSplitQty } from '../lib/splitQty';
 import type { AddItemDraft } from './drafts';
 
@@ -40,6 +41,7 @@ export interface AddItemEditorProps {
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
   i18n: ReturnType<typeof useI18n>;
   priceInThousands: boolean;
+  onTogglePriceUnit: () => void;
   onCancel: () => void;
   onChange: (draft: AddItemDraft | null) => void;
   onSubmit: (draft: AddItemDraft) => void;
@@ -62,6 +64,7 @@ export function AddItemEditor({
   productName,
   i18n,
   priceInThousands,
+  onTogglePriceUnit,
   onCancel,
   onChange,
   onSubmit,
@@ -474,6 +477,14 @@ export function AddItemEditor({
               }}
               onFocus={(e) => e.currentTarget.select()}
               suffix={priceInThousands ? `×1000 ${currency}` : currency}
+            />
+            <PriceUnit
+              typed={price}
+              priceInThousands={priceInThousands}
+              onTogglePriceUnit={onTogglePriceUnit}
+              currency={currency}
+              unit={unit || undefined}
+              i18n={i18n}
             />
             <div className="flex items-baseline justify-between gap-lg">
               <span className="text-body text-secondary">{i18n.t('buy.total')}</span>

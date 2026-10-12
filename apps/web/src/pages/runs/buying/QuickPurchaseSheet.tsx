@@ -4,6 +4,7 @@ import type { PaymentMethod } from '@compass/ui/kit';
 import type { useI18n } from '../../../hooks/useI18n';
 import { formatMoney, formatQty, toQtyInput } from '../../../lib/format';
 import { fromDisplayPrice, toDisplayPrice } from '../lib/priceMath';
+import { PriceUnit } from './PriceUnit';
 
 export interface QuickPurchase {
   qty: string;
@@ -152,20 +153,16 @@ export function QuickPurchaseSheet({
           onKeyDown={(e) => {
             if (e.key === 'Enter') commit();
           }}
-          suffix={
-            // Typing "12" for 12,000 is the habit at the market; the
-            // suffix says which unit is in force and switches it.
-            <button
-              type="button"
-              aria-label={i18n.t('run.label.priceUnitAria') as string}
-              onClick={onTogglePriceUnit}
-              className="flex h-tap items-center text-body text-forest underline decoration-dotted underline-offset-4 outline-none"
-            >
-              {priceInThousands ? `×1000 ${currency}` : currency}
-            </button>
-          }
+          suffix={priceInThousands ? `×1000 ${currency}` : currency}
         />
-        {/* The check on a slipped thousand: "I typed 30, that is 30,000". */}
+        <PriceUnit
+          typed={price}
+          priceInThousands={priceInThousands}
+          onTogglePriceUnit={onTogglePriceUnit}
+          currency={currency}
+          unit={unit}
+          i18n={i18n}
+        />
         <div className="flex items-baseline justify-between gap-lg">
           <span className="text-body text-secondary">{i18n.t('buy.total')}</span>
           <Money amount={total === null ? '—' : formatMoney(total)} currency={currency} size="lg" />

@@ -7,6 +7,7 @@ import { useUnitLabel } from '../../../hooks/useI18n';
 import { formatMoney, formatQty } from '../../../lib/format';
 import { fromDisplayPrice, toDisplayPrice } from '../lib/priceMath';
 import type { PurchaseDraft } from './drafts';
+import { PriceUnit } from './PriceUnit';
 
 export interface PurchaseEditorProps {
   draft: PurchaseDraft | null;
@@ -17,6 +18,7 @@ export interface PurchaseEditorProps {
   i18n: ReturnType<typeof useI18n>;
   /** Prices are typed in thousands ("12" for 12,000) when this is on. */
   priceInThousands: boolean;
+  onTogglePriceUnit: () => void;
   onCancel: () => void;
   onChange: (draft: PurchaseDraft | null) => void;
   onSubmit: (draft: PurchaseDraft) => void;
@@ -39,6 +41,7 @@ export function PurchaseEditor({
   productName,
   i18n,
   priceInThousands,
+  onTogglePriceUnit,
   onCancel,
   onChange,
   onSubmit,
@@ -183,6 +186,14 @@ export function PurchaseEditor({
             suffix={priceSuffix}
           />
         )}
+        <PriceUnit
+          typed={draft.perStorePricing ? '' : price}
+          priceInThousands={priceInThousands}
+          onTogglePriceUnit={onTogglePriceUnit}
+          currency={currency}
+          unit={unit}
+          i18n={i18n}
+        />
         <div className="flex items-baseline justify-between gap-lg">
           <span className="text-body text-secondary">{i18n.t('buy.total')}</span>
           <Money amount={total > 0 ? formatMoney(total) : '—'} currency={currency} size="lg" />
