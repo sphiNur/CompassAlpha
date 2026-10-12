@@ -11,34 +11,9 @@
 
 ALTER TABLE inventory.price_history
   ADD COLUMN IF NOT EXISTS superseded_at timestamptz;
---> statement-breakpoint
 
--- Backfill. One event writes all its rows with the same observed_at, so
--- for a given run and product only the latest observed_at is current;
--- everything before it was replaced by a correction (or by the old
--- habit of recording the same purchase twice). Grouped by run and
--- product, not by store: a correction rewrites every store's share, and
--- some first entries carry no store at all.
---
--- To undo: UPDATE inventory.price_history SET superseded_at = NULL
---          WHERE superseded_at IS NOT NULL;
-UPDATE inventory.price_history ph
-SET superseded_at = now()
-WHERE ph.run_id IS NOT NULL
-  AND ph.superseded_at IS NULL
-  AND (
-    ph.observed_at < (
-      SELECT max(later.observed_at)
-      FROM inventory.price_history later
-      WHERE later.run_id = ph.run_id
-        AND later.sku_id = ph.sku_id
-    )
-    -- The purchase was taken back and the line is not bought any more.
-    OR NOT EXISTS (
-      SELECT 1
-      FROM read_model.run_items_v ri
-      WHERE ri.run_id = ph.run_id
-        AND ri.sku_id = ph.sku_id
-        AND ri.status = 'purchased'
-    )
-  );
+-- The rows that were already wrong when this column arrived are marked
+-- by 0042. The backfill first sat here and marked nothing: migrations
+-- connect as the application role, price_history is under FORCE ROW
+-- LEVEL SECURITY, and without an org or system context an UPDATE sees
+-- no rows at all — while the migration is still recorded as applied.
