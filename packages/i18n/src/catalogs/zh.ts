@@ -376,7 +376,7 @@ export const zh = {
   'ops.audit.inputs': '入参',
   'ops.price.howTitle': '这张表怎么看',
   'ops.price.howBody':
-    '全组织近 30 天的价格观测。最后一列是相对 30 日均价的变化——绿色更便宜，红色是涨价。做次日预算用 7 日均价；30 日均价能抹平每周波动。',
+    '全组织近 30 天的价格观测。最后一列是相对 30 日均价的变化——绿色更便宜，红色是涨价。订单预算按上次买入价计算；7 日和 30 日均价用来看价格的走势。',
   'ops.price.emptyTitle': '还没有价格数据',
   'ops.price.emptyBody': '采购员录完第一张采购单后，价格就会出现在这里。',
   'ops.maint.superOnlyTitle': '仅超级管理员',
