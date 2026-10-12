@@ -39,6 +39,7 @@ import {
 import { appendEvents } from '../services/eventStore';
 import { projectOrder } from '../services/orderProjection';
 import { projectRun } from '../services/runProjection';
+import { loadSkuPriceStats } from '../services/priceStats';
 
 (function loadEnv() {
   let dir = dirname(fileURLToPath(import.meta.url));
@@ -295,6 +296,59 @@ describe('full lifecycle (PG)', () => {
     });
     expect(phRows.length).toBe(1);
     expect(phRows[0]!.unitPrice).toBe('15000.00');
+
+    // A price typed in the wrong unit and then corrected must not stay
+    // in what the product is taken to cost. The mistake is kept as a
+    // row, marked; only the correction counts.
+    const run = async (command: Parameters<typeof decideRun>[1]): Promise<void> => {
+      const events = decideRun(rState, command);
+      for (const e of events) rState = applyRun(rState, e);
+      await appendEvents(db, {
+        streamType: 'run',
+        streamId: runId,
+        orgId: org.id,
+        events: events.map((e) => ({ ...e })),
+      });
+      await projectRun(db, org.id, events);
+    };
+    const correction = {
+      type: 'RevisePurchase' as const,
+      skuId: sku.id,
+      supplierId: null,
+      actualQty: '5',
+      receiptPhotoUrl: null,
+      storeSplits: [{ storeId: store.id, qty: '5' }],
+      paymentMethod: 'cash' as const,
+      actor: purchaserActor,
+    };
+    await run({ ...correction, unitPrice: '15000000', reason: 'typed in the wrong unit' });
+    await run({ ...correction, unitPrice: '15000', reason: 'and back' });
+    const afterFix = await db.query.priceHistory.findMany({
+      where: (ph, { eq: eq2 }) => eq2(ph.skuId, sku.id),
+    });
+    expect(afterFix.length).toBe(3);
+    const current = afterFix.filter((row) => row.supersededAt === null);
+    expect(current.map((row) => row.unitPrice)).toEqual(['15000.00']);
+    const stats = await loadSkuPriceStats(db, org.id, [sku.id]);
+    expect(stats.get(sku.id)?.lastPrice).toBe(15000);
+    expect(stats.get(sku.id)?.avg7d).toBe(15000);
+    expect(stats.get(sku.id)?.observations30d).toBe(1);
+
+    // Taking the purchase back leaves no price at all; buying again does.
+    await run({ type: 'UndoPurchase', skuId: sku.id, reason: 'wrong stall', actor: purchaserActor });
+    expect((await loadSkuPriceStats(db, org.id, [sku.id])).get(sku.id)).toBeUndefined();
+    await run({
+      type: 'PurchaseItem',
+      skuId: sku.id,
+      supplierId: null,
+      unitPrice: '15000',
+      actualQty: '5',
+      receiptPhotoUrl: null,
+      storeSplits: [{ storeId: store.id, qty: '5' }],
+      paymentMethod: 'cash',
+      actor: purchaserActor,
+    });
+    expect((await loadSkuPriceStats(db, org.id, [sku.id])).get(sku.id)?.lastPrice).toBe(15000);
 
     const startDeliver = decideRun(rState, { type: 'StartDelivery', actor: purchaserActor });
     for (const e of startDeliver) rState = applyRun(rState, e);

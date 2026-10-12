@@ -431,6 +431,7 @@ export const runRouter = router({
               ph.unit_price::text AS unit_price
             FROM inventory.price_history ph
             WHERE ph.org_id = ${ctx.session!.orgId}
+              AND ph.superseded_at IS NULL
               AND ph.sku_id IN (${sql.raw(skuIds.map((id) => `'${id}'`).join(','))})
             ORDER BY ph.sku_id, ph.observed_at DESC, ph.created_at DESC
           `);
@@ -2272,6 +2273,7 @@ export const runRouter = router({
                        observed_at
                 FROM inventory.price_history
                 WHERE org_id = ${ctx.session!.orgId}
+                  AND superseded_at IS NULL
                   ${priceStoreScope}
                   AND sku_id IN (${sql.raw(skuIds.map((id) => `'${id}'`).join(','))})
                   -- 2026-07-27: exclude THIS run's own observations.
