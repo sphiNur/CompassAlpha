@@ -69,6 +69,8 @@ declare global {
   interface TelegramWebAppGlobal {
     initData: string;
     initDataUnsafe: {
+      /** Payload from https://t.me/<bot>?startapp=<payload>. */
+      start_param?: string;
       user?: {
         id: number;
         first_name: string;

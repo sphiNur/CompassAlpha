@@ -7,6 +7,22 @@ export const TelegramLoginInputSchema = z.object({
   locale: LocaleSchema.optional(),
 });
 
+/**
+ * Opening an invite link is a sign-in: Telegram proves who is asking,
+ * and the token proves which organisation invited them. The token is
+ * the only client-supplied grant selector; role and stores come from
+ * the server-side invite snapshot.
+ */
+export const AcceptInviteInputSchema = z.object({
+  initData: z.string().min(1),
+  token: z
+    .string()
+    .min(20)
+    .max(128)
+    .regex(/^[A-Za-z0-9_-]+$/, 'invite token has an invalid shape'),
+  locale: LocaleSchema.optional(),
+});
+
 export const NonTelegramLoginInputSchema = z.object({
   tgUserId: z.string().regex(/^\d{4,20}$/),
   accessCode: z.string().min(1).max(256),

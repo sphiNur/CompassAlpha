@@ -62,6 +62,22 @@ function initialDevBrowserTgUserId(): string {
 }
 
 /**
+ * The invite token arrives in one of two places depending on how the
+ * recipient got here:
+ *   - ?startapp=<token> on the bot link → initDataUnsafe.start_param
+ *   - the bot's web_app fallback button → ?invite=<token> on our URL
+ * Both are only useful inside Telegram, where a signed initData blob
+ * is also present.
+ */
+function inviteTokenFromLaunch(): string | null {
+  const startParam = getTg()?.initDataUnsafe?.start_param?.trim();
+  if (startParam?.startsWith('inv_')) return startParam;
+  if (typeof window === 'undefined') return null;
+  const fromUrl = new URLSearchParams(window.location.search).get('invite')?.trim();
+  return fromUrl || null;
+}
+
+/**
  * AuthGate strategy (M1 hardened):
  *
  *  - On first mount, if we have no session AND haven't tried logging in yet,
@@ -88,16 +104,22 @@ export function AuthGate({ children }: AuthGateProps) {
   const [browserAccessCode, setBrowserAccessCode] = useState('');
   const [loginSession, setLoginSession] = useState<AuthSession | null>(null);
   const [authWaitTimedOut, setAuthWaitTimedOut] = useState(false);
+  const [inviteToken] = useState(inviteTokenFromLaunch);
   const activeSession = session ?? loginSession;
   const hasTelegramInitData = Boolean(getTg()?.initData);
   const forceDevPersonaPicker = wantsDevPersonaPicker();
   /** True once we've issued a telegramLogin call this mount cycle. */
   const loginAttempted = useRef(false);
+  /** True once we've tried to accept the launch invite this mount cycle. */
+  const inviteAttempted = useRef(false);
   /** True once `auth.me` failed with UNAUTHORIZED — don't auto-login again. */
   const meUnauthorized = useRef(false);
 
   const me = trpc.auth.me.useQuery(undefined, {
-    enabled: authHydrated && !!accessToken,
+    // An invite launch may deliberately switch organisations. The
+    // existing access token belongs to the old session, so `me` must
+    // not race the acceptance and overwrite the new one.
+    enabled: authHydrated && !!accessToken && !inviteToken,
     retry: false,
   });
   const loginModes = trpc.auth.loginModes.useQuery(undefined, {
@@ -107,9 +129,9 @@ export function AuthGate({ children }: AuthGateProps) {
   });
   const shouldShowDevPersonas = Boolean(
     !activeSession &&
-      !hasTelegramInitData &&
-      loginModes.data?.devPersona.available &&
-      (forceDevPersonaPicker || authWaitTimedOut || error),
+    !hasTelegramInitData &&
+    loginModes.data?.devPersona.available &&
+    (forceDevPersonaPicker || authWaitTimedOut || error),
   );
   const devPersonas = trpc.auth.devPersonas.useQuery(undefined, {
     enabled: authHydrated && shouldShowDevPersonas,
@@ -193,6 +215,36 @@ export function AuthGate({ children }: AuthGateProps) {
       setError(err.message);
     },
   });
+  const acceptInvite = trpc.auth.acceptInvite.useMutation({
+    onSuccess(data) {
+      setSession({
+        accessToken: data.tokens.accessToken,
+        refreshToken: data.tokens.refreshToken,
+        session: data.session,
+      });
+      setLoginSession(data.session);
+      meUnauthorized.current = false;
+      setAuthWaitTimedOut(false);
+      setError(null);
+      // The query-string form is visible in the address bar. Once the
+      // invite has been accepted it has no job left.
+      try {
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('invite')) {
+          url.searchParams.delete('invite');
+          window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+        }
+      } catch {
+        /* the session is valid even if the URL cannot be rewritten */
+      }
+    },
+    onError(err) {
+      const message = err.message.startsWith('auth.errors.')
+        ? i18n.t(err.message as Parameters<typeof i18n.t>[0])
+        : err.message;
+      setError(message);
+    },
+  });
   const devBypassLogin = trpc.auth.devBypassLogin.useMutation({
     onSuccess(data) {
       setSession({
@@ -249,9 +301,7 @@ export function AuthGate({ children }: AuthGateProps) {
     },
   });
 
-  const autoLoginData =
-    getTg()?.initData ??
-    (shouldUseDevBypassLogin() ? 'dev-bypass' : null);
+  const autoLoginData = getTg()?.initData ?? (shouldUseDevBypassLogin() ? 'dev-bypass' : null);
 
   if (import.meta.env.DEV && typeof window !== 'undefined') {
     (
@@ -280,6 +330,7 @@ export function AuthGate({ children }: AuthGateProps) {
     !error &&
     ((login.isPending && !activeSession) ||
       devBypassLogin.isPending ||
+      acceptInvite.isPending ||
       nonTelegramLogin.isPending ||
       devPersonaLogin.isPending ||
       (me.isLoading && !!accessToken) ||
@@ -301,30 +352,47 @@ export function AuthGate({ children }: AuthGateProps) {
   // can't restart the cycle.
   useEffect(() => {
     if (!authHydrated) return;
+    const initData = getTg()?.initData;
+    if (inviteToken && initData && !inviteAttempted.current) {
+      inviteAttempted.current = true;
+      loginAttempted.current = true;
+      acceptInvite.mutate({ initData, token: inviteToken, locale: i18n.locale });
+      return;
+    }
     if (activeSession) return;
     if (loginAttempted.current) return;
     if (meUnauthorized.current && !getTg()?.initData) return;
     if (accessToken) return; // there's a token, let auth.me decide its fate first
     const tg = getTg();
-    const initData = tg?.initData;
+    const autoInitData = tg?.initData;
     if (shouldUseDevBypassLogin()) {
       loginAttempted.current = true;
       devBypassLogin.mutate();
       return;
     }
-    if (!initData) return;
+    if (!autoInitData) return;
     loginAttempted.current = true;
-    login.mutate({ initData });
-  }, [authHydrated, activeSession, accessToken, login, devBypassLogin]);
+    login.mutate({ initData: autoInitData });
+  }, [
+    authHydrated,
+    activeSession,
+    accessToken,
+    acceptInvite,
+    devBypassLogin,
+    i18n.locale,
+    inviteToken,
+    login,
+  ]);
 
   if (
     !authHydrated ||
-    !authWaitTimedOut &&
-    ((login.isPending && !activeSession) ||
-    (devBypassLogin.isPending && !activeSession) ||
-    (devPersonaLogin.isPending && !activeSession) ||
-    (me.isLoading && !!accessToken && !activeSession) ||
-    (!activeSession && !!autoLoginData && !error && !login.isError && !devBypassLogin.isError))
+    (!authWaitTimedOut &&
+      ((login.isPending && !activeSession) ||
+        acceptInvite.isPending ||
+        (devBypassLogin.isPending && !activeSession) ||
+        (devPersonaLogin.isPending && !activeSession) ||
+        (me.isLoading && !!accessToken && !activeSession) ||
+        (!activeSession && !!autoLoginData && !error && !login.isError && !devBypassLogin.isError)))
   ) {
     return (
       <div className="flex h-full items-center justify-center text-[var(--c-fg-muted)]">
@@ -334,9 +402,12 @@ export function AuthGate({ children }: AuthGateProps) {
   }
 
   if (!activeSession) {
-    const showBrowserLogin = Boolean(loginModes.data?.nonTelegram.available && !hasTelegramInitData);
+    const showBrowserLogin = Boolean(
+      loginModes.data?.nonTelegram.available && !hasTelegramInitData,
+    );
     const showDevLogin = shouldShowDevPersonas;
     const showSignInButton = !showBrowserLogin && !showDevLogin;
+    const canRetryInvite = Boolean(inviteToken && hasTelegramInitData && error);
     return (
       <div className="flex h-full flex-col items-center gap-4 overflow-y-auto px-6 py-8 text-center">
         <h1 className="text-old-display font-semibold">Compass</h1>
@@ -367,6 +438,19 @@ export function AuthGate({ children }: AuthGateProps) {
               devBypassLogin.mutate();
             }}
           />
+        ) : null}
+        {canRetryInvite ? (
+          <Button
+            onClick={() => {
+              const initData = getTg()?.initData;
+              if (!initData || !inviteToken) return;
+              setError(null);
+              inviteAttempted.current = false;
+              acceptInvite.mutate({ initData, token: inviteToken, locale: i18n.locale });
+            }}
+          >
+            {i18n.t('auth.retryInvite')}
+          </Button>
         ) : null}
         {showSignInButton ? (
           <Button
@@ -555,12 +639,7 @@ function DevPersonaPicker({
             只在本地 development 环境显示，用真实成员权限进入前端。
           </p>
         </div>
-        <Button
-          size="sm"
-          variant="secondary"
-          loading={pending}
-          onClick={onAutoLogin}
-        >
+        <Button size="sm" variant="secondary" loading={pending} onClick={onAutoLogin}>
           自动
         </Button>
       </div>
@@ -581,8 +660,7 @@ function DevPersonaPicker({
           {personas.map((persona) => {
             const stores =
               persona.storeNames.length > 0 ? persona.storeNames.join(', ') : '未分配店铺';
-            const roles =
-              persona.roleSlugs.length > 0 ? persona.roleSlugs.join(', ') : '无角色';
+            const roles = persona.roleSlugs.length > 0 ? persona.roleSlugs.join(', ') : '无角色';
             return (
               <button
                 key={persona.memberId}
@@ -691,10 +769,7 @@ function NoStoreScreen() {
   const i18n = useI18n();
   return (
     <div className="flex h-full items-center justify-center px-6">
-      <EmptyState
-        title={i18n.t('auth.noStore.title')}
-        description={i18n.t('auth.noStore.body')}
-      />
+      <EmptyState title={i18n.t('auth.noStore.title')} description={i18n.t('auth.noStore.body')} />
     </div>
   );
 }

@@ -9,6 +9,7 @@
  * Out of scope (defer): policy_rules editing, audit log search, export.
  */
 import { TRPCError } from '@trpc/server';
+import { createHash, randomBytes } from 'node:crypto';
 import { and, desc, eq, gt, gte, inArray, isNull, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { schema as s } from '@compass/db';
@@ -682,6 +683,12 @@ const InviteMemberByTgIdInputSchema = z.object({
   storeIds: z.array(UuidSchema).default([]),
 });
 
+const CreateMemberInviteInputSchema = z.object({
+  roleSlug: z.string().min(1).max(64).nullish(),
+  storeIds: z.array(UuidSchema).max(50).default([]),
+  expiresInDays: z.number().int().min(1).max(30).default(7),
+});
+
 const MemberSetDisplayNameInputSchema = z.object({
   memberId: UuidSchema,
   displayName: z.string().min(1).max(200),
@@ -1063,6 +1070,185 @@ export const adminRouter = router({
         await auditAdmin(tx, ctx, 'admin.member.setStatus', 'member', input.memberId, input);
         broadcastPeople(orgId);
         return { ok: true };
+      });
+    }),
+
+  /**
+   * Create a shareable invitation link.
+   *
+   * Unlike memberInviteByTgId, this does not need the person's
+   * Telegram id up front. The link carries a one-time token; the
+   * role/store grants are validated here and snapshotted on the
+   * invite so acceptance cannot widen them later.
+   */
+  memberInviteCreate: authedProcedure
+    .input(CreateMemberInviteInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      requireAdmin(ctx.session!.permissions);
+      return ctx.withOrg(async (tx) => {
+        const orgId = ctx.session!.orgId;
+        const storeIds = [...new Set(input.storeIds)];
+        const isAdminInvite = input.roleSlug === 'admin' || input.roleSlug === 'super_admin';
+        if (!isAdminInvite && storeIds.length === 0) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'admin.errors.inviteNeedsStore',
+          });
+        }
+
+        const actorAdminStores = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId);
+        const allowedStores = new Set(actorAdminStores);
+        for (const storeId of storeIds) {
+          if (!allowedStores.has(storeId)) {
+            throw new TRPCError({
+              code: 'FORBIDDEN',
+              message: 'admin.errors.notAdminOfStore',
+            });
+          }
+        }
+        if (isAdminInvite) {
+          const allOrgStores = await tx
+            .select({ id: s.stores.id })
+            .from(s.stores)
+            .where(and(eq(s.stores.orgId, orgId), eq(s.stores.isActive, true)));
+          if (!allOrgStores.every((st) => allowedStores.has(st.id))) {
+            throw new TRPCError({
+              code: 'FORBIDDEN',
+              message: 'admin.errors.cannotInviteOrgAdminAsStoreAdmin',
+            });
+          }
+        }
+
+        const validStores =
+          storeIds.length > 0
+            ? await tx
+                .select({
+                  id: s.stores.id,
+                  defaultRoleId: s.stores.defaultRoleId,
+                })
+                .from(s.stores)
+                .where(
+                  and(
+                    eq(s.stores.orgId, orgId),
+                    eq(s.stores.isActive, true),
+                    inArray(s.stores.id, storeIds),
+                  ),
+                )
+            : [];
+        if (validStores.length !== storeIds.length) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'admin.errors.storeNotFound',
+          });
+        }
+
+        const grants: Array<{
+          roleId: string;
+          rank: number;
+          scopeType: 'global' | 'store';
+          scopeId: string | null;
+        }> = [];
+        if (input.roleSlug) {
+          const role = await tx.query.roles.findFirst({
+            where: (r, { eq: eq2, and: and2 }) =>
+              and2(eq2(r.orgId, orgId), eq2(r.slug, input.roleSlug!)),
+          });
+          if (!role) {
+            throw new TRPCError({
+              code: 'NOT_FOUND',
+              message: 'admin.errors.roleNotFound',
+            });
+          }
+          if (role.rank >= ADMIN_RANK) {
+            const actorRank = await getActorMaxRank(tx, orgId, ctx.session!.userId);
+            if (role.rank >= actorRank) {
+              throw new TRPCError({
+                code: 'FORBIDDEN',
+                message: 'auth.errors.cannotGrantEqualOrHigher',
+              });
+            }
+            grants.push({
+              roleId: role.id,
+              rank: role.rank,
+              scopeType: 'global',
+              scopeId: null,
+            });
+          } else {
+            for (const storeId of storeIds) {
+              const actorRankInStore = await getActorMaxRankInStore(
+                tx,
+                orgId,
+                ctx.session!.userId,
+                storeId,
+              );
+              if (role.rank >= actorRankInStore) {
+                throw new TRPCError({
+                  code: 'FORBIDDEN',
+                  message: 'auth.errors.cannotGrantEqualOrHigher',
+                });
+              }
+              grants.push({
+                roleId: role.id,
+                rank: role.rank,
+                scopeType: 'store',
+                scopeId: storeId,
+              });
+            }
+          }
+        } else {
+          // Same fall-through as memberInviteByTgId: a store's default
+          // role applies only when the operator did not pick one, and
+          // only if they can grant it there.
+          for (const store of validStores) {
+            if (!store.defaultRoleId) continue;
+            const role = await tx.query.roles.findFirst({
+              where: (r, { eq: eq2 }) => eq2(r.id, store.defaultRoleId!),
+            });
+            if (!role || role.rank >= ADMIN_RANK_THRESHOLD) continue;
+            const actorRankInStore = await getActorMaxRankInStore(
+              tx,
+              orgId,
+              ctx.session!.userId,
+              store.id,
+            );
+            if (role.rank >= actorRankInStore) continue;
+            grants.push({
+              roleId: role.id,
+              rank: role.rank,
+              scopeType: 'store',
+              scopeId: store.id,
+            });
+          }
+        }
+
+        const token = `inv_${randomBytes(32).toString('base64url')}`;
+        const tokenHash = createHash('sha256').update(token).digest('hex');
+        const expiresAt = new Date(Date.now() + input.expiresInDays * 24 * 60 * 60 * 1000);
+        const [invite] = await tx
+          .insert(s.memberInvites)
+          .values({
+            orgId,
+            invitedBy: ctx.session!.userId,
+            tokenHash,
+            storeIds,
+            grants,
+            expiresAt,
+          })
+          .returning({ id: s.memberInvites.id });
+        if (!invite) {
+          throw new TRPCError({
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'admin.errors.inviteCreateFailed',
+          });
+        }
+        // Deliberately omit the raw token from the audit payload.
+        await auditAdmin(tx, ctx, 'admin.memberInviteCreate', 'member_invite', invite.id, {
+          storeIds,
+          roleSlug: input.roleSlug ?? null,
+          expiresAt: expiresAt.toISOString(),
+          grantCount: grants.length,
+        });
+        return { token, expiresAt: expiresAt.toISOString() };
       });
     }),
 

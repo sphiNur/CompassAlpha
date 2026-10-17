@@ -105,7 +105,7 @@ would falsely attribute a pre-detail total to the person making the correction.
 All authed; broad ranks of perms (`users.manage`, `inventory.*.manage`, `org.settings.manage`).
 Per-store admin scope enforced via `getActorAdminStoreIds` (C2). Selected:
 
-- **Members**: `memberList`, `memberInviteByTgId`, `memberSetStatus`, `memberSetDisplayName`, `memberAssignStore` / `memberUnassignStore` / `memberDetachFromStore` / `memberTransferStore`, `memberRemove`, `memberPermissionsList` / `memberPermissionSet` / `memberPermissionRevoke`.
+- **Members**: `memberList`, `memberInviteCreate` (shareable one-time link), `memberInviteByTgId`, `memberSetStatus`, `memberSetDisplayName`, `memberAssignStore` / `memberUnassignStore` / `memberDetachFromStore` / `memberTransferStore`, `memberRemove`, `memberPermissionsList` / `memberPermissionSet` / `memberPermissionRevoke`.
 - **Roles**: `roleList`, `roleDetail`, `roleCreate`, `roleUpdate`, `roleDelete`, `permissionList`, `grantRole`, `revokeRole`.
 - **Stores**: `storeList`, `storeCreate`, `storeUpdate`, `storeDelete`, `storeCloneRoles` (D4), `memberStoreAssignments`.
 - **Catalog**: `categoryList/Create/Update/Delete`, `skuList/Create/Update/Delete`, `supplierList/Create/Update/Delete`.
@@ -136,6 +136,16 @@ The ticket is obtained via `auth.wsTicket` (M1). Once connected, the client
 subscribes to channels (`order:<sessionId>`, `run:<runId>`, `org:<orgId>`).
 Server pushes `{type, payload, seq}` for each new event. Reconnect with
 `?from-seq=<lastSeen>` to resume.
+
+## Invite links
+
+`admin.memberInviteCreate` returns a one-time token (7-day default expiry).
+The web client turns it into `https://t.me/<bot>?startapp=<token>`. Opening
+that Mini App calls the public `auth.acceptInvite` endpoint with Telegram
+`initData`; the server verifies the signature, creates the user/member,
+applies the snapshotted store and role grants, and returns a normal login
+session. Only the token's SHA-256 hash is stored. A token is accepted once;
+the same Telegram user can reopen it idempotently.
 
 ## Error envelope
 

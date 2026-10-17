@@ -11,7 +11,13 @@ export interface TelegramMainButton {
   setText(text: string): void;
   onClick(cb: () => void): void;
   offClick(cb: () => void): void;
-  setParams(params: { text?: string; color?: string; text_color?: string; is_visible?: boolean; is_active?: boolean }): void;
+  setParams(params: {
+    text?: string;
+    color?: string;
+    text_color?: string;
+    is_visible?: boolean;
+    is_active?: boolean;
+  }): void;
 }
 
 export interface TelegramBackButton {
@@ -39,7 +45,11 @@ export interface TelegramSettingsButton {
 
 interface TelegramWebApp {
   initData: string;
-  initDataUnsafe: { user?: { id: number; first_name: string; username?: string; language_code?: string } };
+  initDataUnsafe: {
+    /** Payload from https://t.me/<bot>?startapp=<payload>. */
+    start_param?: string;
+    user?: { id: number; first_name: string; username?: string; language_code?: string };
+  };
   themeParams: Record<string, string>;
   colorScheme: 'light' | 'dark';
   viewportHeight: number;
@@ -52,7 +62,10 @@ interface TelegramWebApp {
   BackButton: TelegramBackButton;
   /** Optional — may be undefined on older Telegram clients. */
   SettingsButton?: TelegramSettingsButton;
-  HapticFeedback: { impactOccurred(style: 'light' | 'medium' | 'heavy'): void; notificationOccurred(type: 'error' | 'success' | 'warning'): void };
+  HapticFeedback: {
+    impactOccurred(style: 'light' | 'medium' | 'heavy'): void;
+    notificationOccurred(type: 'error' | 'success' | 'warning'): void;
+  };
   showAlert(message: string, cb?: () => void): void;
   showConfirm(message: string, cb: (ok: boolean) => void): void;
   setHeaderColor(color: string): void;
@@ -223,10 +236,7 @@ export function useTelegramBackButton(onBack: () => void, enabled = true): void 
  * also exposes a Language row so admins on the web preview without
  * Telegram chrome still have a way in.
  */
-export function useTelegramSettingsButton(
-  onClick: () => void,
-  enabled = true,
-): void {
+export function useTelegramSettingsButton(onClick: () => void, enabled = true): void {
   const cbRef = useRef(onClick);
   cbRef.current = onClick;
   useEffect(() => {

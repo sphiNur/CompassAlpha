@@ -150,6 +150,58 @@ export const members = authSchema.table(
 );
 
 /**
+ * A shareable invitation to join one organisation.
+ *
+ * The link carries a high-entropy token; only its SHA-256 hash is
+ * stored. The row snapshots the stores and role grants that the
+ * inviting operator was allowed to hand out at creation time, so
+ * accepting later cannot evaluate a store's newly-changed default
+ * role and grant something the inviter could not.
+ */
+export const memberInvites = authSchema.table(
+  'member_invites',
+  {
+    id: pkUuid(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    invitedBy: uuid('invited_by').references(() => users.id, { onDelete: 'set null' }),
+    tokenHash: varchar('token_hash', { length: 64 }).notNull(),
+    storeIds: uuid('store_ids')
+      .array()
+      .notNull()
+      .default(sql`'{}'::uuid[]`),
+    /** Array of { roleId, rank, scopeType: 'global'|'store', scopeId }. */
+    grants: jsonb('grants')
+      .$type<
+        Array<{
+          roleId: string;
+          /** Rank at invite creation; a role that later becomes more
+           *  powerful is not granted through the old link. */
+          rank: number;
+          scopeType: 'global' | 'store';
+          scopeId: string | null;
+        }>
+      >()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }).notNull(),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true, mode: 'date' }),
+    acceptedByUserId: uuid('accepted_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    acceptedByMemberId: uuid('accepted_by_member_id').references(() => members.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    tokenHashUnique: uniqueIndex('member_invites_token_hash_unique').on(t.tokenHash),
+    orgIdx: index('member_invites_org_idx').on(t.orgId),
+  }),
+);
+
+/**
  * Per-store assignment for a member. A member MUST be assigned to at
  * least one store before they can edit/view that store's orders. The
  * mapping is many-to-many — a member can be assigned to multiple stores

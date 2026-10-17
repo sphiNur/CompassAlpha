@@ -190,6 +190,9 @@ export const en = {
   'people.inviteTitle': 'Invite a member',
   'people.inviteHint': 'Pick a method',
   'people.inviteViaTelegram': 'Share via Telegram',
+  'people.inviteViaTelegramHint': 'Pick a contact; the link adds them to the right store.',
+  'people.inviteNoBot': 'The Telegram bot is not configured yet.',
+  'people.inviteMessage': 'Join "{org}" on Compass — open this link to accept the invitation:',
   'people.inviteCopyLink': 'Copy invite link',
   'people.inviteCopyLinkHint': 'Paste anywhere outside Telegram.',
   'people.inviteOr': 'or',
@@ -418,8 +421,14 @@ export const en = {
   'auth.errors.noOrg': 'Organization not found',
   'auth.errors.required': 'Sign-in required',
   'auth.errors.signInFailed': 'Sign in failed',
+  'auth.retryInvite': 'Try the invitation again',
   'auth.errors.noInitData':
     'No Telegram initData available — open via Telegram, or set VITE_DEV_MOCK_INIT_DATA.',
+  'auth.errors.inviteNotFound': 'This invitation link is invalid or no longer exists.',
+  'auth.errors.inviteExpired': 'This invitation has expired. Ask your manager for a new link.',
+  'auth.errors.inviteUsed': 'This invitation has already been used.',
+  'auth.errors.inviteMemberSuspended':
+    'Your membership in this organization is suspended. Contact your manager.',
 
   // ── Admin (M1.6, 2026-05-06) ───────────────────────────────────
   // High-traffic admin labels. The deeper admin internals (audit
@@ -501,6 +510,12 @@ export const en = {
   'admin.invite.byTgId.description':
     'Auto-creates a placeholder user; their profile fills in when they /start the bot.',
   'admin.invite.byTgId.submit': 'Add to workspace',
+  'admin.invite.link.title': 'Create an invite link',
+  'admin.invite.link.description':
+    'The person who opens the link joins this organization with the store and role you choose.',
+  'admin.invite.link.hint':
+    'The link can be used once, expires in 7 days, and works only inside Telegram.',
+  'admin.invite.link.submit': 'Create invite link',
   'admin.invite.tgIdHint': "Ask the user to send /id to the bot if they don't know their ID.",
   'admin.invite.noRoleYet': '— no role yet (grant later) —',
   'admin.invite.staffNeedStoreHint': 'Staff need an assigned store before they can place orders.',
@@ -560,6 +575,7 @@ export const en = {
   'admin.errors.cannotSuspendSelf': 'You cannot suspend yourself',
   'admin.errors.categoryNotFound': 'Category not found',
   'admin.errors.inviteNeedsStore': 'A non-admin invite must include at least one store assignment',
+  'admin.errors.inviteCreateFailed': 'Could not create the invitation',
   'admin.errors.memberCreateFailed': 'Could not create the member record',
   'admin.errors.memberNotFound': 'Member not found',
   'admin.errors.orgNotFound': 'Organization not found',

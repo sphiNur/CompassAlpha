@@ -1,9 +1,10 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
-import { inSystem, schema as s, withOrgContext, type DB } from '@compass/db';
+import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
+import { inSystem, schema as s, withOrgContext, withSystemContext, type DB } from '@compass/db';
 import {
+  AcceptInviteInputSchema,
   NonTelegramLoginInputSchema,
   TelegramLoginInputSchema,
   RefreshInputSchema,
@@ -23,6 +24,7 @@ import {
 } from '../../services/refreshTokens';
 import { logger } from '../../infra/log';
 import { env } from '../../env';
+import { hub } from '../../realtime/hub';
 import type { RequestContext } from '../context';
 
 /**
@@ -52,9 +54,17 @@ const AUTH_LIMIT = { window: 60_000, max: 5 } as const;
  * small for it.
  */
 const REFRESH_LIMIT = { window: 60_000, max: 60 } as const;
+/**
+ * A store often onboards several people from the same Wi-Fi. The token
+ * itself is 256-bit, so this is not a guessing surface; the limit only
+ * stops a client that loops on a broken link.
+ */
+const INVITE_LIMIT = { window: 60_000, max: 30 } as const;
 function enforceRate(scope: string, ip: string | null): void {
   if (!ip) return;
-  if (!checkRate(scope, ip, scope === 'refresh' ? REFRESH_LIMIT : AUTH_LIMIT)) {
+  const limit =
+    scope === 'refresh' ? REFRESH_LIMIT : scope === 'acceptInvite' ? INVITE_LIMIT : AUTH_LIMIT;
+  if (!checkRate(scope, ip, limit)) {
     throw new TRPCError({
       code: 'TOO_MANY_REQUESTS',
       message: 'auth.errors.rateLimited',
@@ -746,6 +756,252 @@ export const authRouter = router({
         ctx.userAgent,
       );
     }),
+
+  /**
+   * Accept a shareable invite link.
+   *
+   * The invite is the only path that may create a membership for a
+   * Telegram user who is not already in this organisation. It is
+   * intentionally a sign-in endpoint: Telegram supplies the identity,
+   * and the high-entropy token supplies the membership grant.
+   */
+  acceptInvite: publicProcedure.input(AcceptInviteInputSchema).mutation(async ({ ctx, input }) => {
+    enforceRate('acceptInvite', ctx.ip);
+    const isDevMock = input.initData === DEV_MOCK_INIT_DATA && isDevMockLoginAvailable();
+    let tg: TelegramUser;
+    if (isDevMock) {
+      tg = DEV_MOCK_TG_USER;
+    } else {
+      if (!env.TELEGRAM_BOT_TOKEN) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'auth.errors.botTokenMissing',
+        });
+      }
+      const verified = verifyInitData(input.initData, env.TELEGRAM_BOT_TOKEN);
+      if (!verified.ok || !verified.user) {
+        throw new TRPCError({
+          code: 'UNAUTHORIZED',
+          message: 'auth.errors.invalidInitData',
+        });
+      }
+      tg = verified.user;
+    }
+
+    const tokenHash = createHash('sha256').update(input.token).digest('hex');
+    const identity = await withSystemContext(ctx.db, 'auth', async (tx) => {
+      // Lock the invite before deciding whether it is unused. Two
+      // people opening the same link at once must not both become
+      // the accepted member.
+      await tx.execute(
+        sql`SELECT id FROM auth.member_invites WHERE token_hash = ${tokenHash} FOR UPDATE`,
+      );
+      const invite = await tx.query.memberInvites.findFirst({
+        where: (i, { eq: eq2 }) => eq2(i.tokenHash, tokenHash),
+      });
+      if (!invite) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'auth.errors.inviteNotFound',
+        });
+      }
+
+      let user = await tx.query.users.findFirst({
+        where: (u, { eq: eq2 }) => eq2(u.tgUserId, BigInt(tg.id)),
+      });
+      if (!user) {
+        const [created] = await tx
+          .insert(s.users)
+          .values({
+            tgUserId: BigInt(tg.id),
+            tgUsername: tg.username ?? null,
+            displayName:
+              [tg.first_name, tg.last_name].filter(Boolean).join(' ') ||
+              tg.username ||
+              `user-${tg.id}`,
+            avatarUrl: tg.photo_url ?? null,
+            locale: input.locale ?? tg.language_code ?? 'en',
+            displayNameLocked: false,
+          })
+          .returning();
+        user = created;
+      } else {
+        const known = user;
+        await tx
+          .update(s.users)
+          .set({
+            tgUsername: tg.username ?? known.tgUsername,
+            avatarUrl: tg.photo_url ?? known.avatarUrl,
+            locale: input.locale ?? known.locale ?? tg.language_code ?? 'en',
+            lastSeenAt: new Date(),
+            ...(known.displayName.startsWith('tg:')
+              ? {
+                  displayName:
+                    [tg.first_name, tg.last_name].filter(Boolean).join(' ') ||
+                    tg.username ||
+                    known.displayName,
+                }
+              : {}),
+          })
+          .where(eq(s.users.id, known.id));
+      }
+      if (!user) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      if (invite.acceptedAt) {
+        if (invite.acceptedByUserId !== user.id || !invite.acceptedByMemberId) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'auth.errors.inviteUsed',
+          });
+        }
+        const acceptedMember = await tx.query.members.findFirst({
+          where: (m, { eq: eq2, and: and2 }) =>
+            and2(
+              eq2(m.id, invite.acceptedByMemberId!),
+              eq2(m.orgId, invite.orgId),
+              eq2(m.status, 'active'),
+            ),
+        });
+        if (!acceptedMember) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'auth.errors.inviteUsed',
+          });
+        }
+        return {
+          userId: user.id,
+          memberId: acceptedMember.id,
+          orgId: invite.orgId,
+        };
+      }
+
+      if (invite.expiresAt.getTime() <= Date.now()) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'auth.errors.inviteExpired',
+        });
+      }
+
+      let member = await tx.query.members.findFirst({
+        where: (m, { eq: eq2, and: and2 }) =>
+          and2(eq2(m.orgId, invite.orgId), eq2(m.userId, user!.id)),
+      });
+      if (member?.status === 'suspended') {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'auth.errors.inviteMemberSuspended',
+        });
+      }
+      if (!member) {
+        const [createdMember] = await tx
+          .insert(s.members)
+          .values({
+            orgId: invite.orgId,
+            userId: user.id,
+            status: 'active',
+            invitedBy: invite.invitedBy,
+          })
+          .returning();
+        member = createdMember;
+      } else if (member.status !== 'active') {
+        const [reactivated] = await tx
+          .update(s.members)
+          .set({ status: 'active', updatedAt: new Date() })
+          .where(eq(s.members.id, member.id))
+          .returning();
+        member = reactivated;
+      }
+      if (!member) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      const stores =
+        invite.storeIds.length > 0
+          ? await tx
+              .select({ id: s.stores.id })
+              .from(s.stores)
+              .where(
+                and(
+                  eq(s.stores.orgId, invite.orgId),
+                  eq(s.stores.isActive, true),
+                  inArray(s.stores.id, invite.storeIds),
+                ),
+              )
+          : [];
+      const validStoreIds = new Set(stores.map((st) => st.id));
+      for (const storeId of validStoreIds) {
+        await tx
+          .insert(s.memberStoreAssignments)
+          .values({
+            memberId: member.id,
+            storeId,
+            assignedBy: invite.invitedBy,
+          })
+          .onConflictDoNothing();
+      }
+
+      // The grants were validated when the invite was created and
+      // are re-checked against this org here. Missing roles are
+      // skipped so a deleted role cannot keep someone out entirely.
+      for (const grant of invite.grants ?? []) {
+        const role = await tx.query.roles.findFirst({
+          where: (r, { eq: eq2, and: and2 }) =>
+            and2(eq2(r.id, grant.roleId), eq2(r.orgId, invite.orgId)),
+        });
+        if (!role) continue;
+        // The role may have been edited after the invitation was
+        // created. Never let an old link grant a more powerful rank
+        // than the inviter was allowed to snapshot.
+        if (role.rank > grant.rank) continue;
+        if (grant.scopeType === 'store') {
+          if (!grant.scopeId || !validStoreIds.has(grant.scopeId)) continue;
+        }
+        const existing = await tx.query.memberRoleBindings.findFirst({
+          where: (b, { eq: eq2, and: and2 }) =>
+            and2(
+              eq2(b.memberId, member!.id),
+              eq2(b.roleId, role.id),
+              eq2(b.scopeType, grant.scopeType),
+              grant.scopeType === 'store' && grant.scopeId
+                ? eq2(b.scopeId, grant.scopeId)
+                : isNull(b.scopeId),
+            ),
+        });
+        if (!existing) {
+          await tx.insert(s.memberRoleBindings).values({
+            memberId: member.id,
+            roleId: role.id,
+            scopeType: grant.scopeType,
+            scopeId: grant.scopeType === 'store' ? grant.scopeId : null,
+            grantedBy: invite.invitedBy,
+          });
+        }
+      }
+
+      await tx
+        .update(s.memberInvites)
+        .set({
+          acceptedAt: new Date(),
+          acceptedByUserId: user.id,
+          acceptedByMemberId: member.id,
+        })
+        .where(eq(s.memberInvites.id, invite.id));
+
+      return {
+        userId: user.id,
+        memberId: member.id,
+        orgId: invite.orgId,
+      };
+    });
+
+    hub.publish(identity.orgId, { type: 'people.changed', orgId: identity.orgId });
+    return issueLoginResult(
+      ctx.db,
+      identity.userId,
+      identity.memberId,
+      identity.orgId,
+      ctx.ip,
+      ctx.userAgent,
+    );
+  }),
 
   /** Get current session — used by AuthGate. */
   me: authedProcedure.query(async ({ ctx }) => {

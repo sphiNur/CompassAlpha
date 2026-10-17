@@ -148,6 +148,10 @@ export const ru = {
   'people.inviteTitle': 'Пригласить участника',
   'people.inviteHint': 'Выберите способ',
   'people.inviteViaTelegram': 'Поделиться через Telegram',
+  'people.inviteViaTelegramHint': 'Выберите контакт; ссылка добавит его в нужный магазин.',
+  'people.inviteNoBot': 'Telegram-бот ещё не настроен.',
+  'people.inviteMessage':
+    'Присоединяйтесь к «{org}» в Compass — откройте ссылку, чтобы принять приглашение:',
   'people.inviteCopyLink': 'Скопировать ссылку-приглашение',
   'people.inviteCopyLinkHint': 'Можно вставить где угодно вне Telegram.',
   'people.inviteOr': 'или',
@@ -356,8 +360,14 @@ export const ru = {
   'auth.errors.noOrg': 'Организация не найдена',
   'auth.errors.required': 'Требуется вход',
   'auth.errors.signInFailed': 'Ошибка входа',
+  'auth.retryInvite': 'Попробовать приглашение ещё раз',
   'auth.errors.noInitData':
     'Telegram initData не найден — откройте через Telegram или задайте VITE_DEV_MOCK_INIT_DATA.',
+  'auth.errors.inviteNotFound': 'Ссылка-приглашение недействительна или удалена.',
+  'auth.errors.inviteExpired': 'Срок приглашения истёк. Попросите управляющего новую ссылку.',
+  'auth.errors.inviteUsed': 'Это приглашение уже использовано.',
+  'auth.errors.inviteMemberSuspended':
+    'Ваше членство в этой организации приостановлено. Обратитесь к управляющему.',
 
   // Admin (M1.6) — высокочастотная локализация
   'admin.section.organization': 'Организация',
@@ -422,6 +432,11 @@ export const ru = {
   'admin.invite.byTgId.description':
     'Создаёт пользователя-заглушку; профиль заполняется при первом /start бота.',
   'admin.invite.byTgId.submit': 'Добавить в рабочее пространство',
+  'admin.invite.link.title': 'Создать ссылку-приглашение',
+  'admin.invite.link.description':
+    'Тот, кто откроет ссылку, присоединится к организации с выбранными магазинами и ролью.',
+  'admin.invite.link.hint': 'Ссылка одноразовая, действует 7 дней и открывается только в Telegram.',
+  'admin.invite.link.submit': 'Создать ссылку',
   'admin.invite.tgIdHint': 'Попросите пользователя написать /id боту, если он не знает свой ID.',
   'admin.invite.noRoleYet': '— пока без роли (можно выдать позже) —',
   'admin.invite.staffNeedStoreHint':
@@ -482,6 +497,7 @@ export const ru = {
   'admin.errors.cannotSuspendSelf': 'Нельзя заблокировать самого себя',
   'admin.errors.categoryNotFound': 'Категория не найдена',
   'admin.errors.inviteNeedsStore': 'Для приглашения не-админа нужен хотя бы один магазин',
+  'admin.errors.inviteCreateFailed': 'Не удалось создать приглашение',
   'admin.errors.memberCreateFailed': 'Не удалось создать запись сотрудника',
   'admin.errors.memberNotFound': 'Сотрудник не найден',
   'admin.errors.orgNotFound': 'Организация не найдена',

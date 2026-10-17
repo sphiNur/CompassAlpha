@@ -22,7 +22,7 @@ export const uz = {
 
   // ── 2. Common ──────────────────────────────────────────────────
   'app.update.title': 'Yangi versiya tayyor',
-  'app.update.body': "Qulay paytda yangilash uchun shu yerni bosing",
+  'app.update.body': 'Qulay paytda yangilash uchun shu yerni bosing',
   'common.cancel': 'Bekor qilish',
   'common.archive': 'Arxivlash',
   'common.archived': 'arxivda',
@@ -155,6 +155,10 @@ export const uz = {
   'people.inviteTitle': "A'zo taklif qilish",
   'people.inviteHint': 'Usulni tanlang',
   'people.inviteViaTelegram': 'Telegram orqali ulashish',
+  'people.inviteViaTelegramHint': "Kontaktni tanlang; havola uni kerakli do'konga qo'shadi.",
+  'people.inviteNoBot': 'Telegram bot hali sozlanmagan.',
+  'people.inviteMessage':
+    'Compass’dagi “{org}”ga qo‘shiling — taklifni qabul qilish uchun havolani oching:',
   'people.inviteCopyLink': 'Taklif havolasini nusxalash',
   'people.inviteCopyLinkHint': 'Telegramdan tashqari istalgan joyga qo‘yish mumkin.',
   'people.inviteOr': 'yoki',
@@ -357,8 +361,14 @@ export const uz = {
   'auth.errors.noOrg': 'Tashkilot topilmadi',
   'auth.errors.required': 'Kirish talab qilinadi',
   'auth.errors.signInFailed': 'Kirish bajarilmadi',
+  'auth.retryInvite': 'Taklifni qayta urinish',
   'auth.errors.noInitData':
     "Telegram initData topilmadi — Telegram orqali oching yoki VITE_DEV_MOCK_INIT_DATA o'rnating.",
+  'auth.errors.inviteNotFound': "Taklif havolasi yaroqsiz yoki o'chirilgan.",
+  'auth.errors.inviteExpired': "Taklif muddati tugagan. Rahbaringizdan yangi havola so'rang.",
+  'auth.errors.inviteUsed': 'Bu taklif allaqachon ishlatilgan.',
+  'auth.errors.inviteMemberSuspended':
+    "Bu tashkilotdagi a'zoligingiz to'xtatilgan. Rahbaringiz bilan bog'laning.",
 
   // Admin (M1.6) — yuqori chastotali lokalizatsiya
   'admin.section.organization': 'Tashkilot',
@@ -425,6 +435,12 @@ export const uz = {
   'admin.invite.byTgId.description':
     "Shaxsiy ma'lumotlar bot bilan /start qilingach avtomatik to'ldiriladi.",
   'admin.invite.byTgId.submit': "Ish maydoniga qo'shish",
+  'admin.invite.link.title': 'Taklif havolasini yaratish',
+  'admin.invite.link.description':
+    "Havolani ochgan odam siz tanlagan do'kon va rol bilan tashkilotga qo'shiladi.",
+  'admin.invite.link.hint':
+    'Havola bir marta ishlatiladi, 7 kundan keyin eskiradi va faqat Telegram ichida ochiladi.',
+  'admin.invite.link.submit': 'Taklif havolasini yaratish',
   'admin.invite.tgIdHint': "Foydalanuvchi o'z ID sini bilmasa, botga /id yozsin.",
   'admin.invite.noRoleYet': '— hozircha rolsiz (keyinroq beriladi) —',
   'admin.invite.staffNeedStoreHint':
@@ -487,6 +503,7 @@ export const uz = {
   'admin.errors.cannotSuspendSelf': "O'zingizni to'xtata olmaysiz",
   'admin.errors.categoryNotFound': 'Kategoriya topilmadi',
   'admin.errors.inviteNeedsStore': "Admin bo'lmagan taklif uchun kamida bitta do'kon kerak",
+  'admin.errors.inviteCreateFailed': 'Taklifni yaratib bo‘lmadi',
   'admin.errors.memberCreateFailed': 'Xodim yozuvini yarata olmadik',
   'admin.errors.memberNotFound': 'Xodim topilmadi',
   'admin.errors.orgNotFound': 'Tashkilot topilmadi',
@@ -1064,7 +1081,7 @@ export const uz = {
   'run.errors.unavailableNoteRequired': "Yo'qlik sababini yozing",
   'run.errors.itemNotPending': "Faqat kutilayotgan mahsulotni yo'q deb belgilash mumkin",
   'run.errors.itemAlreadyPurchased':
-    "Bu mahsulot allaqachon xarid qilingan deb yozilgan — mavjud yozuvni tahrirlang",
+    'Bu mahsulot allaqachon xarid qilingan deb yozilgan — mavjud yozuvni tahrirlang',
   'run.errors.cannotCancelAfterConfirm':
     "Do'kon yetkazib berishni allaqachon tasdiqlagan — bu xaridni endi bekor qilib bo'lmaydi",
   'run.errors.noteTooLong': 'Eslatma juda uzun (500 belgi gacha)',

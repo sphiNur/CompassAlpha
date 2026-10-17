@@ -46,7 +46,10 @@ import { matchesAnyString, normalizeQuery } from '../../../lib/searchMatch';
 import { useDateFormat, useI18n } from '../../../hooks/useI18n';
 import { getTg } from '../../../hooks/useTelegram';
 import { useStoreContext } from '../../../components/StoreSwitcher';
-import { botLink as makeBotLink, shareLink as makeShareLink } from '../../../lib/telegramLinks';
+import {
+  inviteLink as makeInviteLink,
+  shareLink as makeShareLink,
+} from '../../../lib/telegramLinks';
 import { nativeConfirm } from '../shared';
 
 // ============ People ============
@@ -105,19 +108,23 @@ export function PeopleSection({
   const fallbackCtx = useStoreContext();
   const storeCtx =
     lockMode?.kind === 'store'
-      ? ({ kind: 'specific' as const, storeId: lockMode.storeId })
+      ? { kind: 'specific' as const, storeId: lockMode.storeId }
       : lockMode?.kind === 'org-level'
-        ? ({ kind: 'org-level' as const })
+        ? { kind: 'org-level' as const }
         : fallbackCtx;
   // Note: the previous internal tabs (Members | Roles) are gone — Roles
   // & Permissions is now its own top-level sub-section under People.
   // This screen is purely the members directory.
-  const [grantFor, setGrantFor] = useState<
-    { userId: string; displayName: string; defaultStoreId?: string | null } | null
-  >(null);
-  const [manageFor, setManageFor] = useState<
-    { memberId: string; userId: string; displayName: string } | null
-  >(null);
+  const [grantFor, setGrantFor] = useState<{
+    userId: string;
+    displayName: string;
+    defaultStoreId?: string | null;
+  } | null>(null);
+  const [manageFor, setManageFor] = useState<{
+    memberId: string;
+    userId: string;
+    displayName: string;
+  } | null>(null);
   // Member-permission overrides editor target (added 2026-05-05).
   // Tap "Permissions" button on a member card → opens
   // MemberPermissionsSheet with the role-derived baseline grayed out
@@ -126,15 +133,15 @@ export function PeopleSection({
   // 2026-05-06: now also carries `stores` for the per-store override
   // tabs (A2). Pulled from the member-list row at click time so the
   // sheet doesn't need a second query for them.
-  const [permsFor, setPermsFor] = useState<
-    {
-      memberId: string;
-      displayName: string;
-      stores: Array<{ id: string; name: string }>;
-    } | null
-  >(null);
+  const [permsFor, setPermsFor] = useState<{
+    memberId: string;
+    displayName: string;
+    stores: Array<{ id: string; name: string }>;
+  } | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [manualDraft, setManualDraft] = useState<InviteDraft | null>(null);
+  const [linkDraft, setLinkDraft] = useState<InviteDraft | null>(null);
+  const [linkAction, setLinkAction] = useState<'share' | 'copy'>('share');
   // M1.11: per-member overflow menu (Permissions / Suspend / Reactivate /
   // Remove-from-store / Remove-from-org). Demotes a 5–6-button action
   // strip — which was wrapping onto two rows on a 390px-wide iPhone — to
@@ -191,11 +198,47 @@ export function PeopleSection({
     onSuccess: (data) => {
       void utils.admin.memberList.invalidate();
       toast[data.created ? 'success' : 'info'](
-        data.created
-          ? i18n.t('admin.toast.memberAdded')
-          : i18n.t('admin.toast.userExists'),
+        data.created ? i18n.t('admin.toast.memberAdded') : i18n.t('admin.toast.userExists'),
       );
       setManualDraft(null);
+    },
+    onError: errToast('common.error'),
+  });
+  const appConfig = trpc.system.appConfig.useQuery(undefined, {
+    staleTime: STALE.long,
+  });
+  const createInvite = trpc.admin.memberInviteCreate.useMutation({
+    onSuccess: async (data) => {
+      const link = makeInviteLink(appConfig.data?.botUsername, data.token);
+      if (!link) {
+        toast.error(i18n.t('people.inviteNoBot'));
+        return;
+      }
+      const message = i18n.t('people.inviteMessage', {
+        org: session?.member.orgName ?? '',
+      });
+      if (linkAction === 'copy') {
+        try {
+          if (!navigator.clipboard) {
+            toast.error(i18n.t('admin.toast.clipboardUnavailable'));
+            return;
+          }
+          await navigator.clipboard.writeText(`${message}\n${link}`);
+          toast.success(i18n.t('admin.toast.linkCopied'));
+        } catch {
+          toast.error(i18n.t('admin.toast.couldNotCopy'));
+          return;
+        }
+      } else {
+        const shareUrl = makeShareLink({ url: link, text: message });
+        const tg = getTg();
+        if (tg) {
+          tg.openTelegramLink(shareUrl);
+        } else if (typeof window !== 'undefined') {
+          window.open(shareUrl, '_blank');
+        }
+      }
+      setLinkDraft(null);
     },
     onError: errToast('common.error'),
   });
@@ -264,9 +307,7 @@ export function PeopleSection({
                         {isSelf ? ` · ${i18n.t('admin.label.you')}` : ''}
                       </CardTitle>
                       <CardMeta>
-                        {m.tgUsername
-                          ? `@${m.tgUsername}`
-                          : i18n.t('admin.label.noTelegram')}
+                        {m.tgUsername ? `@${m.tgUsername}` : i18n.t('admin.label.noTelegram')}
                         {m.lastSeenAt
                           ? ` · ${i18n.t('admin.label.seen', {
                               date: dateFmt.date(m.lastSeenAt),
@@ -300,45 +341,43 @@ export function PeopleSection({
                     actual chips to show — empty cards no longer waste
                     a row of muted-fg label space. */}
                 {m.roles.length > 0 ? (
-                <div className="flex flex-wrap gap-1 px-4">
-                  {
-                    // Per-store role chips (added 2026-05-06). For
-                    // scope='store' we suffix the store's name so the
-                    // operator can tell "Manager of Store A" apart from
-                    // "Manager of Store B" at a glance. Global bindings
-                    // render as just the role name (no scope label).
-                    m.roles.map((r) => {
-                      const scopedStoreName =
-                        r.scopeType === 'store' && r.scopeId
-                          ? m.stores.find((st) => st.id === r.scopeId)?.name ?? null
-                          : null;
-                      return (
-                        <button
-                          key={r.bindingId}
-                          type="button"
-                          className="press inline-flex items-center gap-1 rounded-full bg-[var(--c-surface-2)] px-2 py-0.5 text-old-label ring-hairline"
-                          onClick={() =>
-                            nativeConfirm(
-                              scopedStoreName
-                                ? `Revoke "${r.name}" in ${scopedStoreName} from ${m.displayName}?`
-                                : `Revoke "${r.name}" from ${m.displayName}?`,
-                              () => revoke.mutate({ bindingId: r.bindingId }),
-                            )
-                          }
-                          title={i18n.t('people.tapToRevoke')}
-                        >
-                          <span className="font-semibold">{r.name}</span>
-                          {scopedStoreName ? (
-                            <span className="text-[var(--c-fg-muted)]">
-                              · {scopedStoreName}
-                            </span>
-                          ) : null}
-                          <span className="text-[var(--c-fg-muted)]">×</span>
-                        </button>
-                      );
-                    })
-                  }
-                </div>
+                  <div className="flex flex-wrap gap-1 px-4">
+                    {
+                      // Per-store role chips (added 2026-05-06). For
+                      // scope='store' we suffix the store's name so the
+                      // operator can tell "Manager of Store A" apart from
+                      // "Manager of Store B" at a glance. Global bindings
+                      // render as just the role name (no scope label).
+                      m.roles.map((r) => {
+                        const scopedStoreName =
+                          r.scopeType === 'store' && r.scopeId
+                            ? (m.stores.find((st) => st.id === r.scopeId)?.name ?? null)
+                            : null;
+                        return (
+                          <button
+                            key={r.bindingId}
+                            type="button"
+                            className="press inline-flex items-center gap-1 rounded-full bg-[var(--c-surface-2)] px-2 py-0.5 text-old-label ring-hairline"
+                            onClick={() =>
+                              nativeConfirm(
+                                scopedStoreName
+                                  ? `Revoke "${r.name}" in ${scopedStoreName} from ${m.displayName}?`
+                                  : `Revoke "${r.name}" from ${m.displayName}?`,
+                                () => revoke.mutate({ bindingId: r.bindingId }),
+                              )
+                            }
+                            title={i18n.t('people.tapToRevoke')}
+                          >
+                            <span className="font-semibold">{r.name}</span>
+                            {scopedStoreName ? (
+                              <span className="text-[var(--c-fg-muted)]">· {scopedStoreName}</span>
+                            ) : null}
+                            <span className="text-[var(--c-fg-muted)]">×</span>
+                          </button>
+                        );
+                      })
+                    }
+                  </div>
                 ) : null}
                 {/* M1.11: action row demoted from 5–6 buttons (which
                     wrapped onto 2 lines on a 390px iPhone) to two
@@ -371,8 +410,7 @@ export function PeopleSection({
                         // select that store in the grant sheet (A1, 2026-05-06).
                         // 'all' / 'none' kinds leave the picker empty so the
                         // operator picks consciously.
-                        defaultStoreId:
-                          storeCtx.kind === 'specific' ? storeCtx.storeId : null,
+                        defaultStoreId: storeCtx.kind === 'specific' ? storeCtx.storeId : null,
                       })
                     }
                   >
@@ -402,9 +440,7 @@ export function PeopleSection({
 
           // Specific store: only show members assigned there.
           if (storeCtx.kind === 'specific') {
-            const filtered = rows.filter((m) =>
-              m.stores.some((s) => s.id === storeCtx.storeId),
-            );
+            const filtered = rows.filter((m) => m.stores.some((s) => s.id === storeCtx.storeId));
             if (filtered.length === 0) {
               return (
                 <EmptyState
@@ -445,10 +481,7 @@ export function PeopleSection({
           const orgLevel = rows.filter((m) => m.stores.length === 0);
           // Build store → members map. Every (store, member) pair where
           // the member is in that store contributes one entry.
-          const byStore = new Map<
-            string,
-            { name: string; members: typeof rows }
-          >();
+          const byStore = new Map<string, { name: string; members: typeof rows }>();
           for (const m of rows) {
             for (const st of m.stores) {
               const bucket = byStore.get(st.id) ?? { name: st.name, members: [] };
@@ -525,9 +558,8 @@ export function PeopleSection({
                 onClick={() => {
                   const target = memberMenuFor;
                   setMemberMenuFor(null);
-                  nativeConfirm(
-                    i18n.t('admin.confirm.suspend', { name: target.displayName }),
-                    () => setStatus.mutate({ memberId: target.memberId, status: 'suspended' }),
+                  nativeConfirm(i18n.t('admin.confirm.suspend', { name: target.displayName }), () =>
+                    setStatus.mutate({ memberId: target.memberId, status: 'suspended' }),
                   );
                 }}
               >
@@ -603,10 +635,26 @@ export function PeopleSection({
         onClose={() => setInviteOpen(false)}
         onPickManual={() => {
           setInviteOpen(false);
-          setManualDraft({ tgUserId: '', displayName: '', roleSlug: '', storeIds: [] });
+          setManualDraft({
+            tgUserId: '',
+            displayName: '',
+            roleSlug: '',
+            storeIds: storeCtx.kind === 'specific' ? [storeCtx.storeId] : [],
+          });
+        }}
+        onPickLink={(action) => {
+          setInviteOpen(false);
+          setLinkAction(action);
+          setLinkDraft({
+            tgUserId: '',
+            displayName: '',
+            roleSlug: '',
+            storeIds: storeCtx.kind === 'specific' ? [storeCtx.storeId] : [],
+          });
         }}
       />
       <ManualInviteSheet
+        mode="tgid"
         draft={manualDraft}
         setDraft={setManualDraft}
         onSubmit={() => {
@@ -619,6 +667,19 @@ export function PeopleSection({
           });
         }}
         pending={invite.isPending}
+      />
+      <ManualInviteSheet
+        mode="link"
+        draft={linkDraft}
+        setDraft={setLinkDraft}
+        onSubmit={() => {
+          if (!linkDraft) return;
+          createInvite.mutate({
+            roleSlug: linkDraft.roleSlug || undefined,
+            storeIds: linkDraft.storeIds,
+          });
+        }}
+        pending={createInvite.isPending}
       />
     </div>
   );
@@ -669,9 +730,7 @@ export function PermissionsSection({ isSuperAdmin }: { isSuperAdmin: boolean }) 
         {i18n.t('people.permsHowBody', { rank: myMaxRank })}
       </Banner>
       <div className="mt-3 flex items-center justify-between">
-        <SectionLabel padded={false}>
-          {i18n.t('people.rolesHeading')}
-        </SectionLabel>
+        <SectionLabel padded={false}>{i18n.t('people.rolesHeading')}</SectionLabel>
         {isGlobalAdmin ? (
           <Button size="sm" onClick={() => setCreateOpen(true)}>
             + {i18n.t('people.newRoleButton')}
@@ -705,14 +764,18 @@ export function PermissionsSection({ isSuperAdmin }: { isSuperAdmin: boolean }) 
                       label={
                         <span className="flex items-center gap-2">
                           {r.name}
-                          {r.isBuiltIn ? <Badge tone="muted">{i18n.t('admin.label.builtIn')}</Badge> : null}
+                          {r.isBuiltIn ? (
+                            <Badge tone="muted">{i18n.t('admin.label.builtIn')}</Badge>
+                          ) : null}
                         </span>
                       }
                       hint={subtitle}
                       badge={
                         // UIUX-B1: 'grantable' is the common case → silent;
                         // only the blocking state earns a badge.
-                        grantable ? null : <Badge tone="warn">{i18n.t('people.rankOutranksYou')}</Badge>
+                        grantable ? null : (
+                          <Badge tone="warn">{i18n.t('people.rankOutranksYou')}</Badge>
+                        )
                       }
                       onClick={() => setDrilldownSlug(r.slug)}
                     />
@@ -876,23 +939,21 @@ function RoleCreateSheet({
           <Input
             type="number"
             value={String(rank)}
-            onChange={(e) => setRank(Math.max(1, Math.min(myMaxRank - 1, Number(e.target.value) || 0)))}
+            onChange={(e) =>
+              setRank(Math.max(1, Math.min(myMaxRank - 1, Number(e.target.value) || 0)))
+            }
           />
         </Field>
         <div>
           {/* M2.1: SectionLabel (was ad-hoc eyebrow). */}
-          <SectionLabel className="mb-2 px-0">
-            Permissions ({picked.size})
-          </SectionLabel>
+          <SectionLabel className="mb-2 px-0">Permissions ({picked.size})</SectionLabel>
           {permsQuery.isLoading ? (
             <Spinner size={16} />
           ) : (
             <ul className="flex flex-col gap-3">
               {grouped.map(([ns, keys]) => (
                 <li key={ns}>
-                  <SectionLabel padded={false}>
-                    {ns}
-                  </SectionLabel>
+                  <SectionLabel padded={false}>{ns}</SectionLabel>
                   <ul className="mt-1 flex flex-col gap-1">
                     {keys.map((p) => (
                       <li key={p.key}>
@@ -1067,8 +1128,7 @@ function RolePermissionsSheet({
                 onClick={() => {
                   nativeConfirm(
                     i18n.t('people.confirmDeleteRole', { name: detail.data!.name }),
-                    () =>
-                    remove.mutate({ roleId: detail.data!.id }),
+                    () => remove.mutate({ roleId: detail.data!.id }),
                   );
                 }}
               >
@@ -1080,9 +1140,7 @@ function RolePermissionsSheet({
       }
     >
       {detail.isLoading ? (
-        <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">
-          Loading…
-        </div>
+        <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">Loading…</div>
       ) : !detail.data ? (
         <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">
           {i18n.t('people.noRole')}
@@ -1092,11 +1150,7 @@ function RolePermissionsSheet({
           {editing ? (
             <>
               <Field label={`${i18n.t('admin.field.name')} *`}>
-                <Input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  maxLength={100}
-                />
+                <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} />
               </Field>
               <Field label={i18n.t('admin.field.description')}>
                 <Input
@@ -1106,10 +1160,7 @@ function RolePermissionsSheet({
                 />
               </Field>
               {isBuiltIn ? (
-                <Banner
-                  tone="info"
-                  title={i18n.t('people.builtInLocked', { rank })}
-                >
+                <Banner tone="info" title={i18n.t('people.builtInLocked', { rank })}>
                   {i18n.t('people.builtInRankBody')}
                 </Banner>
               ) : (
@@ -1118,20 +1169,13 @@ function RolePermissionsSheet({
                     type="number"
                     value={String(rank)}
                     onChange={(e) =>
-                      setRank(
-                        Math.max(
-                          1,
-                          Math.min(myMaxRank - 1, Number(e.target.value) || 0),
-                        ),
-                      )
+                      setRank(Math.max(1, Math.min(myMaxRank - 1, Number(e.target.value) || 0)))
                     }
                   />
                 </Field>
               )}
               {/* M2.1: SectionLabel (was ad-hoc eyebrow div). */}
-              <SectionLabel className="px-0">
-                Permissions ({picked.size})
-              </SectionLabel>
+              <SectionLabel className="px-0">Permissions ({picked.size})</SectionLabel>
             </>
           ) : detail.data.description ? (
             <p className="text-old-body-sm text-[var(--c-fg-muted)]">{detail.data.description}</p>
@@ -1144,9 +1188,7 @@ function RolePermissionsSheet({
             <ul className="flex flex-col gap-3">
               {grouped.map(([ns, keys]) => (
                 <li key={ns}>
-                  <SectionLabel padded={false}>
-                    {ns}
-                  </SectionLabel>
+                  <SectionLabel padded={false}>{ns}</SectionLabel>
                   <ul className="mt-1 flex flex-col gap-1">
                     {keys.map((p) => {
                       if (editing) {
@@ -1252,9 +1294,7 @@ function RoleAssigneesByStore({
 
   return (
     <div className="mt-2 border-t border-[var(--c-divider)] pt-3">
-      <SectionLabel padded={false}>
-        Assignees · {assignees.length}
-      </SectionLabel>
+      <SectionLabel padded={false}>Assignees · {assignees.length}</SectionLabel>
       <div className="mt-1 flex flex-col gap-3">
         {grouped.map(([key, bucket]) => (
           <section key={key}>
@@ -1268,13 +1308,9 @@ function RoleAssigneesByStore({
                   className="flex items-center gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-1.5"
                 >
                   <Avatar src={a.avatarUrl} name={a.displayName} size={24} />
-                  <span className="text-old-body text-[var(--c-fg)]">
-                    {a.displayName}
-                  </span>
+                  <span className="text-old-body text-[var(--c-fg)]">{a.displayName}</span>
                   {a.tgUsername ? (
-                    <span className="text-old-label text-[var(--c-fg-muted)]">
-                      @{a.tgUsername}
-                    </span>
+                    <span className="text-old-label text-[var(--c-fg-muted)]">@{a.tgUsername}</span>
                   ) : null}
                 </li>
               ))}
@@ -1298,13 +1334,13 @@ function InviteHubSheet({
   open,
   onClose,
   onPickManual,
+  onPickLink,
 }: {
   open: boolean;
   onClose: () => void;
   onPickManual: () => void;
+  onPickLink: (action: 'share' | 'copy') => void;
 }) {
-  const session = useAuthStore((s) => s.session);
-  const toast = useToast();
   const i18n = useI18n();
   const cfgQuery = trpc.system.appConfig.useQuery(undefined, {
     enabled: open,
@@ -1312,32 +1348,6 @@ function InviteHubSheet({
   });
 
   const botUsername = cfgQuery.data?.botUsername?.replace(/^@/, '') ?? null;
-  const botLink = makeBotLink(botUsername);
-  const message = `Join our Compass workspace "${session?.member.orgName ?? ''}" — open this bot, send /id, then ask me to add you.`;
-  const shareUrl = makeShareLink({ url: botLink, text: message });
-
-  const handleShare = () => {
-    const tg = getTg();
-    if (tg) {
-      tg.openTelegramLink(shareUrl);
-    } else if (typeof window !== 'undefined') {
-      window.open(shareUrl, '_blank');
-    }
-    onClose();
-  };
-
-  const handleCopy = async () => {
-    try {
-      if (navigator.clipboard) {
-        await navigator.clipboard.writeText(`${botLink}\n\n${message}`);
-        toast.success(i18n.t('admin.toast.linkCopied'));
-      } else {
-        toast.error(i18n.t('admin.toast.clipboardUnavailable'));
-      }
-    } catch {
-      toast.error(i18n.t('admin.toast.couldNotCopy'));
-    }
-  };
 
   return (
     <Sheet
@@ -1349,7 +1359,7 @@ function InviteHubSheet({
       <div className="flex flex-col gap-2 py-3">
         <button
           type="button"
-          onClick={handleShare}
+          onClick={() => onPickLink('share')}
           disabled={!botUsername}
           className="press flex items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 text-left ring-hairline disabled:opacity-50"
         >
@@ -1361,9 +1371,7 @@ function InviteHubSheet({
               {i18n.t('people.inviteViaTelegram')}
             </span>
             <span className="mt-0.5 block text-old-label text-[var(--c-fg-muted)]">
-              {botUsername
-                ? "Pick a contact in Telegram; they'll get the bot link."
-                : 'Bot username not configured.'}
+              {botUsername ? i18n.t('people.inviteViaTelegramHint') : i18n.t('people.inviteNoBot')}
             </span>
           </span>
           <span aria-hidden className="shrink-0 text-[var(--c-fg-subtle)]">
@@ -1373,7 +1381,7 @@ function InviteHubSheet({
 
         <button
           type="button"
-          onClick={handleCopy}
+          onClick={() => onPickLink('copy')}
           disabled={!botUsername}
           className="press flex items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 text-left ring-hairline disabled:opacity-50"
         >
@@ -1417,16 +1425,19 @@ function InviteHubSheet({
 }
 
 function ManualInviteSheet({
+  mode = 'tgid',
   draft,
   setDraft,
   onSubmit,
   pending,
 }: {
+  mode?: 'tgid' | 'link';
   draft: InviteDraft | null;
   setDraft: (d: InviteDraft | null) => void;
   onSubmit: () => void;
   pending: boolean;
 }) {
+  const isLink = mode === 'link';
   const i18n = useI18n();
   const rolesQuery = trpc.admin.roleList.useQuery(undefined, { enabled: !!draft });
   const storesQuery = trpc.admin.storeList.useQuery(undefined, { enabled: !!draft });
@@ -1458,8 +1469,7 @@ function ManualInviteSheet({
     [rolesQuery.data, isGlobalAdmin],
   );
   const eligibleStores = useMemo(
-    () =>
-      (storesQuery.data ?? []).filter((st) => adminStoreIds.has(st.id)),
+    () => (storesQuery.data ?? []).filter((st) => adminStoreIds.has(st.id)),
     [storesQuery.data, adminStoreIds],
   );
 
@@ -1469,44 +1479,57 @@ function ManualInviteSheet({
   const isAdminRole = draft?.roleSlug === 'admin' || draft?.roleSlug === 'super_admin';
   const requiresStore = !isAdminRole;
   const hasStore = (draft?.storeIds.length ?? 0) > 0;
-  const canSubmit = tgIdValid && (!requiresStore || hasStore);
+  const canSubmit = (isLink || tgIdValid) && (!requiresStore || hasStore);
   return (
     <Sheet
       open={!!draft}
       onOpenChange={(open) => !open && !pending && setDraft(null)}
-      title={i18n.t('admin.invite.byTgId.title')}
-      description={i18n.t('admin.invite.byTgId.description')}
+      title={i18n.t(isLink ? 'admin.invite.link.title' : 'admin.invite.byTgId.title')}
+      description={i18n.t(
+        isLink ? 'admin.invite.link.description' : 'admin.invite.byTgId.description',
+      )}
       footer={
         <Button block size="lg" loading={pending} disabled={!canSubmit} onClick={onSubmit}>
-          {i18n.t('admin.invite.byTgId.submit')}
+          {i18n.t(isLink ? 'admin.invite.link.submit' : 'admin.invite.byTgId.submit')}
         </Button>
       }
     >
       {draft ? (
         <div className="flex flex-col gap-3 py-3">
-          <Field label={i18n.t('admin.field.tgUserId')}>
-            <Input
-              value={draft.tgUserId}
-              onChange={(e) =>
-                setDraft({ ...draft, tgUserId: e.target.value.replace(/\D/g, '').slice(0, 15) })
-              }
-              inputMode="numeric"
-              maxLength={15}
-              placeholder={i18n.t('admin.field.tgUserIdPlaceholder')}
-              autoFocus
-            />
-            <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
-              {i18n.t('admin.invite.tgIdHint')}
+          {isLink ? (
+            <p className="text-old-body-sm text-[var(--c-fg-muted)]">
+              {i18n.t('admin.invite.link.hint')}
             </p>
-          </Field>
-          <Field label={i18n.t('admin.field.displayName')}>
-            <Input
-              value={draft.displayName}
-              onChange={(e) => setDraft({ ...draft, displayName: e.target.value })}
-              maxLength={200}
-              placeholder={i18n.t('admin.field.displayNamePlaceholder')}
-            />
-          </Field>
+          ) : (
+            <>
+              <Field label={i18n.t('admin.field.tgUserId')}>
+                <Input
+                  value={draft.tgUserId}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      tgUserId: e.target.value.replace(/\D/g, '').slice(0, 15),
+                    })
+                  }
+                  inputMode="numeric"
+                  maxLength={15}
+                  placeholder={i18n.t('admin.field.tgUserIdPlaceholder')}
+                  autoFocus
+                />
+                <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
+                  {i18n.t('admin.invite.tgIdHint')}
+                </p>
+              </Field>
+              <Field label={i18n.t('admin.field.displayName')}>
+                <Input
+                  value={draft.displayName}
+                  onChange={(e) => setDraft({ ...draft, displayName: e.target.value })}
+                  maxLength={200}
+                  placeholder={i18n.t('admin.field.displayNamePlaceholder')}
+                />
+              </Field>
+            </>
+          )}
           <Field label={i18n.t('admin.field.role')}>
             {rolesQuery.isLoading ? (
               <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
@@ -1724,11 +1747,7 @@ function ManageMemberSheet({
                         'press flex items-center gap-2 rounded-[var(--r-utility)] px-2 py-1.5 ' +
                         (editable ? 'cursor-pointer' : 'cursor-not-allowed opacity-60')
                       }
-                      title={
-                        editable
-                          ? undefined
-                          : "You don't administer this store"
-                      }
+                      title={editable ? undefined : "You don't administer this store"}
                     >
                       <Checkbox
                         checked={checked}
@@ -1860,9 +1879,7 @@ function TransferStoreSheet({
   // and (rare) inactive stores that may sneak into session.stores.
   const destinationStores = useMemo(() => {
     if (!target) return [];
-    return sessionStores.filter(
-      (st) => adminStoreIds.has(st.id) && st.id !== target.fromStoreId,
-    );
+    return sessionStores.filter((st) => adminStoreIds.has(st.id) && st.id !== target.fromStoreId);
   }, [sessionStores, adminStoreIds, target]);
 
   const transferMut = trpc.admin.memberTransferStore.useMutation({
@@ -1870,12 +1887,9 @@ function TransferStoreSheet({
       void utils.admin.memberList.invalidate();
       void utils.admin.memberStoreAssignments.invalidate();
       const parts = [i18n.t('people.toastTransferred')];
-      if (data.mirrored > 0)
-        parts.push(i18n.t('people.toastRolesMirrored', { n: data.mirrored }));
+      if (data.mirrored > 0) parts.push(i18n.t('people.toastRolesMirrored', { n: data.mirrored }));
       if (data.revokedBindings > 0)
-        parts.push(
-          i18n.t('people.toastFromSideRevoked', { n: data.revokedBindings }),
-        );
+        parts.push(i18n.t('people.toastFromSideRevoked', { n: data.revokedBindings }));
       toast.success(parts.join(' · '));
       onClose();
     },
@@ -1887,9 +1901,7 @@ function TransferStoreSheet({
       open={open}
       onOpenChange={(o) => !o && !transferMut.isPending && onClose()}
       title={i18n.t('people.transferTitle')}
-      description={
-        target ? i18n.t('people.transferMoving', { name: target.displayName }) : ''
-      }
+      description={target ? i18n.t('people.transferMoving', { name: target.displayName }) : ''}
       footer={
         target ? (
           <Button
@@ -1929,10 +1941,7 @@ function TransferStoreSheet({
                 {i18n.t('people.transferNoDestBody')}
               </Banner>
             ) : (
-              <Select
-                value={toStoreId}
-                onChange={(e) => setToStoreId(e.target.value)}
-              >
+              <Select value={toStoreId} onChange={(e) => setToStoreId(e.target.value)}>
                 <option value="">— pick a destination store —</option>
                 {destinationStores.map((st) => (
                   <option key={st.id} value={st.id}>
@@ -1961,19 +1970,11 @@ function TransferStoreSheet({
           <Banner tone="info" title={i18n.t('people.transferWhatTitle')}>
             {i18n.t('people.transferWhatIntro')}
             <ul className="mt-1 list-disc space-y-0.5 pl-4 text-old-label">
+              <li>{i18n.t('people.transferWhatAdded', { name: target.displayName })}</li>
               <li>
-                {i18n.t('people.transferWhatAdded', { name: target.displayName })}
+                {i18n.t(mirrorRoles ? 'people.transferWhatMirrored' : 'people.transferWhatNoRoles')}
               </li>
-              <li>
-                {i18n.t(
-                  mirrorRoles
-                    ? 'people.transferWhatMirrored'
-                    : 'people.transferWhatNoRoles',
-                )}
-              </li>
-              <li>
-                {i18n.t('people.transferWhatRemoved', { store: target.fromStoreName })}
-              </li>
+              <li>{i18n.t('people.transferWhatRemoved', { store: target.fromStoreName })}</li>
             </ul>
             {i18n.t('people.transferWhatOutro')}
           </Banner>
@@ -2003,16 +2004,14 @@ function MemberPermissionsSheet({
   target,
   onClose,
 }: {
-  target:
-    | {
-        memberId: string;
-        displayName: string;
-        /** The stores this member belongs to (for the per-store
-         *  override tabs added 2026-05-06 in A2). Pass an empty
-         *  array if the member is org-level. */
-        stores: Array<{ id: string; name: string }>;
-      }
-    | null;
+  target: {
+    memberId: string;
+    displayName: string;
+    /** The stores this member belongs to (for the per-store
+     *  override tabs added 2026-05-06 in A2). Pass an empty
+     *  array if the member is org-level. */
+    stores: Array<{ id: string; name: string }>;
+  } | null;
   onClose: () => void;
 }) {
   const i18n = useI18n();
@@ -2036,9 +2035,7 @@ function MemberPermissionsSheet({
    * (A store-scoped admin shouldn't see — let alone be able to edit —
    * overrides for a store they don't run; the server enforces too.)
    */
-  type Scope =
-    | { kind: 'global' }
-    | { kind: 'store'; storeId: string; storeName: string };
+  type Scope = { kind: 'global' } | { kind: 'store'; storeId: string; storeName: string };
   const [scope, setScope] = useState<Scope>({ kind: 'global' });
   // Reset scope when sheet opens for a new target. Default to 'global'
   // so the operator lands on the familiar surface.
@@ -2047,8 +2044,7 @@ function MemberPermissionsSheet({
   }, [target]);
 
   const editableStoreTabs = useMemo(
-    () =>
-      (target?.stores ?? []).filter((st) => adminStoreIds.has(st.id)),
+    () => (target?.stores ?? []).filter((st) => adminStoreIds.has(st.id)),
     [target, adminStoreIds],
   );
 
@@ -2087,14 +2083,10 @@ function MemberPermissionsSheet({
     return m;
   }, [detail.data]);
 
-  const currentScopeKey =
-    scope.kind === 'global' ? 'global' : `store:${scope.storeId}`;
+  const currentScopeKey = scope.kind === 'global' ? 'global' : `store:${scope.storeId}`;
   const overrideByKey = overrideByScopeKey.get(currentScopeKey) ?? new Map();
 
-  const roleKeys = useMemo(
-    () => new Set(detail.data?.roleKeys ?? []),
-    [detail.data],
-  );
+  const roleKeys = useMemo(() => new Set(detail.data?.roleKeys ?? []), [detail.data]);
 
   const grouped = useMemo(() => {
     const m = new Map<string, Array<{ key: string; description: string | null }>>();
@@ -2148,9 +2140,7 @@ function MemberPermissionsSheet({
           <Spinner size={16} />
         </div>
       ) : !detail.data ? (
-        <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">
-          —
-        </div>
+        <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">—</div>
       ) : (
         <div className="flex flex-col gap-3 py-3">
           {/* Scope tabs (A2, 2026-05-06). 'Global' is always present;
@@ -2168,10 +2158,8 @@ function MemberPermissionsSheet({
               </ScopeTab>
               {(target?.stores ?? []).map((st) => {
                 const editable = adminStoreIds.has(st.id);
-                const isActive =
-                  scope.kind === 'store' && scope.storeId === st.id;
-                const tabCount =
-                  overrideByScopeKey.get(`store:${st.id}`)?.size ?? 0;
+                const isActive = scope.kind === 'store' && scope.storeId === st.id;
+                const tabCount = overrideByScopeKey.get(`store:${st.id}`)?.size ?? 0;
                 return (
                   <ScopeTab
                     key={st.id}
@@ -2186,11 +2174,7 @@ function MemberPermissionsSheet({
                       })
                     }
                     count={tabCount}
-                    title={
-                      editable
-                        ? undefined
-                        : "You don't administer this store — read-only"
-                    }
+                    title={editable ? undefined : "You don't administer this store — read-only"}
                   >
                     {st.name}
                   </ScopeTab>
@@ -2205,15 +2189,12 @@ function MemberPermissionsSheet({
           </Banner>
           {grouped.map(([ns, keys]) => (
             <div key={ns}>
-              <SectionLabel padded={false}>
-                {ns}
-              </SectionLabel>
+              <SectionLabel padded={false}>{ns}</SectionLabel>
               <ul className="mt-1 flex flex-col gap-1">
                 {keys.map((p) => {
                   const override = overrideByKey.get(p.key) ?? null;
                   const fromRole = roleKeys.has(p.key);
-                  const mode: 'role' | 'allow' | 'deny' =
-                    override ?? 'role';
+                  const mode: 'role' | 'allow' | 'deny' = override ?? 'role';
                   return (
                     <li
                       key={p.key}
@@ -2228,9 +2209,7 @@ function MemberPermissionsSheet({
                             </div>
                           ) : null}
                         </div>
-                        {fromRole ? (
-                          <Badge tone="muted">from role</Badge>
-                        ) : null}
+                        {fromRole ? <Badge tone="muted">from role</Badge> : null}
                       </div>
                       {/* M3.17 (2026-05-16): migrated from local SegBtn
                           to the shared <Segmented> primitive. Per-option
@@ -2310,9 +2289,7 @@ function ScopeTab({
         <span
           className={
             'inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-old-tiny ' +
-            (active
-              ? 'bg-white/25 text-white'
-              : 'bg-[var(--c-action)] text-[var(--c-action-fg)]')
+            (active ? 'bg-white/25 text-white' : 'bg-[var(--c-action)] text-[var(--c-action-fg)]')
           }
         >
           {count}
@@ -2362,9 +2339,7 @@ function GrantRoleSheet({
   target,
   onClose,
 }: {
-  target:
-    | { userId: string; displayName: string; defaultStoreId?: string | null }
-    | null;
+  target: { userId: string; displayName: string; defaultStoreId?: string | null } | null;
   onClose: () => void;
 }) {
   const session = useAuthStore((s) => s.session);
@@ -2443,9 +2418,7 @@ function GrantRoleSheet({
   const grantableRoles = useMemo(() => {
     return [...(rolesQuery.data ?? [])]
       .filter((r) => r.rank < effectiveRank)
-      .filter((r) =>
-        scopeMode === 'global' ? r.rank >= ADMIN_RANK : r.rank < ADMIN_RANK,
-      )
+      .filter((r) => (scopeMode === 'global' ? r.rank >= ADMIN_RANK : r.rank < ADMIN_RANK))
       .sort((a, b) => b.rank - a.rank);
   }, [rolesQuery.data, effectiveRank, scopeMode]);
 
@@ -2468,13 +2441,13 @@ function GrantRoleSheet({
           scopeType: 'global',
         });
         toast[data.granted ? 'success' : 'info'](
-          i18n.t(
-            data.granted ? 'people.toastRoleGranted' : 'people.toastRoleAlready',
-          ),
+          i18n.t(data.granted ? 'people.toastRoleGranted' : 'people.toastRoleAlready'),
         );
         void utils.admin.memberList.invalidate();
         onClose();
-      } catch {/* error toast already shown */}
+      } catch {
+        /* error toast already shown */
+      }
       return;
     }
     // Store fan-out. We loop sequentially so a mid-run server error
@@ -2501,9 +2474,7 @@ function GrantRoleSheet({
     if (createdCount > 0) {
       toast.success(
         i18n.t('people.toastGrantedInStores', { n: createdCount }) +
-          (skipped > 0
-            ? ` ${i18n.t('people.toastAlreadyHad', { n: skipped })}`
-            : ''),
+          (skipped > 0 ? ` ${i18n.t('people.toastAlreadyHad', { n: skipped })}` : ''),
       );
     } else if (skipped > 0) {
       toast.info(i18n.t('people.toastAlreadyEverywhere'));
@@ -2512,19 +2483,14 @@ function GrantRoleSheet({
     onClose();
   };
 
-  const canSubmit =
-    scopeMode === 'global'
-      ? canGrantGlobal
-      : selectedStoreIds.size > 0;
+  const canSubmit = scopeMode === 'global' ? canGrantGlobal : selectedStoreIds.size > 0;
 
   return (
     <Sheet
       open={!!target}
       onOpenChange={(open) => !open && onClose()}
       title={i18n.t('people.grantRoleTitle')}
-      description={
-        target ? i18n.t('people.grantRoleTo', { name: target.displayName }) : ''
-      }
+      description={target ? i18n.t('people.grantRoleTo', { name: target.displayName }) : ''}
     >
       <div className="flex flex-col gap-3 py-3">
         {/* Step 1 — scope */}
@@ -2572,17 +2538,10 @@ function GrantRoleSheet({
                       key={st.id}
                       className="press flex cursor-pointer items-center gap-2 rounded-[var(--r-utility)] px-2 py-1.5"
                     >
-                      <Checkbox
-                        checked={checked}
-                        onChange={() => toggleStore(st.id)}
-                      />
-                      <span className="text-old-body text-[var(--c-fg)]">
-                        {st.name}
-                      </span>
+                      <Checkbox checked={checked} onChange={() => toggleStore(st.id)} />
+                      <span className="text-old-body text-[var(--c-fg)]">{st.name}</span>
                       {st.code ? (
-                        <span className="text-old-label text-[var(--c-fg-muted)]">
-                          {st.code}
-                        </span>
+                        <span className="text-old-label text-[var(--c-fg-muted)]">{st.code}</span>
                       ) : null}
                     </label>
                   );
@@ -2617,9 +2576,7 @@ function GrantRoleSheet({
               className="press flex items-center justify-between rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 text-left ring-hairline"
             >
               <div>
-                <div className="text-old-body font-semibold text-[var(--c-fg)]">
-                  {r.name}
-                </div>
+                <div className="text-old-body font-semibold text-[var(--c-fg)]">{r.name}</div>
                 <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
                   {i18n.t('people.rankLine', { rank: r.rank })}
                   {r.description ? ` · ${r.description}` : ''}
@@ -2633,4 +2590,3 @@ function GrantRoleSheet({
     </Sheet>
   );
 }
-

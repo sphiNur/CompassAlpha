@@ -16,6 +16,17 @@ export function botLink(botUsername: string | null | undefined): string {
 }
 
 /**
+ * Deep link that opens the bot's Mini App with the invite token as
+ * `start_param`. The bot never sees the token, so copying or sharing
+ * the link does not need a round-trip through the bot first.
+ */
+export function inviteLink(botUsername: string | null | undefined, token: string): string | null {
+  const username = botUsername?.replace(/^@/, '');
+  if (!username || !token) return null;
+  return `${T_ME}/${username}?startapp=${encodeURIComponent(token)}`;
+}
+
+/**
  * Telegram's native share-URL endpoint. Opening this URL inside
  * Telegram triggers the contact picker pre-filled with `url` + `text`.
  */
