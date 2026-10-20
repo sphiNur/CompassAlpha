@@ -12,17 +12,13 @@ export type AdminSection =
   | 'stores'
   | 'permissions'
   | 'catalog'
-  | 'operations';
+  | 'operations'
+  | 'platform';
 
 // M2.0b: new 'dishes' sub-section for menu items + recipe (BOM) editor.
 // Lives next to SKUs because both are catalog data, but a separate
 // route keeps the SKU list from getting cluttered.
-export type CatalogSub =
-  | 'categories'
-  | 'skus'
-  | 'suppliers'
-  | 'dishes'
-  | 'expenseTemplates';
+export type CatalogSub = 'categories' | 'skus' | 'suppliers' | 'dishes' | 'expenseTemplates';
 export type OperationsSub =
   | 'activity'
   | 'history'

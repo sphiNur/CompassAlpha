@@ -61,6 +61,25 @@ export const OrganizationMembershipSchema = z.object({
   joinedAt: z.string(),
 });
 
+export const SubscriptionSummarySchema = z.object({
+  planCode: z.string(),
+  planName: z.string(),
+  status: z.enum(['trialing', 'active', 'past_due', 'suspended', 'canceled']),
+  writeAccess: z.boolean(),
+  trialEndsAt: z.string().nullable(),
+  currentPeriodEnd: z.string().nullable(),
+  graceEndsAt: z.string().nullable(),
+  cancelAtPeriodEnd: z.boolean(),
+  limits: z.object({
+    stores: z.number().int().nullable(),
+    members: z.number().int().nullable(),
+  }),
+  usage: z.object({
+    stores: z.number().int(),
+    members: z.number().int(),
+  }),
+});
+
 export const MemberSummarySchema = z.object({
   memberId: UuidSchema,
   orgId: UuidSchema,
@@ -101,6 +120,7 @@ export const SessionSchema = z.object({
   memberships: z.array(OrganizationMembershipSchema).default([]),
   /** Cross-tenant operator. Only these users may create new tenants. */
   isPlatformAdmin: z.boolean().default(false),
+  subscription: SubscriptionSummarySchema,
   /** ONLY the stores this member is assigned to (admins see all org stores). */
   stores: z.array(StoreSummarySchema),
   permissions: z.array(z.string()),

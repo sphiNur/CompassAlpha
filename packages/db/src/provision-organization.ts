@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import type { DB } from './client';
 import * as s from './schema';
 import { BUILTIN_ROLES, PERMISSIONS } from './seed-data';
+import { provisionSubscription } from './subscription';
 
 export const DEFAULT_ORG_WORKFLOW = {
   steps: ['draft', 'submitted', 'approved', 'in_run', 'delivered', 'confirmed'],
@@ -68,6 +69,7 @@ export async function provisionOrganization(
     })
     .returning();
   if (!org) throw new Error('organization insert returned no row');
+  await provisionSubscription(tx, org.id);
 
   let adminRoleId: string | null = null;
   for (const role of BUILTIN_ROLES) {

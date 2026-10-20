@@ -122,6 +122,16 @@ Per-store admin scope enforced via `getActorAdminStoreIds` (C2). Selected:
 | `upload.config`         | query    | authed | Bucket public base + max bytes.                               |
 | `upload.requestPresign` | mutation | authed | SigV4 PUT URL (M1, S3 / MinIO / R2 / Tencent COS). 5 min TTL. |
 
+### `platform.*`
+
+Cross-tenant platform administrators only.
+
+| Route                         | Type     | Notes                                        |
+| ----------------------------- | -------- | -------------------------------------------- |
+| `platform.organizations`      | query    | List tenants with plan, status and usage.    |
+| `platform.plans`              | query    | List assignable subscription plans.          |
+| `platform.updateSubscription` | mutation | Change plan, status, dates or internal note. |
+
 ### `system.*`
 
 | Route               | Type     | Auth   |

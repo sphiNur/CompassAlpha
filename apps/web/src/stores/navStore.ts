@@ -68,7 +68,8 @@ export type AdminSection =
   | 'stores'
   | 'permissions'
   | 'catalog'
-  | 'operations';
+  | 'operations'
+  | 'platform';
 export type CatalogSub = 'categories' | 'skus' | 'suppliers' | 'dishes' | 'expenseTemplates' | null;
 export type OperationsSub =
   | 'activity'
@@ -186,7 +187,15 @@ export const useNavStore = create<NavState>()(
         );
         const adminSection = oneOf(
           p.adminSection,
-          ['home', 'organization', 'stores', 'permissions', 'catalog', 'operations'] as const,
+          [
+            'home',
+            'organization',
+            'stores',
+            'permissions',
+            'catalog',
+            'operations',
+            'platform',
+          ] as const,
           DEFAULTS.adminSection,
         );
         const storeSub = oneOf(

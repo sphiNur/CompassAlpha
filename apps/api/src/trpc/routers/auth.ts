@@ -38,6 +38,12 @@ import { env } from '../../env';
 import { hub } from '../../realtime/hub';
 import { isUniqueViolation } from '../../services/pgErrors';
 import { isPlatformAdmin } from '../../services/platformAdmin';
+import {
+  assertCanAddMember,
+  assertWriteAccess,
+  readSubscriptionState,
+  type SubscriptionState,
+} from '../../services/subscription';
 import type { RequestContext } from '../context';
 
 /**
@@ -919,6 +925,7 @@ export const authRouter = router({
         });
       }
 
+      assertWriteAccess(await readSubscriptionState(tx, invite.orgId));
       let member = await tx.query.members.findFirst({
         where: (m, { eq: eq2, and: and2 }) =>
           and2(eq2(m.orgId, invite.orgId), eq2(m.userId, user!.id)),
@@ -930,6 +937,7 @@ export const authRouter = router({
         });
       }
       if (!member) {
+        await assertCanAddMember(tx, invite.orgId);
         const [createdMember] = await tx
           .insert(s.members)
           .values({
@@ -1455,9 +1463,18 @@ function buildSessionPayload(
 ): Promise<Session> {
   return Promise.all([listUserMemberships(db, userId), isPlatformAdmin(db, userId)]).then(
     ([memberships, platformAdmin]) =>
-      withOrgContext(db, orgId, (tx) =>
-        readSessionPayload(tx, userId, memberId, orgId, memberships, platformAdmin),
-      ),
+      withOrgContext(db, orgId, async (tx) => {
+        const subscription = await readSubscriptionState(tx, orgId);
+        return readSessionPayload(
+          tx,
+          userId,
+          memberId,
+          orgId,
+          memberships,
+          platformAdmin,
+          subscription,
+        );
+      }),
   );
 }
 
@@ -1502,6 +1519,7 @@ async function readSessionPayload(
   orgId: string,
   memberships: Session['memberships'],
   platformAdmin: boolean,
+  subscription: SubscriptionState,
 ): Promise<Session> {
   const user = await db.query.users.findFirst({ where: (u, { eq: eq2 }) => eq2(u.id, userId) });
   const org = await db.query.organizations.findFirst({
@@ -1818,6 +1836,7 @@ async function readSessionPayload(
     },
     memberships,
     isPlatformAdmin: platformAdmin,
+    subscription,
     stores: storeRows.map((st) => ({
       id: st.id,
       name: st.name,

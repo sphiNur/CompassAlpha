@@ -5,6 +5,7 @@ import { catalogRouter } from './routers/catalog';
 import { dishesRouter } from './routers/dishes';
 import { inventoryRouter } from './routers/inventory';
 import { orderRouter } from './routers/order';
+import { platformRouter } from './routers/platform';
 import { reportRouter } from './routers/report';
 import { runRouter } from './routers/run';
 import { salesRouter } from './routers/sales';
@@ -25,6 +26,7 @@ export const appRouter = router({
   // (M2.0c) will be the next consumer of the same ledger.
   inventory: inventoryRouter,
   order: orderRouter,
+  platform: platformRouter,
   // M1.15: finance reconciliation reports (cash daily / transfer / by
   // supplier). Sits next to Admin but its own router so the admin
   // bundle doesn't grow further.

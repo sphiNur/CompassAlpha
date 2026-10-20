@@ -17,6 +17,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { getDb, closeDb, schema as s } from './index';
 import { PERMISSIONS, BUILTIN_ROLES } from './seed-data';
 import { DEFAULT_FEATURE_FLAGS, DEFAULT_ORG_WORKFLOW } from './provision-organization';
+import { provisionSubscription } from './subscription';
 
 (function loadRootEnv() {
   let dir = dirname(fileURLToPath(import.meta.url));
@@ -67,6 +68,7 @@ async function main() {
     (await db.query.organizations.findFirst({ where: (x, { eq }) => eq(x.slug, 'default') }));
   if (!orgRow) throw new Error('failed to find or create default org');
   const orgId = orgRow.id;
+  await provisionSubscription(db, orgId, { planCode: 'legacy', status: 'active' });
 
   console.log('[seed] Built-in roles...');
   for (const role of BUILTIN_ROLES) {

@@ -136,6 +136,19 @@ export const authedProcedure = t.procedure
       throw new TRPCError({ code: 'UNAUTHORIZED', message: 'auth.errors.required' });
     }
     return opts.next({ ctx: { ...opts.ctx, session: opts.ctx.session } });
+  })
+  .use(async (opts) => {
+    if (opts.type !== 'mutation') return opts.next();
+    if (opts.ctx.session?.writeAccess !== false) return opts.next();
+    const exempt =
+      opts.path.startsWith('auth.') ||
+      opts.path.startsWith('system.') ||
+      opts.path.startsWith('platform.');
+    if (exempt) return opts.next();
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: 'subscription.errors.readOnly',
+    });
   });
 
 /**

@@ -309,6 +309,13 @@
       "when": 1792503600000,
       "tag": "0043_platform_admins",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1792507200000,
+      "tag": "0044_subscriptions",
+      "breakpoints": true
     }
   ]
 }

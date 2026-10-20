@@ -25,6 +25,7 @@ import { authedProcedure, router } from '../trpc';
 import { hub } from '../../realtime/hub';
 import { hasGlobalOrgAdmin, hasGlobalPermission } from '../../services/orgAdmin';
 import { effectivePermissionsForStore } from '../../services/storeScope';
+import { assertCanAddMember, assertCanAddStore } from '../../services/subscription';
 
 function requireAdmin(perms: ReadonlySet<string>): void {
   if (!perms.has('users.manage')) {
@@ -1087,6 +1088,7 @@ export const adminRouter = router({
       requireAdmin(ctx.session!.permissions);
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
+        await assertCanAddMember(tx, orgId);
         const storeIds = [...new Set(input.storeIds)];
         const isAdminInvite = input.roleSlug === 'admin' || input.roleSlug === 'super_admin';
         if (!isAdminInvite && storeIds.length === 0) {
@@ -1355,6 +1357,7 @@ export const adminRouter = router({
         });
         const created = !member;
         if (!member) {
+          await assertCanAddMember(tx, orgId);
           const [m] = await tx
             .insert(s.members)
             .values({ orgId, userId: user.id, status: 'active', invitedBy: ctx.session!.userId })
@@ -3118,6 +3121,7 @@ export const adminRouter = router({
     requireOrgAdmin(ctx.session!.permissions);
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
+      await assertCanAddStore(tx, orgId);
       const [created] = await tx
         .insert(s.stores)
         .values({

@@ -31,6 +31,7 @@ DECLARE
   org_tables text[] := ARRAY[
     'auth.members',
     'auth.member_invites',
+    'auth.organization_subscriptions',
     'auth.roles',
     'auth.policy_rules',
     'inventory.stores',

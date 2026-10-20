@@ -53,6 +53,7 @@ import { useNavStore } from '../stores/navStore';
 import { isInTelegram, useTelegramBackButton } from '../hooks/useTelegram';
 import { useI18n } from '../hooks/useI18n';
 import { LanguageSheet } from '../components/LanguageSheet';
+import { SubscriptionSummary } from '../components/SubscriptionSummary';
 // Operations sections — extracted to admin/operations (Phase 5 step 1).
 import {
   ActivitySection,
@@ -81,6 +82,7 @@ import {
 import { StoresHomeSection, StoreDetailScreen } from './admin/stores/StoresSections';
 // People + permissions — extracted to admin/people (Phase 5 step 4).
 import { PermissionsSection } from './admin/people/PeopleSections';
+import { PlatformSection } from './admin/platform/PlatformSections';
 
 /**
  * AdminPage top-level layout (rewritten 2026-05-06 — round 3, M1.4
@@ -143,6 +145,7 @@ export function AdminPage() {
 
   const isAdmin = session?.permissions.includes('users.manage') ?? false;
   const isSuperAdmin = session?.roleSlugs.includes('super_admin') ?? false;
+  const isPlatformAdmin = session?.isPlatformAdmin ?? false;
   // M1.9 (2026-05-07): per-store admins (e.g. store-scoped manager
   // post-B1) get into Admin via the broadened `users.manage` perm,
   // but most org-wide write surfaces (RoleCreate, TransferStore,
@@ -159,7 +162,7 @@ export function AdminPage() {
   // user locale).
   const i18n = useI18n();
 
-  if (!isAdmin) {
+  if (!isAdmin && !isPlatformAdmin) {
     return (
       <div className="px-4 py-6">
         <EmptyState
@@ -200,15 +203,9 @@ export function AdminPage() {
           />
         ) : null}
         {section === 'stores' && storeFocus !== null ? (
-          <StoreDetailScreen
-            focus={storeFocus}
-            sub={storeSub}
-            onSubChange={setStoreSub}
-          />
+          <StoreDetailScreen focus={storeFocus} sub={storeSub} onSubChange={setStoreSub} />
         ) : null}
-        {section === 'permissions' ? (
-          <PermissionsSection isSuperAdmin={isSuperAdmin} />
-        ) : null}
+        {section === 'permissions' ? <PermissionsSection isSuperAdmin={isSuperAdmin} /> : null}
         {section === 'catalog' && !catalogSub ? (
           <CatalogHome onPick={(s) => setCatalogSub(s)} />
         ) : null}
@@ -228,6 +225,7 @@ export function AdminPage() {
         {section === 'operations' && opsSub === 'priceReport' ? <PriceReportSection /> : null}
         {section === 'operations' && opsSub === 'finance' ? <FinanceSection /> : null}
         {section === 'operations' && opsSub === 'maintenance' ? <MaintenanceSection /> : null}
+        {section === 'platform' ? <PlatformSection /> : null}
       </SectionFrame>
     );
   }
@@ -273,6 +271,14 @@ export function AdminPage() {
           hint={i18n.t('admin.section.operationsHint')}
           onClick={() => setSection('operations')}
         />
+        {isPlatformAdmin ? (
+          <SectionRow
+            icon={<IconShield size={20} />}
+            label={i18n.t('admin.section.platform')}
+            hint={i18n.t('admin.section.platformHint')}
+            onClick={() => setSection('platform')}
+          />
+        ) : null}
       </ul>
     </div>
   );
@@ -292,24 +298,18 @@ function titleForSection(
   }
   if (section === 'catalog' && catalogSub === 'categories')
     return i18n.t('admin.subsection.categories');
-  if (section === 'catalog' && catalogSub === 'skus')
-    return i18n.t('admin.subsection.skus');
+  if (section === 'catalog' && catalogSub === 'skus') return i18n.t('admin.subsection.skus');
   if (section === 'catalog' && catalogSub === 'suppliers')
     return i18n.t('admin.subsection.suppliers');
-  if (section === 'catalog' && catalogSub === 'dishes')
-    return i18n.t('admin.subsection.dishes');
+  if (section === 'catalog' && catalogSub === 'dishes') return i18n.t('admin.subsection.dishes');
   if (section === 'catalog' && catalogSub === 'expenseTemplates')
     return i18n.t('admin.subsection.expenseTemplates');
-  if (section === 'operations' && opsSub === 'activity')
-    return i18n.t('admin.subsection.activity');
-  if (section === 'operations' && opsSub === 'history')
-    return i18n.t('admin.subsection.history');
-  if (section === 'operations' && opsSub === 'adminAudit')
-    return i18n.t('admin.subsection.audit');
+  if (section === 'operations' && opsSub === 'activity') return i18n.t('admin.subsection.activity');
+  if (section === 'operations' && opsSub === 'history') return i18n.t('admin.subsection.history');
+  if (section === 'operations' && opsSub === 'adminAudit') return i18n.t('admin.subsection.audit');
   if (section === 'operations' && opsSub === 'priceReport')
     return i18n.t('admin.subsection.priceReport');
-  if (section === 'operations' && opsSub === 'finance')
-    return i18n.t('admin.subsection.finance');
+  if (section === 'operations' && opsSub === 'finance') return i18n.t('admin.subsection.finance');
   if (section === 'operations' && opsSub === 'maintenance')
     return i18n.t('admin.subsection.maintenance');
   switch (section) {
@@ -323,6 +323,8 @@ function titleForSection(
       return i18n.t('admin.section.catalog');
     case 'operations':
       return i18n.t('admin.section.operations');
+    case 'platform':
+      return i18n.t('admin.section.platform');
     default:
       return '';
   }
@@ -433,16 +435,16 @@ function SectionFrame({
             className="press inline-flex h-9 items-center gap-1 rounded-[var(--r-pill)] px-3 text-old-body text-[var(--c-action)]"
             aria-label={i18n.t('admin.aria.back')}
           >
-            <span aria-hidden className="text-old-h2 leading-none">‹</span>
+            <span aria-hidden className="text-old-h2 leading-none">
+              ‹
+            </span>
             {/* was the literal "Admin" */}
             <span>{i18n.t('nav.admin')}</span>
           </button>
         </header>
       )}
       <div className="px-4 pb-2 pt-3">
-        <h1 className="text-old-h1 font-semibold leading-[1.15] text-[var(--c-fg)]">
-          {title}
-        </h1>
+        <h1 className="text-old-h1 font-semibold leading-[1.15] text-[var(--c-fg)]">{title}</h1>
       </div>
       {children}
     </div>
@@ -515,17 +517,26 @@ function WorkspaceSection() {
   return (
     <div className="px-4 py-3">
       <LanguageSheet open={langSheetOpen} onOpenChange={setLangSheetOpen} />
+      <div className="mb-3">
+        <SubscriptionSummary />
+      </div>
       <Card>
         <div className="flex flex-col gap-3 px-4 py-3">
           {/* M1.7-fix (2026-05-07, audit HIGH #7): these labels were
               hardcoded English — the M1.6 admin-i18n pass missed
               this card. Now they go through i18n.t. */}
-          <DetailRow label={i18n.t('admin.workspace.name')} value={session?.member.orgName ?? '—'} />
+          <DetailRow
+            label={i18n.t('admin.workspace.name')}
+            value={session?.member.orgName ?? '—'}
+          />
           {/* M1.9 (2026-05-07): the `slug` row is internal infrastructure
               ("acme-restaurants" type identifier). Showing it raw to
               the chain owner adds noise without value. Kept the field
               in i18n catalogs in case super_admin tooling wants it. */}
-          <DetailRow label={i18n.t('admin.workspace.yourRole')} value={[...(session?.roleSlugs ?? [])].join(', ') || '—'} />
+          <DetailRow
+            label={i18n.t('admin.workspace.yourRole')}
+            value={[...(session?.roleSlugs ?? [])].join(', ') || '—'}
+          />
           <DetailRow
             label={i18n.t('admin.workspace.telegram')}
             value={session?.user.tgUsername ? `@${session.user.tgUsername}` : '—'}
@@ -533,10 +544,7 @@ function WorkspaceSection() {
           {/* M1.17: read-out of the new financial trio so anyone with
               Admin access can see the active settings at a glance. The
               edit affordance is the ListRow below (admin-only). */}
-          <DetailRow
-            label={i18n.t('admin.workspace.currency')}
-            value={currency}
-          />
+          <DetailRow label={i18n.t('admin.workspace.currency')} value={currency} />
           <DetailRow
             label={i18n.t('admin.workspace.taxRate')}
             value={Number(taxRatePct) > 0 ? `${taxRatePct}%` : '—'}
@@ -681,4 +689,3 @@ function CatalogHome({ onPick }: { onPick: (s: CatalogSub) => void }) {
     </ul>
   );
 }
-

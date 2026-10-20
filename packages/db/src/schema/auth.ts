@@ -80,6 +80,69 @@ export const organizations = authSchema.table(
   }),
 );
 
+/**
+ * Subscription product catalog. Prices are intentionally zero/manual for
+ * now; payment-provider fields can be filled in without changing the
+ * entitlement model.
+ */
+export const billingPlans = authSchema.table('billing_plans', {
+  code: varchar('code', { length: 32 }).primaryKey(),
+  name: varchar('name', { length: 100 }).notNull(),
+  description: text('description'),
+  priceAmount: decimal('price_amount', { precision: 12, scale: 2 }).notNull().default('0'),
+  currency: varchar('currency', { length: 3 }).notNull().default('UZS'),
+  billingInterval: varchar('billing_interval', { length: 16 }).notNull().default('manual'),
+  limits: jsonb('limits')
+    .$type<{ stores: number | null; members: number | null }>()
+    .notNull()
+    .default(sql`'{"stores":1,"members":10}'::jsonb`),
+  features: jsonb('features')
+    .$type<Record<string, boolean>>()
+    .notNull()
+    .default(sql`'{}'::jsonb`),
+  isActive: boolean('is_active').notNull().default(true),
+  sortIndex: integer('sort_index').notNull().default(0),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+/**
+ * One subscription per tenant. `status` controls whether the org can
+ * write; the plan controls its limits/features. Payment provider
+ * references will live here later.
+ */
+export const organizationSubscriptions = authSchema.table(
+  'organization_subscriptions',
+  {
+    orgId: uuid('org_id')
+      .primaryKey()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    planCode: varchar('plan_code', { length: 32 })
+      .notNull()
+      .references(() => billingPlans.code, { onDelete: 'restrict' }),
+    status: varchar('status', { length: 16 }).notNull().default('trialing'),
+    trialEndsAt: timestamp('trial_ends_at', { withTimezone: true, mode: 'date' }),
+    currentPeriodStart: timestamp('current_period_start', {
+      withTimezone: true,
+      mode: 'date',
+    }),
+    currentPeriodEnd: timestamp('current_period_end', {
+      withTimezone: true,
+      mode: 'date',
+    }),
+    graceEndsAt: timestamp('grace_ends_at', { withTimezone: true, mode: 'date' }),
+    cancelAtPeriodEnd: boolean('cancel_at_period_end').notNull().default(false),
+    note: text('note'),
+    updatedBy: uuid('updated_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    planIdx: index('org_sub_plan_idx').on(t.planCode),
+    statusIdx: index('org_sub_status_idx').on(t.status),
+  }),
+);
+
 /** Identity. A user may belong to multiple orgs via `members`. */
 export const users = authSchema.table(
   'users',

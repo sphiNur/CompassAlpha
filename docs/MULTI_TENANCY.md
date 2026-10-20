@@ -94,7 +94,8 @@ store/role grants, and returns a session for that tenant.
 
 Not included in this phase:
 
-- billing, plan enforcement and usage metering;
+- payment collection (plans and entitlement enforcement are implemented;
+  see `docs/SUBSCRIPTIONS.md`);
 - subdomain-per-tenant routing;
 - a cross-tenant platform-admin console;
 - per-tenant encryption keys;

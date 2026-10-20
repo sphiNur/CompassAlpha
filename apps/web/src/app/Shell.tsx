@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import type { ComponentType, ReactNode, SVGProps } from 'react';
 import {
+  Banner,
   IconAdmin,
   IconApprove,
   IconConfirm,
@@ -465,6 +466,13 @@ function ShellInner() {
           overscrollBehaviorY: 'contain',
         }}
       >
+        {session?.subscription && !session.subscription.writeAccess ? (
+          <div className="px-4 pt-3">
+            <Banner tone="warn" title={i18n.t('subscription.readOnlyTitle')}>
+              {i18n.t('subscription.readOnlyBody')}
+            </Banner>
+          </div>
+        ) : null}
         {PAGES[tab]()}
       </main>
 

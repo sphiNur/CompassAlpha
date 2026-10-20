@@ -6,11 +6,14 @@ import { logger } from '../infra/log';
 import { env } from '../env';
 import { ulid } from 'ulid';
 import { hasGlobalOrgAdmin } from '../services/orgAdmin';
+import { readSubscriptionState } from '../services/subscription';
 
 export interface SessionContext {
   userId: string;
   memberId: string;
   orgId: string;
+  /** Subscription status controls whether business mutations are allowed. */
+  writeAccess?: boolean;
   /**
    * IANA timezone for the org — D.1 (M3.39, 2026-05-20). Drives "today's
    * date" calculations in order.todaySession / run.create / submit
@@ -110,6 +113,7 @@ async function readSession(
       and(eq2(m.id, memberId), eq2(m.userId, userId), eq2(m.orgId, orgId)),
   });
   if (!member || member.status !== 'active') return null;
+  const subscription = await readSubscriptionState(db, orgId);
 
   const bindings = await db
     .select({ role: s.roles, binding: s.memberRoleBindings })
@@ -150,6 +154,7 @@ async function readSession(
     userId,
     memberId,
     orgId,
+    writeAccess: subscription.writeAccess,
     orgTimezone,
     // A few destructive maintenance endpoints use this legacy slug gate.
     // Treat `super_admin` as global-only for the same reason as org.admin.

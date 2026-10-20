@@ -42,6 +42,19 @@ export interface AuthSession {
   }>;
   /** Cross-tenant operator; only these users may create new workspaces. */
   isPlatformAdmin?: boolean;
+  /** Current tenant plan and write access snapshot. */
+  subscription?: {
+    planCode: string;
+    planName: string;
+    status: 'trialing' | 'active' | 'past_due' | 'suspended' | 'canceled';
+    writeAccess: boolean;
+    trialEndsAt: string | null;
+    currentPeriodEnd: string | null;
+    graceEndsAt: string | null;
+    cancelAtPeriodEnd: boolean;
+    limits: { stores: number | null; members: number | null };
+    usage: { stores: number; members: number };
+  };
   /** Only stores this member is assigned to (admins see all org stores). */
   stores: Array<{ id: string; name: string; code: string | null; isActive: boolean }>;
   permissions: string[];
