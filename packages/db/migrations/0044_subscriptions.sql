@@ -1,3 +1,5 @@
+SELECT set_config('app.system_context', 'maintenance', true);
+--> statement-breakpoint
 CREATE TABLE "auth"."billing_plans" (
 	"code" varchar(32) PRIMARY KEY NOT NULL,
 	"name" varchar(100) NOT NULL,
