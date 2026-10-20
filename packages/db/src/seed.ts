@@ -55,7 +55,7 @@ async function main() {
     .insert(s.organizations)
     .values({
       slug: 'default',
-      name: 'Default Organization',
+      name: 'Eden',
       localeDefault: 'en',
       timezone: 'Asia/Tashkent',
       workflow: DEFAULT_ORG_WORKFLOW,
