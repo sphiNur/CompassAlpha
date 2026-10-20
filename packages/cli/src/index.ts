@@ -14,18 +14,18 @@ import { registerOrgCommands } from './commands/org';
 import { registerUserCommands } from './commands/user';
 import { registerTestCommands } from './commands/test';
 import { registerProjectCommands } from './commands/project';
+import { registerPlatformCommands } from './commands/platform';
 
 const program = new Command();
-program
-  .name('compass')
-  .description('Compass operations CLI')
-  .version('0.1.0')
-  .showHelpAfterError();
+program.name('compass').description('Compass operations CLI').version('0.1.0').showHelpAfterError();
 
 registerOrgCommands(program.command('org').description('Manage organizations'));
 registerUserCommands(program.command('user').description('Manage users and roles'));
 registerTestCommands(program.command('test').description('Test-data utilities'));
 registerProjectCommands(program.command('project').description('Projection management'));
+registerPlatformCommands(
+  program.command('platform').description('Manage cross-tenant platform administrators'),
+);
 
 program.parseAsync(process.argv).catch((err) => {
   console.error(kleur.red('[compass] Failed:'), err);

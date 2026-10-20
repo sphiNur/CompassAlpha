@@ -14,15 +14,15 @@
 
 ### `auth.*`
 
-| Route                     | Type     | Auth   | Notes                                                                    |
-| ------------------------- | -------- | ------ | ------------------------------------------------------------------------ |
-| `auth.telegramLogin`      | mutation | public | Verifies Telegram initData → tokens + session for the last workspace.    |
-| `auth.acceptInvite`       | mutation | public | Accepts a one-time tenant invite and returns a session for that tenant.  |
-| `auth.createOrganization` | mutation | public | Verifies Telegram identity, provisions a new tenant, makes caller admin. |
-| `auth.switchOrganization` | mutation | authed | Switches to another active membership and issues tenant-bound tokens.    |
-| `auth.me`                 | query    | authed | Returns session, including every active organisation membership.         |
-| `auth.refresh`            | mutation | public | Rotates refresh token; the chain stays in its original tenant.           |
-| `auth.signOut`            | mutation | authed | No-op for stateless access tokens; revokes refresh.                      |
+| Route                     | Type     | Auth           | Notes                                                                   |
+| ------------------------- | -------- | -------------- | ----------------------------------------------------------------------- |
+| `auth.telegramLogin`      | mutation | public         | Verifies Telegram initData → tokens + session for the last workspace.   |
+| `auth.acceptInvite`       | mutation | public         | Accepts a one-time tenant invite and returns a session for that tenant. |
+| `auth.createOrganization` | mutation | platform admin | Provisions a new tenant; requires `auth.platform_admins`.               |
+| `auth.switchOrganization` | mutation | authed         | Switches to another active membership and issues tenant-bound tokens.   |
+| `auth.me`                 | query    | authed         | Returns session, including every active organisation membership.        |
+| `auth.refresh`            | mutation | public         | Rotates refresh token; the chain stays in its original tenant.          |
+| `auth.signOut`            | mutation | authed         | No-op for stateless access tokens; revokes refresh.                     |
 
 ### `catalog.*`
 

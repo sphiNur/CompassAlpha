@@ -384,6 +384,8 @@ export const ru = {
   'auth.errors.orgSlugTaken': 'Этот адрес рабочего пространства уже занят.',
   'auth.errors.orgCreationDisabled':
     'Новые пространства создаёт команда Compass. Запросите приглашение.',
+  'auth.errors.platformAdminRequired':
+    'Создавать новые пространства могут только администраторы платформы.',
 
   // Admin (M1.6) — высокочастотная локализация
   'admin.section.organization': 'Организация',

@@ -385,6 +385,8 @@ export const uz = {
   'auth.errors.orgSlugTaken': 'Bu ish maydoni manzili allaqachon band.',
   'auth.errors.orgCreationDisabled':
     "Yangi ish maydonlarini Compass jamoasi ochadi. Taklif so'rang.",
+  'auth.errors.platformAdminRequired':
+    'Yangi ish maydonlarini faqat platforma administratorlari ochishi mumkin.',
 
   // Admin (M1.6) — yuqori chastotali lokalizatsiya
   'admin.section.organization': 'Tashkilot',

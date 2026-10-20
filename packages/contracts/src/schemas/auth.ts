@@ -99,6 +99,8 @@ export const SessionSchema = z.object({
   member: MemberSummarySchema,
   /** Active organisations this user belongs to. */
   memberships: z.array(OrganizationMembershipSchema).default([]),
+  /** Cross-tenant operator. Only these users may create new tenants. */
+  isPlatformAdmin: z.boolean().default(false),
   /** ONLY the stores this member is assigned to (admins see all org stores). */
   stores: z.array(StoreSummarySchema),
   permissions: z.array(z.string()),
@@ -136,7 +138,6 @@ export const SwitchOrganizationInputSchema = z.object({
 });
 
 export const CreateOrganizationInputSchema = z.object({
-  initData: z.string().min(1),
   name: z.string().trim().min(2).max(200),
   /** Optional operator-chosen slug; omitted lets the server derive one. */
   slug: z

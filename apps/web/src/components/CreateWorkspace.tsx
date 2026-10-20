@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button, Field, Input, SectionLabel, useToast } from '@compass/ui';
 import { useI18n } from '../hooks/useI18n';
-import { getTg } from '../hooks/useTelegram';
 import { trpc } from '../lib/trpc';
 import { useErrToast } from '../lib/errToast';
 import { useAuthStore } from '../stores/authStore';
@@ -56,13 +55,7 @@ export function CreateWorkspaceForm({ onCreated }: { onCreated?: () => void }) {
         loading={create.isPending}
         disabled={!canSubmit}
         onClick={() => {
-          const initData = getTg()?.initData;
-          if (!initData) {
-            toast.error(i18n.t('auth.errors.noInitData'));
-            return;
-          }
           create.mutate({
-            initData,
             name: name.trim(),
             locale: i18n.locale,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,

@@ -134,6 +134,21 @@ export const users = authSchema.table(
   }),
 );
 
+/**
+ * Cross-tenant platform operators. This is deliberately separate from
+ * the org-scoped `super_admin` role: being the highest admin in one
+ * customer organisation must not grant the right to create or inspect
+ * other tenants.
+ */
+export const platformAdmins = authSchema.table('platform_admins', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  grantedBy: uuid('granted_by').references(() => users.id, { onDelete: 'set null' }),
+  note: varchar('note', { length: 200 }),
+  createdAt: createdAt(),
+});
+
 export const members = authSchema.table(
   'members',
   {

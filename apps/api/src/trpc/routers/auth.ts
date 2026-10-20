@@ -37,6 +37,7 @@ import { logger } from '../../infra/log';
 import { env } from '../../env';
 import { hub } from '../../realtime/hub';
 import { isUniqueViolation } from '../../services/pgErrors';
+import { isPlatformAdmin } from '../../services/platformAdmin';
 import type { RequestContext } from '../context';
 
 /**
@@ -72,18 +73,10 @@ const REFRESH_LIMIT = { window: 60_000, max: 60 } as const;
  * stops a client that loops on a broken link.
  */
 const INVITE_LIMIT = { window: 60_000, max: 30 } as const;
-/** Self-service tenant creation is rare; one genuine owner may retry once. */
-const CREATE_ORG_LIMIT = { window: 60 * 60_000, max: 3 } as const;
 function enforceRate(scope: string, ip: string | null): void {
   if (!ip) return;
   const limit =
-    scope === 'refresh'
-      ? REFRESH_LIMIT
-      : scope === 'acceptInvite'
-        ? INVITE_LIMIT
-        : scope === 'createOrganization'
-          ? CREATE_ORG_LIMIT
-          : AUTH_LIMIT;
+    scope === 'refresh' ? REFRESH_LIMIT : scope === 'acceptInvite' ? INVITE_LIMIT : AUTH_LIMIT;
   if (!checkRate(scope, ip, limit)) {
     throw new TRPCError({
       code: 'TOO_MANY_REQUESTS',
@@ -1092,27 +1085,15 @@ export const authRouter = router({
    * self-service onboarding path: the first admin already has a usable
    * role ladder and feature defaults when the workspace opens.
    */
-  createOrganization: publicProcedure
+  createOrganization: authedProcedure
     .input(CreateOrganizationInputSchema)
     .mutation(async ({ ctx, input }) => {
-      enforceRate('createOrganization', ctx.ip);
-      if (env.SELF_SERVICE_ORG_CREATION !== 'true') {
+      if (!(await isPlatformAdmin(ctx.db, ctx.session!.userId))) {
         throw new TRPCError({
           code: 'FORBIDDEN',
-          message: 'auth.errors.orgCreationDisabled',
+          message: 'auth.errors.platformAdminRequired',
         });
       }
-      if (!env.TELEGRAM_BOT_TOKEN) {
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: 'auth.errors.botTokenMissing',
-        });
-      }
-      const verified = verifyInitData(input.initData, env.TELEGRAM_BOT_TOKEN);
-      if (!verified.ok || !verified.user) {
-        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'auth.errors.invalidInitData' });
-      }
-      const tg = verified.user;
       if (input.timezone) {
         try {
           new Intl.DateTimeFormat('en', { timeZone: input.timezone }).format();
@@ -1121,50 +1102,11 @@ export const authRouter = router({
         }
       }
 
-      let user = await inSystem(ctx.db, 'auth', (tx) =>
+      const user = await inSystem(ctx.db, 'auth', (tx) =>
         tx.query.users.findFirst({
-          where: (u, { eq: eq2 }) => eq2(u.tgUserId, BigInt(tg.id)),
+          where: (u, { eq: eq2 }) => eq2(u.id, ctx.session!.userId),
         }),
       );
-      if (!user) {
-        const [created] = await inSystem(ctx.db, 'auth', (tx) =>
-          tx
-            .insert(s.users)
-            .values({
-              tgUserId: BigInt(tg.id),
-              tgUsername: tg.username ?? null,
-              displayName:
-                [tg.first_name, tg.last_name].filter(Boolean).join(' ') ||
-                tg.username ||
-                `user-${tg.id}`,
-              avatarUrl: tg.photo_url ?? null,
-              locale: input.locale ?? tg.language_code ?? 'en',
-            })
-            .returning(),
-        );
-        user = created;
-      } else {
-        const known = user;
-        await inSystem(ctx.db, 'auth', (tx) =>
-          tx
-            .update(s.users)
-            .set({
-              tgUsername: tg.username ?? known.tgUsername,
-              avatarUrl: tg.photo_url ?? known.avatarUrl,
-              locale: input.locale ?? known.locale ?? tg.language_code ?? 'en',
-              lastSeenAt: new Date(),
-              ...(known.displayName.startsWith('tg:')
-                ? {
-                    displayName:
-                      [tg.first_name, tg.last_name].filter(Boolean).join(' ') ||
-                      tg.username ||
-                      known.displayName,
-                  }
-                : {}),
-            })
-            .where(eq(s.users.id, known.id)),
-        );
-      }
       if (!user) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
 
       const slug = input.slug ?? organizationSlugFromName(input.name);
@@ -1177,9 +1119,9 @@ export const authRouter = router({
           return provisionOrganization(tx, {
             name: input.name,
             slug,
-            locale: input.locale ?? user!.locale ?? 'en',
+            locale: input.locale ?? user.locale ?? 'en',
             timezone: input.timezone,
-            ownerUserId: user!.id,
+            ownerUserId: user.id,
           });
         });
       } catch (err) {
@@ -1511,8 +1453,11 @@ function buildSessionPayload(
   memberId: string,
   orgId: string,
 ): Promise<Session> {
-  return listUserMemberships(db, userId).then((memberships) =>
-    withOrgContext(db, orgId, (tx) => readSessionPayload(tx, userId, memberId, orgId, memberships)),
+  return Promise.all([listUserMemberships(db, userId), isPlatformAdmin(db, userId)]).then(
+    ([memberships, platformAdmin]) =>
+      withOrgContext(db, orgId, (tx) =>
+        readSessionPayload(tx, userId, memberId, orgId, memberships, platformAdmin),
+      ),
   );
 }
 
@@ -1556,6 +1501,7 @@ async function readSessionPayload(
   memberId: string,
   orgId: string,
   memberships: Session['memberships'],
+  platformAdmin: boolean,
 ): Promise<Session> {
   const user = await db.query.users.findFirst({ where: (u, { eq: eq2 }) => eq2(u.id, userId) });
   const org = await db.query.organizations.findFirst({
@@ -1871,6 +1817,7 @@ async function readSessionPayload(
       pricesIncludeTax: org.pricesIncludeTax ?? true,
     },
     memberships,
+    isPlatformAdmin: platformAdmin,
     stores: storeRows.map((st) => ({
       id: st.id,
       name: st.name,

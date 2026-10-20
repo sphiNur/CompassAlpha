@@ -231,9 +231,11 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
                   />
                 );
               })}
-              <Button block variant="pearl" onClick={() => setCreatingWorkspace(true)}>
-                {i18n.t('workspace.create.action')}
-              </Button>
+              {session?.isPlatformAdmin ? (
+                <Button block variant="pearl" onClick={() => setCreatingWorkspace(true)}>
+                  {i18n.t('workspace.create.action')}
+                </Button>
+              ) : null}
             </div>
           )}
         </section>

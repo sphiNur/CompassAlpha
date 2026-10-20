@@ -352,6 +352,7 @@ export const zh = {
   'auth.errors.invalidTimezone': '时区无效。',
   'auth.errors.orgSlugTaken': '该工作区标识已被使用。',
   'auth.errors.orgCreationDisabled': '新工作区由 Compass 团队开通，请联系管理员获取邀请。',
+  'auth.errors.platformAdminRequired': '只有平台最高级管理员可以创建新工作区。',
 
   // Admin (M1.6) — high-traffic 管理界面本地化
   'admin.section.organization': '组织',

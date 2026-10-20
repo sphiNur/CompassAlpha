@@ -445,6 +445,7 @@ export const en = {
   'auth.errors.orgSlugTaken': 'That workspace address is already in use.',
   'auth.errors.orgCreationDisabled':
     'New workspaces are created by the Compass team. Ask for an invitation.',
+  'auth.errors.platformAdminRequired': 'Only platform administrators can create new workspaces.',
 
   // ── Admin (M1.6, 2026-05-06) ───────────────────────────────────
   // High-traffic admin labels. The deeper admin internals (audit

@@ -40,6 +40,8 @@ export interface AuthSession {
     status: string;
     joinedAt: string;
   }>;
+  /** Cross-tenant operator; only these users may create new workspaces. */
+  isPlatformAdmin?: boolean;
   /** Only stores this member is assigned to (admins see all org stores). */
   stores: Array<{ id: string; name: string; code: string | null; isActive: boolean }>;
   permissions: string[];

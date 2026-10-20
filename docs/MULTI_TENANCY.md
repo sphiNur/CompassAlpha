@@ -62,19 +62,26 @@ backward compatibility.
 
 ### Create workspace
 
-`auth.createOrganization` is the self-service onboarding path:
+`auth.createOrganization` is a platform-operator path. It requires an
+authenticated session plus a row in `auth.platform_admins`; being the
+`super_admin` or highest admin of one organisation is not enough.
 
-1. Verify Telegram identity.
-2. Create or reuse the user.
-3. Create the organisation.
-4. Provision the permission catalog, built-in role ladder, default
+1. Verify the caller is a platform administrator.
+2. Create the organisation.
+3. Provision the permission catalog, built-in role ladder, default
    feature flags and workflow.
-5. Create the owner membership and a global `admin` binding.
-6. Issue a session for the new tenant.
+4. Create the owner membership and a global `admin` binding.
+5. Issue a session for the new tenant.
 
-The provisioning helper is also used by `compass org create --owner`.
-Set `SELF_SERVICE_ORG_CREATION=false` for invite-only onboarding; the CLI
-path remains available to operators.
+Grant platform access with:
+
+```bash
+compass platform grant <tgUserId>
+compass platform list
+```
+
+The provisioning helper is also used by `compass org create --owner`
+for operator-created tenants outside the app.
 
 ### Invitation
 

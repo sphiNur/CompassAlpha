@@ -71,6 +71,7 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
   let memberB = '';
   let orgA = '';
   let orgB = '';
+  let normalUserId = '';
   let tgUserId = 0n;
 
   beforeAll(async () => {
@@ -86,6 +87,7 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
       .returning();
     userId = user!.id;
     cleanupUserIds.push(userId);
+    await db.insert(s.platformAdmins).values({ userId, note: 'multi-tenant test' });
 
     const suffix = Math.random().toString(36).slice(2, 8);
     const provisioned = await withSystemContext(db, 'maintenance', async (tx) => {
@@ -107,6 +109,18 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
     memberB = provisioned.b.ownerMemberId!;
     cleanupOrgIds.push(orgA, orgB);
     await db.update(s.users).set({ lastOrgId: orgB }).where(eq(s.users.id, userId));
+
+    const [normalUser] = await db
+      .insert(s.users)
+      .values({
+        tgUserId: freshTgId(),
+        displayName: 'Normal Admin',
+        displayNameLocked: true,
+      })
+      .returning();
+    normalUserId = normalUser!.id;
+    cleanupUserIds.push(normalUserId);
+    await db.insert(s.members).values({ orgId: orgA, userId: normalUserId, status: 'active' });
   });
 
   afterAll(async () => {
@@ -125,6 +139,7 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
     expect(login.session.member.memberId).toBe(memberB);
     expect(login.session.memberships.map((m) => m.orgId).sort()).toEqual([orgA, orgB].sort());
     expect(login.session.roleSlugs).toContain('admin');
+    expect(login.session.isPlatformAdmin).toBe(true);
   });
 
   test('switching organisation survives a refresh-token rotation', async () => {
@@ -148,21 +163,27 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
   });
 
   test('creating a workspace provisions roles, defaults and an owner admin', async () => {
-    const newTgId = freshTgId();
-    const created = await caller(null).auth.createOrganization({
-      initData: signInitData(newTgId, 'New Owner'),
+    const sessionB: SessionContext = {
+      userId,
+      memberId: memberB,
+      orgId: orgB,
+      orgTimezone: 'UTC',
+      permissions: new Set(['users.manage', 'org.admin']),
+      roleSlugs: new Set(['admin']),
+    };
+    const created = await caller(sessionB).auth.createOrganization({
       name: 'Brand New Restaurant',
       locale: 'en',
       timezone: 'Asia/Tashkent',
     });
     cleanupOrgIds.push(created.session.member.orgId);
-    cleanupUserIds.push(created.session.user.id);
 
     expect(created.session.member.orgId).not.toBe(orgA);
     expect(created.session.member.orgId).not.toBe(orgB);
     expect(created.session.roleSlugs).toContain('admin');
     expect(created.session.permissions).toContain('org.admin');
-    expect(created.session.memberships).toHaveLength(1);
+    expect(created.session.isPlatformAdmin).toBe(true);
+    expect(created.session.memberships).toHaveLength(3);
 
     const db = getDb(undefined, { system: 'maintenance' });
     const roles = await db
@@ -180,5 +201,22 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
         and2(eq2(m.orgId, created.session.member.orgId), eq2(m.userId, created.session.user.id)),
     });
     expect(owner?.status).toBe('active');
+  });
+
+  test('an ordinary organisation admin cannot create another tenant', async () => {
+    const member = await getDb(undefined, { system: 'maintenance' }).query.members.findFirst({
+      where: (m, { eq: eq2, and: and2 }) => and2(eq2(m.orgId, orgA), eq2(m.userId, normalUserId)),
+    });
+    const session: SessionContext = {
+      userId: normalUserId,
+      memberId: member!.id,
+      orgId: orgA,
+      orgTimezone: 'UTC',
+      permissions: new Set(['users.manage', 'org.admin']),
+      roleSlugs: new Set(['admin']),
+    };
+    await expect(
+      caller(session).auth.createOrganization({ name: 'Unauthorized Tenant' }),
+    ).rejects.toThrow('auth.errors.platformAdminRequired');
   });
 });
