@@ -1,0 +1,17 @@
+[Unit]
+Description=Cloudflare quick tunnel for the Compass application origin
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+ExecStart=/usr/local/bin/cloudflared tunnel --url http://localhost:80 --no-autoupdate --logfile /home/ubuntu/compass-tunnel.log --loglevel info
+Restart=always
+RestartSec=5
+TimeoutStopSec=10
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

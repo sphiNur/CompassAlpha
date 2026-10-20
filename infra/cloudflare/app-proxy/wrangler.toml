@@ -1,0 +1,7 @@
+name = "compass-alpha"
+main = "worker.js"
+compatibility_date = "2026-10-20"
+workers_dev = true
+
+[vars]
+ORIGIN_URL = "https://ground-homes-saturday-spots.trycloudflare.com"

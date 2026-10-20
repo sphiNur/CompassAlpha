@@ -103,3 +103,8 @@ or the RLS boundary.
   active membership and records it as the last workspace.
 - A new workspace starts with the built-in roles but no stores. Its owner
   can create the first store from Admin → Stores.
+- The stable public HTTPS entry is
+  `https://compass-alpha.sphinxr.workers.dev` (Cloudflare Worker). It proxies
+  through the server's supervised quick tunnel, so no owned domain is needed.
+  If the tunnel hostname changes, refresh the Worker origin with
+  `scripts/refresh-app-proxy-origin.sh`; the public URL does not change.
