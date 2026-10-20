@@ -1263,12 +1263,18 @@ export const en = {
   // the gate that replaced that default.
   'confirm.progress': 'Checked {done}/{total}',
   'confirm.markAllOk': 'All arrived fine',
+  'confirm.bulk.title': 'Mark all {n} remaining items as correct?',
+  'confirm.bulk.body': 'Only undecided items are changed. This does not confirm the store receipt.',
+  'confirm.bulk.hint':
+    'Each item will be recorded as received correctly. You can still change an item afterwards.',
+  'confirm.bulk.submit': 'Mark {n} items correct',
   'confirm.confirmStoreBlocked': '{n} still to check',
   'confirm.confirmStoreFinal': '✓ Confirmed',
   'confirm.confirmStoreFinalBanner': 'Store confirmed ✓',
   'confirm.confirmingHint': 'Confirming…',
   'confirm.toast.markedOk': 'Marked OK',
   'confirm.toast.allMarkedOk': '{n} items marked fine',
+  'confirm.toast.nothingToMark': 'Everything was already marked',
   'confirm.toast.issueNoted': 'Issue noted',
   'confirm.toast.storeConfirmed': 'Store confirmed',
   'confirm.toast.savedOffline': 'Saved offline — will sync when back online',

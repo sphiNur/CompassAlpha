@@ -20,6 +20,7 @@ import {
   DispatchInputSchema,
   EjectSessionInputSchema,
   MarkUnavailableInputSchema,
+  MarkStoreItemsOkInputSchema,
   PurchaseItemInputSchema,
   RemoveRunExpenseInputSchema,
   RevisePurchaseInputSchema,
@@ -2671,6 +2672,70 @@ export const runRouter = router({
       );
     }),
 
+  /**
+   * Bulk receiver action: mark every undecided line at one store as OK.
+   * One transaction, one projection pass and one notification dispatch.
+   * Individual `StoreItemConfirmed` events remain in the audit stream.
+   */
+  markStoreItemsOk: authedProcedure
+    .input(MarkStoreItemsOkInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const effectivePerms = await ctx.withOrg(async (tx) => {
+        await assertActorAssignedToStore(
+          tx,
+          ctx.session!.memberId,
+          input.storeId,
+          ctx.session!.permissions,
+        );
+        return effectivePermissionsForStore(
+          tx,
+          ctx.session!.memberId,
+          input.storeId,
+          ctx.session!.permissions,
+        );
+      });
+      const skuIds = [...new Set(input.skuIds)];
+      const result = await runSimpleCommand(
+        ctx,
+        input.runId,
+        (state) => {
+          const expected = new Set<string>();
+          for (const item of state.items.values()) {
+            if (item.status !== 'purchased') continue;
+            for (const split of item.storeSplits) {
+              if (split.storeId === input.storeId) expected.add(item.skuId);
+            }
+          }
+
+          let current = state;
+          const events: RunEvent[] = [];
+          for (const skuId of skuIds) {
+            if (!expected.has(skuId)) {
+              throw new TRPCError({
+                code: 'BAD_REQUEST',
+                message: 'run.errors.itemNotInRun',
+              });
+            }
+            if (current.stores.get(input.storeId)?.itemConfirms.has(skuId)) continue;
+            const out = decideRun(current, {
+              type: 'ConfirmStoreItem',
+              storeId: input.storeId,
+              skuId,
+              status: 'ok',
+              note: null,
+              photoUrl: null,
+              actor: actorFromCtx(ctx, effectivePerms),
+            });
+            events.push(...out);
+            for (const event of out) current = applyRun(current, event);
+          }
+          return events;
+        },
+        { skipRunPermissionScope: true },
+      );
+      return { marked: result.eventCount, lastSeq: result.lastSeq };
+    }),
+
   confirmStore: authedProcedure.input(ConfirmStoreInputSchema).mutation(async ({ ctx, input }) => {
     const effectivePerms = await ctx.withOrg(async (tx) => {
       await assertActorAssignedToStore(
@@ -3366,7 +3431,7 @@ async function runSimpleCommand(
     requiredPermission?: string;
     skipRunPermissionScope?: boolean;
   },
-): Promise<{ lastSeq: number }> {
+): Promise<{ lastSeq: number; eventCount: number }> {
   return ctx.withOrg(async (tx) => {
     const run = await loadRun(tx, ctx.session!.orgId, runId);
     const events = (await readStream(tx, 'run', run.id)) as unknown as RunEvent[];
@@ -3384,7 +3449,7 @@ async function runSimpleCommand(
     }
     try {
       const out = produce(state);
-      if (out.length === 0) return { lastSeq: state.seq };
+      if (out.length === 0) return { lastSeq: state.seq, eventCount: 0 };
       await appendEvents(tx, {
         streamType: 'run',
         streamId: run.id,
@@ -3400,7 +3465,7 @@ async function runSimpleCommand(
         runId: state.streamId,
         lastSeq: state.seq,
       });
-      return { lastSeq: state.seq };
+      return { lastSeq: state.seq, eventCount: out.length };
     } catch (err) {
       if (err instanceof DomainError) rethrowDomainError(err);
       if (isUniqueViolation(err)) {
@@ -3592,4 +3657,3 @@ async function assertRunPermissionForAllStores(
   }
   throw new TRPCError({ code: 'NOT_FOUND', message: 'run.errors.notVisible' });
 }
-

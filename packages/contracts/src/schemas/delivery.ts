@@ -26,6 +26,18 @@ export const ConfirmStoreInputSchema = z.object({
   expectedSeq: z.number().int().optional(),
 });
 
+/**
+ * Bulk "all received correctly" action. This only writes item-level
+ * `ok` confirmations; the separate store-level confirmation remains a
+ * deliberate second step.
+ */
+export const MarkStoreItemsOkInputSchema = z.object({
+  runId: UuidSchema,
+  storeId: UuidSchema,
+  skuIds: z.array(UuidSchema).min(1).max(500),
+  expectedSeq: z.number().int().optional(),
+});
+
 export const DeliveryViewInputSchema = z.object({
   runId: UuidSchema,
   storeId: UuidSchema.optional(),

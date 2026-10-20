@@ -8,7 +8,7 @@
  * For M1 the photo capture stub is a text URL; full S3 upload + image picker
  * lands in M1 follow-ups (PhotoCapture component).
  */
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Button,
   Card,
@@ -59,13 +59,7 @@ export function ConfirmPage() {
   } | null>(null);
   const [issueNote, setIssueNote] = useState('');
   const [issuePhoto, setIssuePhoto] = useState<string | null>(null);
-  // 2026-07-30: bulk "mark everything OK" runs N confirmStoreItem calls in
-  // series. `markingAll` disables the trigger; `bulkRef` suppresses the
-  // per-item success toast so the receiver gets one summary toast instead of
-  // a stack of N. A ref (not state) because confirmItem.onSuccess reads it
-  // outside React's render cycle.
-  const [markingAll, setMarkingAll] = useState(false);
-  const bulkRef = useRef(false);
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const photoUploader = usePhotoUploader('issue');
 
   const runsQuery = trpc.run.list.useQuery();
@@ -73,29 +67,37 @@ export function ConfirmPage() {
   const utils = trpc.useUtils();
   // Receivers also confirm from inside the store, often with terrible
   // wifi. Same offline-replay treatment as the purchaser side.
-  const offline = useOfflineQueue({
-    'run.confirmStoreItem': async (entry) => {
-      await utils.client.run.confirmStoreItem.mutate(
-        entry.input as Parameters<typeof utils.client.run.confirmStoreItem.mutate>[0],
-      );
-      void utils.run.get.invalidate();
+  const offline = useOfflineQueue(
+    {
+      'run.confirmStoreItem': async (entry) => {
+        await utils.client.run.confirmStoreItem.mutate(
+          entry.input as Parameters<typeof utils.client.run.confirmStoreItem.mutate>[0],
+        );
+        void utils.run.get.invalidate();
+      },
+      'run.confirmStore': async (entry) => {
+        await utils.client.run.confirmStore.mutate(
+          entry.input as Parameters<typeof utils.client.run.confirmStore.mutate>[0],
+        );
+        void utils.run.get.invalidate();
+      },
+      'run.markStoreItemsOk': async (entry) => {
+        await utils.client.run.markStoreItemsOk.mutate(
+          entry.input as Parameters<typeof utils.client.run.markStoreItemsOk.mutate>[0],
+        );
+        void utils.run.get.invalidate();
+      },
     },
-    'run.confirmStore': async (entry) => {
-      await utils.client.run.confirmStore.mutate(
-        entry.input as Parameters<typeof utils.client.run.confirmStore.mutate>[0],
-      );
-      void utils.run.get.invalidate();
-    },
-  }, { onDrop: () => toast.error(i18n.t('run.toast.syncFailed')) });
+    { onDrop: () => toast.error(i18n.t('run.toast.syncFailed')) },
+  );
 
   const activeRun = useMemo(
     () => runsQuery.data?.find((r) => r.status === 'delivering') ?? null,
     [runsQuery.data],
   );
-  const detailQuery = trpc.run.get.useQuery(
-    activeRun ? { runId: activeRun.id } : { runId: '' },
-    { enabled: !!activeRun },
-  );
+  const detailQuery = trpc.run.get.useQuery(activeRun ? { runId: activeRun.id } : { runId: '' }, {
+    enabled: !!activeRun,
+  });
 
   const skuById = useMemo(() => {
     const m = new Map<string, { names: Record<string, string>; unit: string }>();
@@ -145,9 +147,6 @@ export function ConfirmPage() {
       // including the most common "ok" case — confusing. The toast now
       // matches what actually happened.
       //
-      // 2026-07-30: during the bulk "mark all OK" loop, stay silent — the
-      // loop toasts once when it finishes rather than N times.
-      if (bulkRef.current) return;
       if (vars.status === 'ok') {
         haptic('success');
         toast.success(i18n.t('confirm.toast.markedOk'));
@@ -185,10 +184,29 @@ export function ConfirmPage() {
       }
     },
   });
+  const bulkMarkOk = trpc.run.markStoreItemsOk.useMutation({
+    onSuccess: (data) => {
+      void utils.run.get.invalidate();
+      setBulkConfirmOpen(false);
+      if (data.marked > 0) {
+        haptic('success');
+        toast.success(i18n.t('confirm.toast.allMarkedOk', { n: data.marked }));
+      } else {
+        toast.info(i18n.t('confirm.toast.nothingToMark'));
+      }
+    },
+    onError: (err, vars) => {
+      if (isLikelyNetworkError(err)) {
+        void offline.enqueue('run.markStoreItemsOk', vars);
+        setBulkConfirmOpen(false);
+        toast.info(i18n.t('confirm.toast.savedOffline'));
+      } else {
+        errToast('common.error')(err);
+      }
+    },
+  });
 
-  const myItems = (detailQuery.data?.splits ?? []).filter(
-    (sp) => sp.storeId === currentStoreId,
-  );
+  const myItems = (detailQuery.data?.splits ?? []).filter((sp) => sp.storeId === currentStoreId);
   /**
    * 2026-07-30 (flow review) — the receiving check used to be a no-op.
    *
@@ -217,43 +235,20 @@ export function ConfirmPage() {
   const storeConfirmed = myItems.length > 0 && myItems.every((s) => !!s.confirmedAt);
 
   /**
-   * Bulk "everything arrived correctly" path. Fires one confirmStoreItem
-   * per undecided line, SEQUENTIALLY — every event lands on the same run
-   * stream, so concurrent appends would race the `(streamId, seq)` UNIQUE
-   * constraint exactly like the order-adjust burst did before M3.x added
-   * per-store serialization. A receiving split is a handful of lines, so
-   * serial round-trips are cheap.
+   * Bulk "everything arrived correctly" is one server transaction now.
+   * One request, one projection pass, and no half-marked store when the
+   * connection drops mid-loop.
    */
-  const markAllOk = async () => {
-    if (storeConfirmed || markingAll) return;
-    const targets = undecided;
-    if (targets.length === 0) return;
-    setMarkingAll(true);
-    bulkRef.current = true;
+  const markAllOk = () => {
+    if (storeConfirmed || bulkMarkOk.isPending) return;
+    if (!activeRun || !currentStoreId) return;
+    if (undecided.length === 0) return;
     haptic('light');
-    let done = 0;
-    try {
-      for (const it of targets) {
-        writeOptimisticItemConfirm(it.runId, it.skuId, it.storeId, 'ok', null, null);
-        await confirmItem.mutateAsync({
-          runId: it.runId,
-          skuId: it.skuId,
-          storeId: it.storeId,
-          status: 'ok',
-          note: null,
-          photoUrl: null,
-        });
-        done += 1;
-      }
-      haptic('success');
-      toast.success(i18n.t('confirm.toast.allMarkedOk', { n: done }));
-    } catch {
-      // confirmItem's own onError already toasts / enqueues offline.
-      // Stop the loop so we don't pile failures on a dead network.
-    } finally {
-      bulkRef.current = false;
-      setMarkingAll(false);
-    }
+    bulkMarkOk.mutate({
+      runId: activeRun.id,
+      storeId: currentStoreId,
+      skuIds: undecided.map((it) => it.skuId),
+    });
   };
 
   // MainButton dispatch — when the issue sheet is open it takes over
@@ -300,7 +295,7 @@ export function ConfirmPage() {
           ? i18n.t('confirm.confirmStore')
           : i18n.t('confirm.confirmStoreBlocked', { n: undecided.length });
     mainBtnVisible = !!activeRun && myItems.length > 0 && !storeConfirmed;
-    mainBtnActive = allDecided && !confirmStore.isPending && !markingAll;
+    mainBtnActive = allDecided && !confirmStore.isPending && !bulkMarkOk.isPending;
     mainBtnClick = () => {
       if (!activeRun || !currentStoreId) return;
       if (storeConfirmed || confirmStore.isPending) return;
@@ -357,21 +352,20 @@ export function ConfirmPage() {
         </StickyPageBar>
       ) : null}
       <div className="flex flex-col gap-3 px-4">
-
-      {!activeRun ? (
-        <EmptyState
-          title={i18n.t('confirm.empty.nothingToConfirm')}
-          description={i18n.t('confirm.empty.nothingDesc')}
-        />
-      ) : (
-        <DataState query={detailQuery}>
-          {() => (
-            <>
-              {!myItems.length ? (
-                <EmptyState title={i18n.t('confirm.empty.noItems')} />
-              ) : (
-                <Card>
-                  {/* UIUX-B1 (2026-07-06): CardHeader/CardTitle deleted —
+        {!activeRun ? (
+          <EmptyState
+            title={i18n.t('confirm.empty.nothingToConfirm')}
+            description={i18n.t('confirm.empty.nothingDesc')}
+          />
+        ) : (
+          <DataState query={detailQuery}>
+            {() => (
+              <>
+                {!myItems.length ? (
+                  <EmptyState title={i18n.t('confirm.empty.noItems')} />
+                ) : (
+                  <Card>
+                    {/* UIUX-B1 (2026-07-06): CardHeader/CardTitle deleted —
                       this is the sole card on the screen and the nav tab
                       already names the job (same reasoning M1.11 used to
                       drop the hint CardMeta).
@@ -382,153 +376,181 @@ export function ConfirmPage() {
                       verdict and offers the honest fast path next to it, so
                       "everything arrived fine" is one deliberate tap rather
                       than a pre-ticked default. */}
-                  {!storeConfirmed ? (
-                    <div className="flex items-center justify-between gap-3 border-b border-[var(--c-divider)] px-4 py-2">
-                      <span
-                        className={
-                          'text-old-label font-semibold tabular-nums ' +
-                          (allDecided
-                            ? 'text-[var(--c-fg-muted)]'
-                            : 'text-[var(--c-warning-fg)]')
-                        }
-                      >
-                        {i18n.t('confirm.progress', {
-                          done: decidedCount,
-                          total: myItems.length,
-                        })}
-                      </span>
-                      {!allDecided ? (
-                        <Button
-                          size="sm"
-                          variant="pearl"
-                          loading={markingAll}
-                          onClick={() => void markAllOk()}
+                    {!storeConfirmed ? (
+                      <div className="flex items-center justify-between gap-3 border-b border-[var(--c-divider)] px-4 py-2">
+                        <span
+                          className={
+                            'text-old-label font-semibold tabular-nums ' +
+                            (allDecided ? 'text-[var(--c-fg-muted)]' : 'text-[var(--c-warning-fg)]')
+                          }
                         >
-                          {i18n.t('confirm.markAllOk')}
-                        </Button>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  <ul className="flex flex-col" role="list">
-                    {myItems.map((it) => {
-                      const sku = skuById.get(it.skuId);
-                      const nm = sku ? productNameParts(sku) : null;
-                      // 2026-07-30 (flow review): was `it.confirmStatus ?? 'ok'`,
-                      // which pre-selected 正常 on every untouched line. The
-                      // receiver's screen therefore OPENED in the state
-                      // "everything is fine" — the exact claim the step exists
-                      // to obtain from them. null now means null: no chip is
-                      // selected until they choose one.
-                      const effectiveStatus = it.confirmStatus as DecisionStatus | null;
-                      return (
-                        <li
-                          key={`${it.runId}:${it.skuId}`}
-                          className="flex flex-col gap-2 border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0"
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            {/* Confirm is the "default" (dense) name tier
+                          {i18n.t('confirm.progress', {
+                            done: decidedCount,
+                            total: myItems.length,
+                          })}
+                        </span>
+                        {!allDecided ? (
+                          <Button
+                            size="sm"
+                            variant="pearl"
+                            loading={bulkMarkOk.isPending}
+                            onClick={() => setBulkConfirmOpen(true)}
+                          >
+                            {i18n.t('confirm.markAllOk')}
+                          </Button>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    <ul className="flex flex-col" role="list">
+                      {myItems.map((it) => {
+                        const sku = skuById.get(it.skuId);
+                        const nm = sku ? productNameParts(sku) : null;
+                        // 2026-07-30 (flow review): was `it.confirmStatus ?? 'ok'`,
+                        // which pre-selected 正常 on every untouched line. The
+                        // receiver's screen therefore OPENED in the state
+                        // "everything is fine" — the exact claim the step exists
+                        // to obtain from them. null now means null: no chip is
+                        // selected until they choose one.
+                        const effectiveStatus = it.confirmStatus as DecisionStatus | null;
+                        return (
+                          <li
+                            key={`${it.runId}:${it.skuId}`}
+                            className="flex flex-col gap-2 border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              {/* Confirm is the "default" (dense) name tier
                                 per the 2026-07-05 two-tier decision. */}
-                            <NameCell
-                              primary={nm ? nm.primary : it.skuId.slice(0, 8)}
-                              secondary={nm?.secondary}
-                              size="default"
-                            />
-                            <span className="shrink-0 font-mono text-old-label tabular-nums text-[var(--c-fg-muted)]">
-                              {formatQty(it.qty)} {unitLabel(sku?.unit)}
-                            </span>
-                          </div>
-                          {/* variant="radio" (2026-07-30): now that an
+                              <NameCell
+                                primary={nm ? nm.primary : it.skuId.slice(0, 8)}
+                                secondary={nm?.secondary}
+                                size="default"
+                              />
+                              <span className="shrink-0 font-mono text-old-label tabular-nums text-[var(--c-fg-muted)]">
+                                {formatQty(it.qty)} {unitLabel(sku?.unit)}
+                              </span>
+                            </div>
+                            {/* variant="radio" (2026-07-30): now that an
                               undecided line selects NOTHING, a tablist
                               with no selected tab would be invalid ARIA.
                               A radiogroup with nothing checked is exactly
                               the state we mean. */}
-                          <ChipBar
-                            variant="radio"
-                            ariaLabel={i18n.t('confirm.status.ariaLabel')}
-                          >
-                            {(['ok', 'short', 'wrong', 'quality'] as DecisionStatus[]).map((s) => (
-                              <Chip
-                                key={s}
-                                aria-label={i18n.t(('confirm.status.' + s) as Parameters<typeof i18n.t>[0])}
-                                selected={effectiveStatus === s}
-                                onClick={() => {
-                                  // Block any further taps once the
-                                  // store side has been finalized.
-                                  // After StoreConfirmed, the API will
-                                  // reject confirmStoreItem anyway; we
-                                  // catch it here so the UI doesn't
-                                  // even try.
-                                  if (storeConfirmed) return;
-                                  // Block double-tap on the SAME chip —
-                                  // the domain will return [] but we
-                                  // save the round-trip entirely.
-                                  if (effectiveStatus === s) return;
-                                  haptic('light');
-                                  if (s === 'ok') {
-                                    // Optimistic: paint the selection
-                                    // immediately so the user sees
-                                    // their tap registered, then fire
-                                    // the mutation. onError invalidates
-                                    // to roll back if the server
-                                    // refuses.
-                                    writeOptimisticItemConfirm(
-                                      it.runId,
-                                      it.skuId,
-                                      it.storeId,
-                                      'ok',
-                                      null,
-                                      null,
-                                    );
-                                    confirmItem.mutate({
-                                      runId: it.runId,
-                                      skuId: it.skuId,
-                                      storeId: it.storeId,
-                                      status: 'ok',
-                                      note: null,
-                                      photoUrl: null,
-                                    });
-                                  } else {
-                                    setIssueOpen({
-                                      runId: it.runId,
-                                      skuId: it.skuId,
-                                      storeId: it.storeId,
-                                      status: s,
-                                    });
-                                  }
-                                }}
-                              >
-                                {/* M1.9-fix (2026-05-07): chip labels were
+                            <ChipBar variant="radio" ariaLabel={i18n.t('confirm.status.ariaLabel')}>
+                              {(['ok', 'short', 'wrong', 'quality'] as DecisionStatus[]).map(
+                                (s) => (
+                                  <Chip
+                                    key={s}
+                                    aria-label={i18n.t(
+                                      ('confirm.status.' + s) as Parameters<typeof i18n.t>[0],
+                                    )}
+                                    selected={effectiveStatus === s}
+                                    onClick={() => {
+                                      // Block any further taps once the
+                                      // store side has been finalized.
+                                      // After StoreConfirmed, the API will
+                                      // reject confirmStoreItem anyway; we
+                                      // catch it here so the UI doesn't
+                                      // even try.
+                                      if (storeConfirmed) return;
+                                      // Block double-tap on the SAME chip —
+                                      // the domain will return [] but we
+                                      // save the round-trip entirely.
+                                      if (effectiveStatus === s) return;
+                                      haptic('light');
+                                      if (s === 'ok') {
+                                        // Optimistic: paint the selection
+                                        // immediately so the user sees
+                                        // their tap registered, then fire
+                                        // the mutation. onError invalidates
+                                        // to roll back if the server
+                                        // refuses.
+                                        writeOptimisticItemConfirm(
+                                          it.runId,
+                                          it.skuId,
+                                          it.storeId,
+                                          'ok',
+                                          null,
+                                          null,
+                                        );
+                                        confirmItem.mutate({
+                                          runId: it.runId,
+                                          skuId: it.skuId,
+                                          storeId: it.storeId,
+                                          status: 'ok',
+                                          note: null,
+                                          photoUrl: null,
+                                        });
+                                      } else {
+                                        setIssueOpen({
+                                          runId: it.runId,
+                                          skuId: it.skuId,
+                                          storeId: it.storeId,
+                                          status: s,
+                                        });
+                                      }
+                                    }}
+                                  >
+                                    {/* M1.9-fix (2026-05-07): chip labels were
                                     rendering the raw enum values (ok/short/
                                     wrong/quality) — every non-English user
                                     saw English on the most-tapped UI on the
                                     page. Map to i18n keys keyed by enum. */}
-                                {i18n.t(('confirm.status.' + s) as Parameters<typeof i18n.t>[0])}
-                              </Chip>
-                            ))}
-                          </ChipBar>
-                          {it.confirmNote ? (
-                            <div className="text-old-label text-[var(--c-fg-muted)]">{it.confirmNote}</div>
-                          ) : null}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                  {/* UIUX-B1 (2026-07-06): inline Confirm-Store button
+                                    {i18n.t(
+                                      ('confirm.status.' + s) as Parameters<typeof i18n.t>[0],
+                                    )}
+                                  </Chip>
+                                ),
+                              )}
+                            </ChipBar>
+                            {it.confirmNote ? (
+                              <div className="text-old-label text-[var(--c-fg-muted)]">
+                                {it.confirmNote}
+                              </div>
+                            ) : null}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    {/* UIUX-B1 (2026-07-06): inline Confirm-Store button
                       deleted — it duplicated the PageMainButton's exact
                       mutation and doubled the double-tap surface the
                       storeConfirmed guard exists to fight. One CTA. */}
-                </Card>
-              )}
-            </>
-          )}
-        </DataState>
-      )}
+                  </Card>
+                )}
+              </>
+            )}
+          </DataState>
+        )}
       </div>
 
       {/* Banner removed — the "Decided X/Y" counter at the top + the
           card meta "Tap a status for each item" + the disabled
           MainButton already convey the same gating. The redundant
           banner was visual clutter. */}
+
+      <Sheet
+        open={bulkConfirmOpen}
+        onOpenChange={(open) => {
+          if (!open && bulkMarkOk.isPending) return;
+          setBulkConfirmOpen(open);
+        }}
+        title={i18n.t('confirm.bulk.title', { n: undecided.length })}
+        description={i18n.t('confirm.bulk.body')}
+        footer={
+          <Button
+            block
+            size="lg"
+            loading={bulkMarkOk.isPending}
+            disabled={undecided.length === 0}
+            onClick={markAllOk}
+          >
+            {i18n.t('confirm.bulk.submit', { n: undecided.length })}
+          </Button>
+        }
+      >
+        <div className="py-3 text-old-body-sm text-[var(--c-fg-muted)]">
+          {i18n.t('confirm.bulk.hint', { n: undecided.length })}
+        </div>
+      </Sheet>
 
       <Sheet
         open={!!issueOpen}
