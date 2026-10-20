@@ -1,0 +1,10 @@
+[Unit]
+Description=Publish the current Cloudflare quick-tunnel URL to the stable proxy
+After=network-online.target compass-app-tunnel.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+ExecStart=/usr/local/bin/compass-origin-watch

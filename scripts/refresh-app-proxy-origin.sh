@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 #
-# Refresh the stable workers.dev proxy after the server's quick tunnel
-# restarts with a new trycloudflare hostname.
+# Manual fallback: publish the current quick-tunnel hostname to the
+# Worker's KV fallback. The normal path is automatic via
+# compass-origin-watch.timer (ntfy rendezvous, checked every minute).
 #
 # Required:
 #   COMPASS_DEPLOY_HOST=ubuntu@<server-ip>
 #   COMPASS_DEPLOY_KEY (optional; defaults to ~/.ssh/compass_alpha_ed25519)
-#   WRANGLER_BIN (optional; defaults to `wrangler`)
 #
 set -euo pipefail
 
 : "${COMPASS_DEPLOY_HOST:?set COMPASS_DEPLOY_HOST first}"
 deploy_key="${COMPASS_DEPLOY_KEY:-$HOME/.ssh/compass_alpha_ed25519}"
-wrangler_bin="${WRANGLER_BIN:-wrangler}"
+proxy_url="https://compass-alpha.sphinxr.workers.dev"
 
 origin_url="$(
   ssh -i "$deploy_key" -o BatchMode=yes "$COMPASS_DEPLOY_HOST" \
@@ -24,8 +24,20 @@ if [[ -z "$origin_url" ]]; then
   exit 1
 fi
 
-repo_root="$(git rev-parse --show-toplevel)"
-cd "$repo_root/infra/cloudflare/app-proxy"
+update_key="$(
+  ssh -i "$deploy_key" -o BatchMode=yes "$COMPASS_DEPLOY_HOST" \
+    "cat /home/ubuntu/.config/compass-origin.key"
+)"
+if [[ -z "$update_key" ]]; then
+  echo "No Worker update key found on the server" >&2
+  exit 1
+fi
 
-"$wrangler_bin" deploy --var "ORIGIN_URL:$origin_url"
-echo "Stable public entry: https://compass-alpha.sphinxr.workers.dev"
+curl -fsS --max-time 20 \
+  -X POST \
+  -H "x-origin-key: ${update_key}" \
+  -H 'content-type: application/json' \
+  --data "{\"url\":\"${origin_url}\"}" \
+  "${proxy_url}/__origin"
+echo
+echo "Stable public entry: ${proxy_url}"

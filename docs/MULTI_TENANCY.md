@@ -106,5 +106,5 @@ or the RLS boundary.
 - The stable public HTTPS entry is
   `https://compass-alpha.sphinxr.workers.dev` (Cloudflare Worker). It proxies
   through the server's supervised quick tunnel, so no owned domain is needed.
-  If the tunnel hostname changes, refresh the Worker origin with
-  `scripts/refresh-app-proxy-origin.sh`; the public URL does not change.
+  A server-side timer publishes a changed tunnel hostname within one minute;
+  the public URL stays the same and needs no manual refresh.

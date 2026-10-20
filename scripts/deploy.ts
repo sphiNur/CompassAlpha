@@ -55,8 +55,8 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = dirname(__dirname);                          // .../CompassAlpha
-const PARENT = dirname(ROOT);                             // .../gemini
+const ROOT = dirname(__dirname); // .../CompassAlpha
+const PARENT = dirname(ROOT); // .../gemini
 
 /**
  * Deploy target (M3.18, launch hardening 2026-05-16).
@@ -329,7 +329,9 @@ if (!DRY) {
   run(`scp -i "${KEY}" -o StrictHostKeyChecking=no "${TARBALL}" ${HOST}:/home/ubuntu/`);
 
   step('3. extract on server');
-  ssh(`tar xzf /home/ubuntu/compass-alpha-deploy.tar.gz -C /home/ubuntu/compass-alpha --strip-components=1`);
+  ssh(
+    `tar xzf /home/ubuntu/compass-alpha-deploy.tar.gz -C /home/ubuntu/compass-alpha --strip-components=1`,
+  );
 
   step('3.5. pnpm install (sync workspace deps if package.json changed)');
   console.log(
@@ -366,7 +368,7 @@ if (!DRY) {
     process.exit(1);
   }
 
-  step('4a. install/refresh systemd units (api + worker, idempotent)');
+  step('4a. install/refresh systemd units (api, worker, tunnel, watchdog)');
   // M3.18 (2026-05-16): compass-api.service now ships in the repo too;
   // earlier it was hand-edited on the server and absent from version
   // control, leaving the unit at risk of drift on a host rebuild.
@@ -374,8 +376,13 @@ if (!DRY) {
     [
       'sudo cp /home/ubuntu/compass-alpha/infra/systemd/compass-api.service /etc/systemd/system/compass-api.service',
       'sudo cp /home/ubuntu/compass-alpha/infra/systemd/compass-worker.service /etc/systemd/system/compass-worker.service',
+      'sudo cp /home/ubuntu/compass-alpha/infra/systemd/compass-app-tunnel.service /etc/systemd/system/compass-app-tunnel.service',
+      'sudo cp /home/ubuntu/compass-alpha/infra/systemd/compass-origin-watch.service /etc/systemd/system/compass-origin-watch.service',
+      'sudo cp /home/ubuntu/compass-alpha/infra/systemd/compass-origin-watch.timer /etc/systemd/system/compass-origin-watch.timer',
+      'sudo install -m 755 /home/ubuntu/compass-alpha/infra/tunnel/compass-origin-watch.sh /usr/local/bin/compass-origin-watch',
       'sudo systemctl daemon-reload',
       'sudo systemctl enable compass-api.service compass-worker.service',
+      'sudo systemctl enable --now compass-app-tunnel.service compass-origin-watch.timer',
     ].join(' && '),
   );
 
@@ -428,9 +435,7 @@ if (!DRY) {
       console.error(
         `\x1b[31m✖ DB role bypasses RLS (got: ${out.trim()}) — RLS is ineffective.\x1b[0m`,
       );
-      console.error(
-        '  Run on the DB host as a superuser: ALTER ROLE compass NOBYPASSRLS;',
-      );
+      console.error('  Run on the DB host as a superuser: ALTER ROLE compass NOBYPASSRLS;');
       process.exit(1);
     }
     if (superuser !== 'true') console.log('  ✓ DB role is not a superuser and does not bypass RLS');
@@ -479,7 +484,9 @@ if (!DRY) {
   );
 
   step('verify deployed assets');
-  const newHash = ssh(`ls /home/ubuntu/compass-alpha/apps/web/dist/assets/index-*.js | head -1`).trim();
+  const newHash = ssh(
+    `ls /home/ubuntu/compass-alpha/apps/web/dist/assets/index-*.js | head -1`,
+  ).trim();
   console.log(`  bundle: ${newHash}`);
   try {
     const buildId = ssh(`cat /home/ubuntu/compass-alpha/apps/web/dist/build-id.txt`).trim();

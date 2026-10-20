@@ -4,4 +4,8 @@ compatibility_date = "2026-10-20"
 workers_dev = true
 
 [vars]
-ORIGIN_URL = "https://ground-homes-saturday-spots.trycloudflare.com"
+ORIGIN_URL = "https://impression-blond-counsel-lift.trycloudflare.com"
+
+[[kv_namespaces]]
+binding = "COMPASS_ORIGIN"
+id = "1f646470b9ff4382b83b90f6e31eb53e"
