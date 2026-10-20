@@ -22,6 +22,7 @@
  * Admin-of-org things stay in Admin so the mental model stays clean.
  */
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Sheet, Button, Field, Input, SectionLabel, PickerRow } from '@compass/ui';
 import { useToast } from '@compass/ui';
 import type { Locale } from '@compass/i18n';
@@ -31,6 +32,7 @@ import { useI18n } from '../hooks/useI18n';
 import { useErrToast } from '../lib/errToast';
 import type { PageMenuRegistration } from '../app/PageMenuContext';
 import { StorePickerSection, useCanSeeStorePicker } from './StoreSwitcher';
+import { CreateWorkspaceForm } from './CreateWorkspace';
 
 interface LangOption {
   code: Locale;
@@ -61,8 +63,10 @@ interface Props {
 export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
   const i18n = useI18n();
   const session = useAuthStore((s) => s.session);
+  const setSession = useAuthStore((s) => s.setSession);
   const patchSession = useAuthStore((s) => s.patchSession);
   const toast = useToast();
+  const queryClient = useQueryClient();
   // M1.21: i18n-aware error toast so server-side error keys like
   // `auth.errors.displayNameTaken` render translated for the user
   // rather than dumped as the raw key string.
@@ -89,6 +93,19 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
     },
     onError: errToast('common.error'),
   });
+  const switchOrganization = trpc.auth.switchOrganization.useMutation({
+    onSuccess: (data) => {
+      setSession({
+        accessToken: data.tokens.accessToken,
+        refreshToken: data.tokens.refreshToken,
+        session: data.session,
+      });
+      queryClient.clear();
+      toast.success(i18n.t('workspace.switched'));
+      onOpenChange(false);
+    },
+    onError: errToast('common.error'),
+  });
 
   // Optional self-rename: the server `auth.completeOnboarding` is the
   // sanctioned path and only works when the name isn't already locked.
@@ -103,6 +120,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
   });
 
   const [draftName, setDraftName] = useState<string>(() => session?.user.displayName ?? '');
+  const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const nameLocked = !!session?.user.displayNameLocked;
   const nameDirty = !nameLocked && draftName.trim() !== (session?.user.displayName ?? '');
 
@@ -111,11 +129,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
   const canSeeStorePicker = useCanSeeStorePicker();
 
   return (
-    <Sheet
-      open={open}
-      onOpenChange={onOpenChange}
-      title={i18n.t('settings.title')}
-    >
+    <Sheet open={open} onOpenChange={onOpenChange} title={i18n.t('settings.title')}>
       <div className="flex flex-col gap-4 py-3">
         {/* ── Page actions (contextual, M1.12) ─────────────── */}
         {pageMenu && pageMenu.actions.length > 0 ? (
@@ -174,9 +188,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
                     size="sm"
                     loading={completeOnboarding.isPending}
                     disabled={!nameDirty || !draftName.trim()}
-                    onClick={() =>
-                      completeOnboarding.mutate({ displayName: draftName.trim() })
-                    }
+                    onClick={() => completeOnboarding.mutate({ displayName: draftName.trim() })}
                   >
                     {i18n.t('common.save')}
                   </Button>
@@ -193,10 +205,41 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
           </div>
         </section>
 
+        {/* ── Workspace switcher / new tenant ──────────────── */}
+        <section>
+          <SectionLabel as="h3" padded={false} className="mb-2">
+            {i18n.t('workspace.title')}
+          </SectionLabel>
+          {creatingWorkspace ? (
+            <CreateWorkspaceForm onCreated={() => setCreatingWorkspace(false)} />
+          ) : (
+            <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
+              {(session?.memberships ?? []).map((membership) => {
+                const selected = membership.orgId === session?.member.orgId;
+                return (
+                  <PickerRow
+                    key={membership.orgId}
+                    label={membership.orgName}
+                    hint={selected ? i18n.t('workspace.current') : undefined}
+                    selected={selected}
+                    disabled={switchOrganization.isPending}
+                    onClick={() => {
+                      if (!selected) {
+                        switchOrganization.mutate({ orgId: membership.orgId });
+                      }
+                    }}
+                  />
+                );
+              })}
+              <Button block variant="pearl" onClick={() => setCreatingWorkspace(true)}>
+                {i18n.t('workspace.create.action')}
+              </Button>
+            </div>
+          )}
+        </section>
+
         {/* ── Store picker (M3.5, org.admin only) ──────────── */}
-        {canSeeStorePicker ? (
-          <StorePickerSection onClose={() => onOpenChange(false)} />
-        ) : null}
+        {canSeeStorePicker ? <StorePickerSection onClose={() => onOpenChange(false)} /> : null}
 
         {/* ── Language ────────────────────────────────────── */}
         <section>
@@ -253,24 +296,21 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
                 />
               );
             })()}
-            {LANGS.filter((l) => l.code !== (session?.user.locale ?? 'en')).map(
-              (lang) => {
-                const selected = session?.user.secondaryLocale === lang.code;
-                return (
-                  <PickerRow
-                    key={lang.code}
-                    label={lang.label}
-                    hint={lang.region}
-                    selected={selected}
-                    disabled={setSecondaryLocale.isPending}
-                    onClick={() => {
-                      if (!selected)
-                        setSecondaryLocale.mutate({ secondaryLocale: lang.code });
-                    }}
-                  />
-                );
-              },
-            )}
+            {LANGS.filter((l) => l.code !== (session?.user.locale ?? 'en')).map((lang) => {
+              const selected = session?.user.secondaryLocale === lang.code;
+              return (
+                <PickerRow
+                  key={lang.code}
+                  label={lang.label}
+                  hint={lang.region}
+                  selected={selected}
+                  disabled={setSecondaryLocale.isPending}
+                  onClick={() => {
+                    if (!selected) setSecondaryLocale.mutate({ secondaryLocale: lang.code });
+                  }}
+                />
+              );
+            })}
           </div>
         </section>
 
@@ -281,30 +321,22 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
           </SectionLabel>
           <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
             <div className="flex items-baseline justify-between text-old-label">
-              <span className="text-[var(--c-fg-muted)]">
-                {i18n.t('settings.about.workspace')}
-              </span>
+              <span className="text-[var(--c-fg-muted)]">{i18n.t('settings.about.workspace')}</span>
               <span className="font-medium text-[var(--c-fg)]">
                 {session?.member.orgName ?? '—'}
               </span>
             </div>
             {(session?.roleSlugs ?? []).length > 0 ? (
               <div className="flex items-baseline justify-between text-old-label">
-                <span className="text-[var(--c-fg-muted)]">
-                  {i18n.t('settings.about.role')}
-                </span>
+                <span className="text-[var(--c-fg-muted)]">{i18n.t('settings.about.role')}</span>
                 <span className="font-medium text-[var(--c-fg)]">
                   {(session?.roleSlugs ?? []).join(', ')}
                 </span>
               </div>
             ) : null}
             <div className="flex items-baseline justify-between text-old-label">
-              <span className="text-[var(--c-fg-muted)]">
-                {i18n.t('settings.about.build')}
-              </span>
-              <span className="font-mono text-[var(--c-fg-muted)]">
-                {buildId}
-              </span>
+              <span className="text-[var(--c-fg-muted)]">{i18n.t('settings.about.build')}</span>
+              <span className="font-mono text-[var(--c-fg-muted)]">{buildId}</span>
             </div>
           </div>
         </section>

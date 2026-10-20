@@ -74,6 +74,17 @@ describe('jwt: signRefresh / verifyRefresh', () => {
     expect(claims.jti).toBe(jti);
   });
 
+  test('carries the tenant the refresh chain belongs to', async () => {
+    const userId = '66666666-6666-6666-6666-666666666666';
+    const family = '77777777-7777-7777-7777-777777777777';
+    const jti = '88888888-8888-8888-8888-888888888888';
+    const orgId = '99999999-9999-9999-9999-999999999999';
+    const memberId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+    const claims = await verifyRefresh(await signRefresh(userId, family, jti, orgId, memberId));
+    expect(claims.org).toBe(orgId);
+    expect(claims.mid).toBe(memberId);
+  });
+
   test('verifyRefresh returns jti=null for legacy jti-less tokens', async () => {
     // Forge a refresh token the OLD way (no jti). We construct it via
     // jose directly to mirror the pre-M1.9 codepath.
@@ -90,6 +101,8 @@ describe('jwt: signRefresh / verifyRefresh', () => {
     expect(claims.sub).toBe(userId);
     expect(claims.family).toBe(family);
     expect(claims.jti).toBeNull();
+    expect(claims.org).toBeNull();
+    expect(claims.mid).toBeNull();
   });
 
   test('rejects token signed with a different secret', async () => {
@@ -184,7 +197,9 @@ pgDescribe('refreshTokens service (PG-gated)', () => {
     // Open the pool first. On cold connections the first caller finishes
     // before the rest have connected and the race never happens.
     await Promise.all(
-      Array.from({ length: 8 }, () => db.query.users.findFirst({ where: eq(s.users.id, testUserId) })),
+      Array.from({ length: 8 }, () =>
+        db.query.users.findFirst({ where: eq(s.users.id, testUserId) }),
+      ),
     );
     const results = await Promise.allSettled(
       Array.from({ length: 8 }, () => svc.consumeRefresh(db, issued.id, issued.family)),
@@ -257,9 +272,9 @@ pgDescribe('refreshTokens service (PG-gated)', () => {
   test('consumeRefresh throws NOT_FOUND for unknown jti', async () => {
     const fakeJti = '00000000-0000-0000-0000-000000000000';
     const fakeFamily = '00000000-0000-0000-0000-000000000001';
-    await expect(
-      svc.consumeRefresh(db, fakeJti, fakeFamily),
-    ).rejects.toThrow(/not tracked|expired/);
+    await expect(svc.consumeRefresh(db, fakeJti, fakeFamily)).rejects.toThrow(
+      /not tracked|expired/,
+    );
   });
 
   test('consumeRefresh throws REPLAY when family does not match the row', async () => {

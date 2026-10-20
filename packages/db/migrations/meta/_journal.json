@@ -295,6 +295,13 @@
       "when": 1792240000000,
       "tag": "0041_member_invites",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1792500000000,
+      "tag": "0042_user_last_org",
+      "breakpoints": true
     }
   ]
 }

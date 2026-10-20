@@ -47,6 +47,20 @@ export const StoreSummarySchema = z.object({
   isActive: z.boolean(),
 });
 
+/**
+ * One organisation the signed-in user can enter. Returned on every
+ * session so the client can offer a workspace switcher without a
+ * separate tenant-discovery endpoint.
+ */
+export const OrganizationMembershipSchema = z.object({
+  orgId: UuidSchema,
+  orgSlug: z.string(),
+  orgName: z.string(),
+  memberId: UuidSchema,
+  status: z.string(),
+  joinedAt: z.string(),
+});
+
 export const MemberSummarySchema = z.object({
   memberId: UuidSchema,
   orgId: UuidSchema,
@@ -83,6 +97,8 @@ export const SessionSchema = z.object({
     tgUsername: z.string().nullable(),
   }),
   member: MemberSummarySchema,
+  /** Active organisations this user belongs to. */
+  memberships: z.array(OrganizationMembershipSchema).default([]),
   /** ONLY the stores this member is assigned to (admins see all org stores). */
   stores: z.array(StoreSummarySchema),
   permissions: z.array(z.string()),
@@ -113,6 +129,24 @@ export const SessionSchema = z.object({
 
 export const CompleteOnboardingInputSchema = z.object({
   displayName: z.string().min(1).max(200).trim(),
+});
+
+export const SwitchOrganizationInputSchema = z.object({
+  orgId: UuidSchema,
+});
+
+export const CreateOrganizationInputSchema = z.object({
+  initData: z.string().min(1),
+  name: z.string().trim().min(2).max(200),
+  /** Optional operator-chosen slug; omitted lets the server derive one. */
+  slug: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(/^[a-z0-9][a-z0-9-]{1,62}$/, 'slug must use lowercase letters, digits and hyphens')
+    .optional(),
+  locale: LocaleSchema.optional(),
+  timezone: z.string().min(1).max(64).optional(),
 });
 
 export const AuthTokensSchema = z.object({

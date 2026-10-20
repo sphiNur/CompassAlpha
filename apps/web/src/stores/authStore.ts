@@ -31,6 +31,15 @@ export interface AuthSession {
     taxRatePct?: string;
     pricesIncludeTax?: boolean;
   };
+  /** Every active organisation this person can enter. */
+  memberships?: Array<{
+    orgId: string;
+    orgSlug: string;
+    orgName: string;
+    memberId: string;
+    status: string;
+    joinedAt: string;
+  }>;
   /** Only stores this member is assigned to (admins see all org stores). */
   stores: Array<{ id: string; name: string; code: string | null; isActive: boolean }>;
   permissions: string[];
@@ -84,10 +93,7 @@ function canUseAllStores(session: AuthSession | null): boolean {
   return session?.permissions.includes('org.admin') ?? false;
 }
 
-function resolveCurrentStore(
-  currentStoreId: StoreContext,
-  session: AuthSession,
-): StoreContext {
+function resolveCurrentStore(currentStoreId: StoreContext, session: AuthSession): StoreContext {
   if (currentStoreId === ALL_STORES && canUseAllStores(session)) return ALL_STORES;
   if (
     typeof currentStoreId === 'string' &&

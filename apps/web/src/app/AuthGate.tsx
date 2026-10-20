@@ -5,6 +5,7 @@ import { useAuthStore, type AuthSession } from '../stores/authStore';
 import { noteSessionCleared, trpc } from '../lib/trpc';
 import { getTg, haptic } from '../hooks/useTelegram';
 import { useI18n } from '../hooks/useI18n';
+import { CreateWorkspaceForm } from '../components/CreateWorkspace';
 
 interface AuthGateProps {
   children: ReactNode;
@@ -100,6 +101,7 @@ export function AuthGate({ children }: AuthGateProps) {
   const clear = useAuthStore((s) => s.clear);
   const i18n = useI18n();
   const [error, setError] = useState<string | null>(null);
+  const [loginErrorCode, setLoginErrorCode] = useState<string | null>(null);
   const [browserTgUserId, setBrowserTgUserId] = useState(initialDevBrowserTgUserId);
   const [browserAccessCode, setBrowserAccessCode] = useState('');
   const [loginSession, setLoginSession] = useState<AuthSession | null>(null);
@@ -210,9 +212,15 @@ export function AuthGate({ children }: AuthGateProps) {
       meUnauthorized.current = false;
       setAuthWaitTimedOut(false);
       setError(null);
+      setLoginErrorCode(null);
     },
     onError(err) {
-      setError(err.message);
+      setError(
+        err.message.startsWith('auth.errors.')
+          ? i18n.t(err.message as Parameters<typeof i18n.t>[0])
+          : err.message,
+      );
+      setLoginErrorCode(err.message);
     },
   });
   const acceptInvite = trpc.auth.acceptInvite.useMutation({
@@ -226,6 +234,7 @@ export function AuthGate({ children }: AuthGateProps) {
       meUnauthorized.current = false;
       setAuthWaitTimedOut(false);
       setError(null);
+      setLoginErrorCode(null);
       // The query-string form is visible in the address bar. Once the
       // invite has been accepted it has no job left.
       try {
@@ -256,6 +265,7 @@ export function AuthGate({ children }: AuthGateProps) {
       meUnauthorized.current = false;
       setAuthWaitTimedOut(false);
       setError(null);
+      setLoginErrorCode(null);
     },
     onError(err) {
       setError(nonTelegramErrorMessage(err.message));
@@ -279,6 +289,7 @@ export function AuthGate({ children }: AuthGateProps) {
       meUnauthorized.current = false;
       setAuthWaitTimedOut(false);
       setError(null);
+      setLoginErrorCode(null);
     },
     onError(err) {
       setError(nonTelegramErrorMessage(err.message));
@@ -295,6 +306,7 @@ export function AuthGate({ children }: AuthGateProps) {
       meUnauthorized.current = false;
       setAuthWaitTimedOut(false);
       setError(null);
+      setLoginErrorCode(null);
     },
     onError(err) {
       setError(nonTelegramErrorMessage(err.message));
@@ -421,6 +433,14 @@ export function AuthGate({ children }: AuthGateProps) {
           <Banner tone="danger" title={i18n.t('auth.errors.signInFailed')}>
             {error}
           </Banner>
+        ) : null}
+        {loginErrorCode === 'auth.errors.noMembership' && hasTelegramInitData ? (
+          <CreateWorkspaceForm
+            onCreated={() => {
+              setError(null);
+              setLoginErrorCode(null);
+            }}
+          />
         ) : null}
         {showDevLogin ? (
           <DevPersonaPicker

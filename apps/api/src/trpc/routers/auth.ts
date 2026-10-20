@@ -1,11 +1,22 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
-import { inSystem, schema as s, withOrgContext, withSystemContext, type DB } from '@compass/db';
+import { and, asc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
+import {
+  inSystem,
+  organizationSlugExists,
+  organizationSlugFromName,
+  provisionOrganization,
+  schema as s,
+  withOrgContext,
+  withSystemContext,
+  type DB,
+} from '@compass/db';
 import {
   AcceptInviteInputSchema,
+  CreateOrganizationInputSchema,
   NonTelegramLoginInputSchema,
+  SwitchOrganizationInputSchema,
   TelegramLoginInputSchema,
   RefreshInputSchema,
   CompleteOnboardingInputSchema,
@@ -25,6 +36,7 @@ import {
 import { logger } from '../../infra/log';
 import { env } from '../../env';
 import { hub } from '../../realtime/hub';
+import { isUniqueViolation } from '../../services/pgErrors';
 import type { RequestContext } from '../context';
 
 /**
@@ -60,10 +72,18 @@ const REFRESH_LIMIT = { window: 60_000, max: 60 } as const;
  * stops a client that loops on a broken link.
  */
 const INVITE_LIMIT = { window: 60_000, max: 30 } as const;
+/** Self-service tenant creation is rare; one genuine owner may retry once. */
+const CREATE_ORG_LIMIT = { window: 60 * 60_000, max: 3 } as const;
 function enforceRate(scope: string, ip: string | null): void {
   if (!ip) return;
   const limit =
-    scope === 'refresh' ? REFRESH_LIMIT : scope === 'acceptInvite' ? INVITE_LIMIT : AUTH_LIMIT;
+    scope === 'refresh'
+      ? REFRESH_LIMIT
+      : scope === 'acceptInvite'
+        ? INVITE_LIMIT
+        : scope === 'createOrganization'
+          ? CREATE_ORG_LIMIT
+          : AUTH_LIMIT;
   if (!checkRate(scope, ip, limit)) {
     throw new TRPCError({
       code: 'TOO_MANY_REQUESTS',
@@ -401,6 +421,8 @@ async function issueLoginResult(
   const accessToken = await signAccess({ sub: userId, org: session.member.orgId, mid: memberId });
   const issued = await issueRefresh(db, {
     userId,
+    orgId,
+    memberId,
     ip,
     userAgent,
   });
@@ -614,12 +636,19 @@ export const authRouter = router({
         });
       }
 
-      const member = await inSystem(ctx.db, 'auth', (tx) =>
-        tx.query.members.findFirst({
+      const member = await inSystem(ctx.db, 'auth', async (tx) => {
+        if (user.lastOrgId) {
+          const remembered = await tx.query.members.findFirst({
+            where: (m, { eq: eq2, and: and2 }) =>
+              and2(eq2(m.userId, user.id), eq2(m.orgId, user.lastOrgId!), eq2(m.status, 'active')),
+          });
+          if (remembered) return remembered;
+        }
+        return tx.query.members.findFirst({
           where: (m, { eq: eq2, and: and2 }) =>
             and2(eq2(m.userId, user.id), eq2(m.status, 'active')),
-        }),
-      );
+        });
+      });
       if (!member) {
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'auth.errors.noMembership' });
       }
@@ -629,6 +658,7 @@ export const authRouter = router({
           .update(s.users)
           .set({
             locale: input.locale ?? user.locale ?? 'en',
+            lastOrgId: member.orgId,
             lastSeenAt: new Date(),
           })
           .where(eq(s.users.id, user.id)),
@@ -714,12 +744,23 @@ export const authRouter = router({
       if (!user) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
 
       const findActiveMember = () =>
-        inSystem(ctx.db, 'auth', (tx) =>
-          tx.query.members.findFirst({
+        inSystem(ctx.db, 'auth', async (tx) => {
+          if (user!.lastOrgId) {
+            const remembered = await tx.query.members.findFirst({
+              where: (m, { eq: eq2, and: and2 }) =>
+                and2(
+                  eq2(m.userId, user!.id),
+                  eq2(m.orgId, user!.lastOrgId!),
+                  eq2(m.status, 'active'),
+                ),
+            });
+            if (remembered) return remembered;
+          }
+          return tx.query.members.findFirst({
             where: (m, { eq: eq2, and: and2 }) =>
               and2(eq2(m.userId, user!.id), eq2(m.status, 'active')),
-          }),
-        );
+          });
+        });
       let ensuredMember = await findActiveMember();
       if (!ensuredMember) {
         // Only the local dev mock self-enrols. This used to run for every
@@ -744,6 +785,9 @@ export const authRouter = router({
       if (isDevMock) {
         await ensureDevMockAdminAccess(ctx.db, ensuredMember.id, ensuredMember.orgId);
       }
+      await inSystem(ctx.db, 'auth', (tx) =>
+        tx.update(s.users).set({ lastOrgId: ensuredMember.orgId }).where(eq(s.users.id, user.id)),
+      );
 
       // M1.9 (2026-05-07): refresh tokens are tracked in auth.refresh_tokens
       // with rotation lineage + replay detection.
@@ -992,6 +1036,9 @@ export const authRouter = router({
       };
     });
 
+    await inSystem(ctx.db, 'auth', (tx) =>
+      tx.update(s.users).set({ lastOrgId: identity.orgId }).where(eq(s.users.id, identity.userId)),
+    );
     hub.publish(identity.orgId, { type: 'people.changed', orgId: identity.orgId });
     return issueLoginResult(
       ctx.db,
@@ -1002,6 +1049,157 @@ export const authRouter = router({
       ctx.userAgent,
     );
   }),
+
+  /**
+   * Switch the current access token to another organisation the same
+   * user belongs to. The new refresh token is bound to that tenant, so
+   * a later refresh cannot silently jump back to the first membership.
+   */
+  switchOrganization: authedProcedure
+    .input(SwitchOrganizationInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const member = await inSystem(ctx.db, 'auth', (tx) =>
+        tx.query.members.findFirst({
+          where: (m, { eq: eq2, and: and2 }) =>
+            and2(
+              eq2(m.userId, ctx.session!.userId),
+              eq2(m.orgId, input.orgId),
+              eq2(m.status, 'active'),
+            ),
+        }),
+      );
+      if (!member) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.noMembership' });
+      }
+      await inSystem(ctx.db, 'auth', (tx) =>
+        tx
+          .update(s.users)
+          .set({ lastOrgId: member.orgId })
+          .where(eq(s.users.id, ctx.session!.userId)),
+      );
+      return issueLoginResult(
+        ctx.db,
+        ctx.session!.userId,
+        member.id,
+        member.orgId,
+        ctx.ip,
+        ctx.userAgent,
+      );
+    }),
+
+  /**
+   * Create a new tenant and make the caller its owner. This is the
+   * self-service onboarding path: the first admin already has a usable
+   * role ladder and feature defaults when the workspace opens.
+   */
+  createOrganization: publicProcedure
+    .input(CreateOrganizationInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      enforceRate('createOrganization', ctx.ip);
+      if (env.SELF_SERVICE_ORG_CREATION !== 'true') {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'auth.errors.orgCreationDisabled',
+        });
+      }
+      if (!env.TELEGRAM_BOT_TOKEN) {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'auth.errors.botTokenMissing',
+        });
+      }
+      const verified = verifyInitData(input.initData, env.TELEGRAM_BOT_TOKEN);
+      if (!verified.ok || !verified.user) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'auth.errors.invalidInitData' });
+      }
+      const tg = verified.user;
+      if (input.timezone) {
+        try {
+          new Intl.DateTimeFormat('en', { timeZone: input.timezone }).format();
+        } catch {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'auth.errors.invalidTimezone' });
+        }
+      }
+
+      let user = await inSystem(ctx.db, 'auth', (tx) =>
+        tx.query.users.findFirst({
+          where: (u, { eq: eq2 }) => eq2(u.tgUserId, BigInt(tg.id)),
+        }),
+      );
+      if (!user) {
+        const [created] = await inSystem(ctx.db, 'auth', (tx) =>
+          tx
+            .insert(s.users)
+            .values({
+              tgUserId: BigInt(tg.id),
+              tgUsername: tg.username ?? null,
+              displayName:
+                [tg.first_name, tg.last_name].filter(Boolean).join(' ') ||
+                tg.username ||
+                `user-${tg.id}`,
+              avatarUrl: tg.photo_url ?? null,
+              locale: input.locale ?? tg.language_code ?? 'en',
+            })
+            .returning(),
+        );
+        user = created;
+      } else {
+        const known = user;
+        await inSystem(ctx.db, 'auth', (tx) =>
+          tx
+            .update(s.users)
+            .set({
+              tgUsername: tg.username ?? known.tgUsername,
+              avatarUrl: tg.photo_url ?? known.avatarUrl,
+              locale: input.locale ?? known.locale ?? tg.language_code ?? 'en',
+              lastSeenAt: new Date(),
+              ...(known.displayName.startsWith('tg:')
+                ? {
+                    displayName:
+                      [tg.first_name, tg.last_name].filter(Boolean).join(' ') ||
+                      tg.username ||
+                      known.displayName,
+                  }
+                : {}),
+            })
+            .where(eq(s.users.id, known.id)),
+        );
+      }
+      if (!user) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+
+      const slug = input.slug ?? organizationSlugFromName(input.name);
+      let createdOrg: Awaited<ReturnType<typeof provisionOrganization>>;
+      try {
+        createdOrg = await withSystemContext(ctx.db, 'auth', async (tx) => {
+          if (input.slug && (await organizationSlugExists(tx, slug))) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: 'auth.errors.orgSlugTaken' });
+          }
+          return provisionOrganization(tx, {
+            name: input.name,
+            slug,
+            locale: input.locale ?? user!.locale ?? 'en',
+            timezone: input.timezone,
+            ownerUserId: user!.id,
+          });
+        });
+      } catch (err) {
+        if (isUniqueViolation(err)) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'auth.errors.orgSlugTaken' });
+        }
+        throw err;
+      }
+      if (!createdOrg.ownerMemberId) {
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+      }
+      return issueLoginResult(
+        ctx.db,
+        user.id,
+        createdOrg.ownerMemberId,
+        createdOrg.orgId,
+        ctx.ip,
+        ctx.userAgent,
+      );
+    }),
 
   /** Get current session — used by AuthGate. */
   me: authedProcedure.query(async ({ ctx }) => {
@@ -1169,7 +1367,13 @@ export const authRouter = router({
    */
   refresh: publicProcedure.input(RefreshInputSchema).mutation(async ({ ctx, input }) => {
     enforceRate('refresh', ctx.ip);
-    let claims: { sub: string; family: string; jti: string | null };
+    let claims: {
+      sub: string;
+      family: string;
+      jti: string | null;
+      org: string | null;
+      mid: string | null;
+    };
     try {
       claims = await verifyRefresh(input.refreshToken);
     } catch {
@@ -1233,15 +1437,38 @@ export const authRouter = router({
     if (!user) {
       throw new TRPCError({ code: 'UNAUTHORIZED', message: 'auth.errors.userMissing' });
     }
-    const member = await inSystem(ctx.db, 'auth', (tx) =>
-      tx.query.members.findFirst({
+    const member = await inSystem(ctx.db, 'auth', async (tx) => {
+      if (claims.org && claims.mid) {
+        return tx.query.members.findFirst({
+          where: (m, { eq: eq2, and: and2 }) =>
+            and2(
+              eq2(m.id, claims.mid!),
+              eq2(m.orgId, claims.org!),
+              eq2(m.userId, user.id),
+              eq2(m.status, 'active'),
+            ),
+        });
+      }
+      // Legacy refresh tokens predate tenant claims. Reopen the last
+      // workspace, then any active membership.
+      if (user.lastOrgId) {
+        const remembered = await tx.query.members.findFirst({
+          where: (m, { eq: eq2, and: and2 }) =>
+            and2(eq2(m.userId, user.id), eq2(m.orgId, user.lastOrgId!), eq2(m.status, 'active')),
+        });
+        if (remembered) return remembered;
+      }
+      return tx.query.members.findFirst({
         where: (m, { eq: eq2, and: and2 }) => and2(eq2(m.userId, user.id), eq2(m.status, 'active')),
-      }),
-    );
+      });
+    });
     if (!member) {
       throw new TRPCError({ code: 'UNAUTHORIZED', message: 'auth.errors.noMembership' });
     }
     const session = await buildSessionPayload(ctx.db, user.id, member.id, member.orgId);
+    await inSystem(ctx.db, 'auth', (tx) =>
+      tx.update(s.users).set({ lastOrgId: member.orgId }).where(eq(s.users.id, user.id)),
+    );
     const accessToken = await signAccess({
       sub: user.id,
       org: session.member.orgId,
@@ -1252,6 +1479,8 @@ export const authRouter = router({
     // family (legacy-token migration path).
     const issued = await issueRefresh(ctx.db, {
       userId: user.id,
+      orgId: member.orgId,
+      memberId: member.id,
       family,
       parentId,
       ip: ctx.ip,
@@ -1282,7 +1511,43 @@ function buildSessionPayload(
   memberId: string,
   orgId: string,
 ): Promise<Session> {
-  return withOrgContext(db, orgId, (tx) => readSessionPayload(tx, userId, memberId, orgId));
+  return listUserMemberships(db, userId).then((memberships) =>
+    withOrgContext(db, orgId, (tx) => readSessionPayload(tx, userId, memberId, orgId, memberships)),
+  );
+}
+
+/**
+ * The membership list is the one deliberately cross-tenant read a
+ * signed-in user is allowed to perform: it returns only organisations
+ * where that exact user has an active membership, and only summary
+ * fields needed by the workspace switcher.
+ */
+async function listUserMemberships(db: DB, userId: string): Promise<Session['memberships']> {
+  return inSystem(db, 'auth', async (tx) => {
+    const rows = await tx
+      .select({
+        orgId: s.organizations.id,
+        orgSlug: s.organizations.slug,
+        orgName: s.organizations.name,
+        memberId: s.members.id,
+        status: s.members.status,
+        joinedAt: s.members.joinedAt,
+      })
+      .from(s.members)
+      .innerJoin(s.organizations, eq(s.organizations.id, s.members.orgId))
+      .where(
+        and(
+          eq(s.members.userId, userId),
+          eq(s.members.status, 'active'),
+          isNull(s.organizations.deletedAt),
+        ),
+      )
+      .orderBy(asc(s.members.joinedAt));
+    return rows.map((row) => ({
+      ...row,
+      joinedAt: row.joinedAt.toISOString(),
+    }));
+  });
 }
 
 async function readSessionPayload(
@@ -1290,6 +1555,7 @@ async function readSessionPayload(
   userId: string,
   memberId: string,
   orgId: string,
+  memberships: Session['memberships'],
 ): Promise<Session> {
   const user = await db.query.users.findFirst({ where: (u, { eq: eq2 }) => eq2(u.id, userId) });
   const org = await db.query.organizations.findFirst({
@@ -1604,6 +1870,7 @@ async function readSessionPayload(
       taxRatePct: org.taxRatePct ?? '0',
       pricesIncludeTax: org.pricesIncludeTax ?? true,
     },
+    memberships,
     stores: storeRows.map((st) => ({
       id: st.id,
       name: st.name,

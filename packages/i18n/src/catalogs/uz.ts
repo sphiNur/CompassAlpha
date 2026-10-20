@@ -315,6 +315,18 @@ export const uz = {
   'settings.profile.username': 'Telegram',
   'settings.about.title': 'Ilova haqida',
   'settings.about.workspace': 'Tashkilot',
+  'workspace.title': 'Ish maydoni',
+  'workspace.current': 'Joriy',
+  'workspace.switched': 'Ish maydoni almashtirildi',
+  'workspace.create.action': 'Yangi ish maydoni yaratish',
+  'workspace.create.title': 'Ish maydoni yaratish',
+  'workspace.create.body':
+    "O'z do'konlari, xodimlari, katalogi va hisobotlariga ega alohida tashkilot.",
+  'workspace.create.name': 'Ish maydoni nomi',
+  'workspace.create.namePlaceholder': 'masalan, Riverside Restaurant',
+  'workspace.create.submit': 'Ish maydonini yaratish',
+  'workspace.create.created': 'Ish maydoni yaratildi',
+  'workspace.create.failed': 'Ish maydonini yaratib bo‘lmadi',
   'settings.about.role': 'Rol',
   'settings.about.build': 'Versiya',
   'common.saved': 'Saqlandi',
@@ -369,6 +381,10 @@ export const uz = {
   'auth.errors.inviteUsed': 'Bu taklif allaqachon ishlatilgan.',
   'auth.errors.inviteMemberSuspended':
     "Bu tashkilotdagi a'zoligingiz to'xtatilgan. Rahbaringiz bilan bog'laning.",
+  'auth.errors.invalidTimezone': "Vaqt mintaqasi noto'g'ri.",
+  'auth.errors.orgSlugTaken': 'Bu ish maydoni manzili allaqachon band.',
+  'auth.errors.orgCreationDisabled':
+    "Yangi ish maydonlarini Compass jamoasi ochadi. Taklif so'rang.",
 
   // Admin (M1.6) — yuqori chastotali lokalizatsiya
   'admin.section.organization': 'Tashkilot',

@@ -44,6 +44,8 @@ export const env = createEnv({
     DEV_MOCK_LOGIN_ENABLED: z.enum(['true', 'false']).optional(),
     NON_TELEGRAM_LOGIN_ENABLED: z.enum(['true', 'false']).optional(),
     NON_TELEGRAM_LOGIN_USERS: z.string().optional(),
+    /** Allow a verified Telegram user to create a new tenant workspace. */
+    SELF_SERVICE_ORG_CREATION: z.enum(['true', 'false']).default('true'),
     // Cloudflare Worker relay for outbound Bot API calls — used when the
     // host network blocks api.telegram.org. See infra/cloudflare/README.md.
     TG_RELAY_URL: z.string().url().optional(),

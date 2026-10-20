@@ -37,17 +37,28 @@ export async function signRefresh(
   userId: string,
   family: string,
   jti: string,
+  orgId?: string,
+  memberId?: string,
 ): Promise<string> {
-  return await new SignJWT({ sub: userId, family, jti })
+  return await new SignJWT({
+    sub: userId,
+    family,
+    jti,
+    ...(orgId && memberId ? { org: orgId, mid: memberId } : {}),
+  })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime(REFRESH_TTL)
     .sign(refreshSecret);
 }
 
-export async function verifyRefresh(
-  token: string,
-): Promise<{ sub: string; family: string; jti: string | null }> {
+export async function verifyRefresh(token: string): Promise<{
+  sub: string;
+  family: string;
+  jti: string | null;
+  org: string | null;
+  mid: string | null;
+}> {
   const { payload } = await jwtVerify(token, refreshSecret);
   // jti is optional during the migration window — tokens issued
   // before M1.9 lack it. Treated as legacy by the consume helper.
@@ -55,5 +66,7 @@ export async function verifyRefresh(
     sub: String(payload.sub),
     family: String(payload.family),
     jti: typeof payload.jti === 'string' ? payload.jti : null,
+    org: typeof payload.org === 'string' ? payload.org : null,
+    mid: typeof payload.mid === 'string' ? payload.mid : null,
   };
 }

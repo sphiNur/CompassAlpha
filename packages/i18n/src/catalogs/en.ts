@@ -372,6 +372,18 @@ export const en = {
   'settings.profile.username': 'Telegram',
   'settings.about.title': 'About',
   'settings.about.workspace': 'Workspace',
+  'workspace.title': 'Workspace',
+  'workspace.current': 'Current',
+  'workspace.switched': 'Workspace switched',
+  'workspace.create.action': 'Create a new workspace',
+  'workspace.create.title': 'Create a workspace',
+  'workspace.create.body':
+    'Set up a separate organization with its own stores, people, catalog and reports.',
+  'workspace.create.name': 'Workspace name',
+  'workspace.create.namePlaceholder': 'e.g. Riverside Restaurant',
+  'workspace.create.submit': 'Create workspace',
+  'workspace.create.created': 'Workspace created',
+  'workspace.create.failed': 'Could not create the workspace',
   'settings.about.role': 'Role',
   'settings.about.build': 'Build',
   'common.saved': 'Saved',
@@ -429,6 +441,10 @@ export const en = {
   'auth.errors.inviteUsed': 'This invitation has already been used.',
   'auth.errors.inviteMemberSuspended':
     'Your membership in this organization is suspended. Contact your manager.',
+  'auth.errors.invalidTimezone': 'That time zone is not valid.',
+  'auth.errors.orgSlugTaken': 'That workspace address is already in use.',
+  'auth.errors.orgCreationDisabled':
+    'New workspaces are created by the Compass team. Ask for an invitation.',
 
   // ── Admin (M1.6, 2026-05-06) ───────────────────────────────────
   // High-traffic admin labels. The deeper admin internals (audit

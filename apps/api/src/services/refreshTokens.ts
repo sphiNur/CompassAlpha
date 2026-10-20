@@ -69,6 +69,9 @@ function hashToken(token: string): string {
 
 interface IssueOpts {
   userId: string;
+  /** Session tenant this refresh chain belongs to. */
+  orgId?: string;
+  memberId?: string;
   /** When this is a rotation, pass the consumed token's family + id. */
   family?: string;
   parentId?: string;
@@ -88,7 +91,7 @@ export async function issueRefresh(
   const id = randomUUID();
   const family = opts.family ?? randomUUID();
   const expiresAt = new Date(Date.now() + REFRESH_TTL_MS);
-  const token = await signRefresh(opts.userId, family, id);
+  const token = await signRefresh(opts.userId, family, id, opts.orgId, opts.memberId);
   await inSystem(db, 'auth', (tx) =>
     tx.insert(s.refreshTokens).values({
       id,

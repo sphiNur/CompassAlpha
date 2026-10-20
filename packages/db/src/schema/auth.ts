@@ -116,6 +116,12 @@ export const users = authSchema.table(
      *  change it — the user themselves cannot. False for fresh sign-ups
      *  and for placeholders created by `admin.memberInviteByTgId`. */
     displayNameLocked: boolean('display_name_locked').notNull().default(false),
+    /**
+     * Last organisation the person actively worked in. Login and legacy
+     * refresh tokens (issued before refresh tokens carried an org) use
+     * this to reopen the right tenant deterministically.
+     */
+    lastOrgId: uuid('last_org_id').references(() => organizations.id, { onDelete: 'set null' }),
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true, mode: 'date' }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -124,6 +130,7 @@ export const users = authSchema.table(
   (t) => ({
     tgUserIdUnique: uniqueIndex('users_tg_user_id_unique').on(t.tgUserId),
     emailUnique: uniqueIndex('users_email_unique').on(t.email),
+    lastOrgIdx: index('users_last_org_idx').on(t.lastOrgId),
   }),
 );
 

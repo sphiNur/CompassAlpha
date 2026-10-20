@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync } from 'node:fs';
 import { getDb, closeDb, schema as s } from './index';
 import { PERMISSIONS, BUILTIN_ROLES } from './seed-data';
+import { DEFAULT_FEATURE_FLAGS, DEFAULT_ORG_WORKFLOW } from './provision-organization';
 
 (function loadRootEnv() {
   let dir = dirname(fileURLToPath(import.meta.url));
@@ -56,7 +57,7 @@ async function main() {
       name: 'Default Organization',
       localeDefault: 'en',
       timezone: 'Asia/Tashkent',
-      workflow: { steps: ['draft', 'submitted', 'approved', 'in_run', 'delivered', 'confirmed'] },
+      workflow: DEFAULT_ORG_WORKFLOW,
     })
     .onConflictDoNothing({ target: s.organizations.slug })
     .returning();
@@ -339,12 +340,7 @@ async function main() {
   console.log('[seed] Default feature flags...');
   await db
     .insert(s.featureFlags)
-    .values([
-      { orgId, key: 'price_alert.threshold_multiplier', value: { value: 1.2 } },
-      { orgId, key: 'price_alert.threshold_uzs', value: { value: 10000 } },
-      { orgId, key: 'order.default_step_for_kg', value: { value: 0.5 } },
-      { orgId, key: 'workflow.skip_approval', value: { value: false } },
-    ])
+    .values(DEFAULT_FEATURE_FLAGS.map((flag) => ({ orgId, ...flag })))
     .onConflictDoNothing();
 
   console.log('[seed] Done.');

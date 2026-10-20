@@ -314,6 +314,18 @@ export const ru = {
   'settings.profile.username': 'Telegram',
   'settings.about.title': 'О приложении',
   'settings.about.workspace': 'Организация',
+  'workspace.title': 'Рабочее пространство',
+  'workspace.current': 'Текущее',
+  'workspace.switched': 'Рабочее пространство переключено',
+  'workspace.create.action': 'Создать новое пространство',
+  'workspace.create.title': 'Создать рабочее пространство',
+  'workspace.create.body':
+    'Отдельная организация со своими магазинами, сотрудниками, каталогом и отчётами.',
+  'workspace.create.name': 'Название пространства',
+  'workspace.create.namePlaceholder': 'например, Riverside Restaurant',
+  'workspace.create.submit': 'Создать пространство',
+  'workspace.create.created': 'Рабочее пространство создано',
+  'workspace.create.failed': 'Не удалось создать рабочее пространство',
   'settings.about.role': 'Роль',
   'settings.about.build': 'Сборка',
   'common.saved': 'Сохранено',
@@ -368,6 +380,10 @@ export const ru = {
   'auth.errors.inviteUsed': 'Это приглашение уже использовано.',
   'auth.errors.inviteMemberSuspended':
     'Ваше членство в этой организации приостановлено. Обратитесь к управляющему.',
+  'auth.errors.invalidTimezone': 'Неверный часовой пояс.',
+  'auth.errors.orgSlugTaken': 'Этот адрес рабочего пространства уже занят.',
+  'auth.errors.orgCreationDisabled':
+    'Новые пространства создаёт команда Compass. Запросите приглашение.',
 
   // Admin (M1.6) — высокочастотная локализация
   'admin.section.organization': 'Организация',
