@@ -66,6 +66,11 @@ import { hub } from '../../realtime/hub';
 import { dispatchRunEventNotifications } from '../../services/notifyForEvent';
 import { money2, runMoneyLinesSql, uuidListSql } from '../../services/runMoney';
 import { todayInTz } from '@compass/domain';
+import {
+  hiddenSplits,
+  mergeScopedRevision,
+  StoreOutOfScopeError,
+} from '../../services/scopedRunRevision';
 
 /**
  * Today as YYYY-MM-DD in the session's ORG timezone. D.1 (M3.39,
@@ -3080,21 +3085,38 @@ export const runRouter = router({
       runSimpleCommand(
         ctx,
         input.runId,
-        (state, scope) =>
-          decideRun(state, {
+        (state, { readStoreIds = null, ...scope }) => {
+          // 2026-10-21: a store-scoped reader only ever saw part of this
+          // item (run.get redaction); keep the hidden stores' splits,
+          // quantity, prices, supplier and receipt instead of letting the
+          // wholesale replacement below erase them.
+          const item = state.items.get(input.skuId);
+          let revision = input;
+          if (item) {
+            try {
+              revision = mergeScopedRevision(item, input, readStoreIds);
+            } catch (err) {
+              if (err instanceof StoreOutOfScopeError) {
+                throw new TRPCError({ code: 'FORBIDDEN', message: 'run.errors.notVisible' });
+              }
+              throw err;
+            }
+          }
+          return decideRun(state, {
             type: 'RevisePurchase',
-            skuId: input.skuId,
-            supplierId: input.supplierId,
-            unitPrice: input.unitPrice,
-            actualQty: input.actualQty,
-            receiptPhotoUrl: input.receiptPhotoUrl,
-            storeSplits: input.storeSplits,
-            reason: input.reason,
-            paymentMethod: input.paymentMethod,
+            skuId: revision.skuId,
+            supplierId: revision.supplierId,
+            unitPrice: revision.unitPrice,
+            actualQty: revision.actualQty,
+            receiptPhotoUrl: revision.receiptPhotoUrl,
+            storeSplits: revision.storeSplits,
+            reason: revision.reason,
+            paymentMethod: revision.paymentMethod,
             ...scope,
             actor: actorFromCtx(ctx),
-          }),
-        { withRunStoreIds: true },
+          });
+        },
+        { withRunStoreIds: true, withReadScope: true },
       ),
     ),
 
@@ -3116,13 +3138,24 @@ export const runRouter = router({
    *  not to buy after all). Blocked once any destination store has
    *  accepted delivery. */
   undoPurchase: authedProcedure.input(UndoPurchaseInputSchema).mutation(async ({ ctx, input }) =>
-    runSimpleCommand(ctx, input.runId, (state) =>
-      decideRun(state, {
-        type: 'UndoPurchase',
-        skuId: input.skuId,
-        reason: input.reason,
-        actor: actorFromCtx(ctx),
-      }),
+    runSimpleCommand(
+      ctx,
+      input.runId,
+      (state, { readStoreIds = null }) => {
+        // 2026-10-21: undo erases every store's split; refuse it for an
+        // actor who can't see all of them (see mergeScopedRevision).
+        const item = state.items.get(input.skuId);
+        if (item && hiddenSplits(item, readStoreIds).length > 0) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'run.errors.notVisible' });
+        }
+        return decideRun(state, {
+          type: 'UndoPurchase',
+          skuId: input.skuId,
+          reason: input.reason,
+          actor: actorFromCtx(ctx),
+        });
+      },
+      { withReadScope: true },
     ),
   ),
 
@@ -3559,7 +3592,10 @@ function actorFromCtx(
 async function runSimpleCommand(
   ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
   runId: string,
-  produce: (state: RunState, scope: { runStoreIds?: string[] }) => RunEvent[],
+  produce: (
+    state: RunState,
+    scope: { runStoreIds?: string[]; readStoreIds?: ReadonlySet<string> | null },
+  ) => RunEvent[],
   options?: {
     requireGlobalAmend?: boolean;
     requiredPermission?: string;
@@ -3570,6 +3606,12 @@ async function runSimpleCommand(
      * deliveries to stores outside the run.
      */
     withRunStoreIds?: boolean;
+    /**
+     * 2026-10-21: resolve the actor's run READ scope (the same resolver
+     * run.get redacts with; null = unrestricted) for commands that must
+     * not touch splits the actor was never shown.
+     */
+    withReadScope?: boolean;
   },
 ): Promise<{ lastSeq: number; eventCount: number }> {
   return ctx.withOrg(async (tx) => {
@@ -3577,9 +3619,13 @@ async function runSimpleCommand(
     const events = (await readStream(tx, 'run', run.id)) as unknown as RunEvent[];
     let state = emptyRunState(run.id);
     for (const e of events) state = applyRun(state, e);
-    const scope = options?.withRunStoreIds
-      ? { runStoreIds: await runInvolvedStoreIds(tx, run) }
-      : {};
+    const scope: { runStoreIds?: string[]; readStoreIds?: ReadonlySet<string> | null } = {
+      ...(options?.withRunStoreIds ? { runStoreIds: await runInvolvedStoreIds(tx, run) } : {}),
+    };
+    if (options?.withReadScope) {
+      const readStoreIds = await resolveRunReadStoreScope(tx, ctx);
+      scope.readStoreIds = readStoreIds === null ? null : new Set(readStoreIds);
+    }
     if (options?.requireGlobalAmend || state.status === 'amending') {
       await assertCanAmendRun(tx, ctx, run);
     } else if (!options?.skipRunPermissionScope) {

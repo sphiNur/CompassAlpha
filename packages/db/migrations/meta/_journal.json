@@ -358,6 +358,13 @@
       "when": 1792528800000,
       "tag": "0050_member_invite_revocation",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1792532400000,
+      "tag": "0051_backfill_transfer_audit_scope",
+      "breakpoints": true
     }
   ]
 }
