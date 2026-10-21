@@ -954,7 +954,7 @@ export const uz = {
   'run.action.markUnavailableDesc': 'Nima uchun ololmaganingizni jamoaga tushuntiring.',
   'run.action.unavailableReasonPlaceholder': 'Sabab',
   'run.action.actualQty': 'Haqiqiy miqdor ({unit})',
-  'run.action.unitPriceUzs': 'Birlik narxi (UZS)',
+  'run.action.unitPriceUzs': 'Birlik narxi ({currency})',
   // M3.41 (2026-05-21): xaridor xarid o'rtasida yangi mahsulot qo'shadi
   'run.action.addItem.button': "+ Qo'shish",
   'run.action.addItem.title': "Xarid o'rtasida mahsulot qo'shish",
@@ -974,7 +974,7 @@ export const uz = {
   'run.action.addItem.save': 'Saqlash',
   'run.label.addedByPurchaser': "Xaridor xarid davomida qo'shgan",
   'run.confirm.finish.addedByPurchaser':
-    "➕ Buyurtmadan tashqari {n} pozitsiya qo'shildi · {total} UZS",
+    "➕ Buyurtmadan tashqari {n} pozitsiya qo'shildi · {total} {currency}",
   'run.toast.itemAdded': "Pozitsiya qo'shildi",
   'run.toast.couldNotAddItem': "Pozitsiyani qo'shib bo'lmadi",
   'run.errors.alreadyInRun': 'Bu SKU xaridda allaqachon bor — mavjud qatorni tahrirlang',
@@ -1002,7 +1002,7 @@ export const uz = {
   'run.toast.expenseAdded': "Xarajat qo'shildi",
   'run.toast.expenseRemoved': "Xarajat o'chirildi",
   'run.toast.couldNotAddExpense': "Xarajatni saqlab bo'lmadi",
-  'run.confirm.finish.expenses': '🧾 {n} ta katalogdan tashqari / xarajat · {total} UZS',
+  'run.confirm.finish.expenses': '🧾 {n} ta katalogdan tashqari / xarajat · {total} {currency}',
   'run.confirm.finish.perStoreHeading': "Do'kon bo'yicha hisob:",
   'run.errors.expenseLabelRequired': 'Nomini kiriting',
   'run.errors.expenseLabelTooLong': "Nom juda uzun (200 dan ko'p emas)",
@@ -1016,9 +1016,10 @@ export const uz = {
   'run.errors.notClaimable': "Xaridni hozirgi holatda olib bo'lmaydi",
   // M3.36 (2026-05-19): minglik rejim — 147500 o'rniga 147.5 yozish.
   // UZS tenant uchun standart yoqilgan.
-  'run.action.unitPriceUzsThousands': 'Birlik narxi (×1000 UZS)',
+  'run.action.unitPriceUzsThousands': 'Birlik narxi (×1000 {currency})',
   'run.label.staleRun': '{days} kun',
-  'run.label.priceUnitAria': "Narx birligi — UZS va minglik o'rtasida almashtirish uchun bosing",
+  'run.label.priceUnitAria':
+    "Narx birligi — {currency} va minglik o'rtasida almashtirish uchun bosing",
   'run.price.check.title': "Narx to'g'rimi?",
   'run.price.check.body': "{name}: o'tgan safar {last} {currency}, hozir {next} {currency}.",
   'run.price.check.confirm': 'Ha, saqlash',
@@ -1043,7 +1044,8 @@ export const uz = {
   'run.confirm.finish.title': 'Xaridni tugatamizmi?',
   'run.confirm.finish.body':
     "Tugatgandan keyin narx, miqdor va yetkazish yozuvlari qulflanadi. Bekor qilib bo'lmaydi.",
-  'run.confirm.finish.summary': "{items} ta mahsulot · {stores} ta do'kon · jami {total} UZS",
+  'run.confirm.finish.summary':
+    "{items} ta mahsulot · {stores} ta do'kon · jami {total} {currency}",
   'run.label.paymentMethod': "To'lov usuli",
   'run.label.paymentCash': 'Naqd',
   'run.label.paymentTransfer': "O'tkazma",
@@ -1601,10 +1603,57 @@ export const uz = {
   'run.action.attachSelected': "{n} ta buyurtmani qo'shish",
   'run.switcher.label': 'Ochiq xaridlar',
   'run.switcher.newRun': '+ Yangi xarid',
-  'run.confirm.finish.money': 'Mahsulotlar {items} · xarajatlar {expenses} · jami {total} UZS',
+  'run.confirm.finish.money':
+    'Mahsulotlar {items} · xarajatlar {expenses} · jami {total} {currency}',
   'run.errors.runDateInFuture': "Xarid sanasi kelajakda bo'lishi mumkin emas",
   'run.errors.receivedQtyRequired': 'Haqiqatda qancha kelganini kiriting',
   'run.errors.receivedQtyInvalid':
     "Qabul qilingan miqdor 0 dan kichik bo'lmagan son bo'lishi kerak",
   'run.errors.receivedQtyExceedsSplit': 'Qabul qilingan miqdor {max} dan oshmasligi kerak',
+  // 2026-10-21 audit follow-ups: staff sales tab, sales void, inventory movements,
+  // invite list/revoke, offline/stale-order messages.
+  'nav.sales': 'Sotuvlar',
+  'sales.page.title': 'Sotuvlar',
+  'sales.action.void': 'Bekor qilish',
+  'sales.void.title': 'Sotuvni bekor qilish',
+  'sales.void.description': '{dish} — masalliqlar omborga qaytariladi.',
+  'sales.void.reasonLabel': 'Sabab',
+  'sales.void.reasonPlaceholder': 'masalan: noto‘g‘ri taom, ikki marta kiritilgan',
+  'sales.void.confirmBtn': 'Bekor qilish',
+  'sales.void.voidedLabel': 'Bekor qilingan: {reason}',
+  'sales.toast.voided': 'Sotuv bekor qilindi — qoldiq tiklandi.',
+  'sales.errors.saleNotFound': 'Sotuv topilmadi.',
+  'dishes.errors.duplicateIngredient':
+    'Retseptda bitta mahsulot ikki marta ko‘rsatilgan — bitta qatorga birlashtiring.',
+  'inventory.action.addStocktake': 'Boshqa mahsulotni inventarizatsiya qilish',
+  'inventory.sheet.stocktake.skuLabel': 'Mahsulot',
+  'inventory.sheet.stocktake.pickSku': 'Mahsulotni tanlang…',
+  'inventory.movements.title': 'So‘nggi harakatlar',
+  'inventory.movements.empty': 'Hali harakatlar yo‘q',
+  'inventory.reason.delivery_received': 'Yetkazib berish qabul qilindi',
+  'inventory.reason.stocktake': 'Inventarizatsiya',
+  'inventory.reason.wastage': 'Isrof',
+  'inventory.reason.consumption': 'Sotuv sarfi',
+  'inventory.reason.consumption_reversed': 'Sotuv bekor qilindi',
+  'inventory.reason.transfer_in': 'Ko‘chirish (kirim)',
+  'inventory.reason.transfer_out': 'Ko‘chirish (chiqim)',
+  'inventory.reason.adjustment': 'Tuzatish',
+  'auth.errors.inviteRevoked':
+    "Bu taklif havolasi bekor qilingan. Rahbaringizdan yangi havola so'rang.",
+  'auth.errors.inviteInviterNoLongerAuthorized':
+    "Taklif endi amal qilmaydi: uni yuborgan kishi endi a'zo qo'sha olmaydi. Yangi havola so'rang.",
+  'admin.errors.inviteNotFound': 'Taklif topilmadi.',
+  'admin.errors.inviteNotPending': 'Bu taklif allaqachon ishlatilgan yoki bekor qilingan.',
+  'admin.toast.inviteRevoked': 'Taklif bekor qilindi',
+  'people.pendingInvitesCount': '{n} ta kutilayotgan taklif',
+  'people.pendingInviteDefaultRole': "Do'kon uchun standart rol",
+  'people.pendingInviteOrgWide': 'Butun tashkilot',
+  'people.pendingInviteMeta': '{name} yubordi · {date} gacha',
+  'people.pendingInviteExpires': '{date} gacha',
+  'people.revokeInvite': 'Bekor qilish',
+  'people.confirmRevokeInvite':
+    "Bu taklif havolasini bekor qilasizmi? Havolasi borlar endi qo'shila olmaydi.",
+  'order.errors.staleOfflineEdit': 'Bu o‘zgarish oldingi kuni oflayn qilingan va qo‘llanmadi',
+  'approval.toast.orderChanged':
+    'Buyurtma siz ochganingizdan keyin o‘zgardi — eng so‘nggi variantini ko‘rib chiqing',
 } as const satisfies Record<CatalogKey, string>;

@@ -278,6 +278,10 @@ export const memberInvites = authSchema.table(
     acceptedByMemberId: uuid('accepted_by_member_id').references(() => members.id, {
       onDelete: 'set null',
     }),
+    /** 2026-10-21 CA-19: an admin can withdraw a pending link (migration
+     *  0050). A revoked invite is refused by auth.acceptInvite. */
+    revokedAt: timestamp('revoked_at', { withTimezone: true, mode: 'date' }),
+    revokedBy: uuid('revoked_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
   },
   (t) => ({

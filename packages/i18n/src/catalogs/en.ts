@@ -1053,7 +1053,7 @@ export const en = {
   'run.action.markUnavailableDesc': "Tell the team why this couldn't be bought.",
   'run.action.unavailableReasonPlaceholder': 'Reason',
   'run.action.actualQty': 'Actual qty ({unit})',
-  'run.action.unitPriceUzs': 'Unit price (UZS)',
+  'run.action.unitPriceUzs': 'Unit price ({currency})',
   // M3.41 (2026-05-21): purchaser-initiated mid-run additions.
   'run.action.addItem.button': '+ Add',
   'run.action.addItem.title': 'Add item mid-run',
@@ -1071,7 +1071,8 @@ export const en = {
   'run.action.addItem.reasonPlaceholder': 'e.g. Chef call-in / Market deal / Vendor freebie',
   'run.action.addItem.save': 'Save addition',
   'run.label.addedByPurchaser': 'Added by purchaser mid-run',
-  'run.confirm.finish.addedByPurchaser': '➕ {n} item(s) added beyond original order · {total} UZS',
+  'run.confirm.finish.addedByPurchaser':
+    '➕ {n} item(s) added beyond original order · {total} {currency}',
   'run.toast.itemAdded': 'Item added to the run',
   'run.toast.couldNotAddItem': 'Could not add the item',
   'run.errors.alreadyInRun': 'This SKU is already in the run — use Edit on the existing row',
@@ -1099,7 +1100,7 @@ export const en = {
   'run.toast.expenseAdded': 'Expense recorded',
   'run.toast.expenseRemoved': 'Expense removed',
   'run.toast.couldNotAddExpense': 'Could not save the expense',
-  'run.confirm.finish.expenses': '🧾 {n} off-catalog item(s) / expense(s) · {total} UZS',
+  'run.confirm.finish.expenses': '🧾 {n} off-catalog item(s) / expense(s) · {total} {currency}',
   'run.confirm.finish.perStoreHeading': 'Per-store settlement:',
   'run.errors.expenseLabelRequired': 'A description is required',
   'run.errors.expenseLabelTooLong': 'Description too long (200 max)',
@@ -1118,9 +1119,9 @@ export const en = {
   // toggle persists in localStorage; default ON for the UZS launch
   // tenant. Math + persisted values stay in raw UZS — only the
   // input/display is divided.
-  'run.action.unitPriceUzsThousands': 'Unit price (×1000 UZS)',
+  'run.action.unitPriceUzsThousands': 'Unit price (×1000 {currency})',
   'run.label.staleRun': '{days}d old',
-  'run.label.priceUnitAria': 'Price unit — tap to switch between UZS and thousands',
+  'run.label.priceUnitAria': 'Price unit — tap to switch between {currency} and thousands',
   'run.price.check.title': 'Is this price right?',
   'run.price.check.body': '{name}: last time {last} {currency}, this time {next} {currency}.',
   'run.price.check.confirm': 'Yes, save',
@@ -1145,7 +1146,7 @@ export const en = {
   'run.confirm.finish.title': 'Finish this run?',
   'run.confirm.finish.body':
     'After finishing, prices, quantities, and delivery records are locked. This cannot be undone.',
-  'run.confirm.finish.summary': '{items} items · {stores} stores · total {total} UZS',
+  'run.confirm.finish.summary': '{items} items · {stores} stores · total {total} {currency}',
   // M1.14: payment-method labels + the optional cash/transfer breakdown
   // line that appears in the finish-run confirm body when the run
   // mixed both methods.
@@ -1739,9 +1740,55 @@ export const en = {
   'run.action.attachSelected': '{n, plural, =1 {Add 1 order} other {Add {n} orders}}',
   'run.switcher.label': 'Open runs',
   'run.switcher.newRun': '+ New purchase',
-  'run.confirm.finish.money': 'Items {items} · expenses {expenses} · total {total} UZS',
+  'run.confirm.finish.money': 'Items {items} · expenses {expenses} · total {total} {currency}',
   'run.errors.runDateInFuture': "The purchase date can't be in the future",
   'run.errors.receivedQtyRequired': 'Enter how much actually arrived',
   'run.errors.receivedQtyInvalid': 'Received quantity must be a number ≥ 0',
   'run.errors.receivedQtyExceedsSplit': "Received quantity can't exceed {max}",
+  // 2026-10-21 audit follow-ups: staff sales tab, sales void, inventory movements,
+  // invite list/revoke, offline/stale-order messages.
+  'nav.sales': 'Sales',
+  'sales.page.title': 'Sales',
+  'sales.action.void': 'Void',
+  'sales.void.title': 'Void sale',
+  'sales.void.description': '{dish} — the ingredients go back into stock.',
+  'sales.void.reasonLabel': 'Reason',
+  'sales.void.reasonPlaceholder': 'e.g. wrong dish, entered twice',
+  'sales.void.confirmBtn': 'Void sale',
+  'sales.void.voidedLabel': 'Voided: {reason}',
+  'sales.toast.voided': 'Sale voided — inventory restored.',
+  'sales.errors.saleNotFound': 'Sale not found.',
+  'dishes.errors.duplicateIngredient':
+    'The same SKU is listed twice in the recipe — merge them into one line.',
+  'inventory.action.addStocktake': 'Add stocktake for another SKU',
+  'inventory.sheet.stocktake.skuLabel': 'SKU',
+  'inventory.sheet.stocktake.pickSku': 'Pick SKU…',
+  'inventory.movements.title': 'Recent movements',
+  'inventory.movements.empty': 'No movements yet',
+  'inventory.reason.delivery_received': 'Delivery received',
+  'inventory.reason.stocktake': 'Stocktake',
+  'inventory.reason.wastage': 'Wastage',
+  'inventory.reason.consumption': 'Sale consumption',
+  'inventory.reason.consumption_reversed': 'Sale voided',
+  'inventory.reason.transfer_in': 'Transfer in',
+  'inventory.reason.transfer_out': 'Transfer out',
+  'inventory.reason.adjustment': 'Adjustment',
+  'auth.errors.inviteRevoked': 'This invitation link was revoked. Ask your manager for a new one.',
+  'auth.errors.inviteInviterNoLongerAuthorized':
+    'This invitation is no longer valid: the person who sent it can no longer add members. Ask for a new link.',
+  'admin.errors.inviteNotFound': 'Invitation not found.',
+  'admin.errors.inviteNotPending': 'This invitation was already used or revoked.',
+  'admin.toast.inviteRevoked': 'Invite revoked',
+  'people.pendingInvitesCount': '{n, plural, one {# pending invite} other {# pending invites}}',
+  'people.pendingInviteDefaultRole': 'Store default role',
+  'people.pendingInviteOrgWide': 'Whole organisation',
+  'people.pendingInviteMeta': 'by {name} · expires {date}',
+  'people.pendingInviteExpires': 'expires {date}',
+  'people.revokeInvite': 'Revoke',
+  'people.confirmRevokeInvite':
+    'Revoke this invite link? Anyone holding it will no longer be able to join.',
+  'order.errors.staleOfflineEdit':
+    'This change was made offline on an earlier day and was not applied',
+  'approval.toast.orderChanged':
+    'This order changed since you opened it — review the latest version',
 } as const;
