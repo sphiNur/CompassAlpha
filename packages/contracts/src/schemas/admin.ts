@@ -36,3 +36,8 @@ export const InviteMemberInputSchema = z.object({
   email: z.string().email().optional(),
   roleSlug: z.string(),
 });
+
+/** 2026-10-21 CA-19: withdraw a pending shareable invite link. */
+export const MemberInviteRevokeInputSchema = z.object({
+  inviteId: UuidSchema,
+});

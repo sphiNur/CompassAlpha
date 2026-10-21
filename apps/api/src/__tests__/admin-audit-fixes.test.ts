@@ -9,7 +9,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { TRPCError } from '@trpc/server';
 import { PgDialect } from 'drizzle-orm/pg-core';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import {
   getDb,
   provisionOrganization,
@@ -21,7 +21,15 @@ import { GrantRoleInputSchema } from '@compass/contracts';
 import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
 import type { RequestContext, SessionContext } from '../trpc/context';
-import { outboxOfOrg, outboxOfStreams, runMovements, withUniqueKey } from '../trpc/routers/admin';
+import {
+  inviteWithinScope,
+  outboxOfOrg,
+  outboxOfStreams,
+  runMovements,
+  runTouchesStores,
+  withUniqueKey,
+} from '../trpc/routers/admin';
+import { inviterCoversInvite } from '../trpc/routers/auth';
 
 const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
 
@@ -132,6 +140,46 @@ describe('purge predicates (CA-28)', () => {
   test('empty id lists match nothing', () => {
     expect(render(outboxOfStreams(ORG, [])).sql).toBe('false');
     expect(render(runMovements(ORG, [])).sql).toBe('false');
+  });
+});
+
+describe('admin read scope + invite reach (CA-17, CA-19)', () => {
+  const A = '00000000-0000-4000-8000-00000000000a';
+  const B = '00000000-0000-4000-8000-00000000000b';
+
+  test('org admins see every invite; store admins only invites inside their stores', () => {
+    expect(inviteWithinScope([A, B], null)).toBe(true);
+    expect(inviteWithinScope([], null)).toBe(true);
+    expect(inviteWithinScope([A], new Set([A]))).toBe(true);
+    expect(inviteWithinScope([A, B], new Set([A]))).toBe(false);
+    // A store-less invite is an org-tier (admin) invite.
+    expect(inviteWithinScope([], new Set([A, B]))).toBe(false);
+  });
+
+  test('an inviter must still be active, hold users.manage and cover the stores', () => {
+    const base = {
+      active: true,
+      hasUsersManage: true,
+      isGlobalAdmin: false,
+      adminStoreIds: new Set([A]),
+    };
+    expect(inviterCoversInvite(base, [A])).toBe(true);
+    expect(inviterCoversInvite(null, [A])).toBe(false);
+    expect(inviterCoversInvite({ ...base, active: false }, [A])).toBe(false);
+    expect(inviterCoversInvite({ ...base, hasUsersManage: false }, [A])).toBe(false);
+    expect(inviterCoversInvite(base, [A, B])).toBe(false);
+    expect(inviterCoversInvite(base, [])).toBe(false);
+    expect(inviterCoversInvite({ ...base, isGlobalAdmin: true }, [])).toBe(true);
+    expect(inviterCoversInvite({ ...base, isGlobalAdmin: true, active: false }, [])).toBe(false);
+  });
+
+  test('run-touches-stores predicate checks attached orders and per-store splits', () => {
+    const dialect = new PgDialect();
+    const q = dialect.sqlToQuery(runTouchesStores(sql`r.id`, [A, B]));
+    expect(q.sql).toContain('read_model.order_sessions_v');
+    expect(q.sql).toContain('read_model.run_item_stores_v');
+    expect(q.params).toEqual([A, B, A, B]);
+    expect(dialect.sqlToQuery(runTouchesStores(sql`r.id`, [])).sql).toBe('false');
   });
 });
 

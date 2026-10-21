@@ -68,6 +68,7 @@ describe.skipIf(!SHOULD_RUN)('invite acceptance (PG-gated)', () => {
   let managerMemberId = '';
   let managerRoleId = '';
   let staffRoleId = '';
+  let adminRoleId = '';
 
   beforeAll(async () => {
     const db = getDb(undefined, { system: 'maintenance' });
@@ -106,6 +107,7 @@ describe.skipIf(!SHOULD_RUN)('invite acceptance (PG-gated)', () => {
       .returning();
     staffRoleId = staffRole!.id;
     managerRoleId = managerRole!.id;
+    adminRoleId = adminRole!.id;
     await db.insert(s.rolePermissions).values([
       { roleId: adminRole!.id, permissionKey: 'users.manage' },
       { roleId: adminRole!.id, permissionKey: 'org.admin' },
@@ -263,6 +265,185 @@ describe.skipIf(!SHOULD_RUN)('invite acceptance (PG-gated)', () => {
         storeIds: [otherStoreId],
       }),
     ).rejects.toThrow('admin.errors.notAdminOfStore');
+  });
+
+  // ---------- 2026-10-21 CA-19 / CA-17 / rename rank ----------------------
+
+  const managerSession = (): SessionContext => ({
+    userId: managerUserId,
+    memberId: managerMemberId,
+    orgId,
+    orgTimezone: 'UTC',
+    permissions: new Set(['users.manage']),
+    roleSlugs: new Set(['manager']),
+  });
+  const staffSlug = async () =>
+    (await getDb(undefined, { system: 'maintenance' }).query.roles.findFirst({
+      where: (r, { eq: eq2 }) => eq2(r.id, staffRoleId),
+    }))!.slug;
+  const inviteIdOf = async (token: string) => {
+    const { createHash } = await import('node:crypto');
+    const hash = createHash('sha256').update(token).digest('hex');
+    const row = await getDb(undefined, { system: 'maintenance' }).query.memberInvites.findFirst({
+      where: (i, { eq: eq2 }) => eq2(i.tokenHash, hash),
+    });
+    return row!.id;
+  };
+
+  test('CA-19 a revoked invite is gone from the list and cannot be accepted', async () => {
+    const created = await caller(adminSession()).admin.memberInviteCreate({
+      roleSlug: await staffSlug(),
+      storeIds: [storeId],
+    });
+    const inviteId = await inviteIdOf(created.token);
+    const before = await caller(adminSession()).admin.memberInviteList();
+    expect(before.some((i) => i.id === inviteId)).toBe(true);
+
+    await caller(adminSession()).admin.memberInviteRevoke({ inviteId });
+    const after = await caller(adminSession()).admin.memberInviteList();
+    expect(after.some((i) => i.id === inviteId)).toBe(false);
+    await expect(caller(adminSession()).admin.memberInviteRevoke({ inviteId })).rejects.toThrow(
+      'admin.errors.inviteNotPending',
+    );
+
+    const tgUserId = freshTgId();
+    await expect(
+      caller(null).auth.acceptInvite({ token: created.token, initData: signInitData(tgUserId) }),
+    ).rejects.toThrow('auth.errors.inviteRevoked');
+    const user = await getDb(undefined, { system: 'maintenance' }).query.users.findFirst({
+      where: (u, { eq: eq2 }) => eq2(u.tgUserId, tgUserId),
+    });
+    expect(user).toBeUndefined();
+    const audit = await getDb(undefined, { system: 'maintenance' }).query.policyDecisions.findMany({
+      where: (pd, { and: and2, eq: eq2 }) =>
+        and2(eq2(pd.orgId, orgId), eq2(pd.resourceId, inviteId)),
+    });
+    expect(audit.map((a) => a.action)).toContain('admin.memberInviteRevoke');
+  });
+
+  test('CA-19 a store manager lists and revokes only invites into their stores', async () => {
+    const mine = await caller(managerSession()).admin.memberInviteCreate({
+      roleSlug: await staffSlug(),
+      storeIds: [storeId],
+    });
+    const theirs = await caller(adminSession()).admin.memberInviteCreate({
+      roleSlug: await staffSlug(),
+      storeIds: [otherStoreId],
+    });
+    const mineId = await inviteIdOf(mine.token);
+    const theirsId = await inviteIdOf(theirs.token);
+    const list = await caller(managerSession()).admin.memberInviteList();
+    expect(list.some((i) => i.id === mineId)).toBe(true);
+    expect(list.some((i) => i.id === theirsId)).toBe(false);
+    await expect(
+      caller(managerSession()).admin.memberInviteRevoke({ inviteId: theirsId }),
+    ).rejects.toThrow('admin.errors.notAdminOfStore');
+    await caller(managerSession()).admin.memberInviteRevoke({ inviteId: mineId });
+  });
+
+  test('CA-19 an invite dies with its inviter (suspended or lost users.manage)', async () => {
+    const db = getDb(undefined, { system: 'maintenance' });
+    const created = await caller(managerSession()).admin.memberInviteCreate({
+      roleSlug: await staffSlug(),
+      storeIds: [storeId],
+    });
+    await db
+      .update(s.members)
+      .set({ status: 'suspended' })
+      .where(eq(s.members.id, managerMemberId));
+    try {
+      await expect(
+        caller(null).auth.acceptInvite({
+          token: created.token,
+          initData: signInitData(freshTgId()),
+        }),
+      ).rejects.toThrow('auth.errors.inviteInviterNoLongerAuthorized');
+    } finally {
+      await db.update(s.members).set({ status: 'active' }).where(eq(s.members.id, managerMemberId));
+    }
+
+    // Losing the store-level users.manage voids the link as well.
+    const second = await caller(managerSession()).admin.memberInviteCreate({
+      roleSlug: await staffSlug(),
+      storeIds: [storeId],
+    });
+    await db.insert(s.memberPermissionOverrides).values({
+      memberId: managerMemberId,
+      permissionKey: 'users.manage',
+      effect: 'deny',
+      scopeType: 'store',
+      scopeId: storeId,
+    });
+    try {
+      await expect(
+        caller(null).auth.acceptInvite({
+          token: second.token,
+          initData: signInitData(freshTgId()),
+        }),
+      ).rejects.toThrow('auth.errors.inviteInviterNoLongerAuthorized');
+    } finally {
+      await db
+        .delete(s.memberPermissionOverrides)
+        .where(eq(s.memberPermissionOverrides.memberId, managerMemberId));
+    }
+  });
+
+  test('CA-17 a store manager reads only their own stores and members', async () => {
+    const mgr = caller(managerSession());
+    const members = await mgr.admin.memberList();
+    expect(members.some((m) => m.memberId === managerMemberId)).toBe(true);
+    // The org admin has no store: not visible to a store manager.
+    expect(members.some((m) => m.memberId === adminMemberId)).toBe(false);
+    expect(members.every((m) => m.tgUserId === null)).toBe(true);
+    for (const m of members) {
+      expect(m.stores.every((st) => st.id === storeId)).toBe(true);
+    }
+    const stores = await mgr.admin.storeList();
+    expect(stores.map((st) => st.id)).toEqual([storeId]);
+    const audit = await mgr.admin.adminAuditList({ limit: 200 });
+    expect(audit.every((r) => r.scopeStoreId === storeId)).toBe(true);
+    expect(await mgr.admin.adminAuditList({ limit: 50, storeId: otherStoreId })).toEqual([]);
+    const overview = await mgr.admin.overview();
+    expect(overview.storeCount).toBe(1);
+    await expect(mgr.admin.memberPermissionsList({ memberId: adminMemberId })).rejects.toThrow(
+      'admin.errors.notAdminOfStore',
+    );
+
+    const adminView = await caller(adminSession()).admin.memberList();
+    expect(adminView.some((m) => m.memberId === adminMemberId && m.tgUserId !== null)).toBe(true);
+  });
+
+  test('rename rank: an org admin cannot rename an equal-rank admin, only themself', async () => {
+    const db = getDb(undefined, { system: 'maintenance' });
+    const [peerUser] = await db
+      .insert(s.users)
+      .values({ tgUserId: freshTgId(), displayName: 'Peer Admin', displayNameLocked: true })
+      .returning();
+    const [peer] = await db
+      .insert(s.members)
+      .values({ orgId, userId: peerUser!.id, status: 'active' })
+      .returning();
+    await db.insert(s.memberRoleBindings).values({
+      memberId: peer!.id,
+      roleId: adminRoleId,
+      scopeType: 'global',
+      scopeId: null,
+      grantedBy: adminUserId,
+    });
+    await expect(
+      caller(adminSession()).admin.memberSetDisplayName({
+        memberId: peer!.id,
+        displayName: 'Hijacked',
+      }),
+    ).rejects.toThrow('auth.errors.cannotRevokeEqualOrHigher');
+    await caller(adminSession()).admin.memberSetDisplayName({
+      memberId: adminMemberId,
+      displayName: 'Admin Renamed Self',
+    });
+    const self = await db.query.users.findFirst({
+      where: (u, { eq: eq2 }) => eq2(u.id, adminUserId),
+    });
+    expect(self?.displayName).toBe('Admin Renamed Self');
   });
 
   test('an unknown token creates nothing', async () => {

@@ -209,6 +209,7 @@ export function PeopleSection({
   });
   const createInvite = trpc.admin.memberInviteCreate.useMutation({
     onSuccess: async (data) => {
+      void utils.admin.memberInviteList.invalidate();
       const link = makeInviteLink(appConfig.data?.botUsername, data.token);
       if (!link) {
         toast.error(i18n.t('people.inviteNoBot'));
@@ -1417,8 +1418,85 @@ function InviteHubSheet({
             <IconChevronRight size={16} />
           </span>
         </button>
+
+        <PendingInvitesList enabled={open} />
       </div>
     </Sheet>
+  );
+}
+
+/**
+ * 2026-10-21 CA-19: pending invite links (not accepted / revoked /
+ * expired) the viewer may manage, each with a Revoke action. Server
+ * scopes the list: org admins see all, store admins only invites into
+ * their own stores. Renders nothing while empty to keep the hub compact.
+ */
+function PendingInvitesList({ enabled }: { enabled: boolean }) {
+  const i18n = useI18n();
+  const dateFmt = useDateFormat();
+  const toast = useToast();
+  const errToast = useErrToast();
+  const utils = trpc.useUtils();
+  const invitesQuery = trpc.admin.memberInviteList.useQuery(undefined, {
+    enabled,
+    retry: false,
+  });
+  const revoke = trpc.admin.memberInviteRevoke.useMutation({
+    onSuccess: () => {
+      void utils.admin.memberInviteList.invalidate();
+      toast.info(i18n.t('admin.toast.inviteRevoked'));
+    },
+    onError: (err) => {
+      void utils.admin.memberInviteList.invalidate();
+      errToast('common.error')(err);
+    },
+  });
+  const invites = invitesQuery.data ?? [];
+  if (invites.length === 0) return null;
+
+  return (
+    <div className="mt-3">
+      <SectionLabel as="h3" padded={false} className="mb-2">
+        {i18n.t('people.pendingInvitesCount', { n: invites.length })}
+      </SectionLabel>
+      <div className="flex flex-col gap-1.5">
+        {invites.map((inv) => {
+          const roles = inv.roles.map((r) => r.name).join(', ');
+          const stores = inv.stores.map((st) => st.name).join(', ');
+          const expires = dateFmt.date(inv.expiresAt);
+          return (
+            <ListRow
+              key={inv.id}
+              className="rounded-[var(--r-card)]"
+              label={roles || i18n.t('people.pendingInviteDefaultRole')}
+              hint={[
+                stores || i18n.t('people.pendingInviteOrgWide'),
+                inv.invitedBy?.displayName
+                  ? i18n.t('people.pendingInviteMeta', {
+                      name: inv.invitedBy.displayName,
+                      date: expires,
+                    })
+                  : i18n.t('people.pendingInviteExpires', { date: expires }),
+              ].join(' · ')}
+              trailing={
+                <Button
+                  size="sm"
+                  variant="danger"
+                  disabled={revoke.isPending}
+                  onClick={() =>
+                    nativeConfirm(i18n.t('people.confirmRevokeInvite'), () =>
+                      revoke.mutate({ inviteId: inv.id }),
+                    )
+                  }
+                >
+                  {i18n.t('people.revokeInvite')}
+                </Button>
+              }
+            />
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
