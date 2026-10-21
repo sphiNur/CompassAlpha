@@ -36,6 +36,7 @@ import { confirmThen } from '../lib/confirm';
 import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
 import { useStoreContext } from '../components/StoreSwitcher';
+import { sessionItemsView } from './approval/sessionItemsView';
 
 type ApprovalTab = 'pending' | 'approved' | 'rejected';
 
@@ -711,7 +712,14 @@ function SessionItems({
     }
     return { sum, known, unknown };
   })();
-  if (totals.length === 0) {
+  const sessionNotes = detail.data?.notes ?? null;
+  const sessionExtras = detail.data?.extras ?? [];
+  // 2026-10-21 FE-02: the empty state used to return before extras and
+  // notes rendered, so an extras-only order read "empty" to the manager.
+  // Now "empty" covers the SKU section only; the whole block reads empty
+  // only when SKUs, extras and notes are all absent.
+  const view = sessionItemsView({ totals, extras: sessionExtras, notes: sessionNotes });
+  if (view.allEmpty) {
     return (
       <div className="border-t border-[var(--c-divider)] px-4 py-3 text-old-body-sm text-[var(--c-fg-muted)]">
         {i18n.t('common.empty')}
@@ -728,8 +736,6 @@ function SessionItems({
     rowsBySku.set(it.skuId, arr);
   }
 
-  const sessionNotes = detail.data?.notes ?? null;
-  const sessionExtras = detail.data?.extras ?? [];
 
   return (
     <div className="border-t border-[var(--c-divider)]">
@@ -739,7 +745,7 @@ function SessionItems({
         sessions + new extras from M3.16+ sessions) so the manager
         sees everything the store asked for in one place. Yellow tint
         because these are off-catalog and need extra scrutiny. */}
-    {sessionExtras.length > 0 ? (
+    {view.showExtras ? (
       <div className="border-b border-[var(--c-divider)] bg-[var(--c-warn-bg)] px-4 py-2.5">
         <SectionLabel padded={false}>
           {i18n.t('order.extras.label')}
@@ -759,7 +765,7 @@ function SessionItems({
         </ul>
       </div>
     ) : null}
-    {sessionNotes ? (
+    {view.showNotes ? (
       <div className="border-b border-[var(--c-divider)] bg-[var(--c-warn-bg)] px-4 py-2.5">
         <SectionLabel padded={false}>
           {i18n.t('order.notes.label')}
@@ -783,6 +789,12 @@ function SessionItems({
         </span>
       </div>
     ) : null}
+    {view.skuSectionEmpty ? (
+      <div className="px-4 py-3 text-old-body-sm text-[var(--c-fg-muted)]">
+        {i18n.t('common.empty')}
+      </div>
+    ) : null}
+    {view.hasSkus ? (
     <ul
       className="flex flex-col px-4 py-2"
       role="list"
@@ -904,6 +916,7 @@ function SessionItems({
         );
       })}
     </ul>
+    ) : null}
     </div>
   );
 }

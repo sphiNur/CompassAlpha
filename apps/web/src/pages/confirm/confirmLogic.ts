@@ -91,3 +91,29 @@ export function initialReceivedQty(
   if (existing != null) return existing;
   return status === 'wrong' || status === 'quality' ? '0' : '';
 }
+
+/**
+ * 2026-10-21 FE-01 / F4-02: what the page shows for run.list.
+ *   - 'loading' — first load in flight: a spinner, never "nothing to confirm".
+ *   - 'error'   — failed with nothing cached: error + Retry. Showing the
+ *                 empty state here made receivers on bad wifi think no
+ *                 goods were coming and skip signing.
+ *   - 'ready'   — data in hand. `stale` = a later refetch failed; the cached
+ *                 runs stay usable (offline confirms queue against them) and
+ *                 an error banner with Retry sits on top.
+ */
+export type RunsListView =
+  | { kind: 'loading' }
+  | { kind: 'error' }
+  | { kind: 'ready'; stale: boolean };
+export function runsListView(q: {
+  isLoading: boolean;
+  isError: boolean;
+  hasData: boolean;
+}): RunsListView {
+  if (q.hasData) return { kind: 'ready', stale: q.isError };
+  if (q.isError) return { kind: 'error' };
+  if (q.isLoading) return { kind: 'loading' };
+  // Disabled / idle query with no data: treat as loaded-and-empty.
+  return { kind: 'ready', stale: false };
+}

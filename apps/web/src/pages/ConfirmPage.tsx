@@ -10,6 +10,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import {
+  Banner,
   Button,
   Card,
   Chip,
@@ -21,6 +22,7 @@ import {
   Sheet,
   StickyPageBar,
   Input,
+  Spinner,
   useToast,
 } from '@compass/ui';
 import { trpc } from '../lib/trpc';
@@ -38,6 +40,7 @@ import {
   defaultDeliveringRunId,
   deliveringRunsForStore,
   initialReceivedQty,
+  runsListView,
   type ConfirmDecisionStatus,
 } from './confirm/confirmLogic';
 
@@ -76,6 +79,13 @@ export function ConfirmPage() {
   const photoUploader = usePhotoUploader('issue');
 
   const runsQuery = trpc.run.list.useQuery();
+  // 2026-10-21 FE-01 / F4-02: loading / failed run.list must not render as
+  // "nothing to confirm".
+  const runsView = runsListView({
+    isLoading: runsQuery.isLoading,
+    isError: runsQuery.isError,
+    hasData: runsQuery.data !== undefined,
+  });
   const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: false });
   const utils = trpc.useUtils();
   // Receivers also confirm from inside the store, often with terrible
@@ -420,6 +430,22 @@ export function ConfirmPage() {
         </StickyPageBar>
       ) : null}
       <div className="flex flex-col gap-3 px-4">
+        {runsView.kind === 'error' || (runsView.kind === 'ready' && runsView.stale) ? (
+          <Banner
+            tone="danger"
+            title={i18n.t('common.error')}
+            action={
+              <Button
+                variant="pearl"
+                size="sm"
+                loading={runsQuery.isFetching}
+                onClick={() => void runsQuery.refetch()}
+              >
+                {i18n.t('common.retry')}
+              </Button>
+            }
+          />
+        ) : null}
         {/* 2026-10-21 CA-04: several deliveries waiting for this store —
             pick which one is being checked. Hidden in the common case of
             one. */}
@@ -441,7 +467,11 @@ export function ConfirmPage() {
             ))}
           </ChipBar>
         ) : null}
-        {!activeRun ? (
+        {runsView.kind === 'loading' ? (
+          <div className="flex items-center justify-center py-12 text-[var(--c-fg-muted)]">
+            <Spinner size={28} />
+          </div>
+        ) : runsView.kind === 'error' ? null : !activeRun ? (
           <EmptyState
             title={i18n.t('confirm.empty.nothingToConfirm')}
             description={i18n.t('confirm.empty.nothingDesc')}
