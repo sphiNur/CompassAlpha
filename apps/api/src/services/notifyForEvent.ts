@@ -11,7 +11,12 @@
 import type { DB } from '@compass/db';
 import type { OrderEvent, OrderState } from '@compass/domain/order';
 import type { RunEvent, RunState } from '@compass/domain/run';
-import { dispatch, findStoreStaff, notifyOthersWithPermission } from './notify';
+import {
+  dispatch,
+  findRecipientsByPermissionInStore,
+  findStoreStaff,
+  notifyOthersWithPermission,
+} from './notify';
 
 export async function dispatchOrderEventNotifications(
   db: DB,
@@ -23,6 +28,12 @@ export async function dispatchOrderEventNotifications(
   for (const e of events) {
     switch (e.type) {
       case 'Submitted': {
+        // 2026-10-21 audit CA-31/F-04: dedupKeys for Submitted, Approved,
+        // Rejected and Unapproved carry the event seq (as Withdrawn already
+        // did). Without it a resubmission after a rejection, or a second
+        // approval after an unapprove, hit the earlier row's dedup key and
+        // the inbox swallowed a legitimate notification. Replays of the
+        // same event keep the same seq, so they still dedup.
         // M3.6 (2026-05-15): scope the recipient set to managers of
         // THIS order's store. Before the fix the call returned every
         // user in the org with `order.approve`, so a manager bound
@@ -47,7 +58,7 @@ export async function dispatchOrderEventNotifications(
             template: 'order.submitted',
             title: 'Order submitted',
             body: 'A staff submitted an order awaiting your review.',
-            dedupKey: `order:${state.streamId}:submitted`,
+            dedupKey: `order:${state.streamId}:submitted:${e.seq}`,
             payload: { sessionId: state.streamId, storeId: state.storeId },
             deepLink: '/approve',
           },
@@ -60,7 +71,7 @@ export async function dispatchOrderEventNotifications(
           template: 'order.approved',
           title: 'Order approved',
           body: 'Your order is approved and queued for the next market run.',
-          dedupKey: `order:${state.streamId}:approved`,
+          dedupKey: `order:${state.streamId}:approved:${e.seq}`,
           deepLink: '/order',
         });
         break;
@@ -70,7 +81,7 @@ export async function dispatchOrderEventNotifications(
           template: 'order.rejected',
           title: 'Order rejected',
           body: e.payload.reason || 'Your order was rejected; please update and resubmit.',
-          dedupKey: `order:${state.streamId}:rejected`,
+          dedupKey: `order:${state.streamId}:rejected:${e.seq}`,
           deepLink: '/order',
           payload: { reason: e.payload.reason },
         });
@@ -85,7 +96,7 @@ export async function dispatchOrderEventNotifications(
           body:
             e.payload.reason ||
             'An approver reopened your order for review.',
-          dedupKey: `order:${state.streamId}:unapproved`,
+          dedupKey: `order:${state.streamId}:unapproved:${e.seq}`,
           deepLink: '/order',
           payload: { reason: e.payload.reason },
         });
@@ -162,18 +173,90 @@ export async function dispatchRunEventNotifications(
         }
         break;
       }
+      case 'StoreConfirmed': {
+        // 2026-10-21 CA-06: a store signed for goods with at least one
+        // short / wrong / quality line. Before this the issue lived only
+        // in run_item_stores_v and vanished from every screen once the
+        // run finished. Tell the run's purchaser(s) and the store's
+        // managers. dedupKey carries the seq — a store can only confirm
+        // once per run, but a replay of the same event still dedups.
+        const store = state.stores.get(e.payload.storeId);
+        const issues = [...(store?.itemConfirms.entries() ?? [])].filter(
+          ([, c]) => c.status !== 'ok',
+        );
+        if (issues.length === 0) break;
+        const recipients = new Set<string>();
+        const purchaserMemberIds = [state.purchaserMemberId, state.claimedByMemberId].filter(
+          (id): id is string => !!id,
+        );
+        if (purchaserMemberIds.length > 0) {
+          const members = await db.query.members.findMany({
+            where: (m, { inArray, and, eq }) =>
+              and(inArray(m.id, purchaserMemberIds), eq(m.status, 'active')),
+          });
+          for (const m of members) recipients.add(m.userId);
+        }
+        for (const u of await findRecipientsByPermissionInStore(
+          db,
+          orgId,
+          'order.approve',
+          e.payload.storeId,
+        )) {
+          recipients.add(u);
+        }
+        recipients.delete(actorUserId);
+        if (recipients.size === 0) break;
+        await dispatch(db, orgId, [...recipients], {
+          template: 'run.storeConfirmedWithIssues',
+          title: 'Delivery received with problems',
+          body: `A store confirmed delivery with ${issues.length} problem item(s) — please review.`,
+          dedupKey: `run:${state.streamId}:store:${e.payload.storeId}:issues:${e.seq}`,
+          payload: {
+            runId: state.streamId,
+            storeId: e.payload.storeId,
+            issues: issues.map(([skuId, c]) => ({
+              skuId,
+              status: c.status,
+              receivedQty: c.receivedQty ?? null,
+              note: c.note,
+            })),
+          },
+          deepLink: '/run',
+        });
+        break;
+      }
       case 'RunFinished': {
+        // 2026-10-21 CA-11: the amount is the one purchase-money figure —
+        // items + expenses — shown as its parts. totalActual stays the
+        // items-only figure; events from before itemsTotal/expensesTotal
+        // existed fall back to totalActual and the state's expenses.
+        const itemsTotal = Number(e.payload.itemsTotal ?? e.payload.totalActual);
+        const expensesTotal =
+          e.payload.expensesTotal !== undefined
+            ? Number(e.payload.expensesTotal)
+            : state.expenses.reduce((sum, x) => sum + Number(x.qty) * Number(x.unitPrice), 0);
+        const grandTotal = (itemsTotal + expensesTotal).toFixed(2);
         if (state.purchaserMemberId) {
+          // 2026-10-21 audit CA-31/F-07: suspended members get nothing.
           const member = await db.query.members.findFirst({
-            where: (m, { eq }) => eq(m.id, state.purchaserMemberId!),
+            where: (m, { eq, and }) =>
+              and(eq(m.id, state.purchaserMemberId!), eq(m.status, 'active')),
           });
           if (member && member.userId !== actorUserId) {
             await dispatch(db, orgId, [member.userId], {
               template: 'run.finished',
               title: 'Run finished',
-              body: `Run complete · total ${e.payload.totalActual}.`,
+              body:
+                `Run complete · items ${itemsTotal.toFixed(2)} · expenses ` +
+                `${expensesTotal.toFixed(2)} · total ${grandTotal}.`,
               dedupKey: `run:${state.streamId}:finished`,
-              payload: { runId: state.streamId, totalActual: e.payload.totalActual },
+              payload: {
+                runId: state.streamId,
+                totalActual: e.payload.totalActual,
+                itemsTotal: itemsTotal.toFixed(2),
+                expensesTotal: expensesTotal.toFixed(2),
+                total: grandTotal,
+              },
               deepLink: '/run',
             });
           }
@@ -212,7 +295,7 @@ export async function dispatchRunEventNotifications(
       }
       // Run events still without notifications:
       //   PurchaseStarted, ItemPurchased, ItemUnavailable, DeliveryStarted,
-      //   StoreItemConfirmed, StoreConfirmed
+      //   StoreItemConfirmed, StoreConfirmed without problem lines
       default:
         break;
     }
@@ -291,8 +374,10 @@ async function notifyOwner(
   }
   if (memberIds.size === 0) return;
 
+  // 2026-10-21 audit CA-31/F-07: suspended members get nothing.
   const memberRows = await db.query.members.findMany({
-    where: (m, { inArray }) => inArray(m.id, [...memberIds]),
+    where: (m, { inArray, and, eq }) =>
+      and(inArray(m.id, [...memberIds]), eq(m.status, 'active')),
   });
   const userIds = memberRows
     .map((m) => m.userId)

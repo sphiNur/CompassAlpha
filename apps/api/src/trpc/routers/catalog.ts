@@ -105,14 +105,25 @@ export const catalogRouter = router({
       });
     }),
 
-  suppliers: authedProcedure.query(async ({ ctx }) => {
-    return ctx.withOrg(async (tx) => {
-      return tx.query.suppliers.findMany({
-        where: (sup, { eq: eq2 }) => eq2(sup.orgId, ctx.session!.orgId),
-        orderBy: (sup, { asc }) => asc(sup.name),
+  // 2026-10-21 audit CA-05 / CA-40: this is the supplier read for run
+  // screens (admin.supplierList needs users.manage, which a purchaser
+  // lacks). Archived suppliers are hidden unless asked for, so pickers
+  // stop offering them; `includeArchived` lets an edit form still name a
+  // supplier that was archived after it was recorded.
+  suppliers: authedProcedure
+    .input(z.object({ includeArchived: z.boolean().default(false) }).optional())
+    .query(async ({ ctx, input }) => {
+      const includeArchived = input?.includeArchived ?? false;
+      return ctx.withOrg(async (tx) => {
+        return tx.query.suppliers.findMany({
+          where: (sup, { eq: eq2, and: and2 }) =>
+            includeArchived
+              ? eq2(sup.orgId, ctx.session!.orgId)
+              : and2(eq2(sup.orgId, ctx.session!.orgId), eq2(sup.isArchived, false)),
+          orderBy: (sup, { asc }) => asc(sup.name),
+        });
       });
-    });
-  }),
+    }),
 
   /**
    * Per-SKU price statistics from `inventory.price_history` (added 2026-05-05).

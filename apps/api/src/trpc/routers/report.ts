@@ -42,6 +42,24 @@ import { DateStringSchema, UuidSchema } from '@compass/contracts';
 import { authedProcedure, router } from '../trpc';
 import { TRPCError } from '@trpc/server';
 import { getActorStoreIds } from '../../services/storeScope';
+import { money2, runMoneyLinesSql, uuidListSql } from '../../services/runMoney';
+
+/**
+ * 2026-10-21 CA-11: the runs a finance window covers. Live statuses are
+ * included on purpose ('amending' keeps a run in the books while a
+ * super-admin corrects it; purchasing/delivering show spend as it
+ * happens).
+ */
+function financeRunsSql(orgId: string, startDate: string, endDate: string) {
+  return sql`(
+    SELECT mr.id
+    FROM read_model.market_runs_v mr
+    WHERE mr.org_id = ${orgId}
+      AND mr.run_date >= ${startDate}::date
+      AND mr.run_date <= ${endDate}::date
+      AND mr.status IN ('purchasing', 'delivering', 'finished', 'amending')
+  )`;
+}
 
 const PurchaseLinesInputSchema = z.object({
   /** Inclusive start date (YYYY-MM-DD), matched against market_runs_v.runDate. */
@@ -65,6 +83,10 @@ export const reportRouter = router({
    * level total). This matches how a finance person reads it: "store A
    * spent ₸2,000 on Apple on 2026-05-08, paid cash" — store-attributable
    * spend, not run-attributable.
+   *
+   * 2026-10-21 CA-11: off-catalog expenses appear as `kind: 'expense'`
+   * lines (one per expense store split, skuId null, label set), so
+   * by-day / by-store views carry them; they have no supplier.
    */
   purchaseLines: authedProcedure
     .input(PurchaseLinesInputSchema)
@@ -97,80 +119,77 @@ export const reportRouter = router({
             });
           }
         }
-        // Sentinel UUID for the "user has zero stores" case so the
-        // SQL IN-list never matches anything (an empty IN-list is a
-        // PG syntax error). For users with stores, the IN-list is
-        // straightforward.
-        const allowedSql =
-          allowedStoreIds === null
-            ? sql``
-            : allowedStoreIds.length === 0
-              ? sql`AND ris.store_id = '00000000-0000-0000-0000-000000000000'::uuid`
-              : sql`AND ris.store_id IN (${sql.join(
-                  allowedStoreIds.map((id) => sql`${id}::uuid`),
-                  sql`, `,
-                )})`;
-        // Pull every per-store split for purchased rows in the date
-        // window. We join through run → run_item → run_item_stores so
-        // each output row already has the store-scoped qty (the only
-        // thing finance reconciles against).
+        // 2026-10-21 CA-11: one row per money line from the shared
+        // definition (services/runMoney.ts) — SKU splits priced at
+        // COALESCE(per-store override, item price) and paid by the
+        // resolved method, PLUS off-catalog expense splits as their own
+        // `kind: 'expense'` lines. Before this the report ignored
+        // per-store price/payment overrides and every expense, so its
+        // total never matched History or the finish sheet.
+        const storeIds = input.storeId ? [input.storeId] : allowedStoreIds;
         const rows = (await tx.execute(sql`
+          WITH money_lines AS (
+            ${runMoneyLinesSql({
+              runsSql: financeRunsSql(orgId, input.startDate, input.endDate),
+              storeIdsSql: uuidListSql(storeIds),
+            })}
+          )
           SELECT
-            mr.id::text          AS run_id,
-            mr.run_date::text    AS run_date,
-            mr.run_index         AS run_index,
-            ri.sku_id::text      AS sku_id,
-            ri.payment_method    AS payment_method,
-            ri.supplier_id::text AS supplier_id,
-            ri.unit_price::text  AS unit_price,
-            ris.store_id::text   AS store_id,
-            ris.qty::text        AS qty
-          FROM read_model.market_runs_v mr
-          INNER JOIN read_model.run_items_v ri
-            ON ri.run_id = mr.id
-          INNER JOIN read_model.run_item_stores_v ris
-            ON ris.run_id = ri.run_id AND ris.sku_id = ri.sku_id
-          WHERE mr.org_id = ${orgId}
-            AND mr.run_date >= ${input.startDate}::date
-            AND mr.run_date <= ${input.endDate}::date
-            AND ri.status = 'purchased'
-            -- 'amending' (2026-07-06): a finished run reopened by a
-            -- super-admin for correction. This query sums the LIVE
-            -- item×split rows, so keep amending runs in the books during
-            -- the correction — otherwise a run mid-amend would silently
-            -- drop out of finance.
-            AND mr.status IN ('purchasing', 'delivering', 'finished', 'amending')
-            ${input.storeId ? sql`AND ris.store_id = ${input.storeId}` : sql``}
-            ${input.paymentMethod ? sql`AND ri.payment_method = ${input.paymentMethod}` : sql``}
-            ${allowedSql}
-          ORDER BY mr.run_date DESC, mr.run_index DESC, ri.sku_id
+            mr.id::text           AS run_id,
+            mr.run_date::text     AS run_date,
+            mr.run_index          AS run_index,
+            ml.kind               AS kind,
+            ml.sku_id::text       AS sku_id,
+            ml.expense_id::text   AS expense_id,
+            ml.label              AS label,
+            ml.payment_method     AS payment_method,
+            ml.supplier_id::text  AS supplier_id,
+            ml.unit_price::text   AS unit_price,
+            ml.store_id::text     AS store_id,
+            ml.qty::text          AS qty,
+            ml.amount::text       AS amount
+          FROM money_lines ml
+          INNER JOIN read_model.market_runs_v mr ON mr.id = ml.run_id
+          WHERE TRUE
+            ${input.paymentMethod ? sql`AND ml.payment_method = ${input.paymentMethod}` : sql``}
+          ORDER BY mr.run_date DESC, mr.run_index DESC, ml.kind DESC, ml.sku_id, ml.label
         `)) as unknown as Array<{
           run_id: string;
           run_date: string;
           run_index: number;
-          sku_id: string;
+          kind: 'item' | 'expense';
+          sku_id: string | null;
+          expense_id: string | null;
+          label: string | null;
           payment_method: string;
           supplier_id: string | null;
           unit_price: string;
           store_id: string;
           qty: string;
+          amount: string;
         }>;
 
         return rows.map((r) => ({
           runId: r.run_id,
           runDate: r.run_date,
           runIndex: r.run_index,
+          /** 'item' = SKU split; 'expense' = off-catalog expense split. */
+          kind: r.kind,
+          /** Null on expense lines. */
           skuId: r.sku_id,
+          /** Expense lines only. */
+          expenseId: r.expense_id,
+          label: r.label,
           paymentMethod: r.payment_method as 'cash' | 'transfer',
           supplierId: r.supplier_id,
+          /** Effective price: the per-store override when one exists. */
           unitPrice: r.unit_price,
           storeId: r.store_id,
           qty: r.qty,
           // Pre-compute lineTotal so the FE doesn't need to BigDecimal-
-          // multiply for the common "sum these" reduction. Floating-
-          // point is fine for display (we round in the UI); the source
-          // of truth for accountancy stays the unit_price × qty pair.
-          lineTotal: (Number(r.unit_price) * Number(r.qty)).toFixed(2),
+          // multiply for the common "sum these" reduction. Computed in
+          // SQL numeric (exact) and rounded to cents here.
+          lineTotal: Number(r.amount).toFixed(2),
         }));
       });
     }),
@@ -206,57 +225,54 @@ export const reportRouter = router({
             });
           }
         }
-        const allowedSql =
-          allowedStoreIds === null
-            ? sql``
-            : allowedStoreIds.length === 0
-              ? sql`AND ris.store_id = '00000000-0000-0000-0000-000000000000'::uuid`
-              : sql`AND ris.store_id IN (${sql.join(
-                  allowedStoreIds.map((id) => sql`${id}::uuid`),
-                  sql`, `,
-                )})`;
+        // 2026-10-21 CA-11: the same money lines purchaseLines returns,
+        // so headline figures equal the sum of the lines and equal the
+        // run.history totals for the same runs. items / expenses / total
+        // are reported separately.
+        const storeIds = input.storeId ? [input.storeId] : allowedStoreIds;
         const rows = (await tx.execute(sql`
+          WITH money_lines AS (
+            ${runMoneyLinesSql({
+              runsSql: financeRunsSql(orgId, input.startDate, input.endDate),
+              storeIdsSql: uuidListSql(storeIds),
+            })}
+          )
           SELECT
-            ri.payment_method AS payment_method,
-            COALESCE(SUM(ri.unit_price * ris.qty), 0)::text AS total,
-            COUNT(DISTINCT mr.id)::int AS run_count,
-            COUNT(*)::int AS line_count
-          FROM read_model.market_runs_v mr
-          INNER JOIN read_model.run_items_v ri
-            ON ri.run_id = mr.id
-          INNER JOIN read_model.run_item_stores_v ris
-            ON ris.run_id = ri.run_id AND ris.sku_id = ri.sku_id
-          WHERE mr.org_id = ${orgId}
-            AND mr.run_date >= ${input.startDate}::date
-            AND mr.run_date <= ${input.endDate}::date
-            AND ri.status = 'purchased'
-            -- 'amending' (2026-07-06): a finished run reopened by a
-            -- super-admin for correction. This query sums the LIVE
-            -- item×split rows, so keep amending runs in the books during
-            -- the correction — otherwise a run mid-amend would silently
-            -- drop out of finance.
-            AND mr.status IN ('purchasing', 'delivering', 'finished', 'amending')
-            ${input.storeId ? sql`AND ris.store_id = ${input.storeId}` : sql``}
-            ${allowedSql}
-          GROUP BY ri.payment_method
+            COALESCE(SUM(amount), 0)::text AS total,
+            COALESCE(SUM(amount) FILTER (WHERE kind = 'item'), 0)::text AS items_total,
+            COALESCE(SUM(amount) FILTER (WHERE kind = 'expense'), 0)::text AS expenses_total,
+            COALESCE(SUM(amount) FILTER (WHERE payment_method = 'cash'), 0)::text AS cash_total,
+            COALESCE(SUM(amount) FILTER (WHERE payment_method = 'transfer'), 0)::text
+              AS transfer_total,
+            (COUNT(*) FILTER (WHERE payment_method = 'cash'))::int AS cash_lines,
+            (COUNT(*) FILTER (WHERE payment_method = 'transfer'))::int AS transfer_lines,
+            -- COUNT(DISTINCT) across both methods (D-04: max() of the
+            -- per-method counts under-counted mixed runs).
+            COUNT(DISTINCT run_id)::int AS run_count
+          FROM money_lines
         `)) as unknown as Array<{
-          payment_method: string;
           total: string;
+          items_total: string;
+          expenses_total: string;
+          cash_total: string;
+          transfer_total: string;
+          cash_lines: number;
+          transfer_lines: number;
           run_count: number;
-          line_count: number;
         }>;
-
-        const cash = rows.find((r) => r.payment_method === 'cash');
-        const transfer = rows.find((r) => r.payment_method === 'transfer');
-        const cashTotal = cash ? Number(cash.total) : 0;
-        const transferTotal = transfer ? Number(transfer.total) : 0;
+        const row = rows[0];
+        const cashTotal = Number(row?.cash_total ?? 0);
+        const transferTotal = Number(row?.transfer_total ?? 0);
         return {
-          totalCash: cashTotal.toFixed(2),
-          totalTransfer: transferTotal.toFixed(2),
-          total: (cashTotal + transferTotal).toFixed(2),
-          cashLines: cash?.line_count ?? 0,
-          transferLines: transfer?.line_count ?? 0,
-          runCount: Math.max(cash?.run_count ?? 0, transfer?.run_count ?? 0),
+          totalCash: money2(cashTotal),
+          totalTransfer: money2(transferTotal),
+          /** items + expenses. */
+          total: money2(Number(row?.total ?? 0)),
+          itemsTotal: money2(Number(row?.items_total ?? 0)),
+          expensesTotal: money2(Number(row?.expenses_total ?? 0)),
+          cashLines: row?.cash_lines ?? 0,
+          transferLines: row?.transfer_lines ?? 0,
+          runCount: row?.run_count ?? 0,
         };
       });
     }),

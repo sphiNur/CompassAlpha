@@ -63,7 +63,10 @@ export const StoreSplitSchema = z.object({
 });
 
 export const RunCreateInputSchema = z.object({
-  date: DateStringSchema.optional(), // defaults to today
+  // Defaults to the org's today. 2026-10-21 CA-03: the purchaser may pick
+  // an earlier booking date; run.create rejects impossible and future
+  // dates (org timezone).
+  date: DateStringSchema.optional(),
   sessionIds: z.array(UuidSchema).min(1),
   /**
    * M1.13 (2026-05-08): atomically transition the new run from

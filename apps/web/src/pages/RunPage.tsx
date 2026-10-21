@@ -30,6 +30,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Banner,
   Button,
+  Chip,
+  ChipBar,
   ConfirmSheet as PriceCheckSheet,
   DataState,
   EmptyState,
@@ -70,8 +72,12 @@ import {
   type AddItemDraft,
 } from './runs/sheets/RunSheets';
 import { isUnusualPrice } from './runs/lib/priceMath';
+import { mergeSplitsIntoExistingItem, runStoreIdsOf } from './runs/lib/runStores';
 // Mid-level panels — extracted to runs/components (Phase 4 step 5).
 import { ActiveRunPanel, PreviewSummaryCard, RunSessionsCard } from './runs/components/RunPanels';
+import { SessionPicker } from './runs/components/SessionPicker';
+import { selectPreview, selectedSessionIds } from './runs/lib/sessionSelection';
+import { NEW_RUN, isBuying, liveRunsOf, pickActiveRun } from './runs/lib/liveRuns';
 
 function newClientId(): string {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -94,7 +100,10 @@ type ConfirmKind =
   | { kind: 'recallDelivery'; storeId: string; storeName: string }
   | { kind: 'unmarkUnavailable'; skuId: string; skuName: string }
   | { kind: 'undoPurchase'; skuId: string; skuName: string }
-  | { kind: 'ejectSession'; sessionId: string; storeName: string; submitterName: string };
+  | { kind: 'ejectSession'; sessionId: string; storeName: string; submitterName: string }
+  // 2026-10-21 audit C-15: removing an expense was a one-tap ✗ with no
+  // confirmation or undo.
+  | { kind: 'removeExpense'; expenseId: string; label: string };
 
 export function RunPage() {
   const i18n = useI18n();
@@ -150,11 +159,35 @@ export function RunPage() {
   const [confirmAction, setConfirmAction] = useState<ConfirmKind | null>(null);
   const [confirmReason, setConfirmReason] = useState('');
   const previewQuery = trpc.run.previewCreatable.useQuery({});
+  /**
+   * 2026-10-21 CA-03: which approved sessions the next run / join takes.
+   * Per-session overrides of the default (today's orders ticked, older
+   * ones not) — see runs/lib/sessionSelection.ts. `runDateChoice` is the
+   * booking date for a new run; null = the org's today.
+   */
+  const [sessionOverrides, setSessionOverrides] = useState<Map<string, boolean>>(
+    () => new Map(),
+  );
+  const [runDateChoice, setRunDateChoice] = useState<string | null>(null);
+  const [attachSheetOpen, setAttachSheetOpen] = useState(false);
+  const previewToday = previewQuery.data?.today ?? null;
+  const chosenSessionIds = useMemo(
+    () => selectedSessionIds(previewQuery.data?.sessions ?? [], previewToday, sessionOverrides),
+    [previewQuery.data?.sessions, previewToday, sessionOverrides],
+  );
+  const selectedPreview = useMemo(
+    () => (previewQuery.data ? selectPreview(previewQuery.data, chosenSessionIds) : undefined),
+    [previewQuery.data, chosenSessionIds],
+  );
+  /** 2026-10-21 CA-04: run-switcher choice (run id, NEW_RUN, or null = default). */
+  const [selectedRunKey, setSelectedRunKey] = useState<string | null>(null);
   const runsQuery = trpc.run.list.useQuery();
   const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: false });
   const categoriesQuery = trpc.catalog.categories.useQuery();
   const storesQuery = trpc.catalog.stores.useQuery({ permission: 'run.purchase' });
-  const suppliersQuery = trpc.catalog.suppliers.useQuery();
+  // 2026-10-21 audit CA-40: archived suppliers are filtered below, except
+  // the one already recorded on the row being edited (so it still shows).
+  const suppliersQuery = trpc.catalog.suppliers.useQuery({ includeArchived: true });
   const expenseTemplatesQuery = trpc.run.expenseTemplates.useQuery(undefined, {
     enabled:
       !!session &&
@@ -237,6 +270,11 @@ export function RunPage() {
       void utils.run.list.invalidate();
       void utils.run.previewCreatable.invalidate();
       haptic('success');
+      // 2026-10-21 CA-03/CA-04: land on the run just created (or the
+      // buying run handed back) and forget this trip's ticks / date.
+      if (res?.runId) setSelectedRunKey(res.runId);
+      setSessionOverrides(new Map());
+      setRunDateChoice(null);
       /**
        * `res.reused` means run.create found a live run and handed it
        * back rather than creating one. Say so — silently landing the
@@ -268,6 +306,7 @@ export function RunPage() {
   });
   const attachSessions = trpc.run.attachSessions.useMutation({
     onSuccess: () => {
+      setAttachSheetOpen(false);
       void utils.run.get.invalidate();
       void utils.run.previewCreatable.invalidate();
       void utils.run.list.invalidate();
@@ -635,18 +674,20 @@ export function RunPage() {
   //     reachable (and thus refinalizable) even if a newer active run
   //     exists — otherwise a reopened run could get stuck & invisible.
   const canAmend = session?.permissions.includes('run.amend') ?? false;
-  const activeRun = useMemo(() => {
-    const rows = runsQuery.data ?? [];
-    const normal =
-      rows.find(
-        (r) => r.status === 'planned' || r.status === 'purchasing' || r.status === 'delivering',
-      ) ?? null;
-    if (canAmend) {
-      const amend = rows.find((r) => r.status === 'amending');
-      if (amend) return amend;
-    }
-    return normal;
-  }, [runsQuery.data, canAmend]);
+  // 2026-10-21 CA-04: an org may now have one run being bought plus
+  // several still out for delivery. pickActiveRun keeps the old default
+  // (amending for amenders → the buying run → a delivering one) and adds
+  // the run switcher's explicit choice, including "new purchase" while
+  // only delivering runs are open.
+  const activeRun = useMemo(
+    () => pickActiveRun(runsQuery.data ?? [], { canAmend, selectedKey: selectedRunKey }),
+    [runsQuery.data, canAmend, selectedRunKey],
+  );
+  const liveRuns = useMemo(() => liveRunsOf(runsQuery.data ?? [], canAmend), [runsQuery.data, canAmend]);
+  const hasBuyingRun = liveRuns.some((r) => isBuying(r.status));
+  const previewSessionCount = previewQuery.data?.sessions.length ?? 0;
+  /** Offer a "new purchase" chip: nothing is being bought and orders wait. */
+  const canStartNewAlongside = !hasBuyingRun && previewSessionCount > 0 && liveRuns.length > 0;
   // `amending` reuses the purchasing edit surface, so most render gates
   // treat it like purchasing; `editing` = "records are editable now".
   const amending = activeRun?.status === 'amending';
@@ -656,6 +697,18 @@ export function RunPage() {
     activeRun ? { runId: activeRun.id } : { runId: '' },
     { enabled: !!activeRun, refetchInterval: activeRun ? 6_000 : false },
   );
+
+  // 2026-10-21 audit CA-29: the stores this run serves. The purchase sheet
+  // only offers these (plus any store already on the edited row), matching
+  // the server's storeNotInRun guard.
+  const runStoreIds = useMemo(() => runStoreIdsOf(runDetailQuery.data), [runDetailQuery.data]);
+  const purchaseStoreById = useMemo(() => {
+    const allowed = new Set(runStoreIds);
+    for (const storeId of purchaseDraft?.splits.keys() ?? []) allowed.add(storeId);
+    const m = new Map<string, { id: string; name: string; code: string | null }>();
+    for (const [id, store] of storeById) if (allowed.has(id)) m.set(id, store);
+    return m;
+  }, [runStoreIds, purchaseDraft?.splits, storeById]);
 
   useEffect(() => {
     if (!inlineSavingSkuId) return;
@@ -754,6 +807,17 @@ export function RunPage() {
    *  user can step back to planned to modify the run mid-purchase. */
   const canUndoStartPurchase = activeRun?.status === 'purchasing';
 
+  /** 2026-10-21 audit C-19: mirror CancelRun's preconditions
+   *  (commands.ts) so the menu stops offering a cancel the server will
+   *  refuse — not while amending, not once any store has confirmed, and
+   *  not without run.create. */
+  const canCancelRun = useMemo(() => {
+    const status = activeRun?.status;
+    if (status !== 'planned' && status !== 'purchasing' && status !== 'delivering') return false;
+    if (!session?.permissions.includes('run.create')) return false;
+    return (runDetailQuery.data?.splits ?? []).every((sp) => !sp.confirmedAt);
+  }, [activeRun?.status, session?.permissions, runDetailQuery.data]);
+
   const finishSummary = useMemo(() => {
     const items = runDetailQuery.data?.items ?? [];
     const splits = runDetailQuery.data?.splits ?? [];
@@ -825,10 +889,25 @@ export function RunPage() {
       runDetailQuery.data?.lastPriceObservedAtBySku ?? {},
       Date.now(),
     );
+    /**
+     * 2026-10-21 CA-11: the one purchase-money definition — items (with
+     * per-store override prices) / expenses / total — taken from run.get's
+     * server-computed `money` so the sheet shows exactly what History,
+     * Finance and the finish notification show. The local sums above are
+     * the fallback for an older server and still drive the cash/transfer
+     * and per-store breakdowns (same math, see runs/lib/settlement.ts).
+     */
+    const serverMoney = runDetailQuery.data?.money;
+    const money = {
+      items: serverMoney ? Number(serverMoney.itemsTotal) : total - expensesTotal,
+      expenses: serverMoney ? Number(serverMoney.expensesTotal) : expensesTotal,
+      total: serverMoney ? Number(serverMoney.total) : total,
+    };
     return {
       skus,
       stores,
       total,
+      money,
       totalCash,
       totalTransfer,
       addedSkus,
@@ -983,9 +1062,11 @@ export function RunPage() {
        * ActiveRunPanel, whose delivery / undo / expense callbacks are all
        * meaningless before a run exists.
        */
-      const plannable = previewQuery.data?.plannedItems.length ?? 0;
-      if (plannable > 0) {
-        const sessionIds = previewQuery.data?.sessions.map((s) => s.id) ?? [];
+      // 2026-10-21 CA-03: only the ticked sessions (default: today's), and
+      // the chosen booking date (default: the org's today).
+      if (previewSessionCount > 0) {
+        const sessionIds = chosenSessionIds;
+        const runDate = runDateChoice ?? previewToday ?? undefined;
         // Gate on connectivity HERE, at the point of the decision, not
         // at the first save. run.create is not in the offline outbox and
         // the replay classifier discards BAD_REQUEST permanently, so a
@@ -993,16 +1074,24 @@ export function RunPage() {
         // price, type it in and only then discover there is no run to
         // put it in.
         const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+        // Server re-checks (run.errors.runDateInFuture / invalidRunDate).
+        const dateOk = !runDate || !previewToday || runDate <= previewToday;
         return {
           text: offline
             ? i18n.t('run.offline.needNetworkToStart')
-            : i18n.t('run.action.startPurchase'),
+            : sessionIds.length === 0
+              ? i18n.t('run.select.noneSelected')
+              : i18n.t('run.action.startPurchase'),
           onClick: () => {
-            if (offline || sessionIds.length === 0 || create.isPending) return;
-            create.mutate({ sessionIds, startImmediately: true });
+            if (offline || sessionIds.length === 0 || !dateOk || create.isPending) return;
+            create.mutate({
+              sessionIds,
+              startImmediately: true,
+              ...(runDate ? { date: runDate } : {}),
+            });
           },
           visible: true,
-          active: !offline && sessionIds.length > 0 && !create.isPending,
+          active: !offline && sessionIds.length > 0 && dateOk && !create.isPending,
         };
       }
       return { text: '', onClick: () => {}, visible: false, active: false };
@@ -1070,7 +1159,18 @@ export function RunPage() {
       default:
         return { text: '', onClick: () => {}, visible: false, active: false };
     }
-  }, [activeRun, allItemsHandled, allStoresConfirmed, pendingCount, i18n, previewQuery.data]);
+  }, [
+    activeRun,
+    allItemsHandled,
+    allStoresConfirmed,
+    pendingCount,
+    i18n,
+    previewSessionCount,
+    chosenSessionIds,
+    runDateChoice,
+    previewToday,
+    create,
+  ]);
 
   /**
    * MainButton dispatch: when a sheet with a single primary action is
@@ -1231,9 +1331,17 @@ export function RunPage() {
               ? '\n' +
                 i18n.t('run.confirm.finish.expenses', {
                   n: finishSummary.expensesCount,
-                  total: formatMoney(finishSummary.expensesTotal),
+                  total: formatMoney(finishSummary.money.expenses),
                 })
               : '';
+          // 2026-10-21 CA-11: always items / expenses / total.
+          const moneyLine =
+            '\n' +
+            i18n.t('run.confirm.finish.money', {
+              items: formatMoney(finishSummary.money.items),
+              expenses: formatMoney(finishSummary.money.expenses),
+              total: formatMoney(finishSummary.money.total),
+            });
           /**
            * Q7(b) safety net (2026-07-26).
            *
@@ -1299,8 +1407,9 @@ export function RunPage() {
               i18n.t('run.confirm.finish.summary', {
                 items: finishSummary.skus,
                 stores: finishSummary.stores,
-                total: formatMoney(finishSummary.total),
+                total: formatMoney(finishSummary.money.total),
               }) +
+              moneyLine +
               breakdownLine +
               addedLine +
               expensesLine +
@@ -1315,15 +1424,23 @@ export function RunPage() {
         }
         case 'refinalize':
           // finishSummary reflects the live (corrected) run.get during
-          // amending. Show the SKU-only total (finishSummary.total INCLUDES
-          // off-catalog expenses, but RunRefinalized re-freezes items-only
-          // actual_total — matching FinishRun + the finance report), so
-          // the number shown is exactly what gets frozen.
+          // amending. 2026-10-21 CA-11: the sheet used to show an
+          // items-only figure here while the finish sheet showed items +
+          // expenses. Both now show the one definition — items / expenses
+          // / total — and RunRefinalized freezes itemsTotal and
+          // expensesTotal explicitly (actual_total stays the items part).
           return {
             title: i18n.t('run.confirm.refinalize.title'),
-            body: i18n.t('run.confirm.refinalize.body', {
-              total: formatMoney(finishSummary.total - finishSummary.expensesTotal),
-            }),
+            body:
+              i18n.t('run.confirm.refinalize.body', {
+                total: formatMoney(finishSummary.money.total),
+              }) +
+              '\n' +
+              i18n.t('run.confirm.finish.money', {
+                items: formatMoney(finishSummary.money.items),
+                expenses: formatMoney(finishSummary.money.expenses),
+                total: formatMoney(finishSummary.money.total),
+              }),
             confirmLabel: i18n.t('run.action.refinalize'),
             danger: false,
             requireReason: false,
@@ -1466,6 +1583,20 @@ export function RunPage() {
                 { onSuccess: () => setConfirmAction(null) },
               ),
           };
+        case 'removeExpense':
+          return {
+            title: i18n.t('run.action.removeExpense'),
+            body: confirmAction.label,
+            confirmLabel: i18n.t('run.action.removeExpense'),
+            danger: true,
+            requireReason: false,
+            isPending: removeExpense.isPending,
+            run: () =>
+              removeExpense.mutate(
+                { runId, expenseId: confirmAction.expenseId, reason: '' },
+                { onSuccess: () => setConfirmAction(null) },
+              ),
+          };
       }
     }
     return null;
@@ -1488,6 +1619,7 @@ export function RunPage() {
     unmarkUnavailable,
     undoPurchase,
     ejectSession,
+    removeExpense,
   ]);
 
   // ---- Unified MainButton dispatcher --------------------------------
@@ -1553,11 +1685,15 @@ export function RunPage() {
                   },
                 ]
               : []),
-            {
-              label: i18n.t('run.action.cancelRun'),
-              variant: 'danger' as const,
-              onClick: () => setConfirmAction('cancel'),
-            },
+            ...(canCancelRun
+              ? [
+                  {
+                    label: i18n.t('run.action.cancelRun'),
+                    variant: 'danger' as const,
+                    onClick: () => setConfirmAction('cancel'),
+                  },
+                ]
+              : []),
           ],
         }
       : null,
@@ -1707,6 +1843,36 @@ export function RunPage() {
         </div>
       ) : null}
 
+      {/* 2026-10-21 CA-04: run switcher. Shown once there is more than one
+          open run (one being bought + earlier ones still delivering), or
+          when only delivering runs are open while approved orders wait —
+          then "new purchase" opens the preview to start the next trip. */}
+      {liveRuns.length > 1 || canStartNewAlongside ? (
+        <ChipBar variant="radio" ariaLabel={i18n.t('run.switcher.label')}>
+          {liveRuns.map((r) => (
+            <Chip
+              key={r.id}
+              selected={activeRun?.id === r.id}
+              onClick={() => setSelectedRunKey(r.id)}
+            >
+              #{r.runIndex + 1} · {r.runDate.slice(5)} ·{' '}
+              {r.status === 'planned'
+                ? i18n.t('run.step.plan')
+                : r.status === 'purchasing'
+                  ? i18n.t('run.step.purchase')
+                  : r.status === 'delivering'
+                    ? i18n.t('run.step.deliver')
+                    : i18n.t('run.step.amend')}
+            </Chip>
+          ))}
+          {canStartNewAlongside ? (
+            <Chip selected={!activeRun} onClick={() => setSelectedRunKey(NEW_RUN)}>
+              {i18n.t('run.switcher.newRun')}
+            </Chip>
+          ) : null}
+        </ChipBar>
+      ) : null}
+
       {/* 2026-07-06: a super-admin is correcting a finished run. Make the
           mode unmistakable — the whole page is now an edit surface and
           the MainButton re-finalizes. */}
@@ -1725,27 +1891,24 @@ export function RunPage() {
           ups — the staff submitted late, the approver waved it
           through, the purchaser is already at the bazaar. The button
           merges every available session in one call; the mutation's
-          domain layer guards against duplicates. */}
+          domain layer guards against duplicates.
+
+          2026-10-21 CA-03: the button no longer merges EVERY waiting
+          session — it opens a picker (today's ticked, older ones flagged
+          and unticked) and attaches only what the purchaser keeps. */}
       {activeRun &&
       (activeRun.status === 'planned' || activeRun.status === 'purchasing') &&
-      previewQuery.data?.sessions.length ? (
+      previewSessionCount > 0 ? (
         <div className="px-4 pt-2">
           <Banner
             tone="info"
-            title={i18n.t('run.attach.banner.title', {
-              n: previewQuery.data.sessions.length,
-            })}
+            title={i18n.t('run.attach.banner.title', { n: previewSessionCount })}
             action={
               <Button
                 variant="pearl"
                 size="sm"
                 loading={attachSessions.isPending}
-                onClick={() =>
-                  attachSessions.mutate({
-                    runId: activeRun.id,
-                    sessionIds: previewQuery.data!.sessions.map((s) => s.id),
-                  })
-                }
+                onClick={() => setAttachSheetOpen(true)}
               >
                 {i18n.t('run.action.attachSessions')}
               </Button>
@@ -1753,24 +1916,73 @@ export function RunPage() {
           />
         </div>
       ) : null}
+      <Sheet
+        open={attachSheetOpen && !!activeRun}
+        onOpenChange={(open) => {
+          if (!open && attachSessions.isPending) return;
+          setAttachSheetOpen(open);
+        }}
+        title={i18n.t('run.attach.sheet.title')}
+        disableAutoFocus
+        footer={
+          <Button
+            variant="primary"
+            size="lg"
+            className="w-full"
+            disabled={chosenSessionIds.length === 0 || attachSessions.isPending}
+            loading={attachSessions.isPending}
+            onClick={() => {
+              if (!activeRun || chosenSessionIds.length === 0) return;
+              attachSessions.mutate({ runId: activeRun.id, sessionIds: chosenSessionIds });
+            }}
+          >
+            {i18n.t('run.action.attachSelected', { n: chosenSessionIds.length })}
+          </Button>
+        }
+      >
+        <SessionPicker
+          bare
+          sessions={previewQuery.data?.sessions ?? []}
+          today={previewToday}
+          overrides={sessionOverrides}
+          onChange={setSessionOverrides}
+          i18n={i18n}
+        />
+      </Sheet>
 
       <div className="flex flex-col gap-2 px-4 pt-2">
         {!activeRun ? (
           <DataState query={previewQuery}>
             {(p) =>
-              p.plannedItems.length === 0 ? (
+              p.sessions.length === 0 ? (
                 <EmptyState
                   title={i18n.t('run.empty.noPlannable')}
                   description={i18n.t('run.empty.noPlannableBody')}
                 />
               ) : (
-                <PreviewSummaryCard
-                  preview={p}
-                  skuById={skuById}
-                  productName={productName}
-                  i18n={i18n}
-                  toast={toast}
-                />
+                <>
+                  {/* 2026-10-21 CA-03: choose orders (grouped by date,
+                      today's ticked) and the booking date; the summary
+                      below shows only what will be planned. */}
+                  <SessionPicker
+                    sessions={p.sessions}
+                    today={p.today ?? null}
+                    overrides={sessionOverrides}
+                    onChange={setSessionOverrides}
+                    i18n={i18n}
+                    runDate={runDateChoice ?? p.today ?? ''}
+                    onRunDateChange={(d) => setRunDateChoice(d || null)}
+                  />
+                  {selectedPreview && selectedPreview.plannedItems.length > 0 ? (
+                    <PreviewSummaryCard
+                      preview={selectedPreview}
+                      skuById={skuById}
+                      productName={productName}
+                      i18n={i18n}
+                      toast={toast}
+                    />
+                  ) : null}
+                </>
               )
             }
           </DataState>
@@ -1971,12 +2183,12 @@ export function RunPage() {
               const demand =
                 runDetailQuery.data?.perStoreDemand?.filter((d) => d.skuId === item.skuId) ?? [];
               for (const d of demand) splits.set(d.storeId, d.qty);
-              // Fallback to first store with the planned qty if no demand
-              // info (legacy runs that were planned before perStoreDemand
-              // existed).
-              if (splits.size === 0) {
-                const firstStore = storesQuery.data?.[0]?.id ?? '';
-                if (firstStore) splits.set(firstStore, item.plannedQty);
+              // Legacy runs planned before perStoreDemand existed: prefill
+              // only when the run serves exactly one store. 2026-10-21
+              // audit CA-29: this used to fall back to the purchaser's
+              // first store, which need not be part of the run at all.
+              if (splits.size === 0 && runStoreIds.length === 1) {
+                splits.set(runStoreIds[0]!, item.plannedQty);
               }
               setPurchaseDraft({
                 isEdit: false,
@@ -2026,12 +2238,8 @@ export function RunPage() {
                 reason: i18n.t('run.extras.recordExpenseReason'),
               });
             }}
-            onRemoveExpense={(expenseId) =>
-              removeExpense.mutate({
-                runId: activeRun.id,
-                expenseId,
-                reason: '',
-              })
+            onRemoveExpense={(expenseId, label) =>
+              setConfirmAction({ kind: 'removeExpense', expenseId, label })
             }
             onOpenExpense={() =>
               setAddItemDraft({
@@ -2080,8 +2288,10 @@ export function RunPage() {
       <PurchaseSheet
         draft={purchaseDraft}
         skuById={skuById}
-        storeById={storeById}
-        suppliers={suppliersQuery.data ?? []}
+        storeById={purchaseStoreById}
+        suppliers={(suppliersQuery.data ?? []).filter(
+          (sup) => !sup.isArchived || sup.id === purchaseDraft?.supplierId,
+        )}
         productName={productName}
         photoUploader={photoUploader}
         i18n={i18n}
@@ -2119,17 +2329,7 @@ export function RunPage() {
           guard). */}
       <AddItemSheet
         draft={addItemDraft}
-        runStoreIds={(() => {
-          const ids = new Set<string>();
-          for (const it of runDetailQuery.data?.items ?? []) {
-            for (const sp of runDetailQuery.data?.splits ?? []) {
-              if (sp.skuId === it.skuId) ids.add(sp.storeId);
-            }
-          }
-          for (const d of runDetailQuery.data?.perStoreDemand ?? []) ids.add(d.storeId);
-          for (const sp of runDetailQuery.data?.splits ?? []) ids.add(sp.storeId);
-          return [...ids];
-        })()}
+        runStoreIds={runStoreIds}
         existingStoreIdsBySku={(() => {
           // M3.54 (2026-05-23): for each SKU in the run, which stores
           // already have demand. AddItemSheet uses this to (1) still
@@ -2213,16 +2413,18 @@ export function RunPage() {
               return;
             }
             if (existingItem) {
-              const combinedSplits = [
-                ...existingSplits.map((sp) => ({
-                  storeId: sp.storeId,
-                  qty: sp.qty,
-                })),
-                ...storeSplits,
-              ];
-              const combinedQty = combinedSplits
-                .reduce((s, sp) => s + Number(sp.qty), 0)
-                .toString();
+              // 2026-10-21 audit CA-29 (C-05): a pending row has no splits
+              // yet, so its base is the other stores' demand — merging
+              // onto the (empty) splits dropped their order.
+              const { splits: combinedSplits, totalQty: combinedQty } =
+                mergeSplitsIntoExistingItem({
+                  status: existingItem.status,
+                  existingSplits,
+                  demand: (runDetailQuery.data?.perStoreDemand ?? []).filter(
+                    (dm) => dm.skuId === d.skuId,
+                  ),
+                  newSplits: storeSplits,
+                });
               if (existingItem.status === 'pending') {
                 purchaseItem.mutate({
                   runId: d.runId,

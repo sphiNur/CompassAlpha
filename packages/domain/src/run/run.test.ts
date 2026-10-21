@@ -1562,6 +1562,7 @@ describe('run.reversals', () => {
         status: 'short',
         note: 'one bag missing',
         photoUrl: null,
+        receivedQty: '3',
         actor: confirmer(),
       },
       clock,
@@ -2015,5 +2016,329 @@ describe('run.paymentMethod', () => {
     ).reduce(applyRun, s);
     expect(s.items.get('apple')!.paymentMethod).toBeNull();
     expect(s.items.get('apple')!.status).toBe('pending');
+  });
+});
+
+// 2026-10-21 audit CA-29 / CA-30: store-scope and receipt-phase guards.
+describe('run.storeScope', () => {
+  const planOnly = () => {
+    let s = emptyRunState('run-scope');
+    s = decideRun(
+      s,
+      {
+        type: 'PlanRun',
+        orgId: 'org-1',
+        runDate: '2026-05-01',
+        runIndex: 0,
+        sessionIds: ['s1'],
+        plannedItems: [{ skuId: 'sku-1', qty: '4' }],
+        actor: purchaser(),
+      },
+      clock,
+    ).reduce(applyRun, s);
+    return s;
+  };
+  const buy = (storeId: string, runStoreIds?: string[]): RunCommand => ({
+    type: 'PurchaseItem',
+    skuId: 'sku-1',
+    supplierId: null,
+    unitPrice: '1000',
+    actualQty: '4',
+    receiptPhotoUrl: null,
+    storeSplits: [{ storeId, qty: '4' }],
+    paymentMethod: 'cash',
+    ...(runStoreIds ? { runStoreIds } : {}),
+    actor: purchaser(),
+  });
+  const deliveredTo = (storeId = 'A') => {
+    let s = planAndPurchase();
+    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
+    s = decideRun(s, { type: 'DeliverToStore', storeId, actor: purchaser() }, clock).reduce(
+      applyRun,
+      s,
+    );
+    return s;
+  };
+  const confirmItem = (storeId: string, skuId = 'sku-1'): RunCommand => ({
+    type: 'ConfirmStoreItem',
+    storeId,
+    skuId,
+    status: 'ok',
+    note: null,
+    photoUrl: null,
+    actor: confirmer(),
+  });
+
+  test('PurchaseItem rejects a split to a store outside runStoreIds', () => {
+    expect(() => decideRun(planOnly(), buy('Z', ['A', 'B']), clock)).toThrow(
+      'run.errors.storeNotInRun',
+    );
+    expect(decideRun(planOnly(), buy('B', ['A', 'B']), clock).map((e) => e.type)).toEqual([
+      'PurchaseStarted',
+      'ItemPurchased',
+    ]);
+  });
+
+  test('RevisePurchase rejects moving a split to a store outside runStoreIds', () => {
+    const s = planAndPurchase();
+    const revise = (storeId: string): RunCommand => ({
+      type: 'RevisePurchase',
+      skuId: 'sku-1',
+      supplierId: null,
+      unitPrice: '1000',
+      actualQty: '4',
+      receiptPhotoUrl: null,
+      storeSplits: [{ storeId, qty: '4' }],
+      reason: 'fix',
+      paymentMethod: 'cash',
+      runStoreIds: ['A'],
+      actor: purchaser(),
+    });
+    expect(() => decideRun(s, revise('Z'), clock)).toThrow('run.errors.storeNotInRun');
+    expect(decideRun(s, revise('A'), clock)).toHaveLength(1);
+  });
+
+  test('AddPurchaserItem uses runStoreIds even before anything is bought', () => {
+    const add = (storeId: string): RunCommand => ({
+      type: 'AddPurchaserItem',
+      skuId: 'sku-extra',
+      supplierId: null,
+      unitPrice: '1000',
+      actualQty: '1',
+      receiptPhotoUrl: null,
+      storeSplits: [{ storeId, qty: '1' }],
+      paymentMethod: 'cash',
+      reason: 'chef asked',
+      runStoreIds: ['A'],
+      actor: purchaser(),
+    });
+    expect(() => decideRun(planOnly(), add('Z'), clock)).toThrow('run.errors.storeNotInRun');
+    expect(decideRun(planOnly(), add('A'), clock).length).toBeGreaterThan(0);
+  });
+
+  test('DeliverToStore rejects a store that neither holds goods nor belongs to the run', () => {
+    let s = planAndPurchase();
+    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
+    expect(() =>
+      decideRun(
+        s,
+        { type: 'DeliverToStore', storeId: 'Z', runStoreIds: ['A', 'B'], actor: purchaser() },
+        clock,
+      ),
+    ).toThrow('run.errors.storeNotInRun');
+    // A run store without goods, and a store holding a split, both pass.
+    expect(
+      decideRun(
+        s,
+        { type: 'DeliverToStore', storeId: 'B', runStoreIds: ['A', 'B'], actor: purchaser() },
+        clock,
+      ),
+    ).toHaveLength(1);
+    expect(
+      decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock),
+    ).toHaveLength(1);
+  });
+
+  test('ConfirmStoreItem requires the store to have been delivered', () => {
+    let s = planAndPurchase();
+    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
+    expect(() => decideRun(s, confirmItem('A'), clock)).toThrow('run.errors.storeNotDelivered');
+  });
+
+  test('ConfirmStoreItem is refused once the store has confirmed', () => {
+    let s = deliveredTo('A');
+    s = decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock).reduce(
+      applyRun,
+      s,
+    );
+    expect(() =>
+      decideRun(s, { ...confirmItem('A'), status: 'short', note: 'late' } as RunCommand, clock),
+    ).toThrow('run.errors.storeAlreadyConfirmed');
+  });
+
+  test('ConfirmStoreItem rejects a SKU that was not split to that store', () => {
+    let s = planAndPurchase({
+      storeSplits: [
+        { storeId: 'A', qty: '2' },
+        { storeId: 'B', qty: '2' },
+      ],
+    });
+    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
+    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
+      applyRun,
+      s,
+    );
+    expect(() => decideRun(s, confirmItem('A', 'sku-unknown'), clock)).toThrow(
+      'run.errors.itemNotInRun',
+    );
+    expect(decideRun(s, confirmItem('A'), clock)).toHaveLength(1);
+  });
+});
+
+// 2026-10-21 CA-06: a problem line records how much actually arrived.
+describe('run.receivedQty', () => {
+  const delivered = (splits?: Array<{ storeId: string; qty: string }>) => {
+    let s = planAndPurchase(splits ? { storeSplits: splits } : undefined);
+    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
+    s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
+      applyRun,
+      s,
+    );
+    return s;
+  };
+  const issue = (
+    status: 'ok' | 'short' | 'wrong' | 'quality',
+    receivedQty?: string,
+  ): RunCommand => ({
+    type: 'ConfirmStoreItem',
+    storeId: 'A',
+    skuId: 'sku-1',
+    status,
+    note: status === 'ok' ? null : 'problem',
+    photoUrl: null,
+    ...(receivedQty !== undefined ? { receivedQty } : {}),
+    actor: confirmer(),
+  });
+  const payloadOf = (evs: ReturnType<typeof decideRun>) => {
+    const e = evs[0];
+    if (e?.type !== 'StoreItemConfirmed') throw new Error('expected StoreItemConfirmed');
+    return e.payload;
+  };
+
+  test('short requires a received qty', () => {
+    expect(() => decideRun(delivered(), issue('short'), clock)).toThrow(
+      'run.errors.receivedQtyRequired',
+    );
+    expect(payloadOf(decideRun(delivered(), issue('short', '2.5'), clock)).receivedQty).toBe('2.5');
+  });
+
+  test('received qty may not exceed the store split and must be a non-negative decimal', () => {
+    const s = delivered([
+      { storeId: 'A', qty: '1' },
+      { storeId: 'B', qty: '3' },
+    ]);
+    expect(() => decideRun(s, issue('short', '1.5'), clock)).toThrow(
+      'run.errors.receivedQtyExceedsSplit',
+    );
+    expect(() => decideRun(s, issue('short', '-1'), clock)).toThrow(
+      'run.errors.receivedQtyInvalid',
+    );
+    expect(() => decideRun(s, issue('short', 'abc'), clock)).toThrow(
+      'run.errors.receivedQtyInvalid',
+    );
+    expect(payloadOf(decideRun(s, issue('short', '1'), clock)).receivedQty).toBe('1');
+  });
+
+  test('wrong / quality default to zero received', () => {
+    expect(payloadOf(decideRun(delivered(), issue('wrong'), clock)).receivedQty).toBe('0');
+    expect(payloadOf(decideRun(delivered(), issue('quality', '1'), clock)).receivedQty).toBe('1');
+  });
+
+  test('ok carries no received qty (old event shape) even if one is sent', () => {
+    const payload = payloadOf(decideRun(delivered(), issue('ok', '1'), clock));
+    expect('receivedQty' in payload).toBe(false);
+  });
+
+  test('state keeps the received qty; changing only the qty appends a new event', () => {
+    let s = delivered();
+    s = decideRun(s, issue('short', '2'), clock).reduce(applyRun, s);
+    expect(s.stores.get('A')?.itemConfirms.get('sku-1')?.receivedQty).toBe('2');
+    expect(decideRun(s, issue('short', '2'), clock)).toEqual([]);
+    expect(decideRun(s, issue('short', '3'), clock)).toHaveLength(1);
+  });
+
+  test('a legacy StoreItemConfirmed without receivedQty still applies', () => {
+    let s = delivered();
+    s = applyRun(s, {
+      streamId: s.streamId,
+      seq: s.seq + 1,
+      occurredAt: NOW,
+      actorUserId: 'u2',
+      actorMemberId: 'm2',
+      type: 'StoreItemConfirmed',
+      payload: { storeId: 'A', skuId: 'sku-1', status: 'short', note: 'old', photoUrl: null },
+    });
+    expect(s.stores.get('A')?.itemConfirms.get('sku-1')?.receivedQty).toBeNull();
+  });
+});
+
+// 2026-10-21 CA-11: FinishRun / RefinalizeRun carry items and expenses
+// explicitly; totalActual keeps its items-only meaning.
+describe('run.totals', () => {
+  const finishWith = () => {
+    // sku-1: 4 × 12,000 with a per-store override on B (2 @ 15,000).
+    let s = planAndPurchase({
+      storeSplits: [
+        { storeId: 'A', qty: '2' },
+        { storeId: 'B', qty: '2', unitPrice: '15000', paymentMethod: 'transfer' },
+      ],
+    });
+    s = decideRun(
+      s,
+      {
+        type: 'AddRunExpense',
+        expenseId: 'ex-1',
+        label: 'porter',
+        qty: '1',
+        unitPrice: '5000',
+        storeSplits: [
+          { storeId: 'A', qty: '0.5' },
+          { storeId: 'B', qty: '0.5' },
+        ],
+        paymentMethod: 'cash',
+        receiptPhotoUrl: null,
+        reason: 'carry',
+        actor: purchaser(),
+      },
+      clock,
+    ).reduce(applyRun, s);
+    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
+    for (const storeId of ['A', 'B']) {
+      s = decideRun(s, { type: 'DeliverToStore', storeId, actor: purchaser() }, clock).reduce(
+        applyRun,
+        s,
+      );
+      s = decideRun(s, { type: 'ConfirmStore', storeId, actor: confirmer() }, clock).reduce(
+        applyRun,
+        s,
+      );
+    }
+    return s;
+  };
+
+  test('FinishRun emits itemsTotal (with per-store overrides) and expensesTotal', () => {
+    const evs = decideRun(finishWith(), { type: 'FinishRun', actor: purchaser() }, clock);
+    const ev = evs[0];
+    if (ev?.type !== 'RunFinished') throw new Error('expected RunFinished');
+    // 2 × 12,000 + 2 × 15,000 = 54,000 items; 5,000 expenses.
+    expect(ev.payload.totalActual).toBe('54000.00');
+    expect(ev.payload.itemsTotal).toBe('54000.00');
+    expect(ev.payload.expensesTotal).toBe('5000.00');
+    expect(ev.payload.totalCash).toBe('24000.00');
+    expect(ev.payload.totalTransfer).toBe('30000.00');
+  });
+
+  test('RefinalizeRun re-freezes the same items / expenses split', () => {
+    const amender: ActorCtx = {
+      userId: 'sa',
+      memberId: 'sa',
+      permissions: new Set(['run.purchase', 'run.amend', 'run.finish']),
+    };
+    let s = finishWith();
+    s = decideRun(s, { type: 'FinishRun', actor: purchaser() }, clock).reduce(applyRun, s);
+    s = decideRun(s, { type: 'ReopenRun', reason: 'fix', actor: amender }, clock).reduce(
+      applyRun,
+      s,
+    );
+    s = decideRun(
+      s,
+      { type: 'RemoveRunExpense', expenseId: 'ex-1', reason: 'dup', actor: amender },
+      clock,
+    ).reduce(applyRun, s);
+    const ev = decideRun(s, { type: 'RefinalizeRun', actor: amender }, clock)[0];
+    if (ev?.type !== 'RunRefinalized') throw new Error('expected RunRefinalized');
+    expect(ev.payload.itemsTotal).toBe('54000.00');
+    expect(ev.payload.expensesTotal).toBe('0.00');
+    expect(ev.payload.totalActual).toBe('54000.00');
   });
 });

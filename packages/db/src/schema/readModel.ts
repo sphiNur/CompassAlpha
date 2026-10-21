@@ -205,10 +205,17 @@ export const marketRunsV = readModelSchema.table(
      * still open. Verified against production before writing this: 71
      * runs, zero pairs ever simultaneously non-terminal, so this
      * enforces the existing usage rather than changing it.
+     *
+     * 2026-10-21 CA-04 (migration 0047): narrowed to planned/purchasing.
+     * A delivering run waits on every store's confirmation, and one
+     * store that never signed blocked the whole org's next trip. Nothing
+     * is bought into a delivering run, so the masking race above cannot
+     * happen there — several delivering runs may now coexist with at
+     * most one run being planned/bought.
      */
     oneActivePerOrg: uniqueIndex('mrv_one_active_per_org_unique')
       .on(t.orgId)
-      .where(sql`status IN ('planned', 'purchasing', 'delivering')`),
+      .where(sql`status IN ('planned', 'purchasing')`),
     /** Partial index for the worker's stale-claim sweep. */
     claimedIdx: index('mrv_claimed_idx')
       .on(t.claimedAt)
@@ -281,6 +288,13 @@ export const runItemStoresV = readModelSchema.table(
     confirmedAt: timestamp('confirmed_at', { withTimezone: true, mode: 'date' }),
     confirmedByUserId: uuid('confirmed_by_user_id').references(() => users.id),
     confirmStatus: varchar('confirm_status', { length: 16 }), // ok|short|wrong|quality
+    /**
+     * 2026-10-21 CA-06 (migration 0047): qty the store reported as
+     * actually received on a short / wrong / quality line. NULL for 'ok'
+     * and for confirmations recorded before the field existed — both
+     * book the full split qty into inventory.
+     */
+    confirmReceivedQty: decimal('confirm_received_qty', { precision: 12, scale: 3 }),
     confirmNote: text('confirm_note'),
     confirmPhotoUrl: text('confirm_photo_url'),
   },

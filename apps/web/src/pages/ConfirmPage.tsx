@@ -8,7 +8,7 @@
  * For M1 the photo capture stub is a text URL; full S3 upload + image picker
  * lands in M1 follow-ups (PhotoCapture component).
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Button,
   Card,
@@ -33,8 +33,15 @@ import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
 import { formatQty } from '../lib/format';
 import { useStoreContext } from '../components/StoreSwitcher';
+import {
+  checkReceivedQty,
+  defaultDeliveringRunId,
+  deliveringRunsForStore,
+  initialReceivedQty,
+  type ConfirmDecisionStatus,
+} from './confirm/confirmLogic';
 
-type DecisionStatus = 'ok' | 'short' | 'wrong' | 'quality';
+type DecisionStatus = ConfirmDecisionStatus;
 
 export function ConfirmPage() {
   const i18n = useI18n();
@@ -56,8 +63,14 @@ export function ConfirmPage() {
     skuId: string;
     storeId: string;
     status: DecisionStatus;
+    /** 2026-10-21 CA-06: this store's split qty — the received-qty ceiling. */
+    splitQty: string;
+    unit: string | undefined;
   } | null>(null);
   const [issueNote, setIssueNote] = useState('');
+  // 2026-10-21 CA-06: how much of the split actually arrived. Empty for
+  // 'short' (must be typed), "0" for 'wrong' / 'quality'.
+  const [issueReceived, setIssueReceived] = useState('');
   const [issuePhoto, setIssuePhoto] = useState<string | null>(null);
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const photoUploader = usePhotoUploader('issue');
@@ -91,10 +104,41 @@ export function ConfirmPage() {
     { onDrop: () => toast.error(i18n.t('run.toast.syncFailed')) },
   );
 
-  const activeRun = useMemo(
-    () => runsQuery.data?.find((r) => r.status === 'delivering') ?? null,
-    [runsQuery.data],
+  /**
+   * 2026-10-21 CA-04: more than one run can be delivering at once (a new
+   * trip may start while an earlier one still waits for signatures), so
+   * "the first delivering run" is no longer THE run. Every delivering run
+   * with goods for this store is a candidate; the picker below opens on
+   * the oldest one this store has not signed for yet.
+   */
+  const candidateRuns = useMemo(
+    () => deliveringRunsForStore(runsQuery.data ?? [], currentStoreId),
+    [runsQuery.data, currentStoreId],
   );
+  const candidateDetails = trpc.useQueries((t) =>
+    candidateRuns.map((r) => t.run.get({ runId: r.id })),
+  );
+  const storeConfirmedByRun = useMemo(() => {
+    const m = new Map<string, boolean | undefined>();
+    candidateRuns.forEach((r, i) => {
+      const data = candidateDetails[i]?.data;
+      if (!data) {
+        m.set(r.id, undefined);
+        return;
+      }
+      const mine = data.splits.filter((sp) => sp.storeId === currentStoreId);
+      m.set(r.id, mine.length > 0 && mine.every((sp) => !!sp.confirmedAt));
+    });
+    return m;
+  }, [candidateRuns, candidateDetails, currentStoreId]);
+  const [pickedRunId, setPickedRunId] = useState<string | null>(null);
+  // A picked run that stopped delivering (finished / cancelled) falls
+  // back to the default instead of pinning a stale id.
+  useEffect(() => {
+    if (pickedRunId && !candidateRuns.some((r) => r.id === pickedRunId)) setPickedRunId(null);
+  }, [pickedRunId, candidateRuns]);
+  const activeRunId = pickedRunId ?? defaultDeliveringRunId(candidateRuns, storeConfirmedByRun);
+  const activeRun = candidateRuns.find((r) => r.id === activeRunId) ?? null;
   const detailQuery = trpc.run.get.useQuery(activeRun ? { runId: activeRun.id } : { runId: '' }, {
     enabled: !!activeRun,
   });
@@ -125,12 +169,19 @@ export function ConfirmPage() {
     status: DecisionStatus,
     note: string | null,
     photoUrl: string | null,
+    receivedQty: string | null = null,
   ) => {
     utils.run.get.setData({ runId }, (old) => {
       if (!old) return old;
       const splits = old.splits.map((sp) =>
         sp.runId === runId && sp.skuId === skuId && sp.storeId === storeId
-          ? { ...sp, confirmStatus: status, confirmNote: note, confirmPhotoUrl: photoUrl }
+          ? {
+              ...sp,
+              confirmStatus: status,
+              confirmNote: note,
+              confirmPhotoUrl: photoUrl,
+              confirmReceivedQty: receivedQty,
+            }
           : sp,
       );
       return { ...old, splits };
@@ -143,6 +194,7 @@ export function ConfirmPage() {
       setIssueOpen(null);
       setIssueNote('');
       setIssuePhoto(null);
+      setIssueReceived('');
       // Bug fix: previously this said "Issue noted" for EVERY confirm,
       // including the most common "ok" case — confusing. The toast now
       // matches what actually happened.
@@ -161,6 +213,7 @@ export function ConfirmPage() {
         setIssueOpen(null);
         setIssueNote('');
         setIssuePhoto(null);
+        setIssueReceived('');
         toast.info(i18n.t('confirm.toast.savedOffline'));
       } else {
         // Roll back the optimistic write since the server refused it.
@@ -206,7 +259,13 @@ export function ConfirmPage() {
     },
   });
 
-  const myItems = (detailQuery.data?.splits ?? []).filter((sp) => sp.storeId === currentStoreId);
+  const myAllItems = (detailQuery.data?.splits ?? []).filter((sp) => sp.storeId === currentStoreId);
+  // 2026-10-21 audit CA-30: lines are only checkable once the purchaser
+  // has handed them over (the server now refuses item confirms before
+  // StoreDelivered). Until then the store sees the waiting state instead
+  // of a list it could tick off for goods it has not received.
+  const myItems = myAllItems.filter((sp) => !!sp.deliveredAt);
+  const awaitingDelivery = myAllItems.length > 0 && myItems.length === 0;
   /**
    * 2026-07-30 (flow review) — the receiving check used to be a no-op.
    *
@@ -253,7 +312,34 @@ export function ConfirmPage() {
 
   // MainButton dispatch — when the issue sheet is open it takes over
   // and drives Save. Otherwise it acts as Confirm Store.
-  const issueReasonOk = !!issueOpen && issueNote.trim().length > 0;
+  const issueReceivedCheck = issueOpen
+    ? checkReceivedQty(issueOpen.status, issueReceived, issueOpen.splitQty)
+    : null;
+  const issueReasonOk =
+    !!issueOpen && issueNote.trim().length > 0 && issueReceivedCheck?.ok === true;
+  /** One submit path for the sheet footer and the Telegram MainButton. */
+  const submitIssue = () => {
+    if (!issueOpen || !issueReasonOk || confirmItem.isPending) return;
+    const receivedQty = issueReceivedCheck?.ok ? issueReceivedCheck.value : null;
+    writeOptimisticItemConfirm(
+      issueOpen.runId,
+      issueOpen.skuId,
+      issueOpen.storeId,
+      issueOpen.status,
+      issueNote.trim(),
+      issuePhoto,
+      receivedQty,
+    );
+    confirmItem.mutate({
+      runId: issueOpen.runId,
+      skuId: issueOpen.skuId,
+      storeId: issueOpen.storeId,
+      status: issueOpen.status,
+      note: issueNote.trim(),
+      photoUrl: issuePhoto,
+      receivedQty,
+    });
+  };
   let mainBtnText: string;
   let mainBtnVisible = false;
   let mainBtnActive = false;
@@ -262,25 +348,7 @@ export function ConfirmPage() {
     mainBtnText = i18n.t('confirm.issue.save');
     mainBtnVisible = true;
     mainBtnActive = issueReasonOk && !confirmItem.isPending;
-    mainBtnClick = () => {
-      if (!issueOpen || !issueReasonOk || confirmItem.isPending) return;
-      writeOptimisticItemConfirm(
-        issueOpen.runId,
-        issueOpen.skuId,
-        issueOpen.storeId,
-        issueOpen.status,
-        issueNote.trim(),
-        issuePhoto,
-      );
-      confirmItem.mutate({
-        runId: issueOpen.runId,
-        skuId: issueOpen.skuId,
-        storeId: issueOpen.storeId,
-        status: issueOpen.status,
-        note: issueNote.trim(),
-        photoUrl: issuePhoto,
-      });
-    };
+    mainBtnClick = submitIssue;
   } else {
     // 2026-07-30: when the gate is closed, SAY so on the button instead of
     // showing an inert "确认收货". The comment where the gating banner used
@@ -352,6 +420,27 @@ export function ConfirmPage() {
         </StickyPageBar>
       ) : null}
       <div className="flex flex-col gap-3 px-4">
+        {/* 2026-10-21 CA-04: several deliveries waiting for this store —
+            pick which one is being checked. Hidden in the common case of
+            one. */}
+        {candidateRuns.length > 1 ? (
+          <ChipBar variant="radio" ariaLabel={i18n.t('confirm.runPicker.ariaLabel')}>
+            {candidateRuns.map((r) => (
+              <Chip
+                key={r.id}
+                selected={r.id === activeRun?.id}
+                onClick={() => {
+                  if (issueOpen) return;
+                  haptic('light');
+                  setPickedRunId(r.id);
+                }}
+              >
+                {i18n.t('confirm.runPicker.option', { n: r.runIndex + 1, date: r.runDate })}
+                {storeConfirmedByRun.get(r.id) ? ' ✓' : ''}
+              </Chip>
+            ))}
+          </ChipBar>
+        ) : null}
         {!activeRun ? (
           <EmptyState
             title={i18n.t('confirm.empty.nothingToConfirm')}
@@ -362,7 +451,14 @@ export function ConfirmPage() {
             {() => (
               <>
                 {!myItems.length ? (
-                  <EmptyState title={i18n.t('confirm.empty.noItems')} />
+                  awaitingDelivery ? (
+                    <EmptyState
+                      title={i18n.t('confirm.empty.nothingToConfirm')}
+                      description={i18n.t('confirm.empty.nothingDesc')}
+                    />
+                  ) : (
+                    <EmptyState title={i18n.t('confirm.empty.noItems')} />
+                  )
                 ) : (
                   <Card>
                     {/* UIUX-B1 (2026-07-06): CardHeader/CardTitle deleted —
@@ -446,8 +542,10 @@ export function ConfirmPage() {
                                     onClick={() => {
                                       // Block any further taps once the
                                       // store side has been finalized.
-                                      // After StoreConfirmed, the API will
-                                      // reject confirmStoreItem anyway; we
+                                      // After StoreConfirmed the API
+                                      // rejects confirmStoreItem
+                                      // (storeAlreadyConfirmed, since the
+                                      // 2026-10-21 audit CA-30 guard); we
                                       // catch it here so the UI doesn't
                                       // even try.
                                       if (storeConfirmed) return;
@@ -485,7 +583,15 @@ export function ConfirmPage() {
                                           skuId: it.skuId,
                                           storeId: it.storeId,
                                           status: s,
+                                          splitQty: it.qty,
+                                          unit: sku?.unit,
                                         });
+                                        setIssueReceived(
+                                          initialReceivedQty(
+                                            s,
+                                            it.confirmStatus === s ? it.confirmReceivedQty : null,
+                                          ),
+                                        );
                                       }
                                     }}
                                   >
@@ -501,6 +607,25 @@ export function ConfirmPage() {
                                 ),
                               )}
                             </ChipBar>
+                            {/* 2026-10-21 CA-06: what was booked into stock
+                                for a problem line. */}
+                            {effectiveStatus &&
+                            effectiveStatus !== 'ok' &&
+                            it.confirmReceivedQty != null ? (
+                              <div className="text-old-label font-medium tabular-nums text-[var(--c-warning-fg)]">
+                                {i18n.t(
+                                  ('confirm.status.' + effectiveStatus) as Parameters<
+                                    typeof i18n.t
+                                  >[0],
+                                )}
+                                {' · '}
+                                {i18n.t('confirm.receivedOf', {
+                                  received: formatQty(it.confirmReceivedQty),
+                                  qty: formatQty(it.qty),
+                                  unit: unitLabel(sku?.unit),
+                                })}
+                              </div>
+                            ) : null}
                             {it.confirmNote ? (
                               <div className="text-old-label text-[var(--c-fg-muted)]">
                                 {it.confirmNote}
@@ -563,7 +688,15 @@ export function ConfirmPage() {
           // work lost. Mutation success closes the sheet naturally via
           // confirmItem.onSuccess setIssueOpen(null).
           if (!open && confirmItem.isPending) return;
-          if (!open) setIssueOpen(null);
+          // 2026-10-21 audit C-20: drop the draft on cancel too — it used
+          // to be cleared only on success, so a cancelled note/photo
+          // reappeared on the next item's issue sheet.
+          if (!open) {
+            setIssueOpen(null);
+            setIssueNote('');
+            setIssuePhoto(null);
+            setIssueReceived('');
+          }
         }}
         title={i18n.t('confirm.issue.markAs', {
           status: issueOpen
@@ -582,33 +715,45 @@ export function ConfirmPage() {
           // ALWAYS render the sheet's own footer button now.
           <Button
             block
-            disabled={!issueNote.trim() || confirmItem.isPending}
+            disabled={!issueReasonOk || confirmItem.isPending}
             loading={confirmItem.isPending}
-            onClick={() => {
-              if (!issueOpen || confirmItem.isPending) return;
-              writeOptimisticItemConfirm(
-                issueOpen.runId,
-                issueOpen.skuId,
-                issueOpen.storeId,
-                issueOpen.status,
-                issueNote.trim(),
-                issuePhoto,
-              );
-              confirmItem.mutate({
-                runId: issueOpen.runId,
-                skuId: issueOpen.skuId,
-                storeId: issueOpen.storeId,
-                status: issueOpen.status,
-                note: issueNote.trim(),
-                photoUrl: issuePhoto,
-              });
-            }}
+            onClick={submitIssue}
           >
             {i18n.t('confirm.issue.save')}
           </Button>
         }
       >
         <div className="flex flex-col gap-3 py-3">
+          {/* 2026-10-21 CA-06: inventory books what actually arrived.
+              Required for a short line; 0 by default for a wrong or
+              spoiled item (nothing usable arrived) and editable. */}
+          {issueOpen ? (
+            <div className="flex flex-col gap-1">
+              <Input
+                type="text"
+                inputMode="decimal"
+                value={issueReceived}
+                onChange={(e) => setIssueReceived(e.target.value)}
+                placeholder={i18n.t('confirm.issue.receivedQty', {
+                  max: formatQty(issueOpen.splitQty),
+                  unit: unitLabel(issueOpen.unit),
+                })}
+                aria-label={i18n.t('confirm.issue.receivedQty', {
+                  max: formatQty(issueOpen.splitQty),
+                  unit: unitLabel(issueOpen.unit),
+                })}
+              />
+              {issueReceivedCheck && !issueReceivedCheck.ok ? (
+                <span className="text-old-label text-[var(--c-warning-fg)]">
+                  {issueReceivedCheck.reason === 'required'
+                    ? i18n.t('confirm.issue.receivedQtyRequired')
+                    : i18n.t('confirm.issue.receivedQtyRange', {
+                        max: formatQty(issueOpen.splitQty),
+                      })}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
           <Input
             value={issueNote}
             onChange={(e) => setIssueNote(e.target.value)}

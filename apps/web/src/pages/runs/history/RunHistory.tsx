@@ -52,6 +52,13 @@ export interface RunListRow {
    *  showing only the lump-sum total in that case. */
   actualCashTotal?: string | null;
   actualTransferTotal?: string | null;
+  /**
+   * 2026-10-21 CA-11: run.history's actualTotal is items + expenses; these
+   * are its two parts (one money definition everywhere — items / expenses
+   * / total). Optional so other row shapes still fit.
+   */
+  itemsTotal?: string | null;
+  expensesTotal?: string | null;
   finishedAt: Date | string | null;
   storeTotals?: RunListStoreTotal[];
 }
@@ -59,6 +66,8 @@ export interface RunListRow {
 export interface RunListStoreTotal {
   storeId: string;
   total: string;
+  itemsTotal?: string;
+  expensesTotal?: string;
   cash: string;
   transfer: string;
   itemCount: number;
@@ -91,6 +100,8 @@ export function RunHistoryPage({
   fetching = false,
   totalCount,
   summaryTotal,
+  summaryItemsTotal,
+  summaryExpensesTotal,
   pagination,
   toolbar,
   hasSearchOrFilters = false,
@@ -106,6 +117,9 @@ export function RunHistoryPage({
   fetching?: boolean;
   totalCount?: number;
   summaryTotal?: string;
+  /** 2026-10-21 CA-11: parts of summaryTotal. */
+  summaryItemsTotal?: string;
+  summaryExpensesTotal?: string;
   pagination?: HistoryPagination;
   toolbar?: ReactNode;
   hasSearchOrFilters?: boolean;
@@ -178,6 +192,16 @@ export function RunHistoryPage({
         >
           {i18n.t('run.history.title')}
         </SectionLabel>
+        {/* 2026-10-21 CA-11: total = items + expenses, shown as its parts
+            whenever expenses are part of it. */}
+        {!loading && Number(summaryExpensesTotal ?? 0) > 0 ? (
+          <div className="px-4 pb-2 text-old-label tabular-nums text-[var(--c-fg-muted)]">
+            {i18n.t('run.money.itemsExpenses', {
+              items: formatMoney(summaryItemsTotal ?? '0'),
+              expenses: formatMoney(summaryExpensesTotal ?? '0'),
+            })}
+          </div>
+        ) : null}
         {loading ? (
           <div className="px-4 py-6 text-center text-old-body-sm text-[var(--c-fg-muted)]">
             {i18n.t('common.loading')}
@@ -217,8 +241,18 @@ export function RunHistoryPage({
                     {run.runDate}
                     {run.runIndex > 0 ? ` #${run.runIndex + 1}` : ''}
                   </div>
-                  <span className="shrink-0 font-mono text-old-body tabular-nums">
-                    {run.actualTotal ? formatMoney(run.actualTotal) : '—'}
+                  <span className="flex shrink-0 flex-col items-end">
+                    <span className="font-mono text-old-body tabular-nums">
+                      {run.actualTotal ? formatMoney(run.actualTotal) : '—'}
+                    </span>
+                    {Number(run.expensesTotal ?? 0) > 0 ? (
+                      <span className="text-old-label tabular-nums text-[var(--c-fg-muted)]">
+                        {i18n.t('run.money.itemsExpenses', {
+                          items: formatMoney(run.itemsTotal ?? '0'),
+                          expenses: formatMoney(run.expensesTotal ?? '0'),
+                        })}
+                      </span>
+                    ) : null}
                   </span>
                 </button>
                 {(run.storeTotals?.length ?? 0) > 0 ? (
@@ -361,6 +395,10 @@ export function RunHistoryDetailSheet({
   const reopen = trpc.run.reopen.useMutation({
     onSuccess: () => {
       void utils.run.list.invalidate();
+      // 2026-10-21 audit D-18: run.history lists finished runs only, so
+      // the reopened (now amending) run must drop out of it right away.
+      void utils.run.history.invalidate();
+      void utils.run.historyDetail.invalidate();
       toast.success(i18n.t('run.amend.reopened'));
       setReopenReason('');
       onClose();
@@ -419,6 +457,7 @@ export function RunHistoryDetailSheet({
     let total = 0;
     let totalCash = 0;
     let totalTransfer = 0;
+    let expensesTotal = 0;
     const purchasedCount = items.filter((i) => i.status === 'purchased').length;
     const unavailableCount = items.filter((i) => i.status === 'unavailable').length;
     for (const it of items) {
@@ -439,6 +478,7 @@ export function RunHistoryDetailSheet({
     for (const ex of expenses) {
       const line = Number(ex.qty) * Number(ex.unitPrice);
       total += line;
+      expensesTotal += line;
       if (ex.paymentMethod === 'transfer') totalTransfer += line;
       else totalCash += line;
     }
@@ -471,6 +511,7 @@ export function RunHistoryDetailSheet({
       total,
       totalCash,
       totalTransfer,
+      expensesTotal,
       purchasedCount,
       unavailableCount,
       perStore,
@@ -574,6 +615,10 @@ export function RunHistoryDetailSheet({
   const headlineTotal = activeStoreTotal?.total ?? breakdown?.total ?? 0;
   const headlineCash = activeStoreTotal?.cash ?? breakdown?.totalCash ?? 0;
   const headlineTransfer = activeStoreTotal?.transfer ?? breakdown?.totalTransfer ?? 0;
+  // 2026-10-21 CA-11: items / expenses / total, for the run or the store.
+  const headlineExpenses = activeStoreTotal
+    ? activeStoreTotal.expensesTotal
+    : (breakdown?.expensesTotal ?? 0);
   const headlineStoreCount = activeStoreId ? 1 : (breakdown?.perStore.size ?? 0);
   const activeStoreName = activeStoreId
     ? (storeById.get(activeStoreId)?.name ?? activeStoreId.slice(0, 8))
@@ -611,6 +656,14 @@ export function RunHistoryDetailSheet({
                 <div className="font-mono text-old-h2 font-semibold tabular-nums">
                   {formatMoney(headlineTotal)} {currency}
                 </div>
+                {headlineExpenses > 0 ? (
+                  <div className="text-old-label tabular-nums text-[var(--c-fg-muted)]">
+                    {i18n.t('run.money.itemsExpenses', {
+                      items: formatMoney(headlineTotal - headlineExpenses),
+                      expenses: formatMoney(headlineExpenses),
+                    })}
+                  </div>
+                ) : null}
               </div>
               <div className="text-right text-old-label text-[var(--c-fg-muted)]">
                 {i18n.t('run.history.itemSummary', {
@@ -798,6 +851,28 @@ export function RunHistoryDetailSheet({
                         </span>
                       ) : null}
                     </div>
+                    {/* 2026-10-21 CA-06: the store's receiving verdict on
+                       a problem line, with what it actually received. */}
+                    {activeStoreId &&
+                    perStoreSplits[0]?.confirmStatus &&
+                    perStoreSplits[0].confirmStatus !== 'ok' ? (
+                      <div className="mt-1 text-old-label font-medium tabular-nums text-[var(--c-warning-fg)]">
+                        {i18n.t(
+                          ('confirm.status.' + perStoreSplits[0].confirmStatus) as Parameters<
+                            typeof i18n.t
+                          >[0],
+                        )}
+                        {perStoreSplits[0].confirmReceivedQty != null
+                          ? ' · ' +
+                            i18n.t('confirm.receivedOf', {
+                              received: formatQty(perStoreSplits[0].confirmReceivedQty),
+                              qty: formatQty(perStoreSplits[0].qty),
+                              unit: unitLabel(sku?.unit),
+                            })
+                          : ''}
+                        {perStoreSplits[0].confirmNote ? ` · ${perStoreSplits[0].confirmNote}` : ''}
+                      </div>
+                    ) : null}
                     {/* M3.52: per-store chips on history rows. Same
                        visual pattern as the in-run PurchaseRow chips. */}
                     {isMulti && it.status === 'purchased' && perStoreSplits.length > 0 ? (

@@ -80,6 +80,16 @@ export type RunEvent =
         status: 'ok' | 'short' | 'wrong' | 'quality';
         note: string | null;
         photoUrl: string | null;
+        /**
+         * 2026-10-21 CA-06: how much of this store's split actually
+         * arrived usable, as a decimal string (0 ≤ receivedQty ≤ split
+         * qty). Only meaningful for non-ok statuses — 'short' always
+         * carries it, 'wrong'/'quality' default to "0". Absent on 'ok'
+         * (full split) and on every event written before this field
+         * existed, which the inventory projection books as the full split
+         * qty exactly as it always did.
+         */
+        receivedQty?: string | null;
       };
     })
   | (BaseEvent & {
@@ -89,7 +99,24 @@ export type RunEvent =
   | (BaseEvent & {
       type: 'RunFinished';
       payload: {
+        /**
+         * ITEMS-ONLY purchase money (every purchased SKU line priced at
+         * COALESCE(per-store override, item price)). Off-catalog expenses
+         * were never part of it, and 2026-10-21 CA-11 keeps that meaning
+         * unchanged so the frozen `market_runs_v.actual_total` column means
+         * the same thing for old and new runs. The run's money total is
+         * `itemsTotal + expensesTotal` (see below).
+         */
         totalActual: string;
+        /**
+         * 2026-10-21 CA-11: the one purchase-money definition, explicit.
+         * `itemsTotal` equals `totalActual`; `expensesTotal` is the sum of
+         * the run's active off-catalog expenses. Optional so events
+         * written before this field still parse — consumers recompute
+         * from the read model when absent.
+         */
+        itemsTotal?: string;
+        expensesTotal?: string;
         /**
          * M1.14: cash / transfer breakdown of `totalActual`. Both are
          * optional on the type so events emitted before this field
@@ -146,9 +173,13 @@ export type RunEvent =
       // Same shape as RunFinished's totals — recomputed from the amended
       // state so cash + transfer = total holds after the correction.
       payload: {
+        /** Items-only, same meaning as RunFinished.totalActual. */
         totalActual: string;
         totalCash: string;
         totalTransfer: string;
+        /** 2026-10-21 CA-11: see RunFinished. Optional for old events. */
+        itemsTotal?: string;
+        expensesTotal?: string;
         byMemberId: string;
       };
     })
