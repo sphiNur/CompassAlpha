@@ -940,14 +940,19 @@ export function RunPage() {
     name: string;
     last: string;
     next: string;
-    run: () => void;
+    run: (confirmed: boolean) => void;
   } | null>(null);
   const withPriceCheck = useCallback(
-    (skuId: string, prices: Array<string | undefined>, run: () => void) => {
+    (
+      skuId: string,
+      prices: Array<string | undefined>,
+      /** `confirmed`: the purchaser was asked about the price and kept it. */
+      run: (confirmed: boolean) => void,
+    ) => {
       const last = runDetailQuery.data?.lastPriceBySku?.[skuId];
       const odd = prices.find((p) => !!p && isUnusualPrice(p, last));
       if (!last || !odd) {
-        run();
+        run(false);
         return;
       }
       const sku = skuById.get(skuId);
@@ -982,11 +987,12 @@ export function RunPage() {
       withPriceCheck(
         d.skuId,
         [d.unitPrice, ...payload.storeSplits.map((sp) => ('unitPrice' in sp ? sp.unitPrice : undefined))],
-        () => {
+        (confirmed) => {
+          const sent = confirmed ? { ...payload, priceConfirmed: true } : payload;
           if (d.isEdit) {
-            revisePurchase.mutate({ ...payload, reason: d.reason });
+            revisePurchase.mutate({ ...sent, reason: d.reason });
           } else {
-            purchaseItem.mutate(payload);
+            purchaseItem.mutate(sent);
           }
         },
       );
@@ -2122,7 +2128,7 @@ export function RunPage() {
               // M1.14: paymentMethod comes from the in-row toggle
               // (defaults to 'cash'; user can flip to 'transfer' before
               // saving for the relatively rare transfer items).
-              withPriceCheck(skuId, [unitPrice], () => {
+              withPriceCheck(skuId, [unitPrice], (confirmed) => {
               setInlineSavingSkuId(skuId);
               purchaseItem.mutate({
                 runId: activeRun.id,
@@ -2145,6 +2151,7 @@ export function RunPage() {
                 receiptPhotoUrl: null,
                 storeSplits,
                 paymentMethod,
+                ...(confirmed ? { priceConfirmed: true } : {}),
               });
               });
             }}
@@ -2400,10 +2407,14 @@ export function RunPage() {
         onTogglePriceUnit={togglePriceInThousands}
         onCancel={() => setAddItemDraft(null)}
         onChange={setAddItemDraft}
-        onSubmit={function save(d: AddItemDraft, priceChecked?: boolean) {
+        onSubmit={function save(
+          d: AddItemDraft,
+          priceChecked?: boolean,
+          priceConfirmed?: boolean,
+        ) {
           // Expenses have no last price to compare with; products do.
           if (!priceChecked && d.mode === 'sku' && d.skuId) {
-            withPriceCheck(d.skuId, [d.unitPrice], () => save(d, true));
+            withPriceCheck(d.skuId, [d.unitPrice], (confirmed) => save(d, true, confirmed));
             return;
           }
           const storeSplits = [...d.splits.entries()]
@@ -2475,6 +2486,7 @@ export function RunPage() {
                   receiptPhotoUrl: d.receiptPhotoUrl,
                   storeSplits: combinedSplits,
                   paymentMethod: d.paymentMethod,
+                  ...(priceConfirmed ? { priceConfirmed: true } : {}),
                 });
                 setAddItemDraft(null);
                 return;
@@ -2498,6 +2510,7 @@ export function RunPage() {
                   runId: d.runId,
                   skuId: d.skuId,
                   ...merged,
+                  ...(priceConfirmed ? { priceConfirmed: true } : {}),
                   reason: d.reason.trim() || i18n.t('run.action.addItem.defaultCrossStoreReason'),
                 });
                 setAddItemDraft(null);
@@ -2516,6 +2529,7 @@ export function RunPage() {
               receiptPhotoUrl: d.receiptPhotoUrl,
               storeSplits,
               paymentMethod: d.paymentMethod,
+              ...(priceConfirmed ? { priceConfirmed: true } : {}),
               reason: d.reason.trim(),
             });
           } else {
@@ -2561,7 +2575,7 @@ export function RunPage() {
         onConfirm={() => {
           const go = priceCheck?.run;
           setPriceCheck(null);
-          go?.();
+          go?.(true);
         }}
         onCancel={() => setPriceCheck(null)}
       />
