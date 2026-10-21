@@ -140,7 +140,7 @@ export const en = {
   'ops.audit.inputs': 'inputs',
   'ops.price.howTitle': 'How to read this',
   'ops.price.howBody':
-    'Last 30 days of price observations across the org. The last column is the change vs 30-day mean — green = cheaper, red = spike. Use 7-day mean for next-day budgeting; 30-day mean smooths weekly oscillations.',
+    'Last 30 days of price observations across the org. The last column is the change vs 30-day mean — green = cheaper, red = spike. An order is budgeted at the last price paid; the 7-day and 30-day means show where the price has been.',
   'ops.price.emptyTitle': 'No price data yet',
   'ops.price.emptyBody': 'Once your purchaser records the first run, prices land here.',
   'ops.maint.superOnlyTitle': 'Super-admin only',
