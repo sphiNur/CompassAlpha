@@ -20,7 +20,7 @@ import {
 import { trpc, newIdempotencyKey } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton, haptic } from '../hooks/useTelegram';
-import { useOfflineQueue } from '../hooks/useOfflineQueue';
+import { frozenOrderDate, useOfflineQueue } from '../hooks/useOfflineQueue';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
 import { matchesNameLike, normalizeQuery } from '../lib/searchMatch';
@@ -154,7 +154,27 @@ export function OrderPage() {
       );
       void utils.order.todaySession.invalidate();
     },
-  }, { onDrop: () => toast.error(i18n.t('run.toast.syncFailed')) });
+    // 2026-10-21 audit CA-27/CA-25: extras saves queue offline too, with
+    // the business date frozen like adjustItem's.
+    'order.setSessionExtras': async (entry) => {
+      await utils.client.order.setSessionExtras.mutate(
+        entry.input as Parameters<typeof utils.client.order.setSessionExtras.mutate>[0],
+      );
+      void utils.order.todaySession.invalidate();
+      void utils.order.todayBatches.invalidate();
+    },
+  }, {
+    // CA-25: say WHY when the server refused a replay because the day it
+    // was made on is over; anything else keeps the generic copy.
+    onDrop: (info) =>
+      toast.error(
+        i18n.t(
+          info.message === 'order.errors.staleOfflineEdit'
+            ? 'order.errors.staleOfflineEdit'
+            : 'run.toast.syncFailed',
+        ),
+      ),
+  });
   // OPTIMISTIC ADJUST — fire-and-forget pattern.
   //
   // Why no onSettled invalidate? Because invalidate triggers a refetch
@@ -222,8 +242,15 @@ export function OrderPage() {
     },
     onError: (err, vars) => {
       if (isLikelyNetworkError(err)) {
-        // Keep optimistic, enqueue for replay when online.
-        void offline.enqueue('order.adjustItem', vars);
+        // Keep optimistic, enqueue for replay when online. CA-25: freeze
+        // the business date NOW so a replay after midnight can't land
+        // in the next day's order (server refuses it instead).
+        void offline.enqueue('order.adjustItem', {
+          ...vars,
+          date:
+            vars.date ??
+            frozenOrderDate(utils.order.todaySession.getData({ storeId: vars.storeId })),
+        });
         return;
       }
       // CONFLICT = (streamId, seq) UNIQUE collision. With per-store
@@ -277,9 +304,9 @@ export function OrderPage() {
    * the keying rationale above). The promise it returns settles when
    * the mutation succeeds OR fails.
    */
-  const flushOne = useCallback(
-    (payload: PendingPayload): Promise<unknown> => {
-      const queueKey = payload.storeId;
+  const serializeOnStore = useCallback(
+    <T,>(storeId: string, fn: () => Promise<T>): Promise<T> => {
+      const queueKey = storeId;
       const previous = inFlight.current.get(queueKey);
       const ref: { self: Promise<unknown> | null } = { self: null };
       const run = (async () => {
@@ -291,7 +318,7 @@ export function OrderPage() {
           }
         }
         try {
-          return await adjust.mutateAsync(payload);
+          return await fn();
         } finally {
           if (inFlight.current.get(queueKey) === ref.self) {
             inFlight.current.delete(queueKey);
@@ -302,7 +329,12 @@ export function OrderPage() {
       inFlight.current.set(queueKey, run);
       return run;
     },
-    [adjust],
+    [],
+  );
+  const flushOne = useCallback(
+    (payload: PendingPayload): Promise<unknown> =>
+      serializeOnStore(payload.storeId, () => adjust.mutateAsync(payload)),
+    [adjust, serializeOnStore],
   );
 
   /**
@@ -556,7 +588,21 @@ export function OrderPage() {
    */
   const setSessionExtras = trpc.order.setSessionExtras.useMutation({
     retry: false,
-    onError: (err) => {
+    onError: (err, vars) => {
+      // 2026-10-21 audit CA-25/CA-27: same offline story as adjustItem —
+      // queue it (the store form already carries the frozen date).
+      if (isLikelyNetworkError(err)) {
+        void offline.enqueue(
+          'order.setSessionExtras',
+          vars.sessionId || vars.date || !vars.storeId
+            ? vars
+            : {
+                ...vars,
+                date: frozenOrderDate(utils.order.todaySession.getData({ storeId: vars.storeId })),
+              },
+        );
+        return;
+      }
       const code = (err as { data?: { code?: string } }).data?.code;
       if (code === 'CONFLICT') {
         if (currentStoreId) {
@@ -636,6 +682,63 @@ export function OrderPage() {
   // While starting a new batch the locked session is not what we're
   // editing, so nothing is read-only.
   const isReadOnly = sessionLocked && !newBatch;
+
+  // 2026-10-21 audit CA-27: the extras editor no longer waits for a SKU
+  // tap to create the session. With no session yet it saves by
+  // {storeId, date} and the server lazy-creates the draft; the editor
+  // then adopts the real id without dropping the rows on screen.
+  const extrasSessionId =
+    sessionQuery.data && sessionQuery.data.id !== 'optimistic' ? sessionQuery.data.id : null;
+  const showExtrasEditor =
+    !!currentStoreId && (extrasSessionId !== null || (!isReadOnly && sessionQuery.isSuccess));
+  const saveExtras = useCallback(
+    async (extras: ExtraDraft[]): Promise<void> => {
+      if (!currentStoreId) return;
+      const storeId = currentStoreId;
+      // Same per-store queue as AdjustItem taps: the first tap and the
+      // first extras save must not BOTH lazy-create a draft.
+      await serializeOnStore(storeId, async () => {
+        // Read the cache at fire time — the render that scheduled this
+        // save may predate the lazily-created draft. Only a draft or
+        // rejected session is editable here (in new-batch mode the raw
+        // cache can still hold the previous SENT batch).
+        const cached = utils.order.todaySession.getData({ storeId });
+        const knownId =
+          cached && cached.id !== 'optimistic' && !isLockedStatus(cached.status)
+            ? cached.id
+            : undefined;
+        // No editable session: address it by store. Pin the date only
+        // when the page shows a real session (server truth); otherwise
+        // the server uses today and onError freezes one if it queues.
+        const input = knownId
+          ? { sessionId: knownId, extras }
+          : {
+              storeId,
+              extras,
+              ...(cached && cached.id !== 'optimistic' ? { date: cached.orderDate } : {}),
+            };
+        let res: { sessionId: string | null } | undefined;
+        try {
+          res = await setSessionExtras.mutateAsync(input);
+        } catch (err) {
+          // Queued offline by onError — keep the rows as saved locally.
+          if (!isLikelyNetworkError(err)) throw err;
+        }
+        const newId = res?.sessionId ?? null;
+        // Optimistic cache write so the editor doesn't flicker on the
+        // next refetch; adopt the lazily-created id over 'optimistic'.
+        utils.order.todaySession.setData({ storeId }, (old) => {
+          if (!old || isLockedStatus(old.status)) return old;
+          return { ...old, extras, ...(newId && !knownId ? { id: newId } : {}) };
+        });
+        if (newId && !knownId) {
+          void utils.order.todaySession.invalidate({ storeId });
+          void utils.order.todayBatches.invalidate({ storeId });
+        }
+      });
+    },
+    [currentStoreId, serializeOnStore, setSessionExtras, utils.order],
+  );
 
   // Telegram MainButton — single point of control for the entire submit
   // flow. State machine:
@@ -1103,12 +1206,12 @@ export function OrderPage() {
           sees before reviewing — natural placement for "and these
           items aren't in the catalog". Read-only once the session
           leaves draft (shown read-only on Approval / Run pages).
-          We render it only when a session row exists; before the
-          user adds their first item there's no stream yet, and
-          adding an extra alone wouldn't carry meaning. */}
-      {sessionQuery.data?.id && sessionQuery.data.id !== 'optimistic' ? (
+          2026-10-21 audit CA-27: also rendered BEFORE any session
+          exists — an order of only non-catalog items is legitimate;
+          the first save lazy-creates the draft (see saveExtras). */}
+      {showExtrasEditor ? (
         <SessionExtrasEditor
-          sessionId={sessionQuery.data.id}
+          sessionId={extrasSessionId}
           storeId={currentStoreId ?? ''}
           // M3.34 (2026-05-19): coerce server-side extras into the
           // canonical-unit shape. Rows submitted pre-M3.34 may carry
@@ -1116,25 +1219,14 @@ export function OrderPage() {
           // dropdown can render them and re-saving lands a canonical
           // value. Anything we can't match falls back to 'kg' (the
           // most-common SKU unit) which the user can then change.
-          initialValue={(sessionQuery.data.extras ?? []).map((r) => ({
+          initialValue={(sessionQuery.data?.extras ?? []).map((r) => ({
             ...r,
             unit: (CANONICAL_UNITS as readonly string[]).includes(r.unit)
               ? (r.unit as (typeof CANONICAL_UNITS)[number])
               : 'kg',
           }))}
           isReadOnly={isReadOnly}
-          onSave={async (extras) => {
-            await setSessionExtras.mutateAsync({
-              sessionId: sessionQuery.data!.id,
-              extras,
-            });
-            // Optimistic cache write so the editor doesn't flicker
-            // on next refetch.
-            utils.order.todaySession.setData(
-              { storeId: currentStoreId ?? '' },
-              (old) => (old ? { ...old, extras } : old),
-            );
-          }}
+          onSave={saveExtras}
         />
       ) : null}
 
@@ -1615,7 +1707,8 @@ function SessionExtrasEditor({
   isReadOnly,
   onSave,
 }: {
-  sessionId: string;
+  /** null = no session yet (CA-27); the first save lazy-creates it. */
+  sessionId: string | null;
   storeId: string;
   initialValue: ExtraDraft[];
   isReadOnly: boolean;
@@ -1643,7 +1736,16 @@ function SessionExtrasEditor({
   }, [JSON.stringify(initialValue)]);
 
   // Reset on session swap (different store → different session).
+  // 2026-10-21 audit CA-27: NOT when the id merely appears (no session
+  // → the draft our own first save / tap just lazy-created, same store)
+  // — that reset wiped the rows the user was still typing.
+  const resetKeyRef = useRef({ storeId, sessionId });
   useEffect(() => {
+    const prev = resetKeyRef.current;
+    resetKeyRef.current = { storeId, sessionId };
+    if (prev.storeId === storeId && (prev.sessionId === sessionId || prev.sessionId === null)) {
+      return;
+    }
     const next = initialValue.map((r) => ({ ...r }));
     lastSavedRef.current = JSON.stringify(next);
     setRows(next);
@@ -1654,7 +1756,7 @@ function SessionExtrasEditor({
     }
     pendingFireRef.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  }, [sessionId, storeId]);
 
   // Sanitize for the wire: drop empty-name rows, trim, coerce qty to
   // a valid decimal-as-string (or '1' fallback). The server enforces

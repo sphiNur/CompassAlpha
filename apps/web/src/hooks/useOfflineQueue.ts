@@ -131,7 +131,34 @@ export type ReplayErrorAction = 'drop' | 'retry';
  * and a later flush (post re-login) can still succeed — dropping a money
  * write just because the 15-minute access token lapsed would be wrong.
  */
-export function classifyReplayError(code: string | undefined): ReplayErrorAction {
+/**
+ * Per-procedure exceptions to the terminal codes above (2026-10-21 audit
+ * CA-25). order.adjustItem / order.setSessionExtras CONFLICT is the
+ * (streamId, seq) collision of two writers on the same draft — nothing
+ * is wrong with the queued change, and on replay it typically collides
+ * with the user's own live taps (or a second tab) landing at the same
+ * moment. Dropping it lost a real edit; retry it a couple of times with
+ * the usual backoff instead. The cap keeps a genuinely stuck entry from
+ * blocking the queue.
+ */
+export const REPLAY_RETRYABLE_OVERRIDES: Readonly<Record<string, ReadonlySet<string>>> = {
+  'order.adjustItem': new Set(['CONFLICT']),
+  'order.setSessionExtras': new Set(['CONFLICT']),
+};
+export const MAX_OVERRIDE_RETRIES = 2;
+
+export function classifyReplayError(
+  code: string | undefined,
+  procedure?: string,
+  retries = 0,
+): ReplayErrorAction {
+  if (
+    code !== undefined &&
+    procedure !== undefined &&
+    REPLAY_RETRYABLE_OVERRIDES[procedure]?.has(code)
+  ) {
+    return retries < MAX_OVERRIDE_RETRIES ? 'retry' : 'drop';
+  }
   if (
     code === 'CONFLICT' ||
     code === 'BAD_REQUEST' ||
@@ -141,6 +168,28 @@ export function classifyReplayError(code: string | undefined): ReplayErrorAction
   )
     return 'drop';
   return 'retry';
+}
+
+/** Device-local calendar date as YYYY-MM-DD. */
+export function localDateString(now: Date): string {
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${now.getFullYear()}-${m}-${d}`;
+}
+
+/**
+ * The business date to FREEZE into an offline-queued order write
+ * (2026-10-21 audit CA-25). Without it the server resolved "today" at
+ * REPLAY time, so a change made offline last night landed in this
+ * morning's order. Prefer the date of the session the page is showing
+ * (server truth, org timezone); before any session exists fall back to
+ * the device's local date (staff devices run in the org's timezone).
+ */
+export function frozenOrderDate(
+  cached: { id: string; orderDate: string } | null | undefined,
+  now: Date = new Date(),
+): string {
+  return cached && cached.id !== 'optimistic' ? cached.orderDate : localDateString(now);
 }
 
 /** Cap on transient retries before an entry is abandoned (mirrors the
@@ -156,6 +205,9 @@ export interface OfflineDropInfo {
   procedure: string;
   /** Why the entry was permanently removed without being applied. */
   reason: 'rejected' | 'gaveup' | 'stale';
+  /** For 'rejected': the server's error message (usually an i18n key such
+   *  as order.errors.staleOfflineEdit) so the host can say WHY. */
+  message?: string;
 }
 
 interface UseOfflineQueueOptions {
@@ -248,10 +300,15 @@ export function useOfflineQueue(
           await outbox.remove(entry.clientSeq);
         } catch (err) {
           const code = (err as { data?: { code?: string } } | undefined)?.data?.code;
-          if (classifyReplayError(code) === 'drop') {
+          if (classifyReplayError(code, entry.procedure, entry.retries) === 'drop') {
             // Server-side rejection — keeping it in the queue won't help.
             await outbox.remove(entry.clientSeq);
-            onDropRef.current?.({ procedure: entry.procedure, reason: 'rejected' });
+            const message = (err as { message?: unknown } | undefined)?.message;
+            onDropRef.current?.({
+              procedure: entry.procedure,
+              reason: 'rejected',
+              ...(typeof message === 'string' ? { message } : {}),
+            });
             continue;
           }
           // No answer, or a lapsed session: the entry is not at fault.

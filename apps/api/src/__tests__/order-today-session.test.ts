@@ -12,6 +12,13 @@
  *   CA-26  A repeated Submit / Approve by the same actor is a no-op
  *          success, not PRECONDITION_FAILED.
  *
+ *   CA-27  setSessionExtras by {storeId, date} lazily creates the draft, so
+ *          an extras-only order can be saved and submitted.
+ *   CA-25  A self-edit carrying a past date with no open draft/rejected
+ *          batch is refused (order.errors.staleOfflineEdit).
+ *   CA-43  approve/reject with an `expectedSeq` the staff has since moved
+ *          past → CONFLICT; the approver's own claim doesn't count.
+ *
  * Skipped when DATABASE_URL is unset OR SKIP_PG_TESTS=1.
  */
 import { beforeAll, describe, expect, test } from 'bun:test';
@@ -49,8 +56,12 @@ import type { RequestContext, SessionContext } from '../trpc/context';
 
 const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
 
-/** The date under test. Fixed, so "today" drift can't affect the lookup. */
-const ORDER_DATE = '2026-05-13';
+/** The date under test. Fixed, so "today" drift can't affect the lookup.
+ *  2026-10-21 (CA-25): moved to the future — a self-edit carrying a PAST
+ *  date may no longer lazy-create a draft (stale offline replay guard). */
+const ORDER_DATE = '2099-05-13';
+const EXTRAS_DATE = '2099-05-14';
+const SEQ_DATE = '2099-05-15';
 
 function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
   return {
@@ -198,5 +209,92 @@ describe.skipIf(!SHOULD_RUN)('order visibility across claim / reject (PG-gated)'
     await mgr.order.claim({ sessionId });
     await mgr.order.approve({ sessionId });
     await expect(mgr.order.approve({ sessionId })).resolves.toBeDefined();
+  });
+});
+
+describe.skipIf(!SHOULD_RUN)('order follow-ups CA-25 / CA-27 / CA-43 (PG-gated)', () => {
+  const extra = { name: 'Paper towels', qty: '2', unit: 'pack' as const };
+
+  test('CA-27: extras-only order via storeId lazy-creates the draft and submits', async () => {
+    if (!fix) throw new Error('fixture missing');
+    const staff = appRouter.createCaller(fix.staff);
+    const input = { storeId: fix.storeId, date: EXTRAS_DATE };
+
+    // Clearing extras with no session is a no-op — no empty draft.
+    const none = await staff.order.setSessionExtras({ ...input, extras: [] });
+    expect(none.sessionId).toBeNull();
+    expect(await staff.order.todaySession(input)).toBeNull();
+
+    const saved = await staff.order.setSessionExtras({ ...input, extras: [extra] });
+    expect(saved.sessionId).toBeTruthy();
+    const sessionId = saved.sessionId!;
+    const draft = await staff.order.todaySession(input);
+    expect(draft?.id).toBe(sessionId);
+    expect(draft?.status).toBe('draft');
+    expect(draft?.extras).toHaveLength(1);
+
+    // Second save by storeId lands on the SAME draft; a later SKU tap too.
+    const again = await staff.order.setSessionExtras({
+      ...input,
+      extras: [extra, { ...extra, name: 'Gloves' }],
+    });
+    expect(again.sessionId).toBe(sessionId);
+    const tap = await staff.order.adjustItem({ ...input, skuId: fix.skuId, qty: '0.5' });
+    expect(tap.sessionId).toBe(sessionId);
+    await staff.order.adjustItem({ ...input, skuId: fix.skuId, qty: '0' });
+
+    await staff.order.submit({ sessionId });
+    expect((await staff.order.todaySession(input))?.status).toBe('submitted');
+  });
+
+  test('CA-25: a past-dated self-edit with no open draft is refused, not lazily created', async () => {
+    if (!fix) throw new Error('fixture missing');
+    const staff = appRouter.createCaller(fix.staff);
+    const past = { storeId: fix.storeId, date: '2000-01-03' };
+    await expect(
+      staff.order.adjustItem({ ...past, skuId: fix.skuId, qty: '1' }),
+    ).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+      message: 'order.errors.staleOfflineEdit',
+    });
+    await expect(staff.order.setSessionExtras({ ...past, extras: [extra] })).rejects.toMatchObject({
+      code: 'PRECONDITION_FAILED',
+      message: 'order.errors.staleOfflineEdit',
+    });
+    expect(await staff.order.todaySession(past)).toBeNull();
+  });
+
+  test('CA-43: approve/reject refuse an order that changed since the approver looked', async () => {
+    if (!fix) throw new Error('fixture missing');
+    const staff = appRouter.createCaller(fix.staff);
+    const mgr = appRouter.createCaller(fix.manager);
+    const input = { storeId: fix.storeId, date: SEQ_DATE };
+
+    const first = await staff.order.adjustItem({ ...input, skuId: fix.skuId, qty: '1' });
+    const sessionId = first.sessionId;
+    await staff.order.submit({ sessionId });
+    const seenRow = (await mgr.order.pendingList(input)).find((r) => r.id === sessionId);
+    expect(typeof seenRow?.lastSeq).toBe('number');
+    const seen = seenRow!.lastSeq;
+
+    // Staff pulls it back, changes the quantity and re-submits.
+    await staff.order.withdraw({ sessionId });
+    await staff.order.adjustItem({ ...input, skuId: fix.skuId, qty: '5' });
+    await staff.order.submit({ sessionId });
+
+    await expect(mgr.order.approve({ sessionId, expectedSeq: seen })).rejects.toMatchObject({
+      code: 'CONFLICT',
+      message: 'order.errors.staleSeq',
+    });
+    await expect(
+      mgr.order.reject({ sessionId, reason: 'no', expectedSeq: seen }),
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
+
+    // Fresh look → the approver's own claim after it does not count.
+    const fresh = (await mgr.order.pendingList(input)).find((r) => r.id === sessionId)!.lastSeq;
+    await mgr.order.claim({ sessionId });
+    await expect(mgr.order.approve({ sessionId, expectedSeq: fresh })).resolves.toBeDefined();
+    // CA-26 retry with the same (now behind) seq stays a no-op success.
+    await expect(mgr.order.approve({ sessionId, expectedSeq: fresh })).resolves.toBeDefined();
   });
 });
