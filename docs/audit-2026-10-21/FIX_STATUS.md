@@ -1,6 +1,6 @@
 # 审计问题修复进度（2026-10-21）
 
-- 分支：`fix/audit-2026-10-21`，基于 `c49ba3e`，已提交，**尚未推送**
+- 分支：`fix/audit-2026-10-21`，基于 `c49ba3e`，已推送，PR：https://github.com/sphiNur/CompassAlpha/pull/56（CI 全绿）
 - 改动规模（第一、二轮）：75 个已有文件修改（+4501 / −1669），29 个新代码或测试文件，2 个迁移（0047、0048）
 - 问题编号对应 `docs/PROJECT_COMPREHENSIVE_AUDIT.md` §9
 
@@ -14,7 +14,7 @@
 | i18n 四语键数一致（各 1395）、ICU 复数检查、未翻译字面量检查、typography 检查、console.log 检查 | 全部通过 |
 | 迁移 journal 与 SQL 文件一致性 | 通过（49 个） |
 | web 生产构建 | 通过 |
-| **PG 集成测试（151 个，含本次新增）** | **未运行**：本机没有 PostgreSQL。CI 已改为运行全部 PG 测试，合并前必须看到 CI 通过 |
+| **PG 集成测试 + Playwright E2E** | **CI 全部通过**（PR #56，提交 `87d409b`：集成测试 248/248，E2E 全过）。CI 首轮发现并修复了 3 个问题：审批按钮“认领→通过”竞态、“所见即所批”误把审批人自己的认领当成他人修改、`run.create` 日期校验排在权限检查前 |
 | Telegram 真机、E2E | 未运行 |
 
 ## 已修复：可由代码或领域设计直接判定的问题
@@ -91,7 +91,7 @@
 
 ## 仍需运维处理（无法在代码中完成）
 
-1. **推送与 CI**：本机无权推送，也没有 `gh`。需要执行 `git push -u origin fix/audit-2026-10-21` 并开 PR，然后看 CI 中 164 个 PG 测试和 E2E 的结果。
+1. **合并与部署**：审阅并合并 PR #56；API 与 web 同时部署。
 2. **CA-12 上线**：生成密钥，写入服务器的 `/home/ubuntu/.config/compass-origin.key`，再执行 `wrangler secret put ORIGIN_SIGNING_KEY` 和 `wrangler deploy`。
 3. **生产环境核查**：连库角色是否 BYPASSRLS；`FRONTEND_URL` 是否为 https；经 workers.dev 的 WebSocket 能否握手；备份是否真实产出。
 4. **Telegram 真机验证**：Sheet 返回键、深链落点、多 Run 切换。
