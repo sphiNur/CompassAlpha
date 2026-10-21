@@ -117,10 +117,15 @@ function requireOrgAdmin(perms: ReadonlySet<string>): void {
  * The keys we look at, in priority order:
  *   - storeId            — most catalog/member-store ops
  *   - scopeId + scopeType==='store' — grantRole / memberPermissionSet
- *   - targetStoreId      — memberTransferStore (the destination is
+ *   - toStoreId          — memberTransferStore (the destination is
  *                          the most "in scope" — that's where the
- *                          new state lives; the from-side is captured
- *                          in the inputs JSON for forensics)
+ *                          new state lives). The from-side stays in the
+ *                          inputs JSON and adminAuditList matches it too,
+ *                          so admins of either store see the transfer.
+ *                          (2026-10-21: this used to look for a
+ *                          `targetStoreId` key the transfer never sends,
+ *                          leaving every transfer row unscoped.)
+ *   - targetStoreId      — legacy key, still honoured
  *   - storeIds[0]        — multi-store ops (invite). The first id is
  *                          the conventional "primary" target for
  *                          single-store filtering. Audit row's `inputs`
@@ -129,7 +134,11 @@ function requireOrgAdmin(perms: ReadonlySet<string>): void {
  * Returns null when none of those resolve to a UUID — global ops like
  * `admin.role.create` legitimately have no store scope.
  */
-function deriveScopeStoreId(_action: string, resourceType: string, inputs: unknown): string | null {
+export function deriveScopeStoreId(
+  _action: string,
+  resourceType: string,
+  inputs: unknown,
+): string | null {
   // resourceType='store' implies the action targets a store directly.
   if (resourceType === 'store') {
     const o = inputs as Record<string, unknown> | null;
@@ -146,11 +155,24 @@ function deriveScopeStoreId(_action: string, resourceType: string, inputs: unkno
   if (typeof o.scopeType === 'string' && o.scopeType === 'store' && typeof o.scopeId === 'string') {
     return o.scopeId;
   }
+  if (typeof o.toStoreId === 'string') return o.toStoreId;
   if (typeof o.targetStoreId === 'string') return o.targetStoreId;
   if (Array.isArray(o.storeIds) && o.storeIds.length === 1 && typeof o.storeIds[0] === 'string') {
     return o.storeIds[0];
   }
   return null;
+}
+
+/** Audit rows scoped to any of `storeIds`, including a transfer's from-store. */
+function auditTouchesStores(storeIds: string[]) {
+  const list = sql.join(
+    storeIds.map((id) => sql`${id}`),
+    sql`, `,
+  );
+  return or(
+    inArray(s.policyDecisions.scopeStoreId, storeIds),
+    sql`(${s.policyDecisions.inputs} ->> 'fromStoreId') in (${list})`,
+  );
 }
 
 async function auditAdmin(
@@ -4645,8 +4667,11 @@ export const adminRouter = router({
           .where(
             and(
               eq(s.policyDecisions.orgId, orgId),
-              ...(storeId ? [eq(s.policyDecisions.scopeStoreId, storeId)] : []),
-              ...(scope && !storeId ? [inArray(s.policyDecisions.scopeStoreId, [...scope])] : []),
+              // 2026-10-21: a transfer touches two stores but has one
+              // scope column (the destination); also match its from-side
+              // so the source store's admins see who left.
+              ...(storeId ? [auditTouchesStores([storeId])] : []),
+              ...(scope && !storeId ? [auditTouchesStores([...scope])] : []),
             ),
           )
           .orderBy(desc(s.policyDecisions.occurredAt))

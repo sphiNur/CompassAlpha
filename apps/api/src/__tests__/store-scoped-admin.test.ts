@@ -774,6 +774,25 @@ describe('D2 memberTransferStore', () => {
         );
       expect(bBinds.length).toBe(1);
       expect(bBinds[0]!.scopeType).toBe('store');
+
+      // 2026-10-21: the audit row is scoped to the destination store, and
+      // the source store's audit view still lists it (from-side match).
+      const auditRows = await db
+        .select({ scopeStoreId: s.policyDecisions.scopeStoreId })
+        .from(s.policyDecisions)
+        .where(
+          and(
+            eq(s.policyDecisions.action, 'admin.memberTransferStore'),
+            eq(s.policyDecisions.resourceId, targetMember),
+          ),
+        );
+      expect(auditRows.map((r) => r.scopeStoreId)).toEqual([storeB.id]);
+      const fromSide = await caller.admin.adminAuditList({ storeId: storeA.id, limit: 50 });
+      expect(
+        fromSide.some(
+          (r) => r.action === 'admin.memberTransferStore' && r.resourceId === targetMember,
+        ),
+      ).toBe(true);
     },
   );
 
