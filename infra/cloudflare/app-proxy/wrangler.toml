@@ -3,6 +3,11 @@ main = "worker.js"
 compatibility_date = "2026-10-20"
 workers_dev = true
 
+# Secrets (not in this file; `wrangler secret put <NAME>` or the dashboard):
+#   ORIGIN_TOPIC        ntfy topic the origin watchdog publishes to
+#   ORIGIN_UPDATE_KEY   shared key for POST /__origin
+#   ORIGIN_SIGNING_KEY  HMAC key for signed ntfy messages (CA-12, 2026-10-21);
+#                       must equal /home/ubuntu/.config/compass-origin.key
 [vars]
 ORIGIN_URL = "https://impression-blond-counsel-lift.trycloudflare.com"
 

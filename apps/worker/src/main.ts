@@ -5,7 +5,9 @@
  *   - outbox.flush — every 5 s, drains sync.outbox via either a Cloudflare
  *                    Worker relay or direct grammY. See bot dispatch block
  *                    below for transport selection.
- *   - hourly: expired idempotency keys + refresh tokens cleanup.
+ *   - hourly: expired idempotency keys + refresh tokens cleanup, and
+ *     retention of ops.notifications / sync.outbox / ops.client_logs
+ *     (see retention.ts).
  *   - every CLAIM_TIMEOUT_SCAN_MINUTES: stale claim release, orphaned
  *     session repair.
  *
@@ -33,6 +35,7 @@ import { getDb, schema as s, closeDb, inSystem, withSystemContext } from '@compa
 import type { DB } from '@compass/db';
 import { assertRelayDelivered, RelayError } from './relay';
 import { orphanRepairFor } from './orphanRepair';
+import { deleteInBatches, RETENTION_RULES, retentionDeleteSql } from './retention';
 
 (function loadRootEnv() {
   let dir = dirname(fileURLToPath(import.meta.url));
@@ -760,6 +763,34 @@ async function purgeExpiredRefreshTokens(): Promise<number> {
   return r.length;
 }
 
+/**
+ * 2026-10-21 audit CA-38: hourly retention for notification history,
+ * delivered outbox rows and client telemetry. One transaction per batch
+ * (see retention.ts) so a big first backlog never holds a long lock on
+ * sync.outbox while the flush loop is writing to it. A failure on one
+ * table is logged and does not stop the others.
+ */
+async function applyRetention(): Promise<void> {
+  for (const rule of RETENTION_RULES) {
+    try {
+      const r = await deleteInBatches(async (limit) => {
+        const rows = (await inSystem(db, 'worker', (tx) =>
+          tx.execute(retentionDeleteSql(rule, limit)),
+        )) as unknown as Array<{ id: string }>;
+        return rows.length;
+      });
+      if (r.deleted > 0) {
+        console.log(
+          `[worker] retention ${rule.name}: ${r.deleted} row(s) older than ${rule.days}d deleted` +
+            (r.exhausted ? ' (batch cap reached; continuing next hour)' : ''),
+        );
+      }
+    } catch (err) {
+      console.error(`[worker] retention ${rule.name} failed`, err);
+    }
+  }
+}
+
 async function loop() {
   while (!stopped) {
     try {
@@ -794,6 +825,8 @@ async function loop() {
         } catch (err) {
           console.error('[worker] refresh token cleanup failed', err);
         }
+        // CA-38: retention sweep on the same hourly cadence.
+        await applyRetention();
         lastIdempotencyCleanup = Date.now();
       }
       // M3.20: claim-timeout sweep — see releaseStaleClaims() above.

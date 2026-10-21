@@ -50,6 +50,13 @@ journalctl -u compass-api --since "1 hour ago" | grep '"level":50'   # pino: 50 
    WHERE level = 'error' ORDER BY created_at DESC LIMIT 50;
   COMMIT;
   ```
+- Retention (2026-10-21, CA-38): the worker deletes `ops.client_logs` and
+  delivered `sync.outbox` rows older than 30 days, and `ops.notifications`
+  older than 90 days, once an hour in batches of 5,000 (at most 40 batches
+  per table per hour; the rest goes next hour). Look for
+  `[worker] retention …` lines in `journalctl -u compass-worker`. Windows
+  live in `apps/worker/src/retention.ts`. Undelivered outbox rows
+  (`sent_at IS NULL`) are never deleted.
 
 ## Common operations
 
@@ -62,9 +69,29 @@ journalctl -u compass-api --since "1 hour ago" | grep '"level":50'   # pino: 50 
 Production is not image-based: `scripts/deploy.ts` tars the local working
 tree, extracts it over `/home/ubuntu/compass-alpha` (in place, no
 `--delete`), runs `pnpm install --frozen-lockfile` and
-`pnpm --filter @compass/db migrate`, refreshes the systemd units, restarts
-`compass-api` and rebuilds `apps/web/dist`. There is no previous image to
-switch back to; a rollback is a redeploy of the last good commit:
+`pnpm --filter @compass/db migrate`, refreshes the systemd units, builds
+the web bundle into `apps/web/dist.next` and renames it into place
+(`dist` → `dist.prev`, `dist.next` → `dist`), and only then restarts
+`compass-api` and `compass-worker` (2026-10-21, CA-37: the build used to
+run after the restart, leaving the new api serving a missing/half-written
+`dist`). A failed web build aborts the deploy before the restart and
+leaves the live `dist` untouched.
+
+**Frontend-only rollback** (the bad deploy is a UI bug; api is fine): the
+previous bundle is kept as `apps/web/dist.prev` for exactly one deploy.
+No restart is needed — the api serves `dist` from disk on every request
+and `/health/version` reads `dist/build-id.txt`, so clients get the
+reload prompt back to the old build:
+```bash
+cd /home/ubuntu/compass-alpha/apps/web
+mv dist dist.bad && mv dist.prev dist   # swap back
+# later: rm -rf dist.bad
+```
+Only valid while the api is compatible with the old bundle (no tRPC
+contract change in between); the next deploy overwrites `dist.prev`.
+
+**Full rollback**: there is no previous image to switch back to; redeploy
+the last good commit:
 ```bash
 git checkout <last-good-sha>            # detached HEAD
 bun run scripts/deploy.ts --force       # --force: not the tip of main
@@ -80,6 +107,32 @@ git checkout main
   newer schema, restore the pre-deploy dump (see "Restore from a dump"
   below — take one with `sudo systemctl start compass-backup.service`
   before risky deploys) and accept losing writes made since that dump.
+
+### Sign the origin rendezvous (CA-12)
+The app-proxy Worker (`infra/cloudflare/app-proxy/`) learns the current
+quick-tunnel hostname from an ntfy topic. Anyone who knows the topic name
+can post to it, so since 2026-10-21 the messages can be HMAC-signed. Both
+halves are backward compatible — an unsigned Worker accepts signed
+messages and an unsigned server keeps working with a Worker that has no
+secret — but a Worker WITH the secret ignores unsigned messages, so do the
+server first:
+```bash
+# 1. generate a key (on your machine; do not commit or paste it anywhere)
+openssl rand -hex 32
+# 2. server: store it next to the topic file, readable only by ubuntu
+install -m 600 /dev/null /home/ubuntu/.config/compass-origin.key
+printf '%s\n' '<key>' > /home/ubuntu/.config/compass-origin.key
+sudo systemctl start compass-origin-watch.service   # republishes at once, signed
+journalctl -u compass-origin-watch -n 5             # "published … (signed)"
+# 3. Worker: same key as a secret (wrangler prompts for the value)
+cd infra/cloudflare/app-proxy && wrangler secret put ORIGIN_SIGNING_KEY
+```
+The watchdog republishes every 6 h; the Worker rejects signed messages
+older than 7 days or more than 5 minutes in the future. If the app goes
+unreachable after step 3, check the server clock and that both sides hold
+the same key; `wrangler secret delete ORIGIN_SIGNING_KEY` reverts the
+Worker to unsigned mode. Rotating: write the new key on the server, run
+the service, then `wrangler secret put` the new key.
 
 ### Replay a projection
 If a projector bug corrupted `read_model.order_sessions_v`:
