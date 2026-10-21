@@ -5,6 +5,9 @@
  *   - outbox.flush — every 5 s, drains sync.outbox via either a Cloudflare
  *                    Worker relay or direct grammY. See bot dispatch block
  *                    below for transport selection.
+ *   - hourly: expired idempotency keys + refresh tokens cleanup.
+ *   - every CLAIM_TIMEOUT_SCAN_MINUTES: stale claim release, orphaned
+ *     session repair.
  *
  * Future (M2/M3):
  *   - supplier.rescore           every 5 m
@@ -29,6 +32,7 @@ import { Bot, GrammyError, HttpError } from 'grammy';
 import { getDb, schema as s, closeDb, inSystem, withSystemContext } from '@compass/db';
 import type { DB } from '@compass/db';
 import { assertRelayDelivered, RelayError } from './relay';
+import { orphanRepairFor } from './orphanRepair';
 
 (function loadRootEnv() {
   let dir = dirname(fileURLToPath(import.meta.url));
@@ -621,10 +625,12 @@ async function releaseStaleRunClaims(): Promise<number> {
  * sweep catches any drift from BEFORE that fix shipped, plus
  * defense against future regression.
  *
- * Idempotent. Emits `EjectedFromRun{reason:'repair'}` so audit can
- * distinguish post-hoc repairs from in-cascade ejects. byMemberId is
- * null since there's no human actor (mirrors the timeout-release
- * pattern in releaseStaleClaims).
+ * Idempotent. For a cancelled run emits `EjectedFromRun{reason:'repair'}`
+ * (session back to approved); for a finished run emits
+ * `Archived{reason:'repair'}` (session archived, as run.finish does —
+ * 2026-10-21 audit CA-45, see orphanRepair.ts). byMemberId is null since
+ * there's no human actor (mirrors the timeout-release pattern in
+ * releaseStaleClaims).
  */
 async function repairOrphanedSessions(): Promise<number> {
   // Cheap candidate scan — joins sessions to their run row and filters
@@ -660,17 +666,21 @@ async function repairOrphanedSessions(): Promise<number> {
         // session between our SELECT and now (e.g. a follow-up manual
         // cancel run cascade ran).
         const fresh = (await tx.execute(sql`
-          SELECT last_seq, status, run_id
-          FROM read_model.order_sessions_v
-          WHERE id = ${row.session_id}
-          FOR UPDATE
+          SELECT sess.last_seq, sess.status, sess.run_id, run.status AS run_status
+          FROM read_model.order_sessions_v sess
+          LEFT JOIN read_model.market_runs_v run ON run.id = sess.run_id
+          WHERE sess.id = ${row.session_id}
+          FOR UPDATE OF sess
         `)) as unknown as Array<{
           last_seq: number;
           status: string;
           run_id: string | null;
+          run_status: string | null;
         }>;
         const cur = fresh[0];
-        if (!cur || cur.status !== 'in_run' || !cur.run_id) return false;
+        if (!cur || cur.status !== 'in_run' || !cur.run_id || !cur.run_status) return false;
+        const repair = orphanRepairFor(cur.run_status, cur.run_id);
+        if (!repair) return false;
 
         const newSeq = cur.last_seq + 1;
         const occurredAt = new Date();
@@ -678,19 +688,15 @@ async function repairOrphanedSessions(): Promise<number> {
         // here is intentional — the domain layer would re-validate
         // a permission set that doesn't exist in the worker context
         // (no actor). The projector below mirrors the apply() +
-        // EjectedFromRun branch of orderProjection.ts.
+        // EjectedFromRun / Archived branches of orderProjection.ts.
         await tx.insert(s.events).values({
           id: randomUUID(),
           orgId: row.org_id,
           streamType: 'order',
           streamId: row.session_id,
           seq: newSeq,
-          type: 'EjectedFromRun',
-          payload: {
-            runId: cur.run_id,
-            byMemberId: null,
-            reason: 'repair',
-          },
+          type: repair.eventType,
+          payload: repair.payload,
           actorId: null,
           occurredAt,
           correlationId: null,
@@ -700,18 +706,17 @@ async function repairOrphanedSessions(): Promise<number> {
         await tx
           .update(s.orderSessionsV)
           .set({
-            status: 'approved',
-            runId: null,
+            ...repair.projection,
             lastSeq: newSeq,
             updatedAt: occurredAt,
           })
           .where(eq(s.orderSessionsV.id, row.session_id));
-        return true;
+        return repair.eventType;
       });
       if (ok) {
         repaired++;
         console.log(
-          `[worker] orphaned session repaired: session=${row.session_id} fromRun=${row.run_id}`,
+          `[worker] orphaned session repaired: session=${row.session_id} fromRun=${row.run_id} action=${ok}`,
         );
       }
     } catch (err) {
@@ -732,6 +737,26 @@ async function cleanupIdempotencyKeys(): Promise<number> {
     RETURNING key
   `),
   )) as unknown as Array<{ key: string }>;
+  return r.length;
+}
+
+/**
+ * 2026-10-21 audit F-14: expired refresh tokens were never deleted
+ * (apps/api/src/services/refreshTokens.ts purgeExpiredRefreshTokens was
+ * written but not wired). Same DELETE and the same 7-day grace, done here
+ * because importing the api service would pull in the api's env/JWT
+ * module. The grace keeps rows long enough for replay detection on a
+ * just-expired family to still find them.
+ */
+const REFRESH_TOKEN_PURGE_GRACE_DAYS = 7;
+async function purgeExpiredRefreshTokens(): Promise<number> {
+  const r = (await inSystem(db, 'worker', (tx) =>
+    tx.execute(sql`
+    DELETE FROM auth.refresh_tokens
+    WHERE expires_at < NOW() - (${REFRESH_TOKEN_PURGE_GRACE_DAYS}::int * interval '1 day')
+    RETURNING id
+  `),
+  )) as unknown as Array<{ id: string }>;
   return r.length;
 }
 
@@ -759,6 +784,15 @@ async function loop() {
           }
         } catch (err) {
           console.error('[worker] idempotency cleanup failed', err);
+        }
+        // F-14: same hourly cadence for expired refresh tokens.
+        try {
+          const purged = await purgeExpiredRefreshTokens();
+          if (purged > 0) {
+            console.log(`[worker] refresh token cleanup: ${purged} expired tokens deleted`);
+          }
+        } catch (err) {
+          console.error('[worker] refresh token cleanup failed', err);
         }
         lastIdempotencyCleanup = Date.now();
       }
@@ -794,7 +828,7 @@ async function loop() {
           const repaired = await repairOrphanedSessions();
           if (repaired > 0) {
             console.log(
-              `[worker] orphaned-session repair: ${repaired} session(s) ejected from cancelled/finished runs`,
+              `[worker] orphaned-session repair: ${repaired} session(s) archived (finished run) or ejected (cancelled run)`,
             );
           }
         } catch (err) {

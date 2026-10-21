@@ -47,6 +47,11 @@ DECLARE
     'domain.events',
     'read_model.order_sessions_v',
     'read_model.market_runs_v',
+    -- 2026-10-21 audit CA-36: created by 0030 with no RLS at all.
+    'read_model.run_expenses_v',
+    -- 2026-10-21 audit CA-36: 0016 enabled but did not FORCE, and its
+    -- dishes_org_isolation policy had no system branch (dropped below).
+    'inventory.dishes',
     'ops.notifications',
     'ops.audit_log',
     'ops.feature_flags',
@@ -150,6 +155,25 @@ CREATE POLICY org_isolation ON read_model.run_item_stores_v
     OR EXISTS (
       SELECT 1 FROM read_model.market_runs_v r
       WHERE r.id = run_item_stores_v.run_id AND r.org_id = app_current_org()
+    )
+  );
+
+-- 2026-10-21 audit CA-36: 0016 created these with their own policies
+-- (ENABLE without FORCE, no system branch). Replace them with the standard
+-- pattern; dishes is in the org_id loop above, dish_ingredients has no
+-- org_id and piggy-backs on its dish.
+DROP POLICY IF EXISTS dishes_org_isolation ON inventory.dishes;
+
+ALTER TABLE inventory.dish_ingredients ENABLE ROW LEVEL SECURITY;
+ALTER TABLE inventory.dish_ingredients FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS dish_ingredients_org_isolation ON inventory.dish_ingredients;
+DROP POLICY IF EXISTS org_isolation ON inventory.dish_ingredients;
+CREATE POLICY org_isolation ON inventory.dish_ingredients
+  USING (
+    app_is_system()
+    OR EXISTS (
+      SELECT 1 FROM inventory.dishes d
+      WHERE d.id = dish_ingredients.dish_id AND d.org_id = app_current_org()
     )
   );
 

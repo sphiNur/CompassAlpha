@@ -365,18 +365,14 @@ jobs:
         env:
           DATABASE_URL: postgres://compass_ci_app:compass_ci_app@localhost:5432/compass_test
         # SKIP_PG_TESTS unset → PG-gated tests run for real.
+        # 2026-10-21 audit CA-13: run the whole test directories instead of
+        # a hand-kept file list — invite-acceptance, multi-tenant and
+        # subscription were silently never run. Tests that sign Telegram
+        # initData use the stub TELEGRAM_BOT_TOKEN above as their own key.
         run: |
           bun test \
-            apps/api/src/__tests__/full-lifecycle.test.ts \
-            apps/api/src/__tests__/pgErrors.test.ts \
-            apps/api/src/__tests__/tenantProbe.test.ts \
-            apps/api/src/__tests__/store-scoped-admin.test.ts \
-            apps/api/src/__tests__/refreshTokens.test.ts \
-            apps/api/src/__tests__/cancel-run-cascade.test.ts \
-            apps/api/src/__tests__/rls-isolation.test.ts \
-            apps/api/src/__tests__/settlement.test.ts \
-            apps/api/src/__tests__/approver-self-edit.test.ts \
-            apps/api/src/__tests__/login-enrolment.test.ts
+            apps/api/src/__tests__ \
+            apps/api/src/services/__tests__
 
   # ============ Job 3: the app in a real browser ============
   e2e:

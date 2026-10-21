@@ -17,9 +17,10 @@
 Postgres  Redis        S3/R2
 ```
 
-All four app processes share the same image (`compass:latest`), differing only in
-their CMD. This means a single `docker compose pull && docker compose up -d`
-deploy ships the whole system atomically.
+Production does not run the docker images in `infra/compose/`: the code is
+shipped as a tarball by `scripts/deploy.ts` to `/home/ubuntu/compass-alpha`
+and run with bun under systemd (`infra/systemd/compass-api.service`,
+`compass-worker.service`). See "Roll back a bad deploy" below.
 
 ## Daily
 
@@ -29,16 +30,26 @@ deploy ships the whole system atomically.
 - `https://compass.example.com/health/version` — confirms the running commit sha.
 
 ### Log tailing
+Production runs as systemd units (`compass-api`, `compass-worker`), not
+docker; their stdout/stderr go to the journal.
 ```bash
-docker compose -f infra/compose/docker-compose.prod.yml logs -f api
-# or via Loki:
-logcli query '{service="compass-api"}' --tail
+journalctl -u compass-api -f
+journalctl -u compass-worker -f
+journalctl -u compass-api --since "1 hour ago" | grep '"level":50'   # pino: 50 = error
 ```
 
 ### Triaging client errors
 - Open `/debug` in the Mini App — Unreviewed tab shows new client_logs.
 - After scanning + fixing, hit "Mark all reviewed" so the cursor advances.
-- Run the same audit from a terminal: `compass logs tail --org default --level error`.
+- From a terminal (there is no `compass logs` CLI command): query
+  `ops.client_logs` with psql. RLS is fail-closed, so open a transaction in
+  the system context first:
+  ```sql
+  BEGIN; SELECT set_config('app.system_context', 'maintenance', true);
+  SELECT created_at, org_id, kind, action, error_msg FROM ops.client_logs
+   WHERE level = 'error' ORDER BY created_at DESC LIMIT 50;
+  COMMIT;
+  ```
 
 ## Common operations
 
@@ -48,18 +59,40 @@ logcli query '{service="compass-api"}' --tail
 3. User reloads the Mini App.
 
 ### Roll back a bad deploy
+Production is not image-based: `scripts/deploy.ts` tars the local working
+tree, extracts it over `/home/ubuntu/compass-alpha` (in place, no
+`--delete`), runs `pnpm install --frozen-lockfile` and
+`pnpm --filter @compass/db migrate`, refreshes the systemd units, restarts
+`compass-api` and rebuilds `apps/web/dist`. There is no previous image to
+switch back to; a rollback is a redeploy of the last good commit:
 ```bash
-docker tag compass:previous compass:latest
-docker compose -f infra/compose/docker-compose.prod.yml up -d api bot worker
+git checkout <last-good-sha>            # detached HEAD
+bun run scripts/deploy.ts --force       # --force: not the tip of main
+git checkout main
 ```
-The image tag scheme is `compass:<gitsha>`. Always keep the previous tag around.
+- `--force` skips the provenance gates and marks the release sha
+  `-unverified` in `/health/version`; add `--allow-active-run` only if you
+  accept forcing a reload on clients in a live run.
+- Files that exist only in the newer commit stay on disk (extraction does
+  not delete); they are harmless unless something imports them.
+- Migrations only move forward: redeploying old code does NOT undo a
+  migration the bad deploy applied. If old code cannot run against the
+  newer schema, restore the pre-deploy dump (see "Restore from a dump"
+  below — take one with `sudo systemctl start compass-backup.service`
+  before risky deploys) and accept losing writes made since that dump.
 
 ### Replay a projection
 If a projector bug corrupted `read_model.order_sessions_v`:
 ```bash
-pnpm compass project rebuild order
+cd /home/ubuntu/compass-alpha
+set -a && . ./.env && set +a
+pnpm --filter @compass/api reproject --type=order   # or --type=run, or omit for all
 ```
-This drops the read model tables and replays events from `domain.events`. Idempotent.
+`apps/api/scripts/reproject.ts` truncates the read model tables and replays
+`domain.events` in one transaction (asks for confirmation; `--yes` skips it).
+It opens its pool in the `maintenance` system context, so it works under the
+fail-closed RLS policies with the normal app role. Idempotent. (`compass
+project rebuild` is not implemented; it only points here.)
 
 ### Add a new built-in permission
 1. Add to `packages/db/src/seed-data.ts` `PERMISSIONS`.
@@ -93,9 +126,9 @@ sustained CONFLICT in logs:
   + `removeOnFail` on producers.
 
 ### `/health/ready` says `projectorLag > 60s`
-- Worker process probably crashed. `docker compose ps`.
-- Restart: `docker compose restart worker`.
-- Investigate: `compass logs tail --service worker --level error`.
+- Worker process probably crashed. `systemctl status compass-worker`.
+- Restart: `sudo systemctl restart compass-worker`.
+- Investigate: `journalctl -u compass-worker --since "1 hour ago" --no-pager`.
 
 ### Cross-tenant data appears in a query
 This is an RLS regression. Critical.
