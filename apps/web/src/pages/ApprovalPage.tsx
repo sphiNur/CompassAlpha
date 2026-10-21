@@ -308,9 +308,15 @@ export function ApprovalPage() {
                           </span>
                         </span>
                       ) : null}
-                      {row.notes ? (
+                      {/* 2026-10-21 audit CA-27 (B-14): new orders only write
+                          structured extras (M3.16-C), so a badge keyed on the
+                          legacy `notes` alone never fired for them. */}
+                      {row.notes || extrasCountOf(row.extrasJson) > 0 ? (
                         <Badge tone="warn" title={i18n.t('order.notes.hasNote')}>
                           {i18n.t('order.notes.badge')}
+                          {extrasCountOf(row.extrasJson) > 0
+                            ? ` · ${extrasCountOf(row.extrasJson)}`
+                            : null}
                         </Badge>
                       ) : null}
                     </div>
@@ -393,17 +399,41 @@ export function ApprovalPage() {
                   ) : null}
 
                   <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+                    {/* 2026-10-21 CA-42: an unclaimed order can be approved or
+                        rejected directly — the domain already allows it
+                        (commands.ts Approve/Reject only conflict when someone
+                        ELSE holds the claim). Claim stays for editing
+                        quantities, and another approver's claim still hides
+                        these buttons. */}
                     {tab === 'pending' && !row.claimedByMemberId ? (
-                      <Button
-                        size="sm"
-                        loading={claim.isPending && claim.variables?.sessionId === row.id}
-                        onClick={() => {
-                          claim.mutate({ sessionId: row.id });
-                          setActiveSessionId(row.id);
-                        }}
-                      >
-                        {i18n.t('approval.claim')}
-                      </Button>
+                      <>
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          loading={approve.isPending && approve.variables?.sessionId === row.id}
+                          onClick={() => approve.mutate({ sessionId: row.id })}
+                        >
+                          {i18n.t('approval.approve')}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          onClick={() => setRejectFor(row.id)}
+                        >
+                          {i18n.t('approval.reject')}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="pearl"
+                          loading={claim.isPending && claim.variables?.sessionId === row.id}
+                          onClick={() => {
+                            claim.mutate({ sessionId: row.id });
+                            setActiveSessionId(row.id);
+                          }}
+                        >
+                          {i18n.t('approval.claim')}
+                        </Button>
+                      </>
                     ) : null}
                     {tab === 'pending' && isClaimedByMe ? (
                       <>
@@ -835,3 +865,8 @@ function SessionItems({
 // entry sheet) — promoting to size="sm" gives ApprovalPage all of those
 // behaviors for free, and any future improvements to QtyControl land
 // here automatically.
+
+/** Rows in a session's structured extras (jsonb; typed loosely by the read model). */
+function extrasCountOf(extrasJson: unknown): number {
+  return Array.isArray(extrasJson) ? extrasJson.length : 0;
+}

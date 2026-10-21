@@ -218,7 +218,9 @@ export type ArchivedEvent = BaseEvent & {
   // session leaves 'in_run' and lands in a terminal state visible in
   // the run-history view but no longer prompting the user with active
   // banners on the order page.
-  payload: { reason: 'eod' | 'manual' | 'run_finished' };
+  // 'repair' added 2026-10-21 (audit CA-45): written by the worker's
+  // orphaned-session sweep when a session was left in_run on a finished run.
+  payload: { reason: 'eod' | 'manual' | 'run_finished' | 'repair' };
 };
 
 export type OrderEvent =

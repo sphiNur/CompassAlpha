@@ -427,6 +427,71 @@ describe('order.decide (per-contributor lines)', () => {
     );
   });
 
+  // 2026-10-21 audit CA-26: repeated decisions by the same actor are
+  // idempotent successes; a different actor still gets the error.
+  function submittedState(): ReturnType<typeof startedDraft> {
+    let st = startedDraft();
+    st = decide(
+      st,
+      { type: 'AdjustItem', skuId: 's', qty: '1', sku: sku('s'), actor: staff() },
+      { clock },
+    ).reduce(apply, st);
+    return decide(st, { type: 'Submit', actor: staff() }, { clock }).reduce(apply, st);
+  }
+
+  test('repeated Submit by the same owner is a no-op', () => {
+    const st = submittedState();
+    expect(decide(st, { type: 'Submit', actor: staff() }, { clock })).toEqual([]);
+  });
+
+  test('Submit on a session approved by someone else still fails', () => {
+    let st = submittedState();
+    st = decide(st, { type: 'Approve', actor: manager() }, { clock }).reduce(apply, st);
+    expect(() => decide(st, { type: 'Submit', actor: staff() }, { clock })).toThrow(
+      'order.errors.notSubmittable',
+    );
+  });
+
+  test('repeated Approve by the same decider is a no-op; other approver errors', () => {
+    let st = submittedState();
+    st = decide(st, { type: 'Approve', actor: manager() }, { clock }).reduce(apply, st);
+    expect(decide(st, { type: 'Approve', actor: manager() }, { clock })).toEqual([]);
+    expect(() =>
+      decide(st, { type: 'Approve', actor: manager(undefined, 'mem-mgr2') }, { clock }),
+    ).toThrow('order.errors.notApprovable');
+    expect(() =>
+      decide(st, { type: 'Reject', reason: 'x', actor: manager() }, { clock }),
+    ).toThrow('order.errors.notRejectable');
+  });
+
+  test('repeated Reject by the same decider is a no-op; other approver errors', () => {
+    let st = submittedState();
+    st = decide(st, { type: 'Reject', reason: 'no', actor: manager() }, { clock }).reduce(
+      apply,
+      st,
+    );
+    expect(decide(st, { type: 'Reject', reason: 'no', actor: manager() }, { clock })).toEqual([]);
+    expect(() =>
+      decide(st, { type: 'Reject', reason: 'no', actor: manager(undefined, 'mem-mgr2') }, { clock }),
+    ).toThrow('order.errors.notRejectable');
+  });
+
+  test('rejected session: owner edits in place and re-submits (CA-02)', () => {
+    let st = submittedState();
+    st = decide(st, { type: 'Reject', reason: 'too much', actor: manager() }, { clock }).reduce(
+      apply,
+      st,
+    );
+    st = decide(
+      st,
+      { type: 'AdjustItem', skuId: 's', qty: '0.5', sku: sku('s'), actor: staff() },
+      { clock },
+    ).reduce(apply, st);
+    st = decide(st, { type: 'Submit', actor: staff() }, { clock }).reduce(apply, st);
+    expect(st.status).toBe('submitted');
+    expect(st.streamId).toBe('sess-1');
+  });
+
   test('replay yields identical state for a single-owner session', () => {
     // 0005: each session has one owner. Replaying the events produces
     // the same items.

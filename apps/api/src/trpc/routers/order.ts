@@ -135,16 +135,36 @@ export const orderRouter = router({
             eq2(sess.status, 'draft'),
           ),
       });
+      // 2026-10-21 audit CA-02: next, the most recent REJECTED batch. The
+      // domain keeps it 'rejected' and lets the owner edit + re-Submit (or
+      // Withdraw) it; before this it was never returned, so a rejected
+      // order simply vanished from the staff's Order page.
       if (!session) {
         session = await tx.query.orderSessionsV.findFirst({
-          where: (sess, { eq: eq2, and: and2, isNull, inArray: inArray2 }) =>
+          where: (sess, { eq: eq2, and: and2 }) =>
+            and2(
+              eq2(sess.orgId, ctx.session!.orgId),
+              eq2(sess.storeId, input.storeId),
+              eq2(sess.orderDate, date),
+              eq2(sess.initiatedByMemberId, ctx.session!.memberId),
+              eq2(sess.status, 'rejected'),
+            ),
+          orderBy: (sess, { desc: desc2 }) => [desc2(sess.decidedAt), desc2(sess.updatedAt)],
+        });
+      }
+      // 2026-10-21 audit CA-01: the receipt fallback used to require
+      // `claimed_by IS NULL`, so the moment a manager claimed the batch it
+      // disappeared (empty catalog → staff re-ordered). Claimed batches
+      // are returned too; the page shows its "under review by X" banner.
+      if (!session) {
+        session = await tx.query.orderSessionsV.findFirst({
+          where: (sess, { eq: eq2, and: and2, inArray: inArray2 }) =>
             and2(
               eq2(sess.orgId, ctx.session!.orgId),
               eq2(sess.storeId, input.storeId),
               eq2(sess.orderDate, date),
               eq2(sess.initiatedByMemberId, ctx.session!.memberId),
               inArray2(sess.status, ['submitted', 'approved', 'in_run']),
-              isNull(sess.claimedByMemberId),
             ),
           orderBy: (sess, { desc: desc2 }) => desc2(sess.submittedAt),
         });
@@ -230,7 +250,7 @@ export const orderRouter = router({
    * Every session this member started for one (store, date) (2026-07-30).
    *
    * `todaySession` deliberately returns ONE session — the open draft, else
-   * the most recent unclaimed submitted one. That's the right answer for
+   * the most recent rejected one, else the most recent submitted one. That's the right answer for
    * "what am I editing", and it was also the only thing the Order page
    * knew, which made M3.32's multi-batch-per-day support invisible: submit
    * a batch, start another, and the first one silently vanished from your
@@ -776,7 +796,12 @@ export const orderRouter = router({
               ),
             orderBy: (sess, { desc }) => desc(sess.updatedAt),
           }))
-        : await tx.query.orderSessionsV.findFirst({
+        : // 2026-10-21 audit CA-02: self-edit targets the open draft, else
+          // the most recent REJECTED batch (domain lets the owner fix it in
+          // place and re-Submit) — the same priority todaySession uses, so
+          // the row the page shows is the row we write. Only when neither
+          // exists do we lazy-create a new draft below.
+          ((await tx.query.orderSessionsV.findFirst({
             where: (sess, { eq: eq2, and: and2 }) =>
               and2(
                 eq2(sess.orgId, ctx.session!.orgId),
@@ -785,7 +810,18 @@ export const orderRouter = router({
                 eq2(sess.initiatedByMemberId, ownerForLookup),
                 eq2(sess.status, 'draft'),
               ),
-          });
+          })) ??
+          (await tx.query.orderSessionsV.findFirst({
+            where: (sess, { eq: eq2, and: and2 }) =>
+              and2(
+                eq2(sess.orgId, ctx.session!.orgId),
+                eq2(sess.storeId, input.storeId),
+                eq2(sess.orderDate, date),
+                eq2(sess.initiatedByMemberId, ownerForLookup),
+                eq2(sess.status, 'rejected'),
+              ),
+            orderBy: (sess, { desc }) => [desc(sess.decidedAt), desc(sess.updatedAt)],
+          })));
 
       let state: OrderState;
       let streamId: string;

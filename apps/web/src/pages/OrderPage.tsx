@@ -17,7 +17,7 @@ import {
   StickyPageBar,
   useToast,
 } from '@compass/ui';
-import { trpc } from '../lib/trpc';
+import { trpc, newIdempotencyKey } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton, haptic } from '../hooks/useTelegram';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
@@ -49,6 +49,15 @@ const UNIT_STEP: Record<string, string> = {
   roll: '1',
 };
 const UNIT_IS_INTEGER = new Set(['pcs', 'pack', 'pair', 'bunch', 'roll']);
+/** Statuses where the batch is sent and no longer editable by its owner. */
+function isLockedStatus(status: string | null | undefined): boolean {
+  return (
+    status === 'submitted' ||
+    status === 'approved' ||
+    status === 'in_run' ||
+    status === 'archived'
+  );
+}
 import { formatQty, formatMoney } from '../lib/format';
 import { useStoreContext } from '../components/StoreSwitcher';
 
@@ -100,15 +109,32 @@ export function OrderPage() {
    * optimistic draft instead of appending to the submitted one.
    */
   const [newBatch, setNewBatch] = useState(false);
+  // 2026-10-21 audit CA-24: mirrors `newBatch` for callbacks (setData
+  // updaters) that must not close over a stale render.
+  const newBatchRef = useRef(false);
+  useEffect(() => {
+    newBatchRef.current = newBatch;
+  }, [newBatch]);
   // M1.10 (2026-05-08): cross-language SKU search. Lives above the
   // category chip-bar; queries match across uz/ru/en/zh names + code.
   const [searchQuery, setSearchQuery] = useState('');
 
   const categoriesQuery = trpc.catalog.categories.useQuery();
   const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: false });
+  // 2026-10-21 audit CA-24: while starting a new batch, any refetch
+  // (realtime order.changed, staleTime) still returns the previous
+  // SUBMITTED batch until the first tap lazy-creates the new draft.
+  // Showing it made the catalog editable on top of the old quantities,
+  // so the first + wrote previous+step into the new batch. Hide sent
+  // batches in this mode; a draft/rejected session still shows.
+  const hideSentWhileNewBatch = useCallback(
+    <T extends { status: string } | null>(d: T): T | null =>
+      newBatch && d && isLockedStatus(d.status) ? null : d,
+    [newBatch],
+  );
   const sessionQuery = trpc.order.todaySession.useQuery(
     { storeId: currentStoreId ?? '' },
-    { enabled: !!currentStoreId },
+    { enabled: !!currentStoreId, select: hideSentWhileNewBatch },
   );
   // Every batch this member started today at this store — drives the
   // "今日 N 批" strip and the receipt's batch list.
@@ -188,6 +214,9 @@ export function OrderPage() {
       utils.order.todaySession.setData(queryKey, (old) => {
         if (!old) return old;
         if (old.id === data.sessionId) return old;
+        // CA-24: a refetched SENT batch is not the one we just wrote —
+        // don't relabel it with the new draft's id; realtime refetches.
+        if (isLockedStatus(old.status)) return old;
         return { ...old, id: data.sessionId };
       });
     },
@@ -241,15 +270,6 @@ export function OrderPage() {
   const pendingTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const pendingPayloads = useRef<Map<string, PendingPayload>>(new Map());
   const inFlight = useRef<Map<string, Promise<unknown>>>(new Map());
-
-  // Cleanup any pending timers on unmount.
-  useEffect(() => {
-    const timersOnMount = pendingTimers.current;
-    return () => {
-      timersOnMount.forEach((t) => clearTimeout(t));
-      timersOnMount.clear();
-    };
-  }, []);
 
   /**
    * Fires a single AdjustItem mutation, waiting first for any
@@ -313,6 +333,27 @@ export function OrderPage() {
     await Promise.allSettled(promises);
   }, [flushOne]);
 
+  // 2026-10-21 audit CA-25: on unmount (tab switch) and on pagehide
+  // (WebView closed / backgrounded) SEND the taps still inside their
+  // 200 ms debounce window. This used to only clearTimeout them, so the
+  // last tap shown on screen never reached the server. The mutation is
+  // owned by the MutationCache, so it completes (and its onError still
+  // queues offline) after the component is gone.
+  const flushAllRef = useRef(flushAllPendingAdjusts);
+  useEffect(() => {
+    flushAllRef.current = flushAllPendingAdjusts;
+  }, [flushAllPendingAdjusts]);
+  useEffect(() => {
+    const onPageHide = () => {
+      void flushAllRef.current();
+    };
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      window.removeEventListener('pagehide', onPageHide);
+      void flushAllRef.current();
+    };
+  }, []);
+
   /**
    * Recompute aggregate totals[] from items[]. Used by the optimistic
    * cache writer.
@@ -346,7 +387,9 @@ export function OrderPage() {
 
       // Step 1: immediate optimistic cache update.
       utils.order.todaySession.setData(queryKey, (old) => {
-        if (!old) {
+        // CA-24: in new-batch mode a cached SENT batch is not what we're
+        // editing — start a fresh optimistic draft instead of building on it.
+        if (!old || (newBatchRef.current && isLockedStatus(old.status))) {
           const items = [
             {
               skuId,
@@ -432,9 +475,20 @@ export function OrderPage() {
    *   3. On network-shaped failure, keep the review sheet open so the
    *      tap target is obvious; on a domain error, close it.
    */
+  // 2026-10-21 audit CA-26: one stable X-Idempotency-Key per LOGICAL
+  // submit of a given session (same pattern as RunPage's purchaseIdemCtx),
+  // so a retry after a lost response dedupes server-side instead of
+  // minting a fresh key. Scoped to the session id because the server's
+  // cache is keyed on (key, route, user) only, not the input.
+  const submitIdemCtx = useRef<{ idempotencyKey?: string }>({}).current;
+  const submitIdemRef = useRef<{ sessionId: string; key: string } | null>(null);
+  /** Guards handleSubmit across its async flush phase (double taps). */
+  const submittingRef = useRef(false);
   const submit = trpc.order.submit.useMutation({
     retry: false,
+    trpc: { context: submitIdemCtx },
     onSuccess: () => {
+      submitIdemRef.current = null;
       void utils.order.todaySession.invalidate();
       void utils.order.todayBatches.invalidate();
       // Leave new-batch mode: the batch we just sent is now the receipt.
@@ -445,8 +499,10 @@ export function OrderPage() {
     onError: (err) => {
       haptic('error');
       if (isLikelyNetworkError(err)) {
+        // Keep submitIdemRef: the retry is the same logical submit.
         toast.error(i18n.t('order.toast.submitFailedNetwork'));
       } else {
+        submitIdemRef.current = null;
         // M1.9-extra (2026-05-07): was interpolating raw err.message
         // into the toast text via {reason}, leaking i18n keys like
         // `order.errors.cannotSubmit` to the user. errToast translates
@@ -458,8 +514,18 @@ export function OrderPage() {
   });
   const withdraw = trpc.order.withdraw.useMutation({
     onSuccess: () => {
+      // CA-26: the withdrawn session will be re-submitted as a new
+      // logical submit — never reuse the previous attempt's key.
+      submitIdemRef.current = null;
       void utils.order.todaySession.invalidate();
       void utils.order.todayBatches.invalidate();
+    },
+    // 2026-10-21 audit B-23: a failed withdraw (e.g. claimed meanwhile —
+    // order.errors.cannotWithdrawWhileClaimed) used to just stop the
+    // spinner. Surface it, and refetch so the banner reflects reality.
+    onError: (err) => {
+      errToast('common.error')(err);
+      void utils.order.todaySession.invalidate();
     },
   });
 
@@ -472,6 +538,7 @@ export function OrderPage() {
   const startNewBatch = useCallback(() => {
     if (!currentStoreId) return;
     setNewBatch(true);
+    newBatchRef.current = true;
     utils.order.todaySession.setData({ storeId: currentStoreId }, null);
   }, [currentStoreId, utils.order.todaySession]);
 
@@ -557,15 +624,15 @@ export function OrderPage() {
     return m;
   }, [items]);
 
-  // Distinct SKUs with non-zero aggregate qty.
-  const selectedCount = totals.length;
+  // Distinct SKUs with non-zero aggregate qty, plus saved extras rows —
+  // 2026-10-21 audit CA-27: the domain accepts an extras-only submit
+  // (M3.33), but zeroing the last SKU used to hide Submit even with
+  // extras on the session.
+  const extrasCount = sessionQuery.data?.extras?.length ?? 0;
+  const selectedCount = totals.length + extrasCount;
 
   const sessionStatus = sessionQuery.data?.status ?? null;
-  const sessionLocked =
-    sessionStatus === 'submitted' ||
-    sessionStatus === 'approved' ||
-    sessionStatus === 'in_run' ||
-    sessionStatus === 'archived';
+  const sessionLocked = isLockedStatus(sessionStatus);
   // While starting a new batch the locked session is not what we're
   // editing, so nothing is read-only.
   const isReadOnly = sessionLocked && !newBatch;
@@ -613,32 +680,53 @@ export function OrderPage() {
   const handleSubmit = useCallback(async () => {
     if (!canSubmit || selectedCount === 0 || submit.isPending) return;
     if (!currentStoreId) return;
+    // CA-26: `submit.isPending` is false during the flush/refetch below,
+    // so a second tap used to start a second submit. Ref-lock the whole
+    // logical submit instead.
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     const storeId = currentStoreId;
+    try {
+      await flushAllPendingAdjusts();
 
-    await flushAllPendingAdjusts();
-
-    let sid = utils.order.todaySession.getData({ storeId })?.id;
-    if (!sid || sid === 'optimistic') {
-      try {
-        const fresh = await utils.order.todaySession.fetch({ storeId });
-        sid = fresh?.id;
-      } catch {
-        /* network fail — fall through to syncing toast */
+      // Only a draft/rejected session is submittable. CA-24: in new-batch
+      // mode the raw cache can still hold the previous SENT batch — never
+      // submit that id (the domain would no-op it as a repeat Submit).
+      const submittableId = (
+        d: { id: string; status: string } | null | undefined,
+      ): string | undefined =>
+        d && d.id !== 'optimistic' && !isLockedStatus(d.status) ? d.id : undefined;
+      let sid = submittableId(utils.order.todaySession.getData({ storeId }));
+      if (!sid) {
+        try {
+          sid = submittableId(await utils.order.todaySession.fetch({ storeId }));
+        } catch {
+          /* network fail — fall through to syncing toast */
+        }
       }
-    }
 
-    if (!sid || sid === 'optimistic') {
-      toast.info(i18n.t('order.toast.syncing'));
-      return;
+      if (!sid) {
+        toast.info(i18n.t('order.toast.syncing'));
+        return;
+      }
+      if (submitIdemRef.current?.sessionId !== sid) {
+        submitIdemRef.current = { sessionId: sid, key: newIdempotencyKey() };
+      }
+      submitIdemCtx.idempotencyKey = submitIdemRef.current.key;
+      try {
+        await submit.mutateAsync({ sessionId: sid });
+        setReviewOpen(false);
+      } catch {
+        /* surfaced by the mutation's onError */
+      }
+    } finally {
+      submittingRef.current = false;
     }
-    submit.mutate(
-      { sessionId: sid },
-      { onSuccess: () => setReviewOpen(false) },
-    );
   }, [
     canSubmit,
     selectedCount,
     submit,
+    submitIdemCtx,
     currentStoreId,
     flushAllPendingAdjusts,
     utils.order.todaySession,
@@ -773,12 +861,8 @@ export function OrderPage() {
             <Banner tone="info" title={i18n.t('order.status.archived')} />
           )}
 
-          <BatchStrip
-            batches={batchesQuery.data ?? []}
-            currentId={locked.id}
-            i18n={i18n}
-            currency={orgCurrency}
-          />
+          {/* 2026-10-21 audit CA-44: a second identical BatchStrip used to
+              render here; the one above the banner is the only copy. */}
 
           <div>
             <SectionLabel padded={false} className="mb-1.5">
@@ -922,7 +1006,13 @@ export function OrderPage() {
         <div className="flex flex-col gap-2 px-4 pt-2">
           {sessionQuery.data?.claimedByMemberId &&
           sessionQuery.data.claimedByMemberId !== session.member.memberId ? (
-            <Banner tone="warn" title={i18n.t('order.banner.claimed', { who: 'manager' })} />
+            <Banner
+              tone="warn"
+              title={i18n.t('order.banner.claimed', {
+                who:
+                  sessionQuery.data.claimedByDisplayName ?? i18n.t('approval.unknownReviewer'),
+              })}
+            />
           ) : null}
           {sessionStatus === 'rejected' ? (
             <Banner
@@ -1110,7 +1200,26 @@ export function OrderPage() {
           </Button>
         }
       >
-        <ReviewList totals={totals} skus={skus} productName={productName} />
+        {/* CA-27: an extras-only batch shouldn't read "Nothing selected". */}
+        {totals.length > 0 || extrasCount === 0 ? (
+          <ReviewList totals={totals} skus={skus} productName={productName} />
+        ) : null}
+        {extrasCount > 0 && sessionQuery.data && sessionQuery.data.id !== 'optimistic' ? (
+          <SessionExtrasEditor
+            sessionId={sessionQuery.data.id}
+            storeId={currentStoreId}
+            initialValue={(sessionQuery.data.extras ?? []).map((r) => ({
+              ...r,
+              unit: (CANONICAL_UNITS as readonly string[]).includes(r.unit)
+                ? (r.unit as (typeof CANONICAL_UNITS)[number])
+                : 'kg',
+            }))}
+            isReadOnly
+            onSave={async () => {
+              /* read-only — never called */
+            }}
+          />
+        ) : null}
       </Sheet>
     </div>
   );
@@ -1543,6 +1652,7 @@ function SessionExtrasEditor({
       clearTimeout(debounceRef.current);
       debounceRef.current = null;
     }
+    pendingFireRef.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
@@ -1573,19 +1683,35 @@ function SessionExtrasEditor({
     return out;
   }, []);
 
+  // CA-25: the save waiting out its 700 ms debounce, so unmount /
+  // pagehide can send it instead of dropping it.
+  const pendingFireRef = useRef<(() => Promise<void>) | null>(null);
+
   const scheduleSave = useCallback(
     (next: ExtraDraft[], { immediate = false } = {}) => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      pendingFireRef.current = null;
       const fire = async () => {
         const cleaned = sanitize(next);
         const cleanedJson = JSON.stringify(cleaned);
-        if (cleanedJson === lastSavedRef.current) return;
+        // 2026-10-21 audit CA-27 (B-09): rows sanitize() drops (no name,
+        // bad / zero qty) are NOT persisted — don't claim "Saved ✓" while
+        // any are on screen; invalid named rows are flagged inline.
+        const allPersisted = cleaned.length === next.length;
+        if (cleanedJson === lastSavedRef.current) {
+          if (!allPersisted) setSavingState('idle');
+          return;
+        }
         setSavingState('saving');
         try {
           await onSave(cleaned);
           lastSavedRef.current = cleanedJson;
-          setSavingState('saved');
-          setTimeout(() => setSavingState('idle'), 1500);
+          if (allPersisted) {
+            setSavingState('saved');
+            setTimeout(() => setSavingState('idle'), 1500);
+          } else {
+            setSavingState('idle');
+          }
         } catch {
           setSavingState('idle');
         }
@@ -1593,8 +1719,10 @@ function SessionExtrasEditor({
       if (immediate) {
         void fire();
       } else {
+        pendingFireRef.current = fire;
         debounceRef.current = setTimeout(() => {
           debounceRef.current = null;
+          pendingFireRef.current = null;
           void fire();
         }, 700);
       }
@@ -1602,12 +1730,24 @@ function SessionExtrasEditor({
     [onSave, sanitize],
   );
 
-  useEffect(
-    () => () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    },
-    [],
-  );
+  // 2026-10-21 audit CA-25: send (don't drop) a debounced save on
+  // unmount and on pagehide.
+  const flushPendingSave = useCallback(() => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    const fire = pendingFireRef.current;
+    pendingFireRef.current = null;
+    if (fire) void fire();
+  }, []);
+  useEffect(() => {
+    window.addEventListener('pagehide', flushPendingSave);
+    return () => {
+      window.removeEventListener('pagehide', flushPendingSave);
+      flushPendingSave();
+    };
+  }, [flushPendingSave]);
 
   // Read-only and nothing to show → render nothing (avoids an empty
   // section under a submitted/approved session).
@@ -1673,6 +1813,7 @@ function SessionExtrasEditor({
             <ExtraRowEditor
               key={idx}
               row={row}
+              invalid={isInvalidExtraRow(row)}
               storeId={storeId}
               onChange={(patch) => updateRow(idx, patch)}
               onRemove={() => removeRow(idx)}
@@ -1699,13 +1840,27 @@ function SessionExtrasEditor({
  * types (debounced via react-query's natural caching — same key →
  * cached result for ~30s).
  */
+/**
+ * A named extras row whose qty sanitize() would reject (empty, malformed
+ * or ≤ 0). Blank-name rows are just "not filled in yet" and aren't
+ * flagged. 2026-10-21 audit CA-27 (B-09).
+ */
+function isInvalidExtraRow(row: ExtraDraft): boolean {
+  if (!row.name.trim()) return false;
+  const qty = row.qty.trim();
+  return !/^\d+(\.\d{1,3})?$/.test(qty) || Number(qty) <= 0;
+}
+
 function ExtraRowEditor({
   row,
+  invalid = false,
   storeId,
   onChange,
   onRemove,
 }: {
   row: ExtraDraft;
+  /** Not saved: named but with an invalid qty (B-09). */
+  invalid?: boolean;
   storeId: string;
   onChange: (patch: Partial<ExtraDraft>) => void;
   onRemove: () => void;
@@ -1726,7 +1881,12 @@ function ExtraRowEditor({
   );
 
   return (
-    <div className="rounded-[var(--r-card)] bg-[var(--c-surface)] p-2 ring-hairline">
+    <div
+      className={cn(
+        'rounded-[var(--r-card)] bg-[var(--c-surface)] p-2 ring-hairline',
+        invalid && 'ring-1 ring-[var(--c-danger)]',
+      )}
+    >
       <div className="flex items-center gap-2">
         <div className="relative min-w-0 flex-1">
           <Input
@@ -1776,6 +1936,7 @@ function ExtraRowEditor({
           inputMode={UNIT_IS_INTEGER.has(row.unit) ? 'numeric' : 'decimal'}
           step={UNIT_STEP[row.unit] ?? '0.1'}
           min="0"
+          aria-invalid={invalid || undefined}
           className="w-16 text-center"
           onChange={(e) => onChange({ qty: e.target.value })}
         />
@@ -1817,6 +1978,11 @@ function ExtraRowEditor({
           </svg>
         </button>
       </div>
+      {invalid ? (
+        <p className="mt-1 px-1 text-old-label text-[var(--c-danger)]">
+          {i18n.t('order.errors.invalidQty')}
+        </p>
+      ) : null}
     </div>
   );
 }
