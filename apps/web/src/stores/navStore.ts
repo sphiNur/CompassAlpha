@@ -33,7 +33,16 @@ import { persist } from 'zustand/middleware';
 /** localStorage key of the persisted slice (see resetNavStore). */
 export const NAV_STORAGE_KEY = 'compass.nav.v1';
 
-export type Tab = 'order' | 'approve' | 'run' | 'history' | 'settlement' | 'confirm' | 'admin';
+// 2026-10-21: 'sales' — staff-only sales entry tab (see SalesPage.tsx).
+export type Tab =
+  | 'order'
+  | 'approve'
+  | 'run'
+  | 'history'
+  | 'settlement'
+  | 'sales'
+  | 'confirm'
+  | 'admin';
 
 /**
  * Pages with an in-progress form can register a guard before the shell
@@ -185,7 +194,16 @@ export const useNavStore = create<NavState>()(
 
         const tab = oneOf(
           p.tab,
-          ['order', 'approve', 'run', 'history', 'settlement', 'confirm', 'admin'] as const,
+          [
+            'order',
+            'approve',
+            'run',
+            'history',
+            'settlement',
+            'sales',
+            'confirm',
+            'admin',
+          ] as const,
           DEFAULTS.tab,
         );
         const adminSection = oneOf(
@@ -266,7 +284,28 @@ export const useNavStore = create<NavState>()(
  */
 export function resolveVisibleTab(persisted: Tab, visibleKeys: readonly Tab[]): Tab {
   if (visibleKeys.includes(persisted)) return persisted;
+  // 2026-10-21: 'sales' and 'settlement' are the two homes of sales entry
+  // and are mutually exclusive (the Sales tab hides once the user holds
+  // settlement.record). Gaining or losing that permission lands the user
+  // on the other one instead of the first tab.
+  const sibling: Tab | null =
+    persisted === 'sales' ? 'settlement' : persisted === 'settlement' ? 'sales' : null;
+  if (sibling && visibleKeys.includes(sibling)) return sibling;
   return visibleKeys[0] ?? 'order';
+}
+
+/**
+ * 2026-10-21: bottom-tab visibility. A tab needs its permission (or none)
+ * and is hidden when the user also holds its `hiddenWith` permission —
+ * the Sales tab yields to the Settlement page's sales block.
+ */
+export function isTabVisible(
+  tab: { permission: string | null; hiddenWith?: string },
+  permissions: readonly string[],
+): boolean {
+  if (tab.permission && !permissions.includes(tab.permission)) return false;
+  if (tab.hiddenWith && permissions.includes(tab.hiddenWith)) return false;
+  return true;
 }
 
 /**

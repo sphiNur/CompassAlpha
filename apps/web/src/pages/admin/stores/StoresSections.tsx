@@ -30,10 +30,28 @@ import { newIdempotencyKey, trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { formatQty } from '../../../lib/format';
-import { useI18n, useProductName, useUnitLabel } from '../../../hooks/useI18n';
+import { useDateFormat, useI18n, useProductName, useUnitLabel } from '../../../hooks/useI18n';
 import { nativeConfirm, type StoreFocus, type StoreSub } from '../shared';
 import { PeopleSection } from '../people/PeopleSections';
 import { StoreSalesPanel } from '../../../components/sales/StoreSalesPanel';
+import {
+  knownMovementReason,
+  signedDelta,
+  skusWithoutLevel,
+  type MovementReason,
+} from './inventoryHelpers';
+
+/** 2026-10-21: localized label per ledger reason (movements sheet). */
+const MOVEMENT_REASON_LABEL = {
+  delivery_received: 'inventory.reason.delivery_received',
+  stocktake: 'inventory.reason.stocktake',
+  wastage: 'inventory.reason.wastage',
+  consumption: 'inventory.reason.consumption',
+  consumption_reversed: 'inventory.reason.consumption_reversed',
+  transfer_in: 'inventory.reason.transfer_in',
+  transfer_out: 'inventory.reason.transfer_out',
+  adjustment: 'inventory.reason.adjustment',
+} as const satisfies Record<MovementReason, string>;
 
 interface StoreDraft {
   storeId?: string;
@@ -390,7 +408,12 @@ export function StoreDetailScreen({
  *     mislabeled / lost).
  *
  * Recent-movements drill-down for "why is the on-hand X" lives on
- * the row tap (opens a sheet listing the last 50 movements).
+ * the row tap (opens a sheet listing the last 50 movements) — wired
+ * 2026-10-21; the comment promised it long before the UI had it.
+ *
+ * 2026-10-21: "Add stocktake for another SKU" posts an opening count
+ * for an active SKU with no ledger row here yet (a new store had no way
+ * to start its inventory except waiting for a delivery).
  */
 function StoreInventoryTab({ storeId }: { storeId: string }) {
   const i18n = useI18n();
@@ -400,6 +423,7 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
   const toast = useToast();
   const errToast = useErrToast();
   const productName = useProductName();
+  const dateFmt = useDateFormat();
   const levelsQuery = trpc.inventory.levels.useQuery({ storeId });
   const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: false });
   const utils = trpc.useUtils();
@@ -428,10 +452,17 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
   }, [skusQuery.data]);
 
   type ActionMode =
-    | { kind: 'stocktake'; skuId: string; current: string }
+    // `pickSku`: opening stocktake — the SKU is chosen inside the sheet.
+    | { kind: 'stocktake'; skuId: string; current: string; pickSku?: boolean }
     | { kind: 'wastage'; skuId: string };
 
   const [action, setAction] = useState<ActionMode | null>(null);
+  // 2026-10-21: movements drill-down for one level row.
+  const [movementsFor, setMovementsFor] = useState<{ skuId: string; name: string } | null>(null);
+  const movementsQuery = trpc.inventory.recentMovements.useQuery(
+    { storeId, skuId: movementsFor?.skuId ?? '' },
+    { enabled: movementsFor !== null },
+  );
   const [draftTarget, setDraftTarget] = useState('');
   const [draftWasteQty, setDraftWasteQty] = useState('');
   const [draftNote, setDraftNote] = useState('');
@@ -459,6 +490,7 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
   const stocktake = trpc.inventory.stocktake.useMutation({
     onSuccess: () => {
       void utils.inventory.levels.invalidate({ storeId });
+      void utils.inventory.recentMovements.invalidate({ storeId });
       toast.success(i18n.t('inventory.toast.stocktakeSaved'));
       setAction(null);
     },
@@ -469,6 +501,7 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
     onSuccess: () => {
       wastageIdemCtx.idempotencyKey = newIdempotencyKey();
       void utils.inventory.levels.invalidate({ storeId });
+      void utils.inventory.recentMovements.invalidate({ storeId });
       toast.success(i18n.t('inventory.toast.wastageSaved'));
       setAction(null);
     },
@@ -493,8 +526,31 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
     });
   }, [levelsQuery.data, skuById, productName]);
 
+  // 2026-10-21: active SKUs with no ledger row here — opening-stock picks.
+  const openingCandidates = useMemo(
+    () =>
+      skusWithoutLevel([...skuById.values()], levelsQuery.data ?? [])
+        .map((sku) => ({ id: sku.id, name: productName({ names: sku.names }) }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [skuById, levelsQuery.data, productName],
+  );
+
   return (
     <div className="px-4 py-3">
+      {canAdjust && !levelsQuery.isLoading && openingCandidates.length > 0 ? (
+        <div className="mb-3 flex">
+          <Button
+            size="sm"
+            variant="pearl"
+            className="ml-auto"
+            onClick={() =>
+              setAction({ kind: 'stocktake', skuId: '', current: '0', pickSku: true })
+            }
+          >
+            {i18n.t('inventory.action.addStocktake')}
+          </Button>
+        </div>
+      ) : null}
       {levelsQuery.isLoading ? (
         <div className="py-6 text-center">
           <Spinner size={16} />
@@ -518,12 +574,17 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
                     (stockedOut ? 'opacity-70' : '')
                   }
                 >
-                  <div className="flex items-baseline justify-between gap-2">
+                  {/* 2026-10-21: tap → recent movements sheet. */}
+                  <button
+                    type="button"
+                    className="flex w-full items-baseline justify-between gap-2 text-left active:opacity-80"
+                    onClick={() => setMovementsFor({ skuId: r.skuId, name: r.name })}
+                  >
                     <span className="truncate text-old-body font-semibold">{r.name}</span>
                     <span className="font-mono text-old-body tabular-nums">
                       {formatQty(r.onHand)} {unitLabel(r.unit)}
                     </span>
-                  </div>
+                  </button>
                   {/* M3.17 (2026-05-16): inline pill buttons → Button
                       size="sm" with pearl + danger-ghost variants.
                       Stocktake is a neutral edit; wastage is a real
@@ -570,7 +631,9 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
             : i18n.t('inventory.sheet.wastage.title')
         }
         description={
-          action ? productName({ names: skuById.get(action.skuId)?.names ?? {} }) : ''
+          action && action.skuId
+            ? productName({ names: skuById.get(action.skuId)?.names ?? {} })
+            : ''
         }
         footer={
           // 2026-07-30: dropped `!getTg() &&` — same defect as the dish
@@ -583,8 +646,9 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
             <Button
               block
               loading={stocktake.isPending || recordWastage.isPending}
+              disabled={!action.skuId}
               onClick={() => {
-                if (!action) return;
+                if (!action || !action.skuId) return;
                 if (action.kind === 'stocktake') {
                   stocktake.mutate({
                     storeId,
@@ -615,6 +679,22 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
           <div className="flex flex-col gap-3 py-3">
             {action.kind === 'stocktake' ? (
               <>
+                {action.pickSku ? (
+                  <Field label={i18n.t('inventory.sheet.stocktake.skuLabel')}>
+                    <Select
+                      value={action.skuId}
+                      aria-label={i18n.t('inventory.sheet.stocktake.skuLabel')}
+                      onChange={(e) => setAction({ ...action, skuId: e.target.value })}
+                    >
+                      <option value="">{i18n.t('inventory.sheet.stocktake.pickSku')}</option>
+                      {openingCandidates.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                ) : null}
                 <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 text-old-label text-[var(--c-fg-muted)]">
                   {i18n.t('inventory.sheet.stocktake.systemSays', {
                     qty: formatQty(action.current),
@@ -666,6 +746,59 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
                   />
                 </Field>
               </>
+            )}
+          </div>
+        ) : null}
+      </Sheet>
+
+      {/* 2026-10-21: recent movements (last 50) for one SKU. */}
+      <Sheet
+        open={movementsFor !== null}
+        onOpenChange={(open) => !open && setMovementsFor(null)}
+        title={i18n.t('inventory.movements.title')}
+        description={movementsFor?.name ?? ''}
+      >
+        {movementsFor ? (
+          <div className="py-3">
+            {movementsQuery.isLoading ? (
+              <div className="py-6 text-center">
+                <Spinner size={16} />
+              </div>
+            ) : (movementsQuery.data ?? []).length === 0 ? (
+              <EmptyState title={i18n.t('inventory.movements.empty')} />
+            ) : (
+              <ul className="flex flex-col gap-1" role="list">
+                {(movementsQuery.data ?? []).map((m) => {
+                  const known = knownMovementReason(m.reason);
+                  const { sign, abs } = signedDelta(m.delta);
+                  const unit = skuById.get(movementsFor.skuId)?.unit ?? '';
+                  return (
+                    <li
+                      key={m.id}
+                      className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 ring-hairline"
+                    >
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="truncate text-old-body font-medium">
+                          {known ? i18n.t(MOVEMENT_REASON_LABEL[known]) : m.reason}
+                        </span>
+                        <span
+                          className={
+                            'font-mono text-old-body tabular-nums ' +
+                            (sign === '-' ? 'text-[var(--c-danger)]' : '')
+                          }
+                        >
+                          {sign}
+                          {formatQty(abs)} {unitLabel(unit)}
+                        </span>
+                      </div>
+                      <div className="text-old-label text-[var(--c-fg-muted)]">
+                        {dateFmt.dateTime(m.occurredAt)}
+                        {m.note ? ` · ${m.note}` : ''}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
           </div>
         ) : null}

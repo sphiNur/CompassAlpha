@@ -4,7 +4,7 @@
  * Closes the ERP loop: purchase → receive (M2.0a) → menu + BOM
  * (M2.0b) → consume (M2.0c).
  *
- * Two procedures:
+ * Three procedures (void added 2026-10-21):
  *
  *   record(storeId, dishId, qty, occurredAt?)
  *     Logs one sale event AND writes the corresponding ingredient
@@ -15,7 +15,13 @@
  *
  *   list(storeId, fromDate, toDate)
  *     Lists recorded sales in the range. Newest first. Cap 200 rows
- *     per call (covers a busy week per store).
+ *     per call (covers a busy week per store). Voided sales are
+ *     included with their void fields so the UI can strike them out.
+ *
+ *   void(saleId, reason)
+ *     Marks a sale voided and appends positive 'consumption_reversed'
+ *     movements mirroring its consumption rows, in one transaction
+ *     (migration 0049). Same gate as record. Re-voiding is a no-op.
  *
  * What happens on `record`:
  *
@@ -75,6 +81,40 @@ const RecordInputSchema = z.object({
    *  back-fill the day's sales at close-out. */
   occurredAt: z.string().datetime().optional(),
 });
+
+const VoidInputSchema = z.object({
+  saleId: UuidSchema,
+  /** Why the sale is being voided — kept on the row for the audit trail. */
+  reason: z.string().trim().min(1).max(300),
+});
+
+/** 2026-10-21: movement source/reason of a sale void's reversal rows. A
+ *  distinct source_type keeps the partial UNIQUE index (source_type,
+ *  source_id, store_id, sku_id) from colliding with the 'sale' rows. */
+export const SALE_VOID_SOURCE_TYPE = 'sale_void';
+export const SALE_VOID_REASON = 'consumption_reversed';
+
+/**
+ * 2026-10-21: the reversing deltas for a voided sale — one row per SKU,
+ * the negation of the summed consumption deltas the sale wrote. Rows that
+ * net to zero are dropped. Exported for unit tests.
+ */
+export function buildSaleReversal(
+  consumption: ReadonlyArray<{ skuId: string; delta: string }>,
+): Array<{ skuId: string; delta: string }> {
+  // Sum in thousandths so 3-decimal deltas don't pick up float drift.
+  const bySku = new Map<string, number>();
+  for (const row of consumption) {
+    const milli = Math.round(Number(row.delta) * 1000);
+    bySku.set(row.skuId, (bySku.get(row.skuId) ?? 0) + milli);
+  }
+  const out: Array<{ skuId: string; delta: string }> = [];
+  for (const [skuId, milli] of bySku) {
+    if (milli === 0) continue;
+    out.push({ skuId, delta: (-milli / 1000).toFixed(3) });
+  }
+  return out;
+}
 
 const ListInputSchema = z.object({
   storeId: UuidSchema,
@@ -279,6 +319,115 @@ export const salesRouter = router({
       });
     }),
 
+  /**
+   * 2026-10-21: void a mistaken sale. Same gate as `record` (sales.record,
+   * assigned to the sale's store, per-store override honoured). Marks the
+   * row voided and appends reversing movements in ONE transaction; the
+   * sale row is locked so two concurrent voids can't both reverse.
+   * Already voided → returns ok without writing anything.
+   */
+  void: authedProcedure.input(VoidInputSchema).mutation(async ({ ctx, input }) => {
+    requireSalesRecord(ctx.session!.permissions);
+    const orgId = ctx.session!.orgId;
+    const sale = await ctx.withOrg((tx) =>
+      tx.query.sales.findFirst({
+        where: (sl, { eq: eq2, and: and2 }) => and2(eq2(sl.id, input.saleId), eq2(sl.orgId, orgId)),
+        columns: { storeId: true },
+      }),
+    );
+    if (!sale) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'sales.errors.saleNotFound' });
+    }
+    await ctx.withOrg((tx) =>
+      assertActorAssignedToStore(
+        tx,
+        ctx.session!.memberId,
+        sale.storeId,
+        ctx.session!.permissions,
+      ),
+    );
+    const effective = await ctx.withOrg((tx) =>
+      effectivePermissionsForStore(
+        tx,
+        ctx.session!.memberId,
+        sale.storeId,
+        ctx.session!.permissions,
+      ),
+    );
+    requireSalesRecord(effective);
+
+    return ctx.withOrg(async (tx) => {
+      // Same rule as record / the inventory ledger guard (CA-54): no
+      // ledger writes against an archived or paused store.
+      const store = await tx.query.stores.findFirst({
+        where: (st, { eq: eq2, and: and2 }) =>
+          and2(eq2(st.id, sale.storeId), eq2(st.orgId, orgId)),
+        columns: { isActive: true, deletedAt: true },
+      });
+      if (!store || !store.isActive || store.deletedAt) {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'auth.errors.storeArchived' });
+      }
+
+      const [locked] = await tx
+        .select({ id: s.sales.id, voidedAt: s.sales.voidedAt })
+        .from(s.sales)
+        .where(and(eq(s.sales.id, input.saleId), eq(s.sales.orgId, orgId)))
+        .for('update');
+      if (!locked) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'sales.errors.saleNotFound' });
+      }
+      if (locked.voidedAt) {
+        return { ok: true as const, alreadyVoided: true as const, reversed: [] };
+      }
+
+      const consumption = await tx
+        .select({ skuId: s.inventoryMovements.skuId, delta: s.inventoryMovements.delta })
+        .from(s.inventoryMovements)
+        .where(
+          and(
+            eq(s.inventoryMovements.orgId, orgId),
+            eq(s.inventoryMovements.storeId, sale.storeId),
+            eq(s.inventoryMovements.sourceType, 'sale'),
+            eq(s.inventoryMovements.sourceId, input.saleId),
+          ),
+        );
+      const reversal = buildSaleReversal(consumption);
+      const now = new Date();
+      if (reversal.length > 0) {
+        await tx
+          .insert(s.inventoryMovements)
+          .values(
+            reversal.map((r) => ({
+              orgId,
+              storeId: sale.storeId,
+              skuId: r.skuId,
+              delta: r.delta,
+              reason: SALE_VOID_REASON,
+              note: input.reason,
+              sourceType: SALE_VOID_SOURCE_TYPE,
+              sourceId: input.saleId,
+              actorMemberId: ctx.session!.memberId,
+              occurredAt: now,
+            })),
+          )
+          .onConflictDoNothing();
+      }
+      await tx
+        .update(s.sales)
+        .set({
+          voidedAt: now,
+          voidedByMemberId: ctx.session!.memberId,
+          voidReason: input.reason,
+        })
+        .where(and(eq(s.sales.id, input.saleId), eq(s.sales.orgId, orgId)));
+      return {
+        ok: true as const,
+        alreadyVoided: false as const,
+        reversed: reversal.map(({ skuId, delta }) => ({ skuId, qty: delta })),
+      };
+    });
+  }),
+
   list: authedProcedure.input(ListInputSchema).query(async ({ ctx, input }) => {
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
@@ -315,6 +464,11 @@ export const salesRouter = router({
           unitPrice: s.sales.unitPrice,
           recordedByMemberId: s.sales.recordedByMemberId,
           occurredAt: s.sales.occurredAt,
+          // 2026-10-21: voided rows stay in the list (struck through in
+          // the UI); the today summary skips them.
+          voidedAt: s.sales.voidedAt,
+          voidedByMemberId: s.sales.voidedByMemberId,
+          voidReason: s.sales.voidReason,
         })
         .from(s.sales)
         .where(

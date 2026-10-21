@@ -8,12 +8,23 @@
  * Both call sites render this component; keep behaviour changes here.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Banner, Button, EmptyState, Input, SectionLabel, Spinner, useToast } from '@compass/ui';
+import {
+  Banner,
+  Button,
+  EmptyState,
+  Field,
+  Input,
+  SectionLabel,
+  Sheet,
+  Spinner,
+  useToast,
+} from '@compass/ui';
 import { newIdempotencyKey, trpc } from '../../lib/trpc';
 import { useAuthStore } from '../../stores/authStore';
 import { useErrToast } from '../../lib/errToast';
 import { formatMoney, formatQty } from '../../lib/format';
 import { useDateFormat, useI18n, useProductName } from '../../hooks/useI18n';
+import { normalizeVoidReason, summarizeSales } from './salesSummary';
 
 /** Server-side row cap of `sales.list` (apps/api/src/trpc/routers/sales.ts). */
 export const SALES_LIST_CAP = 200;
@@ -34,6 +45,9 @@ export const SALES_LIST_CAP = 200;
  *   - `sales.record` (per-store) for the Save action. Granted by
  *     default to manager, cashier + staff roles.
  *   - Anyone with read access to the store can see the list.
+ *   - 2026-10-21: `sales.record` also gates Void (sales.void) — a sale
+ *     is voided with a reason, never deleted; the server puts the
+ *     ingredients back with reversing ledger rows.
  */
 export function StoreSalesPanel({
   storeId,
@@ -115,19 +129,28 @@ export function StoreSalesPanel({
     onError: errToast('common.error'),
   });
 
+  // 2026-10-21: void flow — the sale being voided + the typed reason.
+  const [voidTarget, setVoidTarget] = useState<{ saleId: string; name: string } | null>(null);
+  const [voidReason, setVoidReason] = useState('');
+  const voidSale = trpc.sales.void.useMutation({
+    onSuccess: () => {
+      void utils.sales.list.invalidate({ storeId });
+      // Reversal rows just landed in the ledger.
+      void utils.inventory.levels.invalidate({ storeId });
+      void utils.inventory.recentMovements.invalidate({ storeId });
+      toast.success(i18n.t('sales.toast.voided'));
+      setVoidTarget(null);
+      setVoidReason('');
+    },
+    onError: errToast('common.error'),
+  });
+  const normalizedVoidReason = normalizeVoidReason(voidReason);
+
   const sales = salesQuery.data ?? [];
 
   // Compute today's headline (revenue + count) for the summary row.
-  const summary = useMemo(() => {
-    let count = 0;
-    let revenue = 0;
-    for (const s2 of sales) {
-      const qty = Number(s2.qty);
-      count += qty;
-      if (s2.unitPrice) revenue += qty * Number(s2.unitPrice);
-    }
-    return { count, revenue };
-  }, [sales]);
+  // 2026-10-21: voided sales don't count (see salesSummary.ts).
+  const summary = useMemo(() => summarizeSales(sales), [sales]);
 
   // Sort dishes alphabetically for the picker.
   const dishOptions = useMemo(() => {
@@ -250,12 +273,16 @@ export function StoreSalesPanel({
                 sale.unitPrice && Number(sale.qty) > 0
                   ? Number(sale.qty) * Number(sale.unitPrice)
                   : null;
+              const voided = !!sale.voidedAt;
               return (
                 <li
                   key={sale.id}
-                  className="flex items-baseline justify-between gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 ring-hairline"
+                  className={
+                    'flex items-baseline justify-between gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 ring-hairline ' +
+                    (voided ? 'opacity-60' : '')
+                  }
                 >
-                  <div className="min-w-0 flex-1">
+                  <div className={`min-w-0 flex-1 ${voided ? 'line-through' : ''}`}>
                     <div className="flex items-baseline gap-2">
                       <span className="text-old-label tabular-nums text-[var(--c-fg-muted)]">
                         {time}
@@ -275,12 +302,71 @@ export function StoreSalesPanel({
                       </div>
                     )}
                   </div>
+                  {voided ? (
+                    <div className="max-w-[45%] text-right text-old-label text-[var(--c-fg-muted)]">
+                      {i18n.t('sales.void.voidedLabel', { reason: sale.voidReason ?? '' })}
+                    </div>
+                  ) : canRecord ? (
+                    <Button
+                      size="sm"
+                      variant="danger-ghost"
+                      onClick={() => {
+                        setVoidReason('');
+                        setVoidTarget({ saleId: sale.id, name });
+                      }}
+                    >
+                      {i18n.t('sales.action.void')}
+                    </Button>
+                  ) : null}
                 </li>
               );
             })}
           </ul>
         )}
       </div>
+
+      {/* 2026-10-21: void confirmation — a reason is mandatory. */}
+      <Sheet
+        open={voidTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setVoidTarget(null);
+            setVoidReason('');
+          }
+        }}
+        title={i18n.t('sales.void.title')}
+        description={voidTarget ? i18n.t('sales.void.description', { dish: voidTarget.name }) : ''}
+        footer={
+          voidTarget ? (
+            <Button
+              block
+              variant="danger"
+              loading={voidSale.isPending}
+              disabled={!normalizedVoidReason}
+              onClick={() => {
+                if (!voidTarget || !normalizedVoidReason) return;
+                voidSale.mutate({ saleId: voidTarget.saleId, reason: normalizedVoidReason });
+              }}
+            >
+              {i18n.t('sales.void.confirmBtn')}
+            </Button>
+          ) : null
+        }
+      >
+        {voidTarget ? (
+          <div className="flex flex-col gap-3 py-3">
+            <Field label={i18n.t('sales.void.reasonLabel')}>
+              <Input
+                value={voidReason}
+                maxLength={300}
+                onChange={(e) => setVoidReason(e.target.value)}
+                placeholder={i18n.t('sales.void.reasonPlaceholder')}
+                autoFocus
+              />
+            </Field>
+          </div>
+        ) : null}
+      </Sheet>
     </div>
   );
 }

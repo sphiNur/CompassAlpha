@@ -4,6 +4,7 @@ import {
   Banner,
   IconAdmin,
   IconApprove,
+  IconCatalog,
   IconConfirm,
   IconHistory,
   IconOrder,
@@ -44,8 +45,18 @@ const HistoryPage = lazy(importHistoryPage);
 const importSettlementPage = () =>
   import('../pages/SettlementPage').then((m) => ({ default: m.SettlementPage }));
 const SettlementPage = lazy(importSettlementPage);
+// 2026-10-21: staff-only sales tab. Small page, but lazy like Settlement
+// so the many users who never see it don't parse it.
+const importSalesPage = () => import('../pages/SalesPage').then((m) => ({ default: m.SalesPage }));
+const SalesPage = lazy(importSalesPage);
 import { useAuthStore } from '../stores/authStore';
-import { requestTabChange, resolveVisibleTab, useNavStore } from '../stores/navStore';
+import {
+  isTabVisible,
+  requestTabChange,
+  resolveVisibleTab,
+  useNavStore,
+  type Tab,
+} from '../stores/navStore';
 import { resolveDeepLinkTab, stripDeepLinkPath, tabFromDeepLinkPath } from '../lib/deepLink';
 import { useI18n } from '../hooks/useI18n';
 import {
@@ -62,32 +73,48 @@ import { PageMenuProvider, usePageMenuRegistration } from './PageMenuContext';
 // (was 6 items, now 5) and groups operator-only views together. Admins
 // reach Debug via Admin → Debug; non-admins never see it (which is
 // what `system.logs.view` already gated).
-type Tab = 'order' | 'approve' | 'run' | 'history' | 'settlement' | 'confirm' | 'admin';
-
 type IconComponent = ComponentType<SVGProps<SVGSVGElement> & { size?: number }>;
 
-const TABS: Array<{ key: Tab; permission: string | null; labelKey: string; Icon: IconComponent }> =
-  [
-    { key: 'order', permission: 'order.draft', labelKey: 'nav.order', Icon: IconOrder },
-    { key: 'approve', permission: 'order.approve', labelKey: 'nav.approve', Icon: IconApprove },
-    { key: 'run', permission: 'run.purchase', labelKey: 'nav.run', Icon: IconRun },
-    // 2026-07-30: purchase history used to be reachable only from the
-    // bottom of the Run tab, which meant only `run.purchase` holders
-    // could see it — a store manager had no route to their own store's
-    // spend. `prices.view` is the money-visibility permission (purchaser
-    // + manager + admin + super_admin) and is the right gate for a
-    // price-and-spend record. See HistoryPage.tsx for why this needed no
-    // server-side change.
-    { key: 'history', permission: 'prices.view', labelKey: 'nav.history', Icon: IconHistory },
-    {
-      key: 'settlement',
-      permission: 'settlement.record',
-      labelKey: 'nav.settlement',
-      Icon: IconSettlement,
-    },
-    { key: 'confirm', permission: 'delivery.confirm', labelKey: 'nav.confirm', Icon: IconConfirm },
-    { key: 'admin', permission: 'users.manage', labelKey: 'nav.admin', Icon: IconAdmin },
-  ];
+type TabDef = {
+  key: Tab;
+  permission: string | null;
+  /** Hide the tab when the user ALSO holds this permission (2026-10-21). */
+  hiddenWith?: string;
+  labelKey: string;
+  Icon: IconComponent;
+};
+
+const TABS: TabDef[] = [
+  { key: 'order', permission: 'order.draft', labelKey: 'nav.order', Icon: IconOrder },
+  { key: 'approve', permission: 'order.approve', labelKey: 'nav.approve', Icon: IconApprove },
+  { key: 'run', permission: 'run.purchase', labelKey: 'nav.run', Icon: IconRun },
+  // 2026-07-30: purchase history used to be reachable only from the
+  // bottom of the Run tab, which meant only `run.purchase` holders
+  // could see it — a store manager had no route to their own store's
+  // spend. `prices.view` is the money-visibility permission (purchaser
+  // + manager + admin + super_admin) and is the right gate for a
+  // price-and-spend record. See HistoryPage.tsx for why this needed no
+  // server-side change.
+  { key: 'history', permission: 'prices.view', labelKey: 'nav.history', Icon: IconHistory },
+  {
+    key: 'settlement',
+    permission: 'settlement.record',
+    labelKey: 'nav.settlement',
+    Icon: IconSettlement,
+  },
+  // 2026-10-21: staff hold sales.record but not settlement.record, so
+  // the Settlement page's sales block was unreachable for them. Users
+  // with settlement.record keep that block and don't get this tab.
+  {
+    key: 'sales',
+    permission: 'sales.record',
+    hiddenWith: 'settlement.record',
+    labelKey: 'nav.sales',
+    Icon: IconCatalog,
+  },
+  { key: 'confirm', permission: 'delivery.confirm', labelKey: 'nav.confirm', Icon: IconConfirm },
+  { key: 'admin', permission: 'users.manage', labelKey: 'nav.admin', Icon: IconAdmin },
+];
 
 // Loading fallback for lazily-imported pages. Centered spinner so the
 // blip between bundle download and render doesn't look like a stall.
@@ -119,6 +146,11 @@ const PAGES: Record<Tab, () => ReactNode> = {
       <SettlementPage />
     </Suspense>
   ),
+  sales: () => (
+    <Suspense fallback={<PageLoading />}>
+      <SalesPage />
+    </Suspense>
+  ),
   confirm: () => <ConfirmPage />,
   admin: () => (
     <Suspense fallback={<PageLoading />}>
@@ -147,11 +179,9 @@ function ShellInner() {
   // admin without `users.manage` (for the Platform section), but the tab
   // itself was gated on `users.manage`, so they could never get there.
   const isPlatformAdmin = !!session?.isPlatformAdmin;
+  const permissions = session?.permissions ?? [];
   const visible = TABS.filter(
-    (t) =>
-      !t.permission ||
-      session?.permissions.includes(t.permission) ||
-      (t.key === 'admin' && isPlatformAdmin),
+    (t) => isTabVisible(t, permissions) || (t.key === 'admin' && isPlatformAdmin),
   );
 
   // Warm the AdminPage chunk in the background once we know the user

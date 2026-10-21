@@ -1358,20 +1358,15 @@ export function DishesSection() {
   const invalidate = () => {
     void utils.dishes.list.invalidate();
   };
-  const create = trpc.dishes.create.useMutation({
+  // 2026-10-21 CA-55: one atomic create-or-update (fields + recipe in
+  // one transaction). Was update → setIngredients as two calls, so a
+  // failed second call left new fields with the old recipe.
+  const save = trpc.dishes.save.useMutation({
     onSuccess: () => {
       invalidate();
       toast.success(i18n.t('common.saved'));
       setDraft(null);
     },
-    onError: errToast('common.error'),
-  });
-  const update = trpc.dishes.update.useMutation({
-    onSuccess: invalidate,
-    onError: errToast('common.error'),
-  });
-  const setIngredients = trpc.dishes.setIngredients.useMutation({
-    onSuccess: invalidate,
     onError: errToast('common.error'),
   });
   const archive = trpc.dishes.archive.useMutation({
@@ -1424,34 +1419,20 @@ export function DishesSection() {
         qtyPerServing: Number(i.qtyPerServing).toFixed(4),
         note: i.note.trim() || null,
       }));
-    const payload = {
+    // 2026-10-21 CA-55: the server rejects a SKU listed twice; say so
+    // before the round trip.
+    if (new Set(cleanIngredients.map((i) => i.skuId)).size !== cleanIngredients.length) {
+      errToast('common.error')(new Error('dishes.errors.duplicateIngredient'));
+      return;
+    }
+    save.mutate({
+      ...(draft.dishId ? { dishId: draft.dishId } : {}),
       code: draft.code.trim() || null,
       names: cleanNames,
       description: draft.description,
       unitPrice: draft.unitPrice.trim() ? Number(draft.unitPrice).toFixed(2) : null,
-    };
-    if (draft.dishId) {
-      // Update happens in two calls because the routes are split.
-      // Acceptable since both are inside one transaction at the DB.
-      update.mutate(
-        { dishId: draft.dishId, ...payload },
-        {
-          onSuccess: () => {
-            setIngredients.mutate(
-              { dishId: draft.dishId!, ingredients: cleanIngredients },
-              {
-                onSuccess: () => {
-                  toast.success(i18n.t('common.saved'));
-                  setDraft(null);
-                },
-              },
-            );
-          },
-        },
-      );
-    } else {
-      create.mutate({ ...payload, ingredients: cleanIngredients });
-    }
+      ingredients: cleanIngredients,
+    });
   };
 
   // Helper to add a new empty ingredient row.
@@ -1595,7 +1576,7 @@ export function DishesSection() {
           draft ? (
             <Button
               block
-              loading={create.isPending || update.isPending || setIngredients.isPending}
+              loading={save.isPending}
               onClick={handleSave}
             >
               {i18n.t('common.save')}
