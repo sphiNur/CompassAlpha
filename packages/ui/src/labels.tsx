@@ -59,6 +59,14 @@ export interface UiLabels {
   errorUnknown: string;
   emptyNoData: string;
   emptyNothingYet: string;
+  /**
+   * 2026-10-21 FE-10: turns `query.error.message` (often a server i18n key
+   * like `order.errors.notFound`, or a raw "Failed to fetch") into user
+   * copy. The default passes the message through, as before.
+   */
+  translateError: (message: string | undefined) => string | undefined;
+  /** 2026-10-21 FE-10: label of DataState's retry button. */
+  retry: string;
 
   // --- PhotoCapture ---
   photoLabel: string;
@@ -79,6 +87,8 @@ export const DEFAULT_UI_LABELS: UiLabels = {
   errorUnknown: 'Unknown error',
   emptyNoData: 'No data',
   emptyNothingYet: 'Nothing here yet',
+  translateError: (message) => message,
+  retry: 'Retry',
   photoLabel: 'Receipt photo',
   photoRemove: 'Remove photo',
   photoHint: 'Tap to take a photo',

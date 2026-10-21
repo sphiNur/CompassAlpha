@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import { useUiLabels } from '../labels';
 import { Banner } from './Banner';
+import { Button } from './Button';
+import { resolveDataStateError } from './dataStateError';
 import { EmptyState } from './EmptyState';
 import { Spinner } from './Spinner';
 
@@ -10,7 +12,7 @@ interface QueryLike<T> {
   isError: boolean;
   isFetching?: boolean;
   error?: { message?: string } | null;
-  refetch?: () => void;
+  refetch?: () => unknown;
 }
 
 interface DataStateProps<T> {
@@ -42,9 +44,30 @@ export function DataState<T>({
     );
   }
   if (query.isError) {
+    // 2026-10-21 FE-10: translated message (not the raw i18n key) plus a
+    // retry, so a dropped connection is recoverable without leaving the page.
+    const refetch = query.refetch;
     return (
-      <Banner tone="danger" title={errorTitle ?? labels.errorTitle}>
-        {query.error?.message ?? labels.errorUnknown}
+      <Banner
+        tone="danger"
+        title={errorTitle ?? labels.errorTitle}
+        action={
+          refetch ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              loading={query.isFetching}
+              disabled={query.isFetching}
+              onClick={() => {
+                void refetch();
+              }}
+            >
+              {labels.retry}
+            </Button>
+          ) : null
+        }
+      >
+        {resolveDataStateError(query.error, labels.translateError, labels.errorUnknown)}
       </Banner>
     );
   }

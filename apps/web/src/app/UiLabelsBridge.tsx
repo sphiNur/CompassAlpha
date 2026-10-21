@@ -36,6 +36,7 @@ import type { ReactNode } from 'react';
 import { UiLabelsProvider } from '@compass/ui';
 import type { UiLabels } from '@compass/ui';
 import { useI18n } from '../hooks/useI18n';
+import { errorTextKey } from '../lib/errorText';
 
 export function UiLabelsBridge({ children }: { children: ReactNode }) {
   const i18n = useI18n();
@@ -72,6 +73,13 @@ export function UiLabelsBridge({ children }: { children: ReactNode }) {
       },
       get emptyNothingYet() {
         return i18n.t('common.empty');
+      },
+      // 2026-10-21 FE-10: DataState showed `error.message` raw — usually an
+      // untranslated server key. Same mapping as errToast's toasts.
+      translateError: (message) =>
+        i18n.t(errorTextKey(message, 'common.errorUnknown') as Parameters<typeof i18n.t>[0]),
+      get retry() {
+        return i18n.t('common.retry');
       },
       get photoLabel() {
         return i18n.t('photo.label');

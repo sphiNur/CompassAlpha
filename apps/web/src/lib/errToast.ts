@@ -33,9 +33,7 @@ import type { ReactNode } from 'react';
 import { useToast } from '@compass/ui';
 import { useI18n } from '../hooks/useI18n';
 import { haptic } from '../hooks/useTelegram';
-
-/** Regex matching server-emitted i18n keys (e.g. `order.errors.cannotApprove`). */
-const I18N_KEY_RE = /^[a-z]+\.errors?\./;
+import { I18N_KEY_RE } from './errorText';
 
 interface ErrLike {
   message?: string;
