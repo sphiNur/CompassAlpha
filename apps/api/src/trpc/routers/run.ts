@@ -692,19 +692,6 @@ export const runRouter = router({
     return ctx.withOrg(async (tx) => {
       const today = todayStr(ctx);
       const date = input.date ?? today;
-      // 2026-10-21 CA-03: the purchaser may book the run under an earlier
-      // date (yesterday's orders bought this morning), but never a date
-      // the calendar doesn't have (2026-02-31 would roll into March) or
-      // one in the future (org timezone).
-      {
-        const parsed = new Date(`${date}T00:00:00Z`);
-        if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'run.errors.invalidRunDate' });
-        }
-        if (date > today) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'run.errors.runDateInFuture' });
-        }
-      }
 
       /**
        * One non-terminal run per org (migration 0035, 2026-07-26).
@@ -774,6 +761,21 @@ export const runRouter = router({
         sessions.map((session) => session.storeId),
         allowedStoreIds,
       );
+
+      // 2026-10-21 CA-03: the purchaser may book the run under an earlier
+      // date (yesterday's orders bought this morning), but never a date
+      // the calendar doesn't have (2026-02-31 would roll into March) or
+      // one in the future (org timezone). Checked after the store-scope
+      // gate so an out-of-scope request reports the permission problem.
+      {
+        const parsed = new Date(`${date}T00:00:00Z`);
+        if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'run.errors.invalidRunDate' });
+        }
+        if (date > today) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'run.errors.runDateInFuture' });
+        }
+      }
 
       // Aggregate items across sessions.
       const items = await tx.query.orderItemsV.findMany({

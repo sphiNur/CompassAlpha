@@ -123,6 +123,32 @@ beforeAll(async () => {
     { memberId: staffMember!.id, storeId: store!.id, assignedBy: staffUser!.id },
     { memberId: mgrMember!.id, storeId: store!.id, assignedBy: mgrUser!.id },
   ]);
+  // The order router resolves per-store permissions from persisted role
+  // bindings, not the flat SessionContext set — bind both members.
+  const staffPerms = ['order.draft', 'order.submit'];
+  const mgrPerms = ['order.draft', 'order.submit', 'order.claim', 'order.approve'];
+  await db
+    .insert(s.permissions)
+    .values(mgrPerms.map((key) => ({ key, description: key })))
+    .onConflictDoNothing();
+  const [staffRole] = await db
+    .insert(s.roles)
+    .values({ orgId: org!.id, slug: `staff-${slug}`, name: 'Staff', rank: 20 })
+    .returning();
+  const [mgrRole] = await db
+    .insert(s.roles)
+    .values({ orgId: org!.id, slug: `manager-${slug}`, name: 'Manager', rank: 60 })
+    .returning();
+  await db
+    .insert(s.rolePermissions)
+    .values([
+      ...staffPerms.map((permissionKey) => ({ roleId: staffRole!.id, permissionKey })),
+      ...mgrPerms.map((permissionKey) => ({ roleId: mgrRole!.id, permissionKey })),
+    ]);
+  await db.insert(s.memberRoleBindings).values([
+    { memberId: staffMember!.id, roleId: staffRole!.id, scopeType: 'store', scopeId: store!.id },
+    { memberId: mgrMember!.id, roleId: mgrRole!.id, scopeType: 'store', scopeId: store!.id },
+  ]);
   const [sku] = await db
     .insert(s.skus)
     .values({

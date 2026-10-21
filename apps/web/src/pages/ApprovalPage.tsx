@@ -434,13 +434,17 @@ export function ApprovalPage() {
                         (commands.ts Approve/Reject only conflict when someone
                         ELSE holds the claim). Claim stays for editing
                         quantities, and another approver's claim still hides
-                        these buttons. */}
+                        these buttons. While a claim or approval for this row
+                        is in flight the other actions wait, so a quick
+                        Claim → Approve can't race two writes onto the same
+                        order stream (the loser would fail with staleSeq). */}
                     {tab === 'pending' && !row.claimedByMemberId ? (
                       <>
                         <Button
                           size="sm"
                           variant="primary"
                           loading={approve.isPending && approve.variables?.sessionId === row.id}
+                          disabled={claim.isPending && claim.variables?.sessionId === row.id}
                           onClick={() => approve.mutate({ sessionId: row.id, expectedSeq: row.lastSeq })}
                         >
                           {i18n.t('approval.approve')}
@@ -448,6 +452,10 @@ export function ApprovalPage() {
                         <Button
                           size="sm"
                           variant="danger"
+                          disabled={
+                            (claim.isPending && claim.variables?.sessionId === row.id) ||
+                            (approve.isPending && approve.variables?.sessionId === row.id)
+                          }
                           onClick={() => {
                             setRejectFor(row.id);
                             setRejectSeq(row.lastSeq);
@@ -459,6 +467,7 @@ export function ApprovalPage() {
                           size="sm"
                           variant="pearl"
                           loading={claim.isPending && claim.variables?.sessionId === row.id}
+                          disabled={approve.isPending && approve.variables?.sessionId === row.id}
                           onClick={() => {
                             claim.mutate({ sessionId: row.id });
                             setActiveSessionId(row.id);
