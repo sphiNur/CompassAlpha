@@ -119,7 +119,21 @@ export function assertWriteAccess(state: SubscriptionState): void {
   }
 }
 
+/**
+ * 2026-10-21 audit CA-18: serialise limit checks per org. Every caller
+ * counts and then inserts/activates inside one transaction; without a
+ * lock two concurrent invites (or a restore racing an invite) both read
+ * "one seat left" and both commit. The xact lock is released with the
+ * caller's transaction, so the count and the write it guards are atomic.
+ * The key is distinct from the bare-orgId lock memberSetStatus uses for
+ * the last-admin guard.
+ */
+export async function lockOrgLimits(db: DB, orgId: string): Promise<void> {
+  await db.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${orgId} || ':limits'))`);
+}
+
 export async function assertCanAddStore(db: DB, orgId: string): Promise<void> {
+  await lockOrgLimits(db, orgId);
   const state = await readSubscriptionState(db, orgId);
   assertWriteAccess(state);
   if (state.limits.stores != null && state.usage.stores >= state.limits.stores) {
@@ -131,6 +145,7 @@ export async function assertCanAddStore(db: DB, orgId: string): Promise<void> {
 }
 
 export async function assertCanAddMember(db: DB, orgId: string): Promise<void> {
+  await lockOrgLimits(db, orgId);
   const state = await readSubscriptionState(db, orgId);
   assertWriteAccess(state);
   if (state.limits.members != null && state.usage.members >= state.limits.members) {

@@ -22,6 +22,7 @@ type PlatformOrg = {
   orgId: string;
   name: string;
   slug: string;
+  note: string | null;
   subscription: {
     planCode: string;
     planName: string;
@@ -126,7 +127,7 @@ function SubscriptionSheet({
     setCurrentPeriodEnd(dateValue(sub.currentPeriodEnd));
     setGraceEndsAt(dateValue(sub.graceEndsAt));
     setCancelAtPeriodEnd(sub.cancelAtPeriodEnd);
-    setNote('');
+    setNote(target.note ?? '');
   }, [target]);
 
   const update = trpc.platform.updateSubscription.useMutation({
@@ -152,15 +153,22 @@ function SubscriptionSheet({
           disabled={!target || !planCode}
           onClick={() => {
             if (!target) return;
+            // 2026-10-21 audit CA-39 (A-13): send only what the operator
+            // changed. Omitted fields keep their stored value server-side,
+            // so an untouched date keeps its exact time and
+            // currentPeriodStart / the note are never cleared implicitly.
+            const sub = target.subscription;
+            const changed = (value: string, initial: string | null) =>
+              value === dateValue(initial) ? undefined : value || null;
             update.mutate({
               orgId: target.orgId,
               planCode,
               status,
-              trialEndsAt: trialEndsAt || null,
-              currentPeriodEnd: currentPeriodEnd || null,
-              graceEndsAt: graceEndsAt || null,
+              trialEndsAt: changed(trialEndsAt, sub.trialEndsAt),
+              currentPeriodEnd: changed(currentPeriodEnd, sub.currentPeriodEnd),
+              graceEndsAt: changed(graceEndsAt, sub.graceEndsAt),
               cancelAtPeriodEnd,
-              note: note || null,
+              note: note.trim() === (target.note ?? '') ? undefined : note.trim() || null,
             });
           }}
         >

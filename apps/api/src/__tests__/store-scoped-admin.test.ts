@@ -2804,3 +2804,207 @@ describe('role binding scope is constrained by the database', () => {
     await bind('store', store.id);
   });
 });
+
+// ---------- 2026-10-21 audit: CA-07, CA-08, A-11, CA-39 ----------------
+
+describe('2026-10-21 audit admin gates', () => {
+  const maintenance = () => getDb(undefined, { system: 'maintenance' });
+
+  async function managerOf(storeId: string) {
+    const user = await makeUser('Audit-Manager');
+    const memberId = await makeMember(user.id);
+    await bindRole(memberId, fix!.managerRoleId, { type: 'store', storeId });
+    await maintenance()
+      .insert(s.memberStoreAssignments)
+      .values({ memberId, storeId })
+      .onConflictDoNothing();
+    const caller = appRouter.createCaller(
+      buildCtx(maintenance(), await sessionFor(memberId, user.id)),
+    );
+    return { caller, memberId, userId: user.id };
+  }
+
+  async function memberIn(storeIds: string[], roleId = fix!.staffRoleId) {
+    const user = await makeUser('Audit-Target');
+    const memberId = await makeMember(user.id);
+    for (const storeId of storeIds) {
+      await bindRole(memberId, roleId, { type: 'store', storeId });
+      await maintenance()
+        .insert(s.memberStoreAssignments)
+        .values({ memberId, storeId })
+        .onConflictDoNothing();
+    }
+    return { memberId, userId: user.id };
+  }
+
+  async function codeOf(run: () => Promise<unknown>): Promise<string | undefined> {
+    try {
+      await run();
+    } catch (err) {
+      await settleRolledBackTestTransaction();
+      return (err as { code?: string }).code;
+    }
+    return undefined;
+  }
+
+  async function nameOf(userId: string): Promise<string | undefined> {
+    const row = await maintenance().query.users.findFirst({
+      where: (u, { eq: eq2 }) => eq2(u.id, userId),
+    });
+    return row?.displayName;
+  }
+
+  async function auditActions(resourceId: string): Promise<string[]> {
+    const rows = await maintenance().query.policyDecisions.findMany({
+      where: (pd, { and: and2, eq: eq2 }) =>
+        and2(eq2(pd.orgId, fix!.orgId), eq2(pd.resourceId, resourceId)),
+    });
+    return rows.map((r) => r.action);
+  }
+
+  test.skipIf(!SHOULD_RUN)('CA-07 store manager cannot rename a super admin', async () => {
+    const store = await makeStore(`Ren-${Math.random()}`);
+    const { caller } = await managerOf(store.id);
+    const before = await nameOf(fix!.superAdminUserId);
+    expect(
+      await codeOf(() =>
+        caller.admin.memberSetDisplayName({
+          memberId: fix!.superAdminMemberId,
+          displayName: 'Hijacked',
+        }),
+      ),
+    ).toBe('FORBIDDEN');
+    expect(await nameOf(fix!.superAdminUserId)).toBe(before);
+  });
+
+  test.skipIf(!SHOULD_RUN)('CA-07 store manager cannot rename staff of another store', async () => {
+    const storeA = await makeStore(`RenA-${Math.random()}`);
+    const storeB = await makeStore(`RenB-${Math.random()}`);
+    const { caller } = await managerOf(storeA.id);
+    const target = await memberIn([storeB.id]);
+    expect(
+      await codeOf(() =>
+        caller.admin.memberSetDisplayName({ memberId: target.memberId, displayName: 'X' }),
+      ),
+    ).toBe('FORBIDDEN');
+  });
+
+  test.skipIf(!SHOULD_RUN)(
+    'CA-07 store manager renames own staff; org admin renames anyone; both audited',
+    async () => {
+      const store = await makeStore(`RenOk-${Math.random()}`);
+      const { caller } = await managerOf(store.id);
+      const target = await memberIn([store.id]);
+      await caller.admin.memberSetDisplayName({
+        memberId: target.memberId,
+        displayName: 'Renamed By Manager',
+      });
+      expect(await nameOf(target.userId)).toBe('Renamed By Manager');
+      const admin = appRouter.createCaller(fix!.superAdminCtx);
+      await admin.admin.memberSetDisplayName({
+        memberId: target.memberId,
+        displayName: 'Renamed By Admin',
+      });
+      expect(await nameOf(target.userId)).toBe('Renamed By Admin');
+      const actions = await auditActions(target.memberId);
+      expect(actions.filter((a) => a === 'admin.member.setDisplayName').length).toBe(2);
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)('CA-08 store manager cannot pause their store', async () => {
+    const store = await makeStore(`Pause-${Math.random()}`);
+    const { caller } = await managerOf(store.id);
+    expect(
+      await codeOf(() => caller.admin.storeUpdate({ storeId: store.id, isActive: false })),
+    ).toBe('FORBIDDEN');
+    const row = await maintenance().query.stores.findFirst({
+      where: (st, { eq: eq2 }) => eq2(st.id, store.id),
+    });
+    expect(row?.isActive).toBe(true);
+    // A plain rename is still allowed for the store's manager.
+    await caller.admin.storeUpdate({ storeId: store.id, name: `${store.name}-m` });
+  });
+
+  test.skipIf(!SHOULD_RUN)('CA-08 org admin can reactivate a paused / archived store', async () => {
+    const store = await makeStore(`Restore-${Math.random()}`);
+    const admin = appRouter.createCaller(fix!.superAdminCtx);
+    await admin.admin.storeDelete({ storeId: store.id });
+    await admin.admin.storeUpdate({ storeId: store.id, isActive: true });
+    const row = await maintenance().query.stores.findFirst({
+      where: (st, { eq: eq2 }) => eq2(st.id, store.id),
+    });
+    expect(row?.isActive).toBe(true);
+    expect(row?.deletedAt).toBeNull();
+  });
+
+  test.skipIf(!SHOULD_RUN)('A-11 manager cannot unassign a peer manager', async () => {
+    const storeA = await makeStore(`UnA-${Math.random()}`);
+    const storeB = await makeStore(`UnB-${Math.random()}`);
+    const { caller } = await managerOf(storeA.id);
+    const peer = await memberIn([storeA.id, storeB.id], fix!.managerRoleId);
+    expect(
+      await codeOf(() =>
+        caller.admin.memberUnassignStore({ memberId: peer.memberId, storeId: storeA.id }),
+      ),
+    ).toBe('FORBIDDEN');
+    const still = await maintenance().query.memberStoreAssignments.findFirst({
+      where: (msa, { and: and2, eq: eq2 }) =>
+        and2(eq2(msa.memberId, peer.memberId), eq2(msa.storeId, storeA.id)),
+    });
+    expect(still).toBeTruthy();
+  });
+
+  test.skipIf(!SHOULD_RUN)('CA-39 grant / revoke / assign / unassign are audited', async () => {
+    const storeA = await makeStore(`AudA-${Math.random()}`);
+    const storeB = await makeStore(`AudB-${Math.random()}`);
+    const target = await memberIn([storeA.id]);
+    const admin = appRouter.createCaller(fix!.superAdminCtx);
+    const { bindingId } = await admin.admin.grantRole({
+      userId: target.userId,
+      roleSlug: 'staff',
+      scopeType: 'store',
+      scopeId: storeB.id,
+    });
+    await admin.admin.revokeRole({ bindingId });
+    await admin.admin.memberAssignStore({ memberId: target.memberId, storeId: storeB.id });
+    await admin.admin.memberUnassignStore({ memberId: target.memberId, storeId: storeB.id });
+    const memberActions = await auditActions(target.memberId);
+    expect(memberActions).toContain('admin.role.grant');
+    expect(memberActions).toContain('admin.memberAssignStore');
+    expect(memberActions).toContain('admin.memberUnassignStore');
+    expect(await auditActions(bindingId)).toContain('admin.role.revoke');
+  });
+
+  test.skipIf(!SHOULD_RUN)('A-23 grantRole refuses a past expiresAt', async () => {
+    const store = await makeStore(`Exp-${Math.random()}`);
+    const target = await memberIn([store.id]);
+    const admin = appRouter.createCaller(fix!.superAdminCtx);
+    expect(
+      await codeOf(() =>
+        admin.admin.grantRole({
+          userId: target.userId,
+          roleSlug: 'manager',
+          scopeType: 'store',
+          scopeId: store.id,
+          expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        }),
+      ),
+    ).toBe('BAD_REQUEST');
+  });
+
+  test.skipIf(!SHOULD_RUN)('CA-40 duplicate category slug is a CONFLICT', async () => {
+    const admin = appRouter.createCaller(fix!.superAdminCtx);
+    const slug = `dup-${Math.random().toString(36).slice(2, 8)}`;
+    const names = { uz: 'a', ru: 'a', en: 'a', zh: 'a' };
+    await admin.admin.categoryCreate({ slug, names });
+    let caught: { code?: string; message?: string } | undefined;
+    try {
+      await admin.admin.categoryCreate({ slug, names });
+    } catch (err) {
+      caught = err as { code?: string; message?: string };
+      await settleRolledBackTestTransaction();
+    }
+    expect(caught?.code).toBe('CONFLICT');
+    expect(caught?.message).toBe('admin.errors.slugTaken');
+  });
+});

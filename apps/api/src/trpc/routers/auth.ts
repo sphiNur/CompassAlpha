@@ -949,6 +949,9 @@ export const authRouter = router({
           .returning();
         member = createdMember;
       } else if (member.status !== 'active') {
+        // 2026-10-21 audit CA-18: activating an inactive member takes a
+        // seat exactly like creating one.
+        await assertCanAddMember(tx, invite.orgId);
         const [reactivated] = await tx
           .update(s.members)
           .set({ status: 'active', updatedAt: new Date() })

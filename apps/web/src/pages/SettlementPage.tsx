@@ -36,6 +36,7 @@ import { useI18n } from '../hooks/useI18n';
 import { formatMoney, currencyOf } from '../lib/format';
 import { useAuthStore } from '../stores/authStore';
 import { registerTabChangeGuard } from '../stores/navStore';
+import { StoreSalesPanel } from '../components/sales/StoreSalesPanel';
 
 type MoneyField =
   | 'onlineRevenue'
@@ -372,6 +373,10 @@ export function SettlementPage() {
   const [newWagePickerFor, setNewWagePickerFor] = useState<string | null>(null);
   const [wageRoleFilter, setWageRoleFilter] = useState('');
   const [wageSearch, setWageSearch] = useState('');
+  // 2026-10-21 CA-09: sales entry block (see render). The flat session
+  // set is only a hint; sales.record enforces the store-level override.
+  const canRecordSales = session?.permissions.includes('sales.record') ?? false;
+  const [salesOpen, setSalesOpen] = useState(false);
   const utils = trpc.useUtils();
 
   const businessDateQuery = trpc.settlement.businessDate.useQuery(
@@ -965,6 +970,32 @@ export function SettlementPage() {
       <div className="flex flex-col gap-3 px-4 pt-3">
         {pageHeading}
         {storeSelector}
+
+        {canRecordSales ? (
+          // 2026-10-21 CA-09: cashiers only get this tab, so sales entry
+          // lives here too. Self-contained (own state + mutation, keyed by
+          // store so a half-picked dish never carries over); it never
+          // touches `draft`, so the dirty-form guards and MainButton save
+          // keep tracking the settlement alone. Collapsed by default so
+          // the (up to 200-row) list doesn't push the close form away and
+          // its queries only run once opened.
+          <section className="flex flex-col gap-2">
+            <button
+              type="button"
+              className="flex w-full items-center justify-between rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2.5 text-left ring-hairline"
+              aria-expanded={salesOpen}
+              onClick={() => setSalesOpen((open) => !open)}
+            >
+              <span className="text-old-body font-semibold">{i18n.t('sales.list.title')}</span>
+              <span aria-hidden className="text-[var(--c-fg-muted)]">
+                {salesOpen ? '▾' : '▸'}
+              </span>
+            </button>
+            {salesOpen ? (
+              <StoreSalesPanel key={currentStoreId} storeId={currentStoreId} className="" />
+            ) : null}
+          </section>
+        ) : null}
 
         <Field
           label={i18n.t('settlement.date.label')}

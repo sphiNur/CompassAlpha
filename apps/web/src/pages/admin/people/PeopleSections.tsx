@@ -611,7 +611,8 @@ export function PeopleSection({
                 {i18n.t('admin.action.removeFromStore')}
               </Button>
             ) : null}
-            {!memberMenuFor.isSelf ? (
+            {/* 2026-10-21 audit CA-16: memberRemove is org.admin only. */}
+            {!memberMenuFor.isSelf && isGlobalAdminPeople ? (
               <Button
                 block
                 variant="danger"
@@ -714,15 +715,9 @@ export function PermissionsSection({ isSuperAdmin }: { isSuperAdmin: boolean }) 
   // Per-store managers (post-B1 with users.manage) shouldn't see the
   // "+ New role" button — server-side rank gate would block them
   // anyway, but a button that always errors is bad UX.
-  const sessionStores = session?.stores ?? [];
-  const adminStoreIds = useMemo(
-    () => new Set(session?.adminStoreIds ?? []),
-    [session?.adminStoreIds],
-  );
-  const isGlobalAdmin = useMemo(() => {
-    if (sessionStores.length === 0) return adminStoreIds.size > 0;
-    return sessionStores.every((s) => adminStoreIds.has(s.id));
-  }, [sessionStores, adminStoreIds]);
+  // 2026-10-21 audit CA-16 (A-10): "admin of every store in my session"
+  // was true for a single-store manager. Gate on the explicit marker.
+  const isGlobalAdmin = session?.permissions.includes('org.admin') ?? false;
 
   return (
     <div className="px-4 py-3">
@@ -791,7 +786,10 @@ export function PermissionsSection({ isSuperAdmin }: { isSuperAdmin: boolean }) 
         open={!!drilldownSlug}
         roleSlug={drilldownSlug}
         onClose={() => setDrilldownSlug(null)}
-        canEdit={isSuperAdmin}
+        // 2026-10-21 audit CA-16: the server lets org admins edit / delete
+        // roles ranked below them (the sheet applies the rank gate); this
+        // used to be super_admin only.
+        canEdit={isSuperAdmin || isGlobalAdmin}
         myMaxRank={myMaxRank}
       />
       <RoleCreateSheet
@@ -1452,11 +1450,9 @@ function ManualInviteSheet({
     () => new Set(session?.adminStoreIds ?? []),
     [session?.adminStoreIds],
   );
-  const sessionStores = session?.stores ?? [];
-  const isGlobalAdmin = useMemo(() => {
-    if (sessionStores.length === 0) return adminStoreIds.size > 0;
-    return sessionStores.every((s) => adminStoreIds.has(s.id));
-  }, [sessionStores, adminStoreIds]);
+  // 2026-10-21 audit CA-16 (A-10): explicit org.admin marker, not the
+  // "admin of every visible store" heuristic.
+  const isGlobalAdmin = session?.permissions.includes('org.admin') ?? false;
 
   const sortedRoles = useMemo(
     () =>
@@ -1648,11 +1644,8 @@ function ManageMemberSheet({
   // store managers (who post-B1 have users.manage), the unassign +
   // reassign workflow on the checkbox grid is enough; the dedicated
   // Transfer wizard is an org-wide-write surface they shouldn't reach.
-  const sessionStores = session?.stores ?? [];
-  const isGlobalAdmin = useMemo(() => {
-    if (sessionStores.length === 0) return adminStoreIds.size > 0;
-    return sessionStores.every((s) => adminStoreIds.has(s.id));
-  }, [sessionStores, adminStoreIds]);
+  // 2026-10-21 audit CA-16 (A-10): explicit org.admin marker.
+  const isGlobalAdmin = session?.permissions.includes('org.admin') ?? false;
   const [name, setName] = useState(target?.displayName ?? '');
   // Refresh local name field when target changes.
   useEffect(() => {
@@ -1683,6 +1676,12 @@ function ManageMemberSheet({
     () => new Set((assignmentsQuery.data ?? []).map((r) => r.storeId)),
     [assignmentsQuery.data],
   );
+  // 2026-10-21 audit CA-07: renaming changes the person's global name,
+  // so the server requires org.admin or authority over every store the
+  // member is in (plus a higher rank there, checked server-side).
+  const canRename =
+    isGlobalAdmin ||
+    (assignedIds.size > 0 && [...assignedIds].every((id) => adminStoreIds.has(id)));
 
   // D2 (2026-05-06): transfer wizard state. fromStoreId is set when
   // the operator taps "Transfer..." on a particular row. The sheet
@@ -1708,12 +1707,13 @@ function ManageMemberSheet({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 maxLength={200}
+                disabled={!canRename}
                 placeholder="display name"
               />
               <Button
                 size="sm"
                 loading={renameMut.isPending}
-                disabled={!name.trim() || name.trim() === target.displayName}
+                disabled={!canRename || !name.trim() || name.trim() === target.displayName}
                 onClick={() =>
                   renameMut.mutate({ memberId: target.memberId, displayName: name.trim() })
                 }
@@ -2383,14 +2383,11 @@ function GrantRoleSheet({
     [sessionStores, adminStoreIds],
   );
 
-  // Whether the actor can grant a 'global' (org-tier) binding. Mirrors
-  // the server: only true if the actor is admin EVERYWHERE (their
-  // adminStoreIds covers every active store the session sees). For a
-  // store-scoped admin, adminStoreIds is a subset, so this is false.
-  const canGrantGlobal = useMemo(() => {
-    if (sessionStores.length === 0) return adminStoreIds.size > 0; // edge: org-admin without stores
-    return sessionStores.every((s) => adminStoreIds.has(s.id));
-  }, [sessionStores, adminStoreIds]);
+  // Whether the actor can grant a 'global' (org-tier) binding.
+  // 2026-10-21 audit CA-16 (A-10): the server requires org.admin for a
+  // global binding; the old "admin of every visible store" test was true
+  // for a single-store manager.
+  const canGrantGlobal = session?.permissions.includes('org.admin') ?? false;
 
   // Effective rank in the chosen scope.
   //   global → myGlobalMaxRank (the actor's overall max)
