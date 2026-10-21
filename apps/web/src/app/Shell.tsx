@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ComponentType, ReactNode, SVGProps } from 'react';
 import {
   Banner,
@@ -58,6 +58,7 @@ import {
   type Tab,
 } from '../stores/navStore';
 import { resolveDeepLinkTab, stripDeepLinkPath, tabFromDeepLinkPath } from '../lib/deepLink';
+import { publishMainButtonInset } from '../lib/mainButtonInset';
 import { useI18n } from '../hooks/useI18n';
 import {
   isInTelegram,
@@ -657,10 +658,33 @@ function PageMainButton() {
     tg.MainButton.hide();
   }, [state?.visible]);
 
+  // 2026-10-21 FE-05: publish this bar's height as --app-main-btn-h so the
+  // toast stack (anchored above the nav) clears it instead of covering it.
+  const barRef = useRef<HTMLDivElement>(null);
+  const shown = Boolean(state?.visible);
+  useLayoutEffect(() => {
+    const el = barRef.current;
+    if (!shown || !el) {
+      publishMainButtonInset(0);
+      return;
+    }
+    publishMainButtonInset(el.offsetHeight);
+    const ro =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => publishMainButtonInset(el.offsetHeight))
+        : null;
+    ro?.observe(el);
+    return () => {
+      ro?.disconnect();
+      publishMainButtonInset(0);
+    };
+  }, [shown]);
+
   if (!state || !state.visible) return null;
   const interactable = state.active && !busy;
   return (
     <div
+      ref={barRef}
       className="shrink-0 border-t border-[var(--c-divider)] bg-[var(--c-surface)]"
       style={{
         // Match the chrome horizontal pad so the button doesn't sit

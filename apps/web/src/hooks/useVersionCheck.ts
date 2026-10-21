@@ -1,7 +1,10 @@
 /**
  * Polls /health/version and compares the running build's id with the
  * server's. On mismatch (server has shipped a new build) it shows a
- * prompt that stays until tapped, and tapping it reloads.
+ * prompt with explicit "Reload" / "Later" buttons that stays until one
+ * is tapped. 2026-10-21 FE-05: the whole toast used to be the reload
+ * button and sat on top of the page's Submit/Save, so a tap meant for
+ * Save reloaded the app; now only the Reload button reloads.
  *
  * It does NOT reload a visible app on its own. It used to, 30 seconds
  * after the prompt, whatever the user was doing — so every deploy
@@ -77,10 +80,18 @@ export function useVersionCheck(): void {
         if (!server || server === running || updateWaiting) return;
         updateWaiting = true;
         const { toast: t, i18n: tr } = latest.current;
-        t.show(tr.t('app.update.body'), {
-          title: tr.t('app.update.title'),
+        t.show(tr.t('app.update.title'), {
           ttlMs: 0,
-          onClick: () => reloadApp('update-accepted', running),
+          actions: [
+            // "Later" just dismisses; the hidden-app auto-reload above
+            // still picks the update up when nothing can be lost.
+            { label: tr.t('app.update.later') },
+            {
+              label: tr.t('app.update.reload'),
+              emphasis: 'primary',
+              onClick: () => reloadApp('update-accepted', running),
+            },
+          ],
         });
       } catch {
         // Network errors are fine — we'll try again next interval.

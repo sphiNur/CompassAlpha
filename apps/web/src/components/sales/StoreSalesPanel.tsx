@@ -24,7 +24,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useErrToast } from '../../lib/errToast';
 import { formatMoney, formatQty } from '../../lib/format';
 import { useDateFormat, useI18n, useProductName } from '../../hooks/useI18n';
-import { normalizeVoidReason, summarizeSales } from './salesSummary';
+import { normalizeVoidReason, salesListView, summarizeSales } from './salesSummary';
 
 /** Server-side row cap of `sales.list` (apps/api/src/trpc/routers/sales.ts). */
 export const SALES_LIST_CAP = 200;
@@ -147,6 +147,15 @@ export function StoreSalesPanel({
   const normalizedVoidReason = normalizeVoidReason(voidReason);
 
   const sales = salesQuery.data ?? [];
+  // 2026-10-21 FE-01 / F4-03: an errored list must not read as "0 sales" —
+  // hide the summary and lock record/void until the list is back, so a
+  // cashier can't re-enter sales that already exist.
+  const listView = salesListView({
+    isLoading: salesQuery.isLoading,
+    isError: salesQuery.isError,
+    rowCount: sales.length,
+  });
+  const listErrored = listView === 'error';
 
   // Compute today's headline (revenue + count) for the summary row.
   // 2026-10-21: voided sales don't count (see salesSummary.ts).
@@ -164,45 +173,54 @@ export function StoreSalesPanel({
     <div className={`flex flex-col gap-3 ${className}`}>
       {/* 2026-10-21 CA-09: sales.list returns at most SALES_LIST_CAP rows,
           so on a busy day the summary below undercounts — say so. */}
-      {sales.length >= SALES_LIST_CAP ? (
+      {!listErrored && sales.length >= SALES_LIST_CAP ? (
         <Banner tone="warn" title={i18n.t('sales.list.capReached', { n: SALES_LIST_CAP })} />
       ) : null}
       {/* Today summary tile. */}
-      <div className="grid grid-cols-2 gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
-        <div>
-          <SectionLabel padded={false}>{i18n.t('sales.summary.today')}</SectionLabel>
-          <div className="font-mono text-old-h2 font-semibold tabular-nums">
-            {formatQty(summary.count.toString())}
+      {listErrored ? null : (
+        <div className="grid grid-cols-2 gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
+          <div>
+            <SectionLabel padded={false}>{i18n.t('sales.summary.today')}</SectionLabel>
+            <div className="font-mono text-old-h2 font-semibold tabular-nums">
+              {formatQty(summary.count.toString())}
+            </div>
+            <div className="text-old-label text-[var(--c-fg-muted)]">
+              {i18n.t('sales.summary.servings')}
+            </div>
           </div>
-          <div className="text-old-label text-[var(--c-fg-muted)]">
-            {i18n.t('sales.summary.servings')}
+          <div>
+            <SectionLabel padded={false}>{i18n.t('sales.summary.revenue')}</SectionLabel>
+            <div className="font-mono text-old-h2 font-semibold tabular-nums">
+              {formatMoney(summary.revenue)}
+            </div>
+            <div className="text-old-label text-[var(--c-fg-muted)]">
+              {session?.member.currency ?? 'UZS'}
+            </div>
           </div>
         </div>
-        <div>
-          <SectionLabel padded={false}>{i18n.t('sales.summary.revenue')}</SectionLabel>
-          <div className="font-mono text-old-h2 font-semibold tabular-nums">
-            {formatMoney(summary.revenue)}
-          </div>
-          <div className="text-old-label text-[var(--c-fg-muted)]">
-            {session?.member.currency ?? 'UZS'}
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* Record sale form. */}
       {canRecord ? (
         <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
           {/* M2.1: SectionLabel (was ad-hoc eyebrow). */}
           <SectionLabel className="px-0 py-0">{i18n.t('sales.form.recordTitle')}</SectionLabel>
-          {dishOptions.length === 0 ? (
+          {/* 2026-10-21 F4-12: while dishes load, don't tell the cashier to
+              go create dishes in the Catalog. */}
+          {dishesQuery.isLoading ? (
+            <div className="py-2 text-center">
+              <Spinner size={16} />
+            </div>
+          ) : dishOptions.length === 0 ? (
             <p className="text-old-label text-[var(--c-fg-muted)]">
               {i18n.t('sales.form.noDishesYet')}
             </p>
           ) : (
             <>
               <select
-                className="h-10 w-full rounded-[var(--r-pill)] bg-[var(--c-surface)] px-3 text-old-body ring-hairline"
+                className="h-10 w-full rounded-[var(--r-pill)] bg-[var(--c-surface)] px-3 text-old-body ring-hairline disabled:opacity-60"
                 value={draftDishId}
+                disabled={listErrored}
                 onChange={(e) => setDraftDishId(e.target.value)}
               >
                 <option value="">{i18n.t('sales.form.pickDish')}</option>
@@ -228,12 +246,13 @@ export function StoreSalesPanel({
                   onChange={(e) => setDraftQty(e.target.value)}
                   aria-label={i18n.t('sales.form.qtyLabel')}
                   className="flex-1"
+                  disabled={listErrored}
                 />
                 <Button
                   loading={record.isPending}
-                  disabled={!draftDishId || Number(draftQty) <= 0}
+                  disabled={listErrored || !draftDishId || Number(draftQty) <= 0}
                   onClick={() => {
-                    if (!draftDishId || Number(draftQty) <= 0) return;
+                    if (listErrored || !draftDishId || Number(draftQty) <= 0) return;
                     record.mutate({
                       storeId,
                       dishId: draftDishId,
@@ -253,11 +272,26 @@ export function StoreSalesPanel({
       <div>
         {/* M2.1: SectionLabel (was ad-hoc eyebrow). */}
         <SectionLabel className="mb-2 px-0">{i18n.t('sales.list.title')}</SectionLabel>
-        {salesQuery.isLoading ? (
+        {listView === 'loading' ? (
           <div className="py-4 text-center">
             <Spinner size={16} />
           </div>
-        ) : sales.length === 0 ? (
+        ) : listView === 'error' ? (
+          <Banner
+            tone="danger"
+            title={i18n.t('common.error')}
+            action={
+              <Button
+                variant="pearl"
+                size="sm"
+                loading={salesQuery.isFetching}
+                onClick={() => void salesQuery.refetch()}
+              >
+                {i18n.t('common.retry')}
+              </Button>
+            }
+          />
+        ) : listView === 'empty' ? (
           <EmptyState
             title={i18n.t('sales.empty.title')}
             description={i18n.t('sales.empty.description')}
@@ -342,9 +376,9 @@ export function StoreSalesPanel({
               block
               variant="danger"
               loading={voidSale.isPending}
-              disabled={!normalizedVoidReason}
+              disabled={listErrored || !normalizedVoidReason}
               onClick={() => {
-                if (!voidTarget || !normalizedVoidReason) return;
+                if (listErrored || !voidTarget || !normalizedVoidReason) return;
                 voidSale.mutate({ saleId: voidTarget.saleId, reason: normalizedVoidReason });
               }}
             >

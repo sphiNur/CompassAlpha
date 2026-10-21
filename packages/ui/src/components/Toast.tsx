@@ -12,6 +12,19 @@ import { cn } from '../cn.js';
 
 export type ToastTone = 'info' | 'success' | 'warn' | 'danger';
 
+/**
+ * 2026-10-21 FE-05: an explicit button inside the toast. A toast with
+ * actions is NOT itself tappable — only its buttons are — so a sticky
+ * prompt (e.g. "new version → reload") can't be hit by a stray tap meant
+ * for the page underneath. Every action dismisses the toast after running.
+ */
+export interface ToastAction {
+  label: ReactNode;
+  onClick?: () => void;
+  /** 'primary' = filled; default 'secondary'. */
+  emphasis?: 'primary' | 'secondary';
+}
+
 interface ToastConfig {
   id: string;
   tone: ToastTone;
@@ -19,6 +32,7 @@ interface ToastConfig {
   message: ReactNode;
   ttlMs?: number;
   onClick?: () => void;
+  actions?: ToastAction[];
 }
 
 interface ToastContextValue {
@@ -29,8 +43,11 @@ interface ToastContextValue {
       title?: ReactNode;
       /** 0 keeps the toast up until it is tapped or dismissed. */
       ttlMs?: number;
-      /** Runs when the toast is tapped, before it is dismissed. */
+      /** Runs when the toast is tapped, before it is dismissed.
+       *  Ignored when `actions` is given. */
       onClick?: () => void;
+      /** Explicit buttons; the toast body then stops being a tap target. */
+      actions?: ToastAction[];
     },
   ) => string;
   success: (message: ReactNode, title?: ReactNode) => string;
@@ -88,6 +105,7 @@ export function ToastProvider({
         message,
         ttlMs: opts.ttlMs ?? defaultTtlMs,
         onClick: opts.onClick,
+        actions: opts.actions?.length ? opts.actions : undefined,
       };
       setToasts((prev) => {
         const next = [...prev, config];
@@ -140,8 +158,11 @@ export function ToastProvider({
           // so a top-anchored toast got cropped. Anchoring at the bottom
           // also matches iOS toast convention.
           position: 'fixed',
+          // 2026-10-21 FE-05: + the in-page main button's height (published
+          // by the host Shell as --app-main-btn-h, 0 when none) so toasts
+          // stack ABOVE "Submit / Save" instead of on top of it.
           bottom:
-            'calc(var(--app-safe-bottom, 0px) + var(--app-nav-h, 64px) + 12px)',
+            'calc(var(--app-safe-bottom, 0px) + var(--app-nav-h, 64px) + var(--app-main-btn-h, 0px) + 12px)',
           left: 0,
           right: 0,
           display: 'flex',
@@ -154,26 +175,67 @@ export function ToastProvider({
           paddingRight: 'max(12px, var(--app-safe-right, 0px))',
         }}
       >
-        {toasts.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => {
-              t.onClick?.();
-              dismiss(t.id);
-            }}
-            className={cn(
-              'press min-w-[200px] max-w-[92vw] rounded-[var(--r-pill)] px-4 py-2.5 text-left',
-              TONE[t.tone],
-            )}
-            style={{ pointerEvents: 'auto' }}
-          >
-            {t.title ? (
-              <div className="text-old-body-sm font-semibold leading-tight">{t.title}</div>
-            ) : null}
-            <div className="text-old-body-sm leading-snug">{t.message}</div>
-          </button>
-        ))}
+        {toasts.map((t) =>
+          t.actions ? (
+            <div
+              key={t.id}
+              role="status"
+              className={cn(
+                'flex min-w-[200px] max-w-[92vw] items-center gap-3 rounded-[var(--r-card)] px-4 py-2.5 text-left',
+                TONE[t.tone],
+              )}
+              style={{ pointerEvents: 'auto' }}
+            >
+              <div className="min-w-0 flex-1">
+                {t.title ? (
+                  <div className="text-old-body-sm font-semibold leading-tight">{t.title}</div>
+                ) : null}
+                {t.message ? (
+                  <div className="text-old-body-sm leading-snug">{t.message}</div>
+                ) : null}
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {t.actions.map((a, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => {
+                      a.onClick?.();
+                      dismiss(t.id);
+                    }}
+                    className={cn(
+                      'press h-8 rounded-[var(--r-pill)] px-3 text-old-label font-semibold',
+                      a.emphasis === 'primary'
+                        ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
+                        : 'bg-[var(--c-surface-2)] text-[var(--c-fg)] ring-hairline',
+                    )}
+                  >
+                    {a.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => {
+                t.onClick?.();
+                dismiss(t.id);
+              }}
+              className={cn(
+                'press min-w-[200px] max-w-[92vw] rounded-[var(--r-pill)] px-4 py-2.5 text-left',
+                TONE[t.tone],
+              )}
+              style={{ pointerEvents: 'auto' }}
+            >
+              {t.title ? (
+                <div className="text-old-body-sm font-semibold leading-tight">{t.title}</div>
+              ) : null}
+              <div className="text-old-body-sm leading-snug">{t.message}</div>
+            </button>
+          ),
+        )}
       </div>
     </ToastContext.Provider>
   );

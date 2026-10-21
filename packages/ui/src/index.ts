@@ -85,7 +85,7 @@ export type { ConfirmSheetProps } from './components/ConfirmSheet';
 export { PhotoCapture } from './components/PhotoCapture';
 export type { PhotoUploader, PresignedUpload, PhotoCaptureProps } from './components/PhotoCapture';
 export { ToastProvider, useToast } from './components/Toast';
-export type { ToastTone } from './components/Toast';
+export type { ToastAction, ToastTone } from './components/Toast';
 export {
   IconOrder,
   IconApprove,

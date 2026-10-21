@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { normalizeVoidReason, summarizeSales } from '../salesSummary';
+import { normalizeVoidReason, salesListView, summarizeSales } from '../salesSummary';
 
 describe('summarizeSales', () => {
   test('sums servings and priced revenue', () => {
@@ -29,5 +29,21 @@ describe('normalizeVoidReason', () => {
   test('rejects blank and over-long', () => {
     expect(normalizeVoidReason('   ')).toBeNull();
     expect(normalizeVoidReason('x'.repeat(301))).toBeNull();
+  });
+});
+
+describe('salesListView (2026-10-21 FE-01)', () => {
+  test('loading first', () => {
+    expect(salesListView({ isLoading: true, isError: false, rowCount: 0 })).toBe('loading');
+  });
+  test('an error is never shown as empty', () => {
+    expect(salesListView({ isLoading: false, isError: true, rowCount: 0 })).toBe('error');
+  });
+  test('an error wins over stale rows', () => {
+    expect(salesListView({ isLoading: false, isError: true, rowCount: 3 })).toBe('error');
+  });
+  test('empty vs list', () => {
+    expect(salesListView({ isLoading: false, isError: false, rowCount: 0 })).toBe('empty');
+    expect(salesListView({ isLoading: false, isError: false, rowCount: 2 })).toBe('list');
   });
 });

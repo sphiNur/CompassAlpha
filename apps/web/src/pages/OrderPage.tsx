@@ -22,6 +22,7 @@ import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton, haptic } from '../hooks/useTelegram';
 import { frozenOrderDate, useOfflineQueue } from '../hooks/useOfflineQueue';
 import { isLikelyNetworkError } from '../lib/networkError';
+import { sessionLoadState } from './order/sessionLoadState';
 import { useErrToast } from '../lib/errToast';
 import { matchesNameLike, normalizeQuery } from '../lib/searchMatch';
 import {
@@ -749,6 +750,14 @@ export function OrderPage() {
   // The sheet handles its own dismissal via tap-outside / swipe-down.
   const canSubmit =
     sessionStatus === 'draft' || sessionStatus === 'rejected';
+  // 2026-10-21 FE-01: todaySession failed with nothing cached — we do not
+  // know whether this member already submitted, so no catalog, no submit.
+  const sessionLoad = sessionLoadState({
+    isError: sessionQuery.isError,
+    hasData: sessionQuery.data !== undefined,
+    isNetworkError: isLikelyNetworkError(sessionQuery.error),
+  });
+  const sessionBlocked = sessionLoad === 'blocked';
 
   let mainButtonText: string;
   if (submit.isPending) {
@@ -849,8 +858,8 @@ export function OrderPage() {
       }
     },
     {
-      visible: canSubmit && selectedCount > 0,
-      active: selectedCount > 0 && !submit.isPending,
+      visible: canSubmit && selectedCount > 0 && !sessionBlocked,
+      active: selectedCount > 0 && !submit.isPending && !sessionBlocked,
     },
   );
 
@@ -880,6 +889,53 @@ export function OrderPage() {
       </div>
     );
   }
+
+  // 2026-10-21 FE-01: an errored todaySession used to fall through to an
+  // empty, editable catalog (first tap lazily creates a NEW draft), so a
+  // member who already submitted could order twice. Block until it loads.
+  if (sessionBlocked) {
+    return (
+      <div className="flex flex-col px-4 pt-3">
+        <Banner
+          tone="danger"
+          title={i18n.t('common.error')}
+          action={
+            <Button
+              size="sm"
+              variant="pearl"
+              loading={sessionQuery.isFetching}
+              onClick={() => void sessionQuery.refetch()}
+            >
+              {i18n.t('common.retry')}
+            </Button>
+          }
+        >
+          {sessionQuery.error?.message ?? i18n.t('common.errorUnknown')}
+        </Banner>
+      </div>
+    );
+  }
+  // Background refetch failed but cached data is still good: keep the page
+  // working and say so quietly.
+  const staleWarning =
+    sessionLoad === 'staleWarning' ? (
+      <div className="px-4 pt-2">
+        <Banner
+          tone="warn"
+          title={i18n.t('common.error')}
+          action={
+            <Button
+              size="sm"
+              variant="pearl"
+              loading={sessionQuery.isFetching}
+              onClick={() => void sessionQuery.refetch()}
+            >
+              {i18n.t('common.retry')}
+            </Button>
+          }
+        />
+      </div>
+    ) : null;
 
   // 2026-07-30 (flow review): was `toLocaleDateString(undefined, …)`, i.e.
   // the BROWSER's locale, so the review sheet's subtitle read
@@ -920,6 +976,7 @@ export function OrderPage() {
             {dateLabel}
           </span>
         </StickyPageBar>
+        {staleWarning}
 
         <div className="flex flex-col gap-3 px-4 pt-3">
           <BatchStrip
@@ -1093,6 +1150,7 @@ export function OrderPage() {
           </DataState>
         </ChipBar>
       </StickyPageBar>
+      {staleWarning}
 
       {/* Status banners — only render the wrapper when at least one
           banner condition is true, so the empty-state draft view has

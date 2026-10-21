@@ -72,7 +72,8 @@ import {
   type AddItemDraft,
 } from './runs/sheets/RunSheets';
 import { isUnusualPrice } from './runs/lib/priceMath';
-import { mergeSplitsIntoExistingItem, runStoreIdsOf } from './runs/lib/runStores';
+import { mergeSplitsIntoExistingItem, mergeIntoPurchasedItem, runStoreIdsOf } from './runs/lib/runStores';
+import { buildStorePickList } from './runs/lib/storePickList';
 // Mid-level panels — extracted to runs/components (Phase 4 step 5).
 import { ActiveRunPanel, PreviewSummaryCard, RunSessionsCard } from './runs/components/RunPanels';
 import { SessionPicker } from './runs/components/SessionPicker';
@@ -1505,10 +1506,33 @@ export function RunPage() {
       }
     } else {
       switch (confirmAction.kind) {
-        case 'deliverStore':
+        case 'deliverStore': {
+          // 2026-10-21 FE-03 (F3-01): say what is being handed over — the
+          // store's line count (and goods total when every line is
+          // priced), plus how many ordered SKUs were unavailable.
+          const runDetail = runDetailQuery.data;
+          const pick = runDetail
+            ? buildStorePickList({
+                storeId: confirmAction.storeId,
+                items: runDetail.items,
+                splits: runDetail.splits,
+                demand: runDetail.perStoreDemand,
+              })
+            : null;
+          const pickSummary = pick
+            ? [
+                i18n.t('run.label.itemsCount', { n: pick.lines.length }),
+                ...(pick.total !== null && pick.total > 0
+                  ? [`${i18n.t('run.label.total')} ${formatMoney(pick.total)} ${currency}`]
+                  : []),
+                ...(pick.unavailable.length > 0
+                  ? [i18n.t('run.filter.unavailable', { n: pick.unavailable.length })]
+                  : []),
+              ].join(' · ') + '\n'
+            : '';
           return {
             title: i18n.t('run.confirm.deliver.title', { store: confirmAction.storeName }),
-            body: i18n.t('run.confirm.deliver.body'),
+            body: pickSummary + i18n.t('run.confirm.deliver.body'),
             confirmLabel: i18n.t('run.action.confirmDeliver'),
             danger: false,
             requireReason: false,
@@ -1519,6 +1543,7 @@ export function RunPage() {
                 { onSuccess: () => setConfirmAction(null) },
               ),
           };
+        }
         case 'recallDelivery':
           return {
             title: i18n.t('run.confirm.recall.title', { store: confirmAction.storeName }),
@@ -1610,6 +1635,8 @@ export function RunPage() {
     confirmReason,
     finishSummary,
     activeRun,
+    runDetailQuery.data,
+    currency,
     i18n,
     storeById,
     startPurchase,
@@ -1991,6 +2018,14 @@ export function RunPage() {
               )
             }
           </DataState>
+        ) : null}
+
+        {/* 2026-10-21 FE-01 (F3-02): every phase section below is gated on
+            run.get's data, so a slow or failed load left a blank page with
+            no retry. Only while there is NO data: a failed 6 s background
+            poll keeps showing the last good run instead of hiding it. */}
+        {activeRun && !runDetailQuery.data ? (
+          <DataState query={runDetailQuery}>{() => null}</DataState>
         ) : null}
 
         {activeRun &&
@@ -2445,15 +2480,24 @@ export function RunPage() {
                 return;
               }
               if (existingItem.status === 'purchased') {
+                // 2026-10-21 FE-04 (F3-07): keep the row's supplier,
+                // receipt and per-store price/payment overrides; only the
+                // new store's split is appended (see mergeIntoPurchasedItem).
+                const merged = mergeIntoPurchasedItem({
+                  item: existingItem,
+                  existingSplits,
+                  newSplits: storeSplits,
+                  draft: {
+                    unitPrice: d.unitPrice,
+                    paymentMethod: d.paymentMethod,
+                    supplierId: d.supplierId,
+                    receiptPhotoUrl: d.receiptPhotoUrl,
+                  },
+                });
                 revisePurchase.mutate({
                   runId: d.runId,
                   skuId: d.skuId,
-                  supplierId: d.supplierId,
-                  unitPrice: d.unitPrice,
-                  actualQty: combinedQty,
-                  receiptPhotoUrl: d.receiptPhotoUrl,
-                  storeSplits: combinedSplits,
-                  paymentMethod: d.paymentMethod,
+                  ...merged,
                   reason: d.reason.trim() || i18n.t('run.action.addItem.defaultCrossStoreReason'),
                 });
                 setAddItemDraft(null);

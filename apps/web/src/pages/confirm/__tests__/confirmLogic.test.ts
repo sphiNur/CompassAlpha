@@ -8,6 +8,7 @@ import {
   defaultDeliveringRunId,
   deliveringRunsForStore,
   initialReceivedQty,
+  runsListView,
 } from '../confirmLogic';
 
 const run = (
@@ -85,5 +86,30 @@ describe('initialReceivedQty', () => {
     expect(initialReceivedQty('wrong', undefined)).toBe('0');
     expect(initialReceivedQty('quality', null)).toBe('0');
     expect(initialReceivedQty('short', '1.5')).toBe('1.5');
+  });
+});
+
+describe('runsListView (2026-10-21 FE-01 / F4-02)', () => {
+  it('first load is loading, not "nothing to confirm"', () => {
+    expect(runsListView({ isLoading: true, isError: false, hasData: false })).toEqual({
+      kind: 'loading',
+    });
+  });
+  it('a failure with nothing cached is an error, not empty', () => {
+    expect(runsListView({ isLoading: false, isError: true, hasData: false })).toEqual({
+      kind: 'error',
+    });
+  });
+  it('cached runs survive a failed refetch, flagged stale', () => {
+    expect(runsListView({ isLoading: false, isError: true, hasData: true })).toEqual({
+      kind: 'ready',
+      stale: true,
+    });
+  });
+  it('loaded data is ready', () => {
+    expect(runsListView({ isLoading: false, isError: false, hasData: true })).toEqual({
+      kind: 'ready',
+      stale: false,
+    });
   });
 });

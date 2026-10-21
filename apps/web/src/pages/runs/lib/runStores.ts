@@ -63,3 +63,118 @@ export function mergeSplitsIntoExistingItem(input: {
 function roundQty(n: number): string {
   return String(Math.round(n * 1000) / 1000);
 }
+
+type PaymentMethod = 'cash' | 'transfer';
+type RevisionSplit = {
+  storeId: string;
+  qty: string;
+  unitPrice?: string;
+  paymentMethod?: PaymentMethod;
+};
+
+function asPaymentMethod(v: string | null | undefined): PaymentMethod | null {
+  return v === 'cash' || v === 'transfer' ? v : null;
+}
+
+/**
+ * 2026-10-21 FE-04 (F3-07): the revisePurchase payload for "merge into
+ * existing row" on an already-PURCHASED item.
+ *
+ * revisePurchase rewrites the whole purchase, and the add-item sheet has
+ * no supplier control (its draft supplier/receipt are usually null), so
+ * sending the draft as-is wiped the row's supplier, receipt and every
+ * store's price/payment override. Instead the existing row is the base:
+ *
+ * - item-level supplierId / unitPrice / paymentMethod are kept;
+ * - the receipt is kept unless the draft brings a new one;
+ * - existing splits keep their qty and overrides (run.get reports an
+ *   override as a non-null split unitPrice / paymentMethod);
+ * - the new store's split is appended, carrying the draft price / payment
+ *   as an override only when they differ from the item-level values.
+ *
+ * A store present in both is summed and keeps its existing overrides
+ * (the sheet routes that case to a separate expense, so it is defensive).
+ */
+export function mergeIntoPurchasedItem(input: {
+  item: {
+    unitPrice: string | null;
+    purchasedQty?: string | null;
+    supplierId?: string | null;
+    receiptPhotoUrl?: string | null;
+    paymentMethod?: string | null;
+  };
+  existingSplits: ReadonlyArray<{
+    storeId: string;
+    qty: string;
+    unitPrice?: string | null;
+    paymentMethod?: string | null;
+  }>;
+  newSplits: ReadonlyArray<Split>;
+  draft: {
+    unitPrice: string;
+    paymentMethod: PaymentMethod;
+    supplierId: string | null;
+    receiptPhotoUrl: string | null;
+  };
+}): {
+  supplierId: string | null;
+  unitPrice: string;
+  paymentMethod: PaymentMethod;
+  receiptPhotoUrl: string | null;
+  storeSplits: RevisionSplit[];
+  actualQty: string;
+} {
+  const { item, draft } = input;
+  const unitPrice = item.unitPrice && Number(item.unitPrice) > 0 ? item.unitPrice : draft.unitPrice;
+  const paymentMethod = asPaymentMethod(item.paymentMethod) ?? draft.paymentMethod;
+  const byStore = new Map<
+    string,
+    { qty: number; unitPrice?: string; paymentMethod?: PaymentMethod }
+  >();
+  for (const sp of input.existingSplits) {
+    const qty = Number(sp.qty);
+    if (!(qty > 0)) continue;
+    const cur = byStore.get(sp.storeId);
+    if (cur) {
+      cur.qty += qty;
+      continue;
+    }
+    const pm = asPaymentMethod(sp.paymentMethod);
+    byStore.set(sp.storeId, {
+      qty,
+      ...(sp.unitPrice ? { unitPrice: sp.unitPrice } : {}),
+      ...(pm ? { paymentMethod: pm } : {}),
+    });
+  }
+  const draftPriceDiffers =
+    Number(draft.unitPrice) > 0 && Number(draft.unitPrice) !== Number(unitPrice);
+  for (const sp of input.newSplits) {
+    const qty = Number(sp.qty);
+    if (!(qty > 0)) continue;
+    const cur = byStore.get(sp.storeId);
+    if (cur) {
+      cur.qty += qty;
+      continue;
+    }
+    byStore.set(sp.storeId, {
+      qty,
+      ...(draftPriceDiffers ? { unitPrice: draft.unitPrice } : {}),
+      ...(draft.paymentMethod !== paymentMethod ? { paymentMethod: draft.paymentMethod } : {}),
+    });
+  }
+  const storeSplits: RevisionSplit[] = [...byStore.entries()].map(([storeId, v]) => ({
+    storeId,
+    qty: roundQty(v.qty),
+    ...(v.unitPrice !== undefined ? { unitPrice: v.unitPrice } : {}),
+    ...(v.paymentMethod !== undefined ? { paymentMethod: v.paymentMethod } : {}),
+  }));
+  const total = storeSplits.reduce((s, sp) => s + Number(sp.qty), 0);
+  return {
+    supplierId: item.supplierId ?? draft.supplierId,
+    unitPrice,
+    paymentMethod,
+    receiptPhotoUrl: draft.receiptPhotoUrl ?? item.receiptPhotoUrl ?? null,
+    storeSplits,
+    actualQty: roundQty(total),
+  };
+}

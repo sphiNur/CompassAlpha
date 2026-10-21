@@ -26,7 +26,6 @@ import {
   SectionLabel,
   Select,
   Sheet,
-  Spinner,
   Switch,
   useToast,
 } from '@compass/ui';
@@ -1444,8 +1443,6 @@ export function DishesSection() {
     });
   };
 
-  const dishes = dishesQuery.data?.dishes ?? [];
-
   return (
     <div className="px-4 py-3">
       {/* Top bar: archive toggle + new dish. */}
@@ -1469,85 +1466,97 @@ export function DishesSection() {
         ) : null}
       </div>
 
-      {dishesQuery.isLoading || skusQuery.isLoading ? (
-        <div className="py-6 text-center">
-          <Spinner size={16} />
-        </div>
-      ) : dishes.length === 0 ? (
-        <EmptyState
-          title={i18n.t('dishes.empty.title')}
-          description={i18n.t('dishes.empty.description')}
-        />
-      ) : (
-        <ul className="flex flex-col gap-1" role="list">
-          {dishes.map((d) => {
-            const name = productName({ names: d.names as Record<string, string> });
-            const ingCount = (ingredientsByDish.get(d.id) ?? []).length;
-            return (
-              <li
-                key={d.id}
-                className={
-                  'rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 ring-hairline ' +
-                  (d.isArchived ? 'opacity-60' : '')
-                }
-              >
-                <button
-                  type="button"
-                  onClick={() => openForEdit(d.id)}
-                  className="flex w-full items-baseline justify-between gap-2 text-left active:opacity-80"
+      {/* 2026-10-21 FE-01 / F6-04: a failed dishes.list rendered as "no
+          dishes yet". DataState gives loading / error (+Retry) / empty.
+          The skus query only feeds ingredient names, so it just extends
+          the loading phase as before. */}
+      <DataState
+        query={{
+          data: dishesQuery.data?.dishes,
+          isLoading: dishesQuery.isLoading || skusQuery.isLoading,
+          isError: dishesQuery.isError,
+          isFetching: dishesQuery.isFetching,
+          error: dishesQuery.error,
+          refetch: () => void dishesQuery.refetch(),
+        }}
+        emptyWhen={(rows) => rows.length === 0}
+        empty={
+          <EmptyState
+            title={i18n.t('dishes.empty.title')}
+            description={i18n.t('dishes.empty.description')}
+          />
+        }
+      >
+        {(rows) => (
+          <ul className="flex flex-col gap-1" role="list">
+            {rows.map((d) => {
+              const name = productName({ names: d.names as Record<string, string> });
+              const ingCount = (ingredientsByDish.get(d.id) ?? []).length;
+              return (
+                <li
+                  key={d.id}
+                  className={
+                    'rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 ring-hairline ' +
+                    (d.isArchived ? 'opacity-60' : '')
+                  }
                 >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline gap-2">
-                      <span className="truncate text-old-body font-semibold">{name}</span>
-                      {d.code ? (
-                        <span className="text-old-label text-[var(--c-fg-muted)]">{d.code}</span>
-                      ) : null}
-                      {d.isArchived ? (
-                        <Badge tone="muted">{i18n.t('common.archived')}</Badge>
-                      ) : null}
+                  <button
+                    type="button"
+                    onClick={() => openForEdit(d.id)}
+                    className="flex w-full items-baseline justify-between gap-2 text-left active:opacity-80"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline gap-2">
+                        <span className="truncate text-old-body font-semibold">{name}</span>
+                        {d.code ? (
+                          <span className="text-old-label text-[var(--c-fg-muted)]">{d.code}</span>
+                        ) : null}
+                        {d.isArchived ? (
+                          <Badge tone="muted">{i18n.t('common.archived')}</Badge>
+                        ) : null}
+                      </div>
+                      <div className="text-old-label text-[var(--c-fg-muted)]">
+                        {ingCount === 0
+                          ? i18n.t('dishes.label.noIngredients')
+                          : i18n.t('dishes.label.ingredientCount', { n: ingCount })}
+                        {d.unitPrice ? ` · ${formatMoney(d.unitPrice)}` : ''}
+                      </div>
                     </div>
-                    <div className="text-old-label text-[var(--c-fg-muted)]">
-                      {ingCount === 0
-                        ? i18n.t('dishes.label.noIngredients')
-                        : i18n.t('dishes.label.ingredientCount', { n: ingCount })}
-                      {d.unitPrice ? ` · ${formatMoney(d.unitPrice)}` : ''}
-                    </div>
-                  </div>
-                </button>
-                {/* M3.17 (2026-05-16): inline archive/unarchive pills →
+                  </button>
+                  {/* M3.17 (2026-05-16): inline archive/unarchive pills →
                     Button size="sm". Archive uses danger-ghost (consistent
                     with the Category / SKU / Supplier archive rows). */}
-                {canManage ? (
-                  <div className="mt-1 flex gap-2">
-                    {d.isArchived ? (
-                      <Button
-                        size="sm"
-                        variant="pearl"
-                        onClick={() => unarchive.mutate({ dishId: d.id })}
-                      >
-                        {i18n.t('common.unarchive')}
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        variant="danger-ghost"
-                        onClick={() =>
-                          nativeConfirm(
-                            i18n.t('dishes.confirm.archive', { name }),
-                            () => archive.mutate({ dishId: d.id }),
-                          )
-                        }
-                      >
-                        {i18n.t('common.archive')}
-                      </Button>
-                    )}
-                  </div>
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
-      )}
+                  {canManage ? (
+                    <div className="mt-1 flex gap-2">
+                      {d.isArchived ? (
+                        <Button
+                          size="sm"
+                          variant="pearl"
+                          onClick={() => unarchive.mutate({ dishId: d.id })}
+                        >
+                          {i18n.t('common.unarchive')}
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="danger-ghost"
+                          onClick={() =>
+                            nativeConfirm(i18n.t('dishes.confirm.archive', { name }), () =>
+                              archive.mutate({ dishId: d.id }),
+                            )
+                          }
+                        >
+                          {i18n.t('common.archive')}
+                        </Button>
+                      )}
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </DataState>
 
       {/* Editor sheet. */}
       <Sheet

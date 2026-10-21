@@ -29,6 +29,7 @@ import { ADMIN_RANK } from '@compass/contracts';
 import { newIdempotencyKey, trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
+import { useRefreshSession } from '../../../lib/refreshSession';
 import { formatQty } from '../../../lib/format';
 import { useDateFormat, useI18n, useProductName, useUnitLabel } from '../../../hooks/useI18n';
 import { nativeConfirm, type StoreFocus, type StoreSub } from '../shared';
@@ -109,6 +110,7 @@ export function StoresHomeSection({
   const toast = useToast();
   const errToast = useErrToast();
   const i18n = useI18n();
+  const refreshSession = useRefreshSession();
   // Lightweight create-only sheet: create flow needs name/code/address/
   // timezone but NOT default-role/archive (those land in Settings tab
   // after creation). Keeping it a sheet rather than inline because
@@ -121,10 +123,19 @@ export function StoresHomeSection({
   } | null>(null);
 
   const create = trpc.admin.storeCreate.useMutation({
-    onSuccess: () => {
+    onSuccess: (data, vars) => {
       void utils.admin.storeList.invalidate();
       toast.success(i18n.t('admin.toast.storeCreated'));
       setCreateDraft(null);
+      // 2026-10-21 FE-06: the session's stores / adminStoreIds feed the
+      // invite, grant, transfer and clone pickers; refresh it so the new
+      // store is pickable without reopening the app, then drill into the
+      // new store so setup (default role, team) can continue right away.
+      // Not awaited inside onSuccess: that would hold the mutation (and
+      // the app-wide busy state) pending for an extra round trip.
+      void refreshSession().then(() =>
+        onPickStore({ kind: 'store', storeId: data.id, storeName: vars.name }),
+      );
     },
     onError: errToast('common.error'),
   });
@@ -830,6 +841,7 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
   const toast = useToast();
   const errToast = useErrToast();
   const i18n = useI18n();
+  const refreshSession = useRefreshSession();
   const adminStoreIds = useMemo(
     () => new Set(session?.adminStoreIds ?? []),
     [session?.adminStoreIds],
@@ -864,6 +876,8 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
     onSuccess: () => {
       void utils.admin.storeList.invalidate();
       toast.success(i18n.t('admin.toast.storeUpdated'));
+      // 2026-10-21 FE-06: name / active state live in session.stores too.
+      void refreshSession();
     },
     onError: errToast('common.error'),
   });
@@ -871,6 +885,8 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
     onSuccess: () => {
       void utils.admin.storeList.invalidate();
       toast.info(i18n.t('admin.toast.storeArchived'));
+      // 2026-10-21 FE-06: drop the archived store from session pickers.
+      void refreshSession();
     },
     onError: errToast('common.error'),
   });

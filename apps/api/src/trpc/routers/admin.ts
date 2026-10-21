@@ -926,6 +926,211 @@ const PurgeRunInputSchema = z.object({
   requireOnlyTestSessions: z.boolean().default(true),
 });
 
+// ---------- admin audit labels ----------
+
+/**
+ * 2026-10-21 FE-08 (F6-02): the audit list only carried ids, so "who
+ * granted what role to whom" was unanswerable for anyone but a
+ * super_admin reading raw inputs. `auditRowRefs` picks the ids a row
+ * talks about (pure — unit-tested); adminAuditList batch-resolves them
+ * in the same transaction and `buildAuditLabels` turns them into names.
+ * Every lookup tolerates a missing target (removed member, deleted
+ * role): that label is simply null and the client falls back.
+ */
+export interface AuditRowRefs {
+  memberId: string | null;
+  /** inputs.userId — survives member removal, so it's the fallback. */
+  userId: string | null;
+  roleSlug: string | null;
+  roleId: string | null;
+  storeId: string | null;
+  toStoreId: string | null;
+  catalog: { kind: 'sku' | 'category' | 'supplier' | 'expenseTemplate'; id: string } | null;
+}
+
+export interface AuditRowLabels {
+  memberName: string | null;
+  roleName: string | null;
+  storeName: string | null;
+  toStoreName: string | null;
+  /** Supplier / expense-template label (single string). */
+  targetName: string | null;
+  /** SKU / category i18n names map. */
+  targetNames: Record<string, string> | null;
+}
+
+export interface AuditLookups {
+  memberNameById: Map<string, string>;
+  userNameById: Map<string, string>;
+  roleNameBySlug: Map<string, string>;
+  roleNameById: Map<string, string>;
+  storeNameById: Map<string, string>;
+  catalogNameById: Map<string, string>;
+  catalogNamesById: Map<string, Record<string, string>>;
+}
+
+const CATALOG_RESOURCE_TYPES = new Set(['sku', 'category', 'supplier', 'expenseTemplate']);
+
+function str(o: Record<string, unknown>, key: string): string | null {
+  const v = o[key];
+  return typeof v === 'string' && v.length > 0 ? v : null;
+}
+
+export function auditRowRefs(row: {
+  resourceType: string | null;
+  resourceId: string | null;
+  inputs: unknown;
+  scopeStoreId: string | null;
+}): AuditRowRefs {
+  const o =
+    row.inputs && typeof row.inputs === 'object' ? (row.inputs as Record<string, unknown>) : {};
+  const rt = row.resourceType ?? '';
+  const rid = row.resourceId;
+  const memberId =
+    (rt === 'member' || rt === 'permission') && rid ? rid : (str(o, 'memberId') ?? null);
+  const storeIds = Array.isArray(o.storeIds)
+    ? o.storeIds.filter((x): x is string => typeof x === 'string')
+    : [];
+  const scopedStore = str(o, 'scopeType') === 'store' ? (str(o, 'scopeId') ?? null) : null;
+  const storeId =
+    (rt === 'store' ? rid : null) ??
+    str(o, 'storeId') ??
+    str(o, 'fromStoreId') ??
+    scopedStore ??
+    (storeIds.length === 1 ? storeIds[0]! : null) ??
+    row.scopeStoreId;
+  return {
+    memberId,
+    userId: str(o, 'userId'),
+    roleSlug: str(o, 'roleSlug'),
+    roleId: rt === 'role' && rid ? rid : null,
+    storeId,
+    toStoreId: str(o, 'toStoreId') ?? (rt === 'store' ? null : str(o, 'targetStoreId')),
+    catalog:
+      CATALOG_RESOURCE_TYPES.has(rt) && rid
+        ? { kind: rt as NonNullable<AuditRowRefs['catalog']>['kind'], id: rid }
+        : null,
+  };
+}
+
+export function buildAuditLabels(refs: AuditRowRefs, l: AuditLookups): AuditRowLabels {
+  const get = (m: Map<string, string>, k: string | null) => (k ? (m.get(k) ?? null) : null);
+  return {
+    memberName: get(l.memberNameById, refs.memberId) ?? get(l.userNameById, refs.userId),
+    roleName: get(l.roleNameBySlug, refs.roleSlug) ?? get(l.roleNameById, refs.roleId),
+    storeName: get(l.storeNameById, refs.storeId),
+    toStoreName: get(l.storeNameById, refs.toStoreId),
+    targetName: refs.catalog ? get(l.catalogNameById, refs.catalog.id) : null,
+    targetNames: refs.catalog ? (l.catalogNamesById.get(refs.catalog.id) ?? null) : null,
+  };
+}
+
+async function loadAuditLookups(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tx: any,
+  orgId: string,
+  refs: AuditRowRefs[],
+): Promise<AuditLookups> {
+  const uniq = (xs: (string | null | undefined)[]) => [
+    ...new Set(xs.filter((x): x is string => !!x)),
+  ];
+  // Every id is user-controlled JSON from `inputs`; drop non-UUIDs so a
+  // malformed historical row can't make the uuid cast throw.
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const ids = (xs: (string | null | undefined)[]) => uniq(xs).filter((x) => UUID.test(x));
+  const memberIds = ids(refs.map((r) => r.memberId));
+  const userIds = ids(refs.map((r) => r.userId));
+  const roleSlugs = uniq(refs.map((r) => r.roleSlug));
+  const roleIds = ids(refs.map((r) => r.roleId));
+  const storeIds = ids(refs.flatMap((r) => [r.storeId, r.toStoreId]));
+  const catalogIds = (kind: string) =>
+    ids(refs.map((r) => (r.catalog?.kind === kind ? r.catalog.id : null)));
+  const skuIds = catalogIds('sku');
+  const categoryIds = catalogIds('category');
+  const supplierIds = catalogIds('supplier');
+  const templateIds = catalogIds('expenseTemplate');
+
+  const [members, users, rolesBySlug, rolesById, stores, skus, categories, suppliers, templates] =
+    await Promise.all([
+      memberIds.length
+        ? tx
+            .select({ id: s.members.id, name: s.users.displayName })
+            .from(s.members)
+            .innerJoin(s.users, eq(s.users.id, s.members.userId))
+            .where(and(eq(s.members.orgId, orgId), inArray(s.members.id, memberIds)))
+        : [],
+      userIds.length
+        ? tx
+            .select({ id: s.users.id, name: s.users.displayName })
+            .from(s.users)
+            .where(inArray(s.users.id, userIds))
+        : [],
+      roleSlugs.length
+        ? tx
+            .select({ slug: s.roles.slug, name: s.roles.name })
+            .from(s.roles)
+            .where(and(eq(s.roles.orgId, orgId), inArray(s.roles.slug, roleSlugs)))
+        : [],
+      roleIds.length
+        ? tx
+            .select({ id: s.roles.id, name: s.roles.name })
+            .from(s.roles)
+            .where(and(eq(s.roles.orgId, orgId), inArray(s.roles.id, roleIds)))
+        : [],
+      // Soft-deleted stores are included on purpose: "archived store X"
+      // must still name X.
+      storeIds.length
+        ? tx
+            .select({ id: s.stores.id, name: s.stores.name })
+            .from(s.stores)
+            .where(and(eq(s.stores.orgId, orgId), inArray(s.stores.id, storeIds)))
+        : [],
+      skuIds.length
+        ? tx
+            .select({ id: s.skus.id, names: s.skus.names })
+            .from(s.skus)
+            .where(and(eq(s.skus.orgId, orgId), inArray(s.skus.id, skuIds)))
+        : [],
+      categoryIds.length
+        ? tx
+            .select({ id: s.categories.id, names: s.categories.names })
+            .from(s.categories)
+            .where(and(eq(s.categories.orgId, orgId), inArray(s.categories.id, categoryIds)))
+        : [],
+      supplierIds.length
+        ? tx
+            .select({ id: s.suppliers.id, name: s.suppliers.name })
+            .from(s.suppliers)
+            .where(and(eq(s.suppliers.orgId, orgId), inArray(s.suppliers.id, supplierIds)))
+        : [],
+      templateIds.length
+        ? tx
+            .select({ id: s.expenseTemplates.id, name: s.expenseTemplates.label })
+            .from(s.expenseTemplates)
+            .where(
+              and(eq(s.expenseTemplates.orgId, orgId), inArray(s.expenseTemplates.id, templateIds)),
+            )
+        : [],
+    ]);
+  const byId = (rows: { id: string; name: string | null }[]) =>
+    new Map(rows.filter((r) => r.name).map((r) => [r.id, r.name as string]));
+  return {
+    memberNameById: byId(members),
+    userNameById: byId(users),
+    roleNameBySlug: new Map(
+      (rolesBySlug as { slug: string; name: string }[]).map((r) => [r.slug, r.name]),
+    ),
+    roleNameById: byId(rolesById),
+    storeNameById: byId(stores),
+    catalogNameById: byId([...suppliers, ...templates]),
+    catalogNamesById: new Map(
+      ([...skus, ...categories] as { id: string; names: unknown }[])
+        .filter((r) => r.names && typeof r.names === 'object')
+        .map((r) => [r.id, r.names as Record<string, string>]),
+    ),
+  };
+}
+
 // ---------- router ----------
 
 export const adminRouter = router({
@@ -4459,7 +4664,10 @@ export const adminRouter = router({
               .where(inArray(s.users.id, userIds))
           : [];
         const userById = new Map(users.map((u) => [u.id, u]));
-        return rows.map((r) => ({
+        // 2026-10-21 FE-08: readable target / role / store names per row.
+        const refs = rows.map((r) => auditRowRefs(r));
+        const lookups = await loadAuditLookups(tx, orgId, refs);
+        return rows.map((r, i) => ({
           id: r.id,
           action: r.action,
           resourceType: r.resourceType,
@@ -4468,6 +4676,7 @@ export const adminRouter = router({
           occurredAt: r.occurredAt.toISOString(),
           inputs: r.inputs as unknown,
           scopeStoreId: r.scopeStoreId,
+          labels: buildAuditLabels(refs[i]!, lookups),
         }));
       });
     }),

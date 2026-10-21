@@ -33,3 +33,20 @@ export function normalizeVoidReason(raw: string): string | null {
   const reason = raw.trim();
   return reason.length >= 1 && reason.length <= 300 ? reason : null;
 }
+
+/**
+ * 2026-10-21 FE-01 / F4-03: which state the today's-sales list shows.
+ * An errored list must never read as "no sales yet" — a cashier would
+ * re-enter sales that already exist and stock would be deducted twice.
+ * An error wins over stale data too (a failed refetch of a cached list).
+ */
+export type SalesListView = 'loading' | 'error' | 'empty' | 'list';
+export function salesListView(q: {
+  isLoading: boolean;
+  isError: boolean;
+  rowCount: number;
+}): SalesListView {
+  if (q.isLoading) return 'loading';
+  if (q.isError) return 'error';
+  return q.rowCount === 0 ? 'empty' : 'list';
+}
