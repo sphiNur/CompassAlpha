@@ -62,6 +62,7 @@ import {
   filterSupplierGroups,
 } from '../lib/previewFilter';
 import { groupStoreBySupplier } from '../lib/previewGrouping';
+import { buildStorePickList } from '../lib/storePickList';
 import { normalizeQuery } from '../../../lib/searchMatch';
 import {
   countByStatus,
@@ -338,6 +339,19 @@ export function ActiveRunPanel({
    * retyping four characters.
    */
   const [itemQuery, setItemQuery] = useState('');
+  // 2026-10-21 FE-03: delivering store rows expand into a read-only pick
+  // list; ids of the expanded stores.
+  const [openPickStores, setOpenPickStores] = useState<ReadonlySet<string>>(
+    () => new Set<string>(),
+  );
+  const togglePickStore = useCallback((storeId: string) => {
+    setOpenPickStores((prev) => {
+      const next = new Set(prev);
+      if (next.has(storeId)) next.delete(storeId);
+      else next.add(storeId);
+      return next;
+    });
+  }, []);
   const [itemFilter, setItemFilter] = useState<ItemFilter>('all');
   const itemTokens = useMemo(() => normalizeQuery(itemQuery) ?? [], [itemQuery]);
   const itemCounts = useMemo(
@@ -732,29 +746,105 @@ export function ActiveRunPanel({
                     })}
                   </ul>
                 ) : null;
+              // 2026-10-21 FE-03 (F3-01): what this store gets, from the
+              // run's actual splits; unavailable SKUs it ordered are listed
+              // struck through so they read as deliberately not loaded.
+              const pickOpen = openPickStores.has(storeId);
+              const pick = pickOpen
+                ? buildStorePickList({
+                    storeId,
+                    items: run.items,
+                    splits: run.splits,
+                    demand: run.perStoreDemand,
+                  })
+                : null;
+              const pickList = pick ? (
+                <ul
+                  id={`run-pick-${storeId}`}
+                  className="flex flex-col bg-[var(--c-surface-2)]"
+                  role="list"
+                >
+                  {pick.lines.map((ln) => {
+                    const sku = skuById.get(ln.skuId);
+                    return (
+                      <li
+                        key={ln.skuId}
+                        className="flex items-center gap-2 border-t border-[var(--c-divider)] px-4 py-1.5"
+                      >
+                        <span className="min-w-0 flex-1 truncate text-old-body">
+                          {sku ? productName(sku) : ln.skuId.slice(0, 8)}
+                        </span>
+                        <span className="shrink-0 font-mono text-old-body tabular-nums text-[var(--c-fg-muted)]">
+                          {formatQty(ln.qty)} {unitLabel(sku?.unit)}
+                        </span>
+                      </li>
+                    );
+                  })}
+                  {pick.unavailable.map((ln) => {
+                    const sku = skuById.get(ln.skuId);
+                    return (
+                      <li
+                        key={'na-' + ln.skuId}
+                        className="flex items-center gap-2 border-t border-[var(--c-divider)] px-4 py-1.5 text-[var(--c-fg-muted)]"
+                      >
+                        <span aria-hidden className="shrink-0 text-old-body text-[var(--c-danger)]">
+                          ✗
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-old-body line-through">
+                          {sku ? productName(sku) : ln.skuId.slice(0, 8)}
+                        </span>
+                        <span className="shrink-0 text-old-label">
+                          {i18n.t('run.extras.status.unavailable')}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null;
+              const pickToggle = (
+                <button
+                  type="button"
+                  onClick={() => togglePickStore(storeId)}
+                  aria-expanded={pickOpen}
+                  aria-controls={pickOpen ? `run-pick-${storeId}` : undefined}
+                  aria-label={`${storeName} · ${i18n.t('run.section.items')}`}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
+                >
+                  <span
+                    aria-hidden
+                    className={'inline-block transition-transform ' + (pickOpen ? 'rotate-90' : '')}
+                  >
+                    ›
+                  </span>
+                </button>
+              );
               return (
                 <li
                   key={storeId}
                   className="border-b border-[var(--c-divider)] last:border-b-0"
                 >
-                  {tappable ? (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        stage === 'pending'
-                          ? onDeliverStore(storeId, storeName)
-                          : onRecallStore(storeId, storeName)
-                      }
-                      className="flex w-full items-center gap-2 px-4 py-2 text-left active:bg-[var(--c-surface-2)]"
-                    >
-                      {inner}
-                    </button>
-                  ) : (
-                    <div className="flex w-full items-center gap-2 px-4 py-2 text-[var(--c-fg-muted)]">
-                      {inner}
-                    </div>
-                  )}
+                  <div className="flex items-center">
+                    {tappable ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          stage === 'pending'
+                            ? onDeliverStore(storeId, storeName)
+                            : onRecallStore(storeId, storeName)
+                        }
+                        className="flex min-w-0 flex-1 items-center gap-2 py-2 pl-4 text-left active:bg-[var(--c-surface-2)]"
+                      >
+                        {inner}
+                      </button>
+                    ) : (
+                      <div className="flex min-w-0 flex-1 items-center gap-2 py-2 pl-4 text-[var(--c-fg-muted)]">
+                        {inner}
+                      </div>
+                    )}
+                    {pickToggle}
+                  </div>
                   {issues}
+                  {pickList}
                 </li>
               );
             })}

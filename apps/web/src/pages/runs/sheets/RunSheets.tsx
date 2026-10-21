@@ -989,7 +989,11 @@ export function AddItemSheet({
                   ? i18n.t('run.action.addItem.storeAlreadyHasSkuHint')
                   : skuRecordsAsExpense
                     ? i18n.t('run.action.addItem.separatePriceHint')
-                    : i18n.t('run.action.addItem.mergePriceHint')}
+                    : selectedSkuExisting.status === 'purchased'
+                      ? // 2026-10-21 FE-04: merging into a bought row keeps its
+                        // price, supplier and receipt; only the new store is added.
+                        i18n.t('run.action.addItem.mergePurchasedHint')
+                      : i18n.t('run.action.addItem.mergePriceHint')}
               </p>
             </div>
           ) : null}
