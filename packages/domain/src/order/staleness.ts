@@ -6,7 +6,7 @@
 import type { OrderEvent } from './events';
 
 /**
- * CA-43 "approve what you saw": did anyone OTHER than `memberId` append
+ * CA-43 "approve what you saw": did anyone OTHER than `userId` append
  * to the stream after `sinceSeq`?
  *
  * The approver's own events are deliberately ignored. Claiming bumps the
@@ -14,14 +14,19 @@ import type { OrderEvent } from './events';
  * saw those, and the list they read `lastSeq` from may not have
  * refetched yet. Anything else (the staff withdrawing, editing and
  * re-submitting; another approver's claim or release; a system event
- * with no member) means the order on screen is not the order on disk.
+ * with no actor) means the order on screen is not the order on disk.
+ *
+ * Compared on `actorUserId`, not `actorMemberId`: the event store
+ * persists the acting user (`domain.events.actor_id`) but returns
+ * `actorMemberId: null` on read (eventStore.readStream), so a member-id
+ * comparison would treat the approver's own claim as someone else's.
  */
 export function changedByOthersSince(
-  events: ReadonlyArray<Pick<OrderEvent, 'seq' | 'actorMemberId'>>,
+  events: ReadonlyArray<Pick<OrderEvent, 'seq' | 'actorUserId'>>,
   sinceSeq: number,
-  memberId: string,
+  userId: string,
 ): boolean {
-  return events.some((e) => e.seq > sinceSeq && e.actorMemberId !== memberId);
+  return events.some((e) => e.seq > sinceSeq && e.actorUserId !== userId);
 }
 
 /**

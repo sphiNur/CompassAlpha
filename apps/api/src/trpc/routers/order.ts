@@ -167,10 +167,10 @@ function assertNotStaleOfflineCreate(
 function assertSeenLatest(
   events: OrderEvent[],
   expectedSeq: number | undefined,
-  memberId: string,
+  userId: string,
 ): void {
   if (expectedSeq === undefined) return;
-  if (changedByOthersSince(events, expectedSeq, memberId)) {
+  if (changedByOthersSince(events, expectedSeq, userId)) {
     throw new TRPCError({ code: 'CONFLICT', message: 'order.errors.staleSeq' });
   }
 }
@@ -1467,7 +1467,7 @@ async function runSimpleCommand(
     try {
       const out = produce(state, effectivePerms);
       if (out.length === 0) return { lastSeq: state.seq };
-      assertSeenLatest(events, opts.expectedSeq, ctx.session!.memberId);
+      assertSeenLatest(events, opts.expectedSeq, ctx.session!.userId);
       await appendEvents(tx, {
         streamType: 'order',
         streamId: session.id,

@@ -45,13 +45,13 @@ const submitted = [
 describe('changedByOthersSince (CA-43 approve what you saw)', () => {
   test('nothing after the seen seq → not changed', () => {
     const { state, events } = run(submitted);
-    expect(changedByOthersSince(events, state.seq, mgr.memberId)).toBe(false);
+    expect(changedByOthersSince(events, state.seq, mgr.userId)).toBe(false);
   });
 
   test("the approver's own claim does not count as a change", () => {
     const seen = run(submitted).state.seq;
     const { events } = run([...submitted, () => ({ type: 'Claim' as const, actor: mgr })]);
-    expect(changedByOthersSince(events, seen, mgr.memberId)).toBe(false);
+    expect(changedByOthersSince(events, seen, mgr.userId)).toBe(false);
   });
 
   test('staff withdraw + edit + re-submit after the approver looked → changed', () => {
@@ -62,11 +62,20 @@ describe('changedByOthersSince (CA-43 approve what you saw)', () => {
       () => ({ type: 'AdjustItem' as const, skuId: 'apple', qty: '5', sku, actor: staffA }),
       () => ({ type: 'Submit' as const, actor: staffA }),
     ]);
-    expect(changedByOthersSince(events, seen, mgr.memberId)).toBe(true);
+    expect(changedByOthersSince(events, seen, mgr.userId)).toBe(true);
   });
 
-  test('system events (no member) count as a change', () => {
-    expect(changedByOthersSince([{ seq: 4, actorMemberId: null }], 3, 'mem-mgr')).toBe(true);
+  test('system events (no actor) count as a change', () => {
+    expect(changedByOthersSince([{ seq: 4, actorUserId: null }], 3, mgr.userId)).toBe(true);
+  });
+
+  test('events as read back from the store (actorMemberId null) still recognise the approver', () => {
+    // eventStore.readStream returns actorMemberId: null; only actorUserId
+    // survives persistence. The approver's own claim must not count.
+    const seen = run(submitted).state.seq;
+    const { events } = run([...submitted, () => ({ type: 'Claim' as const, actor: mgr })]);
+    const persisted = events.map((e) => ({ ...e, actorMemberId: null }));
+    expect(changedByOthersSince(persisted, seen, mgr.userId)).toBe(false);
   });
 });
 
