@@ -263,20 +263,36 @@ step('0.5. unit tests (before anything is shipped)');
 // This ran AFTER the api restart, so a red suite was reported on a release
 // that was already live. PG-backed tests are skipped here (prod PG isn't
 // reachable from the dev box); CI runs them on every push.
+//
+// 2026-10-21: paths are RELATIVE to ROOT (bun 1.1.x treats an absolute
+// directory argument as an entry point and fails with ModuleNotFound) and
+// mirror the CI unit job. apps/api validates its env at import time, so
+// — like CI — fill placeholders when the shell has none: the database URL
+// points at an unreachable local port and SKIP_PG_TESTS keeps every
+// PG-backed test skipped, so nothing here can touch a real database.
 const tt = spawnSync(
   'bun',
   [
     'test',
-    join(ROOT, 'packages/domain'),
-    join(ROOT, 'packages/i18n'),
-    join(ROOT, 'apps/api'),
-    join(ROOT, 'apps/worker'),
-    join(ROOT, 'packages/ui'),
-    join(ROOT, 'apps/web/src/lib'),
-    join(ROOT, 'apps/web/src/hooks'),
-    join(ROOT, 'apps/web/src/pages'),
+    'packages/domain',
+    'packages/i18n',
+    'packages/ui',
+    'apps/api',
+    'apps/worker',
+    'apps/web/src',
   ],
-  { stdio: 'inherit', cwd: ROOT, env: { ...process.env, SKIP_PG_TESTS: '1' } },
+  {
+    stdio: 'inherit',
+    cwd: ROOT,
+    env: {
+      ...process.env,
+      SKIP_PG_TESTS: '1',
+      DATABASE_URL: process.env.DATABASE_URL ?? 'postgres://unit:unit@127.0.0.1:1/unit_tests',
+      JWT_SECRET: process.env.JWT_SECRET ?? 'deploy-unit-test-access-secret-xxxxxxxxxxxxxx',
+      JWT_REFRESH_SECRET:
+        process.env.JWT_REFRESH_SECRET ?? 'deploy-unit-test-refresh-secret-xxxxxxxxxxxxx',
+    },
+  },
 );
 if (tt.status !== 0) {
   console.error('\x1b[31m✖ unit tests FAILED — nothing was deployed\x1b[0m');
