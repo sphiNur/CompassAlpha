@@ -63,6 +63,12 @@ export const uz = {
   'catalog.supplier.emptyTitle': "Ta'minotchilar yo'q",
   'catalog.supplier.emptyBody': 'Bozorda kimdan xarid qilayotganingizni yozib boring.',
   'catalog.supplier.confirmArchive': "«{name}» ta'minotchisi arxivlansinmi?",
+  'catalog.category.confirmArchive': '«{name}» toifasi arxivlansinmi?',
+  'catalog.category.meta': 'Slug {slug} · tartib {sort}',
+  'catalog.category.slugPlaceholder': 'masalan, dairy',
+  'catalog.sku.stepMeta': 'qadam {step}',
+  'catalog.supplier.tgPlaceholder': 'foydalanuvchi nomi (@ belgisisiz)',
+  'catalog.readOnlyHint': "Katalogni faqat tashkilot administratorlari o'zgartira oladi.",
   'admin.store.new': "Yangi do'kon",
   'admin.store.emptyTitle': "Do'konlar yo'q",
   'admin.store.emptyBody':
@@ -345,6 +351,8 @@ export const uz = {
   'auth.signIn': 'Kirish',
   'auth.signOut': 'Chiqish',
   'auth.shareThisId': 'Ushbu Telegram ID-ni administratorga yuboring — sizga ruxsat berishadi:',
+  'auth.loginTimeout.title': 'Kirish juda uzoq davom etmoqda',
+  'auth.loginTimeout.body': "Internet aloqasini tekshiring, so'ng ilovani yopib, qayta oching.",
   'auth.noAccess.title': 'Ruxsat berilmagan',
   'auth.noAccess.body':
     "Telegram akkauntingiz tanildi, ammo bu tashkilotda hali rolingiz yo'q. Administrator ruxsat berishi kerak.",
@@ -541,6 +549,7 @@ export const uz = {
   'auth.errors.sessionStale': 'Sessiya eskirgan — sahifani yangilang',
   'auth.errors.storeArchived': "Bu do'kon faol emas",
   'auth.errors.storeForbidden': "Siz bu do'konga biriktirilmagansiz",
+  'auth.errors.notAssignedToStore': "Siz bu do'konga biriktirilmagansiz",
   'auth.errors.userMissing': 'Foydalanuvchi topilmadi',
   'auth.errors.cannotGrantEqualOrHigher':
     "O'z darajangizdagi yoki undan yuqori rolni bera olmaysiz",
@@ -551,6 +560,9 @@ export const uz = {
 
   // ── 6. Admin errors ────────────────────────────────────────────
   'admin.errors.bindingNotFound': 'Rol biriktirmasi topilmadi',
+  'admin.errors.slugTaken': 'Bu identifikator allaqachon band.',
+  'admin.errors.codeTaken': 'Bu kod allaqachon band.',
+  'admin.errors.invalidExpiresAt': "Amal qilish muddati kelajakdagi to'g'ri sana bo'lishi kerak.",
   'admin.errors.cannotLeaveZeroStores': "Xodim kamida bitta do'konga biriktirilgan bo'lishi shart",
   'admin.errors.cannotRemoveLastAdmin': "Tashkilotdagi oxirgi administratorni o'chirib bo'lmaydi",
   'admin.errors.cannotRemoveSelf': "O'zingizni o'chira olmaysiz",
@@ -904,6 +916,10 @@ export const uz = {
   'run.toast.sessionEjected': 'Yuborilgan tekshiruvga qaytarildi',
   'run.toast.couldNotEjectSession': "Yuborilganni qaytarib bo'lmadi",
   'run.errors.cannotEjectSession': "Xariddan yuborilganlarni qaytarish huquqi yo'q",
+  'run.errors.storeAlreadyConfirmed': "Do'kon qabul qilishni allaqachon tasdiqlagan",
+  'run.errors.notVisible': 'Xarid topilmadi yoki sizga mavjud emas',
+  'run.errors.archiveCascadeFailed':
+    "Xaridni buyurtmalari bilan birga arxivlab bo'lmadi. Hech narsa o'zgarmadi — qayta urinib ko'ring.",
   'run.errors.cannotEjectInStatus':
     'Yuborilganlarni faqat reja yoki xarid bosqichida qaytarish mumkin',
   'run.errors.sessionNotInRun': "Bu yuborilgan ushbu xaridda yo'q",
@@ -938,7 +954,7 @@ export const uz = {
   'run.action.markUnavailableDesc': 'Nima uchun ololmaganingizni jamoaga tushuntiring.',
   'run.action.unavailableReasonPlaceholder': 'Sabab',
   'run.action.actualQty': 'Haqiqiy miqdor ({unit})',
-  'run.action.unitPriceUzs': 'Birlik narxi (UZS)',
+  'run.action.unitPriceUzs': 'Birlik narxi ({currency})',
   // M3.41 (2026-05-21): xaridor xarid o'rtasida yangi mahsulot qo'shadi
   'run.action.addItem.button': "+ Qo'shish",
   'run.action.addItem.title': "Xarid o'rtasida mahsulot qo'shish",
@@ -958,7 +974,7 @@ export const uz = {
   'run.action.addItem.save': 'Saqlash',
   'run.label.addedByPurchaser': "Xaridor xarid davomida qo'shgan",
   'run.confirm.finish.addedByPurchaser':
-    "➕ Buyurtmadan tashqari {n} pozitsiya qo'shildi · {total} UZS",
+    "➕ Buyurtmadan tashqari {n} pozitsiya qo'shildi · {total} {currency}",
   'run.toast.itemAdded': "Pozitsiya qo'shildi",
   'run.toast.couldNotAddItem': "Pozitsiyani qo'shib bo'lmadi",
   'run.errors.alreadyInRun': 'Bu SKU xaridda allaqachon bor — mavjud qatorni tahrirlang',
@@ -986,7 +1002,7 @@ export const uz = {
   'run.toast.expenseAdded': "Xarajat qo'shildi",
   'run.toast.expenseRemoved': "Xarajat o'chirildi",
   'run.toast.couldNotAddExpense': "Xarajatni saqlab bo'lmadi",
-  'run.confirm.finish.expenses': '🧾 {n} ta katalogdan tashqari / xarajat · {total} UZS',
+  'run.confirm.finish.expenses': '🧾 {n} ta katalogdan tashqari / xarajat · {total} {currency}',
   'run.confirm.finish.perStoreHeading': "Do'kon bo'yicha hisob:",
   'run.errors.expenseLabelRequired': 'Nomini kiriting',
   'run.errors.expenseLabelTooLong': "Nom juda uzun (200 dan ko'p emas)",
@@ -1000,9 +1016,10 @@ export const uz = {
   'run.errors.notClaimable': "Xaridni hozirgi holatda olib bo'lmaydi",
   // M3.36 (2026-05-19): minglik rejim — 147500 o'rniga 147.5 yozish.
   // UZS tenant uchun standart yoqilgan.
-  'run.action.unitPriceUzsThousands': 'Birlik narxi (×1000 UZS)',
+  'run.action.unitPriceUzsThousands': 'Birlik narxi (×1000 {currency})',
   'run.label.staleRun': '{days} kun',
-  'run.label.priceUnitAria': "Narx birligi — UZS va minglik o'rtasida almashtirish uchun bosing",
+  'run.label.priceUnitAria':
+    "Narx birligi — {currency} va minglik o'rtasida almashtirish uchun bosing",
   'run.price.check.title': "Narx to'g'rimi?",
   'run.price.check.body': "{name}: o'tgan safar {last} {currency}, hozir {next} {currency}.",
   'run.price.check.confirm': 'Ha, saqlash',
@@ -1027,7 +1044,8 @@ export const uz = {
   'run.confirm.finish.title': 'Xaridni tugatamizmi?',
   'run.confirm.finish.body':
     "Tugatgandan keyin narx, miqdor va yetkazish yozuvlari qulflanadi. Bekor qilib bo'lmaydi.",
-  'run.confirm.finish.summary': "{items} ta mahsulot · {stores} ta do'kon · jami {total} UZS",
+  'run.confirm.finish.summary':
+    "{items} ta mahsulot · {stores} ta do'kon · jami {total} {currency}",
   'run.label.paymentMethod': "To'lov usuli",
   'run.label.paymentCash': 'Naqd',
   'run.label.paymentTransfer': "O'tkazma",
@@ -1361,6 +1379,7 @@ export const uz = {
   'dishes.confirm.archive': '{name} arxivlansinmi?',
   'dishes.errors.cannotManage': 'Menyuni tahrirlash uchun dishes.manage ruxsati kerak.',
   'dishes.errors.namesRequired': 'Kamida bitta tildagi nom kerak.',
+  'admin.errors.namesRequired': 'Kamida bitta tildagi nom kerak.',
   'dishes.errors.ingredientQtyMustBePositive': "Ingredient miqdori > 0 bo'lishi kerak.",
   'dishes.errors.ingredientSkuNotFound': "Retseptda noma'lum SKU.",
   'dishes.errors.notFound': 'Taom topilmadi.',
@@ -1376,6 +1395,8 @@ export const uz = {
   'sales.form.noDishesYet': "Hech qanday taom yo'q. Avval Catalog → Dishes da qo'shing.",
   'sales.form.noRecipe': "retsept yo'q",
   'sales.list.title': 'Bugungi sotuvlar',
+  'sales.list.capReached':
+    "Faqat oxirgi {n} ta sotuv ko'rsatilmoqda — jami to'liq bo'lmasligi mumkin.",
   'sales.empty.title': "Bugun sotuvlar yo'q",
   'sales.empty.description': 'Birinchi sotuvni yozish uchun yuqoridagi tugmani bosing.',
   'sales.toast.recorded': 'Yozildi — qoldiq yangilandi.',
@@ -1561,4 +1582,78 @@ export const uz = {
   'settlement.errors.versionConflict': "Bu kun yakuni boshqa joyda o'zgartirilgan.",
   'settlement.errors.versionConflictBody':
     'Tuzatishni saqlashdan oldin yozuvni yangilang va oxirgi versiyani tekshiring.',
+  // 2026-10-21 audit decisions CA-03/04/06/11 (run selection, parallel runs,
+  // received qty, items/expenses money split).
+  'run.money.itemsExpenses': 'Mahsulotlar {items} · xarajatlar {expenses}',
+  'confirm.issue.receivedQty': 'Qabul qilingan miqdor ({max} {unit} dan)',
+  'confirm.issue.receivedQtyRequired': 'Haqiqatda qancha kelganini kiriting',
+  'confirm.issue.receivedQtyRange': '0 dan {max} gacha son kiriting',
+  'confirm.receivedOf': 'qabul qilindi {received} / {qty} {unit}',
+  'confirm.runPicker.ariaLabel': 'Qaysi yetkazib berishni tekshirish',
+  'confirm.runPicker.option': '#{n} · {date}',
+  'finance.label.expense': 'Xarajat',
+  'finance.label.expenses': 'Katalogdan tashqari xarajatlar',
+  'run.select.title': 'Xarid qilinadigan buyurtmalar',
+  'run.select.meta': '{total} tadan {n} tasi tanlandi',
+  'run.select.today': 'Bugun',
+  'run.select.olderDate': '{days} kun oldin — odatda kiritilmaydi',
+  'run.select.runDate': 'Xarid sanasi (hisob)',
+  'run.select.noneSelected': 'Kamida bitta buyurtmani belgilang',
+  'run.attach.sheet.title': "Buyurtmalarni xaridga qo'shish",
+  'run.action.attachSelected': "{n} ta buyurtmani qo'shish",
+  'run.switcher.label': 'Ochiq xaridlar',
+  'run.switcher.newRun': '+ Yangi xarid',
+  'run.confirm.finish.money':
+    'Mahsulotlar {items} · xarajatlar {expenses} · jami {total} {currency}',
+  'run.errors.runDateInFuture': "Xarid sanasi kelajakda bo'lishi mumkin emas",
+  'run.errors.receivedQtyRequired': 'Haqiqatda qancha kelganini kiriting',
+  'run.errors.receivedQtyInvalid':
+    "Qabul qilingan miqdor 0 dan kichik bo'lmagan son bo'lishi kerak",
+  'run.errors.receivedQtyExceedsSplit': 'Qabul qilingan miqdor {max} dan oshmasligi kerak',
+  // 2026-10-21 audit follow-ups: staff sales tab, sales void, inventory movements,
+  // invite list/revoke, offline/stale-order messages.
+  'nav.sales': 'Sotuvlar',
+  'sales.page.title': 'Sotuvlar',
+  'sales.action.void': 'Bekor qilish',
+  'sales.void.title': 'Sotuvni bekor qilish',
+  'sales.void.description': '{dish} — masalliqlar omborga qaytariladi.',
+  'sales.void.reasonLabel': 'Sabab',
+  'sales.void.reasonPlaceholder': 'masalan: noto‘g‘ri taom, ikki marta kiritilgan',
+  'sales.void.confirmBtn': 'Bekor qilish',
+  'sales.void.voidedLabel': 'Bekor qilingan: {reason}',
+  'sales.toast.voided': 'Sotuv bekor qilindi — qoldiq tiklandi.',
+  'sales.errors.saleNotFound': 'Sotuv topilmadi.',
+  'dishes.errors.duplicateIngredient':
+    'Retseptda bitta mahsulot ikki marta ko‘rsatilgan — bitta qatorga birlashtiring.',
+  'inventory.action.addStocktake': 'Boshqa mahsulotni inventarizatsiya qilish',
+  'inventory.sheet.stocktake.skuLabel': 'Mahsulot',
+  'inventory.sheet.stocktake.pickSku': 'Mahsulotni tanlang…',
+  'inventory.movements.title': 'So‘nggi harakatlar',
+  'inventory.movements.empty': 'Hali harakatlar yo‘q',
+  'inventory.reason.delivery_received': 'Yetkazib berish qabul qilindi',
+  'inventory.reason.stocktake': 'Inventarizatsiya',
+  'inventory.reason.wastage': 'Isrof',
+  'inventory.reason.consumption': 'Sotuv sarfi',
+  'inventory.reason.consumption_reversed': 'Sotuv bekor qilindi',
+  'inventory.reason.transfer_in': 'Ko‘chirish (kirim)',
+  'inventory.reason.transfer_out': 'Ko‘chirish (chiqim)',
+  'inventory.reason.adjustment': 'Tuzatish',
+  'auth.errors.inviteRevoked':
+    "Bu taklif havolasi bekor qilingan. Rahbaringizdan yangi havola so'rang.",
+  'auth.errors.inviteInviterNoLongerAuthorized':
+    "Taklif endi amal qilmaydi: uni yuborgan kishi endi a'zo qo'sha olmaydi. Yangi havola so'rang.",
+  'admin.errors.inviteNotFound': 'Taklif topilmadi.',
+  'admin.errors.inviteNotPending': 'Bu taklif allaqachon ishlatilgan yoki bekor qilingan.',
+  'admin.toast.inviteRevoked': 'Taklif bekor qilindi',
+  'people.pendingInvitesCount': '{n} ta kutilayotgan taklif',
+  'people.pendingInviteDefaultRole': "Do'kon uchun standart rol",
+  'people.pendingInviteOrgWide': 'Butun tashkilot',
+  'people.pendingInviteMeta': '{name} yubordi · {date} gacha',
+  'people.pendingInviteExpires': '{date} gacha',
+  'people.revokeInvite': 'Bekor qilish',
+  'people.confirmRevokeInvite':
+    "Bu taklif havolasini bekor qilasizmi? Havolasi borlar endi qo'shila olmaydi.",
+  'order.errors.staleOfflineEdit': 'Bu o‘zgarish oldingi kuni oflayn qilingan va qo‘llanmadi',
+  'approval.toast.orderChanged':
+    'Buyurtma siz ochganingizdan keyin o‘zgardi — eng so‘nggi variantini ko‘rib chiqing',
 } as const satisfies Record<CatalogKey, string>;

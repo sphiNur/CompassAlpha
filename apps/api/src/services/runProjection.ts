@@ -228,6 +228,8 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
             confirmStatus: e.payload.status,
             confirmNote: e.payload.note,
             confirmPhotoUrl: e.payload.photoUrl,
+            // 2026-10-21 CA-06: null for 'ok' and for legacy events.
+            confirmReceivedQty: e.payload.receivedQty ?? null,
           })
           .where(
             and(
@@ -258,15 +260,18 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
         // storeId, skuId) means re-firing this hook (e.g. during
         // reproject) is a no-op via ON CONFLICT DO NOTHING.
         //
-        // Short/wrong qty adjustments (StoreItemConfirmed
-        // status='short') are NOT yet honored in the delta — the
-        // operator must adjust the split before confirming, or post
-        // a stocktake / wastage row after. Future M2.x can wire item-
-        // level confirmation status into the inventory delta.
+        // 2026-10-21 CA-06: a line the store marked short / wrong /
+        // quality books the qty it reported as received, not the split.
+        // 'ok' lines, undecided lines, and every confirmation recorded
+        // before receivedQty existed (confirm_received_qty IS NULL) book
+        // the full split qty exactly as before — so reprojecting old
+        // streams produces identical movements.
         const splitsForStore = await db
           .select({
             skuId: s.runItemStoresV.skuId,
             qty: s.runItemStoresV.qty,
+            confirmStatus: s.runItemStoresV.confirmStatus,
+            confirmReceivedQty: s.runItemStoresV.confirmReceivedQty,
           })
           .from(s.runItemStoresV)
           .where(
@@ -283,7 +288,7 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
                 orgId,
                 storeId: e.payload.storeId,
                 skuId: sp.skuId,
-                delta: sp.qty,
+                delta: receivedDelta(sp),
                 reason: 'delivery_received' as const,
                 sourceType: 'run' as const,
                 sourceId: e.streamId,
@@ -551,6 +556,7 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
             confirmStatus: null,
             confirmNote: null,
             confirmPhotoUrl: null,
+            confirmReceivedQty: null,
           })
           .where(
             and(
@@ -720,4 +726,25 @@ async function insertPriceObservations(
       observedAt: e.occurredAt,
     })),
   );
+}
+
+/**
+ * 2026-10-21 CA-06: inventory delta for one confirmed split. Exported
+ * for unit tests. Non-ok lines with a recorded received qty book that
+ * qty; everything else (ok, undecided, legacy NULL) books the split.
+ */
+export function receivedDelta(split: {
+  qty: string;
+  confirmStatus: string | null;
+  confirmReceivedQty: string | null;
+}): string {
+  if (
+    split.confirmStatus &&
+    split.confirmStatus !== 'ok' &&
+    split.confirmReceivedQty !== null &&
+    split.confirmReceivedQty !== undefined
+  ) {
+    return split.confirmReceivedQty;
+  }
+  return split.qty;
 }

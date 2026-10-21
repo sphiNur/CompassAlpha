@@ -9,6 +9,9 @@ import { Banner, Button, Field, Input, SearchInput, Select, Sheet } from '@compa
 import { trpc } from '../lib/trpc';
 import { useI18n, useProductName } from '../hooks/useI18n';
 import { RunHistoryPage } from './runs/history/RunHistory';
+// 2026-10-21 audit CA-23: shared with the Finance presets (one local-
+// calendar date helper instead of two copies).
+import { localDateValue } from './admin/operations/financeDates';
 
 type PaymentFilter = 'all' | 'cash' | 'transfer' | 'mixed';
 type SortOrder = 'newest' | 'oldest';
@@ -28,13 +31,6 @@ const EMPTY_FILTERS: HistoryFilters = {
   payment: 'all',
   sort: 'newest',
 };
-
-function localDateValue(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
 
 function presetRange(days: number): Pick<HistoryFilters, 'dateFrom' | 'dateTo'> {
   const end = new Date();
@@ -348,6 +344,8 @@ export function HistoryPage() {
       fetching={historyQuery.isFetching}
       totalCount={data?.pageInfo.totalCount ?? 0}
       summaryTotal={data?.summary.total ?? '0'}
+      summaryItemsTotal={data?.summary.itemsTotal ?? '0'}
+      summaryExpensesTotal={data?.summary.expensesTotal ?? '0'}
       pagination={
         data
           ? {

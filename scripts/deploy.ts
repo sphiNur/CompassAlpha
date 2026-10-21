@@ -25,11 +25,12 @@
  *      / .git / .claude)
  *   2. scp to server
  *   3. extract over /home/ubuntu/compass-alpha (in place; no downtime
- *      until the api restart in step 4)
- *   4. systemctl restart compass-api  (api picks up server-side code)
- *   5. pnpm exec vite build            (web/dist gets new hashed bundle
- *      AND the api will read web/dist/build-id.txt for /health/version
- *      so the running clients see a version mismatch and prompt reload)
+ *      until the api restart in step 4c)
+ *   4b. pnpm exec vite build --outDir dist.next, then swap it into place
+ *      (dist → dist.prev, dist.next → dist). The api reads
+ *      web/dist/build-id.txt for /health/version so running clients see
+ *      a version mismatch and prompt reload.
+ *   4c. systemctl restart compass-api compass-worker
  *   6. Run server-side tRPC smoke locally against the public URL
  *   7. Run browser smoke locally against the public URL
  *   8. If either fails, exit non-zero; the deploy is "live" but you know
@@ -206,7 +207,7 @@ console.log(`Branch: ${gitBranch}`);
  * Pre-flight: never swap the frontend out from under a purchaser who is
  * standing in the market (2026-07-26).
  *
- * The api restart in step 4b bumps web/dist/build-id.txt, so every live
+ * The web swap in step 4b bumps web/dist/build-id.txt, so every live
  * client sees a version mismatch and gets a reload prompt. A PurchaseRow
  * holds the typed qty/price in LOCAL component state until the ✓ commits
  * it — a reload mid-row silently discards whatever the purchaser has
@@ -445,7 +446,47 @@ if (!DRY) {
     );
   }
 
-  step('4b. restart api + worker');
+  /**
+   * 2026-10-21 audit CA-37: the web bundle used to be built AFTER the api
+   * restart, and `vite build` empties dist/ before writing it. For the
+   * length of the build the new api was serving a dist/ that was missing
+   * or half-written — every page load in that window 404'd its assets or
+   * fell through to JSON. Now the bundle is built beside the live one and
+   * renamed into place (two same-filesystem renames, microseconds apart)
+   * BEFORE the restart, so there is no window of new api + missing
+   * assets. A failed build aborts here, before anything restarts, and
+   * leaves the live dist/ untouched.
+   *
+   * The previous bundle is kept as dist.prev for exactly one deploy:
+   * rolling the frontend back is `mv dist dist.bad && mv dist.prev dist`
+   * (see docs/RUNBOOK.md "Roll back a bad deploy").
+   */
+  step('4b. build web into dist.next, then swap into place');
+  try {
+    console.log(
+      ssh(
+        [
+          'set -e',
+          'set -o pipefail',
+          'export PATH=$HOME/.bun/bin:$PATH',
+          'cd /home/ubuntu/compass-alpha/apps/web',
+          'rm -rf dist.next',
+          `VITE_BUILD_SHA=${JSON.stringify(releaseSha)} pnpm exec vite build --outDir dist.next --emptyOutDir 2>&1 | tail -10`,
+          'test -f dist.next/index.html',
+          'rm -rf dist.prev',
+          'if [ -d dist ]; then mv dist dist.prev; fi',
+          'mv dist.next dist',
+        ].join(' && '),
+      ),
+    );
+  } catch (err) {
+    console.error('\x1b[31m✖ web build FAILED — aborting before the api restart\x1b[0m');
+    console.error('  The live apps/web/dist was not touched.');
+    console.error(String((err as Error).message ?? err));
+    process.exit(1);
+  }
+
+  step('4c. restart api + worker');
   ssh(
     `sudo systemctl restart compass-api compass-worker && sleep 2 && sudo systemctl is-active compass-api compass-worker`,
   );
@@ -456,7 +497,7 @@ if (!DRY) {
   // because grammY's failure path doesn't exit. Verify the worker
   // logged its `[worker] online` banner since the restart so we
   // know it actually entered the flush loop.
-  step('4c. verify worker startup banner (warn-only)');
+  step('4d. verify worker startup banner (warn-only)');
   try {
     const journal = ssh(
       `journalctl -u compass-worker --since '60 seconds ago' --no-pager 2>&1 | tail -20`,
@@ -471,17 +512,6 @@ if (!DRY) {
   } catch (err) {
     console.log(`  \x1b[33m⚠ couldn't read worker journal: ${(err as Error).message}\x1b[0m`);
   }
-
-  step('5. rebuild web');
-  console.log(
-    ssh(
-      [
-        'export PATH=$HOME/.bun/bin:$PATH',
-        'cd /home/ubuntu/compass-alpha/apps/web',
-        `VITE_BUILD_SHA=${JSON.stringify(releaseSha)} pnpm exec vite build 2>&1 | tail -10`,
-      ].join(' && '),
-    ),
-  );
 
   step('verify deployed assets');
   const newHash = ssh(

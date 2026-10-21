@@ -84,7 +84,16 @@ export interface RunStoreDeliveryState {
   deliveredByUserId: string | null;
   confirmedAt: Date | null;
   confirmedByUserId: string | null;
-  itemConfirms: Map<string, { status: string; note: string | null; photoUrl: string | null }>;
+  itemConfirms: Map<
+    string,
+    {
+      status: string;
+      note: string | null;
+      photoUrl: string | null;
+      /** 2026-10-21 CA-06: received qty for non-ok lines; null = full split / legacy. */
+      receivedQty?: string | null;
+    }
+  >;
 }
 
 export interface RunState {
@@ -269,6 +278,7 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
         status: event.payload.status,
         note: event.payload.note,
         photoUrl: event.payload.photoUrl,
+        receivedQty: event.payload.receivedQty ?? null,
       });
       stores.set(event.payload.storeId, { ...existing, itemConfirms: confirms });
       return { ...state, seq: event.seq, stores };

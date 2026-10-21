@@ -82,6 +82,10 @@ export interface ActiveRun {
     paymentMethod?: string | null;
     deliveredAt: Date | string | null;
     confirmedAt: Date | string | null;
+    /** Receiver's per-line status (ok | short | wrong | quality). */
+    confirmStatus?: string | null;
+    /** 2026-10-21 CA-06: qty actually received on a problem line. */
+    confirmReceivedQty?: string | null;
   }>;
   perStoreDemand?: Array<{ storeId: string; skuId: string; qty: string }>;
   sessions?: Array<{
@@ -120,6 +124,8 @@ export interface ActiveRun {
       idx?: number;
     }>
   >;
+  /** 2026-10-21 CA-11: server-computed items / expenses / total (run.get). */
+  money?: { itemsTotal: string; expensesTotal: string; total: string };
   /** M3.44 (2026-05-22): active (non-removed) off-catalog expenses. */
   expenses?: Array<{
     id: string;

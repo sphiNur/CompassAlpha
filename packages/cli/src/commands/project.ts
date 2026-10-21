@@ -4,10 +4,15 @@ import kleur from 'kleur';
 export function registerProjectCommands(parent: Command): void {
   parent
     .command('rebuild <stream>')
-    .description('Drop a read_model and replay events. Allowed values: order, run.')
+    .description('Not implemented — use `pnpm --filter @compass/api reproject` (see RUNBOOK).')
     .action(async (stream: string) => {
-      // Same note as test.purge: routine lives server-side, CLI delegates.
-      console.log(kleur.yellow('[stub] rebuild'), { stream });
-      console.log('  Not implemented in M0. Implement in apps/worker.');
+      // 2026-10-21 audit CA-14: this used to print "[stub]" and exit 0, which
+      // the RUNBOOK sent operators to during an incident. The real rebuild
+      // is apps/api/scripts/reproject.ts; point there and fail loudly.
+      console.error(kleur.red('compass project rebuild is not implemented.'), { stream });
+      console.error(
+        `  Run instead: pnpm --filter @compass/api reproject --type=${stream === 'run' ? 'run' : 'order'}`,
+      );
+      process.exitCode = 1;
     });
 }

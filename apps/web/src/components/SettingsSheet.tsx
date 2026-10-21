@@ -28,6 +28,7 @@ import { useToast } from '@compass/ui';
 import type { Locale } from '@compass/i18n';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
+import { resetNavStore } from '../stores/navStore';
 import { useI18n } from '../hooks/useI18n';
 import { useErrToast } from '../lib/errToast';
 import type { PageMenuRegistration } from '../app/PageMenuContext';
@@ -101,6 +102,9 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
         session: data.session,
       });
       queryClient.clear();
+      // 2026-10-21 audit CA-33: the old tenant's tab / Admin drill-down
+      // (e.g. a storeFocus on another org's store) must not carry over.
+      resetNavStore();
       toast.success(i18n.t('workspace.switched'));
       onOpenChange(false);
     },
@@ -124,8 +128,8 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
   const nameLocked = !!session?.user.displayNameLocked;
   const nameDirty = !nameLocked && draftName.trim() !== (session?.user.displayName ?? '');
 
-  // M3.5: org.admin holders can switch store context here. Non-admins
-  // never see this section — they're bound to a single store anyway.
+  // M3.5: org.admin holders can switch store context here; since the
+  // 2026-10-21 audit (CA-22) so can members assigned to ≥2 stores.
   const canSeeStorePicker = useCanSeeStorePicker();
 
   return (

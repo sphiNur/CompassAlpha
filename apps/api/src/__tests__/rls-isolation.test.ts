@@ -23,7 +23,8 @@
  * Tables covered: every entry in the org-isolation lists at
  *   packages/db/migrations/sql/900_rls_policies.sql
  * including the M1.9 additions (member_store_assignments,
- * member_permission_overrides, policy_decisions, snapshots).
+ * member_permission_overrides, policy_decisions, snapshots) and the
+ * 2026-10-21 CA-36 additions (run_expenses_v, dishes, dish_ingredients).
  *
  * Skipped when DATABASE_URL is unset OR SKIP_PG_TESTS=1.
  */
@@ -89,6 +90,11 @@ interface Fixture {
   /** snapshotStream id (== events.streamId) per org. */
   snapshotStreamA: string;
   snapshotStreamB: string;
+  /** 2026-10-21 audit CA-36: run_expenses_v + dishes/dish_ingredients. */
+  expenseA: string;
+  expenseB: string;
+  dishA: string;
+  dishB: string;
 }
 
 let fix: Fixture | null = null;
@@ -118,6 +124,10 @@ function dummyFixture(): Fixture {
     skuB: id,
     snapshotStreamA: id,
     snapshotStreamB: id,
+    expenseA: id,
+    expenseB: id,
+    dishA: id,
+    dishB: id,
   };
 }
 
@@ -392,6 +402,42 @@ beforeAll(async () => {
     .insert(s.runItemStoresV)
     .values({ runId: runB, skuId: skuB!.id, storeId: storeB!.id, qty: '1' });
 
+  // --- Run expenses (2026-10-21 audit CA-36: had no RLS before) ---
+  const expenseA = randomUUID();
+  const expenseB = randomUUID();
+  for (const [id, runId, orgId, memberId] of [
+    [expenseA, runA, orgA!.id, memA!.id],
+    [expenseB, runB, orgB!.id, memB!.id],
+  ] as const) {
+    await db.insert(s.runExpensesV).values({
+      id,
+      runId,
+      orgId,
+      label: 'rls expense',
+      unitPrice: '1000',
+      storeSplitsJson: [],
+      reason: 'rls test',
+      addedByMemberId: memberId,
+      addedAt: new Date(),
+    });
+  }
+
+  // --- Dishes + recipe rows (2026-10-21 audit CA-36: now FORCEd) ---
+  const [dishA] = await db
+    .insert(s.dishes)
+    .values({ orgId: orgA!.id, names: { en: 'dish-A' } })
+    .returning();
+  const [dishB] = await db
+    .insert(s.dishes)
+    .values({ orgId: orgB!.id, names: { en: 'dish-B' } })
+    .returning();
+  await db
+    .insert(s.dishIngredients)
+    .values({ dishId: dishA!.id, skuId: skuA!.id, qtyPerServing: '0.1' });
+  await db
+    .insert(s.dishIngredients)
+    .values({ dishId: dishB!.id, skuId: skuB!.id, qtyPerServing: '0.1' });
+
   // --- policy_decisions audit log ---
   await db.insert(s.policyDecisions).values({
     orgId: orgA!.id,
@@ -427,6 +473,10 @@ beforeAll(async () => {
     skuB: skuB!.id,
     snapshotStreamA: sessionA,
     snapshotStreamB: sessionB,
+    expenseA,
+    expenseB,
+    dishA: dishA!.id,
+    dishB: dishB!.id,
   };
 });
 
@@ -709,5 +759,80 @@ describe.skipIf(!SHOULD_RUN)('RLS cross-org isolation (PG-gated)', () => {
     expect(r.aSeen).toBe(1);
     expect(r.bSeen).toBe(1);
     expect(r.totalSeen).toBe(2);
+  });
+
+  // 2026-10-21 audit CA-36: run_expenses_v had no RLS; dishes and
+  // dish_ingredients had ENABLE without FORCE and no system branch.
+  test('read_model.run_expenses_v — direct org_id', async () => {
+    if (!fix) throw new Error('fixture missing');
+    const r = await countUnderEachContext(
+      'read_model.run_expenses_v',
+      `id IN ('${fix.expenseA}', '${fix.expenseB}')`,
+    );
+    expect(r.aSeen).toBe(1);
+    expect(r.bSeen).toBe(1);
+    expect(r.totalSeen).toBe(2);
+  });
+
+  test('read_model.run_expenses_v — cannot be written into another organisation', async () => {
+    if (!fix) throw new Error('fixture missing');
+    if (rlsBypassedByCurrentUser) return;
+    const db = getDb(undefined, { system: 'maintenance' });
+    const intoB = withOrgContext(db, fix.orgA.id, (tx) =>
+      tx.insert(s.runExpensesV).values({
+        id: randomUUID(),
+        runId: fix!.runB,
+        orgId: fix!.orgB.id,
+        label: 'smuggled',
+        unitPrice: '1',
+        storeSplitsJson: [],
+        reason: 'smuggled',
+        addedByMemberId: fix!.memberA.id,
+        addedAt: new Date(),
+      }),
+    );
+    await expect(intoB).rejects.toThrow();
+  });
+
+  test('inventory.dishes — direct org_id, FORCEd', async () => {
+    if (!fix) throw new Error('fixture missing');
+    const r = await countUnderEachContext(
+      'inventory.dishes',
+      `id IN ('${fix.dishA}', '${fix.dishB}')`,
+    );
+    expect(r.aSeen).toBe(1);
+    expect(r.bSeen).toBe(1);
+    expect(r.totalSeen).toBe(2);
+  });
+
+  test('inventory.dish_ingredients — piggyback via dishes.org_id', async () => {
+    if (!fix) throw new Error('fixture missing');
+    const r = await countUnderEachContext(
+      'inventory.dish_ingredients',
+      `dish_id IN ('${fix.dishA}', '${fix.dishB}')`,
+    );
+    expect(r.aSeen).toBe(1);
+    expect(r.bSeen).toBe(1);
+    expect(r.totalSeen).toBe(2);
+  });
+
+  test('FORCE ROW LEVEL SECURITY is on for every CA-36 table', async () => {
+    if (!fix) throw new Error('fixture missing');
+    if (rlsBypassedByCurrentUser) return;
+    const db = getDb(undefined, { system: 'maintenance' });
+    const r = await db.execute(sql`
+      SELECT n.nspname || '.' || c.relname AS t, c.relrowsecurity AS on, c.relforcerowsecurity AS forced
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE (n.nspname, c.relname) IN (
+        ('read_model', 'run_expenses_v'), ('inventory', 'dishes'), ('inventory', 'dish_ingredients')
+      )
+    `);
+    const rows = (Array.isArray(r) ? r : ((r as { rows?: unknown[] }).rows ?? [])) as Array<{
+      t: string;
+      on: boolean;
+      forced: boolean;
+    }>;
+    expect(rows).toHaveLength(3);
+    for (const row of rows) expect([row.t, row.on, row.forced]).toEqual([row.t, true, true]);
   });
 });

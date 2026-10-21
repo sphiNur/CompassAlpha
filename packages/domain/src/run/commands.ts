@@ -35,11 +35,13 @@ export type RunCommand =
        * to cash) so audit always knows which money path each item took.
        */
       paymentMethod: 'cash' | 'transfer';
+      /** 2026-10-21 audit CA-29: see assertStoresWithinRun. */
+      runStoreIds?: readonly string[];
       actor: ActorCtx;
     }
   | { type: 'MarkUnavailable'; skuId: string; note: string; actor: ActorCtx }
   | { type: 'StartDelivery'; actor: ActorCtx }
-  | { type: 'DeliverToStore'; storeId: string; actor: ActorCtx }
+  | { type: 'DeliverToStore'; storeId: string; runStoreIds?: readonly string[]; actor: ActorCtx }
   | {
       type: 'ConfirmStoreItem';
       storeId: string;
@@ -47,6 +49,12 @@ export type RunCommand =
       status: 'ok' | 'short' | 'wrong' | 'quality';
       note: string | null;
       photoUrl: string | null;
+      /**
+       * 2026-10-21 CA-06: decimal string, 0 ≤ qty ≤ this store's split.
+       * Required for 'short'; defaults to "0" for 'wrong'/'quality';
+       * ignored for 'ok' (the full split arrived).
+       */
+      receivedQty?: string | null;
       actor: ActorCtx;
     }
   | { type: 'ConfirmStore'; storeId: string; actor: ActorCtx }
@@ -72,6 +80,8 @@ export type RunCommand =
        *  realised they actually wired the supplier instead of paying
        *  cash). Required so the form always submits the current choice. */
       paymentMethod: 'cash' | 'transfer';
+      /** 2026-10-21 audit CA-29: see assertStoresWithinRun. */
+      runStoreIds?: readonly string[];
       actor: ActorCtx;
     }
   | { type: 'UnmarkUnavailable'; skuId: string; reason: string; actor: ActorCtx }
@@ -115,6 +125,8 @@ export type RunCommand =
       storeSplits: StoreSplitCommand[];
       paymentMethod: 'cash' | 'transfer';
       reason: string;
+      /** 2026-10-21 audit CA-29: see assertStoresWithinRun. */
+      runStoreIds?: readonly string[];
       actor: ActorCtx;
     }
   // ---- Off-catalog expenses (M3.44, 2026-05-22) ----------------------
@@ -136,6 +148,8 @@ export type RunCommand =
       paymentMethod: 'cash' | 'transfer';
       receiptPhotoUrl: string | null;
       reason: string;
+      /** 2026-10-21 audit CA-29: see assertStoresWithinRun. */
+      runStoreIds?: readonly string[];
       actor: ActorCtx;
     }
   | {
@@ -193,6 +207,9 @@ export function decideRun(
       // unique index mrv_one_active_per_org_unique (migration 0035), with
       // run.create short-circuiting to the live run before it gets here.
       // If you come looking for a missing guard, it is not missing.
+      // 2026-10-21 CA-04: migration 0047 narrows that index to
+      // planned/purchasing, so one run may be buying while any number of
+      // earlier runs are still out for delivery / awaiting confirmation.
       if (state.status !== 'absent') {
         throw conflict('run.errors.alreadyPlanned', { status: state.status });
       }
@@ -285,6 +302,12 @@ export function decideRun(
         throw validation('run.errors.splitSumMismatch', { actual, splitSum });
       }
       assertSplitOverrides(command.storeSplits);
+      // 2026-10-21 audit CA-29: a split to a store outside the run sends
+      // goods to a store that cannot see (or confirm) the run, which then
+      // blocks FinishRun forever.
+      if (command.runStoreIds) {
+        assertStoresWithinRun(state, command.storeSplits, command.runStoreIds);
+      }
       const events: RunEvent[] = [];
       if (state.status === 'planned') {
         events.push({ ...baseFor(events.length + 1), type: 'PurchaseStarted', payload: {} });
@@ -363,24 +386,10 @@ export function decideRun(
       // "involved stores" is derived from the existing items'
       // storeSplits AND the run-level stores map (so a run with only
       // pending items still has its store scope known).
-      const involvedStores = new Set<string>();
-      for (const it of state.items.values()) {
-        for (const sp of it.storeSplits) involvedStores.add(sp.storeId);
-      }
-      for (const st of state.stores.keys()) involvedStores.add(st);
-      // If the items + stores maps are both empty (theoretical), fall
-      // back to letting any storeId through — but PlanRun guards
-      // against empty items, so this branch should be unreachable in
-      // practice.
-      if (involvedStores.size > 0) {
-        for (const sp of command.storeSplits) {
-          if (!involvedStores.has(sp.storeId)) {
-            throw preconditionFailed('run.errors.storeNotInRun', {
-              storeId: sp.storeId,
-            });
-          }
-        }
-      }
+      // 2026-10-21 audit CA-29: the derived set is empty on a run with
+      // only pending items, so the API now passes the session-derived
+      // `runStoreIds`; see assertStoresWithinRun.
+      assertStoresWithinRun(state, command.storeSplits, command.runStoreIds);
 
       // Atomic emit: if the run is still in `planned`, also flip it to
       // `purchasing` (same auto-start convention PurchaseItem uses for
@@ -445,20 +454,7 @@ export function decideRun(
       }
       // Store-scope: every split storeId must already be part of this
       // run. Mirrors AddPurchaserItem's same guard.
-      const involvedStores = new Set<string>();
-      for (const it of state.items.values()) {
-        for (const sp of it.storeSplits) involvedStores.add(sp.storeId);
-      }
-      for (const st of state.stores.keys()) involvedStores.add(st);
-      if (involvedStores.size > 0) {
-        for (const sp of command.storeSplits) {
-          if (!involvedStores.has(sp.storeId)) {
-            throw preconditionFailed('run.errors.storeNotInRun', {
-              storeId: sp.storeId,
-            });
-          }
-        }
-      }
+      assertStoresWithinRun(state, command.storeSplits, command.runStoreIds);
       // 2026-07-06: removed the ">200,000 UZS requires a receipt photo"
       // gate. AddRunExpense already mandates a `reason` (checked above),
       // which is the actual audit trail; a paper receipt is often
@@ -601,6 +597,18 @@ export function decideRun(
       // tap) is a no-op, not a second StoreDelivered and a second
       // notification to the store.
       if (state.stores.get(command.storeId)?.deliveredAt) return [];
+      // 2026-10-21 audit CA-29: only a store the run serves can be handed
+      // goods. Stores that hold a purchased split stay deliverable even if
+      // they are outside `runStoreIds` (legacy runs), or the run could
+      // never finish.
+      {
+        const allowed = new Set<string>(command.runStoreIds ?? []);
+        for (const st of purchasedSplitStores(state)) allowed.add(st);
+        for (const st of state.stores.keys()) allowed.add(st);
+        if (!allowed.has(command.storeId)) {
+          throw preconditionFailed('run.errors.storeNotInRun', { storeId: command.storeId });
+        }
+      }
       return [
         {
           ...baseFor(1),
@@ -618,9 +626,48 @@ export function decideRun(
       if (state.status !== 'delivering') {
         throw preconditionFailed('run.errors.notDelivering');
       }
+      // 2026-10-21 audit CA-30: a store may only check goods that have
+      // been handed over to it, only until it has signed for them (the
+      // inventory receipt is written at StoreConfirmed and never revised),
+      // and only for SKUs that were actually split to it.
+      const target = state.stores.get(command.storeId);
+      if (!target?.deliveredAt) {
+        throw preconditionFailed('run.errors.storeNotDelivered');
+      }
+      if (target.confirmedAt) {
+        throw preconditionFailed('run.errors.storeAlreadyConfirmed');
+      }
+      const confirmItem = state.items.get(command.skuId);
+      const confirmSplit =
+        confirmItem?.status === 'purchased'
+          ? confirmItem.storeSplits.find((sp) => sp.storeId === command.storeId)
+          : undefined;
+      if (!confirmSplit) {
+        throw validation('run.errors.itemNotInRun');
+      }
       if (command.status !== 'ok') {
         const note = command.note?.trim() ?? '';
         if (!note) throw validation('run.errors.confirmNoteRequiredOnIssue');
+      }
+      // 2026-10-21 CA-06: a problem line records how much actually
+      // arrived, and that — not the split qty — is what StoreConfirmed
+      // books into inventory. 'short' must say how much; for a wrong or
+      // spoiled item the safe default is that nothing usable arrived.
+      let receivedQty: string | null = null;
+      if (command.status !== 'ok') {
+        const raw = command.receivedQty?.trim() ?? '';
+        if (raw === '') {
+          if (command.status === 'short') throw validation('run.errors.receivedQtyRequired');
+          receivedQty = '0';
+        } else {
+          if (!/^\d+(\.\d+)?$/.test(raw)) {
+            throw validation('run.errors.receivedQtyInvalid', { value: raw });
+          }
+          if (Number(raw) - Number(confirmSplit.qty) > TOLERANCE) {
+            throw validation('run.errors.receivedQtyExceedsSplit', { max: confirmSplit.qty });
+          }
+          receivedQty = raw;
+        }
       }
       // Dedupe — if the item is already at exactly the requested status
       // (and same note + photo), don't append another event. Without
@@ -638,7 +685,8 @@ export function decideRun(
         existing &&
         existing.status === command.status &&
         (existing.note ?? null) === newNote &&
-        (existing.photoUrl ?? null) === (command.photoUrl ?? null)
+        (existing.photoUrl ?? null) === (command.photoUrl ?? null) &&
+        (existing.receivedQty ?? null) === receivedQty
       ) {
         return [];
       }
@@ -652,6 +700,9 @@ export function decideRun(
             status: command.status,
             note: newNote,
             photoUrl: command.photoUrl,
+            // Omitted (not null) on 'ok' so those events keep their
+            // pre-CA-06 shape byte for byte.
+            ...(receivedQty !== null ? { receivedQty } : {}),
           },
         },
       ];
@@ -735,7 +786,7 @@ export function decideRun(
       // M1.14: cash / transfer breakdown alongside the canonical total.
       // Shared with RefinalizeRun so a post-finish amendment re-freezes
       // totals by the exact same math (cash + transfer = total holds).
-      const { total, totalCash, totalTransfer } = computeRunTotals(state);
+      const { total, totalCash, totalTransfer, expensesTotal } = computeRunTotals(state);
       return [
         {
           ...baseFor(1),
@@ -744,6 +795,8 @@ export function decideRun(
             totalActual: total.toFixed(2),
             totalCash: totalCash.toFixed(2),
             totalTransfer: totalTransfer.toFixed(2),
+            itemsTotal: total.toFixed(2),
+            expensesTotal: expensesTotal.toFixed(2),
           },
         },
       ];
@@ -858,7 +911,7 @@ export function decideRun(
       }
       // Recompute totals from the amended state (same math as FinishRun)
       // so the read model's frozen totals are correct again.
-      const { total, totalCash, totalTransfer } = computeRunTotals(state);
+      const { total, totalCash, totalTransfer, expensesTotal } = computeRunTotals(state);
       return [
         {
           ...baseFor(1),
@@ -867,6 +920,8 @@ export function decideRun(
             totalActual: total.toFixed(2),
             totalCash: totalCash.toFixed(2),
             totalTransfer: totalTransfer.toFixed(2),
+            itemsTotal: total.toFixed(2),
+            expensesTotal: expensesTotal.toFixed(2),
             byMemberId: command.actor.memberId,
           },
         },
@@ -916,6 +971,10 @@ export function decideRun(
         throw validation('run.errors.splitSumMismatch', { actual, splitSum });
       }
       assertSplitOverrides(command.storeSplits);
+      // 2026-10-21 audit CA-29: same store-scope guard as PurchaseItem.
+      if (command.runStoreIds) {
+        assertStoresWithinRun(state, command.storeSplits, command.runStoreIds);
+      }
       const reason = command.reason.trim();
       if (!reason) throw validation('run.errors.reviseReasonRequired');
       if (reason.length > 500) throw validation('run.errors.noteTooLong');
@@ -1244,17 +1303,23 @@ function assertActive(state: RunState): void {
 }
 
 /**
- * Run-level actual / cash / transfer totals, computed from the current
- * purchased-item state (expenses are tracked separately and are NOT part
- * of the run's canonical actual_total — matches the finance report).
- * Extracted from FinishRun so RefinalizeRun re-freezes by identical math;
- * cash + transfer = total by construction (every line lands in exactly
- * one bucket).
+ * Run-level money, computed from the current state. Extracted from
+ * FinishRun so RefinalizeRun re-freezes by identical math.
+ *
+ * `total` / `totalCash` / `totalTransfer` are ITEMS ONLY (every purchased
+ * SKU line at COALESCE(split override, item price)) — the long-standing
+ * meaning of `actual_total`; cash + transfer = total by construction.
+ *
+ * 2026-10-21 CA-11: `expensesTotal` is the sum of active off-catalog
+ * expenses, emitted alongside so the one purchase-money definition —
+ * items + expenses, always shown as items / expenses / total — is on the
+ * event itself. Exported for the domain tests.
  */
-function computeRunTotals(state: RunState): {
+export function computeRunTotals(state: RunState): {
   total: number;
   totalCash: number;
   totalTransfer: number;
+  expensesTotal: number;
 } {
   let total = 0;
   let totalCash = 0;
@@ -1278,7 +1343,12 @@ function computeRunTotals(state: RunState): {
       else totalCash += lineTotal;
     }
   }
-  return { total, totalCash, totalTransfer };
+  let expensesTotal = 0;
+  for (const expense of state.expenses) {
+    const line = Number(expense.qty) * Number(expense.unitPrice);
+    if (Number.isFinite(line)) expensesTotal += line;
+  }
+  return { total, totalCash, totalTransfer, expensesTotal };
 }
 
 /**
@@ -1310,6 +1380,46 @@ function assertClaimOwnership(_state: RunState, _actor: ActorCtx): void {
   // Runs are collaborative: separate purchasers may record separate
   // SKU rows or expenses concurrently. Event-stream serialization and
   // per-event actor auditing still protect the ledger from stale writes.
+}
+
+/**
+ * 2026-10-21 audit CA-29: every split must target a store the run serves.
+ *
+ * The domain state only learns stores from purchased splits and delivery
+ * records, so on a run with nothing bought yet that derived set is empty
+ * and any storeId used to slip through. The API therefore passes
+ * `runStoreIds` (the stores of the run's order sessions), which is the
+ * authoritative scope; stores that already hold a delivery record stay
+ * allowed so a legacy run can still be corrected. Without `runStoreIds`
+ * the old derived-set check applies (empty set → no check).
+ */
+function assertStoresWithinRun(
+  state: RunState,
+  splits: ReadonlyArray<{ storeId: string }>,
+  runStoreIds: readonly string[] | undefined,
+): void {
+  const allowed = new Set<string>(runStoreIds ?? []);
+  if (!runStoreIds) {
+    for (const it of state.items.values()) {
+      for (const sp of it.storeSplits) allowed.add(sp.storeId);
+    }
+  }
+  for (const st of state.stores.keys()) allowed.add(st);
+  if (!runStoreIds && allowed.size === 0) return;
+  for (const sp of splits) {
+    if (!allowed.has(sp.storeId)) {
+      throw preconditionFailed('run.errors.storeNotInRun', { storeId: sp.storeId });
+    }
+  }
+}
+
+function purchasedSplitStores(state: RunState): Set<string> {
+  const out = new Set<string>();
+  for (const item of state.items.values()) {
+    if (item.status !== 'purchased') continue;
+    for (const sp of item.storeSplits) out.add(sp.storeId);
+  }
+  return out;
 }
 
 function assertSplitOverrides(splits: StoreSplitCommand[]): void {

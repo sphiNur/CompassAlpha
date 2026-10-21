@@ -16,6 +16,7 @@ import { schema as s } from '@compass/db';
 import {
   ADMIN_RANK,
   GrantRoleInputSchema,
+  MemberInviteRevokeInputSchema,
   SkuStepSchema,
   SkuUnitSchema,
   UuidSchema,
@@ -26,6 +27,7 @@ import { hub } from '../../realtime/hub';
 import { hasGlobalOrgAdmin, hasGlobalPermission } from '../../services/orgAdmin';
 import { effectivePermissionsForStore } from '../../services/storeScope';
 import { assertCanAddMember, assertCanAddStore } from '../../services/subscription';
+import { isUniqueViolation } from '../../services/pgErrors';
 
 function requireAdmin(perms: ReadonlySet<string>): void {
   if (!perms.has('users.manage')) {
@@ -182,6 +184,21 @@ async function auditAdmin(
  * specific granular key. Lets us tighten new orgs to use the granular
  * keys without breaking existing roles that only carry users.manage.
  */
+/**
+ * 2026-10-21 audit CA-40 (E-09): turn a unique-index violation (category
+ * slug, SKU / store code — all unique per org) into a specific 409 key
+ * instead of a generic 500. The transaction is aborted either way; this
+ * only changes what the caller is told.
+ */
+export async function withUniqueKey<T>(op: PromiseLike<T>, message: string): Promise<T> {
+  try {
+    return await op;
+  } catch (err) {
+    if (isUniqueViolation(err)) throw new TRPCError({ code: 'CONFLICT', message, cause: err });
+    throw err;
+  }
+}
+
 function requireOneOf(perms: ReadonlySet<string>, keys: string[]): void {
   for (const k of keys) {
     if (perms.has(k)) return;
@@ -431,6 +448,95 @@ async function getActorAdminStoreIds(
 }
 
 /**
+ * 2026-10-21 CA-17 (A-04): read scope of the admin console.
+ *
+ * `users.manage` is held by store managers, so every admin READ used to
+ * show them the whole organisation (members with Telegram ids, other
+ * stores' role holders, every domain event payload, the full admin
+ * audit). Reads are now scoped the same way writes already were:
+ *
+ *   - null       → the actor holds GLOBAL `org.admin`; no filter.
+ *   - Set<id>    → the stores the actor administers
+ *                  (`getActorAdminStoreIds`); rows outside them are
+ *                  hidden. Can be empty.
+ */
+async function getAdminReadScope(
+  tx: import('@compass/db').DB,
+  session: { userId: string; memberId: string; orgId: string },
+): Promise<Set<string> | null> {
+  if (await hasGlobalOrgAdmin(tx, session.memberId)) return null;
+  return new Set(await getActorAdminStoreIds(tx, session.orgId, session.userId));
+}
+
+/**
+ * Members of the org that have an assignment or a store-scoped role
+ * binding in any of `storeIds`, plus the actor themself (2026-10-21
+ * CA-17). Only meaningful for a non-null read scope.
+ */
+async function visibleMemberIds(
+  tx: import('@compass/db').DB,
+  storeIds: ReadonlySet<string>,
+  selfMemberId: string,
+): Promise<Set<string>> {
+  const ids = new Set<string>([selfMemberId]);
+  if (storeIds.size === 0) return ids;
+  const list = [...storeIds];
+  const [assigned, bound] = await Promise.all([
+    tx
+      .select({ memberId: s.memberStoreAssignments.memberId })
+      .from(s.memberStoreAssignments)
+      .where(inArray(s.memberStoreAssignments.storeId, list)),
+    tx
+      .select({ memberId: s.memberRoleBindings.memberId })
+      .from(s.memberRoleBindings)
+      .where(
+        and(
+          eq(s.memberRoleBindings.scopeType, 'store'),
+          inArray(s.memberRoleBindings.scopeId, list),
+        ),
+      ),
+  ]);
+  for (const r of [...assigned, ...bound]) ids.add(r.memberId);
+  return ids;
+}
+
+/**
+ * 2026-10-21 CA-19: may an actor with read scope `scope` see / revoke an
+ * invite for `inviteStoreIds`? Org admins (null scope) see every invite.
+ * Anyone else only sees invites whose stores they ALL administer; an
+ * invite with no store is an org-tier (admin) invite and stays with org
+ * admins.
+ */
+export function inviteWithinScope(
+  inviteStoreIds: readonly string[],
+  scope: ReadonlySet<string> | null,
+): boolean {
+  if (scope === null) return true;
+  if (inviteStoreIds.length === 0) return false;
+  return inviteStoreIds.every((id) => scope.has(id));
+}
+
+/**
+ * 2026-10-21 CA-17: SQL predicate "run `runIdExpr` involves one of
+ * `storeIds`" — an order of one of those stores was attached to it, or
+ * it carries a per-store split for one of them. Empty list → false.
+ */
+export function runTouchesStores(
+  runIdExpr: ReturnType<typeof sql>,
+  storeIds: readonly string[],
+): ReturnType<typeof sql> {
+  if (storeIds.length === 0) return sql`false`;
+  const ids = sql.join(
+    storeIds.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
+  return sql`(${runIdExpr} IN (SELECT os.run_id FROM read_model.order_sessions_v os WHERE os.run_id IS NOT NULL AND os.store_id IN (${ids})) OR ${runIdExpr} IN (SELECT ris.run_id FROM read_model.run_item_stores_v ris WHERE ris.store_id IN (${ids})))`;
+}
+
+/** Highest built-in rank; super_admin may rename anyone (2026-10-21). */
+const SUPER_ADMIN_RANK = 100;
+
+/**
  * Gate for suspending / reactivating a member.
  *
  *   - An org admin (global `org.admin`) may act on anyone strictly
@@ -455,6 +561,21 @@ async function assertCanSetMemberStatus(
     }
     return;
   }
+  await assertAdministersEveryTargetStore(tx, session, target);
+}
+
+/**
+ * Store-tier half of `assertCanSetMemberStatus`: the actor must
+ * administer EVERY store the target belongs to (assignment or store
+ * binding) and strictly outrank the target in each. Shared with
+ * memberSetDisplayName (2026-10-21 audit CA-07).
+ */
+async function assertAdministersEveryTargetStore(
+  tx: import('@compass/db').DB,
+  session: { userId: string; orgId: string },
+  target: { id: string; userId: string },
+): Promise<void> {
+  const { orgId } = session;
   const [assignments, storeBindings, allowed] = await Promise.all([
     tx
       .select({ storeId: s.memberStoreAssignments.storeId })
@@ -495,26 +616,35 @@ const RevokeRoleInputSchema = z.object({
   bindingId: UuidSchema,
 });
 
-// HARD RULE (2026-05-05): SKUs and categories MUST carry all four
-// languages — uz, ru, en, zh. The earlier "at least one locale" rule
-// let admins create a row with just English, which then broke the
-// OrderPage for non-English staff (the row would render as the SKU
-// code, which they couldn't read or order from). The catalog import
-// script already populates all four; this schema makes that the
-// permanent contract for any SKU/category created or edited via the
-// Admin UI.
+// History: 2026-05-05 made all four languages (uz, ru, en, zh) mandatory
+// because a single-locale row rendered as the bare SKU code on OrderPage.
+// Display now goes through useProductName/pickName, which falls back
+// across locales, so that failure mode is gone.
 //
 // `aliases` is left lax (record<string,string[]>) — those are search
 // keywords, not display strings, and a missing locale just means
 // fewer hits, not a broken render.
+// 2026-10-21 CA-40: relaxed from "all four locales required" to "at least
+// one" (the dishes rule). Blank locales are dropped before storage so
+// display fallbacks (`pickName`'s `??` chain) skip them instead of
+// rendering an empty string.
 const NamesSchema = z
   .object({
-    uz: z.string().min(1).max(200),
-    ru: z.string().min(1).max(200),
-    en: z.string().min(1).max(200),
-    zh: z.string().min(1).max(200),
+    uz: z.string().max(200).optional(),
+    ru: z.string().max(200).optional(),
+    en: z.string().max(200).optional(),
+    zh: z.string().max(200).optional(),
   })
-  .strict();
+  .strict()
+  .transform((v) => {
+    const out: Partial<Record<'uz' | 'ru' | 'en' | 'zh', string>> = {};
+    for (const k of ['uz', 'ru', 'en', 'zh'] as const) {
+      const t = v[k]?.trim();
+      if (t) out[k] = t;
+    }
+    return out;
+  })
+  .refine((v) => Object.keys(v).length > 0, { message: 'admin.errors.namesRequired' });
 
 // M3.14 (2026-05-16) restricted step to {'0.5','1'}; 2026-07-30 widened
 // it to the canonical {'0.5','1','10','50','100'} grid and locked unit
@@ -804,32 +934,65 @@ export const adminRouter = router({
     requireAdmin(ctx.session!.permissions);
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
+      // 2026-10-21 CA-17: a store manager's dashboard counts only their
+      // stores (members, stores, runs, orders). The SKU catalog is
+      // org-wide and shared, so its count is not scoped.
+      const scope = await getAdminReadScope(tx, ctx.session!);
+      const scopeIds = scope ? [...scope] : null;
+      const memberIds = scope
+        ? [...(await visibleMemberIds(tx, scope, ctx.session!.memberId))]
+        : null;
       const [memberCount] = await tx
         .select({ n: sql<number>`count(*)::int` })
         .from(s.members)
-        .where(eq(s.members.orgId, orgId));
-      const [storeCount] = await tx
-        .select({ n: sql<number>`count(*)::int` })
-        .from(s.stores)
-        .where(eq(s.stores.orgId, orgId));
+        .where(
+          and(eq(s.members.orgId, orgId), ...(memberIds ? [inArray(s.members.id, memberIds)] : [])),
+        );
+      const [storeCount] = scopeIds
+        ? [{ n: scopeIds.length }]
+        : await tx
+            .select({ n: sql<number>`count(*)::int` })
+            .from(s.stores)
+            .where(eq(s.stores.orgId, orgId));
       const [skuCount] = await tx
         .select({ n: sql<number>`count(*)::int` })
         .from(s.skus)
         .where(and(eq(s.skus.orgId, orgId), eq(s.skus.isArchived, false)));
+      const sessionInScope =
+        scopeIds === null
+          ? []
+          : scopeIds.length > 0
+            ? [inArray(s.orderSessionsV.storeId, scopeIds)]
+            : [sql`false`];
       const [runCount] = await tx
         .select({ n: sql<number>`count(*)::int` })
         .from(s.marketRunsV)
-        .where(eq(s.marketRunsV.orgId, orgId));
+        .where(
+          and(
+            eq(s.marketRunsV.orgId, orgId),
+            ...(scopeIds === null ? [] : [runTouchesStores(sql`${s.marketRunsV.id}`, scopeIds)]),
+          ),
+        );
       const [pendingApprovals] = await tx
         .select({ n: sql<number>`count(*)::int` })
         .from(s.orderSessionsV)
-        .where(and(eq(s.orderSessionsV.orgId, orgId), eq(s.orderSessionsV.status, 'submitted')));
+        .where(
+          and(
+            eq(s.orderSessionsV.orgId, orgId),
+            eq(s.orderSessionsV.status, 'submitted'),
+            ...sessionInScope,
+          ),
+        );
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
       const [ordersThisWeek] = await tx
         .select({ n: sql<number>`count(*)::int` })
         .from(s.orderSessionsV)
         .where(
-          and(eq(s.orderSessionsV.orgId, orgId), gte(s.orderSessionsV.updatedAt, sevenDaysAgo)),
+          and(
+            eq(s.orderSessionsV.orgId, orgId),
+            gte(s.orderSessionsV.updatedAt, sevenDaysAgo),
+            ...sessionInScope,
+          ),
         );
       return {
         memberCount: memberCount?.n ?? 0,
@@ -909,6 +1072,11 @@ export const adminRouter = router({
     requireAdmin(ctx.session!.permissions);
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
+      // 2026-10-21 CA-17: a non-org-admin sees only members of the stores
+      // they administer (plus themself), only those stores on each card,
+      // and no Telegram ids.
+      const scope = await getAdminReadScope(tx, ctx.session!);
+      const visible = scope ? await visibleMemberIds(tx, scope, ctx.session!.memberId) : null;
       const rows = await tx
         .select({
           memberId: s.members.id,
@@ -923,7 +1091,12 @@ export const adminRouter = router({
         })
         .from(s.members)
         .innerJoin(s.users, eq(s.users.id, s.members.userId))
-        .where(eq(s.members.orgId, orgId))
+        .where(
+          and(
+            eq(s.members.orgId, orgId),
+            ...(visible ? [inArray(s.members.id, [...visible])] : []),
+          ),
+        )
         .orderBy(desc(s.members.joinedAt));
 
       if (rows.length === 0) return [];
@@ -1003,19 +1176,27 @@ export const adminRouter = router({
         }
       }
 
+      // Out-of-scope stores and store-scoped roles are dropped from other
+      // members' cards; the actor's own card stays complete.
+      const inScope = (memberId: string, storeId: string | null) =>
+        scope === null || memberId === ctx.session!.memberId || (!!storeId && scope.has(storeId));
       return rows.map((r) => {
-        const storeIds = [...(storesByMember.get(r.memberId) ?? [])];
+        const storeIds = [...(storesByMember.get(r.memberId) ?? [])].filter((id) =>
+          inScope(r.memberId, id),
+        );
         return {
           memberId: r.memberId,
           userId: r.userId,
-          tgUserId: r.tgUserId !== null ? r.tgUserId.toString() : null,
+          tgUserId: scope === null && r.tgUserId !== null ? r.tgUserId.toString() : null,
           tgUsername: r.tgUsername,
           displayName: r.displayName,
           avatarUrl: r.avatarUrl,
           status: r.status,
           joinedAt: r.joinedAt.toISOString(),
           lastSeenAt: r.lastSeenAt?.toISOString() ?? null,
-          roles: rolesByMember.get(r.memberId) ?? [],
+          roles: (rolesByMember.get(r.memberId) ?? []).filter(
+            (role) => role.scopeType !== 'store' || inScope(r.memberId, role.scopeId),
+          ),
           stores: storeIds
             .map((id) => storeById.get(id))
             .filter((st): st is NonNullable<typeof st> => !!st),
@@ -1051,6 +1232,12 @@ export const adminRouter = router({
         // Last-admin guard for suspend. Serialised per org: two
         // concurrent suspends of the last two admins would otherwise
         // both read a count of 2.
+        // 2026-10-21 audit CA-18: reactivating takes a seat like a new
+        // member; usage counts only active members, so suspend → invite
+        // → reactivate used to exceed the plan.
+        if (input.status === 'active' && member.status !== 'active') {
+          await assertCanAddMember(tx, orgId);
+        }
         if (input.status === 'suspended') {
           await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${orgId}))`);
           const targetMaxRank = await getActorMaxRank(tx, orgId, member.userId);
@@ -1251,6 +1438,125 @@ export const adminRouter = router({
           grantCount: grants.length,
         });
         return { token, expiresAt: expiresAt.toISOString() };
+      });
+    }),
+
+  /**
+   * 2026-10-21 CA-19 (A-06): pending shareable invite links — not
+   * accepted, not revoked, not expired. Org admins see all of them;
+   * anyone else only invites whose stores they all administer
+   * (`inviteWithinScope`). The token itself is never stored, so it is
+   * never returned.
+   */
+  memberInviteList: authedProcedure.query(async ({ ctx }) => {
+    requireAdmin(ctx.session!.permissions);
+    return ctx.withOrg(async (tx) => {
+      const orgId = ctx.session!.orgId;
+      const scope = await getAdminReadScope(tx, ctx.session!);
+      const rows = await tx
+        .select({
+          id: s.memberInvites.id,
+          storeIds: s.memberInvites.storeIds,
+          grants: s.memberInvites.grants,
+          expiresAt: s.memberInvites.expiresAt,
+          createdAt: s.memberInvites.createdAt,
+          invitedBy: s.memberInvites.invitedBy,
+          inviterName: s.users.displayName,
+        })
+        .from(s.memberInvites)
+        .leftJoin(s.users, eq(s.users.id, s.memberInvites.invitedBy))
+        .where(
+          and(
+            eq(s.memberInvites.orgId, orgId),
+            isNull(s.memberInvites.acceptedAt),
+            isNull(s.memberInvites.revokedAt),
+            gt(s.memberInvites.expiresAt, new Date()),
+          ),
+        )
+        .orderBy(desc(s.memberInvites.createdAt));
+      const visible = rows.filter((r) => inviteWithinScope(r.storeIds, scope));
+      if (visible.length === 0) return [];
+      const storeIds = [...new Set(visible.flatMap((r) => r.storeIds))];
+      const roleIds = [...new Set(visible.flatMap((r) => (r.grants ?? []).map((g) => g.roleId)))];
+      const [stores, roles] = await Promise.all([
+        storeIds.length > 0
+          ? tx
+              .select({ id: s.stores.id, name: s.stores.name })
+              .from(s.stores)
+              .where(and(eq(s.stores.orgId, orgId), inArray(s.stores.id, storeIds)))
+          : Promise.resolve([] as Array<{ id: string; name: string }>),
+        roleIds.length > 0
+          ? tx
+              .select({ id: s.roles.id, slug: s.roles.slug, name: s.roles.name })
+              .from(s.roles)
+              .where(and(eq(s.roles.orgId, orgId), inArray(s.roles.id, roleIds)))
+          : Promise.resolve([] as Array<{ id: string; slug: string; name: string }>),
+      ]);
+      const storeById = new Map(stores.map((st) => [st.id, st]));
+      const roleById = new Map(roles.map((r) => [r.id, r]));
+      return visible.map((r) => {
+        const roleSet = new Map<string, { slug: string; name: string }>();
+        for (const g of r.grants ?? []) {
+          const role = roleById.get(g.roleId);
+          if (role) roleSet.set(role.id, { slug: role.slug, name: role.name });
+        }
+        return {
+          id: r.id,
+          stores: r.storeIds
+            .map((id) => storeById.get(id))
+            .filter((st): st is NonNullable<typeof st> => !!st),
+          roles: [...roleSet.values()],
+          invitedBy: r.invitedBy ? { userId: r.invitedBy, displayName: r.inviterName } : null,
+          createdAt: r.createdAt.toISOString(),
+          expiresAt: r.expiresAt.toISOString(),
+        };
+      });
+    });
+  }),
+
+  /**
+   * 2026-10-21 CA-19 (A-06): withdraw a pending invite link. Same reach
+   * as the list. The conditional UPDATE races safely with
+   * auth.acceptInvite (which locks the row FOR UPDATE): whichever
+   * commits first wins and the other sees a non-pending invite.
+   */
+  memberInviteRevoke: authedProcedure
+    .input(MemberInviteRevokeInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      requireAdmin(ctx.session!.permissions);
+      return ctx.withOrg(async (tx) => {
+        const orgId = ctx.session!.orgId;
+        const invite = await tx.query.memberInvites.findFirst({
+          where: (i, { eq: eq2, and: and2 }) =>
+            and2(eq2(i.id, input.inviteId), eq2(i.orgId, orgId)),
+        });
+        if (!invite) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.inviteNotFound' });
+        }
+        const scope = await getAdminReadScope(tx, ctx.session!);
+        if (!inviteWithinScope(invite.storeIds, scope)) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'admin.errors.notAdminOfStore' });
+        }
+        const [revoked] = await tx
+          .update(s.memberInvites)
+          .set({ revokedAt: new Date(), revokedBy: ctx.session!.userId })
+          .where(
+            and(
+              eq(s.memberInvites.id, invite.id),
+              isNull(s.memberInvites.acceptedAt),
+              isNull(s.memberInvites.revokedAt),
+            ),
+          )
+          .returning({ id: s.memberInvites.id });
+        if (!revoked) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'admin.errors.inviteNotPending' });
+        }
+        await auditAdmin(tx, ctx, 'admin.memberInviteRevoke', 'member_invite', invite.id, {
+          storeIds: invite.storeIds,
+          expiresAt: invite.expiresAt.toISOString(),
+        });
+        broadcastPeople(orgId);
+        return { ok: true as const };
       });
     }),
 
@@ -1535,6 +1841,12 @@ export const adminRouter = router({
             }
           }
         }
+        await auditAdmin(tx, ctx, 'admin.memberInviteByTgId', 'member', member.id, {
+          ...input,
+          tgUserId: input.tgUserId.toString(),
+          userId: user.id,
+          created,
+        });
         broadcastPeople(orgId);
         return { memberId: member.id, userId: user.id, created };
       });
@@ -1558,6 +1870,30 @@ export const adminRouter = router({
         if (!member) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.memberNotFound' });
         }
+        // 2026-10-21 audit CA-07: the name lives on the global user row
+        // (shown in every org the person belongs to), so `users.manage`
+        // alone let a store manager rename an admin or another store's
+        // staff. Org admins may rename anyone; everyone else needs the
+        // same reach memberSetStatus demands.
+        if (!(await hasGlobalOrgAdmin(tx, ctx.session!.memberId))) {
+          await assertAdministersEveryTargetStore(tx, ctx.session!, member);
+        } else if (member.id !== ctx.session!.memberId) {
+          // 2026-10-21 rename rank: an org admin used to rename anyone,
+          // including a fellow admin or the super_admin. Like status
+          // changes, renaming someone else now needs a strictly higher
+          // org-wide rank; super_admin may rename anyone, and everyone
+          // may rename themself.
+          const [targetRank, actorRank] = await Promise.all([
+            getActorMaxRank(tx, orgId, member.userId),
+            getActorMaxRank(tx, orgId, ctx.session!.userId),
+          ]);
+          if (actorRank < SUPER_ADMIN_RANK && targetRank >= actorRank) {
+            throw new TRPCError({
+              code: 'FORBIDDEN',
+              message: 'auth.errors.cannotRevokeEqualOrHigher',
+            });
+          }
+        }
         await tx
           .update(s.users)
           .set({
@@ -1566,6 +1902,7 @@ export const adminRouter = router({
             updatedAt: new Date(),
           })
           .where(eq(s.users.id, member.userId));
+        await auditAdmin(tx, ctx, 'admin.member.setDisplayName', 'member', member.id, input);
         broadcastPeople(orgId);
         return { ok: true };
       });
@@ -1588,6 +1925,16 @@ export const adminRouter = router({
         if (!member) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.memberNotFound' });
         }
+        // 2026-10-21 CA-17: outside org admins, only members of stores the
+        // actor administers, and only those stores.
+        const scope = await getAdminReadScope(tx, ctx.session!);
+        const isSelf = member.id === ctx.session!.memberId;
+        if (scope && !isSelf) {
+          const visible = await visibleMemberIds(tx, scope, ctx.session!.memberId);
+          if (!visible.has(member.id)) {
+            throw new TRPCError({ code: 'FORBIDDEN', message: 'admin.errors.notAdminOfStore' });
+          }
+        }
         const rows = await tx
           .select({
             storeId: s.memberStoreAssignments.storeId,
@@ -1599,12 +1946,14 @@ export const adminRouter = router({
           .innerJoin(s.stores, eq(s.stores.id, s.memberStoreAssignments.storeId))
           .where(eq(s.memberStoreAssignments.memberId, input.memberId))
           .orderBy(s.stores.sortIndex);
-        return rows.map((r) => ({
-          storeId: r.storeId,
-          name: r.storeName,
-          code: r.storeCode,
-          assignedAt: r.assignedAt.toISOString(),
-        }));
+        return rows
+          .filter((r) => !scope || isSelf || scope.has(r.storeId))
+          .map((r) => ({
+            storeId: r.storeId,
+            name: r.storeName,
+            code: r.storeCode,
+            assignedAt: r.assignedAt.toISOString(),
+          }));
       });
     }),
 
@@ -1649,6 +1998,7 @@ export const adminRouter = router({
             assignedBy: ctx.session!.userId,
           })
           .onConflictDoNothing();
+        await auditAdmin(tx, ctx, 'admin.memberAssignStore', 'member', member.id, input);
         broadcastPeople(orgId);
         return { ok: true };
       });
@@ -1674,6 +2024,19 @@ export const adminRouter = router({
           throw new TRPCError({
             code: 'FORBIDDEN',
             message: 'admin.errors.notAdminOfStore',
+          });
+        }
+        // 2026-10-21 audit A-11: same in-store rank gate as
+        // memberDetachFromStore — a manager could otherwise unassign a
+        // peer or superior from their shared store.
+        const [targetRankInStore, actorRankInStore] = await Promise.all([
+          getActorMaxRankInStore(tx, orgId, member.userId, input.storeId),
+          getActorMaxRankInStore(tx, orgId, ctx.session!.userId, input.storeId),
+        ]);
+        if (targetRankInStore >= actorRankInStore) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'auth.errors.cannotRevokeEqualOrHigher',
           });
         }
         // SECURITY (2026-05-04): non-admin members must keep at least one
@@ -1705,6 +2068,7 @@ export const adminRouter = router({
               eq(s.memberStoreAssignments.storeId, input.storeId),
             ),
           );
+        await auditAdmin(tx, ctx, 'admin.memberUnassignStore', 'member', member.id, input);
         broadcastPeople(orgId);
         return { ok: true };
       });
@@ -2123,6 +2487,13 @@ export const adminRouter = router({
       }
       // Cascading deletes on member_role_bindings via FK ON DELETE CASCADE.
       // member_store_assignments cascades through the migration's FK.
+      // 2026-10-21 audit CA-39: the member row (and its bindings) is
+      // gone after this, so record who it was alongside the input.
+      await auditAdmin(tx, ctx, 'admin.member.remove', 'member', member.id, {
+        ...input,
+        userId: member.userId,
+        maxRank: targetMaxRank,
+      });
       await tx.delete(s.members).where(eq(s.members.id, input.memberId));
       broadcastPeople(orgId);
       return { ok: true };
@@ -2216,6 +2587,19 @@ export const adminRouter = router({
               eq(s.members.status, 'active'),
             ),
           );
+        // 2026-10-21 CA-17: outside org admins, holders are limited to the
+        // actor's stores — store bindings there, and global bindings of
+        // members who belong to one of those stores.
+        const scope = await getAdminReadScope(tx, ctx.session!);
+        const visible = scope ? await visibleMemberIds(tx, scope, ctx.session!.memberId) : null;
+        const shown =
+          scope && visible
+            ? bindings.filter((b) =>
+                b.scopeType === 'store'
+                  ? !!b.scopeId && scope.has(b.scopeId)
+                  : visible.has(b.memberId),
+              )
+            : bindings;
         return {
           id: role.id,
           slug: role.slug,
@@ -2224,7 +2608,7 @@ export const adminRouter = router({
           isBuiltIn: role.isBuiltIn,
           rank: role.rank,
           permissions: perms.map((p) => p.key),
-          assignees: bindings.map((b) => ({
+          assignees: shown.map((b) => ({
             bindingId: b.bindingId,
             memberId: b.memberId,
             displayName: b.displayName,
@@ -2492,11 +2876,29 @@ export const adminRouter = router({
         if (!member) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.memberNotFound' });
         }
-        // Role-derived perms (across all bindings).
-        const bindings = await tx
-          .select({ roleId: s.memberRoleBindings.roleId })
-          .from(s.memberRoleBindings)
-          .where(eq(s.memberRoleBindings.memberId, member.id));
+        // 2026-10-21 CA-17: outside org admins, only members of stores
+        // the actor administers; grants tied to other stores are hidden.
+        const scope = await getAdminReadScope(tx, ctx.session!);
+        const isSelf = member.id === ctx.session!.memberId;
+        if (scope && !isSelf) {
+          const visible = await visibleMemberIds(tx, scope, ctx.session!.memberId);
+          if (!visible.has(member.id)) {
+            throw new TRPCError({ code: 'FORBIDDEN', message: 'admin.errors.notAdminOfStore' });
+          }
+        }
+        const scopeVisible = (scopeType: string, scopeId: string | null) =>
+          !scope || isSelf || scopeType !== 'store' || (!!scopeId && scope.has(scopeId));
+        // Role-derived perms (across all visible bindings).
+        const bindings = (
+          await tx
+            .select({
+              roleId: s.memberRoleBindings.roleId,
+              scopeType: s.memberRoleBindings.scopeType,
+              scopeId: s.memberRoleBindings.scopeId,
+            })
+            .from(s.memberRoleBindings)
+            .where(eq(s.memberRoleBindings.memberId, member.id))
+        ).filter((b) => scopeVisible(b.scopeType, b.scopeId));
         const rolePerms =
           bindings.length > 0
             ? await tx
@@ -2518,6 +2920,7 @@ export const adminRouter = router({
         const now = new Date();
         const overrides = rawOverrides
           .filter((o) => !o.expiresAt || o.expiresAt > now)
+          .filter((o) => scopeVisible(o.scopeType, o.scopeId))
           .map((o) => ({
             id: o.id,
             permissionKey: o.permissionKey,
@@ -2971,6 +3374,13 @@ export const adminRouter = router({
         },
       });
       if (existing) return { granted: false, bindingId: existing.id };
+      // 2026-10-21 audit A-23: the contract checks the format; re-check
+      // here so a direct caller can't store Invalid Date (→ 500) or an
+      // already-expired grant.
+      const expiresAt = input.expiresAt ? new Date(input.expiresAt) : null;
+      if (expiresAt && !(expiresAt.getTime() > Date.now())) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'admin.errors.invalidExpiresAt' });
+      }
       const [created] = await tx
         .insert(s.memberRoleBindings)
         .values({
@@ -2979,9 +3389,14 @@ export const adminRouter = router({
           scopeType: input.scopeType,
           scopeId: input.scopeId ?? null,
           grantedBy: ctx.session!.userId,
-          expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
+          expiresAt,
         })
         .returning();
+      await auditAdmin(tx, ctx, 'admin.role.grant', 'member', member.id, {
+        ...input,
+        bindingId: created!.id,
+        roleRank: role.rank,
+      });
       // Broadcast so other admins viewing the People section see the
       // new binding without manual refresh.
       hub.publish(orgId, { type: 'people.changed', orgId });
@@ -3070,6 +3485,13 @@ export const adminRouter = router({
         }
       }
       await tx.delete(s.memberRoleBindings).where(eq(s.memberRoleBindings.id, input.bindingId));
+      await auditAdmin(tx, ctx, 'admin.role.revoke', 'role_binding', input.bindingId, {
+        ...input,
+        userId: binding[0]!.memberUserId,
+        roleSlug: targetSlug,
+        scopeType: bindingScopeType,
+        scopeId: bindingScopeId,
+      });
       hub.publish(orgId, { type: 'people.changed', orgId });
       return { revoked: true };
     });
@@ -3112,7 +3534,10 @@ export const adminRouter = router({
             ),
           )
           .orderBy(s.stores.name);
-        return rows;
+        // 2026-10-21 CA-17: a non-org-admin lists only the stores they
+        // administer (active ones — archived stores are org-admin work).
+        const scope = await getAdminReadScope(tx, ctx.session!);
+        return scope ? rows.filter((r) => scope.has(r.id)) : rows;
       });
     }),
 
@@ -3122,16 +3547,19 @@ export const adminRouter = router({
     return ctx.withOrg(async (tx) => {
       const orgId = ctx.session!.orgId;
       await assertCanAddStore(tx, orgId);
-      const [created] = await tx
-        .insert(s.stores)
-        .values({
-          orgId,
-          name: input.name,
-          code: input.code ?? null,
-          address: input.address ?? null,
-          timezone: input.timezone ?? null,
-        })
-        .returning();
+      const [created] = await withUniqueKey(
+        tx
+          .insert(s.stores)
+          .values({
+            orgId,
+            name: input.name,
+            code: input.code ?? null,
+            address: input.address ?? null,
+            timezone: input.timezone ?? null,
+          })
+          .returning(),
+        'admin.errors.codeTaken',
+      );
       await auditAdmin(tx, ctx, 'admin.store.create', 'store', created!.id, input);
       broadcastCatalog(orgId, 'store');
       return { id: created!.id };
@@ -3147,12 +3575,22 @@ export const adminRouter = router({
       // `users.manage`, so a manager-of-A could pass storeId=B and
       // rename Store B. Mirrors the gate already present on
       // memberAssignStore / memberDetachFromStore.
-      const allowed = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId);
-      if (!allowed.includes(input.storeId)) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'admin.errors.notAdminOfStore',
-        });
+      //
+      // 2026-10-21 audit CA-08: pausing / reactivating a store is
+      // org-tier (like storeDelete). And because getActorAdminStoreIds
+      // lists only ACTIVE stores, a paused store could never be updated
+      // again; a global org admin therefore skips the per-store list
+      // (the org match on `existing` below still applies).
+      if (input.isActive !== undefined) requireOrgAdmin(ctx.session!.permissions);
+      const isOrgAdmin = await hasGlobalOrgAdmin(tx, ctx.session!.memberId);
+      if (!isOrgAdmin) {
+        const allowed = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId);
+        if (!allowed.includes(input.storeId)) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'admin.errors.notAdminOfStore',
+          });
+        }
       }
       const existing = await tx.query.stores.findFirst({
         where: (st, { eq: eq2, and: and2 }) =>
@@ -3166,7 +3604,24 @@ export const adminRouter = router({
       if (input.code !== undefined) patch.code = input.code;
       if (input.address !== undefined) patch.address = input.address;
       if (input.timezone !== undefined) patch.timezone = input.timezone;
-      if (input.isActive !== undefined) patch.isActive = input.isActive;
+      if (input.isActive !== undefined) {
+        if (!isOrgAdmin) {
+          // Session said org.admin but no GLOBAL grant backs it.
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'auth.errors.missingPermission',
+            cause: { missingPermission: 'org.admin' },
+          });
+        }
+        patch.isActive = input.isActive;
+        if (input.isActive && !existing.isActive) {
+          // 2026-10-21 audit CA-08 / CA-18: reactivation takes a store
+          // seat on the plan, and also restores an archived store
+          // (storeDelete sets deletedAt alongside isActive=false).
+          await assertCanAddStore(tx, orgId);
+          patch.deletedAt = null;
+        }
+      }
       // D3: defaultRoleSlug. `null` clears; a string resolves to a
       // role-id (within the actor's org so cross-tenant slugs can't
       // sneak in). We accept by slug rather than role-id to keep the
@@ -3199,7 +3654,10 @@ export const adminRouter = router({
           patch.defaultRoleId = role.id;
         }
       }
-      await tx.update(s.stores).set(patch).where(eq(s.stores.id, input.storeId));
+      await withUniqueKey(
+        tx.update(s.stores).set(patch).where(eq(s.stores.id, input.storeId)),
+        'admin.errors.codeTaken',
+      );
       await auditAdmin(tx, ctx, 'admin.store.update', 'store', input.storeId, input);
       broadcastCatalog(orgId, 'store');
       return { ok: true };
@@ -3406,15 +3864,18 @@ export const adminRouter = router({
       requireOrgAdmin(ctx.session!.permissions);
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
-        const [created] = await tx
-          .insert(s.categories)
-          .values({
-            orgId,
-            slug: input.slug,
-            names: input.names,
-            sortIndex: input.sortIndex,
-          })
-          .returning();
+        const [created] = await withUniqueKey(
+          tx
+            .insert(s.categories)
+            .values({
+              orgId,
+              slug: input.slug,
+              names: input.names,
+              sortIndex: input.sortIndex,
+            })
+            .returning(),
+          'admin.errors.slugTaken',
+        );
         await auditAdmin(tx, ctx, 'admin.category.create', 'category', created!.id, input);
         broadcastCatalog(orgId, 'category');
         return { id: created!.id };
@@ -3439,7 +3900,10 @@ export const adminRouter = router({
         if (input.names !== undefined) patch.names = input.names;
         if (input.sortIndex !== undefined) patch.sortIndex = input.sortIndex;
         if (input.isArchived !== undefined) patch.isArchived = input.isArchived;
-        await tx.update(s.categories).set(patch).where(eq(s.categories.id, input.categoryId));
+        await withUniqueKey(
+          tx.update(s.categories).set(patch).where(eq(s.categories.id, input.categoryId)),
+          'admin.errors.slugTaken',
+        );
         await auditAdmin(tx, ctx, 'admin.category.update', 'category', input.categoryId, input);
         broadcastCatalog(orgId, 'category');
         return { ok: true };
@@ -3518,18 +3982,21 @@ export const adminRouter = router({
           throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.categoryNotFound' });
         }
       }
-      const [created] = await tx
-        .insert(s.skus)
-        .values({
-          orgId,
-          categoryId: input.categoryId ?? null,
-          code: input.code ?? null,
-          names: input.names,
-          unit: input.unit,
-          step: input.step,
-          sortIndex: input.sortIndex,
-        })
-        .returning();
+      const [created] = await withUniqueKey(
+        tx
+          .insert(s.skus)
+          .values({
+            orgId,
+            categoryId: input.categoryId ?? null,
+            code: input.code ?? null,
+            names: input.names,
+            unit: input.unit,
+            step: input.step,
+            sortIndex: input.sortIndex,
+          })
+          .returning(),
+        'admin.errors.codeTaken',
+      );
       await auditAdmin(tx, ctx, 'admin.sku.create', 'sku', created!.id, input);
       broadcastCatalog(orgId, 'sku');
       return { id: created!.id };
@@ -3564,7 +4031,10 @@ export const adminRouter = router({
       if (input.step !== undefined) patch.step = input.step;
       if (input.sortIndex !== undefined) patch.sortIndex = input.sortIndex;
       if (input.isArchived !== undefined) patch.isArchived = input.isArchived;
-      await tx.update(s.skus).set(patch).where(eq(s.skus.id, input.skuId));
+      await withUniqueKey(
+        tx.update(s.skus).set(patch).where(eq(s.skus.id, input.skuId)),
+        'admin.errors.codeTaken',
+      );
       await auditAdmin(tx, ctx, 'admin.sku.update', 'sku', input.skuId, input);
       broadcastCatalog(orgId, 'sku');
       return { ok: true };
@@ -3859,6 +4329,21 @@ export const adminRouter = router({
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
         const limit = input?.limit ?? 50;
+        // 2026-10-21 CA-17: events carry no store id, so a non-org-admin
+        // is filtered through the read models: order streams of their
+        // stores, and run streams that involve one of their stores. A
+        // shared run's events can still mention other stores' lines —
+        // accepted: the manager already sees that run on the Run page.
+        const scope = await getAdminReadScope(tx, ctx.session!);
+        let scopeFilter: ReturnType<typeof sql> | null = null;
+        if (scope) {
+          if (scope.size === 0) return [];
+          const ids = sql.join(
+            [...scope].map((id) => sql`${id}::uuid`),
+            sql`, `,
+          );
+          scopeFilter = sql`((${s.events.streamType} = 'order' AND ${s.events.streamId} IN (SELECT os.id FROM read_model.order_sessions_v os WHERE os.store_id IN (${ids}))) OR (${s.events.streamType} = 'run' AND ${runTouchesStores(sql`${s.events.streamId}`, [...scope])}))`;
+        }
         const rows = await tx
           .select({
             id: s.events.id,
@@ -3871,7 +4356,7 @@ export const adminRouter = router({
             payload: s.events.payload,
           })
           .from(s.events)
-          .where(eq(s.events.orgId, orgId))
+          .where(and(eq(s.events.orgId, orgId), ...(scopeFilter ? [scopeFilter] : [])))
           .orderBy(desc(s.events.occurredAt))
           .limit(limit);
         if (rows.length === 0) return [];
@@ -3935,6 +4420,11 @@ export const adminRouter = router({
         const orgId = ctx.session!.orgId;
         const limit = input?.limit ?? 50;
         const storeId = input?.storeId;
+        // 2026-10-21 CA-17: a non-org-admin sees only rows whose
+        // scope_store_id is one of the stores they administer. Org-wide
+        // rows (catalog, roles, finance; NULL scope) stay with org admins.
+        const scope = await getAdminReadScope(tx, ctx.session!);
+        if (scope && (scope.size === 0 || (storeId && !scope.has(storeId)))) return [];
         const rows = await tx
           .select({
             id: s.policyDecisions.id,
@@ -3951,6 +4441,7 @@ export const adminRouter = router({
             and(
               eq(s.policyDecisions.orgId, orgId),
               ...(storeId ? [eq(s.policyDecisions.scopeStoreId, storeId)] : []),
+              ...(scope && !storeId ? [inArray(s.policyDecisions.scopeStoreId, [...scope])] : []),
             ),
           )
           .orderBy(desc(s.policyDecisions.occurredAt))
@@ -4158,15 +4649,31 @@ export const adminRouter = router({
               .then((rows) => rows as unknown as Array<{ n: number }>),
           ),
         );
+        // 2026-10-21 audit CA-28 (F-05): notification outbox rows carry
+        // event_id = orgId (notify.ts), never a domain.events id, so the
+        // event_id sub-select alone matched nothing. Match them by the
+        // orgId in their payload as well.
         await tally(
           'sync.outbox',
           await cnt(
             tx
               .execute(
                 sql`SELECT count(*)::int AS n FROM sync.outbox
-                WHERE event_id IN (
-                  SELECT id FROM domain.events WHERE org_id = ${orgId}
-                )`,
+                WHERE ${outboxOfOrg(orgId)}`,
+              )
+              .then((rows) => rows as unknown as Array<{ n: number }>),
+          ),
+        );
+        // 2026-10-21 audit CA-28 (D-08): delivery receipts write stock
+        // movements keyed by run; they must go with the runs.
+        await tally(
+          'inventory.movements',
+          await cnt(
+            tx
+              .execute(
+                sql`SELECT count(*)::int AS n FROM inventory.movements
+                WHERE org_id = ${orgId} AND source_type = 'run'
+                  AND source_id IN (SELECT id FROM read_model.market_runs_v WHERE org_id = ${orgId})`,
               )
               .then((rows) => rows as unknown as Array<{ n: number }>),
           ),
@@ -4201,6 +4708,11 @@ export const adminRouter = router({
 
         // Order: dependents first, then parents.
         await tx.execute(
+          sql`DELETE FROM inventory.movements
+              WHERE org_id = ${orgId} AND source_type = 'run'
+                AND source_id IN (SELECT id FROM read_model.market_runs_v WHERE org_id = ${orgId})`,
+        );
+        await tx.execute(
           sql`DELETE FROM read_model.run_item_stores_v
               WHERE run_id IN (SELECT id FROM read_model.market_runs_v WHERE org_id = ${orgId})`,
         );
@@ -4216,10 +4728,7 @@ export const adminRouter = router({
         );
         await tx.delete(s.orderSessionsV).where(eq(s.orderSessionsV.orgId, orgId));
 
-        await tx.execute(
-          sql`DELETE FROM sync.outbox
-              WHERE event_id IN (SELECT id FROM domain.events WHERE org_id = ${orgId})`,
-        );
+        await tx.execute(sql`DELETE FROM sync.outbox WHERE ${outboxOfOrg(orgId)}`);
         await tx.execute(
           sql`DELETE FROM domain.snapshots
               WHERE stream_id IN (SELECT DISTINCT stream_id FROM domain.events WHERE org_id = ${orgId})`,
@@ -4301,6 +4810,7 @@ export const adminRouter = router({
         'sync.outbox': 0,
         'ops.notifications': 0,
         'inventory.price_history': 0,
+        'inventory.movements': 0,
         'inventory.store_daily_settlement_revisions': 0,
         'inventory.store_daily_settlements': 0,
       };
@@ -4353,6 +4863,11 @@ export const adminRouter = router({
                   AND run_id IN ${sql.raw(`(${runIds.map((id) => `'${id}'`).join(',')})`)}`,
         );
         counts['inventory.price_history'] = (r3 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
+        const r4 = await tx.execute(
+          sql`SELECT count(*)::int AS n FROM inventory.movements
+                WHERE ${runMovements(orgId, runIds)}`,
+        );
+        counts['inventory.movements'] = (r4 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
       }
       if (allStreamIds.length > 0) {
         const r1 = await tx.execute(
@@ -4368,11 +4883,7 @@ export const adminRouter = router({
         counts['domain.snapshots'] = (r2 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
         const r3 = await tx.execute(
           sql`SELECT count(*)::int AS n FROM sync.outbox
-                WHERE event_id IN (
-                  SELECT id FROM domain.events
-                  WHERE org_id = ${orgId}
-                    AND stream_id IN ${sql.raw(`(${allStreamIds.map((id) => `'${id}'`).join(',')})`)}
-                )`,
+                WHERE ${outboxOfStreams(orgId, allStreamIds)}`,
         );
         counts['sync.outbox'] = (r3 as unknown as Array<{ n: number }>)[0]?.n ?? 0;
         // Notifications stash sessionId/runId in payload jsonb.
@@ -4402,6 +4913,7 @@ export const adminRouter = router({
           sql`DELETE FROM inventory.price_history
                 WHERE org_id = ${orgId} AND run_id IN ${inRuns}`,
         );
+        await tx.execute(sql`DELETE FROM inventory.movements WHERE ${runMovements(orgId, runIds)}`);
         await tx.execute(
           sql`DELETE FROM read_model.market_runs_v
                 WHERE org_id = ${orgId} AND id IN ${inRuns}`,
@@ -4430,11 +4942,7 @@ export const adminRouter = router({
         );
         // Outbox before events (event_id FK).
         await tx.execute(
-          sql`DELETE FROM sync.outbox
-                WHERE event_id IN (
-                  SELECT id FROM domain.events
-                  WHERE org_id = ${orgId} AND stream_id IN ${inStreams}
-                )`,
+          sql`DELETE FROM sync.outbox WHERE ${outboxOfStreams(orgId, allStreamIds)}`,
         );
         await tx.execute(sql`DELETE FROM domain.snapshots WHERE stream_id IN ${inStreams}`);
         await tx.execute(
@@ -4988,6 +5496,53 @@ export const adminRouter = router({
   }),
 });
 
+// ---------- purge predicates ----------
+
+/**
+ * 2026-10-21 audit CA-28 (F-05): which sync.outbox rows belong to an org.
+ * Notification rows (the only producer today, notify.ts) store
+ * event_id = orgId and carry `orgId` in the payload; anything keyed to a
+ * real domain event is matched through domain.events as before.
+ */
+export function outboxOfOrg(orgId: string): ReturnType<typeof sql> {
+  return sql`(event_id IN (SELECT id FROM domain.events WHERE org_id = ${orgId})
+    OR (aggregate = 'notification' AND payload->>'orgId' = ${orgId}))`;
+}
+
+/**
+ * Outbox rows for a set of session / run streams: event-keyed rows via
+ * domain.events, notification rows via the sessionId / runId the
+ * notification payload (`payload.extra`) carries — the same keys the
+ * ops.notifications purge matches on.
+ */
+export function outboxOfStreams(orgId: string, streamIds: string[]): ReturnType<typeof sql> {
+  if (streamIds.length === 0) return sql`false`;
+  const uuids = sql.join(
+    streamIds.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
+  const texts = sql.join(
+    streamIds.map((id) => sql`${id}::text`),
+    sql`, `,
+  );
+  return sql`(event_id IN (
+      SELECT id FROM domain.events WHERE org_id = ${orgId} AND stream_id IN (${uuids})
+    )
+    OR (aggregate = 'notification' AND payload->>'orgId' = ${orgId}
+      AND (payload->'extra'->>'sessionId' IN (${texts})
+        OR payload->'extra'->>'runId' IN (${texts}))))`;
+}
+
+/** 2026-10-21 audit CA-28 (D-08): stock movements written for these runs. */
+export function runMovements(orgId: string, runIds: string[]): ReturnType<typeof sql> {
+  if (runIds.length === 0) return sql`false`;
+  const ids = sql.join(
+    runIds.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
+  return sql`(org_id = ${orgId} AND source_type = 'run' AND source_id IN (${ids}))`;
+}
+
 // ---------- session/run cascade helpers ----------
 // Drizzle's transactional type is annoying to import here; the helpers
 // only call `.execute(sql\`...\`)` so a structural type is enough.
@@ -5019,8 +5574,7 @@ async function countSessionCascade(
   );
   await exec(
     'sync.outbox',
-    sql`SELECT count(*)::int AS n FROM sync.outbox
-        WHERE event_id IN (SELECT id FROM domain.events WHERE org_id = ${orgId} AND stream_id = ${sId})`,
+    sql`SELECT count(*)::int AS n FROM sync.outbox WHERE ${outboxOfStreams(orgId, [sId])}`,
   );
   await exec(
     'ops.notifications',
@@ -5038,10 +5592,7 @@ async function deleteSessionCascade(tx: Tx, orgId: string, sessionId: string): P
         WHERE org_id = ${orgId} AND payload->>'sessionId' = ${sId}`,
   );
   // Outbox before events (event_id FK).
-  await tx.execute(
-    sql`DELETE FROM sync.outbox
-        WHERE event_id IN (SELECT id FROM domain.events WHERE org_id = ${orgId} AND stream_id = ${sId})`,
-  );
+  await tx.execute(sql`DELETE FROM sync.outbox WHERE ${outboxOfStreams(orgId, [sId])}`);
   await tx.execute(sql`DELETE FROM domain.snapshots WHERE stream_id = ${sId}`);
   await tx.execute(sql`DELETE FROM domain.events WHERE org_id = ${orgId} AND stream_id = ${sId}`);
   await tx.execute(sql`DELETE FROM read_model.order_items_v WHERE session_id = ${sId}`);
@@ -5075,6 +5626,10 @@ async function countRunCascade(
     'inventory.price_history',
     sql`SELECT count(*)::int AS n FROM inventory.price_history WHERE org_id = ${orgId} AND run_id = ${runId}`,
   );
+  await exec(
+    'inventory.movements',
+    sql`SELECT count(*)::int AS n FROM inventory.movements WHERE ${runMovements(orgId, [runId])}`,
+  );
   // All streams = run + all attached sessions.
   const allStreams = [runId, ...sessionIds];
   if (allStreams.length > 0) {
@@ -5089,10 +5644,7 @@ async function countRunCascade(
     );
     await exec(
       'sync.outbox',
-      sql`SELECT count(*)::int AS n FROM sync.outbox
-          WHERE event_id IN (
-            SELECT id FROM domain.events WHERE org_id = ${orgId} AND stream_id IN ${inStreams}
-          )`,
+      sql`SELECT count(*)::int AS n FROM sync.outbox WHERE ${outboxOfStreams(orgId, allStreams)}`,
     );
     await exec(
       'ops.notifications',
@@ -5124,12 +5676,7 @@ async function deleteRunCascade(
           WHERE org_id = ${orgId}
             AND (payload->>'sessionId' IN ${inStreams} OR payload->>'runId' IN ${inStreams})`,
     );
-    await tx.execute(
-      sql`DELETE FROM sync.outbox
-          WHERE event_id IN (
-            SELECT id FROM domain.events WHERE org_id = ${orgId} AND stream_id IN ${inStreams}
-          )`,
-    );
+    await tx.execute(sql`DELETE FROM sync.outbox WHERE ${outboxOfStreams(orgId, allStreams)}`);
     await tx.execute(sql`DELETE FROM domain.snapshots WHERE stream_id IN ${inStreams}`);
     await tx.execute(
       sql`DELETE FROM domain.events WHERE org_id = ${orgId} AND stream_id IN ${inStreams}`,
@@ -5141,6 +5688,7 @@ async function deleteRunCascade(
   await tx.execute(
     sql`DELETE FROM inventory.price_history WHERE org_id = ${orgId} AND run_id = ${runId}`,
   );
+  await tx.execute(sql`DELETE FROM inventory.movements WHERE ${runMovements(orgId, [runId])}`);
   await tx.execute(
     sql`DELETE FROM read_model.market_runs_v WHERE org_id = ${orgId} AND id = ${runId}`,
   );

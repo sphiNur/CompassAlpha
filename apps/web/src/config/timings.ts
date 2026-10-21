@@ -25,12 +25,6 @@ export const STALE = {
 } as const;
 
 /**
- * React Query `gcTime` — how long an unused cache entry sits in
- * memory before being garbage-collected.
- */
-export const GC_TIME = 5 * 60 * 1000; // 5m — match React Query default-ish
-
-/**
  * Default page sizes for paginated admin queries. Three buckets cover
  * the spectrum we use today; if a screen needs something exotic, add
  * a new bucket here rather than inlining.

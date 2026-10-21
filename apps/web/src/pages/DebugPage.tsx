@@ -27,6 +27,7 @@ import {
 } from '@compass/ui';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
+import { NAV_STORAGE_KEY } from '../stores/navStore';
 import { getLogger } from '@compass/telemetry';
 import type { LogEvent } from '@compass/telemetry';
 
@@ -36,6 +37,7 @@ type Level = 'all' | 'debug' | 'info' | 'warn' | 'error';
 export function DebugPage() {
   const session = useAuthStore((s) => s.session);
   const clear = useAuthStore((s) => s.clear);
+  const signOut = trpc.auth.signOut.useMutation();
   const [tab, setTab] = useState<Tab>('live');
   const [level, setLevel] = useState<Level>('all');
   const [liveTick, setLiveTick] = useState(0);
@@ -222,15 +224,26 @@ export function DebugPage() {
           <Button
             size="sm"
             variant="danger"
+            loading={signOut.isPending}
             onClick={() => {
-              clear();
-              try {
-                window.localStorage.removeItem('compass.auth');
-                window.sessionStorage.clear();
-              } catch {
-                /* ignore */
-              }
-              reloadApp('debug-page');
+              // 2026-10-21 audit CA-33: a real sign-out — the server revokes
+              // the refresh tokens first. A network failure (or a hang past
+              // 4 s) must not trap the operator, so local state is wiped
+              // regardless.
+              const timeout = new Promise<void>((resolve) => setTimeout(resolve, 4_000));
+              void Promise.race([signOut.mutateAsync().then(() => undefined), timeout])
+                .catch(() => undefined)
+                .finally(() => {
+                  clear(); // also resets the persisted nav store
+                  try {
+                    window.localStorage.removeItem('compass.auth');
+                    window.localStorage.removeItem(NAV_STORAGE_KEY);
+                    window.sessionStorage.clear();
+                  } catch {
+                    /* ignore */
+                  }
+                  reloadApp('debug-page');
+                });
             }}
           >
             Sign out & reset

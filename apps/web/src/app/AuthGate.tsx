@@ -5,6 +5,7 @@ import { useAuthStore, type AuthSession } from '../stores/authStore';
 import { noteSessionCleared, trpc } from '../lib/trpc';
 import { getTg, haptic } from '../hooks/useTelegram';
 import { useI18n } from '../hooks/useI18n';
+import { useTranslateError } from '../lib/errToast';
 
 interface AuthGateProps {
   children: ReactNode;
@@ -416,9 +417,18 @@ export function AuthGate({ children }: AuthGateProps) {
       <div className="flex h-full flex-col items-center gap-4 overflow-y-auto px-6 py-8 text-center">
         <h1 className="text-old-display font-semibold">Compass</h1>
         <p className="text-old-body text-[var(--c-fg-muted)]">{i18n.t('auth.shareThisId')}</p>
+        {/* 2026-10-21 audit CA-50 / A-14: the line above asks the user to
+            send their ID to an admin, but the ID was never on screen. */}
+        <TelegramIdChip />
+        {/* 2026-10-21 audit CA-48 / E-18: the title was hard-coded Chinese
+            and the login-mode diagnostic (dev/browser login internals,
+            Chinese only) showed in production Telegram after 10 s. The
+            diagnostic is now DEV-only; production gets a translated hint. */}
         {authWaitTimedOut ? (
-          <Banner tone="warn" title="登录等待时间过长">
-            {loginDiagnosticText(loginModes.data, loginModes.error?.message)}
+          <Banner tone="warn" title={i18n.t('auth.loginTimeout.title')}>
+            {import.meta.env.DEV
+              ? loginDiagnosticText(loginModes.data, loginModes.error?.message)
+              : i18n.t('auth.loginTimeout.body')}
           </Banner>
         ) : null}
         {error ? (
@@ -713,6 +723,7 @@ function OnboardingScreen() {
       : '';
   const [name, setName] = useState(initial);
   const [error, setError] = useState<string | null>(null);
+  const translateError = useTranslateError();
 
   const complete = trpc.auth.completeOnboarding.useMutation({
     onSuccess(updatedSession) {
@@ -723,7 +734,9 @@ function OnboardingScreen() {
     },
     onError(err) {
       haptic('error');
-      setError(err.message);
+      // 2026-10-21 audit CA-48: server keys (e.g. auth.errors.nameLocked)
+      // were shown raw.
+      setError(translateError(err, 'common.error'));
     },
   });
 
@@ -780,22 +793,32 @@ function NoStoreScreen() {
 
 function NoAccessScreen() {
   const i18n = useI18n();
-  const tg = getTg();
-  const tgUserId = tg?.initDataUnsafe?.user?.id;
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
       <h1 className="text-old-h1 font-semibold">{i18n.t('auth.noAccess.title')}</h1>
       <p className="text-old-body text-[var(--c-fg-muted)]">{i18n.t('auth.noAccess.body')}</p>
       <p className="text-old-body-sm text-[var(--c-fg-muted)]">{i18n.t('auth.shareThisId')}</p>
-      {tgUserId ? (
-        <button
-          type="button"
-          onClick={() => navigator.clipboard?.writeText(String(tgUserId))}
-          className="press rounded-full bg-[var(--c-surface-2)] px-4 py-2 font-mono text-old-body ring-hairline"
-        >
-          {tgUserId}
-        </button>
-      ) : null}
+      <TelegramIdChip />
     </div>
+  );
+}
+
+/** The caller's Telegram user id, tap to copy. Nothing outside Telegram. */
+function TelegramIdChip() {
+  const tgUserId = getTg()?.initDataUnsafe?.user?.id;
+  if (!tgUserId) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void navigator.clipboard?.writeText(String(tgUserId)).then(
+          () => haptic('success'),
+          () => undefined,
+        );
+      }}
+      className="press rounded-full bg-[var(--c-surface-2)] px-4 py-2 font-mono text-old-body ring-hairline"
+    >
+      {tgUserId}
+    </button>
   );
 }

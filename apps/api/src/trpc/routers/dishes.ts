@@ -32,6 +32,15 @@
  *                                  rows so any unchanged ingredient
  *                                  preserves its `created_at`.
  *
+ *   save({ dishId?, ...fields, ingredients[] })
+ *                                — 2026-10-21 (CA-55): create-or-update
+ *                                  the dish fields AND replace its recipe
+ *                                  in ONE transaction. The editor used to
+ *                                  call update then setIngredients, so a
+ *                                  failed second call left new fields
+ *                                  with the old recipe. update and
+ *                                  setIngredients stay for older clients.
+ *
  *   archive({ dishId })           — Soft-delete. Recipe rows stay
  *                                  (we may need them for historical
  *                                  consumption analysis).
@@ -42,7 +51,7 @@
 import { TRPCError } from '@trpc/server';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { schema as s } from '@compass/db';
+import { schema as s, type DB } from '@compass/db';
 import { UuidSchema } from '@compass/contracts';
 import { authedProcedure, router } from '../trpc';
 
@@ -96,6 +105,104 @@ const SetIngredientsInputSchema = z.object({
   dishId: UuidSchema,
   ingredients: z.array(IngredientSchema).max(100),
 });
+
+const SaveInputSchema = CreateInputSchema.extend({
+  /** Absent → create a new dish; present → update that dish. */
+  dishId: UuidSchema.optional(),
+});
+
+type IngredientInput = z.infer<typeof IngredientSchema>;
+
+/**
+ * 2026-10-21 (CA-55): skuIds that appear more than once in a recipe.
+ * (dish_id, sku_id) is the PK, so duplicates used to surface as a 500
+ * (create) or a half-applied diff (setIngredients). Exported for tests.
+ */
+export function duplicateIngredientSkuIds(
+  ingredients: ReadonlyArray<{ skuId: string }>,
+): string[] {
+  const seen = new Set<string>();
+  const dupes = new Set<string>();
+  for (const i of ingredients) {
+    if (seen.has(i.skuId)) dupes.add(i.skuId);
+    seen.add(i.skuId);
+  }
+  return [...dupes];
+}
+
+/** Reject duplicate and foreign SKUs before any write. */
+async function assertIngredientsValid(
+  tx: DB,
+  orgId: string,
+  ingredients: ReadonlyArray<IngredientInput>,
+): Promise<void> {
+  if (duplicateIngredientSkuIds(ingredients).length > 0) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'dishes.errors.duplicateIngredient' });
+  }
+  if (ingredients.length === 0) return;
+  const skuIds = ingredients.map((i) => i.skuId);
+  const owned = await tx
+    .select({ id: s.skus.id })
+    .from(s.skus)
+    .where(and(eq(s.skus.orgId, orgId), inArray(s.skus.id, skuIds)));
+  if (owned.length !== skuIds.length) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'dishes.errors.ingredientSkuNotFound',
+    });
+  }
+}
+
+/**
+ * Replace-all recipe write shared by setIngredients and save. Diffs
+ * against current rows: identical (skuId, qty, note) is left alone
+ * (preserves created_at); changed rows are updated; removed rows are
+ * deleted. Caller has validated the ingredients and the dish's org.
+ */
+async function replaceIngredients(
+  tx: DB,
+  dishId: string,
+  ingredients: ReadonlyArray<IngredientInput>,
+): Promise<void> {
+  const current = await tx
+    .select()
+    .from(s.dishIngredients)
+    .where(eq(s.dishIngredients.dishId, dishId));
+  const currentBySku = new Map(current.map((r) => [r.skuId, r]));
+  const incomingBySku = new Map(ingredients.map((i) => [i.skuId, i]));
+  // Delete rows whose SKU isn't in the new payload.
+  const toDelete = current.map((r) => r.skuId).filter((skuId) => !incomingBySku.has(skuId));
+  if (toDelete.length > 0) {
+    await tx
+      .delete(s.dishIngredients)
+      .where(
+        and(eq(s.dishIngredients.dishId, dishId), inArray(s.dishIngredients.skuId, toDelete)),
+      );
+  }
+  // Upsert each incoming row. Skip the update if qty + note matches;
+  // preserves created_at on no-op edits.
+  for (const inc of ingredients) {
+    const existing = currentBySku.get(inc.skuId);
+    const incomingQty = inc.qtyPerServing;
+    const incomingNote = inc.note ?? null;
+    if (existing) {
+      if (existing.qtyPerServing === incomingQty && (existing.note ?? null) === incomingNote) {
+        continue; // identical, no write
+      }
+      await tx
+        .update(s.dishIngredients)
+        .set({ qtyPerServing: incomingQty, note: incomingNote, updatedAt: new Date() })
+        .where(and(eq(s.dishIngredients.dishId, dishId), eq(s.dishIngredients.skuId, inc.skuId)));
+    } else {
+      await tx.insert(s.dishIngredients).values({
+        dishId,
+        skuId: inc.skuId,
+        qtyPerServing: incomingQty,
+        note: incomingNote,
+      });
+    }
+  }
+}
 
 function requireDishesManage(perms: ReadonlySet<string>): void {
   // M3.2 (2026-05-15): the `users.manage` fallback was DROPPED. The
@@ -159,19 +266,8 @@ export const dishesRouter = router({
       // the insert, but rejecting BEFORE the tx gives a cleaner error.
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
-        if (input.ingredients.length > 0) {
-          const skuIds = input.ingredients.map((i) => i.skuId);
-          const ownedSkus = await tx
-            .select({ id: s.skus.id })
-            .from(s.skus)
-            .where(and(eq(s.skus.orgId, orgId), inArray(s.skus.id, skuIds)));
-          if (ownedSkus.length !== new Set(skuIds).size) {
-            throw new TRPCError({
-              code: 'BAD_REQUEST',
-              message: 'dishes.errors.ingredientSkuNotFound',
-            });
-          }
-        }
+        // 2026-10-21 CA-55: also rejects duplicate skuIds (was a PK 500).
+        await assertIngredientsValid(tx, orgId, input.ingredients);
         // Highest sort_index + 1 so new dishes append at the bottom.
         const last = await tx
           .select({ max: sql<number>`coalesce(max(${s.dishes.sortIndex}), 0)::int` })
@@ -246,78 +342,57 @@ export const dishesRouter = router({
         if (!dish) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'dishes.errors.notFound' });
         }
-        // Verify ingredient SKUs are this org's.
-        if (input.ingredients.length > 0) {
-          const skuIds = input.ingredients.map((i) => i.skuId);
-          const owned = await tx
-            .select({ id: s.skus.id })
-            .from(s.skus)
-            .where(and(eq(s.skus.orgId, orgId), inArray(s.skus.id, skuIds)));
-          if (owned.length !== new Set(skuIds).size) {
-            throw new TRPCError({
-              code: 'BAD_REQUEST',
-              message: 'dishes.errors.ingredientSkuNotFound',
-            });
-          }
-        }
-        const current = await tx
-          .select()
-          .from(s.dishIngredients)
-          .where(eq(s.dishIngredients.dishId, input.dishId));
-        const currentBySku = new Map(current.map((r) => [r.skuId, r]));
-        const incomingBySku = new Map(input.ingredients.map((i) => [i.skuId, i]));
-        // Delete rows whose SKU isn't in the new payload.
-        const toDelete = current
-          .map((r) => r.skuId)
-          .filter((skuId) => !incomingBySku.has(skuId));
-        if (toDelete.length > 0) {
-          await tx
-            .delete(s.dishIngredients)
-            .where(
-              and(
-                eq(s.dishIngredients.dishId, input.dishId),
-                inArray(s.dishIngredients.skuId, toDelete),
-              ),
-            );
-        }
-        // Upsert each incoming row. Skip the update if qty + note
-        // matches; preserves created_at on no-op edits.
-        for (const inc of input.ingredients) {
-          const existing = currentBySku.get(inc.skuId);
-          const incomingQty = inc.qtyPerServing;
-          const incomingNote = inc.note ?? null;
-          if (existing) {
-            if (
-              existing.qtyPerServing === incomingQty &&
-              (existing.note ?? null) === incomingNote
-            ) {
-              continue; // identical, no write
-            }
-            await tx
-              .update(s.dishIngredients)
-              .set({
-                qtyPerServing: incomingQty,
-                note: incomingNote,
-                updatedAt: new Date(),
-              })
-              .where(
-                and(
-                  eq(s.dishIngredients.dishId, input.dishId),
-                  eq(s.dishIngredients.skuId, inc.skuId),
-                ),
-              );
-          } else {
-            await tx.insert(s.dishIngredients).values({
-              dishId: input.dishId,
-              skuId: inc.skuId,
-              qtyPerServing: incomingQty,
-              note: incomingNote,
-            });
-          }
-        }
+        // 2026-10-21 CA-55: shared validation (now also rejects
+        // duplicate skuIds) + the replace-all diff, also used by save.
+        await assertIngredientsValid(tx, orgId, input.ingredients);
+        await replaceIngredients(tx, input.dishId, input.ingredients);
         return { ok: true as const };
       });
     }),
+
+  /**
+   * 2026-10-21 (CA-55): atomic dish editor save. Creates the dish (no
+   * dishId) or updates every field of it (dishId), then replaces the
+   * recipe — all in one withOrg transaction, so either the whole edit
+   * lands or nothing does.
+   */
+  save: authedProcedure.input(SaveInputSchema).mutation(async ({ ctx, input }) => {
+    requireDishesManage(ctx.session!.permissions);
+    return ctx.withOrg(async (tx) => {
+      const orgId = ctx.session!.orgId;
+      await assertIngredientsValid(tx, orgId, input.ingredients);
+      const fields = {
+        code: input.code ?? null,
+        names: input.names as unknown as Record<string, unknown>,
+        description: (input.description ?? {}) as unknown as Record<string, unknown>,
+        unitPrice: input.unitPrice ?? null,
+      };
+      let dishId: string;
+      if (input.dishId) {
+        const r = await tx
+          .update(s.dishes)
+          .set({ ...fields, updatedAt: new Date() })
+          .where(and(eq(s.dishes.id, input.dishId), eq(s.dishes.orgId, orgId)))
+          .returning({ id: s.dishes.id });
+        if (r.length === 0) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'dishes.errors.notFound' });
+        }
+        dishId = input.dishId;
+      } else {
+        const last = await tx
+          .select({ max: sql<number>`coalesce(max(${s.dishes.sortIndex}), 0)::int` })
+          .from(s.dishes)
+          .where(eq(s.dishes.orgId, orgId));
+        const [inserted] = await tx
+          .insert(s.dishes)
+          .values({ orgId, ...fields, sortIndex: (last[0]?.max ?? 0) + 1 })
+          .returning({ id: s.dishes.id });
+        dishId = inserted!.id;
+      }
+      await replaceIngredients(tx, dishId, input.ingredients);
+      return { dishId, created: !input.dishId };
+    });
+  }),
 
   archive: authedProcedure
     .input(z.object({ dishId: UuidSchema }))

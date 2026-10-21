@@ -37,6 +37,7 @@ import { useErrToast } from '../../../lib/errToast';
 import { formatMoney, formatQty } from '../../../lib/format';
 import { useDateFormat, useI18n, useProductName, useUnitLabel } from '../../../hooks/useI18n';
 import { DebugPage } from '../../DebugPage';
+import { financePresetRange } from './financeDates';
 
 // ============ Activity ============
 
@@ -1041,42 +1042,23 @@ export function FinanceSection() {
   // Date range. Default to "this month" since that's the most common
   // reconciliation cadence (monthly bank statement vs. cash drawer
   // closing). Custom range lets the user widen / narrow on demand.
-  const today = useMemo(() => {
-    const d = new Date();
-    return d.toISOString().slice(0, 10);
-  }, []);
-
+  // 2026-10-21 audit CA-23 (D-05): presets read the LOCAL calendar via
+  // financePresetRange — `toISOString()` shifted them a day east of UTC.
   const [preset, setPreset] = useState<FinancePreset>('thisMonth');
-  const [startDate, setStartDate] = useState<string>(() => {
-    const d = new Date();
-    return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
-  });
-  const [endDate, setEndDate] = useState<string>(today);
+  const [startDate, setStartDate] = useState<string>(
+    () => financePresetRange('thisMonth').startDate,
+  );
+  const [endDate, setEndDate] = useState<string>(
+    () => financePresetRange('thisMonth').endDate,
+  );
 
   // Apply preset → derive [start, end]. Custom keeps whatever the user
   // typed in the two inputs.
   useEffect(() => {
     if (preset === 'custom') return;
-    const d = new Date();
-    if (preset === 'today') {
-      const t = d.toISOString().slice(0, 10);
-      setStartDate(t);
-      setEndDate(t);
-    } else if (preset === 'yesterday') {
-      const y = new Date(d);
-      y.setDate(y.getDate() - 1);
-      const t = y.toISOString().slice(0, 10);
-      setStartDate(t);
-      setEndDate(t);
-    } else if (preset === 'thisMonth') {
-      setStartDate(new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10));
-      setEndDate(d.toISOString().slice(0, 10));
-    } else if (preset === 'lastMonth') {
-      const first = new Date(d.getFullYear(), d.getMonth() - 1, 1);
-      const last = new Date(d.getFullYear(), d.getMonth(), 0);
-      setStartDate(first.toISOString().slice(0, 10));
-      setEndDate(last.toISOString().slice(0, 10));
-    }
+    const range = financePresetRange(preset);
+    setStartDate(range.startDate);
+    setEndDate(range.endDate);
   }, [preset]);
 
   const [view, setView] = useState<FinanceView>('daily');
@@ -1107,6 +1089,25 @@ export function FinanceSection() {
 
   const lines = linesQuery.data ?? [];
 
+  /**
+   * 2026-10-21 CA-11: purchaseLines now also carries off-catalog expense
+   * splits (`kind: 'expense'`, skuId null, free-text label), so finance
+   * shows the same money as History and the finish sheet. One name
+   * resolver for both kinds; expenses get a 🧾 marker.
+   */
+  const lineName = useCallback(
+    (l: (typeof lines)[number]): string => {
+      if (l.kind === 'expense' || !l.skuId) {
+        return `🧾 ${l.label ?? i18n.t('finance.label.expense')}`;
+      }
+      const sku = skuById.get(l.skuId);
+      return sku ? productName({ names: sku.names }) : l.skuId.slice(0, 8);
+    },
+    [skuById, productName, i18n],
+  );
+  const lineKey = (l: (typeof lines)[number], i: number) =>
+    `${l.runId}-${l.skuId ?? l.expenseId}-${l.storeId}-${i}`;
+
   // Group by ("YYYY-MM-DD"). Each day → cash sum, transfer sum, line list.
   const dailyGroups = useMemo(() => {
     const m = new Map<
@@ -1133,12 +1134,21 @@ export function FinanceSection() {
   const supplierGroups = useMemo(() => {
     const m = new Map<
       string,
-      { supplierId: string | null; cash: number; transfer: number; lines: typeof lines }
+      {
+        key: string;
+        supplierId: string | null;
+        cash: number;
+        transfer: number;
+        lines: typeof lines;
+      }
     >();
     for (const l of lines) {
-      const key = l.supplierId ?? '__none';
+      // Expenses have no stall; they get their own group rather than
+      // inflating the "no supplier" bucket of unassigned SKU buys.
+      const key = l.kind === 'expense' ? '__expense' : (l.supplierId ?? '__none');
       const g = m.get(key) ?? {
-        supplierId: l.supplierId,
+        key,
+        supplierId: l.kind === 'expense' ? null : l.supplierId,
         cash: 0,
         transfer: 0,
         lines: [] as typeof lines,
@@ -1188,12 +1198,10 @@ export function FinanceSection() {
       `# Finance report ${startDate} → ${endDate}`,
       lineHeader,
       ...lines.map((l) => {
-        const sku = skuById.get(l.skuId);
-        const skuName = sku ? productName({ names: sku.names }) : l.skuId.slice(0, 8);
         return [
           l.runDate,
           `#${l.runIndex + 1}`,
-          skuName,
+          lineName(l),
           storeById.get(l.storeId) ?? l.storeId.slice(0, 8),
           l.supplierId ? (supplierById.get(l.supplierId) ?? l.supplierId.slice(0, 8)) : '—',
           l.paymentMethod,
@@ -1213,7 +1221,7 @@ export function FinanceSection() {
       // hardening pass — privacy + CSP cleanliness).
       toast.error(i18n.t('finance.export.noClipboard'));
     }
-  }, [lines, skuById, storeById, supplierById, productName, startDate, endDate, toast, i18n]);
+  }, [lines, lineName, storeById, supplierById, startDate, endDate, toast, i18n]);
 
   return (
     <div className="px-4 py-3">
@@ -1285,6 +1293,13 @@ export function FinanceSection() {
             <div className="text-old-label text-[var(--c-fg-muted)]">
               {totalsQuery.data.runCount} {i18n.t('finance.label.runs')}
             </div>
+          </div>
+          {/* 2026-10-21 CA-11: total = items + expenses, shown as parts. */}
+          <div className="col-span-3 border-t border-[var(--c-divider)] pt-2 text-old-label tabular-nums text-[var(--c-fg-muted)]">
+            {i18n.t('run.money.itemsExpenses', {
+              items: formatMoney(totalsQuery.data.itemsTotal),
+              expenses: formatMoney(totalsQuery.data.expensesTotal),
+            })}
           </div>
         </div>
       ) : null}
@@ -1360,13 +1375,12 @@ export function FinanceSection() {
                 {isOpen ? (
                   <ul className="flex flex-col border-t border-[var(--c-divider)]" role="list">
                     {g.lines.map((l, i) => {
-                      const sku = skuById.get(l.skuId);
-                      const skuName = sku ? productName({ names: sku.names }) : l.skuId.slice(0, 8);
+                      const skuName = lineName(l);
                       const supplier = l.supplierId ? (supplierById.get(l.supplierId) ?? '—') : '—';
                       const store = storeById.get(l.storeId) ?? l.storeId.slice(0, 8);
                       return (
                         <li
-                          key={`${l.runId}-${l.skuId}-${l.storeId}-${i}`}
+                          key={lineKey(l, i)}
                           className="flex flex-col gap-0.5 border-b border-[var(--c-divider)] px-3 py-2 last:border-b-0"
                         >
                           <div className="flex items-baseline justify-between gap-2">
@@ -1399,11 +1413,14 @@ export function FinanceSection() {
       ) : view === 'bySupplier' ? (
         <ul className="flex flex-col gap-1" role="list">
           {supplierGroups.map((g) => {
-            const key = g.supplierId ?? '__none';
+            const key = g.key;
             const isOpen = expanded === key;
-            const name = g.supplierId
-              ? (supplierById.get(g.supplierId) ?? g.supplierId.slice(0, 8))
-              : `— ${i18n.t('finance.label.noSupplier')}`;
+            const name =
+              key === '__expense'
+                ? `🧾 ${i18n.t('finance.label.expenses')}`
+                : g.supplierId
+                  ? (supplierById.get(g.supplierId) ?? g.supplierId.slice(0, 8))
+                  : `— ${i18n.t('finance.label.noSupplier')}`;
             const mixed = g.cash > 0 && g.transfer > 0;
             return (
               <li
@@ -1433,11 +1450,10 @@ export function FinanceSection() {
                 {isOpen ? (
                   <ul className="flex flex-col border-t border-[var(--c-divider)]" role="list">
                     {g.lines.map((l, i) => {
-                      const sku = skuById.get(l.skuId);
-                      const skuName = sku ? productName({ names: sku.names }) : l.skuId.slice(0, 8);
+                      const skuName = lineName(l);
                       return (
                         <li
-                          key={`${l.runId}-${l.skuId}-${l.storeId}-${i}`}
+                          key={lineKey(l, i)}
                           className="flex items-baseline justify-between gap-2 border-b border-[var(--c-divider)] px-3 py-1.5 text-old-label last:border-b-0"
                         >
                           <span className="truncate">
@@ -1491,11 +1507,10 @@ export function FinanceSection() {
                 {isOpen ? (
                   <ul className="flex flex-col border-t border-[var(--c-divider)]" role="list">
                     {g.lines.map((l, i) => {
-                      const sku = skuById.get(l.skuId);
-                      const skuName = sku ? productName({ names: sku.names }) : l.skuId.slice(0, 8);
+                      const skuName = lineName(l);
                       return (
                         <li
-                          key={`${l.runId}-${l.skuId}-${l.storeId}-${i}`}
+                          key={lineKey(l, i)}
                           className="flex items-baseline justify-between gap-2 border-b border-[var(--c-divider)] px-3 py-1.5 text-old-label last:border-b-0"
                         >
                           <span className="truncate">

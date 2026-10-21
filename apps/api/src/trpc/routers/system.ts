@@ -44,6 +44,28 @@ function clamp(value: unknown, max: number): string | null {
   return value.length > max ? value.slice(0, max) : value;
 }
 
+/**
+ * 2026-10-21 audit F-12: `data` was stored as-is, so one anonymous call
+ * could write 200 arbitrarily large JSON blobs. Keep it when it
+ * serializes to at most 4 KB; otherwise store a marker with the size and
+ * a short preview, enough to recognise the event without the bulk.
+ */
+export const MAX_LOG_DATA_BYTES = 4096;
+const LOG_DATA_PREVIEW_CHARS = 512;
+
+export function capLogData(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object') return null;
+  let json: string;
+  try {
+    json = JSON.stringify(value);
+  } catch {
+    return { _truncated: true, reason: 'unserializable' };
+  }
+  const bytes = Buffer.byteLength(json, 'utf8');
+  if (bytes <= MAX_LOG_DATA_BYTES) return value as Record<string, unknown>;
+  return { _truncated: true, bytes, preview: json.slice(0, LOG_DATA_PREVIEW_CHARS) };
+}
+
 export const systemRouter = router({
   /**
    * Health probe (M1.16, 2026-05-08): now actually checks reality.
@@ -153,8 +175,7 @@ export const systemRouter = router({
         kind,
         action: clamp(raw.action, 64),
         target: clamp(raw.target, 200),
-        data:
-          raw.data && typeof raw.data === 'object' ? (raw.data as Record<string, unknown>) : null,
+        data: capLogData(raw.data),
         errorMsg: typeof raw.errorMsg === 'string' ? raw.errorMsg.slice(0, 4000) : null,
         errorStack: typeof raw.errorStack === 'string' ? raw.errorStack.slice(0, 8000) : null,
         platform: clamp(raw.platform, 32),

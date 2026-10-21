@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { resetNavStore } from './navStore';
 
 export interface AuthSession {
   user: {
@@ -174,8 +175,12 @@ export const useAuthStore = create<AuthState>()(
           }
           return {};
         }),
-      clear: () =>
-        set({ accessToken: null, refreshToken: null, session: null, currentStoreId: null }),
+      clear: () => {
+        // 2026-10-21 audit CA-33: the next person to sign in on this
+        // device must not inherit the previous session's tab / drill-down.
+        resetNavStore();
+        set({ accessToken: null, refreshToken: null, session: null, currentStoreId: null });
+      },
     }),
     {
       name: 'compass.auth',
@@ -191,7 +196,3 @@ export const useAuthStore = create<AuthState>()(
     },
   ),
 );
-
-export const useHasPermission = (key: string): boolean => {
-  return useAuthStore((s) => Boolean(s.session?.permissions.includes(key)));
-};

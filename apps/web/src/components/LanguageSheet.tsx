@@ -112,22 +112,3 @@ export function LanguageSheet({ open, onOpenChange }: LanguageSheetProps) {
     </Sheet>
   );
 }
-
-/**
- * Globe-icon button — drop into a page header. Tapping opens the
- * picker. Caller manages open state so multiple entry points (Admin
- * + Order header) can share one sheet instance if needed.
- */
-export function LanguageButton({ onClick }: { onClick: () => void }) {
-  const i18n = useI18n();
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={i18n.t('settings.language.aria')}
-      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--r-pill)] bg-[var(--c-surface-2)] text-old-body active:opacity-80"
-    >
-      🌐
-    </button>
-  );
-}

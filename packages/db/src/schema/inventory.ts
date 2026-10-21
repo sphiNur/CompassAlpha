@@ -493,15 +493,17 @@ export const dishIngredients = inventorySchema.table(
  * Source linkage:
  *   The auto-emitted movement rows carry sourceType='sale' +
  *   sourceId=<sales.id>. The partial UNIQUE index on movements
- *   (source_type, source_id, store_id, sku_id) guarantees that a
- *   replay or double-fire of `sales.record` cannot double-deduct.
+ *   (source_type, source_id, store_id, sku_id) only stops one sale
+ *   writing two rows for the same SKU; retries are deduped by the
+ *   idempotency key (see routers/sales.ts, audit CA-21).
  *
- * Editing / deleting (NOT in M2.0c):
- *   First cut is record-only. Mistakes are corrected via the
- *   stocktake action (M2.0a). M2.x can add `sales.delete` that
- *   soft-marks the row AND writes reversal movements with reason=
- *   'consumption_reversed' so the audit trail stays append-only.
- *   For now `sales.delete` doesn't exist — keep it simple.
+ * Voiding (2026-10-21, migration 0049):
+ *   A mistaken sale is corrected with `sales.void`, not a stocktake.
+ *   It sets voided_at / voided_by_member_id / void_reason on this row
+ *   AND appends reversing movements (reason='consumption_reversed',
+ *   sourceType='sale_void', sourceId=<sales.id>, positive delta) in
+ *   one tx, so the ledger stays append-only. Sales are never deleted
+ *   or edited; revenue totals skip rows with voided_at set.
  *
  * Price snapshot:
  *   `unit_price` on the sale row is the SELLING price per serving
@@ -541,6 +543,12 @@ export const sales = inventorySchema.table(
       .notNull()
       .defaultNow(),
     createdAt: createdAt(),
+    /** 2026-10-21 (0049): set by `sales.void`. NULL = the sale stands.
+     *  CHECK: voided_at and void_reason (1..300 chars) are set together. */
+    voidedAt: timestamp('voided_at', { withTimezone: true, mode: 'date' }),
+    /** Who voided it. Deliberately not an FK, like recordedByMemberId. */
+    voidedByMemberId: uuid('voided_by_member_id'),
+    voidReason: text('void_reason'),
   },
   (t) => ({
     storeTimeIdx: index('sales_store_time_idx').on(t.storeId, t.occurredAt),
@@ -568,6 +576,9 @@ export const sales = inventorySchema.table(
  *     broken, mislabeled). delta is negative.
  *   - 'consumption': auto-emitted from M2.0c sales when a dish
  *     order resolves into ingredient consumption via the BOM.
+ *   - 'consumption_reversed': written by `sales.void` (2026-10-21,
+ *     0049) — positive mirror of a voided sale's consumption rows,
+ *     sourceType='sale_void'. Wrong sales are voided, not stocktaked.
  *   - 'transfer_in' / 'transfer_out': inter-store movement
  *     (M2.x — pairs of rows, same magnitude, opposite signs).
  *   - 'adjustment': catch-all for cases that don't fit above.
@@ -598,12 +609,14 @@ export const inventoryMovements = inventorySchema.table(
     /** Signed quantity change. Positive = received, negative = consumed. */
     delta: decimal('delta', { precision: 12, scale: 3 }).notNull(),
     /** One of delivery_received | stocktake | wastage | consumption |
-     *  transfer_in | transfer_out | adjustment. Validated in app code;
+     *  consumption_reversed | transfer_in | transfer_out | adjustment.
+     *  Validated in app code;
      *  kept as varchar for schema flexibility (no enum rebuild on add). */
     reason: varchar('reason', { length: 32 }).notNull(),
     /** Optional free-text note. Required when reason='wastage'. */
     note: text('note'),
-    /** What domain entity caused this — 'run' / 'sale' / 'manual' / etc. */
+    /** What domain entity caused this — 'run' / 'sale' / 'sale_void' /
+     *  'manual' / etc. */
     sourceType: varchar('source_type', { length: 32 }),
     /** ID of the entity above. Nullable for 'manual' rows. */
     sourceId: uuid('source_id'),

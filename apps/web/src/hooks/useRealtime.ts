@@ -13,6 +13,7 @@
 import { useEffect, useRef } from 'react';
 import { useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { useAuthStore } from '../stores/authStore';
+import { trpc } from '../lib/trpc';
 
 const RECONNECT_BASE_MS = 1_000;
 const RECONNECT_MAX_MS = 30_000;
@@ -24,6 +25,11 @@ const RECONNECT_MAX_MS = 30_000;
 const INVALIDATE_DEBOUNCE_MS = 400;
 const MUTATION_QUIET_RETRY_MS = 250;
 const MUTATION_QUIET_MAX_WAIT_MS = 2_500;
+// 2026-10-21 audit CA-35: close codes the API's WS layer uses.
+const WS_CLOSE_EVICTED = 4000;
+const WS_CLOSE_TOKEN_EXPIRED = 4001;
+/** Query-key roots refreshed when the socket re-opens (CA-35). */
+const REOPEN_INVALIDATE_KEYS = ['order', 'run', 'catalog', 'admin', 'notifications'] as const;
 
 interface RealtimeMessage {
   type:
@@ -35,6 +41,10 @@ interface RealtimeMessage {
     | 'catalog.changed'
     | 'people.changed'
     | 'notification'
+    // 2026-10-21 audit CA-35 / E-06: the hub drops its OLDEST socket at the
+    // connection cap and sends this, but used to leave it open — a zombie
+    // that never received another event.
+    | 'evicted'
     | 'ping';
   orgId?: string;
   sessionId?: string;
@@ -60,6 +70,11 @@ export function useRealtime(): void {
   const accessToken = useAuthStore((s) => s.accessToken);
   const orgId = useAuthStore((s) => s.session?.member.orgId ?? null);
   const queryClient = useQueryClient();
+  // Ref, not a dep: the utils object's identity isn't guaranteed stable
+  // and a new one must not tear down a healthy socket.
+  const utils = trpc.useUtils();
+  const utilsRef = useRef(utils);
+  utilsRef.current = utils;
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const stoppedRef = useRef(false);
@@ -67,6 +82,9 @@ export function useRealtime(): void {
   useEffect(() => {
     if (!accessToken || !orgId) return;
     stoppedRef.current = false;
+    // Per-effect flag: stoppedRef is shared with the NEXT effect run (a new
+    // token re-runs this effect), so async work started here checks this.
+    let disposed = false;
     let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
 
     // Debounced invalidate so a burst of N ws events for the same query
@@ -94,6 +112,14 @@ export function useRealtime(): void {
       pendingInvalidates.set(id, t);
     };
 
+    // 2026-10-21 audit CA-35 / E-05: events broadcast while the socket was
+    // down (Telegram backgrounded, network blip) are lost, so every
+    // re-open after the first one invalidates what they would have.
+    let hasOpened = false;
+    // After an eviction, keep the backoff growing instead of resetting it
+    // on the next open, so repeated evictions can't spin at 1 s.
+    let reopenAfterEviction = false;
+
     const connect = () => {
       if (stoppedRef.current) return;
       const url = wsUrl(accessToken);
@@ -108,7 +134,12 @@ export function useRealtime(): void {
       wsRef.current = ws;
 
       ws.addEventListener('open', () => {
-        reconnectAttemptsRef.current = 0;
+        if (!reopenAfterEviction) reconnectAttemptsRef.current = 0;
+        reopenAfterEviction = false;
+        if (hasOpened) {
+          for (const key of REOPEN_INVALIDATE_KEYS) debouncedInvalidate([[key]]);
+        }
+        hasOpened = true;
       });
 
       ws.addEventListener('message', (e) => {
@@ -142,14 +173,41 @@ export function useRealtime(): void {
           case 'notification':
             debouncedInvalidate([['notifications']]);
             break;
+          case 'evicted':
+            // Close; the close handler reconnects with backoff.
+            reopenAfterEviction = true;
+            try {
+              ws.close(WS_CLOSE_EVICTED, 'evicted');
+            } catch {
+              /* already closing */
+            }
+            break;
           case 'ping':
           default:
             break;
         }
       });
 
-      ws.addEventListener('close', () => {
-        wsRef.current = null;
+      ws.addEventListener('close', (ev) => {
+        if (wsRef.current === ws) wsRef.current = null;
+        if (disposed) return;
+        if (ev.code === WS_CLOSE_EVICTED) reopenAfterEviction = true;
+        if (ev.code === WS_CLOSE_TOKEN_EXPIRED) {
+          // Reconnecting with the same token would just be refused again.
+          // Any authed tRPC call goes through the client's single-flight
+          // refresh on 401; a rotated token re-runs this effect, which
+          // opens a fresh socket. Only if the token did NOT change (refresh
+          // failed or not needed) fall back to the backoff reconnect.
+          void utilsRef.current.client.auth.me
+            .query()
+            .catch(() => undefined)
+            .finally(() => {
+              if (disposed) return;
+              if (useAuthStore.getState().accessToken !== accessToken) return;
+              scheduleReconnect();
+            });
+          return;
+        }
         scheduleReconnect();
       });
       ws.addEventListener('error', () => {
@@ -158,7 +216,7 @@ export function useRealtime(): void {
     };
 
     const scheduleReconnect = () => {
-      if (stoppedRef.current) return;
+      if (disposed || stoppedRef.current) return;
       const attempt = ++reconnectAttemptsRef.current;
       const delay = Math.min(RECONNECT_BASE_MS * 2 ** (attempt - 1), RECONNECT_MAX_MS);
       timeoutHandle = setTimeout(connect, delay);
@@ -167,6 +225,7 @@ export function useRealtime(): void {
     connect();
 
     return () => {
+      disposed = true;
       stoppedRef.current = true;
       if (timeoutHandle) clearTimeout(timeoutHandle);
       pendingInvalidates.forEach((t) => clearTimeout(t));

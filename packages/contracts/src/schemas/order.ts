@@ -156,12 +156,27 @@ export const MarkExtraStatusInputSchema = z.object({
   expectedSeq: z.number().int().optional(),
 });
 
-export const SetSessionExtrasInputSchema = z.object({
-  sessionId: UuidSchema,
-  /** Max 50 rows per session — same hard cap the domain enforces. */
-  extras: z.array(SessionExtraItemSchema).max(50),
-  expectedSeq: z.number().int().optional(),
-});
+/**
+ * 2026-10-21 audit CA-27: either `sessionId` (edit a known session, the
+ * original shape) or `storeId` (+ optional `date`, default today in the
+ * org tz) — the store form resolves/lazy-creates the caller's own draft
+ * exactly like adjustItem's self-edit, so an extras-only order no longer
+ * needs a SKU tap first. `date` is also what the offline outbox freezes
+ * at enqueue time (CA-25).
+ */
+export const SetSessionExtrasInputSchema = z
+  .object({
+    sessionId: UuidSchema.optional(),
+    storeId: UuidSchema.optional(),
+    date: DateStringSchema.optional(),
+    /** Max 50 rows per session — same hard cap the domain enforces. */
+    extras: z.array(SessionExtraItemSchema).max(50),
+    expectedSeq: z.number().int().optional(),
+  })
+  .refine((v) => v.sessionId !== undefined || v.storeId !== undefined, {
+    message: 'sessionId or storeId is required',
+    path: ['sessionId'],
+  });
 
 /** Query input — list of recently-used extra names for autocomplete. */
 export const ExtrasSuggestionsInputSchema = z.object({
@@ -172,6 +187,12 @@ export const ExtrasSuggestionsInputSchema = z.object({
 
 export const SimpleSessionCommandSchema = z.object({
   sessionId: UuidSchema,
+  /**
+   * The `lastSeq` the client was looking at. 2026-10-21 audit CA-43:
+   * approve / reject refuse (CONFLICT order.errors.staleSeq) when someone
+   * other than the caller has changed the order since. Optional so older
+   * clients keep working unchecked.
+   */
   expectedSeq: z.number().int().optional(),
 });
 

@@ -38,24 +38,56 @@
 import { TRPCError } from '@trpc/server';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { schema as s } from '@compass/db';
+import { schema as s, type DB } from '@compass/db';
 import {
   DecimalStringSchema,
   PositiveDecimalStringSchema,
   UuidSchema,
 } from '@compass/contracts';
-import { authedProcedure, router } from '../trpc';
+import { authedProcedure, idempotentMutation, router } from '../trpc';
 import {
   assertActorAssignedToStore,
   effectivePermissionsForStore,
 } from '../../services/storeScope';
 
+// 2026-10-21 CA-10/CA-57: `|| users.manage` fallback removed — it
+// overrode store-level denies of inventory.adjust for managers and
+// granted stocktake/wastage to any custom role holding users.manage.
+// Migration 0048 backfills manager → inventory.adjust in older orgs.
 function requireInventoryAdjust(perms: ReadonlySet<string>): void {
-  if (!perms.has('inventory.adjust') && !perms.has('users.manage')) {
+  if (!perms.has('inventory.adjust')) {
     throw new TRPCError({
       code: 'FORBIDDEN',
       message: 'inventory.errors.cannotAdjust',
     });
+  }
+}
+
+/**
+ * 2026-10-21 audit CA-54 (D-17): ledger writes must target an active
+ * store of this org and a SKU of this org. The FKs alone accept another
+ * org's SKU uuid and an archived/paused store. Error keys reuse the
+ * settlement (store) and admin catalog (SKU) ones.
+ */
+async function assertWritableStoreAndSku(
+  tx: DB,
+  orgId: string,
+  storeId: string,
+  skuId: string,
+): Promise<void> {
+  const store = await tx.query.stores.findFirst({
+    where: (st, { eq: eq2, and: and2 }) => and2(eq2(st.id, storeId), eq2(st.orgId, orgId)),
+    columns: { isActive: true, deletedAt: true },
+  });
+  if (!store || !store.isActive || store.deletedAt) {
+    throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'auth.errors.storeArchived' });
+  }
+  const sku = await tx.query.skus.findFirst({
+    where: (k, { eq: eq2, and: and2 }) => and2(eq2(k.id, skuId), eq2(k.orgId, orgId)),
+    columns: { id: true },
+  });
+  if (!sku) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.skuNotFound' });
   }
 }
 
@@ -217,6 +249,13 @@ export const inventoryRouter = router({
       }
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
+        await assertWritableStoreAndSku(tx, orgId, input.storeId, input.skuId);
+        // 2026-10-21 audit CA-54: serialize stocktakes per (store, sku)
+        // for the rest of this tx. Without it two concurrent counts both
+        // read the same SUM and both post a delta, double-applying it.
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtext(${'inventory.stocktake:' + input.storeId + ':' + input.skuId}))`,
+        );
         // Compute current SUM(delta) so we can write the right delta
         // to make SUM = target. Single round-trip.
         const cur = (await tx.execute(sql`
@@ -258,7 +297,9 @@ export const inventoryRouter = router({
    * a row (no zero-delta short-circuit) since a wastage of zero is
    * meaningless.
    */
-  recordWastage: authedProcedure
+  // 2026-10-21 audit CA-54: idempotent — a lost-response retry with the
+  // same X-Idempotency-Key replays instead of subtracting the qty twice.
+  recordWastage: idempotentMutation
     .input(WastageInputSchema)
     .mutation(async ({ ctx, input }) => {
       requireInventoryAdjust(ctx.session!.permissions);
@@ -283,6 +324,7 @@ export const inventoryRouter = router({
 
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
+        await assertWritableStoreAndSku(tx, orgId, input.storeId, input.skuId);
         const negative = '-' + Number(input.qty).toFixed(3);
         await tx.insert(s.inventoryMovements).values({
           orgId,

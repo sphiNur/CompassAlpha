@@ -333,6 +333,15 @@ export function decide(
       if (state.initiatedByMemberId && state.initiatedByMemberId !== command.actor.memberId) {
         throw forbidden('order.errors.notOwner');
       }
+      // 2026-10-21 audit CA-26: a repeated Submit by the same owner on a
+      // session they already submitted (double tap, lost-response retry)
+      // is an idempotent success, not a "could not submit" error.
+      if (
+        state.status === 'submitted' &&
+        state.submittedByMemberId === command.actor.memberId
+      ) {
+        return [];
+      }
       if (state.status !== 'draft' && state.status !== 'rejected') {
         throw preconditionFailed('order.errors.notSubmittable', { status: state.status });
       }
@@ -408,6 +417,11 @@ export function decide(
       if (!command.actor.permissions.has('order.approve')) {
         throw forbidden('order.errors.cannotApprove');
       }
+      // 2026-10-21 audit CA-26: same decider re-approving (lost response
+      // retry) is a no-op success rather than PRECONDITION_FAILED.
+      if (state.status === 'approved' && state.decidedByMemberId === command.actor.memberId) {
+        return [];
+      }
       if (state.status !== 'submitted') {
         throw preconditionFailed('order.errors.notApprovable', { status: state.status });
       }
@@ -427,6 +441,10 @@ export function decide(
       assertActiveStream(state);
       if (!command.actor.permissions.has('order.approve')) {
         throw forbidden('order.errors.cannotApprove');
+      }
+      // 2026-10-21 audit CA-26: same decider re-rejecting is a no-op.
+      if (state.status === 'rejected' && state.decidedByMemberId === command.actor.memberId) {
+        return [];
       }
       if (state.status !== 'submitted') {
         throw preconditionFailed('order.errors.notRejectable', { status: state.status });

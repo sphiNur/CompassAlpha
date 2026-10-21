@@ -11,9 +11,92 @@
  * restart. The server-side watchdog POSTs the new hostname to
  * `/__origin`; it is stored in KV and picked up here without changing
  * the public URL.
+ *
+ * 2026-10-21 audit CA-12: the ntfy topic is public to anyone who knows
+ * its name, and whoever can post to it could point the whole app at
+ * their own trycloudflare host. When the ORIGIN_SIGNING_KEY secret is
+ * set, a message is accepted only as `<url>|<unix_ts>|<hex hmac>` where
+ * hmac = HMAC-SHA256(key, `<url>|<unix_ts>`), signed by
+ * infra/tunnel/compass-origin-watch.sh. Without the secret the old
+ * unsigned behaviour stays (with a one-time warning), so the server
+ * script and this Worker can be rolled out in either order.
  */
 const ORIGIN_CACHE_MS = 30_000;
+// The watchdog republishes every 6 h, so a week leaves ample slack for
+// a stalled server while still expiring a captured old message.
+const ORIGIN_SIGNATURE_MAX_AGE_S = 7 * 24 * 60 * 60;
+const ORIGIN_SIGNATURE_MAX_SKEW_S = 5 * 60;
 let originCache = { url: null, readAt: 0 };
+let warnedUnsigned = false;
+const encoder = new TextEncoder();
+
+/**
+ * Constant-time string comparison (CA-12). Length is not secret; the
+ * content is compared without an early exit so response timing does not
+ * reveal how much of a guessed key was right.
+ */
+function timingSafeEqual(a, b) {
+  const x = encoder.encode(String(a ?? ''));
+  const y = encoder.encode(String(b ?? ''));
+  let diff = x.length ^ y.length;
+  const n = Math.max(x.length, y.length);
+  for (let i = 0; i < n; i += 1) diff |= (x[i] ?? 0) ^ (y[i] ?? 0);
+  return diff === 0;
+}
+
+async function hmacHex(key, message) {
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(key),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const mac = await crypto.subtle.sign('HMAC', cryptoKey, encoder.encode(message));
+  return [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function isTunnelOrigin(candidate) {
+  return (
+    candidate.protocol === 'https:' &&
+    candidate.hostname.endsWith('.trycloudflare.com') &&
+    candidate.pathname === '/' &&
+    !candidate.search &&
+    !candidate.hash
+  );
+}
+
+/**
+ * Turn one ntfy message into an origin URL, or null if it must be
+ * ignored. Signed form: `<url>|<ts>|<sig>`; unsigned: `<url>`.
+ */
+async function originFromMessage(message, env) {
+  const parts = message.trim().split('|');
+  if (env.ORIGIN_SIGNING_KEY) {
+    if (parts.length !== 3) return null;
+    const [url, ts, sig] = parts;
+    if (!/^\d{1,12}$/.test(ts) || !/^[0-9a-f]{64}$/.test(sig)) return null;
+    const age = Math.floor(Date.now() / 1000) - Number(ts);
+    if (age > ORIGIN_SIGNATURE_MAX_AGE_S || age < -ORIGIN_SIGNATURE_MAX_SKEW_S) return null;
+    const expected = await hmacHex(env.ORIGIN_SIGNING_KEY, `${url}|${ts}`);
+    if (!timingSafeEqual(expected, sig)) return null;
+    const candidate = new URL(url);
+    return isTunnelOrigin(candidate) ? candidate.toString() : null;
+  }
+  if (!warnedUnsigned) {
+    warnedUnsigned = true;
+    console.warn(
+      'ORIGIN_SIGNING_KEY is not set: accepting unsigned ntfy origin messages (CA-12). ' +
+        'Run `wrangler secret put ORIGIN_SIGNING_KEY`.',
+    );
+  }
+  // Unsigned mode also accepts the signed format (ignoring the
+  // signature) so a server that already signs keeps working while this
+  // Worker has no secret yet.
+  if (parts.length !== 1 && parts.length !== 3) return null;
+  const candidate = new URL(parts[0]);
+  return isTunnelOrigin(candidate) ? candidate.toString() : null;
+}
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -48,19 +131,13 @@ async function currentOrigin(env) {
           try {
             const event = JSON.parse(lines[i]);
             if (event?.event !== 'message' || typeof event.message !== 'string') continue;
-            const candidate = new URL(event.message.trim());
-            if (
-              candidate.protocol === 'https:' &&
-              candidate.hostname.endsWith('.trycloudflare.com') &&
-              candidate.pathname === '/' &&
-              !candidate.search &&
-              !candidate.hash
-            ) {
-              originCache = { url: candidate.toString(), readAt: Date.now() };
-              return candidate.toString();
+            const url = await originFromMessage(event.message, env);
+            if (url) {
+              originCache = { url, readAt: Date.now() };
+              return url;
             }
           } catch {
-            // Ignore malformed/foreign messages in the topic.
+            // Ignore malformed/foreign/unsigned messages in the topic.
           }
         }
       }
@@ -84,7 +161,7 @@ export default {
       if (!env.ORIGIN_UPDATE_KEY) {
         return json({ ok: false, error: 'watchdog secret is not configured' }, 503);
       }
-      if (request.headers.get('x-origin-key') !== env.ORIGIN_UPDATE_KEY) {
+      if (!timingSafeEqual(request.headers.get('x-origin-key'), env.ORIGIN_UPDATE_KEY)) {
         return json({ ok: false, error: 'forbidden' }, 403);
       }
       let body;
@@ -99,13 +176,7 @@ export default {
       } catch {
         return json({ ok: false, error: 'invalid url' }, 400);
       }
-      if (
-        candidate.protocol !== 'https:' ||
-        !candidate.hostname.endsWith('.trycloudflare.com') ||
-        candidate.pathname !== '/' ||
-        candidate.search ||
-        candidate.hash
-      ) {
+      if (!isTunnelOrigin(candidate)) {
         return json({ ok: false, error: 'origin must be a trycloudflare origin' }, 400);
       }
       await env.COMPASS_ORIGIN.put('url', candidate.toString());

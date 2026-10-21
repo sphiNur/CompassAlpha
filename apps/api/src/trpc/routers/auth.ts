@@ -466,6 +466,123 @@ async function issueDevBypassLoginResult(db: DB, userId: string, memberId: strin
   };
 }
 
+/**
+ * 2026-10-21 CA-19 (A-06): what an inviter can still vouch for when
+ * their link is opened. Mirrors the gates of admin.memberInviteCreate:
+ * `users.manage` somewhere (requireAdmin) and admin-tier authority over
+ * every store on the invite (getActorAdminStoreIds). An invite with no
+ * store is an org-tier invite and needs a global admin-tier grant.
+ */
+export interface InviterAuthority {
+  active: boolean;
+  hasUsersManage: boolean;
+  isGlobalAdmin: boolean;
+  adminStoreIds: ReadonlySet<string>;
+}
+
+export function inviterCoversInvite(
+  authority: InviterAuthority | null,
+  inviteStoreIds: readonly string[],
+): boolean {
+  if (!authority || !authority.active || !authority.hasUsersManage) return false;
+  if (authority.isGlobalAdmin) return true;
+  if (inviteStoreIds.length === 0) return false;
+  return inviteStoreIds.every((id) => authority.adminStoreIds.has(id));
+}
+
+const INVITER_ADMIN_PERM_KEYS = new Set(['users.manage', 'users.invite', 'users.grant_role']);
+
+async function loadInviterAuthority(
+  tx: DB,
+  orgId: string,
+  inviterUserId: string | null,
+): Promise<InviterAuthority | null> {
+  if (!inviterUserId) return null;
+  const member = await tx.query.members.findFirst({
+    where: (m, { eq: eq2, and: and2 }) => and2(eq2(m.orgId, orgId), eq2(m.userId, inviterUserId)),
+  });
+  if (!member) return null;
+  const now = new Date();
+  const bindings = await tx
+    .select({
+      roleId: s.memberRoleBindings.roleId,
+      scopeType: s.memberRoleBindings.scopeType,
+      scopeId: s.memberRoleBindings.scopeId,
+    })
+    .from(s.memberRoleBindings)
+    .where(
+      and(
+        eq(s.memberRoleBindings.memberId, member.id),
+        or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, now)),
+      ),
+    );
+  const roleIds = [...new Set(bindings.map((b) => b.roleId))];
+  const rolePerms =
+    roleIds.length > 0
+      ? await tx
+          .select({ roleId: s.rolePermissions.roleId, key: s.rolePermissions.permissionKey })
+          .from(s.rolePermissions)
+          .where(inArray(s.rolePermissions.roleId, roleIds))
+      : [];
+  const overrides = (
+    await tx
+      .select({
+        effect: s.memberPermissionOverrides.effect,
+        scopeType: s.memberPermissionOverrides.scopeType,
+        scopeId: s.memberPermissionOverrides.scopeId,
+        permissionKey: s.memberPermissionOverrides.permissionKey,
+        expiresAt: s.memberPermissionOverrides.expiresAt,
+      })
+      .from(s.memberPermissionOverrides)
+      .where(eq(s.memberPermissionOverrides.memberId, member.id))
+  )
+    .filter((o) => !o.expiresAt || o.expiresAt > now)
+    // Allows first, then denies: deny wins, as everywhere else.
+    .sort((a, b) => Number(a.effect === 'deny') - Number(b.effect === 'deny'));
+
+  const keysByRole = new Map<string, Set<string>>();
+  for (const rp of rolePerms) {
+    const set = keysByRole.get(rp.roleId) ?? new Set<string>();
+    set.add(rp.key);
+    keysByRole.set(rp.roleId, set);
+  }
+  let hasUsersManage = false;
+  let isGlobalAdmin = false;
+  const adminStoreIds = new Set<string>();
+  for (const b of bindings) {
+    const keys = keysByRole.get(b.roleId);
+    if (!keys) continue;
+    if (keys.has('users.manage')) hasUsersManage = true;
+    if (![...keys].some((k) => INVITER_ADMIN_PERM_KEYS.has(k))) continue;
+    if (b.scopeType === 'global') isGlobalAdmin = true;
+    else if (b.scopeType === 'store' && b.scopeId) adminStoreIds.add(b.scopeId);
+  }
+  for (const o of overrides) {
+    if (o.permissionKey === 'users.manage') {
+      if (o.effect === 'allow') hasUsersManage = true;
+      else if (o.scopeType === 'global') hasUsersManage = false;
+    }
+    if (!INVITER_ADMIN_PERM_KEYS.has(o.permissionKey)) continue;
+    if (o.effect === 'allow') {
+      if (o.scopeType === 'global') isGlobalAdmin = true;
+      else if (o.scopeType === 'store' && o.scopeId) adminStoreIds.add(o.scopeId);
+    } else if (o.scopeType === 'global') {
+      isGlobalAdmin = false;
+    } else if (o.scopeType === 'store' && o.scopeId) {
+      adminStoreIds.delete(o.scopeId);
+    }
+  }
+  return { active: member.status === 'active', hasUsersManage, isGlobalAdmin, adminStoreIds };
+}
+
+async function inviterStillAuthorized(
+  tx: DB,
+  invite: { orgId: string; invitedBy: string | null; storeIds: string[] },
+): Promise<boolean> {
+  const authority = await loadInviterAuthority(tx, invite.orgId, invite.invitedBy);
+  return inviterCoversInvite(authority, invite.storeIds);
+}
+
 export const authRouter = router({
   loginModes: publicProcedure.query(({ ctx }) => {
     const devReason = devLoginUnavailableReason(ctx);
@@ -848,6 +965,14 @@ export const authRouter = router({
           message: 'auth.errors.inviteNotFound',
         });
       }
+      // 2026-10-21 CA-19: an admin withdrew this link (only pending
+      // invites can be revoked, so it was never accepted).
+      if (invite.revokedAt) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'auth.errors.inviteRevoked',
+        });
+      }
 
       let user = await tx.query.users.findFirst({
         where: (u, { eq: eq2 }) => eq2(u.tgUserId, BigInt(tg.id)),
@@ -925,6 +1050,17 @@ export const authRouter = router({
         });
       }
 
+      // 2026-10-21 CA-19 (A-06): the link carries the inviter's authority,
+      // so it lapses with it. A removed / suspended inviter, or one who no
+      // longer holds users.manage over the invite's stores, voids every
+      // link they handed out.
+      if (!(await inviterStillAuthorized(tx, invite))) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'auth.errors.inviteInviterNoLongerAuthorized',
+        });
+      }
+
       assertWriteAccess(await readSubscriptionState(tx, invite.orgId));
       let member = await tx.query.members.findFirst({
         where: (m, { eq: eq2, and: and2 }) =>
@@ -949,6 +1085,9 @@ export const authRouter = router({
           .returning();
         member = createdMember;
       } else if (member.status !== 'active') {
+        // 2026-10-21 audit CA-18: activating an inactive member takes a
+        // seat exactly like creating one.
+        await assertCanAddMember(tx, invite.orgId);
         const [reactivated] = await tx
           .update(s.members)
           .set({ status: 'active', updatedAt: new Date() })

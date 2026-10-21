@@ -19,13 +19,20 @@ import { createApp } from './app';
 import { logger } from './infra/log';
 import { getDb, closeDb, inSystem } from '@compass/db';
 import { verifyAccess } from './infra/jwt';
-import { hub } from './realtime/hub';
+import { hub, WS_CLOSE_EVICTED } from './realtime/hub';
+import { loadSession } from './trpc/context';
 
 interface WSData {
   orgId: string;
   userId: string;
   unsub: () => void;
+  /** Access-token `exp` (epoch seconds); the socket is closed when it passes. */
+  exp: number | null;
+  expiryTimer: ReturnType<typeof setTimeout> | null;
 }
+
+/** Close code for a socket whose access token expired (client should refresh). */
+const WS_CLOSE_TOKEN_EXPIRED = 4001;
 
 async function main() {
   const db = getDb(env.DATABASE_URL);
@@ -60,11 +67,26 @@ async function main() {
         } catch {
           return new Response('bad token', { status: 401 });
         }
+        // 2026-10-21 audit CA-35/F-08: a valid signature is not enough —
+        // a member suspended or removed within the token's lifetime could
+        // still open a socket and receive org-wide change events. Same
+        // check every tRPC request makes (trpc/context.ts).
+        let session;
+        try {
+          session = await loadSession(db, claims.sub, claims.org, claims.mid);
+        } catch (err) {
+          logger.warn({ err: (err as Error).message }, 'ws session lookup failed');
+          return new Response('session lookup failed', { status: 503 });
+        }
+        if (!session) return new Response('no active membership', { status: 403 });
+        const exp = (claims as { exp?: number }).exp;
         const upgraded = server.upgrade(req, {
           data: {
             orgId: claims.org,
             userId: claims.sub,
             unsub: () => {},
+            exp: typeof exp === 'number' ? exp : null,
+            expiryTimer: null,
           } as WSData,
         });
         if (upgraded) return undefined;
@@ -74,7 +96,20 @@ async function main() {
     },
     websocket: {
       open(ws: ServerWebSocket<WSData>) {
-        ws.data.unsub = hub.subscribe(ws.data.orgId, (data) => ws.send(data));
+        ws.data.unsub = hub.subscribe(
+          ws.data.orgId,
+          (data) => ws.send(data),
+          () => ws.close(WS_CLOSE_EVICTED, 'evicted'),
+        );
+        // CA-35/F-08: the socket lives no longer than the token it was
+        // opened with; the client reconnects with a fresh one.
+        if (ws.data.exp !== null) {
+          const ms = Math.max(0, ws.data.exp * 1000 - Date.now());
+          ws.data.expiryTimer = setTimeout(
+            () => ws.close(WS_CLOSE_TOKEN_EXPIRED, 'token expired'),
+            ms,
+          );
+        }
         // M3.9: demoted from info → debug. Active deploys see dozens of
         // WS open/close events per minute as clients reconnect; at info
         // level they dominate journalctl and hide real signals. The
@@ -97,6 +132,7 @@ async function main() {
         }
       },
       close(ws: ServerWebSocket<WSData>) {
+        if (ws.data.expiryTimer) clearTimeout(ws.data.expiryTimer);
         ws.data.unsub();
         logger.debug(
           { orgId: ws.data.orgId, userId: ws.data.userId, subs: hub.size(ws.data.orgId) },

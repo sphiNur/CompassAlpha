@@ -33,7 +33,10 @@ async function main(): Promise<void> {
   const jsonPath = jsonAt === -1 ? null : process.argv[jsonAt + 1];
   if (jsonAt !== -1 && !jsonPath) throw new Error('--json needs a file path');
 
-  const db = getDb(process.env.DATABASE_URL);
+  // 2026-10-21 audit CA-14: operator script reads every org, so open the
+  // pool in the system context; under fail-closed RLS a plain handle (on a
+  // non-BYPASSRLS role) sees zero rows and the report would say "clean".
+  const db = getDb(process.env.DATABASE_URL, { system: 'maintenance' });
   const report = await db.transaction((tx) => loadRunFindings(tx as unknown as DB), {
     accessMode: 'read only',
   });

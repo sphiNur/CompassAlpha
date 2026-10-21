@@ -17,9 +17,12 @@ import {
   classifyEntry,
   classifyReplayError,
   countsTowardGiveUp,
+  frozenOrderDate,
+  localDateString,
   isOwnEntry,
   isRetryDue,
   shouldGiveUp,
+  MAX_OVERRIDE_RETRIES,
   MAX_REPLAY_RETRIES,
 } from '../useOfflineQueue';
 
@@ -71,6 +74,25 @@ describe('classifyReplayError', () => {
 
   it('does NOT drop on UNAUTHORIZED — a re-login lets a later flush succeed', () => {
     expect(classifyReplayError('UNAUTHORIZED')).toBe('retry');
+  });
+
+  // 2026-10-21 audit CA-25: a seq collision on the shared draft is not
+  // the queued edit's fault — retry it a bounded number of times.
+  it('retries order.adjustItem / setSessionExtras CONFLICT up to the override cap', () => {
+    for (const proc of ['order.adjustItem', 'order.setSessionExtras']) {
+      expect(classifyReplayError('CONFLICT', proc, 0)).toBe('retry');
+      expect(classifyReplayError('CONFLICT', proc, MAX_OVERRIDE_RETRIES - 1)).toBe('retry');
+      expect(classifyReplayError('CONFLICT', proc, MAX_OVERRIDE_RETRIES)).toBe('drop');
+    }
+  });
+
+  it('keeps every other procedure / code on the default rule', () => {
+    expect(classifyReplayError('CONFLICT', 'run.purchaseItem', 0)).toBe('drop');
+    expect(classifyReplayError('CONFLICT', 'run.confirmStore', 0)).toBe('drop');
+    // The stale-offline-edit refusal is terminal for adjustItem.
+    expect(classifyReplayError('PRECONDITION_FAILED', 'order.adjustItem', 0)).toBe('drop');
+    expect(classifyReplayError('BAD_REQUEST', 'order.adjustItem', 0)).toBe('drop');
+    expect(classifyReplayError(undefined, 'order.adjustItem', 5)).toBe('retry');
   });
 });
 
@@ -141,5 +163,21 @@ describe('isRetryDue', () => {
       if (isRetryDue(retries, now, now + mount * 500)) retries += 1;
     }
     expect(retries).toBe(1);
+  });
+});
+
+describe('frozenOrderDate (CA-25)', () => {
+  const now = new Date(2026, 9, 21, 23, 59); // local 2026-10-21 23:59
+  it("uses the shown session's order date when there is a real session", () => {
+    expect(frozenOrderDate({ id: 'sess-1', orderDate: '2026-10-20' }, now)).toBe('2026-10-20');
+  });
+  it('falls back to the device-local date before a session exists', () => {
+    expect(frozenOrderDate(null, now)).toBe('2026-10-21');
+    expect(frozenOrderDate(undefined, now)).toBe('2026-10-21');
+    // The optimistic placeholder's date is not server truth.
+    expect(frozenOrderDate({ id: 'optimistic', orderDate: '2026-10-22' }, now)).toBe('2026-10-21');
+  });
+  it('formats local dates zero-padded', () => {
+    expect(localDateString(new Date(2026, 0, 5, 0, 1))).toBe('2026-01-05');
   });
 });

@@ -49,6 +49,11 @@ type Send = (data: string) => void;
  * the Set's insertion order). This bias keeps fresh tabs working and
  * sheds zombies first. Evicted connection's `send` is called with a
  * sentinel close message so the FE can log and reconnect cleanly.
+ *
+ * 2026-10-21 audit CA-35/F-08: eviction used to only drop the sink from
+ * the Set and leave the socket open — a zombie the client still believed
+ * was live, receiving nothing. The caller now passes `close`, which the
+ * hub calls right after the notice (main.ts closes with code 4000).
  */
 const MAX_CONNECTIONS_PER_ORG = 1000;
 const EVICTION_NOTICE = JSON.stringify({
@@ -56,10 +61,14 @@ const EVICTION_NOTICE = JSON.stringify({
   reason: 'org connection cap reached',
 });
 
+/** Close code the WS layer uses for an evicted connection. */
+export const WS_CLOSE_EVICTED = 4000;
+
 class Hub {
   private readonly subs = new Map<string, Set<Send>>();
+  private readonly closers = new WeakMap<Send, () => void>();
 
-  subscribe(orgId: string, send: Send): () => void {
+  subscribe(orgId: string, send: Send, close?: () => void): () => void {
     let set = this.subs.get(orgId);
     if (!set) {
       set = new Set();
@@ -77,10 +86,18 @@ class Hub {
       } catch {
         /* dead sink — already gone */
       }
+      try {
+        this.closers.get(oldest)?.();
+      } catch {
+        /* already closed */
+      }
+      this.closers.delete(oldest);
     }
     set.add(send);
+    if (close) this.closers.set(send, close);
     return () => {
       const s = this.subs.get(orgId);
+      this.closers.delete(send);
       if (!s) return;
       s.delete(send);
       if (s.size === 0) this.subs.delete(orgId);

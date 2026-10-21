@@ -49,6 +49,8 @@ export function ApprovalPage() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [rejectFor, setRejectFor] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  // CA-43: the row version the reject sheet was opened on.
+  const [rejectSeq, setRejectSeq] = useState<number | undefined>(undefined);
   // Store-context comes from the global header picker (added 2026-05-05).
   // Replaces the local chip-bar filter — same UX outcome but now the
   // selection follows the user across pages.
@@ -90,13 +92,32 @@ export function ApprovalPage() {
     },
     onError: errToast('common.error'),
   });
+  // 2026-10-21 audit CA-43 "approve what you saw": approve / reject send
+  // the `lastSeq` of the row on screen; the server answers CONFLICT
+  // order.errors.staleSeq when the staff changed the order after that.
+  // Then the card is out of date — reload it and say so, rather than
+  // the generic "someone else just edited — retry" (a blind retry would
+  // approve the new version unseen, which is the bug).
+  const isOrderChanged = (err: unknown): boolean => {
+    const e = err as { data?: { code?: string }; message?: string } | undefined;
+    return e?.data?.code === 'CONFLICT' && e.message === 'order.errors.staleSeq';
+  };
+  const onOrderChanged = (sessionId: string) => {
+    void utils.order.pendingList.invalidate();
+    void utils.order.sessionDetail.invalidate({ sessionId });
+    haptic('warning');
+    toast.info(i18n.t('approval.toast.orderChanged'));
+  };
   const approve = trpc.order.approve.useMutation({
     onSuccess: () => {
       void utils.order.pendingList.invalidate();
       haptic('success');
       toast.success(i18n.t('approval.toast.approved'));
     },
-    onError: errToast('approval.toast.approveFailed'),
+    onError: (err, vars) => {
+      if (isOrderChanged(err)) return onOrderChanged(vars.sessionId);
+      errToast('approval.toast.approveFailed')(err);
+    },
   });
   const reject = trpc.order.reject.useMutation({
     onSuccess: () => {
@@ -106,7 +127,16 @@ export function ApprovalPage() {
       haptic('warning');
       toast.info(i18n.t('approval.toast.rejected'));
     },
-    onError: errToast('approval.toast.rejectFailed'),
+    onError: (err, vars) => {
+      if (isOrderChanged(err)) {
+        // Close the sheet: the reason was written against a version
+        // that no longer exists. The approver re-reads and decides again.
+        setRejectFor(null);
+        setRejectReason('');
+        return onOrderChanged(vars.sessionId);
+      }
+      errToast('approval.toast.rejectFailed')(err);
+    },
   });
   const releaseClaim = trpc.order.releaseClaim.useMutation({
     onSuccess: () => {
@@ -308,9 +338,15 @@ export function ApprovalPage() {
                           </span>
                         </span>
                       ) : null}
-                      {row.notes ? (
+                      {/* 2026-10-21 audit CA-27 (B-14): new orders only write
+                          structured extras (M3.16-C), so a badge keyed on the
+                          legacy `notes` alone never fired for them. */}
+                      {row.notes || extrasCountOf(row.extrasJson) > 0 ? (
                         <Badge tone="warn" title={i18n.t('order.notes.hasNote')}>
                           {i18n.t('order.notes.badge')}
+                          {extrasCountOf(row.extrasJson) > 0
+                            ? ` · ${extrasCountOf(row.extrasJson)}`
+                            : null}
                         </Badge>
                       ) : null}
                     </div>
@@ -393,17 +429,53 @@ export function ApprovalPage() {
                   ) : null}
 
                   <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+                    {/* 2026-10-21 CA-42: an unclaimed order can be approved or
+                        rejected directly — the domain already allows it
+                        (commands.ts Approve/Reject only conflict when someone
+                        ELSE holds the claim). Claim stays for editing
+                        quantities, and another approver's claim still hides
+                        these buttons. While a claim or approval for this row
+                        is in flight the other actions wait, so a quick
+                        Claim → Approve can't race two writes onto the same
+                        order stream (the loser would fail with staleSeq). */}
                     {tab === 'pending' && !row.claimedByMemberId ? (
-                      <Button
-                        size="sm"
-                        loading={claim.isPending && claim.variables?.sessionId === row.id}
-                        onClick={() => {
-                          claim.mutate({ sessionId: row.id });
-                          setActiveSessionId(row.id);
-                        }}
-                      >
-                        {i18n.t('approval.claim')}
-                      </Button>
+                      <>
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          loading={approve.isPending && approve.variables?.sessionId === row.id}
+                          disabled={claim.isPending && claim.variables?.sessionId === row.id}
+                          onClick={() => approve.mutate({ sessionId: row.id, expectedSeq: row.lastSeq })}
+                        >
+                          {i18n.t('approval.approve')}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          disabled={
+                            (claim.isPending && claim.variables?.sessionId === row.id) ||
+                            (approve.isPending && approve.variables?.sessionId === row.id)
+                          }
+                          onClick={() => {
+                            setRejectFor(row.id);
+                            setRejectSeq(row.lastSeq);
+                          }}
+                        >
+                          {i18n.t('approval.reject')}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="pearl"
+                          loading={claim.isPending && claim.variables?.sessionId === row.id}
+                          disabled={approve.isPending && approve.variables?.sessionId === row.id}
+                          onClick={() => {
+                            claim.mutate({ sessionId: row.id });
+                            setActiveSessionId(row.id);
+                          }}
+                        >
+                          {i18n.t('approval.claim')}
+                        </Button>
+                      </>
                     ) : null}
                     {tab === 'pending' && isClaimedByMe ? (
                       <>
@@ -411,14 +483,17 @@ export function ApprovalPage() {
                           size="sm"
                           variant="primary"
                           loading={approve.isPending && approve.variables?.sessionId === row.id}
-                          onClick={() => approve.mutate({ sessionId: row.id })}
+                          onClick={() => approve.mutate({ sessionId: row.id, expectedSeq: row.lastSeq })}
                         >
                           {i18n.t('approval.approve')}
                         </Button>
                         <Button
                           size="sm"
                           variant="danger"
-                          onClick={() => setRejectFor(row.id)}
+                          onClick={() => {
+                            setRejectFor(row.id);
+                            setRejectSeq(row.lastSeq);
+                          }}
                         >
                           {i18n.t('approval.reject')}
                         </Button>
@@ -511,7 +586,11 @@ export function ApprovalPage() {
             loading={reject.isPending}
             onClick={() => {
               if (!rejectFor) return;
-              reject.mutate({ sessionId: rejectFor, reason: rejectReason.trim() });
+              reject.mutate({
+                sessionId: rejectFor,
+                reason: rejectReason.trim(),
+                expectedSeq: rejectSeq,
+              });
             }}
           >
             {i18n.t('approval.reject')}
@@ -835,3 +914,8 @@ function SessionItems({
 // entry sheet) — promoting to size="sm" gives ApprovalPage all of those
 // behaviors for free, and any future improvements to QtyControl land
 // here automatically.
+
+/** Rows in a session's structured extras (jsonb; typed loosely by the read model). */
+function extrasCountOf(extrasJson: unknown): number {
+  return Array.isArray(extrasJson) ? extrasJson.length : 0;
+}

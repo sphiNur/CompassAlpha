@@ -690,6 +690,12 @@ export function ActiveRunPanel({
               /* UIUX-B1 (2026-07-06): stage Badge deleted — the meta line
                  already states the stage (UI-2: status once per row);
                  the L1 delivery-stage rail lands in the B3 row pass. */
+              // 2026-10-21 CA-06: problem lines the store reported (short /
+              // wrong / quality) with the qty it actually received, so the
+              // purchaser sees them here rather than only in a notification.
+              const issueSplits = splitsHere.filter(
+                (sp) => sp.confirmStatus && sp.confirmStatus !== 'ok',
+              );
               const inner = (
                 <>
                   <span className="shrink-0 truncate text-old-body font-semibold">{storeName}</span>
@@ -698,6 +704,34 @@ export function ActiveRunPanel({
                   </span>
                 </>
               );
+              const issues =
+                issueSplits.length > 0 ? (
+                  <ul className="flex flex-col gap-0.5 px-4 pb-2" role="list">
+                    {issueSplits.map((sp) => {
+                      const sku = skuById.get(sp.skuId);
+                      const name = sku ? productName(sku) : sp.skuId.slice(0, 8);
+                      const statusLabel = i18n.t(
+                        ('confirm.status.' + sp.confirmStatus) as Parameters<typeof i18n.t>[0],
+                      );
+                      return (
+                        <li
+                          key={sp.skuId}
+                          className="truncate text-old-label text-[var(--c-warning-fg)]"
+                        >
+                          ⚠ {name} · {statusLabel}
+                          {sp.confirmReceivedQty != null
+                            ? ' · ' +
+                              i18n.t('confirm.receivedOf', {
+                                received: formatQty(sp.confirmReceivedQty),
+                                qty: formatQty(sp.qty),
+                                unit: unitLabel(sku?.unit),
+                              })
+                            : ''}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : null;
               return (
                 <li
                   key={storeId}
@@ -720,6 +754,7 @@ export function ActiveRunPanel({
                       {inner}
                     </div>
                   )}
+                  {issues}
                 </li>
               );
             })}
@@ -1891,7 +1926,14 @@ function VendorPickerSheet({
   toast: ReturnType<typeof useToast>;
 }) {
   const utils = trpc.useUtils();
-  const suppliersQuery = trpc.admin.supplierList.useQuery();
+  // 2026-10-21 audit CA-05: was admin.supplierList, which requires
+  // users.manage — a pure purchaser got FORBIDDEN and an empty list.
+  // catalog.suppliers is readable by any member; archived suppliers are
+  // dropped here except the SKU's current one, so it still shows as set.
+  const suppliersQuery = trpc.catalog.suppliers.useQuery({ includeArchived: true });
+  const suppliers = (suppliersQuery.data ?? []).filter(
+    (sup) => !sup.isArchived || sup.id === currentSupplierId,
+  );
   // M1.21: route the error toast through the i18n-aware helper. The
   // server returns localized message keys (e.g. `run.errors.xxx`);
   // dumping `err.message` raw shows the key string to non-EN users.
@@ -1938,7 +1980,21 @@ function VendorPickerSheet({
           </span>
           {currentSupplierId === null ? <span aria-hidden>✓</span> : null}
         </button>
-        {(suppliersQuery.data ?? []).map((sup) => {
+        {suppliersQuery.isError ? (
+          <div className="flex items-center justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3 ring-hairline">
+            <span className="text-old-label text-[var(--c-fg-muted)]">
+              {i18n.t('common.error')}
+            </span>
+            <button
+              type="button"
+              onClick={() => void suppliersQuery.refetch()}
+              className="press text-old-label font-semibold text-[var(--c-action)]"
+            >
+              {i18n.t('common.retry')}
+            </button>
+          </div>
+        ) : null}
+        {suppliers.map((sup) => {
           const selected = sup.id === currentSupplierId;
           return (
             <button

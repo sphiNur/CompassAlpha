@@ -15,7 +15,9 @@ const SubscriptionUpdateInputSchema = z.object({
   currentPeriodStart: z.string().nullable().optional(),
   currentPeriodEnd: z.string().nullable().optional(),
   graceEndsAt: z.string().nullable().optional(),
-  cancelAtPeriodEnd: z.boolean().default(false),
+  // 2026-10-21 audit CA-39: optional (not default(false)) so an omitted
+  // flag keeps the stored value instead of silently clearing it.
+  cancelAtPeriodEnd: z.boolean().optional(),
   note: z.string().max(500).nullable().optional(),
 });
 
@@ -27,6 +29,16 @@ function parseDate(value: string | null | undefined): Date | null {
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'platform.errors.invalidDate' });
   }
   return date;
+}
+
+/**
+ * 2026-10-21 audit CA-39 (A-13): `undefined` means "leave as is", `null`
+ * (or an empty string) means "clear". Returns undefined for omitted
+ * fields so the upsert's SET clause can skip them.
+ */
+function parseOptionalDate(value: string | null | undefined): Date | null | undefined {
+  if (value === undefined) return undefined;
+  return parseDate(value);
 }
 
 async function requirePlatformAdmin(db: Parameters<typeof isPlatformAdmin>[0], userId: string) {
@@ -57,13 +69,23 @@ export const platformRouter = router({
         orderBy: (o, { asc }) => asc(o.createdAt),
       });
       return Promise.all(
-        orgs.map(async (org) => ({
-          orgId: org.id,
-          name: org.name,
-          slug: org.slug,
-          createdAt: org.createdAt.toISOString(),
-          subscription: await readSubscriptionState(tx, org.id),
-        })),
+        orgs.map(async (org) => {
+          // 2026-10-21 audit CA-39 (A-13): the platform-internal note is
+          // returned here (not in SubscriptionState, which tenants see) so
+          // the manage sheet can prefill it instead of blanking it.
+          const sub = await tx.query.organizationSubscriptions.findFirst({
+            where: (row, { eq: eq2 }) => eq2(row.orgId, org.id),
+            columns: { note: true },
+          });
+          return {
+            orgId: org.id,
+            name: org.name,
+            slug: org.slug,
+            createdAt: org.createdAt.toISOString(),
+            note: sub?.note ?? null,
+            subscription: await readSubscriptionState(tx, org.id),
+          };
+        }),
       );
     });
   }),
@@ -86,36 +108,79 @@ export const platformRouter = router({
           throw new TRPCError({ code: 'NOT_FOUND', message: 'platform.errors.planNotFound' });
         }
 
-        const values = {
-          orgId: input.orgId,
+        // 2026-10-21 audit CA-39 (A-13): fields the caller did not send
+        // keep their stored value. Previously every omitted date became
+        // NULL and the note was overwritten on each save.
+        const dates = {
+          trialEndsAt: parseOptionalDate(input.trialEndsAt),
+          currentPeriodStart: parseOptionalDate(input.currentPeriodStart),
+          currentPeriodEnd: parseOptionalDate(input.currentPeriodEnd),
+          graceEndsAt: parseOptionalDate(input.graceEndsAt),
+        };
+        const note = input.note === undefined ? undefined : input.note?.trim() || null;
+        const before = await tx.query.organizationSubscriptions.findFirst({
+          where: (sub, { eq: eq2 }) => eq2(sub.orgId, input.orgId),
+        });
+        const set: Partial<typeof s.organizationSubscriptions.$inferInsert> = {
           planCode: input.planCode,
           status: input.status,
-          trialEndsAt: parseDate(input.trialEndsAt),
-          currentPeriodStart: parseDate(input.currentPeriodStart),
-          currentPeriodEnd: parseDate(input.currentPeriodEnd),
-          graceEndsAt: parseDate(input.graceEndsAt),
-          cancelAtPeriodEnd: input.cancelAtPeriodEnd,
-          note: input.note?.trim() || null,
           updatedBy: ctx.session!.userId,
+          updatedAt: new Date(),
         };
+        for (const [key, value] of Object.entries(dates) as Array<
+          [keyof typeof dates, Date | null | undefined]
+        >) {
+          if (value !== undefined) set[key] = value;
+        }
+        if (input.cancelAtPeriodEnd !== undefined) set.cancelAtPeriodEnd = input.cancelAtPeriodEnd;
+        if (note !== undefined) set.note = note;
         await tx
           .insert(s.organizationSubscriptions)
-          .values(values)
-          .onConflictDoUpdate({
-            target: s.organizationSubscriptions.orgId,
-            set: {
-              planCode: values.planCode,
-              status: values.status,
-              trialEndsAt: values.trialEndsAt,
-              currentPeriodStart: values.currentPeriodStart,
-              currentPeriodEnd: values.currentPeriodEnd,
-              graceEndsAt: values.graceEndsAt,
-              cancelAtPeriodEnd: values.cancelAtPeriodEnd,
-              note: values.note,
-              updatedBy: values.updatedBy,
-              updatedAt: new Date(),
-            },
-          });
+          .values({
+            orgId: input.orgId,
+            planCode: input.planCode,
+            status: input.status,
+            trialEndsAt: dates.trialEndsAt ?? null,
+            currentPeriodStart: dates.currentPeriodStart ?? null,
+            currentPeriodEnd: dates.currentPeriodEnd ?? null,
+            graceEndsAt: dates.graceEndsAt ?? null,
+            cancelAtPeriodEnd: input.cancelAtPeriodEnd ?? false,
+            note: note ?? null,
+            updatedBy: ctx.session!.userId,
+          })
+          .onConflictDoUpdate({ target: s.organizationSubscriptions.orgId, set });
+        // 2026-10-21 audit CA-39 (A-13): plan / status changes are now
+        // visible in the tenant's admin audit trail. The free-text note is
+        // platform-internal, so only whether it changed is recorded.
+        await tx.insert(s.policyDecisions).values({
+          orgId: input.orgId,
+          actorId: ctx.session!.userId,
+          action: 'platform.subscription.update',
+          resourceType: 'subscription',
+          resourceId: input.orgId,
+          decision: 'allow',
+          inputs: {
+            before: before
+              ? {
+                  planCode: before.planCode,
+                  status: before.status,
+                  trialEndsAt: before.trialEndsAt?.toISOString() ?? null,
+                  currentPeriodStart: before.currentPeriodStart?.toISOString() ?? null,
+                  currentPeriodEnd: before.currentPeriodEnd?.toISOString() ?? null,
+                  graceEndsAt: before.graceEndsAt?.toISOString() ?? null,
+                  cancelAtPeriodEnd: before.cancelAtPeriodEnd,
+                }
+              : null,
+            planCode: input.planCode,
+            status: input.status,
+            trialEndsAt: input.trialEndsAt,
+            currentPeriodStart: input.currentPeriodStart,
+            currentPeriodEnd: input.currentPeriodEnd,
+            graceEndsAt: input.graceEndsAt,
+            cancelAtPeriodEnd: input.cancelAtPeriodEnd,
+            noteChanged: note !== undefined && note !== (before?.note ?? null),
+          },
+        });
         await tx
           .update(s.organizations)
           .set({ plan: input.planCode, updatedAt: new Date() })

@@ -256,8 +256,8 @@ export function PurchaseSheet({
             </label>
             <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
               {priceInThousands
-                ? i18n.t('run.action.unitPriceUzsThousands')
-                : i18n.t('run.action.unitPriceUzs')}
+                ? i18n.t('run.action.unitPriceUzsThousands', { currency })
+                : i18n.t('run.action.unitPriceUzs', { currency })}
               <Input
                 className="mt-1"
                 type="number"
@@ -283,7 +283,7 @@ export function PurchaseSheet({
               priceInThousands={priceInThousands}
               onToggle={onTogglePriceUnit}
               currency={currency}
-              ariaLabel={i18n.t('run.label.priceUnitAria')}
+              ariaLabel={i18n.t('run.label.priceUnitAria', { currency })}
             />
             <span className="min-w-0 text-right">
               <PriceInFull
@@ -1178,8 +1178,8 @@ export function AddItemSheet({
                 </label>
                 <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
                   {priceInThousands
-                    ? i18n.t('run.action.unitPriceUzsThousands')
-                    : i18n.t('run.action.unitPriceUzs')}
+                    ? i18n.t('run.action.unitPriceUzsThousands', { currency })
+                    : i18n.t('run.action.unitPriceUzs', { currency })}
                   <Input
                     className="mt-1"
                     type="number"
@@ -1201,7 +1201,7 @@ export function AddItemSheet({
                   priceInThousands={priceInThousands}
                   onToggle={onTogglePriceUnit}
                   currency={currency}
-                  ariaLabel={i18n.t('run.label.priceUnitAria')}
+                  ariaLabel={i18n.t('run.label.priceUnitAria', { currency })}
                 />
                 <span className="min-w-0 text-right">
                   <PriceInFull

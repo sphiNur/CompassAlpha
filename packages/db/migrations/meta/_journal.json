@@ -330,6 +330,34 @@
       "when": 1792514400000,
       "tag": "0046_rename_default_org_to_eden",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1792518000000,
+      "tag": "0047_parallel_runs_received_qty",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1792521600000,
+      "tag": "0048_backfill_builtin_role_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1792525200000,
+      "tag": "0049_sales_void",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1792528800000,
+      "tag": "0050_member_invite_revocation",
+      "breakpoints": true
     }
   ]
 }

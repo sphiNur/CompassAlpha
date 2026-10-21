@@ -35,6 +35,13 @@ export {
   getSheetCount,
   subscribeSheetCount,
 } from './components/Sheet';
+// 2026-10-21 audit CA-34: shared Telegram BackButton owner stack.
+export {
+  createBackHandlerStack,
+  pushTelegramBackHandler,
+  telegramBackStack,
+} from './telegramBackStack';
+export type { BackButtonLike, BackHandlerStack } from './telegramBackStack';
 export { Banner } from './components/Banner';
 export { Spinner } from './components/Spinner';
 export { EmptyState } from './components/EmptyState';

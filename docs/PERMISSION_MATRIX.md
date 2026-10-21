@@ -92,6 +92,17 @@ later user can never be recorded as the author of an expense that was not
 originally entered as a line item.
 A store-specific deny override always wins.
 
+`sales.record` and `inventory.adjust` are checked on their own, with no
+`users.manage` fallback (removed 2026-10-21, audit CA-10/CA-57). A store-specific
+deny of either therefore applies to managers too, and a custom role holding only
+`users.manage` can no longer record sales, stocktakes, or wastage. Migration
+`0048_backfill_builtin_role_permissions.sql` backfills the three grants older
+organizations never received (manager → `sales.record`, `inventory.adjust`;
+staff → `sales.record`) on built-in roles only (`is_built_in = true`); it never
+removes a grant, never touches custom roles, and does not re-apply any other seed
+grant an admin may have removed on purpose. Sales entry is available on the Settlement page as well as Admin → Stores →
+Sales, so cashiers can record sales from their only tab.
+
 ## How a check is evaluated
 
 1. **RBAC base layer.** Resolve the user's `member_role_bindings` → roles → `role_permissions`.

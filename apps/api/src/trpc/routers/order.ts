@@ -28,8 +28,10 @@ import {
 } from '@compass/contracts';
 import {
   apply,
+  changedByOthersSince,
   decide,
   emptyState,
+  isPastBusinessDate,
   type ActorCtx,
   type OrderEvent,
   type OrderState,
@@ -93,6 +95,86 @@ async function loadSku(db: import('@compass/db').DB, orgId: string, skuId: strin
   return { id: row.id, step: row.step, unit: row.unit, isArchived: row.isArchived };
 }
 
+/**
+ * The session a member's OWN edit at (store, date) lands on: the open
+ * draft, else the most recent REJECTED batch (domain lets the owner fix
+ * it in place and re-Submit) — the same priority todaySession uses, so
+ * the row the page shows is the row we write. `undefined` = neither
+ * exists and the caller may lazy-create a draft.
+ *
+ * Hoisted 2026-10-21 (CA-27) from adjustItem's self-edit branch so
+ * setSessionExtras' store form resolves the exact same row.
+ */
+async function findSelfEditSession(
+  tx: import('@compass/db').DB,
+  orgId: string,
+  storeId: string,
+  memberId: string,
+  date: string,
+) {
+  return (
+    (await tx.query.orderSessionsV.findFirst({
+      where: (sess, { eq: eq2, and: and2 }) =>
+        and2(
+          eq2(sess.orgId, orgId),
+          eq2(sess.storeId, storeId),
+          eq2(sess.orderDate, date),
+          eq2(sess.initiatedByMemberId, memberId),
+          eq2(sess.status, 'draft'),
+        ),
+    })) ??
+    (await tx.query.orderSessionsV.findFirst({
+      where: (sess, { eq: eq2, and: and2 }) =>
+        and2(
+          eq2(sess.orgId, orgId),
+          eq2(sess.storeId, storeId),
+          eq2(sess.orderDate, date),
+          eq2(sess.initiatedByMemberId, memberId),
+          eq2(sess.status, 'rejected'),
+        ),
+      orderBy: (sess, { desc }) => [desc(sess.decidedAt), desc(sess.updatedAt)],
+    }))
+  );
+}
+
+/**
+ * 2026-10-21 audit CA-25: a self-edit that would LAZY-CREATE a draft for
+ * a business day that is already over. Only the offline outbox sends a
+ * past `date` (frozen at enqueue time); replaying it the next morning
+ * used to start a phantom draft on yesterday's date — or, before the
+ * date was frozen, silently put yesterday's quantities into today's
+ * order. Refuse it; the client drops the entry with a visible toast.
+ * Editing an EXISTING draft/rejected session of that day still works.
+ */
+function assertNotStaleOfflineCreate(
+  ctx: { session: { orgTimezone: string } | null },
+  requestedDate: string | undefined,
+): void {
+  if (requestedDate !== undefined && isPastBusinessDate(requestedDate, todayInOrgTz(ctx))) {
+    throw new TRPCError({
+      code: 'PRECONDITION_FAILED',
+      message: 'order.errors.staleOfflineEdit',
+    });
+  }
+}
+
+/**
+ * 2026-10-21 audit CA-43 "approve what you saw": refuse a decision when
+ * someone other than the caller changed the order after the `lastSeq`
+ * the client was looking at. Requests without `expectedSeq` (older
+ * clients) are not checked.
+ */
+function assertSeenLatest(
+  events: OrderEvent[],
+  expectedSeq: number | undefined,
+  userId: string,
+): void {
+  if (expectedSeq === undefined) return;
+  if (changedByOthersSince(events, expectedSeq, userId)) {
+    throw new TRPCError({ code: 'CONFLICT', message: 'order.errors.staleSeq' });
+  }
+}
+
 export const orderRouter = router({
   /**
    * Returns the (storeId, date) session — shared across the store's staff.
@@ -135,16 +217,36 @@ export const orderRouter = router({
             eq2(sess.status, 'draft'),
           ),
       });
+      // 2026-10-21 audit CA-02: next, the most recent REJECTED batch. The
+      // domain keeps it 'rejected' and lets the owner edit + re-Submit (or
+      // Withdraw) it; before this it was never returned, so a rejected
+      // order simply vanished from the staff's Order page.
       if (!session) {
         session = await tx.query.orderSessionsV.findFirst({
-          where: (sess, { eq: eq2, and: and2, isNull, inArray: inArray2 }) =>
+          where: (sess, { eq: eq2, and: and2 }) =>
+            and2(
+              eq2(sess.orgId, ctx.session!.orgId),
+              eq2(sess.storeId, input.storeId),
+              eq2(sess.orderDate, date),
+              eq2(sess.initiatedByMemberId, ctx.session!.memberId),
+              eq2(sess.status, 'rejected'),
+            ),
+          orderBy: (sess, { desc: desc2 }) => [desc2(sess.decidedAt), desc2(sess.updatedAt)],
+        });
+      }
+      // 2026-10-21 audit CA-01: the receipt fallback used to require
+      // `claimed_by IS NULL`, so the moment a manager claimed the batch it
+      // disappeared (empty catalog → staff re-ordered). Claimed batches
+      // are returned too; the page shows its "under review by X" banner.
+      if (!session) {
+        session = await tx.query.orderSessionsV.findFirst({
+          where: (sess, { eq: eq2, and: and2, inArray: inArray2 }) =>
             and2(
               eq2(sess.orgId, ctx.session!.orgId),
               eq2(sess.storeId, input.storeId),
               eq2(sess.orderDate, date),
               eq2(sess.initiatedByMemberId, ctx.session!.memberId),
               inArray2(sess.status, ['submitted', 'approved', 'in_run']),
-              isNull(sess.claimedByMemberId),
             ),
           orderBy: (sess, { desc: desc2 }) => desc2(sess.submittedAt),
         });
@@ -230,7 +332,7 @@ export const orderRouter = router({
    * Every session this member started for one (store, date) (2026-07-30).
    *
    * `todaySession` deliberately returns ONE session — the open draft, else
-   * the most recent unclaimed submitted one. That's the right answer for
+   * the most recent rejected one, else the most recent submitted one. That's the right answer for
    * "what am I editing", and it was also the only thing the Order page
    * knew, which made M3.32's multi-batch-per-day support invisible: submit
    * a batch, start another, and the first one silently vanished from your
@@ -776,16 +878,17 @@ export const orderRouter = router({
               ),
             orderBy: (sess, { desc }) => desc(sess.updatedAt),
           }))
-        : await tx.query.orderSessionsV.findFirst({
-            where: (sess, { eq: eq2, and: and2 }) =>
-              and2(
-                eq2(sess.orgId, ctx.session!.orgId),
-                eq2(sess.storeId, input.storeId),
-                eq2(sess.orderDate, date),
-                eq2(sess.initiatedByMemberId, ownerForLookup),
-                eq2(sess.status, 'draft'),
-              ),
-          });
+        : // 2026-10-21 audit CA-02: self-edit targets the open draft, else
+          // the most recent REJECTED batch; only when neither exists do we
+          // lazy-create a new draft below. (Lookup shared with
+          // setSessionExtras via findSelfEditSession, CA-27.)
+          await findSelfEditSession(
+            tx,
+            ctx.session!.orgId,
+            input.storeId,
+            ownerForLookup,
+            date,
+          );
 
       let state: OrderState;
       let streamId: string;
@@ -808,6 +911,7 @@ export const orderRouter = router({
             message: 'order.errors.sessionMissing',
           });
         }
+        assertNotStaleOfflineCreate(ctx, input.date);
         streamId = randomUUID();
         state = emptyState(streamId);
         // Implicit StartDraft. Initiator = first member to add a line.
@@ -1027,47 +1131,120 @@ export const orderRouter = router({
     .input(SetSessionExtrasInputSchema)
     .mutation(async ({ ctx, input }) => {
       return ctx.withOrg(async (tx) => {
-        const session = await loadSession(tx, ctx.session!.orgId, input.sessionId);
+        // 2026-10-21 audit CA-27: two addressing forms.
+        //   - sessionId:       edit that session (original shape; also
+        //                      how a reviewer would reach someone else's).
+        //   - storeId (+date): the caller's OWN draft for that day,
+        //                      resolved and lazy-created exactly like
+        //                      adjustItem's self-edit — so "only items
+        //                      not in the catalog" orders no longer need
+        //                      a throwaway SKU tap to get a session.
+        let storeId: string;
+        let existing: Awaited<ReturnType<typeof loadSession>> | undefined;
+        if (input.sessionId) {
+          existing = await loadSession(tx, ctx.session!.orgId, input.sessionId);
+          storeId = existing.storeId;
+        } else {
+          storeId = input.storeId!;
+          const store = await tx.query.stores.findFirst({
+            where: (st, { eq: eq2, and: and2 }) =>
+              and2(eq2(st.id, storeId), eq2(st.orgId, ctx.session!.orgId)),
+          });
+          if (!store) {
+            throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.storeForbidden' });
+          }
+          if (!store.isActive) {
+            throw new TRPCError({
+              code: 'PRECONDITION_FAILED',
+              message: 'auth.errors.storeArchived',
+            });
+          }
+        }
         await assertActorAssignedToStore(
           tx,
           ctx.session!.memberId,
-          session.storeId,
+          storeId,
           ctx.session!.permissions,
         );
         const effectivePerms = await effectivePermissionsForStore(
           tx,
           ctx.session!.memberId,
-          session.storeId,
+          storeId,
           ctx.session!.permissions,
         );
-        const events = (await readStream(tx, 'order', session.id)) as unknown as OrderEvent[];
-        let state = emptyState(session.id);
-        for (const e of events) state = apply(state, e);
+        const date = input.date ?? todayInOrgTz(ctx);
+        if (!existing) {
+          existing = await findSelfEditSession(
+            tx,
+            ctx.session!.orgId,
+            storeId,
+            ctx.session!.memberId,
+            date,
+          );
+        }
+
+        let state: OrderState;
+        const out: OrderEvent[] = [];
+        if (existing) {
+          const events = (await readStream(tx, 'order', existing.id)) as unknown as OrderEvent[];
+          state = emptyState(existing.id);
+          for (const e of events) state = apply(state, e);
+        } else {
+          // Clearing extras on a session that doesn't exist is a no-op —
+          // never start an empty draft for it.
+          if (input.extras.length === 0) return { sessionId: null, lastSeq: 0 };
+          assertNotStaleOfflineCreate(ctx, input.date);
+          state = emptyState(randomUUID());
+        }
         try {
-          const out = decide(state, {
+          if (!existing) {
+            for (const e of decide(state, {
+              type: 'StartDraft',
+              orgId: ctx.session!.orgId,
+              storeId,
+              orderDate: date,
+              actor: buildActor(ctx, state, effectivePerms),
+            })) {
+              state = apply(state, e);
+              out.push(e);
+            }
+          }
+          for (const e of decide(state, {
             type: 'SetSessionExtras',
             extras: input.extras,
             actor: buildActor(ctx, state, effectivePerms),
-          });
-          if (out.length === 0) return { lastSeq: state.seq };
-          await appendEvents(tx, {
-            streamType: 'order',
-            streamId: session.id,
-            orgId: ctx.session!.orgId,
-            events: out.map((e) => ({ ...e })),
-          });
-          for (const e of out) state = apply(state, e);
-          await projectOrder(tx, ctx.session!.orgId, out);
-          hub.publish(ctx.session!.orgId, {
-            type: 'order.changed',
-            orgId: ctx.session!.orgId,
-            sessionId: state.streamId,
-            lastSeq: state.seq,
-          });
-          return { lastSeq: state.seq };
+          })) {
+            state = apply(state, e);
+            out.push(e);
+          }
         } catch (err) {
           rethrowDomainError(err);
         }
+        if (out.length === 0) return { sessionId: state.streamId, lastSeq: state.seq };
+        try {
+          await appendEvents(tx, {
+            streamType: 'order',
+            streamId: state.streamId,
+            orgId: ctx.session!.orgId,
+            events: out.map((e) => ({ ...e })),
+          });
+          // Projection is inside the try: a lazy-create racing another
+          // lazy-create (adjustItem from a second tab) trips the one-draft
+          // partial unique index there, not in the event store.
+          await projectOrder(tx, ctx.session!.orgId, out);
+        } catch (err) {
+          if (isUniqueViolation(err)) {
+            throw new TRPCError({ code: 'CONFLICT', message: 'order.errors.staleSeq' });
+          }
+          throw err;
+        }
+        hub.publish(ctx.session!.orgId, {
+          type: 'order.changed',
+          orgId: ctx.session!.orgId,
+          sessionId: state.streamId,
+          lastSeq: state.seq,
+        });
+        return { sessionId: state.streamId, lastSeq: state.seq };
       });
     }),
 
@@ -1219,15 +1396,26 @@ export const orderRouter = router({
       ),
     ),
 
+  // 2026-10-21 audit CA-43: `expectedSeq` (the lastSeq the approver's
+  // list showed) is checked AFTER decide(), so an idempotent repeat of
+  // the same decision (lost-response retry, CA-26) still no-ops instead
+  // of tripping on the seq its own first attempt advanced.
   approve: authedProcedure.input(SimpleSessionCommandSchema).mutation(async ({ ctx, input }) =>
-    runSimpleCommand(ctx, input.sessionId, (state, perms) =>
-      decide(state, { type: 'Approve', actor: buildActor(ctx, state, perms) }),
+    runSimpleCommand(
+      ctx,
+      input.sessionId,
+      (state, perms) => decide(state, { type: 'Approve', actor: buildActor(ctx, state, perms) }),
+      { expectedSeq: input.expectedSeq },
     ),
   ),
 
   reject: authedProcedure.input(RejectInputSchema).mutation(async ({ ctx, input }) =>
-    runSimpleCommand(ctx, input.sessionId, (state, perms) =>
-      decide(state, { type: 'Reject', reason: input.reason, actor: buildActor(ctx, state, perms) }),
+    runSimpleCommand(
+      ctx,
+      input.sessionId,
+      (state, perms) =>
+        decide(state, { type: 'Reject', reason: input.reason, actor: buildActor(ctx, state, perms) }),
+      { expectedSeq: input.expectedSeq },
     ),
   ),
 
@@ -1248,6 +1436,7 @@ async function runSimpleCommand(
   ctx: Awaited<ReturnType<typeof import('../context.js').createContext>>,
   sessionId: string,
   produce: (state: OrderState, perms: ReadonlySet<string>) => OrderEvent[],
+  opts: { expectedSeq?: number | undefined } = {},
 ): Promise<{ lastSeq: number }> {
   return ctx.withOrg(async (tx) => {
     const session = await loadSession(tx, ctx.session!.orgId, sessionId);
@@ -1278,6 +1467,7 @@ async function runSimpleCommand(
     try {
       const out = produce(state, effectivePerms);
       if (out.length === 0) return { lastSeq: state.seq };
+      assertSeenLatest(events, opts.expectedSeq, ctx.session!.userId);
       await appendEvents(tx, {
         streamType: 'order',
         streamId: session.id,

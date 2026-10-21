@@ -20,11 +20,24 @@ export const GrantRoleInputSchema = z.object({
   roleSlug: z.string(),
   scopeType: z.enum(['global', 'store']).default('global'),
   scopeId: UuidSchema.optional(),
-  expiresAt: z.string().optional(),
+  // 2026-10-21 audit A-23: was a bare string, so garbage became Invalid
+  // Date (→ 500) and a past instant stored an already-dead grant.
+  expiresAt: z
+    .string()
+    .datetime({ offset: true, message: 'admin.errors.invalidExpiresAt' })
+    .refine((value) => Date.parse(value) > Date.now(), {
+      message: 'admin.errors.invalidExpiresAt',
+    })
+    .optional(),
 });
 
 export const InviteMemberInputSchema = z.object({
   tgUsername: z.string().min(1).max(64).optional(),
   email: z.string().email().optional(),
   roleSlug: z.string(),
+});
+
+/** 2026-10-21 CA-19: withdraw a pending shareable invite link. */
+export const MemberInviteRevokeInputSchema = z.object({
+  inviteId: UuidSchema,
 });

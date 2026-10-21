@@ -5,10 +5,11 @@
  *   - StoresHomeSection  store tiles + create-store sheet
  *   - StoreDetailScreen  drilled-in store: Team | Settings | Inventory
  *                        | Sales tab router
- *   - StoreInventoryTab / StoreSalesTab / StoreSettingsTab (internal)
+ *   - StoreInventoryTab / StoreSettingsTab (internal); the Sales tab
+ *     renders the shared components/sales/StoreSalesPanel (CA-09)
  *   - StoreCloneRolesSheet clone-roles wizard (internal)
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Badge,
   Banner,
@@ -17,7 +18,6 @@ import {
   EmptyState,
   Field,
   Input,
-  SectionLabel,
   Segmented,
   Select,
   Sheet,
@@ -26,13 +26,32 @@ import {
   useToast,
 } from '@compass/ui';
 import { ADMIN_RANK } from '@compass/contracts';
-import { trpc } from '../../../lib/trpc';
+import { newIdempotencyKey, trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
-import { formatMoney, formatQty } from '../../../lib/format';
+import { formatQty } from '../../../lib/format';
 import { useDateFormat, useI18n, useProductName, useUnitLabel } from '../../../hooks/useI18n';
 import { nativeConfirm, type StoreFocus, type StoreSub } from '../shared';
 import { PeopleSection } from '../people/PeopleSections';
+import { StoreSalesPanel } from '../../../components/sales/StoreSalesPanel';
+import {
+  knownMovementReason,
+  signedDelta,
+  skusWithoutLevel,
+  type MovementReason,
+} from './inventoryHelpers';
+
+/** 2026-10-21: localized label per ledger reason (movements sheet). */
+const MOVEMENT_REASON_LABEL = {
+  delivery_received: 'inventory.reason.delivery_received',
+  stocktake: 'inventory.reason.stocktake',
+  wastage: 'inventory.reason.wastage',
+  consumption: 'inventory.reason.consumption',
+  consumption_reversed: 'inventory.reason.consumption_reversed',
+  transfer_in: 'inventory.reason.transfer_in',
+  transfer_out: 'inventory.reason.transfer_out',
+  adjustment: 'inventory.reason.adjustment',
+} as const satisfies Record<MovementReason, string>;
 
 interface StoreDraft {
   storeId?: string;
@@ -77,7 +96,14 @@ export function StoresHomeSection({
 }: {
   onPickStore: (focus: StoreFocus) => void;
 }) {
-  const storesQuery = trpc.admin.storeList.useQuery();
+  // 2026-10-21 audit CA-08/CA-16: store create/archive/pause are
+  // org.admin-only server-side, so gate the UI on the same flag. An
+  // org.admin also lists paused stores (badge below) so one switched
+  // off by mistake can be found and reactivated.
+  const isOrgAdmin = useAuthStore(
+    (s) => s.session?.permissions.includes('org.admin') ?? false,
+  );
+  const storesQuery = trpc.admin.storeList.useQuery({ includeArchived: isOrgAdmin });
   const membersQuery = trpc.admin.memberList.useQuery();
   const utils = trpc.useUtils();
   const toast = useToast();
@@ -121,16 +147,18 @@ export function StoresHomeSection({
 
   return (
     <div className="px-4 py-3">
-      <div className="mb-3">
-        <Button
-          size="sm"
-          onClick={() =>
-            setCreateDraft({ name: '', code: '', address: '', timezone: '' })
-          }
-        >
-          + {i18n.t('admin.store.new')}
-        </Button>
-      </div>
+      {isOrgAdmin ? (
+        <div className="mb-3">
+          <Button
+            size="sm"
+            onClick={() =>
+              setCreateDraft({ name: '', code: '', address: '', timezone: '' })
+            }
+          >
+            + {i18n.t('admin.store.new')}
+          </Button>
+        </div>
+      ) : null}
       <DataState
         query={storesQuery}
         emptyWhen={(d) => d.length === 0 && memberCounts.orgLevel === 0}
@@ -358,7 +386,7 @@ export function StoreDetailScreen({
         <StoreInventoryTab storeId={focus.storeId} />
       ) : null}
       {effectiveSub === 'sales' && focus.kind === 'store' ? (
-        <StoreSalesTab storeId={focus.storeId} />
+        <StoreSalesPanel storeId={focus.storeId} />
       ) : null}
       {effectiveSub === 'settings' && focus.kind === 'store' ? (
         <StoreSettingsTab storeId={focus.storeId} />
@@ -380,7 +408,12 @@ export function StoreDetailScreen({
  *     mislabeled / lost).
  *
  * Recent-movements drill-down for "why is the on-hand X" lives on
- * the row tap (opens a sheet listing the last 50 movements).
+ * the row tap (opens a sheet listing the last 50 movements) — wired
+ * 2026-10-21; the comment promised it long before the UI had it.
+ *
+ * 2026-10-21: "Add stocktake for another SKU" posts an opening count
+ * for an active SKU with no ledger row here yet (a new store had no way
+ * to start its inventory except waiting for a delivery).
  */
 function StoreInventoryTab({ storeId }: { storeId: string }) {
   const i18n = useI18n();
@@ -390,9 +423,17 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
   const toast = useToast();
   const errToast = useErrToast();
   const productName = useProductName();
+  const dateFmt = useDateFormat();
   const levelsQuery = trpc.inventory.levels.useQuery({ storeId });
   const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: false });
   const utils = trpc.useUtils();
+  // 2026-10-21 audit CA-16: mirror the server's requireInventoryAdjust
+  // exactly — read-only members saw both buttons and got a 403 on save.
+  // CA-10/CA-57: the users.manage fallback is gone on both sides
+  // (migration 0048 backfilled manager → inventory.adjust).
+  const canAdjust = useAuthStore(
+    (s) => s.session?.permissions.includes('inventory.adjust') ?? false,
+  );
 
   const skuById = useMemo(() => {
     const m = new Map<
@@ -411,13 +452,30 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
   }, [skusQuery.data]);
 
   type ActionMode =
-    | { kind: 'stocktake'; skuId: string; current: string }
+    // `pickSku`: opening stocktake — the SKU is chosen inside the sheet.
+    | { kind: 'stocktake'; skuId: string; current: string; pickSku?: boolean }
     | { kind: 'wastage'; skuId: string };
 
   const [action, setAction] = useState<ActionMode | null>(null);
+  // 2026-10-21: movements drill-down for one level row.
+  const [movementsFor, setMovementsFor] = useState<{ skuId: string; name: string } | null>(null);
+  const movementsQuery = trpc.inventory.recentMovements.useQuery(
+    { storeId, skuId: movementsFor?.skuId ?? '' },
+    { enabled: movementsFor !== null },
+  );
   const [draftTarget, setDraftTarget] = useState('');
   const [draftWasteQty, setDraftWasteQty] = useState('');
   const [draftNote, setDraftNote] = useState('');
+
+  // 2026-10-21 audit CA-54: one stable idempotency key per logical
+  // wastage entry — minted when the sheet (re)arms, reused across
+  // retries of the same submit, rotated after success. Same shape as
+  // the sales form below. NOTE: the header is only sent once
+  // 'inventory.recordWastage' is in lib/trpc.ts IDEMPOTENT_MUTATIONS.
+  const wastageIdemCtx = useRef<{ idempotencyKey?: string }>({}).current;
+  useEffect(() => {
+    wastageIdemCtx.idempotencyKey = newIdempotencyKey();
+  }, [wastageIdemCtx, action, draftWasteQty, draftNote]);
 
   useEffect(() => {
     if (!action) {
@@ -432,14 +490,18 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
   const stocktake = trpc.inventory.stocktake.useMutation({
     onSuccess: () => {
       void utils.inventory.levels.invalidate({ storeId });
+      void utils.inventory.recentMovements.invalidate({ storeId });
       toast.success(i18n.t('inventory.toast.stocktakeSaved'));
       setAction(null);
     },
     onError: errToast('common.error'),
   });
   const recordWastage = trpc.inventory.recordWastage.useMutation({
+    trpc: { context: wastageIdemCtx },
     onSuccess: () => {
+      wastageIdemCtx.idempotencyKey = newIdempotencyKey();
       void utils.inventory.levels.invalidate({ storeId });
+      void utils.inventory.recentMovements.invalidate({ storeId });
       toast.success(i18n.t('inventory.toast.wastageSaved'));
       setAction(null);
     },
@@ -464,8 +526,31 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
     });
   }, [levelsQuery.data, skuById, productName]);
 
+  // 2026-10-21: active SKUs with no ledger row here — opening-stock picks.
+  const openingCandidates = useMemo(
+    () =>
+      skusWithoutLevel([...skuById.values()], levelsQuery.data ?? [])
+        .map((sku) => ({ id: sku.id, name: productName({ names: sku.names }) }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [skuById, levelsQuery.data, productName],
+  );
+
   return (
     <div className="px-4 py-3">
+      {canAdjust && !levelsQuery.isLoading && openingCandidates.length > 0 ? (
+        <div className="mb-3 flex">
+          <Button
+            size="sm"
+            variant="pearl"
+            className="ml-auto"
+            onClick={() =>
+              setAction({ kind: 'stocktake', skuId: '', current: '0', pickSku: true })
+            }
+          >
+            {i18n.t('inventory.action.addStocktake')}
+          </Button>
+        </div>
+      ) : null}
       {levelsQuery.isLoading ? (
         <div className="py-6 text-center">
           <Spinner size={16} />
@@ -489,40 +574,47 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
                     (stockedOut ? 'opacity-70' : '')
                   }
                 >
-                  <div className="flex items-baseline justify-between gap-2">
+                  {/* 2026-10-21: tap → recent movements sheet. */}
+                  <button
+                    type="button"
+                    className="flex w-full items-baseline justify-between gap-2 text-left active:opacity-80"
+                    onClick={() => setMovementsFor({ skuId: r.skuId, name: r.name })}
+                  >
                     <span className="truncate text-old-body font-semibold">{r.name}</span>
                     <span className="font-mono text-old-body tabular-nums">
                       {formatQty(r.onHand)} {unitLabel(r.unit)}
                     </span>
-                  </div>
+                  </button>
                   {/* M3.17 (2026-05-16): inline pill buttons → Button
                       size="sm" with pearl + danger-ghost variants.
                       Stocktake is a neutral edit; wastage is a real
                       reduce-stock action so the danger-ghost tone is
                       appropriate (red text, no fill — same level as
                       Archive elsewhere). */}
-                  <div className="mt-1 flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="pearl"
-                      onClick={() =>
-                        setAction({
-                          kind: 'stocktake',
-                          skuId: r.skuId,
-                          current: r.onHand,
-                        })
-                      }
-                    >
-                      {i18n.t('inventory.action.stocktake')}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="danger-ghost"
-                      onClick={() => setAction({ kind: 'wastage', skuId: r.skuId })}
-                    >
-                      {i18n.t('inventory.action.wastage')}
-                    </Button>
-                  </div>
+                  {canAdjust ? (
+                    <div className="mt-1 flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="pearl"
+                        onClick={() =>
+                          setAction({
+                            kind: 'stocktake',
+                            skuId: r.skuId,
+                            current: r.onHand,
+                          })
+                        }
+                      >
+                        {i18n.t('inventory.action.stocktake')}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="danger-ghost"
+                        onClick={() => setAction({ kind: 'wastage', skuId: r.skuId })}
+                      >
+                        {i18n.t('inventory.action.wastage')}
+                      </Button>
+                    </div>
+                  ) : null}
                 </li>
               );
             })}
@@ -539,7 +631,9 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
             : i18n.t('inventory.sheet.wastage.title')
         }
         description={
-          action ? productName({ names: skuById.get(action.skuId)?.names ?? {} }) : ''
+          action && action.skuId
+            ? productName({ names: skuById.get(action.skuId)?.names ?? {} })
+            : ''
         }
         footer={
           // 2026-07-30: dropped `!getTg() &&` — same defect as the dish
@@ -552,8 +646,9 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
             <Button
               block
               loading={stocktake.isPending || recordWastage.isPending}
+              disabled={!action.skuId}
               onClick={() => {
-                if (!action) return;
+                if (!action || !action.skuId) return;
                 if (action.kind === 'stocktake') {
                   stocktake.mutate({
                     storeId,
@@ -584,6 +679,22 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
           <div className="flex flex-col gap-3 py-3">
             {action.kind === 'stocktake' ? (
               <>
+                {action.pickSku ? (
+                  <Field label={i18n.t('inventory.sheet.stocktake.skuLabel')}>
+                    <Select
+                      value={action.skuId}
+                      aria-label={i18n.t('inventory.sheet.stocktake.skuLabel')}
+                      onChange={(e) => setAction({ ...action, skuId: e.target.value })}
+                    >
+                      <option value="">{i18n.t('inventory.sheet.stocktake.pickSku')}</option>
+                      {openingCandidates.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                ) : null}
                 <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 text-old-label text-[var(--c-fg-muted)]">
                   {i18n.t('inventory.sheet.stocktake.systemSays', {
                     qty: formatQty(action.current),
@@ -639,256 +750,59 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
           </div>
         ) : null}
       </Sheet>
-    </div>
-  );
-}
 
-/**
- * StoreSalesTab (M2.0c, 2026-05-08).
- *
- * Sales recording surface for a single store. Closes the ERP loop —
- * each sale auto-deducts ingredient inventory via the dish's recipe
- * BOM (server-side, same transaction). Two zones:
- *
- *   - Today's list (top): every sale recorded today, newest first,
- *     showing time + dish + qty + line revenue if priced.
- *   - "Record sale" entry (bottom): dish picker + qty input. Tap
- *     Save → tRPC roundtrip, list refreshes.
- *
- * Permissions:
- *   - `sales.record` (per-store) for the Save action. Granted by
- *     default to manager + staff roles.
- *   - Anyone with read access to the store can see the list.
- */
-function StoreSalesTab({ storeId }: { storeId: string }) {
-  const dateFmt = useDateFormat();
-  const i18n = useI18n();
-  const toast = useToast();
-  const errToast = useErrToast();
-  const productName = useProductName();
-  const utils = trpc.useUtils();
-  const session = useAuthStore((s) => s.session);
-  const canRecord =
-    (session?.permissions.includes('sales.record') ?? false) ||
-    (session?.permissions.includes('users.manage') ?? false);
-
-  const dishesQuery = trpc.dishes.list.useQuery({ includeArchived: false });
-  const salesQuery = trpc.sales.list.useQuery({ storeId });
-
-  const dishById = useMemo(() => {
-    const m = new Map<
-      string,
-      {
-        id: string;
-        names: Record<string, string>;
-        unitPrice: string | null;
-        ingredientCount: number;
-      }
-    >();
-    const ingCount = new Map<string, number>();
-    for (const ing of dishesQuery.data?.ingredients ?? []) {
-      ingCount.set(ing.dishId, (ingCount.get(ing.dishId) ?? 0) + 1);
-    }
-    for (const d of dishesQuery.data?.dishes ?? []) {
-      m.set(d.id, {
-        id: d.id,
-        names: d.names as Record<string, string>,
-        unitPrice: d.unitPrice,
-        ingredientCount: ingCount.get(d.id) ?? 0,
-      });
-    }
-    return m;
-  }, [dishesQuery.data]);
-
-  const [draftDishId, setDraftDishId] = useState('');
-  const [draftQty, setDraftQty] = useState('1');
-
-  const record = trpc.sales.record.useMutation({
-    onSuccess: () => {
-      void utils.sales.list.invalidate({ storeId });
-      // M2.0c: also invalidate inventory levels — consumption rows
-      // just landed in the ledger.
-      void utils.inventory.levels.invalidate({ storeId });
-      toast.success(i18n.t('sales.toast.recorded'));
-      setDraftDishId('');
-      setDraftQty('1');
-    },
-    onError: errToast('common.error'),
-  });
-
-  const sales = salesQuery.data ?? [];
-
-  // Compute today's headline (revenue + count) for the summary row.
-  const summary = useMemo(() => {
-    let count = 0;
-    let revenue = 0;
-    for (const s2 of sales) {
-      const qty = Number(s2.qty);
-      count += qty;
-      if (s2.unitPrice) revenue += qty * Number(s2.unitPrice);
-    }
-    return { count, revenue };
-  }, [sales]);
-
-  // Sort dishes alphabetically for the picker.
-  const dishOptions = useMemo(() => {
-    const list = [...dishById.values()];
-    return list.sort((a, b) =>
-      productName({ names: a.names }).localeCompare(productName({ names: b.names })),
-    );
-  }, [dishById, productName]);
-
-  return (
-    <div className="flex flex-col gap-3 px-4 py-3">
-      {/* Today summary tile. */}
-      <div className="grid grid-cols-2 gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
-        <div>
-          <SectionLabel padded={false}>
-            {i18n.t('sales.summary.today')}
-          </SectionLabel>
-          <div className="font-mono text-old-h2 font-semibold tabular-nums">
-            {formatQty(summary.count.toString())}
-          </div>
-          <div className="text-old-label text-[var(--c-fg-muted)]">
-            {i18n.t('sales.summary.servings')}
-          </div>
-        </div>
-        <div>
-          <SectionLabel padded={false}>
-            {i18n.t('sales.summary.revenue')}
-          </SectionLabel>
-          <div className="font-mono text-old-h2 font-semibold tabular-nums">
-            {formatMoney(summary.revenue)}
-          </div>
-          <div className="text-old-label text-[var(--c-fg-muted)]">
-            {session?.member.currency ?? 'UZS'}
-          </div>
-        </div>
-      </div>
-
-      {/* Record sale form. */}
-      {canRecord ? (
-        <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
-          {/* M2.1: SectionLabel (was ad-hoc eyebrow). */}
-          <SectionLabel className="px-0 py-0">
-            {i18n.t('sales.form.recordTitle')}
-          </SectionLabel>
-          {dishOptions.length === 0 ? (
-            <p className="text-old-label text-[var(--c-fg-muted)]">
-              {i18n.t('sales.form.noDishesYet')}
-            </p>
-          ) : (
-            <>
-              <select
-                className="h-10 w-full rounded-[var(--r-pill)] bg-[var(--c-surface)] px-3 text-old-body ring-hairline"
-                value={draftDishId}
-                onChange={(e) => setDraftDishId(e.target.value)}
-              >
-                <option value="">{i18n.t('sales.form.pickDish')}</option>
-                {dishOptions.map((d) => {
-                  const label = productName({ names: d.names });
-                  const suffix =
-                    d.ingredientCount === 0
-                      ? ` (${i18n.t('sales.form.noRecipe')})`
-                      : '';
-                  return (
-                    <option key={d.id} value={d.id} disabled={d.ingredientCount === 0}>
-                      {label}
-                      {suffix}
-                    </option>
-                  );
-                })}
-              </select>
-              <div className="flex items-center gap-2">
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  step="1"
-                  min="1"
-                  value={draftQty}
-                  onChange={(e) => setDraftQty(e.target.value)}
-                  aria-label={i18n.t('sales.form.qtyLabel')}
-                  className="flex-1"
-                />
-                <Button
-                  loading={record.isPending}
-                  disabled={!draftDishId || Number(draftQty) <= 0}
-                  onClick={() => {
-                    if (!draftDishId || Number(draftQty) <= 0) return;
-                    record.mutate({
-                      storeId,
-                      dishId: draftDishId,
-                      qty: Number(draftQty).toFixed(2),
-                    });
-                  }}
-                >
-                  {i18n.t('sales.form.recordBtn')}
-                </Button>
+      {/* 2026-10-21: recent movements (last 50) for one SKU. */}
+      <Sheet
+        open={movementsFor !== null}
+        onOpenChange={(open) => !open && setMovementsFor(null)}
+        title={i18n.t('inventory.movements.title')}
+        description={movementsFor?.name ?? ''}
+      >
+        {movementsFor ? (
+          <div className="py-3">
+            {movementsQuery.isLoading ? (
+              <div className="py-6 text-center">
+                <Spinner size={16} />
               </div>
-            </>
-          )}
-        </div>
-      ) : null}
-
-      {/* Today's sales list. */}
-      <div>
-        {/* M2.1: SectionLabel (was ad-hoc eyebrow). */}
-        <SectionLabel className="mb-2 px-0">
-          {i18n.t('sales.list.title')}
-        </SectionLabel>
-        {salesQuery.isLoading ? (
-          <div className="py-4 text-center">
-            <Spinner size={16} />
-          </div>
-        ) : sales.length === 0 ? (
-          <EmptyState
-            title={i18n.t('sales.empty.title')}
-            description={i18n.t('sales.empty.description')}
-          />
-        ) : (
-          <ul className="flex flex-col gap-1" role="list">
-            {sales.map((sale) => {
-              const dish = dishById.get(sale.dishId);
-              const name = dish
-                ? productName({ names: dish.names })
-                : sale.dishId.slice(0, 8);
-              // 2026-07-30: `undefined` meant "browser locale".
-              const time = dateFmt.time(sale.occurredAt);
-              const lineTotal =
-                sale.unitPrice && Number(sale.qty) > 0
-                  ? Number(sale.qty) * Number(sale.unitPrice)
-                  : null;
-              return (
-                <li
-                  key={sale.id}
-                  className="flex items-baseline justify-between gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 ring-hairline"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-old-label tabular-nums text-[var(--c-fg-muted)]">
-                        {time}
-                      </span>
-                      <span className="truncate text-old-body font-medium">{name}</span>
-                    </div>
-                    {lineTotal !== null ? (
-                      <div className="text-old-label text-[var(--c-fg-muted)]">
-                        {formatQty(sale.qty)} × {formatMoney(sale.unitPrice)} ={' '}
-                        <span className="font-mono tabular-nums text-[var(--c-fg)]">
-                          {formatMoney(lineTotal)}
+            ) : (movementsQuery.data ?? []).length === 0 ? (
+              <EmptyState title={i18n.t('inventory.movements.empty')} />
+            ) : (
+              <ul className="flex flex-col gap-1" role="list">
+                {(movementsQuery.data ?? []).map((m) => {
+                  const known = knownMovementReason(m.reason);
+                  const { sign, abs } = signedDelta(m.delta);
+                  const unit = skuById.get(movementsFor.skuId)?.unit ?? '';
+                  return (
+                    <li
+                      key={m.id}
+                      className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 ring-hairline"
+                    >
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="truncate text-old-body font-medium">
+                          {known ? i18n.t(MOVEMENT_REASON_LABEL[known]) : m.reason}
+                        </span>
+                        <span
+                          className={
+                            'font-mono text-old-body tabular-nums ' +
+                            (sign === '-' ? 'text-[var(--c-danger)]' : '')
+                          }
+                        >
+                          {sign}
+                          {formatQty(abs)} {unitLabel(unit)}
                         </span>
                       </div>
-                    ) : (
                       <div className="text-old-label text-[var(--c-fg-muted)]">
-                        {formatQty(sale.qty)} × —
+                        {dateFmt.dateTime(m.occurredAt)}
+                        {m.note ? ` · ${m.note}` : ''}
                       </div>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        ) : null}
+      </Sheet>
     </div>
   );
 }
@@ -903,24 +817,23 @@ function StoreSalesTab({ storeId }: { storeId: string }) {
  * dedicated detail screen.
  */
 function StoreSettingsTab({ storeId }: { storeId: string }) {
-  const storesQuery = trpc.admin.storeList.useQuery();
+  const session = useAuthStore((s) => s.session);
+  // 2026-10-21 audit CA-08/CA-16: pause/reactivate, archive and clone-
+  // roles are org.admin-only server-side. Replaces the isGlobalAdmin
+  // heuristic, which counted a single-store manager as global.
+  const isOrgAdmin = session?.permissions.includes('org.admin') ?? false;
+  // Same input as StoresHomeSection so a paused store (org.admin only)
+  // resolves here instead of spinning on "Loading store…".
+  const storesQuery = trpc.admin.storeList.useQuery({ includeArchived: isOrgAdmin });
   const rolesQuery = trpc.admin.roleList.useQuery();
   const utils = trpc.useUtils();
   const toast = useToast();
   const errToast = useErrToast();
   const i18n = useI18n();
-  const session = useAuthStore((s) => s.session);
   const adminStoreIds = useMemo(
     () => new Set(session?.adminStoreIds ?? []),
     [session?.adminStoreIds],
   );
-  // M1.9 (2026-05-07): clone-roles is an org-wide write — gate to
-  // global admins.
-  const sessionStores = session?.stores ?? [];
-  const isGlobalAdmin = useMemo(() => {
-    if (sessionStores.length === 0) return adminStoreIds.size > 0;
-    return sessionStores.every((s) => adminStoreIds.has(s.id));
-  }, [sessionStores, adminStoreIds]);
 
   const store = useMemo(
     () => (storesQuery.data ?? []).find((s) => s.id === storeId) ?? null,
@@ -986,7 +899,8 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
     draft.isActive !== store.isActive ||
     draft.defaultRoleSlug !== (store.defaultRoleSlug ?? '');
 
-  const canAdmin = adminStoreIds.has(storeId);
+  // org.admin also administers paused stores, which adminStoreIds omits.
+  const canAdmin = isOrgAdmin || adminStoreIds.has(storeId);
 
   return (
     <div className="flex flex-col gap-4 px-4 py-3">
@@ -1049,12 +963,13 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
           {i18n.t('admin.store.defaultRoleHint')}
         </p>
       </Field>
-      <Switch
-        label={i18n.t('admin.label.active')}
-        checked={draft.isActive}
-        onChange={(e) => setDraft({ ...draft, isActive: e.target.checked })}
-        disabled={!canAdmin}
-      />
+      {isOrgAdmin ? (
+        <Switch
+          label={i18n.t('admin.label.active')}
+          checked={draft.isActive}
+          onChange={(e) => setDraft({ ...draft, isActive: e.target.checked })}
+        />
+      ) : null}
 
       <div className="flex flex-wrap gap-2 border-t border-[var(--c-divider)] pt-4">
         <Button
@@ -1067,7 +982,8 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
               code: draft.code || null,
               address: draft.address || null,
               timezone: draft.timezone || null,
-              isActive: draft.isActive,
+              // Only org.admin may send isActive (CA-08); others omit it.
+              ...(isOrgAdmin ? { isActive: draft.isActive } : {}),
               defaultRoleSlug: draft.defaultRoleSlug
                 ? draft.defaultRoleSlug
                 : null,
@@ -1078,8 +994,8 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
         </Button>
         {/* M1.9: clone-roles requires global admin (was canAdmin + ≥2
             admin stores; per-store managers shouldn't trigger this
-            org-wide write). */}
-        {isGlobalAdmin && adminStoreIds.size >= 2 ? (
+            org-wide write). 2026-10-21: org.admin, as the server checks. */}
+        {isOrgAdmin && adminStoreIds.size >= 2 ? (
           <Button
             variant="pearl"
             onClick={() => setCloneOpen(true)}
@@ -1087,7 +1003,7 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
             {i18n.t('admin.action.cloneRoles')}
           </Button>
         ) : null}
-        {canAdmin ? (
+        {isOrgAdmin ? (
           <Button
             variant="danger-ghost"
             onClick={() =>

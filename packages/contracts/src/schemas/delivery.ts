@@ -17,6 +17,18 @@ export const ConfirmStoreItemInputSchema = z.object({
   note: z.string().max(500).nullable(),
   // Accept both https URLs and data: URIs (M1 base64 fallback before S3 lands).
   photoUrl: z.string().max(300_000).nullable(),
+  /**
+   * 2026-10-21 CA-06: how much of this store's split actually arrived
+   * (0 ≤ qty ≤ split qty, upper bound checked by the domain). Required
+   * for 'short'; optional for 'wrong'/'quality' (defaults to 0); ignored
+   * for 'ok'. Optional so older clients keep working — an older client
+   * sending 'short' without it gets run.errors.receivedQtyRequired.
+   */
+  receivedQty: z
+    .string()
+    .regex(/^\d+(\.\d{1,3})?$/, 'invalid decimal')
+    .nullable()
+    .optional(),
   expectedSeq: z.number().int().optional(),
 });
 

@@ -23,7 +23,7 @@
  * Channel = 'bot' for now (WebPush lands later). Body is a short Markdown
  * line with a deep link back into the Mini App.
  */
-import { eq, and, ne, inArray } from 'drizzle-orm';
+import { eq, and, ne, inArray, or, isNull, gt } from 'drizzle-orm';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
 
@@ -62,24 +62,9 @@ export async function findRecipientsByPermission(
   orgId: string,
   permissionKey: string,
 ): Promise<string[]> {
-  // Roles in this org that hold the permission.
-  const roleRows = await db
-    .select({ roleId: s.rolePermissions.roleId })
-    .from(s.rolePermissions)
-    .innerJoin(s.roles, eq(s.roles.id, s.rolePermissions.roleId))
-    .where(
-      and(eq(s.roles.orgId, orgId), eq(s.rolePermissions.permissionKey, permissionKey)),
-    );
-  const roleIds = [...new Set(roleRows.map((r) => r.roleId))];
-  if (roleIds.length === 0) return [];
-
-  // Members holding any of those roles.
-  const memberRows = await db
-    .select({ userId: s.members.userId })
-    .from(s.memberRoleBindings)
-    .innerJoin(s.members, eq(s.members.id, s.memberRoleBindings.memberId))
-    .where(inArray(s.memberRoleBindings.roleId, roleIds));
-  return [...new Set(memberRows.map((r) => r.userId))];
+  const bindings = await activeBindingsWithPermission(db, orgId, permissionKey);
+  const denied = await deniedMemberIds(db, bindings, permissionKey, null);
+  return [...new Set(bindings.filter((b) => !denied.has(b.memberId)).map((b) => b.userId))];
 }
 
 /**
@@ -89,9 +74,8 @@ export async function findRecipientsByPermission(
  *   - global (admin/super_admin reach everywhere), OR
  *   - store-scoped with `scope_id = storeId`
  *
- * Mirrors the pattern already in `findStoreStaff`. Used for store-
- * scoped notification fan-out so a manager-of-B never gets pinged
- * about Store A's order activity.
+ * Used for store-scoped notification fan-out so a manager-of-B never
+ * gets pinged about Store A's order activity.
  */
 export async function findRecipientsByPermissionInStore(
   db: DB,
@@ -99,66 +83,106 @@ export async function findRecipientsByPermissionInStore(
   permissionKey: string,
   storeId: string,
 ): Promise<string[]> {
-  // Roles in this org that hold the permission.
-  const roleRows = await db
-    .select({ roleId: s.rolePermissions.roleId })
-    .from(s.rolePermissions)
-    .innerJoin(s.roles, eq(s.roles.id, s.rolePermissions.roleId))
-    .where(
-      and(eq(s.roles.orgId, orgId), eq(s.rolePermissions.permissionKey, permissionKey)),
-    );
-  const roleIds = [...new Set(roleRows.map((r) => r.roleId))];
-  if (roleIds.length === 0) return [];
-
-  // Bindings of those roles, scoped to global OR our storeId.
-  const bindings = await db
-    .select({
-      userId: s.members.userId,
-      scopeType: s.memberRoleBindings.scopeType,
-      scopeId: s.memberRoleBindings.scopeId,
-    })
-    .from(s.memberRoleBindings)
-    .innerJoin(s.members, eq(s.members.id, s.memberRoleBindings.memberId))
-    .where(
-      and(
-        eq(s.members.orgId, orgId),
-        inArray(s.memberRoleBindings.roleId, roleIds),
-      ),
-    );
-
-  const allowed = new Set<string>();
-  for (const r of bindings) {
-    // Global bindings reach every store (admins overseeing the chain).
-    // Store-scoped bindings reach only their target store.
-    if (r.scopeType === 'global' || r.scopeId === storeId) {
-      allowed.add(r.userId);
-    }
-  }
-  return [...allowed];
+  // Global bindings reach every store (admins overseeing the chain).
+  // Store-scoped bindings reach only their target store.
+  const bindings = (await activeBindingsWithPermission(db, orgId, permissionKey)).filter(
+    (b) => b.scopeType === 'global' || b.scopeId === storeId,
+  );
+  const denied = await deniedMemberIds(db, bindings, permissionKey, storeId);
+  return [...new Set(bindings.filter((b) => !denied.has(b.memberId)).map((b) => b.userId))];
 }
 
 export async function findStoreStaff(db: DB, orgId: string, storeId: string): Promise<string[]> {
-  // Staff = members in this org with `delivery.confirm` permission whose
-  // role binding is either global or scoped to this store.
-  const candidate = await findRecipientsByPermission(db, orgId, 'delivery.confirm');
-  if (candidate.length === 0) return [];
-  // Filter rows: keep where scope_type='global' OR scope_id matches storeId.
-  // Drizzle's whereExpr is awkward for OR with NULL; do it in app code.
-  const scoped = await db
+  // Staff = members in this org with `delivery.confirm` through a binding
+  // that is global or scoped to this store. 2026-10-21 audit CA-31: this
+  // used to accept a user whose delivery.confirm came from a Store-B
+  // binding as long as ANY of their bindings was global; now the binding
+  // that carries the permission must itself reach the store.
+  return findRecipientsByPermissionInStore(db, orgId, 'delivery.confirm', storeId);
+}
+
+interface PermissionBinding {
+  memberId: string;
+  userId: string;
+  scopeType: string;
+  scopeId: string | null;
+}
+
+/**
+ * Role bindings in `orgId` that carry `permissionKey`, for members who can
+ * still sign in. 2026-10-21 audit CA-31/F-07: the recipient queries did not
+ * look at members.status or binding expiry, so suspended members and
+ * expired temporary roles kept receiving store activity over Telegram.
+ * Same filters as the session loader (trpc/context.ts readSession).
+ */
+async function activeBindingsWithPermission(
+  db: DB,
+  orgId: string,
+  permissionKey: string,
+): Promise<PermissionBinding[]> {
+  return db
     .select({
+      memberId: s.members.id,
       userId: s.members.userId,
       scopeType: s.memberRoleBindings.scopeType,
       scopeId: s.memberRoleBindings.scopeId,
     })
     .from(s.memberRoleBindings)
     .innerJoin(s.members, eq(s.members.id, s.memberRoleBindings.memberId))
-    .where(eq(s.members.orgId, orgId));
-  const allowed = new Set<string>();
-  for (const r of scoped) {
-    if (!candidate.includes(r.userId)) continue;
-    if (r.scopeType === 'global' || r.scopeId === storeId) allowed.add(r.userId);
-  }
-  return [...allowed];
+    .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
+    .innerJoin(s.rolePermissions, eq(s.rolePermissions.roleId, s.roles.id))
+    .where(
+      and(
+        eq(s.roles.orgId, orgId),
+        eq(s.members.orgId, orgId),
+        eq(s.members.status, 'active'),
+        eq(s.rolePermissions.permissionKey, permissionKey),
+        or(
+          isNull(s.memberRoleBindings.expiresAt),
+          gt(s.memberRoleBindings.expiresAt, new Date()),
+        ),
+      ),
+    );
+}
+
+/**
+ * Members with an active deny override for `permissionKey`: global ones
+ * always, store ones only when `storeId` is that store. Deny wins over the
+ * role grant, as in storeScope.effectivePermissionsForStore. Allow
+ * overrides are not consulted (they never removed anyone from a list).
+ */
+async function deniedMemberIds(
+  db: DB,
+  bindings: PermissionBinding[],
+  permissionKey: string,
+  storeId: string | null,
+): Promise<Set<string>> {
+  const memberIds = [...new Set(bindings.map((b) => b.memberId))];
+  if (memberIds.length === 0) return new Set();
+  const rows = await db
+    .select({ memberId: s.memberPermissionOverrides.memberId })
+    .from(s.memberPermissionOverrides)
+    .where(
+      and(
+        inArray(s.memberPermissionOverrides.memberId, memberIds),
+        eq(s.memberPermissionOverrides.permissionKey, permissionKey),
+        eq(s.memberPermissionOverrides.effect, 'deny'),
+        storeId
+          ? or(
+              eq(s.memberPermissionOverrides.scopeType, 'global'),
+              and(
+                eq(s.memberPermissionOverrides.scopeType, 'store'),
+                eq(s.memberPermissionOverrides.scopeId, storeId),
+              ),
+            )
+          : eq(s.memberPermissionOverrides.scopeType, 'global'),
+        or(
+          isNull(s.memberPermissionOverrides.expiresAt),
+          gt(s.memberPermissionOverrides.expiresAt, new Date()),
+        ),
+      ),
+    );
+  return new Set(rows.map((r) => r.memberId));
 }
 
 /**
@@ -192,13 +216,23 @@ export async function dispatch(
     }
   }
   // Bulk insert; per-row dedup_key conflicts are ignored.
-  await db.insert(s.notifications).values(notificationRows).onConflictDoNothing();
+  // 2026-10-21 audit CA-31/F-04: RETURNING tells us which rows were new.
+  // The outbox used to be written for every row, so a dedup'd repeat was
+  // silent in the inbox but sent again over Telegram.
+  const inserted = await db
+    .insert(s.notifications)
+    .values(notificationRows)
+    .onConflictDoNothing()
+    .returning({ dedupKey: s.notifications.dedupKey });
+  const fresh = new Set(inserted.map((r) => r.dedupKey));
 
-  // Outbox rows are NOT keyed by dedup; they're transient queue entries.
+  // Outbox rows are transient queue entries, written only for the
+  // notifications that were actually inserted above.
   // The worker consumes them and marks `sent_at`.
+  const outboxRows = notificationRows.filter((r) => r.channel !== 'inapp' && fresh.has(r.dedupKey));
+  if (outboxRows.length === 0) return;
   await db.insert(s.outbox).values(
-    notificationRows
-      .filter((r) => r.channel !== 'inapp')
+    outboxRows
       .map((r) => ({
         aggregate: 'notification',
         aggregateId: orgId, // shard key

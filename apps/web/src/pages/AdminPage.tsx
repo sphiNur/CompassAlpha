@@ -43,7 +43,6 @@ import {
   SectionRow,
   Sheet,
   Switch,
-  useSheetCount,
   useToast,
 } from '@compass/ui';
 import { trpc } from '../lib/trpc';
@@ -237,40 +236,47 @@ export function AdminPage() {
         in SettingsSheet → Profile / About for users who want them. */
     <div className="flex flex-col">
       <ul className="mx-4 mt-3 mb-6 flex flex-col gap-2" role="list">
-        <SectionRow
-          icon={<IconWorkspace size={20} />}
-          label={i18n.t('admin.section.organization')}
-          hint={i18n.t('admin.section.organizationHint')}
-          onClick={() => setSection('organization')}
-        />
-        <SectionRow
-          icon={<IconPeople size={20} />}
-          label={i18n.t('admin.section.stores')}
-          hint={i18n.t('admin.section.storesHint')}
-          onClick={() => setSection('stores')}
-        />
-        {/* M1.11: Permissions had IconWorkspace, same as Organization above
+        {/* 2026-10-21 audit CA-16 / E-12: a platform admin without
+            `users.manage` now reaches this tab; the tenant sections would
+            all 403 for them, so only Platform is listed. */}
+        {isAdmin ? (
+          <>
+            <SectionRow
+              icon={<IconWorkspace size={20} />}
+              label={i18n.t('admin.section.organization')}
+              hint={i18n.t('admin.section.organizationHint')}
+              onClick={() => setSection('organization')}
+            />
+            <SectionRow
+              icon={<IconPeople size={20} />}
+              label={i18n.t('admin.section.stores')}
+              hint={i18n.t('admin.section.storesHint')}
+              onClick={() => setSection('stores')}
+            />
+            {/* M1.11: Permissions had IconWorkspace, same as Organization above
             — visually ambiguous in the section list. Switched to a new
             shield icon (added to @compass/ui) which reads as "access /
             roles" without overlapping the Organization or Stores rows. */}
-        <SectionRow
-          icon={<IconShield size={20} />}
-          label={i18n.t('admin.section.permissions')}
-          hint={i18n.t('admin.section.permissionsHint')}
-          onClick={() => setSection('permissions')}
-        />
-        <SectionRow
-          icon={<IconCatalog size={20} />}
-          label={i18n.t('admin.section.catalog')}
-          hint={i18n.t('admin.section.catalogHint')}
-          onClick={() => setSection('catalog')}
-        />
-        <SectionRow
-          icon={<IconActivity size={20} />}
-          label={i18n.t('admin.section.operations')}
-          hint={i18n.t('admin.section.operationsHint')}
-          onClick={() => setSection('operations')}
-        />
+            <SectionRow
+              icon={<IconShield size={20} />}
+              label={i18n.t('admin.section.permissions')}
+              hint={i18n.t('admin.section.permissionsHint')}
+              onClick={() => setSection('permissions')}
+            />
+            <SectionRow
+              icon={<IconCatalog size={20} />}
+              label={i18n.t('admin.section.catalog')}
+              hint={i18n.t('admin.section.catalogHint')}
+              onClick={() => setSection('catalog')}
+            />
+            <SectionRow
+              icon={<IconActivity size={20} />}
+              label={i18n.t('admin.section.operations')}
+              hint={i18n.t('admin.section.operationsHint')}
+              onClick={() => setSection('operations')}
+            />
+          </>
+        ) : null}
         {isPlatformAdmin ? (
           <SectionRow
             icon={<IconShield size={20} />}
@@ -409,16 +415,12 @@ function SectionFrame({
   // Inside Telegram, the in-page chevron below is hidden — there's only
   // ONE place to go back, the user's muscle memory.
   //
-  // M1.5 (2026-05-06): disable the section's BackButton hook while
-  // any sheet is open. Otherwise Telegram fires both the section's
-  // drill-up handler AND the sheet's close handler simultaneously
-  // (Telegram appends listeners, doesn't replace), and the user sees
-  // the section navigate up underneath the closing sheet — a hidden
-  // dead-end. Sheets register their own close handler; with section
-  // disabled they take over uncontested.
+  // 2026-10-21 audit CA-34: the M1.5 "disable while any sheet is open"
+  // gate is gone. Sheets and this hook share one owner stack, so an open
+  // sheet sits on top and owns back-taps; closing it hands the button
+  // back here without a hide()/show() flicker.
   const i18n = useI18n();
-  const sheetCount = useSheetCount();
-  useTelegramBackButton(onBack, sheetCount === 0);
+  useTelegramBackButton(onBack);
   // 2026-07-30: was `!!getTg()`, which is true in ANY browser because the
   // Telegram SDK is a static script tag — so this chevron never rendered
   // and admin drill-down had no way back outside Telegram. Worse, the
@@ -481,7 +483,9 @@ function WorkspaceSection() {
   const currency = session?.member.currency ?? 'UZS';
   const taxRatePct = session?.member.taxRatePct ?? '0';
   const pricesIncludeTax = session?.member.pricesIncludeTax ?? true;
-  const isAdmin = session?.permissions.includes('users.manage') ?? false;
+  // 2026-10-21 audit CA-16: orgFinanceUpdate is requireOrgAdmin on the
+  // server; `users.manage` (store managers) only got a FORBIDDEN on save.
+  const isAdmin = session?.permissions.includes('org.admin') ?? false;
 
   // Local form draft inside the sheet so we can cancel without
   // affecting the source of truth on the auth store.

@@ -64,6 +64,7 @@ import { projectRun } from '../../services/runProjection';
 import { projectOrder } from '../../services/orderProjection';
 import { hub } from '../../realtime/hub';
 import { dispatchRunEventNotifications } from '../../services/notifyForEvent';
+import { money2, runMoneyLinesSql, uuidListSql } from '../../services/runMoney';
 import { todayInTz } from '@compass/domain';
 
 /**
@@ -220,6 +221,11 @@ export const runRouter = router({
       // implies run_id IS NULL because the projector clears run_id
       // only on Approved → in_run / archived transitions.
       const date = input.date ?? null;
+      // 2026-10-21 CA-03: the org's business "today", so the client can
+      // pre-select only today's orders and flag older ones — the device
+      // clock is the wrong timezone for a purchaser travelling or a
+      // phone set to UTC.
+      const today = todayStr(ctx);
       // M3.2: org-wide visibility requires `run.create.org` (or the
       // legacy `users.manage` super-perm). Without it, scope the
       // query to the actor's bound stores. `getActorStoreIds`
@@ -249,9 +255,11 @@ export const runRouter = router({
       if (sessionIds.length === 0) {
         return {
           date,
+          today,
           sessions: [],
           plannedItems: [],
           perStoreDemand: [],
+          perSessionDemand: [] as Array<{ sessionId: string; skuId: string; qty: string }>,
           supplierBySku: {} as Record<
             string,
             {
@@ -287,10 +295,17 @@ export const runRouter = router({
 
       const aggregated = new Map<string, number>();
       const perStoreSkuQty = new Map<string, Map<string, number>>(); // storeId → skuId → qty
+      // 2026-10-21 CA-03: demand per SESSION, so the client can
+      // re-aggregate the preview over the sessions the purchaser ticked
+      // without a round trip per checkbox.
+      const perSessionSkuQty = new Map<string, Map<string, number>>();
       for (const it of items) {
         const qty = Number(it.qty);
         if (qty <= 0) continue;
         aggregated.set(it.skuId, (aggregated.get(it.skuId) ?? 0) + qty);
+        const bySession = perSessionSkuQty.get(it.sessionId) ?? new Map<string, number>();
+        bySession.set(it.skuId, (bySession.get(it.skuId) ?? 0) + qty);
+        perSessionSkuQty.set(it.sessionId, bySession);
         const sid = storeBySession.get(it.sessionId);
         if (!sid) continue;
         const inner = perStoreSkuQty.get(sid) ?? new Map<string, number>();
@@ -520,8 +535,16 @@ export const runRouter = router({
         };
       });
 
+      const perSessionDemand: Array<{ sessionId: string; skuId: string; qty: string }> = [];
+      for (const [sessionId, inner] of perSessionSkuQty.entries()) {
+        for (const [skuId, qty] of inner.entries()) {
+          perSessionDemand.push({ sessionId, skuId, qty: qty.toString() });
+        }
+      }
+
       return {
         date,
+        today,
         sessions: sessions.map((s) => ({
           id: s.id,
           storeId: s.storeId,
@@ -536,6 +559,7 @@ export const runRouter = router({
           qty: qty.toString(),
         })),
         perStoreDemand,
+        perSessionDemand,
         supplierBySku,
         lastPurchasePriceBySku,
         perStoreBudgets,
@@ -666,7 +690,8 @@ export const runRouter = router({
   // "create run" action so network retry doesn't create two runs.
   create: idempotentMutation.input(RunCreateInputSchema).mutation(async ({ ctx, input }) => {
     return ctx.withOrg(async (tx) => {
-      const date = input.date ?? todayStr(ctx);
+      const today = todayStr(ctx);
+      const date = input.date ?? today;
 
       /**
        * One non-terminal run per org (migration 0035, 2026-07-26).
@@ -683,13 +708,16 @@ export const runRouter = router({
        * run.attachSessions, which has its own guards for the run's
        * status; quietly folding that into create would make one
        * procedure mean two things.
+       *
+       * 2026-10-21 CA-04: only a planned/purchasing run is "the live
+       * run" now (migration 0047 narrowed the unique index to match). A
+       * run that is out for delivery no longer blocks a new trip — it
+       * used to, and one store that never confirmed froze purchasing for
+       * the whole organisation.
        */
       const live = await tx.query.marketRunsV.findFirst({
         where: (r, { eq: eq2, and: and2, inArray: inArray2 }) =>
-          and2(
-            eq2(r.orgId, ctx.session!.orgId),
-            inArray2(r.status, ['planned', 'purchasing', 'delivering']),
-          ),
+          and2(eq2(r.orgId, ctx.session!.orgId), inArray2(r.status, ['planned', 'purchasing'])),
       });
       if (live) {
         // Returning an existing live run is still a run.create operation.
@@ -733,6 +761,21 @@ export const runRouter = router({
         sessions.map((session) => session.storeId),
         allowedStoreIds,
       );
+
+      // 2026-10-21 CA-03: the purchaser may book the run under an earlier
+      // date (yesterday's orders bought this morning), but never a date
+      // the calendar doesn't have (2026-02-31 would roll into March) or
+      // one in the future (org timezone). Checked after the store-scope
+      // gate so an out-of-scope request reports the permission problem.
+      {
+        const parsed = new Date(`${date}T00:00:00Z`);
+        if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'run.errors.invalidRunDate' });
+        }
+        if (date > today) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'run.errors.runDateInFuture' });
+        }
+      }
 
       // Aggregate items across sessions.
       const items = await tx.query.orderItemsV.findMany({
@@ -1002,6 +1045,7 @@ export const runRouter = router({
         await projectRun(tx, ctx.session!.orgId, producedEvents);
 
         // Move each attached session's stream from approved → in_run.
+        const attachedSessions: Array<{ sessionId: string; lastSeq: number }> = [];
         for (const sessionId of dedupedNewIds) {
           const orderEvents = (await readStream(tx, 'order', sessionId)) as unknown as OrderEvent[];
           let oState = emptyOrderState(sessionId);
@@ -1025,6 +1069,30 @@ export const runRouter = router({
             });
             await projectOrder(tx, ctx.session!.orgId, ev);
           }
+          attachedSessions.push({
+            sessionId,
+            lastSeq: ev[ev.length - 1]?.seq ?? oState.seq,
+          });
+        }
+
+        // 2026-10-21 audit CA-31: same broadcast as `create` — without it
+        // other purchasers' Run page and the attached sessions' Order /
+        // Approval screens stayed stale and kept offering actions the
+        // server now rejects. (Notifications stay off, as in `create`.)
+        const runLastSeq = producedEvents[producedEvents.length - 1]?.seq ?? runState.seq;
+        hub.publish(ctx.session!.orgId, {
+          type: 'run.changed',
+          orgId: ctx.session!.orgId,
+          runId: run.id,
+          lastSeq: runLastSeq,
+        });
+        for (const a of attachedSessions) {
+          hub.publish(ctx.session!.orgId, {
+            type: 'order.changed',
+            orgId: ctx.session!.orgId,
+            sessionId: a.sessionId,
+            lastSeq: a.lastSeq,
+          });
         }
 
         return {
@@ -1075,84 +1143,103 @@ export const runRouter = router({
       }
       if (visibleRuns.length === 0) return [];
 
+      // 2026-10-21 CA-11: per-store money now comes from the shared
+      // money-line SQL (services/runMoney.ts) — items at COALESCE(split
+      // override, item price) PLUS active expenses — so run.list agrees
+      // with run.history and report.*. Before, this was items-only JS
+      // float math and silently dropped expenses.
       type MutableStoreTotal = {
         storeId: string;
         total: number;
+        itemsTotal: number;
+        expensesTotal: number;
         cash: number;
         transfer: number;
-        skuIds: Set<string>;
+        /** Items-only cash/transfer — partitions the frozen actual_total. */
+        itemsCash: number;
+        itemsTransfer: number;
+        itemCount: number;
       };
       const totalsByRun = new Map<string, Map<string, MutableStoreTotal>>();
-      const ensureStoreTotal = (runId: string, storeId: string): MutableStoreTotal | null => {
-        if (allowedStoreSet && !allowedStoreSet.has(storeId)) return null;
-        let runTotals = totalsByRun.get(runId);
+      const visibleRunIds = visibleRuns.map((r) => r.id);
+      const moneyRows = executeRows<{
+        run_id: string;
+        store_id: string;
+        total: string;
+        items_total: string;
+        expenses_total: string;
+        cash: string;
+        transfer: string;
+        items_cash: string;
+        items_transfer: string;
+        item_count: number;
+      }>(
+        await tx.execute(sql`
+          WITH money_lines AS (
+            ${runMoneyLinesSql({
+              runsSql: sql`(SELECT unnest(ARRAY[${uuidListSql(visibleRunIds)}]::uuid[]) AS id)`,
+              storeIdsSql: uuidListSql(allowedStoreIds),
+            })}
+          )
+          SELECT
+            run_id::text AS run_id,
+            store_id::text AS store_id,
+            COALESCE(SUM(amount), 0)::text AS total,
+            COALESCE(SUM(amount) FILTER (WHERE kind = 'item'), 0)::text AS items_total,
+            COALESCE(SUM(amount) FILTER (WHERE kind = 'expense'), 0)::text AS expenses_total,
+            COALESCE(SUM(amount) FILTER (WHERE payment_method = 'transfer'), 0)::text AS transfer,
+            COALESCE(SUM(amount) FILTER (WHERE payment_method <> 'transfer'), 0)::text AS cash,
+            COALESCE(SUM(amount) FILTER (WHERE kind = 'item' AND payment_method = 'transfer'), 0)::text
+              AS items_transfer,
+            COALESCE(SUM(amount) FILTER (WHERE kind = 'item' AND payment_method <> 'transfer'), 0)::text
+              AS items_cash,
+            (COUNT(DISTINCT sku_id) FILTER (WHERE sku_id IS NOT NULL))::int AS item_count
+          FROM money_lines
+          GROUP BY run_id, store_id
+        `),
+      );
+      for (const row of moneyRows) {
+        let runTotals = totalsByRun.get(row.run_id);
         if (!runTotals) {
           runTotals = new Map<string, MutableStoreTotal>();
-          totalsByRun.set(runId, runTotals);
+          totalsByRun.set(row.run_id, runTotals);
         }
-        let cur = runTotals.get(storeId);
-        if (!cur) {
-          cur = {
-            storeId,
-            total: 0,
-            cash: 0,
-            transfer: 0,
-            skuIds: new Set<string>(),
-          };
-          runTotals.set(storeId, cur);
-        }
-        return cur;
-      };
-      const visibleRunIds = visibleRuns.map((r) => r.id);
-
-      const splitRows = await tx
-        .select({
-          runId: s.runItemStoresV.runId,
-          storeId: s.runItemStoresV.storeId,
-          skuId: s.runItemStoresV.skuId,
-          qty: s.runItemStoresV.qty,
-          itemUnitPrice: s.runItemsV.unitPrice,
-          itemPaymentMethod: s.runItemsV.paymentMethod,
-          splitUnitPrice: s.runItemStoresV.unitPrice,
-          splitPaymentMethod: s.runItemStoresV.paymentMethod,
-        })
-        .from(s.runItemStoresV)
-        .innerJoin(
-          s.runItemsV,
-          and(
-            eq(s.runItemsV.runId, s.runItemStoresV.runId),
-            eq(s.runItemsV.skuId, s.runItemStoresV.skuId),
-          ),
-        )
-        .where(
-          and(inArray(s.runItemStoresV.runId, visibleRunIds), eq(s.runItemsV.status, 'purchased')),
-        );
-      for (const row of splitRows) {
-        const unitPrice = row.splitUnitPrice ?? row.itemUnitPrice;
-        if (!unitPrice) continue;
-        const subtotal = Number(row.qty) * Number(unitPrice);
-        if (!Number.isFinite(subtotal)) continue;
-        const cur = ensureStoreTotal(row.runId, row.storeId);
-        if (!cur) continue;
-        cur.total += subtotal;
-        if ((row.splitPaymentMethod ?? row.itemPaymentMethod) === 'transfer')
-          cur.transfer += subtotal;
-        else cur.cash += subtotal;
-        cur.skuIds.add(row.skuId);
+        runTotals.set(row.store_id, {
+          storeId: row.store_id,
+          total: Number(row.total),
+          itemsTotal: Number(row.items_total),
+          expensesTotal: Number(row.expenses_total),
+          cash: Number(row.cash),
+          transfer: Number(row.transfer),
+          itemsCash: Number(row.items_cash),
+          itemsTransfer: Number(row.items_transfer),
+          itemCount: row.item_count,
+        });
       }
 
       const moneyString = (n: number) => (Math.round(n * 100) / 100).toString();
       return visibleRuns.map((run) => {
-        const storeTotals = [...(totalsByRun.get(run.id)?.values() ?? [])]
-          .sort((a, b) => b.total - a.total)
-          .map((total) => ({
-            storeId: total.storeId,
-            total: moneyString(total.total),
-            cash: moneyString(total.cash),
-            transfer: moneyString(total.transfer),
-            itemCount: total.skuIds.size,
-          }));
-        if (!allowedStoreSet) return { ...run, storeTotals };
+        const storeTotalRows = [...(totalsByRun.get(run.id)?.values() ?? [])].sort(
+          (a, b) => b.total - a.total,
+        );
+        const storeTotals = storeTotalRows.map((total) => ({
+          storeId: total.storeId,
+          total: moneyString(total.total),
+          itemsTotal: moneyString(total.itemsTotal),
+          expensesTotal: moneyString(total.expensesTotal),
+          cash: moneyString(total.cash),
+          transfer: moneyString(total.transfer),
+          itemCount: total.itemCount,
+        }));
+        // items / expenses / total over the visible stores, live.
+        const itemsSum = storeTotalRows.reduce((sum, row) => sum + row.itemsTotal, 0);
+        const expensesSum = storeTotalRows.reduce((sum, row) => sum + row.expensesTotal, 0);
+        const money = {
+          itemsTotal: money2(itemsSum),
+          expensesTotal: money2(expensesSum),
+          total: money2(itemsSum + expensesSum),
+        };
+        if (!allowedStoreSet) return { ...run, storeTotals, money };
 
         const visibleSessionIds = ((run.sessionIdsJson as unknown as string[]) ?? []).filter(
           (sessionId) => {
@@ -1160,10 +1247,11 @@ export const runRouter = router({
             return storeId !== undefined && allowedStoreSet.has(storeId);
           },
         );
-        const visibleActualTotal = storeTotals.reduce((total, row) => total + Number(row.total), 0);
-        const visibleCashTotal = storeTotals.reduce((total, row) => total + Number(row.cash), 0);
-        const visibleTransferTotal = storeTotals.reduce(
-          (total, row) => total + Number(row.transfer),
+        // actual_total keeps its items-only meaning for partial readers too.
+        const visibleActualTotal = itemsSum;
+        const visibleCashTotal = storeTotalRows.reduce((total, row) => total + row.itemsCash, 0);
+        const visibleTransferTotal = storeTotalRows.reduce(
+          (total, row) => total + row.itemsTransfer,
           0,
         );
         return {
@@ -1177,6 +1265,7 @@ export const runRouter = router({
             run.actualTransferTotal === null ? null : moneyString(visibleTransferTotal),
           sessionIdsJson: visibleSessionIds,
           storeTotals,
+          money,
         };
       });
     });
@@ -1329,44 +1418,17 @@ export const runRouter = router({
               ${visibilitySql}
               ${searchSql}
           ),
-          item_lines AS (
-            SELECT
-              ris.run_id,
-              ris.store_id,
-              ris.sku_id,
-              ris.qty * COALESCE(ris.unit_price, ri.unit_price, 0) AS amount,
-              COALESCE(ris.payment_method, ri.payment_method, 'cash') AS payment_method
-            FROM candidate_runs cr
-            INNER JOIN read_model.run_items_v ri ON ri.run_id = cr.id
-            INNER JOIN read_model.run_item_stores_v ris
-              ON ris.run_id = ri.run_id AND ris.sku_id = ri.sku_id
-            WHERE ri.status = 'purchased'
-              ${splitScopeSql}
-          ),
-          expense_lines AS (
-            SELECT
-              expense.run_id,
-              (expense_split.value->>'storeId')::uuid AS store_id,
-              NULL::uuid AS sku_id,
-              COALESCE(NULLIF(expense_split.value->>'qty', '')::numeric, 0)
-                * expense.unit_price AS amount,
-              expense.payment_method
-            FROM candidate_runs cr
-            INNER JOIN read_model.run_expenses_v expense ON expense.run_id = cr.id
-            CROSS JOIN LATERAL jsonb_array_elements(expense.store_splits_json)
-              AS expense_split(value)
-            WHERE expense.removed_at IS NULL
-              ${expenseScopeSql}
-          ),
+          -- 2026-10-21 CA-11: the shared money-line definition
+          -- (services/runMoney.ts) — the same rows report.* sums.
           money_lines AS (
-            SELECT * FROM item_lines
-            UNION ALL
-            SELECT * FROM expense_lines
+            ${runMoneyLinesSql({ runsSql: sql`candidate_runs`, storeIdsSql })}
           ),
           visible_totals AS (
             SELECT
               run_id,
               COALESCE(SUM(amount), 0) AS total,
+              COALESCE(SUM(amount) FILTER (WHERE kind = 'item'), 0) AS items_total,
+              COALESCE(SUM(amount) FILTER (WHERE kind = 'expense'), 0) AS expenses_total,
               COALESCE(SUM(amount) FILTER (WHERE payment_method = 'cash'), 0) AS cash_total,
               COALESCE(SUM(amount) FILTER (WHERE payment_method = 'transfer'), 0) AS transfer_total,
               (COUNT(DISTINCT sku_id) FILTER (WHERE sku_id IS NOT NULL))::int AS item_count
@@ -1388,6 +1450,8 @@ export const runRouter = router({
               cr.status,
               cr.finished_at,
               COALESCE(vt.total, 0) AS actual_total,
+              COALESCE(vt.items_total, 0) AS items_total,
+              COALESCE(vt.expenses_total, 0) AS expenses_total,
               COALESCE(vt.cash_total, 0) AS actual_cash_total,
               COALESCE(vt.transfer_total, 0) AS actual_transfer_total,
               COALESCE(vt.item_count, 0)::int AS item_count,
@@ -1402,6 +1466,8 @@ export const runRouter = router({
         type SummaryDbRow = {
           total_count: number;
           total: string;
+          items_total: string;
+          expenses_total: string;
           cash: string;
           transfer: string;
         };
@@ -1411,6 +1477,8 @@ export const runRouter = router({
           SELECT
             COUNT(*)::int AS total_count,
             COALESCE(SUM(actual_total), 0)::text AS total,
+            COALESCE(SUM(items_total), 0)::text AS items_total,
+            COALESCE(SUM(expenses_total), 0)::text AS expenses_total,
             COALESCE(SUM(actual_cash_total), 0)::text AS cash,
             COALESCE(SUM(actual_transfer_total), 0)::text AS transfer
           FROM filtered
@@ -1419,6 +1487,8 @@ export const runRouter = router({
         const summary = summaryRows[0] ?? {
           total_count: 0,
           total: '0',
+          items_total: '0',
+          expenses_total: '0',
           cash: '0',
           transfer: '0',
         };
@@ -1430,6 +1500,8 @@ export const runRouter = router({
           status: string;
           finished_at: Date | string | null;
           actual_total: string;
+          items_total: string;
+          expenses_total: string;
           actual_cash_total: string;
           actual_transfer_total: string;
           item_count: number;
@@ -1450,6 +1522,8 @@ export const runRouter = router({
             status,
             finished_at,
             actual_total::text AS actual_total,
+            items_total::text AS items_total,
+            expenses_total::text AS expenses_total,
             actual_cash_total::text AS actual_cash_total,
             actual_transfer_total::text AS actual_transfer_total,
             item_count,
@@ -1465,6 +1539,8 @@ export const runRouter = router({
           run_id: string;
           store_id: string;
           total: string;
+          items_total: string;
+          expenses_total: string;
           cash: string;
           transfer: string;
           item_count: number;
@@ -1474,6 +1550,8 @@ export const runRouter = router({
           Array<{
             storeId: string;
             total: string;
+            itemsTotal: string;
+            expensesTotal: string;
             cash: string;
             transfer: string;
             itemCount: number;
@@ -1487,44 +1565,18 @@ export const runRouter = router({
           );
           const storeTotalRows = executeRows<StoreTotalDbRow>(
             await tx.execute(sql`
-            WITH item_lines AS (
-              SELECT
-                ris.run_id,
-                ris.store_id,
-                ris.sku_id,
-                ris.qty * COALESCE(ris.unit_price, ri.unit_price, 0) AS amount,
-                COALESCE(ris.payment_method, ri.payment_method, 'cash') AS payment_method
-              FROM read_model.run_items_v ri
-              INNER JOIN read_model.run_item_stores_v ris
-                ON ris.run_id = ri.run_id AND ris.sku_id = ri.sku_id
-              WHERE ri.run_id IN (${runIdsSql})
-                AND ri.status = 'purchased'
-                ${splitScopeSql}
-            ),
-            expense_lines AS (
-              SELECT
-                expense.run_id,
-                (expense_split.value->>'storeId')::uuid AS store_id,
-                NULL::uuid AS sku_id,
-                COALESCE(NULLIF(expense_split.value->>'qty', '')::numeric, 0)
-                  * expense.unit_price AS amount,
-                expense.payment_method
-              FROM read_model.run_expenses_v expense
-              CROSS JOIN LATERAL jsonb_array_elements(expense.store_splits_json)
-                AS expense_split(value)
-              WHERE expense.run_id IN (${runIdsSql})
-                AND expense.removed_at IS NULL
-                ${expenseScopeSql}
-            ),
-            money_lines AS (
-              SELECT * FROM item_lines
-              UNION ALL
-              SELECT * FROM expense_lines
+            WITH money_lines AS (
+              ${runMoneyLinesSql({
+                runsSql: sql`(SELECT unnest(ARRAY[${runIdsSql}]::uuid[]) AS id)`,
+                storeIdsSql,
+              })}
             )
             SELECT
               run_id::text AS run_id,
               store_id::text AS store_id,
               COALESCE(SUM(amount), 0)::text AS total,
+              COALESCE(SUM(amount) FILTER (WHERE kind = 'item'), 0)::text AS items_total,
+              COALESCE(SUM(amount) FILTER (WHERE kind = 'expense'), 0)::text AS expenses_total,
               COALESCE(SUM(amount) FILTER (WHERE payment_method = 'cash'), 0)::text AS cash,
               COALESCE(SUM(amount) FILTER (WHERE payment_method = 'transfer'), 0)::text AS transfer,
               (COUNT(DISTINCT sku_id) FILTER (WHERE sku_id IS NOT NULL))::int AS item_count
@@ -1538,6 +1590,8 @@ export const runRouter = router({
             totals.push({
               storeId: row.store_id,
               total: row.total,
+              itemsTotal: row.items_total,
+              expensesTotal: row.expenses_total,
               cash: row.cash,
               transfer: row.transfer,
               itemCount: row.item_count,
@@ -1553,7 +1607,12 @@ export const runRouter = router({
             runDate: row.run_date,
             runIndex: row.run_index,
             status: row.status,
+            // 2026-10-21 CA-11: actualTotal = itemsTotal + expensesTotal
+            // over the reader's visible stores (unchanged meaning here —
+            // history always included expenses).
             actualTotal: row.actual_total,
+            itemsTotal: row.items_total,
+            expensesTotal: row.expenses_total,
             actualCashTotal: row.actual_cash_total,
             actualTransferTotal: row.actual_transfer_total,
             finishedAt: row.finished_at,
@@ -1571,6 +1630,8 @@ export const runRouter = router({
           },
           summary: {
             total: summary.total,
+            itemsTotal: summary.items_total,
+            expensesTotal: summary.expenses_total,
             cash: summary.cash,
             transfer: summary.transfer,
           },
@@ -2396,8 +2457,32 @@ export const runRouter = router({
           }
         }
 
+        // 2026-10-21 CA-11: the one purchase-money definition (see
+        // services/runMoney.ts), live and exact, over the visible stores:
+        // items at COALESCE(split override, item price) + active expenses.
+        // The finish / refinalize sheets show exactly these three numbers.
+        const moneyItemParts: string[] = [];
+        for (const split of splits) {
+          const item = itemBySkuId.get(split.skuId);
+          if (item?.status !== 'purchased') continue;
+          const price = split.unitPrice ?? item.unitPrice;
+          if (!price) continue;
+          moneyItemParts.push(multiplyDecimalStrings(split.qty, price));
+        }
+        const moneyExpenseParts = expenses.flatMap((expense) =>
+          expense.storeSplits.map((split) => multiplyDecimalStrings(split.qty, expense.unitPrice)),
+        );
+        const moneyItemsTotal = sumDecimalStrings(moneyItemParts);
+        const moneyExpensesTotal = sumDecimalStrings(moneyExpenseParts);
+        const money = {
+          itemsTotal: moneyItemsTotal,
+          expensesTotal: moneyExpensesTotal,
+          total: sumDecimalStrings([moneyItemsTotal, moneyExpensesTotal]),
+        };
+
         return {
           ...run,
+          money,
           ...(allowedStoreSet
             ? {
                 plannedTotal: null,
@@ -2484,18 +2569,23 @@ export const runRouter = router({
   // M1.20: idempotent — record-purchase replays would double-deduct
   // inventory + double-record price history.
   purchaseItem: idempotentMutation.input(PurchaseItemInputSchema).mutation(async ({ ctx, input }) =>
-    runSimpleCommand(ctx, input.runId, (state) =>
-      decideRun(state, {
-        type: 'PurchaseItem',
-        skuId: input.skuId,
-        supplierId: input.supplierId,
-        unitPrice: input.unitPrice,
-        actualQty: input.actualQty,
-        receiptPhotoUrl: input.receiptPhotoUrl,
-        storeSplits: input.storeSplits,
-        paymentMethod: input.paymentMethod,
-        actor: actorFromCtx(ctx),
-      }),
+    runSimpleCommand(
+      ctx,
+      input.runId,
+      (state, scope) =>
+        decideRun(state, {
+          type: 'PurchaseItem',
+          skuId: input.skuId,
+          supplierId: input.supplierId,
+          unitPrice: input.unitPrice,
+          actualQty: input.actualQty,
+          receiptPhotoUrl: input.receiptPhotoUrl,
+          storeSplits: input.storeSplits,
+          paymentMethod: input.paymentMethod,
+          ...scope,
+          actor: actorFromCtx(ctx),
+        }),
+      { withRunStoreIds: true },
     ),
   ),
 
@@ -2517,19 +2607,24 @@ export const runRouter = router({
   addPurchaserItem: idempotentMutation
     .input(AddPurchaserItemInputSchema)
     .mutation(async ({ ctx, input }) =>
-      runSimpleCommand(ctx, input.runId, (state) =>
-        decideRun(state, {
-          type: 'AddPurchaserItem',
-          skuId: input.skuId,
-          supplierId: input.supplierId,
-          unitPrice: input.unitPrice,
-          actualQty: input.actualQty,
-          receiptPhotoUrl: input.receiptPhotoUrl,
-          storeSplits: input.storeSplits,
-          paymentMethod: input.paymentMethod,
-          reason: input.reason,
-          actor: actorFromCtx(ctx),
-        }),
+      runSimpleCommand(
+        ctx,
+        input.runId,
+        (state, scope) =>
+          decideRun(state, {
+            type: 'AddPurchaserItem',
+            skuId: input.skuId,
+            supplierId: input.supplierId,
+            unitPrice: input.unitPrice,
+            actualQty: input.actualQty,
+            receiptPhotoUrl: input.receiptPhotoUrl,
+            storeSplits: input.storeSplits,
+            paymentMethod: input.paymentMethod,
+            reason: input.reason,
+            ...scope,
+            actor: actorFromCtx(ctx),
+          }),
+        { withRunStoreIds: true },
       ),
     ),
 
@@ -2547,20 +2642,25 @@ export const runRouter = router({
    *   - receipt photo when total > 200,000 UZS
    */
   addExpense: idempotentMutation.input(AddRunExpenseInputSchema).mutation(async ({ ctx, input }) =>
-    runSimpleCommand(ctx, input.runId, (state) =>
-      decideRun(state, {
-        type: 'AddRunExpense',
-        expenseId: input.expenseId,
-        label: input.label,
-        ...(input.unitHint !== undefined ? { unitHint: input.unitHint } : {}),
-        qty: input.qty,
-        unitPrice: input.unitPrice,
-        storeSplits: input.storeSplits,
-        paymentMethod: input.paymentMethod,
-        receiptPhotoUrl: input.receiptPhotoUrl,
-        reason: input.reason,
-        actor: actorFromCtx(ctx),
-      }),
+    runSimpleCommand(
+      ctx,
+      input.runId,
+      (state, scope) =>
+        decideRun(state, {
+          type: 'AddRunExpense',
+          expenseId: input.expenseId,
+          label: input.label,
+          ...(input.unitHint !== undefined ? { unitHint: input.unitHint } : {}),
+          qty: input.qty,
+          unitPrice: input.unitPrice,
+          storeSplits: input.storeSplits,
+          paymentMethod: input.paymentMethod,
+          receiptPhotoUrl: input.receiptPhotoUrl,
+          reason: input.reason,
+          ...scope,
+          actor: actorFromCtx(ctx),
+        }),
+      { withRunStoreIds: true },
     ),
   ),
 
@@ -2624,13 +2724,14 @@ export const runRouter = router({
     return runSimpleCommand(
       ctx,
       input.runId,
-      (state) =>
+      (state, scope) =>
         decideRun(state, {
           type: 'DeliverToStore',
           storeId: input.storeId,
+          ...scope,
           actor: actorFromCtx(ctx, effectivePerms),
         }),
-      { skipRunPermissionScope: true },
+      { skipRunPermissionScope: true, withRunStoreIds: true },
     );
   }),
 
@@ -2666,6 +2767,7 @@ export const runRouter = router({
             status: input.status,
             note: input.note,
             photoUrl: input.photoUrl,
+            receivedQty: input.receivedQty ?? null,
             actor: actorFromCtx(ctx, effectivePerms),
           }),
         { skipRunPermissionScope: true },
@@ -2699,6 +2801,23 @@ export const runRouter = router({
         ctx,
         input.runId,
         (state) => {
+          // 2026-10-21 audit CA-30: same receipt-phase guard as the
+          // domain's ConfirmStoreItem, checked up front so a request whose
+          // SKUs are all already decided still fails before delivery /
+          // after the store has signed.
+          const target = state.stores.get(input.storeId);
+          if (!target?.deliveredAt) {
+            throw new TRPCError({
+              code: 'PRECONDITION_FAILED',
+              message: 'run.errors.storeNotDelivered',
+            });
+          }
+          if (target.confirmedAt) {
+            throw new TRPCError({
+              code: 'PRECONDITION_FAILED',
+              message: 'run.errors.storeAlreadyConfirmed',
+            });
+          }
           const expected = new Set<string>();
           for (const item of state.items.values()) {
             if (item.status !== 'purchased') continue;
@@ -2958,19 +3077,24 @@ export const runRouter = router({
   revisePurchase: idempotentMutation
     .input(RevisePurchaseInputSchema)
     .mutation(async ({ ctx, input }) =>
-      runSimpleCommand(ctx, input.runId, (state) =>
-        decideRun(state, {
-          type: 'RevisePurchase',
-          skuId: input.skuId,
-          supplierId: input.supplierId,
-          unitPrice: input.unitPrice,
-          actualQty: input.actualQty,
-          receiptPhotoUrl: input.receiptPhotoUrl,
-          storeSplits: input.storeSplits,
-          reason: input.reason,
-          paymentMethod: input.paymentMethod,
-          actor: actorFromCtx(ctx),
-        }),
+      runSimpleCommand(
+        ctx,
+        input.runId,
+        (state, scope) =>
+          decideRun(state, {
+            type: 'RevisePurchase',
+            skuId: input.skuId,
+            supplierId: input.supplierId,
+            unitPrice: input.unitPrice,
+            actualQty: input.actualQty,
+            receiptPhotoUrl: input.receiptPhotoUrl,
+            storeSplits: input.storeSplits,
+            reason: input.reason,
+            paymentMethod: input.paymentMethod,
+            ...scope,
+            actor: actorFromCtx(ctx),
+          }),
+        { withRunStoreIds: true },
       ),
     ),
 
@@ -3173,6 +3297,16 @@ export const runRouter = router({
         });
         for (const e of cancelEvents) runState = applyRun(runState, e);
         await projectRun(tx, ctx.session!.orgId, cancelEvents);
+        // 2026-10-21 audit CA-31: the RunCancelled notification branch
+        // existed but was never reached — stores that had just been told
+        // "delivery arrived" never learned the run was scrapped.
+        await dispatchRunEventNotifications(
+          tx,
+          ctx.session!.orgId,
+          ctx.session!.userId,
+          runState,
+          cancelEvents,
+        );
       }
 
       // Step 2 — eject every attached session. Sessions that are still
@@ -3425,11 +3559,17 @@ function actorFromCtx(
 async function runSimpleCommand(
   ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
   runId: string,
-  produce: (state: RunState) => RunEvent[],
+  produce: (state: RunState, scope: { runStoreIds?: string[] }) => RunEvent[],
   options?: {
     requireGlobalAmend?: boolean;
     requiredPermission?: string;
     skipRunPermissionScope?: boolean;
+    /**
+     * 2026-10-21 audit CA-29: resolve the run's session stores and hand
+     * them to `produce`, so store-keyed commands can reject splits /
+     * deliveries to stores outside the run.
+     */
+    withRunStoreIds?: boolean;
   },
 ): Promise<{ lastSeq: number; eventCount: number }> {
   return ctx.withOrg(async (tx) => {
@@ -3437,6 +3577,9 @@ async function runSimpleCommand(
     const events = (await readStream(tx, 'run', run.id)) as unknown as RunEvent[];
     let state = emptyRunState(run.id);
     for (const e of events) state = applyRun(state, e);
+    const scope = options?.withRunStoreIds
+      ? { runStoreIds: await runInvolvedStoreIds(tx, run) }
+      : {};
     if (options?.requireGlobalAmend || state.status === 'amending') {
       await assertCanAmendRun(tx, ctx, run);
     } else if (!options?.skipRunPermissionScope) {
@@ -3448,7 +3591,7 @@ async function runSimpleCommand(
       );
     }
     try {
-      const out = produce(state);
+      const out = produce(state, scope);
       if (out.length === 0) return { lastSeq: state.seq, eventCount: 0 };
       await appendEvents(tx, {
         streamType: 'run',

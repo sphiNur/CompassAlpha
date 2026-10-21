@@ -102,7 +102,10 @@ async function confirm(prompt: string): Promise<boolean> {
 
 async function main() {
   const opts = parseArgs();
-  const db = getDb(process.env.DATABASE_URL);
+  // 2026-10-21 audit CA-14: operator script reads and writes every org, so
+  // open the pool in the system context; under fail-closed RLS a plain
+  // handle sees zero rows (reproject would refuse, repair would say "clean").
+  const db = getDb(process.env.DATABASE_URL, { system: 'maintenance' });
 
   // Sanity check: refuse to run on an empty event log. Catches the
   // "you ran this against the wrong DB" footgun, where TRUNCATE-then-
