@@ -15,7 +15,7 @@
     "@compass/i18n": "workspace:*",
     "@compass/telemetry": "workspace:*",
     "@compass/ui": "workspace:*",
-    "@tanstack/react-query": "^5.101.4",
+    "@tanstack/react-query": "^5.104.3",
     "@trpc/client": "^11.0.0",
     "@trpc/react-query": "^11.0.0",
     "react": "^18.3.1",
