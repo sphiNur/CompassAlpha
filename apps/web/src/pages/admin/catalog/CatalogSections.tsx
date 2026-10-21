@@ -40,6 +40,53 @@ import { matchesNameLike, normalizeQuery } from '../../../lib/searchMatch';
 import { useI18n, useProductName } from '../../../hooks/useI18n';
 import { nativeConfirm } from '../shared';
 
+/**
+ * 2026-10-21 audit CA-16: every catalog write below (categories, SKUs,
+ * suppliers, expense templates) is `requireOrgAdmin` on the server, but
+ * the controls rendered for anyone who could open Admin (`users.manage`),
+ * so a store manager got a FORBIDDEN on save. Without `org.admin` the
+ * sections are now a read-only list.
+ */
+function useIsOrgAdmin(): boolean {
+  return useAuthStore((s) => s.session?.permissions.includes('org.admin') ?? false);
+}
+
+/** Shown in place of the "+ New" row when the catalog is read-only. */
+function ReadOnlyHint() {
+  const i18n = useI18n();
+  return (
+    <p className="mb-3 text-old-label text-[var(--c-fg-muted)]">{i18n.t('catalog.readOnlyHint')}</p>
+  );
+}
+
+/**
+ * 2026-10-21 CA-40: names need at least one locale, not all four (same rule
+ * as dishes). Empty locales are omitted rather than sent as '' so
+ * `pickName`'s `??` fallback chain shows another language instead of a blank.
+ */
+interface NameDraft {
+  nameUz: string;
+  nameRu: string;
+  nameEn: string;
+  nameZh: string;
+}
+
+function namesFromDraft(d: NameDraft): Record<string, string> {
+  const out: Record<string, string> = {};
+  const pairs: Array<[string, string]> = [
+    ['uz', d.nameUz],
+    ['ru', d.nameRu],
+    ['en', d.nameEn],
+    ['zh', d.nameZh],
+  ];
+  for (const [k, v] of pairs) if (v.trim()) out[k] = v.trim();
+  return out;
+}
+
+function hasAnyName(d: NameDraft | null | undefined): boolean {
+  return !!d && Object.keys(namesFromDraft(d)).length > 0;
+}
+
 interface CategoryDraft {
   categoryId?: string;
   slug: string;
@@ -58,6 +105,7 @@ export function CategoriesSection() {
   const errToast = useErrToast();
   const i18n = useI18n();
   const productName = useProductName();
+  const canWrite = useIsOrgAdmin();
   const [draft, setDraft] = useState<CategoryDraft | null>(null);
 
   const create = trpc.admin.categoryCreate.useMutation({
@@ -86,23 +134,27 @@ export function CategoriesSection() {
 
   return (
     <div className="px-4 py-3">
-      <div className="mb-3">
-        <Button
-          size="sm"
-          onClick={() =>
-            setDraft({
-              slug: '',
-              nameUz: '',
-              nameRu: '',
-              nameEn: '',
-              nameZh: '',
-              sortIndex: 100,
-            })
-          }
-        >
-          + {i18n.t('catalog.category.newButton')}
-        </Button>
-      </div>
+      {canWrite ? (
+        <div className="mb-3">
+          <Button
+            size="sm"
+            onClick={() =>
+              setDraft({
+                slug: '',
+                nameUz: '',
+                nameRu: '',
+                nameEn: '',
+                nameZh: '',
+                sortIndex: 100,
+              })
+            }
+          >
+            + {i18n.t('catalog.category.newButton')}
+          </Button>
+        </div>
+      ) : (
+        <ReadOnlyHint />
+      )}
       <DataState
         query={categoriesQuery}
         emptyWhen={(d) => d.length === 0}
@@ -135,44 +187,62 @@ export function CategoriesSection() {
                         </div>
                       ) : null}
                       <CardMeta>
-                        slug {c.slug} · sort {c.sortIndex}
+                        {i18n.t('catalog.category.meta', { slug: c.slug, sort: c.sortIndex })}
                       </CardMeta>
                     </div>
-                    {c.isArchived ? <Badge tone="muted">archived</Badge> : null}
+                    {c.isArchived ? (
+                      <Badge tone="muted">{i18n.t('common.archived')}</Badge>
+                    ) : null}
                   </CardHeader>
-                  <div className="flex gap-2 border-t border-[var(--c-divider)] px-4 py-2">
-                    <Button
-                      size="sm"
-                      variant="pearl"
-                      onClick={() =>
-                        setDraft({
-                          categoryId: c.id,
-                          slug: c.slug,
-                          nameUz: names.uz ?? '',
-                          nameRu: names.ru ?? '',
-                          nameEn: names.en ?? '',
-                          nameZh: names.zh ?? '',
-                          sortIndex: c.sortIndex,
-                        })
-                      }
-                    >
-                      {i18n.t('common.edit')}
-                    </Button>
-                    {!c.isArchived ? (
+                  {canWrite ? (
+                    <div className="flex gap-2 border-t border-[var(--c-divider)] px-4 py-2">
                       <Button
                         size="sm"
-                        variant="danger-ghost"
+                        variant="pearl"
                         onClick={() =>
-                          nativeConfirm(
-                            `Archive category "${productName({ names }) || c.slug}"?`,
-                            () => remove.mutate({ categoryId: c.id }),
-                          )
+                          setDraft({
+                            categoryId: c.id,
+                            slug: c.slug,
+                            nameUz: names.uz ?? '',
+                            nameRu: names.ru ?? '',
+                            nameEn: names.en ?? '',
+                            nameZh: names.zh ?? '',
+                            sortIndex: c.sortIndex,
+                          })
                         }
                       >
-                        {i18n.t('common.archive')}
+                        {i18n.t('common.edit')}
                       </Button>
-                    ) : null}
-                  </div>
+                      {!c.isArchived ? (
+                        <Button
+                          size="sm"
+                          variant="danger-ghost"
+                          onClick={() =>
+                            nativeConfirm(
+                              i18n.t('catalog.category.confirmArchive', {
+                                name: productName({ names }) || c.slug,
+                              }),
+                              () => remove.mutate({ categoryId: c.id }),
+                            )
+                          }
+                        >
+                          {i18n.t('common.archive')}
+                        </Button>
+                      ) : (
+                        // 2026-10-21 audit CA-40 / E-16: categoryUpdate has
+                        // always accepted isArchived, but there was no way
+                        // back from an archive in the UI.
+                        <Button
+                          size="sm"
+                          variant="pearl"
+                          loading={update.isPending && update.variables?.categoryId === c.id}
+                          onClick={() => update.mutate({ categoryId: c.id, isArchived: false })}
+                        >
+                          {i18n.t('common.unarchive')}
+                        </Button>
+                      )}
+                    </div>
+                  ) : null}
                 </Card>
               );
             })}
@@ -189,23 +259,11 @@ export function CategoriesSection() {
             block
             loading={create.isPending || update.isPending}
             disabled={
-              !draft?.slug.trim() ||
-              !draft?.nameUz.trim() ||
-              !draft?.nameRu.trim() ||
-              !draft?.nameEn.trim() ||
-              !draft?.nameZh.trim()
+              !draft?.slug.trim() || !hasAnyName(draft)
             }
             onClick={() => {
               if (!draft) return;
-              // 4-language contract — server rejects partial. We send
-              // every locale even if the user only edited one because
-              // the schema is `.strict()` and missing keys throw.
-              const names = {
-                uz: draft.nameUz.trim(),
-                ru: draft.nameRu.trim(),
-                en: draft.nameEn.trim(),
-                zh: draft.nameZh.trim(),
-              };
+              const names = namesFromDraft(draft);
               if (draft.categoryId) {
                 update.mutate({
                   categoryId: draft.categoryId,
@@ -229,7 +287,7 @@ export function CategoriesSection() {
                 value={draft.slug}
                 onChange={(e) => setDraft({ ...draft, slug: e.target.value.toLowerCase() })}
                 maxLength={64}
-                placeholder="e.g. dairy"
+                placeholder={i18n.t('catalog.category.slugPlaceholder')}
               />
             </Field>
             {/* 4-language inputs (2026-05-05). All required by server. */}
@@ -334,6 +392,7 @@ export function SkusSection() {
   const errToast = useErrToast();
   const i18n = useI18n();
   const productName = useProductName();
+  const canWrite = useIsOrgAdmin();
   const [draft, setDraft] = useState<SkuDraft | null>(null);
   // M1.10 (2026-05-08): cross-language SKU search.
   const [searchQuery, setSearchQuery] = useState('');
@@ -372,25 +431,28 @@ export function SkusSection() {
 
   return (
     <div className="px-4 py-3">
+      {canWrite ? null : <ReadOnlyHint />}
       <div className="mb-3 flex items-center gap-2">
-        <Button
-          size="sm"
-          onClick={() =>
-            setDraft({
-              categoryId: null,
-              code: '',
-              nameUz: '',
-              nameRu: '',
-              nameEn: '',
-              nameZh: '',
-              unit: 'pcs',
-              step: '1',
-              sortIndex: 100,
-            })
-          }
-        >
-          + {i18n.t('catalog.sku.new')}
-        </Button>
+        {canWrite ? (
+          <Button
+            size="sm"
+            onClick={() =>
+              setDraft({
+                categoryId: null,
+                code: '',
+                nameUz: '',
+                nameRu: '',
+                nameEn: '',
+                nameZh: '',
+                unit: 'pcs',
+                step: '1',
+                sortIndex: 100,
+              })
+            }
+          >
+            + {i18n.t('catalog.sku.new')}
+          </Button>
+        ) : null}
         <div className="ml-auto">
           <Switch
             label={i18n.t('admin.label.showArchived')}
@@ -451,59 +513,64 @@ export function SkusSection() {
                         </div>
                       ) : null}
                       <CardMeta>
-                        {categoryName(sk.categoryId)} · {sk.unit} · step {sk.step}
+                        {categoryName(sk.categoryId)} · {sk.unit} ·{' '}
+                        {i18n.t('catalog.sku.stepMeta', { step: sk.step })}
                         {sk.code ? ` · ${sk.code}` : ''}
                       </CardMeta>
                     </div>
-                    {sk.isArchived ? <Badge tone="muted">archived</Badge> : null}
+                    {sk.isArchived ? (
+                      <Badge tone="muted">{i18n.t('common.archived')}</Badge>
+                    ) : null}
                   </CardHeader>
-                  <div className="flex gap-2 border-t border-[var(--c-divider)] px-4 py-2">
-                    <Button
-                      size="sm"
-                      variant="pearl"
-                      onClick={() =>
-                        setDraft({
-                          skuId: sk.id,
-                          categoryId: sk.categoryId,
-                          code: sk.code ?? '',
-                          nameUz: names.uz ?? '',
-                          nameRu: names.ru ?? '',
-                          nameEn: names.en ?? '',
-                          nameZh: names.zh ?? '',
-                          // Snap legacy values onto the contract enums so
-                          // both Selects have a valid initial selection.
-                          unit: snapUnitToCanonical(sk.unit),
-                          step: snapStepToCanonical(sk.step),
-                          sortIndex: sk.sortIndex,
-                        })
-                      }
-                    >
-                      {i18n.t('common.edit')}
-                    </Button>
-                    {!sk.isArchived ? (
-                      <Button
-                        size="sm"
-                        variant="danger-ghost"
-                        onClick={() =>
-                          nativeConfirm(
-                            i18n.t('catalog.sku.confirmArchive', { name: primary }),
-                            () =>
-                            remove.mutate({ skuId: sk.id }),
-                          )
-                        }
-                      >
-                        {i18n.t('common.archive')}
-                      </Button>
-                    ) : (
+                  {canWrite ? (
+                    <div className="flex gap-2 border-t border-[var(--c-divider)] px-4 py-2">
                       <Button
                         size="sm"
                         variant="pearl"
-                        onClick={() => update.mutate({ skuId: sk.id, isArchived: false })}
+                        onClick={() =>
+                          setDraft({
+                            skuId: sk.id,
+                            categoryId: sk.categoryId,
+                            code: sk.code ?? '',
+                            nameUz: names.uz ?? '',
+                            nameRu: names.ru ?? '',
+                            nameEn: names.en ?? '',
+                            nameZh: names.zh ?? '',
+                            // Snap legacy values onto the contract enums so
+                            // both Selects have a valid initial selection.
+                            unit: snapUnitToCanonical(sk.unit),
+                            step: snapStepToCanonical(sk.step),
+                            sortIndex: sk.sortIndex,
+                          })
+                        }
                       >
-                        {i18n.t('common.unarchive')}
+                        {i18n.t('common.edit')}
                       </Button>
-                    )}
-                  </div>
+                      {!sk.isArchived ? (
+                        <Button
+                          size="sm"
+                          variant="danger-ghost"
+                          onClick={() =>
+                            nativeConfirm(
+                              i18n.t('catalog.sku.confirmArchive', { name: primary }),
+                              () =>
+                              remove.mutate({ skuId: sk.id }),
+                            )
+                          }
+                        >
+                          {i18n.t('common.archive')}
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="pearl"
+                          onClick={() => update.mutate({ skuId: sk.id, isArchived: false })}
+                        >
+                          {i18n.t('common.unarchive')}
+                        </Button>
+                      )}
+                    </div>
+                  ) : null}
                 </Card>
               );
             })}
@@ -521,22 +588,11 @@ export function SkusSection() {
             block
             loading={create.isPending || update.isPending}
             disabled={
-              !draft?.nameUz.trim() ||
-              !draft?.nameRu.trim() ||
-              !draft?.nameEn.trim() ||
-              !draft?.nameZh.trim() ||
-              !draft?.unit.trim()
+              !hasAnyName(draft) || !draft?.unit.trim()
             }
             onClick={() => {
               if (!draft) return;
-              // Send all 4 langs every time — server schema is .strict()
-              // and missing keys are rejected. See NamesSchema in admin.ts.
-              const names = {
-                uz: draft.nameUz.trim(),
-                ru: draft.nameRu.trim(),
-                en: draft.nameEn.trim(),
-                zh: draft.nameZh.trim(),
-              };
+              const names = namesFromDraft(draft);
               if (draft.skuId) {
                 update.mutate({
                   skuId: draft.skuId,
@@ -607,14 +663,20 @@ export function SkusSection() {
                 onChange={(e) => setDraft({ ...draft, categoryId: e.target.value || null })}
               >
                 <option value="">—</option>
-                {(categoriesQuery.data ?? []).map((c) => {
-                  const n = c.names as Record<string, string>;
-                  return (
-                    <option key={c.id} value={c.id}>
-                      {productName({ names: n }) || c.slug}
-                    </option>
-                  );
-                })}
+                {/* 2026-10-21 audit CA-40 / E-16: archived categories are
+                    not offered — except the one this SKU already uses, so
+                    the Select doesn't go blank and silently re-file it. */}
+                {(categoriesQuery.data ?? [])
+                  .filter((c) => !c.isArchived || c.id === draft.categoryId)
+                  .map((c) => {
+                    const n = c.names as Record<string, string>;
+                    return (
+                      <option key={c.id} value={c.id}>
+                        {productName({ names: n }) || c.slug}
+                        {c.isArchived ? ` (${i18n.t('common.archived')})` : ''}
+                      </option>
+                    );
+                  })}
               </Select>
             </Field>
             <div className="grid grid-cols-2 gap-3">
@@ -647,7 +709,7 @@ export function SkusSection() {
               </Field>
             </div>
             <Field label={i18n.t('admin.field.code')}>
-              <Input value={draft.code} onChange={(e) => setDraft({ ...draft, code: e.target.value })} maxLength={64} placeholder="optional" />
+              <Input value={draft.code} onChange={(e) => setDraft({ ...draft, code: e.target.value })} maxLength={64} placeholder={i18n.t('common.optional')} />
             </Field>
             <Field label={i18n.t('admin.field.sortIndex')}>
               <Input
@@ -680,6 +742,7 @@ export function SuppliersSection() {
   const toast = useToast();
   const errToast = useErrToast();
   const i18n = useI18n();
+  const canWrite = useIsOrgAdmin();
   const [draft, setDraft] = useState<SupplierDraft | null>(null);
 
   const create = trpc.admin.supplierCreate.useMutation({
@@ -708,22 +771,25 @@ export function SuppliersSection() {
 
   return (
     <div className="px-4 py-3">
+      {canWrite ? null : <ReadOnlyHint />}
       <div className="mb-3 flex items-center gap-2">
-        <Button
-          size="sm"
-          onClick={() =>
-            setDraft({
-              name: '',
-              contactPhone: '',
-              contactTg: '',
-              address: '',
-              notes: '',
-              isArchived: false,
-            })
-          }
-        >
-          + {i18n.t('catalog.supplier.newButton')}
-        </Button>
+        {canWrite ? (
+          <Button
+            size="sm"
+            onClick={() =>
+              setDraft({
+                name: '',
+                contactPhone: '',
+                contactTg: '',
+                address: '',
+                notes: '',
+                isArchived: false,
+              })
+            }
+          >
+            + {i18n.t('catalog.supplier.newButton')}
+          </Button>
+        ) : null}
         <div className="ml-auto">
           <Switch
             label={i18n.t('admin.label.showArchived')}
@@ -755,50 +821,54 @@ export function SuppliersSection() {
                       {sp.address ? ` · ${sp.address}` : ''}
                     </CardMeta>
                   </div>
-                  {sp.isArchived ? <Badge tone="muted">archived</Badge> : null}
+                  {sp.isArchived ? (
+                    <Badge tone="muted">{i18n.t('common.archived')}</Badge>
+                  ) : null}
                 </CardHeader>
-                <div className="flex gap-2 border-t border-[var(--c-divider)] px-4 py-2">
-                  <Button
-                    size="sm"
-                    variant="pearl"
-                    onClick={() =>
-                      setDraft({
-                        supplierId: sp.id,
-                        name: sp.name,
-                        contactPhone: sp.contactPhone ?? '',
-                        contactTg: sp.contactTg ?? '',
-                        address: sp.address ?? '',
-                        notes: sp.notes ?? '',
-                        isArchived: sp.isArchived,
-                      })
-                    }
-                  >
-                    {i18n.t('common.edit')}
-                  </Button>
-                  {!sp.isArchived ? (
-                    <Button
-                      size="sm"
-                      variant="danger-ghost"
-                      onClick={() =>
-                        nativeConfirm(
-                          i18n.t('catalog.supplier.confirmArchive', { name: sp.name }),
-                          () =>
-                          remove.mutate({ supplierId: sp.id }),
-                        )
-                      }
-                    >
-                      {i18n.t('common.archive')}
-                    </Button>
-                  ) : (
+                {canWrite ? (
+                  <div className="flex gap-2 border-t border-[var(--c-divider)] px-4 py-2">
                     <Button
                       size="sm"
                       variant="pearl"
-                      onClick={() => update.mutate({ supplierId: sp.id, isArchived: false })}
+                      onClick={() =>
+                        setDraft({
+                          supplierId: sp.id,
+                          name: sp.name,
+                          contactPhone: sp.contactPhone ?? '',
+                          contactTg: sp.contactTg ?? '',
+                          address: sp.address ?? '',
+                          notes: sp.notes ?? '',
+                          isArchived: sp.isArchived,
+                        })
+                      }
                     >
-                      {i18n.t('common.unarchive')}
+                      {i18n.t('common.edit')}
                     </Button>
-                  )}
-                </div>
+                    {!sp.isArchived ? (
+                      <Button
+                        size="sm"
+                        variant="danger-ghost"
+                        onClick={() =>
+                          nativeConfirm(
+                            i18n.t('catalog.supplier.confirmArchive', { name: sp.name }),
+                            () =>
+                            remove.mutate({ supplierId: sp.id }),
+                          )
+                        }
+                      >
+                        {i18n.t('common.archive')}
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="pearl"
+                        onClick={() => update.mutate({ supplierId: sp.id, isArchived: false })}
+                      >
+                        {i18n.t('common.unarchive')}
+                      </Button>
+                    )}
+                  </div>
+                ) : null}
               </Card>
             ))}
           </ul>
@@ -850,7 +920,7 @@ export function SuppliersSection() {
               <Input value={draft.contactPhone} onChange={(e) => setDraft({ ...draft, contactPhone: e.target.value })} maxLength={32} placeholder="+998 …" />
             </Field>
             <Field label={i18n.t('admin.field.tgUsername')}>
-              <Input value={draft.contactTg} onChange={(e) => setDraft({ ...draft, contactTg: e.target.value.replace(/^@/, '') })} maxLength={64} placeholder="username (without @)" />
+              <Input value={draft.contactTg} onChange={(e) => setDraft({ ...draft, contactTg: e.target.value.replace(/^@/, '') })} maxLength={64} placeholder={i18n.t('catalog.supplier.tgPlaceholder')} />
             </Field>
             <Field label={i18n.t('admin.field.address')}>
               <Input value={draft.address} onChange={(e) => setDraft({ ...draft, address: e.target.value })} maxLength={500} />
@@ -896,6 +966,7 @@ export function ExpenseTemplatesSection() {
   const utils = trpc.useUtils();
   const toast = useToast();
   const errToast = useErrToast();
+  const canWrite = useIsOrgAdmin();
   const [draft, setDraft] = useState<ExpenseTemplateDraft | null>(null);
 
   const create = trpc.admin.expenseTemplateCreate.useMutation({
@@ -926,23 +997,26 @@ export function ExpenseTemplatesSection() {
 
   return (
     <div className="px-4 py-3">
+      {canWrite ? null : <ReadOnlyHint />}
       <div className="mb-3 flex items-center gap-2">
-        <Button
-          size="sm"
-          onClick={() =>
-            setDraft({
-              label: '',
-              unitHint: '',
-              defaultQty: '1',
-              defaultUnitPrice: '',
-              defaultPaymentMethod: 'cash',
-              sortIndex: 0,
-              isArchived: false,
-            })
-          }
-        >
-          {i18n.t('admin.action.newExpenseTemplate')}
-        </Button>
+        {canWrite ? (
+          <Button
+            size="sm"
+            onClick={() =>
+              setDraft({
+                label: '',
+                unitHint: '',
+                defaultQty: '1',
+                defaultUnitPrice: '',
+                defaultPaymentMethod: 'cash',
+                sortIndex: 0,
+                isArchived: false,
+              })
+            }
+          >
+            {i18n.t('admin.action.newExpenseTemplate')}
+          </Button>
+        ) : null}
         <div className="ml-auto">
           <Switch
             label={i18n.t('admin.label.showArchived')}
@@ -993,60 +1067,62 @@ export function ExpenseTemplatesSection() {
                       </CardMeta>
                     </div>
                     {tpl.isArchived ? (
-                      <Badge tone="muted">{i18n.t('admin.label.archived')}</Badge>
+                      <Badge tone="muted">{i18n.t('common.archived')}</Badge>
                     ) : null}
                   </CardHeader>
-                  <div className="flex gap-2 border-t border-[var(--c-divider)] px-4 py-2">
-                    <Button
-                      size="sm"
-                      variant="pearl"
-                      onClick={() =>
-                        setDraft({
-                          templateId: tpl.id,
-                          label: tpl.label,
-                          unitHint: tpl.unitHint ?? '',
-                          defaultQty: tpl.defaultQty,
-                          defaultUnitPrice: tpl.defaultUnitPrice,
-                          defaultPaymentMethod: tpl.defaultPaymentMethod as
-                            | 'cash'
-                            | 'transfer',
-                          sortIndex: tpl.sortIndex,
-                          isArchived: tpl.isArchived,
-                        })
-                      }
-                    >
-                      {i18n.t('admin.action.edit')}
-                    </Button>
-                    {!tpl.isArchived ? (
-                      <Button
-                        size="sm"
-                        variant="danger-ghost"
-                        onClick={() =>
-                          nativeConfirm(
-                            i18n.t('admin.confirm.archiveExpenseTemplate', {
-                              label: tpl.label,
-                            }),
-                            () => remove.mutate({ templateId: tpl.id }),
-                          )
-                        }
-                      >
-                        {i18n.t('admin.action.archive')}
-                      </Button>
-                    ) : (
+                  {canWrite ? (
+                    <div className="flex gap-2 border-t border-[var(--c-divider)] px-4 py-2">
                       <Button
                         size="sm"
                         variant="pearl"
                         onClick={() =>
-                          update.mutate({
+                          setDraft({
                             templateId: tpl.id,
-                            isArchived: false,
+                            label: tpl.label,
+                            unitHint: tpl.unitHint ?? '',
+                            defaultQty: tpl.defaultQty,
+                            defaultUnitPrice: tpl.defaultUnitPrice,
+                            defaultPaymentMethod: tpl.defaultPaymentMethod as
+                              | 'cash'
+                              | 'transfer',
+                            sortIndex: tpl.sortIndex,
+                            isArchived: tpl.isArchived,
                           })
                         }
                       >
-                        {i18n.t('admin.action.unarchive')}
+                        {i18n.t('admin.action.edit')}
                       </Button>
-                    )}
-                  </div>
+                      {!tpl.isArchived ? (
+                        <Button
+                          size="sm"
+                          variant="danger-ghost"
+                          onClick={() =>
+                            nativeConfirm(
+                              i18n.t('admin.confirm.archiveExpenseTemplate', {
+                                label: tpl.label,
+                              }),
+                              () => remove.mutate({ templateId: tpl.id }),
+                            )
+                          }
+                        >
+                          {i18n.t('admin.action.archive')}
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="pearl"
+                          onClick={() =>
+                            update.mutate({
+                              templateId: tpl.id,
+                              isArchived: false,
+                            })
+                          }
+                        >
+                          {i18n.t('admin.action.unarchive')}
+                        </Button>
+                      )}
+                    </div>
+                  ) : null}
                 </Card>
               );
             })}
@@ -1234,9 +1310,10 @@ export function DishesSection() {
   const errToast = useErrToast();
   const utils = trpc.useUtils();
   const session = useAuthStore((s) => s.session);
-  const canManage =
-    (session?.permissions.includes('dishes.manage') ?? false) ||
-    (session?.permissions.includes('users.manage') ?? false);
+  // 2026-10-21 audit CA-16 / E-02: the server (dishes.ts) dropped the
+  // `users.manage` fallback; showing editors to managers only bought them
+  // a FORBIDDEN on save.
+  const canManage = session?.permissions.includes('dishes.manage') ?? false;
 
   const [includeArchived, setIncludeArchived] = useState(false);
   const dishesQuery = trpc.dishes.list.useQuery({ includeArchived });

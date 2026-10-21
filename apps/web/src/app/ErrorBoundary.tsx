@@ -7,6 +7,7 @@
  */
 import { Component } from 'react';
 import { reloadApp } from '../lib/reload';
+import { NAV_STORAGE_KEY } from '../stores/navStore';
 import type { ErrorInfo, ReactNode } from 'react';
 import { createI18n, detectLocale, type Locale } from '@compass/i18n';
 
@@ -152,6 +153,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             onClick={() => {
               try {
                 window.localStorage.removeItem('compass.auth');
+                // 2026-10-21 audit CA-33: a crash caused by a bad persisted
+                // tab / drill-down must not survive the reset.
+                window.localStorage.removeItem(NAV_STORAGE_KEY);
               } catch {
                 /* ignore */
               }

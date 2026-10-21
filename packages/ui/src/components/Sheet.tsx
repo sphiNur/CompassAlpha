@@ -1,6 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { cn } from '../cn';
+import { pushTelegramBackHandler } from '../telegramBackStack';
 
 /**
  * Shared "how many sheets are currently open?" counter (M1.5,
@@ -21,11 +22,9 @@ import { cn } from '../cn';
  * so the @compass/ui package stays free of an apps/web import.
  *
  * Stacked sheets (sheet-on-sheet, e.g. Transfer launched from Manage
- * member): all open sheets register their handlers; a back-tap fires
- * each, closing the entire stack at once. This matches the Telegram-
- * native "X closes the modal" mental model and avoids the hairier
- * "topmost only" book-keeping we'd otherwise need. If a future round
- * wants per-level back, replace `_count` with an actual array.
+ * member): 2026-10-21 audit CA-34 — the BackButton is now owned through
+ * the stack in ../telegramBackStack, so a back-tap closes only the TOP
+ * sheet and the button is actually shown while any sheet is open.
  */
 let _sheetCount = 0;
 const _sheetCountListeners = new Set<() => void>();
@@ -63,30 +62,23 @@ export function useSheetCount(): number {
  * by this Sheet and the redesigned one in ../kit so the two can coexist.
  */
 export function useSheetPresence(open: boolean, onOpenChange: (open: boolean) => void): void {
-  // Track open-state in the global counter + wire Telegram BackButton
-  // to close. Skipped when not in Telegram (web preview just ignores).
+  // 2026-10-21 audit CA-34: the close callback lives in a ref so a parent
+  // re-render (inline `onOpenChange`) doesn't re-register this sheet and
+  // jump it above a child sheet in the BackButton stack.
+  const onOpenChangeRef = useRef(onOpenChange);
+  onOpenChangeRef.current = onOpenChange;
+  // Track open-state in the global counter + own the Telegram BackButton
+  // while open (shown, closes only the TOP sheet). Outside Telegram the
+  // SDK button is absent or a no-op, so nothing visible changes.
   useEffect(() => {
     if (!open) return;
     _bumpSheetCount(1);
-    // Read window.Telegram lazily — the package must not assume the
-    // SDK is loaded (it ships even in non-Telegram contexts like
-    // jest, storybook, the bare web preview).
-    type TgBackButton = {
-      onClick: (cb: () => void) => unknown;
-      offClick: (cb: () => void) => unknown;
-    };
-    const tg =
-      typeof window !== 'undefined'
-        ? ((window as { Telegram?: { WebApp?: { BackButton?: TgBackButton } } }).Telegram?.WebApp ??
-          null)
-        : null;
-    const handler = () => onOpenChange(false);
-    if (tg?.BackButton) tg.BackButton.onClick(handler);
+    const release = pushTelegramBackHandler(() => onOpenChangeRef.current(false));
     return () => {
       _bumpSheetCount(-1);
-      if (tg?.BackButton) tg.BackButton.offClick(handler);
+      release();
     };
-  }, [open, onOpenChange]);
+  }, [open]);
 }
 
 interface SheetProps {

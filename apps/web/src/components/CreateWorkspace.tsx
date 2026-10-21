@@ -5,6 +5,7 @@ import { useI18n } from '../hooks/useI18n';
 import { trpc } from '../lib/trpc';
 import { useErrToast } from '../lib/errToast';
 import { useAuthStore } from '../stores/authStore';
+import { resetNavStore } from '../stores/navStore';
 
 /**
  * Self-service tenant creation. Used both from the no-membership login
@@ -28,6 +29,8 @@ export function CreateWorkspaceForm({ onCreated }: { onCreated?: () => void }) {
       // Cached queries are keyed by route, not by tenant. Drop them so
       // no row from the previous workspace can flash after the switch.
       queryClient.clear();
+      // 2026-10-21 audit CA-33: same for persisted navigation.
+      resetNavStore();
       toast.success(i18n.t('workspace.create.created'));
       setName('');
       onCreated?.();

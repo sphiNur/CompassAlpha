@@ -30,6 +30,9 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+/** localStorage key of the persisted slice (see resetNavStore). */
+export const NAV_STORAGE_KEY = 'compass.nav.v1';
+
 export type Tab = 'order' | 'approve' | 'run' | 'history' | 'settlement' | 'confirm' | 'admin';
 
 /**
@@ -141,7 +144,7 @@ export const useNavStore = create<NavState>()(
     }),
     {
       // v1: tab + admin drill-down. Bump if the shape changes.
-      name: 'compass.nav.v1',
+      name: NAV_STORAGE_KEY,
       // Persist only the data — re-derive the actions on rehydrate.
       partialize: (s) => ({
         tab: s.tab,
@@ -264,4 +267,27 @@ export const useNavStore = create<NavState>()(
 export function resolveVisibleTab(persisted: Tab, visibleKeys: readonly Tab[]): Tab {
   if (visibleKeys.includes(persisted)) return persisted;
   return visibleKeys[0] ?? 'order';
+}
+
+/**
+ * Drop the persisted navigation (2026-10-21 audit CA-33 / E-07).
+ *
+ * Called on organisation switch, workspace creation, sign-out / auth
+ * clear, and the crash-screen and debug resets. Without it a new tenant
+ * (or a new user on the same device) reopened the previous one's Admin
+ * drill-down — e.g. a `storeFocus` holding another org's storeId — and a
+ * crash caused by a bad persisted value survived "reset".
+ */
+export function resetNavStore(): void {
+  try {
+    useNavStore.setState({ ...DEFAULTS });
+    useNavStore.persist.clearStorage();
+  } catch {
+    /* storage unavailable — the in-memory reset above still applies */
+  }
+  try {
+    window.localStorage.removeItem(NAV_STORAGE_KEY);
+  } catch {
+    /* ignore */
+  }
 }

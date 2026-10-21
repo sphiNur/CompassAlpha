@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { pushTelegramBackHandler } from '@compass/ui';
+import { createOwnerStack, type OwnerHandle } from '../lib/ownerStack';
 
 export interface TelegramMainButton {
   text: string;
@@ -208,15 +210,11 @@ export function useTelegramBackButton(onBack: () => void, enabled = true): void 
   cbRef.current = onBack;
   useEffect(() => {
     if (!enabled) return;
-    const tg = getTg();
-    if (!tg) return;
-    const handler = () => cbRef.current();
-    tg.BackButton.onClick(handler);
-    tg.BackButton.show();
-    return () => {
-      tg.BackButton.offClick(handler);
-      tg.BackButton.hide();
-    };
+    // 2026-10-21 audit CA-34 / E-23: register on the shared owner stack
+    // (also used by every Sheet) instead of show()/hide() directly — the
+    // last registrant owns the button and unmount restores the previous
+    // owner rather than hiding it for everyone.
+    return pushTelegramBackHandler(() => cbRef.current());
   }, [enabled]);
 }
 
@@ -288,10 +286,12 @@ interface PageMainButtonState {
 let _pageMainButton: PageMainButtonState | null = null;
 const _pageMainButtonListeners = new Set<() => void>();
 
-function _setPageMainButton(s: PageMainButtonState | null): void {
-  _pageMainButton = s;
+// 2026-10-21 audit CA-34 / E-23: was a single slot (last write wins, first
+// unmount clears it for everyone). Owners now stack; the top one renders.
+const _pageMainButtonStack = createOwnerStack<PageMainButtonState>((top) => {
+  _pageMainButton = top;
   _pageMainButtonListeners.forEach((l) => l());
-}
+});
 
 /**
  * Subscribe React to the page-main-button state. Used by the
@@ -321,13 +321,35 @@ export function usePageMainButton(
   const safeText = (text ?? '').trim();
   const wantVisible = opts?.visible !== false && !!safeText;
   const wantActive = opts?.active !== false;
+  const stateRef = useRef<PageMainButtonState>({
+    text: safeText,
+    onClick: () => onClickRef.current(),
+    visible: wantVisible,
+    active: wantActive,
+  });
+  stateRef.current = {
+    ...stateRef.current,
+    text: safeText,
+    visible: wantVisible,
+    active: wantActive,
+  };
+  const handleRef = useRef<OwnerHandle<PageMainButtonState> | null>(null);
+  // Register once per mount so a text/visibility change never reorders
+  // this owner above one that mounted later.
   useEffect(() => {
-    _setPageMainButton({
+    const handle = _pageMainButtonStack.push(stateRef.current);
+    handleRef.current = handle;
+    return () => {
+      handleRef.current = null;
+      handle.release();
+    };
+  }, []);
+  useEffect(() => {
+    handleRef.current?.update({
+      ...stateRef.current,
       text: safeText,
-      onClick: () => onClickRef.current(),
       visible: wantVisible,
       active: wantActive,
     });
-    return () => _setPageMainButton(null);
   }, [safeText, wantVisible, wantActive]);
 }

@@ -46,6 +46,7 @@ const importSettlementPage = () =>
 const SettlementPage = lazy(importSettlementPage);
 import { useAuthStore } from '../stores/authStore';
 import { requestTabChange, resolveVisibleTab, useNavStore } from '../stores/navStore';
+import { resolveDeepLinkTab, stripDeepLinkPath, tabFromDeepLinkPath } from '../lib/deepLink';
 import { useI18n } from '../hooks/useI18n';
 import {
   isInTelegram,
@@ -142,7 +143,16 @@ function ShellInner() {
   // sheet opens it shows the page section first, then global settings.
   const pageMenu = usePageMenuRegistration();
 
-  const visible = TABS.filter((t) => !t.permission || session?.permissions.includes(t.permission));
+  // 2026-10-21 audit CA-16 / E-12: AdminPage already admits a platform
+  // admin without `users.manage` (for the Platform section), but the tab
+  // itself was gated on `users.manage`, so they could never get there.
+  const isPlatformAdmin = !!session?.isPlatformAdmin;
+  const visible = TABS.filter(
+    (t) =>
+      !t.permission ||
+      session?.permissions.includes(t.permission) ||
+      (t.key === 'admin' && isPlatformAdmin),
+  );
 
   // Warm the AdminPage chunk in the background once we know the user
   // can see the tab. The static `lazy()` above splits it into a
@@ -157,7 +167,7 @@ function ShellInner() {
   // smoke's 400ms post-click waitForTimeout race the chunk download.
   // We use requestIdleCallback when available so we don't compete with
   // first-paint work on the entry route.
-  const canAdmin = !!session?.permissions.includes('users.manage');
+  const canAdmin = !!session?.permissions.includes('users.manage') || isPlatformAdmin;
   // M3.11: same warmup pattern for RunPage. Trigger when the user
   // can see the Run tab. Purchasers in production are a small share
   // of users, so a non-purchaser saves the 60 kB of RunPage chunk
@@ -193,6 +203,32 @@ function ShellInner() {
       if (allowed) setTab(nextTab);
     });
   };
+  // 2026-10-21 audit CA-15 / E-04: notification buttons open
+  // FRONTEND_URL + '/approve' | '/order' | '/run' | '/confirm'. Shell only
+  // mounts behind AuthGate, so the visible tabs are known here. Switch
+  // through the same guard as a nav tap (an unsaved draft can veto), then
+  // drop the segment from the URL (search/hash kept) so a reload doesn't
+  // re-apply it. A tab the user can't see is ignored.
+  const visibleKey = visibleKeys.join(',');
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const { pathname, search, hash } = window.location;
+    if (!tabFromDeepLinkPath(pathname)) return;
+    const target = resolveDeepLinkTab(pathname, visibleKey.split(',') as Tab[]);
+    try {
+      window.history.replaceState(
+        window.history.state,
+        '',
+        `${stripDeepLinkPath(pathname)}${search}${hash}`,
+      );
+    } catch {
+      /* the tab switch below still applies */
+    }
+    if (!target || target === useNavStore.getState().tab) return;
+    void requestTabChange(target).then((allowed) => {
+      if (allowed) setPersistedTab(target);
+    });
+  }, [visibleKey, setPersistedTab]);
   // If the resolved tab differs from what's persisted (permission
   // lost since last session), write the corrected value back so we
   // don't keep re-resolving on every render.

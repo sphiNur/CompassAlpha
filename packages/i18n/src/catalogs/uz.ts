@@ -63,6 +63,12 @@ export const uz = {
   'catalog.supplier.emptyTitle': "Ta'minotchilar yo'q",
   'catalog.supplier.emptyBody': 'Bozorda kimdan xarid qilayotganingizni yozib boring.',
   'catalog.supplier.confirmArchive': "«{name}» ta'minotchisi arxivlansinmi?",
+  'catalog.category.confirmArchive': '«{name}» toifasi arxivlansinmi?',
+  'catalog.category.meta': 'Slug {slug} · tartib {sort}',
+  'catalog.category.slugPlaceholder': 'masalan, dairy',
+  'catalog.sku.stepMeta': 'qadam {step}',
+  'catalog.supplier.tgPlaceholder': 'foydalanuvchi nomi (@ belgisisiz)',
+  'catalog.readOnlyHint': "Katalogni faqat tashkilot administratorlari o'zgartira oladi.",
   'admin.store.new': "Yangi do'kon",
   'admin.store.emptyTitle': "Do'konlar yo'q",
   'admin.store.emptyBody':
@@ -345,6 +351,8 @@ export const uz = {
   'auth.signIn': 'Kirish',
   'auth.signOut': 'Chiqish',
   'auth.shareThisId': 'Ushbu Telegram ID-ni administratorga yuboring — sizga ruxsat berishadi:',
+  'auth.loginTimeout.title': 'Kirish juda uzoq davom etmoqda',
+  'auth.loginTimeout.body': "Internet aloqasini tekshiring, so'ng ilovani yopib, qayta oching.",
   'auth.noAccess.title': 'Ruxsat berilmagan',
   'auth.noAccess.body':
     "Telegram akkauntingiz tanildi, ammo bu tashkilotda hali rolingiz yo'q. Administrator ruxsat berishi kerak.",
@@ -541,6 +549,7 @@ export const uz = {
   'auth.errors.sessionStale': 'Sessiya eskirgan — sahifani yangilang',
   'auth.errors.storeArchived': "Bu do'kon faol emas",
   'auth.errors.storeForbidden': "Siz bu do'konga biriktirilmagansiz",
+  'auth.errors.notAssignedToStore': "Siz bu do'konga biriktirilmagansiz",
   'auth.errors.userMissing': 'Foydalanuvchi topilmadi',
   'auth.errors.cannotGrantEqualOrHigher':
     "O'z darajangizdagi yoki undan yuqori rolni bera olmaysiz",
@@ -551,6 +560,9 @@ export const uz = {
 
   // ── 6. Admin errors ────────────────────────────────────────────
   'admin.errors.bindingNotFound': 'Rol biriktirmasi topilmadi',
+  'admin.errors.slugTaken': 'Bu identifikator allaqachon band.',
+  'admin.errors.codeTaken': 'Bu kod allaqachon band.',
+  'admin.errors.invalidExpiresAt': "Amal qilish muddati kelajakdagi to'g'ri sana bo'lishi kerak.",
   'admin.errors.cannotLeaveZeroStores': "Xodim kamida bitta do'konga biriktirilgan bo'lishi shart",
   'admin.errors.cannotRemoveLastAdmin': "Tashkilotdagi oxirgi administratorni o'chirib bo'lmaydi",
   'admin.errors.cannotRemoveSelf': "O'zingizni o'chira olmaysiz",
@@ -904,6 +916,10 @@ export const uz = {
   'run.toast.sessionEjected': 'Yuborilgan tekshiruvga qaytarildi',
   'run.toast.couldNotEjectSession': "Yuborilganni qaytarib bo'lmadi",
   'run.errors.cannotEjectSession': "Xariddan yuborilganlarni qaytarish huquqi yo'q",
+  'run.errors.storeAlreadyConfirmed': "Do'kon qabul qilishni allaqachon tasdiqlagan",
+  'run.errors.notVisible': 'Xarid topilmadi yoki sizga mavjud emas',
+  'run.errors.archiveCascadeFailed':
+    "Xaridni buyurtmalari bilan birga arxivlab bo'lmadi. Hech narsa o'zgarmadi — qayta urinib ko'ring.",
   'run.errors.cannotEjectInStatus':
     'Yuborilganlarni faqat reja yoki xarid bosqichida qaytarish mumkin',
   'run.errors.sessionNotInRun': "Bu yuborilgan ushbu xaridda yo'q",
@@ -1361,6 +1377,7 @@ export const uz = {
   'dishes.confirm.archive': '{name} arxivlansinmi?',
   'dishes.errors.cannotManage': 'Menyuni tahrirlash uchun dishes.manage ruxsati kerak.',
   'dishes.errors.namesRequired': 'Kamida bitta tildagi nom kerak.',
+  'admin.errors.namesRequired': 'Kamida bitta tildagi nom kerak.',
   'dishes.errors.ingredientQtyMustBePositive': "Ingredient miqdori > 0 bo'lishi kerak.",
   'dishes.errors.ingredientSkuNotFound': "Retseptda noma'lum SKU.",
   'dishes.errors.notFound': 'Taom topilmadi.',
@@ -1376,6 +1393,8 @@ export const uz = {
   'sales.form.noDishesYet': "Hech qanday taom yo'q. Avval Catalog → Dishes da qo'shing.",
   'sales.form.noRecipe': "retsept yo'q",
   'sales.list.title': 'Bugungi sotuvlar',
+  'sales.list.capReached':
+    "Faqat oxirgi {n} ta sotuv ko'rsatilmoqda — jami to'liq bo'lmasligi mumkin.",
   'sales.empty.title': "Bugun sotuvlar yo'q",
   'sales.empty.description': 'Birinchi sotuvni yozish uchun yuqoridagi tugmani bosing.',
   'sales.toast.recorded': 'Yozildi — qoldiq yangilandi.',
@@ -1561,4 +1580,31 @@ export const uz = {
   'settlement.errors.versionConflict': "Bu kun yakuni boshqa joyda o'zgartirilgan.",
   'settlement.errors.versionConflictBody':
     'Tuzatishni saqlashdan oldin yozuvni yangilang va oxirgi versiyani tekshiring.',
+  // 2026-10-21 audit decisions CA-03/04/06/11 (run selection, parallel runs,
+  // received qty, items/expenses money split).
+  'run.money.itemsExpenses': 'Mahsulotlar {items} · xarajatlar {expenses}',
+  'confirm.issue.receivedQty': 'Qabul qilingan miqdor ({max} {unit} dan)',
+  'confirm.issue.receivedQtyRequired': 'Haqiqatda qancha kelganini kiriting',
+  'confirm.issue.receivedQtyRange': '0 dan {max} gacha son kiriting',
+  'confirm.receivedOf': 'qabul qilindi {received} / {qty} {unit}',
+  'confirm.runPicker.ariaLabel': 'Qaysi yetkazib berishni tekshirish',
+  'confirm.runPicker.option': '#{n} · {date}',
+  'finance.label.expense': 'Xarajat',
+  'finance.label.expenses': 'Katalogdan tashqari xarajatlar',
+  'run.select.title': 'Xarid qilinadigan buyurtmalar',
+  'run.select.meta': '{total} tadan {n} tasi tanlandi',
+  'run.select.today': 'Bugun',
+  'run.select.olderDate': '{days} kun oldin — odatda kiritilmaydi',
+  'run.select.runDate': 'Xarid sanasi (hisob)',
+  'run.select.noneSelected': 'Kamida bitta buyurtmani belgilang',
+  'run.attach.sheet.title': "Buyurtmalarni xaridga qo'shish",
+  'run.action.attachSelected': "{n} ta buyurtmani qo'shish",
+  'run.switcher.label': 'Ochiq xaridlar',
+  'run.switcher.newRun': '+ Yangi xarid',
+  'run.confirm.finish.money': 'Mahsulotlar {items} · xarajatlar {expenses} · jami {total} UZS',
+  'run.errors.runDateInFuture': "Xarid sanasi kelajakda bo'lishi mumkin emas",
+  'run.errors.receivedQtyRequired': 'Haqiqatda qancha kelganini kiriting',
+  'run.errors.receivedQtyInvalid':
+    "Qabul qilingan miqdor 0 dan kichik bo'lmagan son bo'lishi kerak",
+  'run.errors.receivedQtyExceedsSplit': 'Qabul qilingan miqdor {max} dan oshmasligi kerak',
 } as const satisfies Record<CatalogKey, string>;

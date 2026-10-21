@@ -91,18 +91,20 @@ export async function requestStoreChange(nextStoreId: StoreContext): Promise<boo
 /**
  * True iff the actor is allowed to see + use the store picker.
  *
- * M3.5 rule: only `org.admin` holders (super_admin, admin, and any
- * future org-tier custom role) can switch context. Manager (rank 60,
- * store-tier) holds `users.manage` but NOT `org.admin`, so they no
- * longer see the picker — consistent with their store-bound role.
- *
- * If a multi-store-tier role ever needs the picker (e.g., regional
- * purchaser bound to N stores), grant them `org.admin` explicitly or
- * relax this check to also include `stores.length >= 2`.
+ * M3.5 rule was `org.admin` only. 2026-10-21 audit CA-22 / E-08: a
+ * non-admin assigned to two or more stores (multi-store manager,
+ * regional purchaser) was pinned to `stores[0]` forever with no way to
+ * switch, so the rule is now `org.admin` OR ≥2 assigned stores. The
+ * "all organisation stores" row stays `org.admin`-only (see
+ * StorePickerSection and authStore's canUseAllStores).
  */
+export function canSwitchStore(session: AuthSession | null | undefined): boolean {
+  if (!session) return false;
+  return session.permissions.includes('org.admin') || session.stores.length >= 2;
+}
+
 export function useCanSeeStorePicker(): boolean {
-  const session = useAuthStore((s) => s.session);
-  return session?.permissions.includes('org.admin') ?? false;
+  return useAuthStore((s) => canSwitchStore(s.session));
 }
 
 /**
@@ -110,7 +112,7 @@ export function useCanSeeStorePicker(): boolean {
  * no nested sheet — the rows themselves are the picker UI. On selection
  * the caller's `onClose` runs so the Settings sheet can dismiss too.
  *
- * Renders nothing if the actor lacks `org.admin`. The Settings parent
+ * Renders nothing if the actor may not switch (canSwitchStore). The Settings parent
  * can also skip rendering this section by checking `useCanSeeStorePicker`
  * first; this internal early-return is belt-and-suspenders so a mis-call
  * from a non-admin context never leaks the chrome.
@@ -133,6 +135,7 @@ export function StorePickerSection({
   const currentStoreId = useAuthStore((s) => s.currentStoreId);
   const setCurrentStore = useAuthStore((s) => s.setCurrentStore);
   const canSee = useCanSeeStorePicker();
+  const isOrgAdmin = session?.permissions.includes('org.admin') ?? false;
 
   if (!canSee) return null;
 
@@ -157,12 +160,14 @@ export function StorePickerSection({
         </SectionLabel>
       ) : null}
       <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
-        <PickerRow
-          label={i18n.t('storeSwitcher.allOrgStores')}
-          hint={i18n.t('storeSwitcher.allOrgHint')}
-          selected={currentStoreId === ALL_STORES}
-          onClick={() => chooseStore(ALL_STORES)}
-        />
+        {isOrgAdmin ? (
+          <PickerRow
+            label={i18n.t('storeSwitcher.allOrgStores')}
+            hint={i18n.t('storeSwitcher.allOrgHint')}
+            selected={currentStoreId === ALL_STORES}
+            onClick={() => chooseStore(ALL_STORES)}
+          />
+        ) : null}
         {stores.map((store) => (
           <PickerRow
             key={store.id}
@@ -182,7 +187,7 @@ export function StorePickerSection({
  *
  * Renders for every actor — knowing which store you're acting on is
  * context, not a privilege. Tappable only when the actor may switch
- * (`org.admin`); otherwise it's a plain label with no affordance, so
+ * (`org.admin`, or ≥2 assigned stores — CA-22); otherwise it's a plain label with no affordance, so
  * nobody taps something that can't respond.
  *
  * Returns null when there is no store context to state at all (`kind:

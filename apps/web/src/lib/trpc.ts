@@ -213,6 +213,9 @@ const IDEMPOTENT_MUTATIONS = new Set<string>([
   // whole of its benefit — which is still worth having, since a double
   // attach would pull other stores' orders into a run twice.
   'run.addPurchaserItem',
+  // 2026-10-21 audit CA-54: declared idempotentMutation server-side;
+  // StoreInventoryTab threads a stable key per wastage entry.
+  'inventory.recordWastage',
   'run.addExpense',
   'run.attachSessions',
 ]);
