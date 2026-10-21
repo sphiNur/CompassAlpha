@@ -8,7 +8,7 @@
  * mutating process.env.TZ (unreliable once Date has been used in-process).
  */
 import { describe, expect, test } from 'bun:test';
-import { financePresetRange, localDateValue } from '../financeDates';
+import { financePresetRange, localDateValue, maintenanceToday } from '../financeDates';
 
 describe('financePresetRange in Asia/Tashkent (UTC+5)', () => {
   // 2026-03-01 02:30 local = 2026-02-28 21:30 UTC: local and UTC
@@ -71,5 +71,20 @@ describe('financePresetRange in UTC', () => {
       startDate: '2028-02-01',
       endDate: '2028-02-29',
     });
+  });
+});
+
+describe('maintenanceToday (FE-07)', () => {
+  test('local 02:00 in Tashkent is still today, not the UTC yesterday', () => {
+    // 2026-10-21 02:00 local (UTC+5) = 2026-10-20 21:00 UTC.
+    const now = new Date('2026-10-20T21:00:00Z');
+    expect(now.toISOString().slice(0, 10)).toBe('2026-10-20');
+    expect(maintenanceToday(now, 'Asia/Tashkent')).toBe('2026-10-21');
+  });
+
+  test('defaults to the device calendar date', () => {
+    // Built from local components, so this holds in any machine zone.
+    const now = new Date(2026, 9, 21, 2, 0, 0);
+    expect(maintenanceToday(now)).toBe('2026-10-21');
   });
 });

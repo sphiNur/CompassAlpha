@@ -18,6 +18,8 @@ import {
   CardHeader,
   CardMeta,
   CardTitle,
+  Chip,
+  ChipBar,
   DataState,
   EmptyState,
   Field,
@@ -37,7 +39,8 @@ import { useErrToast } from '../../../lib/errToast';
 import { formatMoney, formatQty } from '../../../lib/format';
 import { useDateFormat, useI18n, useProductName, useUnitLabel } from '../../../hooks/useI18n';
 import { DebugPage } from '../../DebugPage';
-import { financePresetRange } from './financeDates';
+import { financePresetRange, maintenanceToday } from './financeDates';
+import { auditCategory, describeAuditRow, type AuditCategory } from './auditSentence';
 
 // ============ Activity ============
 
@@ -336,8 +339,10 @@ function formatRelative(iso: string, i18n: ReturnType<typeof useI18n>): string {
 
 // ============ Maintenance ============
 
+// 2026-10-21 FE-07: local calendar date — the UTC slice made "reset
+// today" purge YESTERDAY east of UTC before the offset hour.
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return maintenanceToday();
 }
 
 /**
@@ -727,6 +732,7 @@ function CascadePreview({ byTable, total }: { byTable: Record<string, number>; t
 export function AdminAuditSection() {
   const i18n = useI18n();
   const dateFmt = useDateFormat();
+  const productName = useProductName();
   // B2 (2026-05-06): per-store filter. The pill row at the top lets an
   // admin scope the log to one store; rows pre-2026-05-06 (NULL scope)
   // disappear under the filter, which is correct — they predate the
@@ -740,6 +746,8 @@ export function AdminAuditSection() {
   // anyone with shell access.
   const isSuperAdmin = session?.roleSlugs.includes('super_admin') ?? false;
   const [storeFilter, setStoreFilter] = useState<string | null>(null);
+  // 2026-10-21 FE-08: client-side category filter over the loaded page.
+  const [categoryFilter, setCategoryFilter] = useState<AuditCategory | 'all'>('all');
   const auditQuery = trpc.admin.adminAuditList.useQuery({
     limit: PAGE_SIZE.list,
     ...(storeFilter ? { storeId: storeFilter } : {}),
@@ -748,6 +756,28 @@ export function AdminAuditSection() {
     () => new Map(sessionStores.map((s) => [s.id, s.name])),
     [sessionStores],
   );
+  const categoryLabel: Record<AuditCategory | 'all', string> = {
+    all: i18n.t('order.categories.all'),
+    people: i18n.t('admin.tile.members'),
+    roles: i18n.t('admin.section.permissions'),
+    stores: i18n.t('admin.section.stores'),
+    catalog: i18n.t('admin.section.catalog'),
+    other: i18n.t('settlement.expenseCategory.other'),
+  };
+  // Catalog rows get a per-kind badge (SKUs / Suppliers …) instead of
+  // the generic "Catalog".
+  const kindLabel: Record<string, string> = {
+    sku: i18n.t('admin.subsection.skus'),
+    category: i18n.t('admin.subsection.categories'),
+    supplier: i18n.t('admin.subsection.suppliers'),
+    expenseTemplate: i18n.t('admin.subsection.expenseTemplates'),
+    dish: i18n.t('admin.subsection.dishes'),
+  };
+  const chipClass = (active: boolean) =>
+    'rounded-full px-3 py-1 text-old-label font-medium ring-hairline ' +
+    (active
+      ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
+      : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]');
   return (
     <div className="px-4 py-3">
       {/* Filter chip row — only renders when there's something to
@@ -757,12 +787,8 @@ export function AdminAuditSection() {
           <button
             type="button"
             onClick={() => setStoreFilter(null)}
-            className={
-              'rounded-full px-3 py-1 text-old-label font-medium ring-hairline ' +
-              (storeFilter === null
-                ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]')
-            }
+            aria-pressed={storeFilter === null}
+            className={chipClass(storeFilter === null)}
           >
             {i18n.t('ops.audit.allScopes')}
           </button>
@@ -771,18 +797,30 @@ export function AdminAuditSection() {
               key={st.id}
               type="button"
               onClick={() => setStoreFilter(st.id)}
-              className={
-                'rounded-full px-3 py-1 text-old-label font-medium ring-hairline ' +
-                (storeFilter === st.id
-                  ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                  : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]')
-              }
+              aria-pressed={storeFilter === st.id}
+              className={chipClass(storeFilter === st.id)}
             >
               {st.name}
             </button>
           ))}
         </div>
       ) : null}
+      {/* Six options: a scrolling ChipBar, not Segmented (2-4 max). */}
+      <ChipBar
+        variant="radio"
+        ariaLabel={i18n.t('ops.audit.filterLabel')}
+        className="-mx-4 mb-3 px-4 py-0"
+      >
+        {(['all', 'people', 'roles', 'stores', 'catalog', 'other'] as const).map((value) => (
+          <Chip
+            key={value}
+            selected={categoryFilter === value}
+            onClick={() => setCategoryFilter(value)}
+          >
+            {categoryLabel[value]}
+          </Chip>
+        ))}
+      </ChipBar>
       <DataState
         query={auditQuery}
         emptyWhen={(d) => d.length === 0}
@@ -790,81 +828,87 @@ export function AdminAuditSection() {
           <EmptyState
             title={
               storeFilter
-                ? `No actions in 🏪 ${storeNameById.get(storeFilter) ?? 'this store'}`
-                : 'No admin actions yet'
+                ? i18n.t('ops.audit.emptyStoreTitle', {
+                    store: storeNameById.get(storeFilter) ?? '—',
+                  })
+                : i18n.t('ops.audit.emptyTitle')
             }
             description={
-              storeFilter
-                ? "Older audit rows predate the per-store column and don't appear under a store filter."
-                : 'Catalog edits and role changes will appear here as they happen.'
+              storeFilter ? i18n.t('ops.audit.emptyStoreBody') : i18n.t('ops.audit.emptyBody')
             }
           />
         }
       >
-        {(rows) => (
-          <ul className="flex flex-col gap-2" role="list">
-            {rows.map((r) => {
-              // Derive a friendly verb + object from the action key.
-              // E.g. "admin.sku.update" → ["sku", "updated"].
-              const parts = r.action.split('.');
-              const obj = parts[1] ?? '?';
-              const verb = parts[2] ?? '?';
-              const tone =
-                verb === 'delete' || verb === 'deny'
-                  ? 'danger'
-                  : verb === 'allow' || verb === 'create'
-                    ? 'success'
-                    : 'muted';
-              // 2026-07-30: `undefined` meant "browser locale".
-              const when = dateFmt.dateTime(r.occurredAt);
-              return (
-                <Card key={r.id}>
-                  <div className="flex items-start gap-3 px-4 py-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-baseline gap-2">
-                        <Badge tone={tone}>{verb}</Badge>
-                        <span className="text-old-body font-semibold text-[var(--c-fg)]">{obj}</span>
-                        {r.resourceId ? (
-                          <span className="font-mono text-old-label text-[var(--c-fg-muted)]">
-                            {r.resourceId.slice(0, 8)}…
-                          </span>
-                        ) : null}
-                        {/* B2: store-scope chip per row.
-                            M3.17 (2026-05-16): inline span → <Badge>. */}
-                        {r.scopeStoreId ? (
-                          <Badge tone="muted">
-                            {storeNameById.get(r.scopeStoreId) ?? r.scopeStoreId.slice(0, 8)}
-                          </Badge>
+        {(allRows) => {
+          const rows =
+            categoryFilter === 'all'
+              ? allRows
+              : allRows.filter((r) => auditCategory(r.action) === categoryFilter);
+          if (rows.length === 0) {
+            return <EmptyState title={i18n.t('ops.audit.emptyFilterTitle')} />;
+          }
+          return (
+            <ul className="flex flex-col gap-2" role="list">
+              {rows.map((r) => {
+                // 2026-10-21 FE-08: one readable sentence per row ("A
+                // granted Manager to B") from server-resolved names,
+                // instead of raw verb/object words and id prefixes.
+                const s = describeAuditRow(r, {
+                  unknown: i18n.t('ops.audit.unknown'),
+                  localName: (names) => productName({ names }),
+                });
+                const badge =
+                  s.category === 'catalog'
+                    ? (kindLabel[s.object] ?? s.object)
+                    : categoryLabel[s.category];
+                // Store chip: the resolved name, else the session's store
+                // list, else the id prefix (B2 / M3.17).
+                const storeChip = r.scopeStoreId
+                  ? (storeNameById.get(r.scopeStoreId) ??
+                    r.labels.storeName ??
+                    r.scopeStoreId.slice(0, 8))
+                  : null;
+                // 2026-07-30: `undefined` meant "browser locale".
+                const when = dateFmt.dateTime(r.occurredAt);
+                return (
+                  <Card key={r.id}>
+                    <div className="flex items-start gap-3 px-4 py-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-baseline gap-2">
+                          <Badge tone={s.tone}>{badge}</Badge>
+                          {storeChip ? <Badge tone="muted">🏪 {storeChip}</Badge> : null}
+                        </div>
+                        <div className="mt-1 text-old-body text-[var(--c-fg)]">
+                          {i18n.t(s.key, s.params)}
+                        </div>
+                        <div className="mt-1 text-old-label text-[var(--c-fg-muted)]">
+                          {r.actor?.tgUsername ? `@${r.actor.tgUsername} · ` : ''}
+                          {when}
+                        </div>
+                        {/* Lightweight payload preview — JSON.stringify
+                            fits one line for most actions; long inputs
+                            are truncated since the full row is in the DB
+                            for forensics. M1.9: super_admin only — looks
+                            like a debugger artifact to non-tech users. */}
+                        {isSuperAdmin ? (
+                          <details className="mt-2">
+                            <summary className="cursor-pointer text-old-label font-medium text-[var(--c-fg-muted)]">
+                              {i18n.t('ops.audit.inputs')} · {r.action}
+                              {r.resourceId ? ` · ${r.resourceId.slice(0, 8)}…` : ''}
+                            </summary>
+                            <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2 py-1 font-mono text-old-label text-[var(--c-fg-muted)]">
+                              {JSON.stringify(r.inputs, null, 2)}
+                            </pre>
+                          </details>
                         ) : null}
                       </div>
-                      <div className="mt-1 text-old-label text-[var(--c-fg-muted)]">
-                        {r.actor?.displayName ?? 'unknown'}
-                        {r.actor?.tgUsername ? ` · @${r.actor.tgUsername}` : ''}
-                        {' · '}
-                        {when}
-                      </div>
-                      {/* Lightweight payload preview — JSON.stringify
-                          fits one line for most actions; long inputs
-                          are truncated since the full row is in the DB
-                          for forensics. M1.9: super_admin only — looks
-                          like a debugger artifact to non-tech users. */}
-                      {isSuperAdmin ? (
-                        <details className="mt-2">
-                          <summary className="cursor-pointer text-old-label font-medium text-[var(--c-fg-muted)]">
-                            {i18n.t('ops.audit.inputs')}
-                          </summary>
-                          <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2 py-1 font-mono text-old-label text-[var(--c-fg-muted)]">
-                            {JSON.stringify(r.inputs, null, 2)}
-                          </pre>
-                        </details>
-                      ) : null}
                     </div>
-                  </div>
-                </Card>
-              );
-            })}
-          </ul>
-        )}
+                  </Card>
+                );
+              })}
+            </ul>
+          );
+        }}
       </DataState>
     </div>
   );
@@ -946,6 +990,27 @@ export function PriceReportSection() {
       {statsQuery.isLoading || skusQuery.isLoading ? (
         <div className="mt-4">
           <Spinner size={16} />
+        </div>
+      ) : statsQuery.isError || skusQuery.isError ? (
+        // 2026-10-21 FE-01 (F6-04): a failed query used to fall through
+        // to "no price data yet". DataState renders the translated error
+        // + Retry; the children branch is unreachable here.
+        <div className="mt-3">
+          <DataState
+            query={{
+              data: undefined,
+              isLoading: false,
+              isError: true,
+              isFetching: statsQuery.isFetching || skusQuery.isFetching,
+              error: statsQuery.error ?? skusQuery.error,
+              refetch: () => {
+                if (statsQuery.isError) void statsQuery.refetch();
+                if (skusQuery.isError) void skusQuery.refetch();
+              },
+            }}
+          >
+            {() => null}
+          </DataState>
         </div>
       ) : rows.length === 0 ? (
         <EmptyState
@@ -1048,9 +1113,7 @@ export function FinanceSection() {
   const [startDate, setStartDate] = useState<string>(
     () => financePresetRange('thisMonth').startDate,
   );
-  const [endDate, setEndDate] = useState<string>(
-    () => financePresetRange('thisMonth').endDate,
-  );
+  const [endDate, setEndDate] = useState<string>(() => financePresetRange('thisMonth').endDate);
 
   // Apply preset → derive [start, end]. Custom keeps whatever the user
   // typed in the two inputs.
@@ -1264,8 +1327,14 @@ export function FinanceSection() {
         )}
       </div>
 
-      {/* Totals scorecard. */}
-      {totalsQuery.data ? (
+      {/* Totals scorecard.
+          2026-10-21 FE-01 (F6-04): a failed totals query used to make the
+          card silently vanish; show the error + Retry instead. */}
+      {totalsQuery.isError ? (
+        <div className="mb-3">
+          <DataState query={totalsQuery}>{() => null}</DataState>
+        </div>
+      ) : totalsQuery.data ? (
         <div className="mb-3 grid grid-cols-3 gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3">
           <div>
             <SectionLabel padded={false}>{i18n.t('run.label.paymentCash')}</SectionLabel>
@@ -1337,6 +1406,9 @@ export function FinanceSection() {
         <div className="py-6 text-center">
           <Spinner size={16} />
         </div>
+      ) : linesQuery.isError ? (
+        // 2026-10-21 FE-01 (F6-04): was rendered as "no expenses".
+        <DataState query={linesQuery}>{() => null}</DataState>
       ) : lines.length === 0 ? (
         <EmptyState
           title={i18n.t('finance.empty.title')}
