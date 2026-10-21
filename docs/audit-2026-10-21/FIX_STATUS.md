@@ -1,7 +1,7 @@
 # 审计问题修复进度（2026-10-21）
 
-- 分支：`fix/audit-2026-10-21`，基于 `c49ba3e`，**尚未提交**
-- 改动规模：75 个已有文件修改（+4501 / −1669），29 个新代码或测试文件，2 个迁移（0047、0048）
+- 分支：`fix/audit-2026-10-21`，基于 `c49ba3e`，已提交，**尚未推送**
+- 改动规模（第一、二轮）：75 个已有文件修改（+4501 / −1669），29 个新代码或测试文件，2 个迁移（0047、0048）
 - 问题编号对应 `docs/PROJECT_COMPREHENSIVE_AUDIT.md` §9
 
 ## 本地验证结果
@@ -67,25 +67,39 @@
 - 财务报表的历史数字会变化：现在包含开销和门店覆盖价。
 - 门店“恢复”同时会把已归档（deletedAt）的门店一起恢复。
 
-## 仍需决策或运维处理
+## 第三轮：授权由我决定的事项（2026-10-21）
 
-1. **CA-12 源站汇合点（ntfy 公共话题）**：需要运维决定改用 named tunnel / 固定域名，还是给 ntfy 消息加 HMAC 签名（需要新的 secret 并部署 Worker）。
-2. **生产验证**：生产连库角色是否 BYPASSRLS（影响 CA-14、CA-36）；`FRONTEND_URL` 是否为 https；经 workers.dev 的 WebSocket 能否握手。
-3. 店员有 `sales.record` 但没有日结 Tab：是给店员开放销售入口，还是从店员角色中去掉 `sales.record`？
-4. 销售作废、退款（CA-21 剩余部分）：是否要做？由谁来作废？
-5. 邀请链接的列表与撤销，以及有效期（CA-19，目前最长 30 天）。
-6. 店长能看到全组织的成员、TG ID 和事件（CA-17）：是否收窄到自己的门店？
-7. 站内通知：是做收件箱，还是停止写入（CA-32）？
-8. 截单时间、前一天未提交 draft 的处理（CA-59）。
-9. 日结：锁定、修订历史、工资审批、与销售对账（CA-20）；purge 是否允许清除日结（CA-28 剩余部分）。
-10. 店长是否应该能确认收货（目前没有 `delivery.confirm`）；审批人能否审批自己提交的订单。
-11. `org.admin` 是否可以修改同级管理员的显示名（目前不检查 rank）。
-12. 部署脚本与可观测性（CA-37、CA-38）、bot 的 systemd 部署（CA-53）。
+产品负责人表示“全都由你自己做”。以下决策都选择了**保守、可回退**的方案：
 
-## 可以继续做、不需要决策，但本轮未做
+| 事项 | 决策 | 实现 |
+|---|---|---|
+| CA-12 ntfy 源站 | 签名而不是换架构 | origin-watch 用 HMAC-SHA256 给发布的地址签名，app-proxy 配置了 `ORIGIN_SIGNING_KEY` 后只接受有效签名（7 天时效，常量时间比较）；不配置时行为不变。上线步骤见 `infra/cloudflare/app-proxy/README.md` 和 RUNBOOK |
+| 店员录销售 | 开放 | 有 `sales.record` 但没有 `settlement.record` 的人显示独立的“销售”Tab；有日结权限的人仍在日结页录 |
+| 销售作废 | 做 | `sales.void`：必须填原因，权限同录入，冲回库存（`consumption_reversed`），重复作废是幂等的；迁移 0049 |
+| CA-17 店长可见范围 | 收窄 | 非 `org.admin` 只能看到自己门店的成员、角色持有人、门店、事件和审计；TG ID 只给 `org.admin` |
+| CA-19 邀请 | 列表 + 撤销 | `memberInviteList` / `memberInviteRevoke`；邀请人被停用、移除或失去权限后，邀请失效；迁移 0050 |
+| 改名 | 加 rank | `org.admin` 修改他人显示名也需要 rank 更高（super_admin 除外） |
+| CA-32 站内通知 | 暂不做收件箱 | worker 每小时清理：通知 90 天、已发送的 outbox 30 天、client_logs 30 天 |
+| CA-37 部署 | 先构建后切换 | 前端先构建到 `dist.next`，原子替换后保留 `dist.prev`，最后才重启 API |
+| CA-27 / CA-25 / CA-43 | 做 | 只含 extras 的订单可以提交；离线修改冻结日期，过期的不再创建草稿；审批会比对版本，订单已被他人修改时拒绝并刷新 |
+| CA-54 / CA-55 | 做 | 库存行可以查看最近流水；可以为没有记录的 SKU 建期初盘点；菜品保存改为单事务，拒绝重复原料 |
+| 币种 | 跟随组织币种 | 采购相关文案中写死的 UZS 改为 `{currency}`（还有 3 个没有调用方的旧键保留未改） |
+| CA-20 日结 | 不做 | 按产品负责人的指示，本轮跳过 |
+| 截单时间、店长确认收货、审批自己的订单 | 维持现状 | 这些是业务规则，没有证据表明当前做法有错，改动风险大于收益 |
 
-- CA-25：离线回放冻结日期和 sessionId（需要先确定过期草稿的处理规则，与 #8 相关）。
-- CA-27：只有 extras 的订单（需要 `setSessionExtras` 支持惰性创建会话）。
-- CA-43：`expectedSeq` 版本校验。
-- CA-49 精度问题；CA-54 库存期初和流水视图；CA-55 菜品原子保存；`run.confirm.finish.*` 文案里写死的 UZS 改为跟随组织币种。
-- 拆分 `admin.ts` / `run.ts`（CA-41）。
+第三轮之后的本地验证：tsc 12/12 通过；lint 通过；单测 **525 pass / 0 fail / 164 skip**（PG）；i18n 四语各 1434 键；迁移 journal 51/51；构建通过。CI 的 web 单测范围已扩大到整个 `apps/web/src`。
+
+## 仍需运维处理（无法在代码中完成）
+
+1. **推送与 CI**：本机无权推送，也没有 `gh`。需要执行 `git push -u origin fix/audit-2026-10-21` 并开 PR，然后看 CI 中 164 个 PG 测试和 E2E 的结果。
+2. **CA-12 上线**：生成密钥，写入服务器的 `/home/ubuntu/.config/compass-origin.key`，再执行 `wrangler secret put ORIGIN_SIGNING_KEY` 和 `wrangler deploy`。
+3. **生产环境核查**：连库角色是否 BYPASSRLS；`FRONTEND_URL` 是否为 https；经 workers.dev 的 WebSocket 能否握手；备份是否真实产出。
+4. **Telegram 真机验证**：Sheet 返回键、深链落点、多 Run 切换。
+5. **部署注意**：API 与 web 必须同时部署；迁移 0047–0050 只做加法，没有破坏性变更。
+6. bot 的 systemd 部署（CA-53）：生产服务器出口访问不了 Telegram，需要运维决定是否改用 webhook，经 Worker 中转。
+
+## 仍未做（低优先级）
+
+- 日结相关（CA-20、purge 日结修订）——按指示跳过
+- CA-49 精度问题、CA-41 拆分 `admin.ts` / `run.ts`、CA-38 指标与告警
+- 归档 SKU 时检查配方引用（D-15）；3 个没有调用方的旧 UZS 文案键

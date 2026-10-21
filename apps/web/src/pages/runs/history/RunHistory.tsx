@@ -947,6 +947,7 @@ export function RunHistoryDetailSheet({
                                   {i18n.t('run.confirm.finish.expenses', {
                                     n: ps.expensesCount,
                                     total: formatMoney(ps.expensesTotal),
+                                    currency,
                                   })}
                                 </>
                               ) : null}

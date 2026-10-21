@@ -1321,6 +1321,7 @@ export function RunPage() {
                 i18n.t('run.confirm.finish.addedByPurchaser', {
                   n: finishSummary.addedSkus,
                   total: formatMoney(finishSummary.addedTotal),
+                  currency,
                 })
               : '';
           // M3.44 (2026-05-22): off-catalog expenses line. Skipped
@@ -1332,6 +1333,7 @@ export function RunPage() {
                 i18n.t('run.confirm.finish.expenses', {
                   n: finishSummary.expensesCount,
                   total: formatMoney(finishSummary.money.expenses),
+                  currency,
                 })
               : '';
           // 2026-10-21 CA-11: always items / expenses / total.
@@ -1341,6 +1343,7 @@ export function RunPage() {
               items: formatMoney(finishSummary.money.items),
               expenses: formatMoney(finishSummary.money.expenses),
               total: formatMoney(finishSummary.money.total),
+              currency,
             });
           /**
            * Q7(b) safety net (2026-07-26).
@@ -1408,6 +1411,7 @@ export function RunPage() {
                 items: finishSummary.skus,
                 stores: finishSummary.stores,
                 total: formatMoney(finishSummary.money.total),
+                currency,
               }) +
               moneyLine +
               breakdownLine +
@@ -1440,6 +1444,7 @@ export function RunPage() {
                 items: formatMoney(finishSummary.money.items),
                 expenses: formatMoney(finishSummary.money.expenses),
                 total: formatMoney(finishSummary.money.total),
+                currency,
               }),
             confirmLabel: i18n.t('run.action.refinalize'),
             danger: false,

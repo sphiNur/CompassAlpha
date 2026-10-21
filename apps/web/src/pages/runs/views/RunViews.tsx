@@ -1929,7 +1929,7 @@ export function PurchaseRow({
               priceInThousands={priceInThousands}
               onToggle={onTogglePriceUnit}
               currency={currency}
-              ariaLabel={i18n.t('run.label.priceUnitAria')}
+              ariaLabel={i18n.t('run.label.priceUnitAria', { currency })}
             />
             <PriceInFull
               typed={price}
