@@ -1579,6 +1579,8 @@ export const en = {
   'run.section.storeExpenses': 'Store expenses',
   'run.history.viewAll': 'All history',
   'run.history.storePurchases': 'Store purchases that day',
+  'run.history.trip': 'Trip {n}',
+  'run.history.tripCount': '{n} trips',
   'run.history.storeItemsHeading': '{store} purchases that day',
   'run.history.searchPlaceholder': 'Search purchases',
   'run.history.filters': 'Filters ({n})',
@@ -1736,6 +1738,7 @@ export const en = {
   // 2026-10-21 audit decisions CA-03/04/06/11 (run selection, parallel runs,
   // received qty, items/expenses money split).
   'run.money.itemsExpenses': 'Items {items} · expenses {expenses}',
+  'run.money.cashTransfer': 'Cash {cash} · transfer {transfer}',
   'confirm.issue.receivedQty': 'Received qty (of {max} {unit})',
   'confirm.issue.receivedQtyRequired': 'Enter how much actually arrived',
   'confirm.issue.receivedQtyRange': 'Enter a number from 0 to {max}',

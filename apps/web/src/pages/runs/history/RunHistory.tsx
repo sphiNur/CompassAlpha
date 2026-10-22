@@ -27,6 +27,7 @@ import { formatMoney, formatQty } from '../../../lib/format';
 import { useUnitLabel } from '../../../hooks/useI18n';
 import type { useI18n, useProductName } from '../../../hooks/useI18n';
 import { splitSubtotal, settleItemLine, settlePerStore } from '../lib/settlement';
+import { groupRunsByDay } from '../lib/historyGroups';
 
 // ====================================================================
 // HISTORY VIEW
@@ -219,88 +220,138 @@ export function RunHistoryPage({
           </div>
         ) : (
           <ul className="flex flex-col" role="list">
-            {runs.map((run) => (
-              <li key={run.id} className="border-b border-[var(--c-divider)] last:border-b-0">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setDetailFor({
-                      runId: run.id,
-                      runIndex: run.runIndex,
-                      runDate: run.runDate,
-                      status: run.status,
-                    })
-                  }
-                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left active:bg-[var(--c-surface-2)]"
-                >
+            {/* 2026-10-23: one entry per day. A day's second trip (or a run
+                moved onto the day) used to be its own "date #2" row, so
+                one day's spend read as two days; see lib/historyGroups. */}
+            {groupRunsByDay(runs).map((day) => {
+              const single = day.runs.length === 1 ? day.runs[0]! : null;
+              const open = (run: RunListRow, initialStoreId?: string) =>
+                setDetailFor({
+                  runId: run.id,
+                  runIndex: run.runIndex,
+                  runDate: run.runDate,
+                  status: run.status,
+                  ...(initialStoreId ? { initialStoreId } : {}),
+                });
+              const headerBody = (
+                <>
                   {/* UIUX-B1 (2026-07-06): constant success Badge with the
                       raw status enum deleted (list is finished-only — it
                       never varied, and leaked English; UI-2). The mono
                       total takes the freed right slot (L2 settlement row). */}
                   <div className="min-w-0 flex-1 text-old-body font-semibold tabular-nums">
-                    {run.runDate}
-                    {run.runIndex > 0 ? ` #${run.runIndex + 1}` : ''}
+                    {day.runDate}
+                    {single && single.runIndex > 0 ? ` #${single.runIndex + 1}` : ''}
+                    {!single ? (
+                      <span className="ml-2 text-old-label font-normal text-[var(--c-fg-muted)]">
+                        {i18n.t('run.history.tripCount', { n: day.runs.length })}
+                      </span>
+                    ) : null}
                   </div>
                   <span className="flex shrink-0 flex-col items-end">
                     <span className="font-mono text-old-body tabular-nums">
-                      {run.actualTotal ? formatMoney(run.actualTotal) : '—'}
+                      {day.runs.some((r) => r.actualTotal) ? formatMoney(day.total) : '—'}
                     </span>
-                    {Number(run.expensesTotal ?? 0) > 0 ? (
+                    {day.expensesTotal > 0 ? (
                       <span className="text-old-label tabular-nums text-[var(--c-fg-muted)]">
                         {i18n.t('run.money.itemsExpenses', {
-                          items: formatMoney(run.itemsTotal ?? '0'),
-                          expenses: formatMoney(run.expensesTotal ?? '0'),
+                          items: formatMoney(day.itemsTotal),
+                          expenses: formatMoney(day.expensesTotal),
+                        })}
+                      </span>
+                    ) : null}
+                    {day.cash !== null && day.transfer !== null && day.total > 0 ? (
+                      <span className="text-old-label tabular-nums text-[var(--c-fg-muted)]">
+                        {i18n.t('run.money.cashTransfer', {
+                          cash: formatMoney(day.cash),
+                          transfer: formatMoney(day.transfer),
                         })}
                       </span>
                     ) : null}
                   </span>
-                </button>
-                {(run.storeTotals?.length ?? 0) > 0 ? (
-                  <div className="border-t border-[var(--c-divider)] px-4 py-2.5">
-                    <div className="mb-1.5 text-old-label font-semibold text-[var(--c-fg-muted)]">
-                      {i18n.t('run.history.storePurchases')}
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      {run.storeTotals!.map((storeTotal) => {
-                        const storeName =
-                          storeById.get(storeTotal.storeId)?.name ?? storeTotal.storeId.slice(0, 8);
-                        return (
+                </>
+              );
+              const headerClass =
+                'flex w-full items-center justify-between gap-3 px-4 py-3 text-left';
+              // Trips without per-store rows (legacy) still need a way in.
+              const bareTrips = single
+                ? []
+                : day.runs.filter((r) => (r.storeTotals?.length ?? 0) === 0);
+              return (
+                <li
+                  key={day.runDate}
+                  className="border-b border-[var(--c-divider)] last:border-b-0"
+                >
+                  {single ? (
+                    <button
+                      type="button"
+                      onClick={() => open(single)}
+                      className={`${headerClass} active:bg-[var(--c-surface-2)]`}
+                    >
+                      {headerBody}
+                    </button>
+                  ) : (
+                    <div className={headerClass}>{headerBody}</div>
+                  )}
+                  {day.storeLines.length > 0 || bareTrips.length > 0 ? (
+                    <div className="border-t border-[var(--c-divider)] px-4 py-2.5">
+                      <div className="mb-1.5 text-old-label font-semibold text-[var(--c-fg-muted)]">
+                        {i18n.t('run.history.storePurchases')}
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        {day.storeLines.map((line) => {
+                          const storeName =
+                            storeById.get(line.storeId)?.name ?? line.storeId.slice(0, 8);
+                          return (
+                            <button
+                              key={`${line.run.id}:${line.storeId}`}
+                              type="button"
+                              onClick={() => open(line.run, line.storeId)}
+                              // Flattened (2026-07-05): dropped the nested
+                              // rounded-card + ring-hairline + surface-2
+                              // (a card inside the history Card). These rows
+                              // already sit in the Card's own bordered
+                              // region, so a plain row reads cleaner.
+                              className="flex min-h-10 w-full items-center justify-between gap-3 px-3 py-2 text-left active:bg-[var(--c-surface-2)]"
+                            >
+                              <span className="min-w-0 flex-1 truncate text-old-body-sm font-medium">
+                                {storeName}
+                                {!single ? (
+                                  <span className="ml-1.5 text-old-label font-normal text-[var(--c-fg-muted)]">
+                                    {i18n.t('run.history.trip', { n: line.trip })}
+                                  </span>
+                                ) : null}
+                              </span>
+                              <span className="shrink-0 text-old-label text-[var(--c-fg-muted)]">
+                                {i18n.t('run.label.itemsCount', { n: line.itemCount })}
+                              </span>
+                              <span className="shrink-0 font-mono text-old-label font-semibold tabular-nums">
+                                {formatMoney(line.total)}
+                              </span>
+                            </button>
+                          );
+                        })}
+                        {bareTrips.map((run) => (
                           <button
-                            key={storeTotal.storeId}
+                            key={run.id}
                             type="button"
-                            onClick={() =>
-                              setDetailFor({
-                                runId: run.id,
-                                runIndex: run.runIndex,
-                                runDate: run.runDate,
-                                status: run.status,
-                                initialStoreId: storeTotal.storeId,
-                              })
-                            }
-                            // Flattened (2026-07-05): dropped the nested
-                            // rounded-card + ring-hairline + surface-2
-                            // (a card inside the history Card). These rows
-                            // already sit in the Card's own bordered
-                            // region, so a plain row reads cleaner.
+                            onClick={() => open(run)}
                             className="flex min-h-10 w-full items-center justify-between gap-3 px-3 py-2 text-left active:bg-[var(--c-surface-2)]"
                           >
                             <span className="min-w-0 flex-1 truncate text-old-body-sm font-medium">
-                              {storeName}
-                            </span>
-                            <span className="shrink-0 text-old-label text-[var(--c-fg-muted)]">
-                              {i18n.t('run.label.itemsCount', { n: storeTotal.itemCount })}
+                              {i18n.t('run.history.trip', { n: run.runIndex + 1 })}
                             </span>
                             <span className="shrink-0 font-mono text-old-label font-semibold tabular-nums">
-                              {formatMoney(storeTotal.total)}
+                              {run.actualTotal ? formatMoney(run.actualTotal) : '—'}
                             </span>
                           </button>
-                        );
-                      })}
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ) : null}
-              </li>
-            ))}
+                  ) : null}
+                </li>
+              );
+            })}
           </ul>
         )}
       </Card>
@@ -674,10 +725,11 @@ export function RunHistoryDetailSheet({
                 {i18n.t('run.history.storeSummary', { stores: headlineStoreCount })}
               </div>
             </div>
-            {/* M1.14: payment-method breakdown row. Only renders when
-                the run actually mixed both methods — pure-cash and
-                pure-transfer runs are unambiguous from the lump sum. */}
-            {headlineCash > 0 && headlineTransfer > 0 ? (
+            {/* M1.14: payment-method breakdown row. 2026-10-23: shown
+                whenever there is money, not only when both methods were
+                used — a one-store, all-cash day still needs to say how
+                much was cash and that transfer was 0. */}
+            {headlineCash + headlineTransfer > 0 ? (
               <div className="flex items-baseline gap-3 border-t border-[var(--c-divider)] pt-2 text-old-label">
                 <span className="text-[var(--c-fg-muted)]">{i18n.t('run.label.paymentCash')}</span>
                 <span className="font-mono tabular-nums text-[var(--c-fg)]">

@@ -1429,6 +1429,8 @@ export const ru = {
   'run.section.storeExpenses': 'Расходы точек',
   'run.history.viewAll': 'Вся история',
   'run.history.storePurchases': 'Покупки магазинов за день',
+  'run.history.trip': 'Рейс {n}',
+  'run.history.tripCount': 'Рейсов: {n}',
   'run.history.storeItemsHeading': 'Покупки {store} за день',
   'run.history.searchPlaceholder': 'Поиск закупок',
   'run.history.filters': 'Фильтры ({n})',
@@ -1587,6 +1589,7 @@ export const ru = {
   // 2026-10-21 audit decisions CA-03/04/06/11 (run selection, parallel runs,
   // received qty, items/expenses money split).
   'run.money.itemsExpenses': 'Товары {items} · расходы {expenses}',
+  'run.money.cashTransfer': 'Наличные {cash} · перевод {transfer}',
   'confirm.issue.receivedQty': 'Получено (из {max} {unit})',
   'confirm.issue.receivedQtyRequired': 'Укажите, сколько фактически получено',
   'confirm.issue.receivedQtyRange': 'Введите число от 0 до {max}',
