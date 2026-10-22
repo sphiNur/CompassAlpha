@@ -839,6 +839,27 @@ describe('run.decide', () => {
     ).toThrow('run.errors.runDateUnchanged');
   });
 
+  test('ChangeRunDate carries the run number on the new day (2026-10-23)', () => {
+    const sa: ActorCtx = { userId: 'sa', memberId: 'sa', permissions: new Set(['run.amend']) };
+    let s = planAndPurchase();
+    expect(s.runIndex).toBe(0);
+    const evs = decideRun(
+      s,
+      { type: 'ChangeRunDate', runDate: '2026-07-22', runIndex: 1, actor: sa },
+      clock,
+    );
+    const ev = evs[0];
+    if (ev?.type !== 'RunDateChanged') throw new Error('expected RunDateChanged');
+    expect(ev.payload.runIndex).toBe(1);
+    s = evs.reduce(applyRun, s);
+    expect(s.runIndex).toBe(1);
+
+    // Older events carry no runIndex: the number is kept.
+    const legacy = decideRun(s, { type: 'ChangeRunDate', runDate: '2026-07-25', actor: sa }, clock);
+    expect('runIndex' in legacy[0]!.payload).toBe(false);
+    expect(legacy.reduce(applyRun, s).runIndex).toBe(1);
+  });
+
   test('RefinalizeRun rejected unless status is amending', () => {
     let s = planAndPurchase();
     const superAdmin: ActorCtx = {

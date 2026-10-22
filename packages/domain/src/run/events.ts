@@ -171,6 +171,14 @@ export type RunEvent =
         runDate: string;
         /** The value being replaced, so the audit trail is self-contained. */
         previousRunDate: string | null;
+        /**
+         * 2026-10-23: the run's number within its new day. Every day numbers
+         * its runs 0, 1, 2… (unique per org + date), so a run moved onto a
+         * day that already has its number used to be refused. Set by the
+         * server to the next free number; absent on older events (the
+         * number was kept).
+         */
+        runIndex?: number;
         byMemberId: string;
       };
     })

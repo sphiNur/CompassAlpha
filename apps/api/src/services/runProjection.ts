@@ -348,7 +348,12 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
         // a mis-dated run's spend land in the right day/month.
         await db
           .update(s.marketRunsV)
-          .set({ runDate: e.payload.runDate, lastSeq: e.seq, updatedAt: new Date() })
+          .set({
+            runDate: e.payload.runDate,
+            ...(e.payload.runIndex !== undefined ? { runIndex: e.payload.runIndex } : {}),
+            lastSeq: e.seq,
+            updatedAt: new Date(),
+          })
           .where(eq(s.marketRunsV.id, e.streamId));
         break;
       case 'RunReopened':
