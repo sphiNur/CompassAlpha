@@ -38,6 +38,7 @@ import { formatMoney, formatQty } from '../../../lib/format';
 import { matchesNameLike, normalizeQuery } from '../../../lib/searchMatch';
 import { useI18n, useProductName } from '../../../hooks/useI18n';
 import { nativeConfirm } from '../shared';
+import { CatalogImportSheet } from './CatalogImportSheet';
 
 /**
  * 2026-10-21 audit CA-16: every catalog write below (categories, SKUs,
@@ -393,6 +394,7 @@ export function SkusSection() {
   const productName = useProductName();
   const canWrite = useIsOrgAdmin();
   const [draft, setDraft] = useState<SkuDraft | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   // M1.10 (2026-05-08): cross-language SKU search.
   const [searchQuery, setSearchQuery] = useState('');
   const tokens = useMemo(() => normalizeQuery(searchQuery), [searchQuery]);
@@ -450,6 +452,11 @@ export function SkusSection() {
             }
           >
             + {i18n.t('catalog.sku.new')}
+          </Button>
+        ) : null}
+        {canWrite ? (
+          <Button size="sm" variant="secondary" onClick={() => setImportOpen(true)}>
+            {i18n.t('catalog.import.button')}
           </Button>
         ) : null}
         <div className="ml-auto">
@@ -577,6 +584,8 @@ export function SkusSection() {
           );
         }}
       </DataState>
+
+      <CatalogImportSheet open={importOpen} onOpenChange={setImportOpen} />
 
       <Sheet
         open={!!draft}

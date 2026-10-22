@@ -32,6 +32,7 @@ export interface AuditRowLike {
 export type AuditSentenceKey =
   | 'ops.audit.s.catalogArchive'
   | 'ops.audit.s.catalogCreate'
+  | 'ops.audit.s.catalogImport'
   | 'ops.audit.s.catalogRestore'
   | 'ops.audit.s.catalogUpdate'
   | 'ops.audit.s.financeUpdate'
@@ -101,7 +102,14 @@ export function parseAuditAction(action: string): { object: string; verb: string
   return { object: action, verb: '' };
 }
 
-const CATALOG_OBJECTS = new Set(['sku', 'category', 'supplier', 'expenseTemplate', 'dish']);
+const CATALOG_OBJECTS = new Set([
+  'catalog',
+  'sku',
+  'category',
+  'supplier',
+  'expenseTemplate',
+  'dish',
+]);
 
 export function auditCategory(action: string): AuditCategory {
   const { object, verb } = parseAuditAction(action);
@@ -221,6 +229,13 @@ export function describeAuditRow(
       return out('ops.audit.s.financeUpdate');
     case 'subscription.update':
       return out('ops.audit.s.subscriptionUpdate');
+    case 'catalog.import': {
+      const summary =
+        inputs.summary && typeof inputs.summary === 'object'
+          ? (inputs.summary as { skus?: { created?: number } })
+          : null;
+      return out('ops.audit.s.catalogImport', { n: String(summary?.skus?.created ?? 0) });
+    }
   }
 
   if (category === 'catalog' && (verb === 'create' || verb === 'update' || verb === 'delete')) {
