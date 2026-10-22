@@ -1442,6 +1442,8 @@ export const uz = {
   'run.section.storeExpenses': "Do'kon xarajatlari",
   'run.history.viewAll': 'Barcha tarix',
   'run.history.storePurchases': "Do'konlarning shu kundagi xaridlari",
+  'run.history.trip': '{n}-reys',
+  'run.history.tripCount': '{n} ta reys',
   'run.history.storeItemsHeading': '{store}ning shu kundagi xaridlari',
   'run.history.searchPlaceholder': 'Xaridlarni qidirish',
   'run.history.filters': 'Filtrlar ({n})',
@@ -1600,6 +1602,7 @@ export const uz = {
   // 2026-10-21 audit decisions CA-03/04/06/11 (run selection, parallel runs,
   // received qty, items/expenses money split).
   'run.money.itemsExpenses': 'Mahsulotlar {items} · xarajatlar {expenses}',
+  'run.money.cashTransfer': "Naqd {cash} · o'tkazma {transfer}",
   'confirm.issue.receivedQty': 'Qabul qilingan miqdor ({max} {unit} dan)',
   'confirm.issue.receivedQtyRequired': 'Haqiqatda qancha kelganini kiriting',
   'confirm.issue.receivedQtyRange': '0 dan {max} gacha son kiriting',

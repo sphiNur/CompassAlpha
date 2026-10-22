@@ -1348,6 +1348,8 @@ export const zh = {
   'run.section.storeExpenses': '分店开销',
   'run.history.viewAll': '全部历史',
   'run.history.storePurchases': '各店当天采购',
+  'run.history.trip': '第{n}趟',
+  'run.history.tripCount': '共{n}趟',
   'run.history.storeItemsHeading': '{store} 当天采购清单',
   'run.history.searchPlaceholder': '搜索采购记录',
   'run.history.filters': '筛选（{n}）',
@@ -1498,6 +1500,7 @@ export const zh = {
   // 2026-10-21 audit decisions CA-03/04/06/11 (run selection, parallel runs,
   // received qty, items/expenses money split).
   'run.money.itemsExpenses': '商品 {items} · 开销 {expenses}',
+  'run.money.cashTransfer': '现金 {cash} · 转账 {transfer}',
   'confirm.issue.receivedQty': '实收数量（共 {max} {unit}）',
   'confirm.issue.receivedQtyRequired': '请填写实际收到的数量',
   'confirm.issue.receivedQtyRange': '请输入 0 到 {max} 之间的数字',
