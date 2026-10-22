@@ -11,7 +11,6 @@ import { and, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
 import {
-  MANAGER_RANK,
   SettlementBusinessDateInputSchema,
   SettlementGetInputSchema,
   type SettlementOperatingExpenseItem,
@@ -26,9 +25,7 @@ import { authedProcedure, idempotentMutation, router } from '../trpc';
 import {
   assertActorAssignedToStore,
   effectivePermissionsForStore,
-  getActorMaxActiveRoleRankInStore,
 } from '../../services/storeScope';
-import { hasGlobalOrgAdmin } from '../../services/orgAdmin';
 
 type SettlementRow = typeof s.storeDailySettlements.$inferSelect;
 
@@ -388,14 +385,6 @@ function missingSettlementPermission(): never {
   });
 }
 
-function managerRequiredForOperatingExpenses(): never {
-  throw new TRPCError({
-    code: 'FORBIDDEN',
-    message: 'settlement.errors.expensesManagerOnly',
-    cause: { minimumRoleRank: MANAGER_RANK },
-  });
-}
-
 function staleSettlement(): never {
   throw new TRPCError({
     code: 'CONFLICT',
@@ -742,17 +731,6 @@ async function loadWageRoster(tx: DB, orgId: string, storeId: string): Promise<W
     .sort((left, right) => left.displayName.localeCompare(right.displayName));
 }
 
-async function canRecordOperatingExpenses(
-  tx: DB,
-  memberId: string,
-  storeId: string,
-): Promise<boolean> {
-  return (
-    (await hasGlobalOrgAdmin(tx, memberId)) ||
-    (await getActorMaxActiveRoleRankInStore(tx, memberId, storeId)) >= MANAGER_RANK
-  );
-}
-
 export const settlementRouter = router({
   /**
    * Authoritative business date for the selected store. The browser must not
@@ -769,13 +747,11 @@ export const settlementRouter = router({
           storeId: store.id,
           date: todayInTz(timezone),
           timezone,
-          // UI affordance only; save independently enforces the exact same
-          // store-scoped role threshold.
-          canRecordOperatingExpenses: await canRecordOperatingExpenses(
-            tx,
-            ctx.session!.memberId,
-            store.id,
-          ),
+          // UI affordance only. Operating expenses are part of the daily
+          // close, so anyone who may record this store's settlement (the
+          // settlement.record check above) may record them too. Kept in the
+          // response so already-loaded web bundles keep enabling the editor.
+          canRecordOperatingExpenses: true,
         };
       });
     }),
@@ -870,21 +846,6 @@ export const settlementRouter = router({
           ),
       });
 
-      const actorCanRecordOperatingExpenses = await canRecordOperatingExpenses(
-        tx,
-        ctx.session!.memberId,
-        store.id,
-      );
-      // Keep the manager boundary dominant for an attempted mutation, even
-      // when the target is also an immutable total-only historical close.
-      if (
-        input.operatingExpenseItems !== undefined &&
-        hasLegacyOperatingExpenseTotal(existing) &&
-        !actorCanRecordOperatingExpenses
-      ) {
-        managerRequiredForOperatingExpenses();
-      }
-
       const roster = input.wageItems?.some((item) => !!item.memberId)
         ? await loadWageRoster(tx, ctx.session!.orgId, store.id)
         : [];
@@ -894,19 +855,6 @@ export const settlementRouter = router({
         ctx.session!.memberId,
         new Map(roster.map((member) => [member.memberId, member])),
       );
-      const operatingExpenseItemsChanged = !sameRawOperatingExpenseItems(
-        existing ? rawOperatingExpenseItems(existing) : [],
-        itemizedOutflows.operatingExpenseItems,
-      );
-      const operatingExpensesChanged =
-        itemizedOutflows.operatingExpenses !==
-        (existing ? normalizeSettlementMoney(existing.operatingExpenses) : '0.00');
-      if (
-        (operatingExpenseItemsChanged || operatingExpensesChanged) &&
-        !actorCanRecordOperatingExpenses
-      ) {
-        managerRequiredForOperatingExpenses();
-      }
       const values = {
         onlineRevenue: normalizeSettlementMoney(input.onlineRevenue),
         invoicedCashRevenue: normalizeSettlementMoney(input.invoicedCashRevenue),

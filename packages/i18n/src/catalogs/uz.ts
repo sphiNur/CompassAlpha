@@ -1588,7 +1588,7 @@ export const uz = {
     "Kun yakuni har bir do'kon uchun alohida yoziladi. Barcha do'konlar o'rniga aniq bir do'konni tanlang.",
   'settlement.errors.invalidMoney': "Ikki kasrgacha bo'lgan to'g'ri summani kiriting.",
   'settlement.errors.expensesManagerOnly':
-    'Operatsion xarajatlarni faqat do‘kon menejeri yoki undan yuqori rol kiritishi mumkin.',
+    'Operatsion xarajatlarni kiritish uchun ushbu do‘konning kunlik hisobini yuritish huquqi kerak.',
   'settlement.errors.invalidDetails': "Har bir xarajat va ish haqi qatorini to'ldiring.",
   'settlement.errors.invalidDetailsBody':
     'Har bir operatsion xarajat uchun musbat summa va sababni kiriting; har bir ish haqi qatori uchun xodimni ham tanlang.',

@@ -1724,7 +1724,7 @@ export const en = {
     'Daily close is recorded per store. Choose a specific store instead of All stores.',
   'settlement.errors.invalidMoney': 'Enter a valid amount with up to two decimal places.',
   'settlement.errors.expensesManagerOnly':
-    'Only a store manager or higher role can record operating expenses.',
+    'Recording operating expenses requires permission to record this store’s daily settlement.',
   'settlement.errors.invalidDetails': 'Complete every expense and wage entry.',
   'settlement.errors.invalidDetailsBody':
     'Each operating expense needs a positive amount and reason; each wage entry also needs a selected employee.',
