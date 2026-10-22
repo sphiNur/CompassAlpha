@@ -36,6 +36,13 @@ import type { DB } from '@compass/db';
 import { assertRelayDelivered, RelayError } from './relay';
 import { orphanRepairFor } from './orphanRepair';
 import { deleteInBatches, RETENTION_RULES, retentionDeleteSql } from './retention';
+import {
+  claimLastActiveAt,
+  claimRowForUpdateSql,
+  type DbTimestamp,
+  isClaimExpired,
+  staleClaimCandidatesSql,
+} from './claimTimeout';
 
 (function loadRootEnv() {
   let dir = dirname(fileURLToPath(import.meta.url));
@@ -391,8 +398,11 @@ let lastIdempotencyCleanup = Date.now();
 // goes idle, the order returns to the queue automatically so the
 // next approver can pick it up without manual intervention.
 //
-//   CLAIM_TIMEOUT_MINUTES         — how long a claim sits before
-//                                   counting as stale (default 30)
+//   CLAIM_TIMEOUT_MINUTES         — how long a claim sits idle before
+//                                   counting as stale (default 30),
+//                                   measured from the claimer's last
+//                                   event on that order / run, or the
+//                                   claim itself if later (claimTimeout.ts)
 //   CLAIM_TIMEOUT_SCAN_MINUTES    — how often this worker scans
 //                                   for stale claims (default 5)
 //
@@ -410,8 +420,31 @@ if (CLAIM_TIMEOUT_MINUTES > 0) {
   console.warn('[worker] claim auto-release disabled (CLAIM_TIMEOUT_MINUTES=0)');
 }
 
+type StaleClaimCandidate = {
+  id: string;
+  org_id: string;
+  last_seq: number;
+  claimed_by_member_id: string;
+  claimed_at: DbTimestamp;
+  last_claimer_event_at: DbTimestamp | null;
+};
+
+type LockedClaimRow = {
+  last_seq: number;
+  claimed_by_member_id: string | null;
+  claimed_at: DbTimestamp | null;
+  status: string;
+  last_claimer_event_at: DbTimestamp | null;
+};
+
+function idleMinutes(row: StaleClaimCandidate): number {
+  const lastActive = claimLastActiveAt(row.claimed_at, row.last_claimer_event_at);
+  return Math.round((Date.now() - lastActive.getTime()) / 60_000);
+}
+
 /**
- * Find sessions whose claim has sat idle past CLAIM_TIMEOUT_MINUTES and
+ * Find sessions whose claim has sat idle past CLAIM_TIMEOUT_MINUTES (since
+ * the later of the claim and the claimer's newest event on the order) and
  * release them by appending a `ClaimReleased{reason:'timeout'}` event +
  * updating the read model. Each release runs in its own tx with FOR UPDATE
  * so a concurrent approve/reject/manual-release races cleanly: only one
@@ -425,22 +458,8 @@ async function releaseStaleClaims(): Promise<number> {
 
   // Candidate set first — cheap scan, no locks.
   const candidates = (await inSystem(db, 'worker', (tx) =>
-    tx.execute(sql`
-    SELECT id, org_id, last_seq, claimed_by_member_id, claimed_at
-    FROM read_model.order_sessions_v
-    WHERE status = 'submitted'
-      AND claimed_by_member_id IS NOT NULL
-      AND claimed_at < NOW() - (${CLAIM_TIMEOUT_MINUTES}::int * interval '1 minute')
-    ORDER BY claimed_at
-    LIMIT 100
-  `),
-  )) as unknown as Array<{
-    id: string;
-    org_id: string;
-    last_seq: number;
-    claimed_by_member_id: string;
-    claimed_at: Date;
-  }>;
+    tx.execute(staleClaimCandidatesSql('order', CLAIM_TIMEOUT_MINUTES)),
+  )) as unknown as StaleClaimCandidate[];
   if (candidates.length === 0) return 0;
 
   let released = 0;
@@ -450,24 +469,21 @@ async function releaseStaleClaims(): Promise<number> {
         // Re-check under row lock — another tx may have already
         // approved / rejected / manually released between our SELECT
         // and now. If so, just skip.
-        const fresh = (await tx.execute(sql`
-          SELECT last_seq, claimed_by_member_id, claimed_at, status
-          FROM read_model.order_sessions_v
-          WHERE id = ${row.id}
-          FOR UPDATE
-        `)) as unknown as Array<{
-          last_seq: number;
-          claimed_by_member_id: string | null;
-          claimed_at: Date | null;
-          status: string;
-        }>;
+        const fresh = (await tx.execute(
+          claimRowForUpdateSql('order', row.id),
+        )) as unknown as LockedClaimRow[];
         const cur = fresh[0];
         if (!cur) return false;
         if (
           cur.status !== 'submitted' ||
           cur.claimed_by_member_id === null ||
           cur.claimed_at === null ||
-          cur.claimed_at.getTime() >= Date.now() - CLAIM_TIMEOUT_MINUTES * 60_000
+          !isClaimExpired({
+            claimedAt: cur.claimed_at,
+            lastClaimerEventAt: cur.last_claimer_event_at,
+            now: new Date(),
+            timeoutMinutes: CLAIM_TIMEOUT_MINUTES,
+          })
         ) {
           return false;
         }
@@ -508,7 +524,7 @@ async function releaseStaleClaims(): Promise<number> {
       if (ok) {
         released++;
         console.log(
-          `[worker] claim timeout released: session=${row.id} prevClaimer=${row.claimed_by_member_id} idleFor=${Math.round((Date.now() - row.claimed_at.getTime()) / 60_000)}m`,
+          `[worker] claim timeout released: session=${row.id} prevClaimer=${row.claimed_by_member_id} idleFor=${idleMinutes(row)}m`,
         );
       }
     } catch (err) {
@@ -532,39 +548,17 @@ async function releaseStaleClaims(): Promise<number> {
 async function releaseStaleRunClaims(): Promise<number> {
   if (CLAIM_TIMEOUT_MINUTES <= 0) return 0;
   const candidates = (await inSystem(db, 'worker', (tx) =>
-    tx.execute(sql`
-    SELECT id, org_id, last_seq, claimed_by_member_id, claimed_at
-    FROM read_model.market_runs_v
-    WHERE status IN ('planned', 'purchasing', 'delivering')
-      AND claimed_by_member_id IS NOT NULL
-      AND claimed_at < NOW() - (${CLAIM_TIMEOUT_MINUTES}::int * interval '1 minute')
-    ORDER BY claimed_at
-    LIMIT 100
-  `),
-  )) as unknown as Array<{
-    id: string;
-    org_id: string;
-    last_seq: number;
-    claimed_by_member_id: string;
-    claimed_at: Date;
-  }>;
+    tx.execute(staleClaimCandidatesSql('run', CLAIM_TIMEOUT_MINUTES)),
+  )) as unknown as StaleClaimCandidate[];
   if (candidates.length === 0) return 0;
 
   let released = 0;
   for (const row of candidates) {
     try {
       const ok = await withSystemContext(db, 'worker', async (tx) => {
-        const fresh = (await tx.execute(sql`
-          SELECT last_seq, claimed_by_member_id, claimed_at, status
-          FROM read_model.market_runs_v
-          WHERE id = ${row.id}
-          FOR UPDATE
-        `)) as unknown as Array<{
-          last_seq: number;
-          claimed_by_member_id: string | null;
-          claimed_at: Date | null;
-          status: string;
-        }>;
+        const fresh = (await tx.execute(
+          claimRowForUpdateSql('run', row.id),
+        )) as unknown as LockedClaimRow[];
         const cur = fresh[0];
         if (!cur) return false;
         if (
@@ -573,7 +567,12 @@ async function releaseStaleRunClaims(): Promise<number> {
             cur.status !== 'delivering') ||
           cur.claimed_by_member_id === null ||
           cur.claimed_at === null ||
-          cur.claimed_at.getTime() >= Date.now() - CLAIM_TIMEOUT_MINUTES * 60_000
+          !isClaimExpired({
+            claimedAt: cur.claimed_at,
+            lastClaimerEventAt: cur.last_claimer_event_at,
+            now: new Date(),
+            timeoutMinutes: CLAIM_TIMEOUT_MINUTES,
+          })
         ) {
           return false;
         }
@@ -608,7 +607,7 @@ async function releaseStaleRunClaims(): Promise<number> {
       if (ok) {
         released++;
         console.log(
-          `[worker] run claim timeout released: run=${row.id} prevClaimer=${row.claimed_by_member_id} idleFor=${Math.round((Date.now() - row.claimed_at.getTime()) / 60_000)}m`,
+          `[worker] run claim timeout released: run=${row.id} prevClaimer=${row.claimed_by_member_id} idleFor=${idleMinutes(row)}m`,
         );
       }
     } catch (err) {

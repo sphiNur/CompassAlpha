@@ -79,6 +79,82 @@ describe('changedByOthersSince (CA-43 approve what you saw)', () => {
   });
 });
 
+describe('changedByOthersSince — worker timeout release + re-claim', () => {
+  const mgr2 = actor('mem-mgr2', ['order.claim', 'order.approve']);
+
+  /** The worker's event: no actor, reason timeout (apps/worker releaseStaleClaims). */
+  const timeoutRelease = (seq: number): OrderEvent => ({
+    streamId: 'sess-1',
+    seq,
+    occurredAt: new Date('2026-10-21T10:31:00Z'),
+    actorUserId: null,
+    actorMemberId: null,
+    type: 'ClaimReleased',
+    payload: { byMemberId: null, reason: 'timeout' },
+  });
+
+  /** Append `claimer`'s claim after a timeout release of `holder`'s claim. */
+  function timedOut(holder: ActorCtx, claimer: ActorCtx) {
+    const claimed = run([...submitted, () => ({ type: 'Claim' as const, actor: holder })]);
+    const seen = claimed.state.seq;
+    const release = timeoutRelease(seen + 1);
+    const state = apply(claimed.state, release);
+    const reclaim = decide(state, { type: 'Claim', actor: claimer }, { clock });
+    return { seen, events: [...claimed.events, release, ...reclaim] };
+  }
+
+  test('my claim timed out and I re-claimed it → not changed', () => {
+    const { seen, events } = timedOut(mgr, mgr);
+    expect(changedByOthersSince(events, seen, mgr.userId)).toBe(false);
+  });
+
+  test('works on events as read back from the store (actorMemberId null)', () => {
+    const { seen, events } = timedOut(mgr, mgr);
+    const persisted = events.map((e) => ({ ...e, actorMemberId: null }));
+    expect(changedByOthersSince(persisted, seen, mgr.userId)).toBe(false);
+  });
+
+  test('someone else re-claimed after the timeout → changed', () => {
+    const { seen, events } = timedOut(mgr, mgr2);
+    expect(changedByOthersSince(events, seen, mgr.userId)).toBe(true);
+  });
+
+  test("another approver's claim timed out and I claimed → changed", () => {
+    // The release ended someone else's claim, not mine.
+    const { seen, events } = timedOut(mgr2, mgr);
+    expect(changedByOthersSince(events, seen, mgr.userId)).toBe(true);
+  });
+
+  test('timeout release with no re-claim yet → changed', () => {
+    const { seen, events } = timedOut(mgr, mgr);
+    expect(changedByOthersSince(events.slice(0, -1), seen, mgr.userId)).toBe(true);
+  });
+
+  test('staff edits after my re-claim still count', () => {
+    const { seen, events } = timedOut(mgr, mgr);
+    const last = events[events.length - 1]!;
+    const staffEdit = { ...last, seq: last.seq + 1, actorUserId: staffA.userId };
+    expect(changedByOthersSince([...events, staffEdit], seen, mgr.userId)).toBe(true);
+  });
+
+  test('an override release by another approver still counts', () => {
+    const claimed = run([...submitted, () => ({ type: 'Claim' as const, actor: mgr })]);
+    const seen = claimed.state.seq;
+    const override = decide(
+      claimed.state,
+      { type: 'ReleaseClaim', reason: 'manual', actor: mgr2 },
+      {
+        clock,
+      },
+    );
+    const state = apply(claimed.state, override[0]!);
+    const reclaim = decide(state, { type: 'Claim', actor: mgr }, { clock });
+    expect(
+      changedByOthersSince([...claimed.events, ...override, ...reclaim], seen, mgr.userId),
+    ).toBe(true);
+  });
+});
+
 describe('isPastBusinessDate (CA-25 offline replay)', () => {
   test('earlier day is past; same day and later are not', () => {
     expect(isPastBusinessDate('2026-10-20', '2026-10-21')).toBe(true);
