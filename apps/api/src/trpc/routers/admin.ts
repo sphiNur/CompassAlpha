@@ -12,7 +12,7 @@ import { TRPCError } from '@trpc/server';
 import { createHash, randomBytes } from 'node:crypto';
 import { and, desc, eq, gt, gte, inArray, isNull, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { schema as s } from '@compass/db';
+import { inSystem, schema as s, withOrgContext } from '@compass/db';
 import {
   ADMIN_RANK,
   GrantRoleInputSchema,
@@ -28,6 +28,11 @@ import { hasGlobalOrgAdmin, hasGlobalPermission } from '../../services/orgAdmin'
 import { effectivePermissionsForStore } from '../../services/storeScope';
 import { assertCanAddMember, assertCanAddStore } from '../../services/subscription';
 import { isUniqueViolation } from '../../services/pgErrors';
+import {
+  applyCatalogCopy,
+  readCatalogSnapshot,
+  type CatalogSnapshot,
+} from '../../services/catalogCopy';
 
 function requireAdmin(perms: ReadonlySet<string>): void {
   if (!perms.has('users.manage')) {
@@ -80,6 +85,67 @@ function requireOrgAdmin(perms: ReadonlySet<string>): void {
       cause: { missingPermission: 'org.admin' },
     });
   }
+}
+
+type AdminCtx = Awaited<ReturnType<typeof import('../context').createContext>>;
+
+const CatalogImportInputSchema = z.object({
+  sourceOrgId: UuidSchema,
+  includeSuppliers: z.boolean(),
+});
+
+/**
+ * org.admin from a GLOBAL grant in the current organisation. The session
+ * permission set is a union across scopes, so it alone can't prove an
+ * org-wide grant (see services/orgAdmin.ts).
+ */
+async function requireGlobalOrgAdmin(ctx: AdminCtx): Promise<void> {
+  requireOrgAdmin(ctx.session!.permissions);
+  const ok = await ctx.withOrg((tx) => hasGlobalOrgAdmin(tx, ctx.session!.memberId));
+  if (!ok) requireOrgAdmin(new Set());
+}
+
+/**
+ * The caller's other organisations where they are an org-wide admin —
+ * the only ones a catalog may be imported from. Memberships are found
+ * the way switchOrganization finds them; the admin check then runs
+ * inside each organisation.
+ */
+async function catalogSourceMemberships(
+  ctx: AdminCtx,
+): Promise<Array<{ orgId: string; orgName: string; memberId: string }>> {
+  const rows = await inSystem(ctx.db, 'auth', (tx) =>
+    tx
+      .select({ orgId: s.organizations.id, orgName: s.organizations.name, memberId: s.members.id })
+      .from(s.members)
+      .innerJoin(s.organizations, eq(s.organizations.id, s.members.orgId))
+      .where(
+        and(
+          eq(s.members.userId, ctx.session!.userId),
+          eq(s.members.status, 'active'),
+          isNull(s.organizations.deletedAt),
+        ),
+      )
+      .orderBy(s.organizations.name),
+  );
+  const others = rows.filter((r) => r.orgId !== ctx.session!.orgId);
+  const admin = await Promise.all(
+    others.map((r) => withOrgContext(ctx.db, r.orgId, (tx) => hasGlobalOrgAdmin(tx, r.memberId))),
+  );
+  return others.filter((_, i) => admin[i]);
+}
+
+/** Read the source catalog, after checking the caller administers it. */
+async function readCatalogSource(ctx: AdminCtx, sourceOrgId: string): Promise<CatalogSnapshot> {
+  const allowed = await catalogSourceMemberships(ctx);
+  if (!allowed.some((m) => m.orgId === sourceOrgId)) {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: 'auth.errors.missingPermission',
+      cause: { missingPermission: 'org.admin' },
+    });
+  }
+  return withOrgContext(ctx.db, sourceOrgId, (tx) => readCatalogSnapshot(tx, sourceOrgId));
 }
 
 /**
@@ -4397,6 +4463,54 @@ export const adminRouter = router({
         broadcastCatalog(orgId, 'supplier');
         return { ok: true };
       });
+    }),
+
+  // ============ CATALOG IMPORT (2026-10-23) ============
+  // Copy another organisation's catalog into this one. The caller must be
+  // an org-wide admin in BOTH organisations; see services/catalogCopy.ts
+  // for what is copied and what is left behind.
+
+  /** Other organisations this admin may import a catalog from. */
+  catalogImportSources: authedProcedure.query(async ({ ctx }) => {
+    await requireGlobalOrgAdmin(ctx);
+    const memberships = await catalogSourceMemberships(ctx);
+    return memberships.map(({ orgId, orgName }) => ({ orgId, orgName }));
+  }),
+
+  catalogImportPreview: authedProcedure
+    .input(CatalogImportInputSchema)
+    .query(async ({ ctx, input }) => {
+      await requireGlobalOrgAdmin(ctx);
+      const source = await readCatalogSource(ctx, input.sourceOrgId);
+      return ctx.withOrg((tx) =>
+        applyCatalogCopy(tx, ctx.session!.orgId, source, {
+          includeSuppliers: input.includeSuppliers,
+          dryRun: true,
+        }),
+      );
+    }),
+
+  catalogImport: authedProcedure
+    .input(CatalogImportInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      await requireGlobalOrgAdmin(ctx);
+      const source = await readCatalogSource(ctx, input.sourceOrgId);
+      const orgId = ctx.session!.orgId;
+      const summary = await ctx.withOrg(async (tx) => {
+        const result = await applyCatalogCopy(tx, orgId, source, {
+          includeSuppliers: input.includeSuppliers,
+          dryRun: false,
+        });
+        await auditAdmin(tx, ctx, 'admin.catalog.import', 'catalog', null, {
+          ...input,
+          summary: result,
+        });
+        return result;
+      });
+      broadcastCatalog(orgId, 'category');
+      broadcastCatalog(orgId, 'sku');
+      if (input.includeSuppliers) broadcastCatalog(orgId, 'supplier');
+      return summary;
     }),
 
   // ============ EXPENSE TEMPLATES (M3.57) ============
