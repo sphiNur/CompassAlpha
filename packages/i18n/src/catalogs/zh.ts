@@ -1470,7 +1470,7 @@ export const zh = {
   'settlement.storeRequired.title': '请选择一个店铺',
   'settlement.storeRequired.body': '每日结算按店铺分别记录，请选择具体店铺，不要选择全部店铺。',
   'settlement.errors.invalidMoney': '请输入有效金额，最多保留两位小数。',
-  'settlement.errors.expensesManagerOnly': '只有店长或更高权限的人员可以录入日常支出。',
+  'settlement.errors.expensesManagerOnly': '需要本门店的日结录入权限才能录入日常支出。',
   'settlement.errors.invalidDetails': '请补全每一条支出和工资明细。',
   'settlement.errors.invalidDetailsBody':
     '每条日常支出都必须填写正数金额和支出原因；每条工资明细还必须选择员工。',
