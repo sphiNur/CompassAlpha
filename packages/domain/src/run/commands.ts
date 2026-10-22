@@ -67,7 +67,8 @@ export type RunCommand =
   | { type: 'RefinalizeRun'; actor: ActorCtx }
   // Correct the calendar date a run's spend is booked under (2026-07-30),
   // super-admin only (run.amend). See the RunDateChanged event docblock.
-  | { type: 'ChangeRunDate'; runDate: string; actor: ActorCtx }
+  // `runIndex`: the run's number on the new day (see RunDateChanged).
+  | { type: 'ChangeRunDate'; runDate: string; runIndex?: number; actor: ActorCtx }
   // ---- Reversal commands (added 2026-05-03) ---------------------------
   | {
       type: 'RevisePurchase';
@@ -903,6 +904,7 @@ export function decideRun(
           payload: {
             runDate,
             previousRunDate: state.runDate,
+            ...(command.runIndex !== undefined ? { runIndex: command.runIndex } : {}),
             byMemberId: command.actor.memberId,
           },
         },

@@ -320,7 +320,12 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
       // Only the calendar key moves. Items, splits, expenses and totals
       // are all untouched — this corrects WHEN the spend is booked, not
       // what was spent.
-      return { ...state, seq: event.seq, runDate: event.payload.runDate };
+      return {
+        ...state,
+        seq: event.seq,
+        runDate: event.payload.runDate,
+        runIndex: event.payload.runIndex ?? state.runIndex,
+      };
     case 'RunReopened':
       // Super-admin reopened a finished run for correction. Item / split
       // / expense state is untouched — only the phase moves back so the

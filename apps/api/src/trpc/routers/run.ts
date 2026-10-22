@@ -8,7 +8,7 @@
  * on each session stream so they transition to `in_run`.
  */
 import { TRPCError } from '@trpc/server';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { schema as s } from '@compass/db';
@@ -3198,13 +3198,18 @@ export const runRouter = router({
     runSimpleCommand(
       ctx,
       input.runId,
-      (state) =>
+      (state, { nextRunIndex }) =>
         decideRun(state, {
           type: 'ChangeRunDate',
           runDate: input.runDate,
+          runIndex: nextRunIndex,
           actor: actorFromCtx(ctx),
         }),
-      { requireGlobalAmend: true },
+      // 2026-10-23: runs are numbered per day (unique org + date + index);
+      // moving a run onto a day that already has a run #0 hit that index
+      // and surfaced as "edited by someone else". It now becomes that
+      // day's next run.
+      { requireGlobalAmend: true, nextRunIndexOn: input.runDate },
     ),
   ),
 
@@ -3599,7 +3604,11 @@ async function runSimpleCommand(
   runId: string,
   produce: (
     state: RunState,
-    scope: { runStoreIds?: string[]; readStoreIds?: ReadonlySet<string> | null },
+    scope: {
+      runStoreIds?: string[];
+      readStoreIds?: ReadonlySet<string> | null;
+      nextRunIndex?: number;
+    },
   ) => RunEvent[],
   options?: {
     requireGlobalAmend?: boolean;
@@ -3617,6 +3626,8 @@ async function runSimpleCommand(
      * not touch splits the actor was never shown.
      */
     withReadScope?: boolean;
+    /** Resolve the next free run number on this date (YYYY-MM-DD). */
+    nextRunIndexOn?: string;
   },
 ): Promise<{ lastSeq: number; eventCount: number }> {
   return ctx.withOrg(async (tx) => {
@@ -3624,9 +3635,26 @@ async function runSimpleCommand(
     const events = (await readStream(tx, 'run', run.id)) as unknown as RunEvent[];
     let state = emptyRunState(run.id);
     for (const e of events) state = applyRun(state, e);
-    const scope: { runStoreIds?: string[]; readStoreIds?: ReadonlySet<string> | null } = {
+    const scope: {
+      runStoreIds?: string[];
+      readStoreIds?: ReadonlySet<string> | null;
+      nextRunIndex?: number;
+    } = {
       ...(options?.withRunStoreIds ? { runStoreIds: await runInvolvedStoreIds(tx, run) } : {}),
     };
+    if (options?.nextRunIndexOn) {
+      const [row] = await tx
+        .select({ next: sql<number>`coalesce(max(${s.marketRunsV.runIndex}) + 1, 0)::int` })
+        .from(s.marketRunsV)
+        .where(
+          and(
+            eq(s.marketRunsV.orgId, ctx.session!.orgId),
+            eq(s.marketRunsV.runDate, options.nextRunIndexOn),
+            ne(s.marketRunsV.id, run.id),
+          ),
+        );
+      scope.nextRunIndex = row?.next ?? 0;
+    }
     if (options?.withReadScope) {
       const readStoreIds = await resolveRunReadStoreScope(tx, ctx);
       scope.readStoreIds = readStoreIds === null ? null : new Set(readStoreIds);
