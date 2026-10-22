@@ -74,6 +74,14 @@ describe.skipIf(!SHOULD_RUN)('run.changeDate onto a day that has a run (PG-gated
     await withOrgContext(getDb(), orgId, async (tx) => {
       await appendEvents(tx, { streamType: 'run', streamId: runId, orgId, events: [event] });
       await projectRun(tx, orgId, [event]);
+      // Only one planned/purchasing run may exist per org (0047), and the
+      // runs being re-dated are finished ones; mark the row finished so the
+      // next one can be planned. The domain allows a date change in any
+      // phase but cancelled.
+      await tx
+        .update(s.marketRunsV)
+        .set({ status: 'finished' })
+        .where(eq(s.marketRunsV.id, runId));
     });
     return runId;
   }
