@@ -1,0 +1,123 @@
+/**
+ * Claim auto-release timing (M3.20 safety net, see `releaseStaleClaims`
+ * in main.ts).
+ *
+ * A claim used to expire CLAIM_TIMEOUT_MINUTES after the claim moment, so
+ * an approver who was still editing the order got released mid-review and
+ * their approve then failed as stale. The idle clock now starts at the
+ * claimer's last activity: the later of the claim time and the claimer's
+ * newest event on that stream (`domain.events.actor_id` is the acting
+ * user, so it is matched to the claiming member through `auth.members`).
+ */
+import { sql, type SQL } from 'drizzle-orm';
+
+/**
+ * A timestamp as raw `tx.execute` returns it. Drizzle's postgres-js
+ * driver leaves timestamptz columns as strings on raw queries (only its
+ * query builder maps them to Date), so the old `cur.claimed_at.getTime()`
+ * threw a TypeError for every candidate and no claim was auto-released.
+ */
+export type DbTimestamp = Date | string;
+
+export function toDate(value: DbTimestamp): Date {
+  return value instanceof Date ? value : new Date(value);
+}
+
+/** When the claimer was last seen working on this order / run. */
+export function claimLastActiveAt(
+  claimedAt: DbTimestamp,
+  lastClaimerEventAt: DbTimestamp | null,
+): Date {
+  const claimed = toDate(claimedAt);
+  const lastEvent = lastClaimerEventAt === null ? null : toDate(lastClaimerEventAt);
+  return lastEvent && lastEvent.getTime() > claimed.getTime() ? lastEvent : claimed;
+}
+
+/**
+ * Has the claim sat idle for at least `timeoutMinutes`? `timeoutMinutes
+ * <= 0` means the auto-release is disabled and nothing ever expires.
+ */
+export function isClaimExpired(input: {
+  claimedAt: DbTimestamp;
+  lastClaimerEventAt: DbTimestamp | null;
+  now: Date;
+  timeoutMinutes: number;
+}): boolean {
+  if (input.timeoutMinutes <= 0) return false;
+  const lastActive = claimLastActiveAt(input.claimedAt, input.lastClaimerEventAt);
+  return lastActive.getTime() < input.now.getTime() - input.timeoutMinutes * 60_000;
+}
+
+export type ClaimStream = 'order' | 'run';
+
+/** Fixed table per stream type; never built from caller input. */
+const CLAIM_TABLES: Record<ClaimStream, { table: SQL; statusFilter: SQL }> = {
+  order: {
+    table: sql.raw('read_model.order_sessions_v'),
+    statusFilter: sql.raw(`c.status = 'submitted'`),
+  },
+  run: {
+    table: sql.raw('read_model.market_runs_v'),
+    statusFilter: sql.raw(`c.status IN ('planned', 'purchasing', 'delivering')`),
+  },
+};
+
+/**
+ * Newest event the claiming member appended to this stream, as a
+ * correlated scalar subquery over the claim row aliased `c`.
+ */
+function lastClaimerEventAtSql(stream: ClaimStream): SQL {
+  return sql`(
+    SELECT MAX(e.occurred_at)
+    FROM domain.events e
+    JOIN auth.members m ON m.user_id = e.actor_id
+    WHERE e.stream_type = ${stream}
+      AND e.stream_id = c.id
+      AND m.id = c.claimed_by_member_id
+  )`;
+}
+
+/**
+ * Cheap, lock-free candidate scan: claimed rows whose last claimer
+ * activity is older than the timeout. Callers re-check each row under
+ * `FOR UPDATE` with `claimRowForUpdateSql` + `isClaimExpired`.
+ */
+export function staleClaimCandidatesSql(
+  stream: ClaimStream,
+  timeoutMinutes: number,
+  limit = 100,
+): SQL {
+  const { table, statusFilter } = CLAIM_TABLES[stream];
+  return sql`
+    SELECT id, org_id, last_seq, claimed_by_member_id, claimed_at, last_claimer_event_at
+    FROM (
+      SELECT c.id, c.org_id, c.last_seq, c.claimed_by_member_id, c.claimed_at,
+        ${lastClaimerEventAtSql(stream)} AS last_claimer_event_at
+      FROM ${table} c
+      WHERE ${statusFilter}
+        AND c.claimed_by_member_id IS NOT NULL
+        AND c.claimed_at < NOW() - (${timeoutMinutes}::int * interval '1 minute')
+    ) claims
+    WHERE GREATEST(claimed_at, last_claimer_event_at)
+      < NOW() - (${timeoutMinutes}::int * interval '1 minute')
+    ORDER BY GREATEST(claimed_at, last_claimer_event_at)
+    LIMIT ${limit}::int
+  `;
+}
+
+/**
+ * Re-read one claim row under a row lock, with the claimer's latest
+ * event time. An event the claimer appends after this read would take
+ * the same seq as the release, so `events_stream_seq_unique` lets at
+ * most one of the two commit.
+ */
+export function claimRowForUpdateSql(stream: ClaimStream, id: string): SQL {
+  const { table } = CLAIM_TABLES[stream];
+  return sql`
+    SELECT c.last_seq, c.claimed_by_member_id, c.claimed_at, c.status,
+      ${lastClaimerEventAtSql(stream)} AS last_claimer_event_at
+    FROM ${table} c
+    WHERE c.id = ${id}
+    FOR UPDATE OF c
+  `;
+}
