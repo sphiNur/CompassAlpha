@@ -37,6 +37,8 @@ export type RunCommand =
       paymentMethod: 'cash' | 'transfer';
       /** 2026-10-21 audit CA-29: see assertStoresWithinRun. */
       runStoreIds?: readonly string[];
+      /** The purchaser confirmed a price far from the last one paid. */
+      priceConfirmed?: boolean;
       actor: ActorCtx;
     }
   | { type: 'MarkUnavailable'; skuId: string; note: string; actor: ActorCtx }
@@ -82,6 +84,8 @@ export type RunCommand =
       paymentMethod: 'cash' | 'transfer';
       /** 2026-10-21 audit CA-29: see assertStoresWithinRun. */
       runStoreIds?: readonly string[];
+      /** The purchaser confirmed a price far from the last one paid. */
+      priceConfirmed?: boolean;
       actor: ActorCtx;
     }
   | { type: 'UnmarkUnavailable'; skuId: string; reason: string; actor: ActorCtx }
@@ -127,6 +131,8 @@ export type RunCommand =
       reason: string;
       /** 2026-10-21 audit CA-29: see assertStoresWithinRun. */
       runStoreIds?: readonly string[];
+      /** The purchaser confirmed a price far from the last one paid. */
+      priceConfirmed?: boolean;
       actor: ActorCtx;
     }
   // ---- Off-catalog expenses (M3.44, 2026-05-22) ----------------------
@@ -323,6 +329,7 @@ export function decideRun(
           receiptPhotoUrl: command.receiptPhotoUrl,
           storeSplits: command.storeSplits,
           paymentMethod: command.paymentMethod,
+          ...(command.priceConfirmed ? { priceConfirmed: true as const } : {}),
         },
       });
       return events;
@@ -411,6 +418,7 @@ export function decideRun(
           paymentMethod: command.paymentMethod,
           reason,
           byMemberId: command.actor.memberId,
+          ...(command.priceConfirmed ? { priceConfirmed: true as const } : {}),
         },
       });
       return events;
@@ -991,6 +999,7 @@ export function decideRun(
             storeSplits: command.storeSplits,
             reason,
             paymentMethod: command.paymentMethod,
+            ...(command.priceConfirmed ? { priceConfirmed: true as const } : {}),
           },
         },
       ];

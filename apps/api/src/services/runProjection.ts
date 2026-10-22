@@ -4,7 +4,7 @@
  *
  * Same pattern as orderProjection.ts.
  */
-import { eq, and, notInArray, sql } from 'drizzle-orm';
+import { eq, and, isNull, notInArray, sql } from 'drizzle-orm';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
 import type { RunEvent } from '@compass/domain/run';
@@ -527,6 +527,7 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
               eq(s.runItemStoresV.skuId, e.payload.skuId),
             ),
           );
+        await supersedePriceObservations(db, orgId, e.streamId, e.payload.skuId, e.occurredAt);
         await bumpSeq(db, e.streamId, e.seq);
         break;
 
@@ -694,11 +695,42 @@ async function bumpSeq(db: DB, streamId: string, seq: number): Promise<void> {
     .where(eq(s.marketRunsV.id, streamId));
 }
 
+/**
+ * Mark what was recorded for this product in this run as not the price
+ * after all: the purchase was corrected or taken back. The rows stay —
+ * they are what was first typed — but price readers skip them
+ * (`superseded_at IS NULL`). Without this a mistyped price stayed in
+ * every average for good, however quickly it was corrected.
+ */
+async function supersedePriceObservations(
+  db: DB,
+  orgId: string,
+  runId: string,
+  skuId: string,
+  at: Date,
+): Promise<void> {
+  await db
+    .update(s.priceHistory)
+    .set({ supersededAt: at })
+    .where(
+      and(
+        eq(s.priceHistory.orgId, orgId),
+        eq(s.priceHistory.runId, runId),
+        eq(s.priceHistory.skuId, skuId),
+        isNull(s.priceHistory.supersededAt),
+      ),
+    );
+}
+
 async function insertPriceObservations(
   db: DB,
   orgId: string,
   e: Extract<RunEvent, { type: 'ItemPurchased' | 'PurchaserItemAdded' | 'PurchaseRevised' }>,
 ): Promise<void> {
+  // Each of these events states the whole purchase of one product in
+  // one run, so whatever was observed for it before is no longer what
+  // was paid.
+  await supersedePriceObservations(db, orgId, e.streamId, e.payload.skuId, e.occurredAt);
   const hasSplitOverrides = e.payload.storeSplits.some(
     (split) => split.unitPrice !== undefined || split.paymentMethod !== undefined,
   );

@@ -660,6 +660,12 @@ export const priceHistory = inventorySchema.table(
     observedAt: timestamp('observed_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .defaultNow(),
+    /**
+     * Set when the purchase this row observed was later corrected or
+     * taken back: the price was never the price. The row is kept (it is
+     * what was first typed) but nothing that reads prices counts it.
+     */
+    supersededAt: timestamp('superseded_at', { withTimezone: true, mode: 'date' }),
     createdAt: createdAt(),
   },
   (t) => ({

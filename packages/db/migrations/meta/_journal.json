@@ -365,6 +365,20 @@
       "when": 1792532400000,
       "tag": "0051_backfill_transfer_audit_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1792540000000,
+      "tag": "0052_price_history_superseded",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1792540000001,
+      "tag": "0053_price_history_superseded_backfill",
+      "breakpoints": true
     }
   ]
 }

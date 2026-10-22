@@ -13,7 +13,7 @@
  * query shape. Volume is bounded by 30 days of observations for the SKUs
  * on screen.
  */
-import { and, eq, gte, inArray, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
 
@@ -53,6 +53,8 @@ export async function loadSkuPriceStats(
     .where(
       and(
         eq(s.priceHistory.orgId, orgId),
+        // A corrected or undone purchase's first price was never the price.
+        isNull(s.priceHistory.supersededAt),
         gte(s.priceHistory.observedAt, since30),
         // inArray (not `= ANY(...)`): Drizzle's tagged template binds a JS
         // array as ONE parameter and PG then rejects it with "op ANY/ALL
@@ -122,6 +124,7 @@ export async function loadSkuPriceStats(
         MAX(ph.observed_at) OVER (PARTITION BY ph.sku_id) AS newest
       FROM inventory.price_history ph
       WHERE ph.org_id = ${orgId}
+        AND ph.superseded_at IS NULL
         ${
           skuIds && skuIds.length > 0
             ? sql`AND ph.sku_id IN (${sql.join(
