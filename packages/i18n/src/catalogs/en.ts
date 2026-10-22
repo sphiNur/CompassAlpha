@@ -1581,6 +1581,7 @@ export const en = {
   'run.history.storePurchases': 'Store purchases that day',
   'run.history.trip': 'Trip {n}',
   'run.history.tripCount': '{n} trips',
+  'run.history.tripsHeading': 'Trips',
   'run.history.storeItemsHeading': '{store} purchases that day',
   'run.history.searchPlaceholder': 'Search purchases',
   'run.history.filters': 'Filters ({n})',

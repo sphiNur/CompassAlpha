@@ -1431,6 +1431,7 @@ export const ru = {
   'run.history.storePurchases': 'Покупки магазинов за день',
   'run.history.trip': 'Рейс {n}',
   'run.history.tripCount': 'Рейсов: {n}',
+  'run.history.tripsHeading': 'Рейсы',
   'run.history.storeItemsHeading': 'Покупки {store} за день',
   'run.history.searchPlaceholder': 'Поиск закупок',
   'run.history.filters': 'Фильтры ({n})',

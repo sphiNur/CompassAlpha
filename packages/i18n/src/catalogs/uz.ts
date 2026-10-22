@@ -1444,6 +1444,7 @@ export const uz = {
   'run.history.storePurchases': "Do'konlarning shu kundagi xaridlari",
   'run.history.trip': '{n}-reys',
   'run.history.tripCount': '{n} ta reys',
+  'run.history.tripsHeading': 'Reyslar',
   'run.history.storeItemsHeading': '{store}ning shu kundagi xaridlari',
   'run.history.searchPlaceholder': 'Xaridlarni qidirish',
   'run.history.filters': 'Filtrlar ({n})',

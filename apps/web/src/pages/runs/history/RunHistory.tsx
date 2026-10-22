@@ -27,7 +27,7 @@ import { formatMoney, formatQty } from '../../../lib/format';
 import { useUnitLabel } from '../../../hooks/useI18n';
 import type { useI18n, useProductName } from '../../../hooks/useI18n';
 import { splitSubtotal, settleItemLine, settlePerStore } from '../lib/settlement';
-import { groupRunsByDay } from '../lib/historyGroups';
+import { dayStoreSummaries, groupRunsByDay, type HistoryDay } from '../lib/historyGroups';
 
 // ====================================================================
 // HISTORY VIEW
@@ -151,6 +151,8 @@ export function RunHistoryPage({
   onBack?: () => void;
 }) {
   const [detailFor, setDetailFor] = useState<HistoryDetailTarget | null>(null);
+  /** 2026-10-23: a day with several trips opens a day summary first. */
+  const [dayFor, setDayFor] = useState<HistoryDay | null>(null);
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   const total =
     summaryTotal ?? String(runs.reduce((sum, run) => sum + Number(run.actualTotal ?? 0), 0));
@@ -291,7 +293,13 @@ export function RunHistoryPage({
                       {headerBody}
                     </button>
                   ) : (
-                    <div className={headerClass}>{headerBody}</div>
+                    <button
+                      type="button"
+                      onClick={() => setDayFor(day)}
+                      className={`${headerClass} active:bg-[var(--c-surface-2)]`}
+                    >
+                      {headerBody}
+                    </button>
                   )}
                   {day.storeLines.length > 0 || bareTrips.length > 0 ? (
                     <div className="border-t border-[var(--c-divider)] px-4 py-2.5">
@@ -384,6 +392,17 @@ export function RunHistoryPage({
           </div>
         </div>
       ) : null}
+      <RunHistoryDaySheet
+        day={dayFor}
+        storeById={storeById}
+        i18n={i18n}
+        currency={currency}
+        onOpenRun={(target) => {
+          setDayFor(null);
+          setDetailFor(target);
+        }}
+        onClose={() => setDayFor(null)}
+      />
       <RunHistoryDetailSheet
         target={detailFor}
         skuById={skuById}
@@ -393,6 +412,186 @@ export function RunHistoryPage({
         onClose={() => setDetailFor(null)}
       />
     </div>
+  );
+}
+
+/**
+ * Day summary for a day with several runs (2026-10-23).
+ *
+ * The run detail sheet is per run, so a day of two trips had no place
+ * that showed the day as a whole. This one does, from the history rows
+ * already loaded (no extra request): the day's total with items /
+ * expenses and cash / transfer, each store's settlement summed over the
+ * trips, and the trips themselves. A store or a trip opens the usual
+ * run detail sheet for the item lines.
+ */
+function RunHistoryDaySheet({
+  day,
+  storeById,
+  i18n,
+  currency,
+  onOpenRun,
+  onClose,
+}: {
+  day: HistoryDay | null;
+  storeById: Map<string, { id: string; name: string; code: string | null }>;
+  i18n: ReturnType<typeof useI18n>;
+  currency: string;
+  onOpenRun: (target: HistoryDetailTarget) => void;
+  onClose: () => void;
+}) {
+  const stores = useMemo(() => (day ? dayStoreSummaries(day) : []), [day]);
+  const trips = useMemo(
+    () => (day ? [...day.runs].sort((a, b) => a.runIndex - b.runIndex) : []),
+    [day],
+  );
+  const open = (run: RunListRow, initialStoreId?: string) =>
+    onOpenRun({
+      runId: run.id,
+      runIndex: run.runIndex,
+      runDate: run.runDate,
+      status: run.status,
+      ...(initialStoreId ? { initialStoreId } : {}),
+    });
+  const storeName = (id: string) => storeById.get(id)?.name ?? id.slice(0, 8);
+  const rowClass =
+    'flex w-full flex-col gap-1 border-b border-[var(--c-divider)] px-4 py-3 text-left last:border-b-0 active:bg-[var(--c-bg)]';
+
+  return (
+    <Sheet
+      open={!!day}
+      onOpenChange={(open) => !open && onClose()}
+      title={day?.runDate ?? ''}
+      description={day ? i18n.t('run.history.tripCount', { n: day.runs.length }) : undefined}
+    >
+      {!day ? null : (
+        <div className="flex flex-col gap-4 py-3">
+          <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3">
+            <SectionLabel padded={false}>{i18n.t('run.history.totalLabel')}</SectionLabel>
+            <div className="font-mono text-old-h2 font-semibold tabular-nums">
+              {formatMoney(day.total)} {currency}
+            </div>
+            {day.expensesTotal > 0 ? (
+              <div className="text-old-label tabular-nums text-[var(--c-fg-muted)]">
+                {i18n.t('run.money.itemsExpenses', {
+                  items: formatMoney(day.itemsTotal),
+                  expenses: formatMoney(day.expensesTotal),
+                })}
+              </div>
+            ) : null}
+            {day.cash !== null && day.transfer !== null ? (
+              <div className="flex items-baseline gap-3 border-t border-[var(--c-divider)] pt-2 text-old-label">
+                <span className="text-[var(--c-fg-muted)]">{i18n.t('run.label.paymentCash')}</span>
+                <span className="font-mono tabular-nums text-[var(--c-fg)]">
+                  {formatMoney(day.cash)}
+                </span>
+                <span className="ml-auto text-[var(--c-fg-muted)]">
+                  {i18n.t('run.label.paymentTransfer')}
+                </span>
+                <span className="font-mono tabular-nums text-[var(--c-fg)]">
+                  {formatMoney(day.transfer)}
+                </span>
+              </div>
+            ) : null}
+          </div>
+
+          {stores.length > 0 ? (
+            <div>
+              <SectionLabel padded={false} className="mb-2">
+                {i18n.t('run.history.storesHeading')}
+              </SectionLabel>
+              <ul className="flex flex-col rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline">
+                {stores.map((st) => {
+                  const body = (
+                    <>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="min-w-0 flex-1 truncate text-old-body font-semibold">
+                          {storeName(st.storeId)}
+                        </span>
+                        <span className="font-mono text-old-body font-semibold tabular-nums">
+                          {formatMoney(st.total)}
+                        </span>
+                      </div>
+                      <div className="flex items-baseline justify-between gap-2 text-old-label text-[var(--c-fg-muted)]">
+                        <span>{i18n.t('run.label.itemsCount', { n: st.itemCount })}</span>
+                        <span className="tabular-nums">
+                          {i18n.t('run.money.cashTransfer', {
+                            cash: formatMoney(st.cash),
+                            transfer: formatMoney(st.transfer),
+                          })}
+                        </span>
+                      </div>
+                    </>
+                  );
+                  // One trip: the row opens it. Several: one link per trip.
+                  return st.lines.length === 1 ? (
+                    <li key={st.storeId}>
+                      <button
+                        type="button"
+                        onClick={() => open(st.lines[0]!.run, st.storeId)}
+                        className={rowClass}
+                      >
+                        {body}
+                        <span className="text-old-label text-[var(--c-fg-muted)]">
+                          {i18n.t('run.history.trip', { n: st.lines[0]!.trip })}
+                        </span>
+                      </button>
+                    </li>
+                  ) : (
+                    <li
+                      key={st.storeId}
+                      className="flex flex-col gap-1 border-b border-[var(--c-divider)] px-4 py-3 last:border-b-0"
+                    >
+                      {body}
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {st.lines.map((line) => (
+                          <button
+                            key={line.run.id}
+                            type="button"
+                            onClick={() => open(line.run, st.storeId)}
+                            className="rounded-[var(--r-pill)] bg-[var(--c-bg)] px-2 py-0.5 text-old-label ring-1 ring-[var(--c-divider)] active:bg-[var(--c-surface-2)]"
+                          >
+                            {i18n.t('run.history.trip', { n: line.trip })} ·{' '}
+                            <span className="font-mono tabular-nums">
+                              {formatMoney(line.total)}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ) : null}
+
+          <div>
+            <SectionLabel padded={false} className="mb-2">
+              {i18n.t('run.history.tripsHeading')}
+            </SectionLabel>
+            <ul className="flex flex-col rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline">
+              {trips.map((run, i) => (
+                <li key={run.id}>
+                  <button type="button" onClick={() => open(run)} className={rowClass}>
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-old-body font-semibold">
+                        {i18n.t('run.history.trip', { n: i + 1 })}
+                      </span>
+                      <span className="font-mono text-old-body font-semibold tabular-nums">
+                        {run.actualTotal ? formatMoney(run.actualTotal) : '—'}
+                      </span>
+                    </div>
+                    <span className="truncate text-old-label text-[var(--c-fg-muted)]">
+                      {(run.storeTotals ?? []).map((st) => storeName(st.storeId)).join(' · ')}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+    </Sheet>
   );
 }
 
