@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { RunListRow } from '../../history/RunHistory';
-import { groupRunsByDay } from '../historyGroups';
+import { dayStoreSummaries, groupRunsByDay } from '../historyGroups';
 
 const run = (id: string, runDate: string, runIndex: number, extra: Partial<RunListRow> = {}) =>
   ({
@@ -62,5 +62,37 @@ describe('groupRunsByDay', () => {
     const [day] = groupRunsByDay([run('a', '2026-10-20', 0)]);
     expect(day!.runs).toHaveLength(1);
     expect(day!.storeLines[0]!.trip).toBe(1);
+  });
+});
+
+describe('dayStoreSummaries', () => {
+  test('a store in two trips is one row with both trips', () => {
+    const shared = (id: string, total: string) => ({
+      storeId: 'lagman',
+      total,
+      cash: total,
+      transfer: '0',
+      itemCount: 2,
+    });
+    const [day] = groupRunsByDay([
+      run('b', '2026-10-22', 1, {
+        storeTotals: [
+          shared('b', '50'),
+          { storeId: 'x', total: '300', cash: '100', transfer: '200', itemCount: 4 },
+        ],
+      }),
+      run('a', '2026-10-22', 0, { storeTotals: [shared('a', '80')] }),
+    ]);
+    const stores = dayStoreSummaries(day!);
+    expect(stores.map((s) => s.storeId)).toEqual(['x', 'lagman']);
+    const lagman = stores[1]!;
+    expect(lagman.total).toBe(130);
+    expect(lagman.cash).toBe(130);
+    expect(lagman.transfer).toBe(0);
+    expect(lagman.itemCount).toBe(4);
+    expect(lagman.lines.map((l) => [l.trip, l.run.id])).toEqual([
+      [1, 'a'],
+      [2, 'b'],
+    ]);
   });
 });

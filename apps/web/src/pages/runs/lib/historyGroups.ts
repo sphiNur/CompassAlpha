@@ -71,3 +71,42 @@ export function groupRunsByDay(runs: readonly RunListRow[]): HistoryDay[] {
   }
   return days;
 }
+
+export type HistoryDayStore = {
+  storeId: string;
+  total: number;
+  cash: number;
+  transfer: number;
+  expensesTotal: number;
+  /** Product lines summed over the day's trips. */
+  itemCount: number;
+  /** This store's line in each trip it was part of, in trip order. */
+  lines: HistoryStoreLine[];
+};
+
+/** One row per store for the day sheet, largest spend first. */
+export function dayStoreSummaries(day: HistoryDay): HistoryDayStore[] {
+  const byStore = new Map<string, HistoryDayStore>();
+  for (const line of day.storeLines) {
+    let store = byStore.get(line.storeId);
+    if (!store) {
+      store = {
+        storeId: line.storeId,
+        total: 0,
+        cash: 0,
+        transfer: 0,
+        expensesTotal: 0,
+        itemCount: 0,
+        lines: [],
+      };
+      byStore.set(line.storeId, store);
+    }
+    store.total += num(line.total);
+    store.cash += num(line.cash);
+    store.transfer += num(line.transfer);
+    store.expensesTotal += num(line.expensesTotal);
+    store.itemCount += line.itemCount;
+    store.lines.push(line);
+  }
+  return [...byStore.values()].sort((a, b) => b.total - a.total);
+}

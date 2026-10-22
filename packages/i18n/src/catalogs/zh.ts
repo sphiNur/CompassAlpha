@@ -1350,6 +1350,7 @@ export const zh = {
   'run.history.storePurchases': '各店当天采购',
   'run.history.trip': '第{n}趟',
   'run.history.tripCount': '共{n}趟',
+  'run.history.tripsHeading': '各趟采购',
   'run.history.storeItemsHeading': '{store} 当天采购清单',
   'run.history.searchPlaceholder': '搜索采购记录',
   'run.history.filters': '筛选（{n}）',
