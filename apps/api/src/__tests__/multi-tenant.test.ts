@@ -138,7 +138,7 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
     expect(login.session.member.orgId).toBe(orgB);
     expect(login.session.member.memberId).toBe(memberB);
     expect(login.session.memberships.map((m) => m.orgId).sort()).toEqual([orgA, orgB].sort());
-    expect(login.session.roleSlugs).toContain('admin');
+    expect(login.session.roleSlugs).toContain('super_admin');
     expect(login.session.isPlatformAdmin).toBe(true);
   });
 
@@ -162,7 +162,7 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
     expect(refreshed.session.member.memberId).toBe(memberA);
   });
 
-  test('creating a workspace provisions roles, defaults and an owner admin', async () => {
+  test('creating a workspace provisions roles, defaults and a Super Admin owner', async () => {
     const sessionB: SessionContext = {
       userId,
       memberId: memberB,
@@ -180,7 +180,9 @@ describe.skipIf(!SHOULD_RUN)('multi-tenant accounts (PG-gated)', () => {
 
     expect(created.session.member.orgId).not.toBe(orgA);
     expect(created.session.member.orgId).not.toBe(orgB);
-    expect(created.session.roleSlugs).toContain('admin');
+    // 2026-10-24: the owner is Super Admin, so they can appoint admins.
+    expect(created.session.roleSlugs).toContain('super_admin');
+    expect(created.session.myMaxRank).toBe(100);
     expect(created.session.permissions).toContain('org.admin');
     expect(created.session.isPlatformAdmin).toBe(true);
     expect(created.session.memberships).toHaveLength(3);
