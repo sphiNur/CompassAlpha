@@ -44,7 +44,7 @@ export interface ProvisionOrganizationInput {
 /**
  * Create an organisation that is immediately usable: permission
  * catalog, built-in role ladder, default product flags, and (when an
- * owner is supplied) an active membership with the org-admin role.
+ * owner is supplied) an active membership with the Super Admin role.
  *
  * The caller owns the transaction, because this usually runs before a
  * tenant is known and must therefore use an explicit system context.
@@ -71,7 +71,7 @@ export async function provisionOrganization(
   if (!org) throw new Error('organization insert returned no row');
   await provisionSubscription(tx, org.id);
 
-  let adminRoleId: string | null = null;
+  let ownerRoleId: string | null = null;
   for (const role of BUILTIN_ROLES) {
     const [row] = await tx
       .insert(s.roles)
@@ -85,7 +85,12 @@ export async function provisionOrganization(
       })
       .returning();
     if (!row) continue;
-    if (role.slug === 'admin') adminRoleId = row.id;
+    // 2026-10-24: the owner is the organisation's Super Admin. As Admin
+    // (rank 80) they could not grant Admin to anyone — grants must be
+    // strictly below the granter's rank — and no screen can grant Super
+    // Admin, so a new organisation's owner had no way to appoint another
+    // admin and lacked the super-admin corrections (run.amend).
+    if (role.slug === 'super_admin') ownerRoleId = row.id;
     if (role.permissions.length > 0) {
       await tx
         .insert(s.rolePermissions)
@@ -101,7 +106,7 @@ export async function provisionOrganization(
 
   let ownerMemberId: string | null = null;
   if (input.ownerUserId) {
-    if (!adminRoleId) throw new Error('built-in admin role was not provisioned');
+    if (!ownerRoleId) throw new Error('built-in super_admin role was not provisioned');
     const [member] = await tx
       .insert(s.members)
       .values({
@@ -115,7 +120,7 @@ export async function provisionOrganization(
     ownerMemberId = member.id;
     await tx.insert(s.memberRoleBindings).values({
       memberId: member.id,
-      roleId: adminRoleId,
+      roleId: ownerRoleId,
       scopeType: 'global',
       scopeId: null,
       grantedBy: input.ownerUserId,
