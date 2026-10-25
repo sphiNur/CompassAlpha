@@ -78,6 +78,7 @@ import { buildStorePickList } from './runs/lib/storePickList';
 import { ActiveRunPanel, PreviewSummaryCard, RunSessionsCard } from './runs/components/RunPanels';
 import { SessionPicker } from './runs/components/SessionPicker';
 import { selectPreview, selectedSessionIds } from './runs/lib/sessionSelection';
+import { editPricingFromSplits, splitOverridesFor } from './runs/lib/purchaseOverrides';
 import { NEW_RUN, isBuying, liveRunsOf, pickActiveRun } from './runs/lib/liveRuns';
 
 function newClientId(): string {
@@ -745,37 +746,28 @@ export function RunPage() {
       paymentMethod?: string | null;
     }) => {
       const splits = new Map<string, string>();
-      const splitPrices = new Map<string, string>();
-      const splitPaymentMethods = new Map<string, 'cash' | 'transfer'>();
-      let perStorePricing = false;
-      for (const sp of runDetailQuery.data?.splits ?? []) {
-        if (sp.skuId !== item.skuId) continue;
-        splits.set(sp.storeId, sp.qty);
-        if (sp.unitPrice) {
-          splitPrices.set(sp.storeId, sp.unitPrice);
-          perStorePricing = true;
-        }
-        if (sp.paymentMethod) {
-          splitPaymentMethods.set(sp.storeId, sp.paymentMethod as 'cash' | 'transfer');
-          perStorePricing = true;
-        }
-      }
+      const rows = (runDetailQuery.data?.splits ?? []).filter((sp) => sp.skuId === item.skuId);
+      for (const sp of rows) splits.set(sp.storeId, sp.qty);
+      // 2026-10-25: open on what money uses — each store's effective
+      // price and method — and in per-store mode only when the stores
+      // really differ (lib/purchaseOverrides).
+      const pricing = editPricingFromSplits(item, rows);
       setPurchaseDraft({
         isEdit: true,
         skuId: item.skuId,
         runId: activeRun!.id,
-        unitPrice: item.unitPrice ?? '',
+        unitPrice: pricing.unitPrice,
         actualQty: item.purchasedQty ?? '',
         supplierId: item.supplierId ?? null,
         splits,
-        splitPrices,
-        splitPaymentMethods,
-        perStorePricing,
+        splitPrices: pricing.splitPrices,
+        splitPaymentMethods: pricing.splitPaymentMethods,
+        perStorePricing: pricing.perStorePricing,
         receiptPhotoUrl: item.receiptPhotoUrl ?? null,
         reason: '',
         // M1.14: prefill from the existing record so editing doesn't
         // accidentally flip the method back to cash.
-        paymentMethod: (item.paymentMethod as 'cash' | 'transfer') ?? 'cash',
+        paymentMethod: pricing.paymentMethod,
       });
     },
     [runDetailQuery.data, activeRun],
@@ -972,16 +964,9 @@ export function RunPage() {
         receiptPhotoUrl: d.receiptPhotoUrl,
         storeSplits: [...d.splits.entries()]
           .filter(([, q]) => Number(q) > 0)
-          .map(([storeId, qty]) => ({
-            storeId,
-            qty,
-            ...(d.perStorePricing
-              ? {
-                  unitPrice: d.splitPrices.get(storeId) || d.unitPrice,
-                  paymentMethod: d.splitPaymentMethods.get(storeId) ?? d.paymentMethod,
-                }
-              : {}),
-          })),
+          // 2026-10-25: an override is only what differs from the item, so
+          // a later change of the item's method or price reaches the store.
+          .map(([storeId, qty]) => ({ storeId, qty, ...splitOverridesFor(d, storeId) })),
         paymentMethod: d.paymentMethod,
       };
       withPriceCheck(

@@ -798,7 +798,12 @@ export function RunHistoryDetailSheet({
     if (cash > 0 && transfer > 0) {
       return `${cashLabel} ${formatMoney(cash)} · ${transferLabel} ${formatMoney(transfer)}`;
     }
-    return transfer > 0 || item.paymentMethod === 'transfer' ? transferLabel : cashLabel;
+    // 2026-10-25: the label follows the money. It used to say transfer
+    // whenever the ITEM said so, even where the split paid in cash and
+    // the line was counted as cash in every total.
+    if (transfer > 0) return transferLabel;
+    if (cash > 0) return cashLabel;
+    return item.paymentMethod === 'transfer' ? transferLabel : cashLabel;
   };
 
   const visibleHistoryRows = useMemo<VisibleHistoryRow[]>(() => {
