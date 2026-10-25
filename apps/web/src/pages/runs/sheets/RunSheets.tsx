@@ -24,6 +24,7 @@ import { useUnitLabel } from '../../../hooks/useI18n';
 import type { useI18n } from '../../../hooks/useI18n';
 import { toDisplayPrice, fromDisplayPrice } from '../lib/priceMath';
 import { evenSplitQty } from '../lib/splitQty';
+import { followPaymentMethod, followUnitPrice } from '../lib/purchaseOverrides';
 import { PriceInFull, PriceUnitSwitch } from '../components/PriceUnit';
 
 /**
@@ -269,9 +270,14 @@ export function PurchaseSheet({
                   // M3.36: draft always stores raw UZS — multiply
                   // back when committing. The display state is the
                   // source of truth for what's shown.
+                  const unitPrice = fromDisplayPrice(v, priceInThousands);
                   onChange({
                     ...draft,
-                    unitPrice: fromDisplayPrice(v, priceInThousands),
+                    unitPrice,
+                    // 2026-10-25: stores on the old price follow the new one.
+                    ...(draft.perStorePricing
+                      ? { splitPrices: followUnitPrice(draft.splitPrices, draft.unitPrice, unitPrice) }
+                      : {}),
                   });
                 }}
               />
@@ -303,7 +309,24 @@ export function PurchaseSheet({
             </div>
             <PaymentMethodChips
               value={draft.paymentMethod}
-              onChange={(m) => onChange({ ...draft, paymentMethod: m })}
+              onChange={(m) =>
+                onChange({
+                  ...draft,
+                  paymentMethod: m,
+                  // 2026-10-25: stores paying the old method follow the new
+                  // one (lib/purchaseOverrides); a store used to keep
+                  // "cash" while the line said "transfer".
+                  ...(draft.perStorePricing
+                    ? {
+                        splitPaymentMethods: followPaymentMethod(
+                          draft.splitPaymentMethods,
+                          draft.paymentMethod,
+                          m,
+                        ),
+                      }
+                    : {}),
+                })
+              }
             />
           </div>
           <button
