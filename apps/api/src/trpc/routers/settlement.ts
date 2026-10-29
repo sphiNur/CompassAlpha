@@ -111,10 +111,26 @@ function centsToSettlementMoney(cents: bigint): string {
   return `${whole}.${fraction}`;
 }
 
+/**
+ * The catalog sentence for each rejected-close reason, so the page can say
+ * what to fix instead of "try again". The structured cause stays as it was.
+ */
+export const SETTLEMENT_REASON_KEYS: Record<string, string> = {
+  'total-too-large': 'settlement.errors.totalTooLarge',
+  'unknown-item': 'settlement.errors.unknownItem',
+  'employee-selection-required': 'settlement.errors.employeeRequired',
+  'employee-not-in-store': 'settlement.errors.employeeNotInStore',
+  'historical-total-immutable': 'settlement.errors.historicalTotalImmutable',
+  'total-mismatch': 'settlement.errors.totalMismatch',
+  'details-required': 'settlement.errors.invalidDetails',
+  'future-date': 'settlement.errors.futureDate',
+  'required-for-correction': 'settlement.errors.correctionReasonRequired',
+};
+
 function detailValidation(field: string, reason: string): never {
   throw new TRPCError({
     code: 'BAD_REQUEST',
-    message: 'common.errors.validation',
+    message: SETTLEMENT_REASON_KEYS[reason] ?? 'common.errors.validation',
     cause: { field, reason },
   });
 }
@@ -827,11 +843,7 @@ export const settlementRouter = router({
         });
       }
       if (date > storeToday) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'common.errors.validation',
-          cause: { field: 'date', reason: 'future-date' },
-        });
+        detailValidation('date', 'future-date');
       }
 
       const correctionReason =
@@ -916,11 +928,7 @@ export const settlementRouter = router({
           return (await serializeSettlements(tx, [existing]))[0]!;
         }
         if (!correctionReason) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'common.errors.validation',
-            cause: { field: 'correctionReason', reason: 'required-for-correction' },
-          });
+          detailValidation('correctionReason', 'required-for-correction');
         }
 
         const now = new Date();

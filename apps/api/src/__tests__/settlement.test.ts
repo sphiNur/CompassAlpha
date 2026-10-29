@@ -9,7 +9,8 @@ import { todayInTz } from '@compass/domain';
 import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
 import type { RequestContext, SessionContext } from '../trpc/context';
-import { normalizeSettlementMoney } from '../trpc/routers/settlement';
+import { loadCatalog } from '@compass/i18n/catalogs';
+import { normalizeSettlementMoney, SETTLEMENT_REASON_KEYS } from '../trpc/routers/settlement';
 
 (function loadEnv() {
   let dir = dirname(fileURLToPath(import.meta.url));
@@ -35,6 +36,17 @@ import { normalizeSettlementMoney } from '../trpc/routers/settlement';
 })();
 
 const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
+
+describe('daily settlement rejection messages', () => {
+  test('every reason the API names has a sentence in every language', async () => {
+    for (const locale of ['en', 'zh', 'ru', 'uz'] as const) {
+      const catalog = await loadCatalog(locale);
+      for (const key of Object.values(SETTLEMENT_REASON_KEYS)) {
+        expect(catalog[key]).toBeString();
+      }
+    }
+  });
+});
 
 describe('daily settlement money normalization', () => {
   test('normalizes equivalent decimal inputs and signed zero', () => {
@@ -612,6 +624,7 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
       error = caught;
     }
     expect((error as { code?: string }).code).toBe('BAD_REQUEST');
+    expect((error as { message?: string }).message).toBe('settlement.errors.employeeNotInStore');
 
     const saved = await fx.caller.settlement.save(
       saveInput(fx.ownStoreId, '2026-07-23', 0, {
@@ -793,6 +806,7 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
       mismatch = error;
     }
     expect((mismatch as { code?: string }).code).toBe('BAD_REQUEST');
+    expect((mismatch as { message?: string }).message).toBe('settlement.errors.totalMismatch');
     expect(await fx.caller.settlement.get({ storeId: fx.ownStoreId, date })).toBeNull();
 
     const created = await fx.caller.settlement.save(saveInput(fx.ownStoreId, date, 0));
@@ -820,6 +834,7 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
       missingReason = error;
     }
     expect((missingReason as { code?: string }).code).toBe('BAD_REQUEST');
+    expect((missingReason as { message?: string }).message).toBe('settlement.errors.correctionReasonRequired');
 
     const corrected = await fx.caller.settlement.save(
       saveInput(fx.ownStoreId, date, created.version, {
@@ -926,6 +941,7 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
       missingDetails = error;
     }
     expect((missingDetails as { code?: string }).code).toBe('BAD_REQUEST');
+    expect((missingDetails as { message?: string }).message).toBe('settlement.errors.invalidDetails');
     expect(await fx.caller.settlement.get({ storeId: fx.ownStoreId, date })).toBeNull();
 
     const created = await fx.caller.settlement.save(saveInput(fx.ownStoreId, '2026-07-28', 0));
@@ -1022,6 +1038,7 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
     // The rank gate is gone; the historical-total immutability rule still
     // applies to every recorder.
     expect((error as { code?: string }).code).toBe('BAD_REQUEST');
+    expect((error as { message?: string }).message).toBe('settlement.errors.historicalTotalImmutable');
     expect((error as { cause?: { reason?: string } }).cause?.reason).toBe(
       'historical-total-immutable',
     );
@@ -1069,6 +1086,7 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
       expenseError = caught;
     }
     expect((expenseError as { code?: string }).code).toBe('BAD_REQUEST');
+    expect((expenseError as { message?: string }).message).toBe('settlement.errors.historicalTotalImmutable');
 
     const wageInput = saveInput(fx.ownStoreId, date, legacy!.version, {
       operatingExpenses: '3',
@@ -1093,6 +1111,7 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
       wageError = caught;
     }
     expect((wageError as { code?: string }).code).toBe('BAD_REQUEST');
+    expect((wageError as { message?: string }).message).toBe('settlement.errors.historicalTotalImmutable');
 
     const raw = await getDb(undefined, { system: 'maintenance' }).query.storeDailySettlements.findFirst({
       where: (row, { eq: eq2 }) => eq2(row.id, legacy!.id),
@@ -1122,6 +1141,7 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
       missingReason = error;
     }
     expect((missingReason as { code?: string }).code).toBe('BAD_REQUEST');
+    expect((missingReason as { message?: string }).message).toBe('settlement.errors.correctionReasonRequired');
 
     const updated = await fx.caller.settlement.save(
       saveInput(fx.ownStoreId, '2026-08-02', 1, {
