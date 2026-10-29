@@ -274,7 +274,7 @@ export const en = {
   'people.pickScopeFirst': 'Pick a scope above to see available roles.',
   'ops.maint.resetTodayTitle': "Reset today's entire flow",
   'ops.maint.resetTodayBody':
-    'Wipes every order, run, delivery, notification and price-history row dated {date} — regardless of who created it. Catalog and members untouched. Use only when you are sure no real users have data today.',
+    'Wipes every order, run, delivery, notification and price-history row dated {date} — regardless of who created it — together with the runs these orders are in and the orders in these runs, even from other dates. Catalog and members untouched. Use only when you are sure no real users have data today.',
   'ops.maint.nothingToPurge': 'Nothing to purge — workspace is already clean.',
   'admin.store.defaultRoleHint':
     'When set, new members invited into this store with no explicit role pick are auto-granted this role.',
@@ -675,7 +675,11 @@ export const en = {
     'Organization-level roles and permissions can only be granted globally',
   'admin.errors.roleNotFound': 'Role not found',
   'admin.errors.runHasForeignSessions':
-    'This run contains sessions from other stores — cannot operate on it',
+    'This run contains other people’s orders — it cannot be deleted',
+  'admin.errors.sessionHasForeignAuthors':
+    'This order contains other people’s entries and cannot be deleted. Only your own test orders can be deleted here',
+  'admin.errors.purgeHasSettlements':
+    'There are daily closes in this range. Daily close history cannot be deleted, so this cannot be purged',
   'admin.errors.runNotFound': 'Market run not found',
   'admin.errors.scopeStoreIdRequired': 'A store-scoped role must specify which store it applies to',
   'admin.errors.sessionAttachedToRun':

@@ -240,7 +240,7 @@ export const uz = {
   'people.pickScopeFirst': "Mavjud rollarni ko'rish uchun yuqorida qamrovni tanlang.",
   'ops.maint.resetTodayTitle': 'Bugungi butun jarayonni tiklash',
   'ops.maint.resetTodayBody':
-    "{date} sanasidagi har bir buyurtma, xarid, yetkazish, bildirishnoma va narx tarixi yozuvini o'chiradi — kim yaratganidan qat'i nazar. Katalog va a'zolarga tegilmaydi. Faqat bugun haqiqiy foydalanuvchi ma'lumoti yo'qligiga ishonchingiz bo'lsa ishlating.",
+    "{date} sanasidagi har bir buyurtma, xarid, yetkazish, bildirishnoma va narx tarixi yozuvini o'chiradi — kim yaratganidan qat'i nazar — shu buyurtmalar kirgan xaridlar va shu xaridlardagi buyurtmalar bilan birga, boshqa sanada bo'lsa ham. Katalog va a'zolarga tegilmaydi. Faqat bugun haqiqiy foydalanuvchi ma'lumoti yo'qligiga ishonchingiz bo'lsa ishlating.",
   'ops.maint.nothingToPurge': "Tozalash uchun hech narsa yo'q — ish maydoni allaqachon toza.",
   'admin.store.defaultRoleHint':
     "Belgilangan bo'lsa, bu do'konga aniq rol tanlanmasdan taklif qilingan yangi a'zolar avtomatik shu rolni oladi.",
@@ -603,7 +603,11 @@ export const uz = {
     'Tashkilot darajasidagi rol va ruxsatlar faqat global berilishi mumkin',
   'admin.errors.roleNotFound': 'Rol topilmadi',
   'admin.errors.runHasForeignSessions':
-    "Bu xaridda boshqa do'konlarning buyurtmalari bor — amal qilib bo'lmaydi",
+    "Bu xaridda boshqa odamlarning buyurtmalari bor — o'chirib bo'lmaydi",
+  'admin.errors.sessionHasForeignAuthors':
+    "Bu buyurtmada boshqa odamlarning yozuvlari bor — o'chirib bo'lmaydi. Bu yerda faqat o'zingizning sinov buyurtmalaringizni o'chirish mumkin",
+  'admin.errors.purgeHasSettlements':
+    "Bu sanalarda kunlik yopilishlar bor. Kunlik yopilish tarixini o'chirib bo'lmaydi, shuning uchun tozalab bo'lmaydi",
   'admin.errors.runNotFound': 'Xarid topilmadi',
   'admin.errors.scopeStoreIdRequired':
     "Do'kon-darajadagi rol qaysi do'konga tegishli ekanini bildirishi kerak",
