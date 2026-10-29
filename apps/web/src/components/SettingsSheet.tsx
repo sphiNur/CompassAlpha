@@ -29,6 +29,7 @@ import type { Locale } from '@compass/i18n';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { resetNavStore } from '../stores/navStore';
+import { isInTelegram } from '../hooks/useTelegram';
 import { useI18n } from '../hooks/useI18n';
 import { useErrToast } from '../lib/errToast';
 import type { PageMenuRegistration } from '../app/PageMenuContext';
@@ -357,6 +358,22 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
             </div>
           </div>
         </section>
+        {/* Local development in a plain browser: back to the persona picker
+            (there is no sign-out in production, where Telegram is the login). */}
+        {import.meta.env.DEV && !isInTelegram() ? (
+          <Button
+            block
+            variant="secondary"
+            onClick={() => {
+              queryClient.clear();
+              resetNavStore();
+              useAuthStore.getState().clear();
+              onOpenChange(false);
+            }}
+          >
+            切换测试身份
+          </Button>
+        ) : null}
       </div>
       {/* UIUX-B1: trailing Cancel deleted — the sheet dismisses via
           scrim-tap and Telegram back, and Settings has nothing to
