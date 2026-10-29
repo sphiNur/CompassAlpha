@@ -702,7 +702,7 @@ function PageMainButton() {
         type="button"
         data-testid="page-main-button"
         disabled={!interactable}
-        onClick={guardTap(state.onClick)}
+        onClick={guardTap(state.onClick, state.text)}
         aria-busy={busy || undefined}
         className={
           'flex h-12 w-full min-w-0 items-center justify-center rounded-[var(--r-pill)] px-4 text-old-h3 font-semibold ' +

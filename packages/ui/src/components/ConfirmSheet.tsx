@@ -99,7 +99,7 @@ export function ConfirmSheet({
                 variant={danger ? 'danger' : undefined}
                 loading={pending}
                 disabled={!reasonOk || pending}
-                onClick={guardTap(onConfirm)}
+                onClick={guardTap(onConfirm, String(confirmLabel ?? ''))}
               >
                 {confirmLabel}
               </Button>
