@@ -697,6 +697,26 @@ export function SettlementPage() {
 
   if (!session) return null;
 
+  // Shared by the form and the invalid-date state below (CLS-4).
+  const dateField = businessDate ? (
+    <Field
+      label={i18n.t('settlement.date.label')}
+      hint={i18n.t('settlement.date.timezone', { timezone: businessDate.timezone })}
+    >
+      <Input
+        type="date"
+        value={date}
+        max={businessDate.date}
+        aria-label={i18n.t('settlement.date.label')}
+        invalid={!dateValid}
+        onChange={(event) => {
+          const nextDate = event.target.value;
+          if (nextDate === date) return;
+          confirmDiscardChanges(() => setDate(nextDate));
+        }}
+      />
+    </Field>
+  ) : null;
   const pageHeading = (
     <div>
       <h1 className="text-old-h1 font-semibold text-[var(--c-fg)]">{i18n.t('settlement.title')}</h1>
@@ -804,6 +824,20 @@ export function SettlementPage() {
   // Query caches can resolve a different store/date before the draft-reset
   // effect runs. Do not briefly render any prior form under this context, and
   // do not offer an empty form while the selected close is still loading.
+  // CLS-4 (2026-10-30): a future or cleared date disables the close query,
+  // and a disabled query stays `isPending`, so this page spun forever with
+  // the date field gone. Keep the field and say what is wrong instead.
+  if (businessDate && !dateValid) {
+    return (
+      <div className="flex flex-col gap-3 px-4 pb-4 pt-3">
+        {pageHeading}
+        {storeSelector}
+        {dateField}
+        <Banner tone="warn" title={i18n.t('settlement.errors.futureDate')} />
+      </div>
+    );
+  }
+
   if (!draftSynchronized) {
     return (
       <div className="flex flex-col gap-3 px-4 pb-4 pt-3">
@@ -1000,23 +1034,7 @@ export function SettlementPage() {
           </section>
         ) : null}
 
-        <Field
-          label={i18n.t('settlement.date.label')}
-          hint={i18n.t('settlement.date.timezone', { timezone: businessDate.timezone })}
-        >
-          <Input
-            type="date"
-            value={date}
-            max={businessDate.date}
-            aria-label={i18n.t('settlement.date.label')}
-            invalid={!dateValid}
-            onChange={(event) => {
-              const nextDate = event.target.value;
-              if (nextDate === date) return;
-              confirmDiscardChanges(() => setDate(nextDate));
-            }}
-          />
-        </Field>
+        {dateField}
 
         {closeQuery.isPending ? (
           <div className="flex justify-center py-4" aria-label={i18n.t('settlement.title')}>

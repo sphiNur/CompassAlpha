@@ -3,6 +3,7 @@ import { Banner } from './Banner';
 import { Button } from './Button';
 import { Input } from './Input';
 import { Sheet } from './Sheet';
+import { useTapGuard } from '../useTapGuard';
 
 export interface ConfirmSheetProps {
   open: boolean;
@@ -77,6 +78,8 @@ export function ConfirmSheet({
   onCancel,
 }: ConfirmSheetProps) {
   const reasonOk = !requireReason || reason.trim().length > 0;
+  // DLV-4: a double tap sent two requests before `pending` disabled this.
+  const guardTap = useTapGuard();
   // Cancel is force-shown when there's a reason input (keyboard covers
   // the backdrop) OR when the consumer explicitly opts in. Otherwise we
   // rely on tap-outside / swipe-down / Telegram BackButton.
@@ -96,7 +99,7 @@ export function ConfirmSheet({
                 variant={danger ? 'danger' : undefined}
                 loading={pending}
                 disabled={!reasonOk || pending}
-                onClick={onConfirm}
+                onClick={guardTap(onConfirm)}
               >
                 {confirmLabel}
               </Button>

@@ -10,8 +10,7 @@ import {
   IconOrder,
   IconRun,
   IconSettlement,
-  Spinner,
-} from '@compass/ui';
+  Spinner, useTapGuard } from '@compass/ui';
 import { OrderPage } from '../pages/OrderPage';
 import { ApprovalPage } from '../pages/ApprovalPage';
 import { ConfirmPage } from '../pages/ConfirmPage';
@@ -649,6 +648,8 @@ function PageMainButton() {
   // sibling-screen's main button (e.g. switch tab → submit there)
   // and create a race.
   const busy = useAppMutating();
+  // DLV-4 / BUY-12: a double tap fired twice before `busy` disabled it.
+  const guardTap = useTapGuard();
   // Permanently hide Telegram's native MainButton — we render our
   // own in-DOM equivalent above the bottom nav. The hide() call is
   // idempotent on the SDK side.
@@ -701,7 +702,7 @@ function PageMainButton() {
         type="button"
         data-testid="page-main-button"
         disabled={!interactable}
-        onClick={state.onClick}
+        onClick={guardTap(state.onClick)}
         aria-busy={busy || undefined}
         className={
           'flex h-12 w-full min-w-0 items-center justify-center rounded-[var(--r-pill)] px-4 text-old-h3 font-semibold ' +
