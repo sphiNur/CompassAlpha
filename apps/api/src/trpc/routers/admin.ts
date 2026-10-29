@@ -1005,6 +1005,9 @@ const PurgeByDateInputSchema = z.object({
 const PurgeSessionInputSchema = z.object({
   sessionId: UuidSchema,
   dryRun: z.boolean().default(true),
+  // CAT-3 (2026-10-30): same guard as purgeRun — only the caller's own
+  // test orders, unless explicitly waived.
+  requireOnlyTestSessions: z.boolean().default(true),
 });
 
 /**
@@ -5052,6 +5055,11 @@ export const adminRouter = router({
           ),
         );
 
+        // CAT-2 (2026-10-30): settlement revisions are append-only (a
+        // trigger refuses DELETE), so the purge could only ever fail with
+        // a bare "something went wrong". Say why up front instead.
+        refuseIfSettlementRevisions(counts);
+
         const total = Object.values(counts).reduce((a, b) => a + b, 0);
 
         if (input.dryRun) {
@@ -5157,6 +5165,12 @@ export const adminRouter = router({
       );
       const runIds: string[] = (runIdsResult as unknown as Array<{ id: string }>).map((r) => r.id);
 
+      // CAT-4 (2026-10-30): orders are picked by order_date and runs by
+      // run_date, which differ when a run takes earlier orders. Deleting
+      // one side left the other pointing at nothing, and those orphans
+      // could not be deleted afterwards. An order and its run go together.
+      await closeOverRunLinks(tx, orgId, sessionIds, runIds);
+
       const allStreamIds = [...sessionIds, ...runIds];
 
       const counts: Record<string, number> = {
@@ -5198,6 +5212,7 @@ export const adminRouter = router({
           ),
         );
       counts['inventory.store_daily_settlements'] = settlementCount?.n ?? 0;
+      refuseIfSettlementRevisions(counts);
 
       if (sessionIds.length > 0) {
         const r = await tx.execute(
@@ -5778,11 +5793,31 @@ export const adminRouter = router({
       if (!session) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.sessionNotFound' });
       }
-      // Refuse if attached to a run — caller should purge the run.
-      if (session.status === 'in_run' || session.status === 'archived' || session.runId) {
+      // Refuse if attached to a run — caller should purge the run. A
+      // session whose run no longer exists (left behind by an earlier
+      // purge, CAT-4) has nothing to purge it through, so it may go alone.
+      const run = session.runId
+        ? await tx.query.marketRunsV.findFirst({
+            where: (r, { eq: eq2, and: and2 }) =>
+              and2(eq2(r.id, session.runId!), eq2(r.orgId, orgId)),
+          })
+        : undefined;
+      const orphaned = session.runId !== null && !run;
+      if (!orphaned && (session.status === 'in_run' || session.status === 'archived' || run)) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
           message: 'admin.errors.sessionAttachedToRun',
+        });
+      }
+      // CAT-3 (2026-10-30): the page promises real users' orders are
+      // never touched; this used to delete anyone's.
+      if (
+        input.requireOnlyTestSessions &&
+        (await foreignAuthors(tx, orgId, ctx.session!.userId, [input.sessionId])).size > 0
+      ) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'admin.errors.sessionHasForeignAuthors',
         });
       }
 
@@ -5826,45 +5861,15 @@ export const adminRouter = router({
 
       // Safety: refuse if any attached session belongs to someone other
       // than the caller, unless explicitly waived.
-      if (input.requireOnlyTestSessions && sessionIds.length > 0) {
-        // Per-store sessions can have multiple contributors. A session
-        // counts as "test" only if every line author AND the submitter
-        // is the caller. Anyone else's line → refuse.
-        const myMember = await tx.query.members.findFirst({
-          where: (m, { eq: eq2, and: and2 }) =>
-            and2(eq2(m.orgId, orgId), eq2(m.userId, ctx.session!.userId)),
+      if (
+        input.requireOnlyTestSessions &&
+        sessionIds.length > 0 &&
+        (await foreignAuthors(tx, orgId, ctx.session!.userId, sessionIds)).size > 0
+      ) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'admin.errors.runHasForeignSessions',
         });
-        const myMemberId = myMember?.id ?? null;
-        const sessions = await tx.query.orderSessionsV.findMany({
-          where: (sess, { inArray: ia }) => ia(sess.id, sessionIds),
-        });
-        const items = await tx.query.orderItemsV.findMany({
-          where: (it, { inArray: ia }) => ia(it.sessionId, sessionIds),
-        });
-        const foreignAttribs = new Set<string>();
-        for (const sess of sessions) {
-          if (sess.submittedByMemberId && sess.submittedByMemberId !== myMemberId) {
-            foreignAttribs.add(sess.submittedByMemberId);
-          }
-          if (
-            sess.initiatedByMemberId &&
-            sess.initiatedByMemberId !== myMemberId &&
-            !sess.submittedByMemberId
-          ) {
-            foreignAttribs.add(sess.initiatedByMemberId);
-          }
-        }
-        for (const it of items) {
-          if (it.contributorMemberId && it.contributorMemberId !== myMemberId) {
-            foreignAttribs.add(it.contributorMemberId);
-          }
-        }
-        if (foreignAttribs.size > 0) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'admin.errors.runHasForeignSessions',
-          });
-        }
       }
 
       const counts = await countRunCascade(tx, orgId, input.runId, sessionIds);
@@ -5937,6 +5942,108 @@ export function runMovements(orgId: string, runIds: string[]): ReturnType<typeof
 }
 
 // ---------- session/run cascade helpers ----------
+type OrgTx = import('@compass/db').DB;
+
+/**
+ * Members other than the caller who wrote any of these sessions. Per-store
+ * sessions can have several contributors, so a session counts as the
+ * caller's test only if the submitter (or, before submit, the initiator)
+ * and every line author is the caller.
+ */
+async function foreignAuthors(
+  tx: OrgTx,
+  orgId: string,
+  userId: string,
+  sessionIds: string[],
+): Promise<Set<string>> {
+  const myMember = await tx.query.members.findFirst({
+    where: (m, { eq: eq2, and: and2 }) => and2(eq2(m.orgId, orgId), eq2(m.userId, userId)),
+  });
+  const myMemberId = myMember?.id ?? null;
+  const sessions = await tx.query.orderSessionsV.findMany({
+    where: (sess, { inArray: ia }) => ia(sess.id, sessionIds),
+  });
+  const items = await tx.query.orderItemsV.findMany({
+    where: (it, { inArray: ia }) => ia(it.sessionId, sessionIds),
+  });
+  const foreign = new Set<string>();
+  for (const sess of sessions) {
+    if (sess.submittedByMemberId && sess.submittedByMemberId !== myMemberId) {
+      foreign.add(sess.submittedByMemberId);
+    }
+    if (
+      sess.initiatedByMemberId &&
+      sess.initiatedByMemberId !== myMemberId &&
+      !sess.submittedByMemberId
+    ) {
+      foreign.add(sess.initiatedByMemberId);
+    }
+  }
+  for (const it of items) {
+    if (it.contributorMemberId && it.contributorMemberId !== myMemberId) {
+      foreign.add(it.contributorMemberId);
+    }
+  }
+  return foreign;
+}
+
+/**
+ * Grow the purge sets (in place) until no order points at a run outside
+ * them and no run outside them holds one of their orders. Only runs that
+ * still exist are added; an order whose run is already gone just goes.
+ */
+async function closeOverRunLinks(
+  tx: OrgTx,
+  orgId: string,
+  sessionIds: string[],
+  runIds: string[],
+): Promise<void> {
+  for (;;) {
+    const sessionSet = new Set(sessionIds);
+    const runSet = new Set(runIds);
+    const ownRuns = sessionIds.length
+      ? await tx
+          .select({ runId: s.orderSessionsV.runId })
+          .from(s.orderSessionsV)
+          .innerJoin(s.marketRunsV, eq(s.marketRunsV.id, s.orderSessionsV.runId))
+          .where(
+            and(eq(s.orderSessionsV.orgId, orgId), inArray(s.orderSessionsV.id, sessionIds)),
+          )
+      : [];
+    const heldSessions = runIds.length
+      ? await tx
+          .select({ id: s.orderSessionsV.id })
+          .from(s.orderSessionsV)
+          .where(and(eq(s.orderSessionsV.orgId, orgId), inArray(s.orderSessionsV.runId, runIds)))
+      : [];
+    let grew = false;
+    for (const r of ownRuns) {
+      if (r.runId && !runSet.has(r.runId)) {
+        runSet.add(r.runId);
+        runIds.push(r.runId);
+        grew = true;
+      }
+    }
+    for (const r of heldSessions) {
+      if (!sessionSet.has(r.id)) {
+        sessionSet.add(r.id);
+        sessionIds.push(r.id);
+        grew = true;
+      }
+    }
+    if (!grew) return;
+  }
+}
+
+function refuseIfSettlementRevisions(counts: Record<string, number>): void {
+  if ((counts['inventory.store_daily_settlement_revisions'] ?? 0) > 0) {
+    throw new TRPCError({
+      code: 'PRECONDITION_FAILED',
+      message: 'admin.errors.purgeHasSettlements',
+    });
+  }
+}
+
 // Drizzle's transactional type is annoying to import here; the helpers
 // only call `.execute(sql\`...\`)` so a structural type is enough.
 type Tx = { execute: (q: ReturnType<typeof sql>) => Promise<unknown> };

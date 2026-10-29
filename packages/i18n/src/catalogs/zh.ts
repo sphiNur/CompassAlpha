@@ -217,7 +217,7 @@ export const zh = {
   'people.pickScopeFirst': '先在上面选一个范围，才能看到可用角色。',
   'ops.maint.resetTodayTitle': '重置今天的整条流程',
   'ops.maint.resetTodayBody':
-    '删掉日期为 {date} 的每一条订单、采购单、配送、通知和价格历史——不管是谁创建的。目录和成员不动。只在你确定今天没有真实用户数据时使用。',
+    '删掉日期为 {date} 的每一条订单、采购单、配送、通知和价格历史——不管是谁创建的；这些订单所在的采购单、这些采购单里的订单即使在别的日期也一起删掉。目录和成员不动。只在你确定今天没有真实用户数据时使用。',
   'ops.maint.nothingToPurge': '没有可清除的内容——工作区已经是干净的。',
   'admin.store.defaultRoleHint':
     '设置之后，被邀请进这家门店、又没有明确选角色的新成员会自动获得这个角色。',
@@ -552,7 +552,11 @@ export const zh = {
   'admin.errors.purgeRequiresSuperAdmin': '仅 super-admin 可清除数据',
   'admin.errors.orgAdminMustBeGlobal': '组织级角色和权限只能全局授予',
   'admin.errors.roleNotFound': '角色不存在',
-  'admin.errors.runHasForeignSessions': '此采购单包含其他门店的订单 — 无法操作',
+  'admin.errors.runHasForeignSessions': '此采购单里有其他人的订单，不能删除',
+  'admin.errors.sessionHasForeignAuthors':
+    '这张订单有其他人的内容，不能删除。这里只能删你自己的测试订单',
+  'admin.errors.purgeHasSettlements':
+    '这些日期里有日结记录。日结的修改记录按规定不能删除，所以无法清理',
   'admin.errors.runNotFound': '采购单不存在',
   'admin.errors.scopeStoreIdRequired': '门店级角色必须指定门店',
   'admin.errors.sessionAttachedToRun': '该订单已并入采购单，无法编辑',
