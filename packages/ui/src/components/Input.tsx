@@ -1,15 +1,34 @@
 import { forwardRef } from 'react';
-import type { InputHTMLAttributes } from 'react';
+import type { ChangeEvent, InputHTMLAttributes } from 'react';
 import { cn } from '../cn';
+import { normalizeDecimalInput } from '../decimalText';
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   invalid?: boolean;
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
-  { className, invalid, ...rest },
+  { className, invalid, ...props },
   ref,
 ) {
+  // R6: a "number" field is a text field with the decimal keypad, so a
+  // decimal comma is read instead of dropped; the value handed to
+  // onChange is normalised (normalizeDecimalInput).
+  const numeric = props.type === 'number';
+  const rest = numeric
+    ? {
+        ...props,
+        type: 'text',
+        inputMode: props.inputMode ?? ('decimal' as const),
+        onChange: props.onChange
+          ? (e: ChangeEvent<HTMLInputElement>) => {
+              const next = normalizeDecimalInput(e.target.value);
+              if (next !== e.target.value) e.target.value = next;
+              props.onChange!(e);
+            }
+          : undefined,
+      }
+    : props;
   return (
     <input
       ref={ref}
