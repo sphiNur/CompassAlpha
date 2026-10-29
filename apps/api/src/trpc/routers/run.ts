@@ -3219,13 +3219,20 @@ export const runRouter = router({
     runSimpleCommand(
       ctx,
       input.runId,
-      (state, { nextRunIndex }) =>
-        decideRun(state, {
+      (state, { nextRunIndex }) => {
+        // HIS-7 (2026-10-30): the same rule as creating a run — never a
+        // day that has not come yet in the org's time zone. Checked after
+        // the amend gate so a caller without it hears about that first.
+        if (input.runDate > todayStr(ctx)) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'run.errors.runDateInFuture' });
+        }
+        return decideRun(state, {
           type: 'ChangeRunDate',
           runDate: input.runDate,
           runIndex: nextRunIndex,
           actor: actorFromCtx(ctx),
-        }),
+        });
+      },
       // 2026-10-23: runs are numbered per day (unique org + date + index);
       // moving a run onto a day that already has a run #0 hit that index
       // and surfaced as "edited by someone else". It now becomes that

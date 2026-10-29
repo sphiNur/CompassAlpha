@@ -156,12 +156,23 @@ describe.skipIf(!SHOULD_RUN)('run.changeDate onto a day that has a run (PG-gated
 
   test('moving onto an empty day makes it that day’s first run', async () => {
     const run = await plannedRun('2026-10-24', 0);
-    await caller(session).run.changeDate({ runId: run, runDate: '2026-11-01' });
+    await caller(session).run.changeDate({ runId: run, runDate: '2026-10-26' });
     const db = getDb(undefined, { system: 'maintenance' });
     const [row] = await db
       .select({ runIndex: s.marketRunsV.runIndex, runDate: s.marketRunsV.runDate })
       .from(s.marketRunsV)
       .where(eq(s.marketRunsV.id, run));
-    expect(row).toEqual({ runIndex: 0, runDate: '2026-11-01' });
+    expect(row).toEqual({ runIndex: 0, runDate: '2026-10-26' });
+  });
+
+  test('HIS-7: a run cannot be moved to a day that has not come yet', async () => {
+    const run = await plannedRun('2026-10-25', 0);
+    let message = '';
+    try {
+      await caller(session).run.changeDate({ runId: run, runDate: '2099-01-01' });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toBe('run.errors.runDateInFuture');
   });
 });

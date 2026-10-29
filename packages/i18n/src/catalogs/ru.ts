@@ -813,6 +813,8 @@ export const ru = {
   'order.errors.notRejectable': 'Сейчас отклонить нельзя',
   'order.errors.rejectReasonRequired': 'Укажите причину отклонения',
   'order.errors.notWithdrawable': 'Сейчас отозвать нельзя',
+  'order.errors.withdrawDraftOpen':
+    'У вас уже есть черновик на сегодня. Сначала отправьте или очистите его, затем отзовите эту партию',
   'order.errors.cannotWithdraw': 'Нет прав на отзыв',
   'order.errors.cannotWithdrawWhileClaimed': 'Нельзя отозвать, пока проверяет менеджер',
   'order.errors.cannotUnapprove': 'Нет прав отменять согласование',

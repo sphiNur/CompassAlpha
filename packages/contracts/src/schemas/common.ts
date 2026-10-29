@@ -43,6 +43,15 @@ export const DecimalStringSchema = z
   .regex(/^-?\d+(\.\d{1,3})?$/, 'invalid decimal');
 
 /**
+ * ORD-9 (2026-10-30): an order line quantity. A mistyped 1,000,000,000
+ * overflowed numeric(12,3) as a 500, and 9,999,999 kg was saved without
+ * a word. A million of anything per line is far beyond a kitchen order.
+ */
+export const OrderQtySchema = DecimalStringSchema.refine((v) => Math.abs(Number(v)) < 1_000_000, {
+  message: 'too large',
+});
+
+/**
  * Strictly positive decimal — for money / actual-purchase qty fields where
  * a 0 or negative value is always a bug. Domain commands check this too,
  * but pulling the rule into the contract layer makes the API reject

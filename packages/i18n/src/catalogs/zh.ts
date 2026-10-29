@@ -759,6 +759,8 @@ export const zh = {
   'order.errors.notRejectable': '当前不能拒绝',
   'order.errors.rejectReasonRequired': '请填写拒绝理由',
   'order.errors.notWithdrawable': '当前不能撤回',
+  'order.errors.withdrawDraftOpen':
+    '今天已经有一张草稿。请先提交或清空它，再撤回这一批',
   'order.errors.cannotWithdraw': '无撤回权限',
   'order.errors.cannotWithdrawWhileClaimed': '审核中无法撤回',
   'order.errors.cannotUnapprove': '无反审权限',

@@ -114,6 +114,13 @@ export interface RunState {
    * RunExpenseRemoved event triggers the splice).
    */
   expenses: RunExpense[];
+  /**
+   * BUY-11 (2026-10-30): ids of removed expenses. Adding an id again
+   * (an offline replay of the original add) is a no-op, as in the read
+   * model, which keeps the removed row; it used to count again here and
+   * in the frozen totals. Optional: older snapshots lack it.
+   */
+  removedExpenseIds?: string[];
   finishedAt: Date | null;
   /**
    * Run-level claim — C.2 (M3.38, 2026-05-19). Holds the purchaser who
@@ -427,7 +434,10 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
       // semantics inside the state — the original Added event stays
       // in the log for audit). Idempotent if the same expenseId
       // already exists (e.g. replay of a stalled mutation).
-      if (state.expenses.some((e) => e.id === event.payload.expenseId)) {
+      if (
+        state.expenses.some((e) => e.id === event.payload.expenseId) ||
+        (state.removedExpenseIds ?? []).includes(event.payload.expenseId)
+      ) {
         return { ...state, seq: event.seq };
       }
       const newExpense: RunExpense = {
@@ -456,6 +466,7 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
         ...state,
         seq: event.seq,
         expenses: state.expenses.filter((e) => e.id !== event.payload.expenseId),
+        removedExpenseIds: [...(state.removedExpenseIds ?? []), event.payload.expenseId],
       };
     }
     case 'RunClaimed':

@@ -441,7 +441,10 @@ export function decideRun(
       // Idempotent — replay of same expenseId is a no-op (the reducer
       // also detects this defensively but we short-circuit to avoid
       // writing a duplicate event).
-      if (state.expenses.some((e) => e.id === command.expenseId)) {
+      if (
+        state.expenses.some((e) => e.id === command.expenseId) ||
+        (state.removedExpenseIds ?? []).includes(command.expenseId)
+      ) {
         return [];
       }
       const label = command.label.trim();
