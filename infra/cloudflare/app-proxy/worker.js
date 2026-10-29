@@ -222,6 +222,11 @@ export default {
       }
     }
 
+    // A 101 (WebSocket upgrade) cannot be rebuilt with `new Response` —
+    // the constructor only takes 200–599 and throws, so realtime never
+    // connected through this proxy. Hand the upgrade back untouched.
+    if (response.status === 101 || response.webSocket) return response;
+
     return new Response(response.body, {
       status: response.status,
       statusText: response.statusText,
