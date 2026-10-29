@@ -293,6 +293,13 @@ describe('CA-10 inventory.adjust has no users.manage fallback', () => {
       caller.inventory.stocktake({ storeId, skuId: fix!.skuId, target: '3' }),
     );
     expect(err).toBeNull();
+
+    // The stocktake wrote a movement; levels must read it back (it threw
+    // on the raw timestamp string for every store that had stock).
+    const levels = await caller.inventory.levels({ storeId });
+    const row = levels.find((l) => l.skuId === fix!.skuId);
+    expect(row?.onHand).toBe('3.000');
+    expect(Number.isNaN(Date.parse(row!.lastMovementAt))).toBe(false);
   });
 
   test.skipIf(!SHOULD_RUN)(
