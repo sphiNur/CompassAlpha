@@ -6,6 +6,7 @@ import { noteSessionCleared, trpc } from '../lib/trpc';
 import { getTg, haptic } from '../hooks/useTelegram';
 import { useI18n } from '../hooks/useI18n';
 import { useTranslateError } from '../lib/errToast';
+import { isLikelyNetworkError } from '../lib/networkError';
 
 interface AuthGateProps {
   children: ReactNode;
@@ -244,9 +245,18 @@ export function AuthGate({ children }: AuthGateProps) {
       }
     },
     onError(err) {
-      const message = err.message.startsWith('auth.errors.')
+      // AUTH-3 (2026-10-30): a malformed invite token (a truncated link,
+      // stray characters) failed input validation and the raw Zod JSON
+      // was shown. Never show a raw message: a server key is translated,
+      // a rejected token reads as an invalid link, the rest is generic.
+      const code = (err as { data?: { code?: string } }).data?.code;
+      const message = /^[a-z]+\.errors?\./.test(err.message)
         ? i18n.t(err.message as Parameters<typeof i18n.t>[0])
-        : err.message;
+        : code === 'BAD_REQUEST'
+          ? i18n.t('auth.errors.inviteNotFound')
+          : isLikelyNetworkError(err)
+            ? i18n.t('common.networkError')
+            : i18n.t('auth.errors.signInFailed');
       setError(message);
     },
   });

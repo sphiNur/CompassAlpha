@@ -1275,8 +1275,12 @@ export function FinanceSection() {
       }),
     ].join('\n');
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      void navigator.clipboard.writeText(tsv);
-      toast.success(i18n.t('finance.export.copied'));
+      // HIS-8 (2026-10-30): the write can be refused (no clipboard
+      // permission); only claim success once it actually happened.
+      navigator.clipboard.writeText(tsv).then(
+        () => toast.success(i18n.t('finance.export.copied')),
+        () => toast.error(i18n.t('finance.export.noClipboard')),
+      );
     } else {
       // Fallback for older WebViews — clipboard API unavailable. We
       // surface a user-facing error toast; the TSV is dropped (the
