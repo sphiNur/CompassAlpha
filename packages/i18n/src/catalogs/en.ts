@@ -1724,7 +1724,7 @@ export const en = {
     'Daily close is recorded per store. Choose a specific store instead of All stores.',
   'settlement.errors.invalidMoney': 'Enter a valid amount with up to two decimal places.',
   'settlement.errors.expensesManagerOnly':
-    'Only a store manager or higher role can record operating expenses.',
+    'Recording operating expenses requires permission to record this store’s daily settlement.',
   'settlement.errors.invalidDetails': 'Complete every expense and wage entry.',
   'settlement.errors.invalidDetailsBody':
     'Each operating expense needs a positive amount and reason; each wage entry also needs a selected employee.',
@@ -1733,6 +1733,14 @@ export const en = {
   'settlement.errors.stores': 'Could not load stores available for daily close.',
   'settlement.errors.businessDate': 'Could not load the store business date.',
   'settlement.errors.save': 'Could not save the daily close. Please try again.',
+  'settlement.errors.totalTooLarge': 'The total is too large. Check the amounts.',
+  'settlement.errors.unknownItem': 'A row was changed elsewhere. Reload the daily close and try again.',
+  'settlement.errors.employeeRequired': 'Choose an employee for every wage entry.',
+  'settlement.errors.employeeNotInStore': 'An employee in the wages no longer works at this store. Choose someone else.',
+  'settlement.errors.historicalTotalImmutable': 'This older close only has a total, so it cannot be split into entries.',
+  'settlement.errors.totalMismatch': 'The entries do not add up to the total. Check the amounts.',
+  'settlement.errors.futureDate': 'You cannot close a day that has not started yet.',
+  'settlement.errors.correctionReasonRequired': 'Changing a saved close needs a correction reason.',
   'settlement.errors.versionConflict': 'This daily close was changed elsewhere.',
   'settlement.errors.versionConflictBody':
     'Refresh the record to review the latest version before saving your correction.',

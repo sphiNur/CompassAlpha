@@ -32,6 +32,7 @@ import { trpc } from '../lib/trpc';
 import { registerStoreChangeGuard, useStoreContext } from '../components/StoreSwitcher';
 import { usePageMainButton, haptic } from '../hooks/useTelegram';
 import { confirmNative } from '../lib/confirm';
+import { useErrToast } from '../lib/errToast';
 import { useI18n } from '../hooks/useI18n';
 import { formatMoney, currencyOf } from '../lib/format';
 import { useAuthStore } from '../stores/authStore';
@@ -351,6 +352,7 @@ function confirmSettlementAction(message: string, onConfirm: () => void): void {
 export function SettlementPage() {
   const i18n = useI18n();
   const toast = useToast();
+  const errToast = useErrToast();
   const session = useAuthStore((state) => state.session);
   const storeCtx = useStoreContext();
   const requestedStoreId = storeCtx.kind === 'specific' ? storeCtx.storeId : null;
@@ -626,8 +628,9 @@ export function SettlementPage() {
         haptic('warning');
         return;
       }
-      haptic('error');
-      toast.error(i18n.t('settlement.errors.save'));
+      // The server names what to fix (an employee who left, totals that do not
+      // add up, a missing correction reason); show that, not "try again".
+      errToast('settlement.errors.save')(error);
     },
   });
 

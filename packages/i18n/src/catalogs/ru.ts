@@ -1575,7 +1575,7 @@ export const ru = {
     'Закрытие дня ведётся отдельно для каждого магазина. Выберите конкретный магазин вместо всех.',
   'settlement.errors.invalidMoney': 'Введите корректную сумму, не более двух знаков после запятой.',
   'settlement.errors.expensesManagerOnly':
-    'Только менеджер магазина или роль выше может вносить операционные расходы.',
+    'Для внесения операционных расходов нужно право вести дневной расчёт этого магазина.',
   'settlement.errors.invalidDetails': 'Заполните каждую строку расхода и зарплаты.',
   'settlement.errors.invalidDetailsBody':
     'Для каждого операционного расхода укажите положительную сумму и причину; для каждой зарплаты также выберите сотрудника.',
@@ -1584,6 +1584,14 @@ export const ru = {
   'settlement.errors.stores': 'Не удалось загрузить магазины для закрытия дня.',
   'settlement.errors.businessDate': 'Не удалось загрузить рабочую дату магазина.',
   'settlement.errors.save': 'Не удалось сохранить закрытие дня. Повторите попытку.',
+  'settlement.errors.totalTooLarge': 'Слишком большая итоговая сумма. Проверьте суммы.',
+  'settlement.errors.unknownItem': 'Строку изменили в другом месте. Обновите закрытие дня и повторите.',
+  'settlement.errors.employeeRequired': 'Выберите сотрудника для каждой строки зарплаты.',
+  'settlement.errors.employeeNotInStore': 'Сотрудник из зарплат больше не работает в этом магазине. Выберите другого.',
+  'settlement.errors.historicalTotalImmutable': 'В этой старой записи есть только итог, разбить её на строки нельзя.',
+  'settlement.errors.totalMismatch': 'Сумма строк не совпадает с итогом. Проверьте суммы.',
+  'settlement.errors.futureDate': 'Нельзя закрыть день, который ещё не наступил.',
+  'settlement.errors.correctionReasonRequired': 'Чтобы изменить сохранённое закрытие дня, укажите причину исправления.',
   'settlement.errors.versionConflict': 'Это закрытие дня было изменено в другом месте.',
   'settlement.errors.versionConflictBody':
     'Обновите запись и проверьте последнюю версию перед сохранением исправления.',

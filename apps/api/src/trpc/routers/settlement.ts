@@ -11,7 +11,6 @@ import { and, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
 import {
-  MANAGER_RANK,
   SettlementBusinessDateInputSchema,
   SettlementGetInputSchema,
   type SettlementOperatingExpenseItem,
@@ -26,9 +25,7 @@ import { authedProcedure, idempotentMutation, router } from '../trpc';
 import {
   assertActorAssignedToStore,
   effectivePermissionsForStore,
-  getActorMaxActiveRoleRankInStore,
 } from '../../services/storeScope';
-import { hasGlobalOrgAdmin } from '../../services/orgAdmin';
 
 type SettlementRow = typeof s.storeDailySettlements.$inferSelect;
 
@@ -114,10 +111,26 @@ function centsToSettlementMoney(cents: bigint): string {
   return `${whole}.${fraction}`;
 }
 
+/**
+ * The catalog sentence for each rejected-close reason, so the page can say
+ * what to fix instead of "try again". The structured cause stays as it was.
+ */
+export const SETTLEMENT_REASON_KEYS: Record<string, string> = {
+  'total-too-large': 'settlement.errors.totalTooLarge',
+  'unknown-item': 'settlement.errors.unknownItem',
+  'employee-selection-required': 'settlement.errors.employeeRequired',
+  'employee-not-in-store': 'settlement.errors.employeeNotInStore',
+  'historical-total-immutable': 'settlement.errors.historicalTotalImmutable',
+  'total-mismatch': 'settlement.errors.totalMismatch',
+  'details-required': 'settlement.errors.invalidDetails',
+  'future-date': 'settlement.errors.futureDate',
+  'required-for-correction': 'settlement.errors.correctionReasonRequired',
+};
+
 function detailValidation(field: string, reason: string): never {
   throw new TRPCError({
     code: 'BAD_REQUEST',
-    message: 'common.errors.validation',
+    message: SETTLEMENT_REASON_KEYS[reason] ?? 'common.errors.validation',
     cause: { field, reason },
   });
 }
@@ -385,14 +398,6 @@ function missingSettlementPermission(): never {
     code: 'FORBIDDEN',
     message: 'auth.errors.missingPermission',
     cause: { missingPermission: 'settlement.record' },
-  });
-}
-
-function managerRequiredForOperatingExpenses(): never {
-  throw new TRPCError({
-    code: 'FORBIDDEN',
-    message: 'settlement.errors.expensesManagerOnly',
-    cause: { minimumRoleRank: MANAGER_RANK },
   });
 }
 
@@ -742,17 +747,6 @@ async function loadWageRoster(tx: DB, orgId: string, storeId: string): Promise<W
     .sort((left, right) => left.displayName.localeCompare(right.displayName));
 }
 
-async function canRecordOperatingExpenses(
-  tx: DB,
-  memberId: string,
-  storeId: string,
-): Promise<boolean> {
-  return (
-    (await hasGlobalOrgAdmin(tx, memberId)) ||
-    (await getActorMaxActiveRoleRankInStore(tx, memberId, storeId)) >= MANAGER_RANK
-  );
-}
-
 export const settlementRouter = router({
   /**
    * Authoritative business date for the selected store. The browser must not
@@ -769,13 +763,11 @@ export const settlementRouter = router({
           storeId: store.id,
           date: todayInTz(timezone),
           timezone,
-          // UI affordance only; save independently enforces the exact same
-          // store-scoped role threshold.
-          canRecordOperatingExpenses: await canRecordOperatingExpenses(
-            tx,
-            ctx.session!.memberId,
-            store.id,
-          ),
+          // UI affordance only. Operating expenses are part of the daily
+          // close, so anyone who may record this store's settlement (the
+          // settlement.record check above) may record them too. Kept in the
+          // response so already-loaded web bundles keep enabling the editor.
+          canRecordOperatingExpenses: true,
         };
       });
     }),
@@ -851,11 +843,7 @@ export const settlementRouter = router({
         });
       }
       if (date > storeToday) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'common.errors.validation',
-          cause: { field: 'date', reason: 'future-date' },
-        });
+        detailValidation('date', 'future-date');
       }
 
       const correctionReason =
@@ -870,21 +858,6 @@ export const settlementRouter = router({
           ),
       });
 
-      const actorCanRecordOperatingExpenses = await canRecordOperatingExpenses(
-        tx,
-        ctx.session!.memberId,
-        store.id,
-      );
-      // Keep the manager boundary dominant for an attempted mutation, even
-      // when the target is also an immutable total-only historical close.
-      if (
-        input.operatingExpenseItems !== undefined &&
-        hasLegacyOperatingExpenseTotal(existing) &&
-        !actorCanRecordOperatingExpenses
-      ) {
-        managerRequiredForOperatingExpenses();
-      }
-
       const roster = input.wageItems?.some((item) => !!item.memberId)
         ? await loadWageRoster(tx, ctx.session!.orgId, store.id)
         : [];
@@ -894,19 +867,6 @@ export const settlementRouter = router({
         ctx.session!.memberId,
         new Map(roster.map((member) => [member.memberId, member])),
       );
-      const operatingExpenseItemsChanged = !sameRawOperatingExpenseItems(
-        existing ? rawOperatingExpenseItems(existing) : [],
-        itemizedOutflows.operatingExpenseItems,
-      );
-      const operatingExpensesChanged =
-        itemizedOutflows.operatingExpenses !==
-        (existing ? normalizeSettlementMoney(existing.operatingExpenses) : '0.00');
-      if (
-        (operatingExpenseItemsChanged || operatingExpensesChanged) &&
-        !actorCanRecordOperatingExpenses
-      ) {
-        managerRequiredForOperatingExpenses();
-      }
       const values = {
         onlineRevenue: normalizeSettlementMoney(input.onlineRevenue),
         invoicedCashRevenue: normalizeSettlementMoney(input.invoicedCashRevenue),
@@ -968,11 +928,7 @@ export const settlementRouter = router({
           return (await serializeSettlements(tx, [existing]))[0]!;
         }
         if (!correctionReason) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'common.errors.validation',
-            cause: { field: 'correctionReason', reason: 'required-for-correction' },
-          });
+          detailValidation('correctionReason', 'required-for-correction');
         }
 
         const now = new Date();

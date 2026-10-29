@@ -1588,7 +1588,7 @@ export const uz = {
     "Kun yakuni har bir do'kon uchun alohida yoziladi. Barcha do'konlar o'rniga aniq bir do'konni tanlang.",
   'settlement.errors.invalidMoney': "Ikki kasrgacha bo'lgan to'g'ri summani kiriting.",
   'settlement.errors.expensesManagerOnly':
-    'Operatsion xarajatlarni faqat do‘kon menejeri yoki undan yuqori rol kiritishi mumkin.',
+    'Operatsion xarajatlarni kiritish uchun ushbu do‘konning kunlik hisobini yuritish huquqi kerak.',
   'settlement.errors.invalidDetails': "Har bir xarajat va ish haqi qatorini to'ldiring.",
   'settlement.errors.invalidDetailsBody':
     'Har bir operatsion xarajat uchun musbat summa va sababni kiriting; har bir ish haqi qatori uchun xodimni ham tanlang.',
@@ -1597,6 +1597,14 @@ export const uz = {
   'settlement.errors.stores': "Kun yakuni uchun do'konlarni yuklab bo'lmadi.",
   'settlement.errors.businessDate': "Do'konning hisob sanasini yuklab bo'lmadi.",
   'settlement.errors.save': "Kun yakunini saqlab bo'lmadi. Qayta urinib ko'ring.",
+  'settlement.errors.totalTooLarge': "Jami summa juda katta. Summalarni tekshiring.",
+  'settlement.errors.unknownItem': "Qator boshqa joyda o'zgartirilgan. Kun yakunini qayta yuklab, yana urinib ko'ring.",
+  'settlement.errors.employeeRequired': "Har bir ish haqi qatori uchun xodimni tanlang.",
+  'settlement.errors.employeeNotInStore': "Ish haqidagi xodim endi bu do'konda ishlamaydi. Boshqa xodimni tanlang.",
+  'settlement.errors.historicalTotalImmutable': "Bu eski yozuvda faqat jami summa bor, uni qatorlarga bo'lib bo'lmaydi.",
+  'settlement.errors.totalMismatch': "Qatorlar yig'indisi jami summaga to'g'ri kelmaydi. Summalarni tekshiring.",
+  'settlement.errors.futureDate': "Hali boshlanmagan kunni yakunlab bo'lmaydi.",
+  'settlement.errors.correctionReasonRequired': "Saqlangan kun yakunini o'zgartirish uchun tuzatish sababini yozing.",
   'settlement.errors.versionConflict': "Bu kun yakuni boshqa joyda o'zgartirilgan.",
   'settlement.errors.versionConflictBody':
     'Tuzatishni saqlashdan oldin yozuvni yangilang va oxirgi versiyani tekshiring.',

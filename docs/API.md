@@ -82,9 +82,9 @@ resolved for the requested store; a permission held in one store never grants
 access to another.
 
 `settlement.save` stores explained outflows alongside its reporting totals.
-Each operating expense now has only an amount and required reason; only an
-effective store-manager-or-higher role (or a persisted global `org.admin`)
-may add, change, or remove it. The API assigns each new expense a stable ID
+Each operating expense now has only an amount and required reason; anyone
+with `settlement.record` effective in that store (for example the built-in
+cashier, or a global `org.admin`) may add, change, or remove it. The API assigns each new expense a stable ID
 and its original recorder from the authenticated session (not from a client
 field). Each wage row selects an active member of that same store by
 `memberId`; the API assigns a stable row ID and snapshots the person’s display
@@ -97,7 +97,7 @@ would falsely attribute a pre-detail total to the person making the correction.
 
 | Route                     | Type                | Permission          | Notes                                                                                                                                                         |
 | ------------------------- | ------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `settlement.businessDate` | query               | `settlement.record` | Returns the selected store's authoritative current business date, effective timezone, and the current-store `canRecordOperatingExpenses` capability.          |
+| `settlement.businessDate` | query               | `settlement.record` | Returns the selected store's authoritative current business date, effective timezone, and `canRecordOperatingExpenses` (true for any allowed caller).         |
 | `settlement.wageRoster`   | query               | `settlement.record` | Minimal active personnel list for the selected store, with only effective roles for the picker; never returns the organization-wide admin directory.          |
 | `settlement.get`          | query               | `settlement.record` | One store/date record or null; inactive-store history remains readable.                                                                                       |
 | `settlement.recent`       | query               | `settlement.record` | Newest records for one store, with an exclusive date cursor.                                                                                                  |
