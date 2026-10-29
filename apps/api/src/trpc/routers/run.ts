@@ -59,7 +59,7 @@ import {
 import { DomainError } from '@compass/domain';
 import { authedProcedure, idempotentMutation, rethrowDomainError, router } from '../trpc';
 import { appendEvents, readStream } from '../../services/eventStore';
-import { isUniqueViolation } from '../../services/pgErrors';
+import { isUniqueViolation, withStreamConflictRetry } from '../../services/pgErrors';
 import { projectRun } from '../../services/runProjection';
 import { projectOrder } from '../../services/orderProjection';
 import { hub } from '../../realtime/hub';
@@ -963,7 +963,7 @@ export const runRouter = router({
   attachSessions: idempotentMutation
     .input(RunAttachSessionsInputSchema)
     .mutation(async ({ ctx, input }) => {
-      return ctx.withOrg(async (tx) => {
+      return withRunStreamRetry(ctx, async (tx) => {
         const run = await loadRun(tx, ctx.session!.orgId, input.runId);
         await assertRunCreateScopeForRun(tx, ctx, run);
         if (run.status === 'amending') await assertCanAmendRun(tx, ctx, run);
@@ -2950,7 +2950,7 @@ export const runRouter = router({
   // M1.20: idempotent — finish locks the run + writes totals; a
   // retry must NOT compute a second total.
   finish: idempotentMutation.input(SimpleRunCommandSchema).mutation(async ({ ctx, input }) => {
-    return ctx.withOrg(async (tx) => {
+    return withRunStreamRetry(ctx, async (tx) => {
       const run = await loadRun(tx, ctx.session!.orgId, input.runId);
       const runEvents = (await readStream(tx, 'run', run.id)) as unknown as RunEvent[];
       let runState = emptyRunState(run.id);
@@ -3325,7 +3325,7 @@ export const runRouter = router({
   // schema disagreed. See RunCancelInputSchema for why the shared
   // schema was NOT relaxed instead.
   cancel: authedProcedure.input(RunCancelInputSchema).mutation(async ({ ctx, input }) => {
-    return ctx.withOrg(async (tx) => {
+    return withRunStreamRetry(ctx, async (tx) => {
       const run = await loadRun(tx, ctx.session!.orgId, input.runId);
       const runEvents = (await readStream(tx, 'run', run.id)) as unknown as RunEvent[];
       let runState = emptyRunState(run.id);
@@ -3459,7 +3459,7 @@ export const runRouter = router({
   }),
 
   ejectSession: authedProcedure.input(EjectSessionInputSchema).mutation(async ({ ctx, input }) => {
-    return ctx.withOrg(async (tx) => {
+    return withRunStreamRetry(ctx, async (tx) => {
       const run = await loadRun(tx, ctx.session!.orgId, input.runId);
       // M3.33 (2026-05-18, Wave1 #3): scope check. Without this, any
       // actor with run.eject_session could pop another store's
@@ -3618,6 +3618,27 @@ function actorFromCtx(
   };
 }
 
+/**
+ * One run-stream transaction, decided again if it lost a sequence race
+ * to another writer (R2, 2026-10-30). Two stores confirming at once, or
+ * two buyers recording different lines, used to hand one of them
+ * "edited by someone else — try again" (and a replayed offline write was
+ * dropped). A race lost on every attempt is still reported as CONFLICT.
+ */
+async function withRunStreamRetry<T>(
+  ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
+  fn: (tx: import('@compass/db').DB) => Promise<T>,
+): Promise<T> {
+  try {
+    return await withStreamConflictRetry(() => ctx.withOrg(fn));
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      throw new TRPCError({ code: 'CONFLICT', message: 'run.errors.staleSeq' });
+    }
+    throw err;
+  }
+}
+
 async function runSimpleCommand(
   ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
   runId: string,
@@ -3649,7 +3670,7 @@ async function runSimpleCommand(
     nextRunIndexOn?: string;
   },
 ): Promise<{ lastSeq: number; eventCount: number }> {
-  return ctx.withOrg(async (tx) => {
+  return withRunStreamRetry(ctx, async (tx) => {
     const run = await loadRun(tx, ctx.session!.orgId, runId);
     const events = (await readStream(tx, 'run', run.id)) as unknown as RunEvent[];
     let state = emptyRunState(run.id);
@@ -3709,9 +3730,8 @@ async function runSimpleCommand(
       return { lastSeq: state.seq, eventCount: out.length };
     } catch (err) {
       if (err instanceof DomainError) rethrowDomainError(err);
-      if (isUniqueViolation(err)) {
-        throw new TRPCError({ code: 'CONFLICT', message: 'run.errors.staleSeq' });
-      }
+      // A unique violation goes up as-is: withRunStreamRetry decides it
+      // again on the fresh stream, then reports CONFLICT if it keeps losing.
       throw err;
     }
   });

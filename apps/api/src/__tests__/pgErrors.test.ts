@@ -1,8 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { getDb, schema as s } from '@compass/db';
-import { appendEvents } from '../services/eventStore';
-import { isUniqueViolation, pgErrorCode } from '../services/pgErrors';
+import { appendEvents, readStream } from '../services/eventStore';
+import {
+  isStreamSeqConflict,
+  isUniqueViolation,
+  pgErrorCode,
+  withStreamConflictRetry,
+} from '../services/pgErrors';
 
 const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
 
@@ -80,5 +85,101 @@ describe('a real sequence collision in the event store (PG)', () => {
     expect(thrown).not.toBeNull();
     expect(pgErrorCode(thrown)).toBe('23505');
     expect(isUniqueViolation(thrown)).toBe(true);
+    // R2: and it is told apart as a stream-sequence race, the one kind a
+    // command may simply decide again.
+    expect(isStreamSeqConflict(thrown)).toBe(true);
+  });
+
+  test.skipIf(!SHOULD_RUN)(
+    'R2: writers racing on one stream all land once each decision is retried',
+    async () => {
+      const db = getDb(undefined, { system: 'maintenance' });
+      const [org] = await db
+        .insert(s.organizations)
+        .values({ slug: `pgretry-${randomUUID().slice(0, 8)}`, name: 'Stream retry probe' })
+        .returning();
+      if (!org) throw new Error('org insert failed');
+      const streamId = randomUUID();
+
+      // One "command": read the stream, take a moment (as deciding does),
+      // append the next sequence number — all in one transaction.
+      const command = () =>
+        db.transaction(async (tx) => {
+          const seen = await readStream(tx as unknown as typeof db, 'order', streamId);
+          await new Promise((resolve) => setTimeout(resolve, 25));
+          await appendEvents(tx as unknown as typeof db, {
+            streamType: 'order',
+            streamId,
+            orgId: org.id,
+            events: [
+              {
+                type: 'ProbeAppended',
+                seq: seen.length + 1,
+                payload: {},
+                actorUserId: null,
+                actorMemberId: null,
+                occurredAt: new Date(),
+              },
+            ],
+          });
+        });
+
+      // Without retries the race really happens and is recognised.
+      const once = await Promise.allSettled([command(), command(), command()]);
+      const lost = once.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
+      expect(lost.length).toBeGreaterThan(0);
+      for (const r of lost) expect(isStreamSeqConflict(r.reason)).toBe(true);
+
+      // With retries every writer lands, on consecutive sequence numbers.
+      const before = (await readStream(db, 'order', streamId)).length;
+      await Promise.all(
+        [1, 2, 3, 4].map(() => withStreamConflictRetry(command, 8)),
+      );
+      const seqs = (await readStream(db, 'order', streamId)).map((e) => e.seq);
+      expect(seqs.length).toBe(before + 4);
+      expect(seqs).toEqual(seqs.map((_, i) => i + 1));
+    },
+  );
+});
+
+describe('withStreamConflictRetry', () => {
+  const seqRace = () =>
+    new Error('Failed query', {
+      cause: Object.assign(new Error('duplicate key'), {
+        code: '23505',
+        constraint_name: 'events_stream_seq_unique',
+      }),
+    });
+
+  test('decides again after a stream race and returns the winner', async () => {
+    let calls = 0;
+    const out = await withStreamConflictRetry(async () => {
+      calls += 1;
+      if (calls < 3) throw seqRace();
+      return 'ok';
+    });
+    expect(out).toBe('ok');
+    expect(calls).toBe(3);
+  });
+
+  test('rethrows a race it keeps losing, and never retries other errors', async () => {
+    let calls = 0;
+    await expect(
+      withStreamConflictRetry(async () => {
+        calls += 1;
+        throw seqRace();
+      }, 3),
+    ).rejects.toThrow('Failed query');
+    expect(calls).toBe(3);
+
+    calls = 0;
+    const otherUnique = Object.assign(new Error('dup'), { code: '23505', constraint_name: 'mrv_one_active_per_org_unique' });
+    await expect(
+      withStreamConflictRetry(async () => {
+        calls += 1;
+        throw otherUnique;
+      }),
+    ).rejects.toBe(otherUnique);
+    expect(calls).toBe(1);
   });
 });

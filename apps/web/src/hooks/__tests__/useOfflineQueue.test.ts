@@ -86,9 +86,18 @@ describe('classifyReplayError', () => {
     }
   });
 
+  // R2 (2026-10-30): a run's writes share one stream, so a replay that
+  // races another writer is not at fault either — retry it, bounded.
+  it('retries queued run writes on CONFLICT up to the override cap', () => {
+    for (const proc of ['run.purchaseItem', 'run.confirmStore', 'run.deliverToStore']) {
+      expect(classifyReplayError('CONFLICT', proc, 0)).toBe('retry');
+      expect(classifyReplayError('CONFLICT', proc, MAX_OVERRIDE_RETRIES)).toBe('drop');
+    }
+  });
+
   it('keeps every other procedure / code on the default rule', () => {
-    expect(classifyReplayError('CONFLICT', 'run.purchaseItem', 0)).toBe('drop');
-    expect(classifyReplayError('CONFLICT', 'run.confirmStore', 0)).toBe('drop');
+    expect(classifyReplayError('CONFLICT', 'run.cancel', 0)).toBe('drop');
+    expect(classifyReplayError('PRECONDITION_FAILED', 'run.purchaseItem', 0)).toBe('drop');
     // The stale-offline-edit refusal is terminal for adjustItem.
     expect(classifyReplayError('PRECONDITION_FAILED', 'order.adjustItem', 0)).toBe('drop');
     expect(classifyReplayError('BAD_REQUEST', 'order.adjustItem', 0)).toBe('drop');
