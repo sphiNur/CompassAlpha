@@ -353,3 +353,51 @@ export async function unassignMemberFromStore(
       ),
     );
 }
+
+/** A permission key granted by a role binding or an override, with its scope. */
+export interface ScopedPermission {
+  key: string;
+  scopeType: string;
+  scopeId: string | null;
+}
+
+/**
+ * The flat permission set: every key that is effective in at least one
+ * scope — globally, or in some store. Each scope resolves like
+ * `effectivePermissionsForStore`: global + that store's role grants, then
+ * allows, then denies (deny wins); `org.admin` only ever from a global row.
+ *
+ * ADM-1/2/3 (2026-10-30): the server's session set ignored overrides (a
+ * global deny of users.manage still passed every admin gate; a global
+ * allow showed the Manage tab, then every page refused), and the client's
+ * set applied a deny in ONE store as if it were global (a manager of two
+ * stores denied in one lost Manage entirely). Both now use this.
+ */
+export function flatEffectivePermissions(
+  grants: readonly ScopedPermission[],
+  overrides: readonly (ScopedPermission & { effect: string })[],
+): Set<string> {
+  const stores = new Set<string>();
+  for (const row of [...grants, ...overrides]) {
+    if (row.scopeType === 'store' && row.scopeId) stores.add(row.scopeId);
+  }
+  const applies = (row: ScopedPermission, storeId: string | null) =>
+    row.scopeType === 'global' ||
+    (storeId !== null && row.scopeType === 'store' && row.scopeId === storeId);
+  const usable = (row: ScopedPermission) =>
+    Boolean(row.key) && (row.key !== 'org.admin' || row.scopeType === 'global');
+  const resolve = (storeId: string | null): Set<string> => {
+    const effective = new Set<string>();
+    for (const g of grants) if (applies(g, storeId) && usable(g)) effective.add(g.key);
+    for (const o of overrides) {
+      if (o.effect === 'allow' && applies(o, storeId) && usable(o)) effective.add(o.key);
+    }
+    for (const o of overrides) {
+      if (o.effect === 'deny' && applies(o, storeId) && usable(o)) effective.delete(o.key);
+    }
+    return effective;
+  };
+  const flat = resolve(null);
+  for (const storeId of stores) for (const key of resolve(storeId)) flat.add(key);
+  return flat;
+}
