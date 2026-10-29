@@ -33,6 +33,7 @@ import {
   readCatalogSnapshot,
   type CatalogSnapshot,
 } from '../../services/catalogCopy';
+import { logger } from '../../infra/log';
 
 function requireAdmin(perms: ReadonlySet<string>): void {
   if (!perms.has('users.manage')) {
@@ -250,19 +251,24 @@ async function auditAdmin(
   inputs: unknown,
 ): Promise<void> {
   try {
-    await tx.insert(s.policyDecisions).values({
-      orgId: ctx.session!.orgId,
-      actorId: ctx.session!.userId,
-      action,
-      resourceType,
-      resourceId,
-      decision: 'allow',
-      inputs: inputs as Record<string, unknown>,
-      scopeStoreId: deriveScopeStoreId(action, resourceType, inputs),
+    // B19 (2026-10-30): inside a savepoint. In Postgres a failed statement
+    // aborts the whole transaction, so catching the error here was not
+    // "best effort" — the admin action itself then failed. A nested
+    // transaction rolls back only this insert.
+    await tx.transaction(async (sp: typeof tx) => {
+      await sp.insert(s.policyDecisions).values({
+        orgId: ctx.session!.orgId,
+        actorId: ctx.session!.userId,
+        action,
+        resourceType,
+        resourceId,
+        decision: 'allow',
+        inputs: inputs as Record<string, unknown>,
+        scopeStoreId: deriveScopeStoreId(action, resourceType, inputs),
+      });
     });
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.warn('[audit] failed to log admin action', { action, err });
+    logger.warn({ err, action }, 'admin audit insert failed');
   }
 }
 

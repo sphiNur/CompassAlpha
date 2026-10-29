@@ -292,6 +292,13 @@ export const zh = {
   'common.error': '出错了',
   'common.errors.rateLimited': '请求过多 — 请稍等片刻后重试',
   'common.errors.requestInFlight': '上一次操作还在处理中，请稍候再试。',
+  'common.errors.internal': '服务器出了点问题，请稍后再试。',
+  'order.errors.tooManyExtras': '一张订单最多 50 个其他物品。',
+  'order.errors.invalidExtraName': '请填写物品名称（最多 200 个字）。',
+  'order.errors.invalidExtraUnit': '请填写单位（最多 16 个字）。',
+  'order.errors.invalidExtraQty': '数量要大于 0，最多 3 位小数。',
+  'order.errors.extraNoteTooLong': '备注太长了（最多 200 个字）。',
+  'run.errors.cannotPlan': '你没有安排采购的权限。',
   'common.errors.validation': '输入无效 — 请检查高亮的字段',
   'common.networkError': '网络错误 — 请检查连接',
 

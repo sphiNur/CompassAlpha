@@ -372,6 +372,13 @@ export const en = {
   // 'auth.errors.rateLimited' — same wording, different namespace.
   'common.errors.rateLimited': 'Too many requests — please wait a moment and try again',
   'common.errors.requestInFlight': 'The previous attempt is still being processed. Try again in a moment.',
+  'common.errors.internal': 'Something went wrong on our side. Please try again.',
+  'order.errors.tooManyExtras': 'An order can have at most 50 other items.',
+  'order.errors.invalidExtraName': 'Give the item a name (up to 200 characters).',
+  'order.errors.invalidExtraUnit': 'Give a unit (up to 16 characters).',
+  'order.errors.invalidExtraQty': 'Enter a quantity above 0, with at most 3 decimals.',
+  'order.errors.extraNoteTooLong': 'The note is too long (up to 200 characters).',
+  'run.errors.cannotPlan': 'You don’t have permission to plan purchase runs.',
   'common.errors.validation': 'Invalid input — check the highlighted fields',
 
   // ── 3. Settings ────────────────────────────────────────────────

@@ -315,6 +315,13 @@ export const ru = {
   'common.error': 'Что-то пошло не так',
   'common.errors.rateLimited': 'Слишком много запросов — подождите и повторите',
   'common.errors.requestInFlight': 'Предыдущая попытка ещё обрабатывается. Повторите чуть позже.',
+  'common.errors.internal': 'На сервере произошла ошибка. Попробуйте ещё раз.',
+  'order.errors.tooManyExtras': 'В заказе может быть не больше 50 других позиций.',
+  'order.errors.invalidExtraName': 'Укажите название (до 200 символов).',
+  'order.errors.invalidExtraUnit': 'Укажите единицу (до 16 символов).',
+  'order.errors.invalidExtraQty': 'Укажите количество больше 0, не более 3 знаков после запятой.',
+  'order.errors.extraNoteTooLong': 'Примечание слишком длинное (до 200 символов).',
+  'run.errors.cannotPlan': 'У вас нет права планировать закупки.',
   'common.errors.validation': 'Неверный ввод — проверьте отмеченные поля',
   'common.networkError': 'Ошибка сети — проверьте соединение',
 
