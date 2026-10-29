@@ -1,6 +1,7 @@
 import { forwardRef } from 'react';
 import type { InputHTMLAttributes } from 'react';
 import { cn } from '../cn';
+import { normalizeDecimalInput } from '../decimalText';
 
 export interface NumberInputProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'size'> {
@@ -27,7 +28,10 @@ export interface NumberInputProps
  * `auto` lets the parent control width (e.g. inside a CSS grid).
  */
 export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(
-  function NumberInput({ className, size = 'md', width = 'auto', oneDecimal: _oneDecimal, ...rest }, ref) {
+  function NumberInput(
+    { className, size = 'md', width = 'auto', oneDecimal: _oneDecimal, onChange, ...rest },
+    ref,
+  ) {
     void _oneDecimal; // reserved for future use; kept on the prop type for clarity
     // md = --control-h-sm (36px, the compact-control tier); sm = h-8 (32px).
     const hSize = size === 'sm' ? 'h-8' : 'h-[var(--control-h-sm)]';
@@ -36,7 +40,9 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(
     return (
       <input
         ref={ref}
-        type="number"
+        // R6: text + decimal keypad, so "1,5" is read as 1.5 instead of
+        // being dropped by type="number"; onChange gets the normalised value.
+        type="text"
         inputMode="decimal"
         className={cn(
           hSize,
@@ -48,6 +54,15 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(
           className,
         )}
         {...rest}
+        onChange={
+          onChange
+            ? (e) => {
+                const next = normalizeDecimalInput(e.target.value);
+                if (next !== e.target.value) e.target.value = next;
+                onChange(e);
+              }
+            : undefined
+        }
       />
     );
   },
