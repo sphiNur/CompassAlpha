@@ -850,7 +850,30 @@ export const orderRouter = router({
       // assertCanEditSession still re-checks status + claimer, so this
       // only decides WHICH session row we load.
       const isManagerEdit = input.targetMemberId !== undefined;
-      let session = isManagerEdit
+      // APR-1 (2026-10-30): the approval screen now names the batch it is
+      // showing. The (store, date, submitter, claimer) guess below picked
+      // the most recently updated batch, so with two batches from the
+      // same person on one day a "+" on the first edited the second.
+      // Load exactly that session and check it belongs to this store and
+      // submitter; the guess stays only for older clients.
+      const namedSession =
+        isManagerEdit && input.sessionId
+          ? await tx.query.orderSessionsV.findFirst({
+              where: (sess, { eq: eq2, and: and2 }) =>
+                and2(
+                  eq2(sess.id, input.sessionId!),
+                  eq2(sess.orgId, ctx.session!.orgId),
+                  eq2(sess.storeId, input.storeId),
+                  eq2(sess.initiatedByMemberId, ownerForLookup),
+                ),
+            })
+          : undefined;
+      if (isManagerEdit && input.sessionId && !namedSession) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'order.errors.sessionMissing' });
+      }
+      let session = namedSession
+        ? namedSession
+        : isManagerEdit
         ? // Prefer the session this actor has actually claimed. Without
           // this, `orderBy updatedAt` could hand back the approver's own
           // unrelated draft for the same (store, date) when approver ==
