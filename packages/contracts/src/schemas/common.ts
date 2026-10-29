@@ -13,6 +13,22 @@ export const DateStringSchema = z
     const day = new Date(`${value}T00:00:00Z`);
     return !Number.isNaN(day.getTime()) && day.toISOString().slice(0, 10) === value;
   }, 'not a calendar date');
+/** An IANA time zone the runtime knows ("Asia/Tashkent", "UTC"). */
+export function isTimeZone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * CLS-7 (2026-10-30): a store saved with "Mars/Olympus" made every
+ * business-date read for it fail, so its daily close never loaded.
+ */
+export const TimeZoneSchema = z.string().trim().min(1).max(64).refine(isTimeZone, 'unknown time zone');
+
 export const LocaleSchema = z.enum(['en', 'zh', 'ru', 'uz']);
 export type Locale = z.infer<typeof LocaleSchema>;
 

@@ -86,7 +86,10 @@ export function ConfirmPage() {
     isError: runsQuery.isError,
     hasData: runsQuery.data !== undefined,
   });
-  const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: false });
+  // CAT-7 (2026-10-30): include archived products so lines already ordered,
+  // approved or bought still show their name and unit (they showed as an id
+  // fragment, or not at all). Pickers filter archived ones out.
+  const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: true });
   const utils = trpc.useUtils();
   // Receivers also confirm from inside the store, often with terrible
   // wifi. Same offline-replay treatment as the purchaser side.

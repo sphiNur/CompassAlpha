@@ -88,12 +88,50 @@ export function useI18n() {
  * Accepts `Date | string | number | null`; returns '' for nullish input so
  * call sites can pipe possibly-absent server values straight through.
  */
+// ORD-19 (2026-10-30): where the runtime has no Uzbek data, Intl falls
+// back to a bare pattern ("M10 30, Fri"). Then format Uzbek (Latin) by
+// hand, following CLDR's uz patterns; runtimes that know uz are untouched.
+const UZ_MONTHS = ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun', 'iyul', 'avgust', 'sentyabr', 'oktyabr', 'noyabr', 'dekabr'];
+const UZ_MONTHS_SHORT = ['yan', 'fev', 'mar', 'apr', 'may', 'iyn', 'iyl', 'avg', 'sen', 'okt', 'noy', 'dek'];
+const UZ_WEEKDAYS = ['yakshanba', 'dushanba', 'seshanba', 'chorshanba', 'payshanba', 'juma', 'shanba'];
+
+function uzFallback(opts: Intl.DateTimeFormatOptions): (d: Date) => string {
+  const hhmm = (d: Date) =>
+    `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  if (opts.weekday) return (d) => `${UZ_WEEKDAYS[d.getDay()]}, ${d.getDate()}-${UZ_MONTHS[d.getMonth()]}`;
+  if (opts.month === 'long') return (d) => `${UZ_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+  if (opts.month === 'short') {
+    return (d) =>
+      `${d.getDate()}-${UZ_MONTHS_SHORT[d.getMonth()]}, ${d.getFullYear()}` +
+      (opts.hour ? `, ${hhmm(d)}` : '');
+  }
+  return hhmm;
+}
+
+let uzProbe: boolean | null = null;
+function intlKnowsUzbek(): boolean {
+  if (uzProbe === null) {
+    try {
+      uzProbe = new Intl.DateTimeFormat('uz', { month: 'long' })
+        .format(new Date(2020, 0, 15))
+        .toLowerCase()
+        .includes('yanvar');
+    } catch {
+      uzProbe = false;
+    }
+  }
+  return uzProbe;
+}
+
 export function useDateFormat() {
   const i18n = useI18n();
   return useMemo(() => {
     const locale = i18n.locale;
+    // supportedLocalesOf can claim uz while formatting still falls back,
+    // so probe a real month name instead.
+    const handFormatUz = locale === 'uz' && !intlKnowsUzbek();
     const fmt = (opts: Intl.DateTimeFormatOptions) => {
-      const f = new Intl.DateTimeFormat(locale, opts);
+      const f = handFormatUz ? { format: uzFallback(opts) } : new Intl.DateTimeFormat(locale, opts);
       return (v: Date | string | number | null | undefined): string => {
         if (v === null || v === undefined || v === '') return '';
         const d = v instanceof Date ? v : new Date(v);

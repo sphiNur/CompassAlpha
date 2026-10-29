@@ -20,6 +20,7 @@ import {
   SkuStepSchema,
   SkuUnitSchema,
   UuidSchema,
+  TimeZoneSchema,
 } from '@compass/contracts';
 import { dateInTz, todayInTz } from '@compass/domain';
 import { authedProcedure, router } from '../trpc';
@@ -747,11 +748,16 @@ const NamesSchema = z
 // gate can't drift apart. Migration 0036 backfills existing rows.
 const StepSchema = SkuStepSchema;
 
+/** A store's own time zone, or empty/null to follow the organisation's (CLS-7). */
+const StoreTimeZoneSchema = z
+  .preprocess((value) => (value === '' ? null : value), TimeZoneSchema.nullable())
+  .optional();
+
 const StoreCreateInputSchema = z.object({
   name: z.string().min(1).max(200),
   code: z.string().max(32).optional().nullable(),
   address: z.string().max(500).optional().nullable(),
-  timezone: z.string().max(64).optional().nullable(),
+  timezone: StoreTimeZoneSchema,
 });
 
 const StoreUpdateInputSchema = z.object({
@@ -759,7 +765,7 @@ const StoreUpdateInputSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   code: z.string().max(32).optional().nullable(),
   address: z.string().max(500).optional().nullable(),
-  timezone: z.string().max(64).optional().nullable(),
+  timezone: StoreTimeZoneSchema,
   isActive: z.boolean().optional(),
   /** D3: default role for new members invited into this store. Pass
    *  `null` to clear; pass an existing role's slug to set. The slug
