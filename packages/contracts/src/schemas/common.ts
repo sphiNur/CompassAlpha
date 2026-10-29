@@ -1,7 +1,18 @@
 import { z } from 'zod';
 
 export const UuidSchema = z.string().uuid();
-export const DateStringSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD');
+/**
+ * A calendar date, YYYY-MM-DD. B11 (2026-10-30): the pattern alone let
+ * "2026-02-31" or "2026-13-01" through, and the query then failed in
+ * Postgres as a 500; it must also be a day that exists.
+ */
+export const DateStringSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD')
+  .refine((value) => {
+    const day = new Date(`${value}T00:00:00Z`);
+    return !Number.isNaN(day.getTime()) && day.toISOString().slice(0, 10) === value;
+  }, 'not a calendar date');
 export const LocaleSchema = z.enum(['en', 'zh', 'ru', 'uz']);
 export type Locale = z.infer<typeof LocaleSchema>;
 

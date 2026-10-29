@@ -316,6 +316,13 @@ export const uz = {
   'common.error': "Nimadir noto'g'ri ketdi",
   'common.errors.rateLimited': "Juda ko'p so'rov — biroz kutib qayta urining",
   'common.errors.requestInFlight': "Oldingi urinish hali bajarilmoqda. Birozdan soʻng qayta urinib koʻring.",
+  'common.errors.internal': "Serverda xatolik yuz berdi. Qayta urinib koʻring.",
+  'order.errors.tooManyExtras': "Bitta buyurtmada koʻpi bilan 50 ta boshqa mahsulot boʻlishi mumkin.",
+  'order.errors.invalidExtraName': "Mahsulot nomini kiriting (200 belgigacha).",
+  'order.errors.invalidExtraUnit': "Oʻlchov birligini kiriting (16 belgigacha).",
+  'order.errors.invalidExtraQty': "Miqdor 0 dan katta boʻlsin, verguldan keyin koʻpi bilan 3 ta raqam.",
+  'order.errors.extraNoteTooLong': "Izoh juda uzun (200 belgigacha).",
+  'run.errors.cannotPlan': "Xaridlarni rejalashtirishga ruxsatingiz yoʻq.",
   'common.errors.validation': "Noto'g'ri kiritish — belgilangan maydonlarni tekshiring",
   'common.networkError': 'Tarmoq xatosi — ulanishni tekshiring',
 
