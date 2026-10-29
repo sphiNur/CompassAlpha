@@ -148,14 +148,17 @@ export const inventoryRouter = router({
       `)) as unknown as Array<{
         sku_id: string;
         on_hand: string;
-        last_movement_at: Date;
+        // A raw `db.execute` returns timestamptz as a string under
+        // postgres-js (only Drizzle's typed selects map it to a Date), so
+        // calling .toISOString() on it threw for every store with stock.
+        last_movement_at: Date | string;
         movement_count: number;
       }>;
 
       return rows.map((r) => ({
         skuId: r.sku_id,
         onHand: r.on_hand,
-        lastMovementAt: r.last_movement_at.toISOString(),
+        lastMovementAt: new Date(r.last_movement_at).toISOString(),
         movementCount: r.movement_count,
       }));
     });

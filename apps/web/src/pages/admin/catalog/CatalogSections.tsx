@@ -31,6 +31,7 @@ import {
 } from '@compass/ui';
 import { SKU_STEPS, SKU_UNITS } from '@compass/contracts';
 import type { SkuStep, SkuUnit } from '@compass/contracts';
+import { snapStepToCanonical } from './skuStep';
 import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
@@ -367,20 +368,6 @@ function snapUnitToCanonical(unit: string): SkuUnit {
   if (unit === 'karobka') return 'box';
   if (unit === 'boglima') return 'bunch';
   return 'pcs';
-}
-
-/**
- * Snap a legacy step value onto the canonical grid.
- *
- * Exact matches pass through; anything else collapses to the M3.14
- * rule (<= 0.5 → '0.5', else '1') — never up-snap a stale 5 or 25 to
- * a bulk step the operator didn't choose.
- */
-function snapStepToCanonical(step: string): SkuStep {
-  if ((SKU_STEPS as readonly string[]).includes(step)) return step as SkuStep;
-  const n = Number(step);
-  if (!Number.isFinite(n)) return '1';
-  return n <= 0.5 ? '0.5' : '1';
 }
 
 export function SkusSection() {

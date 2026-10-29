@@ -2327,13 +2327,32 @@ export const runRouter = router({
               ...splits.map((row) => row.storeId),
             ]),
           ];
+          // An ordinary purchase (no per-store price) records ONE
+          // price_history row with no store_id; only split overrides
+          // record a row per store. Filtering on store_id alone therefore
+          // hid every past price from a store-scoped purchaser (the
+          // built-in purchaser role): no carried-over price, no one-tap
+          // buy, no 5x check. A store-less row counts when that purchase
+          // was split to one of the reader's stores.
+          const visibleStoreList = sql.join(
+            visiblePriceStoreIds.map((storeId) => sql`${storeId}::uuid`),
+            sql`, `,
+          );
           const priceStoreScope =
             allowedStoreSet === null
               ? sql``
-              : sql`AND store_id IN (${sql.join(
-                  visiblePriceStoreIds.map((storeId) => sql`${storeId}::uuid`),
-                  sql`, `,
-                )})`;
+              : sql`AND (
+                  store_id IN (${visibleStoreList})
+                  OR (
+                    store_id IS NULL
+                    AND EXISTS (
+                      SELECT 1 FROM read_model.run_item_stores_v ris
+                      WHERE ris.run_id = price_history.run_id
+                        AND ris.sku_id = price_history.sku_id
+                        AND ris.store_id IN (${visibleStoreList})
+                    )
+                  )
+                )`;
           const rows = (await tx.execute(
             sql`SELECT DISTINCT ON (sku_id) sku_id::text AS sku_id,
                        unit_price::text AS unit_price,
