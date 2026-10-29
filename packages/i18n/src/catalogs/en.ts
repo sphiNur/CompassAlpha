@@ -371,6 +371,7 @@ export const en = {
   // 120-per-minute budget. The auth-specific equivalent stays under
   // 'auth.errors.rateLimited' — same wording, different namespace.
   'common.errors.rateLimited': 'Too many requests — please wait a moment and try again',
+  'common.errors.requestInFlight': 'The previous attempt is still being processed. Try again in a moment.',
   'common.errors.validation': 'Invalid input — check the highlighted fields',
 
   // ── 3. Settings ────────────────────────────────────────────────

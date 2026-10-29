@@ -1,11 +1,12 @@
 import { initTRPC, TRPCError } from '@trpc/server';
 import { ZodError } from 'zod';
-import { and, eq, gt } from 'drizzle-orm';
+import { and, eq, gt, isNull, lte } from 'drizzle-orm';
 import { DomainError } from '@compass/domain';
 import { schema as s, withOrgContext } from '@compass/db';
 import type { RequestContext } from './context';
 import { logger } from '../infra/log';
 import { checkRate } from '../services/rateLimit';
+import { isUniqueViolation } from '../services/pgErrors';
 
 const t = initTRPC.context<RequestContext>().create({
   errorFormatter({ shape, error }) {
@@ -191,6 +192,10 @@ export const authedProcedure = t.procedure
  * time, which falls through to a normal handler run.
  */
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+/** How long a claim (a request still running) holds its key. */
+const IDEMPOTENCY_PENDING_MS = 60 * 1000;
+/** How long a duplicate waits for the first request's answer. */
+const IDEMPOTENCY_WAIT_MS = 8 * 1000;
 
 /**
  * tRPC v11 stamps every middleware result with an internal `marker`. The
@@ -212,48 +217,108 @@ const idempotencyMiddleware = t.middleware(async (opts) => {
     return opts.next();
   }
   const db = ctx.db as RequestContext['db'];
-  const now = new Date();
 
-  // Look for an existing entry. Match on (key, route, user) so a
-  // ULID collision across users / routes can't surface another
-  // user's result.
-  const existing = await withOrgContext(db, orgId, (tx) =>
-    tx.query.idempotencyKeys.findFirst({
-      where: (k, { eq: eq2, and: and2, gt: gt2 }) =>
-        and2(
-          eq2(k.key, key),
-          eq2(k.route, opts.path),
-          eq2(k.userId, userId),
-          gt2(k.expiresAt, now),
-        ),
-    }),
-  );
-  if (existing && existing.response !== null && existing.response !== undefined) {
-    // M3.9: demoted from info → debug. Cache hits are the GOOD path
-    // — they mean idempotency is working. Logging every hit at info
-    // level fills the journal with non-actionable lines. Failed
-    // writes (next catch block) still log at warn since those are
-    // real anomalies operators should see.
-    logger.debug(
-      { path: opts.path, userId, key },
-      'idempotency cache hit — returning prior response',
+  // R3 (2026-10-30): claim the key BEFORE running the handler. The old
+  // check-then-run let two requests with the same key both miss the
+  // cache and both run (a double-tapped "record" booked two sales and
+  // deducted stock twice). A row with a NULL response is the claim; it
+  // lives for IDEMPOTENCY_PENDING_MS so a crashed request can't hold the
+  // key forever, and becomes the cached answer on success.
+  const claim = async (): Promise<boolean> => {
+    const now = new Date();
+    // ON CONFLICT arbitrates on the primary key only; a concurrent insert
+    // of the same key can instead trip idem_user_route_unique first. Either
+    // way someone else holds the key now.
+    const rows = await withOrgContext(db, orgId, (tx) =>
+      tx
+        .insert(s.idempotencyKeys)
+        .values({
+          key,
+          route: opts.path,
+          userId,
+          response: null,
+          expiresAt: new Date(now.getTime() + IDEMPOTENCY_PENDING_MS),
+        })
+        .onConflictDoUpdate({
+          // Only an expired row (an old answer, or a claim whose request
+          // died) may be taken over.
+          target: s.idempotencyKeys.key,
+          set: {
+            route: opts.path,
+            userId,
+            response: null,
+            expiresAt: new Date(now.getTime() + IDEMPOTENCY_PENDING_MS),
+          },
+          where: lte(s.idempotencyKeys.expiresAt, now),
+        })
+        .returning({ key: s.idempotencyKeys.key }),
+    ).catch((err: unknown) => {
+      if (isUniqueViolation(err)) return [];
+      throw err;
+    });
+    return rows.length > 0;
+  };
+  const readOwn = () =>
+    withOrgContext(db, orgId, (tx) =>
+      tx.query.idempotencyKeys.findFirst({
+        where: (k, { eq: eq2, and: and2, gt: gt2 }) =>
+          and2(
+            eq2(k.key, key),
+            eq2(k.route, opts.path),
+            eq2(k.userId, userId),
+            gt2(k.expiresAt, new Date()),
+          ),
+      }),
     );
-    // Return a properly-shaped tRPC middleware result. The prior code
-    // returned the raw cached payload, which has no `ok` field — tRPC's
-    // procedure caller then treated it as a FAILED middleware result and
-    // threw INTERNAL_SERVER_ERROR on every replay (P0 H2), defeating the
-    // whole mechanism. The caller reads only `.ok`/`.data`; we include
-    // `ctx` and (once captured) `marker` to match a real result's shape.
+  const cachedResult = (response: unknown) => {
+    // Return a properly-shaped tRPC middleware result. Returning the raw
+    // payload (no `ok` field) made tRPC's caller treat it as a FAILED
+    // middleware result (P0 H2). The caller reads only `.ok`/`.data`; we
+    // include `ctx` and (once captured) `marker` to match a real result.
     return {
       ok: true,
-      data: existing.response,
+      data: response,
       ctx: opts.ctx,
       ...(capturedMiddlewareMarker !== undefined ? { marker: capturedMiddlewareMarker } : {}),
     } as unknown as Awaited<ReturnType<typeof opts.next>>;
+  };
+
+  if (!(await claim())) {
+    // Someone holds the key. If it is this user's request on this route,
+    // wait for its answer and hand back the same one; a key held by
+    // another user or route (a collision on the key alone) just runs
+    // uncached, as before.
+    const deadline = Date.now() + IDEMPOTENCY_WAIT_MS;
+    let pause = 50;
+    for (;;) {
+      const existing = await readOwn();
+      if (!existing) {
+        // The holder failed and released it, or it belongs to someone
+        // else: try to claim it ourselves, else run uncached.
+        if (await claim()) break;
+        return opts.next();
+      }
+      if (existing.response !== null && existing.response !== undefined) {
+        // M3.9: debug, not info — cache hits are the good path.
+        logger.debug({ path: opts.path, userId, key }, 'idempotency cache hit — returning prior response');
+        return cachedResult(existing.response);
+      }
+      if (Date.now() >= deadline) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'common.errors.requestInFlight' });
+      }
+      await new Promise((resolve) => setTimeout(resolve, pause));
+      pause = Math.min(pause * 2, 400);
+    }
   }
 
-  // Run the handler. Cache on success only.
-  const result = await opts.next();
+  // We hold the claim: run the handler, then cache its answer or let go.
+  let result: Awaited<ReturnType<typeof opts.next>>;
+  try {
+    result = await opts.next();
+  } catch (err) {
+    await releaseClaim(db, orgId, key, opts.path, userId);
+    throw err;
+  }
   // tRPC v11 middleware return shape: { ok: true, data, ctx, marker } | { ok: false, error }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const r = result as any;
@@ -264,27 +329,58 @@ const idempotencyMiddleware = t.middleware(async (opts) => {
     try {
       await withOrgContext(db, orgId, (tx) =>
         tx
-          .insert(s.idempotencyKeys)
-          .values({
-            key,
-            route: opts.path,
-            userId,
+          .update(s.idempotencyKeys)
+          .set({
             response: (r.data ?? null) as unknown as Record<string, unknown>,
-            expiresAt: new Date(now.getTime() + IDEMPOTENCY_TTL_MS),
+            expiresAt: new Date(Date.now() + IDEMPOTENCY_TTL_MS),
           })
-          .onConflictDoNothing(),
+          .where(
+            and(
+              eq(s.idempotencyKeys.key, key),
+              eq(s.idempotencyKeys.route, opts.path),
+              eq(s.idempotencyKeys.userId, userId),
+            ),
+          ),
       );
     } catch (cacheErr) {
-      // Best-effort cache; failure to cache MUST NOT fail the
-      // request. The original mutation succeeded — the worst case
-      // on a cache miss is that a retry runs the mutation again,
-      // and the retry hits whatever natural-key dedupe exists
-      // (event-stream uniqueness, etc.).
+      // Best-effort: the mutation succeeded. The claim simply expires
+      // and a later retry runs again, into whatever natural-key dedupe
+      // exists (event-stream uniqueness, etc.).
       logger.warn({ err: cacheErr, path: opts.path }, 'idempotency cache write failed');
     }
+  } else {
+    // A failed mutation must not be replayed as a cached failure: free
+    // the key so the client's retry runs.
+    await releaseClaim(db, orgId, key, opts.path, userId);
   }
   return result;
 });
+
+/** Drop an unanswered claim (best-effort; it expires on its own anyway). */
+async function releaseClaim(
+  db: RequestContext['db'],
+  orgId: string,
+  key: string,
+  route: string,
+  userId: string,
+): Promise<void> {
+  try {
+    await withOrgContext(db, orgId, (tx) =>
+      tx
+        .delete(s.idempotencyKeys)
+        .where(
+          and(
+            eq(s.idempotencyKeys.key, key),
+            eq(s.idempotencyKeys.route, route),
+            eq(s.idempotencyKeys.userId, userId),
+            isNull(s.idempotencyKeys.response),
+          ),
+        ),
+    );
+  } catch (err) {
+    logger.warn({ err, route }, 'idempotency claim release failed');
+  }
+}
 
 /**
  * Same as `authedProcedure` plus idempotency-key dedupe. Use for

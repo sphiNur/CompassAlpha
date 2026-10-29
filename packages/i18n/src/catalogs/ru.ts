@@ -314,6 +314,7 @@ export const ru = {
   'common.required': 'Обязательно',
   'common.error': 'Что-то пошло не так',
   'common.errors.rateLimited': 'Слишком много запросов — подождите и повторите',
+  'common.errors.requestInFlight': 'Предыдущая попытка ещё обрабатывается. Повторите чуть позже.',
   'common.errors.validation': 'Неверный ввод — проверьте отмеченные поля',
   'common.networkError': 'Ошибка сети — проверьте соединение',
 

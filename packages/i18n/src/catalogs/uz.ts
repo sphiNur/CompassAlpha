@@ -315,6 +315,7 @@ export const uz = {
   'common.required': 'Majburiy',
   'common.error': "Nimadir noto'g'ri ketdi",
   'common.errors.rateLimited': "Juda ko'p so'rov — biroz kutib qayta urining",
+  'common.errors.requestInFlight': "Oldingi urinish hali bajarilmoqda. Birozdan soʻng qayta urinib koʻring.",
   'common.errors.validation': "Noto'g'ri kiritish — belgilangan maydonlarni tekshiring",
   'common.networkError': 'Tarmoq xatosi — ulanishni tekshiring',
 

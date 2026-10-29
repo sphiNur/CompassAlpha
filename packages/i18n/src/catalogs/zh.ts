@@ -291,6 +291,7 @@ export const zh = {
   'common.required': '必填',
   'common.error': '出错了',
   'common.errors.rateLimited': '请求过多 — 请稍等片刻后重试',
+  'common.errors.requestInFlight': '上一次操作还在处理中，请稍候再试。',
   'common.errors.validation': '输入无效 — 请检查高亮的字段',
   'common.networkError': '网络错误 — 请检查连接',
 
