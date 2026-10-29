@@ -524,7 +524,14 @@ export function ApprovalPage() {
                         loading={
                           unapprove.isPending && unapprove.variables?.sessionId === row.id
                         }
-                        onClick={() => unapprove.mutate({ sessionId: row.id })}
+                        // APR-7 (2026-10-30): one tap used to send the order
+                        // back at once; the prompt was written but unused.
+                        onClick={() =>
+                          confirmAction(
+                            `${i18n.t('approval.confirm.unapprove.title')}\n\n${i18n.t('approval.confirm.unapprove.body')}`,
+                            () => unapprove.mutate({ sessionId: row.id }),
+                          )
+                        }
                       >
                         {i18n.t('approval.unapprove')}
                       </Button>
