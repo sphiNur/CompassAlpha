@@ -506,7 +506,26 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
         // Reset the row back to pending and DELETE the per-store
         // splits. The original ItemPurchased event stays in
         // domain.events for audit, but the read-model rows reflect
-        // current truth: this SKU is up for grabs again.
+        // current truth: this SKU is up for grabs again. A row the
+        // purchaser added goes away entirely (BUY-4, as in the domain
+        // state); the update below then matches nothing.
+        await db
+          .delete(s.runItemStoresV)
+          .where(
+            and(
+              eq(s.runItemStoresV.runId, e.streamId),
+              eq(s.runItemStoresV.skuId, e.payload.skuId),
+            ),
+          );
+        await db
+          .delete(s.runItemsV)
+          .where(
+            and(
+              eq(s.runItemsV.runId, e.streamId),
+              eq(s.runItemsV.skuId, e.payload.skuId),
+              eq(s.runItemsV.addedByPurchaser, true),
+            ),
+          );
         await db
           .update(s.runItemsV)
           .set({
@@ -523,14 +542,6 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
           })
           .where(
             and(eq(s.runItemsV.runId, e.streamId), eq(s.runItemsV.skuId, e.payload.skuId)),
-          );
-        await db
-          .delete(s.runItemStoresV)
-          .where(
-            and(
-              eq(s.runItemStoresV.runId, e.streamId),
-              eq(s.runItemStoresV.skuId, e.payload.skuId),
-            ),
           );
         await supersedePriceObservations(db, orgId, e.streamId, e.payload.skuId, e.occurredAt);
         await bumpSeq(db, e.streamId, e.seq);

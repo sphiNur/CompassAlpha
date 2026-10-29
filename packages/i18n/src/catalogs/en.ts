@@ -1194,6 +1194,8 @@ export const en = {
   'run.confirm.undoPurchase.title': 'Undo this purchase?',
   'run.confirm.undoPurchase.body':
     'Reverts this SKU back to pending so it can be re-recorded. The original purchase record stays in the audit log. Allowed only if no store has received delivery yet.',
+  'run.confirm.undoPurchase.bodyAdded':
+    'This item was added during purchasing; undoing removes the row from the run. The original purchase record stays in the audit log. Allowed only if no store has received delivery yet.',
   'run.confirm.unmarkUnavailable.title': 'Mark available again?',
   'run.confirm.unmarkUnavailable.body':
     'Puts this item back to pending so you can record a purchase. The original "unavailable" note stays in the audit log.',

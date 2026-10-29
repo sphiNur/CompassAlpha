@@ -101,7 +101,7 @@ type ConfirmKind =
   | { kind: 'deliverStore'; storeId: string; storeName: string }
   | { kind: 'recallDelivery'; storeId: string; storeName: string }
   | { kind: 'unmarkUnavailable'; skuId: string; skuName: string }
-  | { kind: 'undoPurchase'; skuId: string; skuName: string }
+  | { kind: 'undoPurchase'; skuId: string; skuName: string; added: boolean }
   | { kind: 'ejectSession'; sessionId: string; storeName: string; submitterName: string }
   // 2026-10-21 audit C-15: removing an expense was a one-tap ✗ with no
   // confirmation or undo.
@@ -1573,7 +1573,12 @@ export function RunPage() {
           // anything.
           return {
             title: i18n.t('run.confirm.undoPurchase.title'),
-            body: i18n.t('run.confirm.undoPurchase.body'),
+            // BUY-4: a row the purchaser added is removed, not reopened.
+            body: i18n.t(
+              confirmAction.added
+                ? 'run.confirm.undoPurchase.bodyAdded'
+                : 'run.confirm.undoPurchase.body',
+            ),
             confirmLabel: i18n.t('run.action.undoPurchase'),
             danger: true,
             requireReason: false,
@@ -2346,6 +2351,8 @@ export function RunPage() {
                   kind: 'undoPurchase',
                   skuId: d.skuId,
                   skuName: sku ? productName(sku) : d.skuId.slice(0, 8),
+                  added: !!runDetailQuery.data?.items.find((it) => it.skuId === d.skuId)
+                    ?.addedByPurchaser,
                 });
               }
             : undefined

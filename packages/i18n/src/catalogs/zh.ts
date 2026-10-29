@@ -1015,6 +1015,8 @@ export const zh = {
   'run.confirm.undoPurchase.title': '撤销这条采购记录?',
   'run.confirm.undoPurchase.body':
     '把该商品退回到待采购，可以重新录入。原采购记录保留在审计日志。只有当没有门店收到货时才允许。',
+  'run.confirm.undoPurchase.bodyAdded':
+    '这是采购时临时新增的商品，撤销后整行从采购单里移除。原采购记录保留在审计日志。只有当没有门店收到货时才允许。',
   'run.confirm.unmarkUnavailable.title': '改回可购买?',
   'run.confirm.unmarkUnavailable.body':
     '把该商品恢复为待采购，这样可以再次记录采购。原「缺货」备注会保留在审计日志。',
