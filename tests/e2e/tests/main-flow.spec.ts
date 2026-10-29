@@ -115,7 +115,7 @@ test('buy everything, one item in cash and one by transfer', async () => {
     await main()
       .getByRole('button', { name: new RegExp(`^Set price ${sku}`) })
       .click();
-    await item(sku).getByRole('spinbutton', { name: 'unit price' }).fill(price);
+    await item(sku).getByRole('textbox', { name: 'unit price' }).fill(price);
     // The row writes the price out in full: "12" is twelve thousand.
     await expect(item(sku).getByTestId('price-in-full')).toContainText(`${price},000 UZS`);
     if (method === 'Transfer') {
@@ -212,8 +212,8 @@ test('finish the run and find it in history', async () => {
 test('close the day', async () => {
   await tab('settlement').click();
   await evidence('daily-close-empty');
-  await page.getByRole('spinbutton', { name: 'Invoiced cash revenue' }).fill('500000');
-  await page.getByRole('spinbutton', { name: 'Online / transfer revenue' }).fill('250000');
+  await page.getByRole('textbox', { name: 'Invoiced cash revenue' }).fill('500000');
+  await page.getByRole('textbox', { name: 'Online / transfer revenue' }).fill('250000');
   await expect(main()).toContainText(/Total recorded revenue\s*750,000 UZS/);
   await expect(mainButton()).toHaveText('Save daily close');
   await mainButton().click();
@@ -272,7 +272,7 @@ test('a price typed in the wrong unit is asked about before it is saved', async 
 
   // The row carries last time's price; opening it is how a new one is typed.
   await item('Apple').getByRole('button').first().click();
-  const price = item('Apple').getByRole('spinbutton', { name: 'unit price' });
+  const price = item('Apple').getByRole('textbox', { name: 'unit price' });
   await price.fill('12000');
   await expect(item('Apple').getByTestId('price-in-full')).toContainText('12,000,000 UZS');
   await item('Apple').getByRole('button', { name: 'Save purchase: Apple' }).click();
