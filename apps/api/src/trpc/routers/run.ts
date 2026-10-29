@@ -695,7 +695,9 @@ export const runRouter = router({
   // M1.20: idempotent — FE sends X-Idempotency-Key per logical
   // "create run" action so network retry doesn't create two runs.
   create: idempotentMutation.input(RunCreateInputSchema).mutation(async ({ ctx, input }) => {
-    return ctx.withOrg(async (tx) => {
+    // BUY-12 (2026-10-30): a double tap raced on the orders' streams and
+    // answered 500; decided again, the second finds the run the first made.
+    return withRunStreamRetry(ctx, async (tx) => {
       const today = todayStr(ctx);
       const date = input.date ?? today;
 

@@ -34,7 +34,7 @@ export function isUniqueViolation(err: unknown): boolean {
 }
 
 /** The constraint a Postgres error names, on the error or one of its causes. */
-function pgConstraintName(err: unknown): string | null {
+export function pgConstraintName(err: unknown): string | null {
   let current: unknown = err;
   for (let depth = 0; current && typeof current === 'object' && depth < MAX_DEPTH; depth += 1) {
     const name = (current as { constraint_name?: unknown }).constraint_name;
@@ -65,12 +65,13 @@ export function isStreamSeqConflict(err: unknown): boolean {
 export async function withStreamConflictRetry<T>(
   attempt: () => Promise<T>,
   maxAttempts = 3,
+  retryable: (err: unknown) => boolean = isStreamSeqConflict,
 ): Promise<T> {
   for (let n = 1; ; n += 1) {
     try {
       return await attempt();
     } catch (err) {
-      if (n >= maxAttempts || !isStreamSeqConflict(err)) throw err;
+      if (n >= maxAttempts || !retryable(err)) throw err;
       await new Promise((resolve) => setTimeout(resolve, 10 + Math.random() * 40));
     }
   }
