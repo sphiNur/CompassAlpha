@@ -280,4 +280,85 @@ describe.skipIf(!SHOULD_RUN)('approver editing their own submission (PG-gated)',
       }),
     ).rejects.toThrow(/sessionMissing/);
   });
+
+  test('APR-1: with two batches from one person that day, sessionId picks the one under review', async () => {
+    if (!fix) throw new Error('fixture missing');
+    const db = getDb(undefined, { system: 'maintenance' });
+    const caller = appRouter.createCaller(fix.ctx);
+    const perms = new Set(['order.draft', 'order.submit', 'order.approve', 'order.claim']);
+    const actor = { userId: fix.userId, memberId: fix.memberId, permissions: perms, isClaimer: false };
+
+    // A second batch, submitted and claimed AFTER the first: the most
+    // recently updated one, which the old (store, date, submitter,
+    // claimer) guess would pick.
+    const secondId = randomUUID();
+    let second = emptyOrderState(secondId);
+    const push = async (events: ReturnType<typeof decideOrder>) => {
+      for (const e of events) second = applyOrder(second, e);
+      await appendEvents(db, {
+        streamType: 'order',
+        streamId: secondId,
+        orgId: fix!.orgId,
+        events: events.map((e) => ({ ...e })),
+      });
+      await projectOrder(db, fix!.orgId, events);
+    };
+    await push(
+      decideOrder(second, {
+        type: 'StartDraft',
+        orgId: fix.orgId,
+        storeId: fix.storeId,
+        orderDate: ORDER_DATE,
+        actor,
+      }),
+    );
+    await push(
+      decideOrder(second, {
+        type: 'AdjustItem',
+        skuId: fix.skuId,
+        qty: '4',
+        sku: { id: fix.skuId, step: '0.5', unit: 'kg', isArchived: false },
+        actor,
+      }),
+    );
+    await push(decideOrder(second, { type: 'Submit', actor }));
+    await push(decideOrder(second, { type: 'Claim', actor }));
+
+    const qtyOf = async (sessionId: string) => {
+      const [row] = await db
+        .select({ qty: s.orderItemsV.qty })
+        .from(s.orderItemsV)
+        .where(eq(s.orderItemsV.sessionId, sessionId));
+      return Number(row?.qty);
+    };
+    const firstBefore = await qtyOf(fix.sessionId);
+
+    const res = await caller.order.adjustItem({
+      sessionId: fix.sessionId,
+      storeId: fix.storeId,
+      date: ORDER_DATE,
+      skuId: fix.skuId,
+      qty: String(firstBefore + 0.5),
+      targetMemberId: fix.memberId,
+    });
+
+    expect(res.sessionId).toBe(fix.sessionId);
+    expect(await qtyOf(fix.sessionId)).toBe(firstBefore + 0.5);
+    expect(await qtyOf(secondId)).toBe(4);
+  });
+
+  test('APR-1: a sessionId from another store or submitter is refused', async () => {
+    if (!fix) throw new Error('fixture missing');
+    const caller = appRouter.createCaller(fix.ctx);
+    await expect(
+      caller.order.adjustItem({
+        sessionId: randomUUID(),
+        storeId: fix.storeId,
+        date: ORDER_DATE,
+        skuId: fix.skuId,
+        qty: '1',
+        targetMemberId: fix.memberId,
+      }),
+    ).rejects.toThrow(/sessionMissing/);
+  });
 });

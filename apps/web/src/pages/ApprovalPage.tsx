@@ -836,6 +836,9 @@ function SessionItems({
                       skuId: t.skuId,
                       qty: String(next),
                       targetMemberId: singleRow.contributorMemberId,
+                      // APR-1: name the batch being reviewed; the server used to
+                      // guess it and could edit the same person's other batch.
+                      sessionId,
                     })
                   }
                 />
@@ -900,6 +903,9 @@ function SessionItems({
                             skuId: t.skuId,
                             qty: String(next),
                             targetMemberId: r.contributorMemberId,
+                            // APR-1: name the batch being reviewed; the server used to
+                            // guess it and could edit the same person's other batch.
+                            sessionId,
                           })
                         }
                       />
