@@ -59,7 +59,12 @@ const STALE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
  * one page keeps running after that page unmounts; a per-instance guard
  * let the next page start a second loop over the same entries.
  */
-let flushInFlight = false;
+let flushInFlight: Promise<void> | null = null;
+
+/** While the outbox holds entries, how often to try again on our own:
+ *  a server that was unreachable while the browser stayed "online" never
+ *  fires an `online` event, so the backlog used to wait for a remount. */
+const BACKLOG_RETRY_MS = 15_000;
 
 /** Should the signed-in user replay this entry? Unstamped (older) entries
  *  keep their previous behaviour and replay for whoever is signed in. */
@@ -261,76 +266,80 @@ export function useOfflineQueue(
     }
   }, []);
 
-  const flush = useCallback(async () => {
-    if (flushInFlight) return;
-    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+  const flush = useCallback((): Promise<void> => {
+    // A caller that needs the queue drained (Submit) must be able to wait
+    // for a flush someone else already started, not return straight away.
+    if (flushInFlight) return flushInFlight;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return Promise.resolve();
     const currentUserId = useAuthStore.getState().session?.user.id;
-    if (!currentUserId) return;
-    flushInFlight = true;
-    try {
-      const all = (await outbox.list()).sort((a, b) => a.clientSeq - b.clientSeq);
-      for (const entry of all) {
-        const ageMs = Date.now() - entry.enqueuedAt;
-        if (!isOwnEntry(entry.ownerUserId, currentUserId)) {
-          // Queued by someone else on this device. Never send it under
-          // this session; keep it for its author unless it has gone stale.
-          if (classifyEntry(false, ageMs) === 'expire') {
-            await outbox.remove(entry.clientSeq);
-          }
-          continue;
-        }
-        const fn = globalReplay[entry.procedure];
-        if (!fn) {
-          // No live handler for this procedure. Do NOT delete on sight —
-          // that was the C1 data-loss bug. It is almost always a procedure
-          // owned by a page that isn't mounted right now; leave it for a
-          // later flush. Only discard entries old enough to be from a
-          // retired bundle, so a truly orphaned entry can't loop forever.
-          if (classifyEntry(false, ageMs) === 'expire') {
-            await outbox.remove(entry.clientSeq);
-            onDropRef.current?.({ procedure: entry.procedure, reason: 'stale' });
-          }
-          continue;
-        }
-        // Still backing off from its last failure: stop here rather than
-        // skip ahead, so later writes can't overtake it.
-        if (!isRetryDue(entry.retries, entry.lastAttemptAt, Date.now())) break;
-        try {
-          await fn(entry);
-          await outbox.remove(entry.clientSeq);
-        } catch (err) {
-          const code = (err as { data?: { code?: string } } | undefined)?.data?.code;
-          if (classifyReplayError(code, entry.procedure, entry.retries) === 'drop') {
-            // Server-side rejection — keeping it in the queue won't help.
-            await outbox.remove(entry.clientSeq);
-            const message = (err as { message?: unknown } | undefined)?.message;
-            onDropRef.current?.({
-              procedure: entry.procedure,
-              reason: 'rejected',
-              ...(typeof message === 'string' ? { message } : {}),
-            });
+    if (!currentUserId) return Promise.resolve();
+    flushInFlight = (async () => {
+      try {
+        const all = (await outbox.list()).sort((a, b) => a.clientSeq - b.clientSeq);
+        for (const entry of all) {
+          const ageMs = Date.now() - entry.enqueuedAt;
+          if (!isOwnEntry(entry.ownerUserId, currentUserId)) {
+            // Queued by someone else on this device. Never send it under
+            // this session; keep it for its author unless it has gone stale.
+            if (classifyEntry(false, ageMs) === 'expire') {
+              await outbox.remove(entry.clientSeq);
+            }
             continue;
           }
-          // No answer, or a lapsed session: the entry is not at fault.
-          // Leave it untouched and stop, preserving order for next time.
-          if (!countsTowardGiveUp(code)) break;
-          const nextRetries = entry.retries + 1;
-          if (shouldGiveUp(nextRetries)) {
-            // Transient failures exhausted — abandon this entry so it can't
-            // block the queue forever, but surface the loss (H3).
-            await outbox.remove(entry.clientSeq);
-            onDropRef.current?.({ procedure: entry.procedure, reason: 'gaveup' });
+          const fn = globalReplay[entry.procedure];
+          if (!fn) {
+            // No live handler for this procedure. Do NOT delete on sight —
+            // that was the C1 data-loss bug. It is almost always a procedure
+            // owned by a page that isn't mounted right now; leave it for a
+            // later flush. Only discard entries old enough to be from a
+            // retired bundle, so a truly orphaned entry can't loop forever.
+            if (classifyEntry(false, ageMs) === 'expire') {
+              await outbox.remove(entry.clientSeq);
+              onDropRef.current?.({ procedure: entry.procedure, reason: 'stale' });
+            }
             continue;
           }
-          await outbox.add({ ...entry, retries: nextRetries, lastAttemptAt: Date.now() });
-          // Stop the loop on first transient — preserves order on next attempt.
-          break;
+          // Still backing off from its last failure: stop here rather than
+          // skip ahead, so later writes can't overtake it.
+          if (!isRetryDue(entry.retries, entry.lastAttemptAt, Date.now())) break;
+          try {
+            await fn(entry);
+            await outbox.remove(entry.clientSeq);
+          } catch (err) {
+            const code = (err as { data?: { code?: string } } | undefined)?.data?.code;
+            if (classifyReplayError(code, entry.procedure, entry.retries) === 'drop') {
+              // Server-side rejection — keeping it in the queue won't help.
+              await outbox.remove(entry.clientSeq);
+              const message = (err as { message?: unknown } | undefined)?.message;
+              onDropRef.current?.({
+                procedure: entry.procedure,
+                reason: 'rejected',
+                ...(typeof message === 'string' ? { message } : {}),
+              });
+              continue;
+            }
+            // No answer, or a lapsed session: the entry is not at fault.
+            // Leave it untouched and stop, preserving order for next time.
+            if (!countsTowardGiveUp(code)) break;
+            const nextRetries = entry.retries + 1;
+            if (shouldGiveUp(nextRetries)) {
+              // Transient failures exhausted — abandon this entry so it can't
+              // block the queue forever, but surface the loss (H3).
+              await outbox.remove(entry.clientSeq);
+              onDropRef.current?.({ procedure: entry.procedure, reason: 'gaveup' });
+              continue;
+            }
+            await outbox.add({ ...entry, retries: nextRetries, lastAttemptAt: Date.now() });
+            // Stop the loop on first transient — preserves order on next attempt.
+            break;
+          }
         }
+      } finally {
+        flushInFlight = null;
+        await refresh();
       }
-    } finally {
-      flushInFlight = false;
-      await refresh();
-    }
+    })();
+    return flushInFlight;
   }, [refresh]);
 
   const enqueue = useCallback(
@@ -360,13 +369,22 @@ export function useOfflineQueue(
       void flush();
     };
     const onOffline = () => setOnline(false);
+    // Back from the background (Telegram minimised) or a server that came
+    // back without the browser ever going offline: retry the backlog.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void flush();
+    };
+    const backlogTimer = window.setInterval(() => void flush(), BACKLOG_RETRY_MS);
     window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
+    document.addEventListener('visibilitychange', onVisible);
     // Try once on mount in case there's backlog from a previous visit.
     void flush();
     return () => {
+      window.clearInterval(backlogTimer);
       window.removeEventListener('online', onOnline);
       window.removeEventListener('offline', onOffline);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [flush, refresh]);
 
