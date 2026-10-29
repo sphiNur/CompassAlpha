@@ -339,6 +339,11 @@ if (!DRY) {
     //              unrelated branch's full checkout, on the prod box.
     '--exclude=CompassAlpha/.git',
     '--exclude=CompassAlpha/.claude',
+    // 2026-10-29: local worktrees now live in .worktrees/ (excluded from
+    // git through .git/info/exclude). Same trap as .claude: each is a full
+    // checkout, and its .env (a test bot token) matches none of the .env
+    // excludes above.
+    '--exclude=CompassAlpha/.worktrees',
   ].join(' ');
   run(`tar ${excludes} -czf "${TARBALL_RELATIVE}" CompassAlpha`, { cwd: PARENT });
 
