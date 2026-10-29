@@ -149,6 +149,19 @@ export type ReplayErrorAction = 'drop' | 'retry';
 export const REPLAY_RETRYABLE_OVERRIDES: Readonly<Record<string, ReadonlySet<string>>> = {
   'order.adjustItem': new Set(['CONFLICT']),
   'order.setSessionExtras': new Set(['CONFLICT']),
+  // R2 (2026-10-30): a run has one event stream for every buyer and
+  // store, so a replay racing someone else's write was dropped as
+  // "rejected" — a real purchase or confirmation lost. The server now
+  // retries such races itself; a CONFLICT that still gets through is
+  // retried here too, not discarded.
+  'run.purchaseItem': new Set(['CONFLICT']),
+  'run.markUnavailable': new Set(['CONFLICT']),
+  'run.addPurchaserItem': new Set(['CONFLICT']),
+  'run.addExpense': new Set(['CONFLICT']),
+  'run.deliverToStore': new Set(['CONFLICT']),
+  'run.confirmStoreItem': new Set(['CONFLICT']),
+  'run.markStoreItemsOk': new Set(['CONFLICT']),
+  'run.confirmStore': new Set(['CONFLICT']),
 };
 export const MAX_OVERRIDE_RETRIES = 2;
 
