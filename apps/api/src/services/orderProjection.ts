@@ -12,6 +12,14 @@ import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
 import type { OrderEvent } from '@compass/domain/order';
 
+/** Another device of the same person started today's draft first (ORD-6). */
+export class ConcurrentDraftError extends Error {
+  constructor() {
+    super('order.errors.staleSeq');
+    this.name = 'ConcurrentDraftError';
+  }
+}
+
 export async function projectOrder(db: DB, orgId: string, events: OrderEvent[]): Promise<void> {
   for (const e of events) {
     switch (e.type) {
@@ -27,7 +35,22 @@ export async function projectOrder(db: DB, orgId: string, events: OrderEvent[]):
             status: 'draft',
             lastSeq: e.seq,
           })
-          .onConflictDoNothing();
+          .onConflictDoNothing()
+          .returning({ id: s.orderSessionsV.id })
+          .then(async (inserted) => {
+            if (inserted.length > 0) return;
+            // Nothing inserted. A replay of this same stream is fine (the
+            // row is there); otherwise the one-draft-per-day index refused
+            // it because another device of the same person just started
+            // today's draft. Say so, rather than let the items that follow
+            // fail on row security for a session that doesn't exist.
+            const [existing] = await db
+              .select({ id: s.orderSessionsV.id })
+              .from(s.orderSessionsV)
+              .where(eq(s.orderSessionsV.id, e.streamId))
+              .limit(1);
+            if (!existing) throw new ConcurrentDraftError();
+          });
         break;
       case 'ItemAdjusted': {
         // Per (session, sku, contributor) row. The forMemberId in the

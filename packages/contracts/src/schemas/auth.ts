@@ -150,7 +150,8 @@ export const SessionSchema = z.object({
 });
 
 export const CompleteOnboardingInputSchema = z.object({
-  displayName: z.string().min(1).max(200).trim(),
+  // AUTH-4: trim first, or "   " passes min(1) and locks an empty name.
+  displayName: z.string().trim().min(1).max(200),
 });
 
 export const SwitchOrganizationInputSchema = z.object({

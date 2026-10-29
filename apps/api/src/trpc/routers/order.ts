@@ -40,8 +40,13 @@ import {
 import { DomainError } from '@compass/domain';
 import { authedProcedure, idempotentMutation, rethrowDomainError, router } from '../trpc';
 import { appendEvents, readStream } from '../../services/eventStore';
-import { isUniqueViolation } from '../../services/pgErrors';
-import { projectOrder } from '../../services/orderProjection';
+import {
+  isStreamSeqConflict,
+  isUniqueViolation,
+  pgConstraintName,
+  withStreamConflictRetry,
+} from '../../services/pgErrors';
+import { ConcurrentDraftError, projectOrder } from '../../services/orderProjection';
 import { dispatchOrderEventNotifications } from '../../services/notifyForEvent';
 import {
   estimateLines,
@@ -186,6 +191,37 @@ async function approverStoreIds(
   ]);
   if (approve === null || claim === null) return null;
   return [...new Set([...approve, ...claim])];
+}
+
+/**
+ * One order write, decided again when it lost a race (ORD-6, 2026-10-30):
+ * the stream sequence, or two devices of the same person lazily creating
+ * today's draft at once (osv_org_store_member_date_draft_unique, which
+ * used to surface from the projection as a 500 and lose the tap). The
+ * retry finds the draft the other device made and applies the change
+ * there; quantities are absolute, so deciding again is safe. A race lost
+ * every time is CONFLICT, which the page reconciles by refetching.
+ */
+async function withOrderWriteRetry<T>(
+  ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
+  fn: (tx: import('@compass/db').DB) => Promise<T>,
+): Promise<T> {
+  try {
+    return await withStreamConflictRetry(
+      () => ctx.withOrg(fn),
+      3,
+      (err) =>
+        err instanceof ConcurrentDraftError ||
+        isStreamSeqConflict(err) ||
+        (isUniqueViolation(err) &&
+          pgConstraintName(err) === 'osv_org_store_member_date_draft_unique'),
+    );
+  } catch (err) {
+    if (err instanceof ConcurrentDraftError || isUniqueViolation(err)) {
+      throw new TRPCError({ code: 'CONFLICT', message: 'order.errors.staleSeq' });
+    }
+    throw err;
+  }
 }
 
 export const orderRouter = router({
@@ -784,7 +820,7 @@ export const orderRouter = router({
   /** Adjust an item qty. Lazy-creates a draft if none exists for today. */
   adjustItem: authedProcedure.input(AdjustItemInputSchema).mutation(async ({ ctx, input }) => {
     const date = input.date ?? todayInOrgTz(ctx);
-    return ctx.withOrg(async (tx) => {
+    return withOrderWriteRetry(ctx, async (tx) => {
       // Verify store ownership.
       const store = await tx.query.stores.findFirst({
         where: (st, { eq: eq2, and: and2 }) =>
@@ -962,16 +998,21 @@ export const orderRouter = router({
         streamId = randomUUID();
         state = emptyState(streamId);
         // Implicit StartDraft. Initiator = first member to add a line.
-        const startEvents = decide(
-          state,
-          {
+        // ORD-7 (2026-10-30): a store without order.draft made this throw a
+        // DomainError outside any translation — a 500 (and the offline
+        // queue retried it). Translate it like AdjustItem's below.
+        let startEvents: OrderEvent[] = [];
+        try {
+          startEvents = decide(state, {
             type: 'StartDraft',
             orgId: ctx.session!.orgId,
             storeId: input.storeId,
             orderDate: date,
             actor: buildActor(ctx, state, effectivePerms),
-          },
-        );
+          });
+        } catch (err) {
+          rethrowDomainError(err);
+        }
         for (const e of startEvents) {
           state = apply(state, e);
           collected.push(e);
@@ -1032,12 +1073,10 @@ export const orderRouter = router({
               userId: ctx.session!.userId,
               seq: state.seq,
             },
-            'order.adjustItem CONFLICT (concurrent writers)',
+            'order.adjustItem race (concurrent writers) — deciding again',
           );
-          throw new TRPCError({
-            code: 'CONFLICT',
-            message: 'order.errors.staleSeq',
-          });
+          // Raw, so withOrderWriteRetry runs the whole write again.
+          throw err;
         }
         ctx.log.error(
           {
