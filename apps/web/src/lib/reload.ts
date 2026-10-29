@@ -17,7 +17,9 @@ export type ReloadReason =
   | 'update-while-hidden'
   | 'error-boundary'
   | 'boot-guard'
-  | 'debug-page';
+  | 'debug-page'
+  /** A lazy page's chunk is gone: the app was updated while it was open. */
+  | 'stale-chunk';
 
 interface ReloadRecord {
   reason: string;
@@ -40,6 +42,25 @@ export function reloadApp(reason: ReloadReason, fromBuild: string | null = null)
  * a cold start or a reload the app did not ask for (the user, the
  * WebView, the OS reclaiming memory), which is worth knowing too.
  */
+const STALE_CHUNK_KEY = 'compass.staleChunkReloadAt';
+
+/**
+ * Reload for a stale lazy chunk (F10), unless one was already done within
+ * `withinMs` — then a reload did not help and must not loop. Kept apart
+ * from STORAGE_KEY, which reportLastReload() consumes at boot.
+ */
+export function reloadForStaleChunk(withinMs: number): boolean {
+  try {
+    const at = Number(window.sessionStorage.getItem(STALE_CHUNK_KEY) ?? 0);
+    if (Date.now() - at < withinMs) return false;
+    window.sessionStorage.setItem(STALE_CHUNK_KEY, String(Date.now()));
+  } catch {
+    /* storage unavailable: reload once anyway */
+  }
+  reloadApp('stale-chunk');
+  return true;
+}
+
 export function reportLastReload(): void {
   let record: ReloadRecord | null = null;
   try {

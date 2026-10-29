@@ -3,6 +3,18 @@ import { createRoot } from 'react-dom/client';
 import { detectLocale, preloadCatalog } from '@compass/i18n';
 import { App } from './app/App';
 import './styles/index.css';
+import { reloadForStaleChunk } from './lib/reload';
+
+// F10 (2026-10-30): after a deploy, a client that stayed open asks for
+// lazy page chunks that no longer exist; the import failed into the root
+// error boundary and the whole app became a crash page whose Retry failed
+// again. Load the new version instead — online only (offline it is the
+// network, and a reload would show Telegram's offline page), and not again
+// within a minute if a reload did not help (the boundary then shows).
+window.addEventListener('vite:preloadError', (event) => {
+  if (!navigator.onLine) return;
+  if (reloadForStaleChunk(60_000)) event.preventDefault();
+});
 
 const container = document.getElementById('root');
 if (!container) throw new Error('Root not found');
