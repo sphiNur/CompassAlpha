@@ -41,7 +41,7 @@ import { z } from 'zod';
 import { DateStringSchema, UuidSchema } from '@compass/contracts';
 import { authedProcedure, router } from '../trpc';
 import { TRPCError } from '@trpc/server';
-import { getActorStoreIds } from '../../services/storeScope';
+import { getActorStoreIdsForPermission } from '../../services/storeScope';
 import { money2, runMoneyLinesSql, uuidListSql } from '../../services/runMoney';
 
 /**
@@ -106,9 +106,13 @@ export const reportRouter = router({
         // explicitly passed input.storeId AND it's outside their set,
         // throw notAssignedToStore so they get a clear error
         // (consistent with sales.list M3.1 behaviour).
-        const allowedStoreIds = await getActorStoreIds(
+        const allowedStoreIds = await getActorStoreIdsForPermission(
           tx,
           ctx.session!.memberId,
+          // HIS-1 (2026-10-30): the stores where finance is actually
+          // readable, not every store the person is assigned to — a
+          // manager of A who is a cashier in B saw B's purchases.
+          'users.manage',
           ctx.session!.permissions,
         );
         if (allowedStoreIds !== null && input.storeId !== undefined) {
@@ -212,9 +216,13 @@ export const reportRouter = router({
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
         // M3.7: same store-scope split as purchaseLines (above).
-        const allowedStoreIds = await getActorStoreIds(
+        const allowedStoreIds = await getActorStoreIdsForPermission(
           tx,
           ctx.session!.memberId,
+          // HIS-1 (2026-10-30): the stores where finance is actually
+          // readable, not every store the person is assigned to — a
+          // manager of A who is a cashier in B saw B's purchases.
+          'users.manage',
           ctx.session!.permissions,
         );
         if (allowedStoreIds !== null && input.storeId !== undefined) {

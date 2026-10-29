@@ -5344,6 +5344,7 @@ export const adminRouter = router({
         const orgId = ctx.session!.orgId;
         const date = input?.date;
         const limit = input?.limit ?? 50;
+        const sessionScope = await getAdminReadScope(tx, ctx.session!);
         const rows = await tx
           .select({
             id: s.orderSessionsV.id,
@@ -5357,9 +5358,17 @@ export const adminRouter = router({
           })
           .from(s.orderSessionsV)
           .where(
-            date
-              ? and(eq(s.orderSessionsV.orgId, orgId), eq(s.orderSessionsV.orderDate, date))
-              : eq(s.orderSessionsV.orgId, orgId),
+            and(
+              eq(s.orderSessionsV.orgId, orgId),
+              date ? eq(s.orderSessionsV.orderDate, date) : undefined,
+              // HIS-3 (2026-10-30): a store-tier admin sees their stores'
+              // orders only, like every other admin read.
+              sessionScope === null
+                ? undefined
+                : sessionScope.size === 0
+                  ? sql`false`
+                  : inArray(s.orderSessionsV.storeId, [...sessionScope]),
+            ),
           )
           .orderBy(desc(s.orderSessionsV.updatedAt))
           .limit(limit);
@@ -5502,6 +5511,7 @@ export const adminRouter = router({
         const orgId = ctx.session!.orgId;
         const date = input?.date;
         const limit = input?.limit ?? 50;
+        const runScope = await getAdminReadScope(tx, ctx.session!);
         const rows = await tx
           .select({
             id: s.marketRunsV.id,
@@ -5514,9 +5524,14 @@ export const adminRouter = router({
           })
           .from(s.marketRunsV)
           .where(
-            date
-              ? and(eq(s.marketRunsV.orgId, orgId), eq(s.marketRunsV.runDate, date))
-              : eq(s.marketRunsV.orgId, orgId),
+            and(
+              eq(s.marketRunsV.orgId, orgId),
+              date ? eq(s.marketRunsV.runDate, date) : undefined,
+              // HIS-3: only runs that touch the admin's stores.
+              runScope === null
+                ? undefined
+                : runTouchesStores(sql`${s.marketRunsV.id}`, [...runScope]),
+            ),
           )
           .orderBy(desc(s.marketRunsV.updatedAt))
           .limit(limit);
@@ -5592,6 +5607,23 @@ export const adminRouter = router({
           input?.fromDate ?? dateInTz(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), tz);
         const toDate = input?.toDate ?? todayInTz(tz);
 
+        // HIS-2 (2026-10-30): any store manager saw the whole org's
+        // submissions, submitters, deciders and reject reasons. Limit to
+        // the admin's stores; naming a store outside them is refused.
+        const historyScope = await getAdminReadScope(tx, ctx.session!);
+        if (historyScope !== null && input?.storeId && !historyScope.has(input.storeId)) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.notAssignedToStore' });
+        }
+        const historyStoreFilter =
+          historyScope === null
+            ? sql``
+            : historyScope.size === 0
+              ? sql`AND false`
+              : sql`AND store_id IN (${sql.join(
+                  [...historyScope].map((id) => sql`${id}::uuid`),
+                  sql`, `,
+                )})`;
+
         // Only sessions that progressed past draft are "submissions".
         // We use a raw query so we can express the date range + status
         // filter cleanly without drizzle hoops.
@@ -5604,6 +5636,7 @@ export const adminRouter = router({
                 AND order_date >= ${sevenDaysOrFrom}
                 AND order_date <= ${toDate}
                 ${input?.storeId ? sql`AND store_id = ${input.storeId}` : sql``}
+                ${historyStoreFilter}
               ORDER BY submitted_at DESC NULLS LAST
               LIMIT ${limit}`,
         )) as unknown as Array<{

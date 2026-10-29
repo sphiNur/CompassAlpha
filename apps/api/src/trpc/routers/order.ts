@@ -51,7 +51,7 @@ import {
 import {
   assertActorAssignedToStore,
   effectivePermissionsForStore,
-  getActorStoreIds,
+  getActorStoreIdsForPermission,
 } from '../../services/storeScope';
 import { hub } from '../../realtime/hub';
 import { todayInTz } from '@compass/domain';
@@ -173,6 +173,19 @@ function assertSeenLatest(
   if (changedByOthersSince(events, expectedSeq, userId)) {
     throw new TRPCError({ code: 'CONFLICT', message: 'order.errors.staleSeq' });
   }
+}
+
+/** Stores where the actor may approve or claim orders (null = all). */
+async function approverStoreIds(
+  tx: import('@compass/db').DB,
+  session: { memberId: string; permissions: ReadonlySet<string> },
+): Promise<string[] | null> {
+  const [approve, claim] = await Promise.all([
+    getActorStoreIdsForPermission(tx, session.memberId, 'order.approve', session.permissions),
+    getActorStoreIdsForPermission(tx, session.memberId, 'order.claim', session.permissions),
+  ]);
+  if (approve === null || claim === null) return null;
+  return [...new Set([...approve, ...claim])];
 }
 
 export const orderRouter = router({
@@ -442,6 +455,18 @@ export const orderRouter = router({
           session.storeId,
           ctx.session!.permissions,
         );
+        // APR-4: someone else's order is for approvers of that store.
+        if (session.initiatedByMemberId !== ctx.session!.memberId) {
+          const effective = await effectivePermissionsForStore(
+            tx,
+            ctx.session!.memberId,
+            session.storeId,
+            ctx.session!.permissions,
+          );
+          if (!effective.has('order.approve') && !effective.has('order.claim')) {
+            throw new TRPCError({ code: 'FORBIDDEN', message: 'order.errors.cannotApprove' });
+          }
+        }
         const items = await tx.query.orderItemsV.findMany({
           where: (it, { eq: eq2 }) => eq2(it.sessionId, session.id),
         });
@@ -534,15 +559,14 @@ export const orderRouter = router({
    *  `totalQty` so the FE doesn't need 3+ extra round-trips per card. */
   pendingList: authedProcedure.input(PendingListInputSchema).query(async ({ ctx, input }) => {
     return ctx.withOrg(async (tx) => {
-      // Scope: a manager only sees their assigned stores' queues.
-      // Admins see everything (getActorStoreIds returns null = no filter).
-      const allowedStoreIds = await getActorStoreIds(
-        tx,
-        ctx.session!.memberId,
-        ctx.session!.permissions,
-      );
+      // Scope: the stores where this person approves or claims orders
+      // (null = all). APR-4 (2026-10-30): it used every assigned store,
+      // so staff and buyers could read the whole queue (submitters,
+      // estimates, cash/transfer split), and a store where someone is
+      // only staff showed Approve buttons that then refused.
+      const allowedStoreIds = await approverStoreIds(tx, ctx.session!);
       if (allowedStoreIds !== null && allowedStoreIds.length === 0) {
-        // No assigned stores → nothing to approve.
+        // Approves nowhere → nothing to show.
         return [];
       }
       const storeFilterClause =
