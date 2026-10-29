@@ -32,6 +32,13 @@ const t = initTRPC.context<RequestContext>().create({
         },
       };
     }
+    // An unexpected failure (a database error, a bug) must not reach the
+    // client verbatim: Drizzle's message carries the whole SQL statement
+    // and its parameters. Thrown i18n keys pass through; the rest becomes
+    // the generic key, and the full error is logged by the tRPC onError.
+    if (error.code === 'INTERNAL_SERVER_ERROR' && !/^[a-z]+\.errors?\./.test(error.message)) {
+      return { ...shape, message: 'common.error' };
+    }
     return shape;
   },
 });
