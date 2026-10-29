@@ -380,6 +380,14 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
       const items = new Map(state.items);
       const existing = items.get(event.payload.skuId);
       if (!existing) return { ...state, seq: event.seq };
+      // BUY-4 (2026-10-30): a row the purchaser added has no demand behind
+      // it, so undoing it removes the row. Left pending, it had no store a
+      // store-scoped purchaser could see, yet blocked StartDelivery and
+      // refused to be added again.
+      if (existing.addedByPurchaser) {
+        items.delete(event.payload.skuId);
+        return { ...state, seq: event.seq, items };
+      }
       items.set(event.payload.skuId, {
         ...existing,
         status: 'pending',

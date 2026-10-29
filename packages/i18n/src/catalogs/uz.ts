@@ -1091,6 +1091,8 @@ export const uz = {
   'run.confirm.undoPurchase.title': 'Bu xaridni bekor qilamizmi?',
   'run.confirm.undoPurchase.body':
     "Mahsulotni «kutilmoqda»ga qaytaradi va qayta yozsa bo'ladi. Asl yozuv auditda qoladi. Faqat hech bir do'kon qabul qilmagan bo'lsa.",
+  'run.confirm.undoPurchase.bodyAdded':
+    "Bu mahsulot xarid paytida qo'shilgan; bekor qilinsa, qator xariddan olib tashlanadi. Asl yozuv auditda qoladi. Faqat hech bir do'kon qabul qilmagan bo'lsa.",
   'run.confirm.unmarkUnavailable.title': 'Yana mavjud deb belgilaymizmi?',
   'run.confirm.unmarkUnavailable.body':
     "Mahsulotni «kutilmoqda»ga qaytaradi va xaridni yozish mumkin bo'ladi. Asl «yo'q» eslatmasi auditda qoladi.",

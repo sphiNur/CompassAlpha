@@ -2166,6 +2166,32 @@ describe('run.storeScope', () => {
     expect(decideRun(planOnly(), add('A'), clock).length).toBeGreaterThan(0);
   });
 
+  test('BUY-4: undoing a purchaser-added row removes it, so delivery can start and it can be re-added', () => {
+    const add: RunCommand = {
+      type: 'AddPurchaserItem',
+      skuId: 'sku-extra',
+      supplierId: null,
+      unitPrice: '1000',
+      actualQty: '1',
+      receiptPhotoUrl: null,
+      storeSplits: [{ storeId: 'A', qty: '1' }],
+      paymentMethod: 'cash',
+      reason: 'chef asked',
+      runStoreIds: ['A'],
+      actor: purchaser(),
+    };
+    let s = planAndPurchase();
+    s = decideRun(s, add, clock).reduce(applyRun, s);
+    s = decideRun(
+      s,
+      { type: 'UndoPurchase', skuId: 'sku-extra', reason: '', actor: purchaser() },
+      clock,
+    ).reduce(applyRun, s);
+    expect(s.items.has('sku-extra')).toBe(false);
+    expect(decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock)).toHaveLength(1);
+    expect(decideRun(s, add, clock).map((e) => e.type)).toEqual(['PurchaserItemAdded']);
+  });
+
   test('DeliverToStore rejects a store that neither holds goods nor belongs to the run', () => {
     let s = planAndPurchase();
     s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
