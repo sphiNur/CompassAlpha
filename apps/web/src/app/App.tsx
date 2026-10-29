@@ -84,6 +84,15 @@ export function App() {
           },
           mutations: {
             retry: false,
+            // TanStack's default ('online') PAUSES a mutation while the
+            // browser is offline: no request, no onError. Pages queue a
+            // write in the IndexedDB outbox from onError on a network
+            // error, so offline writes never reached it — they sat paused
+            // in memory (lost when Telegram closed the app) and, counted
+            // as in flight, locked the bottom nav. Always run the request:
+            // offline it fails at once, queued writes go to the outbox and
+            // the rest show an error instead of hanging.
+            networkMode: 'always',
           },
         },
       }),

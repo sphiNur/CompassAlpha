@@ -21,6 +21,7 @@ import { trpc, newIdempotencyKey } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton, haptic } from '../hooks/useTelegram';
 import { frozenOrderDate, useOfflineQueue } from '../hooks/useOfflineQueue';
+import { outbox } from '../lib/idb';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { sessionLoadState } from './order/sessionLoadState';
 import { useErrToast } from '../lib/errToast';
@@ -61,6 +62,21 @@ function isLockedStatus(status: string | null | undefined): boolean {
 }
 import { formatQty, formatMoney } from '../lib/format';
 import { useStoreContext } from '../components/StoreSwitcher';
+
+/** Order writes still waiting in the offline outbox for this store (an
+ *  entry without a storeId, e.g. extras keyed by session, counts too). */
+async function hasQueuedOrderWrites(storeId: string): Promise<boolean> {
+  try {
+    const entries = await outbox.list();
+    return entries.some((entry) => {
+      if (!entry.procedure.startsWith('order.')) return false;
+      const entryStore = (entry.input as { storeId?: unknown } | null)?.storeId;
+      return typeof entryStore !== 'string' || entryStore === storeId;
+    });
+  } catch {
+    return false; // IndexedDB unavailable: nothing can be queued there either
+  }
+}
 
 export function OrderPage() {
   const i18n = useI18n();
@@ -800,6 +816,16 @@ export function OrderPage() {
     const storeId = currentStoreId;
     try {
       await flushAllPendingAdjusts();
+      // Changes queued offline must reach the server before the batch is
+      // submitted: the review showed them, but Submit sent the server's
+      // copy without them, and their later replay lazily opened a new
+      // draft. Drain the outbox; if this store still has queued order
+      // writes (offline, or the server refused to answer), don't submit.
+      await offline.flush();
+      if (await hasQueuedOrderWrites(storeId)) {
+        toast.info(i18n.t('order.toast.syncing'));
+        return;
+      }
 
       // Only a draft/rejected session is submittable. CA-24: in new-batch
       // mode the raw cache can still hold the previous SENT batch — never
@@ -841,6 +867,7 @@ export function OrderPage() {
     submitIdemCtx,
     currentStoreId,
     flushAllPendingAdjusts,
+    offline,
     utils.order.todaySession,
     toast,
     i18n,
