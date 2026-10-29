@@ -2166,6 +2166,35 @@ describe('run.storeScope', () => {
     expect(decideRun(planOnly(), add('A'), clock).length).toBeGreaterThan(0);
   });
 
+  test('BUY-11: re-adding a removed expense id is a no-op, in the command and the reducer', () => {
+    const addExpense: RunCommand = {
+      type: 'AddRunExpense',
+      expenseId: 'exp-1',
+      label: 'porter',
+      qty: '1',
+      unitPrice: '20000',
+      storeSplits: [{ storeId: 'A', qty: '1' }],
+      paymentMethod: 'cash',
+      receiptPhotoUrl: null,
+      reason: 'porter for the heavy sacks',
+      runStoreIds: ['A'],
+      actor: purchaser(),
+    };
+    let s = planAndPurchase();
+    const added = decideRun(s, addExpense, clock);
+    s = added.reduce(applyRun, s);
+    s = decideRun(
+      s,
+      { type: 'RemoveRunExpense', expenseId: 'exp-1', reason: 'typo', actor: purchaser() },
+      clock,
+    ).reduce(applyRun, s);
+    expect(decideRun(s, addExpense, clock)).toEqual([]);
+    // An Added event already in a log (written before this fix) no
+    // longer counts the expense back either.
+    s = added.map((e) => ({ ...e, seq: s.seq + 1 })).reduce(applyRun, s);
+    expect(s.expenses).toHaveLength(0);
+  });
+
   test('BUY-4: undoing a purchaser-added row removes it, so delivery can start and it can be re-added', () => {
     const add: RunCommand = {
       type: 'AddPurchaserItem',

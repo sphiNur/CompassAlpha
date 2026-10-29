@@ -3,6 +3,7 @@ import {
   DateStringSchema,
   DecimalStringSchema,
   IdempotencyKeySchema,
+  OrderQtySchema,
   UuidSchema,
 } from './common';
 
@@ -68,7 +69,7 @@ export const AdjustItemInputSchema = z.object({
   storeId: UuidSchema,
   date: DateStringSchema.optional(),
   skuId: UuidSchema,
-  qty: DecimalStringSchema,
+  qty: OrderQtySchema,
   /** Manager review: target a specific contributor's row. Requires
    *  `order.approve`. Omit (or pass own memberId) for normal staff edits. */
   targetMemberId: UuidSchema.optional(),
@@ -136,7 +137,10 @@ export type ExtraStatus = z.infer<typeof ExtraStatusSchema>;
 
 export const SessionExtraItemSchema = z.object({
   name: z.string().min(1).max(200),
-  qty: z.string().regex(/^\d+(\.\d{1,3})?$/, 'invalid qty'),
+  qty: z
+    .string()
+    .regex(/^\d+(\.\d{1,3})?$/, 'invalid qty')
+    .refine((v) => Number(v) < 1_000_000, { message: 'too large' }),
   // M3.34: tightened from free-text to canonical enum.
   unit: CanonicalUnitSchema,
   note: z.string().max(200).optional(),

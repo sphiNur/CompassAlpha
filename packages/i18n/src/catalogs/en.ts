@@ -908,6 +908,8 @@ export const en = {
   'order.errors.notRejectable': 'This order cannot be rejected right now',
   'order.errors.rejectReasonRequired': 'Please provide a reason for rejection',
   'order.errors.notWithdrawable': 'This order cannot be withdrawn',
+  'order.errors.withdrawDraftOpen':
+    'You already have a draft for today. Submit or clear it first, then withdraw this batch',
   'order.errors.cannotWithdraw': "You don't have permission to withdraw",
   'order.errors.cannotWithdrawWhileClaimed': 'Cannot withdraw while a manager is reviewing',
   'order.errors.cannotUnapprove': "You don't have permission to reverse approval",

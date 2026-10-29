@@ -351,9 +351,19 @@ function bindingIsLive() {
   return or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, new Date()));
 }
 
-async function countAdminsInOrg(tx: import('@compass/db').DB, orgId: string): Promise<number> {
+/**
+ * Active admin-rank members of the org. ADM-6 (2026-10-30): the guards
+ * ask how many would be LEFT, so they pass the member or binding being
+ * removed; counting the target used to refuse removing a suspended admin
+ * (not counted at all) whenever only one other admin remained.
+ */
+async function countAdminsInOrg(
+  tx: import('@compass/db').DB,
+  orgId: string,
+  except: { memberId?: string; bindingId?: string } = {},
+): Promise<number> {
   const rows = await tx
-    .select({ memberId: s.memberRoleBindings.memberId })
+    .select({ memberId: s.memberRoleBindings.memberId, bindingId: s.memberRoleBindings.id })
     .from(s.memberRoleBindings)
     .innerJoin(s.members, eq(s.members.id, s.memberRoleBindings.memberId))
     .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
@@ -367,7 +377,11 @@ async function countAdminsInOrg(tx: import('@compass/db').DB, orgId: string): Pr
     );
   // Distinct member ids — one member with two admin-level roles still
   // counts as ONE admin for "last admin" purposes.
-  const distinct = new Set(rows.map((r) => r.memberId));
+  const distinct = new Set(
+    rows
+      .filter((r) => r.memberId !== except.memberId && r.bindingId !== except.bindingId)
+      .map((r) => r.memberId),
+  );
   return distinct.size;
 }
 
@@ -1550,8 +1564,8 @@ export const adminRouter = router({
           await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${orgId}))`);
           const targetMaxRank = await getActorMaxRank(tx, orgId, member.userId);
           if (targetMaxRank >= ADMIN_RANK_THRESHOLD) {
-            const adminCount = await countAdminsInOrg(tx, orgId);
-            if (adminCount <= 1) {
+            const othersLeft = await countAdminsInOrg(tx, orgId, { memberId: member.id });
+            if (othersLeft < 1) {
               throw new TRPCError({
                 code: 'BAD_REQUEST',
                 message: 'admin.errors.cannotRemoveLastAdmin',
@@ -2785,8 +2799,8 @@ export const adminRouter = router({
       // Last-admin guard. If the target is admin-level and they're
       // the only admin, refuse.
       if (targetMaxRank >= ADMIN_RANK_THRESHOLD) {
-        const adminCount = await countAdminsInOrg(tx, orgId);
-        if (adminCount <= 1) {
+        const othersLeft = await countAdminsInOrg(tx, orgId, { memberId: member.id });
+        if (othersLeft < 1) {
           throw new TRPCError({
             code: 'BAD_REQUEST',
             message: 'admin.errors.cannotRemoveLastAdmin',
@@ -3668,6 +3682,12 @@ export const adminRouter = router({
       // additionally match scopeId so distinct stores get distinct
       // bindings. Without that, the second call wrongly returns the
       // first store's binding as "already exists".
+      // ADM-7 (2026-10-30): two grants at once (a double tap) both found
+      // no binding and both inserted. Serialise per member + role so the
+      // second sees the first.
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${`grant:${member.id}:${role.id}`}))`,
+      );
       const existing = await tx.query.memberRoleBindings.findFirst({
         where: (b, { eq: eq2, and: and2 }) => {
           const base = [
@@ -3782,10 +3802,10 @@ export const adminRouter = router({
       // org could end up with no manageable admin (only super_admin
       // could fix from CLI) — a real footgun for a SaaS rollout.
       if (targetRank >= ADMIN_RANK_THRESHOLD) {
-        const adminCount = await countAdminsInOrg(tx, orgId);
-        // The target is currently counted; the revoke would remove
-        // them — so we need >1 to still have ≥1 left after.
-        if (adminCount <= 1) {
+        // Admins left once this binding is gone (the member may hold
+        // another admin-rank role and stay one).
+        const adminsLeft = await countAdminsInOrg(tx, orgId, { bindingId: input.bindingId });
+        if (adminsLeft < 1) {
           throw new TRPCError({
             code: 'BAD_REQUEST',
             message: 'admin.errors.cannotRemoveLastAdmin',

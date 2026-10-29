@@ -822,6 +822,8 @@ export const uz = {
   'order.errors.notRejectable': "Hozir rad etib bo'lmaydi",
   'order.errors.rejectReasonRequired': 'Rad etish sababini yozing',
   'order.errors.notWithdrawable': 'Hozir qaytarib ololmaysiz',
+  'order.errors.withdrawDraftOpen':
+    "Bugun uchun qoralamangiz allaqachon bor. Avval uni yuboring yoki tozalang, keyin bu partiyani qaytarib oling",
   'order.errors.cannotWithdraw': "Qaytarib olish huquqingiz yo'q",
   'order.errors.cannotWithdrawWhileClaimed': "Menejer tekshirayotganda qaytarib bo'lmaydi",
   'order.errors.cannotUnapprove': "Tasdiqni bekor qilish huquqingiz yo'q",

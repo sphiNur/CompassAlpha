@@ -8,7 +8,7 @@
  * that pure logic touches the DB and the network.
  */
 import { TRPCError } from '@trpc/server';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { schema as s } from '@compass/db';
 import {
@@ -1505,11 +1505,46 @@ export const orderRouter = router({
     ),
   ),
 
-  withdraw: authedProcedure.input(SimpleSessionCommandSchema).mutation(async ({ ctx, input }) =>
-    runSimpleCommand(ctx, input.sessionId, (state, perms) =>
+  withdraw: authedProcedure.input(SimpleSessionCommandSchema).mutation(async ({ ctx, input }) => {
+    // ORD-5 (2026-10-30): a withdrawn batch becomes its author's draft
+    // again, but one person has one draft per store and day. With another
+    // draft open the projection hit that unique index and answered
+    // "edited by someone else". Say what to do instead.
+    const draftOpen = await ctx.withOrg(async (tx) => {
+      const [session] = await tx
+        .select({
+          storeId: s.orderSessionsV.storeId,
+          orderDate: s.orderSessionsV.orderDate,
+          initiatedBy: s.orderSessionsV.initiatedByMemberId,
+        })
+        .from(s.orderSessionsV)
+        .where(
+          and(eq(s.orderSessionsV.orgId, ctx.session!.orgId), eq(s.orderSessionsV.id, input.sessionId)),
+        );
+      if (!session?.initiatedBy) return false;
+      const [other] = await tx
+        .select({ id: s.orderSessionsV.id })
+        .from(s.orderSessionsV)
+        .where(
+          and(
+            eq(s.orderSessionsV.orgId, ctx.session!.orgId),
+            eq(s.orderSessionsV.storeId, session.storeId),
+            eq(s.orderSessionsV.orderDate, session.orderDate),
+            eq(s.orderSessionsV.initiatedByMemberId, session.initiatedBy),
+            eq(s.orderSessionsV.status, 'draft'),
+            ne(s.orderSessionsV.id, input.sessionId),
+          ),
+        )
+        .limit(1);
+      return !!other;
+    });
+    if (draftOpen) {
+      throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'order.errors.withdrawDraftOpen' });
+    }
+    return runSimpleCommand(ctx, input.sessionId, (state, perms) =>
       decide(state, { type: 'Withdraw', actor: buildActor(ctx, state, perms) }),
-    ),
-  ),
+    );
+  }),
 
   unapprove: authedProcedure.input(UnapproveInputSchema).mutation(async ({ ctx, input }) =>
     runSimpleCommand(ctx, input.sessionId, (state, perms) =>
