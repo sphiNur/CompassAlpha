@@ -68,7 +68,9 @@ async function refreshAccessToken(): Promise<{
 
   refreshInFlight = (async () => {
     try {
-      const res = await fetch(`${API_URL}/trpc/auth.refresh`, {
+      // guardedFetch: a refresh that hangs would hold every request
+      // waiting on it (single-flight); time it out like the rest.
+      const res = await guardedFetch(`${API_URL}/trpc/auth.refresh`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ refreshToken }),
@@ -126,6 +128,59 @@ async function refreshAccessToken(): Promise<{
  * This is THE missing piece that was causing every mutation to fail
  * with `auth.errors.required` after the 15-minute access-token TTL.
  */
+/** Queries may wait this long for an answer, writes a little longer. */
+const READ_TIMEOUT_MS = 20_000;
+const WRITE_TIMEOUT_MS = 30_000;
+/** What a proxy says when the API behind it is restarting or unreachable. */
+const GATEWAY_STATUSES = new Set([502, 503, 504, 520, 521, 522, 523, 524, 525, 526, 527, 530]);
+
+/**
+ * One request that cannot hang and does not mistake a proxy's error page
+ * for an answer (N3/N5, 2026-10-30):
+ *   - no timeout meant a stalled 3G request kept a button spinning and a
+ *     write out of the offline queue; it now fails after 20 s (30 s for
+ *     a write) as a network failure;
+ *   - a 502/503/52x HTML page from nginx or Cloudflare while the API
+ *     restarts (every deploy) failed JSON parsing as an ordinary error,
+ *     so the write was refused instead of queued; it is a network failure.
+ * A caller's own abort (a cancelled query) still surfaces as an abort.
+ */
+export async function guardedFetch(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  timeoutMs?: number,
+): Promise<Response> {
+  const isWrite = (init.method ?? 'GET').toUpperCase() !== 'GET';
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(
+    () => {
+      timedOut = true;
+      controller.abort();
+    },
+    timeoutMs ?? (isWrite ? WRITE_TIMEOUT_MS : READ_TIMEOUT_MS),
+  );
+  const outer = init.signal;
+  const forward = () => controller.abort();
+  if (outer) {
+    if (outer.aborted) controller.abort();
+    else outer.addEventListener('abort', forward, { once: true });
+  }
+  try {
+    const res = await fetch(input, { ...init, signal: controller.signal });
+    if (GATEWAY_STATUSES.has(res.status) && !(res.headers.get('content-type') ?? '').includes('json')) {
+      throw new TypeError(`Failed to fetch (gateway ${res.status})`);
+    }
+    return res;
+  } catch (err) {
+    if (timedOut) throw new TypeError('Failed to fetch (timed out)');
+    throw err;
+  } finally {
+    clearTimeout(timer);
+    outer?.removeEventListener('abort', forward);
+  }
+}
+
 async function authFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
   const attach = (token: string | null): RequestInit => ({
     ...init,
@@ -136,7 +191,7 @@ async function authFetch(input: RequestInfo | URL, init: RequestInit = {}): Prom
   });
 
   let token = useAuthStore.getState().accessToken;
-  let res = await fetch(input, attach(token));
+  let res = await guardedFetch(input, attach(token));
   if (res.status !== 401) return res;
 
   // 401 → try to refresh, then retry once. We don't refresh on the
@@ -161,7 +216,7 @@ async function authFetch(input: RequestInfo | URL, init: RequestInit = {}): Prom
     return res;
   }
   token = refreshed.accessToken;
-  res = await fetch(input, attach(token));
+  res = await guardedFetch(input, attach(token));
   return res;
 }
 
