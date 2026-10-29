@@ -184,7 +184,10 @@ export function RunPage() {
   /** 2026-10-21 CA-04: run-switcher choice (run id, NEW_RUN, or null = default). */
   const [selectedRunKey, setSelectedRunKey] = useState<string | null>(null);
   const runsQuery = trpc.run.list.useQuery();
-  const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: false });
+  // CAT-7 (2026-10-30): include archived products so lines already ordered,
+  // approved or bought still show their name and unit (they showed as an id
+  // fragment, or not at all). Pickers filter archived ones out.
+  const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: true });
   const categoriesQuery = trpc.catalog.categories.useQuery();
   const storesQuery = trpc.catalog.stores.useQuery({ permission: 'run.purchase' });
   // 2026-10-21 audit CA-40: archived suppliers are filtered below, except
@@ -2382,7 +2385,7 @@ export function RunPage() {
           }
           return m;
         })()}
-        skus={skusQuery.data ?? []}
+        skus={(skusQuery.data ?? []).filter((s) => !s.isArchived)}
         expenseTemplates={expenseTemplatesQuery.data ?? []}
         storeById={storeById}
         productName={productName}

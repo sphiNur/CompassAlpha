@@ -137,7 +137,10 @@ export function OrderPage() {
   const [searchQuery, setSearchQuery] = useState('');
 
   const categoriesQuery = trpc.catalog.categories.useQuery();
-  const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: false });
+  // CAT-7 (2026-10-30): include archived products so lines already ordered,
+  // approved or bought still show their name and unit (they showed as an id
+  // fragment, or not at all). Pickers filter archived ones out.
+  const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: true });
   // 2026-10-21 audit CA-24: while starting a new batch, any refetch
   // (realtime order.changed, staleTime) still returns the previous
   // SUBMITTED batch until the first tap lazy-creates the new draft.
@@ -631,7 +634,9 @@ export function OrderPage() {
     },
   });
 
-  const skus = skusQuery.data ?? [];
+  const allSkus = useMemo(() => skusQuery.data ?? [], [skusQuery.data]);
+  // The catalogue offers only active products.
+  const skus = useMemo(() => allSkus.filter((s) => !s.isArchived), [allSkus]);
   const filteredSkus = useMemo(
     () => {
       // Two filters compose: category chip + cross-language search.
@@ -1055,7 +1060,7 @@ export function OrderPage() {
             <SectionLabel padded={false} className="mb-1.5">
               {i18n.t('order.receipt.submittedItems')}
             </SectionLabel>
-            <ReviewList totals={totals} skus={skus} productName={productName} />
+            <ReviewList totals={totals} skus={allSkus} productName={productName} />
           </div>
         </div>
 
@@ -1379,7 +1384,7 @@ export function OrderPage() {
       >
         {/* CA-27: an extras-only batch shouldn't read "Nothing selected". */}
         {totals.length > 0 || extrasCount === 0 ? (
-          <ReviewList totals={totals} skus={skus} productName={productName} />
+          <ReviewList totals={totals} skus={allSkus} productName={productName} />
         ) : null}
         {extrasCount > 0 && sessionQuery.data && sessionQuery.data.id !== 'optimistic' ? (
           <SessionExtrasEditor

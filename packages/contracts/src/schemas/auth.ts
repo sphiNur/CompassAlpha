@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { LocaleSchema, UuidSchema } from './common';
+import { LocaleSchema, TimeZoneSchema, UuidSchema } from './common';
 
 export const TelegramLoginInputSchema = z.object({
   initData: z.string().min(1),
@@ -168,7 +168,7 @@ export const CreateOrganizationInputSchema = z.object({
     .regex(/^[a-z0-9][a-z0-9-]{1,62}$/, 'slug must use lowercase letters, digits and hyphens')
     .optional(),
   locale: LocaleSchema.optional(),
-  timezone: z.string().min(1).max(64).optional(),
+  timezone: TimeZoneSchema.optional(),
 });
 
 export const AuthTokensSchema = z.object({

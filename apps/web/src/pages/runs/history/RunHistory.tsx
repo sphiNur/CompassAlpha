@@ -892,6 +892,14 @@ export function RunHistoryDetailSheet({
         <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">
           {i18n.t('common.loading')}
         </div>
+      ) : detail.isError && !breakdown ? (
+        // F11 (2026-10-30): a failed load said "no data", so nobody retried.
+        <div className="flex flex-col items-center gap-3 py-8 text-center text-old-body text-[var(--c-fg-muted)]">
+          {i18n.t('common.error')}
+          <Button size="sm" variant="secondary" onClick={() => void detail.refetch()}>
+            {i18n.t('common.retry')}
+          </Button>
+        </div>
       ) : !breakdown ? (
         <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">
           {i18n.t('common.noData')}

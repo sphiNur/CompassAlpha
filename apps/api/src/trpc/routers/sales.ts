@@ -58,6 +58,7 @@ import {
   assertActorAssignedToStore,
   effectivePermissionsForStore,
 } from '../../services/storeScope';
+import { storeTimeZone } from '../../services/timeZone';
 
 // 2026-10-21 CA-10/CA-57: no `|| users.manage` fallback any more. It
 // made a store-level deny of sales.record a no-op for managers (who
@@ -451,7 +452,7 @@ export const salesRouter = router({
         columns: { timezone: true },
       });
       const { from, toExclusive } = salesListRange(
-        store?.timezone || ctx.session!.orgTimezone,
+        storeTimeZone(store?.timezone, ctx.session!.orgTimezone),
         input.fromDate,
         input.toDate,
       );

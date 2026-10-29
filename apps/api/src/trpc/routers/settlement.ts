@@ -26,6 +26,7 @@ import {
   assertActorAssignedToStore,
   effectivePermissionsForStore,
 } from '../../services/storeScope';
+import { storeTimeZone } from '../../services/timeZone';
 
 type SettlementRow = typeof s.storeDailySettlements.$inferSelect;
 
@@ -758,7 +759,7 @@ export const settlementRouter = router({
     .query(async ({ ctx, input }) => {
       return ctx.withOrg(async (tx) => {
         const store = await authorizeSettlementStore(tx, ctx.session!, input.storeId);
-        const timezone = store.timezone || ctx.session!.orgTimezone;
+        const timezone = storeTimeZone(store.timezone, ctx.session!.orgTimezone);
         return {
           storeId: store.id,
           date: todayInTz(timezone),
@@ -787,7 +788,7 @@ export const settlementRouter = router({
   get: authedProcedure.input(SettlementGetInputSchema).query(async ({ ctx, input }) => {
     return ctx.withOrg(async (tx) => {
       const store = await authorizeSettlementStore(tx, ctx.session!, input.storeId);
-      const date = input.date ?? todayInTz(store.timezone || ctx.session!.orgTimezone);
+      const date = input.date ?? todayInTz(storeTimeZone(store.timezone, ctx.session!.orgTimezone));
       const row = await tx.query.storeDailySettlements.findFirst({
         where: (settlement, { and: and2, eq: eq2 }) =>
           and2(
@@ -834,7 +835,7 @@ export const settlementRouter = router({
   save: idempotentMutation.input(SettlementSaveInputSchema).mutation(async ({ ctx, input }) => {
     return ctx.withOrg(async (tx) => {
       const store = await authorizeSettlementStore(tx, ctx.session!, input.storeId);
-      const storeToday = todayInTz(store.timezone || ctx.session!.orgTimezone);
+      const storeToday = todayInTz(storeTimeZone(store.timezone, ctx.session!.orgTimezone));
       const date = input.date ?? storeToday;
       if (!store.isActive || store.deletedAt) {
         throw new TRPCError({
