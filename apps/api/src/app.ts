@@ -271,6 +271,13 @@ export function createApp() {
     trpcServer({
       router: appRouter,
       createContext: createContext as unknown as Parameters<typeof trpcServer>[0]['createContext'],
+      // The client only gets a generic key for these (trpc.ts
+      // errorFormatter), so this log is the one place the cause is kept.
+      onError({ error, path, type }) {
+        if (error.code === 'INTERNAL_SERVER_ERROR') {
+          logger.error({ err: error.cause ?? error, path, type }, 'trpc internal error');
+        }
+      },
     }),
   );
 

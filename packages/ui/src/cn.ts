@@ -12,6 +12,22 @@ const twMerge = extendTailwindMerge({
     classGroups: {
       'font-size': [
         { text: ['display', 'h1', 'h2', 'body', 'label', 'caption', 'money', 'money-lg'] },
+        // apps/web's older scale (tailwind.config.js). Unregistered, a size
+        // followed by a colour lost the size, and a size after `text-white`
+        // dropped the white from every primary button.
+        {
+          text: [
+            'old-display',
+            'old-h1',
+            'old-h2',
+            'old-h3',
+            'old-body',
+            'old-body-sm',
+            'old-label',
+            'old-meta',
+            'old-tiny',
+          ],
+        },
       ],
     },
     theme: {

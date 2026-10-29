@@ -72,6 +72,11 @@ interface TelegramWebApp {
   showConfirm(message: string, cb: (ok: boolean) => void): void;
   setHeaderColor(color: string): void;
   setBackgroundColor(color: string): void;
+  /** Bot API 7.10+. */
+  setBottomBarColor?: (color: string) => void;
+  /** Bot API 7.7+: stop a downward swipe from minimising the Mini App. */
+  disableVerticalSwipes?: () => void;
+  isVersionAtLeast?: (version: string) => boolean;
   openTelegramLink(url: string): void;
   openLink(url: string, options?: { try_instant_view?: boolean }): void;
   onEvent?: (name: string, cb: () => void) => void;
@@ -154,6 +159,33 @@ export function haptic(intent: HapticIntent = 'light'): void {
   }
 }
 
+/** Any CSS colour (the tokens are OKLCH) as #rrggbb, which Telegram needs. */
+function cssColorToHex(color: string): string | null {
+  try {
+    const ctx = document.createElement('canvas').getContext('2d');
+    if (!ctx) return null;
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, 1, 1);
+    const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+    return `#${[r, g, b].map((v) => (v ?? 0).toString(16).padStart(2, '0')).join('')}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Paint Telegram's own header, background and bottom bar with the page's
+ * background, so the frame around the app matches it in light and dark.
+ */
+function syncTelegramChrome(tg: TelegramWebApp): void {
+  const hex = cssColorToHex(getComputedStyle(document.body).backgroundColor);
+  if (!hex) return;
+  const atLeast = (v: string) => tg.isVersionAtLeast?.(v) ?? false;
+  if (atLeast('6.9')) tg.setHeaderColor(hex);
+  if (atLeast('6.1')) tg.setBackgroundColor(hex);
+  if (atLeast('7.10')) tg.setBottomBarColor?.(hex);
+}
+
 export function useTelegramInit(): void {
   useEffect(() => {
     const tg = getTg();
@@ -176,17 +208,34 @@ export function useTelegramInit(): void {
     tg?.expand();
     applyViewportHeight();
 
+    // Inside Telegram only (a plain browser also loads the SDK): a downward
+    // swipe at the top of a long list must scroll, not minimise the app,
+    // and Telegram's frame takes the page colour, again on theme changes.
+    let themeObserver: MutationObserver | null = null;
+    if (tg && isInTelegram()) {
+      if (tg.isVersionAtLeast?.('7.7')) tg.disableVerticalSwipes?.();
+      const sync = () => requestAnimationFrame(() => syncTelegramChrome(tg));
+      sync();
+      themeObserver = new MutationObserver(sync);
+      themeObserver.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['data-color-scheme', 'data-theme', 'class', 'style'],
+      });
+    }
+
     window.addEventListener('resize', applyViewportHeight);
     window.visualViewport?.addEventListener('resize', applyViewportHeight);
     if (tg?.onEvent && tg.offEvent) {
       tg.onEvent('viewportChanged', applyViewportHeight);
       return () => {
+        themeObserver?.disconnect();
         window.removeEventListener('resize', applyViewportHeight);
         window.visualViewport?.removeEventListener('resize', applyViewportHeight);
         tg.offEvent?.('viewportChanged', applyViewportHeight);
       };
     }
     return () => {
+      themeObserver?.disconnect();
       window.removeEventListener('resize', applyViewportHeight);
       window.visualViewport?.removeEventListener('resize', applyViewportHeight);
     };
