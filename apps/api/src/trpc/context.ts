@@ -6,6 +6,7 @@ import { logger } from '../infra/log';
 import { env } from '../env';
 import { ulid } from 'ulid';
 import { hasGlobalOrgAdmin } from '../services/orgAdmin';
+import { flatEffectivePermissions } from '../services/storeScope';
 import { readSubscriptionState } from '../services/subscription';
 
 export interface SessionContext {
@@ -132,8 +133,37 @@ async function readSession(
         where: (rp, { inArray }) => inArray(rp.roleId, roleIds),
       })
     : [];
+  const overrides = await db
+    .select({
+      key: s.memberPermissionOverrides.permissionKey,
+      effect: s.memberPermissionOverrides.effect,
+      scopeType: s.memberPermissionOverrides.scopeType,
+      scopeId: s.memberPermissionOverrides.scopeId,
+    })
+    .from(s.memberPermissionOverrides)
+    .where(
+      and(
+        eq(s.memberPermissionOverrides.memberId, member.id),
+        or(
+          isNull(s.memberPermissionOverrides.expiresAt),
+          gt(s.memberPermissionOverrides.expiresAt, new Date()),
+        ),
+      ),
+    );
+  const keysByRole = new Map<string, string[]>();
+  for (const p of perms) keysByRole.set(p.roleId, [...(keysByRole.get(p.roleId) ?? []), p.permissionKey]);
   const isGlobalOrgAdmin = await hasGlobalOrgAdmin(db, member.id);
-  const permissions = new Set(perms.map((p) => p.permissionKey));
+  // Keys effective in at least one scope, overrides applied (ADM-1).
+  const permissions = flatEffectivePermissions(
+    bindings.flatMap((b) =>
+      (keysByRole.get(b.role.id) ?? []).map((key) => ({
+        key,
+        scopeType: b.binding.scopeType,
+        scopeId: b.binding.scopeId,
+      })),
+    ),
+    overrides,
+  );
   // The flat set is used by many legacy permission gates. Preserve its
   // compatibility for ordinary store-scoped permissions, but never let a
   // store-scoped role manufacture the organization-wide marker.

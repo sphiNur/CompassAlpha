@@ -38,6 +38,7 @@ import { env } from '../../env';
 import { hub } from '../../realtime/hub';
 import { isUniqueViolation } from '../../services/pgErrors';
 import { isPlatformAdmin } from '../../services/platformAdmin';
+import { flatEffectivePermissions } from '../../services/storeScope';
 import {
   assertCanAddMember,
   assertWriteAccess,
@@ -1694,9 +1695,6 @@ async function readSessionPayload(
     .filter((b) => b.role.slug !== 'super_admin' || b.scopeType === 'global')
     .map((b) => b.role.slug);
   const roleIds = bindings.map((b) => b.role.id);
-  const globalRoleIds = new Set(
-    bindings.filter((b) => b.scopeType === 'global').map((b) => b.role.id),
-  );
   // Highest rank held by this member. Used by the FE to gate role
   // grant UI: an admin can only see + offer roles strictly below
   // their own rank. The server enforces the same rule on grantRole;
@@ -1725,11 +1723,6 @@ async function readSessionPayload(
   // The client receives a flat permission set for feature affordances.
   // `org.admin` is the one exception: it is an organization-wide bypass,
   // so it can only originate from a global role binding.
-  const permKeys = new Set(
-    perms
-      .filter((p) => p.permissionKey !== 'org.admin' || globalRoleIds.has(p.roleId))
-      .map((p) => p.permissionKey),
-  );
 
   // Per-member overrides (added 2026-05-05, migration 0008).
   //
@@ -1765,29 +1758,29 @@ async function readSessionPayload(
   // string, but a malformed row from a future migration bug shouldn't
   // pollute permKeys with `''` or `undefined`.
   //
-  // We collapse global + store-scoped overrides into the flat permKeys
-  // set here for back-compat with old code paths. Per-store evaluation
-  // happens via `effectivePermissionsForStore` at command time. The
-  // organization-wide `org.admin` marker is never collapsed from a
-  // store scope; for computing `adminStoreIds` below we keep originals.
-  for (const o of overrides) {
-    if (
-      o.effect === 'allow' &&
-      o.permissionKey &&
-      (o.permissionKey !== 'org.admin' || o.scopeType === 'global')
-    ) {
-      permKeys.add(o.permissionKey);
-    }
+  // The flat set the client gets: keys effective in at least one scope,
+  // overrides applied per scope (ADM-3: a deny in ONE store used to be
+  // collapsed into the flat set and hid Manage for a two-store manager).
+  // Per-store checks still run through effectivePermissionsForStore.
+  const keysByRole = new Map<string, string[]>();
+  for (const p of perms) {
+    keysByRole.set(p.roleId, [...(keysByRole.get(p.roleId) ?? []), p.permissionKey]);
   }
-  for (const o of overrides) {
-    if (
-      o.effect === 'deny' &&
-      o.permissionKey &&
-      (o.permissionKey !== 'org.admin' || o.scopeType === 'global')
-    ) {
-      permKeys.delete(o.permissionKey);
-    }
-  }
+  const permKeys = flatEffectivePermissions(
+    bindings.flatMap((b) =>
+      (keysByRole.get(b.role.id) ?? []).map((key) => ({
+        key,
+        scopeType: b.scopeType,
+        scopeId: b.scopeId,
+      })),
+    ),
+    overrides.map((o) => ({
+      key: o.permissionKey,
+      effect: o.effect,
+      scopeType: o.scopeType,
+      scopeId: o.scopeId,
+    })),
+  );
 
   // `users.manage` is store-manager authority too. Only the explicit
   // org-tier marker grants visibility over every store in the session.
