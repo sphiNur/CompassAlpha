@@ -182,17 +182,24 @@ pgDescribe('refreshTokens service (PG-gated)', () => {
     expect(claims.jti).toBe(out.id);
   });
 
-  test('consumeRefresh marks revoked and returns userId', async () => {
+  const rotate = (t: { id: string; family: string }, family = t.family) =>
+    svc.rotateRefresh(db, { jti: t.id, family, userId: testUserId });
+  const rowOf = (id: string) =>
+    db.query.refreshTokens.findFirst({ where: eq(s.refreshTokens.id, id) });
+
+  test('rotateRefresh consumes the token and issues its successor in the same family', async () => {
     const issued = await svc.issueRefresh(db, { userId: testUserId });
-    const result = await svc.consumeRefresh(db, issued.id, issued.family);
-    expect(result.userId).toBe(testUserId);
-    const row = await db.query.refreshTokens.findFirst({
-      where: eq(s.refreshTokens.id, issued.id),
-    });
-    expect(row.revokedAt).not.toBeNull();
+    const next = await rotate(issued);
+    expect(next.family).toBe(issued.family);
+    expect(next.id).not.toBe(issued.id);
+    expect((await rowOf(issued.id)).revokedAt).not.toBeNull();
+    const child = await rowOf(next.id);
+    expect(child.parentId).toBe(issued.id);
+    expect(child.revokedAt).toBeNull();
+    expect((await verifyRefresh(next.token)).jti).toBe(next.id);
   });
 
-  test('concurrent consumes of one token: exactly one wins', async () => {
+  test('concurrent rotations of one token all get the same successor (AUTH-12)', async () => {
     const issued = await svc.issueRefresh(db, { userId: testUserId });
     // Open the pool first. On cold connections the first caller finishes
     // before the rest have connected and the race never happens.
@@ -201,61 +208,59 @@ pgDescribe('refreshTokens service (PG-gated)', () => {
         db.query.users.findFirst({ where: eq(s.users.id, testUserId) }),
       ),
     );
-    const results = await Promise.allSettled(
-      Array.from({ length: 8 }, () => svc.consumeRefresh(db, issued.id, issued.family)),
+    const results = await Promise.allSettled(Array.from({ length: 8 }, () => rotate(issued)));
+    const ok = results.filter(
+      (r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof rotate>>> =>
+        r.status === 'fulfilled',
     );
-    expect(results.filter((r) => r.status === 'fulfilled').length).toBe(1);
-    for (const r of results) {
-      if (r.status === 'rejected') expect(r.reason).toBeInstanceOf(svc.RefreshReplayError);
-    }
+    expect(ok.length).toBe(8);
+    expect(new Set(ok.map((r) => r.value.id)).size).toBe(1);
+    expect(new Set(ok.map((r) => r.value.token)).size).toBe(1);
+    const children = await db.query.refreshTokens.findMany({
+      where: eq(s.refreshTokens.parentId, issued.id),
+    });
+    expect(children.length).toBe(1);
   });
 
-  test('a retry right after a rotation whose response was lost is accepted', async () => {
+  test('a retry after a lost response gets the same successor back, not a new one', async () => {
     const root = await svc.issueRefresh(db, { userId: testUserId });
-    await svc.consumeRefresh(db, root.id, root.family);
-    // The successor was issued server-side but never reached the client.
-    const lost = await svc.issueRefresh(db, {
-      userId: testUserId,
-      family: root.family,
-      parentId: root.id,
-    });
-    const retry = await svc.consumeRefresh(db, root.id, root.family);
-    expect(retry.userId).toBe(testUserId);
-    const lostRow = await db.query.refreshTokens.findFirst({
-      where: eq(s.refreshTokens.id, lost.id),
-    });
-    expect(lostRow.revokedAt).toBeNull();
+    const first = await rotate(root);
+    const retry = await rotate(root);
+    const again = await rotate(root);
+    expect(retry.id).toBe(first.id);
+    expect(retry.token).toBe(first.token);
+    expect(again.token).toBe(first.token);
+    // The re-signed token is byte-identical to the stored one.
+    const { createHash } = await import('node:crypto');
+    expect(createHash('sha256').update(retry.token).digest('hex')).toBe(
+      (await rowOf(first.id)).tokenHash,
+    );
+    expect(
+      (await db.query.refreshTokens.findMany({ where: eq(s.refreshTokens.parentId, root.id) }))
+        .length,
+    ).toBe(1);
+    // One chain: once the successor moves on, the old token is a replay.
+    await rotate(first);
+    await expect(rotate(root)).rejects.toBeInstanceOf(svc.RefreshReplayError);
   });
 
   test('a signed-out token is not revived by the retry leeway', async () => {
     const root = await svc.issueRefresh(db, { userId: testUserId });
-    await svc.consumeRefresh(db, root.id, root.family);
-    await svc.issueRefresh(db, { userId: testUserId, family: root.family, parentId: root.id });
+    await rotate(root);
     await svc.revokeAllForUser(db, testUserId);
-    await expect(svc.consumeRefresh(db, root.id, root.family)).rejects.toBeInstanceOf(
-      svc.RefreshReplayError,
-    );
+    await expect(rotate(root)).rejects.toBeInstanceOf(svc.RefreshReplayError);
   });
 
-  test('consumeRefresh on already-revoked row throws REPLAY and nukes family', async () => {
+  test('a consumed token after the leeway is a replay and nukes the family', async () => {
     const root = await svc.issueRefresh(db, { userId: testUserId });
-    // Chain a child token in the same family. After we replay the
-    // parent, the child must also be revoked.
-    const child = await svc.issueRefresh(db, {
-      userId: testUserId,
-      family: root.family,
-      parentId: root.id,
-    });
-    // Consume parent twice. First succeeds (marks revoked); second
-    // hits the replay path once the lost-rotation leeway has passed.
-    await svc.consumeRefresh(db, root.id, root.family);
+    const child = await rotate(root);
     await db
       .update(s.refreshTokens)
       .set({ revokedAt: new Date(Date.now() - svc.ROTATION_RETRY_LEEWAY_MS - 1_000) })
       .where(eq(s.refreshTokens.id, root.id));
     let replayErr: unknown = null;
     try {
-      await svc.consumeRefresh(db, root.id, root.family);
+      await rotate(root);
     } catch (err) {
       replayErr = err;
     }
@@ -263,34 +268,48 @@ pgDescribe('refreshTokens service (PG-gated)', () => {
     expect((replayErr as Error).message).toMatch(/replay/i);
     // The replay path revokes ALL family members. Verify the child is
     // now also revoked even though we never directly touched it.
-    const childRow = await db.query.refreshTokens.findFirst({
-      where: eq(s.refreshTokens.id, child.id),
-    });
-    expect(childRow.revokedAt).not.toBeNull();
+    expect((await rowOf(child.id)).revokedAt).not.toBeNull();
   });
 
-  test('consumeRefresh throws NOT_FOUND for unknown jti', async () => {
+  test('rotateRefresh throws NOT_FOUND for unknown jti', async () => {
     const fakeJti = '00000000-0000-0000-0000-000000000000';
     const fakeFamily = '00000000-0000-0000-0000-000000000001';
-    await expect(svc.consumeRefresh(db, fakeJti, fakeFamily)).rejects.toThrow(
-      /not tracked|expired/,
+    await expect(rotate({ id: fakeJti, family: fakeFamily })).rejects.toBeInstanceOf(
+      svc.RefreshNotFoundError,
     );
   });
 
-  test('consumeRefresh throws REPLAY when family does not match the row', async () => {
+  test('rotateRefresh throws NOT_FOUND for an expired row', async () => {
+    const issued = await svc.issueRefresh(db, { userId: testUserId });
+    await db
+      .update(s.refreshTokens)
+      .set({ expiresAt: new Date(Date.now() - 1_000) })
+      .where(eq(s.refreshTokens.id, issued.id));
+    await expect(rotate(issued)).rejects.toBeInstanceOf(svc.RefreshNotFoundError);
+  });
+
+  test('rotateRefresh throws REPLAY when family does not match the row', async () => {
     // Forgery: someone has the jti right but signed the token with a
     // different family value than the DB row claims. We treat this as
     // a replay to be safe (revokes the legitimate family).
     const issued = await svc.issueRefresh(db, { userId: testUserId });
     const wrongFamily = '99999999-9999-9999-9999-999999999999';
-    let replayErr: unknown = null;
-    try {
-      await svc.consumeRefresh(db, issued.id, wrongFamily);
-    } catch (err) {
-      replayErr = err;
-    }
-    expect(replayErr).toBeTruthy();
-    expect((replayErr as Error).message).toMatch(/replay/i);
+    await expect(rotate(issued, wrongFamily)).rejects.toBeInstanceOf(svc.RefreshReplayError);
+    expect((await rowOf(issued.id)).revokedAt).not.toBeNull();
+  });
+
+  test('revokeFamilyForUser ends one chain of that user only', async () => {
+    const a = await svc.issueRefresh(db, { userId: testUserId });
+    const b = await svc.issueRefresh(db, { userId: testUserId });
+    const ended = await svc.revokeFamilyForUser(db, a.family, testUserId);
+    expect(ended).toBe(1);
+    expect((await rowOf(a.id)).revokedAt).not.toBeNull();
+    expect((await rowOf(b.id)).revokedAt).toBeNull();
+    // Someone else's id cannot end it.
+    expect(
+      await svc.revokeFamilyForUser(db, b.family, '00000000-0000-0000-0000-000000000009'),
+    ).toBe(0);
+    expect((await rowOf(b.id)).revokedAt).toBeNull();
   });
 
   test('revokeAllForUser revokes every active token, leaves already-revoked alone', async () => {
@@ -298,7 +317,7 @@ pgDescribe('refreshTokens service (PG-gated)', () => {
     const t1 = await svc.issueRefresh(db, { userId: testUserId });
     const t2 = await svc.issueRefresh(db, { userId: testUserId });
     const t3 = await svc.issueRefresh(db, { userId: testUserId });
-    await svc.consumeRefresh(db, t2.id, t2.family);
+    await rotate(t2);
     const t2RevokedFirst = (
       await db.query.refreshTokens.findFirst({
         where: eq(s.refreshTokens.id, t2.id),

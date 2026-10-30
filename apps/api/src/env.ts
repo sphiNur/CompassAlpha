@@ -49,6 +49,9 @@ export const env = createEnv({
     TG_RELAY_URL: z.string().url().optional(),
     COMPASS_RELAY_KEY: z.string().min(32).optional(),
     BOT_DELIVERY_ENABLED: z.enum(['true', 'false']).optional(),
+    // Shared with the app-proxy Worker: requests carrying it may name the
+    // real client address for rate limiting (AUTH-6). See services/clientIp.ts.
+    CLIENT_IP_PROXY_KEY: z.string().min(32).optional(),
     FRONTEND_URL: z.string().url().default('http://localhost:5173'),
     S3_ENDPOINT: z.string().url().optional(),
     S3_BUCKET: z.string().optional(),
