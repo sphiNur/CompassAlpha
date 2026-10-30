@@ -436,6 +436,10 @@ export function AuthGate({ children }: AuthGateProps) {
     }
     if (activeSession) return;
     if (loginAttempted.current) return;
+    // AUTH-13 (2026-10-30): a rejected token re-arms `loginAttempted` from
+    // the auth.me error effect, which could fire again while the first
+    // telegramLogin was still in flight — two logins, two refresh chains.
+    if (login.isPending || devBypassLogin.isPending) return;
     if (meUnauthorized.current && !getTg()?.initData) return;
     if (accessToken) return; // there's a token, let auth.me decide its fate first
     const tg = getTg();
