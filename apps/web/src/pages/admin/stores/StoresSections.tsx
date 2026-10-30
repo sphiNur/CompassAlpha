@@ -826,6 +826,7 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
                       </div>
                       <div className="text-old-label text-[var(--c-fg-muted)]">
                         {dateFmt.dateTime(m.occurredAt)}
+                        {m.actorName ? ` · ${m.actorName}` : ''}
                         {m.note ? ` · ${m.note}` : ''}
                       </div>
                     </li>
