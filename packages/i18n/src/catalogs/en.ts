@@ -1522,7 +1522,8 @@ export const en = {
   'finance.export.noClipboard': 'The clipboard is not available, so nothing was copied.',
   // Server error key emitted when a non-admin attempts to query the
   // finance reports.
-  'admin.errors.financeRequiresManage': 'Finance reports require the users.manage permission.',
+  'admin.errors.financeRequiresManage':
+    'Viewing finance needs the reports permission; ask an admin.',
 
   // ── 15. Org financial settings (M1.17) ────────────────
   // Currency + tax rate + price tax-inclusivity. Lives in Admin →

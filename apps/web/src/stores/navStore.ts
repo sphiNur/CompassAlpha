@@ -300,10 +300,16 @@ export function resolveVisibleTab(persisted: Tab, visibleKeys: readonly Tab[]): 
  * the Sales tab yields to the Settlement page's sales block.
  */
 export function isTabVisible(
-  tab: { permission: string | null; hiddenWith?: string },
+  tab: { permission: string | null; orPermission?: string; hiddenWith?: string },
   permissions: readonly string[],
 ): boolean {
-  if (tab.permission && !permissions.includes(tab.permission)) return false;
+  if (
+    tab.permission &&
+    !permissions.includes(tab.permission) &&
+    !(tab.orPermission && permissions.includes(tab.orPermission))
+  ) {
+    return false;
+  }
   if (tab.hiddenWith && permissions.includes(tab.hiddenWith)) return false;
   return true;
 }

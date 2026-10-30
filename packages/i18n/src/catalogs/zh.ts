@@ -1317,7 +1317,8 @@ export const zh = {
   'finance.export.label': '复制为 TSV',
   'finance.export.copied': '已复制 — 粘贴到表格软件。',
   'finance.export.noClipboard': '无法使用剪贴板，没有复制。',
-  'admin.errors.financeRequiresManage': '财务报表需要 users.manage 权限。',
+  'admin.errors.financeRequiresManage':
+    '查看财务需要报表权限，请联系管理员。',
 
   // ── 15. Org financial settings (M1.17) ────────────────
   'admin.workspace.currency': '币种',

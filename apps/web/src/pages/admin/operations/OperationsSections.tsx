@@ -1112,8 +1112,11 @@ export function FinanceSection() {
   const toast = useToast();
   const productName = useProductName();
   const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: true });
-  const suppliersQuery = trpc.admin.supplierList.useQuery();
-  const storesQuery = trpc.catalog.stores.useQuery({ permission: 'users.manage' });
+  // HIS-19: names only, and readable by finance readers who are not
+  // admins; archived stalls keep their names in old periods.
+  const suppliersQuery = trpc.catalog.suppliers.useQuery({ includeArchived: true });
+  // HIS-19: the stores finance covers (reports.view ∪ users.manage).
+  const storesQuery = trpc.catalog.stores.useQuery({ permission: 'finance' });
 
   // Date range. Default to "this month" since that's the most common
   // reconciliation cadence (monthly bank statement vs. cash drawer

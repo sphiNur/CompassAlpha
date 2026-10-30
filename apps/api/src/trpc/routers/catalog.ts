@@ -5,7 +5,11 @@ import { SkuListInputSchema } from '@compass/contracts';
 import { authedProcedure, router } from '../trpc';
 import { canSeePrices } from '../../services/priceRedaction';
 import { loadSkuPriceStats } from '../../services/priceStats';
-import { getActorStoreIds, getActorStoreIdsForPermission } from '../../services/storeScope';
+import {
+  financeStoreIds,
+  getActorStoreIds,
+  getActorStoreIdsForPermission,
+} from '../../services/storeScope';
 
 export const catalogRouter = router({
   categories: authedProcedure.query(async ({ ctx }) => {
@@ -55,7 +59,8 @@ export const catalogRouter = router({
       z
         .object({
           permission: z
-            .enum(['prices.view', 'run.purchase', 'users.manage', 'settlement.record'])
+            // 'finance': the stores finance reports cover (HIS-19).
+            .enum(['prices.view', 'run.purchase', 'users.manage', 'settlement.record', 'finance'])
             .optional(),
         })
         .optional(),
@@ -65,14 +70,23 @@ export const catalogRouter = router({
         // Store names are themselves tenant data. Resolve scope for the
         // concrete consumer instead of exposing every org store to any signed-
         // in employee (especially important for the financial History page).
-        let allowedStoreIds = input?.permission
-          ? await getActorStoreIdsForPermission(
-              tx,
-              ctx.session!.memberId,
-              input.permission,
-              ctx.session!.permissions,
-            )
-          : await getActorStoreIds(tx, ctx.session!.memberId, ctx.session!.permissions);
+        let allowedStoreIds: string[] | null;
+        if (input?.permission === 'finance') {
+          allowedStoreIds = await financeStoreIds(tx, ctx.session!);
+        } else if (input?.permission) {
+          allowedStoreIds = await getActorStoreIdsForPermission(
+            tx,
+            ctx.session!.memberId,
+            input.permission,
+            ctx.session!.permissions,
+          );
+        } else {
+          allowedStoreIds = await getActorStoreIds(
+            tx,
+            ctx.session!.memberId,
+            ctx.session!.permissions,
+          );
+        }
         // Settlement routes require BOTH an effective permission and store
         // assignment (except the persisted org-admin bypass). Keep this
         // picker query identical to that write boundary: a custom global

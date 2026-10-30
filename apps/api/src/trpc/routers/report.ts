@@ -41,7 +41,7 @@ import { z } from 'zod';
 import { DateStringSchema, UuidSchema } from '@compass/contracts';
 import { authedProcedure, router } from '../trpc';
 import { TRPCError } from '@trpc/server';
-import { getActorStoreIdsForPermission } from '../../services/storeScope';
+import { FINANCE_KEYS, financeStoreIds } from '../../services/storeScope';
 import { money2, runMoneyLinesSql, uuidListSql } from '../../services/runMoney';
 
 /**
@@ -72,6 +72,13 @@ const PurchaseLinesInputSchema = z.object({
   paymentMethod: z.enum(['cash', 'transfer']).optional(),
 });
 
+
+function requireFinanceRead(permissions: ReadonlySet<string> | undefined): void {
+  if (!FINANCE_KEYS.some((key) => permissions?.has(key))) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'admin.errors.financeRequiresManage' });
+  }
+}
+
 export const reportRouter = router({
   /**
    * Flat list of every purchase line in the date range. One row per
@@ -91,12 +98,7 @@ export const reportRouter = router({
   purchaseLines: authedProcedure
     .input(PurchaseLinesInputSchema)
     .query(async ({ ctx, input }) => {
-      if (!ctx.session?.permissions.has('users.manage')) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'admin.errors.financeRequiresManage',
-        });
-      }
+      requireFinanceRead(ctx.session?.permissions);
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
         // M3.7: store-scope filter. Skip for org.admin holders (they
@@ -106,15 +108,9 @@ export const reportRouter = router({
         // explicitly passed input.storeId AND it's outside their set,
         // throw notAssignedToStore so they get a clear error
         // (consistent with sales.list M3.1 behaviour).
-        const allowedStoreIds = await getActorStoreIdsForPermission(
-          tx,
-          ctx.session!.memberId,
-          // HIS-1 (2026-10-30): the stores where finance is actually
-          // readable, not every store the person is assigned to — a
-          // manager of A who is a cashier in B saw B's purchases.
-          'users.manage',
-          ctx.session!.permissions,
-        );
+        // HIS-1 (2026-10-30): the stores where finance is actually
+        // readable, not every store the person is assigned to.
+        const allowedStoreIds = await financeStoreIds(tx, ctx.session!);
         if (allowedStoreIds !== null && input.storeId !== undefined) {
           if (!allowedStoreIds.includes(input.storeId)) {
             throw new TRPCError({
@@ -207,24 +203,13 @@ export const reportRouter = router({
   totals: authedProcedure
     .input(PurchaseLinesInputSchema.omit({ paymentMethod: true }))
     .query(async ({ ctx, input }) => {
-      if (!ctx.session?.permissions.has('users.manage')) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'admin.errors.financeRequiresManage',
-        });
-      }
+      requireFinanceRead(ctx.session?.permissions);
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
         // M3.7: same store-scope split as purchaseLines (above).
-        const allowedStoreIds = await getActorStoreIdsForPermission(
-          tx,
-          ctx.session!.memberId,
-          // HIS-1 (2026-10-30): the stores where finance is actually
-          // readable, not every store the person is assigned to — a
-          // manager of A who is a cashier in B saw B's purchases.
-          'users.manage',
-          ctx.session!.permissions,
-        );
+        // HIS-1 (2026-10-30): the stores where finance is actually
+        // readable, not every store the person is assigned to.
+        const allowedStoreIds = await financeStoreIds(tx, ctx.session!);
         if (allowedStoreIds !== null && input.storeId !== undefined) {
           if (!allowedStoreIds.includes(input.storeId)) {
             throw new TRPCError({
