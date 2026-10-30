@@ -155,6 +155,7 @@ export function PeopleSection({
     status: 'active' | 'suspended';
     stores: Array<{ id: string; name: string }>;
     isSelf: boolean;
+    statusOutOfReach: boolean;
   } | null>(null);
 
   const setStatus = trpc.admin.memberSetStatus.useMutation({
@@ -439,6 +440,7 @@ export function PeopleSection({
                         status: m.status as 'active' | 'suspended',
                         stores: m.stores.map((st) => ({ id: st.id, name: st.name })),
                         isSelf,
+                        statusOutOfReach: m.statusOutOfReach ?? false,
                       })
                     }
                   >
@@ -562,7 +564,9 @@ export function PeopleSection({
                 {i18n.t('admin.action.permissions')}
               </Button>
             ) : null}
-            {!memberMenuFor.isSelf && memberMenuFor.status === 'active' ? (
+            {!memberMenuFor.isSelf &&
+            !memberMenuFor.statusOutOfReach &&
+            memberMenuFor.status === 'active' ? (
               <Button
                 block
                 variant="pearl"
@@ -577,7 +581,9 @@ export function PeopleSection({
                 {i18n.t('admin.action.suspend')}
               </Button>
             ) : null}
-            {!memberMenuFor.isSelf && memberMenuFor.status === 'suspended' ? (
+            {!memberMenuFor.isSelf &&
+            !memberMenuFor.statusOutOfReach &&
+            memberMenuFor.status === 'suspended' ? (
               <Button
                 block
                 variant="pearl"
@@ -1561,8 +1567,11 @@ function ManualInviteSheet({
         // cannotInviteOrgAdminAsStoreAdmin gate). The role still exists
         // server-side; this is purely a UX decision.
         .filter((r) => isGlobalAdmin || r.rank < ADMIN_RANK)
+        // ADM-16: nobody can invite at their own rank or above (a super
+        // admin was offered Super Admin, which the server always refuses).
+        .filter((r) => r.rank < (session?.myMaxRank ?? 0))
         .sort((a, b) => a.name.localeCompare(b.name)),
-    [rolesQuery.data, isGlobalAdmin],
+    [rolesQuery.data, isGlobalAdmin, session?.myMaxRank],
   );
   const eligibleStores = useMemo(
     () => (storesQuery.data ?? []).filter((st) => adminStoreIds.has(st.id)),
