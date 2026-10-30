@@ -1697,6 +1697,8 @@ export const uz = {
   'people.confirmRevokeInvite':
     "Bu taklif havolasini bekor qilasizmi? Havolasi borlar endi qo'shila olmaydi.",
   'order.errors.staleOfflineEdit': 'Bu o‘zgarish oldingi kuni oflayn qilingan va qo‘llanmadi',
+  'order.errors.approveEmpty':
+    "Buyurtmada mahsulot qolmadi — tasdiqlab bo'lmaydi. Uni rad eting",
   'approval.toast.orderChanged':
     'Buyurtma siz ochganingizdan keyin o‘zgardi — eng so‘nggi variantini ko‘rib chiqing',
   // 2026-10-21 frontend P1 fixes (FE-04 merge hint, FE-05 update prompt, FE-08 audit sentences).

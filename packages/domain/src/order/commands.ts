@@ -428,6 +428,11 @@ export function decide(
       if (state.claimedByMemberId && state.claimedByMemberId !== command.actor.memberId) {
         throw conflict('order.errors.claimedByOther');
       }
+      // APR-9 (2026-10-30): the approver can bring every line to 0; Submit
+      // refuses an empty order, and so does Approve now (reject it instead).
+      if (countNonZero(state) === 0 && state.extras.length === 0) {
+        throw validation('order.errors.approveEmpty');
+      }
       return [
         {
           ...baseFor(1, 'Approved'),

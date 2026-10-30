@@ -464,6 +464,29 @@ describe('order.decide (per-contributor lines)', () => {
     ).toThrow('order.errors.notRejectable');
   });
 
+  test('APR-9: an order the approver brought to zero cannot be approved', () => {
+    let st = submittedState();
+    const mgr = manager(['order.claim', 'order.approve']);
+    st = decide(st, { type: 'Claim', actor: mgr }, { clock }).reduce(apply, st);
+    const owner = staff().memberId;
+    st = decide(
+      st,
+      {
+        type: 'AdjustItem',
+        skuId: 's',
+        qty: '0',
+        sku: sku('s'),
+        actor: { ...mgr, isClaimer: true },
+        targetMemberId: owner,
+      },
+      { clock },
+    ).reduce(apply, st);
+    expect(() => decide(st, { type: 'Approve', actor: mgr }, { clock })).toThrow(
+      'order.errors.approveEmpty',
+    );
+    expect(decide(st, { type: 'Reject', reason: 'nothing left', actor: mgr }, { clock })).toHaveLength(1);
+  });
+
   test('repeated Reject by the same decider is a no-op; other approver errors', () => {
     let st = submittedState();
     st = decide(st, { type: 'Reject', reason: 'no', actor: manager() }, { clock }).reduce(
