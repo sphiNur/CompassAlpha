@@ -6,7 +6,7 @@
  * keeps a versioned correction trail.  This screen therefore never infers
  * cash from other modules or silently overwrites an existing close.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Banner,
   Button,
@@ -28,7 +28,7 @@ import {
   useToast,
 } from '@compass/ui';
 import type { SettlementWageItem } from '@compass/contracts';
-import { trpc } from '../lib/trpc';
+import { newIdempotencyKey, trpc } from '../lib/trpc';
 import { registerStoreChangeGuard, useStoreContext } from '../components/StoreSwitcher';
 import { usePageMainButton, haptic } from '../hooks/useTelegram';
 import { confirmNative } from '../lib/confirm';
@@ -609,8 +609,15 @@ export function SettlementPage() {
     endingCash: cashOnHand,
   };
 
+  // CLS-17 (2026-10-30): one key per logical save. Every request used to
+  // get a new one, so a retry after a lost response looked like someone
+  // else's edit ("changed elsewhere"). Same content → same key.
+  const saveIdemCtx = useRef<{ idempotencyKey?: string }>({}).current;
+  const saveIdemFor = useRef('');
   const saveMutation = trpc.settlement.save.useMutation({
+    trpc: { context: saveIdemCtx },
     onSuccess: (saved) => {
+      saveIdemFor.current = '';
       const savedRecord = saved as SettlementRecord;
       setDraft(draftFromRecord(savedRecord));
       setDraftRecordKey(
@@ -648,7 +655,7 @@ export function SettlementPage() {
       amount: item.amount.trim(),
       reason: item.reason.trim(),
     }));
-    saveMutation.mutate({
+    const input = {
       storeId: currentStoreId,
       date,
       onlineRevenue: draft.onlineRevenue.trim(),
@@ -670,7 +677,13 @@ export function SettlementPage() {
       note: draft.note.trim() || null,
       correctionReason: needsCorrectionReason ? draft.correctionReason.trim() : null,
       expectedVersion: existing?.version ?? 0,
-    });
+    };
+    const signature = JSON.stringify(input);
+    if (signature !== saveIdemFor.current) {
+      saveIdemFor.current = signature;
+      saveIdemCtx.idempotencyKey = newIdempotencyKey();
+    }
+    saveMutation.mutate(input);
   };
 
   const refreshRecord = () => {

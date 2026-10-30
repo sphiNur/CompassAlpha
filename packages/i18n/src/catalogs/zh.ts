@@ -400,6 +400,8 @@ export const zh = {
     '这里还没有你能用的功能',
   'shell.noTabs.body':
     '你的角色没有下单、审核、采购等任何功能的权限。需要的话请联系管理员。',
+  'shell.pageError.title': '这个页面出错了',
+  'shell.pageError.body': '其他页面不受影响。可以重试，或者先切到别的页面。',
   'auth.invite.failedStillIn':
     '邀请没有生效：{reason}。你仍在「{org}」。',
   'confirm.storeConfirmedAt':
