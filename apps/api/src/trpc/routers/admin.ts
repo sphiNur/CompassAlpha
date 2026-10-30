@@ -2008,6 +2008,11 @@ export const adminRouter = router({
           where: (m, { eq: eq2, and: and2 }) => and2(eq2(m.orgId, orgId), eq2(m.userId, user.id)),
         });
         const created = !member;
+        // ADM-19 (2026-10-30): "inviting" a suspended member silently added
+        // roles and stores while they stayed suspended. Reactivate first.
+        if (member && member.status !== 'active') {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'admin.errors.memberInactiveReactivateFirst' });
+        }
         if (!member) {
           await assertCanAddMember(tx, orgId);
           const [m] = await tx

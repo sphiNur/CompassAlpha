@@ -730,6 +730,8 @@ export const en = {
     'Organization-level roles and permissions can only be granted globally',
   'admin.errors.roleNotFound': 'Role not found',
   'admin.errors.roleSlugTaken': 'This role id is already taken',
+  'admin.errors.memberInactiveReactivateFirst':
+    'This member is suspended. Reactivate them first, then assign stores and roles',
   'admin.errors.unknownPermission': 'There is no such permission',
   'admin.errors.builtinRankLocked': 'A built-in role’s rank cannot be changed',
   'admin.errors.runHasForeignSessions':
@@ -774,7 +776,7 @@ export const en = {
   'admin.toast.memberUpdated': 'Member updated',
   'admin.toast.memberRemoved': 'Member removed',
   'admin.toast.memberAdded': 'Member added',
-  'admin.toast.userExists': 'User already in this workspace',
+  'admin.toast.userExists': 'Already in this workspace — the chosen stores and roles were added',
   'admin.toast.roleRevoked': 'Role revoked',
   'admin.toast.roleCreated': 'Role created',
   'admin.toast.roleUpdated': 'Role updated',
