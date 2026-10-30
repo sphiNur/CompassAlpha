@@ -38,6 +38,7 @@ import {
   type SkuCtx,
 } from '@compass/domain/order';
 import { DomainError } from '@compass/domain';
+import { canSeePrices } from '../../services/priceRedaction';
 import { authedProcedure, idempotentMutation, rethrowDomainError, router } from '../trpc';
 import { appendEvents, readStream } from '../../services/eventStore';
 import {
@@ -448,8 +449,9 @@ export const orderRouter = router({
         for (const perSku of qtyBySession.values()) {
           for (const skuId of perSku.keys()) allSkuIds.add(skuId);
         }
+        // Staff without prices.view get no estimate (HIS-4 / ORD-12).
         const priceStats =
-          allSkuIds.size > 0
+          allSkuIds.size > 0 && canSeePrices(ctx.session)
             ? await loadSkuPriceStats(tx, ctx.session!.orgId, [...allSkuIds])
             : new Map();
 

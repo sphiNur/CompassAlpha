@@ -58,6 +58,7 @@ import {
 } from '@compass/domain/order';
 import { DomainError } from '@compass/domain';
 import { authedProcedure, idempotentMutation, rethrowDomainError, router } from '../trpc';
+import { canSeePrices, withoutPrices } from '../../services/priceRedaction';
 import { appendEvents, readStream } from '../../services/eventStore';
 import { isUniqueViolation, withStreamConflictRetry } from '../../services/pgErrors';
 import { projectRun } from '../../services/runProjection';
@@ -78,6 +79,15 @@ import {
  * 00:00 and (org-offset) UTC to land under yesterday's runDate key
  * for UZ tenants. Same helper shape as order.ts:todayInOrgTz.
  */
+/** run.list / run.get answer without money to members lacking prices.view. */
+const runReadProcedure = authedProcedure.use(async (opts) => {
+  const result = await opts.next();
+  if (result.ok && !canSeePrices(opts.ctx.session)) {
+    return { ...result, data: withoutPrices(result.data) };
+  }
+  return result;
+});
+
 function todayStr(ctx: { session: { orgTimezone: string } | null }): string {
   return todayInTz(ctx.session?.orgTimezone ?? 'UTC');
 }
@@ -1111,7 +1121,7 @@ export const runRouter = router({
       });
     }),
 
-  list: authedProcedure.query(async ({ ctx }) => {
+  list: runReadProcedure.query(async ({ ctx }) => {
     return ctx.withOrg(async (tx) => {
       // A flat session permission is a union across role scopes and cannot
       // prove organization-wide read authority. Resolve the persisted
@@ -1962,7 +1972,7 @@ export const runRouter = router({
       }),
     ),
 
-  get: authedProcedure
+  get: runReadProcedure
     .input(SimpleRunCommandSchema.pick({ runId: true }))
     .query(async ({ ctx, input }) => {
       return ctx.withOrg(async (tx) => {
