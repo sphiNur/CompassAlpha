@@ -351,6 +351,14 @@ export const zh = {
   'auth.loginTimeout.body': '请检查网络连接，然后关闭并重新打开应用。',
   'auth.noAccess.title': '尚未授权',
   'auth.noAccess.body': '已识别您的 Telegram 账号，但当前组织尚未授予角色，请联系管理员。',
+  'shell.noTabs.title':
+    '这里还没有你能用的功能',
+  'shell.noTabs.body':
+    '你的角色没有下单、审核、采购等任何功能的权限。需要的话请联系管理员。',
+  'auth.invite.failedStillIn':
+    '邀请没有生效：{reason}。你仍在「{org}」。',
+  'confirm.storeConfirmedAt':
+    '已确认收货 · {time}',
   'auth.onboarding.title': '欢迎使用 Compass',
   'auth.onboarding.body':
     '请确认您的名字 — 同事将在订单卡片、审批队列和审计日志中看到这个名字。设置后只有管理员能修改。',

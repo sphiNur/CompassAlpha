@@ -438,6 +438,14 @@ export const en = {
   'auth.noAccess.title': 'Access not granted',
   'auth.noAccess.body':
     'Your Telegram account is recognized but has no role in this organization yet. An administrator must grant you access.',
+  'shell.noTabs.title':
+    'Nothing here for you yet',
+  'shell.noTabs.body':
+    'Your role has no access to ordering, approvals, purchasing or any other section. Ask an admin if you need it.',
+  'auth.invite.failedStillIn':
+    'The invite did not work: {reason}. You are still in “{org}”.',
+  'confirm.storeConfirmedAt':
+    'Receipt confirmed · {time}',
   'auth.onboarding.title': 'Welcome to Compass',
   'auth.onboarding.body':
     'Confirm the name your colleagues will see on order cards, approval queue, and audit log. Only an administrator can change it later.',
