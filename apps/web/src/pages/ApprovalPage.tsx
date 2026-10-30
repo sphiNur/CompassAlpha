@@ -322,6 +322,14 @@ export function ApprovalPage() {
                           ~{formatMoney(Number(row.estimatedTotal))}
                         </span>
                       ) : null}
+                      {/* APR-5 (2026-10-30): the unpriced count lived only in
+                          a title tooltip, which a phone never shows, so a
+                          partial sum read as the whole order's cost. */}
+                      {row.estimatedTotal && Number(row.estimatedUnknown) > 0 ? (
+                        <span className="whitespace-nowrap text-old-label text-[var(--c-warning-fg)]">
+                          {i18n.t('approval.estimateUnpriced', { n: row.estimatedUnknown })}
+                        </span>
+                      ) : null}
                       {/* 2026-10-11: the budget by payment method. Nothing
                           is paid yet; this is how each product was paid
                           the last time it was bought. One under the other:
@@ -796,6 +804,11 @@ function SessionItems({
         </span>
         <span className="font-mono text-old-body font-semibold tabular-nums text-[var(--c-fg)]">
           ~{formatMoney(estimateTotal.sum)} {currency}
+          {estimateTotal.unknown > 0 ? (
+            <span className="ml-2 font-sans font-normal text-[var(--c-warning-fg)]">
+              {i18n.t('approval.estimateUnpriced', { n: estimateTotal.unknown })}
+            </span>
+          ) : null}
         </span>
       </div>
     ) : null}

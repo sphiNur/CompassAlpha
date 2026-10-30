@@ -814,6 +814,7 @@ export const en = {
   'order.review.reviewSheet.title': 'Review your order',
   'order.review.estimatedTotal': 'Estimated total',
   'order.review.estimateHint': '~ at the last price paid · {known} priced · {unknown} unknown',
+  'approval.estimateUnpriced': '+ {n} unpriced',
 
   // ── Session-level "其他物品" / miscellaneous note (M1.8) ──────────
   'order.notes.label': 'Other items',
