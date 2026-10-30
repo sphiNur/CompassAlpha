@@ -11,6 +11,13 @@ export interface AccessClaims {
   sub: string; // user id
   org: string; // current org id
   mid: string; // member id
+  /**
+   * Refresh-token family issued alongside this access token (AUTH-11,
+   * 2026-10-30). Lets switchOrganization end the chain the caller is
+   * leaving without the client having to send its refresh token. Absent
+   * on access tokens signed before this field existed.
+   */
+  fam?: string;
 }
 
 export async function signAccess(claims: AccessClaims): Promise<string> {
@@ -39,17 +46,28 @@ export async function signRefresh(
   jti: string,
   orgId?: string,
   memberId?: string,
+  /**
+   * Fixed iat/exp (AUTH-12, 2026-10-30). The token is tracked by its
+   * row, which records both; signing again from the row gives the same
+   * token, so a retried rotation can hand back the successor it already
+   * issued instead of minting a second live one.
+   */
+  times?: { issuedAt: Date; expiresAt: Date },
 ): Promise<string> {
-  return await new SignJWT({
+  const jwt = new SignJWT({
     sub: userId,
     family,
     jti,
     ...(orgId && memberId ? { org: orgId, mid: memberId } : {}),
-  })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
-    .setExpirationTime(REFRESH_TTL)
-    .sign(refreshSecret);
+  }).setProtectedHeader({ alg: 'HS256' });
+  if (times) {
+    jwt
+      .setIssuedAt(Math.floor(times.issuedAt.getTime() / 1000))
+      .setExpirationTime(Math.floor(times.expiresAt.getTime() / 1000));
+  } else {
+    jwt.setIssuedAt().setExpirationTime(REFRESH_TTL);
+  }
+  return await jwt.sign(refreshSecret);
 }
 
 export async function verifyRefresh(token: string): Promise<{

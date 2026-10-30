@@ -1711,6 +1711,9 @@ export const zh = {
   'run.errors.receivedQtyRequired': '请填写实际收到的数量',
   'run.errors.receivedQtyInvalid': '实收数量必须是不小于 0 的数字',
   'run.errors.receivedQtyExceedsSplit': '实收数量不能超过 {max}',
+  'run.errors.receivedQtyNotShort':
+    '实收 {max} 就是全部到齐了，请选「正常」；数量不足时请填少于 {max} 的数',
+  'run.errors.storeItemsUnchecked': '还有 {n} 项待核对，核对完才能确认收货',
   // 2026-10-21 audit follow-ups: staff sales tab, sales void, inventory movements,
   // invite list/revoke, offline/stale-order messages.
   'nav.sales': '销售',

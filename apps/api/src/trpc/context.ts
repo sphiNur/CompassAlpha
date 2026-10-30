@@ -8,6 +8,7 @@ import { ulid } from 'ulid';
 import { hasGlobalOrgAdmin } from '../services/orgAdmin';
 import { flatEffectivePermissions } from '../services/storeScope';
 import { readSubscriptionState } from '../services/subscription';
+import { trustedClientIp } from '../services/clientIp';
 
 export interface SessionContext {
   userId: string;
@@ -26,6 +27,9 @@ export interface SessionContext {
   orgTimezone: string;
   permissions: ReadonlySet<string>;
   roleSlugs: ReadonlySet<string>;
+  /** Refresh chain this access token was issued with (AUTH-11); absent
+   *  on access tokens signed before the claim existed. */
+  refreshFamily?: string;
 }
 
 export interface RequestContext {
@@ -34,6 +38,12 @@ export interface RequestContext {
   log: typeof logger;
   traceId: string;
   ip: string | null;
+  /**
+   * Client address the rate limiter may trust (AUTH-6); null when there
+   * is none and the caller shares one bucket. `ip` above stays as it was
+   * for logging and the local-dev check.
+   */
+  trustedIp?: string | null;
   userAgent: string | null;
   /** M1.20 (2026-05-08): client-supplied idempotency key from the
    *  `X-Idempotency-Key` request header. Read by the `idempotent`
@@ -53,6 +63,7 @@ export async function createContext(_opts: unknown, c: HonoContext): Promise<Req
   const db = getDb(env.DATABASE_URL);
   const traceId = c.req.header('x-trace-id') ?? ulid();
   const ip = c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null;
+  const trustedIp = trustedClientIp((name) => c.req.header(name), env.CLIENT_IP_PROXY_KEY);
   const userAgent = c.req.header('user-agent') ?? null;
   // M1.20: read idempotency key. Clip to 128 chars to match the
   // column width in sync.idempotency_keys; ignore empty strings so
@@ -68,6 +79,7 @@ export async function createContext(_opts: unknown, c: HonoContext): Promise<Req
     try {
       const claims = await verifyAccess(token);
       session = await loadSession(db, claims.sub, claims.org, claims.mid);
+      if (session && typeof claims.fam === 'string') session.refreshFamily = claims.fam;
     } catch (err) {
       logger.warn({ err: (err as Error).message, traceId }, 'invalid jwt; treating as anonymous');
     }
@@ -79,6 +91,7 @@ export async function createContext(_opts: unknown, c: HonoContext): Promise<Req
     log: logger.child({ traceId }),
     traceId,
     ip,
+    trustedIp,
     userAgent,
     idempotencyKey,
     session,
@@ -151,7 +164,8 @@ async function readSession(
       ),
     );
   const keysByRole = new Map<string, string[]>();
-  for (const p of perms) keysByRole.set(p.roleId, [...(keysByRole.get(p.roleId) ?? []), p.permissionKey]);
+  for (const p of perms)
+    keysByRole.set(p.roleId, [...(keysByRole.get(p.roleId) ?? []), p.permissionKey]);
   const isGlobalOrgAdmin = await hasGlobalOrgAdmin(db, member.id);
   // Keys effective in at least one scope, overrides applied (ADM-1).
   const permissions = flatEffectivePermissions(

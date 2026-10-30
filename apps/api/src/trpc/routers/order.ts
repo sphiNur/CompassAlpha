@@ -23,6 +23,7 @@ import {
   SetSessionExtrasInputSchema,
   SetSessionNoteInputSchema,
   SimpleSessionCommandSchema,
+  TakeOverClaimInputSchema,
   TodayBatchesInputSchema,
   TodaySessionInputSchema,
   UnapproveInputSchema,
@@ -1416,11 +1417,6 @@ export const orderRouter = router({
         const events = (await readStream(tx, 'order', session.id)) as unknown as OrderEvent[];
         let state = emptyState(session.id);
         for (const e of events) state = apply(state, e);
-        // APR-18: the row is addressed by its index, so a caller that read an
-        // older version can name it; it was accepted and silently ignored.
-        if (input.expectedSeq !== undefined && input.expectedSeq !== state.seq) {
-          throw new TRPCError({ code: 'CONFLICT', message: 'order.errors.staleSeq' });
-        }
         try {
           const out = decide(state, {
             type: 'MarkExtraStatus',
@@ -1429,6 +1425,12 @@ export const orderRouter = router({
             actor: buildActor(ctx, state, effectivePerms),
           });
           if (out.length === 0) return { lastSeq: state.seq };
+          // APR-18: the row is addressed by its index, so a caller that read
+          // an older version can name the wrong one. Refused when someone
+          // else changed the order since the version the caller saw; the
+          // caller's own marks in between (several taps in a row) do not
+          // count, and a repeat of the same mark is a no-op above.
+          assertSeenLatest(events, input.expectedSeq, ctx.session!.userId);
           await appendEvents(tx, {
             streamType: 'order',
             streamId: session.id,
@@ -1546,15 +1548,30 @@ export const orderRouter = router({
 
   /** APR-13 (2026-10-30): "take over" released someone's claim and left
    *  the order unclaimed, so a third approver could grab it before the
-   *  one who asked tapped Claim. Release and claim are one write now. */
-  takeOverClaim: authedProcedure.input(SimpleSessionCommandSchema).mutation(async ({ ctx, input }) =>
-    runSimpleCommand(ctx, input.sessionId, (state, perms) => {
+   *  one who asked tapped Claim. Release and claim are one write now.
+   *
+   *  RE-APR-2 (2026-10-30): it takes over the claim the caller saw and
+   *  no other. Two approvers taking over at once both used to hear
+   *  "you took over": the loser's retry was decided again and snatched
+   *  the claim the winner had just taken. The claimer is pinned — the
+   *  one the page showed (`fromMemberId`), or for older clients the one
+   *  found on the first attempt — and anyone else holding the claim by
+   *  then means alreadyClaimed. The release event names whose claim it
+   *  ended. Taking over one's own claim writes nothing. */
+  takeOverClaim: authedProcedure.input(TakeOverClaimInputSchema).mutation(async ({ ctx, input }) => {
+    let from: string | null | undefined = input.fromMemberId;
+    return runSimpleCommand(ctx, input.sessionId, (state, perms) => {
       const actor = buildActor(ctx, state, perms);
+      if (from === undefined) from = state.claimedByMemberId;
+      if (state.claimedByMemberId === actor.memberId) return [];
+      if (state.claimedByMemberId && state.claimedByMemberId !== from) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'order.errors.alreadyClaimed' });
+      }
       const released = decide(state, { type: 'ReleaseClaim', reason: 'manual', actor });
       const afterRelease = released.reduce(apply, state);
       return [...released, ...decide(afterRelease, { type: 'Claim', actor })];
-    }),
-  ),
+    });
+  }),
 
   // 2026-10-21 audit CA-43: `expectedSeq` (the lastSeq the approver's
   // list showed) is checked AFTER decide(), so an idempotent repeat of

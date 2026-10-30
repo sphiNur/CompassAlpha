@@ -133,6 +133,8 @@ export interface ActiveRun {
       status?: 'pending' | 'bought' | 'unavailable';
       sessionId?: string;
       idx?: number;
+      /** APR-18: the session's lastSeq, sent back as expectedSeq. */
+      sessionSeq?: number;
     }>
   >;
   /** 2026-10-21 CA-11: server-computed items / expenses / total (run.get). */

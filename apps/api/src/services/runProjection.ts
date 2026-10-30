@@ -376,7 +376,10 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
             actualTotal: e.payload.totalActual,
             actualCashTotal: e.payload.totalCash,
             actualTransferTotal: e.payload.totalTransfer,
-            finishedAt: e.occurredAt,
+            // DLV-15 (2026-10-30): keep the time the run finished. A
+            // correction used to overwrite it with the time it closed;
+            // the correction's own time is on this event.
+            finishedAt: sql`coalesce(${s.marketRunsV.finishedAt}, ${e.occurredAt.toISOString()}::timestamptz)`,
             lastSeq: e.seq,
             updatedAt: new Date(),
           })

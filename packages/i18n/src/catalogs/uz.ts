@@ -1815,6 +1815,9 @@ export const uz = {
   'run.errors.receivedQtyInvalid':
     "Qabul qilingan miqdor 0 dan kichik bo'lmagan son bo'lishi kerak",
   'run.errors.receivedQtyExceedsSplit': 'Qabul qilingan miqdor {max} dan oshmasligi kerak',
+  'run.errors.receivedQtyNotShort':
+    "{max} — bu hammasi, «Yaxshi»ni tanlang; kamomad bo'lsa {max} dan kam kiriting",
+  'run.errors.storeItemsUnchecked': "{n} ta tekshirilmagan. Do'konni tekshirib bo'lgach tasdiqlang",
   // 2026-10-21 audit follow-ups: staff sales tab, sales void, inventory movements,
   // invite list/revoke, offline/stale-order messages.
   'nav.sales': 'Sotuvlar',

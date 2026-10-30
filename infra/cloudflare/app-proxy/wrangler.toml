@@ -8,6 +8,9 @@ workers_dev = true
 #   ORIGIN_UPDATE_KEY   shared key for POST /__origin
 #   ORIGIN_SIGNING_KEY  HMAC key for signed ntfy messages (CA-12, 2026-10-21);
 #                       must equal /home/ubuntu/.config/compass-origin.key
+#   CLIENT_IP_PROXY_KEY real client address for the API rate limiter (AUTH-6,
+#                       2026-10-30); must equal CLIENT_IP_PROXY_KEY in the
+#                       server .env
 [vars]
 ORIGIN_URL = "https://impression-blond-counsel-lift.trycloudflare.com"
 

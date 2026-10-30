@@ -687,6 +687,14 @@ export function decideRun(
           if (Number(raw) - Number(confirmSplit.qty) > TOLERANCE) {
             throw validation('run.errors.receivedQtyExceedsSplit', { max: confirmSplit.qty });
           }
+          // DLV-12 (2026-10-30): "short" with the whole split arrived is
+          // a contradiction the screen already refuses — it is "ok".
+          if (
+            command.status === 'short' &&
+            Number(confirmSplit.qty) - Number(raw) <= TOLERANCE
+          ) {
+            throw validation('run.errors.receivedQtyNotShort', { max: confirmSplit.qty });
+          }
           receivedQty = raw;
         }
       }
@@ -752,36 +760,30 @@ export function decideRun(
       // StoreConfirmed event, polluting the audit log and confusing
       // the run-level finish guard.
       if (store.confirmedAt) return [];
-      // Every item that was supposed to land at this store needs a confirm.
-      const expected = new Set<string>();
+      // Every item that was supposed to land at this store needs a
+      // verdict first. DLV-19 (2026-10-30): this used to write "ok" for
+      // each line nobody had checked, indistinguishable from a real
+      // check; the screens only offer the button once every line is
+      // decided ("mark all OK" is its own command, markStoreItemsOk).
+      let unchecked = 0;
       for (const item of state.items.values()) {
         if (item.status !== 'purchased') continue;
         for (const split of item.storeSplits) {
-          if (split.storeId === command.storeId) expected.add(item.skuId);
+          if (split.storeId === command.storeId && !store.itemConfirms.has(item.skuId)) {
+            unchecked += 1;
+          }
         }
       }
-      const events: RunEvent[] = [];
-      for (const skuId of expected) {
-        if (!store.itemConfirms.has(skuId)) {
-          events.push({
-            ...baseFor(events.length + 1),
-            type: 'StoreItemConfirmed',
-            payload: {
-              storeId: command.storeId,
-              skuId,
-              status: 'ok',
-              note: null,
-              photoUrl: null,
-            },
-          });
-        }
+      if (unchecked > 0) {
+        throw preconditionFailed('run.errors.storeItemsUnchecked', { n: unchecked });
       }
-      events.push({
-        ...baseFor(events.length + 1),
-        type: 'StoreConfirmed',
-        payload: { storeId: command.storeId, confirmedByUserId: command.actor.userId },
-      });
-      return events;
+      return [
+        {
+          ...baseFor(1),
+          type: 'StoreConfirmed',
+          payload: { storeId: command.storeId, confirmedByUserId: command.actor.userId },
+        },
+      ];
     }
 
     case 'FinishRun': {
