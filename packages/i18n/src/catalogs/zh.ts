@@ -999,6 +999,7 @@ export const zh = {
   'run.errors.allSessionsAlreadyInRun': '所选订单均已在本次采购中',
   'run.errors.noSessionsToAttach': '未选择要加入的订单',
   'run.action.remainingItems': '还有 {n} 项待处理',
+  'run.action.waitingOtherStores': '其余商品由负责其他门店的买手处理',
   'run.action.startDelivery': '开始配送',
   'run.action.finish': '结束采购',
   'run.action.cancelRun': '取消整张采购单',

@@ -1067,6 +1067,7 @@ export const uz = {
   'run.errors.allSessionsAlreadyInRun': 'Tanlangan buyurtmalar allaqachon xaridda',
   'run.errors.noSessionsToAttach': "Qo'shiladigan buyurtmalar tanlanmagan",
   'run.action.remainingItems': '{n} ta qoldi',
+  'run.action.waitingOtherStores': "Qolganini boshqa do'konlar xaridori bajaradi",
   'run.action.startDelivery': 'Yetkazishni boshlash',
   'run.action.finish': 'Tugatish',
   'run.action.cancelRun': 'Xaridni bekor qilish',
