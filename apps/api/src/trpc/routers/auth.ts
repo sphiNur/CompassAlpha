@@ -38,7 +38,7 @@ import { env } from '../../env';
 import { hub } from '../../realtime/hub';
 import { isUniqueViolation } from '../../services/pgErrors';
 import { isPlatformAdmin } from '../../services/platformAdmin';
-import { flatEffectivePermissions } from '../../services/storeScope';
+import { effectivePermissionsForStore, flatEffectivePermissions } from '../../services/storeScope';
 import {
   assertCanAddMember,
   assertWriteAccess,
@@ -1949,6 +1949,17 @@ async function readSessionPayload(
   //   2. Admin invite via memberInviteByTgId (placeholder name `tg:NNN`).
   const needsOnboarding = !user.displayNameLocked;
 
+  // SHL-2 / CLS-5 (2026-10-30): the effective permissions in each of the
+  // member's stores, so store-bound tabs can follow the selected store.
+  // `permissions` above stays the flat union every older client reads.
+  const storePermissions: Record<string, string[]> = {};
+  const permSet = new Set(permKeys);
+  for (const st of storeRows) {
+    storePermissions[st.id] = [
+      ...(await effectivePermissionsForStore(db, member.id, st.id, permSet)),
+    ];
+  }
+
   return {
     user: {
       id: user.id,
@@ -1993,6 +2004,7 @@ async function readSessionPayload(
     myMaxRank,
     storeRanks,
     adminStoreIds,
+    storePermissions,
     needsOnboarding,
   };
 }

@@ -75,7 +75,7 @@ import {
 } from '../hooks/useTelegram';
 import { useAppMutating } from '../hooks/useAppMutating';
 import { SettingsSheet } from '../components/SettingsSheet';
-import { StoreChip } from '../components/StoreSwitcher';
+import { StoreChip, useStoreContext } from '../components/StoreSwitcher';
 import { PageMenuProvider, usePageMenuRegistration } from './PageMenuContext';
 
 // Debug tab moved INTO Admin as a sub-tab. Reduces bottom-nav clutter
@@ -133,6 +133,15 @@ const TABS: TabDef[] = [
   },
 ];
 
+
+/** Tabs whose page works on the selected store (SHL-2). */
+const STORE_BOUND_TABS: ReadonlySet<Tab> = new Set<Tab>([
+  'order',
+  'approve',
+  'settlement',
+  'sales',
+  'confirm',
+]);
 // Loading fallback for lazily-imported pages. Centered spinner so the
 // blip between bundle download and render doesn't look like a stall.
 // 80vh keeps it visually placed where the page content would be, not
@@ -208,8 +217,18 @@ function ShellInner() {
   // itself was gated on `users.manage`, so they could never get there.
   const isPlatformAdmin = !!session?.isPlatformAdmin;
   const permissions = session?.permissions ?? [];
+  // SHL-2 / CLS-5 (2026-10-30): tabs that work on one store follow what the
+  // member may do in the selected store, not the union of all their stores
+  // (a staff member at A and manager at B saw 审核 at A, then got "no
+  // permission"; someone with 销售 rights only at B never saw 销售).
+  // Cross-store pages (采购, 历史, 管理) keep the union.
+  const storeCtx = useStoreContext();
+  const storePerms =
+    storeCtx.kind === 'specific' ? session?.storePermissions?.[storeCtx.storeId] : undefined;
   const visible = TABS.filter(
-    (t) => isTabVisible(t, permissions) || (t.key === 'admin' && isPlatformAdmin),
+    (t) =>
+      isTabVisible(t, storePerms && STORE_BOUND_TABS.has(t.key) ? storePerms : permissions) ||
+      (t.key === 'admin' && isPlatformAdmin),
   );
 
   // Warm the AdminPage chunk in the background once we know the user
