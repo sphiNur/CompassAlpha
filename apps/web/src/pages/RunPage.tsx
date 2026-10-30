@@ -1163,8 +1163,7 @@ export function RunPage() {
         // RE-BUY-1: starting delivery is a run-wide step; a purchaser of
         // only some of the run's stores can neither finish the other
         // stores' items nor start it, so say who does.
-        const othersRemain = (runDetailQuery.data?.otherStoreSkuIds ?? []).length > 0;
-        if (!allItemsHandled || othersRemain) {
+        if (!allItemsHandled || (runDetailQuery.data?.otherStoreSkuIds ?? []).length > 0) {
           if (pendingCount === 0) {
             // Only items of other stores remain (RE-BUY-1).
             return {
