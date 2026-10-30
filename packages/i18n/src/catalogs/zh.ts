@@ -348,6 +348,7 @@ export const zh = {
   'run.errors.cannotPlan': '你没有安排采购的权限。',
   'common.errors.validation': '输入无效 — 请检查高亮的字段',
   'common.networkError': '网络错误 — 请检查连接',
+  'common.offlineNotSaved': '没有网络，这次修改没有保存。联网后请再试一次。',
 
   // ── 3. Settings ────────────────────────────────────────────────
   'settings.language.title': '语言',
@@ -409,7 +410,11 @@ export const zh = {
   'shell.noTabs.body':
     '你的角色没有下单、审核、采购等任何功能的权限。需要的话请联系管理员。',
   'shell.offline.title': '现在离线',
-  'shell.offline.body': '看到的是上次加载的内容；记下的修改会在联网后自动同步。',
+  'shell.pageNotLoaded.title': '这个页面还没下载完',
+  'shell.pageNotLoaded.body':
+    '需要联网才能打开。联网后会自动加载，也可以点重试。',
+  'shell.offline.body':
+    '看到的是上次加载的内容。下单、采购和验收的修改会先存在手机上，联网后自动同步；日结、销售和管理需要联网才能保存。',
   'order.pendingSync': '{n} 项修改等待联网同步',
   'shell.pageError.title': '这个页面出错了',
   'shell.pageError.body': '其他页面不受影响。可以重试，或者先切到别的页面。',
@@ -973,6 +978,8 @@ export const zh = {
   'run.errors.cannotEjectSession': '你没有权限从采购单里退回提交',
   'run.errors.storeAlreadyConfirmed': '门店已确认收货，不能再修改',
   'run.errors.notVisible': '该采购单不存在，或您无权查看',
+  'run.errors.priceFormat': '单价要大于 0，最多 12 位整数、2 位小数。',
+  'run.errors.qtyFormat': '数量要大于 0，最多 9 位整数、3 位小数。',
   'run.errors.itemServesOtherStores':
     '这个商品也供应你不负责的门店，只能由负责这些门店的人修改。',
   'run.errors.runHasOtherStores':
