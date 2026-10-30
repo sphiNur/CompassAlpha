@@ -23,9 +23,11 @@ const SubscriptionUpdateInputSchema = z.object({
 
 function parseDate(value: string | null | undefined): Date | null {
   if (!value) return null;
-  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T23:59:59.999Z` : value;
+  const dayOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const normalized = dayOnly ? `${value}T23:59:59.999Z` : value;
   const date = new Date(normalized);
-  if (Number.isNaN(date.getTime())) {
+  // AUTH-23 (2026-10-30): "2026-02-30" used to roll over to 2 March.
+  if (Number.isNaN(date.getTime()) || (dayOnly && date.toISOString().slice(0, 10) !== value)) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'platform.errors.invalidDate' });
   }
   return date;

@@ -21,6 +21,7 @@ import {
   SkuUnitSchema,
   UuidSchema,
   TimeZoneSchema,
+  DateStringSchema,
 } from '@compass/contracts';
 import { dateInTz, todayInTz } from '@compass/domain';
 import { authedProcedure, router } from '../trpc';
@@ -767,17 +768,24 @@ const StoreTimeZoneSchema = z
   .preprocess((value) => (value === '' ? null : value), TimeZoneSchema.nullable())
   .optional();
 
+// ADM-11 (2026-10-30): names are trimmed before the length check, so
+// "   " is refused instead of stored; an empty code means no code.
+const TrimmedName = z.string().trim().min(1).max(200);
+const StoreCodeSchema = z
+  .preprocess((value) => (typeof value === 'string' && value.trim() === '' ? null : value), z.string().trim().max(32).nullable())
+  .optional();
+
 const StoreCreateInputSchema = z.object({
-  name: z.string().min(1).max(200),
-  code: z.string().max(32).optional().nullable(),
+  name: TrimmedName,
+  code: StoreCodeSchema,
   address: z.string().max(500).optional().nullable(),
   timezone: StoreTimeZoneSchema,
 });
 
 const StoreUpdateInputSchema = z.object({
   storeId: UuidSchema,
-  name: z.string().min(1).max(200).optional(),
-  code: z.string().max(32).optional().nullable(),
+  name: TrimmedName.optional(),
+  code: StoreCodeSchema,
   address: z.string().max(500).optional().nullable(),
   timezone: StoreTimeZoneSchema,
   isActive: z.boolean().optional(),
@@ -826,7 +834,7 @@ const SkuDeleteInputSchema = z.object({
 });
 
 const SupplierCreateInputSchema = z.object({
-  name: z.string().min(1).max(200),
+  name: TrimmedName,
   contactPhone: z.string().max(32).optional().nullable(),
   contactTg: z.string().max(64).optional().nullable(),
   address: z.string().max(500).optional().nullable(),
@@ -835,7 +843,7 @@ const SupplierCreateInputSchema = z.object({
 
 const SupplierUpdateInputSchema = z.object({
   supplierId: UuidSchema,
-  name: z.string().min(1).max(200).optional(),
+  name: TrimmedName.optional(),
   contactPhone: z.string().max(32).optional().nullable(),
   contactTg: z.string().max(64).optional().nullable(),
   address: z.string().max(500).optional().nullable(),
@@ -853,8 +861,11 @@ const SupplierDeleteInputSchema = z.object({
 // loop calls AddRunExpense which uses the existing
 // PositiveDecimalString check — a zero default would fail validation
 // at run-create time and break the whole transaction.
-const DecimalStr = z.string().regex(/^\d+(\.\d+)?$/);
-const PositiveDecimalStr = z.string().regex(/^(?!0+(\.0+)?$)\d+(\.\d+)?$/);
+// CAT-11 (2026-10-30): bounded to the columns (a 15-digit price was a
+// 500, a third decimal was rounded away silently) and a quantity must be
+// positive (a 0 default reached the purchaser as a 0-quantity line).
+const DecimalStr = z.string().regex(/^(?!0+(\.0+)?$)\d{1,9}(\.\d{1,3})?$/);
+const PositiveDecimalStr = z.string().regex(/^(?!0+(\.0+)?$)\d{1,12}(\.\d{1,2})?$/);
 const ExpenseTemplateCreateInputSchema = z.object({
   label: z.string().trim().min(1).max(200),
   unitHint: z.string().trim().max(32).optional().nullable(),
@@ -920,7 +931,7 @@ const InviteMemberByTgIdInputSchema = z.object({
     .string()
     .regex(/^\d{4,15}$/, 'Telegram ID must be a numeric string')
     .transform((s) => BigInt(s)),
-  displayName: z.string().min(1).max(200).optional(),
+  displayName: TrimmedName.optional(),
   roleSlug: z.string().min(1).max(64).optional(),
   /** Stores to assign at invite time. The new model REQUIRES at least
    *  one store unless the role is admin/super_admin (which bypass via
@@ -936,7 +947,7 @@ const CreateMemberInviteInputSchema = z.object({
 
 const MemberSetDisplayNameInputSchema = z.object({
   memberId: UuidSchema,
-  displayName: z.string().min(1).max(200),
+  displayName: TrimmedName,
 });
 
 const MemberAssignStoreInputSchema = z.object({
@@ -996,7 +1007,7 @@ const PurgeAllTestDataInputSchema = z.object({
  * they tap commit.
  */
 const PurgeByDateInputSchema = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD'),
+  date: DateStringSchema,
   dryRun: z.boolean().default(true),
 });
 
@@ -3015,17 +3026,22 @@ export const adminRouter = router({
         if (existing) {
           return { id: existing.id, created: false };
         }
-        const [created] = await tx
-          .insert(s.roles)
-          .values({
-            orgId,
-            slug: input.slug,
-            name: input.name,
-            description: input.description ?? null,
-            rank: input.rank,
-            isBuiltIn: false,
-          })
-          .returning();
+        // ADM-25 (2026-10-30): two creates of one slug at once both
+        // passed the check above and the loser hit the unique index as a 500.
+        const [created] = await withUniqueKey(
+          tx
+            .insert(s.roles)
+            .values({
+              orgId,
+              slug: input.slug,
+              name: input.name,
+              description: input.description ?? null,
+              rank: input.rank,
+              isBuiltIn: false,
+            })
+            .returning(),
+          'admin.errors.roleSlugTaken',
+        );
         if (input.permissionKeys.length > 0) {
           // Filter against the dictionary so a typo doesn't silently
           // create a half-broken role.
@@ -5410,9 +5426,7 @@ export const adminRouter = router({
     .input(
       z
         .object({
-          date: z
-            .string()
-            .regex(/^\d{4}-\d{2}-\d{2}$/)
+          date: DateStringSchema
             .optional(),
           limit: z.number().int().min(1).max(200).default(50),
         })
@@ -5577,9 +5591,7 @@ export const adminRouter = router({
     .input(
       z
         .object({
-          date: z
-            .string()
-            .regex(/^\d{4}-\d{2}-\d{2}$/)
+          date: DateStringSchema
             .optional(),
           limit: z.number().int().min(1).max(200).default(50),
         })
@@ -5660,13 +5672,9 @@ export const adminRouter = router({
       z
         .object({
           storeId: UuidSchema.optional(),
-          fromDate: z
-            .string()
-            .regex(/^\d{4}-\d{2}-\d{2}$/)
+          fromDate: DateStringSchema
             .optional(),
-          toDate: z
-            .string()
-            .regex(/^\d{4}-\d{2}-\d{2}$/)
+          toDate: DateStringSchema
             .optional(),
           limit: z.number().int().min(1).max(200).default(50),
         })
@@ -6218,6 +6226,12 @@ async function countRunCascade(
   await exec(
     'inventory.movements',
     sql`SELECT count(*)::int AS n FROM inventory.movements WHERE ${runMovements(orgId, [runId])}`,
+  );
+  // CAT-14 (2026-10-30): expenses go with the run (FK cascade) but were
+  // missing from the preview.
+  await exec(
+    'read_model.run_expenses_v',
+    sql`SELECT count(*)::int AS n FROM read_model.run_expenses_v WHERE run_id = ${runId}`,
   );
   // All streams = run + all attached sessions.
   const allStreams = [runId, ...sessionIds];

@@ -193,7 +193,7 @@ export const SimpleRunCommandSchema = z.object({
 export const ChangeRunDateInputSchema = z.object({
   runId: UuidSchema,
   /** YYYY-MM-DD. The domain re-validates and rejects impossible dates. */
-  runDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  runDate: DateStringSchema,
   expectedSeq: z.number().int().optional(),
 });
 

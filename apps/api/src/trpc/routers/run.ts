@@ -1359,7 +1359,8 @@ export const runRouter = router({
         // same visible store scope, preventing search-result side channels.
         const searchTokens = (query.search ?? '').trim().split(/\s+/u).filter(Boolean).slice(0, 8);
         const tokenPredicates = searchTokens.map((token) => {
-          const pattern = `%${token}%`;
+          // HIS-14 (2026-10-30): "%" or "_" typed in search matched every run.
+          const pattern = `%${token.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
           return sql`(
             mr.run_date::text ILIKE ${pattern}
             OR ('#' || (mr.run_index + 1)::text) ILIKE ${pattern}

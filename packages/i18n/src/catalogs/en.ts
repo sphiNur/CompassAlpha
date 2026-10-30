@@ -682,6 +682,7 @@ export const en = {
   'admin.errors.orgAdminMustBeGlobal':
     'Organization-level roles and permissions can only be granted globally',
   'admin.errors.roleNotFound': 'Role not found',
+  'admin.errors.roleSlugTaken': 'This role id is already taken',
   'admin.errors.runHasForeignSessions':
     'This run contains other people’s orders — it cannot be deleted',
   'admin.errors.sessionHasForeignAuthors':

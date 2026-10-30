@@ -605,6 +605,7 @@ export const ru = {
   'admin.errors.orgAdminMustBeGlobal':
     'Роли и права уровня организации можно назначать только глобально',
   'admin.errors.roleNotFound': 'Роль не найдена',
+  'admin.errors.roleSlugTaken': 'Такой идентификатор роли уже занят',
   'admin.errors.runHasForeignSessions':
     'В закупке есть заказы других людей — удалить нельзя',
   'admin.errors.sessionHasForeignAuthors':

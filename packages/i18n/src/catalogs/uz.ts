@@ -610,6 +610,7 @@ export const uz = {
   'admin.errors.orgAdminMustBeGlobal':
     'Tashkilot darajasidagi rol va ruxsatlar faqat global berilishi mumkin',
   'admin.errors.roleNotFound': 'Rol topilmadi',
+  'admin.errors.roleSlugTaken': "Bu rol identifikatori band",
   'admin.errors.runHasForeignSessions':
     "Bu xaridda boshqa odamlarning buyurtmalari bor — o'chirib bo'lmaydi",
   'admin.errors.sessionHasForeignAuthors':
