@@ -475,7 +475,7 @@ export const uz = {
   'auth.errors.signInFailed': 'Kirish bajarilmadi',
   'auth.retryInvite': 'Taklifni qayta urinish',
   'auth.errors.noInitData':
-    "Telegram initData topilmadi — Telegram orqali oching yoki VITE_DEV_MOCK_INIT_DATA o'rnating.",
+    "Compass'ni Telegram ichida oching (bot yoki taklif havolasi orqali).",
   'auth.errors.inviteNotFound': "Taklif havolasi yaroqsiz yoki o'chirilgan.",
   'auth.errors.inviteExpired': "Taklif muddati tugagan. Rahbaringizdan yangi havola so'rang.",
   'auth.errors.inviteUsed': 'Bu taklif allaqachon ishlatilgan.',

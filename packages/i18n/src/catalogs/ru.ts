@@ -474,7 +474,7 @@ export const ru = {
   'auth.errors.signInFailed': 'Ошибка входа',
   'auth.retryInvite': 'Попробовать приглашение ещё раз',
   'auth.errors.noInitData':
-    'Telegram initData не найден — откройте через Telegram или задайте VITE_DEV_MOCK_INIT_DATA.',
+    'Откройте Compass в Telegram (через бота или ссылку-приглашение).',
   'auth.errors.inviteNotFound': 'Ссылка-приглашение недействительна или удалена.',
   'auth.errors.inviteExpired': 'Срок приглашения истёк. Попросите управляющего новую ссылку.',
   'auth.errors.inviteUsed': 'Это приглашение уже использовано.',

@@ -534,7 +534,7 @@ export const en = {
   'auth.errors.signInFailed': 'Sign in failed',
   'auth.retryInvite': 'Try the invitation again',
   'auth.errors.noInitData':
-    'No Telegram initData available — open via Telegram, or set VITE_DEV_MOCK_INIT_DATA.',
+    'Open Compass inside Telegram (from the bot or an invite link).',
   'auth.errors.inviteNotFound': 'This invitation link is invalid or no longer exists.',
   'auth.errors.inviteExpired': 'This invitation has expired. Ask your manager for a new link.',
   'auth.errors.inviteUsed': 'This invitation has already been used.',

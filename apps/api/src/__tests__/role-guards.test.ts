@@ -241,5 +241,48 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
     const full = await owner.admin.memberList();
     expect(full.find((m) => m.memberId === both.m.id)?.statusOutOfReach).toBe(false);
   });
+  test('ADM-13: a store manager finds their own suspend in the audit log', async () => {
+    const { db, orgId, storeId, roleIds } = fix!;
+    const tag = `${Date.now()}`.slice(-9);
+    const person = async (name: string, n: number) => {
+      const [u] = await db
+        .insert(s.users)
+        .values({ displayName: name, tgUserId: BigInt(`6${tag}${n}`) })
+        .returning();
+      const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
+      await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId, assignedBy: u!.id });
+      return { u: u!, m: m! };
+    };
+    const boss = await person('ADM13 manager', 1);
+    await db
+      .insert(s.memberRoleBindings)
+      .values({ memberId: boss.m.id, roleId: roleIds.manager!, scopeType: 'store', scopeId: storeId });
+    const worker = await person('ADM13 staff', 2);
+    await db
+      .insert(s.memberRoleBindings)
+      .values({ memberId: worker.m.id, roleId: roleIds.staff!, scopeType: 'store', scopeId: storeId });
+    const session = await loadSession(db, boss.u.id, orgId, boss.m.id);
+    const manager = appRouter.createCaller(buildCtx(db, session!));
+    await manager.admin.memberSetStatus({ memberId: worker.m.id, status: 'suspended' });
+    const rows = await manager.admin.adminAuditList({ limit: 50 });
+    expect(
+      rows.some((r) => r.action === 'admin.member.setStatus' && r.resourceId === worker.m.id),
+    ).toBe(true);
+  });
+
+  test('AUTH-5: recentLogs honours level and kind', async () => {
+    const { owner, db, orgId } = fix!;
+    await db.insert(s.clientLogs).values([
+      { orgId, sessionId: 'auth5', level: 'info', kind: 'nav' },
+      { orgId, sessionId: 'auth5', level: 'error', kind: 'crash' },
+      { orgId, sessionId: 'auth5', level: 'error', kind: 'net' },
+    ]);
+    const errors = await owner.system.recentLogs({ limit: 50, level: 'error' });
+    expect(errors.length).toBeGreaterThanOrEqual(2);
+    expect(errors.every((r) => r.level === 'error')).toBe(true);
+    const crashes = await owner.system.recentLogs({ limit: 50, level: 'error', kind: 'crash' });
+    expect(crashes.length).toBeGreaterThanOrEqual(1);
+    expect(crashes.every((r) => r.kind === 'crash')).toBe(true);
+  });
 });
 

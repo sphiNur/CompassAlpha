@@ -443,7 +443,7 @@ export const zh = {
   'auth.errors.signInFailed': '登录失败',
   'auth.retryInvite': '重新尝试接受邀请',
   'auth.errors.noInitData':
-    '未获取到 Telegram initData — 请通过 Telegram 打开,或设置 VITE_DEV_MOCK_INIT_DATA。',
+    '请在 Telegram 里打开 Compass（通过机器人或邀请链接）。',
   'auth.errors.inviteNotFound': '邀请链接无效或已被删除。',
   'auth.errors.inviteExpired': '邀请已过期，请向管理员索取新链接。',
   'auth.errors.inviteUsed': '该邀请已经被使用。',
