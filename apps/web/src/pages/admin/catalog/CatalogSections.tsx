@@ -1309,6 +1309,8 @@ export function ExpenseTemplatesSection() {
 
 interface DishDraft {
   dishId?: string; // when editing
+  /** CLS-25: the version the editor opened, sent back on save. */
+  expectedUpdatedAt?: string;
   code: string;
   names: Record<string, string>;
   description: Record<string, string>;
@@ -1412,6 +1414,7 @@ export function DishesSection() {
     const ing = ingredientsByDish.get(dishId) ?? [];
     setDraft({
       dishId,
+      expectedUpdatedAt: d.updatedAt ? new Date(d.updatedAt).toISOString() : undefined,
       code: d.code ?? '',
       names: d.names as Record<string, string>,
       description: d.description as Record<string, string>,
@@ -1468,6 +1471,7 @@ export function DishesSection() {
     }
     save.mutate({
       ...(draft.dishId ? { dishId: draft.dishId } : {}),
+      ...(draft.expectedUpdatedAt ? { expectedUpdatedAt: draft.expectedUpdatedAt } : {}),
       code: draft.code.trim() || null,
       names: cleanNames,
       description: draft.description,

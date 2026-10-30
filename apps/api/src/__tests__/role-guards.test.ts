@@ -326,5 +326,33 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
       mirrorRoles: true,
     });
   });
+  test('CLS-25: a dish save based on an older version is refused, not applied', async () => {
+    const { owner } = fix!;
+    const { dishId } = await owner.dishes.save({
+      code: `V-${Date.now().toString().slice(-6)}`,
+      names: { en: 'Versioned' },
+      ingredients: [],
+    });
+    const read = async () =>
+      (await owner.dishes.list()).dishes.find((d) => d.id === dishId)!.updatedAt;
+    const opened = new Date(await read()).toISOString();
+    await owner.dishes.save({
+      dishId,
+      expectedUpdatedAt: opened,
+      names: { en: 'First edit' },
+      ingredients: [],
+    });
+    const stale = await errorOf(() =>
+      owner.dishes.save({
+        dishId,
+        expectedUpdatedAt: opened,
+        names: { en: 'Second edit from an old screen' },
+        ingredients: [],
+      }),
+    );
+    expect(stale?.message).toBe('dishes.errors.changedElsewhere');
+    // Without the field the old behaviour (last write wins) is unchanged.
+    await owner.dishes.save({ dishId, names: { en: 'No version' }, ingredients: [] });
+  });
 });
 

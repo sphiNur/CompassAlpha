@@ -1676,6 +1676,7 @@ export const en = {
   'sales.errors.qtyTooLarge': 'That many servings is too large.',
   'sales.errors.occurredInFuture': 'The sale time cannot be in the future.',
   'inventory.errors.qtyTooLarge': 'That quantity is too large.',
+  'dishes.errors.changedElsewhere': 'Someone else just changed this dish. Close and reopen it to see the latest, then edit.',
 
   // ── 18. Sales (M2.0c) ──────────────────────────────────
   // Sales recording — closes the ERP loop. Admin → Stores →

@@ -1528,6 +1528,7 @@ export const ru = {
   'sales.errors.qtyTooLarge': 'Слишком много порций.',
   'sales.errors.occurredInFuture': 'Время продажи не может быть в будущем.',
   'inventory.errors.qtyTooLarge': 'Слишком большое количество.',
+  'dishes.errors.changedElsewhere': 'Это блюдо только что изменил кто-то другой. Закройте и откройте снова, чтобы увидеть последнюю версию.',
 
   // ── 18. Sales (M2.0c) ──────────────────────────────────
   'sales.summary.today': 'Сегодня',
