@@ -90,6 +90,9 @@ export interface ActiveRun {
     confirmStatus?: string | null;
     /** 2026-10-21 CA-06: qty actually received on a problem line. */
     confirmReceivedQty?: string | null;
+    /** DLV-7: the receiver's note and photo on a problem line. */
+    confirmNote?: string | null;
+    confirmPhotoUrl?: string | null;
   }>;
   perStoreDemand?: Array<{ storeId: string; skuId: string; qty: string }>;
   sessions?: Array<{

@@ -1650,6 +1650,7 @@ export const zh = {
   'confirm.issue.receivedQtyNotShort':
     '实收 {max} 就是全部到齐了，请选「正常」；数量不足时请填少于 {max} 的数',
   'confirm.receivedOf': '实收 {received} / {qty} {unit}',
+  'confirm.issue.photoOf': '{name} 的问题照片',
   'confirm.runPicker.ariaLabel': '选择要验收的配送',
   'confirm.runPicker.option': '#{n} · {date}',
   'finance.label.expense': '开销',

@@ -74,6 +74,8 @@ import {
 // formatQty / formatMoney are imported from `../lib/format` —
 // thousand-separator + max-1-decimal display rule applied everywhere.
 
+
+const SAFE_PHOTO_URL = /^(https?:\/\/|data:image\/)/i;
 /**
  * Active-run panel — INLINE-EDIT list rows.
  *
@@ -807,20 +809,48 @@ export function ActiveRunPanel({
                       const statusLabel = i18n.t(
                         ('confirm.status.' + sp.confirmStatus) as Parameters<typeof i18n.t>[0],
                       );
+                      // Only a web or inline-image URL becomes a link.
+                      const photo =
+                        sp.confirmPhotoUrl && SAFE_PHOTO_URL.test(sp.confirmPhotoUrl)
+                          ? sp.confirmPhotoUrl
+                          : null;
                       return (
-                        <li
-                          key={sp.skuId}
-                          className="truncate text-old-label text-[var(--c-warning-fg)]"
-                        >
-                          ⚠ {name} · {statusLabel}
-                          {sp.confirmReceivedQty != null
-                            ? ' · ' +
-                              i18n.t('confirm.receivedOf', {
-                                received: formatQty(sp.confirmReceivedQty),
-                                qty: formatQty(sp.qty),
-                                unit: unitLabel(sku?.unit),
-                              })
-                            : ''}
+                        <li key={sp.skuId} className="flex items-start gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-old-label text-[var(--c-warning-fg)]">
+                              ⚠ {name} · {statusLabel}
+                              {sp.confirmReceivedQty != null
+                                ? ' · ' +
+                                  i18n.t('confirm.receivedOf', {
+                                    received: formatQty(sp.confirmReceivedQty),
+                                    qty: formatQty(sp.qty),
+                                    unit: unitLabel(sku?.unit),
+                                  })
+                                : ''}
+                            </div>
+                            {/* DLV-7: the store's note was saved but never shown. */}
+                            {sp.confirmNote ? (
+                              <div className="whitespace-pre-wrap break-words text-old-label text-[var(--c-fg-muted)]">
+                                {sp.confirmNote}
+                              </div>
+                            ) : null}
+                          </div>
+                          {photo ? (
+                            <a
+                              href={photo}
+                              target="_blank"
+                              rel="noreferrer"
+                              aria-label={i18n.t('confirm.issue.photoOf', { name })}
+                              className="shrink-0"
+                            >
+                              <img
+                                src={photo}
+                                alt=""
+                                loading="lazy"
+                                className="h-10 w-10 rounded-[6px] object-cover ring-hairline"
+                              />
+                            </a>
+                          ) : null}
                         </li>
                       );
                     })}

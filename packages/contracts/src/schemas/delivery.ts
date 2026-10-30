@@ -16,7 +16,12 @@ export const ConfirmStoreItemInputSchema = z.object({
   status: ConfirmStatusSchema,
   note: z.string().max(500).nullable(),
   // Accept both https URLs and data: URIs (M1 base64 fallback before S3 lands).
-  photoUrl: z.string().max(300_000).nullable(),
+  // DLV-7 (2026-10-30): only those — the purchaser's page now links it.
+  photoUrl: z
+    .string()
+    .max(300_000)
+    .regex(/^(https?:\/\/|data:image\/)/i, 'photoUrl must be an http(s) or data:image URL')
+    .nullable(),
   /**
    * 2026-10-21 CA-06: how much of this store's split actually arrived
    * (0 ≤ qty ≤ split qty, upper bound checked by the domain). Required
