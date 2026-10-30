@@ -162,6 +162,20 @@ export function OrderPage() {
     { storeId: currentStoreId ?? '' },
     { enabled: !!currentStoreId },
   );
+  /**
+   * ORD-4 (2026-10-30): a batch picked from today's list. The page's own
+   * session stays the default pick (draft > rejected > latest submitted);
+   * a picked one is read through its own query, so the draft's cache and
+   * its optimistic edits are never touched. Shown read-only.
+   */
+  const [viewBatchId, setViewBatchId] = useState<string | null>(null);
+  const viewQuery = trpc.order.todaySession.useQuery(
+    { storeId: currentStoreId ?? '', sessionId: viewBatchId ?? undefined },
+    { enabled: !!currentStoreId && !!viewBatchId },
+  );
+  useEffect(() => {
+    setViewBatchId(null);
+  }, [currentStoreId]);
 
   const utils = trpc.useUtils();
   // Replay map for the offline outbox. The hook calls back into our
@@ -541,12 +555,15 @@ export function OrderPage() {
   const submit = trpc.order.submit.useMutation({
     retry: false,
     trpc: { context: submitIdemCtx },
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       submitIdemRef.current = null;
       void utils.order.todaySession.invalidate();
       void utils.order.todayBatches.invalidate();
       // Leave new-batch mode: the batch we just sent is now the receipt.
       setNewBatch(false);
+      // ORD-4: stay on the batch just sent; the default pick would show an
+      // older rejected batch instead.
+      setViewBatchId(vars.sessionId);
       haptic('success');
       toast.success(i18n.t('order.toast.submitted'));
     },
@@ -568,6 +585,8 @@ export function OrderPage() {
   });
   const withdraw = trpc.order.withdraw.useMutation({
     onSuccess: () => {
+      // The withdrawn batch is a draft again — the default view.
+      setViewBatchId(null);
       // CA-26: the withdrawn session will be re-submitted as a new
       // logical submit — never reuse the previous attempt's key.
       submitIdemRef.current = null;
@@ -994,6 +1013,101 @@ export function OrderPage() {
    * post-submit receipt should be the same object, so nothing looks like it
    * changed in transit.
    */
+  /** Open a batch from the day's list (the default one closes the view). */
+  const selectBatch = (id: string) => {
+    setBatchesOpen(false);
+    setViewBatchId(id === sessionQuery.data?.id ? null : id);
+  };
+  /** ORD-4: a batch sent back by a reviewer, said on every view. */
+  const rejectedNotice = (shownId: string | undefined) => {
+    const b = (batchesQuery.data ?? []).find((x) => x.status === 'rejected' && x.id !== shownId);
+    if (!b) return null;
+    return (
+      <Banner
+        tone="warn"
+        title={i18n.t('order.batches.rejectedTitle', { n: b.batchNumber })}
+        action={
+          <Button size="sm" variant="pearl" onClick={() => selectBatch(b.id)}>
+            {i18n.t('order.batches.open')}
+          </Button>
+        }
+      >
+        {b.rejectReason || i18n.t('order.status.rejectedNoReason')}
+      </Banner>
+    );
+  };
+
+  if (viewBatchId && viewQuery.data && viewQuery.data.id !== sessionQuery.data?.id) {
+    const v = viewQuery.data;
+    const vClaimedByOther =
+      !!v.claimedByMemberId && v.claimedByMemberId !== session.member.memberId;
+    return (
+      <div className="flex flex-col pb-4">
+        <StickyPageBar>
+          <button
+            type="button"
+            className="text-old-label font-semibold text-[var(--c-action)]"
+            onClick={() => setViewBatchId(null)}
+          >
+            ‹ {i18n.t('order.batches.backToCurrent')}
+          </button>
+          <span className="ml-auto shrink-0 text-old-label tabular-nums text-[var(--c-fg-muted)]">
+            {dateLabel}
+          </span>
+        </StickyPageBar>
+        <div className="flex flex-col gap-3 px-4 pt-3">
+          <BatchStrip
+            batches={batchesQuery.data ?? []}
+            currentId={v.id}
+            i18n={i18n}
+            currency={orgCurrency}
+            onSelect={selectBatch}
+          />
+          {rejectedNotice(v.id)}
+          {v.status === 'rejected' ? (
+            <Banner
+              tone="warn"
+              title={i18n.t('order.status.rejected', {
+                reason: v.rejectReason || i18n.t('order.status.rejectedNoReason'),
+              })}
+            >
+              {i18n.t('order.batches.rejectedFinishDraft')}
+            </Banner>
+          ) : v.status === 'submitted' ? (
+            <Banner
+              tone="info"
+              title={i18n.t('order.status.submitted')}
+              action={
+                !vClaimedByOther ? (
+                  <Button
+                    size="sm"
+                    variant="pearl"
+                    loading={withdraw.isPending}
+                    onClick={() => withdraw.mutate({ sessionId: v.id })}
+                  >
+                    {i18n.t('order.withdraw')}
+                  </Button>
+                ) : undefined
+              }
+            />
+          ) : v.status === 'approved' ? (
+            <Banner tone="success" title={i18n.t('order.banner.approved.title')} />
+          ) : v.status === 'in_run' ? (
+            <Banner tone="info" title={i18n.t('order.banner.inRun.title')} />
+          ) : (
+            <Banner tone="info" title={i18n.t('order.status.archived')} />
+          )}
+          <div>
+            <SectionLabel padded={false} className="mb-1.5">
+              {i18n.t('order.receipt.submittedItems')}
+            </SectionLabel>
+            <ReviewList totals={v.totals ?? []} skus={allSkus} productName={productName} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (isReadOnly && sessionQuery.data) {
     const locked = sessionQuery.data;
     const claimedByOther =
@@ -1018,7 +1132,9 @@ export function OrderPage() {
             currentId={locked.id}
             i18n={i18n}
             currency={orgCurrency}
+            onSelect={selectBatch}
           />
+          {rejectedNotice(locked.id)}
           {claimedByOther ? (
             <Banner
               tone="warn"
@@ -1185,6 +1301,9 @@ export function OrderPage() {
         </ChipBar>
       </StickyPageBar>
       {staleWarning}
+      {rejectedNotice(sessionQuery.data?.id) ? (
+        <div className="px-4 pt-3">{rejectedNotice(sessionQuery.data?.id)}</div>
+      ) : null}
 
       {/* Status banners — only render the wrapper when at least one
           banner condition is true, so the empty-state draft view has
@@ -1353,6 +1472,7 @@ export function OrderPage() {
             i18n={i18n}
             currency={orgCurrency}
             showHeading={false}
+            onSelect={selectBatch}
           />
         </div>
       </Sheet>
@@ -1543,7 +1663,10 @@ function BatchStrip({
   i18n,
   currency,
   showHeading = true,
+  onSelect,
 }: {
+  /** ORD-4 (2026-10-30): a row opens that batch. */
+  onSelect?: (id: string) => void;
   /** The sheet that can host this strip supplies its own title, so it
    *  turns the internal heading off rather than stating "今日 N 批" twice. */
   showHeading?: boolean;
@@ -1570,15 +1693,19 @@ function BatchStrip({
         {batches.map((b) => {
           const isCurrent = b.id === currentId;
           return (
-            <li
-              key={b.id}
-              className={
-                'flex items-baseline justify-between gap-2 rounded-[var(--r-card)] px-3 py-2 text-old-label ring-hairline ' +
-                (isCurrent
-                  ? 'bg-[var(--c-action)]/10 ring-1 ring-[var(--c-action)]'
-                  : 'bg-[var(--c-surface-2)]')
-              }
-            >
+            <li key={b.id}>
+              <button
+                type="button"
+                disabled={!onSelect || isCurrent}
+                onClick={() => onSelect?.(b.id)}
+                className={
+                  'flex w-full items-baseline justify-between gap-2 rounded-[var(--r-card)] px-3 py-2 text-left text-old-label ring-hairline ' +
+                  (onSelect && !isCurrent ? 'press ' : '') +
+                  (isCurrent
+                    ? 'bg-[var(--c-action)]/10 ring-1 ring-[var(--c-action)]'
+                    : 'bg-[var(--c-surface-2)]')
+                }
+              >
               <span className="min-w-0 truncate">
                 <span className="font-semibold text-[var(--c-fg)]">
                   {i18n.t('order.batches.batchLabel', { n: b.batchNumber })}
@@ -1605,6 +1732,7 @@ function BatchStrip({
                   ? ` · ~${formatMoney(Number(b.estimatedTotal))} ${currency}`
                   : ''}
               </span>
+              </button>
             </li>
           );
         })}

@@ -257,15 +257,31 @@ export const orderRouter = router({
       // exists; if the user has already submitted everything for
       // today, returns null and the FE shows an empty-state with a
       // "start a new batch" affordance.
+      // ORD-4 (2026-10-30): a batch the caller picked from the day's list.
+      // Only their own, at this store; nothing else is returned.
+      if (input.sessionId) {
+        const picked = await tx.query.orderSessionsV.findFirst({
+          where: (sess, { eq: eq2, and: and2 }) =>
+            and2(
+              eq2(sess.id, input.sessionId!),
+              eq2(sess.orgId, ctx.session!.orgId),
+              eq2(sess.storeId, input.storeId),
+              eq2(sess.initiatedByMemberId, ctx.session!.memberId),
+            ),
+        });
+        if (!picked) return null;
+      }
       let session = await tx.query.orderSessionsV.findFirst({
         where: (sess, { eq: eq2, and: and2 }) =>
-          and2(
-            eq2(sess.orgId, ctx.session!.orgId),
-            eq2(sess.storeId, input.storeId),
-            eq2(sess.orderDate, date),
-            eq2(sess.initiatedByMemberId, ctx.session!.memberId),
-            eq2(sess.status, 'draft'),
-          ),
+          input.sessionId
+            ? and2(eq2(sess.id, input.sessionId), eq2(sess.orgId, ctx.session!.orgId))
+            : and2(
+                eq2(sess.orgId, ctx.session!.orgId),
+                eq2(sess.storeId, input.storeId),
+                eq2(sess.orderDate, date),
+                eq2(sess.initiatedByMemberId, ctx.session!.memberId),
+                eq2(sess.status, 'draft'),
+              ),
       });
       // 2026-10-21 audit CA-02: next, the most recent REJECTED batch. The
       // domain keeps it 'rejected' and lets the owner edit + re-Submit (or
@@ -471,6 +487,8 @@ export const orderRouter = router({
             itemCount: perSku.size,
             extrasCount: (sess.extrasJson as unknown[] | null)?.length ?? 0,
             estimatedTotal: est.known > 0 ? est.total.toFixed(2) : null,
+            /** ORD-4: the reason, so a rejected batch can say why. */
+            rejectReason: sess.status === 'rejected' ? (sess.rejectReason ?? null) : null,
           };
         });
       });
