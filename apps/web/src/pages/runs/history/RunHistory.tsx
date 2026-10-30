@@ -191,7 +191,11 @@ export function RunHistoryPage({
       <Card className={fetching && !loading ? 'opacity-70 transition-opacity' : undefined}>
         <SectionLabel
           as={onBack ? undefined : 'h1'}
-          meta={`${count} · ${formatMoney(total)} ${currency}`}
+          // HIS-20 (2026-10-30): with a search, the total is of the whole
+          // runs that matched, not of the product searched for.
+          meta={`${count} · ${formatMoney(total)} ${currency}${
+            hasSearchOrFilters ? ' ' + i18n.t('run.history.matchedRunsTotal') : ''
+          }`}
         >
           {i18n.t('run.history.title')}
         </SectionLabel>

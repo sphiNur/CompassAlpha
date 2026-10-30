@@ -730,6 +730,7 @@ export const en = {
     'Organization-level roles and permissions can only be granted globally',
   'admin.errors.roleNotFound': 'Role not found',
   'admin.errors.roleSlugTaken': 'This role id is already taken',
+  'admin.errors.unknownPermission': 'There is no such permission',
   'admin.errors.builtinRankLocked': 'A built-in role’s rank cannot be changed',
   'admin.errors.runHasForeignSessions':
     'This run contains other people’s orders — it cannot be deleted',
@@ -1278,6 +1279,7 @@ export const en = {
   'run.label.reasonForChange': 'Reason for change',
   'run.label.addReasonOptional': '+ Add note (optional)',
   'run.label.total': 'total',
+  'run.label.itemsTotal': 'Goods total',
   'run.label.reasonPlaceholder': 'e.g. price misread on the receipt',
   'run.toast.runPlanned': 'Run planned',
   'run.toast.purchaseStarted': 'Purchasing started',
@@ -1311,6 +1313,7 @@ export const en = {
   'run.history.lastRun': 'Last trip {date}',
   'run.history.monthSoFar': '{month} · {n} so far',
   'run.history.totalLine': 'Total {total} UZS',
+  'run.history.matchedRunsTotal': '(total of the matching runs)',
   'run.history.allStores': 'All stores',
   // M3.9: filter chip toolbar + cancelled-row label dropped — cancelled
   // runs no longer surface in RunPage history. Keys removed:

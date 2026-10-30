@@ -501,11 +501,13 @@ export function decide(
       if (!command.actor.permissions.has('order.unapprove')) {
         throw forbidden('order.errors.cannotUnapprove');
       }
+      // APR-8 (2026-10-30): an order a run has taken is in_run, so the
+      // status check answered "not approved" and this branch never ran.
+      if (state.runId || state.status === 'in_run' || state.status === 'archived') {
+        throw preconditionFailed('order.errors.alreadyInRun');
+      }
       if (state.status !== 'approved') {
         throw preconditionFailed('order.errors.notUnapprovable', { status: state.status });
-      }
-      if (state.runId) {
-        throw preconditionFailed('order.errors.alreadyInRun');
       }
       return [
         {

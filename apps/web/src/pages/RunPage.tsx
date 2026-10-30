@@ -1591,7 +1591,9 @@ export function RunPage() {
             ? [
                 i18n.t('run.label.itemsCount', { n: pick.lines.length }),
                 ...(pick.total !== null && pick.total > 0
-                  ? [`${i18n.t('run.label.total')} ${formatMoney(pick.total)} ${currency}`]
+                  ? // DLV-18 (2026-10-30): goods only; the store's share of
+                    // expenses is added on the final bill.
+                    [`${i18n.t('run.label.itemsTotal')} ${formatMoney(pick.total)} ${currency}`]
                   : []),
                 ...(pick.unavailable.length > 0
                   ? [i18n.t('run.filter.unavailable', { n: pick.unavailable.length })]
