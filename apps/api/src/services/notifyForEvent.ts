@@ -74,6 +74,26 @@ export async function dispatchOrderEventNotifications(
           dedupKey: `order:${state.streamId}:approved:${e.seq}`,
           deepLink: '/order',
         });
+        // APR-6 (2026-10-30, owner decision): approving one's own order
+        // stays allowed (a store often has one manager), but the store's
+        // other approvers hear about it. With none, nobody is told.
+        if (state.submittedByMemberId && state.submittedByMemberId === e.payload.byMemberId) {
+          await notifyOthersWithPermission(
+            db,
+            orgId,
+            'order.approve',
+            actorUserId,
+            {
+              template: 'order.selfApproved',
+              title: 'Order approved by its submitter',
+              body: 'A manager approved an order they submitted themselves.',
+              dedupKey: `order:${state.streamId}:selfApproved:${e.seq}`,
+              payload: { sessionId: state.streamId, storeId: state.storeId },
+              deepLink: '/approve',
+            },
+            { storeId: state.storeId ?? undefined },
+          );
+        }
         break;
       }
       case 'Rejected': {

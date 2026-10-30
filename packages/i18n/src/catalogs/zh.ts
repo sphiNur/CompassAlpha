@@ -1167,6 +1167,8 @@ export const zh = {
   'run.errors.itemNotPending': '只能将待采购物品标记为缺货',
   'run.errors.itemAlreadyPurchased': '该物品已记录为已采购，请编辑现有记录',
   'run.errors.cannotCancelAfterConfirm': '已有门店确认收货，无法再取消此采购单',
+  'run.errors.cannotCancelAfterDelivery':
+    '已有门店送达，不能取消。请先撤回送达，再取消采购单',
   'run.errors.noteTooLong': '备注过长（最多 500 字符）',
   'run.errors.notReadyToDeliver': '尚未到达配送阶段',
   'run.errors.itemsPending': '仍有商品未处理',
@@ -1671,6 +1673,8 @@ export const zh = {
   'people.revokeInvite': '撤销',
   'people.confirmRevokeInvite': '撤销此邀请链接？持有链接的人将无法再加入。',
   'order.errors.staleOfflineEdit': '这项修改是在之前某天离线时做的，未被应用',
+  'order.errors.deviceDateAhead':
+    '手机日期比服务器快，这次修改没有保存。请检查手机的日期和时间',
   'order.errors.approveEmpty':
     '这张单已经没有任何商品，不能通过。可以拒绝它',
   'approval.toast.orderChanged': '该订单在你打开后已被修改，请查看最新内容',

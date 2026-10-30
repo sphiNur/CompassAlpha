@@ -172,6 +172,29 @@ describe.skipIf(!SHOULD_RUN)('medium guards (PG-gated)', () => {
     expect(err?.code).toBe('BAD_REQUEST');
   });
 
+  test('ORD-11: a phone whose clock runs ahead cannot open a draft for tomorrow', async () => {
+    const { staff, storeId, skuId } = fix!;
+    const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+    const err = await errorOf(() => staff.order.adjustItem({ storeId, skuId, qty: '1', date: tomorrow }));
+    expect(err?.code).toBe('PRECONDITION_FAILED');
+    expect(err?.message).toBe('order.errors.deviceDateAhead');
+  });
+
+  test('APR-6: approving one\'s own order tells the store\'s other approvers', async () => {
+    const { db, orgId, storeId, skuId } = fix!;
+    // The owner (super_admin, global) orders and approves it themselves.
+    const owner = fix!.owner;
+    const draft = await owner.order.adjustItem({ storeId, skuId, qty: '3' });
+    await owner.order.submit({ sessionId: draft.sessionId });
+    await owner.order.claim({ sessionId: draft.sessionId });
+    await owner.order.approve({ sessionId: draft.sessionId });
+    const rows = await db
+      .select({ template: s.notifications.template })
+      .from(s.notifications)
+      .where(eq(s.notifications.orgId, orgId));
+    expect(rows.some((r) => r.template === 'order.selfApproved')).toBe(true);
+  });
+
   test('ADM-7: five grants of one role at once leave one binding', async () => {
     const { owner, staffUserId, staffMemberId, storeId, db } = fix!;
     await Promise.all(

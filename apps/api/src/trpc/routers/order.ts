@@ -162,6 +162,15 @@ function assertNotStaleOfflineCreate(
       message: 'order.errors.staleOfflineEdit',
     });
   }
+  // ORD-11 (2026-10-30, owner decision): the date is frozen on the device,
+  // so a phone whose clock runs ahead opened a draft for a day that has
+  // not come, invisible today and puzzling tomorrow.
+  if (requestedDate !== undefined && requestedDate > todayInOrgTz(ctx)) {
+    throw new TRPCError({
+      code: 'PRECONDITION_FAILED',
+      message: 'order.errors.deviceDateAhead',
+    });
+  }
 }
 
 /**

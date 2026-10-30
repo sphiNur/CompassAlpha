@@ -416,7 +416,7 @@ describe.skipIf(!SHOULD_RUN)('cancel-run cascade (PG-gated)', () => {
     }
   });
 
-  test('a delivered run cannot be confirmed after cancellation or receive inventory', async () => {
+  test('a delivered run cannot be cancelled (DLV-6): recall the delivery first', async () => {
     if (!fix) throw new Error('fixture missing');
     const db = getDb(undefined, { system: 'maintenance' });
     const runId = randomUUID();
@@ -475,27 +475,17 @@ describe.skipIf(!SHOULD_RUN)('cancel-run cascade (PG-gated)', () => {
       runId,
     });
 
-    await appRouter.createCaller(fix.cancellerCtx).run.cancel({
-      runId,
-      reason: 'cancel after dispatch',
-    });
-    await settleDirectCallerTransaction();
-
+    // DLV-6 (2026-10-30): the goods are at the store; cancelling would
+    // keep them out of its stock and hand its order back to be bought again.
     await expect(
-      appRouter.createCaller(fix.confirmerCtx).run.confirmStore({
+      appRouter.createCaller(fix.cancellerCtx).run.cancel({
         runId,
-        storeId: fix.storeId,
+        reason: 'cancel after dispatch',
       }),
-    ).rejects.toThrow('run.errors.notDelivering');
+    ).rejects.toThrow('run.errors.cannotCancelAfterDelivery');
     await settleDirectCallerTransaction();
 
     const persisted = await readStream(db, 'run', runId);
-    expect(persisted.at(-1)?.type).toBe('RunCancelled');
-    expect(persisted.some((event) => event.type === 'StoreConfirmed')).toBe(false);
-    const inventoryRows = await db
-      .select({ id: s.inventoryMovements.id })
-      .from(s.inventoryMovements)
-      .where(eq(s.inventoryMovements.sourceId, runId));
-    expect(inventoryRows).toHaveLength(0);
+    expect(persisted.some((event) => event.type === 'RunCancelled')).toBe(false);
   });
 });

@@ -843,7 +843,8 @@ export function RunPage() {
     const status = activeRun?.status;
     if (status !== 'planned' && status !== 'purchasing' && status !== 'delivering') return false;
     if (!session?.permissions.includes('run.create')) return false;
-    return (runDetailQuery.data?.splits ?? []).every((sp) => !sp.confirmedAt);
+    // DLV-6: delivered (not only confirmed) stores block a cancel too.
+    return (runDetailQuery.data?.splits ?? []).every((sp) => !sp.deliveredAt && !sp.confirmedAt);
   }, [activeRun?.status, session?.permissions, runDetailQuery.data]);
 
   const finishSummary = useMemo(() => {

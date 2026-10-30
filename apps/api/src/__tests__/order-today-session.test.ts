@@ -56,12 +56,12 @@ import type { RequestContext, SessionContext } from '../trpc/context';
 
 const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
 
-/** The date under test. Fixed, so "today" drift can't affect the lookup.
- *  2026-10-21 (CA-25): moved to the future — a self-edit carrying a PAST
- *  date may no longer lazy-create a draft (stale offline replay guard). */
-const ORDER_DATE = '2099-05-13';
-const EXTRAS_DATE = '2099-05-14';
-const SEQ_DATE = '2099-05-15';
+/** The date under test: today in the org's zone (UTC). A past date may not
+ *  lazy-create a draft (CA-25) and since ORD-11 (2026-10-30) neither may a
+ *  future one, so each scenario gets its own store instead of its own day. */
+const ORDER_DATE = new Date().toISOString().slice(0, 10);
+const EXTRAS_DATE = ORDER_DATE;
+const SEQ_DATE = ORDER_DATE;
 
 function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
   return {
@@ -83,6 +83,8 @@ function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): Reques
 interface Fixture {
   orgId: string;
   storeId: string;
+  extrasStoreId: string;
+  seqStoreId: string;
   skuId: string;
   staff: RequestContext;
   manager: RequestContext;
@@ -115,14 +117,23 @@ beforeAll(async () => {
     .insert(s.members)
     .values({ orgId: org!.id, userId: mgrUser!.id })
     .returning();
-  const [store] = await db
+  const [store, extrasStore, seqStore] = await db
     .insert(s.stores)
-    .values({ orgId: org!.id, name: 'Visibility Store', code: 'OV-' + slug.slice(-6) })
+    .values(
+      ['OV', 'OE', 'OS'].map((prefix, i) => ({
+        orgId: org!.id,
+        name: `Visibility Store ${i + 1}`,
+        code: `${prefix}-` + slug.slice(-6),
+      })),
+    )
     .returning();
-  await db.insert(s.memberStoreAssignments).values([
-    { memberId: staffMember!.id, storeId: store!.id, assignedBy: staffUser!.id },
-    { memberId: mgrMember!.id, storeId: store!.id, assignedBy: mgrUser!.id },
-  ]);
+  const stores = [store!, extrasStore!, seqStore!];
+  await db.insert(s.memberStoreAssignments).values(
+    stores.flatMap((st) => [
+      { memberId: staffMember!.id, storeId: st.id, assignedBy: staffUser!.id },
+      { memberId: mgrMember!.id, storeId: st.id, assignedBy: mgrUser!.id },
+    ]),
+  );
   // The order router resolves per-store permissions from persisted role
   // bindings, not the flat SessionContext set — bind both members.
   const staffPerms = ['order.draft', 'order.submit'];
@@ -145,10 +156,12 @@ beforeAll(async () => {
       ...staffPerms.map((permissionKey) => ({ roleId: staffRole!.id, permissionKey })),
       ...mgrPerms.map((permissionKey) => ({ roleId: mgrRole!.id, permissionKey })),
     ]);
-  await db.insert(s.memberRoleBindings).values([
-    { memberId: staffMember!.id, roleId: staffRole!.id, scopeType: 'store', scopeId: store!.id },
-    { memberId: mgrMember!.id, roleId: mgrRole!.id, scopeType: 'store', scopeId: store!.id },
-  ]);
+  await db.insert(s.memberRoleBindings).values(
+    stores.flatMap((st) => [
+      { memberId: staffMember!.id, roleId: staffRole!.id, scopeType: 'store', scopeId: st.id },
+      { memberId: mgrMember!.id, roleId: mgrRole!.id, scopeType: 'store', scopeId: st.id },
+    ]),
+  );
   const [sku] = await db
     .insert(s.skus)
     .values({
@@ -163,6 +176,8 @@ beforeAll(async () => {
   fix = {
     orgId: org!.id,
     storeId: store!.id,
+    extrasStoreId: extrasStore!.id,
+    seqStoreId: seqStore!.id,
     skuId: sku!.id,
     staff: buildCtx(db, {
       userId: staffUser!.id,
@@ -244,7 +259,7 @@ describe.skipIf(!SHOULD_RUN)('order follow-ups CA-25 / CA-27 / CA-43 (PG-gated)'
   test('CA-27: extras-only order via storeId lazy-creates the draft and submits', async () => {
     if (!fix) throw new Error('fixture missing');
     const staff = appRouter.createCaller(fix.staff);
-    const input = { storeId: fix.storeId, date: EXTRAS_DATE };
+    const input = { storeId: fix.extrasStoreId, date: EXTRAS_DATE };
 
     // Clearing extras with no session is a no-op — no empty draft.
     const none = await staff.order.setSessionExtras({ ...input, extras: [] });
@@ -294,7 +309,7 @@ describe.skipIf(!SHOULD_RUN)('order follow-ups CA-25 / CA-27 / CA-43 (PG-gated)'
     if (!fix) throw new Error('fixture missing');
     const staff = appRouter.createCaller(fix.staff);
     const mgr = appRouter.createCaller(fix.manager);
-    const input = { storeId: fix.storeId, date: SEQ_DATE };
+    const input = { storeId: fix.seqStoreId, date: SEQ_DATE };
 
     const first = await staff.order.adjustItem({ ...input, skuId: fix.skuId, qty: '1' });
     const sessionId = first.sessionId;

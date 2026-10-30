@@ -1360,6 +1360,8 @@ export const en = {
     'This item is already recorded as bought — edit the existing row instead',
   'run.errors.cannotCancelAfterConfirm':
     'A store has already confirmed its delivery — this run can no longer be cancelled',
+  'run.errors.cannotCancelAfterDelivery':
+    'Goods have been delivered to a store, so the run cannot be cancelled. Recall the delivery first',
   'run.errors.noteTooLong': 'Note is too long (max 500 characters)',
   'run.errors.notReadyToDeliver': 'Cannot start delivery yet',
   'run.errors.itemsPending': 'Some items are still pending',
@@ -1912,6 +1914,8 @@ export const en = {
     'Revoke this invite link? Anyone holding it will no longer be able to join.',
   'order.errors.staleOfflineEdit':
     'This change was made offline on an earlier day and was not applied',
+  'order.errors.deviceDateAhead':
+    'Your phone’s date is ahead of the server, so this change was not saved. Check the phone’s date and time',
   'order.errors.approveEmpty':
     'This order has no items left and cannot be approved. Reject it instead',
   'approval.toast.orderChanged':
