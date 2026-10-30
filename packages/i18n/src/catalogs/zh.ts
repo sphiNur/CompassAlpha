@@ -672,6 +672,7 @@ export const zh = {
   'order.review.reviewSheet.title': '复核订单',
   'order.review.estimatedTotal': '预计金额',
   'order.review.estimateHint': '~ 按上次买入价 · {known} 项有价 · {unknown} 项无价',
+  'approval.estimateUnpriced': '另有 {n} 项无价',
 
   // ── 其他物品（会话级备注，M1.8） ──────────────────────────────────
   'order.notes.label': '其他物品',

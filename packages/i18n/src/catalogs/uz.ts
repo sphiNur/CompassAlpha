@@ -729,6 +729,7 @@ export const uz = {
   'order.review.reviewSheet.title': "Buyurtmani ko'rib chiqing",
   'order.review.estimatedTotal': 'Taxminiy summa',
   'order.review.estimateHint': "~ oxirgi xarid narxi bo'yicha · {known} narxli · {unknown} narxsiz",
+  'approval.estimateUnpriced': "+ {n} ta narxsiz",
 
   // ── Boshqa narsalar (sessiya darajasidagi izoh, M1.8) ────────────
   'order.notes.label': 'Boshqa narsalar',

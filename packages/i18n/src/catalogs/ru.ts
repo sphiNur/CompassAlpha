@@ -722,6 +722,7 @@ export const ru = {
   'order.review.reviewSheet.title': 'Проверьте заказ',
   'order.review.estimatedTotal': 'Оценка стоимости',
   'order.review.estimateHint': '~ по последней цене покупки · {known} с ценой · {unknown} без цены',
+  'approval.estimateUnpriced': '+ {n} без цены',
 
   // ── Прочие позиции (заметка к сессии, M1.8) ──────────────────────
   'order.notes.label': 'Прочее',
