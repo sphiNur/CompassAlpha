@@ -16,6 +16,7 @@ import { env } from '../env';
 import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
 import { loadSession } from '../trpc/context';
+import { revokeAllForUser } from '../services/refreshTokens';
 import type { RequestContext } from '../trpc/context';
 
 const SHOULD_RUN =
@@ -124,6 +125,10 @@ describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
       refreshToken: refreshed.tokens.refreshToken,
     });
     expect(again.session.user.id).toBe(user!.id);
+
+    // AUTH-10: signing out everywhere reports what it revoked (was always 0).
+    expect(await revokeAllForUser(db, user!.id)).toBe(1);
+    expect(await revokeAllForUser(db, user!.id)).toBe(0);
   });
 
   test('an invited member signs in; a removed or suspended one does not come back', async () => {

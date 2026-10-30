@@ -6,6 +6,7 @@ import { UuidSchema } from '@compass/contracts';
 import { authedProcedure, router } from '../trpc';
 import { isPlatformAdmin } from '../../services/platformAdmin';
 import { readSubscriptionState } from '../../services/subscription';
+import { hub } from '../../realtime/hub';
 
 const SubscriptionUpdateInputSchema = z.object({
   orgId: UuidSchema,
@@ -96,7 +97,7 @@ export const platformRouter = router({
     .input(SubscriptionUpdateInputSchema)
     .mutation(async ({ ctx, input }) => {
       await requirePlatformAdmin(ctx.db, ctx.session!.userId);
-      return withSystemContext(ctx.db, 'auth', async (tx) => {
+      const state = await withSystemContext(ctx.db, 'auth', async (tx) => {
         const org = await tx.query.organizations.findFirst({
           where: (o, { eq: eq2 }) => eq2(o.id, input.orgId),
         });
@@ -189,5 +190,11 @@ export const platformRouter = router({
           .where(eq(s.organizations.id, input.orgId));
         return readSubscriptionState(tx, input.orgId);
       });
+      // AUTH-18 (2026-10-30): members online in that organisation kept
+      // their old subscription state (no read-only banner after a suspend)
+      // until a reload. people.changed makes every client re-read its
+      // session, the platform admin's own included.
+      hub.publish(input.orgId, { type: 'people.changed', orgId: input.orgId });
+      return state;
     }),
 });

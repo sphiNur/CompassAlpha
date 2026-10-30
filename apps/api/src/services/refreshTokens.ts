@@ -200,15 +200,16 @@ export async function consumeRefresh(
  * revoke just that family.
  */
 export async function revokeAllForUser(db: DB, userId: string): Promise<number> {
-  const result = await inSystem(db, 'auth', (tx) =>
+  // AUTH-10 (2026-10-30): read the count from RETURNING. postgres-js has
+  // no `rowCount`, so this always reported 0 although tokens were revoked.
+  const revoked = await inSystem(db, 'auth', (tx) =>
     tx
       .update(s.refreshTokens)
       .set({ revokedAt: new Date() })
-      .where(and(eq(s.refreshTokens.userId, userId), isNull(s.refreshTokens.revokedAt))),
+      .where(and(eq(s.refreshTokens.userId, userId), isNull(s.refreshTokens.revokedAt)))
+      .returning({ id: s.refreshTokens.id }),
   );
-  // drizzle-postgres returns rowCount on the underlying query result;
-  // shape varies by adapter. Fall back to 0 if we can't read it.
-  return (result as unknown as { rowCount?: number }).rowCount ?? 0;
+  return revoked.length;
 }
 
 /**
