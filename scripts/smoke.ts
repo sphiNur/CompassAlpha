@@ -16,10 +16,13 @@
  *   - tRPC auth-required routes succeed when authenticated, fail (401) anonymously
  *   - HTML cache headers are no-store (regression check on the iOS WebView fix)
  *   - JS bundle contains expected user-facing strings (catch deploy-of-stale-bundle)
+ *   - Realtime: a real WebSocket upgrade through BASE (token-less probe)
  *
  * Exit code 0 = all green. Non-zero = at least one check failed; the
  * report shows exactly which.
  */
+import { probeRealtime } from './lib/realtimeProbe';
+
 const rawBase = Bun.env.COMPASS_BASE;
 if (!rawBase) {
   console.error(
@@ -46,7 +49,10 @@ function record(name: string, pass: boolean, detail?: string) {
 }
 
 async function head(path: string) {
-  const res = await fetch(BASE + path, { method: 'HEAD', headers: { 'cache-control': 'no-cache' } });
+  const res = await fetch(BASE + path, {
+    method: 'HEAD',
+    headers: { 'cache-control': 'no-cache' },
+  });
   return res;
 }
 async function get(path: string, init?: RequestInit) {
@@ -71,11 +77,7 @@ async function checkSpaShell() {
   record('GET /  -> 200', r.status === 200, `status=${r.status}`);
   const html = await r.text();
   const cc = r.headers.get('cache-control') ?? '';
-  record(
-    'GET / has Cache-Control: no-store',
-    cc.includes('no-store'),
-    `Cache-Control=${cc}`,
-  );
+  record('GET / has Cache-Control: no-store', cc.includes('no-store'), `Cache-Control=${cc}`);
   // Pull asset names from the served HTML.
   const jsMatch = html.match(/\/assets\/index-[A-Za-z0-9_-]+\.js/);
   const cssMatch = html.match(/\/assets\/index-[A-Za-z0-9_-]+\.css/);
@@ -138,22 +140,24 @@ async function checkTrpcPublic() {
   const r = await get('/trpc/system.health');
   record('GET /trpc/system.health -> 200', r.status === 200, `status=${r.status}`);
   const data = (await r.json()) as { result?: { data?: { status?: string } } };
-  record('system.health returns status:ok', data?.result?.data?.status === 'ok', JSON.stringify(data));
+  record(
+    'system.health returns status:ok',
+    data?.result?.data?.status === 'ok',
+    JSON.stringify(data),
+  );
 }
 
 async function checkTrpcAuth() {
   // auth.me requires a Bearer token; anonymous → UNAUTHORIZED.
   const r = await get('/trpc/auth.me');
-  record(
-    'GET /trpc/auth.me anonymous -> 401 UNAUTHORIZED',
-    r.status === 401,
-    `status=${r.status}`,
-  );
+  record('GET /trpc/auth.me anonymous -> 401 UNAUTHORIZED', r.status === 401, `status=${r.status}`);
 
   // auth.telegramLogin with bogus initData should reach the verifier and
   // come back with an UNAUTHORIZED domain error (the Zod schema accepts
   // any non-empty string; the HMAC verifier fails).
-  const login = await post('/trpc/auth.telegramLogin', { initData: 'foo=bar&hash=zzz&auth_date=1' });
+  const login = await post('/trpc/auth.telegramLogin', {
+    initData: 'foo=bar&hash=zzz&auth_date=1',
+  });
   record(
     'POST /trpc/auth.telegramLogin (bad initData) -> 401',
     login.status === 401,
@@ -198,18 +202,44 @@ async function checkLogIngest() {
   });
   record('POST /trpc/system.log -> 200', r.status === 200, `status=${r.status}`);
   const data = (await r.json()) as { result?: { data?: { accepted?: number } } };
-  record('system.log accepted >= 1', (data?.result?.data?.accepted ?? 0) >= 1, JSON.stringify(data));
+  record(
+    'system.log accepted >= 1',
+    (data?.result?.data?.accepted ?? 0) >= 1,
+    JSON.stringify(data),
+  );
 }
 
 async function checkWebSocket() {
-  // /ws requires a token query param; no-token request should produce a
-  // 4xx auth error (any of 400/401/426 confirms the handler is wired).
-  // We use plain GET — Bun.serve replies before the WS upgrade succeeds.
+  // `deploy.ts --rollback` to a release from before the probe sets this:
+  // that api answers 401 to everything token-less and has no probe.
+  if (Bun.env.COMPASS_SMOKE_PRE_PROBE_API === '1') {
+    const r = await get('/ws');
+    record(
+      'GET /ws (no token, pre-probe api) -> 4xx (handler reachable)',
+      r.status >= 400 && r.status < 500,
+      `status=${r.status}`,
+    );
+    console.log('  ⚠ realtime upgrade NOT verified: the api predates the probe');
+    return;
+  }
+  // RE-ENG-4 (2026-10-30): a plain GET (no Upgrade header) is answered
+  // 426 before the token is even looked at. 426 here also proves /ws
+  // reaches the API's own handler, not an SPA fallback.
   const r = await get('/ws');
   record(
-    'GET /ws (no token) -> 4xx (handler reachable)',
-    r.status >= 400 && r.status < 500,
+    'GET /ws without an upgrade -> 426 (handler reachable)',
+    r.status === 426,
     `status=${r.status}`,
+  );
+
+  // N1 (2026-10-30): the check above never attempts an upgrade, so a
+  // proxy that breaks the 101 handshake passed it. Do a real upgrade
+  // through BASE with the API's token-less probe (scripts/lib/realtimeProbe.ts).
+  const probe = await probeRealtime(BASE);
+  record(
+    'realtime: WebSocket upgrade through BASE works (probe 101 + frame + close 4002)',
+    probe.ok,
+    probe.detail,
   );
 }
 
