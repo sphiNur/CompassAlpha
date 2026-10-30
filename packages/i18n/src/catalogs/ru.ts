@@ -1535,6 +1535,7 @@ export const ru = {
   'dishes.errors.qtyTooLarge': 'Количество: не более 8 цифр и 4 знаков после запятой.',
   'sales.errors.qtyTooLarge': 'Слишком много порций.',
   'sales.errors.occurredInFuture': 'Время продажи не может быть в будущем.',
+  'sales.errors.occurredTooOld': 'Продажи можно вносить задним числом не более чем за 90 дней.',
   'inventory.errors.qtyTooLarge': 'Слишком большое количество.',
   'dishes.errors.changedElsewhere': 'Это блюдо только что изменил кто-то другой. Закройте и откройте снова, чтобы увидеть последнюю версию.',
 
@@ -1749,6 +1750,8 @@ export const ru = {
   'settlement.errors.historicalTotalImmutable': 'В этой старой записи есть только итог, разбить её на строки нельзя.',
   'settlement.errors.totalMismatch': 'Сумма строк не совпадает с итогом. Проверьте суммы.',
   'settlement.errors.futureDate': 'Нельзя закрыть день, который ещё не наступил.',
+  'settlement.errors.dateTooOld':
+    'Новое закрытие дня — не старше {days} дней (существующие можно исправлять).',
   'settlement.errors.correctionReasonRequired': 'Чтобы изменить сохранённое закрытие дня, укажите причину исправления.',
   'settlement.errors.versionConflict': 'Это закрытие дня было изменено в другом месте.',
   'settlement.conflict.keptEdits': 'Загружена последняя версия, ваши изменённые суммы и заметка сохранены. Проверьте и сохраните.',

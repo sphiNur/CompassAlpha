@@ -20,6 +20,8 @@ import {
   type SettlementWageItem,
   SettlementWageRosterInputSchema,
   UuidSchema,
+  BACKDATE_LIMIT_DAYS,
+  isoDateDaysBefore,
 } from '@compass/contracts';
 import { z } from 'zod';
 import { todayInTz } from '@compass/domain';
@@ -127,6 +129,7 @@ export const SETTLEMENT_REASON_KEYS: Record<string, string> = {
   'total-mismatch': 'settlement.errors.totalMismatch',
   'details-required': 'settlement.errors.invalidDetails',
   'future-date': 'settlement.errors.futureDate',
+  'too-old': 'settlement.errors.dateTooOld',
   'required-for-correction': 'settlement.errors.correctionReasonRequired',
 };
 
@@ -907,6 +910,12 @@ export const settlementRouter = router({
             eq2(settlement.settlementDate, date),
           ),
       });
+
+      // CLS-14 (2026-10-30): a new close at most BACKDATE_LIMIT_DAYS back.
+      // Correcting an existing older close stays possible.
+      if (!existing && date < isoDateDaysBefore(storeToday, BACKDATE_LIMIT_DAYS)) {
+        detailValidation('date', 'too-old');
+      }
 
       const roster = input.wageItems?.some((item) => !!item.memberId)
         ? await loadWageRoster(tx, ctx.session!.orgId, store.id)

@@ -27,7 +27,11 @@ import {
   Textarea,
   useToast,
 } from '@compass/ui';
-import type { SettlementWageItem } from '@compass/contracts';
+import {
+  BACKDATE_LIMIT_DAYS,
+  isoDateDaysBefore,
+  type SettlementWageItem,
+} from '@compass/contracts';
 import { newIdempotencyKey, trpc } from '../lib/trpc';
 import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
 import { registerStoreChangeGuard, useStoreContext } from '../components/StoreSwitcher';
@@ -597,10 +601,18 @@ export function SettlementPage() {
   const correctionReady = !needsCorrectionReason || draft.correctionReason.trim().length > 0;
   const dateValid = !!businessDate && BUSINESS_DATE.test(date) && date <= businessDate.date;
   const draftSynchronized = !closeQuery.isPending && draftRecordKey === recordKey;
+  // CLS-14: a NEW close may be at most BACKDATE_LIMIT_DAYS back; an
+  // existing older one can still be corrected.
+  const tooOldForNew =
+    !!businessDate &&
+    !existing &&
+    !closeQuery.isFetching &&
+    date < isoDateDaysBefore(businessDate.date, BACKDATE_LIMIT_DAYS);
   const canSave =
     !!currentStoreId &&
     draftSynchronized &&
     dateValid &&
+    !tooOldForNew &&
     !invalidMoney &&
     !invalidDetails &&
     hasChanges &&
@@ -1142,6 +1154,12 @@ export function SettlementPage() {
           </Banner>
         ) : null}
 
+        {tooOldForNew ? (
+          <Banner
+            tone="warn"
+            title={i18n.t('settlement.errors.dateTooOld', { days: BACKDATE_LIMIT_DAYS })}
+          />
+        ) : null}
         {existing ? (
           <Banner tone="info" title={i18n.t('settlement.editing.title')}>
             {i18n.t('settlement.editing.body')}

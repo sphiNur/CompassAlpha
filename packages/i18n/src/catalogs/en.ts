@@ -1683,6 +1683,7 @@ export const en = {
   'dishes.errors.qtyTooLarge': 'Amount: at most 8 digits and 4 decimals.',
   'sales.errors.qtyTooLarge': 'That many servings is too large.',
   'sales.errors.occurredInFuture': 'The sale time cannot be in the future.',
+  'sales.errors.occurredTooOld': 'Sales can be back-filled at most 90 days.',
   'inventory.errors.qtyTooLarge': 'That quantity is too large.',
   'dishes.errors.changedElsewhere': 'Someone else just changed this dish. Close and reopen it to see the latest, then edit.',
 
@@ -1898,6 +1899,8 @@ export const en = {
   'settlement.errors.historicalTotalImmutable': 'This older close only has a total, so it cannot be split into entries.',
   'settlement.errors.totalMismatch': 'The entries do not add up to the total. Check the amounts.',
   'settlement.errors.futureDate': 'You cannot close a day that has not started yet.',
+  'settlement.errors.dateTooOld':
+    'A new daily close can be at most {days} days back (existing ones can still be corrected).',
   'settlement.errors.correctionReasonRequired': 'Changing a saved close needs a correction reason.',
   'settlement.errors.versionConflict': 'This daily close was changed elsewhere.',
   'settlement.conflict.keptEdits': 'Loaded the latest version and kept the amounts and note you changed. Check them, then save.',

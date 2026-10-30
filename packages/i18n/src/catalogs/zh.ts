@@ -1455,6 +1455,7 @@ export const zh = {
   'dishes.errors.qtyTooLarge': '用量最多 8 位整数、4 位小数。',
   'sales.errors.qtyTooLarge': '份数太大了。',
   'sales.errors.occurredInFuture': '销售时间不能晚于现在。',
+  'sales.errors.occurredTooOld': '销售时间最多补录到 90 天前。',
   'inventory.errors.qtyTooLarge': '数量太大了。',
   'dishes.errors.changedElsewhere': '这道菜刚被别人改过。关闭后重新打开，看到最新内容再改。',
 
@@ -1661,6 +1662,8 @@ export const zh = {
   'settlement.errors.historicalTotalImmutable': '这条旧记录只有合计，不能拆成明细。',
   'settlement.errors.totalMismatch': '明细加起来和合计对不上，请检查金额。',
   'settlement.errors.futureDate': '还没到的日期不能日结。',
+  'settlement.errors.dateTooOld':
+    '超过 {days} 天的日期不能新建日结（已有的记录仍可更正）。',
   'settlement.errors.correctionReasonRequired': '修改已保存的日结，需要填写更正原因。',
   'settlement.errors.versionConflict': '该每日结算已在其他位置被修改。',
   'settlement.conflict.keptEdits': '已载入最新版本，并保留了你改过的金额和备注。请核对后再保存。',
