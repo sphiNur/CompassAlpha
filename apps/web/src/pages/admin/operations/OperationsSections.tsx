@@ -78,7 +78,7 @@ export function ActivitySection() {
         )}
       </DataState>
 
-      <h2 className="mt-6 mb-2 text-old-h2 font-semibold text-[var(--c-fg)]">Recent events</h2>
+      <h2 className="mt-6 mb-2 text-old-h2 font-semibold text-[var(--c-fg)]">{i18n.t('ops.activity.recentEvents')}</h2>
       <DataState
         query={eventsQuery}
         emptyWhen={(d) => d.length === 0}
@@ -116,9 +116,9 @@ export function ActivitySection() {
                       className="font-mono text-old-label font-semibold text-[var(--c-fg)]"
                       title={
                         claimReason === 'override'
-                          ? 'Another approver took over this claim — see banner on ApprovalPage'
+                          ? i18n.t('ops.activity.claimOverride')
                           : claimReason === 'timeout'
-                            ? 'Worker released this claim after the idle threshold (CLAIM_TIMEOUT_MINUTES)'
+                            ? i18n.t('ops.activity.claimTimeout')
                             : undefined
                       }
                     >
@@ -199,7 +199,7 @@ export function HistorySection() {
     <div className="px-4 py-3">
       <div className="mb-3">
         <Select value={storeFilter ?? ''} onChange={(e) => setStoreFilter(e.target.value || null)}>
-          <option value="">All stores</option>
+          <option value="">{i18n.t('ops.history.allStores')}</option>
           {(stores.data ?? []).map((st) => (
             <option key={st.id} value={st.id}>
               {st.name}
@@ -275,9 +275,11 @@ export function HistorySection() {
                       </span>
                     ) : null}
                     {r.reviewMinutes !== null ? (
-                      <span>· decided in {r.reviewMinutes} min</span>
+                      <span>{i18n.t('ops.history.decidedIn', { n: r.reviewMinutes })}</span>
                     ) : null}
-                    {r.decidedByName ? <span>· by {r.decidedByName}</span> : null}
+                    {r.decidedByName ? (
+                      <span>{i18n.t('ops.history.decidedBy', { name: r.decidedByName })}</span>
+                    ) : null}
                   </div>
                   {isOpen ? (
                     <div className="border-t border-[var(--c-divider)] px-4 py-2">
@@ -294,7 +296,7 @@ export function HistorySection() {
                               {c.displayName ?? c.memberId.slice(0, 6)}
                             </span>
                             <span className="font-mono tabular-nums text-[var(--c-fg-muted)]">
-                              {c.skuCount} SKU · {formatQty(c.totalQty)}
+                              {i18n.t('ops.history.skuCount', { n: c.skuCount })} · {formatQty(c.totalQty)}
                             </span>
                           </li>
                         ))}
@@ -504,7 +506,9 @@ function TargetedPurgeBrowser() {
                       </div>
                     </div>
                     {inRun ? (
-                      <span className="text-old-tiny text-[var(--c-fg-muted)]">in&nbsp;run</span>
+                      <span className="text-old-tiny text-[var(--c-fg-muted)]">
+                        {i18n.t('ops.purge.inRun')}
+                      </span>
                     ) : (
                       <Button
                         size="sm"
@@ -543,7 +547,7 @@ function TargetedPurgeBrowser() {
           {(rows) => (
             <ul className="flex flex-col gap-1.5" role="list">
               {rows.map((r) => {
-                const label = `Run ${r.runDate} #${r.runIndex + 1}`;
+                const label = i18n.t('ops.purge.runLabel', { date: r.runDate, n: r.runIndex + 1 });
                 return (
                   <li
                     key={r.runId}
@@ -567,7 +571,9 @@ function TargetedPurgeBrowser() {
                             n: r.sessionCount,
                           }),
                         })}
-                        {r.purchaserDisplayName ? ` · by ${r.purchaserDisplayName}` : ''}
+                        {r.purchaserDisplayName
+                          ? ` ${i18n.t('ops.history.decidedBy', { name: r.purchaserDisplayName })}`
+                          : ''}
                       </div>
                     </div>
                     <Button
@@ -596,7 +602,7 @@ function TargetedPurgeBrowser() {
       <Sheet
         open={!!sessionTarget}
         onOpenChange={(o) => !o && !sessionCommit.isPending && setSessionTarget(null)}
-        title={`Delete order session`}
+        title={i18n.t('ops.purge.deleteSessionTitle')}
         description={sessionTarget?.label}
         footer={
           <Button
@@ -613,10 +619,10 @@ function TargetedPurgeBrowser() {
             }}
           >
             {sessionCommit.isPending
-              ? 'Deleting…'
+              ? i18n.t('ops.purge.deleting')
               : sessionTarget?.preview
-                ? `Delete ${sessionTarget.preview.total} rows`
-                : 'Loading preview…'}
+                ? i18n.t('ops.purge.deleteRows', { n: sessionTarget.preview.total })
+                : i18n.t('ops.purge.counting')}
           </Button>
         }
       >
@@ -656,10 +662,10 @@ function TargetedPurgeBrowser() {
             }}
           >
             {runCommit.isPending
-              ? 'Deleting…'
+              ? i18n.t('ops.purge.deleting')
               : runTarget?.preview
-                ? `Delete ${runTarget.preview.total} rows`
-                : 'Loading preview…'}
+                ? i18n.t('ops.purge.deleteRows', { n: runTarget.preview.total })
+                : i18n.t('ops.purge.counting')}
           </Button>
         }
       >
@@ -685,10 +691,11 @@ function TargetedPurgeBrowser() {
 }
 
 function CascadePreview({ byTable, total }: { byTable: Record<string, number>; total: number }) {
+  const i18n = useI18n();
   return (
     <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
       <div className="text-old-body font-semibold text-[var(--c-fg)]">
-        {total} rows would be deleted
+        {i18n.t('ops.purge.rowsWouldBeDeleted', { n: total })}
       </div>
       <ul className="mt-2 flex flex-col gap-1">
         {Object.entries(byTable)
@@ -1050,18 +1057,18 @@ export function PriceReportSection() {
                 </div>
                 <div className="flex flex-wrap items-baseline gap-3 text-old-label text-[var(--c-fg-muted)]">
                   <span>
-                    7d avg{' '}
+                    {i18n.t('ops.price.avg7d')}{' '}
                     <span className="font-mono tabular-nums text-[var(--c-fg)]">
                       {r.avg7d !== null ? formatMoney(r.avg7d) : '—'}
                     </span>
                   </span>
                   <span>
-                    30d avg{' '}
+                    {i18n.t('ops.price.avg30d')}{' '}
                     <span className="font-mono tabular-nums text-[var(--c-fg)]">
                       {r.avg30d !== null ? formatMoney(r.avg30d) : '—'}
                     </span>
                   </span>
-                  <span>{r.observations} obs</span>
+                  <span>{i18n.t('ops.price.observations', { n: r.observations })}</span>
                   <Badge tone={tone}>
                     {arrow} {deltaLabel}
                   </Badge>
@@ -1813,10 +1820,10 @@ export function MaintenanceSection() {
             }}
           >
             {dateCommitMut.isPending
-              ? 'Resetting…'
+              ? i18n.t('ops.maint.resetting')
               : datePreview && datePreview.total > 0
-                ? `Delete ${datePreview.total} rows`
-                : 'Nothing to delete'}
+                ? i18n.t('ops.purge.deleteRows', { n: datePreview.total })
+                : i18n.t('ops.maint.nothingToDelete')}
           </Button>
         }
       >
@@ -1825,8 +1832,8 @@ export function MaintenanceSection() {
             <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
               <div className="text-old-body font-semibold text-[var(--c-fg)]">
                 {datePreview.total === 0
-                  ? `Nothing on ${datePreview.date} — already clean.`
-                  : `${datePreview.total} rows from ${datePreview.date}`}
+                  ? i18n.t('ops.maint.alreadyClean', { date: datePreview.date })
+                  : i18n.t('ops.maint.rowsFromDate', { n: datePreview.total, date: datePreview.date })}
               </div>
               {datePreview.total > 0 ? (
                 <ul className="mt-2 flex flex-col gap-1">
@@ -1866,7 +1873,9 @@ export function MaintenanceSection() {
               allCommit.mutate({ dryRun: false, confirmText });
             }}
           >
-            {allCommit.isPending ? 'Purging…' : `Delete ${allDryRun.data?.total ?? 0} rows`}
+            {allCommit.isPending
+              ? i18n.t('ops.purge.deleting')
+              : i18n.t('ops.purge.deleteRows', { n: allDryRun.data?.total ?? 0 })}
           </Button>
         }
       >
@@ -1874,7 +1883,7 @@ export function MaintenanceSection() {
           {allDryRun.data ? (
             <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
               <div className="text-old-body font-semibold text-[var(--c-fg)]">
-                {allDryRun.data.total} rows would be deleted
+                {i18n.t('ops.purge.rowsWouldBeDeleted', { n: allDryRun.data.total })}
               </div>
               <ul className="mt-2 flex flex-col gap-1">
                 {Object.entries(allDryRun.data.byTable)
