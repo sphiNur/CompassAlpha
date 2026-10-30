@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { schema as s } from '@compass/db';
 import { SkuListInputSchema } from '@compass/contracts';
 import { authedProcedure, router } from '../trpc';
+import { canSeePrices } from '../../services/priceRedaction';
 import { loadSkuPriceStats } from '../../services/priceStats';
 import { getActorStoreIds, getActorStoreIdsForPermission } from '../../services/storeScope';
 
@@ -115,13 +116,17 @@ export const catalogRouter = router({
     .query(async ({ ctx, input }) => {
       const includeArchived = input?.includeArchived ?? false;
       return ctx.withOrg(async (tx) => {
-        return tx.query.suppliers.findMany({
+        const rows = await tx.query.suppliers.findMany({
           where: (sup, { eq: eq2, and: and2 }) =>
             includeArchived
               ? eq2(sup.orgId, ctx.session!.orgId)
               : and2(eq2(sup.orgId, ctx.session!.orgId), eq2(sup.isArchived, false)),
           orderBy: (sup, { asc }) => asc(sup.name),
         });
+        // ORD-12 (2026-10-30): staff get names only, not phone / Telegram /
+        // address / notes.
+        if (canSeePrices(ctx.session)) return rows;
+        return rows.map((r) => ({ ...r, contactPhone: null, contactTg: null, address: null, notes: null }));
       });
     }),
 
@@ -156,6 +161,9 @@ export const catalogRouter = router({
         .optional(),
     )
     .query(async ({ ctx, input }) => {
+      // HIS-4 / ORD-12 (2026-10-30): no prices for members without
+      // prices.view; an empty list keeps their screens working.
+      if (!canSeePrices(ctx.session)) return [];
       return ctx.withOrg(async (tx) => {
         // 2026-07-30: the 30-line last/avg7d/avg30d accumulator that used
         // to live inline moved to services/priceStats.ts so
