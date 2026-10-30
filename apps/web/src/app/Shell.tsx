@@ -59,10 +59,16 @@ import {
   useNavStore,
   type Tab,
 } from '../stores/navStore';
-import { resolveDeepLinkTab, stripDeepLinkPath, tabFromDeepLinkPath } from '../lib/deepLink';
+import {
+  resolveDeepLinkTab,
+  stripDeepLinkPath,
+  tabFromDeepLinkPath,
+  tabFromStartParam,
+} from '../lib/deepLink';
 import { publishMainButtonInset } from '../lib/mainButtonInset';
 import { useI18n } from '../hooks/useI18n';
 import {
+  getTg,
   isInTelegram,
   useTelegramSettingsButton,
   usePageMainButtonState,
@@ -257,8 +263,27 @@ function ShellInner() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const { pathname, search, hash } = window.location;
-    if (!tabFromDeepLinkPath(pathname)) return;
-    const target = resolveDeepLinkTab(pathname, visibleKey.split(',') as Tab[]);
+    const visible = visibleKey.split(',') as Tab[];
+    if (!tabFromDeepLinkPath(pathname)) {
+      // A bot link `startapp=tab_<name>` (atlas SHL-6). Telegram keeps the
+      // same start_param for a reload, so apply it once per launch.
+      const startParam = getTg()?.initDataUnsafe?.start_param;
+      const linked = tabFromStartParam(startParam);
+      if (!linked || !visible.includes(linked)) return;
+      try {
+        const seenKey = 'compass.startParamTab';
+        if (window.sessionStorage.getItem(seenKey) === startParam) return;
+        window.sessionStorage.setItem(seenKey, startParam ?? '');
+      } catch {
+        /* no storage: apply it anyway */
+      }
+      if (linked === useNavStore.getState().tab) return;
+      void requestTabChange(linked).then((allowed) => {
+        if (allowed) setPersistedTab(linked);
+      });
+      return;
+    }
+    const target = resolveDeepLinkTab(pathname, visible);
     try {
       window.history.replaceState(
         window.history.state,
