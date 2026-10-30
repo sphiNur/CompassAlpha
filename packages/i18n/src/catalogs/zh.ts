@@ -887,6 +887,7 @@ export const zh = {
   'run.label.splitsMismatch': '分摊: {sum} / {target}',
   // 配送阶段标签 (M1.9 修)
   'run.deliveryStage.pending': '未配送',
+  'run.deliveryStage.dispatchDenied': '你没有给该门店配送的权限',
   'run.deliveryStage.delivered': '待确认',
   'run.deliveryStage.confirmed': '已确认',
   'run.deliveryStageBadge.pending': '待办',

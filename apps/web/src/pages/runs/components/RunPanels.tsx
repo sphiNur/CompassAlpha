@@ -775,8 +775,12 @@ export function ActiveRunPanel({
               // as raw English. The delivery store list is the
               // purchaser's main during-run view; non-English users were
               // seeing English on every store row.
-              const subtitle = i18n.t(('run.deliveryStage.' + stage) as Parameters<typeof i18n.t>[0]);
-              const tappable = stage !== 'confirmed';
+              const dispatchDenied =
+                stage !== 'confirmed' && (run.dispatchDeniedStoreIds ?? []).includes(storeId);
+              const subtitle = dispatchDenied
+                ? i18n.t('run.deliveryStage.dispatchDenied')
+                : i18n.t(('run.deliveryStage.' + stage) as Parameters<typeof i18n.t>[0]);
+              const tappable = stage !== 'confirmed' && !dispatchDenied;
               /* UIUX-B1 (2026-07-06): stage Badge deleted — the meta line
                  already states the stage (UI-2: status once per row);
                  the L1 delivery-stage rail lands in the B3 row pass. */

@@ -2534,9 +2534,28 @@ export const runRouter = router({
           total: sumDecimalStrings([moneyItemsTotal, moneyExpensesTotal]),
         };
 
+        // DLV-14 (2026-10-30): a store-scoped deny on delivery.dispatch only
+        // showed up as an error after tapping that store's row. Name those
+        // stores so the row can say so up front. Only while delivering, and
+        // only for an actor who can dispatch at all.
+        const dispatchDeniedStoreIds: string[] = [];
+        if (run.status === 'delivering' && ctx.session!.permissions.has('delivery.dispatch')) {
+          for (const storeId of await runInvolvedStoreIds(tx, run)) {
+            if (allowedStoreSet && !allowedStoreSet.has(storeId)) continue;
+            const perms = await effectivePermissionsForStore(
+              tx,
+              ctx.session!.memberId,
+              storeId,
+              ctx.session!.permissions,
+            );
+            if (!perms.has('delivery.dispatch')) dispatchDeniedStoreIds.push(storeId);
+          }
+        }
+
         return {
           ...run,
           money,
+          dispatchDeniedStoreIds,
           ...(allowedStoreSet
             ? {
                 plannedTotal: null,

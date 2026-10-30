@@ -55,6 +55,8 @@ export type PreviewSupplierGroup = {
 export interface ActiveRun {
   id: string;
   status: string;
+  /** DLV-14: stores this actor may not dispatch to (store-scoped deny). */
+  dispatchDeniedStoreIds?: string[];
   items: Array<{
     skuId: string;
     plannedQty: string;
