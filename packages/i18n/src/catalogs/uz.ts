@@ -1752,6 +1752,7 @@ export const uz = {
   'confirm.issue.receivedQtyNotShort':
     "{max} — bu hammasi, «Yaxshi»ni tanlang; kamomad bo'lsa {max} dan kam kiriting",
   'confirm.receivedOf': 'qabul qilindi {received} / {qty} {unit}',
+  'confirm.issue.photoOf': '{name} muammo rasmi',
   'confirm.runPicker.ariaLabel': 'Qaysi yetkazib berishni tekshirish',
   'confirm.runPicker.option': '#{n} · {date}',
   'finance.label.expense': 'Xarajat',

@@ -1739,6 +1739,7 @@ export const ru = {
   'confirm.issue.receivedQtyNotShort':
     '{max} — это всё, выберите «OK»; при недостаче введите меньше {max}',
   'confirm.receivedOf': 'получено {received} / {qty} {unit}',
+  'confirm.issue.photoOf': 'Фото проблемы: {name}',
   'confirm.runPicker.ariaLabel': 'Какую поставку проверить',
   'confirm.runPicker.option': '№{n} · {date}',
   'finance.label.expense': 'Расход',

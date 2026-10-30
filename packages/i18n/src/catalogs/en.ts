@@ -1888,6 +1888,7 @@ export const en = {
   'confirm.issue.receivedQtyNotShort':
     '{max} is everything — choose “OK”; for a shortfall enter less than {max}',
   'confirm.receivedOf': 'received {received} / {qty} {unit}',
+  'confirm.issue.photoOf': 'Problem photo for {name}',
   'confirm.runPicker.ariaLabel': 'Which delivery to check',
   'confirm.runPicker.option': '#{n} · {date}',
   'finance.label.expense': 'Expense',
