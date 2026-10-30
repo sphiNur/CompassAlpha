@@ -319,7 +319,13 @@ export function PeopleSection({
                   </div>
                   {/* UIUX-B1: 'active' is the silent default (L1 — no
                       unearned green); only the exception renders. */}
-                  {m.status !== 'active' ? <Badge tone="warn">{m.status}</Badge> : null}
+                  {m.status !== 'active' ? (
+                    <Badge tone="warn">
+                      {m.status === 'suspended' || m.status === 'invited'
+                        ? i18n.t(`people.memberStatus.${m.status}`)
+                        : m.status}
+                    </Badge>
+                  ) : null}
                 </CardHeader>
                 {/* Store-affiliation chips (added 2026-05-05). Empty
                     array is rendered as "no store" hint so admins can
@@ -362,8 +368,12 @@ export function PeopleSection({
                             onClick={() =>
                               nativeConfirm(
                                 scopedStoreName
-                                  ? `Revoke "${r.name}" in ${scopedStoreName} from ${m.displayName}?`
-                                  : `Revoke "${r.name}" from ${m.displayName}?`,
+                                  ? i18n.t('people.revokeRoleInStoreConfirm', {
+                                      role: r.name,
+                                      store: scopedStoreName,
+                                      name: m.displayName,
+                                    })
+                                  : i18n.t('people.revokeRoleConfirm', { role: r.name, name: m.displayName }),
                                 () => revoke.mutate({ bindingId: r.bindingId }),
                               )
                             }
@@ -1832,7 +1842,7 @@ function ManageMemberSheet({
                         'press flex items-center gap-2 rounded-[var(--r-utility)] px-2 py-1.5 ' +
                         (editable ? 'cursor-pointer' : 'cursor-not-allowed opacity-60')
                       }
-                      title={editable ? undefined : "You don't administer this store"}
+                      title={editable ? undefined : i18n.t('people.notYourStore')}
                     >
                       <Checkbox
                         checked={checked}
@@ -2027,7 +2037,7 @@ function TransferStoreSheet({
               </Banner>
             ) : (
               <Select value={toStoreId} onChange={(e) => setToStoreId(e.target.value)}>
-                <option value="">— pick a destination store —</option>
+                <option value="">{i18n.t('people.pickDestinationStore')}</option>
                 {destinationStores.map((st) => (
                   <option key={st.id} value={st.id}>
                     {st.name}
@@ -2210,7 +2220,11 @@ function MemberPermissionsSheet({
     <Sheet
       open={open}
       onOpenChange={(o) => !o && onClose()}
-      title={target ? `Permissions — ${target.displayName}` : 'Permissions'}
+      title={
+        target
+          ? i18n.t('people.permissionsFor', { name: target.displayName })
+          : i18n.t('people.permissionsTitle')
+      }
       description={
         detail.data
           ? i18n.t('people.effectiveOverridesLine', {
@@ -2259,7 +2273,7 @@ function MemberPermissionsSheet({
                       })
                     }
                     count={tabCount}
-                    title={editable ? undefined : "You don't administer this store — read-only"}
+                    title={editable ? undefined : i18n.t('people.notYourStoreReadOnly')}
                   >
                     {st.name}
                   </ScopeTab>
@@ -2294,7 +2308,7 @@ function MemberPermissionsSheet({
                             </div>
                           ) : null}
                         </div>
-                        {fromRole ? <Badge tone="muted">from role</Badge> : null}
+                        {fromRole ? <Badge tone="muted">{i18n.t('people.perm.fromRoleBadge')}</Badge> : null}
                       </div>
                       {/* M3.17 (2026-05-16): migrated from local SegBtn
                           to the shared <Segmented> primitive. Per-option
@@ -2305,15 +2319,15 @@ function MemberPermissionsSheet({
                         size="sm"
                         value={mode}
                         options={[
-                          { value: 'role', label: 'From role' },
+                          { value: 'role', label: i18n.t('people.perm.fromRole') },
                           {
                             value: 'allow',
-                            label: 'Allow',
+                            label: i18n.t('people.perm.allow'),
                             activeBg: 'bg-[var(--c-success)]',
                           },
                           {
                             value: 'deny',
-                            label: 'Deny',
+                            label: i18n.t('people.perm.deny'),
                             activeBg: 'bg-[var(--c-danger)]',
                           },
                         ]}
@@ -2583,7 +2597,7 @@ function GrantRoleSheet({
           <Segmented<'store' | 'global'>
             value={scopeMode}
             options={[
-              { value: 'store', label: 'In specific store(s)' },
+              { value: 'store', label: i18n.t('people.grantInStores') },
               {
                 value: 'global',
                 label: i18n.t(

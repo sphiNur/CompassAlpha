@@ -247,14 +247,16 @@ export function StoresHomeSection({
                         {st.name}
                       </span>
                       <span className="mt-0.5 block text-old-label text-[var(--c-fg-muted)]">
-                        {st.code ? `code ${st.code}` : 'no code'}
+                        {st.code
+                          ? i18n.t('stores.codeLabel', { code: st.code })
+                          : i18n.t('stores.noCode')}
                         {' · '}
                         {i18n.t('admin.label.memberCount', { n: count })}
                       </span>
                     </span>
                     {/* UIUX-B1: active is the silent default; only the
                         exception (paused) earns ink. */}
-                    {!st.isActive ? <Badge tone="muted">paused</Badge> : null}
+                    {!st.isActive ? <Badge tone="muted">{i18n.t('stores.paused')}</Badge> : null}
                   </button>
                 </li>
               );
@@ -1157,7 +1159,7 @@ function StoreCloneRolesSheet({
                 value={sourceStoreId}
                 onChange={(e) => setSourceStoreId(e.target.value)}
               >
-                <option value="">— pick a source store —</option>
+                <option value="">{i18n.t('stores.pickSourceStore')}</option>
                 {sourceCandidates.map((st) => (
                   <option key={st.id} value={st.id}>
                     {st.name}
