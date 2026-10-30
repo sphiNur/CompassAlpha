@@ -2713,7 +2713,9 @@ export const runRouter = router({
       ),
     ),
 
-  markUnavailable: authedProcedure
+  // BUY-9 (2026-10-30): idempotent, so an offline replay of a request
+  // that already landed (lost response) is answered, not refused.
+  markUnavailable: idempotentMutation
     .input(MarkUnavailableInputSchema)
     .mutation(async ({ ctx, input }) =>
       runSimpleCommand(ctx, input.runId, (state) =>
@@ -2734,7 +2736,7 @@ export const runRouter = router({
       ),
     ),
 
-  deliverToStore: authedProcedure.input(DispatchInputSchema).mutation(async ({ ctx, input }) => {
+  deliverToStore: idempotentMutation.input(DispatchInputSchema).mutation(async ({ ctx, input }) => {
     // Purchaser delivering — they need run.purchase, NOT a store-scope
     // assignment. (The purchaser drives the run on behalf of all stores.)
     //

@@ -166,7 +166,25 @@ export async function dispatchRunEventNotifications(
             template: 'run.storeDelivered',
             title: 'Delivery arrived',
             body: 'Items have been delivered to your store — please confirm.',
-            dedupKey: `run:${state.streamId}:store:${e.payload.storeId}:delivered`,
+            // DLV-5 (2026-10-30): with the seq, a delivery made again after
+            // a recall notifies again instead of deduping into silence.
+            dedupKey: `run:${state.streamId}:store:${e.payload.storeId}:delivered:${e.seq}`,
+            payload: { runId: state.streamId, storeId: e.payload.storeId },
+            deepLink: '/confirm',
+          });
+        }
+        break;
+      }
+      case 'StoreDeliveryUndone': {
+        // DLV-5: the recall dialog says the store is told; it was not.
+        const recipients = await findStoreStaff(db, orgId, e.payload.storeId);
+        const targets = recipients.filter((u) => u !== actorUserId);
+        if (targets.length > 0) {
+          await dispatch(db, orgId, targets, {
+            template: 'run.storeDeliveryRecalled',
+            title: 'Delivery recalled',
+            body: 'The purchaser recalled this delivery. Wait until it is delivered again before confirming.',
+            dedupKey: `run:${state.streamId}:store:${e.payload.storeId}:recalled:${e.seq}`,
             payload: { runId: state.streamId, storeId: e.payload.storeId },
             deepLink: '/confirm',
           });

@@ -226,12 +226,14 @@ export function RunPage() {
       'run.markUnavailable': async (entry) => {
         await utils.client.run.markUnavailable.mutate(
           entry.input as Parameters<typeof utils.client.run.markUnavailable.mutate>[0],
+          entry.idempotencyKey ? { context: { idempotencyKey: entry.idempotencyKey } } : undefined,
         );
         void utils.run.get.invalidate();
       },
       'run.deliverToStore': async (entry) => {
         await utils.client.run.deliverToStore.mutate(
           entry.input as Parameters<typeof utils.client.run.deliverToStore.mutate>[0],
+          entry.idempotencyKey ? { context: { idempotencyKey: entry.idempotencyKey } } : undefined,
         );
         void utils.run.get.invalidate();
         void utils.run.list.invalidate();
@@ -489,16 +491,26 @@ export function RunPage() {
    */
   const revisePurchaseBusyForSheet = revisePurchase.isPending && paymentBusySkuId === null;
 
+  // BUY-9 (2026-10-30): the replay carries the first attempt's key (as
+  // purchaseItem does), so a request that landed with its response lost
+  // is not replayed into "item not pending" and a false "please review".
+  const markUnavailableIdemCtx = useRef<{ idempotencyKey?: string }>({}).current;
   const markUnavailable = trpc.run.markUnavailable.useMutation({
+    trpc: { context: markUnavailableIdemCtx },
+    onMutate: () => {
+      const idempotencyKey = newIdempotencyKey();
+      markUnavailableIdemCtx.idempotencyKey = idempotencyKey;
+      return { idempotencyKey };
+    },
     onSuccess: () => {
       invalidateRunQuietly();
       setUnavailableFor(null);
       setUnavailableNote('');
       toast.info(i18n.t('run.toast.markedUnavailable'));
     },
-    onError: (err, vars) => {
+    onError: (err, vars, ctx) => {
       if (isLikelyNetworkError(err)) {
-        void offline.enqueue('run.markUnavailable', vars);
+        void offline.enqueue('run.markUnavailable', vars, ctx?.idempotencyKey);
         setUnavailableFor(null);
         setUnavailableNote('');
         toast.info(i18n.t('run.toast.purchaseSavedOffline'));
@@ -531,13 +543,20 @@ export function RunPage() {
     },
     onError: errToast('common.error'),
   });
+  const deliverIdemCtx = useRef<{ idempotencyKey?: string }>({}).current;
   const deliverToStore = trpc.run.deliverToStore.useMutation({
+    trpc: { context: deliverIdemCtx },
+    onMutate: () => {
+      const idempotencyKey = newIdempotencyKey();
+      deliverIdemCtx.idempotencyKey = idempotencyKey;
+      return { idempotencyKey };
+    },
     onSuccess: () => {
       invalidateRunQuietly(true);
     },
-    onError: (err, vars) => {
+    onError: (err, vars, ctx) => {
       if (isLikelyNetworkError(err)) {
-        void offline.enqueue('run.deliverToStore', vars);
+        void offline.enqueue('run.deliverToStore', vars, ctx?.idempotencyKey);
         toast.info(i18n.t('run.toast.purchaseSavedOffline'));
       } else {
         errToast('common.error')(err);
