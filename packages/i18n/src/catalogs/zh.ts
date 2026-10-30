@@ -423,6 +423,9 @@ export const zh = {
   'auth.onboarding.namePlaceholder': '例如：张三',
   'auth.onboarding.continue': '继续',
   'auth.onboarding.failed': '无法保存名字',
+  'auth.noStoreYet.title': '还没有门店',
+  'auth.noStoreYet.body': '先在 管理 › 门店 新建一个门店，下单、验收、日结和销售才能使用。',
+  'auth.noStoreYet.action': '去新建门店',
   'auth.noStore.title': '尚未分配店铺',
   'auth.noStore.body': '账号已就绪，但管理员还没把您分配到店铺，请联系管理员。',
 

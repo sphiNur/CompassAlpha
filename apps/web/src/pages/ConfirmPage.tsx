@@ -34,6 +34,7 @@ import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
 import { formatQty } from '../lib/format';
+import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
 import { useStoreContext } from '../components/StoreSwitcher';
 import {
   checkReceivedQty,
@@ -59,6 +60,7 @@ export function ConfirmPage() {
   // store. Reading via the context helper coerces 'all' to null so the
   // pick-a-store empty-state takes over (added 2026-05-05).
   const storeCtx = useStoreContext();
+  const noStoreYet = useNoStoreYet();
   const currentStoreId = storeCtx.kind === 'specific' ? storeCtx.storeId : null;
   const toast = useToast();
   const errToast = useErrToast();
@@ -410,7 +412,9 @@ export function ConfirmPage() {
          lives in SettingsSheet, reachable via Telegram's gear button. */
       <div className="flex flex-col gap-3 pb-4">
         <div className="px-4 pt-3">
-          {storeCtx.kind === 'none' ? (
+          {noStoreYet ? (
+            <NoStoreYet />
+          ) : storeCtx.kind === 'none' ? (
             <EmptyState
               title={i18n.t('auth.noStore.title')}
               description={i18n.t('auth.noStore.body')}

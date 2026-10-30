@@ -450,6 +450,9 @@ export const ru = {
   'auth.onboarding.namePlaceholder': 'например, Иван',
   'auth.onboarding.continue': 'Продолжить',
   'auth.onboarding.failed': 'Не удалось сохранить имя',
+  'auth.noStoreYet.title': 'Магазинов пока нет',
+  'auth.noStoreYet.body': 'Сначала создайте магазин в разделе Управление › Магазины: заказы, приёмка, закрытие дня и продажи ведутся по магазинам.',
+  'auth.noStoreYet.action': 'Создать магазин',
   'auth.noStore.title': 'Магазин ещё не назначен',
   'auth.noStore.body':
     'Учётная запись готова, но администратор пока не привязал вас к магазину. Свяжитесь с менеджером.',

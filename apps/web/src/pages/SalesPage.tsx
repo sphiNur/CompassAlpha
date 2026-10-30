@@ -11,6 +11,7 @@
  */
 import { EmptyState, PageHeader } from '@compass/ui';
 import { StoreSalesPanel } from '../components/sales/StoreSalesPanel';
+import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
 import { useStoreContext } from '../components/StoreSwitcher';
 import { useI18n } from '../hooks/useI18n';
 import { useAuthStore } from '../stores/authStore';
@@ -18,6 +19,7 @@ import { useAuthStore } from '../stores/authStore';
 export function SalesPage() {
   const i18n = useI18n();
   const storeCtx = useStoreContext();
+  const noStoreYet = useNoStoreYet();
   const storeName = useAuthStore((s) =>
     storeCtx.kind === 'specific'
       ? (s.session?.stores.find((store) => store.id === storeCtx.storeId)?.name ?? null)
@@ -29,7 +31,9 @@ export function SalesPage() {
     // org admin on the all-stores context who must pick one store.
     return (
       <div className="flex flex-col gap-3 px-4 pb-4 pt-3">
-        {storeCtx.kind === 'none' ? (
+        {noStoreYet ? (
+          <NoStoreYet />
+        ) : storeCtx.kind === 'none' ? (
           <EmptyState
             title={i18n.t('auth.noStore.title')}
             description={i18n.t('auth.noStore.body')}
