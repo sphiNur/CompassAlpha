@@ -400,6 +400,9 @@ export const zh = {
     '这里还没有你能用的功能',
   'shell.noTabs.body':
     '你的角色没有下单、审核、采购等任何功能的权限。需要的话请联系管理员。',
+  'shell.offline.title': '现在离线',
+  'shell.offline.body': '看到的是上次加载的内容；记下的修改会在联网后自动同步。',
+  'order.pendingSync': '{n} 项修改等待联网同步',
   'shell.pageError.title': '这个页面出错了',
   'shell.pageError.body': '其他页面不受影响。可以重试，或者先切到别的页面。',
   'auth.invite.failedStillIn':
