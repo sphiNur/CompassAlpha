@@ -23,6 +23,19 @@ export { loadCatalog, preloadCatalog, isLoaded, getLoadedCatalog } from './catal
 // missing from en — should be ~never).
 const TAIL: Locale[] = ['en', 'ru', 'zh', 'uz'];
 
+/**
+ * Each language's name in that language, for language pickers and the
+ * "name in <language>" fields. One list so the Uzbek name is spelled with
+ * the real oʻ (U+02BB) everywhere — it used to be "O'zbekcha" in three
+ * hand-copied lists.
+ */
+export const LANGUAGE_NATIVE_NAMES: Record<Locale, string> = {
+  uz: 'Oʻzbekcha',
+  ru: 'Русский',
+  en: 'English',
+  zh: '中文',
+};
+
 export function detectLocale(input: string | undefined | null): Locale {
   if (!input) return 'en';
   const lower = input.toLowerCase();

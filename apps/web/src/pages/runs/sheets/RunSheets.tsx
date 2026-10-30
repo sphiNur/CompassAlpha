@@ -1250,7 +1250,11 @@ export function AddItemSheet({
               </div>
               {totalHint !== null ? (
                 <div className="text-old-label text-[var(--c-fg-muted)]">
-                  {i18n.t('run.action.addItem.totalHint')}:{' '}
+                  {/* "Line total: " / "小计：" — the colon belongs to the language. */}
+                  {i18n.t('common.labelValue', {
+                    label: i18n.t('run.action.addItem.totalHint'),
+                    value: '',
+                  })}
                   <span className="font-mono font-semibold tabular-nums text-[var(--c-fg)]">
                     {formatMoney(totalHint)} {currency}
                   </span>
