@@ -2,7 +2,6 @@ import { z } from 'zod';
 import {
   DateStringSchema,
   DecimalStringSchema,
-  PositiveDecimalStringSchema,
   UuidSchema,
 } from './common';
 
@@ -48,17 +47,32 @@ export const RunHistoryInputSchema = z
   });
 export type RunHistoryInput = z.infer<typeof RunHistoryInputSchema>;
 
+/**
+ * RE-ENG-1 / BUY-15 (2026-10-30): what the columns can hold. Prices are
+ * numeric(14,2): a third decimal was stored rounded, so reports and the
+ * run's own total disagreed, and a 13th digit was a 500. Quantities are
+ * numeric(12,3).
+ */
+export const PurchasePriceSchema = z
+  .string()
+  .regex(/^\d{1,12}(\.\d{1,2})?$/, 'run.errors.priceFormat')
+  .refine((v) => Number(v) > 0, { message: 'run.errors.priceFormat' });
+export const PurchaseQtySchema = z
+  .string()
+  .regex(/^\d{1,9}(\.\d{1,3})?$/, 'run.errors.qtyFormat')
+  .refine((v) => Number(v) > 0, { message: 'run.errors.qtyFormat' });
+
 export const StoreSplitSchema = z.object({
   storeId: UuidSchema,
   // Per-store qty must be > 0 — a 0-qty split is meaningless and causes
   // sum-mismatch downstream. Domain enforces too (defense-in-depth).
-  qty: PositiveDecimalStringSchema,
+  qty: PurchaseQtySchema,
   /**
    * Optional per-store override for cases where the same SKU is bought
    * for different stores at different prices or payment paths. When
    * omitted, the item-level unitPrice/paymentMethod is used.
    */
-  unitPrice: PositiveDecimalStringSchema.optional(),
+  unitPrice: PurchasePriceSchema.optional(),
   paymentMethod: PaymentMethodSchema.optional(),
 });
 
@@ -102,8 +116,8 @@ export const PurchaseItemInputSchema = z.object({
   supplierId: UuidSchema.nullable(),
   // Strictly > 0 (2026-05-05). Negative or zero would have corrupted
   // run totals — see PositiveDecimalStringSchema rationale.
-  unitPrice: PositiveDecimalStringSchema,
-  actualQty: PositiveDecimalStringSchema,
+  unitPrice: PurchasePriceSchema,
+  actualQty: PurchaseQtySchema,
   // Accept both https URLs and data: URIs.
   receiptPhotoUrl: z.string().max(300_000).nullable(),
   storeSplits: z.array(StoreSplitSchema).min(1),
@@ -129,8 +143,8 @@ export const AddPurchaserItemInputSchema = z.object({
   runId: UuidSchema,
   skuId: UuidSchema,
   supplierId: UuidSchema.nullable(),
-  unitPrice: PositiveDecimalStringSchema,
-  actualQty: PositiveDecimalStringSchema,
+  unitPrice: PurchasePriceSchema,
+  actualQty: PurchaseQtySchema,
   receiptPhotoUrl: z.string().max(300_000).nullable(),
   storeSplits: z.array(StoreSplitSchema).min(1),
   paymentMethod: PaymentMethodSchema,
@@ -157,8 +171,8 @@ export const AddRunExpenseInputSchema = z.object({
   expenseId: UuidSchema,
   label: z.string().trim().min(1).max(200),
   unitHint: z.string().trim().max(32).optional(),
-  qty: PositiveDecimalStringSchema,
-  unitPrice: PositiveDecimalStringSchema,
+  qty: PurchaseQtySchema,
+  unitPrice: PurchasePriceSchema,
   storeSplits: z.array(StoreSplitSchema).min(1),
   paymentMethod: PaymentMethodSchema,
   receiptPhotoUrl: z.string().max(300_000).nullable(),

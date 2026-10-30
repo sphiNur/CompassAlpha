@@ -1135,6 +1135,8 @@ export const en = {
   'run.errors.cannotEjectSession': 'You do not have permission to return submissions from a run',
   'run.errors.storeAlreadyConfirmed': 'This store has already confirmed receipt',
   'run.errors.notVisible': 'This purchase run was not found or is not available to you',
+  'run.errors.priceFormat': 'Price must be above 0, with at most 12 digits and 2 decimals.',
+  'run.errors.qtyFormat': 'Quantity must be above 0, with at most 9 digits and 3 decimals.',
   'run.errors.itemServesOtherStores':
     'This item also serves stores you do not buy for; someone who buys for them must change it.',
   'run.errors.runHasOtherStores':

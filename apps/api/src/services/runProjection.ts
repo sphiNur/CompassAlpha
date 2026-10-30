@@ -642,8 +642,11 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
               // Sum existing.planned_qty + delta. We can do it via SQL
               // expression so the read-then-write race against a
               // concurrent purchase doesn't lose data.
+              // RE-BUY-3: a purchaser-added row becomes a demand row
+              // (planned = the order's demand), as in the domain state.
               set: {
-                plannedQty: sql`${s.runItemsV.plannedQty} + ${added.qty}::numeric`,
+                plannedQty: sql`CASE WHEN ${s.runItemsV.addedByPurchaser} THEN ${added.qty}::numeric ELSE ${s.runItemsV.plannedQty} + ${added.qty}::numeric END`,
+                addedByPurchaser: false,
                 updatedAt: new Date(),
               },
             });
