@@ -434,6 +434,9 @@ export const ru = {
   'shell.pageError.body': 'Остальные страницы работают. Повторите или перейдите на другую страницу.',
   'auth.invite.failedStillIn':
     'Приглашение не сработало: {reason}. Вы по-прежнему в «{org}».',
+  'auth.invite.joined': 'Вы присоединились к «{org}»',
+  'auth.invite.addedToExisting':
+    'Вы уже в «{org}»; магазины и роли из приглашения добавлены',
   'confirm.storeConfirmedAt':
     'Приёмка подтверждена · {time}',
   'auth.onboarding.title': 'Добро пожаловать в Compass',

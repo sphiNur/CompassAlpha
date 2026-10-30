@@ -1073,6 +1073,9 @@ export const authRouter = router({
           message: 'auth.errors.inviteMemberSuspended',
         });
       }
+      // AUTH-28 (2026-10-30): an existing member opening an invite got its
+      // stores and roles added with no word; the page now says which.
+      const alreadyMember = member?.status === 'active';
       if (!member) {
         await assertCanAddMember(tx, invite.orgId);
         const [createdMember] = await tx
@@ -1174,6 +1177,7 @@ export const authRouter = router({
         userId: user.id,
         memberId: member.id,
         orgId: invite.orgId,
+        alreadyMember,
       };
     });
 
@@ -1181,7 +1185,7 @@ export const authRouter = router({
       tx.update(s.users).set({ lastOrgId: identity.orgId }).where(eq(s.users.id, identity.userId)),
     );
     hub.publish(identity.orgId, { type: 'people.changed', orgId: identity.orgId });
-    return issueLoginResult(
+    const login = await issueLoginResult(
       ctx.db,
       identity.userId,
       identity.memberId,
@@ -1189,6 +1193,7 @@ export const authRouter = router({
       ctx.ip,
       ctx.userAgent,
     );
+    return { ...login, alreadyMember: identity.alreadyMember };
   }),
 
   /**

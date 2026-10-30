@@ -246,6 +246,12 @@ export function AuthGate({ children }: AuthGateProps) {
   });
   const acceptInvite = trpc.auth.acceptInvite.useMutation({
     onSuccess(data) {
+      // AUTH-28 (2026-10-30): say what the invite did.
+      toast.success(
+        i18n.t(data.alreadyMember ? 'auth.invite.addedToExisting' : 'auth.invite.joined', {
+          org: data.session.member.orgName,
+        }),
+      );
       setSession({
         accessToken: data.tokens.accessToken,
         refreshToken: data.tokens.refreshToken,

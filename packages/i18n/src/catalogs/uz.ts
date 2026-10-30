@@ -435,6 +435,9 @@ export const uz = {
   'shell.pageError.body': "Boshqa sahifalar ishlaydi. Qayta urinib ko'ring yoki boshqa sahifaga o'ting.",
   'auth.invite.failedStillIn':
     "Taklif ishlamadi: {reason}. Siz hali ham «{org}»dasiz.",
+  'auth.invite.joined': "«{org}»ga qo'shildingiz",
+  'auth.invite.addedToExisting':
+    "Siz allaqachon «{org}»dasiz; taklifdagi do'konlar va rollar qo'shildi",
   'confirm.storeConfirmedAt':
     "Qabul tasdiqlandi · {time}",
   'auth.onboarding.title': "Compass'ga xush kelibsiz",

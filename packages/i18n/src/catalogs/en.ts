@@ -494,6 +494,9 @@ export const en = {
   'shell.pageError.body': 'Other pages still work. Try again, or switch to another page.',
   'auth.invite.failedStillIn':
     'The invite did not work: {reason}. You are still in “{org}”.',
+  'auth.invite.joined': 'Joined “{org}”',
+  'auth.invite.addedToExisting':
+    'You were already in “{org}”; the invite’s stores and roles were added',
   'confirm.storeConfirmedAt':
     'Receipt confirmed · {time}',
   'auth.onboarding.title': 'Welcome to Compass',
