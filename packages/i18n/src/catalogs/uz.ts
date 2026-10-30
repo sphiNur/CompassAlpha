@@ -1500,7 +1500,9 @@ export const uz = {
   'dishes.field.qtyPlaceholder': 'porsiyaga miqdor',
   'dishes.field.pickSku': 'Ingredient tanlang…',
   'dishes.confirm.archive': '{name} arxivlansinmi?',
-  'dishes.errors.cannotManage': 'Menyuni tahrirlash uchun dishes.manage ruxsati kerak.',
+  'dishes.errors.cannotManage': "Menyuni tahrirlash uchun administrator beradigan ruxsat kerak.",
+  'dishes.readOnly':
+    "Taom retseptini ko'rishingiz mumkin; menyuni tahrirlash uchun administrator beradigan ruxsat kerak.",
   'dishes.errors.namesRequired': 'Kamida bitta tildagi nom kerak.',
   'admin.errors.namesRequired': 'Kamida bitta tildagi nom kerak.',
   'dishes.errors.ingredientQtyMustBePositive': "Ingredient miqdori > 0 bo'lishi kerak.",

@@ -1636,7 +1636,9 @@ export const en = {
   'dishes.field.qtyPlaceholder': 'qty per serving',
   'dishes.field.pickSku': 'Pick ingredient…',
   'dishes.confirm.archive': 'Archive "{name}"?',
-  'dishes.errors.cannotManage': 'You need dishes.manage to edit menu items.',
+  'dishes.errors.cannotManage': 'Editing the menu needs a permission an admin can give you.',
+  'dishes.readOnly':
+    'You can view this dish’s recipe; editing the menu needs a permission an admin can give you.',
   'dishes.errors.namesRequired': 'At least one language name is required.',
   'admin.errors.namesRequired': 'At least one language name is required.',
   'dishes.errors.ingredientQtyMustBePositive': 'Ingredient qty must be > 0.',

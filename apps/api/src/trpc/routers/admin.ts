@@ -1807,7 +1807,14 @@ export const adminRouter = router({
           ),
         )
         .orderBy(desc(s.memberInvites.createdAt));
-      const visible = rows.filter((r) => inviteWithinScope(r.storeIds, scope));
+      // ADM-14 (2026-10-30): a store-tier admin saw (and could revoke)
+      // links that hand out admin-rank roles; those are for org admins.
+      const adminRoleIds = scope === null ? new Set<string>() : await adminRankRoleIds(tx, orgId);
+      const visible = rows.filter(
+        (r) =>
+          inviteWithinScope(r.storeIds, scope) &&
+          !(r.grants ?? []).some((g) => adminRoleIds.has(g.roleId)),
+      );
       if (visible.length === 0) return [];
       const storeIds = [...new Set(visible.flatMap((r) => r.storeIds))];
       const roleIds = [...new Set(visible.flatMap((r) => (r.grants ?? []).map((g) => g.roleId)))];
@@ -1869,6 +1876,12 @@ export const adminRouter = router({
         const scope = await getAdminReadScope(tx, ctx.session!);
         if (!inviteWithinScope(invite.storeIds, scope)) {
           throw new TRPCError({ code: 'FORBIDDEN', message: 'admin.errors.notAdminOfStore' });
+        }
+        if (scope !== null) {
+          const adminRoleIds = await adminRankRoleIds(tx, orgId);
+          if ((invite.grants ?? []).some((g) => adminRoleIds.has(g.roleId))) {
+            throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.cannotRevokeEqualOrHigher' });
+          }
         }
         const [revoked] = await tx
           .update(s.memberInvites)
@@ -6150,6 +6163,15 @@ function assertHoldsKeys(perms: ReadonlySet<string>, keys: Iterable<string>): vo
 function broadcastPurged(orgId: string, sessionIds: string[], runIds: string[]): void {
   hub.publish(orgId, { type: 'order.changed', orgId, sessionId: sessionIds[0] ?? orgId, lastSeq: -1 });
   hub.publish(orgId, { type: 'run.changed', orgId, runId: runIds[0] ?? orgId, lastSeq: -1 });
+}
+
+/** Ids of the org's roles at admin rank or above (ADM-14). */
+async function adminRankRoleIds(tx: OrgTx, orgId: string): Promise<Set<string>> {
+  const rows = await tx
+    .select({ id: s.roles.id })
+    .from(s.roles)
+    .where(and(eq(s.roles.orgId, orgId), gte(s.roles.rank, ADMIN_RANK_THRESHOLD)));
+  return new Set(rows.map((r) => r.id));
 }
 
 function refuseIfSettlementRevisions(counts: Record<string, number>): void {

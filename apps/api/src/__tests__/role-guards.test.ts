@@ -67,7 +67,7 @@ function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): Reques
 }
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
-let fix: { db: ReturnType<typeof getDb>; storeId: string; admin: Caller; manager: Caller; roleIds: Record<string, string> } | null = null;
+let fix: { db: ReturnType<typeof getDb>; storeId: string; admin: Caller; manager: Caller; owner: Caller; roleIds: Record<string, string> } | null = null;
 
 async function errorOf(fn: () => Promise<unknown>): Promise<{ code?: string; message: string } | null> {
   try {
@@ -117,10 +117,10 @@ beforeAll(async () => {
     if (!session) throw new Error('session failed to load');
     return appRouter.createCaller(buildCtx(db, session));
   };
-  await member('super_admin', 'global');
+  const owner = await member('super_admin', 'global');
   const admin = await member('admin', 'global');
   const manager = await member('manager', 'store');
-  fix = { db, storeId: store!.id, admin, manager, roleIds };
+  fix = { db, storeId: store!.id, admin, manager, owner, roleIds };
 });
 
 describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
@@ -165,5 +165,17 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
     expect(err?.code).toBe('FORBIDDEN');
     expect(err?.message).toBe('auth.errors.cannotGrantEqualOrHigher');
     expect(await errorOf(() => manager.admin.storeUpdate({ storeId, defaultRoleSlug: 'staff' }))).toBeNull();
+  });
+
+  test('ADM-14: a store manager neither sees nor revokes an admin invite for their store', async () => {
+    const { owner, manager, storeId } = fix!;
+    await owner.admin.memberInviteCreate({ roleSlug: 'admin', storeIds: [storeId] });
+    const all = await owner.admin.memberInviteList();
+    const adminInvite = all.find((i) => i.roles.some((r) => r.slug === 'admin'));
+    expect(adminInvite).toBeTruthy();
+    const seen = await manager.admin.memberInviteList();
+    expect(seen.some((i) => i.id === adminInvite!.id)).toBe(false);
+    const err = await errorOf(() => manager.admin.memberInviteRevoke({ inviteId: adminInvite!.id }));
+    expect(err?.code).toBe('FORBIDDEN');
   });
 });

@@ -6,6 +6,7 @@ import { noteSessionCleared, trpc } from '../lib/trpc';
 import { getTg, haptic } from '../hooks/useTelegram';
 import { useI18n } from '../hooks/useI18n';
 import { useTranslateError } from '../lib/errToast';
+import { errorTextKey } from '../lib/errorText';
 import { isLikelyNetworkError } from '../lib/networkError';
 
 interface AuthGateProps {
@@ -236,10 +237,10 @@ export function AuthGate({ children }: AuthGateProps) {
       setError(null);
     },
     onError(err) {
+      // AUTH-21 (2026-10-30): a transport failure showed its English text
+      // ("Failed to fetch (session refresh did not complete)").
       setError(
-        err.message.startsWith('auth.errors.')
-          ? i18n.t(err.message as Parameters<typeof i18n.t>[0])
-          : err.message,
+        i18n.t(errorTextKey(err.message, 'auth.errors.signInFailed') as Parameters<typeof i18n.t>[0]),
       );
     },
   });
