@@ -241,7 +241,8 @@ export const en = {
   'people.transferWhatAdded': '{name} is added to the destination store',
   'people.transferWhatMirrored':
     'their store-scoped role bindings in the source are recreated in the destination',
-  'people.transferWhatNoRoles': 'no role bindings are created in the destination',
+  'people.transferWhatNoRoles':
+    'No roles in the destination store: after the move they have no permissions there until you grant a role',
   'people.transferWhatRemoved':
     'their assignment + bindings + per-store overrides in {store} are removed',
   'people.transferWhatOutro':
@@ -770,6 +771,8 @@ export const en = {
   'admin.errors.permissionNotFound': 'Permission key not in the dictionary',
   'admin.errors.notAdminOfStore':
     "You don't administer this store — only its admin can perform this action",
+  'admin.errors.memberNotInSourceStore':
+    'They are not in the source store, so they cannot be moved out of it; assign them to the new store instead.',
   'admin.errors.cannotInviteOrgAdminAsStoreAdmin':
     'Only org-level admins can invite or grant org-level admin roles',
   'admin.errors.transferSameStore': 'Source and destination must be different stores',

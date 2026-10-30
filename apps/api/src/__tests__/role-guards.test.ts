@@ -293,5 +293,38 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
     const other = await admin.auth.setLocale({ locale: 'en' });
     expect(other.user.secondaryLocale).toBe('zh');
   });
+
+  test('ADM-23: a transfer must start from a store the member is in', async () => {
+    const { owner, db, orgId, storeId, roleIds } = fix!;
+    const tag = `${Date.now()}`.slice(-9);
+    const [other] = await db
+      .insert(s.stores)
+      .values({ orgId, name: 'Elsewhere', code: `E-${tag.slice(-6)}` })
+      .returning();
+    const [u] = await db
+      .insert(s.users)
+      .values({ displayName: 'ADM23 staff', tgUserId: BigInt(`5${tag}1`) })
+      .returning();
+    const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
+    await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId, assignedBy: u!.id });
+    await db
+      .insert(s.memberRoleBindings)
+      .values({ memberId: m!.id, roleId: roleIds.staff!, scopeType: 'store', scopeId: storeId });
+    const wrong = await errorOf(() =>
+      owner.admin.memberTransferStore({
+        memberId: m!.id,
+        fromStoreId: other!.id,
+        toStoreId: storeId,
+        mirrorRoles: true,
+      }),
+    );
+    expect(wrong?.message).toBe('admin.errors.memberNotInSourceStore');
+    await owner.admin.memberTransferStore({
+      memberId: m!.id,
+      fromStoreId: storeId,
+      toStoreId: other!.id,
+      mirrorRoles: true,
+    });
+  });
 });
 

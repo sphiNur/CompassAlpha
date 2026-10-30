@@ -2727,6 +2727,18 @@ export const adminRouter = router({
             message: 'auth.errors.cannotRevokeEqualOrHigher',
           });
         }
+        // ADM-23 (2026-10-30): "transferring" someone out of a store they
+        // were never in was a plain assignment in disguise.
+        const [inSource] = await tx
+          .select({ storeId: s.memberStoreAssignments.storeId })
+          .from(s.memberStoreAssignments)
+          .where(
+            and(
+              eq(s.memberStoreAssignments.memberId, input.memberId),
+              eq(s.memberStoreAssignments.storeId, input.fromStoreId),
+            ),
+          )
+          .limit(1);
         // Pull the bindings to mirror. Even if mirrorRoles=false we
         // still need the count for the audit log.
         const fromBindings = await tx
@@ -2744,6 +2756,12 @@ export const adminRouter = router({
               eq(s.memberRoleBindings.scopeId, input.fromStoreId),
             ),
           );
+        if (!inSource && fromBindings.length === 0) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'admin.errors.memberNotInSourceStore',
+          });
+        }
         if (input.mirrorRoles && fromBindings.length > 0) {
           const toActorRank = await getActorMaxRankInStore(
             tx,

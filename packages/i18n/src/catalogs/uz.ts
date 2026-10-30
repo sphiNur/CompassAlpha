@@ -208,7 +208,8 @@ export const uz = {
   'people.transferWhatAdded': "{name} maqsadli do'konga qo'shiladi",
   'people.transferWhatMirrored':
     "manba do'kondagi do'kon darajasidagi rol biriktirmalari maqsadli do'konda qayta yaratiladi",
-  'people.transferWhatNoRoles': "maqsadli do'konda rol biriktirmasi yaratilmaydi",
+  'people.transferWhatNoRoles':
+    "Yangi do'konda rol yaratilmaydi: ko'chirilgandan keyin rol bermaguningizcha u yerda hech qanday huquqi bo'lmaydi",
   'people.transferWhatRemoved':
     "{store} dagi tayinlovi, biriktirmalari va do'kon bo'yicha bekor qilishlari olib tashlanadi",
   'people.transferWhatOutro':
@@ -697,6 +698,8 @@ export const uz = {
     'Bu rol hali xodimlarga biriktirilgan — avval ularni qaytarib oling',
   'admin.errors.permissionNotFound': "Ruxsat lug'atda topilmadi",
   'admin.errors.notAdminOfStore': "Bu do'kon administratori siz emas — bu amalni bajara olmaysiz",
+  'admin.errors.memberNotInSourceStore':
+    "U manba do'konida yo'q, undan ko'chirib bo'lmaydi; uni to'g'ridan-to'g'ri yangi do'konga biriktiring.",
   'admin.errors.cannotInviteOrgAdminAsStoreAdmin':
     'Tashkilot darajasidagi rolni faqat tashkilot administratori bera oladi',
   'admin.errors.transferSameStore': "Manba va maqsad do'kon har xil bo'lishi kerak",

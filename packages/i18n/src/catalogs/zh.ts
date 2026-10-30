@@ -192,7 +192,8 @@ export const zh = {
   'people.transferWhatIntro': '在一个事务里原子完成：',
   'people.transferWhatAdded': '把 {name} 加入目标门店',
   'people.transferWhatMirrored': '在目标门店重建他在来源门店的门店级角色绑定',
-  'people.transferWhatNoRoles': '目标门店不建任何角色绑定',
+  'people.transferWhatNoRoles':
+    '目标门店不建任何角色：调过去后他在那里没有任何权限，需要再给他授予角色',
   'people.transferWhatRemoved': '移除他在 {store} 的分配、绑定和按店权限覆盖',
   'people.transferWhatOutro': '他所属的其他门店不受影响。任何一步失败，整个调动都会回滚。',
   'people.scopeGlobal': '全局',
@@ -643,6 +644,8 @@ export const zh = {
   'admin.errors.roleHasBindings': '该角色仍有成员持有,请先撤销这些授予',
   'admin.errors.permissionNotFound': '权限不存在于字典中',
   'admin.errors.notAdminOfStore': '你不是该门店的管理员,无法在此门店执行此操作',
+  'admin.errors.memberNotInSourceStore':
+    '他不在来源门店，没法从那里调出；请直接把他分配到新门店。',
   'admin.errors.cannotInviteOrgAdminAsStoreAdmin': '只有组织级管理员才能邀请或授予组织级管理员角色',
   'admin.errors.transferSameStore': '源店铺和目标店铺必须不同',
   'admin.errors.defaultRoleMustBeStoreTier':
