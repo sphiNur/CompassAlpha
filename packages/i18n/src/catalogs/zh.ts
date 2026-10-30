@@ -1440,6 +1440,12 @@ export const zh = {
   'dishes.errors.ingredientQtyMustBePositive': '食材用量必须 > 0。',
   'dishes.errors.ingredientSkuNotFound': '配方中引用了未知 SKU。',
   'dishes.errors.notFound': '菜品未找到。',
+  'dishes.errors.codeTaken': '这个编号已被别的菜品使用。',
+  'dishes.errors.priceTooLarge': '售价最多 12 位整数、2 位小数。',
+  'dishes.errors.qtyTooLarge': '用量最多 8 位整数、4 位小数。',
+  'sales.errors.qtyTooLarge': '份数太大了。',
+  'sales.errors.occurredInFuture': '销售时间不能晚于现在。',
+  'inventory.errors.qtyTooLarge': '数量太大了。',
 
   // ── 18. Sales (M2.0c) ──────────────────────────────────
   'sales.summary.today': '今日',

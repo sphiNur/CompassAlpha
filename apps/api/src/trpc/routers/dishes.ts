@@ -54,6 +54,22 @@ import { z } from 'zod';
 import { schema as s, type DB } from '@compass/db';
 import { UuidSchema } from '@compass/contracts';
 import { authedProcedure, router } from '../trpc';
+import { isUniqueViolation } from '../../services/pgErrors';
+
+/**
+ * CLS-12 (2026-10-30): a dish code already used in the org tripped
+ * dishes_org_code_unique and came back as a bare 500 / 「出错了」.
+ */
+async function codeChecked<T>(op: PromiseLike<T>): Promise<T> {
+  try {
+    return await op;
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      throw new TRPCError({ code: 'CONFLICT', message: 'dishes.errors.codeTaken', cause: err });
+    }
+    throw err;
+  }
+}
 
 /**
  * i18n names jsonb shape. At least one non-empty locale required —
@@ -71,7 +87,7 @@ const IngredientSchema = z.object({
   /** Decimal string with up to 4 fraction digits, must be > 0. */
   qtyPerServing: z
     .string()
-    .regex(/^\d+(\.\d{1,4})?$/, 'qty must be > 0 with at most 4 decimals')
+    .regex(/^\d{1,8}(\.\d{1,4})?$/, 'dishes.errors.qtyTooLarge')
     .refine((s2) => Number(s2) > 0, { message: 'dishes.errors.ingredientQtyMustBePositive' }),
   note: z.string().max(500).optional().nullable(),
 });
@@ -82,7 +98,7 @@ const CreateInputSchema = z.object({
   description: z.record(z.string(), z.string().max(2000)).optional(),
   unitPrice: z
     .string()
-    .regex(/^\d+(\.\d{1,2})?$/, 'unitPrice must be ≥ 0 with at most 2 decimals')
+    .regex(/^\d{1,12}(\.\d{1,2})?$/, 'dishes.errors.priceTooLarge')
     .optional()
     .nullable(),
   ingredients: z.array(IngredientSchema).max(100),
@@ -95,7 +111,7 @@ const UpdateInputSchema = z.object({
   description: z.record(z.string(), z.string().max(2000)).optional(),
   unitPrice: z
     .string()
-    .regex(/^\d+(\.\d{1,2})?$/, 'unitPrice must be ≥ 0 with at most 2 decimals')
+    .regex(/^\d{1,12}(\.\d{1,2})?$/, 'dishes.errors.priceTooLarge')
     .optional()
     .nullable(),
   sortIndex: z.number().int().optional(),
@@ -274,7 +290,8 @@ export const dishesRouter = router({
           .from(s.dishes)
           .where(eq(s.dishes.orgId, orgId));
         const nextSort = (last[0]?.max ?? 0) + 1;
-        const [inserted] = await tx
+        const [inserted] = await codeChecked(
+          tx
           .insert(s.dishes)
           .values({
             orgId,
@@ -284,7 +301,8 @@ export const dishesRouter = router({
             unitPrice: input.unitPrice ?? null,
             sortIndex: nextSort,
           })
-          .returning({ id: s.dishes.id });
+          .returning({ id: s.dishes.id }),
+        );
         const dishId = inserted!.id;
         if (input.ingredients.length > 0) {
           await tx.insert(s.dishIngredients).values(
@@ -312,11 +330,13 @@ export const dishesRouter = router({
         if (input.description !== undefined) patch.description = input.description;
         if (input.unitPrice !== undefined) patch.unitPrice = input.unitPrice;
         if (input.sortIndex !== undefined) patch.sortIndex = input.sortIndex;
-        const r = await tx
-          .update(s.dishes)
-          .set(patch)
-          .where(and(eq(s.dishes.id, input.dishId), eq(s.dishes.orgId, orgId)))
-          .returning({ id: s.dishes.id });
+        const r = await codeChecked(
+          tx
+            .update(s.dishes)
+            .set(patch)
+            .where(and(eq(s.dishes.id, input.dishId), eq(s.dishes.orgId, orgId)))
+            .returning({ id: s.dishes.id }),
+        );
         if (r.length === 0) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'dishes.errors.notFound' });
         }
@@ -369,11 +389,13 @@ export const dishesRouter = router({
       };
       let dishId: string;
       if (input.dishId) {
-        const r = await tx
-          .update(s.dishes)
-          .set({ ...fields, updatedAt: new Date() })
-          .where(and(eq(s.dishes.id, input.dishId), eq(s.dishes.orgId, orgId)))
-          .returning({ id: s.dishes.id });
+        const r = await codeChecked(
+          tx
+            .update(s.dishes)
+            .set({ ...fields, updatedAt: new Date() })
+            .where(and(eq(s.dishes.id, input.dishId), eq(s.dishes.orgId, orgId)))
+            .returning({ id: s.dishes.id }),
+        );
         if (r.length === 0) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'dishes.errors.notFound' });
         }
@@ -383,10 +405,12 @@ export const dishesRouter = router({
           .select({ max: sql<number>`coalesce(max(${s.dishes.sortIndex}), 0)::int` })
           .from(s.dishes)
           .where(eq(s.dishes.orgId, orgId));
-        const [inserted] = await tx
-          .insert(s.dishes)
-          .values({ orgId, ...fields, sortIndex: (last[0]?.max ?? 0) + 1 })
-          .returning({ id: s.dishes.id });
+        const [inserted] = await codeChecked(
+          tx
+            .insert(s.dishes)
+            .values({ orgId, ...fields, sortIndex: (last[0]?.max ?? 0) + 1 })
+            .returning({ id: s.dishes.id }),
+        );
         dishId = inserted!.id;
       }
       await replaceIngredients(tx, dishId, input.ingredients);

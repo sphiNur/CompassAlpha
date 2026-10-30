@@ -17,6 +17,30 @@ export const I18N_KEY_RE = /^[a-z]+\.errors?\./;
  */
 export function errorTextKey(message: string | undefined, fallbackKey: string): string {
   if (typeof message === 'string' && I18N_KEY_RE.test(message)) return message;
+  const fromZod = zodIssueKey(message);
+  if (fromZod) return fromZod;
   if (isLikelyNetworkError({ message })) return 'common.networkError';
   return fallbackKey;
+}
+
+/**
+ * CAT-10 / CLS-12 (2026-10-30): an input the server's schema refuses comes
+ * back as the zod issue list serialised into the message. When the first
+ * issue carries a catalog key ("dishes.errors.codeTaken"), use it rather
+ * than the generic fallback.
+ */
+export function zodIssueKey(message: string | undefined): string | null {
+  if (typeof message !== 'string' || !message.trimStart().startsWith('[')) return null;
+  try {
+    const issues = JSON.parse(message) as Array<{ message?: unknown }>;
+    if (!Array.isArray(issues)) return null;
+    for (const issue of issues) {
+      if (typeof issue?.message === 'string' && I18N_KEY_RE.test(issue.message)) {
+        return issue.message;
+      }
+    }
+  } catch {
+    /* not JSON */
+  }
+  return null;
 }
