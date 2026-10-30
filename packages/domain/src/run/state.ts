@@ -55,6 +55,13 @@ export interface RunItemState {
    * small — audit lookup walks the event stream when needed.
    */
   addedByPurchaser?: boolean;
+  /**
+   * BUY-5 (2026-10-30): demand that arrived (SessionsAttachedToRun) after
+   * this item was already bought or marked unavailable — "still need X".
+   * Cleared when the purchase is revised, undone or unmarked, or the
+   * purchaser dismisses it. Absent / null = nothing outstanding.
+   */
+  topUpQty?: string | null;
 }
 
 /**
@@ -361,6 +368,8 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
       if (!existing) return { ...state, seq: event.seq };
       items.set(event.payload.skuId, {
         ...existing,
+        // BUY-5: revising the row is how the extra demand gets bought.
+        topUpQty: null,
         purchasedQty: event.payload.actualQty,
         supplierId: event.payload.supplierId,
         unitPrice: event.payload.unitPrice,
@@ -380,7 +389,15 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
         ...existing,
         status: 'pending',
         unavailableNote: null,
+        topUpQty: null,
       });
+      return { ...state, seq: event.seq, items };
+    }
+    case 'TopUpDismissed': {
+      const items = new Map(state.items);
+      const existing = items.get(event.payload.skuId);
+      if (!existing) return { ...state, seq: event.seq };
+      items.set(event.payload.skuId, { ...existing, topUpQty: null });
       return { ...state, seq: event.seq, items };
     }
     case 'PurchaseUndone': {
@@ -397,6 +414,7 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
       }
       items.set(event.payload.skuId, {
         ...existing,
+        topUpQty: null,
         status: 'pending',
         purchasedQty: null,
         supplierId: null,
@@ -509,7 +527,14 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
         const existing = items.get(p.skuId);
         if (existing) {
           const merged = (Number(existing.plannedQty) + Number(p.qty)).toString();
-          items.set(p.skuId, { ...existing, plannedQty: merged });
+          const decided = existing.status === 'purchased' || existing.status === 'unavailable';
+          items.set(p.skuId, {
+            ...existing,
+            plannedQty: merged,
+            ...(decided
+              ? { topUpQty: (Number(existing.topUpQty ?? 0) + Number(p.qty)).toString() }
+              : {}),
+          });
         } else {
           items.set(p.skuId, {
             skuId: p.skuId,

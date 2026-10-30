@@ -1060,7 +1060,7 @@ describe('run.reversals', () => {
     ).toThrow('run.errors.notRevisable');
   });
 
-  test('RevisePurchase blocked once the destination store has accepted', () => {
+  test('RevisePurchase of quantities blocked once the destination store has accepted', () => {
     let s = planAndPurchase();
     s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
     s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
@@ -1075,9 +1075,9 @@ describe('run.reversals', () => {
           skuId: 'sku-1',
           supplierId: null,
           unitPrice: '1',
-          actualQty: '4',
+          actualQty: '3',
           receiptPhotoUrl: null,
-          storeSplits: [{ storeId: 'A', qty: '4' }],
+          storeSplits: [{ storeId: 'A', qty: '3' }],
           reason: 'x',
           paymentMethod: 'cash',
           actor: purchaser(),
@@ -2456,5 +2456,98 @@ describe('run.totals', () => {
     expect(ev.payload.itemsTotal).toBe('54000.00');
     expect(ev.payload.expensesTotal).toBe('0.00');
     expect(ev.payload.totalActual).toBe('54000.00');
+  });
+});
+
+// 2026-10-30 owner decisions: BUY-5 top-ups and prices filled in after delivery.
+describe('run.topUp (BUY-5)', () => {
+  const attach = (qty: string): RunCommand => ({
+    type: 'AttachSessions',
+    sessionIds: ['sess-late'],
+    addedPlannedItems: [{ skuId: 'sku-1', qty }],
+    actor: purchaser(),
+  });
+  const revise = (actualQty: string, splits: Array<{ storeId: string; qty: string }>): RunCommand => ({
+    type: 'RevisePurchase',
+    skuId: 'sku-1',
+    supplierId: 'sup-1',
+    unitPrice: '12000',
+    actualQty,
+    receiptPhotoUrl: null,
+    storeSplits: splits,
+    reason: 'top-up',
+    paymentMethod: 'cash',
+    actor: purchaser(),
+  });
+
+  test('demand joining a bought item is "still need X" and holds delivery', () => {
+    let s = planAndPurchase();
+    s = decideRun(s, attach('5'), clock).reduce(applyRun, s);
+    expect(s.items.get('sku-1')?.topUpQty).toBe('5');
+    expect(s.items.get('sku-1')?.status).toBe('purchased');
+    expect(() => decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock)).toThrow(
+      'run.errors.topUpPending',
+    );
+  });
+
+  test('buying the difference clears it; so does saying it will not be bought', () => {
+    let s = planAndPurchase();
+    s = decideRun(s, attach('5'), clock).reduce(applyRun, s);
+    const bought = decideRun(s, revise('9', [{ storeId: 'A', qty: '4' }, { storeId: 'B', qty: '5' }]), clock).reduce(
+      applyRun,
+      s,
+    );
+    expect(bought.items.get('sku-1')?.topUpQty).toBeNull();
+    expect(decideRun(bought, { type: 'StartDelivery', actor: purchaser() }, clock)).toHaveLength(1);
+
+    const dismissed = decideRun(s, { type: 'DismissTopUp', skuId: 'sku-1', note: 'enough', actor: purchaser() }, clock);
+    expect(dismissed.map((e) => e.type)).toEqual(['TopUpDismissed']);
+    const after = dismissed.reduce(applyRun, s);
+    expect(after.items.get('sku-1')?.topUpQty).toBeNull();
+    expect(decideRun(after, { type: 'DismissTopUp', skuId: 'sku-1', actor: purchaser() }, clock)).toEqual([]);
+  });
+
+  test('a pending item just grows, with no top-up', () => {
+    let s = emptyRunState('run-p');
+    s = decideRun(
+      s,
+      { type: 'PlanRun', orgId: 'org-1', runDate: '2026-05-01', runIndex: 0, sessionIds: ['s1'], plannedItems: [{ skuId: 'sku-1', qty: '4' }], actor: purchaser() },
+      clock,
+    ).reduce(applyRun, s);
+    s = decideRun(s, attach('5'), clock).reduce(applyRun, s);
+    expect(s.items.get('sku-1')?.plannedQty).toBe('9');
+    expect(s.items.get('sku-1')?.topUpQty ?? null).toBeNull();
+  });
+});
+
+describe('run.priceAfterDelivery (2026-10-30)', () => {
+  const deliveredRun = () => {
+    let s = planAndPurchase();
+    s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
+    return decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(applyRun, s);
+  };
+  const revise = (unitPrice: string, actualQty: string): RunCommand => ({
+    type: 'RevisePurchase',
+    skuId: 'sku-1',
+    supplierId: 'sup-1',
+    unitPrice,
+    actualQty,
+    receiptPhotoUrl: null,
+    storeSplits: [{ storeId: 'A', qty: actualQty }],
+    reason: 'real price',
+    paymentMethod: 'transfer',
+    actor: purchaser(),
+  });
+
+  test('price and payment method may change after the goods went out', () => {
+    const s = deliveredRun();
+    const out = decideRun(s, revise('15000', '4'), clock).reduce(applyRun, s);
+    expect(out.items.get('sku-1')?.unitPrice).toBe('15000');
+  });
+
+  test('quantities may not', () => {
+    expect(() => decideRun(deliveredRun(), revise('15000', '5'), clock)).toThrow(
+      'run.errors.cannotReviseAfterDelivery',
+    );
   });
 });

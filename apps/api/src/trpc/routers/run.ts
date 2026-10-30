@@ -35,6 +35,7 @@ import {
   UndeliverStoreInputSchema,
   UndoPurchaseInputSchema,
   UnmarkUnavailableInputSchema,
+  DismissTopUpInputSchema,
 } from '@compass/contracts';
 import {
   assertActorAssignedToStore,
@@ -2010,6 +2011,8 @@ export const runRouter = router({
         });
         type VisibleRunItem = Omit<(typeof allItems)[number], 'paymentMethod'> & {
           paymentMethod: string | null;
+          /** BUY-5: demand that joined after the item was decided. */
+          topUpQty?: string | null;
         };
         let items: VisibleRunItem[] = allItems;
         let splits = await tx.query.runItemStoresV.findMany({
@@ -2263,6 +2266,18 @@ export const runRouter = router({
                 receiptPhotoUrl: hasHiddenSplit ? null : item.receiptPhotoUrl,
               };
             });
+        }
+
+        // BUY-5 (2026-10-30): "still need X" lives in the domain state only
+        // (no read-model column); a run stream is a few dozen events.
+        {
+          const events = (await readStream(tx, 'run', run.id)) as unknown as RunEvent[];
+          let domainState = emptyRunState(run.id);
+          for (const e of events) domainState = applyRun(domainState, e);
+          items = items.map((it) => ({
+            ...it,
+            topUpQty: domainState.items.get(it.skuId)?.topUpQty ?? null,
+          }));
         }
 
         // M3.27 (2026-05-18): preferred-supplier mapping for the
@@ -3168,6 +3183,21 @@ export const runRouter = router({
           type: 'UnmarkUnavailable',
           skuId: input.skuId,
           reason: input.reason,
+          actor: actorFromCtx(ctx),
+        }),
+      ),
+    ),
+
+  /** BUY-5 (2026-10-30): the extra demand that joined after this item was
+   *  bought or marked unavailable will not be bought. */
+  dismissTopUp: authedProcedure
+    .input(DismissTopUpInputSchema)
+    .mutation(async ({ ctx, input }) =>
+      runSimpleCommand(ctx, input.runId, (state) =>
+        decideRun(state, {
+          type: 'DismissTopUp',
+          skuId: input.skuId,
+          note: input.note,
           actor: actorFromCtx(ctx),
         }),
       ),

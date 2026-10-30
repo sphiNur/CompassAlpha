@@ -91,6 +91,9 @@ export interface PurchaseDraft {
   perStorePricing: boolean;
   receiptPhotoUrl: string | null;
   reason: string;
+  /** 2026-10-30: the goods already went to a store, so only price,
+   *  supplier, payment method and receipt may change. */
+  qtyLocked?: boolean;
   /** M1.14: cash | transfer. Defaults to 'cash' for new purchases (the
    *  common case at the market). Edit pre-fills from the existing item. */
   paymentMethod: 'cash' | 'transfer';
@@ -240,7 +243,12 @@ export function PurchaseSheet({
       {draft ? (
         <div className="flex flex-col gap-3 py-3">
           {draft.isEdit ? (
-            <Banner tone="info" title={i18n.t('run.confirm.editPurchase.body')} />
+            <Banner
+              tone="info"
+              title={i18n.t(
+                draft.qtyLocked ? 'run.prices.lockedHint' : 'run.confirm.editPurchase.body',
+              )}
+            />
           ) : null}
           <div className="grid grid-cols-2 gap-3">
             <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
@@ -252,7 +260,8 @@ export function PurchaseSheet({
                 step={sku?.step ?? '1'}
                 value={draft.actualQty}
                 onChange={(e) => onChange({ ...draft, actualQty: e.target.value })}
-                autoFocus
+                disabled={draft.qtyLocked}
+                autoFocus={!draft.qtyLocked}
               />
             </label>
             <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
@@ -407,6 +416,7 @@ export function PurchaseSheet({
                         inputMode="decimal"
                         step={sku?.step ?? '1'}
                         value={splitQty}
+                        disabled={draft.qtyLocked}
                         onChange={(e) => {
                           const next = new Map(draft.splits);
                           if (e.target.value === '') next.delete(store.id);
@@ -484,7 +494,7 @@ export function PurchaseSheet({
               inside the edit sheet keeps it reachable (tap the row →
               here) and puts deliberate distance between it and the ✓.
               It still routes through RunPage's ConfirmSheet. */}
-          {draft.isEdit && onUndo ? (
+          {draft.isEdit && onUndo && !draft.qtyLocked ? (
             <button
               type="button"
               onClick={onUndo}

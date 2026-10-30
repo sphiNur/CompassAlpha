@@ -125,7 +125,16 @@ export function ActiveRunPanel({
   onOpenExpense,
   onSetPaymentMethod,
   paymentBusySkuId,
+  onTopUpBuy,
+  onTopUpDismiss,
+  onEditPrice,
 }: {
+  /** BUY-5: buy the demand that joined after this item was decided. */
+  onTopUpBuy: (item: ActiveRun['items'][number]) => void;
+  /** BUY-5: that demand will not be bought. */
+  onTopUpDismiss: (item: ActiveRun['items'][number]) => void;
+  /** 2026-10-30: fill in or correct a price after the goods went out. */
+  onEditPrice: (item: ActiveRun['items'][number]) => void;
   run: ActiveRun;
   skuById: Map<
     string,
@@ -379,8 +388,48 @@ export function ActiveRunPanel({
     [run.items, itemListView, itemTokens, itemFilter],
   );
 
+  // BUY-5 (2026-10-30): items an order asked for more of after they were
+  // bought or marked unavailable.
+  const topUps = run.items.filter((it) => Number(it.topUpQty ?? 0) > 0);
+  const nameOf = (skuId: string) => {
+    const sku = skuById.get(skuId);
+    return sku ? productName(sku) : skuId.slice(0, 8);
+  };
+
   return (
     <div className="flex flex-col gap-2">
+      {editingPhase && topUps.length > 0 ? (
+        <Card>
+          <SectionLabel>{i18n.t('run.topUp.title')}</SectionLabel>
+          <ul className="flex flex-col" role="list">
+            {topUps.map((it) => (
+              <li
+                key={it.skuId}
+                className="flex flex-wrap items-center gap-2 border-t border-[var(--c-divider)] px-4 py-2 first:border-t-0"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-old-body font-semibold">{nameOf(it.skuId)}</span>
+                  <span className="block text-old-label text-[var(--c-warning-fg)]">
+                    {i18n.t(
+                      it.status === 'unavailable' ? 'run.topUp.lineUnavailable' : 'run.topUp.line',
+                      {
+                        bought: formatQty(it.purchasedQty ?? '0'),
+                        need: formatQty(it.topUpQty ?? '0'),
+                      },
+                    )}
+                  </span>
+                </span>
+                <Button size="sm" variant="pearl" onClick={() => onTopUpBuy(it)}>
+                  {i18n.t('run.topUp.buy')}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => onTopUpDismiss(it)}>
+                  {i18n.t('run.topUp.dismiss')}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
       {/* View-mode toggle — M3.28 (2026-05-18): dropped the "Aggregate"
           chip per user feedback. The aggregate view is the editing
           surface where price/qty get recorded; it's not a "view" the
@@ -667,6 +716,33 @@ export function ActiveRunPanel({
             title={i18n.t('run.empty.nothingToDeliver')}
             description={i18n.t('run.empty.nothingToDeliverBody')}
           />
+        </Card>
+      ) : null}
+
+      {/* 2026-10-30 (owner decision): prices are often filled in after the
+          goods went out. Quantities and splits stay fixed here. */}
+      {run.status === 'delivering' && run.items.some((it) => it.status === 'purchased') ? (
+        <Card>
+          <SectionLabel meta={i18n.t('run.prices.hint')}>{i18n.t('run.prices.title')}</SectionLabel>
+          <ul className="flex flex-col" role="list">
+            {run.items
+              .filter((it) => it.status === 'purchased')
+              .map((it) => (
+                <li key={it.skuId} className="border-t border-[var(--c-divider)] first:border-t-0">
+                  <button
+                    type="button"
+                    className="press flex w-full items-baseline gap-2 px-4 py-2 text-left"
+                    onClick={() => onEditPrice(it)}
+                  >
+                    <span className="min-w-0 flex-1 truncate text-old-body">{nameOf(it.skuId)}</span>
+                    <span className="shrink-0 font-mono text-old-label tabular-nums text-[var(--c-fg-muted)]">
+                      {formatQty(it.purchasedQty ?? '0')} ×{' '}
+                      {it.unitPrice ? formatMoney(Number(it.unitPrice)) : '—'}
+                    </span>
+                  </button>
+                </li>
+              ))}
+          </ul>
         </Card>
       ) : null}
 

@@ -15,6 +15,13 @@ export interface SplitLike {
 
 export interface ItemStatusLike {
   status: string;
+  /** BUY-5: demand that joined after the item was decided ("still need"). */
+  topUpQty?: string | null;
+}
+
+/** Bought or marked unavailable, with no later demand left to decide. */
+function isHandled(i: ItemStatusLike): boolean {
+  return (i.status === 'purchased' || i.status === 'unavailable') && !(Number(i.topUpQty ?? 0) > 0);
 }
 
 /**
@@ -58,10 +65,7 @@ export function allStoresConfirmed(splits: readonly SplitLike[]): boolean {
  * delivery.
  */
 export function allItemsHandled(items: readonly ItemStatusLike[]): boolean {
-  return (
-    items.length > 0 &&
-    items.every((i) => i.status === 'purchased' || i.status === 'unavailable')
-  );
+  return items.length > 0 && items.every(isHandled);
 }
 
 /**
@@ -79,7 +83,5 @@ export function allItemsHandled(items: readonly ItemStatusLike[]): boolean {
  * never disagree about what "handled" means.
  */
 export function pendingItemCount(items: readonly ItemStatusLike[]): number {
-  return items.filter(
-    (i) => i.status !== 'purchased' && i.status !== 'unavailable',
-  ).length;
+  return items.filter((i) => !isHandled(i)).length;
 }

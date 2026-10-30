@@ -72,6 +72,8 @@ export interface ActiveRun {
      *  purchaser via AddPurchaserItem. Drives the "+" badge on the row
      *  and the breakdown in finish summary. Default false. */
     addedByPurchaser?: boolean;
+    /** BUY-5: demand that joined after the item was decided. */
+    topUpQty?: string | null;
   }>;
   splits: Array<{
     runId: string;

@@ -217,6 +217,13 @@ export const UnmarkUnavailableInputSchema = z.object({
   reason: z.string().min(1).max(500),
 });
 
+/** BUY-5: won't buy the demand that joined after the item was decided. */
+export const DismissTopUpInputSchema = z.object({
+  runId: UuidSchema,
+  skuId: UuidSchema,
+  note: z.string().max(500).optional(),
+});
+
 /**
  * Undo a purchase = revert one row from `purchased` back to `pending`.
  * Reason was made optional 2026-05-04 — user feedback was that an
