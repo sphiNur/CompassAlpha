@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ComponentType, ReactNode, SVGProps } from 'react';
 import {
   Banner,
@@ -25,7 +25,7 @@ import { ConfirmPage } from '../pages/ConfirmPage';
 // (M1.3, 2026-05-06.) The other tabs stay eagerly imported because
 // every authenticated user reaches at least one of them.
 const importAdminPage = () => import('../pages/AdminPage').then((m) => ({ default: m.AdminPage }));
-const AdminPage = lazy(importAdminPage);
+const AdminPage = resilientLazy(importAdminPage);
 // M3.11 (2026-05-16): same treatment for RunPage. ~3.4k LoC + heavy
 // purchase / delivery / confirm sheets + history detail. The
 // `run.purchase` permission gate hides the tab from staff, cashiers,
@@ -34,23 +34,24 @@ const AdminPage = lazy(importAdminPage);
 // it behind lazy() saves ~60 kB off the initial bundle. Prefetch
 // (below) keeps the tap-to-open latency snappy for actual purchasers.
 const importRunPage = () => import('../pages/RunPage').then((m) => ({ default: m.RunPage }));
-const RunPage = lazy(importRunPage);
+const RunPage = resilientLazy(importRunPage);
 // 2026-07-30: history is its own tab now. Lazy for the same reason as
 // RunPage — it pulls in the ~800-line history subsystem plus the money
 // settlement helpers. Rollup hoists RunHistory.tsx into a chunk shared
 // with RunPage, so a purchaser who opens both downloads it once.
 const importHistoryPage = () =>
   import('../pages/HistoryPage').then((m) => ({ default: m.HistoryPage }));
-const HistoryPage = lazy(importHistoryPage);
+const HistoryPage = resilientLazy(importHistoryPage);
 // Daily close is a financial, permission-gated surface. Keep its form and
 // recent-ledger query code out of the startup bundle for everyone else.
 const importSettlementPage = () =>
   import('../pages/SettlementPage').then((m) => ({ default: m.SettlementPage }));
-const SettlementPage = lazy(importSettlementPage);
+const SettlementPage = resilientLazy(importSettlementPage);
 // 2026-10-21: staff-only sales tab. Small page, but lazy like Settlement
 // so the many users who never see it don't parse it.
 const importSalesPage = () => import('../pages/SalesPage').then((m) => ({ default: m.SalesPage }));
-const SalesPage = lazy(importSalesPage);
+const SalesPage = resilientLazy(importSalesPage);
+import { resilientLazy } from '../lib/resilientLazy';
 import { useAuthStore } from '../stores/authStore';
 import {
   isTabVisible,

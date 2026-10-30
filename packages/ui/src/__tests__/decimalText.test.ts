@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { normalizeDecimalInput } from '../decimalText';
+import { normalizeDecimalInput, setDecimalLocale } from '../decimalText';
 
 describe('normalizeDecimalInput (R6)', () => {
   test('a decimal comma becomes a point', () => {
@@ -31,5 +31,24 @@ describe('normalizeDecimalInput (R6)', () => {
 
   test('plain numbers pass through unchanged', () => {
     for (const v of ['0', '1', '1.5', '125000', '0.001']) expect(normalizeDecimalInput(v)).toBe(v);
+  });
+
+  test('RE-CLS-4: zh / en read comma-grouped thousands; ru / uz keep the decimal comma', () => {
+    try {
+      setDecimalLocale('zh');
+      expect(normalizeDecimalInput('1,000')).toBe('1000');
+      expect(normalizeDecimalInput('1,500,000')).toBe('1500000');
+      expect(normalizeDecimalInput('12,500.5')).toBe('12500.5');
+      expect(normalizeDecimalInput('1,5')).toBe('1.5');
+      expect(normalizeDecimalInput('1,50')).toBe('1.50');
+      setDecimalLocale('en');
+      expect(normalizeDecimalInput('2,000')).toBe('2000');
+      setDecimalLocale('ru');
+      expect(normalizeDecimalInput('1,000')).toBe('1.000');
+      setDecimalLocale('uz');
+      expect(normalizeDecimalInput('1,500')).toBe('1.500');
+    } finally {
+      setDecimalLocale(null);
+    }
   });
 });
