@@ -746,11 +746,16 @@ export function ConfirmPage() {
             setIssueReceived('');
           }
         }}
-        title={i18n.t('confirm.issue.markAs', {
-          status: issueOpen
+        // DLV-10 (2026-10-30): the title named the verdict but not the item.
+        title={(() => {
+          const status = issueOpen
             ? i18n.t(('confirm.status.' + issueOpen.status) as Parameters<typeof i18n.t>[0])
-            : '',
-        })}
+            : '';
+          const sku = issueOpen ? skuById.get(issueOpen.skuId) : undefined;
+          return sku
+            ? i18n.t('confirm.issue.markItemAs', { item: productNameParts(sku).primary, status })
+            : i18n.t('confirm.issue.markAs', { status });
+        })()}
         description={i18n.t('confirm.issue.describe')}
         // M1.9-fix (2026-05-07): autofocusing the issue note input
         // popped the iOS keyboard mid-slideUp, pushing the
@@ -777,6 +782,13 @@ export function ConfirmPage() {
               spoiled item (nothing usable arrived) and editable. */}
           {issueOpen ? (
             <div className="flex flex-col gap-1">
+              {/* DLV-10: once typed into, the field had no visible label. */}
+              <span className="text-old-label font-semibold text-[var(--c-fg-muted)]">
+                {i18n.t('confirm.issue.receivedQty', {
+                  max: formatQty(issueOpen.splitQty),
+                  unit: unitLabel(issueOpen.unit),
+                })}
+              </span>
               <Input
                 type="text"
                 inputMode="decimal"

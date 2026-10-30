@@ -63,7 +63,7 @@ function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): Reques
 }
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
-let fix: { storeId: string; skuId: string; staff: Caller; other: Caller; manager: Caller } | null = null;
+let fix: { storeId: string; skuId: string; staff: Caller; other: Caller; manager: Caller; manager2: Caller } | null = null;
 
 beforeAll(async () => {
   if (!SHOULD_RUN) return;
@@ -97,7 +97,7 @@ beforeAll(async () => {
     if (!session) throw new Error('session failed to load');
     return appRouter.createCaller(buildCtx(db, session));
   };
-  fix = { storeId: store!.id, skuId: sku!.id, staff: await member('staff'), other: await member('staff'), manager: await member('manager') };
+  fix = { storeId: store!.id, skuId: sku!.id, staff: await member('staff'), other: await member('staff'), manager: await member('manager'), manager2: await member('manager') };
 });
 
 describe.skipIf(!SHOULD_RUN)('order batches (PG-gated)', () => {
@@ -116,5 +116,18 @@ describe.skipIf(!SHOULD_RUN)('order batches (PG-gated)', () => {
     const batches = await staff.order.todayBatches({ storeId });
     expect(batches.find((b) => b.id === first.sessionId)?.rejectReason).toBe('too much');
     expect(await other.order.todaySession({ storeId, sessionId: first.sessionId })).toBeNull();
+  });
+
+  test('APR-13: taking over a claim leaves it claimed by the one who took it', async () => {
+    const { staff, manager, manager2, storeId, skuId } = fix!;
+    const draft = await staff.order.adjustItem({ storeId, skuId, qty: '4' });
+    await staff.order.submit({ sessionId: draft.sessionId });
+    await manager.order.claim({ sessionId: draft.sessionId });
+    await manager2.order.takeOverClaim({ sessionId: draft.sessionId });
+    const detail = await manager2.order.sessionDetail({ sessionId: draft.sessionId });
+    expect((detail as { claimedByMemberId?: string | null }).claimedByMemberId).toBeTruthy();
+    // The first claimer can no longer approve; the one who took over can.
+    await expect(manager.order.approve({ sessionId: draft.sessionId })).rejects.toThrow();
+    await manager2.order.approve({ sessionId: draft.sessionId });
   });
 });

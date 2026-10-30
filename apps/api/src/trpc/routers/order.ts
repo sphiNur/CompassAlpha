@@ -1511,6 +1511,18 @@ export const orderRouter = router({
       ),
     ),
 
+  /** APR-13 (2026-10-30): "take over" released someone's claim and left
+   *  the order unclaimed, so a third approver could grab it before the
+   *  one who asked tapped Claim. Release and claim are one write now. */
+  takeOverClaim: authedProcedure.input(SimpleSessionCommandSchema).mutation(async ({ ctx, input }) =>
+    runSimpleCommand(ctx, input.sessionId, (state, perms) => {
+      const actor = buildActor(ctx, state, perms);
+      const released = decide(state, { type: 'ReleaseClaim', reason: 'manual', actor });
+      const afterRelease = released.reduce(apply, state);
+      return [...released, ...decide(afterRelease, { type: 'Claim', actor })];
+    }),
+  ),
+
   // 2026-10-21 audit CA-43: `expectedSeq` (the lastSeq the approver's
   // list showed) is checked AFTER decide(), so an idempotent repeat of
   // the same decision (lost-response retry, CA-26) still no-ops instead

@@ -30,7 +30,7 @@ import {
 } from '@compass/ui';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
-import { useI18n, useProductName, useUnitLabel } from '../hooks/useI18n';
+import { useDateFormat, useI18n, useProductName, useUnitLabel } from '../hooks/useI18n';
 import { haptic } from '../hooks/useTelegram';
 import { confirmThen } from '../lib/confirm';
 import { useErrToast } from '../lib/errToast';
@@ -154,6 +154,14 @@ export function ApprovalPage() {
       errToast('approval.toast.rejectFailed')(err);
     },
   });
+  const takeOverClaim = trpc.order.takeOverClaim.useMutation({
+    onSuccess: () => {
+      void utils.order.pendingList.invalidate();
+      toast.info(i18n.t('approval.toast.tookOver'));
+    },
+    onError: errToast('common.error'),
+  });
+  const dates = useDateFormat();
   const releaseClaim = trpc.order.releaseClaim.useMutation({
     onSuccess: () => {
       void utils.order.pendingList.invalidate();
@@ -306,6 +314,18 @@ export function ApprovalPage() {
                             ? i18n.t('approval.contributorsCount', { n: row.contributorCount }) + ' · '
                             : ''}
                           {row.orderDate}
+                          {/* APR-15 (2026-10-30): two cards from one person on
+                              one day were indistinguishable; only then the
+                              submit time tells them apart. */}
+                          {row.submittedAt &&
+                          rows.some(
+                            (o) =>
+                              o.id !== row.id &&
+                              o.orderDate === row.orderDate &&
+                              o.attribDisplayName === row.attribDisplayName,
+                          )
+                            ? ' · ' + dates.time(row.submittedAt)
+                            : ''}
                           {/* UI-3 (declutter): dropped the standalone HH:MM
                               time — it wrapped the meta to a second line and
                               the exact timestamp lives in the detail view. */}
@@ -428,15 +448,15 @@ export function ApprovalPage() {
                               size="sm"
                               variant="pearl"
                               loading={
-                                releaseClaim.isPending &&
-                                releaseClaim.variables?.sessionId === row.id
+                                takeOverClaim.isPending &&
+                                takeOverClaim.variables?.sessionId === row.id
                               }
                               onClick={() =>
                                 confirmAction(
                                   i18n.t('approval.confirmTakeover', {
                                     who: row.claimedByDisplayName ?? i18n.t('approval.unknownReviewer'),
                                   }),
-                                  () => releaseClaim.mutate({ sessionId: row.id }),
+                                  () => takeOverClaim.mutate({ sessionId: row.id }),
                                 )
                               }
                             >
