@@ -38,6 +38,7 @@ import { StorePickerSection, useCanSeeStorePicker } from './StoreSwitcher';
 /** Built-in roles have a translated name; a custom role shows its slug. */
 const BUILTIN_ROLE_SLUGS = new Set(['super_admin', 'admin', 'manager', 'purchaser', 'cashier', 'staff']);
 import { CreateWorkspaceForm } from './CreateWorkspace';
+import { BLOCKS_NAVIGATION } from '../hooks/useAppMutating';
 
 interface LangOption {
   code: Locale;
@@ -99,6 +100,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
     onError: errToast('common.error'),
   });
   const switchOrganization = trpc.auth.switchOrganization.useMutation({
+    meta: BLOCKS_NAVIGATION,
     onSuccess: (data) => {
       setSession({
         accessToken: data.tokens.accessToken,

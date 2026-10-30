@@ -6,6 +6,7 @@ import { trpc } from '../lib/trpc';
 import { useErrToast } from '../lib/errToast';
 import { useAuthStore } from '../stores/authStore';
 import { resetNavStore } from '../stores/navStore';
+import { BLOCKS_NAVIGATION } from '../hooks/useAppMutating';
 
 /**
  * Self-service tenant creation. Used both from the no-membership login
@@ -24,6 +25,7 @@ export function CreateWorkspaceForm({ onCreated }: { onCreated?: () => void }) {
   const submitting = useRef(false);
 
   const create = trpc.auth.createOrganization.useMutation({
+    meta: BLOCKS_NAVIGATION,
     onSuccess(data) {
       setSession({
         accessToken: data.tokens.accessToken,
