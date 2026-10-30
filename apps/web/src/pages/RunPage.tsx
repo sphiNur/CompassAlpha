@@ -657,7 +657,12 @@ export function RunPage() {
       invalidateRunQuietly();
       haptic('success');
     },
-    onError: errToast('common.error'),
+    // APR-18: refused as stale when someone else changed the order since
+    // this page read it; show the current rows.
+    onError: (err) => {
+      invalidateRunQuietly();
+      errToast('common.error')(err);
+    },
   });
   // UIUX-B1 (2026-07-06): the C.2/M3.38 exclusive-claim subsystem
   // (claim/release mutations, auto-claim/auto-release effects, the
@@ -1449,7 +1454,10 @@ export function RunPage() {
                       ? ` · ${i18n.t('run.label.paymentCash')} ${formatMoney(ps.cash)}` +
                         ` · ${i18n.t('run.label.paymentTransfer')} ${formatMoney(ps.transfer)}`
                       : '';
-                    return `${storeName}: ${formatMoney(ps.total)}${tail}`;
+                    return i18n.t('common.labelValue', {
+                      label: storeName,
+                      value: `${formatMoney(ps.total)}${tail}`,
+                    });
                   })
                   .join('\n')
               : '';
@@ -2406,8 +2414,8 @@ export function RunPage() {
             onRecallStore={(storeId, storeName) =>
               setConfirmAction({ kind: 'recallDelivery', storeId, storeName })
             }
-            onMarkExtraStatus={(sessionId, extraIndex, status) =>
-              markExtraStatus.mutate({ sessionId, extraIndex, status })
+            onMarkExtraStatus={(sessionId, extraIndex, status, expectedSeq) =>
+              markExtraStatus.mutate({ sessionId, extraIndex, status, expectedSeq })
             }
             onRecordExtraExpense={(storeId, extra) => {
               setAddItemDraft({

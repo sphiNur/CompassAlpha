@@ -67,6 +67,12 @@ export function useI18n() {
     window.Telegram?.WebApp?.initDataUnsafe?.user?.language_code ?? navigator.language;
   const resolved: Locale = (locale as Locale | null) ?? detectLocale(fallback);
   useEnsureLocale(resolved);
+  // boot-guard.js sets <html lang> from the Telegram / browser language;
+  // the account's own locale wins once it is known. Screen readers use it,
+  // and so does the `:lang(ru)` / `:lang(uz)` rule in styles/index.css.
+  useEffect(() => {
+    if (document.documentElement.lang !== resolved) document.documentElement.lang = resolved;
+  }, [resolved]);
   return useMemo(() => createI18n(resolved), [resolved]);
 }
 

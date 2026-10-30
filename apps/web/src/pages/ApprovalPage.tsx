@@ -159,7 +159,11 @@ export function ApprovalPage() {
       void utils.order.pendingList.invalidate();
       toast.info(i18n.t('approval.toast.tookOver'));
     },
-    onError: errToast('common.error'),
+    // RE-APR-2: someone else took it over first — show who has it now.
+    onError: (err) => {
+      void utils.order.pendingList.invalidate();
+      errToast('common.error')(err);
+    },
   });
   const dates = useDateFormat();
   const releaseClaim = trpc.order.releaseClaim.useMutation({
@@ -460,7 +464,12 @@ export function ApprovalPage() {
                                   i18n.t('approval.confirmTakeover', {
                                     who: row.claimedByDisplayName ?? i18n.t('approval.unknownReviewer'),
                                   }),
-                                  () => takeOverClaim.mutate({ sessionId: row.id }),
+                                  () =>
+                                    takeOverClaim.mutate({
+                                      sessionId: row.id,
+                                      // RE-APR-2: take over this claim, no other.
+                                      fromMemberId: row.claimedByMemberId ?? undefined,
+                                    }),
                                 )
                               }
                             >

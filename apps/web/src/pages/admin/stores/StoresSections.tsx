@@ -312,7 +312,7 @@ export function StoresHomeSection({
                   setCreateDraft({ ...createDraft, code: e.target.value })
                 }
                 maxLength={32}
-                placeholder="optional internal code"
+                placeholder={i18n.t('admin.field.codePlaceholder')}
               />
             </Field>
             <Field label={i18n.t('admin.field.address')}>
@@ -331,7 +331,7 @@ export function StoresHomeSection({
                   setCreateDraft({ ...createDraft, timezone: e.target.value })
                 }
                 maxLength={64}
-                placeholder="e.g. Asia/Tashkent"
+                placeholder={i18n.t('admin.field.timezonePlaceholder')}
               />
             </Field>
             <p className="text-old-label text-[var(--c-fg-muted)]">
@@ -932,7 +932,7 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
   if (storesQuery.isLoading || !draft || !store) {
     return (
       <div className="flex items-center gap-2 px-4 py-6 text-old-body-sm text-[var(--c-fg-muted)]">
-        <Spinner size={14} /> Loading store…
+        <Spinner size={14} /> {i18n.t('admin.label.loadingStore')}
       </div>
     );
   }
@@ -963,7 +963,7 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
           value={draft.code}
           onChange={(e) => setDraft({ ...draft, code: e.target.value })}
           maxLength={32}
-          placeholder="optional internal code"
+          placeholder={i18n.t('admin.field.codePlaceholder')}
           disabled={!canAdmin}
         />
       </Field>
@@ -980,14 +980,14 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
           value={draft.timezone}
           onChange={(e) => setDraft({ ...draft, timezone: e.target.value })}
           maxLength={64}
-          placeholder="e.g. Asia/Tashkent"
+          placeholder={i18n.t('admin.field.timezonePlaceholder')}
           disabled={!canAdmin}
         />
       </Field>
       <Field label={i18n.t('admin.field.defaultRole')}>
         {rolesQuery.isLoading ? (
           <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
-            <Spinner size={14} /> Loading roles…
+            <Spinner size={14} /> {i18n.t('admin.label.loadingRoles')}
           </div>
         ) : (
           <Select

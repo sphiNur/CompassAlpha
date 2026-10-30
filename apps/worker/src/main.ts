@@ -31,17 +31,23 @@ import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync } from 'node:fs';
 import { eq, sql } from 'drizzle-orm';
 import { Bot, GrammyError, HttpError } from 'grammy';
-import { getDb, schema as s, closeDb, inSystem, withSystemContext } from '@compass/db';
+import {
+  getDb,
+  schema as s,
+  closeDb,
+  inSystem,
+  notifyRealtime,
+  withSystemContext,
+} from '@compass/db';
 import type { DB } from '@compass/db';
 import { assertRelayDelivered, RelayError } from './relay';
 import { orphanRepairFor } from './orphanRepair';
 import { deleteInBatches, RETENTION_RULES, retentionDeleteSql } from './retention';
 import {
   claimLastActiveAt,
-  claimRowForUpdateSql,
   type DbTimestamp,
-  isClaimExpired,
   nextSeq,
+  releaseClaimIfExpired,
   staleClaimCandidatesSql,
 } from './claimTimeout';
 
@@ -430,14 +436,6 @@ type StaleClaimCandidate = {
   last_claimer_event_at: DbTimestamp | null;
 };
 
-type LockedClaimRow = {
-  last_seq: number | string; // bigint: a string from raw tx.execute
-  claimed_by_member_id: string | null;
-  claimed_at: DbTimestamp | null;
-  status: string;
-  last_claimer_event_at: DbTimestamp | null;
-};
-
 function idleMinutes(row: StaleClaimCandidate): number {
   const lastActive = claimLastActiveAt(row.claimed_at, row.last_claimer_event_at);
   return Math.round((Date.now() - lastActive.getTime()) / 60_000);
@@ -453,6 +451,9 @@ function idleMinutes(row: StaleClaimCandidate): number {
  *
  * No human actor → event payload has `byMemberId: null`. The audit log
  * groups these with override releases under "interventions" (M3.21).
+ *
+ * The worker has no realtime hub; each release announces itself with
+ * Postgres NOTIFY, which the API relays to open pages (APR-12/B14).
  */
 async function releaseStaleClaims(): Promise<number> {
   if (CLAIM_TIMEOUT_MINUTES <= 0) return 0;
@@ -466,62 +467,16 @@ async function releaseStaleClaims(): Promise<number> {
   let released = 0;
   for (const row of candidates) {
     try {
-      const ok = await withSystemContext(db, 'worker', async (tx) => {
-        // Re-check under row lock — another tx may have already
-        // approved / rejected / manually released between our SELECT
-        // and now. If so, just skip.
-        const fresh = (await tx.execute(
-          claimRowForUpdateSql('order', row.id),
-        )) as unknown as LockedClaimRow[];
-        const cur = fresh[0];
-        if (!cur) return false;
-        if (
-          cur.status !== 'submitted' ||
-          cur.claimed_by_member_id === null ||
-          cur.claimed_at === null ||
-          !isClaimExpired({
-            claimedAt: cur.claimed_at,
-            lastClaimerEventAt: cur.last_claimer_event_at,
-            now: new Date(),
-            timeoutMinutes: CLAIM_TIMEOUT_MINUTES,
-          })
-        ) {
-          return false;
-        }
-        const newSeq = nextSeq(cur.last_seq);
-        const occurredAt = new Date();
-        // Append the timeout event. Schema invariant: (stream_id, seq)
-        // is uniqueIndex'd so a racing append would error out here —
-        // we let the tx fail and move on rather than retrying.
-        await tx.insert(s.events).values({
-          id: randomUUID(),
-          orgId: row.org_id,
-          streamType: 'order',
-          streamId: row.id,
-          seq: newSeq,
-          type: 'ClaimReleased',
-          payload: { byMemberId: null, reason: 'timeout' },
-          actorId: null,
-          occurredAt,
-          correlationId: null,
-          causationId: null,
-          idempotencyKey: null,
-        });
-        // Mirror the projector's ClaimReleased branch (M3.22): snapshot
-        // the timed-out claimer into previous_claimer_member_id so the
-        // next reviewer's banner shows "X → Y".
-        await tx
-          .update(s.orderSessionsV)
-          .set({
-            claimedByMemberId: null,
-            claimedAt: null,
-            previousClaimerMemberId: cur.claimed_by_member_id,
-            lastSeq: newSeq,
-            updatedAt: occurredAt,
-          })
-          .where(eq(s.orderSessionsV.id, row.id));
-        return true;
-      });
+      // Re-checked under a row lock: another tx may have approved,
+      // rejected or released it since the scan.
+      const ok = await withSystemContext(db, 'worker', (tx) =>
+        releaseClaimIfExpired(
+          tx,
+          'order',
+          { id: row.id, orgId: row.org_id },
+          CLAIM_TIMEOUT_MINUTES,
+        ),
+      );
       if (ok) {
         released++;
         console.log(
@@ -556,55 +511,9 @@ async function releaseStaleRunClaims(): Promise<number> {
   let released = 0;
   for (const row of candidates) {
     try {
-      const ok = await withSystemContext(db, 'worker', async (tx) => {
-        const fresh = (await tx.execute(
-          claimRowForUpdateSql('run', row.id),
-        )) as unknown as LockedClaimRow[];
-        const cur = fresh[0];
-        if (!cur) return false;
-        if (
-          (cur.status !== 'planned' &&
-            cur.status !== 'purchasing' &&
-            cur.status !== 'delivering') ||
-          cur.claimed_by_member_id === null ||
-          cur.claimed_at === null ||
-          !isClaimExpired({
-            claimedAt: cur.claimed_at,
-            lastClaimerEventAt: cur.last_claimer_event_at,
-            now: new Date(),
-            timeoutMinutes: CLAIM_TIMEOUT_MINUTES,
-          })
-        ) {
-          return false;
-        }
-        const newSeq = nextSeq(cur.last_seq);
-        const occurredAt = new Date();
-        await tx.insert(s.events).values({
-          id: randomUUID(),
-          orgId: row.org_id,
-          streamType: 'run',
-          streamId: row.id,
-          seq: newSeq,
-          type: 'RunClaimReleased',
-          payload: { byMemberId: null, reason: 'timeout' },
-          actorId: null,
-          occurredAt,
-          correlationId: null,
-          causationId: null,
-          idempotencyKey: null,
-        });
-        await tx
-          .update(s.marketRunsV)
-          .set({
-            claimedByMemberId: null,
-            claimedAt: null,
-            previousClaimerMemberId: cur.claimed_by_member_id,
-            lastSeq: newSeq,
-            updatedAt: occurredAt,
-          })
-          .where(eq(s.marketRunsV.id, row.id));
-        return true;
-      });
+      const ok = await withSystemContext(db, 'worker', (tx) =>
+        releaseClaimIfExpired(tx, 'run', { id: row.id, orgId: row.org_id }, CLAIM_TIMEOUT_MINUTES),
+      );
       if (ok) {
         released++;
         console.log(
@@ -714,6 +623,13 @@ async function repairOrphanedSessions(): Promise<number> {
             updatedAt: occurredAt,
           })
           .where(eq(s.orderSessionsV.id, row.session_id));
+        // Open pages refresh once this commits (B14).
+        await notifyRealtime(tx, {
+          type: 'order.changed',
+          orgId: row.org_id,
+          sessionId: row.session_id,
+          lastSeq: newSeq,
+        });
         return repair.eventType;
       });
       if (ok) {

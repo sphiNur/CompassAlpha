@@ -19,7 +19,14 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-const ROOTS = ['apps/web/src', 'packages/ui/src', 'apps/api/src', 'packages/domain/src'];
+const ROOTS = [
+  'apps/web/src',
+  'packages/ui/src',
+  'apps/api/src',
+  'packages/domain/src',
+  // zod messages in the shared schemas are catalog keys too (run.errors.priceFormat).
+  'packages/contracts/src',
+];
 
 function walk(dir: string, out: string[] = []): string[] {
   let entries: string[];
@@ -45,9 +52,13 @@ const blob = ROOTS.flatMap((r) => walk(r))
   .map((f) => readFileSync(f, 'utf8'))
   .join('\n');
 
-// A key reached via `i18n.t('some.prefix.' + x)` never appears literally.
+// A key reached via `i18n.t('some.prefix.' + x)` or
+// `i18n.t(`some.prefix.${x}`)` never appears literally.
 const dynamicPrefixes = [
-  ...new Set([...blob.matchAll(/'([a-z][a-zA-Z0-9._]*\.)'\s*\+/g)].map((m) => m[1]!)),
+  ...new Set([
+    ...[...blob.matchAll(/'([a-z][a-zA-Z0-9._]*\.)'\s*\+/g)].map((m) => m[1]!),
+    ...[...blob.matchAll(/`([a-z][a-zA-Z0-9._]*\.)\$\{/g)].map((m) => m[1]!),
+  ]),
 ];
 
 const unused = keys.filter(

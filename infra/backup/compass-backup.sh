@@ -22,6 +22,13 @@
 
 set -euo pipefail
 
+# 2026-10-30: say so in the journal, in one greppable line, whenever the
+# run fails — `set -e` alone exits silently on the failing command, and
+# "no backup today" then looks like a quiet success to anyone reading
+# `journalctl -u compass-backup` (alerting on it needs the owner's choice
+# of channel: see docs/RUNBOOK.md "Backups").
+trap 'rc=$?; echo "[backup] FAILED (exit $rc) at line $LINENO: $BASH_COMMAND" >&2' ERR
+
 ENV_FILE=${ENV_FILE:-/home/ubuntu/compass-alpha/.env}
 BACKUP_DIR=${BACKUP_DIR:-/home/ubuntu/compass-backups}
 RETENTION_DAYS=${RETENTION_DAYS:-14}
@@ -92,7 +99,7 @@ pg_dump \
   "$DUMP_URL"
 
 ELAPSED=$(( $(date +%s) - START ))
-SIZE=$(stat -c %s "$DUMP")
+SIZE=$(wc -c < "$DUMP" | tr -d ' ')
 echo "[backup] pg_dump done — ${SIZE} bytes in ${ELAPSED}s"
 
 # --- Verify -----------------------------------------------------------------
@@ -120,9 +127,14 @@ if [[ "$DELETED" -gt 0 ]]; then
 fi
 
 # --- Optional: off-site to S3-compatible storage ----------------------------
+# 2026-10-30: once BACKUP_S3_BUCKET is set, a missing CLI or a failed
+# upload fails the run (exit 1). Both used to log WARN and exit 0, so the
+# off-site copy could stop for weeks with the unit reporting success. The
+# local dump is kept either way.
 if [[ -n "${BACKUP_S3_BUCKET:-}" ]]; then
   if ! command -v aws > /dev/null 2>&1; then
-    echo "[backup] WARN: BACKUP_S3_BUCKET set but 'aws' CLI not installed; skipping upload" >&2
+    echo "[backup] ERROR: BACKUP_S3_BUCKET is set but the 'aws' CLI is not installed — no off-site copy (local dump kept: $DUMP)" >&2
+    exit 1
   else
     PREFIX="${BACKUP_S3_PREFIX:-compass-backups}"
     REMOTE="s3://${BACKUP_S3_BUCKET}/${PREFIX%/}/compass-${TS}.dump"
@@ -131,13 +143,13 @@ if [[ -n "${BACKUP_S3_BUCKET:-}" ]]; then
       EXTRA_ARGS+=("--endpoint-url" "$BACKUP_S3_ENDPOINT")
     fi
     echo "[backup] uploading to $REMOTE"
-    if aws "${EXTRA_ARGS[@]}" s3 cp "$DUMP" "$REMOTE" --only-show-errors; then
+    if aws ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} s3 cp "$DUMP" "$REMOTE" --only-show-errors; then
       echo "[backup] uploaded"
     else
-      # Don't fail the whole backup just because S3 hiccupped. The local
-      # copy is still on disk; the next run will re-upload along with its
-      # own dump (we don't track which were uploaded — keep it simple).
-      echo "[backup] WARN: S3 upload failed, local copy still good" >&2
+      # The local copy is still on disk; the next run uploads its own
+      # dump (earlier ones are not retried — copy them by hand).
+      echo "[backup] ERROR: S3 upload failed — no off-site copy (local dump kept: $DUMP)" >&2
+      exit 1
     fi
   fi
 fi

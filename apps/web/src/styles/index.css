@@ -89,3 +89,16 @@
     }
   }
 }
+
+/*
+ * 11-文案 C12 (2026-10-30): eyebrow labels are styled `uppercase`. In
+ * Cyrillic and Uzbek Latin a line of capitals («ЗАЯВКИ В ЭТОЙ ЗАКУПКЕ»,
+ * "SIZ YUBORGAN NARSALAR") is much harder to read than in English, and the
+ * catalog already writes these labels in sentence case. Chinese has no
+ * case, so only English keeps the capitals. <html lang> is set by
+ * boot-guard.js and then by useI18n.
+ */
+:lang(ru) .uppercase,
+:lang(uz) .uppercase {
+  text-transform: none;
+}

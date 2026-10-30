@@ -5,7 +5,7 @@ import { inSystem, schema as s } from '@compass/db';
 import { RecentLogsInputSchema } from '@compass/contracts';
 import { permissionProcedure, publicProcedure, router } from '../trpc';
 import { logger } from '../../infra/log';
-import { checkRate } from '../../services/rateLimit';
+import { checkClientRate } from '../../services/rateLimit';
 
 /**
  * Rate limit for the public `system.log` endpoint (M1.9 hardening,
@@ -18,10 +18,9 @@ import { checkRate } from '../../services/rateLimit';
  * limit by event count because honest spikes (e.g. an error storm in
  * the WebView) legitimately fill a single batch to the 200 cap.
  *
- * Same null-IP fallback as auth.ts: if Cloudflare/proxy headers don't
- * yield an IP we don't enforce — the alternative is dropping all
- * client telemetry behind a misconfigured proxy, which would blind us
- * during incidents.
+ * Keyed on the trusted client address like auth.ts (AUTH-6). Without
+ * one the caller shares a bucket with ten times the budget: telemetry
+ * keeps flowing behind a misconfigured proxy, but no longer unlimited.
  */
 const LOG_LIMIT = { window: 60_000, max: 60 } as const;
 
@@ -144,7 +143,7 @@ export const systemRouter = router({
    * column constraints; rejects are counted but don't fail the batch.
    */
   log: publicProcedure.input(LooseLogBatchSchema).mutation(async ({ ctx, input }) => {
-    if (ctx.ip && !checkRate('system.log', ctx.ip, LOG_LIMIT)) {
+    if (!checkClientRate('system.log', ctx.trustedIp, LOG_LIMIT)) {
       throw new TRPCError({
         code: 'TOO_MANY_REQUESTS',
         message: 'system.errors.logRateLimited',

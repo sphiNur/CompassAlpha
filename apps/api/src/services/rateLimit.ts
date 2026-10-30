@@ -54,6 +54,28 @@ export function checkRate(scope: string, key: string, opts: RateOptions): boolea
   return true;
 }
 
+/**
+ * Key for callers with no trusted address (AUTH-6). They used to skip
+ * the limit entirely; now they share one bucket with a larger budget,
+ * so a whole office behind one unknown proxy is not locked out by a
+ * single person's typos, while a script cannot loop forever.
+ */
+export const UNIDENTIFIED_CLIENT = 'unidentified';
+export const UNIDENTIFIED_BUDGET_FACTOR = 10;
+
+/** `checkRate` on the client address, or on the shared bucket without one. */
+export function checkClientRate(
+  scope: string,
+  ip: string | null | undefined,
+  opts: RateOptions,
+): boolean {
+  if (ip) return checkRate(scope, ip, opts);
+  return checkRate(scope, UNIDENTIFIED_CLIENT, {
+    window: opts.window,
+    max: opts.max * UNIDENTIFIED_BUDGET_FACTOR,
+  });
+}
+
 /** Test-only — reset the entire store. Never call in production code. */
 export function _resetRateBuckets(): void {
   buckets.clear();

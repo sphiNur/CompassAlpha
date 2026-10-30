@@ -288,6 +288,8 @@ export function PerVendorView({
     sessionId: string,
     extraIndex: number,
     status: 'pending' | 'bought' | 'unavailable',
+    /** APR-18: the session's lastSeq the row was read at. */
+    expectedSeq?: number,
   ) => void;
   onRecordExtraExpense: (
     storeId: string,
@@ -535,6 +537,7 @@ export function RunExtrasCard({
       status?: 'pending' | 'bought' | 'unavailable';
       sessionId?: string;
       idx?: number;
+      sessionSeq?: number;
     }>
   >;
   sessionNotesByStore?: Record<string, string>;
@@ -547,6 +550,8 @@ export function RunExtrasCard({
     sessionId: string,
     extraIndex: number,
     status: 'pending' | 'bought' | 'unavailable',
+    /** APR-18: the session's lastSeq the row was read at. */
+    expectedSeq?: number,
   ) => void;
   onRecordExtraExpense?: (
     storeId: string,
@@ -649,7 +654,7 @@ export function RunExtrasCard({
                               type="button"
                               title={i18n.t('run.extras.status.cycleHint', { current: v.label })}
                               onClick={() =>
-                                onMarkExtraStatus!(e.sessionId!, e.idx!, cycle(status))
+                                onMarkExtraStatus!(e.sessionId!, e.idx!, cycle(status), e.sessionSeq)
                               }
                               className="flex min-w-0 flex-1 items-baseline gap-2 rounded-[6px] text-left active:bg-[var(--c-surface-2)]"
                             >
@@ -1607,7 +1612,10 @@ export function PurchaseRow({
   const paymentLabel = i18n.t(
     isTransfer ? 'run.label.paymentTransfer' : 'run.label.paymentCash',
   );
-  const paymentAria = `${i18n.t('run.label.paymentMethod')}: ${paymentLabel}`;
+  const paymentAria = i18n.t('common.labelValue', {
+    label: i18n.t('run.label.paymentMethod'),
+    value: paymentLabel,
+  });
 
   // BUY-6 (2026-10-30): a purchaser of only some of the run's stores sees
   // rows that also serve other stores, but cannot change them.
@@ -1886,11 +1894,12 @@ export function PurchaseRow({
             // indication that it was a toggle or what tapping would do;
             // the ×1000 toggle two files away already gets this right.
             aria-pressed={paymentMethod === 'transfer'}
-            aria-label={`${i18n.t('run.label.paymentMethod')}: ${i18n.t(
-              paymentMethod === 'cash'
-                ? 'run.label.paymentCash'
-                : 'run.label.paymentTransfer',
-            )}`}
+            aria-label={i18n.t('common.labelValue', {
+              label: i18n.t('run.label.paymentMethod'),
+              value: i18n.t(
+                paymentMethod === 'cash' ? 'run.label.paymentCash' : 'run.label.paymentTransfer',
+              ),
+            })}
             title={
               paymentMethod === 'cash'
                 ? i18n.t('run.label.paymentCash')

@@ -406,10 +406,13 @@ export function decide(
         {
           ...baseFor(1, 'ClaimReleased'),
           type: 'ClaimReleased',
-          payload: {
-            byMemberId: command.actor.memberId,
-            reason: isSelf ? command.reason : 'override',
-          },
+          payload: isSelf
+            ? { byMemberId: command.actor.memberId, reason: command.reason }
+            : {
+                byMemberId: command.actor.memberId,
+                reason: 'override',
+                fromMemberId: state.claimedByMemberId,
+              },
         },
       ];
     }

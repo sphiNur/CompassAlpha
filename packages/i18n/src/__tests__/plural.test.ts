@@ -43,27 +43,27 @@ describe('plural selection — English', () => {
 
   test('keeps surrounding text and other placeholders intact', () => {
     expect(
-      createI18n('en').t('run.label.itemsHint' as CatalogKey, {
+      createI18n('en').t('run.label.skuCountAndQty' as CatalogKey, {
         n: 1,
-        subtitle: 'Eden',
+        qty: '3 kg',
       }),
-    ).toBe('1 item · Eden');
+    ).toBe('1 product · 3 kg');
     expect(
-      createI18n('en').t('run.label.itemsHint' as CatalogKey, {
+      createI18n('en').t('run.label.skuCountAndQty' as CatalogKey, {
         n: 7,
-        subtitle: 'Eden',
+        qty: '3 kg',
       }),
-    ).toBe('7 items · Eden');
+    ).toBe('7 products · 3 kg');
   });
 
   test('a plural block mid-sentence leaves the rest of the sentence alone', () => {
     const one = createI18n('en').t('ops.purge.cascadeBody' as CatalogKey, { n: 1 });
     const many = createI18n('en').t('ops.purge.cascadeBody' as CatalogKey, { n: 3 });
-    expect(one).toContain('its 1 attached order session.');
-    expect(many).toContain('its 3 attached order sessions.');
+    expect(one).toContain('its 1 attached order.');
+    expect(many).toContain('its 3 attached orders.');
     // The tail after the plural block must survive in both.
-    expect(one).toContain('use the per-session purge');
-    expect(many).toContain('use the per-session purge');
+    expect(one).toContain('use the per-order purge');
+    expect(many).toContain('use the per-order purge');
   });
 });
 
@@ -71,18 +71,31 @@ describe('plural selection — Russian three-way split', () => {
   const t = (key: string, n: number) =>
     createI18n('ru').t(key as CatalogKey, { n });
 
-  test('one / few / other are selected per CLDR', () => {
-    // одна роль (one) / две роли (few) / пять ролей (other)
+  test('one / few / many / other are selected per CLDR', () => {
+    // одна роль (one) / две роли (few) / пять ролей (many)
     expect(t('people.toastRolesRevoked', 1)).toBe('отозвана 1 роль');
     expect(t('people.toastRolesRevoked', 2)).toBe('отозвано 2 роли');
     expect(t('people.toastRolesRevoked', 7)).toBe('отозвано 7 ролей');
   });
 
-  test('21 takes the `one` form, 5 takes `other`', () => {
-    // Russian: 21 ends in 1 (but not 11) -> one; 5 -> other.
+  test('21 takes the `one` form, 5 and 11 take `many`', () => {
+    // Russian: 21 ends in 1 (but not 11) -> one; 5 and 11 -> many.
     expect(t('approval.contributorsCount', 21)).toBe('21 участник');
     expect(t('approval.contributorsCount', 5)).toBe('5 участников');
     expect(t('approval.contributorsCount', 11)).toBe('11 участников');
+  });
+
+  test('a fraction takes `other`, which reads like `few`', () => {
+    // 1.5 позиции, not 1.5 позиций: CLDR puts fractions in `other`.
+    expect(t('run.label.itemsCount', 1.5)).toBe('1.5 позиции');
+    expect(t('run.label.itemsCount', 5)).toBe('5 позиций');
+  });
+
+  test('a count in the middle of a sentence agrees with its noun', () => {
+    expect(t('run.sessions.meta', 2)).toBe('2 заказа');
+    expect(t('run.sessions.meta', 5)).toBe('5 заказов');
+    expect(t('run.history.lastDays', 1)).toBe('Последний 1 день');
+    expect(t('run.history.lastDays', 3)).toBe('Последние 3 дня');
   });
 });
 
@@ -143,5 +156,16 @@ describe('plural parser edge cases', () => {
 
   test('a missing count variable is treated as 0', () => {
     expect(fmt('{n, plural, =0 {none} other {# x}}', {})).toBe('none');
+  });
+});
+
+describe('label: value pairs', () => {
+  // RE-COPY-7: code used to glue `${label}: ${value}`, so Chinese read
+  // 「支付方式: 现金」 with a half-width colon.
+  test('each language brings its own colon', () => {
+    const vars = { label: 'X', value: 'Y' };
+    expect(createI18n('zh').t('common.labelValue' as CatalogKey, vars)).toBe('X：Y');
+    expect(createI18n('en').t('common.labelValue' as CatalogKey, vars)).toBe('X: Y');
+    expect(createI18n('ru').t('common.labelValue' as CatalogKey, vars)).toBe('X: Y');
   });
 });

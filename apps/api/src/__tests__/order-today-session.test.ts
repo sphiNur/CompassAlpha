@@ -287,10 +287,12 @@ describe.skipIf(!SHOULD_RUN)('order follow-ups CA-25 / CA-27 / CA-43 (PG-gated)'
     await staff.order.submit({ sessionId });
     expect((await staff.order.todaySession(input))?.status).toBe('submitted');
 
-    // APR-18: an expectedSeq from an older read is refused, not ignored.
+    // Staff cannot mark extras at all. (APR-18's stale-read check — where
+    // the caller's own later writes do not count — is in
+    // server-rules.test.ts.)
     await expect(
       staff.order.markExtraStatus({ sessionId, extraIndex: 0, status: 'bought', expectedSeq: 1 }),
-    ).rejects.toMatchObject({ message: 'order.errors.staleSeq' });
+    ).rejects.toMatchObject({ message: 'order.errors.cannotMarkExtra' });
   });
 
   test('CA-25: a past-dated self-edit with no open draft is refused, not lazily created', async () => {

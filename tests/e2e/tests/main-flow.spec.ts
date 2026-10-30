@@ -184,7 +184,7 @@ test('finish the run and find it in history', async () => {
   await expect(sheet()).toContainText('transfer 90,000');
   await evidence('run-finish-summary');
   await sheet().getByRole('button', { name: 'Finish run' }).click();
-  await expect(main().getByRole('heading', { name: 'No approved sessions to plan' })).toBeVisible();
+  await expect(main().getByRole('heading', { name: 'No approved orders to plan' })).toBeVisible();
 
   await tab('history').click();
   await expect(main().getByRole('heading', { level: 1 })).toHaveText(/History\s*1 · 114,000 UZS/);

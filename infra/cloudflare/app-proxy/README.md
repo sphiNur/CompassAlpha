@@ -47,6 +47,28 @@ waits on an unsigned message it would reject:
 Revert with `wrangler secret delete ORIGIN_SIGNING_KEY`. See
 docs/RUNBOOK.md "Sign the origin rendezvous".
 
+### Real client address for rate limiting (AUTH-6, 2026-10-30)
+
+On the tunnel hop the API cannot see who is calling: `cf-connecting-ip`
+there names the Worker, and `x-forwarded-for` is whatever the client
+sent. With the `CLIENT_IP_PROXY_KEY` secret set, the Worker forwards
+the real client address (Cloudflare's `cf-connecting-ip` as the Worker
+receives it) in `x-compass-client-ip`, together with the secret in
+`x-compass-proxy-key`; it always drops client-sent copies of both.
+
+Rollout, Worker first so the API never waits on a header it would require:
+
+1. `openssl rand -hex 32`.
+2. `wrangler secret put CLIENT_IP_PROXY_KEY` with that value, then
+   `wrangler deploy` (this worker.js).
+3. Add `CLIENT_IP_PROXY_KEY=<same value>` to the server `.env` and
+   restart the API.
+
+Until step 3 the API keeps using `cf-connecting-ip` as before (never
+`x-forwarded-for`). After it, a request without the right key (one
+that skipped the Worker) has no trusted address and shares a single
+rate-limit bucket. Revert with step 3 undone (remove the line, restart).
+
 The Worker is deployed with:
 
 ```bash

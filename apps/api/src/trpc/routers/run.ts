@@ -498,6 +498,9 @@ export const runRouter = router({
         status?: 'pending' | 'bought' | 'unavailable';
         sessionId: string;
         idx: number;
+        /** The session's lastSeq, sent back as markExtraStatus's
+         *  expectedSeq (APR-18). */
+        sessionSeq: number;
       };
       const notesByStore = new Map<string, string[]>();
       const extrasByStore = new Map<string, ExtraItem[]>();
@@ -519,7 +522,7 @@ export const runRouter = router({
           const arr = extrasByStore.get(sess.storeId) ?? [];
           for (let i = 0; i < sessionExtras.length; i++) {
             const ex = sessionExtras[i]!;
-            arr.push({ ...ex, sessionId: sess.id, idx: i });
+            arr.push({ ...ex, sessionId: sess.id, idx: i, sessionSeq: sess.lastSeq });
           }
           extrasByStore.set(sess.storeId, arr);
         }
@@ -1707,6 +1710,7 @@ export const runRouter = router({
                   submittedByMemberId: true,
                   initiatedByMemberId: true,
                   status: true,
+                  lastSeq: true,
                 },
               })
             : [];
@@ -1902,6 +1906,9 @@ export const runRouter = router({
           status?: 'pending' | 'bought' | 'unavailable';
           sessionId: string;
           idx: number;
+          /** The session's lastSeq, sent back as markExtraStatus's
+           *  expectedSeq (APR-18). */
+          sessionSeq: number;
         };
         const notesByStore = new Map<string, string[]>();
         const extrasByStore = new Map<string, ExtraItem[]>();
@@ -1920,7 +1927,9 @@ export const runRouter = router({
             status?: 'pending' | 'bought' | 'unavailable';
           }>;
           const target = extrasByStore.get(session.storeId) ?? [];
-          extras.forEach((extra, idx) => target.push({ ...extra, sessionId: session.id, idx }));
+          extras.forEach((extra, idx) =>
+            target.push({ ...extra, sessionId: session.id, idx, sessionSeq: session.lastSeq }),
+          );
           if (target.length > 0) extrasByStore.set(session.storeId, target);
         }
         const sessionNotesByStore = Object.fromEntries(
