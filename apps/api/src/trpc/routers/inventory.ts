@@ -191,8 +191,12 @@ export const inventoryRouter = router({
             sourceType: s.inventoryMovements.sourceType,
             sourceId: s.inventoryMovements.sourceId,
             occurredAt: s.inventoryMovements.occurredAt,
+            // CLS-23 (2026-10-30): who wrote off / counted it.
+            actorName: s.users.displayName,
           })
           .from(s.inventoryMovements)
+          .leftJoin(s.members, eq(s.members.id, s.inventoryMovements.actorMemberId))
+          .leftJoin(s.users, eq(s.users.id, s.members.userId))
           .where(
             and(
               eq(s.inventoryMovements.orgId, orgId),
