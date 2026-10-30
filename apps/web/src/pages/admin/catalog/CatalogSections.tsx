@@ -106,6 +106,9 @@ interface CategoryDraft {
  * used to drop whatever was typed, and could close mid-save (atlas CAT-18).
  * While saving the sheet stays open; with unsaved edits it asks first.
  */
+/** Category slugs: what CreateCategoryInput accepts. */
+const SLUG_RE = /^[a-z0-9-]+$/;
+
 function useEditorClose<T>(draft: T | null, setDraft: (d: null) => void, busy: boolean) {
   const i18n = useI18n();
   const opened = useRef<string | null>(null);
@@ -284,7 +287,7 @@ export function CategoriesSection() {
             block
             loading={create.isPending || update.isPending}
             disabled={
-              !draft?.slug.trim() || !hasAnyName(draft)
+              !draft?.slug.trim() || !SLUG_RE.test(draft.slug) || !hasAnyName(draft)
             }
             onClick={() => {
               if (!draft) return;
@@ -307,16 +310,30 @@ export function CategoriesSection() {
       >
         {draft ? (
           <div className="flex flex-col gap-3 py-3">
-            <Field label={`${i18n.t('admin.field.slug')} *`}>
+            {/* CAT-10 (2026-10-30): the server takes a-z, 0-9 and "-" only;
+                anything else used to come back as 「出错了」. */}
+            <Field
+              label={`${i18n.t('admin.field.slug')} *`}
+              hint={
+                draft.slug && !SLUG_RE.test(draft.slug)
+                  ? i18n.t('catalog.category.slugInvalid')
+                  : undefined
+              }
+            >
               <Input
                 value={draft.slug}
                 onChange={(e) => setDraft({ ...draft, slug: e.target.value.toLowerCase() })}
                 maxLength={64}
+                invalid={!!draft.slug && !SLUG_RE.test(draft.slug)}
                 placeholder={i18n.t('catalog.category.slugPlaceholder')}
               />
             </Field>
-            {/* 4-language inputs (2026-05-05). All required by server. */}
-            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: "O'zbekcha" })} *`}>
+            {/* CAT-10: one name in any language is enough (the server's rule);
+                the four fields used to be starred as if all were required. */}
+            <p className="text-old-label text-[var(--c-fg-muted)]">
+              {i18n.t('catalog.names.atLeastOne')}
+            </p>
+            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: "O'zbekcha" })}`}>
               <Input
                 value={draft.nameUz}
                 onChange={(e) => setDraft({ ...draft, nameUz: e.target.value })}
@@ -324,7 +341,7 @@ export function CategoriesSection() {
                 placeholder="Sabzavotlar" /* i18n-exempt: example word FOR that specific language field */
               />
             </Field>
-            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: 'Русский' })} *`}>
+            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: 'Русский' })}`}>
               <Input
                 value={draft.nameRu}
                 onChange={(e) => setDraft({ ...draft, nameRu: e.target.value })}
@@ -332,7 +349,7 @@ export function CategoriesSection() {
                 placeholder="Овощи"
               />
             </Field>
-            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: 'English' })} *`}>
+            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: 'English' })}`}>
               <Input
                 value={draft.nameEn}
                 onChange={(e) => setDraft({ ...draft, nameEn: e.target.value })}
@@ -340,7 +357,7 @@ export function CategoriesSection() {
                 placeholder="Vegetables" /* i18n-exempt: example word FOR that specific language field */
               />
             </Field>
-            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: '中文' })} *`}>
+            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: '中文' })}`}>
               <Input
                 value={draft.nameZh}
                 onChange={(e) => setDraft({ ...draft, nameZh: e.target.value })}
@@ -642,10 +659,13 @@ export function SkusSection() {
       >
         {draft ? (
           <div className="flex flex-col gap-3 py-3">
-            {/* 4-language inputs (2026-05-05). All required by server.
-                Order is uz/ru/en/zh — uz first because that's the working
-                language in this market. */}
-            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: "O'zbekcha" })} *`}>
+            {/* 4-language inputs (2026-05-05). Order is uz/ru/en/zh — uz
+                first because that's the working language in this market.
+                CAT-10: one of them is enough. */}
+            <p className="text-old-label text-[var(--c-fg-muted)]">
+              {i18n.t('catalog.names.atLeastOne')}
+            </p>
+            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: "O'zbekcha" })}`}>
               <Input
                 value={draft.nameUz}
                 onChange={(e) => setDraft({ ...draft, nameUz: e.target.value })}
@@ -654,7 +674,7 @@ export function SkusSection() {
                 autoFocus
               />
             </Field>
-            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: 'Русский' })} *`}>
+            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: 'Русский' })}`}>
               <Input
                 value={draft.nameRu}
                 onChange={(e) => setDraft({ ...draft, nameRu: e.target.value })}
@@ -662,7 +682,7 @@ export function SkusSection() {
                 placeholder="Помидор"
               />
             </Field>
-            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: 'English' })} *`}>
+            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: 'English' })}`}>
               <Input
                 value={draft.nameEn}
                 onChange={(e) => setDraft({ ...draft, nameEn: e.target.value })}
@@ -670,7 +690,7 @@ export function SkusSection() {
                 placeholder="Tomato" /* i18n-exempt: example word FOR that specific language field */
               />
             </Field>
-            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: '中文' })} *`}>
+            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: '中文' })}`}>
               <Input
                 value={draft.nameZh}
                 onChange={(e) => setDraft({ ...draft, nameZh: e.target.value })}

@@ -19,7 +19,9 @@ import {
   SettlementSaveInputSchema,
   type SettlementWageItem,
   SettlementWageRosterInputSchema,
+  UuidSchema,
 } from '@compass/contracts';
+import { z } from 'zod';
 import { todayInTz } from '@compass/domain';
 import { authedProcedure, idempotentMutation, router } from '../trpc';
 import {
@@ -801,6 +803,53 @@ export const settlementRouter = router({
       return (await serializeSettlements(tx, [row]))[0]!;
     });
   }),
+
+  /**
+   * CLS-20 (2026-10-30): every saved version of one daily close — who saved
+   * it, when, which fields changed and the correction reason. The rows were
+   * written on every save but nothing read them.
+   */
+  revisions: authedProcedure
+    .input(z.object({ settlementId: UuidSchema }))
+    .query(async ({ ctx, input }) => {
+      return ctx.withOrg(async (tx) => {
+        const settlement = await tx.query.storeDailySettlements.findFirst({
+          where: (row, { and: and2, eq: eq2 }) =>
+            and2(eq2(row.id, input.settlementId), eq2(row.orgId, ctx.session!.orgId)),
+          columns: { storeId: true },
+        });
+        if (!settlement) return [];
+        await authorizeSettlementStore(tx, ctx.session!, settlement.storeId);
+        const rows = await tx
+          .select({
+            version: s.storeDailySettlementRevisions.version,
+            createdAt: s.storeDailySettlementRevisions.createdAt,
+            changedFields: s.storeDailySettlementRevisions.changedFields,
+            correctionReason: s.storeDailySettlementRevisions.correctionReason,
+            actorMemberId: s.storeDailySettlementRevisions.actorMemberId,
+          })
+          .from(s.storeDailySettlementRevisions)
+          .where(
+            and(
+              eq(s.storeDailySettlementRevisions.orgId, ctx.session!.orgId),
+              eq(s.storeDailySettlementRevisions.settlementId, input.settlementId),
+            ),
+          )
+          .orderBy(desc(s.storeDailySettlementRevisions.version))
+          .limit(50);
+        const names = await memberNameMap(
+          tx,
+          rows.map((row) => row.actorMemberId),
+        );
+        return rows.map((row) => ({
+          version: row.version,
+          createdAt: row.createdAt.toISOString(),
+          changedFields: Array.isArray(row.changedFields) ? (row.changedFields as string[]) : [],
+          correctionReason: row.correctionReason,
+          actorName: names.get(row.actorMemberId) ?? null,
+        }));
+      });
+    }),
 
   /** Recent filings for one authorized store, newest business date first. */
   recent: authedProcedure.input(SettlementRecentInputSchema).query(async ({ ctx, input }) => {

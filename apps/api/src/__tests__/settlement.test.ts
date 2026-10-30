@@ -875,6 +875,13 @@ describe.skipIf(!SHOULD_RUN)('daily settlement API (PG-gated)', () => {
         enteredByMemberId: fx.memberId,
       }),
     );
+
+    // CLS-20: the same history, readable through the API.
+    const history = await fx.caller.settlement.revisions({ settlementId: created.id });
+    expect(history.map((rev) => rev.version)).toEqual([2, 1]);
+    expect(history[0]?.changedFields).toContain('operatingExpenseItems');
+    expect(history[0]?.correctionReason).toBeTruthy();
+    expect(history[0]?.actorName).toBeTruthy();
   });
 
   test('keeps each operating-expense recorder when another manager adds a row', async () => {
