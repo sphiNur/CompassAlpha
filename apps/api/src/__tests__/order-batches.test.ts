@@ -143,5 +143,19 @@ describe.skipIf(!SHOULD_RUN)('order batches (PG-gated)', () => {
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     for (const f of failed) expect((f.reason as Error).message).toBe('order.errors.alreadyClaimed');
   });
+
+  test('ORD-17: extras suggestions keep how names were written and skip drafts', async () => {
+    const { other, storeId } = fix!;
+    const sent = await other.order.setSessionExtras({
+      storeId,
+      extras: [{ name: 'Laundry Detergent', qty: '2', unit: 'pack' }],
+    });
+    await other.order.submit({ sessionId: sent.sessionId! });
+    // A half-typed name still sitting in a draft is not a suggestion.
+    await other.order.setSessionExtras({ storeId, extras: [{ name: 'laun', qty: '1', unit: 'pack' }] });
+    const names = (await other.order.extrasSuggestions({ storeId })).map((s) => s.name);
+    expect(names).toContain('Laundry Detergent');
+    expect(names).not.toContain('laun');
+  });
 });
 

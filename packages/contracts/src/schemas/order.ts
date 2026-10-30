@@ -189,7 +189,9 @@ export const SetSessionExtrasInputSchema = z
 export const ExtrasSuggestionsInputSchema = z.object({
   storeId: UuidSchema,
   /** Optional prefix for type-ahead. Empty = top-N most-used. */
-  search: z.string().max(100).optional(),
+  // ORD-17 (2026-10-30): extras names may be 200 characters; at 100 every
+  // keystroke past it answered 400.
+  search: z.string().max(200).optional(),
 });
 
 export const SimpleSessionCommandSchema = z.object({

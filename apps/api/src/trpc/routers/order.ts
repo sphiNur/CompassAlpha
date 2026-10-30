@@ -1473,14 +1473,20 @@ export const orderRouter = router({
         const search = (input.search ?? '').trim().toLowerCase();
         const today = todayInOrgTz(ctx);
         const rows = await tx.execute<Row>(sql`
-          SELECT lower(elem->>'name') AS name, count(*)::int AS cnt
+          -- ORD-17 (2026-10-30): grouped case-insensitively but returned as
+          -- people last wrote it (picking a suggestion lower-cased the
+          -- name); drafts are left out, so half-typed autosaves ("laun")
+          -- do not become suggestions.
+          SELECT (array_agg(elem->>'name' ORDER BY s.updated_at DESC))[1] AS name,
+                 count(*)::int AS cnt
           FROM read_model.order_sessions_v s
           CROSS JOIN LATERAL jsonb_array_elements(s.extras_json) AS elem
           WHERE s.org_id = ${ctx.session!.orgId}::uuid
             AND s.store_id = ${input.storeId}::uuid
+            AND s.status <> 'draft'
             AND s.order_date >= (${today}::date - interval '30 days')
             AND elem->>'name' IS NOT NULL
-            ${search ? sql`AND lower(elem->>'name') LIKE ${'%' + search + '%'}` : sql``}
+            ${search ? sql`AND lower(elem->>'name') LIKE ${'%' + search.replace(/[\\%_]/g, (c) => `\\${c}`) + '%'}` : sql``}
           GROUP BY lower(elem->>'name')
           ORDER BY cnt DESC, name ASC
           LIMIT 20

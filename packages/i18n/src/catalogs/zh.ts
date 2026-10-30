@@ -407,6 +407,9 @@ export const zh = {
   'shell.pageError.body': '其他页面不受影响。可以重试，或者先切到别的页面。',
   'auth.invite.failedStillIn':
     '邀请没有生效：{reason}。你仍在「{org}」。',
+  'auth.invite.joined': '已加入「{org}」',
+  'auth.invite.addedToExisting':
+    '你已在「{org}」，邀请里的门店和角色已加上',
   'confirm.storeConfirmedAt':
     '已确认收货 · {time}',
   'auth.onboarding.title': '欢迎使用 Compass',
