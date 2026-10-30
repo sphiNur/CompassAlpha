@@ -220,7 +220,7 @@ export type ArchivedEvent = BaseEvent & {
   // banners on the order page.
   // 'repair' added 2026-10-21 (audit CA-45): written by the worker's
   // orphaned-session sweep when a session was left in_run on a finished run.
-  payload: { reason: 'eod' | 'manual' | 'run_finished' | 'repair' };
+  payload: { reason: 'eod' | 'manual' | 'run_finished' | 'repair' | 'empty_draft' };
 };
 
 export type OrderEvent =

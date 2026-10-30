@@ -612,6 +612,28 @@ describe('order.decide (per-contributor lines)', () => {
     expect(s.status).toBe('archived');
   });
 
+  test('RE-ORD-5: an emptied draft can be archived as empty_draft; one with items cannot', () => {
+    let s = startedDraft();
+    s = decide(
+      s,
+      { type: 'AdjustItem', skuId: 'sku-1', qty: '1', sku: sku('sku-1'), actor: staff() },
+      { clock },
+    ).reduce(apply, s);
+    expect(() =>
+      decide(s, { type: 'Archive', reason: 'empty_draft', actor: staff() }, { clock }),
+    ).toThrow();
+    s = decide(
+      s,
+      { type: 'AdjustItem', skuId: 'sku-1', qty: '0', sku: sku('sku-1'), actor: staff() },
+      { clock },
+    ).reduce(apply, s);
+    const out = decide(s, { type: 'Archive', reason: 'empty_draft', actor: staff() }, { clock });
+    expect(out.map((e) => e.type)).toEqual(['Archived']);
+    expect(out.reduce(apply, s).status).toBe('archived');
+    // Any other reason still needs in_run / approved.
+    expect(() => decide(s, { type: 'Archive', reason: 'manual', actor: staff() }, { clock })).toThrow();
+  });
+
   test('Archive on an already-archived session is a no-op', () => {
     // Build an archived state by feeding events directly.
     const archivedState = replay('s1', [

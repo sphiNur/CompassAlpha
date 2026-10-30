@@ -65,7 +65,7 @@ export type OrderCommand =
   // Terminal archive — emitted when a run finishes (FinishRun cascade) or
   // by a future end-of-day batch. Locks the session forever; status flips
   // to 'archived' so the order page no longer shows it as "in run".
-  | { type: 'Archive'; reason: 'eod' | 'manual' | 'run_finished'; actor: ActorCtx };
+  | { type: 'Archive'; reason: 'eod' | 'manual' | 'run_finished' | 'empty_draft'; actor: ActorCtx };
 
 export interface ActorCtx {
   userId: string;
@@ -591,7 +591,15 @@ export function decide(
       // From the FinishRun cascade we expect status='in_run'. Allow
       // 'approved' too so a future "end-of-day" batch could archive
       // sessions that never made it into a run.
-      if (state.status !== 'in_run' && state.status !== 'approved') {
+      // RE-ORD-5 (2026-10-30): a draft its author emptied may be archived
+      // ('empty_draft') so it stops holding the one-draft-per-day slot —
+      // otherwise an earlier batch could never be withdrawn that day.
+      const emptyDraft =
+        command.reason === 'empty_draft' &&
+        state.status === 'draft' &&
+        [...state.items.values()].every((item) => !(Number(item.qty) > 0)) &&
+        state.extras.length === 0;
+      if (state.status !== 'in_run' && state.status !== 'approved' && !emptyDraft) {
         throw preconditionFailed('order.errors.cannotArchive', {
           status: state.status,
         });
