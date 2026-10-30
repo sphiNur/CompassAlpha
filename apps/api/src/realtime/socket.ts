@@ -32,13 +32,23 @@ export const WS_CLOSE_TOKEN_EXPIRED = 4001;
  * the 101 and every client fell back to polling) passes through just as
  * well as a healthy one. So the smoke "passed" with realtime dead.
  *
- * `GET /ws?probe=1` with no token is upgraded for real, sent one
- * `{"type":"probe"}` frame and closed with this code. Getting all three
- * back through the public URL proves the upgrade, a server→client frame
- * and the close frame all cross every proxy. The probe socket never joins
- * the hub, so it receives nothing about any organisation.
+ * `GET /ws?probe=1` with no token is upgraded for real and sent a
+ * `{"type":"probe","stage":"hello"}` frame at once, as a real socket gets
+ * its hello. When the client then sends anything, it is answered with
+ * `{"type":"probe","stage":"echo"}` and closed with this code shortly
+ * after. Getting the echo and the close back through the public URL
+ * proves the upgrade and both directions cross every proxy; a probe that
+ * never hears from its client is closed after PROBE_IDLE_MS.
+ *
+ * The first version closed right after the hello. Through the Cloudflare
+ * quick tunnel that arrived as a bare 1006 with no frame (direct to the
+ * server it was fine), so the probe now stays open until the round trip
+ * is done. The probe socket never joins the hub, so it receives nothing
+ * about any organisation.
  */
 export const WS_CLOSE_PROBE = 4002;
+const PROBE_IDLE_MS = 5_000;
+const PROBE_CLOSE_DELAY_MS = 300;
 
 interface Claims {
   sub: string;
@@ -134,8 +144,8 @@ export function createWebSocketHandler(log: {
   return {
     open(ws: ServerWebSocket<WSData>) {
       if (ws.data.probe) {
-        ws.send(JSON.stringify({ type: 'probe', t: Date.now() }));
-        ws.close(WS_CLOSE_PROBE, 'probe');
+        ws.send(JSON.stringify({ type: 'probe', stage: 'hello', t: Date.now() }));
+        ws.data.expiryTimer = setTimeout(() => ws.close(WS_CLOSE_PROBE, 'probe'), PROBE_IDLE_MS);
         return;
       }
       ws.data.unsub = hub.subscribe(
@@ -166,7 +176,15 @@ export function createWebSocketHandler(log: {
     },
     message(ws: ServerWebSocket<WSData>, raw) {
       // M1 has no client→server messages; just pong on ping.
-      if (ws.data.probe) return;
+      if (ws.data.probe) {
+        if (ws.data.expiryTimer) clearTimeout(ws.data.expiryTimer);
+        ws.send(JSON.stringify({ type: 'probe', stage: 'echo', t: Date.now() }));
+        ws.data.expiryTimer = setTimeout(
+          () => ws.close(WS_CLOSE_PROBE, 'probe'),
+          PROBE_CLOSE_DELAY_MS,
+        );
+        return;
+      }
       try {
         const msg = JSON.parse(typeof raw === 'string' ? raw : raw.toString());
         if (msg?.type === 'ping') ws.send(JSON.stringify({ type: 'ping', t: Date.now() }));

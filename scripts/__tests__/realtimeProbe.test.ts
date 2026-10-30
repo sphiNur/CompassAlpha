@@ -102,6 +102,53 @@ describe('realtime probe', () => {
     expect(r.detail).toContain('-> 200');
   });
 
+  test('passes against an API from before the echo (one frame, then 4002), for rollbacks', async () => {
+    const old = Bun.serve<undefined>({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch(req, srv) {
+        return srv.upgrade(req, { data: undefined })
+          ? undefined
+          : new Response('no', { status: 426 });
+      },
+      websocket: {
+        open(ws) {
+          ws.send(JSON.stringify({ type: 'probe', t: Date.now() }));
+          ws.close(4002, 'probe');
+        },
+        message() {},
+      },
+    });
+    servers.push(old);
+    const r = await probeRealtime(url(old), 3_000);
+    expect(r.ok).toBe(true);
+    expect(r.detail).toContain('before the echo');
+  });
+
+  test('fails when the hello arrives but the echo never does', async () => {
+    const mute = Bun.serve<undefined>({
+      port: 0,
+      hostname: '127.0.0.1',
+      fetch(req, srv) {
+        return srv.upgrade(req, { data: undefined })
+          ? undefined
+          : new Response('no', { status: 426 });
+      },
+      websocket: {
+        open(ws) {
+          ws.send(JSON.stringify({ type: 'probe', stage: 'hello', t: Date.now() }));
+        },
+        message(ws) {
+          ws.close(1011, 'dropped');
+        },
+      },
+    });
+    servers.push(mute);
+    const r = await probeRealtime(url(mute), 3_000);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toContain('hello but no echo');
+  });
+
   test('fails when nothing listens', async () => {
     const dead = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => new Response('') });
     const deadUrl = url(dead);

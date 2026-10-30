@@ -8,11 +8,14 @@
  * GREEN.
  *
  * The smoke has no production token, so the API offers a token-less probe:
- * `GET /ws?probe=1` with a real upgrade is accepted, sent one
- * `{"type":"probe"}` frame and closed with code 4002
- * (apps/api/src/realtime/socket.ts). Seeing all three through the public
- * URL proves the upgrade, a server→client frame and the close frame cross
- * every proxy in front of the API. When the upgrade does not complete, a
+ * `GET /ws?probe=1` with a real upgrade is accepted and sent a hello
+ * frame; this probe then sends a message, which the API answers with an
+ * echo frame before closing with code 4002 (apps/api/src/realtime/socket.ts).
+ * Seeing the echo and the close through the public URL proves the upgrade
+ * and both directions cross every proxy in front of the API. A missing
+ * hello is reported but not failed: real sockets get the same hello, and
+ * clients do not depend on it. An API from before the echo (one frame
+ * without a stage, then 4002) still passes, so a rollback can be smoked. When the upgrade does not complete, a
  * plain GET /ws tells the two failure kinds apart:
  *
  *   426 from the API  → the API is reachable over HTTP, but the upgrade
@@ -38,7 +41,12 @@ export function probeUrl(base: string): string {
 
 interface SocketOutcome {
   opened: boolean;
+  /** Any probe frame arrived (hello, echo, or the first version's one frame). */
   probeFrame: boolean;
+  hello: boolean;
+  echo: boolean;
+  /** The first version's frame, with no stage. */
+  legacy: boolean;
   closeCode: number | null;
   timedOut: boolean;
 }
@@ -48,6 +56,9 @@ function openProbe(url: string, timeoutMs: number): Promise<SocketOutcome> {
     const out: SocketOutcome = {
       opened: false,
       probeFrame: false,
+      hello: false,
+      echo: false,
+      legacy: false,
       closeCode: null,
       timedOut: false,
     };
@@ -69,11 +80,20 @@ function openProbe(url: string, timeoutMs: number): Promise<SocketOutcome> {
     }, timeoutMs);
     ws.addEventListener('open', () => {
       out.opened = true;
+      try {
+        ws.send(JSON.stringify({ type: 'ping' }));
+      } catch {
+        /* closed under us; the close handler reports it */
+      }
     });
     ws.addEventListener('message', (e) => {
       try {
-        const msg = JSON.parse(String(e.data)) as { type?: string };
-        if (msg.type === 'probe') out.probeFrame = true;
+        const msg = JSON.parse(String(e.data)) as { type?: string; stage?: string };
+        if (msg.type !== 'probe') return;
+        out.probeFrame = true;
+        if (msg.stage === 'hello') out.hello = true;
+        else if (msg.stage === 'echo') out.echo = true;
+        else out.legacy = true;
       } catch {
         /* not ours */
       }
@@ -107,11 +127,11 @@ export async function probeRealtime(
 ): Promise<RealtimeProbeResult> {
   const url = probeUrl(base);
   const o = await openProbe(url, timeoutMs);
-  if (o.opened && o.probeFrame && o.closeCode === WS_CLOSE_PROBE) {
-    return {
-      ok: true,
-      detail: `${url}: upgraded (101), probe frame received, closed ${WS_CLOSE_PROBE}`,
-    };
+  if (o.opened && (o.echo || o.legacy) && o.closeCode === WS_CLOSE_PROBE) {
+    const how = o.echo
+      ? `echo received${o.hello ? '' : ' (the initial hello frame was lost on the way)'}`
+      : 'probe frame received (API from before the echo)';
+    return { ok: true, detail: `${url}: upgraded (101), ${how}, closed ${WS_CLOSE_PROBE}` };
   }
   if (o.opened) {
     // Upgraded, but not by this API's probe path — e.g. an API build from
@@ -119,7 +139,7 @@ export async function probeRealtime(
     return {
       ok: false,
       detail:
-        `${url}: upgraded but ${o.probeFrame ? 'closed' : 'no probe frame,'} ` +
+        `${url}: upgraded but ${o.probeFrame ? `${o.hello ? 'hello' : 'a frame'} but no echo,` : 'no probe frame,'} ` +
         `${o.timedOut ? `still open after ${timeoutMs} ms` : `close code ${o.closeCode}`} ` +
         `(expected probe frame + ${WS_CLOSE_PROBE}; is the API older than the probe?)`,
     };
