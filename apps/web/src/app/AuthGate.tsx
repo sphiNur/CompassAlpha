@@ -44,6 +44,20 @@ function wantsDevPersonaPicker(): boolean {
   }
 }
 
+/**
+ * `?devAs=<name or memberId>` signs a local development build straight in
+ * as that persona (case-insensitive part of the display name), so test
+ * scripts and repeated debugging skip the picker. Development builds only.
+ */
+function devAsFromUrl(): string | null {
+  if (!import.meta.env.DEV || typeof window === 'undefined') return null;
+  try {
+    return new URLSearchParams(window.location.search).get('devAs')?.trim().toLowerCase() || null;
+  } catch {
+    return null;
+  }
+}
+
 function shouldUseDevBypassLogin(): boolean {
   return (
     import.meta.env.DEV &&
@@ -111,6 +125,13 @@ export function AuthGate({ children }: AuthGateProps) {
   const activeSession = session ?? loginSession;
   const hasTelegramInitData = Boolean(getTg()?.initData);
   const forceDevPersonaPicker = wantsDevPersonaPicker();
+  // A development build opened in a plain browser cannot sign in through
+  // Telegram, so it goes straight to the persona picker (unless the
+  // VITE_DEV_MOCK_INIT_DATA auto-login is configured).
+  const devBrowser = import.meta.env.DEV && !hasTelegramInitData && !shouldUseDevBypassLogin();
+  const [devAs] = useState(devAsFromUrl);
+  /** True once `?devAs=` has picked its persona this mount cycle. */
+  const devAsAttempted = useRef(false);
   /** True once we've issued a telegramLogin call this mount cycle. */
   const loginAttempted = useRef(false);
   /** True once we've tried to accept the launch invite this mount cycle. */
@@ -134,7 +155,7 @@ export function AuthGate({ children }: AuthGateProps) {
     !activeSession &&
     !hasTelegramInitData &&
     loginModes.data?.devPersona.available &&
-    (forceDevPersonaPicker || authWaitTimedOut || error),
+    (forceDevPersonaPicker || devBrowser || authWaitTimedOut || error),
   );
   const devPersonas = trpc.auth.devPersonas.useQuery(undefined, {
     enabled: authHydrated && shouldShowDevPersonas,
@@ -325,6 +346,29 @@ export function AuthGate({ children }: AuthGateProps) {
     },
   });
 
+  // `?devAs=` names who should be signed in: a session for someone else is
+  // dropped first, so changing the URL switches persona in the same tab.
+  useEffect(() => {
+    if (!devAs || !authHydrated || devAsAttempted.current || !activeSession) return;
+    const name = activeSession.user.displayName?.toLowerCase() ?? '';
+    if (activeSession.member.memberId === devAs || name.includes(devAs)) {
+      devAsAttempted.current = true;
+      return;
+    }
+    clear();
+  }, [devAs, authHydrated, activeSession, clear]);
+
+  useEffect(() => {
+    if (!devAs || devAsAttempted.current || activeSession || !devPersonas.data) return;
+    const personas = devPersonas.data as DevPersona[];
+    const match =
+      personas.find((p) => p.memberId === devAs) ??
+      personas.find((p) => p.displayName.toLowerCase().includes(devAs));
+    devAsAttempted.current = true;
+    if (match) devPersonaLogin.mutate({ memberId: match.memberId });
+    else setError(`devAs: no persona matches "${devAs}"`);
+  }, [devAs, activeSession, devPersonas.data, devPersonaLogin]);
+
   const autoLoginData = getTg()?.initData ?? (shouldUseDevBypassLogin() ? 'dev-bypass' : null);
 
   if (import.meta.env.DEV && typeof window !== 'undefined') {
@@ -410,6 +454,9 @@ export function AuthGate({ children }: AuthGateProps) {
 
   if (
     !authHydrated ||
+    // Until the server says whether dev personas exist, a plain-browser dev
+    // build would otherwise flash the Telegram sign-in screen.
+    (devBrowser && !activeSession && loginModes.isLoading) ||
     (!authWaitTimedOut &&
       ((login.isPending && !activeSession) ||
         acceptInvite.isPending ||
@@ -435,10 +482,15 @@ export function AuthGate({ children }: AuthGateProps) {
     return (
       <div className="flex h-full flex-col items-center gap-4 overflow-y-auto px-6 py-8 text-center">
         <h1 className="text-old-display font-semibold">Compass</h1>
-        <p className="text-old-body text-[var(--c-fg-muted)]">{i18n.t('auth.shareThisId')}</p>
-        {/* 2026-10-21 audit CA-50 / A-14: the line above asks the user to
-            send their ID to an admin, but the ID was never on screen. */}
-        <TelegramIdChip />
+        {/* Outside Telegram there is no ID to share: the dev picker replaces it. */}
+        {showDevLogin && !hasTelegramInitData ? null : (
+          <>
+            <p className="text-old-body text-[var(--c-fg-muted)]">{i18n.t('auth.shareThisId')}</p>
+            {/* 2026-10-21 audit CA-50 / A-14: the line above asks the user to
+                send their ID to an admin, but the ID was never on screen. */}
+            <TelegramIdChip />
+          </>
+        )}
         {/* 2026-10-21 audit CA-48 / E-18: the title was hard-coded Chinese
             and the login-mode diagnostic (dev/browser login internals,
             Chinese only) showed in production Telegram after 10 s. The
@@ -666,13 +718,22 @@ function DevPersonaPicker({
   return (
     <section className="mt-2 flex w-full max-w-sm flex-col gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] p-4 text-left ring-hairline">
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0 flex-1">
           <div className="text-old-h3 font-semibold text-[var(--c-fg)]">开发测试身份登录</div>
           <p className="mt-1 text-old-body-sm text-[var(--c-fg-muted)]">
             只在本地 development 环境显示，用真实成员权限进入前端。
           </p>
+          <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
+            网址加 <code>?devAs=名字</code>（如 <code>?devAs=aziz</code>）可直接以该身份登录。
+          </p>
         </div>
-        <Button size="sm" variant="secondary" loading={pending} onClick={onAutoLogin}>
+        <Button
+          size="sm"
+          variant="secondary"
+          className="shrink-0"
+          loading={pending}
+          onClick={onAutoLogin}
+        >
           自动
         </Button>
       </div>
@@ -689,7 +750,7 @@ function DevPersonaPicker({
           本地数据库里没有 active 成员。请先迁移并初始化本地数据库。
         </Banner>
       ) : (
-        <div className="grid max-h-[52vh] gap-2 overflow-y-auto pr-1">
+        <div className="grid max-h-[52vh] grid-cols-[minmax(0,1fr)] gap-2 overflow-y-auto pr-1">
           {personas.map((persona) => {
             const stores =
               persona.storeNames.length > 0 ? persona.storeNames.join(', ') : '未分配店铺';
