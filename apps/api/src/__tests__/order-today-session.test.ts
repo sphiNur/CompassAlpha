@@ -343,4 +343,21 @@ describe.skipIf(!SHOULD_RUN)('order follow-ups CA-25 / CA-27 / CA-43 (PG-gated)'
     // CA-26 retry with the same (now behind) seq stays a no-op success.
     await expect(mgr.order.approve({ sessionId, expectedSeq: fresh })).resolves.toBeDefined();
   });
+  test('RE-ORD-5: an emptied draft no longer blocks withdrawing an earlier batch, and is not listed', async () => {
+    if (!fix) throw new Error('fixture missing');
+    const staff = appRouter.createCaller(fix.staff);
+    const input = { storeId: fix.seqStoreId, date: SEQ_DATE };
+    const a = await staff.order.adjustItem({ ...input, skuId: fix.skuId, qty: '1' });
+    await staff.order.submit({ sessionId: a.sessionId });
+    // A second batch started and then set back to nothing.
+    const b = await staff.order.adjustItem({ ...input, skuId: fix.skuId, qty: '1' });
+    expect(b.sessionId).not.toBe(a.sessionId);
+    await staff.order.adjustItem({ ...input, skuId: fix.skuId, qty: '0' });
+    const listed = await staff.order.todayBatches(input);
+    expect(listed.some((x) => x.id === b.sessionId)).toBe(false);
+    await staff.order.withdraw({ sessionId: a.sessionId });
+    const after = await staff.order.todayBatches(input);
+    expect(after.find((x) => x.id === a.sessionId)?.status).toBe('draft');
+    expect(after.some((x) => x.id === b.sessionId)).toBe(false);
+  });
 });

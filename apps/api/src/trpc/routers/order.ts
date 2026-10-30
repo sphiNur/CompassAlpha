@@ -481,7 +481,18 @@ export const orderRouter = router({
             ? await loadSkuPriceStats(tx, ctx.session!.orgId, [...allSkuIds])
             : new Map();
 
-        return sessions.map((sess, idx) => {
+        // RE-ORD-5 (2026-10-30): an empty draft (everything set back to 0)
+        // and one archived as such are not batches; listing them showed
+        // 「草稿 0 项」 and shifted the numbers.
+        const listed = sessions.filter(
+          (sess) =>
+            !(
+              (sess.status === 'draft' || sess.status === 'archived') &&
+              !qtyBySession.has(sess.id) &&
+              ((sess.extrasJson as unknown[] | null)?.length ?? 0) === 0
+            ),
+        );
+        return listed.map((sess, idx) => {
           const perSku = qtyBySession.get(sess.id) ?? new Map<string, number>();
           const est = estimateLines(
             [...perSku.entries()].map(([skuId, qty]) => ({ skuId, qty })),
@@ -1584,7 +1595,7 @@ export const orderRouter = router({
         .where(
           and(eq(s.orderSessionsV.orgId, ctx.session!.orgId), eq(s.orderSessionsV.id, input.sessionId)),
         );
-      if (!session?.initiatedBy) return false;
+      if (!session?.initiatedBy) return null;
       const [other] = await tx
         .select({ id: s.orderSessionsV.id })
         .from(s.orderSessionsV)
@@ -1599,10 +1610,20 @@ export const orderRouter = router({
           ),
         )
         .limit(1);
-      return !!other;
+      return other ? { id: other.id, initiatedBy: session.initiatedBy } : null;
     });
     if (draftOpen) {
-      throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'order.errors.withdrawDraftOpen' });
+      // RE-ORD-5 (2026-10-30): a draft its author has emptied no longer
+      // blocks — archive it and go on. One with content still does.
+      const mine = draftOpen.initiatedBy === ctx.session!.memberId;
+      try {
+        if (!mine) throw new Error('not the author');
+        await runSimpleCommand(ctx, draftOpen.id, (state, perms) =>
+          decide(state, { type: 'Archive', reason: 'empty_draft', actor: buildActor(ctx, state, perms) }),
+        );
+      } catch {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'order.errors.withdrawDraftOpen' });
+      }
     }
     return runSimpleCommand(ctx, input.sessionId, (state, perms) =>
       decide(state, { type: 'Withdraw', actor: buildActor(ctx, state, perms) }),
