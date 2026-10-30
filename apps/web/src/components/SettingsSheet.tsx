@@ -23,7 +23,7 @@
  */
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Sheet, Button, Field, Input, SectionLabel, PickerRow } from '@compass/ui';
+import { Sheet, Button, Field, SectionLabel, PickerRow } from '@compass/ui';
 import { useToast } from '@compass/ui';
 import type { Locale } from '@compass/i18n';
 import { trpc } from '../lib/trpc';
@@ -115,26 +115,11 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
     onError: errToast('common.error'),
   });
 
-  // Optional self-rename: the server `auth.completeOnboarding` is the
-  // sanctioned path and only works when the name isn't already locked.
-  // For users whose name IS locked, the form is read-only with the
-  // "ask your admin" hint — preserves the impersonation safeguard.
-  const completeOnboarding = trpc.auth.completeOnboarding.useMutation({
-    onSuccess: (next) => {
-      patchSession(next as never);
-      toast.success(i18n.t('common.saved') as string);
-    },
-    onError: errToast('common.error'),
-  });
-
-  const [draftName, setDraftName] = useState<string>(() => session?.user.displayName ?? '');
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   // AUTH-16: reopening the sheet starts from the workspace list again.
   useEffect(() => {
     if (!open) setCreatingWorkspace(false);
   }, [open]);
-  const nameLocked = !!session?.user.displayNameLocked;
-  const nameDirty = !nameLocked && draftName.trim() !== (session?.user.displayName ?? '');
 
   // M3.5: org.admin holders can switch store context here; since the
   // 2026-10-21 audit (CA-22) so can members assigned to ≥2 stores.
@@ -179,33 +164,16 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
             {i18n.t('settings.profile.title')}
           </SectionLabel>
           <div className="flex flex-col gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
+            {/* AUTH-22 (2026-10-30): the name is always locked here — anyone
+                whose name is not yet confirmed is held at onboarding before
+                they can open settings — so the edit branch is gone. */}
             <Field label={i18n.t('settings.profile.displayName')}>
-              {nameLocked ? (
-                <>
-                  <div className="rounded-[var(--r-pill)] bg-[var(--c-surface)] px-4 py-2 text-old-h3 ring-hairline">
-                    {session?.user.displayName ?? '—'}
-                  </div>
-                  <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
-                    {i18n.t('settings.profile.lockedHint')}
-                  </p>
-                </>
-              ) : (
-                <div className="flex gap-2">
-                  <Input
-                    value={draftName}
-                    onChange={(e) => setDraftName(e.target.value)}
-                    maxLength={200}
-                  />
-                  <Button
-                    size="sm"
-                    loading={completeOnboarding.isPending}
-                    disabled={!nameDirty || !draftName.trim()}
-                    onClick={() => completeOnboarding.mutate({ displayName: draftName.trim() })}
-                  >
-                    {i18n.t('common.save')}
-                  </Button>
-                </div>
-              )}
+              <div className="rounded-[var(--r-pill)] bg-[var(--c-surface)] px-4 py-2 text-old-h3 ring-hairline">
+                {session?.user.displayName ?? '—'}
+              </div>
+              <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
+                {i18n.t('settings.profile.lockedHint')}
+              </p>
             </Field>
             {session?.user.tgUsername ? (
               <Field label={i18n.t('settings.profile.username')}>

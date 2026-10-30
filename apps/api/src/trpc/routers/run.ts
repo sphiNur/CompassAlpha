@@ -8,6 +8,7 @@
  * on each session stream so they transition to `in_run`.
  */
 import { TRPCError } from '@trpc/server';
+import { logger } from '../../infra/log';
 import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -2638,14 +2639,18 @@ export const runRouter = router({
    * on RunPage mount when status ∈ {purchasing, delivering}. The
    * domain layer's `assertClaimOwnership` is what actually enforces
    * the lock; this endpoint just announces "I'm taking it".
+   *
+   * @deprecated BUY-20 (2026-10-30): the web app stopped calling it in
+   * UIUX-B1 and Fine never did; logged when called so it can be removed.
    */
   claim: authedProcedure
     .input(SimpleRunCommandSchema)
-    .mutation(async ({ ctx, input }) =>
-      runSimpleCommand(ctx, input.runId, (state) =>
+    .mutation(async ({ ctx, input }) => {
+      logger.warn({ procedure: 'run.claim', orgId: ctx.session?.orgId }, 'deprecated procedure called');
+      return runSimpleCommand(ctx, input.runId, (state) =>
         decideRun(state, { type: 'ClaimRun', actor: actorFromCtx(ctx) }),
-      ),
-    ),
+      );
+    }),
 
   /**
    * C.2 (M3.38, 2026-05-19): release a run claim. Reason 'manual' for
@@ -2653,6 +2658,8 @@ export const runRouter = router({
    * visibilitychange auto-release. Override path: when the caller is
    * NOT the current claimer, the domain layer re-tags the emitted
    * event with reason 'override' (the take-over button uses this).
+   *
+   * @deprecated BUY-20 (2026-10-30): no client calls it; see `claim`.
    */
   releaseClaim: authedProcedure
     .input(
@@ -2660,15 +2667,19 @@ export const runRouter = router({
         reason: z.enum(['manual', 'pagehide']).default('manual'),
       }),
     )
-    .mutation(async ({ ctx, input }) =>
-      runSimpleCommand(ctx, input.runId, (state) =>
+    .mutation(async ({ ctx, input }) => {
+      logger.warn(
+        { procedure: 'run.releaseClaim', orgId: ctx.session?.orgId },
+        'deprecated procedure called',
+      );
+      return runSimpleCommand(ctx, input.runId, (state) =>
         decideRun(state, {
           type: 'ReleaseRunClaim',
           reason: input.reason,
           actor: actorFromCtx(ctx),
         }),
-      ),
-    ),
+      );
+    }),
 
   startPurchase: authedProcedure
     .input(SimpleRunCommandSchema)

@@ -8,6 +8,7 @@
  * that pure logic touches the DB and the network.
  */
 import { TRPCError } from '@trpc/server';
+import { logger } from '../../infra/log';
 import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { schema as s } from '@compass/db';
@@ -1137,7 +1138,12 @@ export const orderRouter = router({
     });
   }),
 
+  /**
+   * @deprecated ORD-20 (2026-10-30): neither the web app nor Fine calls this;
+   * logged when called so it can be removed once nothing does.
+   */
   setNote: authedProcedure.input(SetNoteInputSchema).mutation(async ({ ctx, input }) => {
+    logger.warn({ procedure: 'order.setNote', orgId: ctx.session?.orgId }, 'deprecated procedure called');
     return ctx.withOrg(async (tx) => {
       const session = await loadSession(tx, ctx.session!.orgId, input.sessionId);
       await assertActorAssignedToStore(
@@ -1189,6 +1195,11 @@ export const orderRouter = router({
   setSessionNote: authedProcedure
     .input(SetSessionNoteInputSchema)
     .mutation(async ({ ctx, input }) => {
+      // @deprecated ORD-20 (2026-10-30): no client calls this; see setNote.
+      logger.warn(
+        { procedure: 'order.setSessionNote', orgId: ctx.session?.orgId },
+        'deprecated procedure called',
+      );
       return ctx.withOrg(async (tx) => {
         const session = await loadSession(tx, ctx.session!.orgId, input.sessionId);
         await assertActorAssignedToStore(
