@@ -9,7 +9,7 @@ import { Component } from 'react';
 import { reloadApp } from '../lib/reload';
 import { NAV_STORAGE_KEY } from '../stores/navStore';
 import type { ErrorInfo, ReactNode } from 'react';
-import { createI18n, detectLocale, type Locale } from '@compass/i18n';
+import { createI18n, detectLocale, isLoaded, loadCatalog, type Locale } from '@compass/i18n';
 
 /**
  * Resolve the user's locale WITHOUT hooks (2026-07-30).
@@ -80,6 +80,16 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     // Always echo to console in case telemetry is dead.
     // eslint-disable-next-line no-console
     console.error('[ErrorBoundary]', error, info);
+    // AUTH-27 (2026-10-30): a crash before the language chunk arrived drew
+    // the screen in English until a retry. Fetch it now and draw again.
+    const locale = crashLocale();
+    if (!isLoaded(locale)) {
+      void loadCatalog(locale)
+        .then(() => this.forceUpdate())
+        .catch(() => {
+          /* offline: English it is */
+        });
+    }
   }
 
   override render(): ReactNode {
