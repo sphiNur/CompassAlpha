@@ -1037,6 +1037,8 @@ export const ru = {
   'run.errors.cannotEjectSession': 'Нет прав возвращать заявки из закупки',
   'run.errors.storeAlreadyConfirmed': 'Магазин уже подтвердил приёмку',
   'run.errors.notVisible': 'Закупка не найдена или недоступна вам',
+  'run.errors.priceFormat': 'Цена должна быть больше 0: не более 12 цифр и 2 знаков после запятой.',
+  'run.errors.qtyFormat': 'Количество должно быть больше 0: не более 9 цифр и 3 знаков после запятой.',
   'run.errors.itemServesOtherStores':
     'Этот товар нужен и магазинам, за которые вы не отвечаете; изменить его может их закупщик.',
   'run.errors.runHasOtherStores':

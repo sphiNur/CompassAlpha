@@ -243,7 +243,7 @@ async function authFetch(input: RequestInfo | URL, init: RequestInit = {}): Prom
  * "Load failed" case) then dedupes on replay instead of double-charging.
  * Mutations without a context key fall back to a fresh per-request key.
  */
-const IDEMPOTENT_MUTATIONS = new Set<string>([
+export const IDEMPOTENT_MUTATIONS = new Set<string>([
   'run.create',
   'run.purchaseItem',
   'run.revisePurchase',
@@ -273,6 +273,12 @@ const IDEMPOTENT_MUTATIONS = new Set<string>([
   'inventory.recordWastage',
   'run.addExpense',
   'run.attachSessions',
+  // BUY-9 (2026-10-30): declared idempotentMutation and given a stable
+  // key by RunPage since #91, but never listed here, so the header was
+  // never sent and a replay after a lost response raised a false
+  // "please review" warning.
+  'run.markUnavailable',
+  'run.deliverToStore',
 ]);
 
 function genKey(): string {

@@ -1044,6 +1044,8 @@ export const uz = {
   'run.errors.cannotEjectSession': "Xariddan yuborilganlarni qaytarish huquqi yo'q",
   'run.errors.storeAlreadyConfirmed': "Do'kon qabul qilishni allaqachon tasdiqlagan",
   'run.errors.notVisible': 'Xarid topilmadi yoki sizga mavjud emas',
+  'run.errors.priceFormat': "Narx 0 dan katta bo'lsin: ko'pi bilan 12 raqam va 2 kasr.",
+  'run.errors.qtyFormat': "Miqdor 0 dan katta bo'lsin: ko'pi bilan 9 raqam va 3 kasr.",
   'run.errors.itemServesOtherStores':
     "Bu mahsulot siz javobgar bo'lmagan do'konlarga ham kerak; uni o'sha do'konlar xaridori o'zgartiradi.",
   'run.errors.runHasOtherStores':
