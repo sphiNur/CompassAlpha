@@ -3007,6 +3007,7 @@ export const adminRouter = router({
             message: 'auth.errors.cannotGrantEqualOrHigher',
           });
         }
+        assertHoldsKeys(ctx.session!.permissions, input.permissionKeys);
         // Idempotency: if the slug already exists, return it.
         const existing = await tx.query.roles.findFirst({
           where: (r, { eq: eq2, and: and2 }) => and2(eq2(r.orgId, orgId), eq2(r.slug, input.slug)),
@@ -3096,6 +3097,18 @@ export const adminRouter = router({
         if (input.description !== undefined) patch.description = input.description;
         // Built-ins keep their rank (anchors the rank-gate ladder).
         if (input.rank !== undefined && !role.isBuiltIn) patch.rank = input.rank;
+        if (input.permissionKeys !== undefined) {
+          // Keys the role already has may stay; only additions are gated.
+          const current = await tx
+            .select({ key: s.rolePermissions.permissionKey })
+            .from(s.rolePermissions)
+            .where(eq(s.rolePermissions.roleId, role.id));
+          const had = new Set(current.map((r) => r.key));
+          assertHoldsKeys(
+            ctx.session!.permissions,
+            input.permissionKeys.filter((key) => !had.has(key)),
+          );
+        }
         if (Object.keys(patch).length > 0) {
           await tx.update(s.roles).set(patch).where(eq(s.roles.id, role.id));
         }
@@ -3977,6 +3990,22 @@ export const adminRouter = router({
             throw new TRPCError({
               code: 'BAD_REQUEST',
               message: 'admin.errors.defaultRoleMustBeStoreTier',
+            });
+          }
+          // ADM-5 (2026-10-30): the default is granted to anyone invited
+          // here without a role, so it is a grant by the actor and takes
+          // the same rank gate: a manager could set a role above their
+          // own and have later invitees receive it.
+          const actorStoreRank = await getActorMaxRankInStore(
+            tx,
+            orgId,
+            ctx.session!.userId,
+            input.storeId,
+          );
+          if (role.rank >= actorStoreRank) {
+            throw new TRPCError({
+              code: 'FORBIDDEN',
+              message: 'auth.errors.cannotGrantEqualOrHigher',
             });
           }
           patch.defaultRoleId = role.id;
@@ -5132,6 +5161,7 @@ export const adminRouter = router({
         await tx.delete(s.clientLogs).where(eq(s.clientLogs.orgId, orgId));
         await tx.delete(s.policyDecisions).where(eq(s.policyDecisions.orgId, orgId));
 
+        broadcastPurged(orgId, [], []);
         return { dryRun: false, total, byTable: counts, orgSlug: org.slug };
       });
     }),
@@ -5362,6 +5392,7 @@ export const adminRouter = router({
           ),
         );
 
+      broadcastPurged(orgId, sessionIds, runIds);
       return { dryRun: false, total, byTable: counts, date };
     });
   }),
@@ -5851,6 +5882,7 @@ export const adminRouter = router({
         };
       }
       await deleteSessionCascade(tx, orgId, input.sessionId);
+      broadcastPurged(orgId, [input.sessionId], []);
       return {
         dryRun: false,
         total: Object.values(counts).reduce((a, b) => a + b, 0),
@@ -5903,6 +5935,7 @@ export const adminRouter = router({
         };
       }
       await deleteRunCascade(tx, orgId, input.runId, sessionIds);
+      broadcastPurged(orgId, sessionIds, [input.runId]);
       return {
         dryRun: false,
         total: Object.values(counts).reduce((a, b) => a + b, 0),
@@ -6053,6 +6086,31 @@ async function closeOverRunLinks(
     }
     if (!grew) return;
   }
+}
+
+/**
+ * ADM-4 (2026-10-30): putting a key into a role hands it to everyone the
+ * role is granted to, so the actor must hold it, as memberPermissionSet
+ * already requires for a single allow. An admin used to be able to mint
+ * a role with super-admin keys and grant it to themselves.
+ */
+function assertHoldsKeys(perms: ReadonlySet<string>, keys: Iterable<string>): void {
+  for (const key of keys) {
+    if (!perms.has(key)) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.missingPermission' });
+    }
+  }
+}
+
+/**
+ * CAT-6 (2026-10-30): after a purge, open order and run pages kept
+ * showing the deleted rows until someone acted on one ("not found").
+ * Clients refetch on the message type, so one of each is enough; the ids
+ * are a hint (the org id when a whole workspace went).
+ */
+function broadcastPurged(orgId: string, sessionIds: string[], runIds: string[]): void {
+  hub.publish(orgId, { type: 'order.changed', orgId, sessionId: sessionIds[0] ?? orgId, lastSeq: -1 });
+  hub.publish(orgId, { type: 'run.changed', orgId, runId: runIds[0] ?? orgId, lastSeq: -1 });
 }
 
 function refuseIfSettlementRevisions(counts: Record<string, number>): void {

@@ -150,11 +150,16 @@ export function useRealtime(): void {
           return;
         }
         switch (msg.type) {
+          // HIS-6 (2026-10-30): finance, price reports and order history
+          // live under other prefixes and kept old numbers until reopened.
           case 'order.changed':
             debouncedInvalidate([['order']]);
+            debouncedInvalidate([['admin', 'submissionHistory']]);
             break;
           case 'run.changed':
             debouncedInvalidate([['run']]);
+            debouncedInvalidate([['report']]);
+            debouncedInvalidate([['catalog', 'skuPriceStats']]);
             break;
           case 'catalog.changed':
             // Catalog changes ripple into many admin queries AND into
