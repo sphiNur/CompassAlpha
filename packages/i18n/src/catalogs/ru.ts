@@ -1053,6 +1053,7 @@ export const ru = {
   'run.errors.allSessionsAlreadyInRun': 'Все выбранные заявки уже в закупке',
   'run.errors.noSessionsToAttach': 'Не выбраны заявки для добавления',
   'run.action.remainingItems': 'Осталось обработать: {n}',
+  'run.action.waitingOtherStores': 'Остальное — для закупщика других магазинов',
   'run.action.startDelivery': 'Начать доставку',
   'run.action.finish': 'Завершить',
   'run.action.cancelRun': 'Отменить закупку',

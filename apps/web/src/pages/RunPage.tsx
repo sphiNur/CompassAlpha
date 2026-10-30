@@ -813,10 +813,15 @@ export function RunPage() {
     [runDetailQuery.data],
   );
   /** Drives the "N left to handle" bottom bar during purchasing. */
-  const pendingCount = useMemo(
-    () => pendingItemCountOf(runDetailQuery.data?.items ?? []),
-    [runDetailQuery.data],
-  );
+  // RE-BUY-1 (2026-10-30): a purchaser of only some stores cannot handle
+  // the items that also serve other stores; counting those left a
+  // "N left" they could never clear.
+  const pendingCount = useMemo(() => {
+    const other = new Set(runDetailQuery.data?.otherStoreSkuIds ?? []);
+    return pendingItemCountOf(
+      (runDetailQuery.data?.items ?? []).filter((it) => !other.has(it.skuId)),
+    );
+  }, [runDetailQuery.data]);
 
   const allStoresConfirmed = useMemo(() => {
     if (!runDetailQuery.data) return false;
@@ -1155,7 +1160,20 @@ export function RunPage() {
         // useful work the whole time: it states the remaining count and
         // jumps to the next item that needs one, then becomes the advance
         // action at zero. Always visible, always actionable.
-        if (!allItemsHandled) {
+        // RE-BUY-1: starting delivery is a run-wide step; a purchaser of
+        // only some of the run's stores can neither finish the other
+        // stores' items nor start it, so say who does.
+        const othersRemain = (runDetailQuery.data?.otherStoreSkuIds ?? []).length > 0;
+        if (!allItemsHandled || othersRemain) {
+          if (pendingCount === 0) {
+            // Only items of other stores remain (RE-BUY-1).
+            return {
+              text: i18n.t('run.action.waitingOtherStores'),
+              onClick: () => {},
+              visible: true,
+              active: false,
+            };
+          }
           return {
             text: i18n.t('run.action.remainingItems', { n: pendingCount }),
             onClick: () => {
@@ -1195,6 +1213,7 @@ export function RunPage() {
     allItemsHandled,
     allStoresConfirmed,
     pendingCount,
+    runDetailQuery.data?.otherStoreSkuIds,
     i18n,
     previewSessionCount,
     chosenSessionIds,

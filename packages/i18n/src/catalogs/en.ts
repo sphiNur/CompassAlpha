@@ -1158,6 +1158,7 @@ export const en = {
   'run.errors.allSessionsAlreadyInRun': 'Every selected session is already in this run',
   'run.errors.noSessionsToAttach': 'No sessions selected to attach',
   'run.action.remainingItems': '{n} left to handle',
+  'run.action.waitingOtherStores': 'The rest are for the buyer of the other stores',
   'run.action.startDelivery': 'Start delivery',
   'run.action.finish': 'Finish run',
   'run.action.cancelRun': 'Cancel run',
