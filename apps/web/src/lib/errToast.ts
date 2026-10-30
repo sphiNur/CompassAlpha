@@ -33,7 +33,7 @@ import type { ReactNode } from 'react';
 import { useToast } from '@compass/ui';
 import { useI18n } from '../hooks/useI18n';
 import { haptic } from '../hooks/useTelegram';
-import { I18N_KEY_RE } from './errorText';
+import { I18N_KEY_RE, zodIssueKey } from './errorText';
 
 interface ErrLike {
   message?: string;
@@ -51,7 +51,9 @@ export function useErrToast(): (
   const toast = useToast();
   return (defaultKey) => (err: unknown) => {
     haptic('error');
-    const msg = (err as ErrLike | null)?.message;
+    const raw = (err as ErrLike | null)?.message;
+    // A schema refusal carries its key inside the zod issue list.
+    const msg = zodIssueKey(raw) ?? raw;
     const looksLikeKey = typeof msg === 'string' && I18N_KEY_RE.test(msg);
     const text: ReactNode = looksLikeKey
       ? i18n.t(msg as Parameters<typeof i18n.t>[0])
@@ -72,7 +74,8 @@ export function useTranslateError(): (
 ) => string {
   const i18n = useI18n();
   return (err, defaultKey) => {
-    const msg = (err as ErrLike | null)?.message;
+    const raw = (err as ErrLike | null)?.message;
+    const msg = zodIssueKey(raw) ?? raw;
     if (typeof msg === 'string' && I18N_KEY_RE.test(msg)) {
       return i18n.t(msg as Parameters<typeof i18n.t>[0]);
     }

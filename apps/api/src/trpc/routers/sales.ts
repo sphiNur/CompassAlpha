@@ -77,10 +77,20 @@ function requireSalesRecord(perms: ReadonlySet<string>): void {
 const RecordInputSchema = z.object({
   storeId: UuidSchema,
   dishId: UuidSchema,
-  qty: PositiveDecimalStringSchema,
+  // CLS-19 (2026-10-30): 1e9 servings overflowed the column as a 500.
+  qty: PositiveDecimalStringSchema.refine((v) => Number(v) < 1_000_000, {
+    message: 'sales.errors.qtyTooLarge',
+  }),
   /** Optional ISO timestamp; defaults to NOW(). Lets shift leads
-   *  back-fill the day's sales at close-out. */
-  occurredAt: z.string().datetime().optional(),
+   *  back-fill the day's sales at close-out. Not in the future (CLS-19;
+   *  a few minutes of clock skew allowed). */
+  occurredAt: z
+    .string()
+    .datetime()
+    .refine((v) => Date.parse(v) <= Date.now() + 10 * 60_000, {
+      message: 'sales.errors.occurredInFuture',
+    })
+    .optional(),
 });
 
 const VoidInputSchema = z.object({

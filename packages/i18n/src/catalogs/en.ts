@@ -1668,6 +1668,14 @@ export const en = {
   'dishes.errors.ingredientQtyMustBePositive': 'Ingredient qty must be > 0.',
   'dishes.errors.ingredientSkuNotFound': 'One or more ingredients reference an unknown SKU.',
   'dishes.errors.notFound': 'Dish not found.',
+  'dishes.errors.incompleteIngredient': 'An ingredient row has no product or no amount; complete it or remove it.',
+  'sales.errors.qtyFormat': 'Servings must be above 0 with at most 2 decimals.',
+  'dishes.errors.codeTaken': 'Another dish already uses this code.',
+  'dishes.errors.priceTooLarge': 'Price: at most 12 digits and 2 decimals.',
+  'dishes.errors.qtyTooLarge': 'Amount: at most 8 digits and 4 decimals.',
+  'sales.errors.qtyTooLarge': 'That many servings is too large.',
+  'sales.errors.occurredInFuture': 'The sale time cannot be in the future.',
+  'inventory.errors.qtyTooLarge': 'That quantity is too large.',
 
   // ── 18. Sales (M2.0c) ──────────────────────────────────
   // Sales recording — closes the ERP loop. Admin → Stores →

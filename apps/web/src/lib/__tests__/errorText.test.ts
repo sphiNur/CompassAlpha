@@ -20,4 +20,15 @@ describe('errorTextKey', () => {
     );
     expect(errorTextKey(undefined, 'common.errorUnknown')).toBe('common.errorUnknown');
   });
+
+  test('takes the catalog key out of a zod issue list (CLS-12)', () => {
+    const zod = JSON.stringify(
+      [{ code: 'custom', message: 'dishes.errors.priceTooLarge', path: ['unitPrice'] }],
+      null,
+      2,
+    );
+    expect(errorTextKey(zod, 'common.errorUnknown')).toBe('dishes.errors.priceTooLarge');
+    const plain = JSON.stringify([{ code: 'invalid_string', message: 'invalid decimal' }]);
+    expect(errorTextKey(plain, 'common.errorUnknown')).toBe('common.errorUnknown');
+  });
 });

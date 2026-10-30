@@ -1520,6 +1520,14 @@ export const ru = {
   'dishes.errors.ingredientQtyMustBePositive': 'Кол-во ингредиента должно быть > 0.',
   'dishes.errors.ingredientSkuNotFound': 'В рецепте указан неизвестный SKU.',
   'dishes.errors.notFound': 'Блюдо не найдено.',
+  'dishes.errors.incompleteIngredient': 'В строке ингредиента нет товара или количества — заполните или удалите её.',
+  'sales.errors.qtyFormat': 'Порций должно быть больше 0, не более 2 знаков после запятой.',
+  'dishes.errors.codeTaken': 'Этот код уже у другого блюда.',
+  'dishes.errors.priceTooLarge': 'Цена: не более 12 цифр и 2 знаков после запятой.',
+  'dishes.errors.qtyTooLarge': 'Количество: не более 8 цифр и 4 знаков после запятой.',
+  'sales.errors.qtyTooLarge': 'Слишком много порций.',
+  'sales.errors.occurredInFuture': 'Время продажи не может быть в будущем.',
+  'inventory.errors.qtyTooLarge': 'Слишком большое количество.',
 
   // ── 18. Sales (M2.0c) ──────────────────────────────────
   'sales.summary.today': 'Сегодня',

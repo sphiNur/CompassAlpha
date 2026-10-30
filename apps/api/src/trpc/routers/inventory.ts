@@ -101,16 +101,20 @@ const StocktakeInputSchema = z.object({
   /** Target on-hand qty after the stocktake. Must be ≥ 0. */
   target: z
     .string()
-    .regex(/^\d+(\.\d{1,3})?$/, 'qty must be ≥ 0 with at most 3 decimals'),
+    // CLS-19 (2026-10-30): at most 8 integer digits; 99999999999 was a 500.
+    .regex(/^\d{1,8}(\.\d{1,3})?$/, 'inventory.errors.qtyTooLarge'),
   note: z.string().max(500).optional(),
 });
 
 const WastageInputSchema = z.object({
   storeId: UuidSchema,
   skuId: UuidSchema,
-  qty: PositiveDecimalStringSchema,
+  qty: PositiveDecimalStringSchema.refine((v) => Number(v) < 100_000_000, {
+    message: 'inventory.errors.qtyTooLarge',
+  }),
   /** Mandatory reason — wastage rows without context are useless. */
-  note: z.string().min(1).max(500),
+  // CLS-19: a note of only spaces is no note.
+  note: z.string().trim().min(1).max(500),
 });
 
 export const inventoryRouter = router({
