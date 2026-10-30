@@ -130,4 +130,18 @@ describe.skipIf(!SHOULD_RUN)('order batches (PG-gated)', () => {
     await expect(manager.order.approve({ sessionId: draft.sessionId })).rejects.toThrow();
     await manager2.order.approve({ sessionId: draft.sessionId });
   });
+
+  test('APR-19: two approvers claiming at once — the loser is told it is already claimed', async () => {
+    const { staff, manager, manager2, storeId, skuId } = fix!;
+    const draft = await staff.order.adjustItem({ storeId, skuId, qty: '6' });
+    await staff.order.submit({ sessionId: draft.sessionId });
+    const results = await Promise.allSettled([
+      manager.order.claim({ sessionId: draft.sessionId }),
+      manager2.order.claim({ sessionId: draft.sessionId }),
+    ]);
+    const failed = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    for (const f of failed) expect((f.reason as Error).message).toBe('order.errors.alreadyClaimed');
+  });
 });
+

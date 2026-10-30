@@ -658,6 +658,8 @@ export const uz = {
     'Tashkilot darajasidagi rol va ruxsatlar faqat global berilishi mumkin',
   'admin.errors.roleNotFound': 'Rol topilmadi',
   'admin.errors.roleSlugTaken': "Bu rol identifikatori band",
+  'admin.errors.memberInactiveReactivateFirst':
+    "A'zo to'xtatilgan. Avval faollashtiring, keyin do'kon va rollarni bering",
   'admin.errors.unknownPermission': "Bunday ruxsat yo'q",
   'admin.errors.builtinRankLocked': "Ichki rolning darajasini o'zgartirib bo'lmaydi",
   'admin.errors.runHasForeignSessions':
@@ -698,7 +700,7 @@ export const uz = {
   'admin.toast.memberUpdated': 'Xodim yangilandi',
   'admin.toast.memberRemoved': "Xodim o'chirildi",
   'admin.toast.memberAdded': "Xodim qo'shildi",
-  'admin.toast.userExists': 'Foydalanuvchi bu tashkilotda mavjud',
+  'admin.toast.userExists': "Allaqachon bu ish maydonida — tanlangan do'konlar va rollar qo'shildi",
   'admin.toast.roleRevoked': 'Rol qaytarib olindi',
   'admin.toast.roleCreated': 'Rol yaratildi',
   'admin.toast.roleUpdated': 'Rol yangilandi',

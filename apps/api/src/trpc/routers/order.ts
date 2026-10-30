@@ -1600,7 +1600,11 @@ async function runSimpleCommand(
   produce: (state: OrderState, perms: ReadonlySet<string>) => OrderEvent[],
   opts: { expectedSeq?: number | undefined } = {},
 ): Promise<{ lastSeq: number }> {
-  return ctx.withOrg(async (tx) => {
+  // APR-19 (2026-10-30): a write that lost the race for the stream (two
+  // approvers claiming at once) is decided again on the fresh state, so
+  // the loser hears "already claimed by someone" rather than "edited by
+  // someone else — retry".
+  return withOrderWriteRetry(ctx, async (tx) => {
     const session = await loadSession(tx, ctx.session!.orgId, sessionId);
     // Multi-store guard: the actor must be assigned to this session's
     // store (or be an admin / super_admin via the bypass). This makes
@@ -1663,9 +1667,8 @@ async function runSimpleCommand(
         'order.runSimpleCommand failed',
       );
       if (err instanceof DomainError) rethrowDomainError(err);
-      if (isUniqueViolation(err)) {
-        throw new TRPCError({ code: 'CONFLICT', message: 'order.errors.staleSeq' });
-      }
+      // A unique violation goes up as-is: withOrderWriteRetry decides it
+      // again, then answers CONFLICT if it keeps losing.
       throw err;
     }
   });

@@ -653,6 +653,8 @@ export const ru = {
     'Роли и права уровня организации можно назначать только глобально',
   'admin.errors.roleNotFound': 'Роль не найдена',
   'admin.errors.roleSlugTaken': 'Такой идентификатор роли уже занят',
+  'admin.errors.memberInactiveReactivateFirst':
+    'Участник приостановлен. Сначала активируйте его, затем назначьте магазины и роли',
   'admin.errors.unknownPermission': 'Такого права нет',
   'admin.errors.builtinRankLocked': 'Уровень встроенной роли изменить нельзя',
   'admin.errors.runHasForeignSessions':
@@ -692,7 +694,7 @@ export const ru = {
   'admin.toast.memberUpdated': 'Сотрудник обновлён',
   'admin.toast.memberRemoved': 'Сотрудник удалён',
   'admin.toast.memberAdded': 'Сотрудник добавлен',
-  'admin.toast.userExists': 'Пользователь уже в этой организации',
+  'admin.toast.userExists': 'Уже в этом пространстве — выбранные магазины и роли добавлены',
   'admin.toast.roleRevoked': 'Роль отозвана',
   'admin.toast.roleCreated': 'Роль создана',
   'admin.toast.roleUpdated': 'Роль обновлена',

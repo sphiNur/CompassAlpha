@@ -608,6 +608,8 @@ export const zh = {
   'admin.errors.orgAdminMustBeGlobal': '组织级角色和权限只能全局授予',
   'admin.errors.roleNotFound': '角色不存在',
   'admin.errors.roleSlugTaken': '这个角色标识已被占用',
+  'admin.errors.memberInactiveReactivateFirst':
+    '该成员已停用，请先启用，再给他分配门店和角色',
   'admin.errors.unknownPermission': '没有这个权限',
   'admin.errors.builtinRankLocked': '内置角色的等级不能修改',
   'admin.errors.runHasForeignSessions': '此采购单里有其他人的订单，不能删除',
@@ -643,7 +645,7 @@ export const zh = {
   'admin.toast.memberUpdated': '成员已更新',
   'admin.toast.memberRemoved': '成员已移除',
   'admin.toast.memberAdded': '成员已添加',
-  'admin.toast.userExists': '该用户已在此工作区中',
+  'admin.toast.userExists': '此人已在工作区中，已为其加上所选的门店和角色',
   'admin.toast.roleRevoked': '角色已撤销',
   'admin.toast.roleCreated': '角色已创建',
   'admin.toast.roleUpdated': '角色已更新',
