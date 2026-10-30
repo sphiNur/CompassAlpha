@@ -133,7 +133,7 @@ describe('purge predicates (CA-28)', () => {
 
   test('run movements predicate is org + run scoped', () => {
     const q = render(runMovements(ORG, [RUN]));
-    expect(q.sql).toContain("source_type = 'run'");
+    expect(q.sql).toContain("source_type IN ('run', 'run_amend')");
     expect(q.params).toEqual([ORG, RUN]);
   });
 

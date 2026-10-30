@@ -381,6 +381,7 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
             updatedAt: new Date(),
           })
           .where(eq(s.marketRunsV.id, e.streamId));
+        await syncAmendMovements(db, orgId, e);
         break;
       case 'RunClaimed':
         // C.2 (M3.38): claim grab. The reducer mirrors this exactly —
@@ -781,6 +782,92 @@ async function insertPriceObservations(
  * for unit tests. Non-ok lines with a recorded received qty book that
  * qty; everything else (ok, undecided, legacy NULL) books the split.
  */
+/**
+ * DLV-3 (2026-10-30, owner decision: write offsetting movements). The
+ * stock a store received is booked once, at StoreConfirmed (source 'run').
+ * A super-admin correction of a finished run (undo a purchase, move a
+ * split, add an item) changed the run but not the stock. When the
+ * correction closes, every store that had signed gets one 'run_amend'
+ * row per product: what the run now says it received minus what was
+ * booked. Rewritten from scratch on each close, so a second correction or
+ * a replay ends in the same rows.
+ */
+async function syncAmendMovements(
+  db: DB,
+  orgId: string,
+  e: Extract<RunEvent, { type: 'RunRefinalized' }>,
+): Promise<void> {
+  const runId = e.streamId;
+  const splits = await db
+    .select({
+      storeId: s.runItemStoresV.storeId,
+      skuId: s.runItemStoresV.skuId,
+      qty: s.runItemStoresV.qty,
+      confirmStatus: s.runItemStoresV.confirmStatus,
+      confirmReceivedQty: s.runItemStoresV.confirmReceivedQty,
+      confirmedAt: s.runItemStoresV.confirmedAt,
+    })
+    .from(s.runItemStoresV)
+    .where(eq(s.runItemStoresV.runId, runId));
+  const booked = await db
+    .select({
+      storeId: s.inventoryMovements.storeId,
+      skuId: s.inventoryMovements.skuId,
+      delta: s.inventoryMovements.delta,
+    })
+    .from(s.inventoryMovements)
+    .where(
+      and(
+        eq(s.inventoryMovements.orgId, orgId),
+        eq(s.inventoryMovements.sourceType, 'run'),
+        eq(s.inventoryMovements.sourceId, runId),
+      ),
+    );
+  const signedStores = new Set(booked.map((b) => b.storeId));
+  for (const sp of splits) if (sp.confirmedAt) signedStores.add(sp.storeId);
+
+  // Thousandths, as integers: qty columns are numeric(12,3).
+  const milli = (v: string) => Math.round(Number(v) * 1000);
+  const key = (storeId: string, skuId: string) => `${storeId}|${skuId}`;
+  const now = new Map<string, number>();
+  for (const sp of splits) {
+    if (!signedStores.has(sp.storeId)) continue;
+    const k = key(sp.storeId, sp.skuId);
+    now.set(k, (now.get(k) ?? 0) + milli(receivedDelta(sp)));
+  }
+  const before = new Map<string, number>();
+  for (const b of booked) before.set(key(b.storeId, b.skuId), milli(b.delta));
+
+  await db
+    .delete(s.inventoryMovements)
+    .where(
+      and(
+        eq(s.inventoryMovements.orgId, orgId),
+        eq(s.inventoryMovements.sourceType, 'run_amend'),
+        eq(s.inventoryMovements.sourceId, runId),
+      ),
+    );
+  const rows = [];
+  for (const k of new Set([...now.keys(), ...before.keys()])) {
+    const diff = (now.get(k) ?? 0) - (before.get(k) ?? 0);
+    if (diff === 0) continue;
+    const [storeId, skuId] = k.split('|') as [string, string];
+    rows.push({
+      orgId,
+      storeId,
+      skuId,
+      delta: (diff / 1000).toFixed(3),
+      reason: 'adjustment' as const,
+      note: null,
+      sourceType: 'run_amend' as const,
+      sourceId: runId,
+      actorMemberId: e.actorMemberId,
+      occurredAt: e.occurredAt,
+    });
+  }
+  if (rows.length > 0) await db.insert(s.inventoryMovements).values(rows);
+}
+
 export function receivedDelta(split: {
   qty: string;
   confirmStatus: string | null;
