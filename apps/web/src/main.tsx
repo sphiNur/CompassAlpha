@@ -16,6 +16,18 @@ window.addEventListener('vite:preloadError', (event) => {
   if (reloadForStaleChunk(60_000)) event.preventDefault();
 });
 
+// N12 (2026-10-30): an offline reload showed a blank page — the document
+// itself could not be fetched. public/sw.js keeps the last good shell.
+// Production builds only: in dev it would cache Vite's modules. Where
+// service workers are unavailable (some WebViews) this is a no-op.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      /* unsupported or blocked: the app works as before, online only */
+    });
+  });
+}
+
 const container = document.getElementById('root');
 if (!container) throw new Error('Root not found');
 
