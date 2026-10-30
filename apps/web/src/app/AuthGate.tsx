@@ -664,6 +664,8 @@ function nonTelegramErrorMessage(message: string): string {
       return 'Telegram ID 或访问码无效，或该用户不在允许名单中。';
     case 'auth.errors.noMembership':
       return '该用户没有可用的组织成员身份。';
+    case 'auth.errors.membershipSuspended':
+      return '该用户的成员身份已停用。';
     case 'auth.errors.devBypassDisabled':
       return '本地开发自动登录未开启，或当前不是 development 环境。';
     case 'auth.errors.devLocalhostOnly':

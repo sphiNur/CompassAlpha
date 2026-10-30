@@ -473,6 +473,8 @@ export const uz = {
   'auth.errors.nameLocked': "Ism qulflangan — faqat administrator o'zgartira oladi",
   'auth.errors.noMembership':
     "Siz hali hech bir do'konga qo'shilmagansiz. Rahbaringizdan sizni Compass'ga taklif qilishini so'rang.",
+  'auth.errors.membershipSuspended':
+    "Bu tashkilotdagi a'zoligingiz to'xtatilgan. Administratorga murojaat qiling.",
   'auth.errors.noOrg': 'Tashkilot topilmadi',
   'auth.errors.required': 'Kirish talab qilinadi',
   'auth.errors.signInFailed': 'Kirish bajarilmadi',

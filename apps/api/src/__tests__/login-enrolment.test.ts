@@ -148,8 +148,9 @@ describe.skipIf(!SHOULD_RUN)('telegramLogin enrolment (PG-gated)', () => {
     expect(ok.session.member.memberId).toBe(member!.id);
 
     await db.update(s.members).set({ status: 'suspended' }).where(eq(s.members.id, member!.id));
+    // AUTH-19: a suspended member is told so, not "no membership".
     await expect(anonymousCaller().auth.telegramLogin({ initData })).rejects.toThrow(
-      'auth.errors.noMembership',
+      'auth.errors.membershipSuspended',
     );
 
     await db.delete(s.refreshTokens).where(eq(s.refreshTokens.userId, user!.id));

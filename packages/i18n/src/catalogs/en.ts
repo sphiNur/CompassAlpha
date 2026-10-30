@@ -532,6 +532,8 @@ export const en = {
   'auth.errors.nameLocked': 'Your name is locked — only an administrator can change it',
   'auth.errors.noMembership':
     'You have not been added to a store yet. Ask your manager to invite you in Compass.',
+  'auth.errors.membershipSuspended':
+    'Your membership in this organisation has been suspended. Please contact an admin.',
   'auth.errors.noOrg': 'Organization not found',
   'auth.errors.required': 'Sign-in required',
   'auth.errors.signInFailed': 'Sign in failed',
