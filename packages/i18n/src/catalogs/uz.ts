@@ -1249,6 +1249,8 @@ export const uz = {
     'Bu mahsulot allaqachon xarid qilingan deb yozilgan — mavjud yozuvni tahrirlang',
   'run.errors.cannotCancelAfterConfirm':
     "Do'kon yetkazib berishni allaqachon tasdiqlagan — bu xaridni endi bekor qilib bo'lmaydi",
+  'run.errors.cannotCancelAfterDelivery':
+    "Mahsulot do'konga yetkazilgan, xaridni bekor qilib bo'lmaydi. Avval yetkazishni qaytarib oling",
   'run.errors.noteTooLong': 'Eslatma juda uzun (500 belgi gacha)',
   'run.errors.notReadyToDeliver': "Yetkazishni hali boshlab bo'lmaydi",
   'run.errors.itemsPending': 'Hali ishlanmagan mahsulotlar bor',
@@ -1778,6 +1780,8 @@ export const uz = {
   'people.confirmRevokeInvite':
     "Bu taklif havolasini bekor qilasizmi? Havolasi borlar endi qo'shila olmaydi.",
   'order.errors.staleOfflineEdit': 'Bu o‘zgarish oldingi kuni oflayn qilingan va qo‘llanmadi',
+  'order.errors.deviceDateAhead':
+    "Telefon sanasi serverdan oldinda, o'zgarish saqlanmadi. Telefon sana va vaqtini tekshiring",
   'order.errors.approveEmpty':
     "Buyurtmada mahsulot qolmadi — tasdiqlab bo'lmaydi. Uni rad eting",
   'approval.toast.orderChanged':

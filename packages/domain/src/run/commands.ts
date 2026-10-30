@@ -840,6 +840,12 @@ export function decideRun(
       for (const store of state.stores.values()) {
         if (store.confirmedAt) throw preconditionFailed('run.errors.cannotCancelAfterConfirm');
       }
+      // DLV-6 (2026-10-30, owner decision): goods already at a store would
+      // never reach its stock and its orders would be bought again. Recall
+      // the delivery first.
+      for (const store of state.stores.values()) {
+        if (store.deliveredAt) throw preconditionFailed('run.errors.cannotCancelAfterDelivery');
+      }
       // M1.7 (2026-05-07): reason is OPTIONAL by user request — most
       // cancels are misclicks; hard-requiring a reason produces "asdf"
       // noise that pollutes audit. The FE shows an encouraging

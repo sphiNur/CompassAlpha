@@ -937,10 +937,11 @@ describe('run.decide', () => {
       applyRun,
       s,
     );
-    // Delivered but not yet confirmed: still cancellable.
-    expect(
-      decideRun(s, { type: 'CancelRun', reason: '', actor: purchaser() }, clock).map((e) => e.type),
-    ).toEqual(['RunCancelled']);
+    // DLV-6 (2026-10-30): delivered but not yet confirmed is refused too —
+    // recall the delivery first.
+    expect(() =>
+      decideRun(s, { type: 'CancelRun', reason: '', actor: purchaser() }, clock),
+    ).toThrow('run.errors.cannotCancelAfterDelivery');
     s = decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock).reduce(
       applyRun,
       s,
@@ -1689,11 +1690,17 @@ describe('run.reversals', () => {
       clock,
     ).reduce(applyRun, delivering);
 
-    const cancelled = decideRun(
-      delivering,
-      { type: 'CancelRun', reason: 'delivery cancelled', actor: purchaser() },
-      clock,
-    ).reduce(applyRun, delivering);
+    // DLV-6 (2026-10-30): CancelRun now refuses a delivered run, but
+    // streams written before that may hold one; the guard must hold there.
+    const cancelled = applyRun(delivering, {
+      streamId: delivering.streamId,
+      seq: delivering.seq + 1,
+      occurredAt: new Date(),
+      actorUserId: null,
+      actorMemberId: null,
+      type: 'RunCancelled',
+      payload: { reason: 'delivery cancelled' },
+    });
     expect(() =>
       decideRun(cancelled, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock),
     ).toThrow('run.errors.notDelivering');
