@@ -31,6 +31,8 @@ export interface AuthSession {
     currency?: string;
     taxRatePct?: string;
     pricesIncludeTax?: boolean;
+    /** HIS-13: the org's time zone (older sessions lack it). */
+    timezone?: string;
   };
   /** Every active organisation this person can enter. */
   memberships?: Array<{
