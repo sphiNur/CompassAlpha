@@ -71,7 +71,9 @@ export function StoreSalesPanel({
   // as a 403 toast — the flat session set can't see per-store overrides.
   const canRecord = session?.permissions.includes('sales.record') ?? false;
 
-  const dishesQuery = trpc.dishes.list.useQuery({ includeArchived: false });
+  // CLS-9 (2026-10-30): archived dishes too, so today's sales of a dish
+  // archived since keep its name; the picker offers active ones only.
+  const dishesQuery = trpc.dishes.list.useQuery({ includeArchived: true });
   const salesQuery = trpc.sales.list.useQuery({ storeId });
 
   const dishById = useMemo(() => {
@@ -82,6 +84,7 @@ export function StoreSalesPanel({
         names: Record<string, string>;
         unitPrice: string | null;
         ingredientCount: number;
+        isArchived: boolean;
       }
     >();
     const ingCount = new Map<string, number>();
@@ -94,6 +97,7 @@ export function StoreSalesPanel({
         names: d.names as Record<string, string>,
         unitPrice: d.unitPrice,
         ingredientCount: ingCount.get(d.id) ?? 0,
+        isArchived: d.isArchived,
       });
     }
     return m;
@@ -163,7 +167,7 @@ export function StoreSalesPanel({
 
   // Sort dishes alphabetically for the picker.
   const dishOptions = useMemo(() => {
-    const list = [...dishById.values()];
+    const list = [...dishById.values()].filter((d) => !d.isArchived);
     return list.sort((a, b) =>
       productName({ names: a.names }).localeCompare(productName({ names: b.names })),
     );
