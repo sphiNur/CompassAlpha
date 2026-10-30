@@ -44,11 +44,15 @@ export function ThemeProvider({
     if (typeof window === 'undefined') return;
     interface TgWebApp {
       colorScheme?: 'light' | 'dark';
+      initData?: string;
       onEvent?: (name: string, cb: () => void) => void;
       offEvent?: (name: string, cb: () => void) => void;
     }
     const tg = (window as { Telegram?: { WebApp?: TgWebApp } }).Telegram?.WebApp;
-    if (tg?.colorScheme && typeof tg.onEvent === 'function') {
+    // The SDK script loads in a plain browser too and then reports
+    // colorScheme 'light' by default; only signed initData means Telegram
+    // is really hosting the page (atlas SHL-4).
+    if (tg?.initData && tg.colorScheme && typeof tg.onEvent === 'function') {
       const sync = () => {
         if (tg.colorScheme) setColorScheme(tg.colorScheme);
       };

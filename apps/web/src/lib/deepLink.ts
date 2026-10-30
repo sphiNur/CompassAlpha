@@ -17,6 +17,7 @@ const DEEP_LINK_TABS: readonly Tab[] = [
   'run',
   'history',
   'settlement',
+  'sales',
   'confirm',
   'admin',
 ];
@@ -50,4 +51,15 @@ export function stripDeepLinkPath(pathname: string): string {
 export function resolveDeepLinkTab(pathname: string, visibleKeys: readonly Tab[]): Tab | null {
   const target = tabFromDeepLinkPath(pathname);
   return target && visibleKeys.includes(target) ? target : null;
+}
+
+/**
+ * The tab a bot link's `startapp=tab_<name>` points at (atlas SHL-6), or
+ * null. Invite tokens (`inv_…`) and anything else are not tab links.
+ */
+export function tabFromStartParam(startParam: string | null | undefined): Tab | null {
+  const raw = startParam?.trim().toLowerCase();
+  if (!raw?.startsWith('tab_')) return null;
+  const key = raw.slice(4) as Tab;
+  return DEEP_LINK_TABS.includes(key) ? key : null;
 }

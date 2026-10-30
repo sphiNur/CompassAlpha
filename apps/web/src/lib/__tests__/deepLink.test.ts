@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'bun:test';
-import { resolveDeepLinkTab, stripDeepLinkPath, tabFromDeepLinkPath } from '../deepLink';
+import {
+  resolveDeepLinkTab,
+  stripDeepLinkPath,
+  tabFromDeepLinkPath,
+  tabFromStartParam,
+} from '../deepLink';
 
 describe('tabFromDeepLinkPath', () => {
   it('maps the notification paths to their tabs', () => {
@@ -38,5 +43,17 @@ describe('resolveDeepLinkTab', () => {
     expect(resolveDeepLinkTab('/approve', ['order', 'approve'])).toBe('approve');
     expect(resolveDeepLinkTab('/approve', ['order'])).toBeNull();
     expect(resolveDeepLinkTab('/', ['order'])).toBeNull();
+  });
+});
+
+describe('tabFromStartParam (atlas SHL-6)', () => {
+  it('tab_<name> points at that tab', () => {
+    expect(tabFromStartParam('tab_sales')).toBe('sales');
+    expect(tabFromStartParam(' TAB_Run ')).toBe('run');
+  });
+  it('invites, unknown tabs and empty values are not tab links', () => {
+    expect(tabFromStartParam('inv_abc')).toBeNull();
+    expect(tabFromStartParam('tab_nope')).toBeNull();
+    expect(tabFromStartParam(undefined)).toBeNull();
   });
 });

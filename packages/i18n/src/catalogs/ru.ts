@@ -45,6 +45,7 @@ export const ru = {
   'common.edit': 'Изменить',
   'common.delete': 'Удалить',
   'catalog.category.new': 'Новая категория',
+  'catalog.confirm.discardEdits': 'Отменить несохранённые изменения?',
   'catalog.category.edit': 'Изменить категорию',
   'catalog.category.emptyTitle': 'Нет категорий',
   'catalog.category.emptyBody': 'Группируют товары на странице заказа.',

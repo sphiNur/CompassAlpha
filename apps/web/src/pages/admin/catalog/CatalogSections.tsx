@@ -10,7 +10,7 @@
  * internal. The audit's ListEditor/NameFieldsML consolidation happens
  * on top of this split as its own pass.
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   Badge,
   Banner,
@@ -100,6 +100,27 @@ interface CategoryDraft {
   sortIndex: number;
 }
 
+
+/**
+ * Closing a catalog editor by Esc, a backdrop tap or Telegram's back button
+ * used to drop whatever was typed, and could close mid-save (atlas CAT-18).
+ * While saving the sheet stays open; with unsaved edits it asks first.
+ */
+function useEditorClose<T>(draft: T | null, setDraft: (d: null) => void, busy: boolean) {
+  const i18n = useI18n();
+  const opened = useRef<string | null>(null);
+  if (draft === null) opened.current = null;
+  else if (opened.current === null) opened.current = JSON.stringify(draft);
+  return (open: boolean) => {
+    if (open || busy) return;
+    if (draft !== null && JSON.stringify(draft) !== opened.current) {
+      nativeConfirm(i18n.t('catalog.confirm.discardEdits'), () => setDraft(null));
+      return;
+    }
+    setDraft(null);
+  };
+}
+
 export function CategoriesSection() {
   const categoriesQuery = trpc.admin.categoryList.useQuery();
   const utils = trpc.useUtils();
@@ -133,6 +154,8 @@ export function CategoriesSection() {
     },
     onError: errToast('common.error'),
   });
+
+  const closeEditor = useEditorClose(draft, setDraft, create.isPending || update.isPending);
 
   return (
     <div className="px-4 py-3">
@@ -254,7 +277,7 @@ export function CategoriesSection() {
 
       <Sheet
         open={!!draft}
-        onOpenChange={(open) => !open && setDraft(null)}
+        onOpenChange={closeEditor}
         title={i18n.t(draft?.categoryId ? 'catalog.category.edit' : 'catalog.category.new')}
         footer={
           <Button
@@ -418,6 +441,8 @@ export function SkusSection() {
     return productName({ names: c.names as Record<string, string> }) || c.slug;
   };
 
+  const closeEditor = useEditorClose(draft, setDraft, create.isPending || update.isPending);
+
   return (
     <div className="px-4 py-3">
       {canWrite ? null : <ReadOnlyHint />}
@@ -577,7 +602,7 @@ export function SkusSection() {
 
       <Sheet
         open={!!draft}
-        onOpenChange={(open) => !open && setDraft(null)}
+        onOpenChange={closeEditor}
         title={i18n.t(draft?.skuId ? 'catalog.sku.edit' : 'catalog.sku.new')}
         footer={
           <Button
@@ -765,6 +790,8 @@ export function SuppliersSection() {
     onError: errToast('common.error'),
   });
 
+  const closeEditor = useEditorClose(draft, setDraft, create.isPending || update.isPending);
+
   return (
     <div className="px-4 py-3">
       {canWrite ? null : <ReadOnlyHint />}
@@ -873,7 +900,7 @@ export function SuppliersSection() {
 
       <Sheet
         open={!!draft}
-        onOpenChange={(open) => !open && setDraft(null)}
+        onOpenChange={closeEditor}
         title={i18n.t(draft?.supplierId ? 'catalog.supplier.edit' : 'catalog.supplier.new')}
         footer={
           <Button
@@ -990,6 +1017,8 @@ export function ExpenseTemplatesSection() {
   });
 
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
+
+  const closeEditor = useEditorClose(draft, setDraft, create.isPending || update.isPending);
 
   return (
     <div className="px-4 py-3">
@@ -1128,7 +1157,7 @@ export function ExpenseTemplatesSection() {
 
       <Sheet
         open={!!draft}
-        onOpenChange={(open) => !open && setDraft(null)}
+        onOpenChange={closeEditor}
         title={
           draft?.templateId
             ? i18n.t('admin.sheet.editExpenseTemplate')
@@ -1440,6 +1469,8 @@ export function DishesSection() {
     });
   };
 
+  const closeEditor = useEditorClose(draft, setDraft, save.isPending);
+
   return (
     <div className="px-4 py-3">
       {/* Top bar: archive toggle + new dish. */}
@@ -1558,7 +1589,7 @@ export function DishesSection() {
       {/* Editor sheet. */}
       <Sheet
         open={draft !== null}
-        onOpenChange={(open) => !open && setDraft(null)}
+        onOpenChange={closeEditor}
         title={
           draft?.dishId
             ? i18n.t('dishes.sheet.editTitle')

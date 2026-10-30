@@ -52,6 +52,7 @@ export const uz = {
   'common.edit': 'Tahrirlash',
   'common.delete': "O'chirish",
   'catalog.category.new': 'Yangi turkum',
+  'catalog.confirm.discardEdits': "Saqlanmagan o'zgarishlar bekor qilinsinmi?",
   'catalog.category.edit': 'Turkumni tahrirlash',
   'catalog.category.emptyTitle': "Turkumlar yo'q",
   'catalog.category.emptyBody': 'Buyurtma sahifasida mahsulotlarni guruhlaydi.',

@@ -76,6 +76,7 @@ export const en = {
   'common.edit': 'Edit',
   'common.delete': 'Delete',
   'catalog.category.new': 'New category',
+  'catalog.confirm.discardEdits': 'Discard the changes you have not saved?',
   'catalog.category.edit': 'Edit category',
   'catalog.category.emptyTitle': 'No categories',
   'catalog.category.emptyBody': 'Used to group SKUs in the order page.',
