@@ -1089,6 +1089,10 @@ export const uz = {
   'run.toast.couldNotAddExpense': "Xarajatni saqlab bo'lmadi",
   'run.confirm.finish.expenses': '🧾 {n} ta katalogdan tashqari / xarajat · {total} {currency}',
   'run.confirm.finish.perStoreHeading': "Do'kon bo'yicha hisob:",
+  'run.confirm.finish.receiptIssues':
+    "Qabulda muammo bo'lgan qatorlar: {n}; taxminan {amount} {currency} qabul qilinmagan. Quyidagi hisoblar hali ham taqsimlangan miqdor bo'yicha.",
+  'run.confirm.finish.receiptIssueLine': "{sku} · {store}: qabul {received}/{qty}",
+  'run.confirm.finish.receiptIssuesMore': "…yana {n} ta",
   'run.errors.expenseLabelRequired': 'Nomini kiriting',
   'run.errors.expenseLabelTooLong': "Nom juda uzun (200 dan ko'p emas)",
   'run.errors.expenseReasonRequired': 'Sababni kiriting',

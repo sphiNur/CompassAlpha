@@ -1186,6 +1186,10 @@ export const en = {
   'run.toast.couldNotAddExpense': 'Could not save the expense',
   'run.confirm.finish.expenses': '🧾 {n} off-catalog item(s) / expense(s) · {total} {currency}',
   'run.confirm.finish.perStoreHeading': 'Per-store settlement:',
+  'run.confirm.finish.receiptIssues':
+    '{n} lines were signed for with a problem; about {amount} {currency} was not received. The bills below still charge the split quantities.',
+  'run.confirm.finish.receiptIssueLine': '{sku} · {store}: received {received}/{qty}',
+  'run.confirm.finish.receiptIssuesMore': '…and {n} more',
   'run.errors.expenseLabelRequired': 'A description is required',
   'run.errors.expenseLabelTooLong': 'Description too long (200 max)',
   'run.errors.expenseReasonRequired': 'Reason is required',
