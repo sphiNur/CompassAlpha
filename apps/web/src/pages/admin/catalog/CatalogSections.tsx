@@ -1437,13 +1437,29 @@ export function DishesSection() {
       errToast('common.error')(new Error('dishes.errors.namesRequired'));
       return;
     }
-    const cleanIngredients = draft.ingredients
-      .filter((i) => i.skuId && Number(i.qtyPerServing) > 0)
-      .map((i) => ({
-        skuId: i.skuId,
-        qtyPerServing: Number(i.qtyPerServing).toFixed(4),
-        note: i.note.trim() || null,
-      }));
+    // CLS-11 (2026-10-30): a row with a product but no amount (or the
+    // reverse) was dropped without a word, and amounts / prices were
+    // rounded by toFixed. Only a row left completely blank is skipped now;
+    // anything half-filled or with too many digits stops the save.
+    const filled = draft.ingredients.filter((i) => i.skuId || i.qtyPerServing.trim());
+    if (filled.some((i) => !i.skuId || !(Number(i.qtyPerServing) > 0))) {
+      errToast('common.error')(new Error('dishes.errors.incompleteIngredient'));
+      return;
+    }
+    if (filled.some((i) => !/^\d{1,8}(\.\d{1,4})?$/.test(i.qtyPerServing.trim()))) {
+      errToast('common.error')(new Error('dishes.errors.qtyTooLarge'));
+      return;
+    }
+    const price = draft.unitPrice.trim();
+    if (price && !/^\d{1,12}(\.\d{1,2})?$/.test(price)) {
+      errToast('common.error')(new Error('dishes.errors.priceTooLarge'));
+      return;
+    }
+    const cleanIngredients = filled.map((i) => ({
+      skuId: i.skuId,
+      qtyPerServing: i.qtyPerServing.trim(),
+      note: i.note.trim() || null,
+    }));
     // 2026-10-21 CA-55: the server rejects a SKU listed twice; say so
     // before the round trip.
     if (new Set(cleanIngredients.map((i) => i.skuId)).size !== cleanIngredients.length) {
@@ -1455,7 +1471,7 @@ export function DishesSection() {
       code: draft.code.trim() || null,
       names: cleanNames,
       description: draft.description,
-      unitPrice: draft.unitPrice.trim() ? Number(draft.unitPrice).toFixed(2) : null,
+      unitPrice: price || null,
       ingredients: cleanIngredients,
     });
   };

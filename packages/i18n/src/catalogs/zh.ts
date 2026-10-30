@@ -1440,6 +1440,8 @@ export const zh = {
   'dishes.errors.ingredientQtyMustBePositive': '食材用量必须 > 0。',
   'dishes.errors.ingredientSkuNotFound': '配方中引用了未知 SKU。',
   'dishes.errors.notFound': '菜品未找到。',
+  'dishes.errors.incompleteIngredient': '有一行食材没选商品或没填用量，请补全或删掉这一行。',
+  'sales.errors.qtyFormat': '份数要大于 0，最多两位小数。',
   'dishes.errors.codeTaken': '这个编号已被别的菜品使用。',
   'dishes.errors.priceTooLarge': '售价最多 12 位整数、2 位小数。',
   'dishes.errors.qtyTooLarge': '用量最多 8 位整数、4 位小数。',

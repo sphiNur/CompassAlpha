@@ -1532,6 +1532,8 @@ export const uz = {
   'dishes.errors.ingredientQtyMustBePositive': "Ingredient miqdori > 0 bo'lishi kerak.",
   'dishes.errors.ingredientSkuNotFound': "Retseptda noma'lum SKU.",
   'dishes.errors.notFound': 'Taom topilmadi.',
+  'dishes.errors.incompleteIngredient': "Masalliq qatorida mahsulot yoki miqdor yo'q — to'ldiring yoki o'chiring.",
+  'sales.errors.qtyFormat': "Porsiyalar 0 dan katta, ko'pi bilan 2 kasr bo'lsin.",
   'dishes.errors.codeTaken': 'Bu kod boshqa taomda ishlatilgan.',
   'dishes.errors.priceTooLarge': "Narx: ko'pi bilan 12 raqam va 2 kasr.",
   'dishes.errors.qtyTooLarge': "Miqdor: ko'pi bilan 8 raqam va 4 kasr.",

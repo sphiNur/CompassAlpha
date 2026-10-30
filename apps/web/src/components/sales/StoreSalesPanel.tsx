@@ -261,11 +261,14 @@ export function StoreSalesPanel({
                   disabled={listErrored || !draftDishId || Number(draftQty) <= 0}
                   onClick={() => {
                     if (listErrored || !draftDishId || Number(draftQty) <= 0) return;
-                    record.mutate({
-                      storeId,
-                      dishId: draftDishId,
-                      qty: Number(draftQty).toFixed(2),
-                    });
+                    // CLS-11: 1.005 was silently sent as 1.00 and 0.001 as
+                    // 0.00 (then refused as 「出错了」). Say what is allowed.
+                    const qty = draftQty.trim();
+                    if (!/^\d{1,6}(\.\d{1,2})?$/.test(qty)) {
+                      errToast('sales.errors.qtyFormat')(new Error('sales.errors.qtyFormat'));
+                      return;
+                    }
+                    record.mutate({ storeId, dishId: draftDishId, qty });
                   }}
                 >
                   {i18n.t('sales.form.recordBtn')}
