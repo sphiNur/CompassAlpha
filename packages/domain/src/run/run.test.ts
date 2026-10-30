@@ -662,6 +662,17 @@ describe('run.decide', () => {
     ).reduce(applyRun, s);
     expect(s.items.get('sku-1')?.unitPrice).toBe('15000');
 
+    // DLV-3: a purchase undone during the correction leaves the item
+    // pending, and the run cannot close until it is handled.
+    const undone = decideRun(
+      s,
+      { type: 'UndoPurchase', skuId: 'sku-1', reason: 'check', actor: superAdmin() },
+      clock,
+    ).reduce(applyRun, s);
+    expect(() => decideRun(undone, { type: 'RefinalizeRun', actor: superAdmin() }, clock)).toThrow(
+      'run.errors.itemsPending',
+    );
+
     // Refinalize: totals recomputed from the amended state.
     const refinEvs = decideRun(s, { type: 'RefinalizeRun', actor: superAdmin() }, clock);
     s = refinEvs.reduce(applyRun, s);

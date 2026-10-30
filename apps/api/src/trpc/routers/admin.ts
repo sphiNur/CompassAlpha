@@ -5097,7 +5097,7 @@ export const adminRouter = router({
             tx
               .execute(
                 sql`SELECT count(*)::int AS n FROM inventory.movements
-                WHERE org_id = ${orgId} AND source_type = 'run'
+                WHERE org_id = ${orgId} AND source_type IN ('run', 'run_amend')
                   AND source_id IN (SELECT id FROM read_model.market_runs_v WHERE org_id = ${orgId})`,
               )
               .then((rows) => rows as unknown as Array<{ n: number }>),
@@ -5139,7 +5139,7 @@ export const adminRouter = router({
         // Order: dependents first, then parents.
         await tx.execute(
           sql`DELETE FROM inventory.movements
-              WHERE org_id = ${orgId} AND source_type = 'run'
+              WHERE org_id = ${orgId} AND source_type IN ('run', 'run_amend')
                 AND source_id IN (SELECT id FROM read_model.market_runs_v WHERE org_id = ${orgId})`,
         );
         await tx.execute(
@@ -6015,7 +6015,8 @@ export function runMovements(orgId: string, runIds: string[]): ReturnType<typeof
     runIds.map((id) => sql`${id}::uuid`),
     sql`, `,
   );
-  return sql`(org_id = ${orgId} AND source_type = 'run' AND source_id IN (${ids}))`;
+  // DLV-3: corrections of a finished run book 'run_amend' rows too.
+  return sql`(org_id = ${orgId} AND source_type IN ('run', 'run_amend') AND source_id IN (${ids}))`;
 }
 
 // ---------- session/run cascade helpers ----------

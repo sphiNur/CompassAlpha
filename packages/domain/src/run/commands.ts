@@ -922,6 +922,12 @@ export function decideRun(
       if (state.status !== 'amending') {
         throw preconditionFailed('run.errors.notRefinalizable', { status: state.status });
       }
+      // DLV-3 (2026-10-30): a correction may add an item; the run cannot
+      // close again with it neither bought nor marked unavailable.
+      const allHandled = Array.from(state.items.values()).every(
+        (i) => i.status === 'purchased' || i.status === 'unavailable',
+      );
+      if (!allHandled) throw preconditionFailed('run.errors.itemsPending');
       // Recompute totals from the amended state (same math as FinishRun)
       // so the read model's frozen totals are correct again.
       const { total, totalCash, totalTransfer, expensesTotal } = computeRunTotals(state);
