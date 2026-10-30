@@ -44,32 +44,7 @@ export function DataState<T>({
     );
   }
   if (query.isError) {
-    // 2026-10-21 FE-10: translated message (not the raw i18n key) plus a
-    // retry, so a dropped connection is recoverable without leaving the page.
-    const refetch = query.refetch;
-    return (
-      <Banner
-        tone="danger"
-        title={errorTitle ?? labels.errorTitle}
-        action={
-          refetch ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              loading={query.isFetching}
-              disabled={query.isFetching}
-              onClick={() => {
-                void refetch();
-              }}
-            >
-              {labels.retry}
-            </Button>
-          ) : null
-        }
-      >
-        {resolveDataStateError(query.error, labels.translateError, labels.errorUnknown)}
-      </Banner>
-    );
+    return <QueryErrorBanner query={query} title={errorTitle} />;
   }
   if (!query.data) {
     return <EmptyState title={labels.emptyNoData} />;
@@ -78,4 +53,47 @@ export function DataState<T>({
     return <>{empty ?? <EmptyState title={labels.emptyNothingYet} />}</>;
   }
   return <>{children(query.data)}</>;
+}
+
+/**
+ * DataState's error state on its own, for screens that lay out loading /
+ * empty / list themselves (CLS-1 / F11, 2026-10-30: the inventory list
+ * checked only `isLoading`, so a failed load read "no stock data yet" and
+ * offered actions on top of it). Translated message plus a retry, so a
+ * dropped connection is recoverable without leaving the page.
+ */
+export function QueryErrorBanner({
+  query,
+  title,
+}: {
+  query: Pick<QueryLike<unknown>, 'isFetching' | 'error' | 'refetch'>;
+  title?: ReactNode;
+}) {
+  // 2026-10-21 FE-10: translated message (not the raw i18n key) plus a
+  // retry, so a dropped connection is recoverable without leaving the page.
+  const labels = useUiLabels();
+  const refetch = query.refetch;
+  return (
+    <Banner
+      tone="danger"
+      title={title ?? labels.errorTitle}
+      action={
+        refetch ? (
+          <Button
+            size="sm"
+            variant="secondary"
+            loading={query.isFetching}
+            disabled={query.isFetching}
+            onClick={() => {
+              void refetch();
+            }}
+          >
+            {labels.retry}
+          </Button>
+        ) : null
+      }
+    >
+      {resolveDataStateError(query.error, labels.translateError, labels.errorUnknown)}
+    </Banner>
+  );
 }

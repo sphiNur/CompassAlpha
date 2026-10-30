@@ -34,6 +34,7 @@ import {
   ChipBar,
   ConfirmSheet as PriceCheckSheet,
   DataState,
+  QueryErrorBanner,
   EmptyState,
   Input,
   Sheet,
@@ -50,6 +51,7 @@ import { usePhotoUploader } from '../hooks/usePhotoUploader';
 // through other paths if needed.
 import { usePageMenu } from '../app/PageMenuContext';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
+import { PendingSyncNotice } from '../components/PendingSyncNotice';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
@@ -1971,6 +1973,9 @@ export function RunPage() {
         </div>
       ) : null}
 
+      {/* BUY-8 (2026-10-30): purchases saved offline used to look unsaved. */}
+      <PendingSyncNotice count={offline.pendingCount} />
+
       {/* 2026-10-21 CA-04: run switcher. Shown once there is more than one
           open run (one being bought + earlier ones still delivering), or
           when only delivering runs are open while approved orders wait —
@@ -2079,7 +2084,11 @@ export function RunPage() {
       </Sheet>
 
       <div className="flex flex-col gap-2 px-4 pt-2">
-        {!activeRun ? (
+        {runsQuery.isError && !runsQuery.data ? (
+          // F11 (2026-10-30): a failed run list read as "no approved
+          // orders to plan" — the buyer was told there was nothing to buy.
+          <QueryErrorBanner query={runsQuery} />
+        ) : !activeRun ? (
           <DataState query={previewQuery}>
             {(p) =>
               p.sessions.length === 0 ? (
