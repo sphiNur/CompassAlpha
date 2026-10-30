@@ -121,3 +121,19 @@ export function claimRowForUpdateSql(stream: ClaimStream, id: string): SQL {
     FOR UPDATE OF c
   `;
 }
+
+/**
+ * The seq of the event appended after `lastSeq`.
+ *
+ * RE-APR-1 (2026-10-30): `last_seq` is a bigint column, and raw
+ * `tx.execute` returns it as a STRING, so `cur.last_seq + 1` built
+ * "17" + 1 = "171". Every timeout release (and orphan repair) wrote an
+ * event with a jumped seq, after which the stream refused all writes.
+ */
+export function nextSeq(lastSeq: number | string | bigint): number {
+  const n = Number(lastSeq);
+  if (!Number.isSafeInteger(n) || n < 0) {
+    throw new Error(`invalid last_seq: ${String(lastSeq)}`);
+  }
+  return n + 1;
+}

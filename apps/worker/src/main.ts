@@ -41,6 +41,7 @@ import {
   claimRowForUpdateSql,
   type DbTimestamp,
   isClaimExpired,
+  nextSeq,
   staleClaimCandidatesSql,
 } from './claimTimeout';
 
@@ -423,14 +424,14 @@ if (CLAIM_TIMEOUT_MINUTES > 0) {
 type StaleClaimCandidate = {
   id: string;
   org_id: string;
-  last_seq: number;
+  last_seq: number | string; // bigint: a string from raw tx.execute
   claimed_by_member_id: string;
   claimed_at: DbTimestamp;
   last_claimer_event_at: DbTimestamp | null;
 };
 
 type LockedClaimRow = {
-  last_seq: number;
+  last_seq: number | string; // bigint: a string from raw tx.execute
   claimed_by_member_id: string | null;
   claimed_at: DbTimestamp | null;
   status: string;
@@ -487,7 +488,7 @@ async function releaseStaleClaims(): Promise<number> {
         ) {
           return false;
         }
-        const newSeq = cur.last_seq + 1;
+        const newSeq = nextSeq(cur.last_seq);
         const occurredAt = new Date();
         // Append the timeout event. Schema invariant: (stream_id, seq)
         // is uniqueIndex'd so a racing append would error out here —
@@ -576,7 +577,7 @@ async function releaseStaleRunClaims(): Promise<number> {
         ) {
           return false;
         }
-        const newSeq = cur.last_seq + 1;
+        const newSeq = nextSeq(cur.last_seq);
         const occurredAt = new Date();
         await tx.insert(s.events).values({
           id: randomUUID(),
@@ -655,7 +656,7 @@ async function repairOrphanedSessions(): Promise<number> {
   )) as unknown as Array<{
     session_id: string;
     org_id: string;
-    last_seq: number;
+    last_seq: number | string; // bigint: a string from raw tx.execute
     run_id: string;
   }>;
   if (candidates.length === 0) return 0;
@@ -674,7 +675,7 @@ async function repairOrphanedSessions(): Promise<number> {
           WHERE sess.id = ${row.session_id}
           FOR UPDATE OF sess
         `)) as unknown as Array<{
-          last_seq: number;
+          last_seq: number | string; // bigint: a string from raw tx.execute
           status: string;
           run_id: string | null;
           run_status: string | null;
@@ -684,7 +685,7 @@ async function repairOrphanedSessions(): Promise<number> {
         const repair = orphanRepairFor(cur.run_status, cur.run_id);
         if (!repair) return false;
 
-        const newSeq = cur.last_seq + 1;
+        const newSeq = nextSeq(cur.last_seq);
         const occurredAt = new Date();
         // Append the repair event directly. Skipping decideOrder()
         // here is intentional — the domain layer would re-validate

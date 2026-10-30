@@ -7,6 +7,7 @@ import {
   claimLastActiveAt,
   claimRowForUpdateSql,
   isClaimExpired,
+  nextSeq,
   staleClaimCandidatesSql,
 } from './claimTimeout';
 
@@ -46,6 +47,18 @@ describe('timestamps as raw tx.execute returns them (strings)', () => {
         timeoutMinutes: 30,
       }),
     ).toBe(true);
+  });
+});
+
+describe('nextSeq (RE-APR-1)', () => {
+  test('a bigint seq read back as a string is added, not concatenated', () => {
+    expect(nextSeq('17')).toBe(18);
+    expect(nextSeq(8)).toBe(9);
+    expect(nextSeq(0n)).toBe(1);
+  });
+  test('refuses a value that is not a seq', () => {
+    expect(() => nextSeq('abc')).toThrow();
+    expect(() => nextSeq(-1)).toThrow();
   });
 });
 
@@ -258,6 +271,10 @@ describe.skipIf(!SHOULD_RUN)('claim timeout SQL (PG-gated)', () => {
     // Raw execute returns timestamptz as a string, not a Date; the
     // helpers must accept that (the old `claimed_at.getTime()` threw).
     expect(typeof row!.claimed_at).toBe('string');
+    // RE-APR-1: last_seq (bigint) also comes back as a string; the next
+    // event's seq must be numeric, not "<seq>1".
+    const seqRow = row as unknown as { last_seq: string | number };
+    expect(nextSeq(seqRow.last_seq)).toBe(Number(seqRow.last_seq) + 1);
     expect(row!.last_claimer_event_at).not.toBeNull();
     expect(
       isClaimExpired({
