@@ -385,5 +385,30 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
     const err = await errorOf(() => staff.report.totals(range));
     expect(err?.code).toBe('FORBIDDEN');
   });
+
+  test('SHL-2: the session carries effective permissions per store', async () => {
+    const { db, orgId, storeId, roleIds } = fix!;
+    const tag = `${Date.now()}`.slice(-9);
+    const [other] = await db
+      .insert(s.stores)
+      .values({ orgId, name: 'Second', code: `S-${tag.slice(-6)}` })
+      .returning();
+    const [u] = await db
+      .insert(s.users)
+      .values({ displayName: 'SHL2 split', tgUserId: BigInt(`3${tag}1`) })
+      .returning();
+    const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
+    for (const [sid, role] of [[storeId, 'staff'], [other!.id, 'manager']] as const) {
+      await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId: sid, assignedBy: u!.id });
+      await db
+        .insert(s.memberRoleBindings)
+        .values({ memberId: m!.id, roleId: roleIds[role]!, scopeType: 'store', scopeId: sid });
+    }
+    const session = await loadSession(db, u!.id, orgId, m!.id);
+    const me = await appRouter.createCaller(buildCtx(db, session!)).auth.me();
+    expect(me.storePermissions[storeId]).not.toContain('order.approve');
+    expect(me.storePermissions[other!.id]).toContain('order.approve');
+    expect(me.permissions).toContain('order.approve');
+  });
 });
 

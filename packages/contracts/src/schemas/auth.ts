@@ -148,6 +148,10 @@ export const SessionSchema = z.object({
    *  and the assign/unassign actions against this set. The server
    *  enforces with `getActorAdminStoreIds`. */
   adminStoreIds: z.array(UuidSchema).default([]),
+  /** SHL-2 / CLS-5 (2026-10-30): effective permission keys per store the
+   *  member is in (roles + overrides at that store, plus global ones).
+   *  `permissions` remains the flat union. */
+  storePermissions: z.record(z.string(), z.array(z.string())).default({}),
   /** True until the user confirms their name in onboarding. */
   needsOnboarding: z.boolean(),
 });
