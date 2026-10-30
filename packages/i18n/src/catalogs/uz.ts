@@ -797,6 +797,8 @@ export const uz = {
   'order.review.title': "Buyurtmani ko'rib chiqing",
   'order.review.itemsCount': '{n} ta mahsulot',
   'order.review.empty': 'Hozircha hech narsa tanlanmagan.',
+  'order.review.archived': 'Sotuvdan olingan',
+  'order.review.remove': 'Olib tashlash',
   'order.review.reviewSheet.title': "Buyurtmani ko'rib chiqing",
   'order.review.estimatedTotal': 'Taxminiy summa',
   'order.review.estimateHint': "~ oxirgi xarid narxi bo'yicha · {known} narxli · {unknown} narxsiz",

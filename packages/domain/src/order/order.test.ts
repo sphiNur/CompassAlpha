@@ -63,6 +63,29 @@ describe('order.decide (per-contributor lines)', () => {
     expect(row?.updatedByMemberId).toBe('mem-staff-a');
   });
 
+  test('ORD-10: a product archived while in a draft can be set to zero, not raised', () => {
+    let state = startedDraft();
+    state = decide(
+      state,
+      { type: 'AdjustItem', skuId: 'towel', qty: '1', sku: sku('towel'), actor: staff() },
+      { clock },
+    ).reduce(apply, state);
+    const archived = { ...sku('towel'), isArchived: true };
+    expect(() =>
+      decide(
+        state,
+        { type: 'AdjustItem', skuId: 'towel', qty: '1.5', sku: archived, actor: staff() },
+        { clock },
+      ),
+    ).toThrow();
+    state = decide(
+      state,
+      { type: 'AdjustItem', skuId: 'towel', qty: '0', sku: archived, actor: staff() },
+      { clock },
+    ).reduce(apply, state);
+    expect(Number(state.items.get(itemKey('towel', 'mem-staff-a'))?.qty ?? 0)).toBe(0);
+  });
+
   test('staff cannot edit a session owned by another staff', () => {
     // 0005: per-member ownership. memberA owns the session; memberB
     // tries to add a line to it and gets bounced.
