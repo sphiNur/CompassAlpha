@@ -213,6 +213,29 @@ async function checkWebSocket() {
   );
 }
 
+async function checkDevLoginOff() {
+  // RE-ENG-3 (2026-10-30): dev login is gated on env (and, as a second
+  // line, on "looks local" — which trusts request headers). Against a real
+  // deployment, prove the env gate is shut: even with the headers that make
+  // a request look local, the answer must be "disabled", never a persona
+  // list and never just "localhost only". Skipped for a local BASE.
+  const host = new URL(BASE).hostname;
+  if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return;
+  const r = await get('/trpc/auth.devPersonas', {
+    headers: {
+      'x-forwarded-host': 'localhost',
+      origin: 'http://localhost',
+      'x-forwarded-for': '127.0.0.1',
+    },
+  });
+  const body = await r.text();
+  record(
+    'dev login is disabled on this deployment (spoofed local headers -> devBypassDisabled)',
+    r.status === 403 && body.includes('auth.errors.devBypassDisabled'),
+    `status=${r.status} ${body.slice(0, 120)}`,
+  );
+}
+
 // ---- Run ----
 
 const tasks: Array<[string, () => Promise<void>]> = [
@@ -223,6 +246,7 @@ const tasks: Array<[string, () => Promise<void>]> = [
   ['upload auth', checkUploadAuth],
   ['client-log ingest', checkLogIngest],
   ['WebSocket endpoint', checkWebSocket],
+  ['dev login off', checkDevLoginOff],
 ];
 
 console.log(`▶ Compass smoke against ${BASE}\n`);
