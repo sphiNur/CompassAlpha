@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button, Field, Input, SectionLabel, useToast } from '@compass/ui';
 import { useI18n } from '../hooks/useI18n';
@@ -18,6 +18,10 @@ export function CreateWorkspaceForm({ onCreated }: { onCreated?: () => void }) {
   const setSession = useAuthStore((s) => s.setSession);
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
+  // AUTH-1: `isPending` only disables the button after a re-render, so a
+  // fast double tap created two workspaces with the same name. Lock in
+  // the click handler itself.
+  const submitting = useRef(false);
 
   const create = trpc.auth.createOrganization.useMutation({
     onSuccess(data) {
@@ -36,6 +40,9 @@ export function CreateWorkspaceForm({ onCreated }: { onCreated?: () => void }) {
       onCreated?.();
     },
     onError: errToast('workspace.create.failed'),
+    onSettled() {
+      submitting.current = false;
+    },
   });
 
   const canSubmit = name.trim().length >= 2 && !create.isPending;
@@ -58,6 +65,8 @@ export function CreateWorkspaceForm({ onCreated }: { onCreated?: () => void }) {
         loading={create.isPending}
         disabled={!canSubmit}
         onClick={() => {
+          if (submitting.current) return;
+          submitting.current = true;
           create.mutate({
             name: name.trim(),
             locale: i18n.locale,
