@@ -379,6 +379,14 @@ export const uz = {
   'auth.noAccess.title': 'Ruxsat berilmagan',
   'auth.noAccess.body':
     "Telegram akkauntingiz tanildi, ammo bu tashkilotda hali rolingiz yo'q. Administrator ruxsat berishi kerak.",
+  'shell.noTabs.title':
+    "Hozircha siz uchun bo'lim yo'q",
+  'shell.noTabs.body':
+    "Rolingizda buyurtma, tekshiruv, xarid yoki boshqa bo'limlarga ruxsat yo'q. Kerak bo'lsa, administratorga murojaat qiling.",
+  'auth.invite.failedStillIn':
+    "Taklif ishlamadi: {reason}. Siz hali ham «{org}»dasiz.",
+  'confirm.storeConfirmedAt':
+    "Qabul tasdiqlandi · {time}",
   'auth.onboarding.title': "Compass'ga xush kelibsiz",
   'auth.onboarding.body':
     "Hamkasblar buyurtma kartalari, tasdiqlash navbati va auditda ko'radigan ismingizni tasdiqlang. Keyinchalik faqat administrator o'zgartira oladi.",

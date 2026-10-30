@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Button, Banner, EmptyState, Input, Spinner } from '@compass/ui';
+import { Button, Banner, EmptyState, Input, Spinner, useToast } from '@compass/ui';
 import { useAuthStore, type AuthSession } from '../stores/authStore';
 import { noteSessionCleared, trpc } from '../lib/trpc';
 import { getTg, haptic } from '../hooks/useTelegram';
@@ -101,6 +101,7 @@ export function AuthGate({ children }: AuthGateProps) {
   const setSession = useAuthStore((s) => s.setSession);
   const clear = useAuthStore((s) => s.clear);
   const i18n = useI18n();
+  const toast = useToast();
   const [error, setError] = useState<string | null>(null);
   const [browserTgUserId, setBrowserTgUserId] = useState(initialDevBrowserTgUserId);
   const [browserAccessCode, setBrowserAccessCode] = useState('');
@@ -258,6 +259,14 @@ export function AuthGate({ children }: AuthGateProps) {
             ? i18n.t('common.networkError')
             : i18n.t('auth.errors.signInFailed');
       setError(message);
+      // AUTH-2 (2026-10-30): with a session already on the device the
+      // error banner (sign-in screen only) never shows, and the person
+      // landed in their old workspace believing they had joined.
+      if (session) {
+        toast.error(
+          i18n.t('auth.invite.failedStillIn', { reason: message, org: session.member.orgName }),
+        );
+      }
     },
   });
   const devBypassLogin = trpc.auth.devBypassLogin.useMutation({

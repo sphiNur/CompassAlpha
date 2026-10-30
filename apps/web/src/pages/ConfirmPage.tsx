@@ -28,7 +28,7 @@ import {
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton, haptic } from '../hooks/useTelegram';
-import { useI18n, useProductNameParts, useUnitLabel } from '../hooks/useI18n';
+import { useDateFormat, useI18n, useProductNameParts, useUnitLabel } from '../hooks/useI18n';
 import { usePhotoUploader } from '../hooks/usePhotoUploader';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { isLikelyNetworkError } from '../lib/networkError';
@@ -48,6 +48,7 @@ type DecisionStatus = ConfirmDecisionStatus;
 
 export function ConfirmPage() {
   const i18n = useI18n();
+  const dates = useDateFormat();
   const productNameParts = useProductNameParts();
   // 2026-07-30 (flow review): the receiving list printed the raw canonical
   // unit ("kg") while Run — the screen the goods just came from — printed
@@ -305,6 +306,14 @@ export function ConfirmPage() {
    *  used to fire repeated `confirmStore.mutate` calls — the user
    *  reported tapping 5+ times before the UI caught up. */
   const storeConfirmed = myItems.length > 0 && myItems.every((s) => !!s.confirmedAt);
+  // DLV-8 (2026-10-30): once signed, say so for as long as the page is
+  // open (a toast was all there was) and stop offering the verdicts.
+  const confirmedAt = storeConfirmed
+    ? myItems.reduce<string | null>((latest, s) => {
+        const at = s.confirmedAt ? String(s.confirmedAt) : null;
+        return at && (!latest || at > latest) ? at : latest;
+      }, null)
+    : null;
 
   /**
    * Bulk "everything arrived correctly" is one server transaction now.
@@ -529,7 +538,11 @@ export function ConfirmPage() {
                           </Button>
                         ) : null}
                       </div>
-                    ) : null}
+                    ) : (
+                      <div className="border-b border-[var(--c-divider)] px-4 py-2 text-old-label font-semibold text-[var(--c-success)]">
+                        {i18n.t('confirm.storeConfirmedAt', { time: dates.dateTime(confirmedAt) })}
+                      </div>
+                    )}
                     <ul className="flex flex-col" role="list">
                       {myItems.map((it) => {
                         const sku = skuById.get(it.skuId);
@@ -572,6 +585,8 @@ export function ConfirmPage() {
                                       ('confirm.status.' + s) as Parameters<typeof i18n.t>[0],
                                     )}
                                     selected={effectiveStatus === s}
+                                    disabled={storeConfirmed}
+                                    className={storeConfirmed && effectiveStatus !== s ? 'opacity-40' : undefined}
                                     onClick={() => {
                                       // Block any further taps once the
                                       // store side has been finalized.
