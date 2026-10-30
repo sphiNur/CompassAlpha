@@ -600,6 +600,7 @@ export function SkusSection() {
                         <Button
                           size="sm"
                           variant="pearl"
+                          loading={update.isPending && update.variables?.skuId === sk.id}
                           onClick={() => update.mutate({ skuId: sk.id, isArchived: false })}
                         >
                           {i18n.t('common.unarchive')}
@@ -905,6 +906,7 @@ export function SuppliersSection() {
                       <Button
                         size="sm"
                         variant="pearl"
+                        loading={update.isPending && update.variables?.supplierId === sp.id}
                         onClick={() => update.mutate({ supplierId: sp.id, isArchived: false })}
                       >
                         {i18n.t('common.unarchive')}
@@ -1600,6 +1602,7 @@ export function DishesSection() {
                         <Button
                           size="sm"
                           variant="pearl"
+                          loading={unarchive.isPending && unarchive.variables?.dishId === d.id}
                           onClick={() => unarchive.mutate({ dishId: d.id })}
                         >
                           {i18n.t('common.unarchive')}
