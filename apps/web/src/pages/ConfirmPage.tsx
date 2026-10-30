@@ -600,7 +600,10 @@ export function ConfirmPage() {
                                       // Block double-tap on the SAME chip —
                                       // the domain will return [] but we
                                       // save the round-trip entirely.
-                                      if (effectiveStatus === s) return;
+                                      // DLV-9 (2026-10-30): tapping the
+                                      // problem already chosen reopens it
+                                      // to correct the quantity or note.
+                                      if (effectiveStatus === s && s === 'ok') return;
                                       haptic('light');
                                       if (s === 'ok') {
                                         // Optimistic: paint the selection
@@ -640,6 +643,13 @@ export function ConfirmPage() {
                                             it.confirmStatus === s ? it.confirmReceivedQty : null,
                                           ),
                                         );
+                                        // DLV-9: keep the note and photo of a
+                                        // problem already reported (they were
+                                        // lost when switching problems).
+                                        if (it.confirmStatus && it.confirmStatus !== 'ok') {
+                                          setIssueNote(it.confirmNote ?? '');
+                                          setIssuePhoto(it.confirmPhotoUrl ?? null);
+                                        }
                                       }
                                     }}
                                   >

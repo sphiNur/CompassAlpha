@@ -14,6 +14,7 @@ import { useEffect, useRef } from 'react';
 import { useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { useAuthStore } from '../stores/authStore';
 import { trpc } from '../lib/trpc';
+import { useRefreshSession } from '../lib/refreshSession';
 
 const RECONNECT_BASE_MS = 1_000;
 const RECONNECT_MAX_MS = 30_000;
@@ -75,6 +76,9 @@ export function useRealtime(): void {
   const utils = trpc.useUtils();
   const utilsRef = useRef(utils);
   utilsRef.current = utils;
+  const refreshSession = useRefreshSession();
+  const refreshSessionRef = useRef(refreshSession);
+  refreshSessionRef.current = refreshSession;
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const stoppedRef = useRef(false);
@@ -168,12 +172,18 @@ export function useRealtime(): void {
             // the `catalog.*` ones used by the order screen.
             debouncedInvalidate([['admin']]);
             debouncedInvalidate([['catalog']]);
+            // CAT-12 (2026-10-30): the purchaser's expense templates.
+            debouncedInvalidate([['run', 'expenseTemplates']]);
             break;
           case 'people.changed':
             // Member / role binding / store assignment changes.
             // The admin people page reads multiple list queries; one
             // coarse `[admin]` invalidation covers them all.
             debouncedInvalidate([['admin']]);
+            // ADM-24 (2026-10-30): the change may be to this person's own
+            // roles; re-read the session so tabs and pages follow it
+            // instead of failing on the next request.
+            void refreshSessionRef.current();
             break;
           case 'notification':
             debouncedInvalidate([['notifications']]);

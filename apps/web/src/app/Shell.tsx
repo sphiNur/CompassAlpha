@@ -10,9 +10,11 @@ import {
   IconOrder,
   IconRun,
   IconSettlement,
+  Button,
   EmptyState,
   Spinner, useTapGuard } from '@compass/ui';
 import { OrderPage } from '../pages/OrderPage';
+import { PageErrorBoundary } from './PageErrorBoundary';
 import { ApprovalPage } from '../pages/ApprovalPage';
 import { ConfirmPage } from '../pages/ConfirmPage';
 // AdminPage is the heaviest screen in the bundle (~5k LoC + the role
@@ -543,7 +545,22 @@ function ShellInner() {
         {/* SHL-3 (2026-10-30): a member whose roles open no tab (only
             reports.view, say) got an empty bar over the order page. */}
         {visibleKeys.length > 0 ? (
-          PAGES[tab]()
+          <PageErrorBoundary
+            key={tab}
+            fallback={(retry) => (
+              <EmptyState
+                title={i18n.t('shell.pageError.title')}
+                description={i18n.t('shell.pageError.body')}
+                action={
+                  <Button variant="pearl" onClick={retry}>
+                    {i18n.t('common.retry')}
+                  </Button>
+                }
+              />
+            )}
+          >
+            {PAGES[tab]()}
+          </PageErrorBoundary>
         ) : (
           <EmptyState
             title={i18n.t('shell.noTabs.title')}

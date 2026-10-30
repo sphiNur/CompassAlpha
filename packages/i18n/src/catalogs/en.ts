@@ -487,6 +487,8 @@ export const en = {
     'Nothing here for you yet',
   'shell.noTabs.body':
     'Your role has no access to ordering, approvals, purchasing or any other section. Ask an admin if you need it.',
+  'shell.pageError.title': 'This page ran into a problem',
+  'shell.pageError.body': 'Other pages still work. Try again, or switch to another page.',
   'auth.invite.failedStillIn':
     'The invite did not work: {reason}. You are still in “{org}”.',
   'confirm.storeConfirmedAt':
