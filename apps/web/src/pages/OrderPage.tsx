@@ -1578,7 +1578,6 @@ type SkuRowSku = {
   names: Record<string, string>;
   unit: string;
   step: string;
-  suggestedQty?: string | number | null;
 };
 
 const SkuRow = memo(function SkuRow({
@@ -1622,8 +1621,9 @@ const SkuRow = memo(function SkuRow({
   //     suggested qty AND no cross-staff contribution count — most
   //     rows on a fresh order are exactly that case, so the row
   //     collapses to a single line.
-  const hasSecondaryLine =
-    !!sku.suggestedQty || (otherContribCount > 0 && totalQty > 0);
+  // ORD-20 (2026-10-30): a "suggested qty" line used to sit here too, but
+  // nothing ever wrote a suggestion, so it never showed.
+  const hasSecondaryLine = otherContribCount > 0 && totalQty > 0;
   const nm = productNameParts(sku);
   return (
     <li className="flex items-center justify-between border-b border-[var(--c-divider)] px-4 py-1.5 last:border-b-0">
@@ -1631,12 +1631,6 @@ const SkuRow = memo(function SkuRow({
         <NameCell primary={nm.primary} secondary={nm.secondary} size="prominent" />
         {hasSecondaryLine ? (
           <div className="mt-0.5 text-old-label leading-tight text-[var(--c-fg-muted)]">
-            {sku.suggestedQty
-              ? i18n.t('order.suggested', { qty: sku.suggestedQty })
-              : null}
-            {sku.suggestedQty && otherContribCount > 0 && totalQty > 0
-              ? ' · '
-              : null}
             {otherContribCount > 0 && totalQty > 0 ? (
               <>
                 <span className="font-semibold text-[var(--c-fg)]">
