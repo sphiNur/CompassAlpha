@@ -118,7 +118,7 @@ export function PhotoCapture({
             <button
               type="button"
               onClick={onClear}
-              className="press absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-[oklch(0%_0_0_/_0.7)] text-white"
+              className="press hit-44 absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full bg-[oklch(0%_0_0_/_0.7)] text-white"
               aria-label={labels.photoRemove}
             >
               ×

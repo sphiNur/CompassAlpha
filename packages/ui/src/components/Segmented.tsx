@@ -77,7 +77,9 @@ export function Segmented<V extends string>({
       role="radiogroup"
       aria-label={ariaLabel}
       className={cn(
-        'flex overflow-hidden rounded-[var(--r-utility)] ring-hairline',
+        // V4 (2026-10-30): no overflow-hidden — it clipped the segments'
+        // hit-44 tap areas. The end segments round their own corners.
+        'flex rounded-[var(--r-utility)] ring-hairline',
         isSm ? 'h-7' : 'h-[var(--control-h-sm)]',
         disabled && 'opacity-50 pointer-events-none',
         className,
@@ -97,7 +99,8 @@ export function Segmented<V extends string>({
               if (!active) onChange(opt.value);
             }}
             className={cn(
-              'press inline-flex items-center justify-center whitespace-nowrap font-medium tabular-nums',
+              'press hit-44 inline-flex items-center justify-center whitespace-nowrap font-medium tabular-nums',
+              'first:rounded-l-[var(--r-utility)] last:rounded-r-[var(--r-utility)]',
               isSm ? 'px-2 text-old-label' : 'px-3 text-old-body-sm',
               equalWidth ? 'flex-1' : 'shrink-0',
               active

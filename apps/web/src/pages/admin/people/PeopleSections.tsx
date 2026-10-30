@@ -2416,7 +2416,11 @@ function ScopeTab({
         <span
           className={
             'inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-old-tiny ' +
-            (active ? 'bg-white/25 text-white' : 'bg-[var(--c-action)] text-[var(--c-action-fg)]')
+            // V7: inverted on the active chip; white-on-white-tint went
+            // unreadable once the dark theme's action fill turned light.
+            (active
+              ? 'bg-[var(--c-action-fg)] text-[var(--c-action)]'
+              : 'bg-[var(--c-action)] text-[var(--c-action-fg)]')
           }
         >
           {count}

@@ -10,9 +10,10 @@ interface BannerProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title'> {
 
 const TONE: Record<NonNullable<BannerProps['tone']>, string> = {
   info: 'bg-[var(--c-surface-2)] text-[var(--c-fg)] ring-hairline',
-  success: 'bg-[oklch(96%_0.06_145)] text-[oklch(35%_0.16_145)]',
-  warn: 'bg-[oklch(97%_0.07_75)] text-[oklch(35%_0.16_75)]',
-  danger: 'bg-[oklch(96%_0.06_25)] text-[var(--c-danger)]',
+  // V7: status tints and inks are tokens so they follow the dark theme.
+  success: 'bg-[var(--c-success-bg)] text-[var(--c-success-ink)]',
+  warn: 'bg-[var(--c-warn-bg)] text-[var(--c-warn-ink)]',
+  danger: 'bg-[var(--c-danger-bg)] text-[var(--c-danger-ink)]',
 };
 
 export function Banner({ className, tone = 'info', title, action, children, ...rest }: BannerProps) {

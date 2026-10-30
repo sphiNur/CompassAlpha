@@ -1274,13 +1274,16 @@ export function OrderPage() {
             <button
               type="button"
               onClick={() => setBatchesOpen(true)}
-              className="press shrink-0 rounded-[var(--r-pill)] px-1.5 py-0.5 text-old-label tabular-nums text-[var(--c-action)]"
+              className="press hit-44 shrink-0 rounded-[var(--r-pill)] px-1.5 py-0.5 text-old-label tabular-nums text-[var(--c-action)]"
             >
               {i18n.t('order.batches.today', { n: batchesQuery.data!.length })}
             </button>
           ) : null}
         </div>
-        <ChipBar ariaLabel={i18n.t('order.categoriesAriaLabel')} className="-mx-4 px-4 py-0">
+        {/* V4: -my-1.5 py-1.5 instead of py-0 — same layout, but the
+            scroller keeps the 6px above and below that the chips' 44px tap
+            areas (hit-44) need; a scroller clips everything past its padding. */}
+        <ChipBar ariaLabel={i18n.t('order.categoriesAriaLabel')} className="-mx-4 -my-1.5 px-4 py-1.5">
           <Chip
             selected={activeCategory === null}
             onClick={() => {
@@ -1720,7 +1723,8 @@ function BatchStrip({
                 disabled={!onSelect || isCurrent}
                 onClick={() => onSelect?.(b.id)}
                 className={
-                  'flex w-full items-baseline justify-between gap-2 rounded-[var(--r-card)] px-3 py-2 text-left text-old-label ring-hairline ' +
+                  // V4: min-h-11 — a stacked list row is tapped across its whole height.
+                  'flex min-h-11 w-full items-center justify-between gap-2 rounded-[var(--r-card)] px-3 py-2 text-left text-old-label ring-hairline ' +
                   (onSelect && !isCurrent ? 'press ' : '') +
                   (isCurrent
                     ? 'bg-[var(--c-action)]/10 ring-1 ring-[var(--c-action)]'
@@ -2294,7 +2298,7 @@ function ExtraRowEditor({
                       onChange({ name: s.name });
                       setFocusing(false);
                     }}
-                    className="press flex w-full items-baseline justify-between gap-2 px-3 py-1.5 text-left text-old-body hover:bg-[var(--c-surface-2)]"
+                    className="press flex min-h-11 w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-old-body hover:bg-[var(--c-surface-2)]"
                   >
                     <span className="text-[var(--c-fg)]">{s.name}</span>
                     <span className="text-old-label text-[var(--c-fg-muted)]">

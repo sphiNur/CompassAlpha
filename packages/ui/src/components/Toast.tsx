@@ -61,10 +61,10 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 const TONE: Record<ToastTone, string> = {
   info: 'bg-[var(--c-surface-elevated)] text-[var(--c-fg)] ring-hairline',
   success:
-    'bg-[oklch(96%_0.06_145)] text-[oklch(35%_0.16_145)] ring-1 ring-[var(--c-success)]',
-  warn: 'bg-[oklch(97%_0.07_75)] text-[oklch(38%_0.16_75)] ring-1 ring-[var(--c-warning)]',
+    'bg-[var(--c-success-bg)] text-[var(--c-success-ink)] ring-1 ring-[var(--c-success)]',
+  warn: 'bg-[var(--c-warn-bg)] text-[var(--c-warn-ink)] ring-1 ring-[var(--c-warning)]',
   danger:
-    'bg-[oklch(96%_0.06_25)] text-[var(--c-danger)] ring-1 ring-[var(--c-danger)]',
+    'bg-[var(--c-danger-bg)] text-[var(--c-danger-ink)] ring-1 ring-[var(--c-danger)]',
 };
 
 let counter = 0;

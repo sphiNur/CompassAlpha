@@ -47,8 +47,11 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(
         className={cn(
           hSize,
           w,
-          'min-w-0 rounded-[var(--r-pill)] border border-[var(--c-divider)]',
+          // V9: the field's edge at 3:1 against the page.
+          'min-w-0 rounded-[var(--r-pill)] border border-[var(--c-field-border)]',
           'bg-[var(--c-surface-2)] px-3 text-old-h3 tabular-nums outline-none',
+          // V8: the browser's default placeholder grey was 2.19:1 here.
+          'placeholder:text-[var(--c-fg-subtle)]',
           'focus:border-[var(--c-action)]',
           rest.disabled ? 'opacity-50' : '',
           className,

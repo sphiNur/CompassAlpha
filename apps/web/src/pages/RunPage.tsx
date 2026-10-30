@@ -1945,7 +1945,7 @@ export function RunPage() {
                 })
               }
               title={i18n.t('run.action.addItem.title')}
-              className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-action)] px-2.5 py-0.5 text-old-label font-semibold text-[var(--c-action-fg)] active:opacity-70"
+              className="hit-44 shrink-0 rounded-[var(--r-pill)] bg-[var(--c-action)] px-2.5 py-0.5 text-old-label font-semibold text-[var(--c-action-fg)] active:opacity-70"
             >
               {i18n.t('run.action.addItem.button')}
             </button>

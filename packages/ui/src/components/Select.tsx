@@ -43,7 +43,8 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
         className={cn(
           'h-[var(--control-h)] w-full appearance-none rounded-[var(--r-pill)] bg-[var(--c-surface-2)] pl-4 pr-9 text-old-h3',
           'text-[var(--c-fg)]',
-          'outline-none ring-hairline',
+          // V9: the field's edge at 3:1 against the page (--c-field-border).
+          'outline-none ring-field',
           'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',
           'focus-visible:ring-offset-[var(--c-bg)]',
           'disabled:opacity-60',

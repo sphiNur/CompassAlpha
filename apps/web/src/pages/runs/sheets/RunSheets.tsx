@@ -820,7 +820,7 @@ export function AddItemSheet({
                     });
                   }}
                   className={
-                    'flex-1 rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium ' +
+                    'hit-44 flex-1 rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium ' +
                     (selected
                       ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
                       : 'text-[var(--c-fg-muted)]')
@@ -887,7 +887,7 @@ export function AddItemSheet({
                                 : 'merge',
                             })
                           }
-                          className="flex w-full items-baseline justify-between gap-2 px-3 py-2 text-left active:bg-[var(--c-surface-2)]"
+                          className="flex min-h-11 w-full items-center justify-between gap-2 px-3 py-2 text-left active:bg-[var(--c-surface-2)]"
                         >
                           <span className="min-w-0 truncate text-old-body">
                             {productName(sku)}
