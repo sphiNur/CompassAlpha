@@ -125,6 +125,13 @@ const SetIngredientsInputSchema = z.object({
 const SaveInputSchema = CreateInputSchema.extend({
   /** Absent → create a new dish; present → update that dish. */
   dishId: UuidSchema.optional(),
+  /**
+   * CLS-25 (2026-10-30): the dish's `updatedAt` when the editor opened it.
+   * When given and the dish has changed since, the save is refused instead
+   * of silently overwriting the other person's edit. Optional so clients
+   * that don't send it keep working.
+   */
+  expectedUpdatedAt: z.string().datetime().optional(),
 });
 
 type IngredientInput = z.infer<typeof IngredientSchema>;
@@ -393,10 +400,28 @@ export const dishesRouter = router({
           tx
             .update(s.dishes)
             .set({ ...fields, updatedAt: new Date() })
-            .where(and(eq(s.dishes.id, input.dishId), eq(s.dishes.orgId, orgId)))
+            .where(
+              and(
+                eq(s.dishes.id, input.dishId),
+                eq(s.dishes.orgId, orgId),
+                input.expectedUpdatedAt
+                  ? sql`date_trunc('milliseconds', ${s.dishes.updatedAt}) = ${input.expectedUpdatedAt}::timestamptz`
+                  : undefined,
+              ),
+            )
             .returning({ id: s.dishes.id }),
         );
         if (r.length === 0) {
+          if (input.expectedUpdatedAt) {
+            const still = await tx.query.dishes.findFirst({
+              where: (d, { eq: eq2, and: and2 }) =>
+                and2(eq2(d.id, input.dishId!), eq2(d.orgId, orgId)),
+              columns: { id: true },
+            });
+            if (still) {
+              throw new TRPCError({ code: 'CONFLICT', message: 'dishes.errors.changedElsewhere' });
+            }
+          }
           throw new TRPCError({ code: 'NOT_FOUND', message: 'dishes.errors.notFound' });
         }
         dishId = input.dishId;

@@ -1448,6 +1448,7 @@ export const zh = {
   'sales.errors.qtyTooLarge': '份数太大了。',
   'sales.errors.occurredInFuture': '销售时间不能晚于现在。',
   'inventory.errors.qtyTooLarge': '数量太大了。',
+  'dishes.errors.changedElsewhere': '这道菜刚被别人改过。关闭后重新打开，看到最新内容再改。',
 
   // ── 18. Sales (M2.0c) ──────────────────────────────────
   'sales.summary.today': '今日',

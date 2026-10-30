@@ -1540,6 +1540,7 @@ export const uz = {
   'sales.errors.qtyTooLarge': 'Porsiyalar soni juda katta.',
   'sales.errors.occurredInFuture': "Sotuv vaqti kelajakda bo'lishi mumkin emas.",
   'inventory.errors.qtyTooLarge': 'Miqdor juda katta.',
+  'dishes.errors.changedElsewhere': "Bu taomni hozirgina boshqa kishi o'zgartirdi. Yopib, qayta oching va so'nggi holatini ko'ring.",
 
   // ── 18. Sales (M2.0c) ──────────────────────────────────
   'sales.summary.today': 'Bugun',
