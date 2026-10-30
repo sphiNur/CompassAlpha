@@ -1731,6 +1731,8 @@ export const uz = {
   'settlement.errors.futureDate': "Hali boshlanmagan kunni yakunlab bo'lmaydi.",
   'settlement.errors.correctionReasonRequired': "Saqlangan kun yakunini o'zgartirish uchun tuzatish sababini yozing.",
   'settlement.errors.versionConflict': "Bu kun yakuni boshqa joyda o'zgartirilgan.",
+  'settlement.conflict.keptEdits': "So'nggi versiya yuklandi, siz o'zgartirgan summalar va izoh saqlab qolindi. Tekshirib, saqlang.",
+  'settlement.conflict.linesLost': "Xarajat va ish haqi qatorlarini so'nggi versiyaga o'tkazib bo'lmaydi — ularni qayta kiritish kerak. Baribir yangilansinmi?",
   'settlement.errors.versionConflictBody':
     'Tuzatishni saqlashdan oldin yozuvni yangilang va oxirgi versiyani tekshiring.',
   // 2026-10-21 audit decisions CA-03/04/06/11 (run selection, parallel runs,

@@ -1867,6 +1867,8 @@ export const en = {
   'settlement.errors.futureDate': 'You cannot close a day that has not started yet.',
   'settlement.errors.correctionReasonRequired': 'Changing a saved close needs a correction reason.',
   'settlement.errors.versionConflict': 'This daily close was changed elsewhere.',
+  'settlement.conflict.keptEdits': 'Loaded the latest version and kept the amounts and note you changed. Check them, then save.',
+  'settlement.conflict.linesLost': 'Expense and wage lines cannot be carried over to the latest version; you will need to enter them again. Refresh anyway?',
   'settlement.errors.versionConflictBody':
     'Refresh the record to review the latest version before saving your correction.',
   // 2026-10-21 audit decisions CA-03/04/06/11 (run selection, parallel runs,

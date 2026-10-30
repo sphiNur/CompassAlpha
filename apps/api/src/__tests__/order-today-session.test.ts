@@ -286,6 +286,11 @@ describe.skipIf(!SHOULD_RUN)('order follow-ups CA-25 / CA-27 / CA-43 (PG-gated)'
 
     await staff.order.submit({ sessionId });
     expect((await staff.order.todaySession(input))?.status).toBe('submitted');
+
+    // APR-18: an expectedSeq from an older read is refused, not ignored.
+    await expect(
+      staff.order.markExtraStatus({ sessionId, extraIndex: 0, status: 'bought', expectedSeq: 1 }),
+    ).rejects.toMatchObject({ message: 'order.errors.staleSeq' });
   });
 
   test('CA-25: a past-dated self-edit with no open draft is refused, not lazily created', async () => {
