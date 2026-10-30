@@ -1038,6 +1038,7 @@ export const en = {
   // M1.9-fix (2026-05-07): delivery store-row stage labels — were
   // hardcoded English on the purchaser's main during-run view.
   'run.deliveryStage.pending': 'Not delivered',
+  'run.deliveryStage.dispatchDenied': 'You are not allowed to deliver to this store',
   'run.deliveryStage.delivered': 'Awaiting confirm',
   'run.deliveryStage.confirmed': 'Confirmed',
   'run.deliveryStageBadge.pending': 'pending',

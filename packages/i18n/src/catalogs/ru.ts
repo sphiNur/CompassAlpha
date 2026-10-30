@@ -943,6 +943,7 @@ export const ru = {
   'run.label.splitsMismatch': 'Распределение: {sum} / {target}',
   // Этапы доставки (M1.9 fix)
   'run.deliveryStage.pending': 'Не доставлено',
+  'run.deliveryStage.dispatchDenied': 'Вам запрещена доставка в этот магазин',
   'run.deliveryStage.delivered': 'Ожидает подтверждения',
   'run.deliveryStage.confirmed': 'Подтверждено',
   'run.deliveryStageBadge.pending': 'в очереди',

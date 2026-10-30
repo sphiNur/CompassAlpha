@@ -950,6 +950,7 @@ export const uz = {
   'run.label.splitsMismatch': 'Taqsimot: {sum} / {target}',
   // Yetkazib berish bosqichi (M1.9 fix)
   'run.deliveryStage.pending': 'Yetkazilmagan',
+  'run.deliveryStage.dispatchDenied': "Bu do'konga yetkazishga ruxsatingiz yo'q",
   'run.deliveryStage.delivered': 'Tasdiqlash kutilmoqda',
   'run.deliveryStage.confirmed': 'Tasdiqlandi',
   'run.deliveryStageBadge.pending': 'kutilmoqda',
