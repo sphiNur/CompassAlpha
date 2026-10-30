@@ -83,6 +83,9 @@ export function evenSplitQty(
 export function proportionalSplitQty(
   demand: ReadonlyArray<{ storeId: string; qty: string }>,
   actualQtyStr: string,
+  /** BUY-13 (2026-10-30): the product's order step. Shares are rounded
+   *  down to it (no 5.625 pieces); the last store takes the remainder. */
+  step?: string,
 ): Array<{ storeId: string; qty: string }> | null {
   if (demand.length === 0) return null;
   const actual = Number(actualQtyStr);
@@ -94,6 +97,11 @@ export function proportionalSplitQty(
     return [{ storeId: demand[0]!.storeId, qty: actualQtyStr }];
   }
 
+  const stepNum = Number(step);
+  const roundDown = (v: number) =>
+    Number.isFinite(stepNum) && stepNum > 0
+      ? Math.floor(v / stepNum + 1e-9) * stepNum
+      : v;
   const out: Array<{ storeId: string; qty: string }> = [];
   let allocated = 0;
   for (let i = 0; i < demand.length; i++) {
@@ -101,10 +109,13 @@ export function proportionalSplitQty(
     if (i === demand.length - 1) {
       out.push({ storeId: d.storeId, qty: (actual - allocated).toFixed(SCALE) });
     } else {
-      const portion = ((Number(d.qty) / plannedTotal) * actual).toFixed(SCALE);
+      const portion = roundDown((Number(d.qty) / plannedTotal) * actual).toFixed(SCALE);
       allocated += Number(portion);
       out.push({ storeId: d.storeId, qty: portion });
     }
   }
+  // BUY-13: a store left with nothing (a tiny quantity, or rounding to the
+  // step) was sent as "0.000" and refused; let the full sheet decide.
+  if (out.some((o) => !(Number(o.qty) > 0))) return null;
   return out;
 }

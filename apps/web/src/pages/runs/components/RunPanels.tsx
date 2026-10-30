@@ -2107,6 +2107,9 @@ function VendorPickerSheet({
   const setSupplier = trpc.run.setSkuPreferredSupplier.useMutation({
     onSuccess: (_data, vars) => {
       void utils.run.previewCreatable.invalidate();
+      // BUY-18 (2026-10-30): an open run's by-stall view reads run.get,
+      // which otherwise changed only on the next poll.
+      void utils.run.get.invalidate();
       toast.success(
         i18n.t(
           vars.supplierId
