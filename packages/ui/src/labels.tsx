@@ -73,6 +73,7 @@ export interface UiLabels {
   photoRemove: string;
   photoHint: string;
   uploading: string;
+  photoUploadFailed: string;
 }
 
 export const DEFAULT_UI_LABELS: UiLabels = {
@@ -93,6 +94,7 @@ export const DEFAULT_UI_LABELS: UiLabels = {
   photoRemove: 'Remove photo',
   photoHint: 'Tap to take a photo',
   uploading: 'Uploading…',
+  photoUploadFailed: 'The photo did not upload. Try again.',
 };
 
 const UiLabelsContext = createContext<UiLabels>(DEFAULT_UI_LABELS);

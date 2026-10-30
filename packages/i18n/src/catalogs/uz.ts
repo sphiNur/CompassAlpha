@@ -48,6 +48,7 @@ export const uz = {
   'photo.remove': 'Rasmni olib tashlash',
   'photo.hint': 'Rasm olish uchun bosing',
   'photo.uploading': 'Yuklanmoqda…',
+  'photo.uploadFailed': "Rasm yuklanmadi. Qayta urinib ko'ring.",
   'common.create': 'Yaratish',
   'common.edit': 'Tahrirlash',
   'common.delete': "O'chirish",
@@ -932,7 +933,7 @@ export const uz = {
   'run.banner.readyToStart': 'Xaridni boshlashga tayyor',
   'run.banner.readyToStartBody': "Pastdagi tugmadan keyingi bosqichga o'ting.",
   'run.banner.planLockWarning':
-    "Boshlash {n} ta tasdiqlangan buyurtmani bu xaridga biriktiradi — ularni qayta ko'rib chiqishga qaytarib bo'lmaydi. Alohida buyurtmani baribir chiqarib tashlash mumkin.",
+    "Hozircha buyurtmalarni qayta ko'rib chiqishga qaytarish mumkin. Xarid boshlangach, bu {n} ta tasdiqlangan buyurtma xaridga biriktiriladi va ularni qaytarib bo'lmaydi. Alohida buyurtmani baribir chiqarib tashlash mumkin.",
   'run.banner.confirmingFinish':
     "Tugatilmoqchi. Bundan keyin narxlar, yetkazishlar va qabullarni o'zgartirib bo'lmaydi.",
   'run.section.items': 'Mahsulotlar',
@@ -1148,7 +1149,7 @@ export const uz = {
   'run.main.awaitingConfirms': "Do'konlarning tasdiqi kutilmoqda",
   'run.confirm.startPurchase.title': 'Xaridni boshlaymizmi?',
   'run.confirm.startPurchase.body':
-    "Xarid jarayonda deb belgilanadi. Hech narsa yozmagan bo'lsangiz, rejaga qaytishingiz mumkin.",
+    "Xarid jarayonda deb belgilanadi. Keyin rejaga qaytish mumkin (sabab ko'rsatiladi); yozilgan xaridlar saqlanib qoladi.",
   'run.confirm.startDelivery.title': 'Yetkazishni boshlaymizmi?',
   'run.confirm.startDelivery.body':
     "Hamma mahsulot yetkazishga tayyor bo'ladi. Hali bironta do'konga olib bormagan bo'lsangiz, xaridga qaytishingiz mumkin.",

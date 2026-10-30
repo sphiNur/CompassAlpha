@@ -1109,7 +1109,10 @@ export function RunPage() {
             ? i18n.t('run.offline.needNetworkToStart')
             : sessionIds.length === 0
               ? i18n.t('run.select.noneSelected')
-              : i18n.t('run.action.startPurchase'),
+              : !dateOk
+                ? // BUY-19: the button only greyed out; say why.
+                  i18n.t('run.errors.runDateInFuture')
+                : i18n.t('run.action.startPurchase'),
           onClick: () => {
             if (offline || sessionIds.length === 0 || !dateOk || create.isPending) return;
             create.mutate({
