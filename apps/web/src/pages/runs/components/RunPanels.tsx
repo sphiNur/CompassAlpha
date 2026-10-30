@@ -422,12 +422,22 @@ export function ActiveRunPanel({
                     )}
                   </span>
                 </span>
-                <Button size="sm" variant="pearl" onClick={() => onTopUpBuy(it)}>
-                  {i18n.t('run.topUp.buy')}
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => onTopUpDismiss(it)}>
-                  {i18n.t('run.topUp.dismiss')}
-                </Button>
+                {/* RE-BUY-1: an item that also serves stores this purchaser
+                    does not buy for is theirs to settle, not this one's. */}
+                {otherStoreSkusOf(run).has(it.skuId) ? (
+                  <span className="text-old-label text-[var(--c-fg-muted)]">
+                    {i18n.t('run.label.servesOtherStores')}
+                  </span>
+                ) : (
+                  <>
+                    <Button size="sm" variant="pearl" onClick={() => onTopUpBuy(it)}>
+                      {i18n.t('run.topUp.buy')}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => onTopUpDismiss(it)}>
+                      {i18n.t('run.topUp.dismiss')}
+                    </Button>
+                  </>
+                )}
               </li>
             ))}
           </ul>

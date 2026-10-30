@@ -413,6 +413,7 @@ export const en = {
   'common.required': 'Required',
   'common.error': 'Something went wrong',
   'common.networkError': 'Network error — check your connection',
+  'common.offlineNotSaved': 'No connection — this change was not saved. Try again once you are online.',
   // M1.20 (2026-05-08): generic rate-limit error returned by the
   // server-side mutation rate limiter when a (user, path) exceeds the
   // 120-per-minute budget. The auth-specific equivalent stays under
@@ -496,7 +497,11 @@ export const en = {
   'shell.noTabs.body':
     'Your role has no access to ordering, approvals, purchasing or any other section. Ask an admin if you need it.',
   'shell.offline.title': 'You are offline',
-  'shell.offline.body': 'What you see was loaded earlier; changes you make sync when the connection is back.',
+  'shell.pageNotLoaded.title': 'This page has not downloaded yet',
+  'shell.pageNotLoaded.body':
+    'It needs a connection to open. It loads by itself once you are online, or tap Retry.',
+  'shell.offline.body':
+    'You are seeing what was last loaded. Orders, purchases and receiving are kept on this phone and sync when you are back online; daily close, sales and admin need a connection to save.',
   'order.pendingSync': '{n} changes waiting to sync',
   'shell.pageError.title': 'This page ran into a problem',
   'shell.pageError.body': 'Other pages still work. Try again, or switch to another page.',
@@ -1135,6 +1140,8 @@ export const en = {
   'run.errors.cannotEjectSession': 'You do not have permission to return submissions from a run',
   'run.errors.storeAlreadyConfirmed': 'This store has already confirmed receipt',
   'run.errors.notVisible': 'This purchase run was not found or is not available to you',
+  'run.errors.priceFormat': 'Price must be above 0, with at most 12 digits and 2 decimals.',
+  'run.errors.qtyFormat': 'Quantity must be above 0, with at most 9 digits and 3 decimals.',
   'run.errors.itemServesOtherStores':
     'This item also serves stores you do not buy for; someone who buys for them must change it.',
   'run.errors.runHasOtherStores':
@@ -1158,6 +1165,7 @@ export const en = {
   'run.errors.allSessionsAlreadyInRun': 'Every selected session is already in this run',
   'run.errors.noSessionsToAttach': 'No sessions selected to attach',
   'run.action.remainingItems': '{n} left to handle',
+  'run.action.waitingOtherStores': 'The rest are for the buyer of the other stores',
   'run.action.startDelivery': 'Start delivery',
   'run.action.finish': 'Finish run',
   'run.action.cancelRun': 'Cancel run',

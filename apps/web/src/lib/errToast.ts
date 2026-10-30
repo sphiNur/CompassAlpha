@@ -34,6 +34,7 @@ import { useToast } from '@compass/ui';
 import { useI18n } from '../hooks/useI18n';
 import { haptic } from '../hooks/useTelegram';
 import { I18N_KEY_RE, zodIssueKey } from './errorText';
+import { isLikelyNetworkError } from './networkError';
 
 interface ErrLike {
   message?: string;
@@ -55,9 +56,15 @@ export function useErrToast(): (
     // A schema refusal carries its key inside the zod issue list.
     const msg = zodIssueKey(raw) ?? raw;
     const looksLikeKey = typeof msg === 'string' && I18N_KEY_RE.test(msg);
+    // RE-CLS-3 (2026-10-30): writes that reach here were NOT queued (the
+    // queued ones say "saved offline" themselves). Say plainly that nothing
+    // was saved, instead of a generic failure next to a banner promising
+    // that changes sync later.
     const text: ReactNode = looksLikeKey
       ? i18n.t(msg as Parameters<typeof i18n.t>[0])
-      : i18n.t(defaultKey);
+      : isLikelyNetworkError(err)
+        ? i18n.t('common.offlineNotSaved')
+        : i18n.t(defaultKey);
     toast.error(text);
   };
 }

@@ -901,10 +901,12 @@ export function OrderPage() {
     i18n,
   ]);
 
+  const viewingOtherBatch =
+    !!viewBatchId && !!viewQuery.data && viewQuery.data.id !== sessionQuery.data?.id;
   usePageMainButton(
     mainButtonText,
     () => {
-      if (!canSubmit || selectedCount === 0 || submit.isPending) return;
+      if (!canSubmit || selectedCount === 0 || submit.isPending || viewingOtherBatch) return;
       if (reviewOpen) {
         if (!sessionQuery.data) return;
         void handleSubmit();
@@ -913,7 +915,10 @@ export function OrderPage() {
       }
     },
     {
-      visible: canSubmit && selectedCount > 0 && !sessionBlocked,
+      // RE-ORD-1 (2026-10-30): while another batch is shown read-only the
+      // button would still act on the current draft — tapping it submitted
+      // a batch the user was not looking at. No main button there.
+      visible: canSubmit && selectedCount > 0 && !sessionBlocked && !viewingOtherBatch,
       active: selectedCount > 0 && !submit.isPending && !sessionBlocked,
     },
   );
