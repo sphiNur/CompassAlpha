@@ -553,6 +553,11 @@ function WorkspaceSection() {
           {/* M1.17: read-out of the new financial trio so anyone with
               Admin access can see the active settings at a glance. The
               edit affordance is the ListRow below (admin-only). */}
+          {/* AUTH-25 (2026-10-30): the section hint promised a time zone. */}
+          <DetailRow
+            label={i18n.t('admin.workspace.timezone')}
+            value={session?.member.timezone ?? '—'}
+          />
           <DetailRow label={i18n.t('admin.workspace.currency')} value={currency} />
           <DetailRow
             label={i18n.t('admin.workspace.taxRate')}
@@ -561,8 +566,9 @@ function WorkspaceSection() {
         </div>
       </Card>
       <div className="mt-3 flex flex-col gap-2">
+        {/* AUTH-25: this is the viewer's own language, not the org's. */}
         <ListRow
-          label={i18n.t('settings.language.title')}
+          label={i18n.t('admin.workspace.myLanguage')}
           hint={localeLabels[currentLocale] ?? currentLocale}
           onClick={() => setLangSheetOpen(true)}
         />

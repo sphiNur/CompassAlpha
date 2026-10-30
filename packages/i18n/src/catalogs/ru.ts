@@ -493,7 +493,7 @@ export const ru = {
   'admin.section.permissions': 'Роли и права',
   'admin.section.catalog': 'Каталог',
   'admin.section.operations': 'Операции',
-  'admin.section.organizationHint': 'Информация, язык, часовой пояс',
+  'admin.section.organizationHint': 'Информация, часовой пояс, мой язык',
   'admin.section.storesHint': 'Откройте магазин, чтобы управлять командой и настройками',
   'admin.section.permissionsHint': 'Встроенные роли, ранги, матрица прав',
   'admin.section.catalogHint': 'Категории, товары, поставщики',
@@ -1391,6 +1391,8 @@ export const ru = {
   // ── 15. Org financial settings (M1.17) ────────────────
   'admin.workspace.currency': 'Валюта',
   'admin.workspace.taxRate': 'Ставка налога',
+  'admin.workspace.timezone': 'Часовой пояс',
+  'admin.workspace.myLanguage': 'Мой язык',
   'admin.workspace.taxRateHint': 'Стандартный НДС %. 0 — не отслеживать.',
   'admin.workspace.pricesIncludeTax': 'Цены с налогом',
   'admin.workspace.pricesIncludeTaxOn': 'С НДС (как на прилавке)',

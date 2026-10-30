@@ -459,7 +459,7 @@ export const zh = {
   'admin.section.permissions': '角色与权限',
   'admin.section.catalog': '目录',
   'admin.section.operations': '运营',
-  'admin.section.organizationHint': '组织信息、语言、时区',
+  'admin.section.organizationHint': '组织信息、时区、我的语言',
   'admin.section.storesHint': '点击门店管理其人员与设置',
   'admin.section.permissionsHint': '内置角色、等级、权限矩阵',
   'admin.section.catalogHint': '分类、商品、供应商',
@@ -1317,6 +1317,8 @@ export const zh = {
   // ── 15. Org financial settings (M1.17) ────────────────
   'admin.workspace.currency': '币种',
   'admin.workspace.taxRate': '税率',
+  'admin.workspace.timezone': '时区',
+  'admin.workspace.myLanguage': '我的语言',
   'admin.workspace.taxRateHint': '标准 VAT 百分比，0 表示不追踪税。',
   'admin.workspace.pricesIncludeTax': '价格含税',
   'admin.workspace.pricesIncludeTaxOn': '含税（市场报价）',

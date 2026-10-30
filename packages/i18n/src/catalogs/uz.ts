@@ -494,7 +494,7 @@ export const uz = {
   'admin.section.permissions': 'Rollar va ruxsatlar',
   'admin.section.catalog': 'Katalog',
   'admin.section.operations': 'Operatsiyalar',
-  'admin.section.organizationHint': "Tashkilot ma'lumoti, til, vaqt mintaqasi",
+  'admin.section.organizationHint': "Tashkilot ma'lumoti, vaqt mintaqasi, mening tilim",
   'admin.section.storesHint': "Do'konni oching va jamoa bilan sozlamalarni boshqaring",
   'admin.section.permissionsHint': "O'rnatilgan rollar, darajalar, ruxsatlar matritsasi",
   'admin.section.catalogHint': 'Toifalar, mahsulotlar, yetkazib beruvchilar',
@@ -1402,6 +1402,8 @@ export const uz = {
   // ── 15. Org financial settings (M1.17) ────────────────
   'admin.workspace.currency': 'Valyuta',
   'admin.workspace.taxRate': 'Soliq stavkasi',
+  'admin.workspace.timezone': 'Vaqt mintaqasi',
+  'admin.workspace.myLanguage': 'Mening tilim',
   'admin.workspace.taxRateHint': 'Standart QQS %. 0 = soliqsiz.',
   'admin.workspace.pricesIncludeTax': 'Narxlar soliq bilan',
   'admin.workspace.pricesIncludeTaxOn': "Brutto (do'kondagi narx)",

@@ -557,7 +557,7 @@ export const en = {
   'admin.section.permissions': 'Roles & Permissions',
   'admin.section.catalog': 'Catalog',
   'admin.section.operations': 'Operations',
-  'admin.section.organizationHint': 'Org info, locale, timezone',
+  'admin.section.organizationHint': 'Org info, time zone, my language',
   'admin.section.storesHint': 'Open a store to manage its team and settings',
   'admin.section.permissionsHint': 'Built-in roles, ranks, permission matrix',
   'admin.section.catalogHint': 'Categories, SKUs, suppliers',
@@ -1525,6 +1525,8 @@ export const en = {
   // in M2.x.
   'admin.workspace.currency': 'Currency',
   'admin.workspace.taxRate': 'Tax rate',
+  'admin.workspace.timezone': 'Time zone',
+  'admin.workspace.myLanguage': 'My language',
   'admin.workspace.taxRateHint': 'Standard VAT %. Set 0 to disable tax tracking.',
   'admin.workspace.pricesIncludeTax': 'Prices include tax',
   'admin.workspace.pricesIncludeTaxOn': 'Gross (price as quoted at the stall)',
