@@ -66,10 +66,10 @@ describe('checkReceivedQty', () => {
   it('ok sends nothing', () => {
     expect(checkReceivedQty('ok', '5', '2')).toEqual({ ok: true, value: null });
   });
-  it('short requires a value within 0..split', () => {
+  it('short requires a value from 0 to below the split', () => {
     expect(checkReceivedQty('short', '', '2')).toEqual({ ok: false, reason: 'required' });
     expect(checkReceivedQty('short', '1,5', '2')).toEqual({ ok: true, value: '1.5' });
-    expect(checkReceivedQty('short', '2', '2')).toEqual({ ok: true, value: '2' });
+    expect(checkReceivedQty('short', '2', '2')).toEqual({ ok: false, reason: 'notShort' });
     expect(checkReceivedQty('short', '2.5', '2')).toEqual({ ok: false, reason: 'exceeds' });
     expect(checkReceivedQty('short', '-1', '2')).toEqual({ ok: false, reason: 'invalid' });
     expect(checkReceivedQty('short', '1.2345', '2')).toEqual({ ok: false, reason: 'invalid' });
