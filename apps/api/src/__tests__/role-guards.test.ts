@@ -354,5 +354,36 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
     // Without the field the old behaviour (last write wins) is unchanged.
     await owner.dishes.save({ dishId, names: { en: 'No version' }, ingredients: [] });
   });
+  test('HIS-19: reports.view alone opens finance for its own store; neither key is refused', async () => {
+    const { db, orgId, storeId, roleIds } = fix!;
+    const tag = `${Date.now()}`.slice(-9);
+    const [accountant] = await db
+      .insert(s.roles)
+      .values({ orgId, slug: `acct-${tag}`, name: 'Accountant', rank: 15, isBuiltIn: false })
+      .returning();
+    await db.insert(s.permissions).values({ key: 'reports.view', description: 'reports.view' }).onConflictDoNothing();
+    await db.insert(s.rolePermissions).values({ roleId: accountant!.id, permissionKey: 'reports.view' });
+    const person = async (roleId: string, n: number) => {
+      const [u] = await db
+        .insert(s.users)
+        .values({ displayName: `HIS19 ${n}`, tgUserId: BigInt(`4${tag}${n}`) })
+        .returning();
+      const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
+      await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId, assignedBy: u!.id });
+      await db
+        .insert(s.memberRoleBindings)
+        .values({ memberId: m!.id, roleId, scopeType: 'store', scopeId: storeId });
+      const session = await loadSession(db, u!.id, orgId, m!.id);
+      return appRouter.createCaller(buildCtx(db, session!));
+    };
+    const reader = await person(accountant!.id, 1);
+    const range = { startDate: '2026-10-01', endDate: '2026-10-30' };
+    await expect(reader.report.totals(range)).resolves.toBeDefined();
+    const stores = await reader.catalog.stores({ permission: 'finance' });
+    expect(stores.map((st) => st.id)).toEqual([storeId]);
+    const staff = await person(roleIds.staff!, 2);
+    const err = await errorOf(() => staff.report.totals(range));
+    expect(err?.code).toBe('FORBIDDEN');
+  });
 });
 

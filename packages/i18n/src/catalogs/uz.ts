@@ -1402,7 +1402,8 @@ export const uz = {
   'finance.export.label': 'TSV nusxa olish',
   'finance.export.copied': 'Hisobot nusxalandi — jadval dasturiga joylashtiring.',
   'finance.export.noClipboard': "Bufer mavjud emas, hech narsa nusxalanmadi.",
-  'admin.errors.financeRequiresManage': 'Moliyaviy hisobotlar uchun users.manage ruxsati kerak.',
+  'admin.errors.financeRequiresManage':
+    "Moliyani ko'rish uchun hisobot huquqi kerak; administratorga murojaat qiling.",
 
   // ── 15. Org financial settings (M1.17) ────────────────
   'admin.workspace.currency': 'Valyuta',

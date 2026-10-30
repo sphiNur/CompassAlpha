@@ -87,6 +87,8 @@ type IconComponent = ComponentType<SVGProps<SVGSVGElement> & { size?: number }>;
 type TabDef = {
   key: Tab;
   permission: string | null;
+  /** The tab also shows with this key (HIS-19: Admin for finance readers). */
+  orPermission?: string;
   /** Hide the tab when the user ALSO holds this permission (2026-10-21). */
   hiddenWith?: string;
   labelKey: string;
@@ -122,7 +124,13 @@ const TABS: TabDef[] = [
     Icon: IconCatalog,
   },
   { key: 'confirm', permission: 'delivery.confirm', labelKey: 'nav.confirm', Icon: IconConfirm },
-  { key: 'admin', permission: 'users.manage', labelKey: 'nav.admin', Icon: IconAdmin },
+  {
+    key: 'admin',
+    permission: 'users.manage',
+    orPermission: 'reports.view',
+    labelKey: 'nav.admin',
+    Icon: IconAdmin,
+  },
 ];
 
 // Loading fallback for lazily-imported pages. Centered spinner so the

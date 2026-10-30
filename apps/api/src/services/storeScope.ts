@@ -401,3 +401,23 @@ export function flatEffectivePermissions(
   for (const storeId of stores) for (const key of resolve(storeId)) flat.add(key);
   return flat;
 }
+
+/**
+ * HIS-19 (2026-10-30): finance is read with `reports.view`, the key the
+ * roles carry for it. `users.manage` keeps working so no one who sees
+ * finance today loses it; the readable stores are the union of both.
+ */
+export const FINANCE_KEYS = ['reports.view', 'users.manage'] as const;
+
+export async function financeStoreIds(
+  db: DB,
+  session: { memberId: string; permissions: ReadonlySet<string> },
+): Promise<string[] | null> {
+  const union = new Set<string>();
+  for (const key of FINANCE_KEYS) {
+    const ids = await getActorStoreIdsForPermission(db, session.memberId, key, session.permissions);
+    if (ids === null) return null;
+    for (const id of ids) union.add(id);
+  }
+  return [...union];
+}

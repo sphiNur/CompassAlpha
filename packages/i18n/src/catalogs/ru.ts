@@ -1391,7 +1391,8 @@ export const ru = {
   'finance.export.label': 'Копировать TSV',
   'finance.export.copied': 'Отчёт скопирован — вставьте в таблицу.',
   'finance.export.noClipboard': 'Буфер обмена недоступен, ничего не скопировано.',
-  'admin.errors.financeRequiresManage': 'Финансовые отчёты требуют права users.manage.',
+  'admin.errors.financeRequiresManage':
+    'Для просмотра финансов нужно право на отчёты; обратитесь к администратору.',
 
   // ── 15. Org financial settings (M1.17) ────────────────
   'admin.workspace.currency': 'Валюта',

@@ -164,6 +164,12 @@ export function AdminPage() {
   // user locale).
   const i18n = useI18n();
 
+  // HIS-19 (2026-10-30): someone who reads finance (reports.view) without
+  // managing people gets the finance report alone.
+  const readsFinance = session?.permissions.includes('reports.view') ?? false;
+  if (!isAdmin && !isPlatformAdmin && readsFinance) {
+    return <FinanceSection />;
+  }
   if (!isAdmin && !isPlatformAdmin) {
     return (
       <div className="px-4 py-6">
