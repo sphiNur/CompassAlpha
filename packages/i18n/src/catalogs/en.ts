@@ -413,6 +413,7 @@ export const en = {
   'common.required': 'Required',
   'common.error': 'Something went wrong',
   'common.networkError': 'Network error — check your connection',
+  'common.offlineNotSaved': 'No connection — this change was not saved. Try again once you are online.',
   // M1.20 (2026-05-08): generic rate-limit error returned by the
   // server-side mutation rate limiter when a (user, path) exceeds the
   // 120-per-minute budget. The auth-specific equivalent stays under
@@ -496,7 +497,11 @@ export const en = {
   'shell.noTabs.body':
     'Your role has no access to ordering, approvals, purchasing or any other section. Ask an admin if you need it.',
   'shell.offline.title': 'You are offline',
-  'shell.offline.body': 'What you see was loaded earlier; changes you make sync when the connection is back.',
+  'shell.pageNotLoaded.title': 'This page has not downloaded yet',
+  'shell.pageNotLoaded.body':
+    'It needs a connection to open. It loads by itself once you are online, or tap Retry.',
+  'shell.offline.body':
+    'You are seeing what was last loaded. Orders, purchases and receiving are kept on this phone and sync when you are back online; daily close, sales and admin need a connection to save.',
   'order.pendingSync': '{n} changes waiting to sync',
   'shell.pageError.title': 'This page ran into a problem',
   'shell.pageError.body': 'Other pages still work. Try again, or switch to another page.',
