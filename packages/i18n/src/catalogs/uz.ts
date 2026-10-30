@@ -690,6 +690,8 @@ export const uz = {
     "Bu xaridda boshqa odamlarning buyurtmalari bor — o'chirib bo'lmaydi",
   'admin.errors.sessionHasForeignAuthors':
     "Bu buyurtmada boshqa odamlarning yozuvlari bor — o'chirib bo'lmaydi. Bu yerda faqat o'zingizning sinov buyurtmalaringizni o'chirish mumkin",
+  'admin.errors.bulkPurgeDisabledInProduction':
+    'Ishchi serverda ommaviy tozalash (hammasini tozalash, sanani qayta tiklash) oʻchirilgan. Bitta buyurtma yoki xaridni oʻchirish ishlaydi.',
   'admin.errors.purgeHasSettlements':
     "Bu sanalarda kunlik yopilishlar bor. Kunlik yopilish tarixini o'chirib bo'lmaydi, shuning uchun tozalab bo'lmaydi",
   'admin.errors.runNotFound': 'Xarid topilmadi',

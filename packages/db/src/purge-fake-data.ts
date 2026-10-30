@@ -47,12 +47,16 @@
  *
  * EXTREMELY DESTRUCTIVE. There is no rollback. The dry-run prints exactly
  * how many rows would be touched per table — eyeball that before --apply.
+ *
+ * D5 (2026-10-30): `--apply` is refused on production (see purgeGuard.ts)
+ * unless COMPASS_ALLOW_BULK_PURGE=true is set for that one command.
  */
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync } from 'node:fs';
 import { sql } from 'drizzle-orm';
 import { allowEventPurge, getDb, closeDb } from './index';
+import { currentWipeRefusal } from './purgeGuard';
 
 (function loadRootEnv() {
   let dir = dirname(fileURLToPath(import.meta.url));
@@ -79,6 +83,18 @@ import { allowEventPurge, getDb, closeDb } from './index';
 
 const args = new Set(process.argv.slice(2));
 const APPLY = args.has('--apply');
+
+if (APPLY) {
+  const refusal = currentWipeRefusal();
+  if (refusal) {
+    console.error(
+      `\x1b[31m✖ Refusing to wipe: this looks like production (${refusal}).\x1b[0m\n` +
+        "  This script deletes every tenant's data. If that is really intended,\n" +
+        '  take a backup first and re-run with COMPASS_ALLOW_BULK_PURGE=true.',
+    );
+    process.exit(2);
+  }
+}
 
 // ANSI colors
 const c = {

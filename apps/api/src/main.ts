@@ -13,27 +13,15 @@
  *     the per-org realtime hub
  */
 import { sql } from 'drizzle-orm';
-import type { ServerWebSocket } from 'bun';
 import { env } from './env';
 import { createApp } from './app';
 import { logger } from './infra/log';
 import { getDb, closeDb, inSystem, unprobed } from '@compass/db';
 import { verifyAccess } from './infra/jwt';
-import { hub, WS_CLOSE_EVICTED } from './realtime/hub';
+import { hub } from './realtime/hub';
 import { relayDatabaseNotices } from './realtime/dbRelay';
+import { createWebSocketHandler, handleWsRequest, type WSData } from './realtime/socket';
 import { loadSession } from './trpc/context';
-
-interface WSData {
-  orgId: string;
-  userId: string;
-  unsub: () => void;
-  /** Access-token `exp` (epoch seconds); the socket is closed when it passes. */
-  exp: number | null;
-  expiryTimer: ReturnType<typeof setTimeout> | null;
-}
-
-/** Close code for a socket whose access token expired (client should refresh). */
-const WS_CLOSE_TOKEN_EXPIRED = 4001;
 
 async function main() {
   const db = getDb(env.DATABASE_URL);
@@ -69,90 +57,16 @@ async function main() {
     async fetch(req, server) {
       const url = new URL(req.url);
       if (url.pathname === '/ws') {
-        // Auth via short-lived ?token=<jwt>; we accept the same access
-        // token the SPA uses for tRPC (M2 will replace with a dedicated
-        // ws-ticket procedure).
-        const token = url.searchParams.get('token') ?? '';
-        if (!token) return new Response('missing token', { status: 401 });
-        let claims;
-        try {
-          claims = await verifyAccess(token);
-        } catch {
-          return new Response('bad token', { status: 401 });
-        }
-        // 2026-10-21 audit CA-35/F-08: a valid signature is not enough —
-        // a member suspended or removed within the token's lifetime could
-        // still open a socket and receive org-wide change events. Same
-        // check every tRPC request makes (trpc/context.ts).
-        let session;
-        try {
-          session = await loadSession(db, claims.sub, claims.org, claims.mid);
-        } catch (err) {
-          logger.warn({ err: (err as Error).message }, 'ws session lookup failed');
-          return new Response('session lookup failed', { status: 503 });
-        }
-        if (!session) return new Response('no active membership', { status: 403 });
-        const exp = (claims as { exp?: number }).exp;
-        const upgraded = server.upgrade(req, {
-          data: {
-            orgId: claims.org,
-            userId: claims.sub,
-            unsub: () => {},
-            exp: typeof exp === 'number' ? exp : null,
-            expiryTimer: null,
-          } as WSData,
+        return handleWsRequest(req, server, {
+          verifyAccess,
+          loadSession: (userId, orgId, memberId) => loadSession(db, userId, orgId, memberId),
+          onSessionLookupError: (err) =>
+            logger.warn({ err: (err as Error).message }, 'ws session lookup failed'),
         });
-        if (upgraded) return undefined;
-        return new Response('upgrade failed', { status: 500 });
       }
       return app.fetch(req);
     },
-    websocket: {
-      open(ws: ServerWebSocket<WSData>) {
-        ws.data.unsub = hub.subscribe(
-          ws.data.orgId,
-          (data) => ws.send(data),
-          () => ws.close(WS_CLOSE_EVICTED, 'evicted'),
-        );
-        // CA-35/F-08: the socket lives no longer than the token it was
-        // opened with; the client reconnects with a fresh one.
-        if (ws.data.exp !== null) {
-          const ms = Math.max(0, ws.data.exp * 1000 - Date.now());
-          ws.data.expiryTimer = setTimeout(
-            () => ws.close(WS_CLOSE_TOKEN_EXPIRED, 'token expired'),
-            ms,
-          );
-        }
-        // M3.9: demoted from info → debug. Active deploys see dozens of
-        // WS open/close events per minute as clients reconnect; at info
-        // level they dominate journalctl and hide real signals. The
-        // info we log here (orgId/userId/subs count) is recoverable
-        // from connection metrics if needed.
-        logger.debug(
-          { orgId: ws.data.orgId, userId: ws.data.userId, subs: hub.size(ws.data.orgId) },
-          'ws open',
-        );
-        // Send an initial hello so the client knows the channel is live.
-        ws.send(JSON.stringify({ type: 'ping', t: Date.now() }));
-      },
-      message(ws: ServerWebSocket<WSData>, raw) {
-        // M1 has no client→server messages; just pong on ping.
-        try {
-          const msg = JSON.parse(typeof raw === 'string' ? raw : raw.toString());
-          if (msg?.type === 'ping') ws.send(JSON.stringify({ type: 'ping', t: Date.now() }));
-        } catch {
-          /* ignore malformed */
-        }
-      },
-      close(ws: ServerWebSocket<WSData>) {
-        if (ws.data.expiryTimer) clearTimeout(ws.data.expiryTimer);
-        ws.data.unsub();
-        logger.debug(
-          { orgId: ws.data.orgId, userId: ws.data.userId, subs: hub.size(ws.data.orgId) },
-          'ws close',
-        );
-      },
-    },
+    websocket: createWebSocketHandler(logger),
     error(err) {
       logger.error({ err }, 'Bun.serve error');
       return new Response('Internal error', { status: 500 });

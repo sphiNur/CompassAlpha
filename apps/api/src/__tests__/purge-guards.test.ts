@@ -18,6 +18,7 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { getDb, schema as s, withOrgContext } from '@compass/db';
 import { logger } from '../infra/log';
+import { env } from '../env';
 import { appRouter } from '../trpc/router';
 import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
 
@@ -304,5 +305,47 @@ describe.skipIf(!SHOULD_RUN)('maintenance purge guards (PG-gated)', () => {
     expect(err?.code).toBe('PRECONDITION_FAILED');
     expect(err?.message).toBe('admin.errors.purgeHasSettlements');
     expect(await errorOf(() => admin.admin.purgeByDate({ date: '2026-06-11', dryRun: false }))).toBeNull();
+  });
+
+  test('D1: on production the workspace-wide purges refuse; per-item deletes still work', async () => {
+    const { admin, db, orgId, storeId, memberId } = fix!;
+    const e = env as { NODE_ENV: string; COMPASS_ALLOW_BULK_PURGE?: string };
+    const saved = { NODE_ENV: e.NODE_ENV, allow: e.COMPASS_ALLOW_BULK_PURGE };
+    const sessionId = randomUUID();
+    await db.insert(s.orderSessionsV).values({
+      id: sessionId,
+      orgId,
+      storeId,
+      orderDate: '2026-06-21',
+      status: 'draft',
+      initiatedByMemberId: memberId,
+    });
+    try {
+      e.NODE_ENV = 'production';
+      e.COMPASS_ALLOW_BULK_PURGE = undefined;
+      for (const call of [
+        () => admin.admin.purgeAllTestData({ dryRun: true }),
+        () => admin.admin.purgeAllTestData({ dryRun: false, confirmText: 'x' }),
+        () => admin.admin.purgeByDate({ date: '2026-06-21', dryRun: true }),
+        () => admin.admin.purgeByDate({ date: '2026-06-21', dryRun: false }),
+      ]) {
+        const err = await errorOf(call);
+        expect(err?.code).toBe('FORBIDDEN');
+        expect(err?.message).toBe('admin.errors.bulkPurgeDisabledInProduction');
+      }
+      expect(await db.query.orderSessionsV.findFirst({ where: (x, o) => o.eq(x.id, sessionId) })).toBeTruthy();
+
+      // The explicit switch lets them run again.
+      e.COMPASS_ALLOW_BULK_PURGE = 'true';
+      expect(await errorOf(() => admin.admin.purgeByDate({ date: '2026-06-22', dryRun: true }))).toBeNull();
+
+      // Deleting one's own single order is not a bulk purge.
+      e.COMPASS_ALLOW_BULK_PURGE = undefined;
+      expect(await errorOf(() => admin.admin.purgeSession({ sessionId, dryRun: false }))).toBeNull();
+      expect(await db.query.orderSessionsV.findFirst({ where: (x, o) => o.eq(x.id, sessionId) })).toBeUndefined();
+    } finally {
+      e.NODE_ENV = saved.NODE_ENV;
+      e.COMPASS_ALLOW_BULK_PURGE = saved.allow;
+    }
   });
 });

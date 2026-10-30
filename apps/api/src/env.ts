@@ -57,6 +57,10 @@ export const env = createEnv({
     S3_SECRET_KEY: z.string().optional(),
     S3_PUBLIC_BASE: z.string().url().optional(),
     OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
+    /** D1 (2026-10-30): lets admin.purgeAllTestData / purgeByDate run on
+     * production. Set it only for a maintenance window; see
+     * services/bulkPurge.ts. */
+    COMPASS_ALLOW_BULK_PURGE: z.enum(['true', 'false']).optional(),
   },
   runtimeEnv: process.env as Record<string, string | undefined>,
   emptyStringAsUndefined: true,
