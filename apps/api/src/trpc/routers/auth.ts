@@ -884,7 +884,19 @@ export const authRouter = router({
         // caller, which made the bot's audience the org's membership and
         // quietly re-admitted anyone an admin had removed.
         if (!isDevMock) {
-          throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.noMembership' });
+          // AUTH-19 (2026-10-30): a suspended member was told they had not
+          // been added to any store yet; say what actually happened.
+          const suspended = await inSystem(ctx.db, 'auth', (tx) =>
+            tx.query.members.findFirst({
+              where: (m, { eq: eq2, and: and2 }) =>
+                and2(eq2(m.userId, user!.id), eq2(m.status, 'suspended')),
+              columns: { id: true },
+            }),
+          );
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: suspended ? 'auth.errors.membershipSuspended' : 'auth.errors.noMembership',
+          });
         }
         const defaultOrg = await inSystem(ctx.db, 'auth', (tx) =>
           tx.query.organizations.findFirst({

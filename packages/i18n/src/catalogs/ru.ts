@@ -472,6 +472,8 @@ export const ru = {
   'auth.errors.nameLocked': 'Имя зафиксировано — изменить может только администратор',
   'auth.errors.noMembership':
     'Вас ещё не добавили ни в один магазин. Попросите управляющего пригласить вас в Compass.',
+  'auth.errors.membershipSuspended':
+    'Ваше членство в этой организации приостановлено. Обратитесь к администратору.',
   'auth.errors.noOrg': 'Организация не найдена',
   'auth.errors.required': 'Требуется вход',
   'auth.errors.signInFailed': 'Ошибка входа',
