@@ -1055,7 +1055,7 @@ export function OrderPage() {
         <StickyPageBar>
           <button
             type="button"
-            className="text-old-label font-semibold text-[var(--c-action)]"
+            className="hit-44 text-old-label font-semibold text-[var(--c-action)]"
             onClick={() => setViewBatchId(null)}
           >
             ‹ {i18n.t('order.batches.backToCurrent')}

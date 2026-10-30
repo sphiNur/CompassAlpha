@@ -664,7 +664,7 @@ export function RunExtrasCard({
                             <button
                               type="button"
                               onClick={() => onRecordExtraExpense!(storeId, e)}
-                              className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2 py-0.5 text-old-label font-medium text-[var(--c-action)] ring-hairline active:opacity-70"
+                              className="hit-44 shrink-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2 py-0.5 text-old-label font-medium text-[var(--c-action)] ring-hairline active:opacity-70"
                             >
                               {i18n.t('run.extras.recordPrice')}
                             </button>
@@ -797,7 +797,7 @@ export function ExpensesCard({
                     type="button"
                     onClick={() => onRemove(e.id, e.label)}
                     aria-label={i18n.t('run.action.removeExpense')}
-                    className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-old-label text-[var(--c-danger)] active:bg-[var(--c-surface-2)]"
+                    className="hit-44 shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-old-label text-[var(--c-danger)] active:bg-[var(--c-surface-2)]"
                   >
                     ✗
                   </button>
@@ -1791,7 +1791,7 @@ export function PurchaseRow({
           <button
             type="button"
             onClick={() => onMarkNa(item.skuId)}
-            className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-old-label text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
+            className="hit-44 shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-old-label text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
           >
             {i18n.t('run.action.markNa')}
           </button>

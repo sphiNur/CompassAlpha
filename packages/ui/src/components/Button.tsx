@@ -26,7 +26,7 @@ const button = cva(
         // Filled red — for irreversible PRIMARY destructive actions
         // (delete account, drop org). Heavy by design.
         danger:
-          'bg-[var(--c-danger)] text-[var(--c-fg-inverse)] rounded-[var(--r-pill)]',
+          'bg-[var(--c-danger)] text-[var(--c-danger-fg)] rounded-[var(--r-pill)]',
         // M3.16 (2026-05-16): "soft danger" — transparent with red
         // text + red hairline. Right tone for SECONDARY destructive
         // operations (archive a category, archive a SKU) where the
