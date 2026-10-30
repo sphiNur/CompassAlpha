@@ -790,6 +790,8 @@ export const ru = {
   'order.review.title': 'Проверьте заказ',
   'order.review.itemsCount': '{n} позиций',
   'order.review.empty': 'Пока ничего не выбрано.',
+  'order.review.archived': 'Снят с продажи',
+  'order.review.remove': 'Убрать',
   'order.review.reviewSheet.title': 'Проверьте заказ',
   'order.review.estimatedTotal': 'Оценка стоимости',
   'order.review.estimateHint': '~ по последней цене покупки · {known} с ценой · {unknown} без цены',

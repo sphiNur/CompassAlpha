@@ -1520,7 +1520,14 @@ export function OrderPage() {
       >
         {/* CA-27: an extras-only batch shouldn't read "Nothing selected". */}
         {totals.length > 0 || extrasCount === 0 ? (
-          <ReviewList totals={totals} skus={allSkus} productName={productName} />
+          <ReviewList
+            totals={totals}
+            skus={allSkus}
+            productName={productName}
+            onRemove={
+              currentStoreId ? (skuId) => handleQtyChange(currentStoreId, skuId, '0') : undefined
+            }
+          />
         ) : null}
         {extrasCount > 0 && sessionQuery.data && sessionQuery.data.id !== 'optimistic' ? (
           <SessionExtrasEditor
@@ -1766,10 +1773,21 @@ function ReviewList({
   totals,
   skus,
   productName,
+  onRemove,
 }: {
   totals: ReviewTotal[];
-  skus: Array<{ id: string; categoryId: string | null; names: unknown; unit: string; step: string }>;
+  skus: Array<{
+    id: string;
+    categoryId: string | null;
+    names: unknown;
+    unit: string;
+    step: string;
+    isArchived?: boolean;
+  }>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
+  /** ORD-10: take a line out (only offered for archived products, which
+   *  the catalog list no longer shows). Omitted on read-only reviews. */
+  onRemove?: (skuId: string) => void;
 }) {
   const i18n = useI18n();
   // 2026-07-30 (flow review): was printing the raw canonical unit, so the
@@ -1825,16 +1843,21 @@ function ReviewList({
   }, [skus]);
 
   const groups = useMemo(() => {
-    const byCat = new Map<string | null, Array<{ name: string; qty: string; unit: string }>>();
+    const byCat = new Map<
+      string | null,
+      Array<{ skuId: string; name: string; qty: string; unit: string; archived: boolean }>
+    >();
     for (const t of totals) {
       if (Number(t.qty) <= 0) continue;
       const sku = skuById.get(t.skuId);
       if (!sku) continue;
       const arr = byCat.get(sku.categoryId) ?? [];
       arr.push({
+        skuId: t.skuId,
         name: productName({ names: sku.names as Record<string, string> }),
         qty: t.qty,
         unit: sku.unit,
+        archived: !!sku.isArchived,
       });
       byCat.set(sku.categoryId, arr);
     }
@@ -1894,9 +1917,25 @@ function ReviewList({
                       list read at the same size. */}
                   <span className="truncate pr-3 text-old-h2 font-semibold text-[var(--c-fg)]">
                     {r.name}
+                    {r.archived ? (
+                      <span className="ml-2 text-old-label font-normal text-[var(--c-warning-fg)]">
+                        {i18n.t('order.review.archived')}
+                      </span>
+                    ) : null}
                   </span>
-                  <span className="shrink-0 font-mono text-old-body tabular-nums text-[var(--c-fg-muted)]">
-                    {formatQty(r.qty)} {unitLabel(r.unit)}
+                  <span className="flex shrink-0 items-baseline gap-2">
+                    <span className="font-mono text-old-body tabular-nums text-[var(--c-fg-muted)]">
+                      {formatQty(r.qty)} {unitLabel(r.unit)}
+                    </span>
+                    {r.archived && onRemove ? (
+                      <button
+                        type="button"
+                        onClick={() => onRemove(r.skuId)}
+                        className="rounded-[var(--r-pill)] px-2 py-0.5 text-old-label font-medium text-[var(--c-danger)] ring-hairline active:opacity-70"
+                      >
+                        {i18n.t('order.review.remove')}
+                      </button>
+                    ) : null}
                   </span>
                 </li>
               ))}

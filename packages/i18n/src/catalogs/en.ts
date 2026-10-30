@@ -882,6 +882,8 @@ export const en = {
   'order.review.title': 'Review your order',
   'order.review.itemsCount': '{n, plural, one {# item} other {{n} items}}',
   'order.review.empty': 'Nothing selected yet.',
+  'order.review.archived': 'No longer sold',
+  'order.review.remove': 'Remove',
   'order.review.reviewSheet.title': 'Review your order',
   'order.review.estimatedTotal': 'Estimated total',
   'order.review.estimateHint': '~ at the last price paid · {known} priced · {unknown} unknown',

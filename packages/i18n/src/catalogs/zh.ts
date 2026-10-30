@@ -740,6 +740,8 @@ export const zh = {
   'order.review.title': '复核订单',
   'order.review.itemsCount': '{n} 件商品',
   'order.review.empty': '暂未选择任何商品。',
+  'order.review.archived': '已下架',
+  'order.review.remove': '移除',
   'order.review.reviewSheet.title': '复核订单',
   'order.review.estimatedTotal': '预计金额',
   'order.review.estimateHint': '~ 按上次买入价 · {known} 项有价 · {unknown} 项无价',

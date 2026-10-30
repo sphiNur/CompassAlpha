@@ -159,11 +159,13 @@ export function decide(
           });
         }
       }
-      if (command.sku.isArchived) {
-        throw validation('order.errors.skuArchived', { skuId: command.skuId });
-      }
       const qty = parseDecimal(command.qty, 'order.errors.invalidQty');
       if (qty < 0) throw validation('order.errors.qtyNegative');
+      // ORD-10 (2026-10-30): a product archived while it sat in a draft
+      // could not be taken out again — zero is still allowed, more is not.
+      if (command.sku.isArchived && qty > 0) {
+        throw validation('order.errors.skuArchived', { skuId: command.skuId });
+      }
       const step = parseDecimal(command.sku.step, 'order.errors.invalidStep');
       if (step > 0 && !isMultipleOf(qty, step)) {
         throw validation('order.errors.qtyNotMultipleOfStep', { step: command.sku.step });
