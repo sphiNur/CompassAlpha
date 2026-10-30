@@ -243,6 +243,16 @@ describe('run money consistency (PG)', () => {
         receivedQty: '1.5',
         actor,
       });
+      // DLV-19: B's line is checked explicitly before B can confirm.
+      await exec({
+        type: 'ConfirmStoreItem',
+        storeId: storeB.id,
+        skuId: sku.id,
+        status: 'ok',
+        note: null,
+        photoUrl: null,
+        actor,
+      });
       for (const storeId of [storeA.id, storeB.id]) {
         await exec({ type: 'ConfirmStore', storeId, actor });
       }

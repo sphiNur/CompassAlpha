@@ -1947,6 +1947,9 @@ export const en = {
   'run.errors.receivedQtyRequired': 'Enter how much actually arrived',
   'run.errors.receivedQtyInvalid': 'Received quantity must be a number ≥ 0',
   'run.errors.receivedQtyExceedsSplit': "Received quantity can't exceed {max}",
+  'run.errors.receivedQtyNotShort':
+    '{max} is everything — choose “OK”; for a shortfall enter less than {max}',
+  'run.errors.storeItemsUnchecked': '{n} still to check before the store can be confirmed',
   // 2026-10-21 audit follow-ups: staff sales tab, sales void, inventory movements,
   // invite list/revoke, offline/stale-order messages.
   'nav.sales': 'Sales',
