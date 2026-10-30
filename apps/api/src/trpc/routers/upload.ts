@@ -36,7 +36,9 @@ const RequestPresignInputSchema = z.object({
   contentType: z.string().min(1).max(64),
   /** Caller's hint at file size in bytes. We cap at 8 MB. */
   contentLength: z.number().int().min(1).max(8 * 1024 * 1024).optional(),
-  /** Optional original filename — used to derive the extension. */
+  /** Optional original filename. Accepted for older clients and ignored:
+   *  AUTH-24 (2026-10-30) — the key's extension came from it, so a signed
+   *  image/png upload could land under "….html". */
   filename: z.string().max(200).optional(),
 });
 
@@ -57,7 +59,7 @@ export const uploadRouter = router({
         });
       }
 
-      const ext = pickExtension(input.contentType, input.filename);
+      const ext = pickExtension(input.contentType);
       const datePart = new Date().toISOString().slice(0, 10);
       const key =
         `${ctx.session!.orgId}/${ctx.session!.userId}/${input.kind}/${datePart}/${randomUUID()}.${ext}`;
@@ -92,11 +94,7 @@ export const uploadRouter = router({
   })),
 });
 
-function pickExtension(contentType: string, filename?: string): string {
-  if (filename) {
-    const m = filename.toLowerCase().match(/\.([a-z0-9]{2,5})$/);
-    if (m && m[1]) return m[1];
-  }
+export function pickExtension(contentType: string): string {
   switch (contentType) {
     case 'image/jpeg':
       return 'jpg';

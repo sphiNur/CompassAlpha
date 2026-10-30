@@ -560,6 +560,7 @@ export const zh = {
   'admin.errors.purgeRequiresSuperAdmin': '仅 super-admin 可清除数据',
   'admin.errors.orgAdminMustBeGlobal': '组织级角色和权限只能全局授予',
   'admin.errors.roleNotFound': '角色不存在',
+  'admin.errors.roleSlugTaken': '这个角色标识已被占用',
   'admin.errors.runHasForeignSessions': '此采购单里有其他人的订单，不能删除',
   'admin.errors.sessionHasForeignAuthors':
     '这张订单有其他人的内容，不能删除。这里只能删你自己的测试订单',
