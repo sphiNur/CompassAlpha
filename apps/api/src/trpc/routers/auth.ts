@@ -1378,7 +1378,14 @@ export const authRouter = router({
       await inSystem(ctx.db, 'auth', (tx) =>
         tx
           .update(s.users)
-          .set({ locale: input.locale, updatedAt: new Date() })
+          .set({
+            locale: input.locale,
+            // AUTH-14 (2026-10-30): a second language equal to the new
+            // primary one left no stall-language row selected (not even
+            // "off"); it adds nothing, so it is cleared.
+            secondaryLocale: sql`CASE WHEN ${s.users.secondaryLocale} = ${input.locale} THEN NULL ELSE ${s.users.secondaryLocale} END`,
+            updatedAt: new Date(),
+          })
           .where(eq(s.users.id, ctx.session.userId)),
       );
       return buildSessionPayload(

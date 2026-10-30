@@ -284,5 +284,14 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
     expect(crashes.length).toBeGreaterThanOrEqual(1);
     expect(crashes.every((r) => r.kind === 'crash')).toBe(true);
   });
+  test('AUTH-14: switching the primary language to the second one clears the second', async () => {
+    const { admin } = fix!;
+    await admin.auth.setSecondaryLocale({ secondaryLocale: 'ru' });
+    const same = await admin.auth.setLocale({ locale: 'ru' });
+    expect(same.user.secondaryLocale).toBeNull();
+    await admin.auth.setSecondaryLocale({ secondaryLocale: 'zh' });
+    const other = await admin.auth.setLocale({ locale: 'en' });
+    expect(other.user.secondaryLocale).toBe('zh');
+  });
 });
 
