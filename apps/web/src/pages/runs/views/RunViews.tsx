@@ -622,6 +622,8 @@ export function RunExtrasCard({
                         <span aria-hidden className={`shrink-0 text-old-body ${v.tone}`}>
                           {v.mark}
                         </span>
+                        {/* APR-18: the mark is decorative; say the status. */}
+                        <span className="sr-only">{v.label}</span>
                         <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">
                           {e.name}
                           {e.note ? (

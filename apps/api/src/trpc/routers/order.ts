@@ -1394,6 +1394,11 @@ export const orderRouter = router({
         const events = (await readStream(tx, 'order', session.id)) as unknown as OrderEvent[];
         let state = emptyState(session.id);
         for (const e of events) state = apply(state, e);
+        // APR-18: the row is addressed by its index, so a caller that read an
+        // older version can name it; it was accepted and silently ignored.
+        if (input.expectedSeq !== undefined && input.expectedSeq !== state.seq) {
+          throw new TRPCError({ code: 'CONFLICT', message: 'order.errors.staleSeq' });
+        }
         try {
           const out = decide(state, {
             type: 'MarkExtraStatus',
