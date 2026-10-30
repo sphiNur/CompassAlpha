@@ -240,7 +240,7 @@ export const useNavStore = create<NavState>()(
             ? oneOfOrNull(p.opsSub, [
                 'activity',
                 'history',
-                'maintenance',
+                // Never restored: the destructive page is opened on purpose.
                 'adminAudit',
                 'priceReport',
                 'finance',

@@ -144,6 +144,9 @@ export function AdminPage() {
 
   const isAdmin = session?.permissions.includes('users.manage') ?? false;
   const isSuperAdmin = session?.roleSlugs.includes('super_admin') ?? false;
+  // CAT-8 / HIS-10 (2026-10-30): the build flag hid only the menu row; a
+  // restored navigation state opened the page itself.
+  const maintenanceOn = isSuperAdmin && import.meta.env.VITE_ENABLE_MAINTENANCE === '1';
   const isPlatformAdmin = session?.isPlatformAdmin ?? false;
   // M1.9 (2026-05-07): per-store admins (e.g. store-scoped manager
   // post-B1) get into Admin via the broadened `users.manage` perm,
@@ -215,7 +218,7 @@ export function AdminPage() {
         {section === 'catalog' && catalogSub === 'expenseTemplates' ? (
           <ExpenseTemplatesSection />
         ) : null}
-        {section === 'operations' && !opsSub ? (
+        {section === 'operations' && (!opsSub || (opsSub === 'maintenance' && !maintenanceOn)) ? (
           <OperationsHome onPick={(s) => setOpsSub(s)} isSuperAdmin={isSuperAdmin} />
         ) : null}
         {section === 'operations' && opsSub === 'activity' ? <ActivitySection /> : null}
@@ -223,7 +226,9 @@ export function AdminPage() {
         {section === 'operations' && opsSub === 'adminAudit' ? <AdminAuditSection /> : null}
         {section === 'operations' && opsSub === 'priceReport' ? <PriceReportSection /> : null}
         {section === 'operations' && opsSub === 'finance' ? <FinanceSection /> : null}
-        {section === 'operations' && opsSub === 'maintenance' ? <MaintenanceSection /> : null}
+        {section === 'operations' && opsSub === 'maintenance' && maintenanceOn ? (
+          <MaintenanceSection />
+        ) : null}
         {section === 'platform' ? <PlatformSection /> : null}
       </SectionFrame>
     );
