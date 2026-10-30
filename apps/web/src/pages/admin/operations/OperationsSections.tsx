@@ -746,6 +746,10 @@ export function AdminAuditSection() {
   // column.
   const session = useAuthStore((s) => s.session);
   const sessionStores = session?.stores ?? [];
+  // ADM-16: the server only returns rows for stores the actor administers,
+  // so a store they merely work in was a filter that always came up empty.
+  const adminStoreIds = new Set(session?.adminStoreIds ?? []);
+  const filterStores = sessionStores.filter((st) => adminStoreIds.has(st.id));
   // M1.9 (2026-05-07): the raw `JSON.stringify(r.inputs)` payload
   // preview looks like a debugger artifact to a non-technical chain
   // owner. Hide for everyone-but-super-admin so the verb+actor+time
@@ -789,7 +793,7 @@ export function AdminAuditSection() {
     <div className="px-4 py-3">
       {/* Filter chip row — only renders when there's something to
           filter. Single-store users see one chip + "all". */}
-      {sessionStores.length > 0 ? (
+      {filterStores.length > 0 ? (
         <div className="mb-3 flex flex-wrap gap-1">
           <button
             type="button"
@@ -799,7 +803,7 @@ export function AdminAuditSection() {
           >
             {i18n.t('ops.audit.allScopes')}
           </button>
-          {sessionStores.map((st) => (
+          {filterStores.map((st) => (
             <button
               key={st.id}
               type="button"

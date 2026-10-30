@@ -192,5 +192,54 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
     const after = await owner.admin.memberInviteList();
     for (const inv of mine) expect(after.some((i) => i.id === inv.id)).toBe(false);
   });
+
+  test('ADM-16: inviting into an archived store says it is archived', async () => {
+    const { owner, db, orgId } = fix!;
+    const [gone] = await db
+      .insert(s.stores)
+      .values({ orgId, name: 'Gone', code: `G-${Date.now().toString().slice(-6)}`, isActive: false })
+      .returning();
+    const err = await errorOf(() =>
+      owner.admin.memberInviteCreate({ roleSlug: 'staff', storeIds: [gone!.id] }),
+    );
+    expect(err?.message).toBe('auth.errors.storeArchived');
+  });
+
+  test('ADM-16: a member also in a store the manager does not run is marked statusOutOfReach', async () => {
+    const { owner, db, orgId, storeId, roleIds } = fix!;
+    const tag = `${Date.now()}`.slice(-9);
+    const [other] = await db
+      .insert(s.stores)
+      .values({ orgId, name: 'Other', code: `O-${tag.slice(-6)}` })
+      .returning();
+    const person = async (name: string, n: number) => {
+      const [u] = await db
+        .insert(s.users)
+        .values({ displayName: name, tgUserId: BigInt(`7${tag}${n}`) })
+        .returning();
+      const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
+      return { u: u!, m: m! };
+    };
+    const boss = await person('ADM16 manager', 1);
+    await db.insert(s.memberStoreAssignments).values({ memberId: boss.m.id, storeId, assignedBy: boss.u.id });
+    await db
+      .insert(s.memberRoleBindings)
+      .values({ memberId: boss.m.id, roleId: roleIds.manager!, scopeType: 'store', scopeId: storeId });
+    const both = await person('ADM16 both stores', 2);
+    const here = await person('ADM16 here only', 3);
+    for (const [who, sid] of [[both, storeId], [both, other!.id], [here, storeId]] as const) {
+      await db.insert(s.memberStoreAssignments).values({ memberId: who.m.id, storeId: sid, assignedBy: boss.u.id });
+      await db
+        .insert(s.memberRoleBindings)
+        .values({ memberId: who.m.id, roleId: roleIds.staff!, scopeType: 'store', scopeId: sid });
+    }
+    const session = await loadSession(db, boss.u.id, orgId, boss.m.id);
+    const manager = appRouter.createCaller(buildCtx(db, session!));
+    const seen = await manager.admin.memberList();
+    expect(seen.find((m) => m.memberId === both.m.id)?.statusOutOfReach).toBe(true);
+    expect(seen.find((m) => m.memberId === here.m.id)?.statusOutOfReach).toBe(false);
+    const full = await owner.admin.memberList();
+    expect(full.find((m) => m.memberId === both.m.id)?.statusOutOfReach).toBe(false);
+  });
 });
 

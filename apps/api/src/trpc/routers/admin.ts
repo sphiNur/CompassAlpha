@@ -571,6 +571,27 @@ async function getActorAdminStoreIds(
  *                  (`getActorAdminStoreIds`); rows outside them are
  *                  hidden. Can be empty.
  */
+/**
+ * ADM-16 (2026-10-30): the refusal for a store outside the actor's admin
+ * set. An archived store is outside everyone's set, and "you are not this
+ * store's admin" sent people looking for a missing role; say it is archived.
+ */
+async function notAdminOfStore(tx: OrgTx, orgId: string, storeIds: string[]): Promise<TRPCError> {
+  if (storeIds.length > 0) {
+    const archived = await tx
+      .select({ id: s.stores.id })
+      .from(s.stores)
+      .where(
+        and(eq(s.stores.orgId, orgId), inArray(s.stores.id, storeIds), eq(s.stores.isActive, false)),
+      )
+      .limit(1);
+    if (archived.length > 0) {
+      return new TRPCError({ code: 'PRECONDITION_FAILED', message: 'auth.errors.storeArchived' });
+    }
+  }
+  return new TRPCError({ code: 'FORBIDDEN', message: 'admin.errors.notAdminOfStore' });
+}
+
 async function getAdminReadScope(
   tx: import('@compass/db').DB,
   session: { userId: string; memberId: string; orgId: string },
@@ -1515,9 +1536,13 @@ export const adminRouter = router({
       const inScope = (memberId: string, storeId: string | null) =>
         scope === null || memberId === ctx.session!.memberId || (!!storeId && scope.has(storeId));
       return rows.map((r) => {
-        const storeIds = [...(storesByMember.get(r.memberId) ?? [])].filter((id) =>
-          inScope(r.memberId, id),
-        );
+        const allStoreIds = [...(storesByMember.get(r.memberId) ?? [])];
+        const storeIds = allStoreIds.filter((id) => inScope(r.memberId, id));
+        // ADM-16: suspend / reactivate needs authority over every store the
+        // member is in (assertCanSetMemberStatus). Say when that is out of
+        // reach so the card doesn't offer an action the server refuses.
+        const statusOutOfReach =
+          scope !== null && (allStoreIds.length === 0 || storeIds.length < allStoreIds.length);
         return {
           memberId: r.memberId,
           userId: r.userId,
@@ -1534,6 +1559,7 @@ export const adminRouter = router({
           stores: storeIds
             .map((id) => storeById.get(id))
             .filter((st): st is NonNullable<typeof st> => !!st),
+          statusOutOfReach,
         };
       });
     });
@@ -1623,10 +1649,7 @@ export const adminRouter = router({
         const allowedStores = new Set(actorAdminStores);
         for (const storeId of storeIds) {
           if (!allowedStores.has(storeId)) {
-            throw new TRPCError({
-              code: 'FORBIDDEN',
-              message: 'admin.errors.notAdminOfStore',
-            });
+            throw await notAdminOfStore(tx, orgId, [storeId]);
           }
         }
         if (isAdminInvite) {
@@ -1962,10 +1985,7 @@ export const adminRouter = router({
           const allowed = new Set(actorAdminStores);
           for (const sid of input.storeIds) {
             if (!allowed.has(sid)) {
-              throw new TRPCError({
-                code: 'FORBIDDEN',
-                message: 'admin.errors.notAdminOfStore',
-              });
+              throw await notAdminOfStore(tx, orgId, [sid]);
             }
           }
         }
@@ -2347,10 +2367,7 @@ export const adminRouter = router({
         // to it. Mirrors the invite + grant gates.
         const allowed = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId);
         if (!allowed.includes(input.storeId)) {
-          throw new TRPCError({
-            code: 'FORBIDDEN',
-            message: 'admin.errors.notAdminOfStore',
-          });
+          throw await notAdminOfStore(tx, orgId, [input.storeId]);
         }
         await tx
           .insert(s.memberStoreAssignments)
@@ -2383,10 +2400,7 @@ export const adminRouter = router({
         // administers. Symmetric to memberAssignStore.
         const allowedStores = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId);
         if (!allowedStores.includes(input.storeId)) {
-          throw new TRPCError({
-            code: 'FORBIDDEN',
-            message: 'admin.errors.notAdminOfStore',
-          });
+          throw await notAdminOfStore(tx, orgId, [input.storeId]);
         }
         // 2026-10-21 audit A-11: same in-store rank gate as
         // memberDetachFromStore — a manager could otherwise unassign a
@@ -2480,10 +2494,7 @@ export const adminRouter = router({
         // C2: must administer the store you're detaching from.
         const allowed = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId);
         if (!allowed.includes(input.storeId)) {
-          throw new TRPCError({
-            code: 'FORBIDDEN',
-            message: 'admin.errors.notAdminOfStore',
-          });
+          throw await notAdminOfStore(tx, orgId, [input.storeId]);
         }
         // C1: rank gate evaluated in this store. A manager-rank-30 of
         // Store A cannot detach a manager-rank-30 of Store A — same
@@ -2649,10 +2660,7 @@ export const adminRouter = router({
         // would silently fail (no admin authority in B). Refuse up front.
         const allowed = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId);
         if (!allowed.includes(input.fromStoreId) || !allowed.includes(input.toStoreId)) {
-          throw new TRPCError({
-            code: 'FORBIDDEN',
-            message: 'admin.errors.notAdminOfStore',
-          });
+          throw await notAdminOfStore(tx, orgId, [input.fromStoreId, input.toStoreId]);
         }
         // C1: rank gate in BOTH stores. The "from" rank must outrank
         // the target IN from-store (mirror of detach). The "to" rank
@@ -3719,10 +3727,7 @@ export const adminRouter = router({
       if (input.scopeType === 'store' && input.scopeId) {
         const allowed = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId);
         if (!allowed.includes(input.scopeId)) {
-          throw new TRPCError({
-            code: 'FORBIDDEN',
-            message: 'admin.errors.notAdminOfStore',
-          });
+          throw await notAdminOfStore(tx, orgId, [input.scopeId]);
         }
       }
 
@@ -3993,10 +3998,7 @@ export const adminRouter = router({
       if (!isOrgAdmin) {
         const allowed = await getActorAdminStoreIds(tx, orgId, ctx.session!.userId);
         if (!allowed.includes(input.storeId)) {
-          throw new TRPCError({
-            code: 'FORBIDDEN',
-            message: 'admin.errors.notAdminOfStore',
-          });
+          throw await notAdminOfStore(tx, orgId, [input.storeId]);
         }
       }
       const existing = await tx.query.stores.findFirst({
