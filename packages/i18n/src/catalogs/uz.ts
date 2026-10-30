@@ -1437,6 +1437,8 @@ export const uz = {
   'inventory.sheet.note': 'Izoh',
   'inventory.toast.stocktakeSaved': 'Inventarizatsiya saqlandi.',
   'inventory.toast.wastageSaved': 'Yo&apos;qotish yozildi.',
+  'inventory.confirm.wastageNegative':
+    "Hisobdan chiqarilgandan keyin qoldiq {after} (manfiy) bo'ladi — demak hisob avval ham noto'g'ri edi. Baribir saqlansinmi? Keyin inventarizatsiya qilish tavsiya etiladi.",
   'inventory.errors.cannotAdjust':
     "Inventarizatsiya yoki yo'qotish uchun inventory.adjust ruxsati kerak.",
   'inventory.errors.invalidQty': "Miqdor manfiy bo'lmasligi kerak.",

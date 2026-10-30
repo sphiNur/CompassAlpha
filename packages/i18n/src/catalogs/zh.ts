@@ -1349,6 +1349,8 @@ export const zh = {
   'inventory.sheet.note': '备注',
   'inventory.toast.stocktakeSaved': '盘点已保存。',
   'inventory.toast.wastageSaved': '报损已记录。',
+  'inventory.confirm.wastageNegative':
+    '报损后库存会变成 {after}（负数），说明之前的库存记录不准。仍要保存吗？建议之后做一次盘点。',
   'inventory.errors.cannotAdjust': '盘点或报损需要 inventory.adjust 权限。',
   'inventory.errors.invalidQty': '数量必须为非负数。',
   'inventory.errors.wastageNeedsNote': '报损必须填写原因。',

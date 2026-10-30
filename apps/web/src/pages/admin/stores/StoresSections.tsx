@@ -674,12 +674,28 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
                     errToast('common.error')(new Error('inventory.errors.wastageNeedsNote'));
                     return;
                   }
-                  recordWastage.mutate({
-                    storeId,
-                    skuId: action.skuId,
-                    qty: draftWasteQty,
-                    note: draftNote.trim(),
-                  });
+                  const save = () =>
+                    recordWastage.mutate({
+                      storeId,
+                      skuId: action.skuId,
+                      qty: draftWasteQty,
+                      note: draftNote.trim(),
+                    });
+                  // CLS-8 (2026-10-30, owner decision): allowed, but said out
+                  // loud — stock that goes negative means the record was
+                  // already off, and a stocktake is the fix.
+                  const onHand = Number(
+                    (levelsQuery.data ?? []).find((l) => l.skuId === action.skuId)?.onHand ?? 0,
+                  );
+                  const after = onHand - Number(draftWasteQty.replace(',', '.'));
+                  if (after < 0) {
+                    nativeConfirm(
+                      i18n.t('inventory.confirm.wastageNegative', { after: formatQty(String(after)) }),
+                      save,
+                    );
+                  } else {
+                    save();
+                  }
                 }
               }}
             >

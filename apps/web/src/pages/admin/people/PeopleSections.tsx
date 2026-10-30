@@ -1760,9 +1760,14 @@ function ManageMemberSheet({
     },
     onError: errToast('common.error'),
   });
-  const unassignMut = trpc.admin.memberUnassignStore.useMutation({
+  // ADM-8 (2026-10-30, owner decision): unticking a store takes the person
+  // out of it — assignment, the store's roles and its permission
+  // overrides — as "remove from store" does. Removing only the assignment
+  // left the roles, and with them access to the store.
+  const detachMut = trpc.admin.memberDetachFromStore.useMutation({
     onSuccess: () => {
       void utils.admin.memberStoreAssignments.invalidate();
+      void utils.admin.memberList.invalidate();
     },
     onError: errToast('common.error'),
   });
@@ -1830,7 +1835,7 @@ function ManageMemberSheet({
               <div className="flex flex-col gap-1.5 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
                 {(storesQuery.data ?? []).map((st) => {
                   const checked = assignedIds.has(st.id);
-                  const pending = assignMut.isPending || unassignMut.isPending;
+                  const pending = assignMut.isPending || detachMut.isPending;
                   // C2: stores you don't administer are visible (so
                   // you see the full picture) but the checkbox is
                   // disabled. The server would reject anyway.
@@ -1854,10 +1859,17 @@ function ManageMemberSheet({
                               storeId: st.id,
                             });
                           } else {
-                            unassignMut.mutate({
-                              memberId: target.memberId,
-                              storeId: st.id,
-                            });
+                            nativeConfirm(
+                              i18n.t('admin.confirm.removeFromStore', {
+                                name: target.displayName,
+                                store: st.name,
+                              }),
+                              () =>
+                                detachMut.mutate({
+                                  memberId: target.memberId,
+                                  storeId: st.id,
+                                }),
+                            );
                           }
                         }}
                       />
