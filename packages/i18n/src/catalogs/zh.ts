@@ -1591,6 +1591,8 @@ export const zh = {
   'confirm.issue.receivedQty': '实收数量（共 {max} {unit}）',
   'confirm.issue.receivedQtyRequired': '请填写实际收到的数量',
   'confirm.issue.receivedQtyRange': '请输入 0 到 {max} 之间的数字',
+  'confirm.issue.receivedQtyNotShort':
+    '实收 {max} 就是全部到齐了，请选「正常」；数量不足时请填少于 {max} 的数',
   'confirm.receivedOf': '实收 {received} / {qty} {unit}',
   'confirm.runPicker.ariaLabel': '选择要验收的配送',
   'confirm.runPicker.option': '#{n} · {date}',

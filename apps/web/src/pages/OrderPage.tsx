@@ -509,7 +509,9 @@ export function OrderPage() {
         const payload = pendingPayloads.current.get(key);
         if (!payload) return;
         pendingPayloads.current.delete(key);
-        void flushOne(payload);
+        // ORD-22 (2026-10-30): the mutation's onError already handled a
+        // failure; the bare promise surfaced again as an unhandled rejection.
+        flushOne(payload).catch(() => {});
       }, DEBOUNCE_MS);
       pendingTimers.current.set(key, timer);
     },

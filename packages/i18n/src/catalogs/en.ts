@@ -1829,6 +1829,8 @@ export const en = {
   'confirm.issue.receivedQty': 'Received qty (of {max} {unit})',
   'confirm.issue.receivedQtyRequired': 'Enter how much actually arrived',
   'confirm.issue.receivedQtyRange': 'Enter a number from 0 to {max}',
+  'confirm.issue.receivedQtyNotShort':
+    '{max} is everything — choose “OK”; for a shortfall enter less than {max}',
   'confirm.receivedOf': 'received {received} / {qty} {unit}',
   'confirm.runPicker.ariaLabel': 'Which delivery to check',
   'confirm.runPicker.option': '#{n} · {date}',

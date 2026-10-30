@@ -1680,6 +1680,8 @@ export const ru = {
   'confirm.issue.receivedQty': 'Получено (из {max} {unit})',
   'confirm.issue.receivedQtyRequired': 'Укажите, сколько фактически получено',
   'confirm.issue.receivedQtyRange': 'Введите число от 0 до {max}',
+  'confirm.issue.receivedQtyNotShort':
+    '{max} — это всё, выберите «OK»; при недостаче введите меньше {max}',
   'confirm.receivedOf': 'получено {received} / {qty} {unit}',
   'confirm.runPicker.ariaLabel': 'Какую поставку проверить',
   'confirm.runPicker.option': '№{n} · {date}',

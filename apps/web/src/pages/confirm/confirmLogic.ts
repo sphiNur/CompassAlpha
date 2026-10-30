@@ -60,7 +60,7 @@ export function defaultDeliveringRunId(
 
 export type ReceivedQtyCheck =
   | { ok: true; value: string | null }
-  | { ok: false; reason: 'required' | 'invalid' | 'exceeds' };
+  | { ok: false; reason: 'required' | 'invalid' | 'exceeds' | 'notShort' };
 
 /**
  * 2026-10-21 CA-06: client mirror of the domain's receivedQty rule.
@@ -80,6 +80,10 @@ export function checkReceivedQty(
   }
   if (!/^\d+(\.\d{1,3})?$/.test(trimmed)) return { ok: false, reason: 'invalid' };
   if (Number(trimmed) - Number(splitQty) > 1e-6) return { ok: false, reason: 'exceeds' };
+  // DLV-12: all of it arrived — that is "ok", not "short".
+  if (status === 'short' && Number(splitQty) - Number(trimmed) <= 1e-6) {
+    return { ok: false, reason: 'notShort' };
+  }
   return { ok: true, value: trimmed };
 }
 

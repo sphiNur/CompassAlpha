@@ -795,7 +795,11 @@ export function ConfirmPage() {
                 <span className="text-old-label text-[var(--c-warning-fg)]">
                   {issueReceivedCheck.reason === 'required'
                     ? i18n.t('confirm.issue.receivedQtyRequired')
-                    : i18n.t('confirm.issue.receivedQtyRange', {
+                    : issueReceivedCheck.reason === 'notShort'
+                      ? i18n.t('confirm.issue.receivedQtyNotShort', {
+                          max: formatQty(issueOpen.splitQty),
+                        })
+                      : i18n.t('confirm.issue.receivedQtyRange', {
                         max: formatQty(issueOpen.splitQty),
                       })}
                 </span>

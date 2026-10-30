@@ -1693,6 +1693,8 @@ export const uz = {
   'confirm.issue.receivedQty': 'Qabul qilingan miqdor ({max} {unit} dan)',
   'confirm.issue.receivedQtyRequired': 'Haqiqatda qancha kelganini kiriting',
   'confirm.issue.receivedQtyRange': '0 dan {max} gacha son kiriting',
+  'confirm.issue.receivedQtyNotShort':
+    "{max} — bu hammasi, «Yaxshi»ni tanlang; kamomad bo'lsa {max} dan kam kiriting",
   'confirm.receivedOf': 'qabul qilindi {received} / {qty} {unit}',
   'confirm.runPicker.ariaLabel': 'Qaysi yetkazib berishni tekshirish',
   'confirm.runPicker.option': '#{n} · {date}',

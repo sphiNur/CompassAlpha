@@ -6,7 +6,7 @@
  * approve / reject. Per-card item view uses the dedicated
  * `order.sessionDetail({id})` endpoint.
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   Avatar,
   Badge,
@@ -111,6 +111,18 @@ export function ApprovalPage() {
     void utils.order.sessionDetail.invalidate({ sessionId });
     haptic('warning');
     toast.info(i18n.t('approval.toast.orderChanged'));
+  };
+  // APR-10 (2026-10-30): a double tap sent two approvals; the second lost
+  // on the unique index and toasted "changed since you opened it" right
+  // after "approved". One in flight per order.
+  const approving = useRef(new Set<string>());
+  const approveOnce = (sessionId: string, expectedSeq: number) => {
+    if (approving.current.has(sessionId)) return;
+    approving.current.add(sessionId);
+    approve.mutate(
+      { sessionId, expectedSeq },
+      { onSettled: () => approving.current.delete(sessionId) },
+    );
   };
   const approve = trpc.order.approve.useMutation({
     onSuccess: () => {
@@ -467,7 +479,7 @@ export function ApprovalPage() {
                           variant="primary"
                           loading={approve.isPending && approve.variables?.sessionId === row.id}
                           disabled={claim.isPending && claim.variables?.sessionId === row.id}
-                          onClick={() => approve.mutate({ sessionId: row.id, expectedSeq: row.lastSeq })}
+                          onClick={() => approveOnce(row.id, row.lastSeq)}
                         >
                           {i18n.t('approval.approve')}
                         </Button>
@@ -505,7 +517,7 @@ export function ApprovalPage() {
                           size="sm"
                           variant="primary"
                           loading={approve.isPending && approve.variables?.sessionId === row.id}
-                          onClick={() => approve.mutate({ sessionId: row.id, expectedSeq: row.lastSeq })}
+                          onClick={() => approveOnce(row.id, row.lastSeq)}
                         >
                           {i18n.t('approval.approve')}
                         </Button>
