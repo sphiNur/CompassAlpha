@@ -6019,7 +6019,11 @@ export const adminRouter = router({
       // never touched; this used to delete anyone's.
       if (
         input.requireOnlyTestSessions &&
-        (await foreignAuthors(tx, orgId, ctx.session!.userId, [input.sessionId])).size > 0
+        ((await foreignAuthors(tx, orgId, ctx.session!.userId, [input.sessionId])).size > 0 ||
+          // RE-CAT-1: someone else approved, claimed or rejected it.
+          (await othersActedOn(tx, ctx.session!.userId, [
+            { type: 'order', ids: [input.sessionId] },
+          ])))
       ) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
@@ -6072,10 +6076,18 @@ export const adminRouter = router({
 
       // Safety: refuse if any attached session belongs to someone other
       // than the caller, unless explicitly waived.
+      // RE-CAT-1 (2026-10-30): authorship of the orders alone let a run that
+      // a real purchaser bought, priced or delivered be wiped with its
+      // price history and stock movements. Anyone else acting on the run
+      // (or on its orders) makes it real data.
       if (
         input.requireOnlyTestSessions &&
-        sessionIds.length > 0 &&
-        (await foreignAuthors(tx, orgId, ctx.session!.userId, sessionIds)).size > 0
+        ((sessionIds.length > 0 &&
+          (await foreignAuthors(tx, orgId, ctx.session!.userId, sessionIds)).size > 0) ||
+          (await othersActedOn(tx, ctx.session!.userId, [
+            { type: 'run', ids: [input.runId] },
+            { type: 'order', ids: sessionIds },
+          ])))
       ) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
@@ -6168,6 +6180,34 @@ type OrgTx = import('@compass/db').DB;
  * caller's test only if the submitter (or, before submit, the initiator)
  * and every line author is the caller.
  */
+/**
+ * RE-CAT-1: has anyone other than `userId` written an event on these
+ * streams? System events (no actor) do not count.
+ */
+async function othersActedOn(
+  tx: OrgTx,
+  userId: string,
+  streams: Array<{ type: 'run' | 'order'; ids: string[] }>,
+): Promise<boolean> {
+  for (const stream of streams) {
+    if (stream.ids.length === 0) continue;
+    const [row] = await tx
+      .select({ id: s.events.id })
+      .from(s.events)
+      .where(
+        and(
+          eq(s.events.streamType, stream.type),
+          inArray(s.events.streamId, stream.ids),
+          sql`${s.events.actorId} IS NOT NULL`,
+          sql`${s.events.actorId} <> ${userId}`,
+        ),
+      )
+      .limit(1);
+    if (row) return true;
+  }
+  return false;
+}
+
 async function foreignAuthors(
   tx: OrgTx,
   orgId: string,
