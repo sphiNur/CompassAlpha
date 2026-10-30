@@ -111,6 +111,8 @@ export const en = {
   'admin.store.emptyTitle': 'No stores',
   'admin.store.emptyBody': 'Create one with the button above to start onboarding your team.',
   'admin.store.confirmArchive': 'Archive "{name}"?',
+  'admin.store.confirmArchiveBusy':
+    '{name} still has {orders} open orders and {runs} runs under way. They stay as they are after archiving. Archive anyway?',
   'admin.store.tabTeam': 'Team',
   'admin.store.tabInventory': 'Inventory',
   'admin.store.tabSales': 'Sales',
@@ -313,6 +315,7 @@ export const en = {
   'stores.codeLabel': 'code {code}',
   'stores.noCode': 'no code',
   'stores.paused': 'paused',
+  'stores.archived': 'archived',
   'stores.pickSourceStore': '— choose a source store —',
   'ops.maint.nothingToPurge': 'Nothing to purge — workspace is already clean.',
   'admin.store.defaultRoleHint':

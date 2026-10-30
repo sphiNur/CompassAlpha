@@ -3914,6 +3914,8 @@ export const adminRouter = router({
             address: s.stores.address,
             timezone: s.stores.timezone,
             isActive: s.stores.isActive,
+            // ADM-18 (2026-10-30): archived and paused both read "paused".
+            archived: sql<boolean>`${s.stores.deletedAt} IS NOT NULL`,
             createdAt: s.stores.createdAt,
             defaultRoleId: s.stores.defaultRoleId,
             defaultRoleSlug: s.roles.slug,
@@ -4074,6 +4076,37 @@ export const adminRouter = router({
     });
   }),
 
+  /** ADM-18 (2026-10-30): what archiving would leave hanging, for the
+   *  confirmation: open orders and runs still under way at the store. */
+  storeArchiveImpact: authedProcedure.input(StoreDeleteInputSchema).query(async ({ ctx, input }) => {
+    requireOrgAdmin(ctx.session!.permissions);
+    return ctx.withOrg(async (tx) => {
+      const orgId = ctx.session!.orgId;
+      const [orders] = await tx
+        .select({ n: sql<number>`count(*)::int` })
+        .from(s.orderSessionsV)
+        .where(
+          and(
+            eq(s.orderSessionsV.orgId, orgId),
+            eq(s.orderSessionsV.storeId, input.storeId),
+            inArray(s.orderSessionsV.status, ['draft', 'submitted', 'approved']),
+          ),
+        );
+      const [runs] = await tx
+        .select({ n: sql<number>`count(distinct ${s.orderSessionsV.runId})::int` })
+        .from(s.orderSessionsV)
+        .innerJoin(s.marketRunsV, eq(s.marketRunsV.id, s.orderSessionsV.runId))
+        .where(
+          and(
+            eq(s.orderSessionsV.orgId, orgId),
+            eq(s.orderSessionsV.storeId, input.storeId),
+            inArray(s.marketRunsV.status, ['planned', 'purchasing', 'delivering', 'amending']),
+          ),
+        );
+      return { openOrders: orders?.n ?? 0, activeRuns: runs?.n ?? 0 };
+    });
+  }),
+
   storeDelete: authedProcedure.input(StoreDeleteInputSchema).mutation(async ({ ctx, input }) => {
     // M3.3: deleting a store cascades through every store-scoped row
     // for that location. Org.admin only.
@@ -4087,6 +4120,8 @@ export const adminRouter = router({
       if (!existing) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.storeNotFound' });
       }
+      // ADM-18 (2026-10-30): archiving it again rewrote the date and the audit.
+      if (existing.deletedAt) return { ok: true };
       // Soft delete via deleted_at timestamp + isActive=false. Hard delete
       // would cascade through every order_session, run_item_store, etc.
       // — much too destructive for a button tap.

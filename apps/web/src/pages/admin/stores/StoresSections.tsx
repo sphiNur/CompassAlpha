@@ -256,7 +256,11 @@ export function StoresHomeSection({
                     </span>
                     {/* UIUX-B1: active is the silent default; only the
                         exception (paused) earns ink. */}
-                    {!st.isActive ? <Badge tone="muted">{i18n.t('stores.paused')}</Badge> : null}
+                    {!st.isActive ? (
+                      <Badge tone="muted">
+                        {i18n.t(st.archived ? 'stores.archived' : 'stores.paused')}
+                      </Badge>
+                    ) : null}
                   </button>
                 </li>
               );
@@ -1040,12 +1044,23 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
         {isOrgAdmin ? (
           <Button
             variant="danger-ghost"
-            onClick={() =>
+            onClick={async () => {
+              // ADM-18 (2026-10-30): say what is still open at the store.
+              const impact = await utils.admin.storeArchiveImpact
+                .fetch({ storeId })
+                .catch(() => null);
+              const busy = impact && (impact.openOrders > 0 || impact.activeRuns > 0);
               nativeConfirm(
-                i18n.t('admin.store.confirmArchive', { name: store.name }),
+                busy
+                  ? i18n.t('admin.store.confirmArchiveBusy', {
+                      name: store.name,
+                      orders: impact.openOrders,
+                      runs: impact.activeRuns,
+                    })
+                  : i18n.t('admin.store.confirmArchive', { name: store.name }),
                 () => remove.mutate({ storeId }),
-              )
-            }
+              );
+            }}
           >
             {i18n.t('common.archive')}
           </Button>

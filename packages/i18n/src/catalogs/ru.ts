@@ -81,6 +81,8 @@ export const ru = {
   'admin.store.emptyTitle': 'Нет магазинов',
   'admin.store.emptyBody': 'Создайте магазин кнопкой выше, чтобы добавить команду.',
   'admin.store.confirmArchive': 'Архивировать «{name}»?',
+  'admin.store.confirmArchiveBusy':
+    'У {name} ещё {orders} незавершённых заказов и {runs} закупок в работе. После архивации они останутся как есть. Всё равно архивировать?',
   'admin.store.tabTeam': 'Команда',
   'admin.store.tabInventory': 'Склад',
   'admin.store.tabSales': 'Продажи',
@@ -269,6 +271,7 @@ export const ru = {
   'stores.codeLabel': 'код {code}',
   'stores.noCode': 'без кода',
   'stores.paused': 'приостановлен',
+  'stores.archived': 'в архиве',
   'stores.pickSourceStore': '— выберите исходный магазин —',
   'ops.maint.nothingToPurge': 'Удалять нечего — рабочее пространство уже чистое.',
   'admin.store.defaultRoleHint':
