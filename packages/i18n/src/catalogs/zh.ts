@@ -1408,7 +1408,9 @@ export const zh = {
   'dishes.field.qtyPlaceholder': '每份用量',
   'dishes.field.pickSku': '选择食材…',
   'dishes.confirm.archive': '归档 "{name}"?',
-  'dishes.errors.cannotManage': '编辑菜单需要 dishes.manage 权限。',
+  'dishes.errors.cannotManage': '编辑菜单需要相应权限，请联系管理员。',
+  'dishes.readOnly':
+    '你可以查看这道菜的配方，但编辑菜单需要管理员给你相应权限。',
   'dishes.errors.namesRequired': '至少需要填写一种语言的名称。',
   'admin.errors.namesRequired': '至少需要填写一种语言的名称。',
   'dishes.errors.ingredientQtyMustBePositive': '食材用量必须 > 0。',

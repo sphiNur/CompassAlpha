@@ -1488,7 +1488,9 @@ export const ru = {
   'dishes.field.qtyPlaceholder': 'кол-во на порцию',
   'dishes.field.pickSku': 'Выберите ингредиент…',
   'dishes.confirm.archive': 'Архивировать «{name}»?',
-  'dishes.errors.cannotManage': 'Для редактирования меню нужно право dishes.manage.',
+  'dishes.errors.cannotManage': 'Для редактирования меню нужно право, которое выдаёт администратор.',
+  'dishes.readOnly':
+    'Вы можете посмотреть рецепт; для редактирования меню нужно право, которое выдаёт администратор.',
   'dishes.errors.namesRequired': 'Хотя бы одно название обязательно.',
   'admin.errors.namesRequired': 'Хотя бы одно название обязательно.',
   'dishes.errors.ingredientQtyMustBePositive': 'Кол-во ингредиента должно быть > 0.',

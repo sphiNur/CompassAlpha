@@ -13,6 +13,7 @@
 import { useMemo, useState } from 'react';
 import {
   Badge,
+  Banner,
   Button,
   Card,
   CardHeader,
@@ -1578,7 +1579,9 @@ export function DishesSection() {
           // M3.49 already made exactly this fix for ConfirmPage's issue
           // sheet and RunSheets' confirm sheet ("Was `!inTelegram` … no
           // longer correct"); these two admin sheets were missed.
-          draft ? (
+          // CLS-13 (2026-10-30): without dishes.manage the sheet is a
+          // read-only view; Save used to be offered and then refused.
+          draft && canManage ? (
             <Button
               block
               loading={save.isPending}
@@ -1590,7 +1593,8 @@ export function DishesSection() {
         }
       >
         {draft ? (
-          <div className="flex flex-col gap-3 py-3">
+          <fieldset disabled={!canManage} className="flex min-w-0 flex-col gap-3 border-0 p-0 py-3">
+            {!canManage ? <Banner tone="info" title={i18n.t('dishes.readOnly')} /> : null}
             {/* Names — 4 locales. */}
             {(['en', 'zh', 'ru', 'uz'] as const).map((loc) => (
               <Field key={loc} label={`${i18n.t('common.name')} · ${loc.toUpperCase()}`}>
@@ -1701,7 +1705,7 @@ export function DishesSection() {
                 </ul>
               )}
             </div>
-          </div>
+          </fieldset>
         ) : null}
       </Sheet>
     </div>
