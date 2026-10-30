@@ -72,6 +72,7 @@ export const en = {
   'photo.remove': 'Remove photo',
   'photo.hint': 'Tap to take a photo',
   'photo.uploading': 'Uploading…',
+  'photo.uploadFailed': 'The photo did not upload. Try again.',
   'common.create': 'Create',
   'common.edit': 'Edit',
   'common.delete': 'Delete',
@@ -1019,7 +1020,7 @@ export const en = {
   'run.banner.readyToStart': 'Ready to start purchasing',
   'run.banner.readyToStartBody': 'Use the button at the bottom of the screen to advance.',
   'run.banner.planLockWarning':
-    'Starting locks {n} approved orders into this run — they can no longer be sent back to review. Individual orders can still be ejected.',
+    'You can still send orders back to review now. Once purchasing starts, these {n} approved orders are locked into this run and can no longer go back to review. Individual orders can still be ejected.',
   'run.banner.confirmingFinish':
     'About to finish. After this nothing in this run can be changed — including prices, deliveries, or store confirms.',
   'run.section.items': 'Items',
@@ -1249,7 +1250,7 @@ export const en = {
   'run.main.awaitingConfirms': 'Awaiting store confirmations',
   'run.confirm.startPurchase.title': 'Start purchasing?',
   'run.confirm.startPurchase.body':
-    'Marks this run as in-progress. You can still come back to plan if you have not recorded anything.',
+    'Marks this run as in progress. You can still go back to planning later (with a reason); purchases already recorded are kept.',
   'run.confirm.startDelivery.title': 'Start delivery?',
   'run.confirm.startDelivery.body':
     'Marks all items as ready to ship. You can still come back to purchase if no store has been delivered yet.',

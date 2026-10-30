@@ -93,6 +93,9 @@ export function UiLabelsBridge({ children }: { children: ReactNode }) {
       get uploading() {
         return i18n.t('photo.uploading');
       },
+      get photoUploadFailed() {
+        return i18n.t('photo.uploadFailed');
+      },
     }),
     [i18n],
   );

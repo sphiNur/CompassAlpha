@@ -41,6 +41,7 @@ export const zh = {
   'photo.remove': '移除照片',
   'photo.hint': '点击拍照',
   'photo.uploading': '上传中…',
+  'photo.uploadFailed': '照片没有上传成功，请重试。',
   'common.create': '创建',
   'common.edit': '编辑',
   'common.delete': '删除',
@@ -869,7 +870,7 @@ export const zh = {
   'run.banner.readyToStart': '可以开始采购',
   'run.banner.readyToStartBody': '点击底部按钮进入下一步。',
   'run.banner.planLockWarning':
-    '开始后将锁定 {n} 份已审核订单 — 它们不能再退回审核。单份订单仍可从采购单中移出。',
+    '现在还可以把订单退回审核；开始采购后，这 {n} 份已审核订单就锁定在本采购单里，不能再退回审核。单份订单仍可从采购单中移出。',
   'run.banner.confirmingFinish':
     '即将结束本次采购。结束后，所有价格、配送、验收记录都将锁死，无法再修改。',
   'run.section.items': '商品',
@@ -914,14 +915,14 @@ export const zh = {
   'run.previewShare.openedWithCopy': '已打开联系人选择，清单也已复制',
   'run.preview.groupTotal': '合计',
   'run.preview.priceUnknown': '待询价',
-  'run.preview.unknownPrices': '{n} 个无参考价',
+  'run.preview.unknownPrices': '{n} 种无参考价',
   'run.preview.expand': '展开',
   'run.preview.collapse': '折叠',
   'run.view.perCategory': '按类型',
   'run.view.uncategorized': '未分类',
   'run.preview.estimateTitle': '预估',
-  'run.preview.coverage': '已知价格 {known}/{total} 项 · 至少 {money}',
-  'run.preview.noSupplierCount': '无摊位 {n}',
+  'run.preview.coverage': '已知价格 {known}/{total} 种 · 至少 {money}',
+  'run.preview.noSupplierCount': '{n} 种未定摊位',
   'run.preview.filterMatch': '匹配 {n} / 共 {total} 项',
   'run.price.fillIn': '填价',
   'run.offline.needNetworkToStart': '需要网络才能开始采购',
@@ -1076,7 +1077,7 @@ export const zh = {
   'run.main.awaitingConfirms': '等待门店验收',
   'run.confirm.startPurchase.title': '确认开始采购?',
   'run.confirm.startPurchase.body':
-    '把本次采购单标记为进行中。如果还没记录任何采购，可以再回到计划阶段。',
+    '把本次采购单标记为进行中。之后仍可回到计划阶段（需填写原因），已记录的购买不会丢失。',
   'run.confirm.startDelivery.title': '确认开始配送?',
   'run.confirm.startDelivery.body':
     '把所有商品标记为可配送。如果还没向任何门店送货，可以再回到采购阶段。',

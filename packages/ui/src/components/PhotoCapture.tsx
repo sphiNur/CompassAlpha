@@ -93,7 +93,11 @@ export function PhotoCapture({
         onCapture(await blobToDataUrl(blob));
       }
     } catch (err) {
-      setError((err as Error).message ?? 'Failed to upload');
+      // BUY-19: the raw message ("Failed to fetch", "Upload failed (413)")
+      // reached the screen in English. Name a network failure as such;
+      // anything else is just "the photo did not upload".
+      const said = labels.translateError((err as Error).message);
+      setError(said && said !== labels.errorUnknown ? said : labels.photoUploadFailed);
     } finally {
       setBusy(false);
     }
