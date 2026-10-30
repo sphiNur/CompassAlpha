@@ -274,7 +274,8 @@ jobs:
             packages/ui \
             apps/api \
             apps/worker \
-            apps/web/src
+            apps/web/src \
+            scripts
 
   # ============ Job 2: PG-backed integration tests ============
   integration:

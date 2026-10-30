@@ -9,7 +9,9 @@
  * newest event on that stream (`domain.events.actor_id` is the acting
  * user, so it is matched to the claiming member through `auth.members`).
  */
-import { sql, type SQL } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
+import { eq, sql, type SQL } from 'drizzle-orm';
+import { notifyRealtime, schema as s, type DB } from '@compass/db';
 
 /**
  * A timestamp as raw `tx.execute` returns it. Drizzle's postgres-js
@@ -136,4 +138,100 @@ export function nextSeq(lastSeq: number | string | bigint): number {
     throw new Error(`invalid last_seq: ${String(lastSeq)}`);
   }
   return n + 1;
+}
+
+type LockedClaimRow = {
+  last_seq: number | string; // bigint: a string from raw tx.execute
+  claimed_by_member_id: string | null;
+  claimed_at: DbTimestamp | null;
+  status: string;
+  last_claimer_event_at: DbTimestamp | null;
+};
+
+const CLAIMABLE_STATUSES: Record<ClaimStream, readonly string[]> = {
+  order: ['submitted'],
+  run: ['planned', 'purchasing', 'delivering'],
+};
+
+/**
+ * Release one claim, in the caller's transaction, if it is still idle
+ * past the timeout once its row is locked. Another tx may have approved,
+ * rejected or released it between the candidate scan and now; then this
+ * does nothing and returns false.
+ *
+ * Appends `ClaimReleased` / `RunClaimReleased` with `reason: 'timeout'`
+ * and no actor, mirrors the projector on the read model (the timed-out
+ * claimer becomes previous_claimer_member_id, so the next reviewer's
+ * banner shows "X → Y"), and announces the change to open pages
+ * (APR-12/B14). The worker has no realtime hub of its own: the
+ * announcement is a Postgres NOTIFY, sent on commit, after the row lock
+ * is gone, and not at all if the transaction rolls back.
+ */
+export async function releaseClaimIfExpired(
+  tx: DB,
+  stream: ClaimStream,
+  claim: { id: string; orgId: string },
+  timeoutMinutes: number,
+): Promise<boolean> {
+  const fresh = (await tx.execute(
+    claimRowForUpdateSql(stream, claim.id),
+  )) as unknown as LockedClaimRow[];
+  const cur = fresh[0];
+  if (!cur) return false;
+  if (
+    !CLAIMABLE_STATUSES[stream].includes(cur.status) ||
+    cur.claimed_by_member_id === null ||
+    cur.claimed_at === null ||
+    !isClaimExpired({
+      claimedAt: cur.claimed_at,
+      lastClaimerEventAt: cur.last_claimer_event_at,
+      now: new Date(),
+      timeoutMinutes,
+    })
+  ) {
+    return false;
+  }
+  const newSeq = nextSeq(cur.last_seq);
+  const occurredAt = new Date();
+  // (stream_id, seq) is unique, so a racing append makes this insert
+  // fail; the caller lets the tx roll back and moves on.
+  await tx.insert(s.events).values({
+    id: randomUUID(),
+    orgId: claim.orgId,
+    streamType: stream,
+    streamId: claim.id,
+    seq: newSeq,
+    type: stream === 'order' ? 'ClaimReleased' : 'RunClaimReleased',
+    payload: { byMemberId: null, reason: 'timeout' },
+    actorId: null,
+    occurredAt,
+    correlationId: null,
+    causationId: null,
+    idempotencyKey: null,
+  });
+  const released = {
+    claimedByMemberId: null,
+    claimedAt: null,
+    previousClaimerMemberId: cur.claimed_by_member_id,
+    lastSeq: newSeq,
+    updatedAt: occurredAt,
+  };
+  if (stream === 'order') {
+    await tx.update(s.orderSessionsV).set(released).where(eq(s.orderSessionsV.id, claim.id));
+    await notifyRealtime(tx, {
+      type: 'order.changed',
+      orgId: claim.orgId,
+      sessionId: claim.id,
+      lastSeq: newSeq,
+    });
+  } else {
+    await tx.update(s.marketRunsV).set(released).where(eq(s.marketRunsV.id, claim.id));
+    await notifyRealtime(tx, {
+      type: 'run.changed',
+      orgId: claim.orgId,
+      runId: claim.id,
+      lastSeq: newSeq,
+    });
+  }
+  return true;
 }

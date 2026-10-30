@@ -762,6 +762,8 @@ export const en = {
     'This run contains other people’s orders — it cannot be deleted',
   'admin.errors.sessionHasForeignAuthors':
     'This order contains other people’s entries and cannot be deleted. Only your own test orders can be deleted here',
+  'admin.errors.bulkPurgeDisabledInProduction':
+    'Workspace-wide purges (wipe everything, reset a date) are switched off on the live server. Deleting a single order or market run still works.',
   'admin.errors.purgeHasSettlements':
     'There are daily closes in this range. Daily close history cannot be deleted, so this cannot be purged',
   'admin.errors.runNotFound': 'Market run not found',

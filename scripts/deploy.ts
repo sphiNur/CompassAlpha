@@ -5,6 +5,8 @@
  *   bun run scripts/deploy.ts --dry               # only verify; don't ship
  *   bun run scripts/deploy.ts --force             # ship an unreproducible tree
  *   bun run scripts/deploy.ts --allow-active-run  # ship during a live run
+ *   bun run scripts/deploy.ts --rollback --dry    # show the release a rollback would restore
+ *   bun run scripts/deploy.ts --rollback          # put the previous release back + verify
  *
  * The two override flags exist because this script ships a WORKING
  * DIRECTORY rather than a git ref, and both gates protect against that:
@@ -24,6 +26,8 @@
  *   1. Tar local CompassAlpha sources (excl. node_modules / .env / .turbo
  *      / .git / .claude)
  *   2. scp to server
+ *   2.5 keep the live release as /home/ubuntu/compass-alpha.prev.tar.gz
+ *      (the rollback target — see "Rollback" below)
  *   3. extract over /home/ubuntu/compass-alpha (in place; no downtime
  *      until the api restart in step 4c)
  *   4b. pnpm exec vite build --outDir dist.next, then swap it into place
@@ -35,6 +39,18 @@
  *   7. Run browser smoke locally against the public URL
  *   8. If either fails, exit non-zero; the deploy is "live" but you know
  *      something's broken.
+ *
+ * Rollback (N9, 2026-10-30): `--rollback` ships nothing. It puts the
+ * release kept in step 2.5 back over the live tree (code + web bundle;
+ * the server's .env files are never part of it), reinstalls that
+ * release's lockfile, refreshes the units, restarts api + worker and runs
+ * the same checks as a deploy (steps 4c–8). It does NOT undo migrations
+ * (see docs/RUNBOOK.md "Roll back a bad deploy"). Only one release is
+ * kept: the next deploy replaces it with whatever is live at that moment.
+ *
+ * Host keys (N9): ssh/scp verify the server against
+ * infra/deploy/known_hosts (override: COMPASS_DEPLOY_KNOWN_HOSTS) and
+ * refuse a host that is not pinned there, or presents another key.
  *
  * The reason smoke runs LOCALLY hitting the PUBLIC URL: that's the same
  * code path real users take, including Cloudflare + nginx + the same
@@ -54,6 +70,16 @@ import { execSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  APP_DIR,
+  PREV_TARBALL,
+  describeSnapshotScript,
+  hostName,
+  knownHostsFile,
+  restoreScript,
+  snapshotScript,
+  sshOptions,
+} from './lib/deployRemote';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = dirname(__dirname); // .../CompassAlpha
@@ -91,6 +117,9 @@ const TARBALL_RELATIVE = 'compass-alpha-deploy.tar.gz';
 
 const args = new Set(process.argv.slice(2));
 const DRY = args.has('--dry');
+const ROLLBACK = args.has('--rollback');
+const KNOWN_HOSTS = knownHostsFile(ROOT);
+const SSH_OPTS = sshOptions(KEY, KNOWN_HOSTS);
 
 function step(label: string) {
   console.log(`\n\x1b[36m▶ ${label}\x1b[0m`);
@@ -126,14 +155,46 @@ function runCapture(cmd: string, opts?: { cwd?: string }): string {
  */
 function ssh(cmd: string): string {
   const payload = Buffer.from(cmd, 'utf8').toString('base64');
-  return runCapture(
-    `ssh -i "${KEY}" -o StrictHostKeyChecking=no ${HOST} "echo ${payload} | base64 -d | bash"`,
-  );
+  return runCapture(`ssh ${SSH_OPTS} ${HOST} "echo ${payload} | base64 -d | bash"`);
 }
 
 if (!existsSync(KEY)) {
   console.error(`SSH key not found at ${KEY}`);
   process.exit(2);
+}
+
+// N9 (2026-10-30): this used to pass StrictHostKeyChecking=no, so
+// whatever answered on the deploy address got the session — and with it
+// the production .env and sudo. Refuse up front, with a clear message,
+// when the target is not pinned (ssh itself refuses a changed key).
+{
+  const pinned = spawnSync('ssh-keygen', ['-F', hostName(HOST), '-f', KNOWN_HOSTS], {
+    stdio: 'pipe',
+  });
+  if (pinned.status !== 0) {
+    console.error(`\x1b[31m✖ ${hostName(HOST)} has no pinned host key in ${KNOWN_HOSTS}.\x1b[0m`);
+    console.error("  Get the server's key fingerprints from the provider console (not over");
+    console.error('  the network you are deploying through), compare them with');
+    console.error(`    ssh-keyscan ${hostName(HOST)} | ssh-keygen -lf -`);
+    console.error('  and only then append the keyscan output to that file (or point');
+    console.error('  COMPASS_DEPLOY_KNOWN_HOSTS at a file that has them).');
+    process.exit(2);
+  }
+}
+
+/**
+ * `--rollback --dry`: say which release a rollback would restore, change
+ * nothing. Read-only on the server.
+ */
+if (ROLLBACK && DRY) {
+  step('rollback target (dry: nothing is changed)');
+  try {
+    console.log(ssh(describeSnapshotScript()));
+  } catch (err) {
+    console.error(`\x1b[31m✖ no usable previous release: ${(err as Error).message}\x1b[0m`);
+    process.exit(1);
+  }
+  process.exit(0);
 }
 
 /**
@@ -158,50 +219,55 @@ if (!existsSync(KEY)) {
  * the release sha is suffixed so the version endpoint cannot claim a
  * provenance the artifact does not have.
  */
-const gitBranch = runCapture('git rev-parse --abbrev-ref HEAD').trim();
-const gitDirty = runCapture('git status --porcelain').trim();
-const provenanceProblems: string[] = [];
+function provenanceGates(): string {
+  const gitBranch = runCapture('git rev-parse --abbrev-ref HEAD').trim();
+  const gitDirty = runCapture('git status --porcelain').trim();
+  const provenanceProblems: string[] = [];
 
-if (gitDirty) {
-  provenanceProblems.push(
-    `working tree is dirty (${gitDirty.split('\n').length} file(s)) — commit or stash first`,
-  );
-}
-if (gitBranch !== 'main') {
-  provenanceProblems.push(`HEAD is on "${gitBranch}", not main`);
-}
-try {
-  // Non-fatal on network failure: we still check against whatever
-  // origin/main we already have.
-  execSync('git fetch origin main --quiet', { cwd: ROOT, stdio: 'pipe' });
-} catch {
-  console.log('  \x1b[33m⚠ could not fetch origin/main — checking against the local copy\x1b[0m');
-}
-try {
-  execSync('git merge-base --is-ancestor HEAD origin/main', { cwd: ROOT, stdio: 'pipe' });
-} catch {
-  provenanceProblems.push('HEAD is not an ancestor of origin/main — push and merge it first');
-}
-
-const FORCED = provenanceProblems.length > 0;
-if (FORCED) {
-  const bullets = provenanceProblems.map((p) => `    • ${p}`).join('\n');
-  if (!args.has('--force')) {
-    console.error('\x1b[31m✖ Refusing to deploy — this artifact is not reproducible:\x1b[0m');
-    console.error(bullets);
-    console.error('\n  Fix the above, or re-run with --force if you accept shipping');
-    console.error('  code that exists only on this machine.');
-    process.exit(2);
+  if (gitDirty) {
+    provenanceProblems.push(
+      `working tree is dirty (${gitDirty.split('\n').length} file(s)) — commit or stash first`,
+    );
   }
-  console.log('\x1b[33m⚠ --force: shipping an unreproducible artifact:\x1b[0m');
-  console.log(bullets);
+  if (gitBranch !== 'main') {
+    provenanceProblems.push(`HEAD is on "${gitBranch}", not main`);
+  }
+  try {
+    // Non-fatal on network failure: we still check against whatever
+    // origin/main we already have.
+    execSync('git fetch origin main --quiet', { cwd: ROOT, stdio: 'pipe' });
+  } catch {
+    console.log('  \x1b[33m⚠ could not fetch origin/main — checking against the local copy\x1b[0m');
+  }
+  try {
+    execSync('git merge-base --is-ancestor HEAD origin/main', { cwd: ROOT, stdio: 'pipe' });
+  } catch {
+    provenanceProblems.push('HEAD is not an ancestor of origin/main — push and merge it first');
+  }
+
+  const FORCED = provenanceProblems.length > 0;
+  if (FORCED) {
+    const bullets = provenanceProblems.map((p) => `    • ${p}`).join('\n');
+    if (!args.has('--force')) {
+      console.error('\x1b[31m✖ Refusing to deploy — this artifact is not reproducible:\x1b[0m');
+      console.error(bullets);
+      console.error('\n  Fix the above, or re-run with --force if you accept shipping');
+      console.error('  code that exists only on this machine.');
+      process.exit(2);
+    }
+    console.log('\x1b[33m⚠ --force: shipping an unreproducible artifact:\x1b[0m');
+    console.log(bullets);
+  }
+
+  const releaseSha =
+    runCapture('git rev-parse --short=12 HEAD').trim() + (FORCED ? '-unverified' : '');
+
+  console.log(`Release sha: ${releaseSha}`);
+  console.log(`Branch: ${gitBranch}`);
+  return releaseSha;
 }
-
-const releaseSha =
-  runCapture('git rev-parse --short=12 HEAD').trim() + (FORCED ? '-unverified' : '');
-
-console.log(`Release sha: ${releaseSha}`);
-console.log(`Branch: ${gitBranch}`);
+// A rollback ships nothing from this machine, so provenance is moot.
+const releaseSha = ROLLBACK ? '' : provenanceGates();
 
 /**
  * Pre-flight: never swap the frontend out from under a purchaser who is
@@ -259,135 +325,180 @@ if (!DRY && !args.has('--allow-active-run')) {
   }
 }
 
-step('0.5. unit tests (before anything is shipped)');
-// This ran AFTER the api restart, so a red suite was reported on a release
-// that was already live. PG-backed tests are skipped here (prod PG isn't
-// reachable from the dev box); CI runs them on every push.
-//
-// 2026-10-21: paths are RELATIVE to ROOT (bun 1.1.x treats an absolute
-// directory argument as an entry point and fails with ModuleNotFound) and
-// mirror the CI unit job. apps/api validates its env at import time, so
-// — like CI — fill placeholders when the shell has none: the database URL
-// points at an unreachable local port and SKIP_PG_TESTS keeps every
-// PG-backed test skipped, so nothing here can touch a real database.
-const tt = spawnSync(
-  'bun',
-  [
-    'test',
-    'packages/domain',
-    'packages/i18n',
-    'packages/ui',
-    'apps/api',
-    'apps/worker',
-    'apps/web/src',
-  ],
-  {
-    stdio: 'inherit',
-    cwd: ROOT,
-    env: {
-      ...process.env,
-      SKIP_PG_TESTS: '1',
-      DATABASE_URL: process.env.DATABASE_URL ?? 'postgres://unit:unit@127.0.0.1:1/unit_tests',
-      JWT_SECRET: process.env.JWT_SECRET ?? 'deploy-unit-test-access-secret-xxxxxxxxxxxxxx',
-      JWT_REFRESH_SECRET:
-        process.env.JWT_REFRESH_SECRET ?? 'deploy-unit-test-refresh-secret-xxxxxxxxxxxxx',
+// A rollback ships nothing, so there is nothing new to test.
+if (!ROLLBACK) {
+  step('0.5. unit tests (before anything is shipped)');
+  // This ran AFTER the api restart, so a red suite was reported on a release
+  // that was already live. PG-backed tests are skipped here (prod PG isn't
+  // reachable from the dev box); CI runs them on every push.
+  //
+  // 2026-10-21: paths are RELATIVE to ROOT (bun 1.1.x treats an absolute
+  // directory argument as an entry point and fails with ModuleNotFound) and
+  // mirror the CI unit job. apps/api validates its env at import time, so
+  // — like CI — fill placeholders when the shell has none: the database URL
+  // points at an unreachable local port and SKIP_PG_TESTS keeps every
+  // PG-backed test skipped, so nothing here can touch a real database.
+  const tt = spawnSync(
+    'bun',
+    [
+      'test',
+      'packages/domain',
+      'packages/i18n',
+      'packages/ui',
+      'apps/api',
+      'apps/worker',
+      'apps/web/src',
+      'scripts',
+    ],
+    {
+      stdio: 'inherit',
+      cwd: ROOT,
+      env: {
+        ...process.env,
+        SKIP_PG_TESTS: '1',
+        DATABASE_URL: process.env.DATABASE_URL ?? 'postgres://unit:unit@127.0.0.1:1/unit_tests',
+        JWT_SECRET: process.env.JWT_SECRET ?? 'deploy-unit-test-access-secret-xxxxxxxxxxxxxx',
+        JWT_REFRESH_SECRET:
+          process.env.JWT_REFRESH_SECRET ?? 'deploy-unit-test-refresh-secret-xxxxxxxxxxxxx',
+      },
     },
-  },
-);
-if (tt.status !== 0) {
-  console.error('\x1b[31m✖ unit tests FAILED — nothing was deployed\x1b[0m');
-  process.exit(1);
+  );
+  if (tt.status !== 0) {
+    console.error('\x1b[31m✖ unit tests FAILED — nothing was deployed\x1b[0m');
+    process.exit(1);
+  }
 }
 
 if (!DRY) {
-  step('1. Tar local source');
-  // Use --exclude with leading anchored paths so we don't ship 600 MB of node_modules.
-  const excludes = [
-    '--exclude=CompassAlpha/node_modules',
-    '--exclude=CompassAlpha/apps/*/node_modules',
-    '--exclude=CompassAlpha/packages/*/node_modules',
-    '--exclude=CompassAlpha/apps/*/dist',
-    '--exclude=CompassAlpha/apps/*/.turbo',
-    '--exclude=CompassAlpha/.turbo',
-    // M3.25 (2026-05-18 incident #2): all .env files MUST stay
-    // server-side. The previous version excluded only the monorepo-
-    // root .env. apps/web/.env on the dev box carried the Vite
-    // VITE_DEV_MOCK_INIT_DATA + VITE_API_URL=http://localhost:3000,
-    // and every deploy tar'd it up and overwrote the server's
-    // production-safe copy — baking a dev auth bypass + a broken
-    // API URL into every prod bundle until manually re-fixed.
-    // Server keeps its own .env files; dev box's stay out of the
-    // tarball entirely.
-    '--exclude=CompassAlpha/.env',
-    '--exclude=CompassAlpha/.env.*',
-    '--exclude=CompassAlpha/apps/*/.env',
-    '--exclude=CompassAlpha/apps/*/.env.*',
-    '--exclude=CompassAlpha/packages/*/.env',
-    '--exclude=CompassAlpha/packages/*/.env.*',
-    '--exclude=CompassAlpha/*.log',
-    '--exclude=CompassAlpha/test-results',
-    '--exclude=*.pem',
-    // 2026-07-26: neither of these was excluded, and both were being
-    // scp'd to production on every deploy.
-    //   .git     — ~10 MB of history the server never reads, and it
-    //              shipped every branch name and commit message.
-    //   .claude  — agent worktrees. Measured 222 MB, of which one stale
-    //              worktree was 206 MB because it carried its OWN
-    //              node_modules: the node_modules excludes above are
-    //              anchored at `CompassAlpha/apps/*`, so they never
-    //              matched `.claude/worktrees/*/apps/*`. That is an
-    //              unrelated branch's full checkout, on the prod box.
-    '--exclude=CompassAlpha/.git',
-    '--exclude=CompassAlpha/.claude',
-    // 2026-10-29: local worktrees now live in .worktrees/ (excluded from
-    // git through .git/info/exclude). Same trap as .claude: each is a full
-    // checkout, and its .env (a test bot token) matches none of the .env
-    // excludes above.
-    '--exclude=CompassAlpha/.worktrees',
-  ].join(' ');
-  run(`tar ${excludes} -czf "${TARBALL_RELATIVE}" CompassAlpha`, { cwd: PARENT });
+  if (!ROLLBACK) {
+    step('1. Tar local source');
+    // Use --exclude with leading anchored paths so we don't ship 600 MB of node_modules.
+    const excludes = [
+      '--exclude=CompassAlpha/node_modules',
+      '--exclude=CompassAlpha/apps/*/node_modules',
+      '--exclude=CompassAlpha/packages/*/node_modules',
+      '--exclude=CompassAlpha/apps/*/dist',
+      '--exclude=CompassAlpha/apps/*/.turbo',
+      '--exclude=CompassAlpha/.turbo',
+      // M3.25 (2026-05-18 incident #2): all .env files MUST stay
+      // server-side. The previous version excluded only the monorepo-
+      // root .env. apps/web/.env on the dev box carried the Vite
+      // VITE_DEV_MOCK_INIT_DATA + VITE_API_URL=http://localhost:3000,
+      // and every deploy tar'd it up and overwrote the server's
+      // production-safe copy — baking a dev auth bypass + a broken
+      // API URL into every prod bundle until manually re-fixed.
+      // Server keeps its own .env files; dev box's stay out of the
+      // tarball entirely.
+      '--exclude=CompassAlpha/.env',
+      '--exclude=CompassAlpha/.env.*',
+      '--exclude=CompassAlpha/apps/*/.env',
+      '--exclude=CompassAlpha/apps/*/.env.*',
+      '--exclude=CompassAlpha/packages/*/.env',
+      '--exclude=CompassAlpha/packages/*/.env.*',
+      '--exclude=CompassAlpha/*.log',
+      '--exclude=CompassAlpha/test-results',
+      '--exclude=*.pem',
+      // 2026-07-26: neither of these was excluded, and both were being
+      // scp'd to production on every deploy.
+      //   .git     — ~10 MB of history the server never reads, and it
+      //              shipped every branch name and commit message.
+      //   .claude  — agent worktrees. Measured 222 MB, of which one stale
+      //              worktree was 206 MB because it carried its OWN
+      //              node_modules: the node_modules excludes above are
+      //              anchored at `CompassAlpha/apps/*`, so they never
+      //              matched `.claude/worktrees/*/apps/*`. That is an
+      //              unrelated branch's full checkout, on the prod box.
+      '--exclude=CompassAlpha/.git',
+      '--exclude=CompassAlpha/.claude',
+      // 2026-10-29: local worktrees now live in .worktrees/ (excluded from
+      // git through .git/info/exclude). Same trap as .claude: each is a full
+      // checkout, and its .env (a test bot token) matches none of the .env
+      // excludes above.
+      '--exclude=CompassAlpha/.worktrees',
+    ].join(' ');
+    run(`tar ${excludes} -czf "${TARBALL_RELATIVE}" CompassAlpha`, { cwd: PARENT });
 
-  step('2. scp to server');
-  run(`scp -i "${KEY}" -o StrictHostKeyChecking=no "${TARBALL}" ${HOST}:/home/ubuntu/`);
+    step('2. scp to server');
+    run(`scp ${SSH_OPTS} "${TARBALL}" ${HOST}:/home/ubuntu/`);
 
-  step('3. extract on server');
-  ssh(
-    `tar xzf /home/ubuntu/compass-alpha-deploy.tar.gz -C /home/ubuntu/compass-alpha --strip-components=1`,
-  );
+    // N9 (2026-10-30): the API had no way back — only the web bundle kept
+    // a dist.prev. Keep the whole live release (code + bundle, not
+    // node_modules or the server's .env files) before extracting over it.
+    // `--rollback` puts it back. A failed snapshot stops here, before
+    // anything on the server has changed.
+    step('2.5. keep the live release for --rollback');
+    try {
+      console.log('  ' + ssh(snapshotScript()).trim());
+    } catch (err) {
+      console.error('\x1b[31m✖ could not keep the live release — aborting before extract\x1b[0m');
+      console.error(String((err as Error).message ?? err));
+      process.exit(1);
+    }
+
+    step('3. extract on server');
+    ssh(`tar xzf /home/ubuntu/compass-alpha-deploy.tar.gz -C ${APP_DIR} --strip-components=1`);
+  } else {
+    // N9: put the release kept by the last deploy's step 2.5 back. The
+    // remaining steps (deps, units, env checks, restart, smokes) are the
+    // deploy's own; migrations and the web build are skipped — the
+    // snapshot carries its built bundle, and migrations only go forward.
+    step('R1. restore the previous release');
+    try {
+      console.log('  ' + ssh(describeSnapshotScript()).trim().replace(/\n/g, '\n  '));
+      console.log('  ' + ssh(restoreScript()).trim());
+    } catch (err) {
+      console.error(`\x1b[31m✖ rollback FAILED — ${PREV_TARBALL} missing or unreadable.\x1b[0m`);
+      console.error('  Nothing was restarted. If the web bundle was moved aside, the restore');
+      console.error('  script moved it back.');
+      console.error(String((err as Error).message ?? err));
+      process.exit(1);
+    }
+  }
 
   step('3.5. pnpm install (sync workspace deps if package.json changed)');
-  console.log(
-    ssh(
-      [
-        'export PATH=$HOME/.bun/bin:$PATH',
-        'cd /home/ubuntu/compass-alpha',
-        // Frozen: the server must install exactly what CI tested, not
-        // re-resolve and quietly rewrite the lockfile.
-        'pnpm install --frozen-lockfile 2>&1 | tail -5',
-      ].join(' && '),
-    ),
-  );
-
-  step('3.7. db migrations (idempotent — drizzle skips already-applied)');
-  // We previously piped to `tail -20`, which masked migrate failures
-  // because the pipeline exit code is tail's (always 0). A real
-  // PostgresError shipped silently for several deploys, leaving prod
-  // without the display_name_locked column. Now: full output, no pipe,
-  // and `ssh()` throws on non-zero so we abort before the api restart.
+  // 2026-10-30: pipefail — `| tail -5` used to report tail's exit code, so
+  // a failed install went on to restart the api on missing deps.
   try {
     console.log(
       ssh(
         [
+          'set -o pipefail',
           'export PATH=$HOME/.bun/bin:$PATH',
           'cd /home/ubuntu/compass-alpha',
-          'pnpm --filter @compass/db migrate 2>&1',
+          // Frozen: the server must install exactly what CI tested, not
+          // re-resolve and quietly rewrite the lockfile.
+          'pnpm install --frozen-lockfile 2>&1 | tail -5',
         ].join(' && '),
       ),
     );
   } catch (err) {
-    console.error('\x1b[31m✖ db migrate FAILED — aborting deploy before api restart\x1b[0m');
+    console.error('\x1b[31m✖ pnpm install FAILED — aborting before the api restart\x1b[0m');
     console.error(String((err as Error).message ?? err));
     process.exit(1);
+  }
+
+  if (!ROLLBACK) {
+    step('3.7. db migrations (idempotent — drizzle skips already-applied)');
+    // We previously piped to `tail -20`, which masked migrate failures
+    // because the pipeline exit code is tail's (always 0). A real
+    // PostgresError shipped silently for several deploys, leaving prod
+    // without the display_name_locked column. Now: full output, no pipe,
+    // and `ssh()` throws on non-zero so we abort before the api restart.
+    try {
+      console.log(
+        ssh(
+          [
+            'export PATH=$HOME/.bun/bin:$PATH',
+            'cd /home/ubuntu/compass-alpha',
+            'pnpm --filter @compass/db migrate 2>&1',
+          ].join(' && '),
+        ),
+      );
+    } catch (err) {
+      console.error('\x1b[31m✖ db migrate FAILED — aborting deploy before api restart\x1b[0m');
+      console.error(String((err as Error).message ?? err));
+      process.exit(1);
+    }
   }
 
   step('4a. install/refresh systemd units (api, worker, tunnel, watchdog)');
@@ -467,44 +578,46 @@ if (!DRY) {
     );
   }
 
-  /**
-   * 2026-10-21 audit CA-37: the web bundle used to be built AFTER the api
-   * restart, and `vite build` empties dist/ before writing it. For the
-   * length of the build the new api was serving a dist/ that was missing
-   * or half-written — every page load in that window 404'd its assets or
-   * fell through to JSON. Now the bundle is built beside the live one and
-   * renamed into place (two same-filesystem renames, microseconds apart)
-   * BEFORE the restart, so there is no window of new api + missing
-   * assets. A failed build aborts here, before anything restarts, and
-   * leaves the live dist/ untouched.
-   *
-   * The previous bundle is kept as dist.prev for exactly one deploy:
-   * rolling the frontend back is `mv dist dist.bad && mv dist.prev dist`
-   * (see docs/RUNBOOK.md "Roll back a bad deploy").
-   */
-  step('4b. build web into dist.next, then swap into place');
-  try {
-    console.log(
-      ssh(
-        [
-          'set -e',
-          'set -o pipefail',
-          'export PATH=$HOME/.bun/bin:$PATH',
-          'cd /home/ubuntu/compass-alpha/apps/web',
-          'rm -rf dist.next',
-          `VITE_BUILD_SHA=${JSON.stringify(releaseSha)} pnpm exec vite build --outDir dist.next --emptyOutDir 2>&1 | tail -10`,
-          'test -f dist.next/index.html',
-          'rm -rf dist.prev',
-          'if [ -d dist ]; then mv dist dist.prev; fi',
-          'mv dist.next dist',
-        ].join(' && '),
-      ),
-    );
-  } catch (err) {
-    console.error('\x1b[31m✖ web build FAILED — aborting before the api restart\x1b[0m');
-    console.error('  The live apps/web/dist was not touched.');
-    console.error(String((err as Error).message ?? err));
-    process.exit(1);
+  if (!ROLLBACK) {
+    /**
+     * 2026-10-21 audit CA-37: the web bundle used to be built AFTER the api
+     * restart, and `vite build` empties dist/ before writing it. For the
+     * length of the build the new api was serving a dist/ that was missing
+     * or half-written — every page load in that window 404'd its assets or
+     * fell through to JSON. Now the bundle is built beside the live one and
+     * renamed into place (two same-filesystem renames, microseconds apart)
+     * BEFORE the restart, so there is no window of new api + missing
+     * assets. A failed build aborts here, before anything restarts, and
+     * leaves the live dist/ untouched.
+     *
+     * The previous bundle is kept as dist.prev for exactly one deploy:
+     * rolling the frontend back is `mv dist dist.bad && mv dist.prev dist`
+     * (see docs/RUNBOOK.md "Roll back a bad deploy").
+     */
+    step('4b. build web into dist.next, then swap into place');
+    try {
+      console.log(
+        ssh(
+          [
+            'set -e',
+            'set -o pipefail',
+            'export PATH=$HOME/.bun/bin:$PATH',
+            'cd /home/ubuntu/compass-alpha/apps/web',
+            'rm -rf dist.next',
+            `VITE_BUILD_SHA=${JSON.stringify(releaseSha)} pnpm exec vite build --outDir dist.next --emptyOutDir 2>&1 | tail -10`,
+            'test -f dist.next/index.html',
+            'rm -rf dist.prev',
+            'if [ -d dist ]; then mv dist dist.prev; fi',
+            'mv dist.next dist',
+          ].join(' && '),
+        ),
+      );
+    } catch (err) {
+      console.error('\x1b[31m✖ web build FAILED — aborting before the api restart\x1b[0m');
+      console.error('  The live apps/web/dist was not touched.');
+      console.error(String((err as Error).message ?? err));
+      process.exit(1);
+    }
   }
 
   step('4c. restart api + worker');
@@ -547,8 +660,28 @@ if (!DRY) {
   }
 }
 
+// The smoke's realtime check needs the token-less probe (N1, 2026-10-30).
+// A rollback to a release from before it cannot answer the probe; say
+// so instead of failing the rollback on it. Checked on main.ts because
+// extraction never deletes: the newer socket.ts stays on disk, unused.
+let smokeEnv: NodeJS.ProcessEnv = process.env;
+if (ROLLBACK && !DRY) {
+  const probeAware = ssh(
+    `grep -q "realtime/socket" ${APP_DIR}/apps/api/src/main.ts && echo yes || echo no`,
+  ).trim();
+  if (probeAware !== 'yes') {
+    console.log(
+      '  \x1b[33m⚠ restored api predates the realtime probe — smoke cannot verify the WebSocket upgrade\x1b[0m',
+    );
+    smokeEnv = { ...process.env, COMPASS_SMOKE_PRE_PROBE_API: '1' };
+  }
+}
+
 step('6. server-side smoke');
-const sm = spawnSync('bun', ['run', join(__dirname, 'smoke.ts')], { stdio: 'inherit' });
+const sm = spawnSync('bun', ['run', join(__dirname, 'smoke.ts')], {
+  stdio: 'inherit',
+  env: smokeEnv,
+});
 if (sm.status !== 0) {
   console.error('\x1b[31m✖ server-side smoke FAILED\x1b[0m');
   process.exit(1);
@@ -574,4 +707,8 @@ if (bsd.status !== 0) {
   process.exit(1);
 }
 
-console.log('\n\x1b[32m✔ DEPLOY GREEN\x1b[0m  Both smokes passed against the live URL.');
+console.log(
+  ROLLBACK
+    ? '\n\x1b[32m✔ ROLLBACK GREEN\x1b[0m  The previous release is live and the smokes passed.'
+    : '\n\x1b[32m✔ DEPLOY GREEN\x1b[0m  Both smokes passed against the live URL.',
+);

@@ -90,8 +90,46 @@ mv dist dist.bad && mv dist.prev dist   # swap back
 Only valid while the api is compatible with the old bundle (no tRPC
 contract change in between); the next deploy overwrites `dist.prev`.
 
-**Full rollback**: there is no previous image to switch back to; redeploy
-the last good commit:
+**Full rollback (api + worker + web)** — N9, 2026-10-30. Every deploy
+keeps the release that was live before it as
+`/home/ubuntu/compass-alpha.prev.tar.gz` (code and built web bundle;
+not `node_modules`, not the server's `.env` files) before extracting
+anything. To go back to it, from the deploy machine:
+```bash
+bun run scripts/deploy.ts --rollback --dry   # which release would come back (read-only)
+bun run scripts/deploy.ts --rollback         # put it back, restart, verify
+```
+`--rollback` ships nothing from your checkout (no provenance gates, no
+unit tests), but keeps the in-flight-run pre-flight (`--allow-active-run`
+overrides it). It restores the tree (the web bundle wholesale), runs
+`pnpm install --frozen-lockfile` against the restored lockfile, refreshes
+the systemd units, re-runs the `.env` / BYPASSRLS checks, restarts
+`compass-api` + `compass-worker` and runs the same smokes as a deploy;
+it ends with `ROLLBACK GREEN`. It does not run migrations and does not
+rebuild the bundle (the snapshot carries the built one).
+- Only one release is kept: the next deploy replaces the snapshot with
+  whatever is live at that moment. Rolling back twice in a row restores
+  the same release twice.
+- The very first deploy made with this script snapshots the release the
+  old script left behind, so a rollback is available from that deploy on.
+  If that older api predates the realtime probe, the smoke says so and
+  checks only that `/ws` answers, instead of failing.
+- Files that exist only in the newer release stay on disk (extraction
+  does not delete); they are harmless unless something imports them.
+- Migrations only move forward: rolling back does NOT undo a migration
+  the bad deploy applied. If old code cannot run against the newer
+  schema, restore the pre-deploy dump (see "Restore from a dump" below —
+  take one with `sudo systemctl start compass-backup.service` before
+  risky deploys) and accept losing writes made since that dump.
+- By hand, without the deploy machine (then restart and check yourself):
+  ```bash
+  cd /home/ubuntu/compass-alpha
+  tar -tzf ../compass-alpha.prev.tar.gz >/dev/null      # readable?
+  mv apps/web/dist apps/web/dist.bad && tar -xzf ../compass-alpha.prev.tar.gz -C .
+  pnpm install --frozen-lockfile && sudo systemctl restart compass-api compass-worker
+  ```
+
+**Redeploying an older commit** is still possible:
 ```bash
 git checkout <last-good-sha>            # detached HEAD
 bun run scripts/deploy.ts --force       # --force: not the tip of main
@@ -100,13 +138,27 @@ git checkout main
 - `--force` skips the provenance gates and marks the release sha
   `-unverified` in `/health/version`; add `--allow-active-run` only if you
   accept forcing a reload on clients in a live run.
-- Files that exist only in the newer commit stay on disk (extraction does
-  not delete); they are harmless unless something imports them.
-- Migrations only move forward: redeploying old code does NOT undo a
-  migration the bad deploy applied. If old code cannot run against the
-  newer schema, restore the pre-deploy dump (see "Restore from a dump"
-  below — take one with `sudo systemctl start compass-backup.service`
-  before risky deploys) and accept losing writes made since that dump.
+
+### Deploy host key (N9)
+`scripts/deploy.ts` connects with `StrictHostKeyChecking=yes` against the
+keys pinned in `infra/deploy/known_hosts` (129.204.59.183; taken with
+`ssh-keyscan` on 2026-10-30 and identical to the keys the deploy Mac had
+already accepted). A host that is not in that file, or presents another
+key, is refused. If the server is rebuilt or moves: read the new key
+fingerprints from the provider console, compare them with
+`ssh-keyscan <host> | ssh-keygen -lf -`, and only then replace the lines
+in the file (or point `COMPASS_DEPLOY_KNOWN_HOSTS` at another file).
+
+### Workspace-wide purges are off on production (D1/D5)
+`admin.purgeAllTestData` (清空整个工作区) and `admin.purgeByDate`
+(重置指定日期) refuse with `bulkPurgeDisabledInProduction` when the api
+runs with `NODE_ENV=production` or `COMPASS_RELEASE_CHANNEL=production`.
+Deleting a single order or market run on the maintenance page is not
+affected. `packages/db/src/purge-fake-data.ts --apply` refuses on the same
+signals and also on any host where `compass-api.service` is installed.
+For a deliberate maintenance window, take a backup first, then set
+`COMPASS_ALLOW_BULK_PURGE=true` in the server `.env` and restart the api
+(or prefix the script command with it); remove it again afterwards.
 
 ### Sign the origin rendezvous (CA-12)
 The app-proxy Worker (`infra/cloudflare/app-proxy/`) learns the current
@@ -211,8 +263,16 @@ optional off-site upload to any S3-compatible bucket.
   dumps are ~MB-scale.
 - **Off-site (optional)**: set `BACKUP_S3_BUCKET`, `BACKUP_S3_PREFIX`, and
   `BACKUP_S3_ENDPOINT` in `.env`. Works with Yandex Object Storage / Tencent COS /
-  MinIO / AWS S3 via the `aws` CLI. Upload failure does NOT fail the backup —
-  the local dump is still good.
+  MinIO / AWS S3 via the `aws` CLI. Once a bucket is set, a failed upload or a
+  missing `aws` CLI fails the unit (exit 1, `[backup] ERROR: …` in the journal);
+  the local dump is kept. (Until 2026-10-30 both only logged WARN and exited 0.)
+- **Failures** print one `[backup] FAILED (exit N) at line L: <command>` or
+  `[backup] ERROR: …` line and exit non-zero, so the unit shows `failed`.
+  Nothing alerts on that yet. To add alerting the owner needs to choose:
+  where alerts go (Telegram chat/bot, email, ntfy topic, …), who receives
+  them, and whether a missing nightly run (not only a failed one) should
+  alert — e.g. an `OnFailure=` unit that posts to the chosen channel plus a
+  daily check that the newest dump is < 26 h old.
 - **Recovery target (M1.1)**: ≤ 24 h RPO, ≤ 1 h RTO. WAL streaming + sub-15-min
   RPO is on the M2 backlog.
 
