@@ -42,6 +42,7 @@ import {
 import { trpc, newIdempotencyKey } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton, haptic } from '../hooks/useTelegram';
+import { confirmThen } from '../lib/confirm';
 import { useI18n, useProductName } from '../hooks/useI18n';
 import { usePhotoUploader } from '../hooks/usePhotoUploader';
 // M3.5: StoreSwitcher pill removed from page chrome; picker lives in
@@ -518,6 +519,15 @@ export function RunPage() {
         errToast('common.error')(err);
       }
     },
+  });
+  // BUY-5 (2026-10-30): the demand that joined after an item was decided
+  // will not be bought.
+  const dismissTopUp = trpc.run.dismissTopUp.useMutation({
+    onSuccess: () => {
+      invalidateRunQuietly(true);
+      toast.info(i18n.t('run.topUp.dismissed'));
+    },
+    onError: errToast('common.error'),
   });
   const unmarkUnavailable = trpc.run.unmarkUnavailable.useMutation({
     onSuccess: () => {
@@ -2277,6 +2287,53 @@ export function RunPage() {
             onUnmark={(skuId, skuName) =>
               setConfirmAction({ kind: 'unmarkUnavailable', skuId, skuName })
             }
+            onTopUpBuy={(item) => {
+              const sku = skuById.get(item.skuId);
+              const skuName = sku ? productName(sku) : item.skuId.slice(0, 8);
+              // An unavailable item comes back as pending (with the whole
+              // demand) through the existing restore flow.
+              if (item.status === 'unavailable') {
+                setConfirmAction({ kind: 'unmarkUnavailable', skuId: item.skuId, skuName });
+                return;
+              }
+              openPurchaseEdit(item);
+              // Prefill the extra where the demand is not yet covered, so it
+              // goes to the stores that asked for it, not spread over all.
+              const demand = (runDetailQuery.data?.perStoreDemand ?? []).filter(
+                (d) => d.skuId === item.skuId,
+              );
+              setPurchaseDraft((d) => {
+                if (!d) return d;
+                const splits = new Map(d.splits);
+                let remaining = Number(item.topUpQty ?? 0);
+                for (const dm of demand) {
+                  if (remaining <= 0) break;
+                  const gap = Number(dm.qty) - Number(splits.get(dm.storeId) ?? 0);
+                  if (gap <= 0) continue;
+                  const add = Math.min(gap, remaining);
+                  splits.set(dm.storeId, String(Number(splits.get(dm.storeId) ?? 0) + add));
+                  remaining -= add;
+                }
+                const total = [...splits.values()].reduce((sum, q) => sum + Number(q), 0) + remaining;
+                return {
+                  ...d,
+                  splits,
+                  actualQty: String(Number(total.toFixed(3))),
+                  reason: i18n.t('run.topUp.reason'),
+                };
+              });
+            }}
+            onTopUpDismiss={(item) =>
+              confirmThen(i18n.t('run.topUp.dismissConfirm', { qty: formatQty(item.topUpQty ?? '0') }), () =>
+                dismissTopUp.mutate({ runId: activeRun!.id, skuId: item.skuId }),
+              )
+            }
+            onEditPrice={(item) => {
+              openPurchaseEdit(item);
+              setPurchaseDraft((d) =>
+                d ? { ...d, qtyLocked: true, reason: i18n.t('run.prices.reason') } : d,
+              );
+            }}
             onOpenAdvancedPurchase={(item) => {
               // User changed qty from planned (or no per-store demand
               // info available) — open the full PurchaseSheet so they

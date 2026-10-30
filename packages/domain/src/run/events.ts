@@ -237,6 +237,12 @@ export type RunEvent =
       payload: { skuId: string; reason: string };
     })
   | (BaseEvent & {
+      // BUY-5 (2026-10-30): the purchaser will not buy the extra demand
+      // that arrived after this item was bought or marked unavailable.
+      type: 'TopUpDismissed';
+      payload: { skuId: string; qty: string; note: string };
+    })
+  | (BaseEvent & {
       // Reverts a previously-purchased SKU back to pending. Used when
       // the purchaser realises after the fact that a recorded buy was
       // wrong (mistapped wrong row, decided not to buy after all,

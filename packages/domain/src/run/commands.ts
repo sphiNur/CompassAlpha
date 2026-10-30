@@ -90,6 +90,9 @@ export type RunCommand =
       actor: ActorCtx;
     }
   | { type: 'UnmarkUnavailable'; skuId: string; reason: string; actor: ActorCtx }
+  /** BUY-5: the purchaser decides not to buy the extra demand that
+   *  arrived after this item was already bought or marked unavailable. */
+  | { type: 'DismissTopUp'; skuId: string; note?: string; actor: ActorCtx }
   | { type: 'UndoPurchase'; skuId: string; reason?: string; actor: ActorCtx }
   | { type: 'UndeliverStore'; storeId: string; reason: string; actor: ActorCtx }
   | { type: 'UndoStartPurchase'; reason: string; actor: ActorCtx }
@@ -594,6 +597,12 @@ export function decideRun(
         (i) => i.status === 'purchased' || i.status === 'unavailable',
       );
       if (!allHandled) throw preconditionFailed('run.errors.itemsPending');
+      // BUY-5 (2026-10-30): an order joined after an item was bought (or
+      // marked unavailable) and asked for more of it. Buy the difference or
+      // say it will not be bought before the goods go out.
+      if (Array.from(state.items.values()).some((i) => topUpOf(i) > 0)) {
+        throw preconditionFailed('run.errors.topUpPending');
+      }
       return [{ ...baseFor(1), type: 'DeliveryStarted', payload: {} }];
     }
 
@@ -970,14 +979,18 @@ export function decideRun(
       // may fix records for goods that were already delivered/confirmed
       // (the physical receipt stands; the recorded numbers are what's
       // being corrected). Outside amending the guard holds as before.
+      // 2026-10-30 (owner decision): prices are often filled in after the
+      // goods went out. Once a store has the goods, its quantity and split
+      // stand, but price, supplier, payment method and receipt may still
+      // be corrected until the run is finished.
       if (state.status !== 'amending') {
-        for (const split of item.storeSplits) {
-          const store = state.stores.get(split.storeId);
-          if (store?.deliveredAt) {
-            throw preconditionFailed('run.errors.cannotReviseAfterDelivery', {
-              storeId: split.storeId,
-            });
-          }
+        const deliveredSplit = item.storeSplits.find(
+          (split) => !!state.stores.get(split.storeId)?.deliveredAt,
+        );
+        if (deliveredSplit && !sameQuantities(item, command.actualQty, command.storeSplits)) {
+          throw preconditionFailed('run.errors.cannotReviseAfterDelivery', {
+            storeId: deliveredSplit.storeId,
+          });
         }
       }
       const actual = num(command.actualQty, 'run.errors.invalidQty');
@@ -1053,6 +1066,26 @@ export function decideRun(
       const reason = (command.reason ?? '').trim();
       if (reason.length > 500) throw validation('run.errors.noteTooLong');
       return [{ ...baseFor(1), type: 'PurchaseUndone', payload: { skuId: command.skuId, reason } }];
+    }
+
+    case 'DismissTopUp': {
+      assertActive(state);
+      if (!command.actor.permissions.has('run.purchase')) {
+        throw forbidden('run.errors.cannotPurchase');
+      }
+      assertEditablePhase(state, command.actor);
+      const item = state.items.get(command.skuId);
+      if (!item) throw validation('run.errors.itemNotInRun');
+      if (!(topUpOf(item) > 0)) return [];
+      const note = (command.note ?? '').trim();
+      if (note.length > 500) throw validation('run.errors.noteTooLong');
+      return [
+        {
+          ...baseFor(1),
+          type: 'TopUpDismissed',
+          payload: { skuId: command.skuId, qty: item.topUpQty!, note },
+        },
+      ];
     }
 
     case 'UnmarkUnavailable': {
@@ -1378,6 +1411,27 @@ export function computeRunTotals(state: RunState): {
  * wall. Cancelled stays permanently frozen. Returns nothing; throws the
  * appropriate precondition/forbidden on a blocked edit.
  */
+function topUpOf(item: { topUpQty?: string | null }): number {
+  return Number(item.topUpQty ?? 0);
+}
+
+/** Same total and the same quantity per store (prices may differ). */
+function sameQuantities(
+  item: { purchasedQty: string | null; storeSplits: Array<{ storeId: string; qty: string }> },
+  actualQty: string,
+  splits: Array<{ storeId: string; qty: string }>,
+): boolean {
+  if (Math.abs(Number(item.purchasedQty ?? 0) - Number(actualQty)) > TOLERANCE) return false;
+  const before = new Map<string, number>();
+  for (const sp of item.storeSplits) before.set(sp.storeId, (before.get(sp.storeId) ?? 0) + Number(sp.qty));
+  const after = new Map<string, number>();
+  for (const sp of splits) after.set(sp.storeId, (after.get(sp.storeId) ?? 0) + Number(sp.qty));
+  for (const id of new Set([...before.keys(), ...after.keys()])) {
+    if (Math.abs((before.get(id) ?? 0) - (after.get(id) ?? 0)) > TOLERANCE) return false;
+  }
+  return true;
+}
+
 function assertEditablePhase(state: RunState, actor: ActorCtx): void {
   if (state.status === 'cancelled') {
     throw preconditionFailed('run.errors.runFrozen', { status: state.status });

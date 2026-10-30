@@ -562,6 +562,11 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
         await bumpSeq(db, e.streamId, e.seq);
         break;
 
+      case 'TopUpDismissed':
+        // BUY-5: domain-state only (see run.get); nothing to project.
+        await bumpSeq(db, e.streamId, e.seq);
+        break;
+
       case 'StoreDeliveryUndone':
         // Clear deliveredAt/by AND any item-level confirms scoped to
         // this store. (Item-level confirms shouldn't exist before
