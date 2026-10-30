@@ -152,6 +152,13 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
     expect(await errorOf(() => admin.admin.roleUpdate({ roleId: roleIds.manager!, permissionKeys: current }))).toBeNull();
   });
 
+  test('ADM-22: a built-in role keeps its rank, and says so', async () => {
+    const { admin, roleIds } = fix!;
+    const err = await errorOf(() => admin.admin.roleUpdate({ roleId: roleIds.manager!, rank: 55 }));
+    expect(err?.code).toBe('BAD_REQUEST');
+    expect(err?.message).toBe('admin.errors.builtinRankLocked');
+  });
+
   test('ADM-5: a manager cannot make a role at or above their rank the store default', async () => {
     const { manager, storeId } = fix!;
     const err = await errorOf(() => manager.admin.storeUpdate({ storeId, defaultRoleSlug: 'manager' }));

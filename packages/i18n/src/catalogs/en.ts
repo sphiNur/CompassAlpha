@@ -689,6 +689,7 @@ export const en = {
     'Organization-level roles and permissions can only be granted globally',
   'admin.errors.roleNotFound': 'Role not found',
   'admin.errors.roleSlugTaken': 'This role id is already taken',
+  'admin.errors.builtinRankLocked': 'A built-in role’s rank cannot be changed',
   'admin.errors.runHasForeignSessions':
     'This run contains other people’s orders — it cannot be deleted',
   'admin.errors.sessionHasForeignAuthors':
@@ -1411,6 +1412,8 @@ export const en = {
   'finance.preset.custom': 'Custom',
   'finance.range.start': 'Start date',
   'finance.range.end': 'End date',
+  'finance.range.invalid':
+    'Choose a start and an end date; the start cannot be after the end.',
   'finance.view.daily': 'Daily',
   'finance.view.bySupplier': 'By supplier',
   'finance.view.byStore': 'By store',
@@ -1422,7 +1425,7 @@ export const en = {
   'finance.empty.description': 'Pick a different date range, or record a run first.',
   'finance.export.label': 'Copy as TSV',
   'finance.export.copied': 'Report copied — paste into a spreadsheet.',
-  'finance.export.noClipboard': 'Clipboard not available — check console for TSV.',
+  'finance.export.noClipboard': 'The clipboard is not available, so nothing was copied.',
   // Server error key emitted when a non-admin attempts to query the
   // finance reports.
   'admin.errors.financeRequiresManage': 'Finance reports require the users.manage permission.',
@@ -1768,6 +1771,7 @@ export const en = {
   'settlement.errors.stores': 'Could not load stores available for daily close.',
   'settlement.errors.businessDate': 'Could not load the store business date.',
   'settlement.errors.save': 'Could not save the daily close. Please try again.',
+  'settlement.errors.load': 'Could not load this day’s close. Refresh to try again.',
   'settlement.errors.totalTooLarge': 'The total is too large. Check the amounts.',
   'settlement.errors.unknownItem': 'A row was changed elsewhere. Reload the daily close and try again.',
   'settlement.errors.employeeRequired': 'Choose an employee for every wage entry.',

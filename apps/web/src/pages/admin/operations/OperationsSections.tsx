@@ -1126,8 +1126,17 @@ export function FinanceSection() {
 
   const [view, setView] = useState<FinanceView>('daily');
 
-  const linesQuery = trpc.report.purchaseLines.useQuery({ startDate, endDate });
-  const totalsQuery = trpc.report.totals.useQuery({ startDate, endDate });
+  // HIS-12 (2026-10-30): an empty or reversed custom range used to show
+  // "no purchases in this range", or fail three times into "unknown error".
+  const rangeOk =
+    /^\d{4}-\d{2}-\d{2}$/.test(startDate) &&
+    /^\d{4}-\d{2}-\d{2}$/.test(endDate) &&
+    startDate <= endDate;
+  const linesQuery = trpc.report.purchaseLines.useQuery(
+    { startDate, endDate },
+    { enabled: rangeOk },
+  );
+  const totalsQuery = trpc.report.totals.useQuery({ startDate, endDate }, { enabled: rangeOk });
 
   // Lookup tables for joining ids → display names.
   const skuById = useMemo(() => {
@@ -1406,7 +1415,9 @@ export function FinanceSection() {
         </Button>
       </div>
 
-      {linesQuery.isLoading ? (
+      {!rangeOk ? (
+        <Banner tone="warn" title={i18n.t('finance.range.invalid')} />
+      ) : linesQuery.isLoading ? (
         <div className="py-6 text-center">
           <Spinner size={16} />
         </div>

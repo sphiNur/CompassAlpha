@@ -1043,9 +1043,10 @@ export function SettlementPage() {
         ) : null}
 
         {closeQuery.isError ? (
+          // CLS-15 (2026-10-30): a failed LOAD said "could not save".
           <Banner
             tone="danger"
-            title={i18n.t('settlement.errors.save')}
+            title={i18n.t('settlement.errors.load')}
             action={
               <Button size="sm" variant="pearl" onClick={refreshRecord}>
                 {i18n.t('settlement.action.refresh')}

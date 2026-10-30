@@ -617,6 +617,7 @@ export const uz = {
     'Tashkilot darajasidagi rol va ruxsatlar faqat global berilishi mumkin',
   'admin.errors.roleNotFound': 'Rol topilmadi',
   'admin.errors.roleSlugTaken': "Bu rol identifikatori band",
+  'admin.errors.builtinRankLocked': "Ichki rolning darajasini o'zgartirib bo'lmaydi",
   'admin.errors.runHasForeignSessions':
     "Bu xaridda boshqa odamlarning buyurtmalari bor — o'chirib bo'lmaydi",
   'admin.errors.sessionHasForeignAuthors':
@@ -1293,6 +1294,8 @@ export const uz = {
   'finance.preset.custom': 'Maxsus',
   'finance.range.start': 'Boshlanish sanasi',
   'finance.range.end': 'Tugash sanasi',
+  'finance.range.invalid':
+    "Boshlanish va tugash sanasini tanlang; boshlanish tugashdan keyin bo'lmasin.",
   'finance.view.daily': 'Kunlik',
   'finance.view.bySupplier': "Yetkazib beruvchi bo'yicha",
   'finance.view.byStore': "Do'kon bo'yicha",
@@ -1304,7 +1307,7 @@ export const uz = {
   'finance.empty.description': 'Boshqa sana tanlang yoki avval xarid yozib oling.',
   'finance.export.label': 'TSV nusxa olish',
   'finance.export.copied': 'Hisobot nusxalandi — jadval dasturiga joylashtiring.',
-  'finance.export.noClipboard': 'Bufer mavjud emas — TSV konsolga chiqarildi.',
+  'finance.export.noClipboard': "Bufer mavjud emas, hech narsa nusxalanmadi.",
   'admin.errors.financeRequiresManage': 'Moliyaviy hisobotlar uchun users.manage ruxsati kerak.',
 
   // ── 15. Org financial settings (M1.17) ────────────────
@@ -1632,6 +1635,7 @@ export const uz = {
   'settlement.errors.stores': "Kun yakuni uchun do'konlarni yuklab bo'lmadi.",
   'settlement.errors.businessDate': "Do'konning hisob sanasini yuklab bo'lmadi.",
   'settlement.errors.save': "Kun yakunini saqlab bo'lmadi. Qayta urinib ko'ring.",
+  'settlement.errors.load': "Bu kunning yopilishini yuklab bo'lmadi. Sahifani yangilang.",
   'settlement.errors.totalTooLarge': "Jami summa juda katta. Summalarni tekshiring.",
   'settlement.errors.unknownItem': "Qator boshqa joyda o'zgartirilgan. Kun yakunini qayta yuklab, yana urinib ko'ring.",
   'settlement.errors.employeeRequired': "Har bir ish haqi qatori uchun xodimni tanlang.",

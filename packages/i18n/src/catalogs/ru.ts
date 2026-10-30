@@ -612,6 +612,7 @@ export const ru = {
     'Роли и права уровня организации можно назначать только глобально',
   'admin.errors.roleNotFound': 'Роль не найдена',
   'admin.errors.roleSlugTaken': 'Такой идентификатор роли уже занят',
+  'admin.errors.builtinRankLocked': 'Уровень встроенной роли изменить нельзя',
   'admin.errors.runHasForeignSessions':
     'В закупке есть заказы других людей — удалить нельзя',
   'admin.errors.sessionHasForeignAuthors':
@@ -1282,6 +1283,8 @@ export const ru = {
   'finance.preset.custom': 'Произвольный',
   'finance.range.start': 'Начало периода',
   'finance.range.end': 'Конец периода',
+  'finance.range.invalid':
+    'Выберите начальную и конечную даты; начало не может быть позже конца.',
   'finance.view.daily': 'По дням',
   'finance.view.bySupplier': 'По поставщикам',
   'finance.view.byStore': 'По магазинам',
@@ -1293,7 +1296,7 @@ export const ru = {
   'finance.empty.description': 'Выберите другой период или запишите закупку.',
   'finance.export.label': 'Копировать TSV',
   'finance.export.copied': 'Отчёт скопирован — вставьте в таблицу.',
-  'finance.export.noClipboard': 'Буфер обмена недоступен — TSV в консоли.',
+  'finance.export.noClipboard': 'Буфер обмена недоступен, ничего не скопировано.',
   'admin.errors.financeRequiresManage': 'Финансовые отчёты требуют права users.manage.',
 
   // ── 15. Org financial settings (M1.17) ────────────────
@@ -1619,6 +1622,7 @@ export const ru = {
   'settlement.errors.stores': 'Не удалось загрузить магазины для закрытия дня.',
   'settlement.errors.businessDate': 'Не удалось загрузить рабочую дату магазина.',
   'settlement.errors.save': 'Не удалось сохранить закрытие дня. Повторите попытку.',
+  'settlement.errors.load': 'Не удалось загрузить закрытие дня. Обновите страницу.',
   'settlement.errors.totalTooLarge': 'Слишком большая итоговая сумма. Проверьте суммы.',
   'settlement.errors.unknownItem': 'Строку изменили в другом месте. Обновите закрытие дня и повторите.',
   'settlement.errors.employeeRequired': 'Выберите сотрудника для каждой строки зарплаты.',
