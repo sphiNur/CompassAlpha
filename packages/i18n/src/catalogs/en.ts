@@ -77,6 +77,8 @@ export const en = {
   'common.edit': 'Edit',
   'common.delete': 'Delete',
   'catalog.category.new': 'New category',
+  'catalog.category.slugInvalid': 'Use lowercase letters, digits and "-" only.',
+  'catalog.names.atLeastOne': 'A name in at least one language.',
   'catalog.confirm.discardEdits': 'Discard the changes you have not saved?',
   'catalog.category.edit': 'Edit category',
   'catalog.category.emptyTitle': 'No categories',

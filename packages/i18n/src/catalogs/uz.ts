@@ -53,6 +53,8 @@ export const uz = {
   'common.edit': 'Tahrirlash',
   'common.delete': "O'chirish",
   'catalog.category.new': 'Yangi turkum',
+  'catalog.category.slugInvalid': 'Faqat kichik lotin harflari, raqamlar va «-».',
+  'catalog.names.atLeastOne': 'Kamida bitta tilda nom.',
   'catalog.confirm.discardEdits': "Saqlanmagan o'zgarishlar bekor qilinsinmi?",
   'catalog.category.edit': 'Turkumni tahrirlash',
   'catalog.category.emptyTitle': "Turkumlar yo'q",

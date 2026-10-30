@@ -46,6 +46,8 @@ export const zh = {
   'common.edit': '编辑',
   'common.delete': '删除',
   'catalog.category.new': '新建分类',
+  'catalog.category.slugInvalid': '只能用小写字母、数字和「-」。',
+  'catalog.names.atLeastOne': '名称至少填一种语言。',
   'catalog.confirm.discardEdits': '放弃还没保存的修改吗？',
   'catalog.category.edit': '编辑分类',
   'catalog.category.emptyTitle': '暂无分类',

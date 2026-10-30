@@ -46,6 +46,8 @@ export const ru = {
   'common.edit': 'Изменить',
   'common.delete': 'Удалить',
   'catalog.category.new': 'Новая категория',
+  'catalog.category.slugInvalid': 'Только строчные латинские буквы, цифры и «-».',
+  'catalog.names.atLeastOne': 'Название хотя бы на одном языке.',
   'catalog.confirm.discardEdits': 'Отменить несохранённые изменения?',
   'catalog.category.edit': 'Изменить категорию',
   'catalog.category.emptyTitle': 'Нет категорий',
