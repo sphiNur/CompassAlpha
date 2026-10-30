@@ -2514,6 +2514,59 @@ describe('run.topUp (BUY-5)', () => {
     expect(decideRun(after, { type: 'DismissTopUp', skuId: 'sku-1', actor: purchaser() }, clock)).toEqual([]);
   });
 
+  test('RE-BUY-2: a price-only or partial revision leaves the rest of the top-up', () => {
+    let s = planAndPurchase();
+    s = decideRun(s, attach('5'), clock).reduce(applyRun, s);
+    const priceOnly = decideRun(s, revise('4', [{ storeId: 'A', qty: '4' }]), clock).reduce(applyRun, s);
+    expect(priceOnly.items.get('sku-1')?.topUpQty).toBe('5');
+    const partial = decideRun(s, revise('6', [{ storeId: 'A', qty: '4' }, { storeId: 'B', qty: '2' }]), clock).reduce(
+      applyRun,
+      s,
+    );
+    expect(partial.items.get('sku-1')?.topUpQty).toBe('3');
+    expect(() => decideRun(partial, { type: 'StartDelivery', actor: purchaser() }, clock)).toThrow(
+      'run.errors.topUpPending',
+    );
+  });
+
+  test('RE-BUY-3: an order joining a purchaser-added item makes it a demand row that survives an undo', () => {
+    let s = planAndPurchase();
+    s = decideRun(
+      s,
+      {
+        type: 'AddPurchaserItem',
+        skuId: 'sku-extra',
+        supplierId: null,
+        unitPrice: '1000',
+        actualQty: '2',
+        receiptPhotoUrl: null,
+        storeSplits: [{ storeId: 'A', qty: '2' }],
+        paymentMethod: 'cash',
+        reason: 'chef asked',
+        runStoreIds: ['A'],
+        actor: purchaser(),
+      },
+      clock,
+    ).reduce(applyRun, s);
+    s = decideRun(
+      s,
+      { type: 'AttachSessions', sessionIds: ['sess-late'], addedPlannedItems: [{ skuId: 'sku-extra', qty: '3' }], actor: purchaser() },
+      clock,
+    ).reduce(applyRun, s);
+    const joined = s.items.get('sku-extra')!;
+    expect(joined.addedByPurchaser).toBe(false);
+    expect(joined.plannedQty).toBe('3');
+    s = decideRun(
+      s,
+      { type: 'UndoPurchase', skuId: 'sku-extra', reason: 'wrong price', actor: purchaser() },
+      clock,
+    ).reduce(applyRun, s);
+    const undone = s.items.get('sku-extra');
+    expect(undone?.status).toBe('pending');
+    expect(undone?.plannedQty).toBe('3');
+    expect(() => decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock)).toThrow();
+  });
+
   test('a pending item just grows, with no top-up', () => {
     let s = emptyRunState('run-p');
     s = decideRun(

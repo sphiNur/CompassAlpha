@@ -372,6 +372,7 @@ export const uz = {
   'run.errors.cannotPlan': "Xaridlarni rejalashtirishga ruxsatingiz yoʻq.",
   'common.errors.validation': "Noto'g'ri kiritish — belgilangan maydonlarni tekshiring",
   'common.networkError': 'Tarmoq xatosi — ulanishni tekshiring',
+  'common.offlineNotSaved': "Internet yo'q — bu o'zgarish saqlanmadi. Internet qaytganda qayta urinib ko'ring.",
 
   // ── 3. Settings ────────────────────────────────────────────────
   'settings.language.title': 'Til',
@@ -437,7 +438,11 @@ export const uz = {
   'shell.noTabs.body':
     "Rolingizda buyurtma, tekshiruv, xarid yoki boshqa bo'limlarga ruxsat yo'q. Kerak bo'lsa, administratorga murojaat qiling.",
   'shell.offline.title': "Internet yo'q",
-  'shell.offline.body': "Oldin yuklangan ma'lumot ko'rsatilmoqda; o'zgarishlar aloqa tiklanganda sinxronlanadi.",
+  'shell.pageNotLoaded.title': 'Bu sahifa hali yuklanmagan',
+  'shell.pageNotLoaded.body':
+    "Ochish uchun internet kerak. Internet qaytganda o'zi yuklanadi yoki «Qayta urinish»ni bosing.",
+  'shell.offline.body':
+    "Oxirgi yuklangan ma'lumot ko'rsatilmoqda. Buyurtma, xarid va qabul telefonda saqlanadi va internet qaytganda yuboriladi; kun yakuni, savdo va boshqaruv faqat internet bilan saqlanadi.",
   'order.pendingSync': "{n} ta o'zgarish sinxronlanishni kutmoqda",
   'shell.pageError.title': 'Bu sahifada xatolik yuz berdi',
   'shell.pageError.body': "Boshqa sahifalar ishlaydi. Qayta urinib ko'ring yoki boshqa sahifaga o'ting.",
@@ -1039,6 +1044,8 @@ export const uz = {
   'run.errors.cannotEjectSession': "Xariddan yuborilganlarni qaytarish huquqi yo'q",
   'run.errors.storeAlreadyConfirmed': "Do'kon qabul qilishni allaqachon tasdiqlagan",
   'run.errors.notVisible': 'Xarid topilmadi yoki sizga mavjud emas',
+  'run.errors.priceFormat': "Narx 0 dan katta bo'lsin: ko'pi bilan 12 raqam va 2 kasr.",
+  'run.errors.qtyFormat': "Miqdor 0 dan katta bo'lsin: ko'pi bilan 9 raqam va 3 kasr.",
   'run.errors.itemServesOtherStores':
     "Bu mahsulot siz javobgar bo'lmagan do'konlarga ham kerak; uni o'sha do'konlar xaridori o'zgartiradi.",
   'run.errors.runHasOtherStores':

@@ -171,6 +171,30 @@ describe.skipIf(!SHOULD_RUN)('maintenance purge guards (PG-gated)', () => {
     expect(audit).toBeTruthy();
   });
 
+  test('RE-CAT-1: a run someone else worked on cannot be deleted as test data', async () => {
+    const { admin, db, orgId } = fix!;
+    const [purchaser] = await db
+      .insert(s.users)
+      .values({ displayName: 'Real buyer', tgUserId: BigInt(`8${Date.now()}`.slice(-12)) })
+      .returning();
+    const runId = randomUUID();
+    await db.insert(s.marketRunsV).values({ id: runId, orgId, runDate: '2026-06-03', status: 'finished' });
+    await db.insert(s.events).values({
+      orgId,
+      streamType: 'run',
+      streamId: runId,
+      seq: 1,
+      type: 'ItemPurchased',
+      payload: {},
+      actorId: purchaser!.id,
+    });
+    const err = await errorOf(() =>
+      admin.admin.purgeRun({ runId, dryRun: false, requireOnlyTestSessions: true }),
+    );
+    expect(err?.message).toBe('admin.errors.runHasForeignSessions');
+    expect(await db.query.marketRunsV.findFirst({ where: (x, o) => o.eq(x.id, runId) })).toBeTruthy();
+  });
+
   test('CAT-5: emptying the workspace keeps the admin audit', async () => {
     const { admin, db, orgId } = fix!;
     const before = await db.query.policyDecisions.findMany({ where: (x, o) => o.eq(x.orgId, orgId) });
