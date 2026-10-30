@@ -3108,6 +3108,11 @@ export const adminRouter = router({
             message: 'auth.errors.cannotGrantEqualOrHigher',
           });
         }
+        // ADM-22 (2026-10-30): a new rank for a built-in role answered ok
+        // and was silently ignored.
+        if (input.rank !== undefined && role.isBuiltIn && input.rank !== role.rank) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'admin.errors.builtinRankLocked' });
+        }
         const patch: Record<string, unknown> = {};
         if (input.name !== undefined) patch.name = input.name;
         if (input.description !== undefined) patch.description = input.description;

@@ -567,6 +567,7 @@ export const zh = {
   'admin.errors.orgAdminMustBeGlobal': '组织级角色和权限只能全局授予',
   'admin.errors.roleNotFound': '角色不存在',
   'admin.errors.roleSlugTaken': '这个角色标识已被占用',
+  'admin.errors.builtinRankLocked': '内置角色的等级不能修改',
   'admin.errors.runHasForeignSessions': '此采购单里有其他人的订单，不能删除',
   'admin.errors.sessionHasForeignAuthors':
     '这张订单有其他人的内容，不能删除。这里只能删你自己的测试订单',
@@ -1208,6 +1209,8 @@ export const zh = {
   'finance.preset.custom': '自定义',
   'finance.range.start': '开始日期',
   'finance.range.end': '结束日期',
+  'finance.range.invalid':
+    '请选择开始和结束日期，开始不能晚于结束。',
   'finance.view.daily': '按日',
   'finance.view.bySupplier': '按供应商',
   'finance.view.byStore': '按门店',
@@ -1219,7 +1222,7 @@ export const zh = {
   'finance.empty.description': '更换日期，或先记录一次采购。',
   'finance.export.label': '复制为 TSV',
   'finance.export.copied': '已复制 — 粘贴到表格软件。',
-  'finance.export.noClipboard': '剪贴板不可用 — 请在控制台查看 TSV。',
+  'finance.export.noClipboard': '无法使用剪贴板，没有复制。',
   'admin.errors.financeRequiresManage': '财务报表需要 users.manage 权限。',
 
   // ── 15. Org financial settings (M1.17) ────────────────
@@ -1531,6 +1534,7 @@ export const zh = {
   'settlement.errors.stores': '无法加载可进行每日结算的店铺。',
   'settlement.errors.businessDate': '无法加载该店铺的营业日期。',
   'settlement.errors.save': '无法保存每日结算，请重试。',
+  'settlement.errors.load': '无法加载这一天的日结，请刷新。',
   'settlement.errors.totalTooLarge': '合计金额太大，请检查金额。',
   'settlement.errors.unknownItem': '有一行已在别处被修改，请重新载入日结后再保存。',
   'settlement.errors.employeeRequired': '每一条工资都要选一位员工。',

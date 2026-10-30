@@ -859,7 +859,14 @@ function RoleCreateSheet({
   }, [permsQuery.data]);
 
   const create = trpc.admin.roleCreate.useMutation({
-    onSuccess: () => {
+    onSuccess: (data) => {
+      // ADM-10 (2026-10-30): an existing slug returns that role
+      // (idempotent replay) — it used to read "role created" and drop
+      // everything typed here.
+      if (!data.created) {
+        toast.error(i18n.t('admin.errors.roleSlugTaken'));
+        return;
+      }
       void utils.admin.roleList.invalidate();
       toast.success(i18n.t('admin.toast.roleCreated'));
       onClose();
