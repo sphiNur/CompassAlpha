@@ -61,6 +61,7 @@ function isLockedStatus(status: string | null | undefined): boolean {
   );
 }
 import { formatQty, formatMoney } from '../lib/format';
+import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
 import { useStoreContext } from '../components/StoreSwitcher';
 
 /** Order writes still waiting in the offline outbox for this store (an
@@ -100,6 +101,7 @@ export function OrderPage() {
   // refuse and prompt the user to pick (added 2026-05-05).
   // Language picker moved to Telegram's gear button (Shell wires it).
   const storeCtx = useStoreContext();
+  const noStoreYet = useNoStoreYet();
   const currentStoreId = storeCtx.kind === 'specific' ? storeCtx.storeId : null;
   const toast = useToast();
   const errToast = useErrToast();
@@ -928,7 +930,9 @@ export function OrderPage() {
          lives in SettingsSheet, reachable via Telegram's gear button.
          Empty-state copy was updated to point users at Settings. */
       <div className="flex flex-col">
-        {storeCtx.kind === 'none' ? (
+        {noStoreYet ? (
+          <NoStoreYet />
+        ) : storeCtx.kind === 'none' ? (
           <EmptyState
             title={i18n.t('auth.noStore.title')}
             description={i18n.t('auth.noStore.body')}

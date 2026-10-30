@@ -451,6 +451,9 @@ export const uz = {
   'auth.onboarding.namePlaceholder': 'masalan, Ali',
   'auth.onboarding.continue': 'Davom etish',
   'auth.onboarding.failed': "Ismni saqlab bo'lmadi",
+  'auth.noStoreYet.title': "Hali do'kon yo'q",
+  'auth.noStoreYet.body': "Avval Boshqaruv › Do'konlar bo'limida do'kon yarating: buyurtma, qabul, kun yakuni va savdo do'kon bo'yicha yuritiladi.",
+  'auth.noStoreYet.action': "Do'kon yaratish",
   'auth.noStore.title': "Hali do'kon belgilanmagan",
   'auth.noStore.body':
     "Hisob tayyor, ammo administrator hali sizni do'konga biriktirmagan. Menejer bilan bog'laning.",

@@ -510,6 +510,9 @@ export const en = {
   'auth.onboarding.namePlaceholder': 'e.g. Alex',
   'auth.onboarding.continue': 'Continue',
   'auth.onboarding.failed': 'Could not save name',
+  'auth.noStoreYet.title': 'No store yet',
+  'auth.noStoreYet.body': 'Create a store in Admin › Stores first; ordering, receiving, daily close and sales work per store.',
+  'auth.noStoreYet.action': 'Create a store',
   'auth.noStore.title': 'No store assigned yet',
   'auth.noStore.body':
     'Your account is set up but an administrator still needs to assign you to a store. Contact your manager.',

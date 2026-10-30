@@ -29,6 +29,7 @@ import {
 } from '@compass/ui';
 import type { SettlementWageItem } from '@compass/contracts';
 import { newIdempotencyKey, trpc } from '../lib/trpc';
+import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
 import { registerStoreChangeGuard, useStoreContext } from '../components/StoreSwitcher';
 import { usePageMainButton, haptic } from '../hooks/useTelegram';
 import { confirmNative } from '../lib/confirm';
@@ -376,6 +377,7 @@ export function SettlementPage() {
   const errToast = useErrToast();
   const session = useAuthStore((state) => state.session);
   const storeCtx = useStoreContext();
+  const noStoreYet = useNoStoreYet();
   const requestedStoreId = storeCtx.kind === 'specific' ? storeCtx.storeId : null;
   const setCurrentStore = useAuthStore((state) => state.setCurrentStore);
   const storesQuery = trpc.catalog.stores.useQuery(
@@ -843,10 +845,14 @@ export function SettlementPage() {
     return (
       <div className="flex flex-col gap-3 px-4 pb-4 pt-3">
         {pageHeading}
-        <EmptyState
-          title={i18n.t('settlement.noEligibleStores.title')}
-          description={i18n.t('settlement.noEligibleStores.body')}
-        />
+        {noStoreYet ? (
+          <NoStoreYet />
+        ) : (
+          <EmptyState
+            title={i18n.t('settlement.noEligibleStores.title')}
+            description={i18n.t('settlement.noEligibleStores.body')}
+          />
+        )}
       </div>
     );
   }
