@@ -4894,7 +4894,8 @@ export const adminRouter = router({
    *   ops.notifications, ops.client_logs, inventory.price_history,
    *   inventory.store_daily_settlements and their revisions,
    *   read_model.market_runs_v, read_model.order_sessions_v,
-   *   domain.events, domain.policy_decisions
+   *   domain.events
+   * (domain.policy_decisions, the admin audit, is kept — CAT-5.)
    *
    * Tables scoped via FK — must use sub-select against a parent that
    * still has its rows when this delete runs (so order matters):
@@ -5009,15 +5010,6 @@ export const adminRouter = router({
               .select({ n: sql<number>`count(*)::int` })
               .from(s.storeDailySettlements)
               .where(eq(s.storeDailySettlements.orgId, orgId)),
-          ),
-        );
-        await tally(
-          'domain.policy_decisions',
-          await cnt(
-            tx
-              .select({ n: sql<number>`count(*)::int` })
-              .from(s.policyDecisions)
-              .where(eq(s.policyDecisions.orgId, orgId)),
           ),
         );
 
@@ -5159,7 +5151,10 @@ export const adminRouter = router({
         await tx.delete(s.priceHistory).where(eq(s.priceHistory.orgId, orgId));
         await tx.delete(s.notifications).where(eq(s.notifications.orgId, orgId));
         await tx.delete(s.clientLogs).where(eq(s.clientLogs.orgId, orgId));
-        await tx.delete(s.policyDecisions).where(eq(s.policyDecisions.orgId, orgId));
+        // CAT-5 (2026-10-30): the admin audit (domain.policy_decisions)
+        // stays, as this procedure's contract says; it used to be wiped
+        // with everything else. The purge itself is recorded in it.
+        await auditAdmin(tx, ctx, 'admin.purge.all', 'org', orgId, { total, byTable: counts });
 
         broadcastPurged(orgId, [], []);
         return { dryRun: false, total, byTable: counts, orgSlug: org.slug };
@@ -5392,6 +5387,13 @@ export const adminRouter = router({
           ),
         );
 
+      await auditAdmin(tx, ctx, 'admin.purge.date', 'org', orgId, {
+        date,
+        total,
+        byTable: counts,
+        sessionIds,
+        runIds,
+      });
       broadcastPurged(orgId, sessionIds, runIds);
       return { dryRun: false, total, byTable: counts, date };
     });
@@ -5882,6 +5884,10 @@ export const adminRouter = router({
         };
       }
       await deleteSessionCascade(tx, orgId, input.sessionId);
+      await auditAdmin(tx, ctx, 'admin.purge.session', 'session', input.sessionId, {
+        ...input,
+        byTable: counts,
+      });
       broadcastPurged(orgId, [input.sessionId], []);
       return {
         dryRun: false,
@@ -5935,6 +5941,11 @@ export const adminRouter = router({
         };
       }
       await deleteRunCascade(tx, orgId, input.runId, sessionIds);
+      await auditAdmin(tx, ctx, 'admin.purge.run', 'run', input.runId, {
+        ...input,
+        sessionIds,
+        byTable: counts,
+      });
       broadcastPurged(orgId, sessionIds, [input.runId]);
       return {
         dryRun: false,

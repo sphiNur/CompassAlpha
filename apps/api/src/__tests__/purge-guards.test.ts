@@ -15,6 +15,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import { eq } from 'drizzle-orm';
 import { getDb, schema as s, withOrgContext } from '@compass/db';
 import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
@@ -163,6 +164,25 @@ describe.skipIf(!SHOULD_RUN)('maintenance purge guards (PG-gated)', () => {
     });
     expect(await errorOf(() => admin.admin.purgeSession({ sessionId: mine.sessionId, dryRun: false }))).toBeNull();
     expect(await db.query.orderSessionsV.findFirst({ where: (x, o) => o.eq(x.id, mine.sessionId) })).toBeUndefined();
+    // CAT-5: the purge is in the admin audit.
+    const audit = await db.query.policyDecisions.findFirst({
+      where: (x, o) => o.and(o.eq(x.action, 'admin.purge.session'), o.eq(x.resourceId, mine.sessionId)),
+    });
+    expect(audit).toBeTruthy();
+  });
+
+  test('CAT-5: emptying the workspace keeps the admin audit', async () => {
+    const { admin, db, orgId } = fix!;
+    const before = await db.query.policyDecisions.findMany({ where: (x, o) => o.eq(x.orgId, orgId) });
+    expect(before.length).toBeGreaterThan(0);
+    const preview = await admin.admin.purgeAllTestData({ dryRun: true });
+    expect(preview.byTable['domain.policy_decisions']).toBeUndefined();
+    const [org] = await db.select({ slug: s.organizations.slug }).from(s.organizations).where(eq(s.organizations.id, orgId));
+    // Runs before the CAT-2 test adds a daily close (which blocks this).
+    await admin.admin.purgeAllTestData({ dryRun: false, confirmText: org!.slug });
+    const after = await db.query.policyDecisions.findMany({ where: (x, o) => o.eq(x.orgId, orgId) });
+    expect(after.length).toBe(before.length + 1);
+    expect(after.some((r) => r.action === 'admin.purge.all')).toBe(true);
   });
 
   test('CAT-4: reset by date takes the run of its orders and the orders of its runs', async () => {
