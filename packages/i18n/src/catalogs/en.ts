@@ -1933,6 +1933,7 @@ export const en = {
   'admin.toast.inviteRevoked': 'Invite revoked',
   'people.pendingInvitesCount': '{n, plural, one {# pending invite} other {# pending invites}}',
   'people.pendingInviteDefaultRole': 'Store default role',
+  'people.pendingInviteRoleDeleted': 'role deleted',
   'people.pendingInviteOrgWide': 'Whole organisation',
   'people.pendingInviteMeta': 'by {name} · expires {date}',
   'people.pendingInviteExpires': 'expires {date}',
