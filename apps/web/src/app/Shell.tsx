@@ -172,6 +172,17 @@ export function Shell() {
 
 function ShellInner() {
   const i18n = useI18n();
+  const [online, setOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine));
+  useEffect(() => {
+    const up = () => setOnline(true);
+    const down = () => setOnline(false);
+    window.addEventListener('online', up);
+    window.addEventListener('offline', down);
+    return () => {
+      window.removeEventListener('online', up);
+      window.removeEventListener('offline', down);
+    };
+  }, []);
   const session = useAuthStore((s) => s.session);
   // M1.12: contextual "this page" actions live in the same gear as the
   // global SettingsSheet. Pages register via usePageMenu(). When the
@@ -535,6 +546,15 @@ function ShellInner() {
           overscrollBehaviorY: 'contain',
         }}
       >
+        {/* HIS-9 / CLS-6 (2026-10-30): offline, lists kept showing the last
+            data (or "nothing yet") with no word that it was stale. */}
+        {!online ? (
+          <div className="px-4 pt-3">
+            <Banner tone="warn" title={i18n.t('shell.offline.title')}>
+              {i18n.t('shell.offline.body')}
+            </Banner>
+          </div>
+        ) : null}
         {session?.subscription && !session.subscription.writeAccess ? (
           <div className="px-4 pt-3">
             <Banner tone="warn" title={i18n.t('subscription.readOnlyTitle')}>

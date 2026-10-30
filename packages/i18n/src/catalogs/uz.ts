@@ -428,6 +428,9 @@ export const uz = {
     "Hozircha siz uchun bo'lim yo'q",
   'shell.noTabs.body':
     "Rolingizda buyurtma, tekshiruv, xarid yoki boshqa bo'limlarga ruxsat yo'q. Kerak bo'lsa, administratorga murojaat qiling.",
+  'shell.offline.title': "Internet yo'q",
+  'shell.offline.body': "Oldin yuklangan ma'lumot ko'rsatilmoqda; o'zgarishlar aloqa tiklanganda sinxronlanadi.",
+  'order.pendingSync': "{n} ta o'zgarish sinxronlanishni kutmoqda",
   'shell.pageError.title': 'Bu sahifada xatolik yuz berdi',
   'shell.pageError.body': "Boshqa sahifalar ishlaydi. Qayta urinib ko'ring yoki boshqa sahifaga o'ting.",
   'auth.invite.failedStillIn':

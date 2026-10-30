@@ -1305,6 +1305,12 @@ export function OrderPage() {
         </ChipBar>
       </StickyPageBar>
       {staleWarning}
+      {/* ORD-3 (2026-10-30): changes waiting in the outbox were invisible. */}
+      {offline.pendingCount > 0 ? (
+        <div className="px-4 pt-2 text-old-label text-[var(--c-warning-fg)]">
+          {i18n.t('order.pendingSync', { n: offline.pendingCount })}
+        </div>
+      ) : null}
       {rejectedNotice(sessionQuery.data?.id) ? (
         <div className="px-4 pt-3">{rejectedNotice(sessionQuery.data?.id)}</div>
       ) : null}

@@ -487,6 +487,9 @@ export const en = {
     'Nothing here for you yet',
   'shell.noTabs.body':
     'Your role has no access to ordering, approvals, purchasing or any other section. Ask an admin if you need it.',
+  'shell.offline.title': 'You are offline',
+  'shell.offline.body': 'What you see was loaded earlier; changes you make sync when the connection is back.',
+  'order.pendingSync': '{n} changes waiting to sync',
   'shell.pageError.title': 'This page ran into a problem',
   'shell.pageError.body': 'Other pages still work. Try again, or switch to another page.',
   'auth.invite.failedStillIn':
