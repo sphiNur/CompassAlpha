@@ -80,6 +80,8 @@ export const zh = {
   'admin.store.emptyTitle': '暂无门店',
   'admin.store.emptyBody': '点上面的按钮创建一个，然后开始添加团队成员。',
   'admin.store.confirmArchive': '归档「{name}」?',
+  'admin.store.confirmArchiveBusy':
+    '{name} 还有 {orders} 张未完成的订单、{runs} 张进行中的采购单。归档后这些单据会留在原处，仍要归档吗？',
   'admin.store.tabTeam': '人员',
   'admin.store.tabInventory': '库存',
   'admin.store.tabSales': '销售',
@@ -256,6 +258,7 @@ export const zh = {
   'stores.codeLabel': '编号 {code}',
   'stores.noCode': '无编号',
   'stores.paused': '已暂停',
+  'stores.archived': '已归档',
   'stores.pickSourceStore': '— 选择来源门店 —',
   'ops.maint.nothingToPurge': '没有可清除的内容——工作区已经是干净的。',
   'admin.store.defaultRoleHint':

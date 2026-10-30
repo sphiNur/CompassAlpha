@@ -89,6 +89,8 @@ export const uz = {
   'admin.store.emptyBody':
     "Jamoani qo'shishni boshlash uchun yuqoridagi tugma bilan do'kon yarating.",
   'admin.store.confirmArchive': '«{name}» arxivlansinmi?',
+  'admin.store.confirmArchiveBusy':
+    "{name}da hali {orders} ta yakunlanmagan buyurtma va {runs} ta davom etayotgan xarid bor. Arxivlangandan keyin ular o'z joyida qoladi. Baribir arxivlansinmi?",
   'admin.store.tabTeam': 'Jamoa',
   'admin.store.tabInventory': 'Ombor',
   'admin.store.tabSales': 'Savdo',
@@ -279,6 +281,7 @@ export const uz = {
   'stores.codeLabel': 'kod {code}',
   'stores.noCode': 'kodsiz',
   'stores.paused': "to'xtatilgan",
+  'stores.archived': "arxivlangan",
   'stores.pickSourceStore': "— manba do'konni tanlang —",
   'ops.maint.nothingToPurge': "Tozalash uchun hech narsa yo'q — ish maydoni allaqachon toza.",
   'admin.store.defaultRoleHint':
