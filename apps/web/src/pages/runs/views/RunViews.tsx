@@ -1363,7 +1363,7 @@ export function PurchaseRow({
    * matches actualQty bit-perfectly.
    */
   const computeProportionalSplits = (actualQtyStr: string) =>
-    proportionalSplitQty(demand, actualQtyStr);
+    proportionalSplitQty(demand, actualQtyStr, step);
 
   /**
    * Can the COLLAPSED row's one-tap ✓ commit?

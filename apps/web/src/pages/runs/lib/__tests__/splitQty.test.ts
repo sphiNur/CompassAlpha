@@ -142,6 +142,25 @@ describe('proportionalSplitQty', () => {
       ],
       '3',
     );
-    for (const o of out!) expect(Number(o.qty)).toBeGreaterThanOrEqual(0);
+    // BUY-13: store a's share rounds to 0.000, which the server refuses;
+    // the full purchase sheet takes over instead.
+    expect(out).toBeNull();
+  });
+});
+
+describe('proportionalSplitQty with a step (BUY-13)', () => {
+  const demand = [
+    { storeId: 'A', qty: '6' },
+    { storeId: 'B', qty: '10' },
+  ];
+  it('rounds shares down to whole pieces; the last store takes the rest', () => {
+    expect(proportionalSplitQty(demand, '15', '1')).toEqual([
+      { storeId: 'A', qty: '5.000' },
+      { storeId: 'B', qty: '10.000' },
+    ]);
+  });
+  it('gives up (full sheet) rather than send a zero share', () => {
+    expect(proportionalSplitQty(demand, '0.001')).toBeNull();
+    expect(proportionalSplitQty(demand, '1', '1')).toBeNull();
   });
 });
