@@ -67,7 +67,7 @@ function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): Reques
 }
 
 type Caller = ReturnType<typeof appRouter.createCaller>;
-let fix: { db: ReturnType<typeof getDb>; storeId: string; admin: Caller; manager: Caller; owner: Caller; roleIds: Record<string, string> } | null = null;
+let fix: { db: ReturnType<typeof getDb>; storeId: string; orgId: string; admin: Caller; manager: Caller; owner: Caller; roleIds: Record<string, string> } | null = null;
 
 async function errorOf(fn: () => Promise<unknown>): Promise<{ code?: string; message: string } | null> {
   try {
@@ -120,7 +120,7 @@ beforeAll(async () => {
   const owner = await member('super_admin', 'global');
   const admin = await member('admin', 'global');
   const manager = await member('manager', 'store');
-  fix = { db, storeId: store!.id, admin, manager, owner, roleIds };
+  fix = { db, storeId: store!.id, orgId, admin, manager, owner, roleIds };
 });
 
 describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
@@ -178,4 +178,19 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
     const err = await errorOf(() => manager.admin.memberInviteRevoke({ inviteId: adminInvite!.id }));
     expect(err?.code).toBe('FORBIDDEN');
   });
+
+  test('ADM-15: a link whose inviter lost the authority is no longer listed', async () => {
+    const { owner, manager, storeId, db, roleIds } = fix!;
+    await manager.admin.memberInviteCreate({ roleSlug: 'staff', storeIds: [storeId] });
+    const before = await owner.admin.memberInviteList();
+    const mine = before.filter((i) => i.roles.some((r) => r.slug === 'staff'));
+    expect(mine.length).toBeGreaterThan(0);
+    // The manager stops being a manager of the store.
+    await db
+      .delete(s.memberRoleBindings)
+      .where(eq(s.memberRoleBindings.roleId, roleIds.manager!));
+    const after = await owner.admin.memberInviteList();
+    for (const inv of mine) expect(after.some((i) => i.id === inv.id)).toBe(false);
+  });
 });
+

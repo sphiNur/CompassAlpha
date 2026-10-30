@@ -35,6 +35,7 @@ import {
   readCatalogSnapshot,
   type CatalogSnapshot,
 } from '../../services/catalogCopy';
+import { inviterStillAuthorized } from './auth';
 import { logger } from '../../infra/log';
 
 function requireAdmin(perms: ReadonlySet<string>): void {
@@ -1810,11 +1811,19 @@ export const adminRouter = router({
       // ADM-14 (2026-10-30): a store-tier admin saw (and could revoke)
       // links that hand out admin-rank roles; those are for org admins.
       const adminRoleIds = scope === null ? new Set<string>() : await adminRankRoleIds(tx, orgId);
-      const visible = rows.filter(
+      const inScope = rows.filter(
         (r) =>
           inviteWithinScope(r.storeIds, scope) &&
           !(r.grants ?? []).some((g) => adminRoleIds.has(g.roleId)),
       );
+      // ADM-15 (2026-10-30): links whose inviter has since lost the
+      // authority are refused on accept; stop listing them as pending.
+      const visible: typeof inScope = [];
+      for (const r of inScope) {
+        if (await inviterStillAuthorized(tx, { orgId, invitedBy: r.invitedBy, storeIds: r.storeIds })) {
+          visible.push(r);
+        }
+      }
       if (visible.length === 0) return [];
       const storeIds = [...new Set(visible.flatMap((r) => r.storeIds))];
       const roleIds = [...new Set(visible.flatMap((r) => (r.grants ?? []).map((g) => g.roleId)))];
@@ -1842,6 +1851,8 @@ export const adminRouter = router({
         }
         return {
           id: r.id,
+          /** ADM-15: a granted role that has since been deleted. */
+          roleDeleted: (r.grants ?? []).some((g) => !roleById.has(g.roleId)),
           stores: r.storeIds
             .map((id) => storeById.get(id))
             .filter((st): st is NonNullable<typeof st> => !!st),

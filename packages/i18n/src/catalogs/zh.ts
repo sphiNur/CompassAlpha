@@ -1694,6 +1694,7 @@ export const zh = {
   'admin.toast.inviteRevoked': '邀请已撤销',
   'people.pendingInvitesCount': '{n} 个待接受的邀请',
   'people.pendingInviteDefaultRole': '门店默认角色',
+  'people.pendingInviteRoleDeleted': '角色已删除',
   'people.pendingInviteOrgWide': '整个组织',
   'people.pendingInviteMeta': '由 {name} 发出 · {date} 过期',
   'people.pendingInviteExpires': '{date} 过期',

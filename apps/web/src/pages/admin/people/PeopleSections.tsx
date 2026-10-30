@@ -1485,7 +1485,12 @@ function PendingInvitesList({ enabled }: { enabled: boolean }) {
             <ListRow
               key={inv.id}
               className="rounded-[var(--r-card)]"
-              label={roles || i18n.t('people.pendingInviteDefaultRole')}
+              // ADM-15 (2026-10-30): a deleted role read as "default role".
+              label={
+                inv.roleDeleted
+                  ? [roles, i18n.t('people.pendingInviteRoleDeleted')].filter(Boolean).join(' · ')
+                  : roles || i18n.t('people.pendingInviteDefaultRole')
+              }
               hint={[
                 stores || i18n.t('people.pendingInviteOrgWide'),
                 inv.invitedBy?.displayName

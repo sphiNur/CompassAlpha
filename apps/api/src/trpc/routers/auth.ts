@@ -576,7 +576,7 @@ async function loadInviterAuthority(
   return { active: member.status === 'active', hasUsersManage, isGlobalAdmin, adminStoreIds };
 }
 
-async function inviterStillAuthorized(
+export async function inviterStillAuthorized(
   tx: DB,
   invite: { orgId: string; invitedBy: string | null; storeIds: string[] },
 ): Promise<boolean> {

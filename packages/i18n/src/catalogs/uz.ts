@@ -1800,6 +1800,7 @@ export const uz = {
   'admin.toast.inviteRevoked': 'Taklif bekor qilindi',
   'people.pendingInvitesCount': '{n} ta kutilayotgan taklif',
   'people.pendingInviteDefaultRole': "Do'kon uchun standart rol",
+  'people.pendingInviteRoleDeleted': "rol o'chirilgan",
   'people.pendingInviteOrgWide': 'Butun tashkilot',
   'people.pendingInviteMeta': '{name} yubordi · {date} gacha',
   'people.pendingInviteExpires': '{date} gacha',

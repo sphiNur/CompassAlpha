@@ -1786,6 +1786,7 @@ export const ru = {
   'people.pendingInvitesCount':
     '{n, plural, one {# ожидающее приглашение} few {# ожидающих приглашения} many {# ожидающих приглашений} other {# ожидающих приглашения}}',
   'people.pendingInviteDefaultRole': 'Роль магазина по умолчанию',
+  'people.pendingInviteRoleDeleted': 'роль удалена',
   'people.pendingInviteOrgWide': 'Вся организация',
   'people.pendingInviteMeta': 'от {name} · до {date}',
   'people.pendingInviteExpires': 'до {date}',
