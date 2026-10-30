@@ -1630,6 +1630,8 @@ export const zh = {
   'settlement.errors.futureDate': '还没到的日期不能日结。',
   'settlement.errors.correctionReasonRequired': '修改已保存的日结，需要填写更正原因。',
   'settlement.errors.versionConflict': '该每日结算已在其他位置被修改。',
+  'settlement.conflict.keptEdits': '已载入最新版本，并保留了你改过的金额和备注。请核对后再保存。',
+  'settlement.conflict.linesLost': '费用和工资明细无法带到最新版本，刷新后需要重新录入这些明细。继续刷新吗？',
   'settlement.errors.versionConflictBody': '请先刷新并查看最新版本，再保存本次更正。',
   // 2026-10-21 audit decisions CA-03/04/06/11 (run selection, parallel runs,
   // received qty, items/expenses money split).

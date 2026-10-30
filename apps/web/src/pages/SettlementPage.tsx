@@ -194,6 +194,27 @@ function draftFromRecord(record: SettlementRecord): SettlementDraft {
   };
 }
 
+type CarriedFields = Partial<Pick<SettlementDraft, MoneyField | 'note' | 'correctionReason'>>;
+
+/** The typed fields that differ from the record the form was loaded from. */
+function editedFields(draft: SettlementDraft, base: SettlementDraft): CarriedFields {
+  const carried: CarriedFields = {};
+  for (const key of [...MONEY_FIELDS, 'note', 'correctionReason'] as const) {
+    if (draft[key] !== base[key]) carried[key] = draft[key];
+  }
+  return carried;
+}
+
+/** Expense / wage lines compared by content (the local row ids are random). */
+function linesEdited(draft: SettlementDraft, base: SettlementDraft): boolean {
+  const lines = (d: SettlementDraft) =>
+    JSON.stringify([
+      d.operatingExpenseItems.map(({ id: _id, ...rest }) => rest),
+      d.wageItems.map(({ id: _id, ...rest }) => rest),
+    ]);
+  return lines(draft) !== lines(base);
+}
+
 function moneyNumber(value: string): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -371,6 +392,10 @@ export function SettlementPage() {
   const [draft, setDraft] = useState<SettlementDraft>(emptyDraft);
   const [draftRecordKey, setDraftRecordKey] = useState<string | null>(null);
   const [versionConflict, setVersionConflict] = useState(false);
+  // CLS-18: the record the form was loaded from, and the user's own typed
+  // fields to put back on top of a newer version after a conflict refresh.
+  const baseDraft = useRef<SettlementDraft>(emptyDraft());
+  const carryOver = useRef<{ at: string; fields: CarriedFields } | null>(null);
   const [wagePickerFor, setWagePickerFor] = useState<string | null>(null);
   const [newWagePickerFor, setNewWagePickerFor] = useState<string | null>(null);
   const [wageRoleFilter, setWageRoleFilter] = useState('');
@@ -443,7 +468,16 @@ export function SettlementPage() {
       setDraftRecordKey(null);
       return;
     }
-    setDraft(existing ? draftFromRecord(existing) : emptyDraft());
+    const fresh = existing ? draftFromRecord(existing) : emptyDraft();
+    baseDraft.current = fresh;
+    const carry = carryOver.current;
+    carryOver.current = null;
+    if (carry && carry.at === `${currentStoreId}:${date}` && Object.keys(carry.fields).length) {
+      setDraft({ ...fresh, ...carry.fields });
+      toast.info(i18n.t('settlement.conflict.keptEdits'));
+    } else {
+      setDraft(fresh);
+    }
     setDraftRecordKey(recordKey);
     setVersionConflict(false);
   }, [currentStoreId, recordKey]);
@@ -619,7 +653,8 @@ export function SettlementPage() {
     onSuccess: (saved) => {
       saveIdemFor.current = '';
       const savedRecord = saved as SettlementRecord;
-      setDraft(draftFromRecord(savedRecord));
+      baseDraft.current = draftFromRecord(savedRecord);
+      setDraft(baseDraft.current);
       setDraftRecordKey(
         `${savedRecord.storeId}:${savedRecord.date}:${savedRecord.id}:${savedRecord.version}`,
       );
@@ -687,11 +722,30 @@ export function SettlementPage() {
   };
 
   const refreshRecord = () => {
-    confirmDiscardChanges(() => {
+    const reload = () => {
       setVersionConflict(false);
       void closeQuery.refetch();
       void recentQuery.refetch();
-    });
+    };
+    // CLS-18: after a version conflict the newer record loads and the
+    // amounts / note this user typed are put back on top of it. Only
+    // expense and wage lines cannot be carried over, so ask about those.
+    if (versionConflict) {
+      carryOver.current = {
+        at: `${currentStoreId}:${date}`,
+        fields: editedFields(draft, baseDraft.current),
+      };
+      if (linesEdited(draft, baseDraft.current)) {
+        void confirmSettlement(i18n.t('settlement.conflict.linesLost')).then((ok) => {
+          if (ok) reload();
+          else carryOver.current = null;
+        });
+      } else {
+        reload();
+      }
+      return;
+    }
+    confirmDiscardChanges(reload);
   };
 
   const mainButtonText = saveMutation.isPending
@@ -1088,6 +1142,13 @@ export function SettlementPage() {
           </Banner>
         ) : null}
 
+        {/* CLS-16: while a save is in flight the form is locked; whatever was
+            typed meanwhile used to be overwritten by the saved record. */}
+        <fieldset
+          disabled={saveMutation.isPending}
+          aria-busy={saveMutation.isPending}
+          className="contents"
+        >
         <section className="flex flex-col gap-2">
           <SectionLabel as="h2">{i18n.t('settlement.group.revenue')}</SectionLabel>
           <Card>
@@ -1460,6 +1521,7 @@ export function SettlementPage() {
             ) : null}
           </CardBody>
         </Card>
+        </fieldset>
 
         {invalidMoney ? (
           <Banner tone="warn" title={i18n.t('settlement.errors.invalidMoney')} />

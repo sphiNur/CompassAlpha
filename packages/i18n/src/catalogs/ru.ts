@@ -1718,6 +1718,8 @@ export const ru = {
   'settlement.errors.futureDate': 'Нельзя закрыть день, который ещё не наступил.',
   'settlement.errors.correctionReasonRequired': 'Чтобы изменить сохранённое закрытие дня, укажите причину исправления.',
   'settlement.errors.versionConflict': 'Это закрытие дня было изменено в другом месте.',
+  'settlement.conflict.keptEdits': 'Загружена последняя версия, ваши изменённые суммы и заметка сохранены. Проверьте и сохраните.',
+  'settlement.conflict.linesLost': 'Строки расходов и зарплат нельзя перенести в последнюю версию — их придётся ввести заново. Всё равно обновить?',
   'settlement.errors.versionConflictBody':
     'Обновите запись и проверьте последнюю версию перед сохранением исправления.',
   // 2026-10-21 audit decisions CA-03/04/06/11 (run selection, parallel runs,
