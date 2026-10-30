@@ -581,7 +581,7 @@ export function ActiveRunPanel({
                   onChange={(e) => setItemQuery(e.target.value)}
                   placeholder={i18n.t('run.search.itemsPlaceholder')}
                   aria-label={i18n.t('run.search.itemsPlaceholder')}
-                  className="h-9 w-full rounded-[var(--r-pill)] border border-[var(--c-divider)] bg-[var(--c-surface-2)] px-3 text-old-body outline-none focus:border-[var(--c-action)]"
+                  className="h-9 w-full rounded-[var(--r-pill)] border border-[var(--c-divider)] bg-[var(--c-surface-2)] px-3 text-old-body outline-none placeholder:text-[var(--c-fg-muted)] focus:border-[var(--c-action)]"
                 />
               </div>
               <ChipBar

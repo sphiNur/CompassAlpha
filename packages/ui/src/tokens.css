@@ -26,6 +26,9 @@
   --c-action: oklch(56% 0.18 250);
   --c-action-hover: oklch(50% 0.18 250);
   --c-action-fg: oklch(99% 0 0);
+  /* RE-VIS-1 (2026-10-30): text on a filled danger button. It borrowed
+   * --c-fg-inverse, which turns near-black in dark mode (4.10:1 on red). */
+  --c-danger-fg: oklch(99% 0 0);
 
   /* Status */
   --c-success: oklch(58% 0.16 145);
@@ -265,6 +268,16 @@
    * existing fill value already measures 7.12:1 on --c-surface and
    * 5.79:1 on the dark --c-warn-bg below, so it doubles as the ink. */
   --c-warning-fg: oklch(72% 0.15 75);
+  /* RE-VIS-6 (2026-10-30): the light-theme action / danger / success
+   * values are tuned for white surfaces; as text on these dark surfaces
+   * they measured 3.4–4.3:1. Lighter here, and the text ON those fills
+   * turns dark so filled buttons keep their contrast too. */
+  --c-action: oklch(72% 0.14 250);
+  --c-action-hover: oklch(78% 0.12 250);
+  --c-action-fg: oklch(15% 0.01 240);
+  --c-danger: oklch(70% 0.17 25);
+  --c-danger-fg: oklch(15% 0.01 240);
+  --c-success: oklch(72% 0.15 145);
   /* Dim status surfaces so they read as backgrounds, not panels. */
   --c-warn-bg: oklch(28% 0.07 75);
   --c-success-bg: oklch(28% 0.06 145);
@@ -306,4 +319,19 @@
 /* 1px hairline used by cards (avoids 0.5px sub-pixel issues on @1x) */
 .ring-hairline {
   box-shadow: inset 0 0 0 1px var(--c-divider);
+}
+
+/* RE-VIS-3 (2026-10-30): a tap area of at least 44×44 around a small
+ * control, without changing how it looks or lays out. */
+.hit-44 {
+  position: relative;
+}
+.hit-44::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100%, 44px);
+  height: max(100%, 44px);
+  transform: translate(-50%, -50%);
 }
