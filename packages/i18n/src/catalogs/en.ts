@@ -913,6 +913,7 @@ export const en = {
   'run.extras.status.pending': 'Not yet bought',
   'run.extras.status.bought': 'Bought',
   'run.extras.status.unavailable': 'Not available',
+  'run.label.servesOtherStores': 'Also for stores you do not buy for · read-only',
   'run.extras.status.cycleHint': 'Tap to mark · current: {current}',
   'run.extras.recordPrice': 'Price',
   'run.extras.recordExpenseReason': 'Other item from staff order',
@@ -1132,6 +1133,10 @@ export const en = {
   'run.errors.cannotEjectSession': 'You do not have permission to return submissions from a run',
   'run.errors.storeAlreadyConfirmed': 'This store has already confirmed receipt',
   'run.errors.notVisible': 'This purchase run was not found or is not available to you',
+  'run.errors.itemServesOtherStores':
+    'This item also serves stores you do not buy for; someone who buys for them must change it.',
+  'run.errors.runHasOtherStores':
+    'This run includes stores you do not buy for; this step needs someone who buys for all of them.',
   'run.errors.archiveCascadeFailed':
     'Could not archive the run together with its orders. Nothing was changed — please try again.',
   'run.errors.cannotEjectInStatus':

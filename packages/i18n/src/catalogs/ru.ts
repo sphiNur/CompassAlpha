@@ -820,6 +820,7 @@ export const ru = {
   'run.extras.status.pending': 'Ещё не куплено',
   'run.extras.status.bought': 'Куплено',
   'run.extras.status.unavailable': 'Не нашли',
+  'run.label.servesOtherStores': 'Нужен и другим магазинам · только просмотр',
   'run.extras.status.cycleHint': 'Тап для смены · сейчас: {current}',
   'run.extras.recordPrice': 'Цена',
   'run.extras.recordExpenseReason': 'Прочая позиция из заявки сотрудника',
@@ -1029,6 +1030,10 @@ export const ru = {
   'run.errors.cannotEjectSession': 'Нет прав возвращать заявки из закупки',
   'run.errors.storeAlreadyConfirmed': 'Магазин уже подтвердил приёмку',
   'run.errors.notVisible': 'Закупка не найдена или недоступна вам',
+  'run.errors.itemServesOtherStores':
+    'Этот товар нужен и магазинам, за которые вы не отвечаете; изменить его может их закупщик.',
+  'run.errors.runHasOtherStores':
+    'В закупке есть магазины, за которые вы не отвечаете; этот шаг должен сделать закупщик всех магазинов.',
   'run.errors.archiveCascadeFailed':
     'Не удалось архивировать закупку вместе с заявками. Ничего не изменено — попробуйте ещё раз.',
   'run.errors.cannotEjectInStatus': 'Заявки можно возвращать только на этапе плана или закупки',

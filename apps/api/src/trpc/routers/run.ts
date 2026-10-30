@@ -2552,9 +2552,48 @@ export const runRouter = router({
           }
         }
 
+        // BUY-6 (2026-10-30): the stores this actor purchases for (null =
+        // all), so rows serving other stores can be shown read-only.
+        const purchaseScopeStoreIds = await getActorStoreIdsForPermission(
+          tx,
+          ctx.session!.memberId,
+          'run.purchase',
+          ctx.session!.permissions,
+        );
+        // Items that also serve a store outside that scope — from all of
+        // the run's demand and splits, not the redacted view above.
+        const otherStoreSkuIds: string[] = [];
+        if (purchaseScopeStoreIds !== null) {
+          const scope = new Set(purchaseScopeStoreIds);
+          const runSessionIds = (run.sessionIdsJson as unknown as string[] | null) ?? [];
+          const demandRows =
+            runSessionIds.length > 0
+              ? await tx
+                  .selectDistinct({
+                    skuId: s.orderItemsV.skuId,
+                    storeId: s.orderSessionsV.storeId,
+                  })
+                  .from(s.orderItemsV)
+                  .innerJoin(s.orderSessionsV, eq(s.orderSessionsV.id, s.orderItemsV.sessionId))
+                  .where(
+                    and(
+                      inArray(s.orderItemsV.sessionId, runSessionIds),
+                      sql`${s.orderItemsV.qty} > 0`,
+                    ),
+                  )
+              : [];
+          const other = new Set<string>();
+          for (const row of [...demandRows, ...allSplits]) {
+            if (!scope.has(row.storeId)) other.add(row.skuId);
+          }
+          otherStoreSkuIds.push(...other);
+        }
+
         return {
           ...run,
           money,
+          purchaseScopeStoreIds,
+          otherStoreSkuIds,
           dispatchDeniedStoreIds,
           ...(allowedStoreSet
             ? {
@@ -2659,7 +2698,13 @@ export const runRouter = router({
           ...scope,
           actor: actorFromCtx(ctx),
         }),
-      { withRunStoreIds: true },
+      {
+        withRunStoreIds: true,
+        item: {
+          skuId: input.skuId,
+          splitStoreIds: (input.storeSplits ?? []).map((split) => split.storeId),
+        },
+      },
     ),
   ),
 
@@ -2699,7 +2744,13 @@ export const runRouter = router({
             ...scope,
             actor: actorFromCtx(ctx),
           }),
-        { withRunStoreIds: true },
+        {
+          withRunStoreIds: true,
+          item: {
+            skuId: input.skuId,
+            splitStoreIds: input.storeSplits.map((split) => split.storeId),
+          },
+        },
       ),
     ),
 
@@ -2770,6 +2821,7 @@ export const runRouter = router({
           note: input.note,
           actor: actorFromCtx(ctx),
         }),
+        { item: { skuId: input.skuId } },
       ),
     ),
 
@@ -3189,7 +3241,14 @@ export const runRouter = router({
             actor: actorFromCtx(ctx),
           });
         },
-        { withRunStoreIds: true, withReadScope: true },
+        {
+          withRunStoreIds: true,
+          withReadScope: true,
+          item: {
+            skuId: input.skuId,
+            splitStoreIds: input.storeSplits.map((split) => split.storeId),
+          },
+        },
       ),
     ),
 
@@ -3204,6 +3263,7 @@ export const runRouter = router({
           reason: input.reason,
           actor: actorFromCtx(ctx),
         }),
+        { item: { skuId: input.skuId } },
       ),
     ),
 
@@ -3219,6 +3279,7 @@ export const runRouter = router({
           note: input.note,
           actor: actorFromCtx(ctx),
         }),
+        { item: { skuId: input.skuId } },
       ),
     ),
 
@@ -3243,7 +3304,7 @@ export const runRouter = router({
           actor: actorFromCtx(ctx),
         });
       },
-      { withReadScope: true },
+      { withReadScope: true, item: { skuId: input.skuId } },
     ),
   ),
 
@@ -3739,6 +3800,12 @@ async function runSimpleCommand(
     withReadScope?: boolean;
     /** Resolve the next free run number on this date (YYYY-MM-DD). */
     nextRunIndexOn?: string;
+    /**
+     * BUY-6 (2026-10-30): the command touches one item. A purchaser who
+     * runs only some of the run's stores may act on it when every store
+     * that item serves (and every store the input splits it to) is theirs.
+     */
+    item?: { skuId: string; splitStoreIds?: readonly string[] };
   },
 ): Promise<{ lastSeq: number; eventCount: number }> {
   return withRunStreamRetry(ctx, async (tx) => {
@@ -3778,6 +3845,14 @@ async function runSimpleCommand(
         ctx,
         run,
         options?.requiredPermission ?? 'run.purchase',
+        options?.item
+          ? {
+              ...options.item,
+              purchasedStoreIds: (state.items.get(options.item.skuId)?.storeSplits ?? []).map(
+                (split) => split.storeId,
+              ),
+            }
+          : undefined,
       );
     }
     try {
@@ -3974,6 +4049,11 @@ async function assertRunPermissionForAllStores(
   ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
   run: { sessionIdsJson: unknown },
   permissionKey: string,
+  item?: {
+    skuId: string;
+    splitStoreIds?: readonly string[];
+    purchasedStoreIds: readonly string[];
+  },
 ): Promise<void> {
   const allowedStoreIds = await getActorStoreIdsForPermission(
     db,
@@ -3987,5 +4067,45 @@ async function assertRunPermissionForAllStores(
   if (involvedStoreIds.length > 0 && involvedStoreIds.every((storeId) => allowed.has(storeId))) {
     return;
   }
-  throw new TRPCError({ code: 'NOT_FOUND', message: 'run.errors.notVisible' });
+  const actsInRun = involvedStoreIds.some((storeId) => allowed.has(storeId));
+  if (!actsInRun) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: 'run.errors.notVisible' });
+  }
+  // BUY-6 (2026-10-30): a purchaser of some of the run's stores may work
+  // on an item that serves only their stores.
+  if (item) {
+    const itemStoreIds = new Set<string>([
+      ...(await itemDemandStoreIds(db, run, item.skuId)),
+      ...item.purchasedStoreIds,
+      ...(item.splitStoreIds ?? []),
+    ]);
+    if (itemStoreIds.size > 0 && [...itemStoreIds].every((storeId) => allowed.has(storeId))) {
+      return;
+    }
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'run.errors.itemServesOtherStores' });
+  }
+  // Run-wide steps (start delivery, finish, expenses…) still need every store.
+  throw new TRPCError({ code: 'FORBIDDEN', message: 'run.errors.runHasOtherStores' });
+}
+
+/** Stores whose orders in this run ask for `skuId` (BUY-6). */
+async function itemDemandStoreIds(
+  db: import('@compass/db').DB,
+  run: { sessionIdsJson: unknown },
+  skuId: string,
+): Promise<string[]> {
+  const sessionIds = (run.sessionIdsJson as unknown as string[] | null) ?? [];
+  if (sessionIds.length === 0) return [];
+  const rows = await db
+    .selectDistinct({ storeId: s.orderSessionsV.storeId })
+    .from(s.orderItemsV)
+    .innerJoin(s.orderSessionsV, eq(s.orderSessionsV.id, s.orderItemsV.sessionId))
+    .where(
+      and(
+        inArray(s.orderItemsV.sessionId, sessionIds),
+        eq(s.orderItemsV.skuId, skuId),
+        sql`${s.orderItemsV.qty} > 0`,
+      ),
+    );
+  return rows.map((row) => row.storeId);
 }

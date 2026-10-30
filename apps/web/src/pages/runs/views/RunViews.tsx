@@ -29,7 +29,7 @@ import {
 } from '../lib/priceState';
 import { proportionalSplitQty } from '../lib/splitQty';
 import { PriceInFull, PriceUnitSwitch } from '../components/PriceUnit';
-import type { ActiveRun } from '../types';
+import { otherStoreSkusOf, type ActiveRun } from '../types';
 
 /**
  * GroupCardHeader — the "group title + right-aligned count·qty meta"
@@ -454,6 +454,7 @@ export function PerVendorView({
                     <PurchaseRow
                       key={r.skuId}
                       item={runItem}
+                      servesOtherStores={otherStoreSkusOf(run).has(runItem.skuId)}
                       skuName={skuName}
                       unit={unitLabel(r.sku?.unit)}
                       step={r.sku?.step ?? '0.1'}
@@ -964,6 +965,7 @@ export function PerCategoryView({
                 <PurchaseRow
                   key={item.skuId}
                   item={item}
+                  servesOtherStores={otherStoreSkusOf(run).has(item.skuId)}
                   skuName={skuName}
                   unit={unitLabel(sku?.unit)}
                   step={sku?.step ?? '0.1'}
@@ -1147,7 +1149,11 @@ export function PurchaseRow({
   onOpenAdvanced,
   onSetPaymentMethod,
   paymentBusy,
+  servesOtherStores = false,
 }: {
+  /** BUY-6: the item also serves a store this purchaser does not buy for;
+   *  the row is shown read-only. */
+  servesOtherStores?: boolean;
   item: ActiveRun['items'][number];
   skuName: string;
   unit: string;
@@ -1602,6 +1608,31 @@ export function PurchaseRow({
     isTransfer ? 'run.label.paymentTransfer' : 'run.label.paymentCash',
   );
   const paymentAria = `${i18n.t('run.label.paymentMethod')}: ${paymentLabel}`;
+
+  // BUY-6 (2026-10-30): a purchaser of only some of the run's stores sees
+  // rows that also serve other stores, but cannot change them.
+  if (servesOtherStores) {
+    return (
+      <li className="border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0">
+        <div className="flex items-baseline gap-2">
+          <span className="min-w-0 flex-1 truncate text-old-body font-semibold text-[var(--c-fg)]">
+            {skuName}
+          </span>
+          <span className="shrink-0 font-mono text-old-body-sm tabular-nums text-[var(--c-fg-muted)]">
+            {item.status === 'unavailable'
+              ? i18n.t('run.extras.status.unavailable')
+              : item.status === 'purchased'
+                ? `${formatQty(item.purchasedQty ?? item.plannedQty)} ${unit}` +
+                  (item.unitPrice ? ` × ${formatMoney(Number(item.unitPrice))}` : '')
+                : `${formatQty(item.plannedQty)} ${unit} · ${i18n.t('run.extras.status.pending')}`}
+          </span>
+        </div>
+        <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
+          {i18n.t('run.label.servesOtherStores')}
+        </div>
+      </li>
+    );
+  }
 
   if (item.status === 'pending' && collapsedState !== 'editing') {
     const carried = collapsedState === 'carried';

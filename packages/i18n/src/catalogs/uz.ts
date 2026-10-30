@@ -827,6 +827,7 @@ export const uz = {
   'run.extras.status.pending': 'Hali olinmagan',
   'run.extras.status.bought': 'Olindi',
   'run.extras.status.unavailable': 'Topilmadi',
+  'run.label.servesOtherStores': "Boshqa do'konlarga ham · faqat ko'rish",
   'run.extras.status.cycleHint': 'Bosing · hozir: {current}',
   'run.extras.recordPrice': 'Narx',
   'run.extras.recordExpenseReason': 'Xodim buyurtmasidagi boshqa narsa',
@@ -1036,6 +1037,10 @@ export const uz = {
   'run.errors.cannotEjectSession': "Xariddan yuborilganlarni qaytarish huquqi yo'q",
   'run.errors.storeAlreadyConfirmed': "Do'kon qabul qilishni allaqachon tasdiqlagan",
   'run.errors.notVisible': 'Xarid topilmadi yoki sizga mavjud emas',
+  'run.errors.itemServesOtherStores':
+    "Bu mahsulot siz javobgar bo'lmagan do'konlarga ham kerak; uni o'sha do'konlar xaridori o'zgartiradi.",
+  'run.errors.runHasOtherStores':
+    "Bu xaridda siz javobgar bo'lmagan do'konlar bor; bu qadamni barcha do'konlar xaridori bajaradi.",
   'run.errors.archiveCascadeFailed':
     "Xaridni buyurtmalari bilan birga arxivlab bo'lmadi. Hech narsa o'zgarmadi — qayta urinib ko'ring.",
   'run.errors.cannotEjectInStatus':
