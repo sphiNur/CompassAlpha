@@ -178,7 +178,13 @@ export type ClaimReleasedEvent = BaseEvent & {
    *  The audit UI groups override/timeout as "interventions" and surfaces
    *  them with a different tone (see AdminPage's audit viewer). */
   payload:
-    | { byMemberId: string; reason: 'manual' | 'pagehide' | 'override' }
+    | {
+        byMemberId: string;
+        reason: 'manual' | 'pagehide' | 'override';
+        /** Whose claim an `override` ended (RE-APR-2, 2026-10-30). Absent
+         *  on events written before, and on self-releases. */
+        fromMemberId?: string;
+      }
     | { byMemberId: null; reason: 'timeout' };
 };
 

@@ -188,6 +188,19 @@ export default {
     const target = new URL(incoming.pathname + incoming.search, origin);
 
     const headers = new Headers(request.headers);
+    // AUTH-6 (2026-10-30): the origin cannot tell clients apart — on the
+    // tunnel hop `cf-connecting-ip` names this Worker, and
+    // `x-forwarded-for` is whatever the client wrote. Here Cloudflare's
+    // `cf-connecting-ip` is the real client. Pass it on with the shared
+    // secret so the API's rate limiter can trust it; never pass on a
+    // client's own copy of either header.
+    headers.delete('x-compass-client-ip');
+    headers.delete('x-compass-proxy-key');
+    if (env.CLIENT_IP_PROXY_KEY) {
+      const clientIp = request.headers.get('cf-connecting-ip');
+      if (clientIp) headers.set('x-compass-client-ip', clientIp);
+      headers.set('x-compass-proxy-key', env.CLIENT_IP_PROXY_KEY);
+    }
     headers.set('x-forwarded-host', incoming.host);
     headers.set('x-forwarded-proto', 'https');
     // Avoid forwarding the Workers hostname as the origin Host header.

@@ -662,6 +662,8 @@ export const uz = {
     'Bu xaridda boshqa odamlarning buyurtmalari bor — oʻchirib boʻlmaydi',
   'admin.errors.sessionHasForeignAuthors':
     'Bu buyurtmada boshqa odamlarning yozuvlari bor — oʻchirib boʻlmaydi. Bu yerda faqat oʻzingizning sinov buyurtmalaringizni oʻchirish mumkin',
+  'admin.errors.bulkPurgeDisabledInProduction':
+    'Ishchi serverda ommaviy tozalash (hammasini tozalash, sanani qayta tiklash) oʻchirilgan. Bitta buyurtma yoki xaridni oʻchirish ishlaydi.',
   'admin.errors.purgeHasSettlements':
     'Bu sanalarda kunlik yopilishlar bor. Kunlik yopilish tarixini oʻchirib boʻlmaydi, shuning uchun tozalab boʻlmaydi',
   'admin.errors.runNotFound': 'Xarid topilmadi',
@@ -1705,6 +1707,9 @@ export const uz = {
   'run.errors.receivedQtyInvalid':
     'Qabul qilingan miqdor 0 dan kichik boʻlmagan son boʻlishi kerak',
   'run.errors.receivedQtyExceedsSplit': 'Qabul qilingan miqdor {max} dan oshmasligi kerak',
+  'run.errors.receivedQtyNotShort':
+    "{max} — bu hammasi, «Yaxshi»ni tanlang; kamomad boʻlsa {max} dan kam kiriting",
+  'run.errors.storeItemsUnchecked': "{n} ta tekshirilmagan. Doʻkonni tekshirib boʻlgach tasdiqlang",
   // 2026-10-21 audit follow-ups: staff sales tab, sales void, inventory movements,
   // invite list/revoke, offline/stale-order messages.
   'nav.sales': 'Sotuvlar',

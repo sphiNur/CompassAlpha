@@ -73,6 +73,13 @@ Both are required. CI fails-closed on orphan SQL files (the bug that broke
 0009 in prod for a week). Drizzle migrator skips the SQL file silently
 if the journal entry is missing.
 
+Write the SQL by hand. Do not run `drizzle-kit generate` (`pnpm
+db:generate` now refuses): `meta/` only has the snapshot of 0000, and
+about two dozen CHECK constraints exist only in the SQL, so the
+generated diff would be against the first schema and could drop or
+rename columns (D8). Keep the Drizzle schema in `src/schema/` in step
+with what the SQL creates.
+
 ### 6. Wire the tRPC procedure
 
 `apps/api/src/trpc/routers/<router>.ts`. Pattern:

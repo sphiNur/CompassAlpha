@@ -386,6 +386,13 @@
       "when": 1792540000002,
       "tag": "0054_manager_delivery_confirm",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1792540000003,
+      "tag": "0055_event_store_append_only",
+      "breakpoints": true
     }
   ]
 }

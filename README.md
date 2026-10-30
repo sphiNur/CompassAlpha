@@ -18,8 +18,7 @@ docker compose -f infra/compose/docker-compose.dev.yml up -d   # 起 PG + Redis 
 # 2. 安装依赖
 pnpm install
 
-# 3. 生成 + 迁移数据库 + 种子
-pnpm db:generate
+# 3. 迁移数据库 + 种子（迁移是手写的 SQL，不用 drizzle-kit generate）
 pnpm db:migrate
 pnpm db:seed
 

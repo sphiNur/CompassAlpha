@@ -14,8 +14,14 @@ $$ LANGUAGE SQL STABLE;
 -- row through whenever no tenant was set, so a query that merely forgot to
 -- set one could read another customer's data. Now nothing is visible
 -- unless a tenant is set or this returns true.
+--
+-- D3 (2026-10-30): only the reasons the code actually uses count — the
+-- SystemReason values in rls.ts, which are also what the migrations and
+-- the maintenance connection set ('maintenance'). Any other value, a
+-- typo or a made-up string, is "not system" and sees nothing.
 CREATE OR REPLACE FUNCTION app_is_system() RETURNS boolean AS $$
-  SELECT coalesce(current_setting('app.system_context', true), '') <> ''
+  SELECT coalesce(current_setting('app.system_context', true), '')
+    IN ('auth', 'worker', 'health', 'maintenance', 'telemetry')
 $$ LANGUAGE SQL STABLE;
 
 -- Org self-row policy.

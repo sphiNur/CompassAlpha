@@ -345,6 +345,8 @@ describe('order.decide (per-contributor lines)', () => {
     if (ev.type === 'ClaimReleased') {
       expect(ev.payload.byMemberId).toBe('mem-mgrB');
       expect(ev.payload.reason).toBe('override');
+      // RE-APR-2: and whose claim it ended.
+      expect(ev.payload.reason === 'override' && ev.payload.fromMemberId).toBe('mem-mgrA');
     }
     state = events.reduce(apply, state);
     expect(state.claimedByMemberId).toBeNull();

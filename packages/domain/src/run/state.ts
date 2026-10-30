@@ -350,11 +350,13 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
       // Correction session closed. Totals were recomputed from the
       // amended state (same math as RunFinished) and carried on the
       // event; the reducer just moves the phase back to finished.
+      // DLV-15 (2026-10-30): the run still finished when it finished — a
+      // correction does not move that time (it is its own event).
       return {
         ...state,
         seq: event.seq,
         status: 'finished',
-        finishedAt: event.occurredAt,
+        finishedAt: state.finishedAt ?? event.occurredAt,
       };
 
     // ---- Reversal events (added 2026-05-03) -----------------------------

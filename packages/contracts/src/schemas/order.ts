@@ -205,6 +205,17 @@ export const SimpleSessionCommandSchema = z.object({
   expectedSeq: z.number().int().optional(),
 });
 
+/**
+ * RE-APR-2 (2026-10-30): `fromMemberId` is the claimer the approver saw
+ * when asking to take over. If someone else holds the claim by the time
+ * the write lands (another approver took it over first), the take-over
+ * is refused with order.errors.alreadyClaimed instead of snatching it
+ * again. Optional so older clients keep working.
+ */
+export const TakeOverClaimInputSchema = SimpleSessionCommandSchema.extend({
+  fromMemberId: UuidSchema.optional(),
+});
+
 export const RejectInputSchema = SimpleSessionCommandSchema.extend({
   reason: z.string().min(1).max(500),
 });

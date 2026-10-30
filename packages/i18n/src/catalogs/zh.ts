@@ -613,6 +613,8 @@ export const zh = {
   'admin.errors.runHasForeignSessions': '此采购单里有其他人的订单，不能删除',
   'admin.errors.sessionHasForeignAuthors':
     '这张订单有其他人的内容，不能删除。这里只能删你自己的测试订单',
+  'admin.errors.bulkPurgeDisabledInProduction':
+    '正式环境不允许整体清理（清空整个工作区、重置指定日期）。删除单张订单或单张采购单不受影响。',
   'admin.errors.purgeHasSettlements':
     '这些日期里有日结记录。日结的修改记录按规定不能删除，所以无法清理',
   'admin.errors.runNotFound': '采购单不存在',
@@ -1607,6 +1609,9 @@ export const zh = {
   'run.errors.receivedQtyRequired': '请填写实际收到的数量',
   'run.errors.receivedQtyInvalid': '实收数量必须是不小于 0 的数字',
   'run.errors.receivedQtyExceedsSplit': '实收数量不能超过 {max}',
+  'run.errors.receivedQtyNotShort':
+    '实收 {max} 就是全部到齐了，请选「正常」；数量不足时请填少于 {max} 的数',
+  'run.errors.storeItemsUnchecked': '还有 {n} 项待核对，核对完才能确认收货',
   // 2026-10-21 audit follow-ups: staff sales tab, sales void, inventory movements,
   // invite list/revoke, offline/stale-order messages.
   'nav.sales': '销售',

@@ -288,6 +288,8 @@ export function PerVendorView({
     sessionId: string,
     extraIndex: number,
     status: 'pending' | 'bought' | 'unavailable',
+    /** APR-18: the session's lastSeq the row was read at. */
+    expectedSeq?: number,
   ) => void;
   onRecordExtraExpense: (
     storeId: string,
@@ -535,6 +537,7 @@ export function RunExtrasCard({
       status?: 'pending' | 'bought' | 'unavailable';
       sessionId?: string;
       idx?: number;
+      sessionSeq?: number;
     }>
   >;
   sessionNotesByStore?: Record<string, string>;
@@ -547,6 +550,8 @@ export function RunExtrasCard({
     sessionId: string,
     extraIndex: number,
     status: 'pending' | 'bought' | 'unavailable',
+    /** APR-18: the session's lastSeq the row was read at. */
+    expectedSeq?: number,
   ) => void;
   onRecordExtraExpense?: (
     storeId: string,
@@ -649,7 +654,7 @@ export function RunExtrasCard({
                               type="button"
                               title={i18n.t('run.extras.status.cycleHint', { current: v.label })}
                               onClick={() =>
-                                onMarkExtraStatus!(e.sessionId!, e.idx!, cycle(status))
+                                onMarkExtraStatus!(e.sessionId!, e.idx!, cycle(status), e.sessionSeq)
                               }
                               className="flex min-w-0 flex-1 items-baseline gap-2 rounded-[6px] text-left active:bg-[var(--c-surface-2)]"
                             >

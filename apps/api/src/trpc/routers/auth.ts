@@ -24,12 +24,13 @@ import {
 } from '@compass/contracts';
 import { authedProcedure, publicProcedure, router } from '../trpc';
 import { verifyInitData, type TelegramUser } from '../../services/telegramAuth';
-import { checkRate } from '../../services/rateLimit';
+import { checkClientRate } from '../../services/rateLimit';
 import { signAccess, verifyRefresh } from '../../infra/jwt';
 import {
   issueRefresh,
-  consumeRefresh,
+  rotateRefresh,
   revokeAllForUser,
+  revokeFamilyForUser,
   RefreshReplayError,
   RefreshNotFoundError,
 } from '../../services/refreshTokens';
@@ -61,10 +62,10 @@ import type { RequestContext } from '../context';
  * own bot constraints already limit per-user open rate, so this is
  * defence-in-depth rather than the primary line.
  *
- * Behind Cloudflare we trust `cf-connecting-ip`; fall back to
- * `x-forwarded-for` or null. A null IP means we couldn't identify
- * the caller, so we don't enforce — the alternative is locking out
- * everyone behind a misconfigured proxy.
+ * The address comes from `ctx.trustedIp` (services/clientIp.ts): the
+ * one the app-proxy Worker vouches for, never a header the client can
+ * write (AUTH-6). Callers without one share a bucket with a larger
+ * budget instead of escaping the limit.
  */
 const AUTH_LIMIT = { window: 60_000, max: 5 } as const;
 /**
@@ -80,11 +81,10 @@ const REFRESH_LIMIT = { window: 60_000, max: 60 } as const;
  * stops a client that loops on a broken link.
  */
 const INVITE_LIMIT = { window: 60_000, max: 30 } as const;
-function enforceRate(scope: string, ip: string | null): void {
-  if (!ip) return;
+function enforceRate(scope: string, ip: string | null | undefined): void {
   const limit =
     scope === 'refresh' ? REFRESH_LIMIT : scope === 'acceptInvite' ? INVITE_LIMIT : AUTH_LIMIT;
-  if (!checkRate(scope, ip, limit)) {
+  if (!checkClientRate(scope, ip, limit)) {
     throw new TRPCError({
       code: 'TOO_MANY_REQUESTS',
       message: 'auth.errors.rateLimited',
@@ -418,13 +418,18 @@ async function issueLoginResult(
   userAgent: string | null,
 ) {
   const session = await buildSessionPayload(db, userId, memberId, orgId);
-  const accessToken = await signAccess({ sub: userId, org: session.member.orgId, mid: memberId });
   const issued = await issueRefresh(db, {
     userId,
     orgId,
     memberId,
     ip,
     userAgent,
+  });
+  const accessToken = await signAccess({
+    sub: userId,
+    org: session.member.orgId,
+    mid: memberId,
+    fam: issued.family,
   });
 
   return {
@@ -436,6 +441,21 @@ async function issueLoginResult(
     },
     session,
   };
+}
+
+/**
+ * The caller is moving its session to another organisation and gets a
+ * new refresh chain for it. End the chain it is leaving (AUTH-11,
+ * 2026-10-30): before, the old refresh token kept working next to the
+ * new one and silently put `lastOrgId` back. The access token names
+ * its chain; one signed before that claim existed (at most 15 minutes
+ * after this shipped) has nothing to name, and the old chain then
+ * simply runs out as before.
+ */
+async function endLeftRefreshChain(ctx: RequestContext): Promise<void> {
+  const family = ctx.session?.refreshFamily;
+  if (!family || !ctx.session) return;
+  await revokeFamilyForUser(ctx.db, family, ctx.session.userId);
 }
 
 async function issueDevBypassLoginResult(db: DB, userId: string, memberId: string, orgId: string) {
@@ -624,7 +644,7 @@ export const authRouter = router({
    * development, so production users never see or hit this path.
    */
   devPersonas: publicProcedure.query(async ({ ctx }) => {
-    enforceRate('devPersonas', ctx.ip);
+    enforceRate('devPersonas', ctx.trustedIp);
     assertDevLoginAvailable(ctx);
     let rows: DevPersonaRow[] | { rows?: DevPersonaRow[] };
     try {
@@ -689,7 +709,7 @@ export const authRouter = router({
    * database, preferring an admin account so all screens are reachable.
    */
   devBypassLogin: publicProcedure.mutation(async ({ ctx }) => {
-    enforceRate('devBypassLogin', ctx.ip);
+    enforceRate('devBypassLogin', ctx.trustedIp);
     assertDevLoginAvailable(ctx);
     let identity: LoginIdentity;
     try {
@@ -704,7 +724,7 @@ export const authRouter = router({
   devPersonaLogin: publicProcedure
     .input(DevPersonaLoginInputSchema)
     .mutation(async ({ ctx, input }) => {
-      enforceRate('devPersonaLogin', ctx.ip);
+      enforceRate('devPersonaLogin', ctx.trustedIp);
       assertDevLoginAvailable(ctx);
       let identity: LoginIdentity;
       try {
@@ -726,7 +746,7 @@ export const authRouter = router({
   nonTelegramLogin: publicProcedure
     .input(NonTelegramLoginInputSchema)
     .mutation(async ({ ctx, input }) => {
-      enforceRate('nonTelegramLogin', ctx.ip);
+      enforceRate('nonTelegramLogin', ctx.trustedIp);
       if (!isNonTelegramLoginAvailable()) {
         throw new TRPCError({
           code: 'FORBIDDEN',
@@ -788,7 +808,7 @@ export const authRouter = router({
   telegramLogin: publicProcedure
     .input(TelegramLoginInputSchema)
     .mutation(async ({ ctx, input }) => {
-      enforceRate('login', ctx.ip);
+      enforceRate('login', ctx.trustedIp);
       const isDevMock = input.initData === DEV_MOCK_INIT_DATA && isDevMockLoginAvailable();
       let tg: TelegramUser;
       if (isDevMock) {
@@ -939,7 +959,7 @@ export const authRouter = router({
    * and the high-entropy token supplies the membership grant.
    */
   acceptInvite: publicProcedure.input(AcceptInviteInputSchema).mutation(async ({ ctx, input }) => {
-    enforceRate('acceptInvite', ctx.ip);
+    enforceRate('acceptInvite', ctx.trustedIp);
     const isDevMock = input.initData === DEV_MOCK_INIT_DATA && isDevMockLoginAvailable();
     let tg: TelegramUser;
     if (isDevMock) {
@@ -1235,6 +1255,7 @@ export const authRouter = router({
           .set({ lastOrgId: member.orgId })
           .where(eq(s.users.id, ctx.session!.userId)),
       );
+      await endLeftRefreshChain(ctx);
       return issueLoginResult(
         ctx.db,
         ctx.session!.userId,
@@ -1298,6 +1319,7 @@ export const authRouter = router({
       if (!createdOrg.ownerMemberId) {
         throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
       }
+      await endLeftRefreshChain(ctx);
       return issueLoginResult(
         ctx.db,
         user.id,
@@ -1474,13 +1496,12 @@ export const authRouter = router({
    *   - Issue a NEW access token AND a fresh refresh token (same
    *     family) so the client can keep rotating indefinitely.
    *
-   * NOT yet implemented (later milestones): refresh-token revocation
-   * tracking, family-blacklisting on suspected reuse, rate limiting.
-   * Those are M2 hardening; the priority here is "stop locking users
-   * out after 15 minutes".
+   * Since then: tracked rotation with replay detection (M1.9), one
+   * successor per token even when it is retried (AUTH-12), and no
+   * untracked tokens (B12). See services/refreshTokens.ts.
    */
   refresh: publicProcedure.input(RefreshInputSchema).mutation(async ({ ctx, input }) => {
-    enforceRate('refresh', ctx.ip);
+    enforceRate('refresh', ctx.trustedIp);
     let claims: {
       sub: string;
       family: string;
@@ -1494,54 +1515,16 @@ export const authRouter = router({
       throw new TRPCError({ code: 'UNAUTHORIZED', message: 'auth.errors.invalidRefresh' });
     }
 
-    // M1.9 (2026-05-07): consume the tracked refresh token. Three
-    // outcomes:
-    //   - Tracked + active: marked revoked, we proceed to issue a
-    //     rotated successor.
-    //   - Tracked + already-revoked: REPLAY — the entire family is
-    //     nuked inside consumeRefresh and we throw 401. The legitimate
-    //     user re-logs in; the attacker (or stale device) loses
-    //     access.
-    //   - Untracked: pre-M1.9 jti-less token, OR the tracking row was
-    //     wiped (db reset, manual purge). Grandfather: issue a fresh
-    //     tracked refresh token, log a warning so we can quantify how
-    //     many users are still on legacy tokens. After ~30d (refresh
-    //     TTL) all sessions migrate naturally.
-    let parentId: string | undefined;
-    let family: string | undefined;
-    if (claims.jti) {
-      try {
-        await consumeRefresh(ctx.db, claims.jti, claims.family);
-        parentId = claims.jti;
-        family = claims.family;
-      } catch (err) {
-        if (err instanceof RefreshReplayError) {
-          throw new TRPCError({
-            code: 'UNAUTHORIZED',
-            message: 'auth.errors.refreshReplayDetected',
-          });
-        }
-        if (err instanceof RefreshNotFoundError) {
-          // Untracked OR expired-by-row. Treat the same as legacy.
-          logger.warn(
-            { sub: claims.sub, family: claims.family, jti: claims.jti },
-            'auth.refresh: jti not found in DB — grandfathering as legacy',
-          );
-        } else {
-          throw err;
-        }
-      }
-    } else {
-      // M3.9: demoted from info → debug. Legacy-token refresh is the
-      // EXPECTED path during the rollout window after we added jti
-      // tracking; logging at info clutters the journal with one line
-      // per refresh for users on the older bundle. The interesting
-      // case (replay-detected) still logs at warn above.
-      logger.debug(
-        { sub: claims.sub, family: claims.family },
-        'auth.refresh: legacy jti-less token — issuing tracked successor',
-      );
+    // B12 (2026-10-30): only a tracked token can be exchanged. Tokens
+    // without a jti predate M1.9 (2026-05-07) and their 30-day lifetime
+    // ended long ago; every token issued since has its row written
+    // before it is returned. A token whose row is gone (expired and
+    // purged, or wiped) used to be "grandfathered" into a brand-new
+    // family on every use, outside rotation and replay detection.
+    if (!claims.jti) {
+      throw new TRPCError({ code: 'UNAUTHORIZED', message: 'auth.errors.invalidRefresh' });
     }
+    const jti = claims.jti;
 
     const user = await inSystem(ctx.db, 'auth', (tx) =>
       tx.query.users.findFirst({
@@ -1563,7 +1546,7 @@ export const authRouter = router({
             ),
         });
       }
-      // Legacy refresh tokens predate tenant claims. Reopen the last
+      // Refresh tokens from before tenant claims. Reopen the last
       // workspace, then any active membership.
       if (user.lastOrgId) {
         const remembered = await tx.query.members.findFirst({
@@ -1579,6 +1562,42 @@ export const authRouter = router({
     if (!member) {
       throw new TRPCError({ code: 'UNAUTHORIZED', message: 'auth.errors.noMembership' });
     }
+
+    // Consume the token and get its successor in the same family:
+    //   - Active: consumed, successor issued.
+    //   - Consumed moments ago, successor still live: that same
+    //     successor again (lost response, second tab) — AUTH-12.
+    //   - Otherwise consumed: REPLAY — the whole family is revoked and
+    //     the client has to sign in again.
+    //   - Untracked or expired: refused (B12).
+    let issued: Awaited<ReturnType<typeof rotateRefresh>>;
+    try {
+      issued = await rotateRefresh(ctx.db, {
+        jti,
+        family: claims.family,
+        userId: user.id,
+        orgId: member.orgId,
+        memberId: member.id,
+        ip: ctx.ip,
+        userAgent: ctx.userAgent,
+      });
+    } catch (err) {
+      if (err instanceof RefreshReplayError) {
+        throw new TRPCError({
+          code: 'UNAUTHORIZED',
+          message: 'auth.errors.refreshReplayDetected',
+        });
+      }
+      if (err instanceof RefreshNotFoundError) {
+        logger.warn(
+          { sub: claims.sub, family: claims.family, jti },
+          'auth.refresh: refresh token not tracked or expired — refused',
+        );
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'auth.errors.invalidRefresh' });
+      }
+      throw err;
+    }
+
     const session = await buildSessionPayload(ctx.db, user.id, member.id, member.orgId);
     await inSystem(ctx.db, 'auth', (tx) =>
       tx.update(s.users).set({ lastOrgId: member.orgId }).where(eq(s.users.id, user.id)),
@@ -1587,18 +1606,7 @@ export const authRouter = router({
       sub: user.id,
       org: session.member.orgId,
       mid: member.id,
-    });
-    // Issue the rotated successor. When `parentId` + `family` are set
-    // we're chaining to the consumed row; otherwise we start a fresh
-    // family (legacy-token migration path).
-    const issued = await issueRefresh(ctx.db, {
-      userId: user.id,
-      orgId: member.orgId,
-      memberId: member.id,
-      family,
-      parentId,
-      ip: ctx.ip,
-      userAgent: ctx.userAgent,
+      fam: issued.family,
     });
     const accessExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
     const refreshExpiresAt = issued.expiresAt.toISOString();

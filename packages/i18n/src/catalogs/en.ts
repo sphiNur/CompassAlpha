@@ -734,6 +734,8 @@ export const en = {
     "This run contains other people's orders — it cannot be deleted",
   'admin.errors.sessionHasForeignAuthors':
     "This order contains other people's entries and cannot be deleted. Only your own test orders can be deleted here",
+  'admin.errors.bulkPurgeDisabledInProduction':
+    'Workspace-wide purges (wipe everything, reset a date) are switched off on the live server. Deleting a single order or market run still works.',
   'admin.errors.purgeHasSettlements':
     'There are daily closes in this range. Daily close history cannot be deleted, so this cannot be purged',
   'admin.errors.runNotFound': 'Market run not found',
@@ -1835,6 +1837,9 @@ export const en = {
   'run.errors.receivedQtyRequired': 'Enter how much actually arrived',
   'run.errors.receivedQtyInvalid': 'Received quantity must be a number ≥ 0',
   'run.errors.receivedQtyExceedsSplit': "Received quantity can't exceed {max}",
+  'run.errors.receivedQtyNotShort':
+    '{max} is everything — choose “OK”; for a shortfall enter less than {max}',
+  'run.errors.storeItemsUnchecked': '{n} still to check before the store can be confirmed',
   // 2026-10-21 audit follow-ups: staff sales tab, sales void, inventory movements,
   // invite list/revoke, offline/stale-order messages.
   'nav.sales': 'Sales',

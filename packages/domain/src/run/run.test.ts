@@ -65,6 +65,40 @@ function planAndPurchase(opts?: {
   return state;
 }
 
+/**
+ * Mark every line still unchecked at `storeId` OK, then confirm the store.
+ * DLV-19 (2026-10-30): ConfirmStore no longer writes those OKs itself.
+ */
+function confirmStoreAllOk(
+  state: ReturnType<typeof emptyRunState>,
+  storeId: string,
+): ReturnType<typeof emptyRunState> {
+  let s = state;
+  const store = s.stores.get(storeId);
+  for (const item of s.items.values()) {
+    if (item.status !== 'purchased') continue;
+    if (!item.storeSplits.some((sp) => sp.storeId === storeId)) continue;
+    if (store?.itemConfirms.has(item.skuId)) continue;
+    s = decideRun(
+      s,
+      {
+        type: 'ConfirmStoreItem',
+        storeId,
+        skuId: item.skuId,
+        status: 'ok',
+        note: null,
+        photoUrl: null,
+        actor: confirmer(),
+      },
+      clock,
+    ).reduce(applyRun, s);
+  }
+  return decideRun(s, { type: 'ConfirmStore', storeId, actor: confirmer() }, clock).reduce(
+    applyRun,
+    s,
+  );
+}
+
 describe('run.decide', () => {
   test('PlanRun without run.create permission throws forbidden', () => {
     const state = emptyRunState('r1');
@@ -535,10 +569,7 @@ describe('run.decide', () => {
       },
       clock,
     ).reduce(applyRun, s);
-    s = decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock).reduce(
-      applyRun,
-      s,
-    );
+    s = confirmStoreAllOk(s, 'A');
     // store B not yet confirmed
     expect(() => decideRun(s, { type: 'FinishRun', actor: purchaser() }, clock)).toThrow(
       'run.errors.storeNotConfirmed',
@@ -565,10 +596,7 @@ describe('run.decide', () => {
       },
       clock,
     ).reduce(applyRun, s);
-    s = decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock).reduce(
-      applyRun,
-      s,
-    );
+    s = confirmStoreAllOk(s, 'A');
     s = decideRun(s, { type: 'FinishRun', actor: purchaser() }, clock).reduce(applyRun, s);
     expect(s.status).toBe('finished');
     expect(s.finishedAt).toEqual(NOW);
@@ -600,10 +628,7 @@ describe('run.decide', () => {
       },
       clock,
     ).reduce(applyRun, s);
-    s = decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock).reduce(
-      applyRun,
-      s,
-    );
+    s = confirmStoreAllOk(s, 'A');
     const finishEvs = decideRun(s, { type: 'FinishRun', actor: purchaser() }, clock);
     s = finishEvs.reduce(applyRun, s);
     expect(s.status).toBe('finished');
@@ -942,10 +967,7 @@ describe('run.decide', () => {
     expect(() =>
       decideRun(s, { type: 'CancelRun', reason: '', actor: purchaser() }, clock),
     ).toThrow('run.errors.cannotCancelAfterDelivery');
-    s = decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock).reduce(
-      applyRun,
-      s,
-    );
+    s = confirmStoreAllOk(s, 'A');
     expect(() =>
       decideRun(s, { type: 'CancelRun', reason: '', actor: purchaser() }, clock),
     ).toThrow('run.errors.cannotCancelAfterConfirm');
@@ -982,10 +1004,7 @@ describe('run.decide', () => {
       },
       clock,
     ).reduce(applyRun, s);
-    s = decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock).reduce(
-      applyRun,
-      s,
-    );
+    s = confirmStoreAllOk(s, 'A');
     s = decideRun(s, { type: 'FinishRun', actor: purchaser() }, clock).reduce(applyRun, s);
     expect(() =>
       decideRun(s, { type: 'CancelRun', reason: 'oops', actor: purchaser() }, clock),
@@ -1171,10 +1190,7 @@ describe('run.reversals', () => {
       },
       clock,
     ).reduce(applyRun, s);
-    s = decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock).reduce(
-      applyRun,
-      s,
-    );
+    s = confirmStoreAllOk(s, 'A');
     expect(() =>
       decideRun(
         s,
@@ -1655,27 +1671,25 @@ describe('run.reversals', () => {
       },
       clock,
     ).reduce(applyRun, s);
-    s = decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock).reduce(
-      applyRun,
-      s,
-    );
+    s = confirmStoreAllOk(s, 'A');
     const dup = decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock);
     expect(dup).toEqual([]);
   });
 
-  test('ConfirmStore defaults missing item confirms to ok', () => {
+  test('ConfirmStore is refused while a line is unchecked (DLV-19)', () => {
     let s = planAndPurchase();
     s = decideRun(s, { type: 'StartDelivery', actor: purchaser() }, clock).reduce(applyRun, s);
     s = decideRun(s, { type: 'DeliverToStore', storeId: 'A', actor: purchaser() }, clock).reduce(
       applyRun,
       s,
     );
-    const evs = decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock);
-    expect(evs.map((e) => e.type)).toEqual(['StoreItemConfirmed', 'StoreConfirmed']);
-    const confirm = evs[0]!;
-    expect(confirm.type).toBe('StoreItemConfirmed');
-    if (confirm.type !== 'StoreItemConfirmed') throw new Error('unreachable');
-    expect(confirm.payload.status).toBe('ok');
+    // It used to write an "ok" for the line nobody had checked.
+    expect(() =>
+      decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock),
+    ).toThrow('run.errors.storeItemsUnchecked');
+    s = confirmStoreAllOk(s, 'A');
+    expect(s.stores.get('A')?.confirmedAt).toBeTruthy();
+    expect(s.stores.get('A')?.itemConfirms.get('sku-1')?.status).toBe('ok');
   });
 
   test('ConfirmStore is blocked after a run is cancelled or finished', () => {
@@ -1705,11 +1719,7 @@ describe('run.reversals', () => {
       decideRun(cancelled, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock),
     ).toThrow('run.errors.notDelivering');
 
-    let finished = decideRun(
-      delivering,
-      { type: 'ConfirmStore', storeId: 'A', actor: confirmer() },
-      clock,
-    ).reduce(applyRun, delivering);
+    let finished = confirmStoreAllOk(delivering, 'A');
     finished = decideRun(finished, { type: 'FinishRun', actor: purchaser() }, clock).reduce(
       applyRun,
       finished,
@@ -1926,10 +1936,7 @@ describe('run.paymentMethod', () => {
       },
       clock,
     ).reduce(applyRun, s);
-    s = decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock).reduce(
-      applyRun,
-      s,
-    );
+    s = confirmStoreAllOk(s, 'A');
     const finishEvs = decideRun(s, { type: 'FinishRun', actor: purchaser() }, clock);
     expect(finishEvs).toHaveLength(1);
     const ev = finishEvs[0]!;
@@ -1959,14 +1966,8 @@ describe('run.paymentMethod', () => {
       applyRun,
       s,
     );
-    s = decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock).reduce(
-      applyRun,
-      s,
-    );
-    s = decideRun(s, { type: 'ConfirmStore', storeId: 'B', actor: confirmer() }, clock).reduce(
-      applyRun,
-      s,
-    );
+    s = confirmStoreAllOk(s, 'A');
+    s = confirmStoreAllOk(s, 'B');
     const finishEvs = decideRun(s, { type: 'FinishRun', actor: purchaser() }, clock);
     const ev = finishEvs[0]!;
     expect(ev.type).toBe('RunFinished');
@@ -2270,10 +2271,7 @@ describe('run.storeScope', () => {
 
   test('ConfirmStoreItem is refused once the store has confirmed', () => {
     let s = deliveredTo('A');
-    s = decideRun(s, { type: 'ConfirmStore', storeId: 'A', actor: confirmer() }, clock).reduce(
-      applyRun,
-      s,
-    );
+    s = confirmStoreAllOk(s, 'A');
     expect(() =>
       decideRun(s, { ...confirmItem('A'), status: 'short', note: 'late' } as RunCommand, clock),
     ).toThrow('run.errors.storeAlreadyConfirmed');
@@ -2349,7 +2347,21 @@ describe('run.receivedQty', () => {
     expect(() => decideRun(s, issue('short', 'abc'), clock)).toThrow(
       'run.errors.receivedQtyInvalid',
     );
-    expect(payloadOf(decideRun(s, issue('short', '1'), clock)).receivedQty).toBe('1');
+    expect(payloadOf(decideRun(s, issue('short', '0.5'), clock)).receivedQty).toBe('0.5');
+  });
+
+  test('short with the whole split received is refused; wrong / quality may keep it all (DLV-12)', () => {
+    const s = delivered([
+      { storeId: 'A', qty: '1' },
+      { storeId: 'B', qty: '3' },
+    ]);
+    expect(() => decideRun(s, issue('short', '1'), clock)).toThrow(
+      'run.errors.receivedQtyNotShort',
+    );
+    expect(() => decideRun(s, issue('short', '1.000'), clock)).toThrow(
+      'run.errors.receivedQtyNotShort',
+    );
+    expect(payloadOf(decideRun(s, issue('quality', '1'), clock)).receivedQty).toBe('1');
   });
 
   test('wrong / quality default to zero received', () => {
@@ -2421,10 +2433,7 @@ describe('run.totals', () => {
         applyRun,
         s,
       );
-      s = decideRun(s, { type: 'ConfirmStore', storeId, actor: confirmer() }, clock).reduce(
-        applyRun,
-        s,
-      );
+      s = confirmStoreAllOk(s, storeId);
     }
     return s;
   };
@@ -2463,6 +2472,26 @@ describe('run.totals', () => {
     expect(ev.payload.itemsTotal).toBe('54000.00');
     expect(ev.payload.expensesTotal).toBe('0.00');
     expect(ev.payload.totalActual).toBe('54000.00');
+  });
+
+  test('closing a correction keeps the time the run finished (DLV-15)', () => {
+    const amender: ActorCtx = {
+      userId: 'sa',
+      memberId: 'sa',
+      permissions: new Set(['run.purchase', 'run.amend', 'run.finish']),
+    };
+    let s = finishWith();
+    s = decideRun(s, { type: 'FinishRun', actor: purchaser() }, clock).reduce(applyRun, s);
+    const finishedAt = s.finishedAt;
+    expect(finishedAt).toEqual(NOW);
+    const later = fixedClock(new Date(NOW.getTime() + 3_600_000));
+    s = decideRun(s, { type: 'ReopenRun', reason: 'fix', actor: amender }, later).reduce(
+      applyRun,
+      s,
+    );
+    s = decideRun(s, { type: 'RefinalizeRun', actor: amender }, later).reduce(applyRun, s);
+    expect(s.status).toBe('finished');
+    expect(s.finishedAt).toEqual(finishedAt);
   });
 });
 

@@ -657,6 +657,8 @@ export const ru = {
     'В закупке есть заказы других людей — удалить нельзя',
   'admin.errors.sessionHasForeignAuthors':
     'В заказе есть позиции других людей — удалить нельзя. Здесь можно удалять только свои тестовые заказы',
+  'admin.errors.bulkPurgeDisabledInProduction':
+    'Массовая очистка (всё рабочее пространство, сброс даты) отключена на рабочем сервере. Удалить отдельный заказ или закупку по-прежнему можно.',
   'admin.errors.purgeHasSettlements':
     'За эти даты есть закрытия дня. Историю закрытий удалять нельзя, поэтому очистка невозможна',
   'admin.errors.runNotFound': 'Закупка не найдена',
@@ -1690,6 +1692,9 @@ export const ru = {
   'run.errors.receivedQtyRequired': 'Укажите, сколько фактически получено',
   'run.errors.receivedQtyInvalid': 'Полученное количество должно быть числом ≥ 0',
   'run.errors.receivedQtyExceedsSplit': 'Полученное количество не может превышать {max}',
+  'run.errors.receivedQtyNotShort':
+    '{max} — это всё, выберите «OK»; при недостаче введите меньше {max}',
+  'run.errors.storeItemsUnchecked': 'Осталось проверить: {n}. Магазин можно подтвердить после проверки',
   // 2026-10-21 audit follow-ups: staff sales tab, sales void, inventory movements,
   // invite list/revoke, offline/stale-order messages.
   'nav.sales': 'Продажи',
