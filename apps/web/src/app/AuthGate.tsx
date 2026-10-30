@@ -489,8 +489,9 @@ export function AuthGate({ children }: AuthGateProps) {
     return (
       <div className="flex h-full flex-col items-center gap-4 overflow-y-auto px-6 py-8 text-center">
         <h1 className="text-old-display font-semibold">Compass</h1>
-        {/* Outside Telegram there is no ID to share: the dev picker replaces it. */}
-        {showDevLogin && !hasTelegramInitData ? null : (
+        {/* Outside Telegram there is no ID to share (AUTH-8: production
+            browsers were asked to send an ID that was not on screen). */}
+        {!hasTelegramInitData ? null : (
           <>
             <p className="text-old-body text-[var(--c-fg-muted)]">{i18n.t('auth.shareThisId')}</p>
             {/* 2026-10-21 audit CA-50 / A-14: the line above asks the user to

@@ -201,7 +201,8 @@ export const ru = {
   'people.transferWhatAdded': '{name} добавляется в магазин назначения',
   'people.transferWhatMirrored':
     'его привязки ролей из исходного магазина воссоздаются в магазине назначения',
-  'people.transferWhatNoRoles': 'в магазине назначения привязки ролей не создаются',
+  'people.transferWhatNoRoles':
+    'В новом магазине не будет ролей: после перевода у сотрудника там нет прав, пока вы не назначите роль',
   'people.transferWhatRemoved': 'его назначение, привязки и переопределения в {store} удаляются',
   'people.transferWhatOutro':
     'Другие магазины участника не затрагиваются. При любой ошибке весь перевод откатывается.',
@@ -474,7 +475,7 @@ export const ru = {
   'auth.errors.signInFailed': 'Ошибка входа',
   'auth.retryInvite': 'Попробовать приглашение ещё раз',
   'auth.errors.noInitData':
-    'Telegram initData не найден — откройте через Telegram или задайте VITE_DEV_MOCK_INIT_DATA.',
+    'Откройте Compass в Telegram (через бота или ссылку-приглашение).',
   'auth.errors.inviteNotFound': 'Ссылка-приглашение недействительна или удалена.',
   'auth.errors.inviteExpired': 'Срок приглашения истёк. Попросите управляющего новую ссылку.',
   'auth.errors.inviteUsed': 'Это приглашение уже использовано.',
@@ -493,7 +494,7 @@ export const ru = {
   'admin.section.permissions': 'Роли и права',
   'admin.section.catalog': 'Каталог',
   'admin.section.operations': 'Операции',
-  'admin.section.organizationHint': 'Информация, язык, часовой пояс',
+  'admin.section.organizationHint': 'Информация, часовой пояс, мой язык',
   'admin.section.storesHint': 'Откройте магазин, чтобы управлять командой и настройками',
   'admin.section.permissionsHint': 'Встроенные роли, ранги, матрица прав',
   'admin.section.catalogHint': 'Категории, товары, поставщики',
@@ -691,6 +692,8 @@ export const ru = {
     'Эта роль ещё назначена сотрудникам — сначала отзовите назначения',
   'admin.errors.permissionNotFound': 'Право не найдено в справочнике',
   'admin.errors.notAdminOfStore': 'Вы не администрируете этот магазин — операция запрещена',
+  'admin.errors.memberNotInSourceStore':
+    'Сотрудника нет в исходном магазине, перевести его оттуда нельзя; просто назначьте его в новый магазин.',
   'admin.errors.cannotInviteOrgAdminAsStoreAdmin':
     'Назначить роль уровня организации может только администратор организации',
   'admin.errors.transferSameStore': 'Магазин-источник и магазин-цель должны различаться',
@@ -1391,6 +1394,8 @@ export const ru = {
   // ── 15. Org financial settings (M1.17) ────────────────
   'admin.workspace.currency': 'Валюта',
   'admin.workspace.taxRate': 'Ставка налога',
+  'admin.workspace.timezone': 'Часовой пояс',
+  'admin.workspace.myLanguage': 'Мой язык',
   'admin.workspace.taxRateHint': 'Стандартный НДС %. 0 — не отслеживать.',
   'admin.workspace.pricesIncludeTax': 'Цены с налогом',
   'admin.workspace.pricesIncludeTaxOn': 'С НДС (как на прилавке)',

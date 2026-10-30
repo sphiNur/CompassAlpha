@@ -241,7 +241,8 @@ export const en = {
   'people.transferWhatAdded': '{name} is added to the destination store',
   'people.transferWhatMirrored':
     'their store-scoped role bindings in the source are recreated in the destination',
-  'people.transferWhatNoRoles': 'no role bindings are created in the destination',
+  'people.transferWhatNoRoles':
+    'No roles in the destination store: after the move they have no permissions there until you grant a role',
   'people.transferWhatRemoved':
     'their assignment + bindings + per-store overrides in {store} are removed',
   'people.transferWhatOutro':
@@ -534,7 +535,7 @@ export const en = {
   'auth.errors.signInFailed': 'Sign in failed',
   'auth.retryInvite': 'Try the invitation again',
   'auth.errors.noInitData':
-    'No Telegram initData available — open via Telegram, or set VITE_DEV_MOCK_INIT_DATA.',
+    'Open Compass inside Telegram (from the bot or an invite link).',
   'auth.errors.inviteNotFound': 'This invitation link is invalid or no longer exists.',
   'auth.errors.inviteExpired': 'This invitation has expired. Ask your manager for a new link.',
   'auth.errors.inviteUsed': 'This invitation has already been used.',
@@ -557,7 +558,7 @@ export const en = {
   'admin.section.permissions': 'Roles & Permissions',
   'admin.section.catalog': 'Catalog',
   'admin.section.operations': 'Operations',
-  'admin.section.organizationHint': 'Org info, locale, timezone',
+  'admin.section.organizationHint': 'Org info, time zone, my language',
   'admin.section.storesHint': 'Open a store to manage its team and settings',
   'admin.section.permissionsHint': 'Built-in roles, ranks, permission matrix',
   'admin.section.catalogHint': 'Categories, SKUs, suppliers',
@@ -770,6 +771,8 @@ export const en = {
   'admin.errors.permissionNotFound': 'Permission key not in the dictionary',
   'admin.errors.notAdminOfStore':
     "You don't administer this store — only its admin can perform this action",
+  'admin.errors.memberNotInSourceStore':
+    'They are not in the source store, so they cannot be moved out of it; assign them to the new store instead.',
   'admin.errors.cannotInviteOrgAdminAsStoreAdmin':
     'Only org-level admins can invite or grant org-level admin roles',
   'admin.errors.transferSameStore': 'Source and destination must be different stores',
@@ -1525,6 +1528,8 @@ export const en = {
   // in M2.x.
   'admin.workspace.currency': 'Currency',
   'admin.workspace.taxRate': 'Tax rate',
+  'admin.workspace.timezone': 'Time zone',
+  'admin.workspace.myLanguage': 'My language',
   'admin.workspace.taxRateHint': 'Standard VAT %. Set 0 to disable tax tracking.',
   'admin.workspace.pricesIncludeTax': 'Prices include tax',
   'admin.workspace.pricesIncludeTaxOn': 'Gross (price as quoted at the stall)',

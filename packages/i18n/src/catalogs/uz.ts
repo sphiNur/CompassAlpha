@@ -208,7 +208,8 @@ export const uz = {
   'people.transferWhatAdded': "{name} maqsadli do'konga qo'shiladi",
   'people.transferWhatMirrored':
     "manba do'kondagi do'kon darajasidagi rol biriktirmalari maqsadli do'konda qayta yaratiladi",
-  'people.transferWhatNoRoles': "maqsadli do'konda rol biriktirmasi yaratilmaydi",
+  'people.transferWhatNoRoles':
+    "Yangi do'konda rol yaratilmaydi: ko'chirilgandan keyin rol bermaguningizcha u yerda hech qanday huquqi bo'lmaydi",
   'people.transferWhatRemoved':
     "{store} dagi tayinlovi, biriktirmalari va do'kon bo'yicha bekor qilishlari olib tashlanadi",
   'people.transferWhatOutro':
@@ -475,7 +476,7 @@ export const uz = {
   'auth.errors.signInFailed': 'Kirish bajarilmadi',
   'auth.retryInvite': 'Taklifni qayta urinish',
   'auth.errors.noInitData':
-    "Telegram initData topilmadi — Telegram orqali oching yoki VITE_DEV_MOCK_INIT_DATA o'rnating.",
+    "Compass'ni Telegram ichida oching (bot yoki taklif havolasi orqali).",
   'auth.errors.inviteNotFound': "Taklif havolasi yaroqsiz yoki o'chirilgan.",
   'auth.errors.inviteExpired': "Taklif muddati tugagan. Rahbaringizdan yangi havola so'rang.",
   'auth.errors.inviteUsed': 'Bu taklif allaqachon ishlatilgan.',
@@ -494,7 +495,7 @@ export const uz = {
   'admin.section.permissions': 'Rollar va ruxsatlar',
   'admin.section.catalog': 'Katalog',
   'admin.section.operations': 'Operatsiyalar',
-  'admin.section.organizationHint': "Tashkilot ma'lumoti, til, vaqt mintaqasi",
+  'admin.section.organizationHint': "Tashkilot ma'lumoti, vaqt mintaqasi, mening tilim",
   'admin.section.storesHint': "Do'konni oching va jamoa bilan sozlamalarni boshqaring",
   'admin.section.permissionsHint': "O'rnatilgan rollar, darajalar, ruxsatlar matritsasi",
   'admin.section.catalogHint': 'Toifalar, mahsulotlar, yetkazib beruvchilar',
@@ -697,6 +698,8 @@ export const uz = {
     'Bu rol hali xodimlarga biriktirilgan — avval ularni qaytarib oling',
   'admin.errors.permissionNotFound': "Ruxsat lug'atda topilmadi",
   'admin.errors.notAdminOfStore': "Bu do'kon administratori siz emas — bu amalni bajara olmaysiz",
+  'admin.errors.memberNotInSourceStore':
+    "U manba do'konida yo'q, undan ko'chirib bo'lmaydi; uni to'g'ridan-to'g'ri yangi do'konga biriktiring.",
   'admin.errors.cannotInviteOrgAdminAsStoreAdmin':
     'Tashkilot darajasidagi rolni faqat tashkilot administratori bera oladi',
   'admin.errors.transferSameStore': "Manba va maqsad do'kon har xil bo'lishi kerak",
@@ -1402,6 +1405,8 @@ export const uz = {
   // ── 15. Org financial settings (M1.17) ────────────────
   'admin.workspace.currency': 'Valyuta',
   'admin.workspace.taxRate': 'Soliq stavkasi',
+  'admin.workspace.timezone': 'Vaqt mintaqasi',
+  'admin.workspace.myLanguage': 'Mening tilim',
   'admin.workspace.taxRateHint': 'Standart QQS %. 0 = soliqsiz.',
   'admin.workspace.pricesIncludeTax': 'Narxlar soliq bilan',
   'admin.workspace.pricesIncludeTaxOn': "Brutto (do'kondagi narx)",

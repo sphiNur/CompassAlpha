@@ -2088,7 +2088,9 @@ function TransferStoreSheet({
               </p>
             </div>
           </label>
-          <Banner tone="info" title={i18n.t('people.transferWhatTitle')}>
+          {/* ADM-23: without mirrored roles the member arrives with no
+              permissions at all; say so in warning colours. */}
+          <Banner tone={mirrorRoles ? 'info' : 'warn'} title={i18n.t('people.transferWhatTitle')}>
             {i18n.t('people.transferWhatIntro')}
             <ul className="mt-1 list-disc space-y-0.5 pl-4 text-old-label">
               <li>{i18n.t('people.transferWhatAdded', { name: target.displayName })}</li>

@@ -230,7 +230,41 @@ export function deriveScopeStoreId(
   if (Array.isArray(o.storeIds) && o.storeIds.length === 1 && typeof o.storeIds[0] === 'string') {
     return o.storeIds[0];
   }
+  if (
+    Array.isArray(o.memberStoreIds) &&
+    o.memberStoreIds.length === 1 &&
+    typeof o.memberStoreIds[0] === 'string'
+  ) {
+    return o.memberStoreIds[0];
+  }
   return null;
+}
+
+/**
+ * ADM-13 (2026-10-30): the stores a member belongs to (assignments and
+ * store-scoped roles). Suspend / reactivate / rename carry only a memberId,
+ * so their audit rows had no store and the store manager who did them
+ * could not find them in their own audit log.
+ */
+async function memberStoreIdsForAudit(tx: OrgTx, memberId: string): Promise<string[]> {
+  const [assigned, bound] = await Promise.all([
+    tx
+      .select({ storeId: s.memberStoreAssignments.storeId })
+      .from(s.memberStoreAssignments)
+      .where(eq(s.memberStoreAssignments.memberId, memberId)),
+    tx
+      .select({ storeId: s.memberRoleBindings.scopeId })
+      .from(s.memberRoleBindings)
+      .where(
+        and(
+          eq(s.memberRoleBindings.memberId, memberId),
+          eq(s.memberRoleBindings.scopeType, 'store'),
+        ),
+      ),
+  ]);
+  const ids = new Set<string>();
+  for (const row of [...assigned, ...bound]) if (row.storeId) ids.add(row.storeId);
+  return [...ids];
 }
 
 /** Audit rows scoped to any of `storeIds`, including a transfer's from-store. */
@@ -242,6 +276,8 @@ function auditTouchesStores(storeIds: string[]) {
   return or(
     inArray(s.policyDecisions.scopeStoreId, storeIds),
     sql`(${s.policyDecisions.inputs} ->> 'fromStoreId') in (${list})`,
+    // ADM-13: member actions list every store the member was in.
+    sql`jsonb_exists_any(${s.policyDecisions.inputs} -> 'memberStoreIds', array[${list}]::text[])`,
   );
 }
 
@@ -1615,7 +1651,10 @@ export const adminRouter = router({
           .update(s.members)
           .set({ status: input.status })
           .where(eq(s.members.id, input.memberId));
-        await auditAdmin(tx, ctx, 'admin.member.setStatus', 'member', input.memberId, input);
+        await auditAdmin(tx, ctx, 'admin.member.setStatus', 'member', input.memberId, {
+          ...input,
+          memberStoreIds: await memberStoreIdsForAudit(tx, input.memberId),
+        });
         broadcastPeople(orgId);
         return { ok: true };
       });
@@ -2284,7 +2323,10 @@ export const adminRouter = router({
             updatedAt: new Date(),
           })
           .where(eq(s.users.id, member.userId));
-        await auditAdmin(tx, ctx, 'admin.member.setDisplayName', 'member', member.id, input);
+        await auditAdmin(tx, ctx, 'admin.member.setDisplayName', 'member', member.id, {
+          ...input,
+          memberStoreIds: await memberStoreIdsForAudit(tx, member.id),
+        });
         broadcastPeople(orgId);
         return { ok: true };
       });
@@ -2685,6 +2727,18 @@ export const adminRouter = router({
             message: 'auth.errors.cannotRevokeEqualOrHigher',
           });
         }
+        // ADM-23 (2026-10-30): "transferring" someone out of a store they
+        // were never in was a plain assignment in disguise.
+        const [inSource] = await tx
+          .select({ storeId: s.memberStoreAssignments.storeId })
+          .from(s.memberStoreAssignments)
+          .where(
+            and(
+              eq(s.memberStoreAssignments.memberId, input.memberId),
+              eq(s.memberStoreAssignments.storeId, input.fromStoreId),
+            ),
+          )
+          .limit(1);
         // Pull the bindings to mirror. Even if mirrorRoles=false we
         // still need the count for the audit log.
         const fromBindings = await tx
@@ -2702,6 +2756,12 @@ export const adminRouter = router({
               eq(s.memberRoleBindings.scopeId, input.fromStoreId),
             ),
           );
+        if (!inSource && fromBindings.length === 0) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'admin.errors.memberNotInSourceStore',
+          });
+        }
         if (input.mirrorRoles && fromBindings.length > 0) {
           const toActorRank = await getActorMaxRankInStore(
             tx,

@@ -192,7 +192,8 @@ export const zh = {
   'people.transferWhatIntro': '在一个事务里原子完成：',
   'people.transferWhatAdded': '把 {name} 加入目标门店',
   'people.transferWhatMirrored': '在目标门店重建他在来源门店的门店级角色绑定',
-  'people.transferWhatNoRoles': '目标门店不建任何角色绑定',
+  'people.transferWhatNoRoles':
+    '目标门店不建任何角色：调过去后他在那里没有任何权限，需要再给他授予角色',
   'people.transferWhatRemoved': '移除他在 {store} 的分配、绑定和按店权限覆盖',
   'people.transferWhatOutro': '他所属的其他门店不受影响。任何一步失败，整个调动都会回滚。',
   'people.scopeGlobal': '全局',
@@ -443,7 +444,7 @@ export const zh = {
   'auth.errors.signInFailed': '登录失败',
   'auth.retryInvite': '重新尝试接受邀请',
   'auth.errors.noInitData':
-    '未获取到 Telegram initData — 请通过 Telegram 打开,或设置 VITE_DEV_MOCK_INIT_DATA。',
+    '请在 Telegram 里打开 Compass（通过机器人或邀请链接）。',
   'auth.errors.inviteNotFound': '邀请链接无效或已被删除。',
   'auth.errors.inviteExpired': '邀请已过期，请向管理员索取新链接。',
   'auth.errors.inviteUsed': '该邀请已经被使用。',
@@ -459,7 +460,7 @@ export const zh = {
   'admin.section.permissions': '角色与权限',
   'admin.section.catalog': '目录',
   'admin.section.operations': '运营',
-  'admin.section.organizationHint': '组织信息、语言、时区',
+  'admin.section.organizationHint': '组织信息、时区、我的语言',
   'admin.section.storesHint': '点击门店管理其人员与设置',
   'admin.section.permissionsHint': '内置角色、等级、权限矩阵',
   'admin.section.catalogHint': '分类、商品、供应商',
@@ -643,6 +644,8 @@ export const zh = {
   'admin.errors.roleHasBindings': '该角色仍有成员持有,请先撤销这些授予',
   'admin.errors.permissionNotFound': '权限不存在于字典中',
   'admin.errors.notAdminOfStore': '你不是该门店的管理员,无法在此门店执行此操作',
+  'admin.errors.memberNotInSourceStore':
+    '他不在来源门店，没法从那里调出；请直接把他分配到新门店。',
   'admin.errors.cannotInviteOrgAdminAsStoreAdmin': '只有组织级管理员才能邀请或授予组织级管理员角色',
   'admin.errors.transferSameStore': '源店铺和目标店铺必须不同',
   'admin.errors.defaultRoleMustBeStoreTier':
@@ -1317,6 +1320,8 @@ export const zh = {
   // ── 15. Org financial settings (M1.17) ────────────────
   'admin.workspace.currency': '币种',
   'admin.workspace.taxRate': '税率',
+  'admin.workspace.timezone': '时区',
+  'admin.workspace.myLanguage': '我的语言',
   'admin.workspace.taxRateHint': '标准 VAT 百分比，0 表示不追踪税。',
   'admin.workspace.pricesIncludeTax': '价格含税',
   'admin.workspace.pricesIncludeTaxOn': '含税（市场报价）',

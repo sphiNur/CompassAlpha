@@ -219,10 +219,14 @@ export const systemRouter = router({
     .query(async ({ ctx, input }) => {
       return ctx.withOrg(async (tx) => {
         return tx.query.clientLogs.findMany({
+          // AUTH-5 (2026-10-30): `level` and `kind` were accepted and ignored.
           where: (cl, { eq, and }) =>
-            input.userId
-              ? and(eq(cl.orgId, ctx.session!.orgId), eq(cl.userId, input.userId))
-              : eq(cl.orgId, ctx.session!.orgId),
+            and(
+              eq(cl.orgId, ctx.session!.orgId),
+              input.userId ? eq(cl.userId, input.userId) : undefined,
+              input.level ? eq(cl.level, input.level) : undefined,
+              input.kind ? eq(cl.kind, input.kind) : undefined,
+            ),
           orderBy: (cl, { desc }) => desc(cl.createdAt),
           limit: input.limit,
         });
