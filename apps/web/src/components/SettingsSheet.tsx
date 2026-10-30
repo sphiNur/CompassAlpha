@@ -33,6 +33,9 @@ import { useI18n } from '../hooks/useI18n';
 import { useErrToast } from '../lib/errToast';
 import type { PageMenuRegistration } from '../app/PageMenuContext';
 import { StorePickerSection, useCanSeeStorePicker } from './StoreSwitcher';
+
+/** Built-in roles have a translated name; a custom role shows its slug. */
+const BUILTIN_ROLE_SLUGS = new Set(['super_admin', 'admin', 'manager', 'purchaser', 'cashier', 'staff']);
 import { CreateWorkspaceForm } from './CreateWorkspace';
 
 interface LangOption {
@@ -336,7 +339,15 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
               <div className="flex items-baseline justify-between text-old-label">
                 <span className="text-[var(--c-fg-muted)]">{i18n.t('settings.about.role')}</span>
                 <span className="font-medium text-[var(--c-fg)]">
-                  {(session?.roleSlugs ?? []).join(', ')}
+                  {/* AUTH-15 (2026-10-30): raw slugs, one per binding
+                      ("super_admin, staff, cashier, staff"). */}
+                  {[...new Set(session?.roleSlugs ?? [])]
+                    .map((slug) =>
+                      BUILTIN_ROLE_SLUGS.has(slug)
+                        ? i18n.t(`settings.about.roleName.${slug}` as Parameters<typeof i18n.t>[0])
+                        : slug,
+                    )
+                    .join(', ')}
                 </span>
               </div>
             ) : null}

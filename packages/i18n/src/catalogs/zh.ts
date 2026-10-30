@@ -331,6 +331,12 @@ export const zh = {
   'workspace.create.created': '工作区已创建',
   'workspace.create.failed': '无法创建工作区',
   'settings.about.role': '角色',
+  'settings.about.roleName.super_admin': '超级管理员',
+  'settings.about.roleName.admin': '管理员',
+  'settings.about.roleName.manager': '店长',
+  'settings.about.roleName.purchaser': '采购员',
+  'settings.about.roleName.cashier': '收银员',
+  'settings.about.roleName.staff': '员工',
   'settings.about.build': '版本',
   'common.saved': '已保存',
 
@@ -1055,6 +1061,7 @@ export const zh = {
   'run.toast.unmarkedUnavailable': '已恢复为可购',
   'run.toast.purchaseUndone': '已撤销采购，恢复为待采购',
   'run.toast.deliveryRecalled': '已撤回配送',
+  'run.toast.delivered': '已标记送达',
   'run.toast.runCancelled': '已取消整张采购单',
   // Wave2 #15 (M3.40, 2026-05-20)
   'run.toast.runCancelledWithOrphans': '已取消采购单 — 还有 {n} 个订单会被后台自动释放',
@@ -1341,7 +1348,9 @@ export const zh = {
   'sales.form.pickDish': '选择菜品…',
   'sales.form.qtyLabel': '份数',
   'sales.form.recordBtn': '记录',
-  'sales.form.noDishesYet': '尚无菜品。请先在 Catalog → Dishes 创建。',
+  'sales.form.noDishesYet':
+    '尚无菜品。请先在 管理 › 目录 › 菜品 中创建。',
+  'sales.form.noDishesAskManager': '尚无菜品，请让店长添加。',
   'sales.form.noRecipe': '无配方',
   'sales.list.title': '今日销售',
   'sales.list.capReached': '仅显示最近 {n} 笔销售，合计可能不完整。',

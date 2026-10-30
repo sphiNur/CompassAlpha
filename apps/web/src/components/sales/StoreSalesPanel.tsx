@@ -217,7 +217,11 @@ export function StoreSalesPanel({
             </div>
           ) : dishOptions.length === 0 ? (
             <p className="text-old-label text-[var(--c-fg-muted)]">
-              {i18n.t('sales.form.noDishesYet')}
+              {/* CLS-21 (2026-10-30): the hint named an English path and was
+                  shown to cashiers who cannot create dishes. */}
+              {session?.permissions.includes('dishes.manage')
+                ? i18n.t('sales.form.noDishesYet')
+                : i18n.t('sales.form.noDishesAskManager')}
             </p>
           ) : (
             <>

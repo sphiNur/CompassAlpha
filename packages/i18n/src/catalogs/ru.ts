@@ -356,6 +356,12 @@ export const ru = {
   'workspace.create.created': 'Рабочее пространство создано',
   'workspace.create.failed': 'Не удалось создать рабочее пространство',
   'settings.about.role': 'Роль',
+  'settings.about.roleName.super_admin': 'Суперадмин',
+  'settings.about.roleName.admin': 'Администратор',
+  'settings.about.roleName.manager': 'Управляющий',
+  'settings.about.roleName.purchaser': 'Закупщик',
+  'settings.about.roleName.cashier': 'Кассир',
+  'settings.about.roleName.staff': 'Сотрудник',
   'settings.about.build': 'Сборка',
   'common.saved': 'Сохранено',
 
@@ -1121,6 +1127,7 @@ export const ru = {
   'run.toast.unmarkedUnavailable': 'Снова доступно',
   'run.toast.purchaseUndone': 'Покупка отменена — возвращено в ожидание',
   'run.toast.deliveryRecalled': 'Доставка отозвана',
+  'run.toast.delivered': 'Отмечено как доставлено',
   'run.toast.runCancelled': 'Закупка отменена',
   // Wave2 #15 (M3.40, 2026-05-20)
   'run.toast.runCancelledWithOrphans':
@@ -1421,7 +1428,9 @@ export const ru = {
   'sales.form.pickDish': 'Выберите блюдо…',
   'sales.form.qtyLabel': 'Порций',
   'sales.form.recordBtn': 'Записать',
-  'sales.form.noDishesYet': 'Нет блюд. Сначала создайте в Catalog → Dishes.',
+  'sales.form.noDishesYet':
+    'Нет блюд. Сначала создайте в Админ › Каталог › Блюда.',
+  'sales.form.noDishesAskManager': 'Блюд пока нет. Попросите управляющего добавить их.',
   'sales.form.noRecipe': 'нет рецепта',
   'sales.list.title': 'Продажи сегодня',
   'sales.list.capReached': 'Показаны только последние {n} продаж — итоги могут быть неполными.',

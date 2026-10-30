@@ -413,6 +413,12 @@ export const en = {
   'workspace.create.created': 'Workspace created',
   'workspace.create.failed': 'Could not create the workspace',
   'settings.about.role': 'Role',
+  'settings.about.roleName.super_admin': 'Super admin',
+  'settings.about.roleName.admin': 'Admin',
+  'settings.about.roleName.manager': 'Store manager',
+  'settings.about.roleName.purchaser': 'Purchaser',
+  'settings.about.roleName.cashier': 'Cashier',
+  'settings.about.roleName.staff': 'Store staff',
   'settings.about.build': 'Build',
   'common.saved': 'Saved',
 
@@ -1234,6 +1240,7 @@ export const en = {
   'run.toast.unmarkedUnavailable': 'Marked available again',
   'run.toast.purchaseUndone': 'Purchase undone — back to pending',
   'run.toast.deliveryRecalled': 'Delivery recalled',
+  'run.toast.delivered': 'Marked as delivered',
   'run.toast.runCancelled': 'Run cancelled',
   // Wave2 #15 (M3.40, 2026-05-20): shown when run.cancel completes but
   // one or more sessions failed to eject cleanly. The repair worker
@@ -1572,7 +1579,9 @@ export const en = {
   'sales.form.pickDish': 'Pick dish…',
   'sales.form.qtyLabel': 'Servings',
   'sales.form.recordBtn': 'Record',
-  'sales.form.noDishesYet': 'No dishes set up. Add one in Catalog → Dishes first.',
+  'sales.form.noDishesYet':
+    'No dishes set up. Add one in Admin › Catalog › Dishes first.',
+  'sales.form.noDishesAskManager': 'No dishes set up yet. Ask your manager to add them.',
   'sales.form.noRecipe': 'no recipe',
   'sales.list.title': "Today's sales",
   'sales.list.capReached': 'Showing the latest {n} sales only — totals may be incomplete.',

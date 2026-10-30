@@ -886,7 +886,12 @@ export function RunHistoryDetailSheet({
       title={
         target ? `${target.runDate}${target.runIndex > 0 ? ` #${target.runIndex + 1}` : ''}` : ''
       }
-      description={target?.status ?? undefined}
+      // DLV-16 (2026-10-30): was the raw status ("finished", "amending").
+      description={
+        target?.status
+          ? i18n.t(`run.status.${target.status}` as Parameters<typeof i18n.t>[0])
+          : undefined
+      }
     >
       {!target ? null : detail.isLoading ? (
         <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">

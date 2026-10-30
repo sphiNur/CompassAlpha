@@ -553,6 +553,9 @@ export function RunPage() {
     },
     onSuccess: () => {
       invalidateRunQuietly(true);
+      // DLV-17 (2026-10-30): the only state change with no feedback.
+      haptic('success');
+      toast.success(i18n.t('run.toast.delivered'));
     },
     onError: (err, vars, ctx) => {
       if (isLikelyNetworkError(err)) {

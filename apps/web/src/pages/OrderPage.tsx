@@ -1582,10 +1582,13 @@ function BatchStrip({
                   {i18n.t('order.batches.batchLabel', { n: b.batchNumber })}
                 </span>{' '}
                 <span className="text-[var(--c-fg-muted)]">
-                  {i18n.t(
-                    ('order.status.' + b.status) as Parameters<typeof i18n.t>[0],
-                    { reason: '' },
-                  )}
+                  {/* ORD-18 (2026-10-30): the rejected label is "Rejected — {reason}"
+                      and the strip has no reason, so it read "Rejected —". */}
+                  {b.status === 'rejected'
+                    ? i18n.t('approval.tab.rejected')
+                    : i18n.t(('order.status.' + b.status) as Parameters<typeof i18n.t>[0], {
+                        reason: '',
+                      })}
                 </span>
                 {isCurrent ? (
                   <span className="text-[var(--c-action)]">
