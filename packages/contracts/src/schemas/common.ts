@@ -85,3 +85,16 @@ export const DomainErrorShape = z.object({
   i18nKey: z.string(),
   context: z.record(z.unknown()).optional(),
 });
+
+/**
+ * CLS-14 / CLS-19 (2026-10-30, user decision): how far back a new daily
+ * close or a back-filled sale may be dated.
+ */
+export const BACKDATE_LIMIT_DAYS = 90;
+
+/** A calendar date `days` before `isoDate` (YYYY-MM-DD in, out). */
+export function isoDateDaysBefore(isoDate: string, days: number): string {
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
+}

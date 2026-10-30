@@ -53,6 +53,7 @@ import {
   UuidSchema,
 } from '@compass/contracts';
 import { todayInTz } from '@compass/domain';
+import { BACKDATE_LIMIT_DAYS } from '@compass/contracts';
 import { authedProcedure, idempotentMutation, router } from '../trpc';
 import {
   assertActorAssignedToStore,
@@ -89,6 +90,10 @@ const RecordInputSchema = z.object({
     .datetime()
     .refine((v) => Date.parse(v) <= Date.now() + 10 * 60_000, {
       message: 'sales.errors.occurredInFuture',
+    })
+    // CLS-19 (2026-10-30, user decision): back-fill at most 90 days.
+    .refine((v) => Date.parse(v) >= Date.now() - BACKDATE_LIMIT_DAYS * 86_400_000, {
+      message: 'sales.errors.occurredTooOld',
     })
     .optional(),
 });

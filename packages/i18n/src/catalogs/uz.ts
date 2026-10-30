@@ -1547,6 +1547,7 @@ export const uz = {
   'dishes.errors.qtyTooLarge': "Miqdor: ko'pi bilan 8 raqam va 4 kasr.",
   'sales.errors.qtyTooLarge': 'Porsiyalar soni juda katta.',
   'sales.errors.occurredInFuture': "Sotuv vaqti kelajakda bo'lishi mumkin emas.",
+  'sales.errors.occurredTooOld': "Sotuvni ko'pi bilan 90 kun oldingisiga kiritish mumkin.",
   'inventory.errors.qtyTooLarge': 'Miqdor juda katta.',
   'dishes.errors.changedElsewhere': "Bu taomni hozirgina boshqa kishi o'zgartirdi. Yopib, qayta oching va so'nggi holatini ko'ring.",
 
@@ -1762,6 +1763,8 @@ export const uz = {
   'settlement.errors.historicalTotalImmutable': "Bu eski yozuvda faqat jami summa bor, uni qatorlarga bo'lib bo'lmaydi.",
   'settlement.errors.totalMismatch': "Qatorlar yig'indisi jami summaga to'g'ri kelmaydi. Summalarni tekshiring.",
   'settlement.errors.futureDate': "Hali boshlanmagan kunni yakunlab bo'lmaydi.",
+  'settlement.errors.dateTooOld':
+    "Yangi kun yakuni ko'pi bilan {days} kun oldingi bo'lishi mumkin (mavjudlarini tuzatish mumkin).",
   'settlement.errors.correctionReasonRequired': "Saqlangan kun yakunini o'zgartirish uchun tuzatish sababini yozing.",
   'settlement.errors.versionConflict': "Bu kun yakuni boshqa joyda o'zgartirilgan.",
   'settlement.conflict.keptEdits': "So'nggi versiya yuklandi, siz o'zgartirgan summalar va izoh saqlab qolindi. Tekshirib, saqlang.",
