@@ -62,7 +62,8 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
         className={cn(
           'h-[var(--control-h-sm)] w-full min-w-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] pl-9 pr-10 text-old-body-sm',
           'text-[var(--c-fg)] placeholder:text-[var(--c-fg-subtle)]',
-          'outline-none ring-hairline',
+          // V9: the field's edge at 3:1 against the page (--c-field-border).
+          'outline-none ring-field',
           'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',
           'focus-visible:ring-offset-[var(--c-bg)]',
           // The browser's native `<input type=search>` cancel decoration

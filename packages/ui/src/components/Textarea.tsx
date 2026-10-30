@@ -36,7 +36,8 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
         'w-full resize-none rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2',
         'text-old-body leading-snug text-[var(--c-fg)]',
         'placeholder:text-[var(--c-fg-subtle)]',
-        'outline-none ring-hairline',
+        // V9: the field's edge at 3:1 against the page (--c-field-border).
+        'outline-none ring-field',
         'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',
         'focus-visible:ring-offset-[var(--c-bg)]',
         'disabled:opacity-60',

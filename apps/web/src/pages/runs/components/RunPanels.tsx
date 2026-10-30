@@ -593,11 +593,13 @@ export function ActiveRunPanel({
                   onChange={(e) => setItemQuery(e.target.value)}
                   placeholder={i18n.t('run.search.itemsPlaceholder')}
                   aria-label={i18n.t('run.search.itemsPlaceholder')}
-                  className="h-9 w-full rounded-[var(--r-pill)] border border-[var(--c-divider)] bg-[var(--c-surface-2)] px-3 text-old-body outline-none placeholder:text-[var(--c-fg-muted)] focus:border-[var(--c-action)]"
+                  className="h-9 w-full rounded-[var(--r-pill)] border border-[var(--c-field-border)] bg-[var(--c-surface-2)] px-3 text-old-body outline-none placeholder:text-[var(--c-fg-muted)] focus:border-[var(--c-action)]"
                 />
               </div>
+              {/* V4: -mt-1.5 pt-1.5 instead of pt-0 — same layout, and the
+                  scroller keeps room for the chips' 44px tap areas. */}
               <ChipBar
-                className="pt-0"
+                className="-mt-1.5 pt-1.5"
                 ariaLabel={i18n.t('run.filter.ariaLabel')}
               >
                 <Chip
@@ -1762,7 +1764,7 @@ export function PreviewSummaryCard({
             onChange={(e) => setFilterText(e.target.value)}
             placeholder={i18n.t('order.search.placeholder')}
             aria-label={i18n.t('order.search.placeholder')}
-            className="h-9 min-w-0 flex-1 rounded-[var(--r-pill)] border border-[var(--c-divider)] bg-[var(--c-surface-2)] px-3 text-old-body outline-none focus:border-[var(--c-action)]"
+            className="h-9 min-w-0 flex-1 rounded-[var(--r-pill)] border border-[var(--c-field-border)] bg-[var(--c-surface-2)] px-3 text-old-body outline-none focus:border-[var(--c-action)]"
           />
           {filtering ? (
             <span className="shrink-0 font-mono text-old-label tabular-nums text-[var(--c-fg-muted)]">
@@ -1778,7 +1780,7 @@ export function PreviewSummaryCard({
             type="button"
             onClick={() => chooseView(v)}
             className={
-              'press flex-1 rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium ring-hairline ' +
+              'press hit-44 flex-1 rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium ring-hairline ' +
               (view === v
                 ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
                 : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]')

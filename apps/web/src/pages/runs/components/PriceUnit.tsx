@@ -36,7 +36,7 @@ export function PriceUnitSwitch({
       onClick={onToggle}
       aria-label={ariaLabel}
       data-testid="price-unit-switch"
-      className="press inline-flex shrink-0 items-center rounded-[var(--r-pill)] bg-[var(--c-surface-2)] p-0.5 text-old-label ring-hairline active:opacity-70"
+      className="press hit-44 inline-flex shrink-0 items-center rounded-[var(--r-pill)] bg-[var(--c-surface-2)] p-0.5 text-old-label ring-hairline active:opacity-70"
     >
       <span className={segment(priceInThousands)}>×1000</span>
       <span className={segment(!priceInThousands)}>{currency}</span>

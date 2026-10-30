@@ -229,7 +229,8 @@ export function StoreChip({ className }: { className?: string } = {}) {
    * `min-w-0 truncate` + `shrink` so a long store name truncates
    * instead of pushing into either chrome button.
    */
-  const shell = 'inline-flex min-w-0 shrink items-center gap-1 text-old-body font-semibold';
+  // V4: hit-44 — the title is 18 px tall; it taps as 44.
+  const shell = 'hit-44 inline-flex min-w-0 shrink items-center gap-1 text-old-body font-semibold';
 
   if (!canSwitch) {
     return (

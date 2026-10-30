@@ -331,7 +331,7 @@ export function RunHistoryPage({
                               // (a card inside the history Card). These rows
                               // already sit in the Card's own bordered
                               // region, so a plain row reads cleaner.
-                              className="flex min-h-10 w-full items-center justify-between gap-3 px-3 py-2 text-left active:bg-[var(--c-surface-2)]"
+                              className="flex min-h-11 w-full items-center justify-between gap-3 px-3 py-2 text-left active:bg-[var(--c-surface-2)]"
                             >
                               <span className="min-w-0 flex-1 truncate text-old-body-sm font-medium">
                                 {storeName}
@@ -355,7 +355,7 @@ export function RunHistoryPage({
                             key={run.id}
                             type="button"
                             onClick={() => open(run)}
-                            className="flex min-h-10 w-full items-center justify-between gap-3 px-3 py-2 text-left active:bg-[var(--c-surface-2)]"
+                            className="flex min-h-11 w-full items-center justify-between gap-3 px-3 py-2 text-left active:bg-[var(--c-surface-2)]"
                           >
                             <span className="min-w-0 flex-1 truncate text-old-body-sm font-medium">
                               {i18n.t('run.history.trip', { n: run.runIndex + 1 })}
@@ -1029,8 +1029,8 @@ export function RunHistoryDetailSheet({
                 onClick={() => setSelectedStoreId(null)}
                 className={
                   !activeStoreId
-                    ? 'shrink-0 rounded-[var(--r-pill)] bg-[var(--c-bg)] px-3 py-1.5 text-old-label font-medium text-[var(--c-fg)] shadow-sm'
-                    : 'shrink-0 rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium text-[var(--c-fg-muted)]'
+                    ? 'hit-44 shrink-0 rounded-[var(--r-pill)] bg-[var(--c-bg)] px-3 py-1.5 text-old-label font-medium text-[var(--c-fg)] shadow-sm'
+                    : 'hit-44 shrink-0 rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium text-[var(--c-fg-muted)]'
                 }
               >
                 {i18n.t('run.history.allStores')}
@@ -1047,8 +1047,8 @@ export function RunHistoryDetailSheet({
                     onClick={() => setSelectedStoreId(storeTotal.storeId)}
                     className={
                       selected
-                        ? 'shrink-0 rounded-[var(--r-pill)] bg-[var(--c-bg)] px-3 py-1.5 text-old-label font-medium text-[var(--c-fg)] shadow-sm'
-                        : 'shrink-0 rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium text-[var(--c-fg-muted)]'
+                        ? 'hit-44 shrink-0 rounded-[var(--r-pill)] bg-[var(--c-bg)] px-3 py-1.5 text-old-label font-medium text-[var(--c-fg)] shadow-sm'
+                        : 'hit-44 shrink-0 rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium text-[var(--c-fg-muted)]'
                     }
                   >
                     <span className="inline-block max-w-[9rem] truncate align-bottom">

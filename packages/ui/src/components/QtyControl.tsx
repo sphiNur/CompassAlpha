@@ -148,7 +148,9 @@ export function QtyControl({
   //   - sm → h-7 (28 px) · text-old-label · for dense lists (ApprovalPage).
   const tone = (active: boolean) =>
     cn(
-      'press inline-flex items-center justify-center rounded-full shrink-0',
+      // V4 (2026-10-30): hit-44 — the 36 / 28 px circles tap as 44 px.
+      // gap-2 between the three keys keeps the areas from overlapping.
+      'press hit-44 inline-flex items-center justify-center rounded-full shrink-0',
       isSmall ? 'h-7 w-7 text-old-label' : 'h-9 w-9 text-old-body',
       'bg-[var(--c-surface-2)] ring-hairline text-[var(--c-fg)]',
       active && 'bg-[var(--c-action)] text-[var(--c-action-fg)]',
@@ -205,9 +207,9 @@ export function QtyControl({
           onClick={openQuickPick}
           disabled={disabled}
           className={cn(
-            'press flex items-center justify-center font-semibold tabular-nums',
+            'press hit-44 flex items-center justify-center font-semibold tabular-nums',
             isSmall ? 'h-7 w-14 px-1 text-old-body-sm' : 'h-9 w-16 px-1 text-old-h3',
-            'overflow-hidden whitespace-nowrap',
+            'whitespace-nowrap',
             showZero && 'text-[var(--c-fg-subtle)] font-normal',
             disabled && 'opacity-40 pointer-events-none',
           )}
@@ -223,10 +225,13 @@ export function QtyControl({
             visible and the row states its unit without the caption M3.55
             removed. Non-zero values are unchanged.
           */}
-          <span>{display}</span>
-          {unit ? (
-            <span className="ml-0.5 text-old-label text-[var(--c-fg-muted)]">{unit}</span>
-          ) : null}
+          {/* Clipping lives here, not on the button, so hit-44 still taps. */}
+          <span className="flex min-w-0 items-baseline overflow-hidden">
+            <span>{display}</span>
+            {unit ? (
+              <span className="ml-0.5 text-old-label text-[var(--c-fg-muted)]">{unit}</span>
+            ) : null}
+          </span>
         </button>
 
         <button

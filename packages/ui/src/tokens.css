@@ -15,25 +15,45 @@
   --c-surface: oklch(100% 0 0);
   --c-surface-2: oklch(95% 0.005 240);
   --c-surface-elevated: oklch(99% 0 0);
+  /* V7 (2026-10-30): a step past surface-2 (a note inside a surface-2
+   * panel, a hover on a surface-2 row). Was referenced but never
+   * defined, so those backgrounds rendered transparent. */
+  --c-surface-3: oklch(91% 0.006 240);
 
-  /* Ink */
+  /* Ink.
+   *
+   * V8 (2026-10-30): every text colour below clears 4.5:1 on all three
+   * light surfaces (--c-bg, --c-surface, --c-surface-2), measured
+   * rather than eyeballed. --c-fg-subtle was 65% (2.79:1 as a
+   * placeholder on surface-2, 3.04:1 on bg); it is now 52% (4.74:1 on
+   * surface-2). --c-fg-muted moves down to 46% so the three inks still
+   * read as three steps (6.14:1 on surface-2). */
   --c-fg: oklch(20% 0.01 240);
-  --c-fg-muted: oklch(50% 0.02 240);
-  --c-fg-subtle: oklch(65% 0.02 240);
+  --c-fg-muted: oklch(46% 0.02 240);
+  --c-fg-subtle: oklch(52% 0.02 240);
   --c-fg-inverse: oklch(99% 0 0);
 
-  /* Action */
-  --c-action: oklch(56% 0.18 250);
-  --c-action-hover: oklch(50% 0.18 250);
+  /* Action.
+   *
+   * V3 (2026-10-30): white on the old 56% blue was 4.47:1, and the blue
+   * as text on surface-2 3.98:1. Same hue, darker: 5.26:1 white-on-blue,
+   * 4.68:1 blue-on-surface-2. The brand hue itself is unchanged. */
+  --c-action: oklch(52% 0.18 250);
+  --c-action-hover: oklch(46% 0.18 250);
   --c-action-fg: oklch(99% 0 0);
   /* RE-VIS-1 (2026-10-30): text on a filled danger button. It borrowed
    * --c-fg-inverse, which turns near-black in dark mode (4.10:1 on red). */
   --c-danger-fg: oklch(99% 0 0);
 
-  /* Status */
-  --c-success: oklch(58% 0.16 145);
+  /* Status.
+   *
+   * V8 / 2026-10-30: success and danger double as text colours (the run
+   * row's "✓", "删除", "✗"), so like --c-action they are tuned for
+   * 4.5:1 on every light surface: success 4.68:1 and danger 4.88:1 on
+   * surface-2 (were 3.47 and 4.14). Same hues, darker. */
+  --c-success: oklch(51% 0.14 145);
   --c-warning: oklch(72% 0.15 75);
-  --c-danger: oklch(58% 0.22 25);
+  --c-danger: oklch(54% 0.21 25);
   --c-info: oklch(60% 0.13 240);
 
   /* Status ink (2026-07-27).
@@ -66,9 +86,24 @@
   --c-danger-bg: oklch(96% 0.06 25);
   --c-info-bg: oklch(95% 0.04 240);
 
+  /* Status ink on the tints above (V7, 2026-10-30). Banner, Badge,
+   * Toast and the ops activity list used to hard-code these as
+   * `oklch(...)` literals, which stayed a light-yellow block on the
+   * dark theme. Light values are the old literals (9–10:1 on their
+   * tint); dark values are in the dark block. */
+  --c-success-ink: oklch(35% 0.16 145);
+  --c-warn-ink: oklch(35% 0.16 75);
+  --c-danger-ink: oklch(45% 0.18 25);
+
   /* Lines */
   --c-divider: oklch(0% 0 0 / 0.08);
-  --c-ring: oklch(56% 0.18 250);
+  /* V9 (2026-10-30): the edge of a text field. The hairline divider
+   * (8% black) left fields at 1.1–1.3:1 against the page; this clears
+   * the 3:1 non-text minimum on bg, surface and surface-2. */
+  --c-field-border: oklch(62% 0.02 240);
+  /* Behind a sheet. */
+  --c-scrim: oklch(0% 0 0 / 0.32);
+  --c-ring: oklch(52% 0.18 250);
   --c-ring-offset: var(--c-bg);
 
   /* Radii */
@@ -258,11 +293,17 @@
   --c-surface: oklch(20% 0.012 240);
   --c-surface-2: oklch(24% 0.012 240);
   --c-surface-elevated: oklch(22% 0.012 240);
+  --c-surface-3: oklch(28% 0.012 240);
   --c-fg: oklch(96% 0 0);
-  --c-fg-muted: oklch(70% 0.02 240);
-  --c-fg-subtle: oklch(55% 0.02 240);
+  /* V8: subtle was 55% (3.4:1 on surface-2); 64% is 4.9:1. Muted moves
+   * up with it to stay a distinct step (7.7:1). */
+  --c-fg-muted: oklch(76% 0.02 240);
+  --c-fg-subtle: oklch(64% 0.02 240);
   --c-fg-inverse: oklch(15% 0.01 240);
   --c-divider: oklch(100% 0 0 / 0.1);
+  --c-field-border: oklch(56% 0.02 240);
+  --c-ring: oklch(72% 0.14 250);
+  --c-scrim: oklch(0% 0 0 / 0.56);
   /* The light-theme warning ink is a dark amber; on these surfaces it
    * would be ~1.3:1. Dark theme wants the opposite direction, and the
    * existing fill value already measures 7.12:1 on --c-surface and
@@ -283,6 +324,9 @@
   --c-success-bg: oklch(28% 0.06 145);
   --c-danger-bg: oklch(28% 0.07 25);
   --c-info-bg: oklch(28% 0.05 240);
+  --c-success-ink: oklch(86% 0.1 145);
+  --c-warn-ink: oklch(86% 0.1 75);
+  --c-danger-ink: oklch(84% 0.08 25);
 }
 
 :root[data-theme='apple'] {
@@ -319,6 +363,12 @@
 /* 1px hairline used by cards (avoids 0.5px sub-pixel issues on @1x) */
 .ring-hairline {
   box-shadow: inset 0 0 0 1px var(--c-divider);
+}
+
+/* V9 (2026-10-30): the same inset line for text fields, in a colour
+ * that marks the field's edge at 3:1 (see --c-field-border). */
+.ring-field {
+  box-shadow: inset 0 0 0 1px var(--c-field-border);
 }
 
 /* RE-VIS-3 (2026-10-30): a tap area of at least 44×44 around a small

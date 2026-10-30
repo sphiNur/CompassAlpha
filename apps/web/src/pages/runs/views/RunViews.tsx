@@ -744,7 +744,7 @@ export function ExpensesCard({
           <button
             type="button"
             onClick={onOpenExpense}
-            className="rounded-[var(--r-pill)] bg-[var(--c-action)] px-2.5 py-1 text-old-label font-semibold text-[var(--c-action-fg)] active:opacity-70"
+            className="hit-44 rounded-[var(--r-pill)] bg-[var(--c-action)] px-2.5 py-1 text-old-label font-semibold text-[var(--c-action-fg)] active:opacity-70"
           >
             {i18n.t('run.action.addExpense.button')}
           </button>
@@ -1045,8 +1045,10 @@ const ROW_TRACKS = '1.25rem minmax(0,1fr) minmax(3rem,auto) minmax(4.25rem,auto)
  * not what this redesign buys — see the note on the PurchaseRow doc. */
 const ROW_SHELL = 'flex min-h-[3.25rem] items-center gap-1.5 px-4';
 
+/* self-stretch (V4, 2026-10-30): the body fills the 52px row, so it
+ * taps across the row's height instead of only its 18px text line. */
 const ROW_TAP =
-  'press grid min-w-0 flex-1 items-center gap-x-1.5 rounded-[var(--r-utility)] ' +
+  'press grid min-w-0 flex-1 items-center gap-x-1.5 self-stretch rounded-[var(--r-utility)] ' +
   'text-left outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]';
 const ROW_STATIC = 'grid min-w-0 flex-1 items-center gap-x-1.5';
 

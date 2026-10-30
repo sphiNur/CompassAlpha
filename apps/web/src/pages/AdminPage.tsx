@@ -446,7 +446,7 @@ function SectionFrame({
           <button
             type="button"
             onClick={onBack}
-            className="press inline-flex h-9 items-center gap-1 rounded-[var(--r-pill)] px-3 text-old-body text-[var(--c-action)]"
+            className="press hit-44 inline-flex h-9 items-center gap-1 rounded-[var(--r-pill)] px-3 text-old-body text-[var(--c-action)]"
             aria-label={i18n.t('admin.aria.back')}
           >
             <span aria-hidden className="text-old-h2 leading-none">

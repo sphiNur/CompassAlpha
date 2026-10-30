@@ -7,7 +7,11 @@ import { createTapGuard } from '../useTapGuard';
 
 const button = cva(
   [
-    'press inline-flex min-w-0 max-w-full items-center justify-center gap-2 overflow-hidden font-medium select-none',
+    // V4 (2026-10-30): hit-44 gives sm (32) and md (40) a 44 px tap area
+    // without changing how they look. That needs the button NOT to clip
+    // its overflow (a clipped ::after takes no taps); the label span
+    // below truncates itself instead.
+    'press hit-44 inline-flex min-w-0 max-w-full items-center justify-center gap-2 font-medium select-none',
     'whitespace-nowrap outline-none transition-[background,color,box-shadow]',
     'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',
     'focus-visible:ring-offset-[var(--c-ring-offset)]',

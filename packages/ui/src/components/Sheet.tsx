@@ -172,7 +172,7 @@ export function Sheet({
       <Dialog.Portal>
         <Dialog.Overlay
           className={cn(
-            'fixed inset-0 z-50 bg-[oklch(0%_0_0_/_0.32)]',
+            'fixed inset-0 z-50 bg-[var(--c-scrim)]',
             'data-[state=open]:animate-[fadeIn_var(--t-quick)_var(--easing)]',
             'data-[state=closed]:animate-[fadeOut_var(--t-quick)_var(--easing)]',
           )}

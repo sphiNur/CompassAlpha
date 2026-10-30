@@ -8,9 +8,9 @@ const badge = cva(
     variants: {
       tone: {
         info: 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)] ring-hairline',
-        success: 'bg-[oklch(95%_0.06_145)] text-[var(--c-success)]',
-        warn: 'bg-[oklch(96%_0.07_75)] text-[oklch(40%_0.16_75)]',
-        danger: 'bg-[oklch(96%_0.06_25)] text-[var(--c-danger)]',
+        success: 'bg-[var(--c-success-bg)] text-[var(--c-success-ink)]',
+        warn: 'bg-[var(--c-warn-bg)] text-[var(--c-warn-ink)]',
+        danger: 'bg-[var(--c-danger-bg)] text-[var(--c-danger-ink)]',
         action: 'bg-[var(--c-action)] text-[var(--c-action-fg)]',
         muted: 'bg-transparent text-[var(--c-fg-subtle)] ring-hairline',
       },

@@ -104,7 +104,7 @@ export function ActivitySection() {
                   : undefined;
               const isIntervention = claimReason === 'override' || claimReason === 'timeout';
               const rowBg = isIntervention
-                ? 'bg-[oklch(97%_0.07_75)] ring-[oklch(35%_0.16_75)]/20'
+                ? 'bg-[var(--c-warn-bg)]'
                 : 'bg-[var(--c-surface)] ring-hairline';
               return (
                 <li
@@ -127,7 +127,7 @@ export function ActivitySection() {
                         <span
                           className={
                             isIntervention
-                              ? 'ml-1.5 text-old-tiny font-medium uppercase tracking-wider text-[oklch(35%_0.16_75)]'
+                              ? 'ml-1.5 text-old-tiny font-medium uppercase tracking-wider text-[var(--c-warn-ink)]'
                               : 'ml-1.5 text-old-tiny font-medium uppercase tracking-wider text-[var(--c-fg-muted)]'
                           }
                         >
@@ -820,7 +820,8 @@ export function AdminAuditSection() {
       <ChipBar
         variant="radio"
         ariaLabel={i18n.t('ops.audit.filterLabel')}
-        className="-mx-4 mb-3 px-4 py-0"
+        // V4: -my-1.5 py-1.5 rather than py-0: same layout, room for hit-44.
+        className="-mx-4 -my-1.5 mb-1.5 px-4 py-1.5"
       >
         {(['all', 'people', 'roles', 'stores', 'catalog', 'other'] as const).map((value) => (
           <Chip

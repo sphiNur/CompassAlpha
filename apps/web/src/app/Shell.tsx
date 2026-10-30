@@ -578,9 +578,14 @@ function ShellInner() {
             data-testid="open-settings"
             aria-label={i18n.t('settings.title')}
             onClick={() => setSettingsOpen(true)}
-            className="press justify-self-end truncate text-old-label text-[var(--c-fg-muted)] underline decoration-dotted underline-offset-4"
+            // V4: hit-44 makes the 14px-tall name tap as 44px. The
+            // truncation lives on the inner span: an overflow-hidden
+            // button would clip its own tap area.
+            className="press hit-44 min-w-0 max-w-full justify-self-end text-old-label text-[var(--c-fg-muted)]"
           >
-            {session?.member.orgName ?? i18n.t('settings.title')}
+            <span className="block truncate underline decoration-dotted underline-offset-4">
+              {session?.member.orgName ?? i18n.t('settings.title')}
+            </span>
           </button>
         </header>
       )}
@@ -714,16 +719,23 @@ function BottomNav({
             aria-current={active ? 'page' : undefined}
             disabled={busy}
             className={
-              'press flex min-w-0 flex-col items-center justify-center gap-1 px-1 ' +
+              // V5: px-0.5 leaves each of seven tabs at 360 px about 47 px
+              // of label room — enough for every zh and en label at 11 px.
+              'press flex min-w-0 flex-col items-center justify-center gap-1 px-0.5 ' +
               (active ? 'text-[var(--c-action)]' : 'text-[var(--c-fg-muted)]')
             }
           >
             <Icon size={visible.length >= 5 ? 21 : 22} />
+            {/* V5 (2026-10-30): 11 px (text-old-label), was 9 px with the
+                line height equal to the size. Measured at 360 px with seven
+                tabs: zh and en fit; the longest ru / uz words
+                ("Согласование", "Tasdiqlash", "Kun yakuni") already
+                overflowed at 9 px and still end in an ellipsis. */}
             <span
               className={
                 active
-                  ? 'max-w-full truncate text-old-tiny font-semibold leading-none'
-                  : 'max-w-full truncate text-old-tiny leading-none'
+                  ? 'max-w-full truncate text-old-label font-semibold leading-tight'
+                  : 'max-w-full truncate text-old-label leading-tight'
               }
             >
               {i18n.t(t.labelKey as Parameters<typeof i18n.t>[0])}
