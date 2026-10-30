@@ -1174,12 +1174,16 @@ export function OrderPage() {
           {/* 2026-10-21 audit CA-44: a second identical BatchStrip used to
               render here; the one above the banner is the only copy. */}
 
-          <div>
-            <SectionLabel padded={false} className="mb-1.5">
-              {i18n.t('order.receipt.submittedItems')}
-            </SectionLabel>
-            <ReviewList totals={totals} skus={allSkus} productName={productName} />
-          </div>
+          {/* ORD-13 (2026-10-30): an extras-only batch said "nothing chosen
+              yet"; its extras are listed below. */}
+          {totals.length > 0 || extrasCount === 0 ? (
+            <div>
+              <SectionLabel padded={false} className="mb-1.5">
+                {i18n.t('order.receipt.submittedItems')}
+              </SectionLabel>
+              <ReviewList totals={totals} skus={allSkus} productName={productName} />
+            </div>
+          ) : null}
         </div>
 
         {/* Extras render read-only through the same editor the draft uses,
@@ -1676,6 +1680,7 @@ function BatchStrip({
     batchNumber: number;
     itemCount: number;
     estimatedTotal: string | null;
+    extrasCount: number;
   }>;
   currentId: string;
   i18n: ReturnType<typeof useI18n>;
@@ -1728,6 +1733,7 @@ function BatchStrip({
               </span>
               <span className="shrink-0 whitespace-nowrap tabular-nums text-[var(--c-fg-muted)]">
                 {i18n.t('approval.itemsCount', { n: b.itemCount })}
+                {b.extrasCount > 0 ? ` + ${i18n.t('order.batches.extras', { n: b.extrasCount })}` : ''}
                 {b.estimatedTotal
                   ? ` · ~${formatMoney(Number(b.estimatedTotal))} ${currency}`
                   : ''}

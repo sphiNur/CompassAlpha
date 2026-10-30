@@ -21,7 +21,7 @@
  * "lighten the admin load" — I refused. Settings = "my preferences."
  * Admin-of-org things stay in Admin so the mental model stays clean.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Sheet, Button, Field, Input, SectionLabel, PickerRow } from '@compass/ui';
 import { useToast } from '@compass/ui';
@@ -129,6 +129,10 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
 
   const [draftName, setDraftName] = useState<string>(() => session?.user.displayName ?? '');
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
+  // AUTH-16: reopening the sheet starts from the workspace list again.
+  useEffect(() => {
+    if (!open) setCreatingWorkspace(false);
+  }, [open]);
   const nameLocked = !!session?.user.displayNameLocked;
   const nameDirty = !nameLocked && draftName.trim() !== (session?.user.displayName ?? '');
 
@@ -219,7 +223,13 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
             {i18n.t('workspace.title')}
           </SectionLabel>
           {creatingWorkspace ? (
-            <CreateWorkspaceForm onCreated={() => setCreatingWorkspace(false)} />
+            <div className="flex flex-col gap-2">
+              <CreateWorkspaceForm onCreated={() => setCreatingWorkspace(false)} />
+              {/* AUTH-16 (2026-10-30): the form had no way back. */}
+              <Button block variant="ghost" onClick={() => setCreatingWorkspace(false)}>
+                {i18n.t('common.cancel')}
+              </Button>
+            </div>
           ) : (
             <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
               {(session?.memberships ?? []).map((membership) => {
