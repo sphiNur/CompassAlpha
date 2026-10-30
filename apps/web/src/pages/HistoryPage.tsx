@@ -11,6 +11,7 @@ import { useI18n, useProductName } from '../hooks/useI18n';
 import { RunHistoryPage } from './runs/history/RunHistory';
 // 2026-10-21 audit CA-23: shared with the Finance presets (one local-
 // calendar date helper instead of two copies).
+import { useAuthStore } from '../stores/authStore';
 import { localDateValue } from './admin/operations/financeDates';
 
 type PaymentFilter = 'all' | 'cash' | 'transfer' | 'mixed';
@@ -32,15 +33,16 @@ const EMPTY_FILTERS: HistoryFilters = {
   sort: 'newest',
 };
 
-function presetRange(days: number): Pick<HistoryFilters, 'dateFrom' | 'dateTo'> {
+/** HIS-13 (2026-10-30): days counted on the org's calendar. */
+function presetRange(days: number, timeZone?: string): Pick<HistoryFilters, 'dateFrom' | 'dateTo'> {
   const end = new Date();
-  const start = new Date(end);
-  start.setDate(start.getDate() - (days - 1));
-  return { dateFrom: localDateValue(start), dateTo: localDateValue(end) };
+  const start = new Date(end.getTime() - (days - 1) * 86_400_000);
+  return { dateFrom: localDateValue(start, timeZone), dateTo: localDateValue(end, timeZone) };
 }
 
 export function HistoryPage() {
   const i18n = useI18n();
+  const orgTimeZone = useAuthStore((s) => s.session?.member.timezone);
   const productName = useProductName();
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -256,7 +258,7 @@ export function HistoryPage() {
                   variant="secondary"
                   size="sm"
                   onClick={() =>
-                    setDraftFilters((current) => ({ ...current, ...presetRange(days) }))
+                    setDraftFilters((current) => ({ ...current, ...presetRange(days, orgTimeZone) }))
                   }
                 >
                   {i18n.t('run.history.lastDays', { n: days })}

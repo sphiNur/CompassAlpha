@@ -1116,17 +1116,22 @@ export function FinanceSection() {
   // closing). Custom range lets the user widen / narrow on demand.
   // 2026-10-21 audit CA-23 (D-05): presets read the LOCAL calendar via
   // financePresetRange — `toISOString()` shifted them a day east of UTC.
+  // HIS-13 (2026-10-30): the org's calendar, not the device's — a phone set
+  // to UTC turned Tashkent's "today" into yesterday until 05:00.
+  const orgTimeZone = useAuthStore((s) => s.session?.member.timezone);
   const [preset, setPreset] = useState<FinancePreset>('thisMonth');
   const [startDate, setStartDate] = useState<string>(
-    () => financePresetRange('thisMonth').startDate,
+    () => financePresetRange('thisMonth', new Date(), orgTimeZone).startDate,
   );
-  const [endDate, setEndDate] = useState<string>(() => financePresetRange('thisMonth').endDate);
+  const [endDate, setEndDate] = useState<string>(
+    () => financePresetRange('thisMonth', new Date(), orgTimeZone).endDate,
+  );
 
   // Apply preset → derive [start, end]. Custom keeps whatever the user
   // typed in the two inputs.
   useEffect(() => {
     if (preset === 'custom') return;
-    const range = financePresetRange(preset);
+    const range = financePresetRange(preset, new Date(), orgTimeZone);
     setStartDate(range.startDate);
     setEndDate(range.endDate);
   }, [preset]);

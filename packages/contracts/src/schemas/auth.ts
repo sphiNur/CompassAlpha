@@ -95,6 +95,9 @@ export const MemberSummarySchema = z.object({
   currency: z.string().length(3).optional(),
   taxRatePct: z.string().optional(),
   pricesIncludeTax: z.boolean().optional(),
+  /** HIS-13 (2026-10-30): the org's time zone, for "today" / "this month"
+   *  presets. Optional for sessions minted by older servers. */
+  timezone: z.string().optional(),
 });
 
 export const SessionSchema = z.object({

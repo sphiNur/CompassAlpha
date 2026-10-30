@@ -1970,6 +1970,7 @@ async function readSessionPayload(
       currency: org.currency ?? 'UZS',
       taxRatePct: org.taxRatePct ?? '0',
       pricesIncludeTax: org.pricesIncludeTax ?? true,
+      timezone: org.timezone,
     },
     memberships,
     isPlatformAdmin: platformAdmin,
