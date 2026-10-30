@@ -31,9 +31,9 @@
  * accident. `labels.custom` still reads as a plain string at the call
  * site; the lookup just happens on access instead of on mount.
  */
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import type { ReactNode } from 'react';
-import { UiLabelsProvider } from '@compass/ui';
+import { setDecimalLocale, UiLabelsProvider } from '@compass/ui';
 import type { UiLabels } from '@compass/ui';
 import { useI18n } from '../hooks/useI18n';
 import { errorTextKey } from '../lib/errorText';
@@ -45,6 +45,10 @@ export function UiLabelsBridge({ children }: { children: ReactNode }) {
   // reading the context re-renders on each pass. Safe to memo BECAUSE the
   // fields are getters: staleness of the object identity no longer implies
   // staleness of the strings.
+  // RE-CLS-4: number fields read "1,000" by the interface language.
+  useEffect(() => {
+    setDecimalLocale(i18n.locale);
+  }, [i18n.locale]);
   const labels = useMemo<Partial<UiLabels>>(
     () => ({
       get decrement() {

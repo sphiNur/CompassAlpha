@@ -54,7 +54,7 @@ export { Segmented } from './components/Segmented';
 export type { SegmentedProps, SegmentedOption } from './components/Segmented';
 export { Avatar } from './components/Avatar';
 export { NumberInput } from './components/NumberInput';
-export { normalizeDecimalInput } from './decimalText';
+export { normalizeDecimalInput, setDecimalLocale } from './decimalText';
 export type { NumberInputProps } from './components/NumberInput';
 export { PageHeader } from './components/PageHeader';
 export type { PageHeaderProps } from './components/PageHeader';
