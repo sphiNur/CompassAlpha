@@ -57,6 +57,10 @@ export interface ActiveRun {
   status: string;
   /** DLV-14: stores this actor may not dispatch to (store-scoped deny). */
   dispatchDeniedStoreIds?: string[];
+  /** BUY-6: stores this actor purchases for; null/absent = all. */
+  purchaseScopeStoreIds?: string[] | null;
+  /** BUY-6: items that also serve stores outside that scope (read-only). */
+  otherStoreSkuIds?: string[];
   items: Array<{
     skuId: string;
     plannedQty: string;
@@ -167,4 +171,16 @@ export interface ActiveRun {
       estimatedUnitPrice?: string | null;
     } | null
   >;
+}
+
+const otherCache = new WeakMap<string[], ReadonlySet<string>>();
+/** BUY-6: the read-only item set, stable per run.get payload. */
+export function otherStoreSkusOf(run: Pick<ActiveRun, 'otherStoreSkuIds'>): ReadonlySet<string> {
+  const ids = run.otherStoreSkuIds ?? [];
+  let set = otherCache.get(ids);
+  if (!set) {
+    set = new Set(ids);
+    otherCache.set(ids, set);
+  }
+  return set;
 }

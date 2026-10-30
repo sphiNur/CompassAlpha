@@ -768,6 +768,7 @@ export const zh = {
   'run.extras.status.pending': '未购买',
   'run.extras.status.bought': '已购买',
   'run.extras.status.unavailable': '没买到',
+  'run.label.servesOtherStores': '也供应你不负责的门店 · 只读',
   'run.extras.status.cycleHint': '点击切换状态 · 当前：{current}',
   'run.extras.recordPrice': '记价',
   'run.extras.recordExpenseReason': '员工订单里的其他物品',
@@ -970,6 +971,10 @@ export const zh = {
   'run.errors.cannotEjectSession': '你没有权限从采购单里退回提交',
   'run.errors.storeAlreadyConfirmed': '门店已确认收货，不能再修改',
   'run.errors.notVisible': '该采购单不存在，或您无权查看',
+  'run.errors.itemServesOtherStores':
+    '这个商品也供应你不负责的门店，只能由负责这些门店的人修改。',
+  'run.errors.runHasOtherStores':
+    '这张采购单包含你不负责的门店，这一步需要由负责全部门店的人操作。',
   'run.errors.archiveCascadeFailed': '无法将采购单连同其订单一起归档。未做任何更改，请重试。',
   'run.errors.cannotEjectInStatus': '只能在计划或采购阶段退回提交',
   'run.errors.sessionNotInRun': '该提交不在这张采购单中',

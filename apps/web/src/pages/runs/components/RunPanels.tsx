@@ -48,6 +48,7 @@ import type {
   PreviewStoreGroup,
   PreviewSupplierGroup,
 } from '../types';
+import { otherStoreSkusOf } from '../types';
 import {
   buildStoreText as buildStoreTextPure,
   buildSupplierText as buildSupplierTextPure,
@@ -636,6 +637,7 @@ export function ActiveRunPanel({
                   key={it.skuId}
                   onTogglePriceUnit={onTogglePriceUnit}
                   item={it}
+                  servesOtherStores={otherStoreSkusOf(run).has(it.skuId)}
                   skuName={skuName}
                   unit={unitLabel(sku?.unit)}
                   step={sku?.step ?? '0.1'}
