@@ -10,7 +10,7 @@
     "./rls": "./src/rls.ts"
   },
   "scripts": {
-    "generate": "drizzle-kit generate --config drizzle.config.ts",
+    "generate": "echo 'Refused: migrations are hand-written (CONTRIBUTING.md section 5). meta/ holds only the 0000 snapshot, so drizzle-kit generate would diff against the first schema and emit a wrong, possibly destructive, migration.' >&2 && exit 1",
     "migrate": "bun run src/migrate.ts",
     "studio": "drizzle-kit studio --config drizzle.config.ts",
     "seed": "bun run src/seed.ts",

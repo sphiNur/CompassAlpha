@@ -12,7 +12,7 @@ import { TRPCError } from '@trpc/server';
 import { createHash, randomBytes } from 'node:crypto';
 import { and, desc, eq, gt, gte, inArray, isNull, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { inSystem, schema as s, withOrgContext } from '@compass/db';
+import { allowEventPurge, inSystem, schema as s, withOrgContext } from '@compass/db';
 import {
   ADMIN_RANK,
   GrantRoleInputSchema,
@@ -5312,6 +5312,7 @@ export const adminRouter = router({
           sql`DELETE FROM domain.snapshots
               WHERE stream_id IN (SELECT DISTINCT stream_id FROM domain.events WHERE org_id = ${orgId})`,
         );
+        await allowEventPurge(tx);
         await tx.delete(s.events).where(eq(s.events.orgId, orgId));
 
         await tx
@@ -5542,6 +5543,7 @@ export const adminRouter = router({
           sql`DELETE FROM sync.outbox WHERE ${outboxOfStreams(orgId, allStreamIds)}`,
         );
         await tx.execute(sql`DELETE FROM domain.snapshots WHERE stream_id IN ${inStreams}`);
+        await allowEventPurge(tx);
         await tx.execute(
           sql`DELETE FROM domain.events
                 WHERE org_id = ${orgId} AND stream_id IN ${inStreams}`,
@@ -6402,6 +6404,7 @@ async function deleteSessionCascade(tx: Tx, orgId: string, sessionId: string): P
   // Outbox before events (event_id FK).
   await tx.execute(sql`DELETE FROM sync.outbox WHERE ${outboxOfStreams(orgId, [sId])}`);
   await tx.execute(sql`DELETE FROM domain.snapshots WHERE stream_id = ${sId}`);
+  await allowEventPurge(tx);
   await tx.execute(sql`DELETE FROM domain.events WHERE org_id = ${orgId} AND stream_id = ${sId}`);
   await tx.execute(sql`DELETE FROM read_model.order_items_v WHERE session_id = ${sId}`);
   await tx.execute(
@@ -6492,6 +6495,7 @@ async function deleteRunCascade(
     );
     await tx.execute(sql`DELETE FROM sync.outbox WHERE ${outboxOfStreams(orgId, allStreams)}`);
     await tx.execute(sql`DELETE FROM domain.snapshots WHERE stream_id IN ${inStreams}`);
+    await allowEventPurge(tx);
     await tx.execute(
       sql`DELETE FROM domain.events WHERE org_id = ${orgId} AND stream_id IN ${inStreams}`,
     );

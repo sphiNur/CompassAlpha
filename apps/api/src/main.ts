@@ -16,9 +16,10 @@ import { sql } from 'drizzle-orm';
 import { env } from './env';
 import { createApp } from './app';
 import { logger } from './infra/log';
-import { getDb, closeDb, inSystem } from '@compass/db';
+import { getDb, closeDb, inSystem, unprobed } from '@compass/db';
 import { verifyAccess } from './infra/jwt';
 import { hub } from './realtime/hub';
+import { relayDatabaseNotices } from './realtime/dbRelay';
 import { createWebSocketHandler, handleWsRequest, type WSData } from './realtime/socket';
 import { loadSession } from './trpc/context';
 
@@ -33,6 +34,18 @@ async function main() {
       process.exit(1);
     }
     logger.warn({ err: (err as Error).message }, 'DB ping failed; continuing in dev');
+  }
+
+  // APR-12/B14: changes the worker makes (a claim released for being
+  // idle) reach open pages through Postgres NOTIFY. Without the listener
+  // the app still works; those pages just refresh later.
+  try {
+    await relayDatabaseNotices(unprobed(db).$client);
+  } catch (err) {
+    logger.warn(
+      { err: (err as Error).message },
+      'realtime LISTEN failed; worker changes will not be pushed',
+    );
   }
 
   const app = createApp();
