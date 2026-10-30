@@ -366,10 +366,15 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
       const items = new Map(state.items);
       const existing = items.get(event.payload.skuId);
       if (!existing) return { ...state, seq: event.seq };
+      // BUY-5: revising the row is how the extra demand gets bought — but
+      // only what was actually added counts against it (RE-BUY-2: a
+      // price-only or partial revision used to wipe the whole top-up).
+      const boughtMore =
+        Number(event.payload.actualQty) - Number(existing.purchasedQty ?? 0);
+      const topUpLeft = Number(existing.topUpQty ?? 0) - Math.max(0, boughtMore);
       items.set(event.payload.skuId, {
         ...existing,
-        // BUY-5: revising the row is how the extra demand gets bought.
-        topUpQty: null,
+        topUpQty: topUpLeft > 1e-9 ? String(Number(topUpLeft.toFixed(3))) : null,
         purchasedQty: event.payload.actualQty,
         supplierId: event.payload.supplierId,
         unitPrice: event.payload.unitPrice,
@@ -526,11 +531,18 @@ export function applyRun(state: RunState, event: RunEvent): RunState {
       for (const p of event.payload.addedPlannedItems) {
         const existing = items.get(p.skuId);
         if (existing) {
-          const merged = (Number(existing.plannedQty) + Number(p.qty)).toString();
+          // RE-BUY-3 (2026-10-30): a row the purchaser added has no demand
+          // of its own; once an order asks for the SKU it becomes a demand
+          // row (planned = that demand). Left flagged, undoing the purchase
+          // deleted the row and the stores' demand with it.
+          const merged = existing.addedByPurchaser
+            ? p.qty
+            : (Number(existing.plannedQty) + Number(p.qty)).toString();
           const decided = existing.status === 'purchased' || existing.status === 'unavailable';
           items.set(p.skuId, {
             ...existing,
             plannedQty: merged,
+            addedByPurchaser: false,
             ...(decided
               ? { topUpQty: (Number(existing.topUpQty ?? 0) + Number(p.qty)).toString() }
               : {}),

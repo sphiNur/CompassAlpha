@@ -973,6 +973,8 @@ export const zh = {
   'run.errors.cannotEjectSession': '你没有权限从采购单里退回提交',
   'run.errors.storeAlreadyConfirmed': '门店已确认收货，不能再修改',
   'run.errors.notVisible': '该采购单不存在，或您无权查看',
+  'run.errors.priceFormat': '单价要大于 0，最多 12 位整数、2 位小数。',
+  'run.errors.qtyFormat': '数量要大于 0，最多 9 位整数、3 位小数。',
   'run.errors.itemServesOtherStores':
     '这个商品也供应你不负责的门店，只能由负责这些门店的人修改。',
   'run.errors.runHasOtherStores':
