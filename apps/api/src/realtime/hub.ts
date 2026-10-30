@@ -5,6 +5,13 @@
  * call `hub.publish(orgId, 'order.changed' | 'run.changed', payload)` after
  * a successful projection so connected clients can refetch their queries.
  *
+ * B9 (2026-10-30): those calls sit inside the transaction that wrote the
+ * change, so `publish` defers the send until that transaction commits
+ * (and drops it on rollback); see `afterCommit` in @compass/db. A client
+ * that refetches on the message now always reads what it announces.
+ * Changes made by the worker process arrive through Postgres NOTIFY
+ * (dbRelay.ts), which Postgres itself only delivers on commit.
+ *
  * This M1 implementation is intentionally simple — it only does broadcast
  * fan-out within a single API process. M2 swaps the in-memory Map for a
  * Redis pub/sub channel so multi-instance deploys converge.
@@ -13,6 +20,8 @@
  * upgrade handler has validated the connection's bearer ticket. The hub
  * itself has no opinion on auth.
  */
+
+import { afterCommit } from '@compass/db';
 
 export type RealtimeMessage =
   | { type: 'order.changed'; orgId: string; sessionId: string; lastSeq: number }
@@ -104,7 +113,12 @@ class Hub {
     };
   }
 
+  /** Send to the org's sockets once the current transaction commits. */
   publish(orgId: string, message: RealtimeMessage): void {
+    afterCommit(() => this.deliver(orgId, message));
+  }
+
+  private deliver(orgId: string, message: RealtimeMessage): void {
     const set = this.subs.get(orgId);
     if (!set || set.size === 0) return;
     const payload = JSON.stringify(message);

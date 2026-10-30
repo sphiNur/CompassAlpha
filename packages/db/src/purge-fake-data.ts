@@ -52,7 +52,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync } from 'node:fs';
 import { sql } from 'drizzle-orm';
-import { getDb, closeDb } from './index';
+import { allowEventPurge, getDb, closeDb } from './index';
 
 (function loadRootEnv() {
   let dir = dirname(fileURLToPath(import.meta.url));
@@ -257,6 +257,9 @@ async function main() {
   // Single transaction so a failure mid-way leaves nothing half-wiped.
   console.log(c.cyan('\n▶ Wiping inside a single transaction…'));
   await db.transaction(async (tx) => {
+    // domain.events refuses deletes unless the transaction says it is a
+    // purge (migration 0055).
+    await allowEventPurge(tx);
     for (const step of WIPE_PLAN) {
       try {
         await tx.execute(sql.raw(step.deleteSql));
