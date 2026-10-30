@@ -150,6 +150,9 @@ export const BUILTIN_ROLES = [
       // themselves; let them record sales without elevating to admin.
       'sales.record',
       'settlement.record',
+      // DLV-13 (2026-10-30): a manager signs for deliveries at their own
+      // store when no staff is on shift (existing orgs: migration 0054).
+      'delivery.confirm',
     ] as readonly string[],
   },
   {

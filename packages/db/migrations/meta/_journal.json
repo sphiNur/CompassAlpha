@@ -379,6 +379,13 @@
       "when": 1792540000001,
       "tag": "0053_price_history_superseded_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1792540000002,
+      "tag": "0054_manager_delivery_confirm",
+      "breakpoints": true
     }
   ]
 }

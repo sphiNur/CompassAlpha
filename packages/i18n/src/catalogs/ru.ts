@@ -1426,6 +1426,8 @@ export const ru = {
   'inventory.sheet.note': 'Заметка',
   'inventory.toast.stocktakeSaved': 'Инвентаризация сохранена.',
   'inventory.toast.wastageSaved': 'Списание записано.',
+  'inventory.confirm.wastageNegative':
+    'После списания остаток станет {after} (отрицательный) — значит, учёт уже расходился. Всё равно сохранить? Советуем потом провести инвентаризацию.',
   'inventory.errors.cannotAdjust': 'Для инвентаризации / списания нужно право inventory.adjust.',
   'inventory.errors.invalidQty': 'Количество должно быть неотрицательным.',
   'inventory.errors.wastageNeedsNote': 'Списание требует причины.',

@@ -1571,6 +1571,8 @@ export const en = {
   'inventory.sheet.note': 'Note',
   'inventory.toast.stocktakeSaved': 'Stocktake saved.',
   'inventory.toast.wastageSaved': 'Wastage recorded.',
+  'inventory.confirm.wastageNegative':
+    'After this wastage the stock would be {after} (negative), so the record was already off. Save anyway? A stocktake afterwards is recommended.',
   'inventory.errors.cannotAdjust': 'You need inventory.adjust to stocktake or record wastage.',
   'inventory.errors.invalidQty': 'Quantity must be a non-negative number.',
   'inventory.errors.wastageNeedsNote': 'Wastage requires a reason.',
