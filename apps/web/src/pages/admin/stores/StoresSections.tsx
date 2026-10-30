@@ -24,6 +24,7 @@ import {
   Spinner,
   Switch,
   useToast,
+  QueryErrorBanner,
 } from '@compass/ui';
 import { ADMIN_RANK } from '@compass/contracts';
 import { newIdempotencyKey, trpc } from '../../../lib/trpc';
@@ -554,7 +555,7 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
 
   return (
     <div className="px-4 py-3">
-      {canAdjust && !levelsQuery.isLoading && openingCandidates.length > 0 ? (
+      {canAdjust && levelsQuery.isSuccess && openingCandidates.length > 0 ? (
         <div className="mb-3 flex">
           <Button
             size="sm"
@@ -572,6 +573,10 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
         <div className="py-6 text-center">
           <Spinner size={16} />
         </div>
+      ) : levelsQuery.isError ? (
+        // CLS-1 (2026-10-30): a failed load used to read "no stock data
+        // yet", with the opening-stock button still offered above it.
+        <QueryErrorBanner query={levelsQuery} />
       ) : rows.length === 0 ? (
         <EmptyState
           title={i18n.t('inventory.empty.title')}
@@ -797,6 +802,8 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
               <div className="py-6 text-center">
                 <Spinner size={16} />
               </div>
+            ) : movementsQuery.isError ? (
+              <QueryErrorBanner query={movementsQuery} />
             ) : (movementsQuery.data ?? []).length === 0 ? (
               <EmptyState title={i18n.t('inventory.movements.empty')} />
             ) : (

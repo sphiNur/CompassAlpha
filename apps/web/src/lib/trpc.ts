@@ -58,6 +58,25 @@ function noteRefreshIncomplete(why: string): void {
  */
 let refreshInFlight: Promise<{ accessToken: string; refreshToken: string } | null> | null = null;
 
+/**
+ * RE-AUTH-5 (2026-10-30): a refresh that hung kept the order page on a
+ * spinner for ~95 s. The refresh is a POST, so it waited the 30 s write
+ * timeout, and each of react-query's two retries waited for a fresh
+ * refresh again. A refresh is small and every request on screen is
+ * queued behind it: give up after 10 s, and for a few seconds after one
+ * did not complete fail the follow-up 401s at once instead of starting
+ * another — the retries land inside that window, so the page shows its
+ * network error after ~10 s, and a Retry tapped later tries afresh.
+ */
+const REFRESH_TIMEOUT_MS = 10_000;
+const REFRESH_COOLDOWN_MS = 5_000;
+let refreshIncompleteAt = Number.NEGATIVE_INFINITY;
+
+/** Tests only: forget the last incomplete refresh. */
+export function resetRefreshCooldownForTests(): void {
+  refreshIncompleteAt = Number.NEGATIVE_INFINITY;
+}
+
 async function refreshAccessToken(): Promise<{
   accessToken: string;
   refreshToken: string;
@@ -65,16 +84,21 @@ async function refreshAccessToken(): Promise<{
   if (refreshInFlight) return refreshInFlight;
   const refreshToken = useAuthStore.getState().refreshToken;
   if (!refreshToken) return null;
+  if (Date.now() - refreshIncompleteAt < REFRESH_COOLDOWN_MS) return null;
 
   refreshInFlight = (async () => {
     try {
       // guardedFetch: a refresh that hangs would hold every request
-      // waiting on it (single-flight); time it out like the rest.
-      const res = await guardedFetch(`${API_URL}/trpc/auth.refresh`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ refreshToken }),
-      });
+      // waiting on it (single-flight); time it out, sooner than a write.
+      const res = await guardedFetch(
+        `${API_URL}/trpc/auth.refresh`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ refreshToken }),
+        },
+        REFRESH_TIMEOUT_MS,
+      );
       if (!res.ok) {
         // Refresh token itself is bad: clear auth so AuthGate routes the
         // user back through telegramLogin. Anything else (5xx, 429) is
@@ -84,6 +108,7 @@ async function refreshAccessToken(): Promise<{
           noteSessionCleared('refresh-rejected', res.status);
           useAuthStore.getState().clear();
         } else {
+          refreshIncompleteAt = Date.now();
           noteRefreshIncomplete(`http ${res.status}`);
         }
         return null;
@@ -106,6 +131,7 @@ async function refreshAccessToken(): Promise<{
       });
       return { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken };
     } catch (err) {
+      refreshIncompleteAt = Date.now();
       noteRefreshIncomplete(err instanceof Error ? err.message : 'fetch failed');
       return null;
     } finally {
@@ -181,7 +207,7 @@ export async function guardedFetch(
   }
 }
 
-async function authFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+export async function authFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
   const attach = (token: string | null): RequestInit => ({
     ...init,
     headers: {

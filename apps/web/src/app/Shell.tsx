@@ -74,7 +74,7 @@ import {
   useTelegramSettingsButton,
   usePageMainButtonState,
 } from '../hooks/useTelegram';
-import { useAppMutating } from '../hooks/useAppMutating';
+import { useAppMutating, useNavigationBlocked } from '../hooks/useAppMutating';
 import { SettingsSheet } from '../components/SettingsSheet';
 import { StoreChip, useStoreContext } from '../components/StoreSwitcher';
 import { PageMenuProvider, usePageMenuRegistration } from './PageMenuContext';
@@ -665,6 +665,9 @@ function ShellInner() {
  * the save result, racing the cache invalidation. Now: nav goes
  * grey + non-interactive until the mutation settles.
  *
+ * F3 (2026-10-30): narrowed to the writes that swap the session — see
+ * useNavigationBlocked for why leaving a page mid-write is safe.
+ *
  * Cosmetic: faded opacity rather than removed-from-screen, so the
  * user still has spatial context of where the nav is. Mirrors the
  * existing disabled-button look used everywhere else in the app.
@@ -680,7 +683,9 @@ function BottomNav({
   setTab: (k: Tab) => void;
   i18n: ReturnType<typeof useI18n>;
 }) {
-  const busy = useAppMutating();
+  // F3 (2026-10-30): only writes that swap the session lock the nav now;
+  // see useNavigationBlocked.
+  const busy = useNavigationBlocked();
   return (
     <nav
       data-testid="primary-nav"

@@ -53,6 +53,12 @@ export interface UiLabels {
   custom: string;
   /** Quick-pick confirm button. Receives value + unit, e.g. "3 公斤". */
   setValue: (valueWithUnit: string) => string;
+  /** F13: the free-entry field is empty or not a number. */
+  qtyEnterNumber: string;
+  /** F13: the free-entry value is below the minimum. Receives the minimum. */
+  qtyAtLeast: (min: string) => string;
+  /** F13: the free-entry value is above the maximum. Receives the maximum. */
+  qtyAtMost: (max: string) => string;
 
   // --- DataState ---
   errorTitle: string;
@@ -84,6 +90,9 @@ export const DEFAULT_UI_LABELS: UiLabels = {
   unitIs: (unit) => `Unit: ${unit}`,
   custom: 'Custom',
   setValue: (v) => `Set ${v}`,
+  qtyEnterNumber: 'Enter a number',
+  qtyAtLeast: (min) => `Enter ${min} or more`,
+  qtyAtMost: (max) => `Enter ${max} or less`,
   errorTitle: 'Something went wrong',
   errorUnknown: 'Unknown error',
   emptyNoData: 'No data',

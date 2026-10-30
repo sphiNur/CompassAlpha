@@ -23,6 +23,8 @@ import { usePageMainButton, haptic } from '../hooks/useTelegram';
 import { frozenOrderDate, useOfflineQueue } from '../hooks/useOfflineQueue';
 import { outbox } from '../lib/idb';
 import { isLikelyNetworkError } from '../lib/networkError';
+import { errorTextKey } from '../lib/errorText';
+import { PendingSyncNotice } from '../components/PendingSyncNotice';
 import { sessionLoadState } from './order/sessionLoadState';
 import { useErrToast } from '../lib/errToast';
 import { matchesNameLike, normalizeQuery } from '../lib/searchMatch';
@@ -972,7 +974,13 @@ export function OrderPage() {
             </Button>
           }
         >
-          {sessionQuery.error?.message ?? i18n.t('common.errorUnknown')}
+          {/* RE-AUTH-5 (2026-10-30): showed the raw transport text, e.g.
+              "Failed to fetch (session refresh did not complete)". */}
+          {i18n.t(
+            errorTextKey(sessionQuery.error?.message, 'common.errorUnknown') as Parameters<
+              typeof i18n.t
+            >[0],
+          )}
         </Banner>
       </div>
     );
@@ -1315,11 +1323,7 @@ export function OrderPage() {
       </StickyPageBar>
       {staleWarning}
       {/* ORD-3 (2026-10-30): changes waiting in the outbox were invisible. */}
-      {offline.pendingCount > 0 ? (
-        <div className="px-4 pt-2 text-old-label text-[var(--c-warning-fg)]">
-          {i18n.t('order.pendingSync', { n: offline.pendingCount })}
-        </div>
-      ) : null}
+      <PendingSyncNotice count={offline.pendingCount} />
       {rejectedNotice(sessionQuery.data?.id) ? (
         <div className="px-4 pt-3">{rejectedNotice(sessionQuery.data?.id)}</div>
       ) : null}
@@ -1639,7 +1643,7 @@ const SkuRow = memo(function SkuRow({
             {otherContribCount > 0 && totalQty > 0 ? (
               <>
                 <span className="font-semibold text-[var(--c-fg)]">
-                  {i18n.t('order.totalQty', { qty: totalQty, unit: unitLabel(sku.unit) })}
+                  {i18n.t('order.totalQty', { qty: formatQty(totalQty), unit: unitLabel(sku.unit) })}
                 </span>
                 {' '}
                 ({otherContribCount + (myQty > 0 ? 1 : 0)})
@@ -2181,7 +2185,7 @@ function SessionExtrasEditor({
             >
               <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">{r.name}</span>
               <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
-                {r.qty} {unitLabel(r.unit)}
+                {formatQty(r.qty)} {unitLabel(r.unit)}
               </span>
             </li>
           ))}

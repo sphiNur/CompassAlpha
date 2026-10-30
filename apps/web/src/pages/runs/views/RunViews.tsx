@@ -17,7 +17,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Card, NumberInput, SectionLabel } from '@compass/ui';
 import { useAuthStore } from '../../../stores/authStore';
-import { formatMoney, formatQty, toQtyInput } from '../../../lib/format';
+import { formatMoney, formatMoneyThousands, formatQty, toQtyInput } from '../../../lib/format';
 import { useI18n, useUnitLabel } from '../../../hooks/useI18n';
 import { toDisplayPrice, fromDisplayPrice } from '../lib/priceMath';
 import {
@@ -139,7 +139,7 @@ export function PerStoreView({
                             ) : null}
                           </span>
                           <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
-                            {e.qty} {unitLabel(e.unit)}
+                            {formatQty(e.qty)} {unitLabel(e.unit)}
                           </span>
                         </li>
                       ))}
@@ -639,7 +639,7 @@ export function RunExtrasCard({
                           ) : null}
                         </span>
                         <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
-                          {e.qty} {unitLabel(e.unit)}
+                          {formatQty(e.qty)} {unitLabel(e.unit)}
                         </span>
                       </>
                     );
@@ -767,7 +767,7 @@ export function ExpensesCard({
             .map((sp) => storeById.get(sp.storeId)?.name ?? sp.storeId.slice(0, 8))
             .join(' · ');
           const unitPriceDisplay = priceInThousands
-            ? `${formatMoney(Number(e.unitPrice) / 1000)}K`
+            ? formatMoneyThousands(e.unitPrice)
             : formatMoney(e.unitPrice);
           return (
             <li
@@ -1261,7 +1261,7 @@ export function PurchaseRow({
   // can overwrite.
   //
   // toQtyInput, NOT formatQty: this value is editable and handleSave
-  // sends it to the API verbatim. formatQty rounds to one decimal and
+  // sends it to the API verbatim. formatQty used to round to one decimal and
   // adds thousand separators, which turned a planned 1.25 kg into a
   // saved 1.3 kg and made every qty >= 1000 unsaveable. See the doc
   // comment on toQtyInput.
@@ -1594,7 +1594,7 @@ export function PurchaseRow({
 
   const refPriceText = lastPrice
     ? priceInThousands
-      ? `${formatMoney(Number(lastPrice) / 1000)}K`
+      ? formatMoneyThousands(lastPrice)
       : formatMoney(lastPrice)
     : '';
   /* In thousands mode the visible figure is scaled, so long-press has to
@@ -1790,7 +1790,7 @@ export function PurchaseRow({
                   title={priceInThousands ? `${formatMoney(lastPrice)} ${currency}` : undefined}
                 >
                   {priceInThousands
-                    ? `${formatMoney(Number(lastPrice) / 1000)}K`
+                    ? formatMoneyThousands(lastPrice)
                     : formatMoney(lastPrice)}
                 </span>
               </>
@@ -2053,7 +2053,7 @@ export function PurchaseRow({
               title={rawPriceTitle(item.unitPrice)}
             >
               {priceInThousands && item.unitPrice
-                ? `${formatMoney(Number(item.unitPrice) / 1000)}K`
+                ? formatMoneyThousands(item.unitPrice)
                 : formatMoney(item.unitPrice)}
               {Number(item.purchasedQty) > 0 && Number(item.unitPrice) > 0 ? (
                 <span className="sr-only">

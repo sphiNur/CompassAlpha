@@ -26,6 +26,7 @@ import {
   Spinner,
   Textarea,
   useToast,
+  QueryErrorBanner,
 } from '@compass/ui';
 import {
   BACKDATE_LIMIT_DAYS,
@@ -1593,6 +1594,9 @@ export function SettlementPage() {
             <div className="flex justify-center py-3">
               <Spinner size={18} />
             </div>
+          ) : recentQuery.isError && !recentQuery.data ? (
+            // F11 (2026-10-30): a failed load read "no settlements yet".
+            <QueryErrorBanner query={recentQuery} />
           ) : recentQuery.data?.length ? (
             <ul className="flex flex-col gap-2" role="list">
               {recentQuery.data.map((record) => (

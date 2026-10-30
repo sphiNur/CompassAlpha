@@ -567,6 +567,10 @@ export function ApprovalPage() {
                         <Button
                           size="sm"
                           variant="pearl"
+                          loading={
+                            releaseClaim.isPending &&
+                            releaseClaim.variables?.sessionId === row.id
+                          }
                           onClick={() => releaseClaim.mutate({ sessionId: row.id })}
                         >
                           {i18n.t('approval.release')}
@@ -831,7 +835,7 @@ function SessionItems({
             >
               <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">{e.name}</span>
               <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
-                {e.qty} {unitLabel(e.unit)}
+                {formatQty(e.qty)} {unitLabel(e.unit)}
               </span>
             </li>
           ))}
