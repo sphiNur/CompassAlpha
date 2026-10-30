@@ -1473,6 +1473,13 @@ export const en = {
   'admin.field.stores': 'Stores',
   'admin.field.assignedStores': 'Assigned stores',
   'admin.field.displayNameOverride': 'Display name (admin override)',
+  // 2026-10-30: input placeholders that were hard-coded English (12-工程 F8).
+  'admin.field.codePlaceholder': 'Optional internal code',
+  'admin.field.timezonePlaceholder': 'e.g. Asia/Tashkent',
+  'admin.field.roleSlugPlaceholder': 'e.g. shift-lead',
+  'admin.field.memberNamePlaceholder': 'Display name',
+  'admin.label.counting': 'Counting…',
+  'admin.label.loadingStore': 'Loading store…',
   'admin.field.sortIndex': 'Sort index',
   'admin.field.unit': 'Unit',
   'admin.field.step': 'Step',

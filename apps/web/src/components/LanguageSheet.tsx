@@ -21,7 +21,7 @@
  * SKUs/categories — keep them in lockstep.
  */
 import { Sheet, Button, PickerRow } from '@compass/ui';
-import type { Locale } from '@compass/i18n';
+import { LANGUAGE_NATIVE_NAMES, type Locale } from '@compass/i18n';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { useI18n } from '../hooks/useI18n';
@@ -29,17 +29,17 @@ import { useErrToast } from '../lib/errToast';
 
 interface LangOption {
   code: Locale;
-  /** Native-language label so a uz user sees "O'zbekcha" not "Uzbek". */
+  /** Native-language label so a uz user sees "Oʻzbekcha" not "Uzbek". */
   label: string;
   /** Two-letter region tag for the small subtitle. */
   region: string;
 }
 
 const LANGS: LangOption[] = [
-  { code: 'uz', label: "O'zbekcha", region: 'UZ' },
-  { code: 'ru', label: 'Русский', region: 'RU' },
-  { code: 'en', label: 'English', region: 'EN' },
-  { code: 'zh', label: '中文', region: 'ZH' },
+  { code: 'uz', label: LANGUAGE_NATIVE_NAMES.uz, region: 'UZ' },
+  { code: 'ru', label: LANGUAGE_NATIVE_NAMES.ru, region: 'RU' },
+  { code: 'en', label: LANGUAGE_NATIVE_NAMES.en, region: 'EN' },
+  { code: 'zh', label: LANGUAGE_NATIVE_NAMES.zh, region: 'ZH' },
 ];
 
 interface LanguageSheetProps {

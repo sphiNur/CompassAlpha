@@ -39,6 +39,7 @@ import { en } from '../catalogs/en';
 import { ru } from '../catalogs/ru';
 import { uz } from '../catalogs/uz';
 import { zh } from '../catalogs/zh';
+import { LANGUAGE_NATIVE_NAMES } from '../index';
 
 type Lang = 'zh' | 'en' | 'ru' | 'uz';
 type Catalogs = Record<Lang, Record<string, string>>;
@@ -423,6 +424,13 @@ describe('catalog lint', () => {
       expect(found, `\n${found.join('\n')}\n`).toEqual([]);
     });
   }
+
+  test('the language pickers spell Oʻzbekcha with U+02BB', () => {
+    // Shown in Settings, the language sheet and the catalog name fields;
+    // it used to be "O'zbekcha" in three hand-copied lists.
+    expect(LANGUAGE_NATIVE_NAMES.uz).toBe('O\u02bbzbekcha');
+    expect(uzbekApostrophes(one({ uz: LANGUAGE_NATIVE_NAMES.uz }))).toEqual([]);
+  });
 });
 
 // ── The rules catch what they exist for ─────────────────────────────────
