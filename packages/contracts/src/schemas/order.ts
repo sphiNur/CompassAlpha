@@ -20,6 +20,9 @@ export type OrderStatus = z.infer<typeof OrderStatusSchema>;
 export const TodaySessionInputSchema = z.object({
   storeId: UuidSchema,
   date: DateStringSchema.optional(),
+  /** ORD-4 (2026-10-30): one of the caller's own batches, by id, instead
+   *  of the default pick (draft > rejected > latest submitted). */
+  sessionId: UuidSchema.optional(),
 });
 
 /**
