@@ -639,6 +639,8 @@ export const zh = {
   'admin.errors.runHasForeignSessions': '此采购单里有其他人的订单，不能删除',
   'admin.errors.sessionHasForeignAuthors':
     '这张订单有其他人的内容，不能删除。这里只能删你自己的测试订单',
+  'admin.errors.bulkPurgeDisabledInProduction':
+    '正式环境不允许整体清理（清空整个工作区、重置指定日期）。删除单张订单或单张采购单不受影响。',
   'admin.errors.purgeHasSettlements':
     '这些日期里有日结记录。日结的修改记录按规定不能删除，所以无法清理',
   'admin.errors.runNotFound': '采购单不存在',

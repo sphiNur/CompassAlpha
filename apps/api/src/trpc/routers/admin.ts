@@ -30,6 +30,8 @@ import { hasGlobalOrgAdmin, hasGlobalPermission } from '../../services/orgAdmin'
 import { effectivePermissionsForStore } from '../../services/storeScope';
 import { assertCanAddMember, assertCanAddStore } from '../../services/subscription';
 import { isUniqueViolation } from '../../services/pgErrors';
+import { bulkPurgeAllowed } from '../../services/bulkPurge';
+import { env } from '../../env';
 import {
   applyCatalogCopy,
   readCatalogSnapshot,
@@ -5080,6 +5082,13 @@ export const adminRouter = router({
           message: 'admin.errors.purgeRequiresSuperAdmin',
         });
       }
+      // D1 (2026-10-30): off on production unless the server opts in.
+      if (!bulkPurgeAllowed(env)) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'admin.errors.bulkPurgeDisabledInProduction',
+        });
+      }
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
         const org = await tx.query.organizations.findFirst({
@@ -5347,6 +5356,13 @@ export const adminRouter = router({
       throw new TRPCError({
         code: 'FORBIDDEN',
         message: 'admin.errors.purgeRequiresSuperAdmin',
+      });
+    }
+    // D1 (2026-10-30): off on production unless the server opts in.
+    if (!bulkPurgeAllowed(env)) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'admin.errors.bulkPurgeDisabledInProduction',
       });
     }
     return ctx.withOrg(async (tx) => {
