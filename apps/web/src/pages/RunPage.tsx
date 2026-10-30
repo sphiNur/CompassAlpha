@@ -1419,6 +1419,46 @@ export function RunPage() {
                   })
                   .join('\n')
               : '';
+          // DLV-11 (2026-10-30): the bills below still charge each store
+          // for what was split to it, even where the store signed for less.
+          // Say so before the run locks: every line signed short / wrong /
+          // spoiled, and roughly how much was not received.
+          const receiptIssues = (runDetailQuery.data?.splits ?? []).filter(
+            (sp) => sp.confirmStatus != null && sp.confirmStatus !== 'ok',
+          );
+          const itemPrice = new Map(
+            (runDetailQuery.data?.items ?? []).map((it) => [it.skuId, it.unitPrice]),
+          );
+          const missingValue = receiptIssues.reduce((sum, sp) => {
+            const price = Number(sp.unitPrice ?? itemPrice.get(sp.skuId) ?? 0);
+            const missing = Number(sp.qty) - Number(sp.confirmReceivedQty ?? 0);
+            return sum + (missing > 0 ? missing * price : 0);
+          }, 0);
+          const receiptLine =
+            receiptIssues.length > 0
+              ? '\n\n' +
+                i18n.t('run.confirm.finish.receiptIssues', {
+                  n: receiptIssues.length,
+                  amount: formatMoney(missingValue),
+                  currency,
+                }) +
+                '\n' +
+                receiptIssues
+                  .slice(0, 5)
+                  .map((sp) => {
+                    const sku = skuById.get(sp.skuId);
+                    return i18n.t('run.confirm.finish.receiptIssueLine', {
+                      sku: sku ? productName(sku) : sp.skuId.slice(0, 8),
+                      store: storeById.get(sp.storeId)?.name ?? sp.storeId.slice(0, 8),
+                      received: formatQty(sp.confirmReceivedQty ?? '0'),
+                      qty: formatQty(sp.qty),
+                    });
+                  })
+                  .join('\n') +
+                (receiptIssues.length > 5
+                  ? '\n' + i18n.t('run.confirm.finish.receiptIssuesMore', { n: receiptIssues.length - 5 })
+                  : '')
+              : '';
           return {
             title: i18n.t('run.confirm.finish.title'),
             body:
@@ -1435,7 +1475,8 @@ export function RunPage() {
               addedLine +
               expensesLine +
               carriedLine +
-              perStoreLines,
+              perStoreLines +
+              receiptLine,
             confirmLabel: i18n.t('run.action.finish'),
             danger: false,
             requireReason: false,

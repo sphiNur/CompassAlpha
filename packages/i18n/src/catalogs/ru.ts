@@ -1081,6 +1081,10 @@ export const ru = {
   'run.toast.couldNotAddExpense': 'Не удалось сохранить расход',
   'run.confirm.finish.expenses': '🧾 {n} поз. вне каталога / расходов · {total} {currency}',
   'run.confirm.finish.perStoreHeading': 'Расчёт по магазинам:',
+  'run.confirm.finish.receiptIssues':
+    'Строк с проблемой при приёмке: {n}; не получено примерно на {amount} {currency}. Счета ниже по-прежнему считаются по распределённому количеству.',
+  'run.confirm.finish.receiptIssueLine': '{sku} · {store}: принято {received}/{qty}',
+  'run.confirm.finish.receiptIssuesMore': '…и ещё {n}',
   'run.errors.expenseLabelRequired': 'Укажите название',
   'run.errors.expenseLabelTooLong': 'Название слишком длинное (макс 200)',
   'run.errors.expenseReasonRequired': 'Укажите причину',

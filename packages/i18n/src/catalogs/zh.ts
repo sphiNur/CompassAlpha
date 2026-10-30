@@ -1018,6 +1018,10 @@ export const zh = {
   'run.toast.couldNotAddExpense': '保存开销失败',
   'run.confirm.finish.expenses': '🧾 目录外 / 开销 {n} 笔 · 合计 {total} {currency}',
   'run.confirm.finish.perStoreHeading': '按门店分账：',
+  'run.confirm.finish.receiptIssues':
+    '签收有问题 {n} 行，少收约 {amount} {currency}。下面的账单仍按分配数量计算。',
+  'run.confirm.finish.receiptIssueLine': '{sku} · {store}：实收 {received}/{qty}',
+  'run.confirm.finish.receiptIssuesMore': '…另有 {n} 行',
   'run.errors.expenseLabelRequired': '名称必填',
   'run.errors.expenseLabelTooLong': '名称过长(最多 200 字符)',
   'run.errors.expenseReasonRequired': '原因必填',
