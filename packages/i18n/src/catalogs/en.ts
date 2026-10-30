@@ -1831,6 +1831,8 @@ export const en = {
     'Revoke this invite link? Anyone holding it will no longer be able to join.',
   'order.errors.staleOfflineEdit':
     'This change was made offline on an earlier day and was not applied',
+  'order.errors.approveEmpty':
+    'This order has no items left and cannot be approved. Reject it instead',
   'approval.toast.orderChanged':
     'This order changed since you opened it — review the latest version',
   // 2026-10-21 frontend P1 fixes (FE-04 merge hint, FE-05 update prompt, FE-08 audit sentences).

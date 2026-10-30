@@ -1684,6 +1684,8 @@ export const ru = {
     'Отозвать эту ссылку-приглашение? По ней больше никто не сможет присоединиться.',
   'order.errors.staleOfflineEdit':
     'Это изменение было сделано офлайн в один из прошлых дней и не было применено',
+  'order.errors.approveEmpty':
+    'В заказе не осталось позиций — одобрить нельзя. Отклоните его',
   'approval.toast.orderChanged':
     'Заказ изменился после того, как вы его открыли — проверьте актуальную версию',
   // 2026-10-21 frontend P1 fixes (FE-04 merge hint, FE-05 update prompt, FE-08 audit sentences).

@@ -1590,6 +1590,8 @@ export const zh = {
   'people.revokeInvite': '撤销',
   'people.confirmRevokeInvite': '撤销此邀请链接？持有链接的人将无法再加入。',
   'order.errors.staleOfflineEdit': '这项修改是在之前某天离线时做的，未被应用',
+  'order.errors.approveEmpty':
+    '这张单已经没有任何商品，不能通过。可以拒绝它',
   'approval.toast.orderChanged': '该订单在你打开后已被修改，请查看最新内容',
   // 2026-10-21 frontend P1 fixes (FE-04 merge hint, FE-05 update prompt, FE-08 audit sentences).
   'app.update.reload': '刷新',
