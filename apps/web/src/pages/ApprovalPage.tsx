@@ -225,10 +225,20 @@ export function ApprovalPage() {
         query={pendingQuery}
         emptyWhen={(d) => d.length === 0}
         empty={
-          <EmptyState
-            title={i18n.t('approval.empty.title')}
-            description={i18n.t('approval.empty.body')}
-          />
+          // APR-14 (2026-10-30): the approved / rejected tabs said "inbox
+          // empty — new orders will appear here"; the per-tab line was unused.
+          tab === 'pending' ? (
+            <EmptyState
+              title={i18n.t('approval.empty.title')}
+              description={i18n.t('approval.empty.body')}
+            />
+          ) : (
+            <EmptyState
+              title={i18n.t('approval.empty.tab', {
+                tab: i18n.t(`approval.tab.${tab}` as Parameters<typeof i18n.t>[0]),
+              })}
+            />
+          )
         }
       >
         {(rows) => (

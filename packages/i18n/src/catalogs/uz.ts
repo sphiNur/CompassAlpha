@@ -357,6 +357,12 @@ export const uz = {
   'workspace.create.created': 'Ish maydoni yaratildi',
   'workspace.create.failed': 'Ish maydonini yaratib bo‘lmadi',
   'settings.about.role': 'Rol',
+  'settings.about.roleName.super_admin': "Superadmin",
+  'settings.about.roleName.admin': "Administrator",
+  'settings.about.roleName.manager': "Do'kon boshqaruvchisi",
+  'settings.about.roleName.purchaser': "Xaridor",
+  'settings.about.roleName.cashier': "Kassir",
+  'settings.about.roleName.staff': "Xodim",
   'settings.about.build': 'Versiya',
   'common.saved': 'Saqlandi',
 
@@ -1131,6 +1137,7 @@ export const uz = {
   'run.toast.unmarkedUnavailable': 'Yana mavjud deb belgilandi',
   'run.toast.purchaseUndone': 'Xarid bekor qilindi — kutishga qaytdi',
   'run.toast.deliveryRecalled': 'Yetkazish qaytarildi',
+  'run.toast.delivered': "Yetkazildi deb belgilandi",
   'run.toast.runCancelled': 'Xarid bekor qilindi',
   // Wave2 #15 (M3.40, 2026-05-20)
   'run.toast.runCancelledWithOrphans':
@@ -1433,7 +1440,9 @@ export const uz = {
   'sales.form.pickDish': 'Taomni tanlang…',
   'sales.form.qtyLabel': 'Porsiya',
   'sales.form.recordBtn': 'Yozish',
-  'sales.form.noDishesYet': "Hech qanday taom yo'q. Avval Catalog → Dishes da qo'shing.",
+  'sales.form.noDishesYet':
+    "Hech qanday taom yo'q. Avval Boshqaruv › Katalog › Taomlar da qo'shing.",
+  'sales.form.noDishesAskManager': "Hozircha taom yo'q. Boshqaruvchidan qo'shishni so'rang.",
   'sales.form.noRecipe': "retsept yo'q",
   'sales.list.title': 'Bugungi sotuvlar',
   'sales.list.capReached':
