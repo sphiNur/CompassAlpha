@@ -487,6 +487,15 @@ describe('order.decide (per-contributor lines)', () => {
     expect(decide(st, { type: 'Reject', reason: 'nothing left', actor: mgr }, { clock })).toHaveLength(1);
   });
 
+  test('APR-8: unapproving an order a run has taken says so', () => {
+    let st = submittedState();
+    st = decide(st, { type: 'Approve', actor: manager() }, { clock }).reduce(apply, st);
+    st = { ...st, status: 'in_run', runId: 'run-1' };
+    expect(() =>
+      decide(st, { type: 'Unapprove', reason: 'x', actor: manager(['order.unapprove', 'order.approve']) }, { clock }),
+    ).toThrow('order.errors.alreadyInRun');
+  });
+
   test('repeated Reject by the same decider is a no-op; other approver errors', () => {
     let st = submittedState();
     st = decide(st, { type: 'Reject', reason: 'no', actor: manager() }, { clock }).reduce(

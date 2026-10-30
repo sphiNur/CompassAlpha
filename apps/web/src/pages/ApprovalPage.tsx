@@ -174,7 +174,11 @@ export function ApprovalPage() {
       void utils.order.pendingList.invalidate();
       toast.info(i18n.t('approval.toast.unapproved'));
     },
-    onError: errToast('common.error'),
+    onError: (err) => {
+      // APR-8: the card may be stale (a run took the order); refresh it.
+      void utils.order.pendingList.invalidate();
+      errToast('common.error')(err);
+    },
   });
 
   // 2026-07-30 (flow review): `step` was missing from this map while

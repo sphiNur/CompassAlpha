@@ -3340,6 +3340,17 @@ export const adminRouter = router({
         if (!member) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.memberNotFound' });
         }
+        // ADM-21 (2026-10-30): an unknown key answered "no permission", and
+        // a past expiry stored an override that never applied.
+        const knownKey = await tx.query.permissions.findFirst({
+          where: (p, { eq: eq2 }) => eq2(p.key, input.permissionKey),
+        });
+        if (!knownKey) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'admin.errors.unknownPermission' });
+        }
+        if (input.expiresAt && !(new Date(input.expiresAt).getTime() > Date.now())) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'admin.errors.invalidExpiresAt' });
+        }
         // Global overrides change authority across the whole organization.
         // Store managers may manage their own store, but cannot mint or
         // alter organization-wide grants. `org.admin` itself is global-only
@@ -3551,7 +3562,7 @@ export const adminRouter = router({
             message: 'auth.errors.cannotGrantEqualOrHigher',
           });
         }
-        await tx
+        const removed = await tx
           .delete(s.memberPermissionOverrides)
           .where(
             and(
@@ -3562,7 +3573,10 @@ export const adminRouter = router({
                 ? eq(s.memberPermissionOverrides.scopeId, input.scopeId)
                 : sql`${s.memberPermissionOverrides.scopeId} IS NULL`,
             ),
-          );
+          )
+          .returning({ id: s.memberPermissionOverrides.id });
+        // ADM-21: nothing removed, nothing to audit.
+        if (removed.length === 0) return { ok: true };
         await auditAdmin(tx, ctx, 'admin.memberPermission.revoke', 'permission', member.id, input);
         broadcastPeople(orgId);
         return { ok: true };

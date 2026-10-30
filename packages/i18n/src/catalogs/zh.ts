@@ -608,6 +608,7 @@ export const zh = {
   'admin.errors.orgAdminMustBeGlobal': '组织级角色和权限只能全局授予',
   'admin.errors.roleNotFound': '角色不存在',
   'admin.errors.roleSlugTaken': '这个角色标识已被占用',
+  'admin.errors.unknownPermission': '没有这个权限',
   'admin.errors.builtinRankLocked': '内置角色的等级不能修改',
   'admin.errors.runHasForeignSessions': '此采购单里有其他人的订单，不能删除',
   'admin.errors.sessionHasForeignAuthors':
@@ -1099,6 +1100,7 @@ export const zh = {
   'run.label.reasonForChange': '修改原因',
   'run.label.addReasonOptional': '+ 添加备注（可选）',
   'run.label.total': '合计',
+  'run.label.itemsTotal': '商品合计',
   'run.label.reasonPlaceholder': '例如：小票上的单价看错了',
   'run.toast.runPlanned': '采购单已生成',
   'run.toast.purchaseStarted': '开始采购',
@@ -1128,6 +1130,7 @@ export const zh = {
   'run.history.lastRun': '最近一单 {date}',
   'run.history.monthSoFar': '{month} · 已 {n} 单',
   'run.history.totalLine': '合计 {total} UZS',
+  'run.history.matchedRunsTotal': '（所含采购单的合计）',
   'run.history.allStores': '全部门店',
   // M3.9: 已取消 run 不再显示在采购页历史里，移除 4 个 key.
   'run.cancel.reasonPlaceholder': '为什么取消?(可选,有助团队复盘)',

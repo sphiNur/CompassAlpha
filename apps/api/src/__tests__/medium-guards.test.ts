@@ -195,6 +195,27 @@ describe.skipIf(!SHOULD_RUN)('medium guards (PG-gated)', () => {
     expect(rows.some((r) => r.template === 'order.selfApproved')).toBe(true);
   });
 
+  test('ADM-21: unknown keys and past expiries are refused; revoking nothing writes no audit', async () => {
+    const { owner, staffMemberId, db, orgId } = fix!;
+    const unknown = await errorOf(() =>
+      owner.admin.memberPermissionSet({ memberId: staffMemberId, permissionKey: 'no.such.key', effect: 'allow' }),
+    );
+    expect(unknown?.message).toBe('admin.errors.unknownPermission');
+    const past = await errorOf(() =>
+      owner.admin.memberPermissionSet({
+        memberId: staffMemberId,
+        permissionKey: 'order.draft',
+        effect: 'deny',
+        expiresAt: '2020-01-01T00:00:00.000Z',
+      }),
+    );
+    expect(past?.message).toBe('admin.errors.invalidExpiresAt');
+    const before = await db.query.policyDecisions.findMany({ where: (x, o) => o.eq(x.orgId, orgId) });
+    await owner.admin.memberPermissionRevoke({ memberId: staffMemberId, permissionKey: 'order.draft' });
+    const after = await db.query.policyDecisions.findMany({ where: (x, o) => o.eq(x.orgId, orgId) });
+    expect(after.length).toBe(before.length);
+  });
+
   test('ADM-7: five grants of one role at once leave one binding', async () => {
     const { owner, staffUserId, staffMemberId, storeId, db } = fix!;
     await Promise.all(

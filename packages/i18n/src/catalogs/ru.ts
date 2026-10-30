@@ -653,6 +653,7 @@ export const ru = {
     'Роли и права уровня организации можно назначать только глобально',
   'admin.errors.roleNotFound': 'Роль не найдена',
   'admin.errors.roleSlugTaken': 'Такой идентификатор роли уже занят',
+  'admin.errors.unknownPermission': 'Такого права нет',
   'admin.errors.builtinRankLocked': 'Уровень встроенной роли изменить нельзя',
   'admin.errors.runHasForeignSessions':
     'В закупке есть заказы других людей — удалить нельзя',
@@ -1165,6 +1166,7 @@ export const ru = {
   'run.label.reasonForChange': 'Причина изменения',
   'run.label.addReasonOptional': '+ Добавить заметку (опционально)',
   'run.label.total': 'итого',
+  'run.label.itemsTotal': 'Итого по товарам',
   'run.label.reasonPlaceholder': 'например: ошибся при чтении чека',
   'run.toast.runPlanned': 'Закупка запланирована',
   'run.toast.purchaseStarted': 'Начало закупки',
@@ -1195,6 +1197,7 @@ export const ru = {
   'run.history.lastRun': 'Последняя закупка {date}',
   'run.history.monthSoFar': '{month} · пока {n}',
   'run.history.totalLine': 'Итого {total} UZS',
+  'run.history.matchedRunsTotal': '(итог найденных закупок)',
   'run.history.allStores': 'Все магазины',
   // M3.9: отменённые run больше не показываются в истории — 4 ключа удалены.
   'run.cancel.reasonPlaceholder': 'Почему отменяете? (опционально — поможет команде разобраться)',

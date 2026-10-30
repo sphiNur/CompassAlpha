@@ -658,6 +658,7 @@ export const uz = {
     'Tashkilot darajasidagi rol va ruxsatlar faqat global berilishi mumkin',
   'admin.errors.roleNotFound': 'Rol topilmadi',
   'admin.errors.roleSlugTaken': "Bu rol identifikatori band",
+  'admin.errors.unknownPermission': "Bunday ruxsat yo'q",
   'admin.errors.builtinRankLocked': "Ichki rolning darajasini o'zgartirib bo'lmaydi",
   'admin.errors.runHasForeignSessions':
     "Bu xaridda boshqa odamlarning buyurtmalari bor — o'chirib bo'lmaydi",
@@ -1175,6 +1176,7 @@ export const uz = {
   'run.label.reasonForChange': "O'zgarish sababi",
   'run.label.addReasonOptional': "+ Izoh qo'shish (ixtiyoriy)",
   'run.label.total': 'jami',
+  'run.label.itemsTotal': 'Mahsulotlar jami',
   'run.label.reasonPlaceholder': "masalan: chekdagi narxni noto'g'ri o'qibman",
   'run.toast.runPlanned': 'Xarid rejalashtirildi',
   'run.toast.purchaseStarted': 'Xarid boshlandi',
@@ -1205,6 +1207,7 @@ export const uz = {
   'run.history.lastRun': 'Oxirgi xarid {date}',
   'run.history.monthSoFar': '{month} · hozircha {n}',
   'run.history.totalLine': 'Jami {total} UZS',
+  'run.history.matchedRunsTotal': '(topilgan xaridlar jami)',
   'run.history.allStores': "Barcha do'konlar",
   // M3.9: bekor qilingan run endi tarixda ko'rinmaydi — 4 kalit olib tashlandi.
   'run.cancel.reasonPlaceholder':
