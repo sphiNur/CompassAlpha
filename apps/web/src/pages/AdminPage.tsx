@@ -51,6 +51,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useNavStore } from '../stores/navStore';
 import { isInTelegram, useTelegramBackButton } from '../hooks/useTelegram';
 import { useI18n } from '../hooks/useI18n';
+import { LANGUAGE_NATIVE_NAMES } from '@compass/i18n';
 import { LanguageSheet } from '../components/LanguageSheet';
 import { SubscriptionSummary } from '../components/SubscriptionSummary';
 // Operations sections — extracted to admin/operations (Phase 5 step 1).
@@ -484,12 +485,7 @@ function WorkspaceSection() {
   // M1.17: financial settings sheet (currency + tax + tax-inclusive).
   const [financeSheetOpen, setFinanceSheetOpen] = useState(false);
   // Map locale codes to native labels for the read-out.
-  const localeLabels: Record<string, string> = {
-    en: 'English',
-    zh: '中文',
-    ru: 'Русский',
-    uz: "O'zbekcha",
-  };
+  const localeLabels: Record<string, string> = LANGUAGE_NATIVE_NAMES;
   const currentLocale = session?.user.locale ?? 'en';
   const currency = session?.member.currency ?? 'UZS';
   const taxRatePct = session?.member.taxRatePct ?? '0';

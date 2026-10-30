@@ -937,7 +937,7 @@ function RoleCreateSheet({
             value={slug}
             onChange={(e) => setSlug(e.target.value.toLowerCase())}
             maxLength={64}
-            placeholder="e.g. shift-lead"
+            placeholder={i18n.t('admin.field.roleSlugPlaceholder')}
             autoFocus
           />
         </Field>
@@ -1162,7 +1162,9 @@ function RolePermissionsSheet({
       }
     >
       {detail.isLoading ? (
-        <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">Loading…</div>
+        <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">
+          {i18n.t('common.loading')}
+        </div>
       ) : !detail.data ? (
         <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">
           {i18n.t('people.noRole')}
@@ -1822,7 +1824,7 @@ function ManageMemberSheet({
                 onChange={(e) => setName(e.target.value)}
                 maxLength={200}
                 disabled={!canRename}
-                placeholder="display name"
+                placeholder={i18n.t('admin.field.memberNamePlaceholder')}
               />
               <Button
                 size="sm"
@@ -1843,7 +1845,7 @@ function ManageMemberSheet({
           <Field label={i18n.t('admin.field.assignedStores')}>
             {storesQuery.isLoading || assignmentsQuery.isLoading ? (
               <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
-                <Spinner size={14} /> Loading…
+                <Spinner size={14} /> {i18n.t('common.loading')}
               </div>
             ) : (
               <div className="flex flex-col gap-1.5 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
@@ -2686,7 +2688,7 @@ function GrantRoleSheet({
           </p>
         ) : rolesQuery.isLoading ? (
           <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
-            <Spinner size={14} /> Loading roles…
+            <Spinner size={14} /> {i18n.t('admin.label.loadingRoles')}
           </div>
         ) : grantableRoles.length === 0 ? (
           <Banner tone="warn" title={i18n.t('people.noGrantableTitle')}>

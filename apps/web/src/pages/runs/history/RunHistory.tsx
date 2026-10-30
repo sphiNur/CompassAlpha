@@ -99,6 +99,7 @@ export function RunHistoryPage({
   runs,
   loading,
   fetching = false,
+  failed = false,
   totalCount,
   summaryTotal,
   summaryItemsTotal,
@@ -116,6 +117,8 @@ export function RunHistoryPage({
   runs: RunListRow[];
   loading: boolean;
   fetching?: boolean;
+  /** F11: the list failed to load — no "0 · 0" count/total in the header. */
+  failed?: boolean;
   totalCount?: number;
   summaryTotal?: string;
   /** 2026-10-21 CA-11: parts of summaryTotal. */
@@ -193,9 +196,13 @@ export function RunHistoryPage({
           as={onBack ? undefined : 'h1'}
           // HIS-20 (2026-10-30): with a search, the total is of the whole
           // runs that matched, not of the product searched for.
-          meta={`${count} · ${formatMoney(total)} ${currency}${
-            hasSearchOrFilters ? ' ' + i18n.t('run.history.matchedRunsTotal') : ''
-          }`}
+          meta={
+            failed
+              ? undefined
+              : `${count} · ${formatMoney(total)} ${currency}${
+                  hasSearchOrFilters ? ' ' + i18n.t('run.history.matchedRunsTotal') : ''
+                }`
+          }
         >
           {i18n.t('run.history.title')}
         </SectionLabel>

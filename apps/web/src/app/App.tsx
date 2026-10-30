@@ -9,6 +9,7 @@ import { useTelegramInit } from '../hooks/useTelegram';
 import { useTapGuard } from '../hooks/useTapGuard';
 import { useVersionCheck } from '../hooks/useVersionCheck';
 import { useRealtime } from '../hooks/useRealtime';
+import { useRefetchFailedOnReconnect } from '../hooks/useRefetchFailedOnReconnect';
 import { AuthGate } from './AuthGate';
 import { Shell } from './Shell';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -48,6 +49,7 @@ if (compassWindow && !compassWindow.__compassLoggerBooted) {
 function QueryConsumers({ children }: { children: ReactNode }) {
   useRealtime();
   useVersionCheck();
+  useRefetchFailedOnReconnect();
   return <>{children}</>;
 }
 

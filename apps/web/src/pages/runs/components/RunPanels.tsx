@@ -180,6 +180,8 @@ export function ActiveRunPanel({
     sessionId: string,
     extraIndex: number,
     status: 'pending' | 'bought' | 'unavailable',
+    /** APR-18: the session's lastSeq the row was read at. */
+    expectedSeq?: number,
   ) => void;
   onRecordExtraExpense: (
     storeId: string,

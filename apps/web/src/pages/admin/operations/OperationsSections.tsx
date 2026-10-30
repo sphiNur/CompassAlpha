@@ -629,7 +629,7 @@ function TargetedPurgeBrowser() {
         <div className="flex flex-col gap-3 py-3">
           {sessionDryRun.isPending ? (
             <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
-              <Spinner size={14} /> Counting…
+              <Spinner size={14} /> {i18n.t('admin.label.counting')}
             </div>
           ) : sessionTarget?.preview ? (
             <CascadePreview
@@ -672,7 +672,7 @@ function TargetedPurgeBrowser() {
         <div className="flex flex-col gap-3 py-3">
           {runDryRun.isPending ? (
             <div className="flex items-center gap-2 text-old-body-sm text-[var(--c-fg-muted)]">
-              <Spinner size={14} /> Counting…
+              <Spinner size={14} /> {i18n.t('admin.label.counting')}
             </div>
           ) : runTarget?.preview ? (
             <>

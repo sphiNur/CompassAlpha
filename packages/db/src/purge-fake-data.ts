@@ -47,12 +47,16 @@
  *
  * EXTREMELY DESTRUCTIVE. There is no rollback. The dry-run prints exactly
  * how many rows would be touched per table — eyeball that before --apply.
+ *
+ * D5 (2026-10-30): `--apply` is refused on production (see purgeGuard.ts)
+ * unless COMPASS_ALLOW_BULK_PURGE=true is set for that one command.
  */
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync } from 'node:fs';
 import { sql } from 'drizzle-orm';
-import { getDb, closeDb } from './index';
+import { allowEventPurge, getDb, closeDb } from './index';
+import { currentWipeRefusal } from './purgeGuard';
 
 (function loadRootEnv() {
   let dir = dirname(fileURLToPath(import.meta.url));
@@ -79,6 +83,18 @@ import { getDb, closeDb } from './index';
 
 const args = new Set(process.argv.slice(2));
 const APPLY = args.has('--apply');
+
+if (APPLY) {
+  const refusal = currentWipeRefusal();
+  if (refusal) {
+    console.error(
+      `\x1b[31m✖ Refusing to wipe: this looks like production (${refusal}).\x1b[0m\n` +
+        "  This script deletes every tenant's data. If that is really intended,\n" +
+        '  take a backup first and re-run with COMPASS_ALLOW_BULK_PURGE=true.',
+    );
+    process.exit(2);
+  }
+}
 
 // ANSI colors
 const c = {
@@ -257,6 +273,9 @@ async function main() {
   // Single transaction so a failure mid-way leaves nothing half-wiped.
   console.log(c.cyan('\n▶ Wiping inside a single transaction…'));
   await db.transaction(async (tx) => {
+    // domain.events refuses deletes unless the transaction says it is a
+    // purge (migration 0055).
+    await allowEventPurge(tx);
     for (const step of WIPE_PLAN) {
       try {
         await tx.execute(sql.raw(step.deleteSql));

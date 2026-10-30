@@ -1,7 +1,18 @@
 export * from './client';
 export * as schema from './schema/index';
-export { setOrgContext, withOrgContext, withSystemContext, inSystem, clearOrgContext } from './rls';
+export {
+  afterCommit,
+  allowEventPurge,
+  clearOrgContext,
+  inSystem,
+  setOrgContext,
+  SYSTEM_REASONS,
+  withOrgContext,
+  withSystemContext,
+} from './rls';
 export type { OrgTransactionOptions, SystemReason } from './rls';
+export { notifyRealtime, parseRealtimeNotice, REALTIME_CHANNEL } from './realtime';
+export type { DbRealtimeMessage } from './realtime';
 export {
   DEFAULT_FEATURE_FLAGS,
   DEFAULT_ORG_WORKFLOW,

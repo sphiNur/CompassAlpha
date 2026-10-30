@@ -25,7 +25,7 @@ import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Sheet, Button, Field, SectionLabel, PickerRow } from '@compass/ui';
 import { useToast } from '@compass/ui';
-import type { Locale } from '@compass/i18n';
+import { LANGUAGE_NATIVE_NAMES, type Locale } from '@compass/i18n';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { resetNavStore } from '../stores/navStore';
@@ -38,6 +38,7 @@ import { StorePickerSection, useCanSeeStorePicker } from './StoreSwitcher';
 /** Built-in roles have a translated name; a custom role shows its slug. */
 const BUILTIN_ROLE_SLUGS = new Set(['super_admin', 'admin', 'manager', 'purchaser', 'cashier', 'staff']);
 import { CreateWorkspaceForm } from './CreateWorkspace';
+import { BLOCKS_NAVIGATION } from '../hooks/useAppMutating';
 
 interface LangOption {
   code: Locale;
@@ -46,10 +47,10 @@ interface LangOption {
 }
 
 const LANGS: LangOption[] = [
-  { code: 'uz', label: "O'zbekcha", region: 'UZ' },
-  { code: 'ru', label: 'Русский', region: 'RU' },
-  { code: 'en', label: 'English', region: 'EN' },
-  { code: 'zh', label: '中文', region: 'ZH' },
+  { code: 'uz', label: LANGUAGE_NATIVE_NAMES.uz, region: 'UZ' },
+  { code: 'ru', label: LANGUAGE_NATIVE_NAMES.ru, region: 'RU' },
+  { code: 'en', label: LANGUAGE_NATIVE_NAMES.en, region: 'EN' },
+  { code: 'zh', label: LANGUAGE_NATIVE_NAMES.zh, region: 'ZH' },
 ];
 
 interface Props {
@@ -99,6 +100,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
     onError: errToast('common.error'),
   });
   const switchOrganization = trpc.auth.switchOrganization.useMutation({
+    meta: BLOCKS_NAVIGATION,
     onSuccess: (data) => {
       setSession({
         accessToken: data.tokens.accessToken,

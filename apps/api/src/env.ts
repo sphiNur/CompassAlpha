@@ -49,6 +49,9 @@ export const env = createEnv({
     TG_RELAY_URL: z.string().url().optional(),
     COMPASS_RELAY_KEY: z.string().min(32).optional(),
     BOT_DELIVERY_ENABLED: z.enum(['true', 'false']).optional(),
+    // Shared with the app-proxy Worker: requests carrying it may name the
+    // real client address for rate limiting (AUTH-6). See services/clientIp.ts.
+    CLIENT_IP_PROXY_KEY: z.string().min(32).optional(),
     FRONTEND_URL: z.string().url().default('http://localhost:5173'),
     S3_ENDPOINT: z.string().url().optional(),
     S3_BUCKET: z.string().optional(),
@@ -57,6 +60,10 @@ export const env = createEnv({
     S3_SECRET_KEY: z.string().optional(),
     S3_PUBLIC_BASE: z.string().url().optional(),
     OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
+    /** D1 (2026-10-30): lets admin.purgeAllTestData / purgeByDate run on
+     * production. Set it only for a maintenance window; see
+     * services/bulkPurge.ts. */
+    COMPASS_ALLOW_BULK_PURGE: z.enum(['true', 'false']).optional(),
   },
   runtimeEnv: process.env as Record<string, string | undefined>,
   emptyStringAsUndefined: true,

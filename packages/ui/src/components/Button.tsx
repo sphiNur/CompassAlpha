@@ -1,8 +1,9 @@
-import { forwardRef, isValidElement } from 'react';
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import { forwardRef, isValidElement, useRef } from 'react';
+import type { ButtonHTMLAttributes, MouseEvent, ReactNode } from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '../cn';
 import { Spinner } from './Spinner';
+import { createTapGuard } from '../useTapGuard';
 
 const button = cva(
   [
@@ -66,19 +67,59 @@ const button = cva(
   },
 );
 
+/** A second tap on a write button within this window is a double tap. */
+export const REPEAT_TAP_MS = 700;
+
 export interface ButtonProps
   extends ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof button> {
+  /**
+   * The action's request is in flight: shows a spinner and disables the
+   * button. Passing the prop at all (even `false`) also marks the button
+   * as one that sends a write, so a quick second tap is dropped — see
+   * REPEAT_TAP_MS.
+   */
   loading?: boolean;
   leadingIcon?: ReactNode;
   trailingIcon?: ReactNode;
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { className, variant, size, block, loading, leadingIcon, trailingIcon, children, disabled, ...rest },
+  {
+    className,
+    variant,
+    size,
+    block,
+    loading,
+    leadingIcon,
+    trailingIcon,
+    children,
+    disabled,
+    onClick,
+    ...rest
+  },
   ref,
 ) {
   const childIsPlain = typeof children === 'string' || typeof children === 'number';
+  const tapGuard = useRef<ReturnType<typeof createTapGuard> | null>(null);
+  // DLV-4 / BUY-12 (2026-10-30): `loading` disables the button only after
+  // the re-render that follows the mutation starting, and React Query
+  // reports isPending on a later tick — a double tap lands both clicks
+  // first. "Start delivery" then sent two requests and showed success and
+  // a conflict together. Every button that carries `loading` sends a
+  // write, so it drops a repeat inside the window itself instead of each
+  // call site remembering to wrap its handler.
+  const guarded =
+    loading === undefined || !onClick
+      ? onClick
+      : (e: MouseEvent<HTMLButtonElement>) => {
+          tapGuard.current ??= createTapGuard(REPEAT_TAP_MS);
+          if (!tapGuard.current.allow('', Date.now())) {
+            e.preventDefault(); // a submit button must not submit twice either
+            return;
+          }
+          onClick(e);
+        };
   return (
     <button
       ref={ref}
@@ -87,6 +128,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       data-loading={loading || undefined}
       className={cn(button({ variant, size, block }), className)}
       {...rest}
+      onClick={guarded}
     >
       {loading ? <Spinner size={16} /> : leadingIcon}
       <span className={childIsPlain || !isValidElement(children) ? 'min-w-0 truncate' : 'min-w-0'}>

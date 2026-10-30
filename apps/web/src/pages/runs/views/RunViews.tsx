@@ -17,7 +17,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Card, NumberInput, SectionLabel } from '@compass/ui';
 import { useAuthStore } from '../../../stores/authStore';
-import { formatMoney, formatQty, toQtyInput } from '../../../lib/format';
+import { formatMoney, formatMoneyThousands, formatQty, toQtyInput } from '../../../lib/format';
 import { useI18n, useUnitLabel } from '../../../hooks/useI18n';
 import { toDisplayPrice, fromDisplayPrice } from '../lib/priceMath';
 import {
@@ -139,7 +139,7 @@ export function PerStoreView({
                             ) : null}
                           </span>
                           <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
-                            {e.qty} {unitLabel(e.unit)}
+                            {formatQty(e.qty)} {unitLabel(e.unit)}
                           </span>
                         </li>
                       ))}
@@ -288,6 +288,8 @@ export function PerVendorView({
     sessionId: string,
     extraIndex: number,
     status: 'pending' | 'bought' | 'unavailable',
+    /** APR-18: the session's lastSeq the row was read at. */
+    expectedSeq?: number,
   ) => void;
   onRecordExtraExpense: (
     storeId: string,
@@ -535,6 +537,7 @@ export function RunExtrasCard({
       status?: 'pending' | 'bought' | 'unavailable';
       sessionId?: string;
       idx?: number;
+      sessionSeq?: number;
     }>
   >;
   sessionNotesByStore?: Record<string, string>;
@@ -547,6 +550,8 @@ export function RunExtrasCard({
     sessionId: string,
     extraIndex: number,
     status: 'pending' | 'bought' | 'unavailable',
+    /** APR-18: the session's lastSeq the row was read at. */
+    expectedSeq?: number,
   ) => void;
   onRecordExtraExpense?: (
     storeId: string,
@@ -634,7 +639,7 @@ export function RunExtrasCard({
                           ) : null}
                         </span>
                         <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
-                          {e.qty} {unitLabel(e.unit)}
+                          {formatQty(e.qty)} {unitLabel(e.unit)}
                         </span>
                       </>
                     );
@@ -649,7 +654,7 @@ export function RunExtrasCard({
                               type="button"
                               title={i18n.t('run.extras.status.cycleHint', { current: v.label })}
                               onClick={() =>
-                                onMarkExtraStatus!(e.sessionId!, e.idx!, cycle(status))
+                                onMarkExtraStatus!(e.sessionId!, e.idx!, cycle(status), e.sessionSeq)
                               }
                               className="flex min-w-0 flex-1 items-baseline gap-2 rounded-[6px] text-left active:bg-[var(--c-surface-2)]"
                             >
@@ -762,7 +767,7 @@ export function ExpensesCard({
             .map((sp) => storeById.get(sp.storeId)?.name ?? sp.storeId.slice(0, 8))
             .join(' · ');
           const unitPriceDisplay = priceInThousands
-            ? `${formatMoney(Number(e.unitPrice) / 1000)}K`
+            ? formatMoneyThousands(e.unitPrice)
             : formatMoney(e.unitPrice);
           return (
             <li
@@ -1258,7 +1263,7 @@ export function PurchaseRow({
   // can overwrite.
   //
   // toQtyInput, NOT formatQty: this value is editable and handleSave
-  // sends it to the API verbatim. formatQty rounds to one decimal and
+  // sends it to the API verbatim. formatQty used to round to one decimal and
   // adds thousand separators, which turned a planned 1.25 kg into a
   // saved 1.3 kg and made every qty >= 1000 unsaveable. See the doc
   // comment on toQtyInput.
@@ -1591,7 +1596,7 @@ export function PurchaseRow({
 
   const refPriceText = lastPrice
     ? priceInThousands
-      ? `${formatMoney(Number(lastPrice) / 1000)}K`
+      ? formatMoneyThousands(lastPrice)
       : formatMoney(lastPrice)
     : '';
   /* In thousands mode the visible figure is scaled, so long-press has to
@@ -1609,7 +1614,10 @@ export function PurchaseRow({
   const paymentLabel = i18n.t(
     isTransfer ? 'run.label.paymentTransfer' : 'run.label.paymentCash',
   );
-  const paymentAria = `${i18n.t('run.label.paymentMethod')}: ${paymentLabel}`;
+  const paymentAria = i18n.t('common.labelValue', {
+    label: i18n.t('run.label.paymentMethod'),
+    value: paymentLabel,
+  });
 
   // BUY-6 (2026-10-30): a purchaser of only some of the run's stores sees
   // rows that also serve other stores, but cannot change them.
@@ -1784,7 +1792,7 @@ export function PurchaseRow({
                   title={priceInThousands ? `${formatMoney(lastPrice)} ${currency}` : undefined}
                 >
                   {priceInThousands
-                    ? `${formatMoney(Number(lastPrice) / 1000)}K`
+                    ? formatMoneyThousands(lastPrice)
                     : formatMoney(lastPrice)}
                 </span>
               </>
@@ -1888,11 +1896,12 @@ export function PurchaseRow({
             // indication that it was a toggle or what tapping would do;
             // the ×1000 toggle two files away already gets this right.
             aria-pressed={paymentMethod === 'transfer'}
-            aria-label={`${i18n.t('run.label.paymentMethod')}: ${i18n.t(
-              paymentMethod === 'cash'
-                ? 'run.label.paymentCash'
-                : 'run.label.paymentTransfer',
-            )}`}
+            aria-label={i18n.t('common.labelValue', {
+              label: i18n.t('run.label.paymentMethod'),
+              value: i18n.t(
+                paymentMethod === 'cash' ? 'run.label.paymentCash' : 'run.label.paymentTransfer',
+              ),
+            })}
             title={
               paymentMethod === 'cash'
                 ? i18n.t('run.label.paymentCash')
@@ -2046,7 +2055,7 @@ export function PurchaseRow({
               title={rawPriceTitle(item.unitPrice)}
             >
               {priceInThousands && item.unitPrice
-                ? `${formatMoney(Number(item.unitPrice) / 1000)}K`
+                ? formatMoneyThousands(item.unitPrice)
                 : formatMoney(item.unitPrice)}
               {Number(item.purchasedQty) > 0 && Number(item.unitPrice) > 0 ? (
                 <span className="sr-only">

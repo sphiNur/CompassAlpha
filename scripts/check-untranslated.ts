@@ -173,6 +173,19 @@ function looksLikeCopyInExpression(raw: string): boolean {
 }
 
 /**
+ * Lower-case prose in a prop that only ever holds copy (2026-10-30).
+ * `placeholder="optional internal code"` and `placeholder="e.g. shift-lead"`
+ * slipped past `looksLikeCopyInExpression`, which wants an initial capital.
+ * Several words separated by spaces cannot be a class name or an enum tag.
+ */
+function looksLikeLowercaseProse(raw: string): boolean {
+  const text = raw.trim();
+  if (!looksLikeEnglishCopy(text)) return false;
+  if (/[[\]()<>{}]|--|::/.test(text)) return false;
+  return /^(?:e\.g\.\s+)?[A-Za-z][\w/.'-]*(?:\s+[\w/.'-]+)*$/.test(text) && /\s/.test(text);
+}
+
+/**
  * Inline suppression. Put `// i18n-exempt: <reason>` on the line itself or
  * the line directly above. A reason is mandatory — the point is that the
  * next reader can tell "deliberately language-neutral" from "nobody got
@@ -265,8 +278,19 @@ function scan(file: string): Finding[] {
       /\b(title|label|ariaLabel|aria-label|placeholder|description|confirmLabel)\s*=\s*(?:\{\s*)?['"]([^'"]{2,})['"]/g;
     let m: RegExpExecArray | null;
     while ((m = propRe.exec(line))) {
-      if (looksLikeCopyInExpression(m[2]!)) {
+      if (looksLikeCopyInExpression(m[2]!) || looksLikeLowercaseProse(m[2]!)) {
         found.push({ file, line: lineNo, kind: `prop:${m[1]}`, text: m[2]! });
+      }
+    }
+
+    // 1b. Text node sharing a line with its tags (2026-10-30):
+    //     `<div …>Loading…</div>` and `<Spinner /> Loading…`. Rule 1 only
+    //     sees text alone on its line, and the trailing ellipsis made it
+    //     non-ASCII, which reads as already-translated copy.
+    const inlineRe = />\s*([A-Z][A-Za-z ]*[A-Za-z])(?:…|\.\.\.)?\s*(?:<\/|$)/g;
+    while ((m = inlineRe.exec(line))) {
+      if (looksLikeEnglishCopy(m[1]!)) {
+        found.push({ file, line: lineNo, kind: 'jsx-inline-text', text: m[1]! });
       }
     }
 

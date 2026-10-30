@@ -31,6 +31,7 @@ import { usePageMainButton, haptic } from '../hooks/useTelegram';
 import { useDateFormat, useI18n, useProductNameParts, useUnitLabel } from '../hooks/useI18n';
 import { usePhotoUploader } from '../hooks/usePhotoUploader';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
+import { PendingSyncNotice } from '../components/PendingSyncNotice';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
 import { formatQty } from '../lib/format';
@@ -445,6 +446,7 @@ export function ConfirmPage() {
           </span>
         </StickyPageBar>
       ) : null}
+      <PendingSyncNotice count={offline.pendingCount} />
       <div className="flex flex-col gap-3 px-4">
         {runsView.kind === 'error' || (runsView.kind === 'ready' && runsView.stale) ? (
           <Banner

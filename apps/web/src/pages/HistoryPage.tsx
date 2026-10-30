@@ -344,6 +344,7 @@ export function HistoryPage() {
       runs={data?.rows ?? []}
       loading={historyQuery.isLoading}
       fetching={historyQuery.isFetching}
+      failed={historyQuery.isError && !data}
       totalCount={data?.pageInfo.totalCount ?? 0}
       summaryTotal={data?.summary.total ?? '0'}
       summaryItemsTotal={data?.summary.itemsTotal ?? '0'}

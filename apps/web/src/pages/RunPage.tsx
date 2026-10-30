@@ -34,6 +34,7 @@ import {
   ChipBar,
   ConfirmSheet as PriceCheckSheet,
   DataState,
+  QueryErrorBanner,
   EmptyState,
   Input,
   Sheet,
@@ -50,6 +51,7 @@ import { usePhotoUploader } from '../hooks/usePhotoUploader';
 // through other paths if needed.
 import { usePageMenu } from '../app/PageMenuContext';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
+import { PendingSyncNotice } from '../components/PendingSyncNotice';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
@@ -655,7 +657,12 @@ export function RunPage() {
       invalidateRunQuietly();
       haptic('success');
     },
-    onError: errToast('common.error'),
+    // APR-18: refused as stale when someone else changed the order since
+    // this page read it; show the current rows.
+    onError: (err) => {
+      invalidateRunQuietly();
+      errToast('common.error')(err);
+    },
   });
   // UIUX-B1 (2026-07-06): the C.2/M3.38 exclusive-claim subsystem
   // (claim/release mutations, auto-claim/auto-release effects, the
@@ -1447,7 +1454,10 @@ export function RunPage() {
                       ? ` · ${i18n.t('run.label.paymentCash')} ${formatMoney(ps.cash)}` +
                         ` · ${i18n.t('run.label.paymentTransfer')} ${formatMoney(ps.transfer)}`
                       : '';
-                    return `${storeName}: ${formatMoney(ps.total)}${tail}`;
+                    return i18n.t('common.labelValue', {
+                      label: storeName,
+                      value: `${formatMoney(ps.total)}${tail}`,
+                    });
                   })
                   .join('\n')
               : '';
@@ -1971,6 +1981,9 @@ export function RunPage() {
         </div>
       ) : null}
 
+      {/* BUY-8 (2026-10-30): purchases saved offline used to look unsaved. */}
+      <PendingSyncNotice count={offline.pendingCount} />
+
       {/* 2026-10-21 CA-04: run switcher. Shown once there is more than one
           open run (one being bought + earlier ones still delivering), or
           when only delivering runs are open while approved orders wait —
@@ -2079,7 +2092,11 @@ export function RunPage() {
       </Sheet>
 
       <div className="flex flex-col gap-2 px-4 pt-2">
-        {!activeRun ? (
+        {runsQuery.isError && !runsQuery.data ? (
+          // F11 (2026-10-30): a failed run list read as "no approved
+          // orders to plan" — the buyer was told there was nothing to buy.
+          <QueryErrorBanner query={runsQuery} />
+        ) : !activeRun ? (
           <DataState query={previewQuery}>
             {(p) =>
               p.sessions.length === 0 ? (
@@ -2397,8 +2414,8 @@ export function RunPage() {
             onRecallStore={(storeId, storeName) =>
               setConfirmAction({ kind: 'recallDelivery', storeId, storeName })
             }
-            onMarkExtraStatus={(sessionId, extraIndex, status) =>
-              markExtraStatus.mutate({ sessionId, extraIndex, status })
+            onMarkExtraStatus={(sessionId, extraIndex, status, expectedSeq) =>
+              markExtraStatus.mutate({ sessionId, extraIndex, status, expectedSeq })
             }
             onRecordExtraExpense={(storeId, extra) => {
               setAddItemDraft({

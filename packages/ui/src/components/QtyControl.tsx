@@ -3,6 +3,7 @@ import { useUiLabels } from '../labels';
 import { cn } from '../cn';
 import { Sheet, SheetFooter } from './Sheet';
 import { Button } from './Button';
+import { readQtyDraft } from '../qtyDraft';
 import { NumberInput } from './NumberInput';
 
 interface QtyControlProps {
@@ -326,12 +327,17 @@ function QtyQuickPickSheet({
     if (open) setDraft(String(current));
   }, [open, current]);
 
-  const sanitizedDraft = useMemo(() => {
-    const n = Number(draft);
-    if (!Number.isFinite(n)) return null;
-    const clamped = clamp(roundToStep(n, step), min, max);
-    return clamped;
-  }, [draft, min, max, step]);
+  // F13 / ORD-8 (2026-10-30): empty, non-numeric and out-of-range input is
+  // refused with a reason instead of becoming "Set 0". See readQtyDraft.
+  const read = useMemo(() => readQtyDraft(draft, { min, max }), [draft, min, max]);
+  const sanitizedDraft = read.ok ? read.value : null;
+  const draftProblem = read.ok
+    ? null
+    : read.reason === 'belowMin'
+      ? labels.qtyAtLeast(formatQty(min, step))
+      : read.reason === 'aboveMax'
+        ? labels.qtyAtMost(formatQty(max, step))
+        : labels.qtyEnterNumber;
   const draftDiffers = sanitizedDraft !== null && sanitizedDraft !== current;
 
   const setLabel = labels.setValue(
@@ -422,8 +428,14 @@ function QtyQuickPickSheet({
             min={min}
             max={max}
             inputMode="decimal"
+            aria-invalid={draftProblem ? true : undefined}
           />
         </label>
+        {draftProblem ? (
+          <p role="alert" className="text-old-label text-[var(--c-danger)]">
+            {draftProblem}
+          </p>
+        ) : null}
       </div>
     </Sheet>
   );
@@ -444,12 +456,6 @@ function defaultPresets(step: number): number[] {
 
 function clamp(v: number, min: number, max: number): number {
   return Math.min(Math.max(v, min), max);
-}
-
-function roundToStep(v: number, step: number): number {
-  if (step <= 0) return v;
-  const ratio = Math.round(v / step);
-  return Number((ratio * step).toFixed(3));
 }
 
 function formatQty(v: number, _step: number): string {

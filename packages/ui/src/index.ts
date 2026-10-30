@@ -45,7 +45,7 @@ export type { BackButtonLike, BackHandlerStack } from './telegramBackStack';
 export { Banner } from './components/Banner';
 export { Spinner } from './components/Spinner';
 export { EmptyState } from './components/EmptyState';
-export { DataState } from './components/DataState';
+export { DataState, QueryErrorBanner } from './components/DataState';
 export { Skeleton } from './components/Skeleton';
 export { Stepper } from './components/Stepper';
 export { ChipBar, Chip } from './components/Chip';

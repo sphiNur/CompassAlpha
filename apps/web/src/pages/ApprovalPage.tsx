@@ -159,7 +159,11 @@ export function ApprovalPage() {
       void utils.order.pendingList.invalidate();
       toast.info(i18n.t('approval.toast.tookOver'));
     },
-    onError: errToast('common.error'),
+    // RE-APR-2: someone else took it over first — show who has it now.
+    onError: (err) => {
+      void utils.order.pendingList.invalidate();
+      errToast('common.error')(err);
+    },
   });
   const dates = useDateFormat();
   const releaseClaim = trpc.order.releaseClaim.useMutation({
@@ -460,7 +464,12 @@ export function ApprovalPage() {
                                   i18n.t('approval.confirmTakeover', {
                                     who: row.claimedByDisplayName ?? i18n.t('approval.unknownReviewer'),
                                   }),
-                                  () => takeOverClaim.mutate({ sessionId: row.id }),
+                                  () =>
+                                    takeOverClaim.mutate({
+                                      sessionId: row.id,
+                                      // RE-APR-2: take over this claim, no other.
+                                      fromMemberId: row.claimedByMemberId ?? undefined,
+                                    }),
                                 )
                               }
                             >
@@ -558,6 +567,10 @@ export function ApprovalPage() {
                         <Button
                           size="sm"
                           variant="pearl"
+                          loading={
+                            releaseClaim.isPending &&
+                            releaseClaim.variables?.sessionId === row.id
+                          }
                           onClick={() => releaseClaim.mutate({ sessionId: row.id })}
                         >
                           {i18n.t('approval.release')}
@@ -822,7 +835,7 @@ function SessionItems({
             >
               <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">{e.name}</span>
               <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
-                {e.qty} {unitLabel(e.unit)}
+                {formatQty(e.qty)} {unitLabel(e.unit)}
               </span>
             </li>
           ))}

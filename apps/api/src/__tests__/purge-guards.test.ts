@@ -18,6 +18,7 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { getDb, schema as s, withOrgContext } from '@compass/db';
 import { logger } from '../infra/log';
+import { env } from '../env';
 import { appRouter } from '../trpc/router';
 import { loadSession, type RequestContext, type SessionContext } from '../trpc/context';
 
@@ -195,6 +196,40 @@ describe.skipIf(!SHOULD_RUN)('maintenance purge guards (PG-gated)', () => {
     expect(await db.query.marketRunsV.findFirst({ where: (x, o) => o.eq(x.id, runId) })).toBeTruthy();
   });
 
+  test('D1: the purges still delete the events of what they purge', async () => {
+    // The event store refuses DELETE (migration 0055) unless the
+    // transaction calls allowEventPurge; each purge path does.
+    const { admin, db, orgId, storeId } = fix!;
+    const event = (streamType: 'order' | 'run', streamId: string) => ({
+      orgId,
+      streamType,
+      streamId,
+      seq: 1,
+      type: streamType === 'order' ? 'DraftStarted' : 'RunPlanned',
+      payload: {},
+    });
+    const eventsOf = async (streamId: string) =>
+      (await db.select({ id: s.events.id }).from(s.events).where(eq(s.events.streamId, streamId))).length;
+
+    const sessionId = randomUUID();
+    await db.insert(s.orderSessionsV).values({ id: sessionId, orgId, storeId, orderDate: '2026-06-21', status: 'draft' });
+    await db.insert(s.events).values(event('order', sessionId));
+    await admin.admin.purgeSession({ sessionId, dryRun: false });
+    expect(await eventsOf(sessionId)).toBe(0);
+
+    const runId = randomUUID();
+    await db.insert(s.marketRunsV).values({ id: runId, orgId, runDate: '2026-06-22', status: 'finished' });
+    await db.insert(s.events).values(event('run', runId));
+    await admin.admin.purgeRun({ runId, dryRun: false });
+    expect(await eventsOf(runId)).toBe(0);
+
+    const datedRun = randomUUID();
+    await db.insert(s.marketRunsV).values({ id: datedRun, orgId, runDate: '2026-06-23', status: 'finished' });
+    await db.insert(s.events).values(event('run', datedRun));
+    await admin.admin.purgeByDate({ date: '2026-06-23', dryRun: false });
+    expect(await eventsOf(datedRun)).toBe(0);
+  });
+
   test('CAT-5: emptying the workspace keeps the admin audit', async () => {
     const { admin, db, orgId } = fix!;
     const before = await db.query.policyDecisions.findMany({ where: (x, o) => o.eq(x.orgId, orgId) });
@@ -270,5 +305,47 @@ describe.skipIf(!SHOULD_RUN)('maintenance purge guards (PG-gated)', () => {
     expect(err?.code).toBe('PRECONDITION_FAILED');
     expect(err?.message).toBe('admin.errors.purgeHasSettlements');
     expect(await errorOf(() => admin.admin.purgeByDate({ date: '2026-06-11', dryRun: false }))).toBeNull();
+  });
+
+  test('D1: on production the workspace-wide purges refuse; per-item deletes still work', async () => {
+    const { admin, db, orgId, storeId, memberId } = fix!;
+    const e = env as { NODE_ENV: string; COMPASS_ALLOW_BULK_PURGE?: string };
+    const saved = { NODE_ENV: e.NODE_ENV, allow: e.COMPASS_ALLOW_BULK_PURGE };
+    const sessionId = randomUUID();
+    await db.insert(s.orderSessionsV).values({
+      id: sessionId,
+      orgId,
+      storeId,
+      orderDate: '2026-06-21',
+      status: 'draft',
+      initiatedByMemberId: memberId,
+    });
+    try {
+      e.NODE_ENV = 'production';
+      e.COMPASS_ALLOW_BULK_PURGE = undefined;
+      for (const call of [
+        () => admin.admin.purgeAllTestData({ dryRun: true }),
+        () => admin.admin.purgeAllTestData({ dryRun: false, confirmText: 'x' }),
+        () => admin.admin.purgeByDate({ date: '2026-06-21', dryRun: true }),
+        () => admin.admin.purgeByDate({ date: '2026-06-21', dryRun: false }),
+      ]) {
+        const err = await errorOf(call);
+        expect(err?.code).toBe('FORBIDDEN');
+        expect(err?.message).toBe('admin.errors.bulkPurgeDisabledInProduction');
+      }
+      expect(await db.query.orderSessionsV.findFirst({ where: (x, o) => o.eq(x.id, sessionId) })).toBeTruthy();
+
+      // The explicit switch lets them run again.
+      e.COMPASS_ALLOW_BULK_PURGE = 'true';
+      expect(await errorOf(() => admin.admin.purgeByDate({ date: '2026-06-22', dryRun: true }))).toBeNull();
+
+      // Deleting one's own single order is not a bulk purge.
+      e.COMPASS_ALLOW_BULK_PURGE = undefined;
+      expect(await errorOf(() => admin.admin.purgeSession({ sessionId, dryRun: false }))).toBeNull();
+      expect(await db.query.orderSessionsV.findFirst({ where: (x, o) => o.eq(x.id, sessionId) })).toBeUndefined();
+    } finally {
+      e.NODE_ENV = saved.NODE_ENV;
+      e.COMPASS_ALLOW_BULK_PURGE = saved.allow;
+    }
   });
 });

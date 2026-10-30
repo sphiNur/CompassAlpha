@@ -32,6 +32,7 @@ import {
 } from '@compass/ui';
 import { SKU_STEPS, SKU_UNITS } from '@compass/contracts';
 import type { SkuStep, SkuUnit } from '@compass/contracts';
+import { LANGUAGE_NATIVE_NAMES } from '@compass/i18n';
 import { snapStepToCanonical } from './skuStep';
 import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
@@ -333,7 +334,7 @@ export function CategoriesSection() {
             <p className="text-old-label text-[var(--c-fg-muted)]">
               {i18n.t('catalog.names.atLeastOne')}
             </p>
-            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: "O'zbekcha" })}`}>
+            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: LANGUAGE_NATIVE_NAMES.uz })}`}>
               <Input
                 value={draft.nameUz}
                 onChange={(e) => setDraft({ ...draft, nameUz: e.target.value })}
@@ -341,7 +342,7 @@ export function CategoriesSection() {
                 placeholder="Sabzavotlar" /* i18n-exempt: example word FOR that specific language field */
               />
             </Field>
-            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: 'Русский' })}`}>
+            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: LANGUAGE_NATIVE_NAMES.ru })}`}>
               <Input
                 value={draft.nameRu}
                 onChange={(e) => setDraft({ ...draft, nameRu: e.target.value })}
@@ -349,7 +350,7 @@ export function CategoriesSection() {
                 placeholder="Овощи"
               />
             </Field>
-            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: 'English' })}`}>
+            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: LANGUAGE_NATIVE_NAMES.en })}`}>
               <Input
                 value={draft.nameEn}
                 onChange={(e) => setDraft({ ...draft, nameEn: e.target.value })}
@@ -357,7 +358,7 @@ export function CategoriesSection() {
                 placeholder="Vegetables" /* i18n-exempt: example word FOR that specific language field */
               />
             </Field>
-            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: '中文' })}`}>
+            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: LANGUAGE_NATIVE_NAMES.zh })}`}>
               <Input
                 value={draft.nameZh}
                 onChange={(e) => setDraft({ ...draft, nameZh: e.target.value })}
@@ -600,6 +601,7 @@ export function SkusSection() {
                         <Button
                           size="sm"
                           variant="pearl"
+                          loading={update.isPending && update.variables?.skuId === sk.id}
                           onClick={() => update.mutate({ skuId: sk.id, isArchived: false })}
                         >
                           {i18n.t('common.unarchive')}
@@ -665,7 +667,7 @@ export function SkusSection() {
             <p className="text-old-label text-[var(--c-fg-muted)]">
               {i18n.t('catalog.names.atLeastOne')}
             </p>
-            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: "O'zbekcha" })}`}>
+            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: LANGUAGE_NATIVE_NAMES.uz })}`}>
               <Input
                 value={draft.nameUz}
                 onChange={(e) => setDraft({ ...draft, nameUz: e.target.value })}
@@ -674,7 +676,7 @@ export function SkusSection() {
                 autoFocus
               />
             </Field>
-            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: 'Русский' })}`}>
+            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: LANGUAGE_NATIVE_NAMES.ru })}`}>
               <Input
                 value={draft.nameRu}
                 onChange={(e) => setDraft({ ...draft, nameRu: e.target.value })}
@@ -682,7 +684,7 @@ export function SkusSection() {
                 placeholder="Помидор"
               />
             </Field>
-            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: 'English' })}`}>
+            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: LANGUAGE_NATIVE_NAMES.en })}`}>
               <Input
                 value={draft.nameEn}
                 onChange={(e) => setDraft({ ...draft, nameEn: e.target.value })}
@@ -690,7 +692,7 @@ export function SkusSection() {
                 placeholder="Tomato" /* i18n-exempt: example word FOR that specific language field */
               />
             </Field>
-            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: '中文' })}`}>
+            <Field label={`${i18n.t('admin.field.nameInLocale', { locale: LANGUAGE_NATIVE_NAMES.zh })}`}>
               <Input
                 value={draft.nameZh}
                 onChange={(e) => setDraft({ ...draft, nameZh: e.target.value })}
@@ -905,6 +907,7 @@ export function SuppliersSection() {
                       <Button
                         size="sm"
                         variant="pearl"
+                        loading={update.isPending && update.variables?.supplierId === sp.id}
                         onClick={() => update.mutate({ supplierId: sp.id, isArchived: false })}
                       >
                         {i18n.t('common.unarchive')}
@@ -1600,6 +1603,7 @@ export function DishesSection() {
                         <Button
                           size="sm"
                           variant="pearl"
+                          loading={unarchive.isPending && unarchive.variables?.dishId === d.id}
                           onClick={() => unarchive.mutate({ dishId: d.id })}
                         >
                           {i18n.t('common.unarchive')}

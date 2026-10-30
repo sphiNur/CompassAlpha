@@ -66,6 +66,11 @@ export function UiLabelsBridge({ children }: { children: ReactNode }) {
         return i18n.t('qty.custom');
       },
       setValue: (valueWithUnit) => i18n.t('qty.setValue', { value: valueWithUnit }),
+      get qtyEnterNumber() {
+        return i18n.t('qty.enterNumber');
+      },
+      qtyAtLeast: (min) => i18n.t('qty.atLeast', { min }),
+      qtyAtMost: (max) => i18n.t('qty.atMost', { max }),
       get errorTitle() {
         return i18n.t('common.error');
       },
