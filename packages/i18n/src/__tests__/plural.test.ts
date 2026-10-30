@@ -158,3 +158,14 @@ describe('plural parser edge cases', () => {
     expect(fmt('{n, plural, =0 {none} other {# x}}', {})).toBe('none');
   });
 });
+
+describe('label: value pairs', () => {
+  // RE-COPY-7: code used to glue `${label}: ${value}`, so Chinese read
+  // 「支付方式: 现金」 with a half-width colon.
+  test('each language brings its own colon', () => {
+    const vars = { label: 'X', value: 'Y' };
+    expect(createI18n('zh').t('common.labelValue' as CatalogKey, vars)).toBe('X：Y');
+    expect(createI18n('en').t('common.labelValue' as CatalogKey, vars)).toBe('X: Y');
+    expect(createI18n('ru').t('common.labelValue' as CatalogKey, vars)).toBe('X: Y');
+  });
+});

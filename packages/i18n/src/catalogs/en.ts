@@ -383,6 +383,9 @@ export const en = {
   'common.noData': 'No data',
   'common.clear': 'Clear',
   'common.optional': 'Optional',
+  // 2026-10-30: "Label: value" built in code put a half-width colon into
+  // Chinese (支付方式: 现金). The punctuation belongs to the language.
+  'common.labelValue': '{label}: {value}',
   'common.empty': 'Empty',
   // M3.34 (2026-05-19): canonical unit strings. SKU.unit stores one of
   // these; UI looks up via `useUnitLabel(unit)`.

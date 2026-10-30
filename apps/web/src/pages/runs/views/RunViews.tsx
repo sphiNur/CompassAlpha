@@ -1607,7 +1607,10 @@ export function PurchaseRow({
   const paymentLabel = i18n.t(
     isTransfer ? 'run.label.paymentTransfer' : 'run.label.paymentCash',
   );
-  const paymentAria = `${i18n.t('run.label.paymentMethod')}: ${paymentLabel}`;
+  const paymentAria = i18n.t('common.labelValue', {
+    label: i18n.t('run.label.paymentMethod'),
+    value: paymentLabel,
+  });
 
   // BUY-6 (2026-10-30): a purchaser of only some of the run's stores sees
   // rows that also serve other stores, but cannot change them.
@@ -1886,11 +1889,12 @@ export function PurchaseRow({
             // indication that it was a toggle or what tapping would do;
             // the ×1000 toggle two files away already gets this right.
             aria-pressed={paymentMethod === 'transfer'}
-            aria-label={`${i18n.t('run.label.paymentMethod')}: ${i18n.t(
-              paymentMethod === 'cash'
-                ? 'run.label.paymentCash'
-                : 'run.label.paymentTransfer',
-            )}`}
+            aria-label={i18n.t('common.labelValue', {
+              label: i18n.t('run.label.paymentMethod'),
+              value: i18n.t(
+                paymentMethod === 'cash' ? 'run.label.paymentCash' : 'run.label.paymentTransfer',
+              ),
+            })}
             title={
               paymentMethod === 'cash'
                 ? i18n.t('run.label.paymentCash')

@@ -1447,7 +1447,10 @@ export function RunPage() {
                       ? ` · ${i18n.t('run.label.paymentCash')} ${formatMoney(ps.cash)}` +
                         ` · ${i18n.t('run.label.paymentTransfer')} ${formatMoney(ps.transfer)}`
                       : '';
-                    return `${storeName}: ${formatMoney(ps.total)}${tail}`;
+                    return i18n.t('common.labelValue', {
+                      label: storeName,
+                      value: `${formatMoney(ps.total)}${tail}`,
+                    });
                   })
                   .join('\n')
               : '';

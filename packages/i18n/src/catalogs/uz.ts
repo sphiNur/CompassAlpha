@@ -337,6 +337,7 @@ export const uz = {
   'common.noData': 'Maʼlumot yoʻq',
   'common.clear': 'Tozalash',
   'common.optional': 'Ixtiyoriy',
+  'common.labelValue': '{label}: {value}',
   'common.empty': 'Boʻsh',
   'unit.kg': 'kg',
   'unit.g': 'g',

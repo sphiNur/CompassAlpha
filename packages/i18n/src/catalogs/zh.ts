@@ -313,6 +313,7 @@ export const zh = {
   'common.noData': '暂无数据',
   'common.clear': '清除',
   'common.optional': '可选',
+  'common.labelValue': '{label}：{value}',
   'common.empty': '暂无内容',
   'unit.kg': '公斤',
   'unit.g': '克',

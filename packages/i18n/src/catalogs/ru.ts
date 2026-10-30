@@ -336,6 +336,7 @@ export const ru = {
   'common.noData': 'Нет данных',
   'common.clear': 'Очистить',
   'common.optional': 'Необязательно',
+  'common.labelValue': '{label}: {value}',
   'common.empty': 'Пусто',
   'unit.kg': 'кг',
   'unit.g': 'г',
