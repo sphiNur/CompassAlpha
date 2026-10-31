@@ -30,7 +30,7 @@ import {
 import { proportionalSplitQty } from '../lib/splitQty';
 import { PriceInFull, PriceUnitSwitch } from '../components/PriceUnit';
 import { otherStoreSkusOf, type ActiveRun } from '../types';
-import { lineAmountNumber } from '@compass/contracts';
+import { lineAmountNumber, lineWithinCap } from '@compass/contracts';
 
 /**
  * GroupCardHeader — the "group title + right-aligned count·qty meta"
@@ -1467,13 +1467,17 @@ export function PurchaseRow({
   // is said under the field (PriceInFull), before the 5× check or a
   // round trip, and ✓ stays off.
   const priceProblem = price.trim() !== '' && rawPrice === null;
+  // R2-ENG-2: the server caps one line (qty × price) at 1e12.
+  const lineTooLarge =
+    totalHint !== null && rawPrice !== null && !lineWithinCap(qty.trim(), rawPrice);
 
   const canSave =
     item.status === 'pending' &&
     !saving &&
     /^\d+(\.\d{1,3})?$/.test(qty.trim()) &&
     Number(qty) > 0 &&
-    rawPrice !== null;
+    rawPrice !== null &&
+    !lineTooLarge;
 
 
   /**
@@ -1994,7 +1998,11 @@ export function PurchaseRow({
               currency={currency}
               unit={unit}
             />
-            {totalHint !== null ? (
+            {lineTooLarge ? (
+              <span role="alert" className="text-[var(--c-danger)]">
+                {i18n.t('run.errors.lineTooLarge')}
+              </span>
+            ) : totalHint !== null ? (
               <span>
                 ={' '}
                 <span className="font-mono font-semibold tabular-nums text-[var(--c-fg)]">
