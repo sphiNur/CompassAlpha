@@ -4,6 +4,7 @@ import {
   DecimalStringSchema,
   UuidSchema,
 } from './common';
+import { PURCHASE_PRICE_RE } from '../limits';
 
 export const RunStatusSchema = z.enum([
   'planned',
@@ -55,7 +56,7 @@ export type RunHistoryInput = z.infer<typeof RunHistoryInputSchema>;
  */
 export const PurchasePriceSchema = z
   .string()
-  .regex(/^\d{1,12}(\.\d{1,2})?$/, 'run.errors.priceFormat')
+  .regex(PURCHASE_PRICE_RE, 'run.errors.priceFormat')
   .refine((v) => Number(v) > 0, { message: 'run.errors.priceFormat' });
 export const PurchaseQtySchema = z
   .string()

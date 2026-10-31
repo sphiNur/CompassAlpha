@@ -7,11 +7,13 @@ import { QueryClient } from '@tanstack/react-query';
 // queries React Query forgot stay in the copy until they are too old.
 import {
   MAX_AGE_MS,
+  RESAVE_UNCHANGED_MS,
   cacheOwner,
   clearPersistedQueries,
   isFreshEnough,
   isRestorable,
   mergeForSave,
+  needsSave,
   procedureOf,
   restoreQueryCache,
   shouldPersistQuery,
@@ -166,5 +168,33 @@ describe('save and restore', () => {
     expect(store.size).toBe(1);
     await clearPersistedQueries(kv);
     expect(store.size).toBe(0);
+  });
+});
+
+describe('saving only what changed (P-4)', () => {
+  it('needsSave: new query or new data saves; the same data only after a while', () => {
+    const data = [{ id: 'r1' }];
+    expect(needsSave(undefined, data, 1)).toBe(true);
+    expect(needsSave({ data, at: 1 }, data, 6_001)).toBe(false);
+    expect(needsSave({ data, at: 1 }, [{ id: 'r1' }], 6_001)).toBe(true);
+    expect(needsSave({ data, at: 1 }, data, 1 + RESAVE_UNCHANGED_MS)).toBe(true);
+  });
+
+  it('a refetch that returns the same answer does not rewrite the copy', async () => {
+    let writes = 0;
+    const counting: CacheStorage = { ...kv, set: async (k, v) => { writes++; await kv.set(k, v); } };
+    const qc = new QueryClient();
+    const stop = startQueryPersistence(qc, () => 'u1:o1', counting);
+    qc.setQueryData(key('run.get', { runId: 'r' }), { items: [{ id: 'i1', qty: 1 }] });
+    await wait(1_100);
+    expect(writes).toBe(1);
+    // Equal data: structural sharing keeps the old reference, no new write.
+    qc.setQueryData(key('run.get', { runId: 'r' }), { items: [{ id: 'i1', qty: 1 }] });
+    await wait(1_100);
+    expect(writes).toBe(1);
+    qc.setQueryData(key('run.get', { runId: 'r' }), { items: [{ id: 'i1', qty: 2 }] });
+    await wait(1_100);
+    expect(writes).toBe(2);
+    stop();
   });
 });

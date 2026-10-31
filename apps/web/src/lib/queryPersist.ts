@@ -35,6 +35,22 @@ const STORAGE_KEY = 'queryCache:v1';
 export const MAX_AGE_MS = 36 * 60 * 60 * 1000;
 /** Coalesce a burst of query updates into one IndexedDB write. */
 const SAVE_DELAY_MS = 1_000;
+/**
+ * A refetch that returned the same data (TanStack keeps the old reference)
+ * does not need a new IndexedDB write — except now and then, so the saved
+ * load time does not fall behind MAX_AGE_MS / the "today" rule while a
+ * screen keeps polling unchanged data.
+ */
+export const RESAVE_UNCHANGED_MS = 10 * 60 * 1000;
+
+/** Does this successful fetch need a save? P-4 (2026-10-31). */
+export function needsSave(
+  prev: { data: unknown; at: number } | undefined,
+  data: unknown,
+  at: number,
+): boolean {
+  return !prev || prev.data !== data || at - prev.at >= RESAVE_UNCHANGED_MS;
+}
 
 /**
  * tRPC procedures whose last answer is worth keeping for an offline
@@ -238,9 +254,21 @@ export function startQueryPersistence(
   const schedule = () => {
     if (timer === null) timer = setTimeout(save, SAVE_DELAY_MS);
   };
+  // Per query: the data last scheduled for saving, and when it loaded.
+  // A 6 s poll returning the same answer used to rewrite the whole copy
+  // every time.
+  const scheduled = new Map<string, { data: unknown; at: number }>();
   const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+    if (event.type === 'removed') {
+      scheduled.delete(event.query.queryHash);
+      return;
+    }
     if (event.type !== 'updated' || event.action.type !== 'success') return;
-    if (shouldPersistQuery(event.query.queryKey)) schedule();
+    if (!shouldPersistQuery(event.query.queryKey)) return;
+    const { data, dataUpdatedAt } = event.query.state;
+    if (!needsSave(scheduled.get(event.query.queryHash), data, dataUpdatedAt)) return;
+    scheduled.set(event.query.queryHash, { data, at: dataUpdatedAt });
+    schedule();
   });
   // Closing the app inside the coalescing window must not lose the copy.
   const onHide = () => {

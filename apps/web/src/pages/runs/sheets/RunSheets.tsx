@@ -26,7 +26,7 @@ import { toDisplayPrice, fromDisplayPrice, isStorablePrice, readDisplayPrice } f
 import { evenSplitQty } from '../lib/splitQty';
 import { followPaymentMethod, followUnitPrice } from '../lib/purchaseOverrides';
 import { PriceInFull, PriceUnitSwitch } from '../components/PriceUnit';
-import { lineAmountNumber } from '@compass/contracts';
+import { lineAmountNumber } from '@compass/contracts/money';
 import { useDraftChanged } from '../../../hooks/useDraftChanged';
 
 /**

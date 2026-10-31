@@ -9,7 +9,7 @@
  *   - FinanceSection     daily / by-supplier / by-store expense views
  *   - MaintenanceSection danger zone (+ TargetedPurgeBrowser, internal)
  */
-import { addMoney } from '@compass/contracts';
+import { addMoney } from '@compass/contracts/money';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Badge,
@@ -39,6 +39,7 @@ import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { formatMoney, formatQty, toQtyInput } from '../../../lib/format';
 import { useDateFormat, useI18n, useProductName, useUnitLabel } from '../../../hooks/useI18n';
+import { useReportStore } from '../../../hooks/useReportStore';
 import { DebugPage } from '../../DebugPage';
 import { financePresetRange, maintenanceToday } from './financeDates';
 import { auditCategory, describeAuditRow, type AuditCategory } from './auditSentence';
@@ -1135,6 +1136,10 @@ export function FinanceSection() {
   const suppliersQuery = trpc.catalog.suppliers.useQuery({ includeArchived: true });
   // HIS-19: the stores finance covers (reports.view ∪ users.manage).
   const storesQuery = trpc.catalog.stores.useQuery({ permission: 'finance' });
+  // CMP-HIS-1 (2026-10-31): the top bar's store, not every store's money
+  // under one store's name. '' = all stores.
+  const reportStore = useReportStore(storesQuery.data ?? (storesQuery.isError ? [] : undefined));
+  const storeId = reportStore.storeId || undefined;
 
   // Date range. Default to "this month" since that's the most common
   // reconciliation cadence (monthly bank statement vs. cash drawer
@@ -1170,10 +1175,13 @@ export function FinanceSection() {
     /^\d{4}-\d{2}-\d{2}$/.test(endDate) &&
     startDate <= endDate;
   const linesQuery = trpc.report.purchaseLines.useQuery(
-    { startDate, endDate },
-    { enabled: rangeOk },
+    { startDate, endDate, storeId },
+    { enabled: rangeOk && reportStore.ready },
   );
-  const totalsQuery = trpc.report.totals.useQuery({ startDate, endDate }, { enabled: rangeOk });
+  const totalsQuery = trpc.report.totals.useQuery(
+    { startDate, endDate, storeId },
+    { enabled: rangeOk && reportStore.ready },
+  );
 
   // Lookup tables for joining ids → display names.
   const skuById = useMemo(() => {
@@ -1350,7 +1358,11 @@ export function FinanceSection() {
       i18n.t('finance.tsv.total'),
     ].join('\t');
     const tsv = [
-      `# ${i18n.t('finance.tsv.title', { start: startDate, end: endDate })}`,
+      `# ${i18n.t('finance.tsv.title', { start: startDate, end: endDate })} · ${
+        reportStore.storeId
+          ? (storeById.get(reportStore.storeId) ?? reportStore.storeId.slice(0, 8))
+          : i18n.t('run.history.allStores')
+      }`,
       lineHeader,
       ...lines.map((l) => {
         const sku = l.skuId ? skuById.get(l.skuId) : undefined;
@@ -1392,6 +1404,7 @@ export function FinanceSection() {
     supplierById,
     startDate,
     endDate,
+    reportStore.storeId,
     toast,
     i18n,
   ]);
@@ -1401,6 +1414,19 @@ export function FinanceSection() {
       {/* Range picker — preset segmented control + two date inputs.
           M3.17 (2026-05-16): preset chips migrated to shared <Segmented>. */}
       <div className="mb-3 flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3">
+        {/* CMP-HIS-1: which stores every amount below covers. */}
+        <Select
+          value={reportStore.storeId}
+          onChange={(e) => reportStore.setStoreId(e.currentTarget.value)}
+          aria-label={i18n.t('run.history.storeFilter')}
+        >
+          <option value="">{i18n.t('run.history.allStores')}</option>
+          {(storesQuery.data ?? []).map((store) => (
+            <option key={store.id} value={store.id}>
+              {store.name}
+            </option>
+          ))}
+        </Select>
         <Segmented<'today' | 'yesterday' | 'thisMonth' | 'lastMonth' | 'custom'>
           value={preset}
           equalWidth={false}

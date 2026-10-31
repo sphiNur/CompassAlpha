@@ -23,7 +23,8 @@ import { usePageMainButton, haptic } from '../hooks/useTelegram';
 import { frozenOrderDate, useOfflineQueue } from '../hooks/useOfflineQueue';
 import { outbox } from '../lib/idb';
 import { isLikelyNetworkError } from '../lib/networkError';
-import { errorTextKey } from '../lib/errorText';
+import { errorTextOf } from '../lib/errorText';
+import { sentBatchCount } from './order/batchCount';
 import { PendingSyncNotice } from '../components/PendingSyncNotice';
 import { useQueryClient } from '@tanstack/react-query';
 import { refetchFailedQueries } from '../hooks/useRefetchFailedOnReconnect';
@@ -67,7 +68,7 @@ function isLockedStatus(status: string | null | undefined): boolean {
 import { formatQty, formatMoney } from '../lib/format';
 import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
 import { useStoreContext } from '../components/StoreSwitcher';
-import { ORDER_QTY_MAX } from '@compass/contracts';
+import { ORDER_QTY_MAX } from '@compass/contracts/limits';
 
 /** Order writes still waiting in the offline outbox for this store (an
  *  entry without a storeId, e.g. extras keyed by session, counts too). */
@@ -968,11 +969,10 @@ export function OrderPage() {
         >
           {/* RE-AUTH-5 (2026-10-30): showed the raw transport text, e.g.
               "Failed to fetch (session refresh did not complete)". */}
-          {i18n.t(
-            errorTextKey(sessionQuery.error?.message, 'common.errorUnknown') as Parameters<
-              typeof i18n.t
-            >[0],
-          )}
+          {(() => {
+            const said = errorTextOf(sessionQuery.error, 'common.errorUnknown');
+            return i18n.t(said.key as Parameters<typeof i18n.t>[0], said.vars);
+          })()}
         </Banner>
       </div>
     );
@@ -1110,13 +1110,33 @@ export function OrderPage() {
           ) : (
             <Banner tone="info" title={i18n.t('order.status.archived')} />
           )}
-          <div>
-            <SectionLabel padded={false} className="mb-1.5">
-              {i18n.t('order.receipt.submittedItems')}
-            </SectionLabel>
-            <ReviewList totals={v.totals ?? []} skus={allSkus} productName={productName} />
-          </div>
+          {(v.totals ?? []).length > 0 || (v.extras ?? []).length === 0 ? (
+            <div>
+              <SectionLabel padded={false} className="mb-1.5">
+                {i18n.t('order.receipt.submittedItems')}
+              </SectionLabel>
+              <ReviewList totals={v.totals ?? []} skus={allSkus} productName={productName} />
+            </div>
+          ) : null}
         </div>
+        {/* CMP-ORD-2 (2026-10-31): a batch opened from today's list left its
+            extras out, so they looked lost. Read-only, like the current
+            batch's receipt below. `key` gives each batch its own editor. */}
+        <SessionExtrasEditor
+          key={v.id}
+          sessionId={v.id}
+          storeId={currentStoreId}
+          initialValue={(v.extras ?? []).map((r) => ({
+            ...r,
+            unit: (CANONICAL_UNITS as readonly string[]).includes(r.unit)
+              ? (r.unit as (typeof CANONICAL_UNITS)[number])
+              : 'kg',
+          }))}
+          isReadOnly
+          onSave={async () => {
+            /* read-only — never called */
+          }}
+        />
       </div>
     );
   }
@@ -1280,7 +1300,8 @@ export function OrderPage() {
               onClick={() => setBatchesOpen(true)}
               className="press hit-44 shrink-0 rounded-[var(--r-pill)] px-1.5 py-0.5 text-old-label tabular-nums text-[var(--c-action)]"
             >
-              {i18n.t('order.batches.today', { n: batchesQuery.data!.length })}
+              {/* U5: the draft being filled in is not counted. */}
+              {i18n.t('order.batches.today', { n: sentBatchCount(batchesQuery.data) })}
             </button>
           ) : null}
         </div>
@@ -1485,7 +1506,7 @@ export function OrderPage() {
       <Sheet
         open={batchesOpen}
         onOpenChange={setBatchesOpen}
-        title={i18n.t('order.batches.today', { n: batchesQuery.data?.length ?? 0 })}
+        title={i18n.t('order.batches.today', { n: sentBatchCount(batchesQuery.data) })}
       >
         <div className="py-3">
           <BatchStrip
@@ -1716,7 +1737,7 @@ function BatchStrip({
     <div>
       {showHeading ? (
         <SectionLabel padded={false} className="mb-1.5">
-          {i18n.t('order.batches.today', { n: batches.length })}
+          {i18n.t('order.batches.today', { n: sentBatchCount(batches) })}
         </SectionLabel>
       ) : null}
       <ul className="flex flex-col gap-1" role="list">
@@ -2344,7 +2365,7 @@ function ExtraRowEditor({
           onChange={(e) =>
             onChange({ unit: e.target.value as (typeof CANONICAL_UNITS)[number] })
           }
-          className="h-[var(--control-h)] w-20 rounded-[var(--r-input)] bg-[var(--c-surface)] px-2 text-center text-old-body text-[var(--c-fg)] ring-hairline focus:outline-none focus:ring-2 focus:ring-[var(--c-action)]"
+          className="h-[var(--control-h)] w-20 rounded-[var(--r-pill)] bg-[var(--c-surface)] px-2 text-center text-old-body text-[var(--c-fg)] ring-hairline focus:outline-none focus:ring-2 focus:ring-[var(--c-action)]"
         >
           {CANONICAL_UNITS.map((u) => (
             <option key={u} value={u}>

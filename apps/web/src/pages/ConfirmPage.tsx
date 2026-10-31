@@ -44,6 +44,7 @@ import {
   defaultDeliveringRunId,
   deliveringRunsForStore,
   initialReceivedQty,
+  issueSaveState,
   runsListView,
   type ConfirmDecisionStatus,
 } from './confirm/confirmLogic';
@@ -86,6 +87,8 @@ export function ConfirmPage() {
   // summary sheet instead of submitting on one tap.
   const [finalConfirmOpen, setFinalConfirmOpen] = useState(false);
   const photoUploader = usePhotoUploader('issue');
+  // CMP-DLV-6: Save waits for a photo that is still uploading.
+  const [photoUploading, setPhotoUploading] = useState(false);
 
   const runsQuery = trpc.run.list.useQuery();
   // 2026-10-21 FE-01 / F4-02: loading / failed run.list must not render as
@@ -347,9 +350,14 @@ export function ConfirmPage() {
     : null;
   const issueReasonOk =
     !!issueOpen && issueNote.trim().length > 0 && issueReceivedCheck?.ok === true;
+  const issueSave = issueSaveState({
+    reasonOk: issueReasonOk,
+    photoUploading,
+    saving: confirmItem.isPending,
+  });
   /** One submit path for the sheet footer and the Telegram MainButton. */
   const submitIssue = () => {
-    if (!issueOpen || !issueReasonOk || confirmItem.isPending) return;
+    if (!issueOpen || !issueSave.canSave) return;
     const receivedQty = issueReceivedCheck?.ok ? issueReceivedCheck.value : null;
     writeOptimisticItemConfirm(
       issueOpen.runId,
@@ -380,9 +388,11 @@ export function ConfirmPage() {
     confirmStore.mutate({ runId: activeRun.id, storeId: currentStoreId });
   };
   if (issueOpen) {
-    mainBtnText = i18n.t('confirm.issue.save');
+    mainBtnText = issueSave.waitingForPhoto
+      ? i18n.t('photo.uploading')
+      : i18n.t('confirm.issue.save');
     mainBtnVisible = true;
-    mainBtnActive = issueReasonOk && !confirmItem.isPending;
+    mainBtnActive = issueSave.canSave;
     mainBtnClick = submitIssue;
   } else if (finalConfirmOpen) {
     // U4: the summary sheet's primary, as the issue sheet does above.
@@ -845,14 +855,26 @@ export function ConfirmPage() {
           // M3.49 (2026-05-23): dropped !getTg() — the in-page
           // PageMainButton sits behind any open sheet, so we
           // ALWAYS render the sheet's own footer button now.
-          <Button
-            block
-            disabled={!issueReasonOk || confirmItem.isPending}
-            loading={confirmItem.isPending}
-            onClick={submitIssue}
-          >
-            {i18n.t('confirm.issue.save')}
-          </Button>
+          <div className="flex flex-col gap-2">
+            {issueSave.waitingForPhoto ? (
+              <p
+                id="issue-save-reason"
+                role="status"
+                className="text-center text-old-label text-[var(--c-fg-muted)]"
+              >
+                {i18n.t('confirm.issue.photoUploading')}
+              </p>
+            ) : null}
+            <Button
+              block
+              disabled={!issueSave.canSave}
+              aria-describedby={issueSave.waitingForPhoto ? 'issue-save-reason' : undefined}
+              loading={confirmItem.isPending}
+              onClick={submitIssue}
+            >
+              {i18n.t('confirm.issue.save')}
+            </Button>
+          </div>
         }
       >
         <div className="flex flex-col gap-3 py-3">
@@ -909,6 +931,7 @@ export function ConfirmPage() {
             onCapture={(url) => setIssuePhoto(url)}
             onClear={() => setIssuePhoto(null)}
             uploader={photoUploader}
+            onBusyChange={setPhotoUploading}
           />
         </div>
       </Sheet>

@@ -46,4 +46,17 @@ describe('readQtyDraft', () => {
       expect(readQtyDraft(s, range)).toEqual({ ok: false, reason: 'notNumber' });
     }
   });
+
+  it('CMP-ORD-1: refuses a value off the product step when the step is given', () => {
+    const halves = { ...range, step: 0.5 };
+    expect(readQtyDraft('0.3', halves)).toEqual({ ok: false, reason: 'notMultiple' });
+    expect(readQtyDraft('1.25', halves)).toEqual({ ok: false, reason: 'notMultiple' });
+    expect(readQtyDraft('1.5', halves)).toEqual({ ok: true, value: 1.5 });
+    expect(readQtyDraft('0', halves)).toEqual({ ok: true, value: 0 });
+    // Float noise: 0.3 / 0.1 is 2.9999999999999996.
+    expect(readQtyDraft('0.3', { ...range, step: 0.1 })).toEqual({ ok: true, value: 0.3 });
+    expect(readQtyDraft('0.75', { ...range, step: 0.25 })).toEqual({ ok: true, value: 0.75 });
+    expect(readQtyDraft('3', { ...range, step: 1 })).toEqual({ ok: true, value: 3 });
+    expect(readQtyDraft('0.3', { ...range, step: 1 })).toEqual({ ok: false, reason: 'notMultiple' });
+  });
 });

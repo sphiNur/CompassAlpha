@@ -438,6 +438,21 @@ export interface OfflineDropInfo {
 /** A queued write as a page needs it to show it as pending. */
 export type PendingWrite = Pick<OutboxEntry, 'clientSeq' | 'procedure' | 'input' | 'enqueuedAt'>;
 
+/**
+ * Same queued writes as before? An entry's clientSeq is unique and its
+ * procedure, input and enqueuedAt never change while it is queued (a retry
+ * only bumps `retries`), so comparing the clientSeq lists is enough.
+ * Used to keep the previous array when the outbox did not change: the
+ * backlog timer re-reads the outbox every 15 s, and a new `[]` each time
+ * re-rendered every page that overlays pending writes (P-3).
+ */
+export function samePendingWrites(
+  a: readonly PendingWrite[],
+  b: readonly PendingWrite[],
+): boolean {
+  return a.length === b.length && a.every((e, i) => e.clientSeq === b[i]?.clientSeq);
+}
+
 interface UseOfflineQueueResult {
   pendingCount: number;
   /** A write has been waiting more than SLOW_WRITE_MS for its answer. */
@@ -488,17 +503,17 @@ export function useOfflineQueue(): UseOfflineQueueResult {
       // In-flight write-ahead entries are not "waiting" yet (R2-ORD-5).
       const waiting = all.filter((e) => !isLiveEntry(e.clientSeq));
       setPendingCount(waiting.length);
-      setPendingEntries(
-        waiting
-          .filter((entry) => isOwnEntry(entry.ownerUserId, userId))
-          .sort((a, b) => a.clientSeq - b.clientSeq)
-          .map(({ clientSeq, procedure, input, enqueuedAt }) => ({
-            clientSeq,
-            procedure,
-            input,
-            enqueuedAt,
-          })),
-      );
+      const next = waiting
+        .filter((entry) => isOwnEntry(entry.ownerUserId, userId))
+        .sort((a, b) => a.clientSeq - b.clientSeq)
+        .map(({ clientSeq, procedure, input, enqueuedAt }) => ({
+          clientSeq,
+          procedure,
+          input,
+          enqueuedAt,
+        }));
+      // Unchanged outbox: keep the old array so nothing re-renders.
+      setPendingEntries((prev) => (samePendingWrites(prev, next) ? prev : next));
     } catch {
       /* IDB unavailable */
     }

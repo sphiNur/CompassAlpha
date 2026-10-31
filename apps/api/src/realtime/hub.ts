@@ -43,6 +43,8 @@ export type RealtimeMessage =
   | { type: 'ping'; t: number };
 
 type Send = (data: string) => void;
+/** Closes the sink's socket with the given WS close code. */
+type Close = (code: number) => void;
 
 /**
  * Per-org connection cap (M1.22, 2026-05-08, launch hardening).
@@ -73,11 +75,20 @@ const EVICTION_NOTICE = JSON.stringify({
 /** Close code the WS layer uses for an evicted connection. */
 export const WS_CLOSE_EVICTED = 4000;
 
+/**
+ * Close code for a socket whose member was suspended or removed
+ * (security scan F7, 2026-10-31). The client's ordinary reconnect is
+ * then refused at the upgrade, which re-checks the membership.
+ */
+export const WS_CLOSE_MEMBERSHIP_ENDED = 4003;
+
 class Hub {
   private readonly subs = new Map<string, Set<Send>>();
-  private readonly closers = new WeakMap<Send, () => void>();
+  private readonly closers = new WeakMap<Send, Close>();
+  /** The member each sink belongs to, for `closeMember`. */
+  private readonly members = new WeakMap<Send, string>();
 
-  subscribe(orgId: string, send: Send, close?: () => void): () => void {
+  subscribe(orgId: string, send: Send, close?: Close, memberId?: string): () => void {
     let set = this.subs.get(orgId);
     if (!set) {
       set = new Set();
@@ -96,7 +107,7 @@ class Hub {
         /* dead sink — already gone */
       }
       try {
-        this.closers.get(oldest)?.();
+        this.closers.get(oldest)?.(WS_CLOSE_EVICTED);
       } catch {
         /* already closed */
       }
@@ -104,13 +115,44 @@ class Hub {
     }
     set.add(send);
     if (close) this.closers.set(send, close);
+    if (memberId) this.members.set(send, memberId);
     return () => {
       const s = this.subs.get(orgId);
       this.closers.delete(send);
+      this.members.delete(send);
       if (!s) return;
       s.delete(send);
       if (s.size === 0) this.subs.delete(orgId);
     };
+  }
+
+  /**
+   * Close every socket the member has open in the org once the current
+   * transaction commits (security scan F7, 2026-10-31). Membership is
+   * checked when a socket opens; without this a member suspended or
+   * removed kept receiving the org's change events until the access
+   * token ran out (up to 15 minutes).
+   */
+  closeMember(orgId: string, memberId: string): void {
+    afterCommit(() => this.closeMemberNow(orgId, memberId));
+  }
+
+  private closeMemberNow(orgId: string, memberId: string): void {
+    const set = this.subs.get(orgId);
+    if (!set) return;
+    for (const send of [...set]) {
+      if (this.members.get(send) !== memberId) continue;
+      set.delete(send);
+      const close = this.closers.get(send);
+      this.closers.delete(send);
+      this.members.delete(send);
+      try {
+        close?.(WS_CLOSE_MEMBERSHIP_ENDED);
+      } catch {
+        /* already closed */
+      }
+    }
+    if (set.size === 0) this.subs.delete(orgId);
   }
 
   /** Send to the org's sockets once the current transaction commits. */

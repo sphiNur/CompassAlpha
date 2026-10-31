@@ -61,6 +61,8 @@ export interface UiLabels {
   qtyAtMost: (max: string) => string;
   /** R2-ORD-2: more decimals than the quantity keeps. Receives the limit. */
   qtyMaxDecimals: (decimals: number) => string;
+  /** CMP-ORD-1: the typed value is not a multiple of the product's step. */
+  qtyNotMultiple: (step: string) => string;
 
   // --- NumberInput / Input type="number" ---
   /** R2-ORD-2: the text in a number field is not one number ("1e3"). */
@@ -76,9 +78,11 @@ export interface UiLabels {
   /**
    * 2026-10-21 FE-10: turns `query.error.message` (often a server i18n key
    * like `order.errors.notFound`, or a raw "Failed to fetch") into user
-   * copy. The default passes the message through, as before.
+   * copy. The default passes the message through, as before. `error` is
+   * the whole error, for the placeholders a server error carries
+   * (CMP-FE-1); hosts that ignore it keep working.
    */
-  translateError: (message: string | undefined) => string | undefined;
+  translateError: (message: string | undefined, error?: unknown) => string | undefined;
   /** 2026-10-21 FE-10: label of DataState's retry button. */
   retry: string;
 
@@ -112,6 +116,7 @@ export const DEFAULT_UI_LABELS: UiLabels = {
   qtyAtLeast: (min) => `Enter ${min} or more`,
   qtyAtMost: (max) => `Enter ${max} or less`,
   qtyMaxDecimals: (decimals) => `At most ${decimals} decimals`,
+  qtyNotMultiple: (step) => `Enter a multiple of ${step}`,
   numberInvalid: 'Not a number — write it like 1500 or 1.5',
   errorTitle: 'Something went wrong',
   errorUnknown: 'Unknown error',

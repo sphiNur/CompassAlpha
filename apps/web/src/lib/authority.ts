@@ -10,7 +10,7 @@
  * what is shown, and when a rank is unknown (an older server) the action
  * is shown and the server answers as before.
  */
-import { ADMIN_RANK } from '@compass/contracts';
+import { ADMIN_RANK } from '@compass/contracts/schemas/roles';
 
 /** A role binding as the member list returns it. */
 export interface Binding {

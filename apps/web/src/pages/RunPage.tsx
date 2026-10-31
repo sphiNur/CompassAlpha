@@ -26,7 +26,7 @@
  * for backwards-incompatible operations, asks for a free-text reason that
  * goes into the audit log.
  */
-import { addMoney } from '@compass/contracts';
+import { addMoney } from '@compass/contracts/money';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Banner,
@@ -39,6 +39,7 @@ import {
   EmptyState,
   Input,
   Sheet,
+  Skeleton,
   useToast,
 } from '@compass/ui';
 import { trpc, newIdempotencyKey } from '../lib/trpc';
@@ -52,6 +53,7 @@ import { usePhotoUploader } from '../hooks/usePhotoUploader';
 // through other paths if needed.
 import { usePageMenu } from '../app/PageMenuContext';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
+import { pollWhenOffline, useRealtimeLive } from '../hooks/useRealtime';
 import { PendingSyncNotice } from '../components/PendingSyncNotice';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
@@ -84,7 +86,7 @@ import { ActiveRunPanel, PreviewSummaryCard, RunSessionsCard } from './runs/comp
 import { SessionPicker } from './runs/components/SessionPicker';
 import { selectPreview, selectedSessionIds } from './runs/lib/sessionSelection';
 import { editPricingFromSplits, splitOverridesFor } from './runs/lib/purchaseOverrides';
-import { NEW_RUN, isBuying, liveRunsOf, pickActiveRun } from './runs/lib/liveRuns';
+import { NEW_RUN, isBuying, liveRunsOf, pickActiveRun, runListGate } from './runs/lib/liveRuns';
 import { overlayPendingWrites, startDeliveryBlock, withData } from './runs/lib/pendingOverlay';
 
 function newClientId(): string {
@@ -685,6 +687,7 @@ export function RunPage() {
     () => pickActiveRun(runsQuery.data ?? [], { canAmend, selectedKey: selectedRunKey }),
     [runsQuery.data, canAmend, selectedRunKey],
   );
+  const runListState = runListGate(runsQuery);
   const liveRuns = useMemo(() => liveRunsOf(runsQuery.data ?? [], canAmend), [runsQuery.data, canAmend]);
   const hasBuyingRun = liveRuns.some((r) => isBuying(r.status));
   const previewSessionCount = previewQuery.data?.sessions.length ?? 0;
@@ -695,9 +698,12 @@ export function RunPage() {
   const amending = activeRun?.status === 'amending';
   const editing = activeRun?.status === 'purchasing' || amending;
 
+  const realtimeLive = useRealtimeLive();
   const runDetailQueryRaw = trpc.run.get.useQuery(
     activeRun ? { runId: activeRun.id } : { runId: '' },
-    { enabled: !!activeRun, refetchInterval: activeRun ? 6_000 : false },
+    // P-4 (2026-10-31): realtime `run.changed` already refreshes this; poll
+    // only while the socket is down instead of every 6 s on top of it.
+    { enabled: !!activeRun, refetchInterval: activeRun ? pollWhenOffline(6_000, realtimeLive) : false },
   );
   // R2-INT-1 / RE-DLV-1 (2026-10-31): writes saved offline show on their
   // item (bought, unavailable, delivered — waiting to sync) instead of the
@@ -2158,14 +2164,17 @@ export function RunPage() {
       </Sheet>
 
       <div className="flex flex-col gap-2 px-4 pt-2">
-        {runsQuery.isError && !runsQuery.data ? (
+        {runListState === 'error' ? (
           // F11 (2026-10-30): a failed run list read as "no approved
           // orders to plan" — the buyer was told there was nothing to buy.
           <QueryErrorBanner query={runsQuery} />
-        ) : runsQuery.data === undefined && runsQuery.fetchStatus === 'paused' ? (
+        ) : runListState === 'offline' ? (
           // R2-ENG-1 (2026-10-31): offline with no saved run list, not
           // "nothing to plan"; it loads by itself once back online.
           <EmptyState title={i18n.t('common.offlineNoData')} />
+        ) : runListState === 'loading' ? (
+          // P-2 (2026-10-31): not "nothing to plan" while it loads.
+          <RunListSkeleton label={i18n.t('common.loading')} />
         ) : !activeRun ? (
           <DataState query={previewQuery}>
             {(p) =>
@@ -2863,6 +2872,18 @@ export function RunPage() {
           - Pending store rows: tap → deliver-confirm sheet
           - Delivered store rows: tap → recall-confirm sheet
           - Confirmed store rows: read-only, not tappable. */}
+    </div>
+  );
+}
+
+/** P-2: placeholder rows while run.list loads, shaped like the purchase list. */
+function RunListSkeleton({ label }: { label: string }) {
+  return (
+    <div role="status" aria-label={label} className="flex flex-col gap-2">
+      <Skeleton className="h-9 w-2/3 rounded-[var(--r-pill)]" />
+      {[0, 1, 2, 3].map((i) => (
+        <Skeleton key={i} className="h-14 rounded-[var(--r-card)]" />
+      ))}
     </div>
   );
 }

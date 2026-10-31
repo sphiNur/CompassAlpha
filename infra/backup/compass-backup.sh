@@ -29,6 +29,10 @@ set -euo pipefail
 # of channel: see docs/RUNBOOK.md "Backups").
 trap 'rc=$?; echo "[backup] FAILED (exit $rc) at line $LINENO: $BASH_COMMAND" >&2' ERR
 
+# F11: credentials go to pg_dump through PGPASSWORD, not argv.
+# shellcheck source=pg-url.sh
+source "$(dirname "${BASH_SOURCE[0]}")/pg-url.sh"
+
 ENV_FILE=${ENV_FILE:-/home/ubuntu/compass-alpha/.env}
 BACKUP_DIR=${BACKUP_DIR:-/home/ubuntu/compass-backups}
 RETENTION_DAYS=${RETENTION_DAYS:-14}
@@ -91,12 +95,16 @@ START=$(date +%s)
 # -Fc: custom format (parallelizable on restore, internally compressed)
 # --no-owner / --no-privileges keep the dump portable across hosts where
 # the role names may differ on the restore side.
+# The password goes through the environment (pg-url.sh): on the command
+# line every local account could read it from ps / /proc for the whole
+# dump, and the backup role bypasses RLS (security scan F11).
+pg_url_split "$DUMP_URL"
 pg_dump \
   --format=custom \
   --no-owner \
   --no-privileges \
   --file="$DUMP" \
-  "$DUMP_URL"
+  "$PG_URL_NOPASS"
 
 ELAPSED=$(( $(date +%s) - START ))
 SIZE=$(wc -c < "$DUMP" | tr -d ' ')

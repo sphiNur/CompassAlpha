@@ -9,6 +9,7 @@ import {
   defaultDeliveringRunId,
   deliveringRunsForStore,
   initialReceivedQty,
+  issueSaveState,
   runsListView,
 } from '../confirmLogic';
 
@@ -134,5 +135,27 @@ describe('runsListView (2026-10-21 FE-01 / F4-02)', () => {
       kind: 'ready',
       stale: false,
     });
+  });
+});
+
+describe('issueSaveState (CMP-DLV-6)', () => {
+  it('Save waits while the photo uploads, and says why', () => {
+    expect(issueSaveState({ reasonOk: true, photoUploading: true, saving: false })).toEqual({
+      canSave: false,
+      waitingForPhoto: true,
+    });
+    expect(issueSaveState({ reasonOk: true, photoUploading: false, saving: false })).toEqual({
+      canSave: true,
+      waitingForPhoto: false,
+    });
+  });
+
+  it('the other gates still hold', () => {
+    expect(issueSaveState({ reasonOk: false, photoUploading: false, saving: false }).canSave).toBe(
+      false,
+    );
+    expect(issueSaveState({ reasonOk: true, photoUploading: false, saving: true }).canSave).toBe(
+      false,
+    );
   });
 });
