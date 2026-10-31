@@ -71,6 +71,10 @@ export function UiLabelsBridge({ children }: { children: ReactNode }) {
       },
       qtyAtLeast: (min) => i18n.t('qty.atLeast', { min }),
       qtyAtMost: (max) => i18n.t('qty.atMost', { max }),
+      qtyMaxDecimals: (decimals) => i18n.t('qty.maxDecimals', { decimals }),
+      get numberInvalid() {
+        return i18n.t('number.invalid');
+      },
       get errorTitle() {
         return i18n.t('common.error');
       },

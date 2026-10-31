@@ -125,10 +125,16 @@ describe('toQtyInput', () => {
 });
 
 describe('formatMoneyThousands', () => {
-  it('is exact and drops trailing zeros', () => {
+  it('drops trailing zeros', () => {
     expect(formatMoneyThousands('4500.00')).toBe('4.5K');
     expect(formatMoneyThousands(38000)).toBe('38K');
-    expect(formatMoneyThousands('33333.33')).toBe('33.33333K');
+    expect(formatMoneyThousands('4510')).toBe('4.51K');
     expect(formatMoneyThousands('')).toBe('');
+  });
+
+  it('R2-BUY-3: a price the K form cannot show in two decimals is shown in full', () => {
+    expect(formatMoneyThousands('92000.5')).toBe('92,000.50');
+    expect(formatMoneyThousands('33333.33')).toBe('33,333.33');
+    expect(formatMoneyThousands('4515')).toBe('4,515');
   });
 });

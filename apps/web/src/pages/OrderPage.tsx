@@ -67,6 +67,7 @@ function isLockedStatus(status: string | null | undefined): boolean {
 import { formatQty, formatMoney } from '../lib/format';
 import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
 import { useStoreContext } from '../components/StoreSwitcher';
+import { ORDER_QTY_MAX } from '@compass/contracts';
 
 /** Order writes still waiting in the offline outbox for this store (an
  *  entry without a storeId, e.g. extras keyed by session, counts too). */
@@ -1680,6 +1681,9 @@ const SkuRow = memo(function SkuRow({
         unit={unitLabel(sku.unit)}
         disabled={isReadOnly}
         onChange={(next) => onQtyChange(storeId, sku.id, String(next))}
+        // ORD-9 (2026-10-31): the server refuses a line of a million or
+        // more; the sheet now says so instead of a retry-forever toast.
+        max={ORDER_QTY_MAX}
         // M3.55 (2026-05-23): show the SKU name in the qty quick-pick
         // sheet title. Without this the popup was a context-less "Set
         // quantity" — when the user mis-tapped a row, they couldn't
@@ -2254,7 +2258,8 @@ function SessionExtrasEditor({
 function isInvalidExtraRow(row: ExtraDraft): boolean {
   if (!row.name.trim()) return false;
   const qty = row.qty.trim();
-  return !/^\d+(\.\d{1,3})?$/.test(qty) || Number(qty) <= 0;
+  // ORD-9: the server's upper bound too, so the row is flagged before save.
+  return !/^\d+(\.\d{1,3})?$/.test(qty) || Number(qty) <= 0 || Number(qty) > ORDER_QTY_MAX;
 }
 
 function ExtraRowEditor({

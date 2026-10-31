@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { applyRun, decideRun, emptyRunState } from './index';
+import { computeRunTotals } from './commands';
 import type { ActorCtx, RunCommand } from './commands';
 import { fixedClock } from '../shared/clock';
 
@@ -257,6 +258,43 @@ describe('run.decide', () => {
         clock,
       ),
     ).toThrow('run.errors.splitSumMismatch');
+  });
+
+  test('R2-ENG-2: a line over 1e12 (qty × price) is refused', () => {
+    let s = emptyRunState('r');
+    s = decideRun(
+      s,
+      {
+        type: 'PlanRun',
+        orgId: 'o',
+        runDate: '2026-05-01',
+        runIndex: 0,
+        sessionIds: ['s1'],
+        plannedItems: [{ skuId: 'k', qty: '5' }],
+        actor: purchaser(),
+      },
+      clock,
+    ).reduce(applyRun, s);
+    s = decideRun(s, { type: 'StartPurchase', actor: purchaser() }, clock).reduce(applyRun, s);
+    const buy = (unitPrice: string, actualQty: string, splitPrice?: string) =>
+      decideRun(
+        s,
+        {
+          type: 'PurchaseItem',
+          skuId: 'k',
+          supplierId: null,
+          unitPrice,
+          actualQty,
+          receiptPhotoUrl: null,
+          storeSplits: [{ storeId: 'A', qty: actualQty, unitPrice: splitPrice }],
+          paymentMethod: 'cash',
+          actor: purchaser(),
+        },
+        clock,
+      );
+    expect(() => buy('999999999999.99', '999999999')).toThrow('run.errors.lineTooLarge');
+    expect(() => buy('10', '1000', '1000000000.01')).toThrow('run.errors.lineTooLarge');
+    expect(buy('1000000000', '1000').length).toBeGreaterThan(0);
   });
 
   test('allows a second purchaser to record a buy while another purchaser has claimed the run', () => {
@@ -2448,6 +2486,44 @@ describe('run.totals', () => {
     expect(ev.payload.expensesTotal).toBe('5000.00');
     expect(ev.payload.totalCash).toBe('24000.00');
     expect(ev.payload.totalTransfer).toBe('30000.00');
+  });
+
+  test('D1: each store line is rounded half-up to cents, totals add the cents', () => {
+    // 0.5 × 2.01 = 1.005 and 0.5 × 4.03 = 2.015: float math froze 1.00 /
+    // 2.01; the report (per-line ROUND) says 1.01 / 2.02.
+    let s = planAndPurchase({
+      purchasedQty: '1',
+      storeSplits: [
+        { storeId: 'A', qty: '0.5', unitPrice: '2.01' },
+        { storeId: 'B', qty: '0.5', unitPrice: '4.03', paymentMethod: 'transfer' },
+      ],
+    });
+    s = decideRun(
+      s,
+      {
+        type: 'AddRunExpense',
+        expenseId: 'ex-1',
+        label: 'porter',
+        qty: '1',
+        unitPrice: '2.01',
+        storeSplits: [
+          { storeId: 'A', qty: '0.5' },
+          { storeId: 'B', qty: '0.5' },
+        ],
+        paymentMethod: 'cash',
+        receiptPhotoUrl: null,
+        reason: 'carry',
+        actor: purchaser(),
+      },
+      clock,
+    ).reduce(applyRun, s);
+    expect(computeRunTotals(s)).toEqual({
+      total: '3.03',
+      totalCash: '1.01',
+      totalTransfer: '2.02',
+      // Two expense lines of 1.005 → 1.01 each.
+      expensesTotal: '2.02',
+    });
   });
 
   test('RefinalizeRun re-freezes the same items / expenses split', () => {

@@ -38,6 +38,7 @@ import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
 import { useStoreContext } from '../components/StoreSwitcher';
 import { sessionItemsView } from './approval/sessionItemsView';
+import { ORDER_QTY_MAX } from '@compass/contracts';
 
 type ApprovalTab = 'pending' | 'approved' | 'rejected';
 
@@ -916,6 +917,7 @@ function SessionItems({
                   value={Number(singleRow.qty)}
                   step={Number(sku.step)}
                   unit={unitLabel(sku.unit)}
+                  max={ORDER_QTY_MAX}
                   disabled={adjust.isPending}
                   onChange={(next) =>
                     adjust.mutate({
@@ -987,6 +989,7 @@ function SessionItems({
                         value={Number(r.qty)}
                         step={Number(sku.step)}
                         unit={unitLabel(sku.unit)}
+                        max={ORDER_QTY_MAX}
                         disabled={adjust.isPending}
                         onChange={(next) =>
                           adjust.mutate({

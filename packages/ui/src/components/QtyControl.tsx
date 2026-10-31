@@ -3,7 +3,7 @@ import { useUiLabels } from '../labels';
 import { cn } from '../cn';
 import { Sheet, SheetFooter } from './Sheet';
 import { Button } from './Button';
-import { readQtyDraft } from '../qtyDraft';
+import { QTY_DECIMALS, readQtyDraft } from '../qtyDraft';
 import { NumberInput } from './NumberInput';
 
 interface QtyControlProps {
@@ -337,7 +337,9 @@ function QtyQuickPickSheet({
       ? labels.qtyAtLeast(formatQty(min, step))
       : read.reason === 'aboveMax'
         ? labels.qtyAtMost(formatQty(max, step))
-        : labels.qtyEnterNumber;
+        : read.reason === 'tooPrecise'
+          ? labels.qtyMaxDecimals(QTY_DECIMALS)
+          : labels.qtyEnterNumber;
   const draftDiffers = sanitizedDraft !== null && sanitizedDraft !== current;
 
   const setLabel = labels.setValue(
@@ -429,6 +431,8 @@ function QtyQuickPickSheet({
             max={max}
             inputMode="decimal"
             aria-invalid={draftProblem ? true : undefined}
+            // The sheet's own line below says what is wrong.
+            formatError="none"
           />
         </label>
         {draftProblem ? (
