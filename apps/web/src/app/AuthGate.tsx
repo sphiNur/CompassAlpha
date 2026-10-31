@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Button, Banner, EmptyState, Input, Spinner, useToast } from '@compass/ui';
+import { Button, Banner, Input, Spinner, useToast } from '@compass/ui';
 import { useAuthStore, type AuthSession } from '../stores/authStore';
 import { noteSessionCleared, trpc } from '../lib/trpc';
 import { getTg, haptic } from '../hooks/useTelegram';
@@ -8,6 +8,8 @@ import { useI18n, useRoleLabels } from '../hooks/useI18n';
 import { useTranslateError } from '../lib/errToast';
 import { errorTextKey, withoutFinalStop } from '../lib/errorText';
 import { isLikelyNetworkError } from '../lib/networkError';
+import { useRefreshSession } from '../lib/refreshSession';
+import { accessBlock, authErrorText, type AuthError } from '../lib/authAccess';
 
 interface AuthGateProps {
   children: ReactNode;
@@ -117,7 +119,7 @@ export function AuthGate({ children }: AuthGateProps) {
   const clear = useAuthStore((s) => s.clear);
   const i18n = useI18n();
   const toast = useToast();
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<AuthError | null>(null);
   const [browserTgUserId, setBrowserTgUserId] = useState(initialDevBrowserTgUserId);
   const [browserAccessCode, setBrowserAccessCode] = useState('');
   const [loginSession, setLoginSession] = useState<AuthSession | null>(null);
@@ -239,9 +241,7 @@ export function AuthGate({ children }: AuthGateProps) {
     onError(err) {
       // AUTH-21 (2026-10-30): a transport failure showed its English text
       // ("Failed to fetch (session refresh did not complete)").
-      setError(
-        i18n.t(errorTextKey(err.message, 'auth.errors.signInFailed') as Parameters<typeof i18n.t>[0]),
-      );
+      setError({ key: errorTextKey(err.message, 'auth.errors.signInFailed') });
     },
   });
   const acceptInvite = trpc.auth.acceptInvite.useMutation({
@@ -279,14 +279,15 @@ export function AuthGate({ children }: AuthGateProps) {
       // was shown. Never show a raw message: a server key is translated,
       // a rejected token reads as an invalid link, the rest is generic.
       const code = (err as { data?: { code?: string } }).data?.code;
-      const message = /^[a-z]+\.errors?\./.test(err.message)
-        ? i18n.t(err.message as Parameters<typeof i18n.t>[0])
+      const key = /^[a-z]+\.errors?\./.test(err.message)
+        ? err.message
         : code === 'BAD_REQUEST'
-          ? i18n.t('auth.errors.inviteNotFound')
+          ? 'auth.errors.inviteNotFound'
           : isLikelyNetworkError(err)
-            ? i18n.t('common.networkError')
-            : i18n.t('auth.errors.signInFailed');
-      setError(message);
+            ? 'common.networkError'
+            : 'auth.errors.signInFailed';
+      setError({ key });
+      const message = authErrorText(i18n, { key });
       // AUTH-2 (2026-10-30): with a session already on the device the
       // error banner (sign-in screen only) never shows, and the person
       // landed in their old workspace believing they had joined.
@@ -313,7 +314,7 @@ export function AuthGate({ children }: AuthGateProps) {
       setError(null);
     },
     onError(err) {
-      setError(nonTelegramErrorMessage(i18n, err.message));
+      setError({ key: err.message });
     },
   });
   const nonTelegramLogin = trpc.auth.nonTelegramLogin.useMutation({
@@ -336,7 +337,7 @@ export function AuthGate({ children }: AuthGateProps) {
       setError(null);
     },
     onError(err) {
-      setError(nonTelegramErrorMessage(i18n, err.message));
+      setError({ key: err.message });
     },
   });
   const devPersonaLogin = trpc.auth.devPersonaLogin.useMutation({
@@ -352,7 +353,7 @@ export function AuthGate({ children }: AuthGateProps) {
       setError(null);
     },
     onError(err) {
-      setError(nonTelegramErrorMessage(i18n, err.message));
+      setError({ key: err.message });
     },
   });
 
@@ -376,7 +377,7 @@ export function AuthGate({ children }: AuthGateProps) {
       personas.find((p) => p.displayName.toLowerCase().includes(devAs));
     devAsAttempted.current = true;
     if (match) devPersonaLogin.mutate({ memberId: match.memberId });
-    else setError(`devAs: no persona matches "${devAs}"`);
+    else setError({ key: 'auth.errors.signInFailed', raw: `devAs: no persona matches "${devAs}"` });
   }, [devAs, activeSession, devPersonas.data, devPersonaLogin]);
 
   const autoLoginData = getTg()?.initData ?? (shouldUseDevBypassLogin() ? 'dev-bypass' : null);
@@ -471,7 +472,14 @@ export function AuthGate({ children }: AuthGateProps) {
     // Until the server says whether dev personas exist, a plain-browser dev
     // build would otherwise flash the Telegram sign-in screen.
     (devBrowser && !activeSession && loginModes.isLoading) ||
+    // CMP-SHL-2 (2026-10-31): a request that already failed is never a
+    // reason to keep spinning. `error` is set from the mutation's own
+    // onError, while `isPending` belongs to the observer, which can miss
+    // that update (seen in development builds, where React mounts twice):
+    // it said "pending" forever, and with `error` set the 10 s fallback
+    // above never armed either.
     (!authWaitTimedOut &&
+      !error &&
       ((login.isPending && !activeSession) ||
         acceptInvite.isPending ||
         (devBypassLogin.isPending && !activeSession) ||
@@ -519,7 +527,10 @@ export function AuthGate({ children }: AuthGateProps) {
         ) : null}
         {error ? (
           <Banner tone="danger" title={i18n.t('auth.errors.signInFailed')}>
-            {error}
+            {/* The generic failure is already the title; don't say it twice. */}
+            {authErrorText(i18n, error) === i18n.t('auth.errors.signInFailed')
+              ? null
+              : authErrorText(i18n, error)}
           </Banner>
         ) : null}
         {showDevLogin ? (
@@ -557,13 +568,14 @@ export function AuthGate({ children }: AuthGateProps) {
             onClick={() => {
               loginAttempted.current = true;
               meUnauthorized.current = false;
+              setError(null);
               if (shouldUseDevBypassLogin()) {
                 devBypassLogin.mutate();
                 return;
               }
               const data = getTg()?.initData ?? '';
               if (!data) {
-                setError(i18n.t('auth.errors.noInitData'));
+                setError({ key: 'auth.errors.noInitData' });
                 return;
               }
               login.mutate({ initData: data });
@@ -642,16 +654,9 @@ export function AuthGate({ children }: AuthGateProps) {
     return <OnboardingScreen />;
   }
 
-  // After name onboarding, regular staff need at least one store
-  // assigned. Admins (users.manage) bypass — they always see all stores.
-  const isAdmin = activeSession.permissions.includes('users.manage');
-  if (!isAdmin && activeSession.stores.length === 0) {
-    return <NoStoreScreen />;
-  }
-
-  if (activeSession.permissions.length === 0) {
-    return <NoAccessScreen />;
-  }
+  const block = accessBlock(activeSession);
+  if (block === 'noStore') return <NoStoreScreen />;
+  if (block === 'noAccess') return <NoAccessScreen />;
   return <>{children}</>;
 }
 
@@ -881,27 +886,96 @@ function OnboardingScreen() {
 function NoStoreScreen() {
   const i18n = useI18n();
   return (
-    <div className="flex h-full items-center justify-center px-6">
-      <EmptyState title={i18n.t('auth.noStore.title')} description={i18n.t('auth.noStore.body')} />
-    </div>
+    <BlockedScreen title={i18n.t('auth.noStore.title')} body={i18n.t('auth.noStore.body')} />
   );
 }
 
 function NoAccessScreen() {
   const i18n = useI18n();
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
-      <h1 className="text-old-h1 font-semibold">{i18n.t('auth.noAccess.title')}</h1>
-      <p className="text-old-body text-[var(--c-fg-muted)]">{i18n.t('auth.noAccess.body')}</p>
-      <p className="text-old-body-sm text-[var(--c-fg-muted)]">{i18n.t('auth.shareThisId')}</p>
-      <TelegramIdChip />
+    <BlockedScreen title={i18n.t('auth.noAccess.title')} body={i18n.t('auth.noAccess.body')} />
+  );
+}
+
+/**
+ * CMP-SHL-1 (2026-10-31): "no role" and "no store" were dead ends — no way
+ * to check again once the administrator had acted, no way out, and no sign
+ * of who was signed in. Now: who (name, Telegram id to send to the
+ * administrator), Retry (re-reads the session; the app opens as soon as
+ * access is there) and a way out — inside Telegram that closes the Mini
+ * App, since the Telegram account is the identity; in a browser it signs
+ * out. Who to ask follows D24: roles, members and stores → administrator.
+ */
+function BlockedScreen({ title, body }: { title: string; body: string }) {
+  const i18n = useI18n();
+  const toast = useToast();
+  const session = useAuthStore((s) => s.session);
+  const clear = useAuthStore((s) => s.clear);
+  const refreshSession = useRefreshSession();
+  const [checking, setChecking] = useState(false);
+  const inTelegram = Boolean(getTg()?.initData);
+  const tgUserId =
+    session?.user.tgUserId ?? (inTelegram ? String(getTg()?.initDataUnsafe?.user?.id ?? '') : '');
+  const name = session?.user.displayName;
+  return (
+    <div className="flex h-full flex-col px-6 pt-12 pb-8">
+      <div className="flex flex-1 flex-col items-center gap-4 text-center">
+        <h1 className="text-old-h1 font-semibold">{title}</h1>
+        <p className="text-old-body text-[var(--c-fg-muted)]">{body}</p>
+        {name && !name.startsWith('tg:') ? (
+          <p className="text-old-body-sm text-[var(--c-fg-muted)]">
+            {i18n.t('auth.blocked.signedInAs', { name })}
+          </p>
+        ) : null}
+        {tgUserId ? (
+          <>
+            <p className="text-old-body-sm text-[var(--c-fg-muted)]">{i18n.t('auth.shareThisId')}</p>
+            <TelegramIdChip id={tgUserId} />
+          </>
+        ) : null}
+      </div>
+      <div className="flex flex-col gap-2">
+        <Button
+          block
+          size="lg"
+          loading={checking}
+          onClick={() => {
+            setChecking(true);
+            void refreshSession().then((applied) => {
+              setChecking(false);
+              // Granted: the gate re-renders into the app on its own.
+              const now = useAuthStore.getState().session;
+              if (!applied) toast.error(i18n.t('common.networkError'));
+              else if (now && accessBlock(now)) toast.info(i18n.t('auth.blocked.stillBlocked'));
+            });
+          }}
+        >
+          {i18n.t('common.retry')}
+        </Button>
+        <Button
+          block
+          size="lg"
+          variant="secondary"
+          onClick={() => {
+            const tg = inTelegram ? getTg() : null;
+            if (tg) {
+              tg.close();
+              return;
+            }
+            noteSessionCleared('blocked-sign-out');
+            clear();
+          }}
+        >
+          {i18n.t(inTelegram ? 'auth.blocked.close' : 'auth.blocked.signOut')}
+        </Button>
+      </div>
     </div>
   );
 }
 
-/** The caller's Telegram user id, tap to copy. Nothing outside Telegram. */
-function TelegramIdChip() {
-  const tgUserId = getTg()?.initDataUnsafe?.user?.id;
+/** A Telegram user id (the caller's by default), tap to copy. */
+function TelegramIdChip({ id }: { id?: string } = {}) {
+  const tgUserId = id ?? getTg()?.initDataUnsafe?.user?.id;
   if (!tgUserId) return null;
   return (
     <button
