@@ -158,8 +158,9 @@ export function StoreSalesPanel({
     isLoading: salesQuery.isLoading,
     isError: salesQuery.isError,
     rowCount: sales.length,
+    waitingOffline: salesQuery.data === undefined && salesQuery.fetchStatus === 'paused',
   });
-  const listErrored = listView === 'error';
+  const listErrored = listView === 'error' || listView === 'offline';
 
   // Compute today's headline (revenue + count) for the summary row.
   // 2026-10-21: voided sales don't count (see salesSummary.ts).
@@ -215,6 +216,9 @@ export function StoreSalesPanel({
             <div className="py-2 text-center">
               <Spinner size={16} />
             </div>
+          ) : dishesQuery.data === undefined && dishesQuery.fetchStatus === 'paused' ? (
+            // CLS-6: offline with no saved menu is not "no dishes yet".
+            <p className="text-old-label text-[var(--c-fg-muted)]">{i18n.t('common.offlineNoData')}</p>
           ) : dishOptions.length === 0 ? (
             <p className="text-old-label text-[var(--c-fg-muted)]">
               {/* CLS-21 (2026-10-30): the hint named an English path and was
@@ -302,6 +306,8 @@ export function StoreSalesPanel({
               </Button>
             }
           />
+        ) : listView === 'offline' ? (
+          <EmptyState title={i18n.t('common.offlineNoData')} />
         ) : listView === 'empty' ? (
           <EmptyState
             title={i18n.t('sales.empty.title')}

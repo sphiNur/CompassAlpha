@@ -90,6 +90,14 @@ describe('initialReceivedQty', () => {
 });
 
 describe('runsListView (2026-10-21 FE-01 / F4-02)', () => {
+  it('offline with nothing saved is offline, not "nothing to confirm" (R2-ENG-1)', () => {
+    expect(
+      runsListView({ isLoading: false, isError: false, hasData: false, waitingOffline: true }),
+    ).toEqual({ kind: 'offline' });
+    expect(
+      runsListView({ isLoading: false, isError: false, hasData: true, waitingOffline: true }),
+    ).toEqual({ kind: 'ready', stale: false });
+  });
   it('first load is loading, not "nothing to confirm"', () => {
     expect(runsListView({ isLoading: true, isError: false, hasData: false })).toEqual({
       kind: 'loading',

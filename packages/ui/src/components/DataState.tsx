@@ -11,6 +11,8 @@ interface QueryLike<T> {
   isLoading: boolean;
   isError: boolean;
   isFetching?: boolean;
+  /** React Query's: 'paused' while it waits for the network to come back. */
+  fetchStatus?: string;
   error?: { message?: string } | null;
   refetch?: () => unknown;
 }
@@ -43,7 +45,23 @@ export function DataState<T>({
       </div>
     );
   }
+  // R2-ENG-1 / HIS-18 (2026-10-31): offline with nothing saved, a query
+  // waits (paused) instead of failing, and fell through to "no data" —
+  // read as "there is nothing", not "you are offline". It loads by itself
+  // once the network is back.
+  if (query.data === undefined && query.fetchStatus === 'paused') {
+    return <EmptyState title={labels.offlineNoData} />;
+  }
   if (query.isError) {
+    // Data from before (or the offline copy) stays readable under the error.
+    if (query.data !== undefined && query.data !== null && !emptyWhen?.(query.data)) {
+      return (
+        <>
+          <QueryErrorBanner query={query} title={errorTitle} />
+          {children(query.data)}
+        </>
+      );
+    }
     return <QueryErrorBanner query={query} title={errorTitle} />;
   }
   if (!query.data) {

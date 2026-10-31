@@ -83,6 +83,9 @@ export function UiLabelsBridge({ children }: { children: ReactNode }) {
       get emptyNothingYet() {
         return i18n.t('common.empty');
       },
+      get offlineNoData() {
+        return i18n.t('common.offlineNoData');
+      },
       // 2026-10-21 FE-10: DataState showed `error.message` raw — usually an
       // untranslated server key. Same mapping as errToast's toasts.
       translateError: (message) =>

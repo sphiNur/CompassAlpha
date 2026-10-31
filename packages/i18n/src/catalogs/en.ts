@@ -404,6 +404,10 @@ export const en = {
   'common.error': 'Something went wrong',
   'common.networkError': 'Network error — check your connection',
   'common.offlineNotSaved': 'No connection — this change was not saved. Try again once you are online.',
+  'common.offlineNoData': 'Offline — this has not been loaded on this phone yet. It loads by itself once you are back online.',
+  'common.savingSlow': 'Saving…',
+  'common.maybeSaved': 'No answer from the server — this change may or may not have been saved. Refresh to check before changing it again.',
+  'common.maybeSavedRetrySafe': 'No answer from the server — this change may already be saved. Saving again is safe: it will not be recorded twice.',
   // M1.20 (2026-05-08): generic rate-limit error returned by the
   // server-side mutation rate limiter when a (user, path) exceeds the
   // 120-per-minute budget. The auth-specific equivalent stays under
@@ -489,6 +493,8 @@ export const en = {
     'It needs a connection to open. It loads by itself once you are online, or tap Retry.',
   'shell.offline.body':
     'You are seeing what was last loaded. Orders, purchases and receiving are kept on this phone and sync when you are back online; daily close, sales and admin need a connection to save.',
+  'shell.offline.lastUpdated': 'last updated {time}',
+  'shell.offline.noDataBody': 'Nothing has been loaded on this phone yet; data appears once you are back online. Orders, purchases and receiving are kept on this phone and sync when you are back online; daily close, sales and admin need a connection to save.',
   'order.pendingSync': '{n, plural, one {# change} other {# changes}} waiting to sync',
   'shell.pageError.title': 'This page ran into a problem',
   'shell.pageError.body': 'Other pages still work. Try again, or switch to another page.',

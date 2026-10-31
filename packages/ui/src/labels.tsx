@@ -65,6 +65,8 @@ export interface UiLabels {
   errorUnknown: string;
   emptyNoData: string;
   emptyNothingYet: string;
+  /** Offline with no saved copy: the query waits for the network. */
+  offlineNoData: string;
   /**
    * 2026-10-21 FE-10: turns `query.error.message` (often a server i18n key
    * like `order.errors.notFound`, or a raw "Failed to fetch") into user
@@ -97,6 +99,7 @@ export const DEFAULT_UI_LABELS: UiLabels = {
   errorUnknown: 'Unknown error',
   emptyNoData: 'No data',
   emptyNothingYet: 'Nothing here yet',
+  offlineNoData: 'Offline — this has not been loaded on this phone yet. It loads once you are back online.',
   translateError: (message) => message,
   retry: 'Retry',
   photoLabel: 'Receipt photo',

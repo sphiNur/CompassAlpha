@@ -26,4 +26,15 @@ describe('sessionLoadState', () => {
   it('network failure with cached data stays silent (offline path)', () => {
     expect(sessionLoadState({ isError: true, hasData: true, isNetworkError: true })).toBe('ok');
   });
+
+  // R2-ENG-1 (2026-10-31): offline with nothing saved the query waits
+  // (paused) — not "no session", which would offer an editable catalog.
+  it('waiting offline with no data blocks as offline; saved data is used', () => {
+    expect(
+      sessionLoadState({ isError: false, hasData: false, isNetworkError: false, waitingOffline: true }),
+    ).toBe('offline');
+    expect(
+      sessionLoadState({ isError: false, hasData: true, isNetworkError: false, waitingOffline: true }),
+    ).toBe('ok');
+  });
 });

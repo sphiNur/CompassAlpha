@@ -25,6 +25,8 @@ import { outbox } from '../lib/idb';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { errorTextKey } from '../lib/errorText';
 import { PendingSyncNotice } from '../components/PendingSyncNotice';
+import { useQueryClient } from '@tanstack/react-query';
+import { refetchFailedQueries } from '../hooks/useRefetchFailedOnReconnect';
 import { sessionLoadState } from './order/sessionLoadState';
 import { useErrToast } from '../lib/errToast';
 import { matchesNameLike, normalizeQuery } from '../lib/searchMatch';
@@ -182,6 +184,7 @@ export function OrderPage() {
   }, [currentStoreId]);
 
   const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
   // Replay map for the offline outbox. The hook calls back into our
   // tRPC client when network returns; we use the imperative .mutate()
   // form so the in-memory mutation state stays the same.
@@ -279,18 +282,9 @@ export function OrderPage() {
       });
     },
     onError: (err, vars) => {
-      if (isLikelyNetworkError(err)) {
-        // Keep optimistic, enqueue for replay when online. CA-25: freeze
-        // the business date NOW so a replay after midnight can't land
-        // in the next day's order (server refuses it instead).
-        void offline.enqueue('order.adjustItem', {
-          ...vars,
-          date:
-            vars.date ??
-            frozenOrderDate(utils.order.todaySession.getData({ storeId: vars.storeId })),
-        });
-        return;
-      }
+      // Keep optimistic: flushOne stored the write in the outbox before
+      // sending it (R2-ORD-5), and a network failure leaves it there.
+      if (isLikelyNetworkError(err)) return;
       // CONFLICT = (streamId, seq) UNIQUE collision. With per-store
       // serialization (see `flushOne`) this can only happen when a
       // SECOND staff member at the same store wrote concurrently —
@@ -369,10 +363,29 @@ export function OrderPage() {
     },
     [],
   );
+  /**
+   * R2-ORD-5 (2026-10-31): the write goes into the outbox BEFORE it is
+   * sent and leaves it on success. A request that hung on a slow network
+   * used to be queued only when it finally failed (up to 30 s later), so
+   * closing the app meanwhile lost a change the screen showed as made.
+   * qty is absolute, so replaying one the server did receive is harmless.
+   * CA-25: the queued copy carries the business date frozen NOW, so a
+   * replay after midnight can't land in the next day's order.
+   */
+  const { sendQueued } = offline;
   const flushOne = useCallback(
     (payload: PendingPayload): Promise<unknown> =>
-      serializeOnStore(payload.storeId, () => adjust.mutateAsync(payload)),
-    [adjust, serializeOnStore],
+      serializeOnStore(payload.storeId, () =>
+        sendQueued(
+          'order.adjustItem',
+          {
+            ...payload,
+            date: frozenOrderDate(utils.order.todaySession.getData({ storeId: payload.storeId })),
+          },
+          () => adjust.mutateAsync(payload),
+        ),
+      ),
+    [adjust, sendQueued, serializeOnStore, utils.order.todaySession],
   );
 
   /**
@@ -633,21 +646,10 @@ export function OrderPage() {
    */
   const setSessionExtras = trpc.order.setSessionExtras.useMutation({
     retry: false,
-    onError: (err, vars) => {
+    onError: (err) => {
       // 2026-10-21 audit CA-25/CA-27: same offline story as adjustItem —
-      // queue it (the store form already carries the frozen date).
-      if (isLikelyNetworkError(err)) {
-        void offline.enqueue(
-          'order.setSessionExtras',
-          vars.sessionId || vars.date || !vars.storeId
-            ? vars
-            : {
-                ...vars,
-                date: frozenOrderDate(utils.order.todaySession.getData({ storeId: vars.storeId })),
-              },
-        );
-        return;
-      }
+      // the save stored it in the outbox before sending (R2-ORD-5).
+      if (isLikelyNetworkError(err)) return;
       const code = (err as { data?: { code?: string } }).data?.code;
       if (code === 'CONFLICT') {
         if (currentStoreId) {
@@ -764,11 +766,19 @@ export function OrderPage() {
               extras,
               ...(cached && cached.id !== 'optimistic' ? { date: cached.orderDate } : {}),
             };
+        // The queued copy freezes the business date (CA-25) when the input
+        // addresses the session by store without one.
+        const queuedInput =
+          'storeId' in input && !input.date
+            ? { ...input, date: frozenOrderDate(cached) }
+            : input;
         let res: { sessionId: string | null } | undefined;
         try {
-          res = await setSessionExtras.mutateAsync(input);
+          res = await sendQueued('order.setSessionExtras', queuedInput, () =>
+            setSessionExtras.mutateAsync(input),
+          );
         } catch (err) {
-          // Queued offline by onError — keep the rows as saved locally.
+          // Left in the outbox on a network failure — keep the rows as saved locally.
           if (!isLikelyNetworkError(err)) throw err;
         }
         const newId = res?.sessionId ?? null;
@@ -784,7 +794,7 @@ export function OrderPage() {
         }
       });
     },
-    [currentStoreId, serializeOnStore, setSessionExtras, utils.order],
+    [currentStoreId, sendQueued, serializeOnStore, setSessionExtras, utils.order],
   );
 
   // Telegram MainButton — single point of control for the entire submit
@@ -802,6 +812,7 @@ export function OrderPage() {
     isError: sessionQuery.isError,
     hasData: sessionQuery.data !== undefined,
     isNetworkError: isLikelyNetworkError(sessionQuery.error),
+    waitingOffline: sessionQuery.fetchStatus === 'paused',
   });
   const sessionBlocked = sessionLoad === 'blocked';
 
@@ -954,6 +965,14 @@ export function OrderPage() {
     );
   }
 
+  if (sessionLoad === 'offline') {
+    return (
+      <div className="flex flex-col px-4 pt-3">
+        <EmptyState title={i18n.t('common.offlineNoData')} />
+      </div>
+    );
+  }
+
   // 2026-10-21 FE-01: an errored todaySession used to fall through to an
   // empty, editable catalog (first tap lazily creates a NEW draft), so a
   // member who already submitted could order twice. Block until it loads.
@@ -968,7 +987,7 @@ export function OrderPage() {
               size="sm"
               variant="pearl"
               loading={sessionQuery.isFetching}
-              onClick={() => void sessionQuery.refetch()}
+              onClick={() => void refetchFailedQueries(queryClient)}
             >
               {i18n.t('common.retry')}
             </Button>
@@ -998,7 +1017,7 @@ export function OrderPage() {
               size="sm"
               variant="pearl"
               loading={sessionQuery.isFetching}
-              onClick={() => void sessionQuery.refetch()}
+              onClick={() => void refetchFailedQueries(queryClient)}
             >
               {i18n.t('common.retry')}
             </Button>
@@ -1326,7 +1345,7 @@ export function OrderPage() {
       </StickyPageBar>
       {staleWarning}
       {/* ORD-3 (2026-10-30): changes waiting in the outbox were invisible. */}
-      <PendingSyncNotice count={offline.pendingCount} />
+      <PendingSyncNotice count={offline.pendingCount} saving={offline.savingSlow} />
       {rejectedNotice(sessionQuery.data?.id) ? (
         <div className="px-4 pt-3">{rejectedNotice(sessionQuery.data?.id)}</div>
       ) : null}
