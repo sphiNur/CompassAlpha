@@ -1729,7 +1729,7 @@ export function DishesSection() {
                       >
                         <div className="flex items-center gap-2">
                           <select
-                            className="h-9 min-w-0 flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface)] px-3 text-old-body ring-hairline"
+                            className="h-[var(--control-h)] min-w-0 flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface)] px-3 text-old-body ring-hairline"
                             value={ing.skuId}
                             onChange={(e) => {
                               const next = [...draft.ingredients];

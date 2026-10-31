@@ -33,8 +33,11 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(
     ref,
   ) {
     void _oneDecimal; // reserved for future use; kept on the prop type for clarity
-    // md = --control-h-sm (36px, the compact-control tier); sm = h-8 (32px).
-    const hSize = size === 'sm' ? 'h-8' : 'h-[var(--control-h-sm)]';
+    // D18 (2026-10-31): both sizes are --control-h (44px). `size` used to
+    // pick 36 or 32; it is kept so callers compile, and only the tap
+    // height changed.
+    void size;
+    const hSize = 'h-[var(--control-h)]';
     const w =
       width === 'narrow' ? 'w-20' : width === 'wide' ? 'w-full' : 'w-full min-w-0';
     return (

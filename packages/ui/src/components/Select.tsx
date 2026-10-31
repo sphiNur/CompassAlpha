@@ -4,7 +4,7 @@ import { cn } from '../cn';
 /**
  * Select — native dropdown with Concord styling.
  *
- * Style parity with `Input`: both render at `--control-h` (40px), same
+ * Style parity with `Input`: both render at `--control-h` (44px), same
  * rounded pill shape, same surface + ring tokens. (Was h-11/44px and
  * drifted 4px above Input after M3.15 lowered Input to 40 — now both
  * read from the one token.) Visual difference: the right edge carries a

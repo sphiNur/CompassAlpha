@@ -371,7 +371,7 @@ export function PurchaseSheet({
             <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
               {i18n.t('run.action.supplier')}
               <select
-                className="mt-1 h-11 w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3 ring-hairline"
+                className="mt-1 h-[var(--control-h)] w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3 ring-hairline"
                 value={draft.supplierId ?? ''}
                 onChange={(e) => onChange({ ...draft, supplierId: e.target.value || null })}
               >
@@ -837,7 +837,7 @@ export function AddItemSheet({
           {/* 1) Identity section — mode-specific. */}
           {draft.mode === 'sku' ? (
             selectedSku ? (
-              <div className="flex items-center justify-between rounded-[6px] bg-[var(--c-surface-2)] px-3 py-2">
+              <div className="flex items-center justify-between rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-3 py-2">
                 <div className="min-w-0">
                   <div className="truncate text-old-body font-semibold">
                     {productName(selectedSku)}
@@ -865,7 +865,7 @@ export function AddItemSheet({
                   placeholder={i18n.t('run.action.addItem.searchPlaceholder')}
                   autoFocus
                 />
-                <ul className="flex max-h-72 flex-col overflow-y-auto rounded-[6px] border border-[var(--c-divider)]">
+                <ul className="flex max-h-72 flex-col overflow-y-auto rounded-[var(--r-utility)] border border-[var(--c-divider)]">
                   {filteredSkus.length === 0 ? (
                     <li className="px-3 py-2 text-old-body-sm text-[var(--c-fg-muted)]">
                       {i18n.t('run.action.addItem.noMatch')}
@@ -973,7 +973,7 @@ export function AddItemSheet({
               Lists the stores that already have demand so the user
               knows which stores aren't available in the dropdown. */}
           {draft.mode === 'sku' && selectedSku && selectedSkuExisting ? (
-            <div className="rounded-[6px] bg-[var(--c-warning)]/10 px-3 py-2 text-old-label text-[var(--c-fg)] ring-1 ring-[var(--c-warning)]">
+            <div className="rounded-[var(--r-utility)] bg-[var(--c-warning)]/10 px-3 py-2 text-old-label text-[var(--c-fg)] ring-1 ring-[var(--c-warning)]">
               {i18n.t('run.action.addItem.crossStoreHint', {
                 stores: [...selectedSkuExisting.storeIds]
                   .map((id) => storeById.get(id)?.name ?? id.slice(0, 8))
@@ -984,7 +984,7 @@ export function AddItemSheet({
           {/* 2) Store selection — SKU mode is single-store dropdown,
                  expense mode is multi-store chips with auto-even-split. */}
           {draft.mode === 'sku' && selectedSku && selectedSkuExisting ? (
-            <div className="rounded-[6px] bg-[var(--c-surface-2)] p-2">
+            <div className="rounded-[var(--r-utility)] bg-[var(--c-surface-2)] p-2">
               <div className="mb-1 text-old-label font-semibold text-[var(--c-fg-muted)]">
                 {i18n.t('run.action.addItem.costModeTitle')}
               </div>
@@ -1034,7 +1034,7 @@ export function AddItemSheet({
             <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
               {i18n.t('run.action.addItem.targetStore')}
               <select
-                className="mt-1 h-11 w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3 ring-hairline"
+                className="mt-1 h-[var(--control-h)] w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3 ring-hairline"
                 value={selectedStoreId}
                 onChange={(e) => {
                   const next = new Map<string, string>();

@@ -614,7 +614,7 @@ function WorkspaceSection() {
         <div className="flex flex-col gap-3 py-3">
           <Field label={i18n.t('admin.workspace.currency')}>
             <select
-              className="h-11 w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3 ring-hairline"
+              className="h-[var(--control-h)] w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3 ring-hairline"
               value={draftCurrency}
               onChange={(e) => setDraftCurrency(e.target.value)}
             >

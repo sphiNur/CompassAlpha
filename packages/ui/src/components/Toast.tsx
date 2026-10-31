@@ -204,7 +204,9 @@ export function ToastProvider({
                       dismiss(t.id);
                     }}
                     className={cn(
-                      'press h-8 rounded-[var(--r-pill)] px-3 text-old-label font-semibold',
+                      // hit-44 (R2-VIS-2): 32px to look at, 44 to tap; the
+                      // toast's 10px padding leaves room for the area.
+                      'press hit-44 h-8 rounded-[var(--r-pill)] px-3 text-old-label font-semibold',
                       a.emphasis === 'primary'
                         ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
                         : 'bg-[var(--c-surface-2)] text-[var(--c-fg)] ring-hairline',
@@ -224,7 +226,8 @@ export function ToastProvider({
                 dismiss(t.id);
               }}
               className={cn(
-                'press min-w-[200px] max-w-[92vw] rounded-[var(--r-pill)] px-4 py-2.5 text-left',
+                // min-h-11 (R2-VIS-2): a one-line toast was 37px tall.
+                'press min-h-11 min-w-[200px] max-w-[92vw] rounded-[var(--r-pill)] px-4 py-2.5 text-left',
                 TONE[t.tone],
               )}
               style={{ pointerEvents: 'auto' }}

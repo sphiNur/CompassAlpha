@@ -387,16 +387,22 @@ export function ApprovalPage() {
                           room for on a phone. */}
                       {row.estimatedTotal && row.estimatedCash && row.estimatedTransfer ? (
                         <span
+                          // V10: the figures in the same mono face as the
+                          // card's total beside them.
                           data-testid="approval-payment-budget"
                           className="flex flex-col items-end text-old-label tabular-nums text-[var(--c-fg-muted)]"
                         >
                           <span className="whitespace-nowrap">
-                            {i18n.t('run.label.paymentCash')} ~
-                            {formatMoney(Number(row.estimatedCash))}
+                            {i18n.t('run.label.paymentCash')}{' '}
+                            <span className="font-mono">
+                              ~{formatMoney(Number(row.estimatedCash))}
+                            </span>
                           </span>
                           <span className="whitespace-nowrap">
-                            {i18n.t('run.label.paymentTransfer')} ~
-                            {formatMoney(Number(row.estimatedTransfer))}
+                            {i18n.t('run.label.paymentTransfer')}{' '}
+                            <span className="font-mono">
+                              ~{formatMoney(Number(row.estimatedTransfer))}
+                            </span>
                           </span>
                         </span>
                       ) : null}

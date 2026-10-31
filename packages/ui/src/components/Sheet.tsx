@@ -181,10 +181,13 @@ export function Sheet({
           ref={contentRef}
           className={cn(
             'fixed inset-x-0 bottom-0 z-50 mx-auto flex w-full max-w-[var(--app-sheet-max-w)] flex-col',
-            'rounded-t-[24px] bg-[var(--c-surface)] text-[var(--c-fg)]',
+            'rounded-t-[var(--r-sheet)] bg-[var(--c-surface)] text-[var(--c-fg)]',
             'data-[state=open]:animate-[slideUp_var(--t-base)_var(--easing)]',
             'data-[state=closed]:animate-[slideDown_var(--t-quick)_var(--easing)]',
-            'pb-[var(--app-safe-bottom)] outline-none shadow-[var(--shadow-product)] ring-hairline',
+            // V18: .shadow-sheet is the lift AND the hairline in one
+            // box-shadow. As two classes (shadow-[…] ring-hairline) the
+            // later one replaced the whole property and the lift was lost.
+            'pb-[var(--app-safe-bottom)] outline-none shadow-sheet',
           )}
           style={{
             maxHeight:

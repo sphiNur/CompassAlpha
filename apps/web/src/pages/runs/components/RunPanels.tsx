@@ -593,7 +593,7 @@ export function ActiveRunPanel({
                   onChange={(e) => setItemQuery(e.target.value)}
                   placeholder={i18n.t('run.search.itemsPlaceholder')}
                   aria-label={i18n.t('run.search.itemsPlaceholder')}
-                  className="h-9 w-full rounded-[var(--r-pill)] border border-[var(--c-field-border)] bg-[var(--c-surface-2)] px-3 text-old-body outline-none placeholder:text-[var(--c-fg-muted)] focus:border-[var(--c-action)]"
+                  className="h-[var(--control-h)] w-full rounded-[var(--r-pill)] border border-[var(--c-field-border)] bg-[var(--c-surface-2)] px-3 text-old-body outline-none placeholder:text-[var(--c-fg-muted)] focus:border-[var(--c-action)]"
                 />
               </div>
               {/* V4: -mt-1.5 pt-1.5 instead of pt-0 — same layout, and the
@@ -749,7 +749,8 @@ export function ActiveRunPanel({
                 <li key={it.skuId} className="border-t border-[var(--c-divider)] first:border-t-0">
                   <button
                     type="button"
-                    className="press flex w-full items-baseline gap-2 px-4 py-2 text-left"
+                    // min-h-11 (R2-DLV-4): was a 34px row.
+                    className="press flex min-h-11 w-full items-center gap-2 px-4 py-2 text-left"
                     onClick={() => onEditPrice(it)}
                   >
                     <span className="min-w-0 flex-1 truncate text-old-body">{nameOf(it.skuId)}</span>
@@ -863,7 +864,7 @@ export function ActiveRunPanel({
                                 src={photo}
                                 alt=""
                                 loading="lazy"
-                                className="h-10 w-10 rounded-[6px] object-cover ring-hairline"
+                                className="h-10 w-10 rounded-[var(--r-utility)] object-cover ring-hairline"
                               />
                             </a>
                           ) : null}
@@ -958,12 +959,14 @@ export function ActiveRunPanel({
                             ? onDeliverStore(storeId, storeName)
                             : onRecallStore(storeId, storeName)
                         }
-                        className="flex min-w-0 flex-1 items-center gap-2 py-2 pl-4 text-left active:bg-[var(--c-surface-2)]"
+                        // min-h-11 (R2-DLV-4): as tall as the 44px pick-list
+                        // toggle beside it; it was 34.
+                        className="flex min-h-11 min-w-0 flex-1 items-center gap-2 py-2 pl-4 text-left active:bg-[var(--c-surface-2)]"
                       >
                         {inner}
                       </button>
                     ) : (
-                      <div className="flex min-w-0 flex-1 items-center gap-2 py-2 pl-4 text-[var(--c-fg-muted)]">
+                      <div className="flex min-h-11 min-w-0 flex-1 items-center gap-2 py-2 pl-4 text-[var(--c-fg-muted)]">
                         {inner}
                       </div>
                     )}
@@ -1764,7 +1767,7 @@ export function PreviewSummaryCard({
             onChange={(e) => setFilterText(e.target.value)}
             placeholder={i18n.t('order.search.placeholder')}
             aria-label={i18n.t('order.search.placeholder')}
-            className="h-9 min-w-0 flex-1 rounded-[var(--r-pill)] border border-[var(--c-field-border)] bg-[var(--c-surface-2)] px-3 text-old-body outline-none focus:border-[var(--c-action)]"
+            className="h-[var(--control-h)] min-w-0 flex-1 rounded-[var(--r-pill)] border border-[var(--c-field-border)] bg-[var(--c-surface-2)] px-3 text-old-body outline-none focus:border-[var(--c-action)]"
           />
           {filtering ? (
             <span className="shrink-0 font-mono text-old-label tabular-nums text-[var(--c-fg-muted)]">
