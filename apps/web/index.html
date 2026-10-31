@@ -31,8 +31,13 @@
     <title>Compass</title>
     <link rel="stylesheet" href="/boot.css" />
     <!-- Telegram WebApp SDK. Listed in CSP's script-src whitelist
-         (the only third-party script we accept). -->
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+         (the only third-party script we accept).
+         P-7 (2026-10-31): `defer` so a first open does not wait for
+         telegram.org before parsing the page and showing the splash.
+         Deferred scripts run in document order before the module script
+         below, so main.tsx still finds window.Telegram; boot-guard.js
+         re-reads the Telegram language on this script's load event. -->
+    <script src="https://telegram.org/js/telegram-web-app.js" defer></script>
     <!-- Boot guard: locale detection + error capture + 12s failsafe
          + Reload / Reset button wiring. External per CSP. -->
     <script src="/boot-guard.js"></script>
