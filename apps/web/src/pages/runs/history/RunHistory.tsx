@@ -22,6 +22,7 @@ import { addMoney } from '@compass/contracts';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Badge, Button, Card, Input, SectionLabel, Sheet, useToast } from '@compass/ui';
 import { trpc } from '../../../lib/trpc';
+import { useNavStore } from '../../../stores/navStore';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { formatMoney, formatQty } from '../../../lib/format';
@@ -661,9 +662,13 @@ export function RunHistoryDetailSheet({
       // the reopened (now amending) run must drop out of it right away.
       void utils.run.history.invalidate();
       void utils.run.historyDetail.invalidate();
-      toast.success(i18n.t('run.amend.reopened'));
+      toast.success(i18n.t('run.amend.reopenedGoing'));
       setReopenReason('');
       onClose();
+      // R2-INT-4 (2026-10-31): take the corrector to the purchase tab,
+      // which opens on the run being corrected (pickActiveRun prefers an
+      // amending run for run.amend holders); they used to have to go there.
+      useNavStore.getState().setTab('run');
     },
     onError: errToast('common.error'),
   });
@@ -1153,6 +1158,33 @@ export function RunHistoryDetailSheet({
                         {perStoreSplits[0].confirmNote ? ` · ${perStoreSplits[0].confirmNote}` : ''}
                       </div>
                     ) : null}
+                    {/* D3 / D4 (2026-10-31): what changed on this line after
+                       a store confirmed receipt — quantity a correction
+                       added (counted as received) and later price changes. */}
+                    {(detail.data?.corrections ?? [])
+                      .filter(
+                        (c) =>
+                          c.skuId === it.skuId &&
+                          (!activeStoreId || c.storeId === null || c.storeId === activeStoreId),
+                      )
+                      .map((c, i) => (
+                        <div
+                          key={`${c.kind}-${i}`}
+                          data-testid="history-correction"
+                          className="mt-1 text-old-label font-medium tabular-nums text-[var(--c-fg-muted)]"
+                        >
+                          {c.kind === 'amendAdded'
+                            ? i18n.t('run.history.amendAdded', {
+                                qty: formatQty(c.qty),
+                                unit: unitLabel(sku?.unit),
+                                store: storeById.get(c.storeId)?.name ?? c.storeId.slice(0, 8),
+                              })
+                            : i18n.t('run.history.priceAfterReceipt', {
+                                from: c.from ? formatMoney(c.from) : '—',
+                                to: formatMoney(c.to),
+                              }) + (c.reason ? ` · ${c.reason}` : '')}
+                        </div>
+                      ))}
                     {/* M3.52: per-store chips on history rows. Same
                        visual pattern as the in-run PurchaseRow chips. */}
                     {isMulti && it.status === 'purchased' && perStoreSplits.length > 0 ? (
