@@ -15,7 +15,7 @@ export const ru = {
   'nav.short.approve': 'Проверка',
   'nav.short.run': 'Закупка',
   'nav.short.history': 'История',
-  'nav.short.settlement': 'Итоги',
+  'nav.short.settlement': 'Закрытие',
   'nav.short.sales': 'Продажи',
   'nav.short.confirm': 'Приёмка',
   'nav.short.admin': 'Админ',
@@ -1052,7 +1052,6 @@ export const ru = {
   'order.errors.staleSeq': 'Кто-то только что отредактировал — повторите',
 
   // ── 10. Run page ───────────────────────────────────────────────
-  'run.title': 'Закупка',
   'run.empty.noActive': 'Активной закупки нет',
   'run.empty.noPlannable': 'Нет одобренных заказов для планирования',
   'run.empty.noPlannableBody':
@@ -1861,6 +1860,7 @@ export const ru = {
   'run.switcher.label': 'Открытые закупки',
   'run.switcher.newRun': '+ Новая закупка',
   'run.switcher.option': '№{n} · {date} · {step}',
+  'run.titleWithIndex': 'Закупка №{n}',
   'run.confirm.finish.money': 'Товары {items} · расходы {expenses} · итого {total} {currency}',
   'run.errors.runDateInFuture': 'Дата закупки не может быть в будущем',
   'run.errors.receivedQtyRequired': 'Укажите, сколько фактически получено',

@@ -1806,7 +1806,7 @@ export function RunPage() {
   usePageMenu(
     activeRun
       ? {
-          title: i18n.t('run.title') + ` #${activeRun.runIndex + 1}`,
+          title: i18n.t('run.titleWithIndex', { n: activeRun.runIndex + 1 }),
           actions: [
             ...(canUndoStartPurchase
               ? [
@@ -1869,20 +1869,25 @@ export function RunPage() {
   // stored "10-31".
   const runDateShort = dates.calendarDay(activeRun?.runDate);
 
+  // RE-COPY-1: "#1 · 10月31日 · 采购" — the number sign (ru «№») and the
+  // order come from the catalog, like the switcher chips below.
   const runSubtitle = activeRun
-    ? `${runDateShort} · ${
-        activeRun.status === 'planned'
-          ? i18n.t('run.step.plan')
-          : activeRun.status === 'purchasing'
-            ? i18n.t('run.step.purchase')
-            : activeRun.status === 'delivering'
-              ? i18n.t('run.step.deliver')
-              : activeRun.status === 'finished'
-                ? i18n.t('run.step.done')
-                : activeRun.status === 'amending'
-                  ? i18n.t('run.step.amend')
-                  : activeRun.status
-      }`
+    ? i18n.t('run.switcher.option', {
+        n: activeRun.runIndex + 1,
+        date: runDateShort,
+        step:
+          activeRun.status === 'planned'
+            ? i18n.t('run.step.plan')
+            : activeRun.status === 'purchasing'
+              ? i18n.t('run.step.purchase')
+              : activeRun.status === 'delivering'
+                ? i18n.t('run.step.deliver')
+                : activeRun.status === 'finished'
+                  ? i18n.t('run.step.done')
+                  : activeRun.status === 'amending'
+                    ? i18n.t('run.step.amend')
+                    : activeRun.status,
+      })
     : i18n.t('run.empty.noActive');
 
   return (
@@ -1970,7 +1975,7 @@ export function RunPage() {
               saying so; a purchaser opening the app can't tell an active
               trip from one somebody forgot to close. */}
           <span className="min-w-0 flex-1 truncate text-old-body font-semibold tabular-nums text-[var(--c-fg)]">
-            #{activeRun.runIndex + 1} · {runSubtitle}
+            {runSubtitle}
           </span>
           {runAgeDays > 0 ? (
             <span className="shrink-0 whitespace-nowrap rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-old-label text-[var(--c-warning-fg)]">

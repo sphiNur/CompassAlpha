@@ -989,7 +989,6 @@ export const zh = {
   'order.errors.staleSeq': '已被他人编辑——请重试',
 
   // ── 10. Run page ───────────────────────────────────────────────
-  'run.title': '采购',
   'run.empty.noActive': '暂无进行中的采购',
   'run.empty.noPlannable': '暂无审核通过的订单可生成采购单',
   'run.empty.noPlannableBody': '管理员审核通过订单后，可生成采购单。',
@@ -1760,6 +1759,7 @@ export const zh = {
   'run.switcher.label': '进行中的采购',
   'run.switcher.newRun': '+ 新采购',
   'run.switcher.option': '#{n} · {date} · {step}',
+  'run.titleWithIndex': '采购 #{n}',
   'run.confirm.finish.money': '商品 {items} · 开销 {expenses} · 合计 {total} {currency}',
   'run.errors.runDateInFuture': '采购日期不能晚于今天',
   'run.errors.receivedQtyRequired': '请填写实际收到的数量',

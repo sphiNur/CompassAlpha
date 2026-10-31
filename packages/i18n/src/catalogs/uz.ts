@@ -22,7 +22,7 @@ export const uz = {
   'nav.short.approve': 'Tekshiruv',
   'nav.short.run': 'Xarid',
   'nav.short.history': 'Tarix',
-  'nav.short.settlement': 'Yakun',
+  'nav.short.settlement': 'Kun yakuni',
   'nav.short.sales': 'Sotuv',
   'nav.short.confirm': 'Qabul',
   'nav.short.admin': 'Admin',
@@ -1061,7 +1061,6 @@ export const uz = {
   'order.errors.staleSeq': 'Boshqa odam tahrirladi — qayta urining',
 
   // ── 10. Run page ───────────────────────────────────────────────
-  'run.title': 'Xarid',
   'run.empty.noActive': 'Faol xarid yoʻq',
   'run.empty.noPlannable': 'Rejalashtirish uchun maʼqullangan buyurtma yoʻq',
   'run.empty.noPlannableBody': 'Menejer bitta buyurtmani maʼqullasa, xarid rejalashtirsa boʻladi.',
@@ -1872,6 +1871,7 @@ export const uz = {
   'run.switcher.label': 'Ochiq xaridlar',
   'run.switcher.newRun': '+ Yangi xarid',
   'run.switcher.option': '#{n} · {date} · {step}',
+  'run.titleWithIndex': 'Xarid #{n}',
   'run.confirm.finish.money':
     'Mahsulotlar {items} · xarajatlar {expenses} · jami {total} {currency}',
   'run.errors.runDateInFuture': 'Xarid sanasi kelajakda boʻlishi mumkin emas',

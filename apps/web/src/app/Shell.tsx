@@ -740,9 +740,13 @@ function BottomNav({
   return (
     <nav
       data-testid="primary-nav"
-      className="grid shrink-0 border-t border-[var(--c-divider)] bg-[var(--c-surface)]"
+      // D17 (2026-10-31): flex, not a grid of equal columns. Every tab
+      // still starts from an equal share (flex-1 = basis 0), but a tab
+      // never shrinks below its own label, so a long ru / uz word takes a
+      // few px from the short ones instead of ending in an ellipsis. Seven
+      // tabs at 360 px: ru labels need 321 px, uz 300 px.
+      className="flex shrink-0 border-t border-[var(--c-divider)] bg-[var(--c-surface)]"
       style={{
-        gridTemplateColumns: `repeat(${visible.length}, minmax(0, 1fr))`,
         paddingBottom: 'var(--app-safe-bottom)',
         height: 'calc(var(--app-nav-h) + var(--app-safe-bottom))',
         // M3.50: block tab switches during in-flight mutations.
@@ -772,7 +776,7 @@ function BottomNav({
             className={
               // V5: px-0.5 leaves each of seven tabs at 360 px about 47 px
               // of label room — enough for every zh and en label at 11 px.
-              'press flex min-w-0 flex-col items-center justify-center gap-1 px-0.5 ' +
+              'press flex flex-1 flex-col items-center justify-center gap-1 px-0.5 ' +
               (active ? 'text-[var(--c-action)]' : 'text-[var(--c-fg-muted)]')
             }
           >

@@ -1146,7 +1146,6 @@ export const en = {
   'order.errors.staleSeq': 'Someone else just edited — please retry',
 
   // ── 10. Run page (UI + sheets + toasts) ────────────────────────
-  'run.title': 'Market run',
   'run.empty.noActive': 'No active run',
   'run.empty.noPlannable': 'No approved orders to plan',
   'run.empty.noPlannableBody': 'Once a manager approves at least one order, you can plan a run.',
@@ -2006,6 +2005,7 @@ export const en = {
   'run.switcher.label': 'Open runs',
   'run.switcher.newRun': '+ New purchase',
   'run.switcher.option': '#{n} · {date} · {step}',
+  'run.titleWithIndex': 'Run #{n}',
   'run.confirm.finish.money': 'Items {items} · expenses {expenses} · total {total} {currency}',
   'run.errors.runDateInFuture': "The purchase date can't be in the future",
   'run.errors.receivedQtyRequired': 'Enter how much actually arrived',

@@ -1365,7 +1365,7 @@ export function FinanceSection() {
           </div>
         ) : (
           <div className="text-old-label tabular-nums text-[var(--c-fg-muted)]">
-            {startDate} → {endDate}
+            {dates.calendarDay(startDate)} → {dates.calendarDay(endDate)}
           </div>
         )}
       </div>
