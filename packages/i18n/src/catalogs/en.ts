@@ -498,6 +498,8 @@ export const en = {
   'order.errors.qtyTooLarge': 'A line can be at most 999,999.999.',
   'order.errors.extraNoteTooLong': 'The note is too long (up to 200 characters).',
   'run.errors.cannotPlan': "You don't have permission to plan purchase runs.",
+  'common.errors.controlCharacters':
+    'Names cannot contain control characters (such as tabs or line breaks)',
   'common.errors.validation': 'Invalid input — check the highlighted fields',
 
   // ── 3. Settings ────────────────────────────────────────────────
@@ -1399,6 +1401,8 @@ export const en = {
     '{n, plural, one {# line was} other {# lines were}} received with a problem; about {amount} {currency} was not received. Store bills still charge the split quantities.',
   'run.confirm.finish.receiptIssueLine': '{sku} · {store}: received {received}/{qty}',
   'run.confirm.finish.receiptIssuesMore': '…and {n} more',
+  'run.errors.expenseIdTaken':
+    'This expense is already recorded on another run. Add it again as a new expense',
   'run.errors.expenseLabelRequired': 'A description is required',
   'run.errors.expenseLabelTooLong': 'Description too long (200 max)',
   'run.errors.expenseReasonRequired': 'Reason is required',
@@ -1822,6 +1826,8 @@ export const en = {
   'dishes.readOnly':
     "You can view this dish's recipe; editing the menu needs a permission an admin can give you.",
   'dishes.errors.namesRequired': 'At least one language name is required.',
+  'admin.errors.displayNameSharedWithOtherOrg':
+    'This person also belongs to another workspace, so only they can change their name',
   'admin.errors.namesRequired': 'At least one language name is required.',
   'dishes.errors.ingredientQtyMustBePositive': 'Ingredient qty must be > 0.',
   'dishes.errors.ingredientSkuNotFound': 'One or more ingredients reference an unknown product.',

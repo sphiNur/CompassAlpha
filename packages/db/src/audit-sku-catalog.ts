@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync } from 'node:fs';
 import { eq } from 'drizzle-orm';
 import { closeDb, getDb, schema as s } from './index';
+import { printable } from './printable';
 
 (function loadRootEnv() {
   let dir = dirname(fileURLToPath(import.meta.url));
@@ -206,18 +207,22 @@ async function main() {
   }
 
   console.log(`CompassAlpha SKU catalog audit (${APPLY ? 'APPLY' : 'DRY-RUN'})`);
-  console.log(`org=${org.name} activeSkus=${activeSkus.length} categories=${categories.length}`);
+  console.log(`org=${printable(org.name)} activeSkus=${activeSkus.length} categories=${categories.length}`);
   console.log(`category updates suggested=${categoryUpdates.length}`);
   for (const row of categoryUpdates) {
-    console.log(`  ~ ${row.name} [${row.code ?? row.id.slice(0, 8)}] ${row.from} -> ${row.to}`);
+    console.log(
+      `  ~ ${printable(row.name)} [${printable(row.code ?? row.id.slice(0, 8))}] ${printable(row.from)} -> ${printable(row.to)}`,
+    );
   }
   console.log(`no category suggestion=${noSuggestion.length}`);
   for (const row of noSuggestion.slice(0, 30)) {
-    console.log(`  ? ${row.name} [${row.code ?? row.id.slice(0, 8)}]`);
+    console.log(`  ? ${printable(row.name)} [${printable(row.code ?? row.id.slice(0, 8))}]`);
   }
   console.log(`language warnings=${languageWarnings.length}`);
   for (const row of languageWarnings.slice(0, 60)) {
-    console.log(`  ! ${row.name} [${row.code ?? row.id.slice(0, 8)}] ${row.notes.join(',')}`);
+    console.log(
+      `  ! ${printable(row.name)} [${printable(row.code ?? row.id.slice(0, 8))}] ${row.notes.join(',')}`,
+    );
   }
 
   if (APPLY) {

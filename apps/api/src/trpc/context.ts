@@ -41,9 +41,16 @@ export interface RequestContext {
   /**
    * Client address the rate limiter may trust (AUTH-6); null when there
    * is none and the caller shares one bucket. `ip` above stays as it was
-   * for logging and the local-dev check.
+   * for logging.
    */
   trustedIp?: string | null;
+  /**
+   * The socket's real peer address (Bun's `server.requestIP`, handed to
+   * Hono by main.ts as `c.env.peerIp`); null when unknown (tests, or a
+   * runtime that does not report it). Only the dev-login locality check
+   * reads it (D21).
+   */
+  peerIp?: string | null;
   userAgent: string | null;
   /** M1.20 (2026-05-08): client-supplied idempotency key from the
    *  `X-Idempotency-Key` request header. Read by the `idempotent`
@@ -64,6 +71,7 @@ export async function createContext(_opts: unknown, c: HonoContext): Promise<Req
   const traceId = c.req.header('x-trace-id') ?? ulid();
   const ip = c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for') ?? null;
   const trustedIp = trustedClientIp((name) => c.req.header(name), env.CLIENT_IP_PROXY_KEY);
+  const peerIp = (c.env as { peerIp?: string | null } | undefined)?.peerIp ?? null;
   const userAgent = c.req.header('user-agent') ?? null;
   // M1.20: read idempotency key. Clip to 128 chars to match the
   // column width in sync.idempotency_keys; ignore empty strings so
@@ -92,6 +100,7 @@ export async function createContext(_opts: unknown, c: HonoContext): Promise<Req
     traceId,
     ip,
     trustedIp,
+    peerIp,
     userAgent,
     idempotencyKey,
     session,

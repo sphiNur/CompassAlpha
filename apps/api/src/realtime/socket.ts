@@ -7,12 +7,14 @@
  * plugs the real `verifyAccess` and `loadSession` in.
  */
 import type { Server, ServerWebSocket, WebSocketHandler } from 'bun';
-import { hub, WS_CLOSE_EVICTED } from './hub';
+import { hub, WS_CLOSE_MEMBERSHIP_ENDED } from './hub';
 import { checkClientRate } from '../services/rateLimit';
 
 export interface WSData {
   orgId: string;
   userId: string;
+  /** The member the token was issued for (F7: closed when they leave). */
+  memberId?: string;
   unsub: () => void;
   /** Access-token `exp` (epoch seconds); the socket is closed when it passes. */
   exp: number | null;
@@ -143,6 +145,7 @@ export async function handleWsRequest(
   const data: WSData = {
     orgId: claims.org,
     userId: claims.sub,
+    memberId: claims.mid,
     unsub: () => {},
     exp: typeof claims.exp === 'number' ? claims.exp : null,
     expiryTimer: null,
@@ -166,7 +169,9 @@ export function createWebSocketHandler(log: {
       ws.data.unsub = hub.subscribe(
         ws.data.orgId,
         (data) => ws.send(data),
-        () => ws.close(WS_CLOSE_EVICTED, 'evicted'),
+        (code) =>
+          ws.close(code, code === WS_CLOSE_MEMBERSHIP_ENDED ? 'membership ended' : 'evicted'),
+        ws.data.memberId,
       );
       // CA-35/F-08: the socket lives no longer than the token it was
       // opened with; the client reconnects with a fresh one.

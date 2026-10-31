@@ -437,6 +437,8 @@ export const uz = {
   'order.errors.qtyTooLarge': 'Bir qatorda koʻpi bilan 999 999,999.',
   'order.errors.extraNoteTooLong': "Izoh juda uzun (200 belgigacha).",
   'run.errors.cannotPlan': "Xaridlarni rejalashtirishga ruxsatingiz yoʻq.",
+  'common.errors.controlCharacters':
+    'Nomda boshqaruv belgilari (tabulyatsiya, yangi qator) boʻlishi mumkin emas',
   'common.errors.validation': 'Notoʻgʻri kiritish — belgilangan maydonlarni tekshiring',
   'common.networkError': 'Tarmoq xatosi — ulanishni tekshiring',
   'common.offlineNotSaved': 'Internet yoʻq — bu oʻzgarish saqlanmadi. Internet qaytganda qayta urinib koʻring.',
@@ -1307,6 +1309,8 @@ export const uz = {
     'Qabulda muammo boʻlgan qatorlar: {n}; taxminan {amount} {currency} qabul qilinmagan. Doʻkon hisoblari hali ham taqsimlangan miqdor boʻyicha.',
   'run.confirm.finish.receiptIssueLine': "{sku} · {store}: qabul {received}/{qty}",
   'run.confirm.finish.receiptIssuesMore': "…yana {n} ta",
+  'run.errors.expenseIdTaken':
+    'Bu xarajat boshqa xaridda yozilgan. Uni yangi xarajat sifatida qayta qoʻshing',
   'run.errors.expenseLabelRequired': 'Nomini kiriting',
   'run.errors.expenseLabelTooLong': 'Nom juda uzun (200 dan koʻp emas)',
   'run.errors.expenseReasonRequired': 'Sababni kiriting',
@@ -1691,6 +1695,8 @@ export const uz = {
   'dishes.readOnly':
     'Taom retseptini koʻrishingiz mumkin; menyuni tahrirlash uchun administrator beradigan ruxsat kerak.',
   'dishes.errors.namesRequired': 'Kamida bitta tildagi nom kerak.',
+  'admin.errors.displayNameSharedWithOtherOrg':
+    'Bu odam boshqa ish maydonida ham bor, shuning uchun ismini faqat oʻzi oʻzgartira oladi',
   'admin.errors.namesRequired': 'Kamida bitta tildagi nom kerak.',
   'dishes.errors.ingredientQtyMustBePositive': 'Ingredient miqdori > 0 boʻlishi kerak.',
   'dishes.errors.ingredientSkuNotFound': 'Retseptda nomaʼlum mahsulot.',

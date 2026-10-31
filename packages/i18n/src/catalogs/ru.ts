@@ -438,6 +438,8 @@ export const ru = {
   'order.errors.qtyTooLarge': 'В строке не больше 999 999,999.',
   'order.errors.extraNoteTooLong': 'Примечание слишком длинное (до 200 символов).',
   'run.errors.cannotPlan': 'У вас нет права планировать закупки.',
+  'common.errors.controlCharacters':
+    'Название не может содержать управляющие символы (табуляцию, перенос строки)',
   'common.errors.validation': 'Неверный ввод — проверьте отмеченные поля',
   'common.networkError': 'Ошибка сети — проверьте соединение',
   'common.offlineNotSaved': 'Нет сети — изменение не сохранено. Повторите, когда появится связь.',
@@ -1296,6 +1298,8 @@ export const ru = {
     'Строк с проблемой при приёмке: {n}; не получено примерно на {amount} {currency}. Счета магазинов по-прежнему считаются по распределённому количеству.',
   'run.confirm.finish.receiptIssueLine': '{sku} · {store}: принято {received}/{qty}',
   'run.confirm.finish.receiptIssuesMore': '…и ещё {n}',
+  'run.errors.expenseIdTaken':
+    'Этот расход уже записан в другой закупке. Добавьте его заново как новый расход',
   'run.errors.expenseLabelRequired': 'Укажите название',
   'run.errors.expenseLabelTooLong': 'Название слишком длинное (макс 200)',
   'run.errors.expenseReasonRequired': 'Укажите причину',
@@ -1676,6 +1680,8 @@ export const ru = {
   'dishes.readOnly':
     'Вы можете посмотреть рецепт; для редактирования меню нужно право, которое выдаёт администратор.',
   'dishes.errors.namesRequired': 'Хотя бы одно название обязательно.',
+  'admin.errors.displayNameSharedWithOtherOrg':
+    'Этот человек состоит и в другом рабочем пространстве, поэтому имя может изменить только он сам',
   'admin.errors.namesRequired': 'Хотя бы одно название обязательно.',
   'dishes.errors.ingredientQtyMustBePositive': 'Кол-во ингредиента должно быть > 0.',
   'dishes.errors.ingredientSkuNotFound': 'В рецепте указан неизвестный товар.',
