@@ -37,7 +37,7 @@ import {
   Spinner,
   useToast,
 } from '@compass/ui';
-import { ADMIN_RANK } from '@compass/contracts';
+import { ADMIN_RANK } from '@compass/contracts/schemas/roles';
 import { STALE } from '../../../config/timings';
 import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';

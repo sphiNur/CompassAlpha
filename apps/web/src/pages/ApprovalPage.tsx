@@ -39,7 +39,7 @@ import { formatQty, formatMoney } from '../lib/format';
 import { useStoreContext } from '../components/StoreSwitcher';
 import { sessionItemsView } from './approval/sessionItemsView';
 import { cardRequests, showPaymentSplit } from './approval/cardSummary';
-import { ORDER_QTY_MAX } from '@compass/contracts';
+import { ORDER_QTY_MAX } from '@compass/contracts/limits';
 
 type ApprovalTab = 'pending' | 'approved' | 'rejected';
 

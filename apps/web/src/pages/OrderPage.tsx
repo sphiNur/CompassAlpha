@@ -68,7 +68,7 @@ function isLockedStatus(status: string | null | undefined): boolean {
 import { formatQty, formatMoney } from '../lib/format';
 import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
 import { useStoreContext } from '../components/StoreSwitcher';
-import { ORDER_QTY_MAX } from '@compass/contracts';
+import { ORDER_QTY_MAX } from '@compass/contracts/limits';
 
 /** Order writes still waiting in the offline outbox for this store (an
  *  entry without a storeId, e.g. extras keyed by session, counts too). */
@@ -2393,7 +2393,7 @@ function ExtraRowEditor({
           onChange={(e) =>
             onChange({ unit: e.target.value as (typeof CANONICAL_UNITS)[number] })
           }
-          className="h-[var(--control-h)] w-20 rounded-[var(--r-input)] bg-[var(--c-surface)] px-2 text-center text-old-body text-[var(--c-fg)] ring-hairline focus:outline-none focus:ring-2 focus:ring-[var(--c-action)]"
+          className="h-[var(--control-h)] w-20 rounded-[var(--r-pill)] bg-[var(--c-surface)] px-2 text-center text-old-body text-[var(--c-fg)] ring-hairline focus:outline-none focus:ring-2 focus:ring-[var(--c-action)]"
         >
           {CANONICAL_UNITS.map((u) => (
             <option key={u} value={u}>

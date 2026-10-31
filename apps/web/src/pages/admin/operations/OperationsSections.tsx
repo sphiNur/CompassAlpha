@@ -9,7 +9,7 @@
  *   - FinanceSection     daily / by-supplier / by-store expense views
  *   - MaintenanceSection danger zone (+ TargetedPurgeBrowser, internal)
  */
-import { addMoney } from '@compass/contracts';
+import { addMoney } from '@compass/contracts/money';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Badge,

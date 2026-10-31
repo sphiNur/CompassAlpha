@@ -1,4 +1,5 @@
-import { SKU_STEPS, type SkuStep } from '@compass/contracts';
+import type { SkuStep } from '@compass/contracts';
+import { SKU_STEPS } from '@compass/contracts/limits';
 
 /**
  * Snap a legacy step value onto the canonical grid.

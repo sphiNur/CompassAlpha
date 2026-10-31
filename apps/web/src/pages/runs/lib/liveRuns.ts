@@ -60,3 +60,25 @@ export function pickActiveRun<R extends LiveRunRow>(
   }
   return buying ?? live.find((r) => r.status === 'delivering') ?? null;
 }
+
+/**
+ * What the top of the purchase screen shows before it can decide between
+ * "plan a new purchase" and the open run. P-2 (2026-10-31): while run.list
+ * was still loading, `activeRun` was null and the screen fell through to
+ * the planning branch; previewCreatable usually answers first, with no
+ * sessions (they are already in the open run), so the buyer briefly read
+ * "no approved orders to plan" — on a slow network it was the largest
+ * paint. Loading now shows a placeholder instead.
+ */
+export type RunListGate = 'error' | 'offline' | 'loading' | 'ready';
+
+export function runListGate(q: {
+  data: unknown;
+  isError: boolean;
+  fetchStatus: string;
+}): RunListGate {
+  if (q.data !== undefined) return 'ready';
+  if (q.isError) return 'error';
+  if (q.fetchStatus === 'paused') return 'offline';
+  return 'loading';
+}

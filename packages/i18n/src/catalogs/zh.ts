@@ -414,6 +414,7 @@ export const zh = {
   'order.errors.qtyTooLarge': '一行的数量不能超过 999,999.999。',
   'order.errors.extraNoteTooLong': '备注太长了（最多 200 个字）。',
   'run.errors.cannotPlan': '你没有安排采购的权限。',
+  'common.errors.controlCharacters': '名称不能包含控制字符（如制表符或换行）',
   'common.errors.validation': '输入无效——请检查高亮的字段',
   'common.networkError': '网络错误——请检查连接',
   'common.offlineNotSaved': '没有网络，这次修改没有保存。联网后请再试一次。',
@@ -1225,6 +1226,7 @@ export const zh = {
     '验收有问题 {n} 行，少收约 {amount} {currency}。门店的账单仍按分配数量计算。',
   'run.confirm.finish.receiptIssueLine': '{sku} · {store}：实收 {received}/{qty}',
   'run.confirm.finish.receiptIssuesMore': '…另有 {n} 行',
+  'run.errors.expenseIdTaken': '这笔费用已记在另一张采购单上，请作为新费用重新添加',
   'run.errors.expenseLabelRequired': '名称必填',
   'run.errors.expenseLabelTooLong': '名称过长（最多 200 字符）',
   'run.errors.expenseReasonRequired': '原因必填',
@@ -1590,6 +1592,7 @@ export const zh = {
   'dishes.readOnly':
     '你可以查看这道菜的配方，但编辑菜单需要管理员给你相应权限。',
   'dishes.errors.namesRequired': '至少需要填写一种语言的名称。',
+  'admin.errors.displayNameSharedWithOtherOrg': '此人也属于其他工作区，只有本人可以修改名字',
   'admin.errors.namesRequired': '至少需要填写一种语言的名称。',
   'dishes.errors.ingredientQtyMustBePositive': '食材用量必须 > 0。',
   'dishes.errors.ingredientSkuNotFound': '配方中引用了未知商品。',

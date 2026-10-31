@@ -27,11 +27,22 @@ manual action is needed when the tunnel or server restarts.
 The ntfy topic is reachable by anyone who learns its name. With the
 `ORIGIN_SIGNING_KEY` Worker secret set, the Worker only accepts messages
 of the form `<url>|<unix_ts>|<hex sig>`, where
-`sig = HMAC-SHA256(key, "<url>|<unix_ts>")`, the timestamp is at most 7
-days old and at most 5 minutes in the future, and the signature compares
-in constant time. Without the secret it accepts unsigned (and signed)
+`sig = HMAC-SHA256(key, "<url>|<unix_ts>")`, the timestamp is at most
+6 h 30 min old and at most 5 minutes in the future, and the signature
+compares in constant time. Without the secret it accepts unsigned (and signed)
 messages as before and logs one warning per isolate. The `/__origin` key
 check is constant-time too.
+
+Replays (security scan F3, 2026-10-31): anyone can re-post an old signed
+message to the topic. The Worker therefore takes the valid message with
+the largest signed timestamp (not the last one posted), stores the
+highest timestamp it accepted in the `COMPASS_ORIGIN` KV namespace
+(`signedTs`, plus a per-isolate copy because KV is eventually
+consistent) and ignores anything older. The accepted origin is written
+to KV `url` too, so when the topic holds no fresh message (watchdog late,
+ntfy down) the Worker keeps serving the newest origin it saw. The age
+window is tied to the watchdog's `republish_after_seconds=21600`: keep
+the window above that interval if either changes.
 
 The watchdog signs when it finds a key in
 `/home/ubuntu/.config/compass-origin.key` (mode 600, next to the topic
