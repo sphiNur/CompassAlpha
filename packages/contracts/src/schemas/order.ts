@@ -3,6 +3,7 @@ import {
   DateStringSchema,
   DecimalStringSchema,
   IdempotencyKeySchema,
+  ORDER_QTY_MAX,
   OrderQtySchema,
   UuidSchema,
 } from './common';
@@ -142,8 +143,8 @@ export const SessionExtraItemSchema = z.object({
   name: z.string().min(1).max(200),
   qty: z
     .string()
-    .regex(/^\d+(\.\d{1,3})?$/, 'invalid qty')
-    .refine((v) => Number(v) < 1_000_000, { message: 'too large' }),
+    .regex(/^\d+(\.\d{1,3})?$/, 'common.errors.invalidDecimal')
+    .refine((v) => Number(v) <= ORDER_QTY_MAX, { message: 'order.errors.qtyTooLarge' }),
   // M3.34: tightened from free-text to canonical enum.
   unit: CanonicalUnitSchema,
   note: z.string().max(200).optional(),

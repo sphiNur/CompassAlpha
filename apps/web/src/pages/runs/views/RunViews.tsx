@@ -19,7 +19,7 @@ import { Card, NumberInput, SectionLabel } from '@compass/ui';
 import { useAuthStore } from '../../../stores/authStore';
 import { formatMoney, formatMoneyThousands, formatQty, toQtyInput } from '../../../lib/format';
 import { useI18n, useUnitLabel } from '../../../hooks/useI18n';
-import { toDisplayPrice, fromDisplayPrice } from '../lib/priceMath';
+import { toDisplayPrice, fromDisplayPrice, readDisplayPrice } from '../lib/priceMath';
 import {
   priceRowState,
   priceAgeDays,
@@ -30,6 +30,7 @@ import {
 import { proportionalSplitQty } from '../lib/splitQty';
 import { PriceInFull, PriceUnitSwitch } from '../components/PriceUnit';
 import { otherStoreSkusOf, type ActiveRun } from '../types';
+import { lineAmountNumber, lineWithinCap } from '@compass/contracts';
 
 /**
  * GroupCardHeader — the "group title + right-aligned count·qty meta"
@@ -1423,7 +1424,7 @@ export function PurchaseRow({
         ? toDisplayPrice(collapsedPayload?.price ?? '', priceInThousands).trim()
         : price.trim();
     if (!actualQty || Number(actualQty) <= 0) return;
-    if (!displayPrice || Number(displayPrice) <= 0) return;
+    if (!displayPrice || readDisplayPrice(displayPrice, priceInThousands) === null) return;
 
     const splits = computeProportionalSplits(actualQty);
     if (!splits || splits.length === 0) {
@@ -1450,21 +1451,33 @@ export function PurchaseRow({
   // user sanity-check before tapping Save. M3.36: in thousands mode the
   // displayed `price` is divided by 1000, so multiply back so the
   // total reflects the actual UZS the operator will pay.
+  // D1: the line as the server will count it — qty × price, rounded
+  // half-up to cents (it used to round to whole som here).
+  const rawPrice = readDisplayPrice(price, priceInThousands);
   const totalHint = useMemo(() => {
     const q = Number(qty);
-    const p = Number(price);
-    if (!Number.isFinite(q) || !Number.isFinite(p) || q <= 0 || p <= 0) {
+    if (!/^\d+(\.\d+)?$/.test(qty.trim()) || q <= 0 || rawPrice === null) return null;
+    try {
+      return lineAmountNumber(qty.trim(), rawPrice);
+    } catch {
       return null;
     }
-    const effectiveP = priceInThousands ? p * 1000 : p;
-    return Math.round(q * effectiveP);
-  }, [qty, price, priceInThousands]);
+  }, [qty, rawPrice]);
+  // R2-BUY-2: a price the server would refuse (3rd decimal, 13th digit)
+  // is said under the field (PriceInFull), before the 5× check or a
+  // round trip, and ✓ stays off.
+  const priceProblem = price.trim() !== '' && rawPrice === null;
+  // R2-ENG-2: the server caps one line (qty × price) at 1e12.
+  const lineTooLarge =
+    totalHint !== null && rawPrice !== null && !lineWithinCap(qty.trim(), rawPrice);
 
   const canSave =
     item.status === 'pending' &&
     !saving &&
+    /^\d+(\.\d{1,3})?$/.test(qty.trim()) &&
     Number(qty) > 0 &&
-    Number(price) > 0;
+    rawPrice !== null &&
+    !lineTooLarge;
 
 
   /**
@@ -1848,6 +1861,7 @@ export function PurchaseRow({
             value={qty}
             onChange={(e) => setQty(e.target.value)}
             onFocus={(e) => e.currentTarget.select()}
+            formatError="none"
             enterKeyHint="next"
             onKeyDown={(e) => {
               if (e.key !== 'Enter') return;
@@ -1869,6 +1883,9 @@ export function PurchaseRow({
             value={price}
             onChange={(e) => setPrice(e.target.value)}
             onFocus={(e) => e.currentTarget.select()}
+            // The grid has no room for a message; line 3 says it.
+            formatError="none"
+            aria-invalid={priceProblem || undefined}
             enterKeyHint="done"
             onKeyDown={(e) => {
               if (e.key !== 'Enter') return;
@@ -1981,7 +1998,11 @@ export function PurchaseRow({
               currency={currency}
               unit={unit}
             />
-            {totalHint !== null ? (
+            {lineTooLarge ? (
+              <span role="alert" className="text-[var(--c-danger)]">
+                {i18n.t('run.errors.lineTooLarge')}
+              </span>
+            ) : totalHint !== null ? (
               <span>
                 ={' '}
                 <span className="font-mono font-semibold tabular-nums text-[var(--c-fg)]">

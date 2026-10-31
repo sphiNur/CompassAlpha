@@ -11,6 +11,7 @@
  * store's demand so the purchaser can see the store asked for them and
  * that they are deliberately not on the truck.
  */
+import { addMoney } from '@compass/contracts';
 import { splitSubtotal, splitUnitPrice } from './settlement';
 
 export type PickLine = { skuId: string; qty: string; lineTotal: number | null };
@@ -47,7 +48,7 @@ export function buildStorePickList(input: {
     const priced = item ? splitUnitPrice(sp, item) : (sp.unitPrice ?? null);
     const lineTotal = priced ? splitSubtotal(sp, item ?? {}) : null;
     if (lineTotal === null) total = null;
-    else if (total !== null) total += lineTotal;
+    else if (total !== null) total = addMoney(total, lineTotal);
     lines.push({ skuId: sp.skuId, qty: sp.qty, lineTotal });
   }
   const unavailable: Array<{ skuId: string; qty: string }> = [];

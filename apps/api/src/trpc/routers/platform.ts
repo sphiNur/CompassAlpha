@@ -2,7 +2,7 @@ import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { schema as s, withSystemContext } from '@compass/db';
-import { UuidSchema } from '@compass/contracts';
+import { isCalendarDate, UuidSchema } from '@compass/contracts';
 import { authedProcedure, router } from '../trpc';
 import { isPlatformAdmin } from '../../services/platformAdmin';
 import { readSubscriptionState } from '../../services/subscription';
@@ -22,13 +22,22 @@ const SubscriptionUpdateInputSchema = z.object({
   note: z.string().max(500).nullable().optional(),
 });
 
+/**
+ * RE-AUTH-3 (2026-10-31): only "YYYY-MM-DD" or a full ISO timestamp with
+ * a zone. `new Date()` read "2026-1-5" in the server's own zone (stored as
+ * 4 January 19:00 UTC) and "0000-01-01" as a real day, which Postgres then
+ * refused as a 500.
+ */
+const ISO_TIMESTAMP = /^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
+
 function parseDate(value: string | null | undefined): Date | null {
   if (!value) return null;
   const dayOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const datePart = dayOnly ? value : ISO_TIMESTAMP.exec(value)?.[1];
   const normalized = dayOnly ? `${value}T23:59:59.999Z` : value;
   const date = new Date(normalized);
   // AUTH-23 (2026-10-30): "2026-02-30" used to roll over to 2 March.
-  if (Number.isNaN(date.getTime()) || (dayOnly && date.toISOString().slice(0, 10) !== value)) {
+  if (!datePart || !isCalendarDate(datePart) || Number.isNaN(date.getTime())) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'platform.errors.invalidDate' });
   }
   return date;

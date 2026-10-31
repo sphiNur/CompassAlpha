@@ -823,6 +823,17 @@ const NamesSchema = z
 // gate can't drift apart. Migration 0036 backfills existing rows.
 const StepSchema = SkuStepSchema;
 
+/**
+ * CAT-10 (2026-10-31): a sort position. A fractional or huge value came
+ * back as zod's English "Expected integer" — "出错了" in the form — or
+ * overflowed the int column as a 500.
+ */
+const SortIndexSchema = z
+  .number({ invalid_type_error: 'admin.errors.sortIndexInteger' })
+  .int('admin.errors.sortIndexInteger')
+  .min(-1_000_000, 'admin.errors.sortIndexInteger')
+  .max(1_000_000, 'admin.errors.sortIndexInteger');
+
 /** A store's own time zone, or empty/null to follow the organisation's (CLS-7). */
 const StoreTimeZoneSchema = z
   .preprocess((value) => (value === '' ? null : value), TimeZoneSchema.nullable())
@@ -875,7 +886,7 @@ const SkuCreateInputSchema = z.object({
   names: NamesSchema,
   unit: SkuUnitSchema,
   step: StepSchema.default('1'),
-  sortIndex: z.number().int().default(0),
+  sortIndex: SortIndexSchema.default(0),
 });
 
 const SkuUpdateInputSchema = z.object({
@@ -885,7 +896,7 @@ const SkuUpdateInputSchema = z.object({
   names: NamesSchema.optional(),
   unit: SkuUnitSchema.optional(),
   step: StepSchema.optional(),
-  sortIndex: z.number().int().optional(),
+  sortIndex: SortIndexSchema.optional(),
   isArchived: z.boolean().optional(),
 });
 
@@ -932,7 +943,7 @@ const ExpenseTemplateCreateInputSchema = z.object({
   defaultQty: DecimalStr.default('1'),
   defaultUnitPrice: PositiveDecimalStr,
   defaultPaymentMethod: z.enum(['cash', 'transfer']).default('cash'),
-  sortIndex: z.number().int().default(0),
+  sortIndex: SortIndexSchema.default(0),
 });
 
 const ExpenseTemplateUpdateInputSchema = z.object({
@@ -942,7 +953,7 @@ const ExpenseTemplateUpdateInputSchema = z.object({
   defaultQty: DecimalStr.optional(),
   defaultUnitPrice: PositiveDecimalStr.optional(),
   defaultPaymentMethod: z.enum(['cash', 'transfer']).optional(),
-  sortIndex: z.number().int().optional(),
+  sortIndex: SortIndexSchema.optional(),
   isArchived: z.boolean().optional(),
 });
 
@@ -957,7 +968,7 @@ const CategoryCreateInputSchema = z.object({
     .max(64)
     .regex(/^[a-z0-9-]+$/),
   names: NamesSchema,
-  sortIndex: z.number().int().default(0),
+  sortIndex: SortIndexSchema.default(0),
 });
 
 const CategoryUpdateInputSchema = z.object({
@@ -969,7 +980,7 @@ const CategoryUpdateInputSchema = z.object({
     .regex(/^[a-z0-9-]+$/)
     .optional(),
   names: NamesSchema.optional(),
-  sortIndex: z.number().int().optional(),
+  sortIndex: SortIndexSchema.optional(),
   isArchived: z.boolean().optional(),
 });
 
@@ -1426,7 +1437,7 @@ export const adminRouter = router({
           .regex(/^[A-Z]{3}$/, 'currency must be ISO-4217 (3 uppercase letters)'),
         taxRatePct: z
           .string()
-          .regex(/^\d{1,3}(\.\d{1,2})?$/, 'tax must be a number, max 2 decimals'),
+          .regex(/^\d{1,3}(\.\d{1,2})?$/, 'admin.errors.taxRateFormat'),
         pricesIncludeTax: z.boolean(),
       }),
     )

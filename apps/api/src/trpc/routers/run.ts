@@ -37,6 +37,10 @@ import {
   UndoPurchaseInputSchema,
   UnmarkUnavailableInputSchema,
   DismissTopUpInputSchema,
+  centsToMoney,
+  lineAmount,
+  sumMoney,
+  toCents,
 } from '@compass/contracts';
 import {
   assertActorAssignedToStore,
@@ -67,7 +71,7 @@ import { projectRun } from '../../services/runProjection';
 import { projectOrder } from '../../services/orderProjection';
 import { hub } from '../../realtime/hub';
 import { dispatchRunEventNotifications } from '../../services/notifyForEvent';
-import { money2, runMoneyLinesSql, uuidListSql } from '../../services/runMoney';
+import { moneyText, runMoneyLinesSql, uuidListSql } from '../../services/runMoney';
 import { todayInTz } from '@compass/domain';
 import {
   hiddenSplits,
@@ -120,27 +124,6 @@ function sumDecimalStrings(values: readonly string[]): string {
   }
   const negative = total < 0n;
   const digits = (negative ? -total : total).toString().padStart(scale + 1, '0');
-  if (scale === 0) return `${negative ? '-' : ''}${digits}`;
-  const whole = digits.slice(0, -scale) || '0';
-  const fraction = digits.slice(-scale).replace(/0+$/, '');
-  return `${negative ? '-' : ''}${whole}${fraction ? `.${fraction}` : ''}`;
-}
-
-/** Exact multiplication for DB decimal strings (quantity × unit price). */
-function multiplyDecimalStrings(left: string, right: string): string {
-  const parse = (value: string): { units: bigint; scale: number } => {
-    const negative = value.startsWith('-');
-    const unsigned = negative ? value.slice(1) : value;
-    const [whole = '0', fraction = ''] = unsigned.split('.');
-    const units = BigInt(`${whole || '0'}${fraction}`);
-    return { units: negative ? -units : units, scale: fraction.length };
-  };
-  const a = parse(left);
-  const b = parse(right);
-  const scale = a.scale + b.scale;
-  const product = a.units * b.units;
-  const negative = product < 0n;
-  const digits = (negative ? -product : product).toString().padStart(scale + 1, '0');
   if (scale === 0) return `${negative ? '-' : ''}${digits}`;
   const whole = digits.slice(0, -scale) || '0';
   const fraction = digits.slice(-scale).replace(/0+$/, '');
@@ -1171,16 +1154,18 @@ export const runRouter = router({
       // override, item price) PLUS active expenses — so run.list agrees
       // with run.history and report.*. Before, this was items-only JS
       // float math and silently dropped expenses.
+      // D1 (2026-10-31): integer cents — the lines are rounded to cents
+      // in SQL, and adding them as floats could drift.
       type MutableStoreTotal = {
         storeId: string;
-        total: number;
-        itemsTotal: number;
-        expensesTotal: number;
-        cash: number;
-        transfer: number;
+        total: bigint;
+        itemsTotal: bigint;
+        expensesTotal: bigint;
+        cash: bigint;
+        transfer: bigint;
         /** Items-only cash/transfer — partitions the frozen actual_total. */
-        itemsCash: number;
-        itemsTransfer: number;
+        itemsCash: bigint;
+        itemsTransfer: bigint;
         itemCount: number;
       };
       const totalsByRun = new Map<string, Map<string, MutableStoreTotal>>();
@@ -1229,21 +1214,22 @@ export const runRouter = router({
         }
         runTotals.set(row.store_id, {
           storeId: row.store_id,
-          total: Number(row.total),
-          itemsTotal: Number(row.items_total),
-          expensesTotal: Number(row.expenses_total),
-          cash: Number(row.cash),
-          transfer: Number(row.transfer),
-          itemsCash: Number(row.items_cash),
-          itemsTransfer: Number(row.items_transfer),
+          total: toCents(row.total),
+          itemsTotal: toCents(row.items_total),
+          expensesTotal: toCents(row.expenses_total),
+          cash: toCents(row.cash),
+          transfer: toCents(row.transfer),
+          itemsCash: toCents(row.items_cash),
+          itemsTransfer: toCents(row.items_transfer),
           itemCount: row.item_count,
         });
       }
 
-      const moneyString = (n: number) => (Math.round(n * 100) / 100).toString();
+      const moneyString = centsToMoney;
+      const sumCents = (values: bigint[]) => values.reduce((sum, v) => sum + v, 0n);
       return visibleRuns.map((run) => {
-        const storeTotalRows = [...(totalsByRun.get(run.id)?.values() ?? [])].sort(
-          (a, b) => b.total - a.total,
+        const storeTotalRows = [...(totalsByRun.get(run.id)?.values() ?? [])].sort((a, b) =>
+          b.total > a.total ? 1 : b.total < a.total ? -1 : 0,
         );
         const storeTotals = storeTotalRows.map((total) => ({
           storeId: total.storeId,
@@ -1255,12 +1241,12 @@ export const runRouter = router({
           itemCount: total.itemCount,
         }));
         // items / expenses / total over the visible stores, live.
-        const itemsSum = storeTotalRows.reduce((sum, row) => sum + row.itemsTotal, 0);
-        const expensesSum = storeTotalRows.reduce((sum, row) => sum + row.expensesTotal, 0);
+        const itemsSum = sumCents(storeTotalRows.map((row) => row.itemsTotal));
+        const expensesSum = sumCents(storeTotalRows.map((row) => row.expensesTotal));
         const money = {
-          itemsTotal: money2(itemsSum),
-          expensesTotal: money2(expensesSum),
-          total: money2(itemsSum + expensesSum),
+          itemsTotal: centsToMoney(itemsSum),
+          expensesTotal: centsToMoney(expensesSum),
+          total: centsToMoney(itemsSum + expensesSum),
         };
         if (!allowedStoreSet) return { ...run, storeTotals, money };
 
@@ -1272,11 +1258,8 @@ export const runRouter = router({
         );
         // actual_total keeps its items-only meaning for partial readers too.
         const visibleActualTotal = itemsSum;
-        const visibleCashTotal = storeTotalRows.reduce((total, row) => total + row.itemsCash, 0);
-        const visibleTransferTotal = storeTotalRows.reduce(
-          (total, row) => total + row.itemsTransfer,
-          0,
-        );
+        const visibleCashTotal = sumCents(storeTotalRows.map((row) => row.itemsCash));
+        const visibleTransferTotal = sumCents(storeTotalRows.map((row) => row.itemsTransfer));
         return {
           ...run,
           // These columns are aggregates over the entire run. Never expose
@@ -1613,11 +1596,11 @@ export const runRouter = router({
             const totals = storeTotalsByRun.get(row.run_id) ?? [];
             totals.push({
               storeId: row.store_id,
-              total: row.total,
-              itemsTotal: row.items_total,
-              expensesTotal: row.expenses_total,
-              cash: row.cash,
-              transfer: row.transfer,
+              total: moneyText(row.total),
+              itemsTotal: moneyText(row.items_total),
+              expensesTotal: moneyText(row.expenses_total),
+              cash: moneyText(row.cash),
+              transfer: moneyText(row.transfer),
               itemCount: row.item_count,
             });
             storeTotalsByRun.set(row.run_id, totals);
@@ -1634,11 +1617,11 @@ export const runRouter = router({
             // 2026-10-21 CA-11: actualTotal = itemsTotal + expensesTotal
             // over the reader's visible stores (unchanged meaning here —
             // history always included expenses).
-            actualTotal: row.actual_total,
-            itemsTotal: row.items_total,
-            expensesTotal: row.expenses_total,
-            actualCashTotal: row.actual_cash_total,
-            actualTransferTotal: row.actual_transfer_total,
+            actualTotal: moneyText(row.actual_total),
+            itemsTotal: moneyText(row.items_total),
+            expensesTotal: moneyText(row.expenses_total),
+            actualCashTotal: moneyText(row.actual_cash_total),
+            actualTransferTotal: moneyText(row.actual_transfer_total),
             finishedAt: row.finished_at,
             itemCount: row.item_count,
             storeCount: row.store_count,
@@ -1653,11 +1636,11 @@ export const runRouter = router({
             hasNext: query.page * query.pageSize < totalCount,
           },
           summary: {
-            total: summary.total,
-            itemsTotal: summary.items_total,
-            expensesTotal: summary.expenses_total,
-            cash: summary.cash,
-            transfer: summary.transfer,
+            total: moneyText(summary.total),
+            itemsTotal: moneyText(summary.items_total),
+            expensesTotal: moneyText(summary.expenses_total),
+            cash: moneyText(summary.cash),
+            transfer: moneyText(summary.transfer),
           },
         };
       },
@@ -2514,7 +2497,7 @@ export const runRouter = router({
           for (const split of splits) {
             const item = itemBySkuId.get(split.skuId);
             if (item?.status !== 'purchased' || split.unitPrice === null) continue;
-            const subtotal = multiplyDecimalStrings(split.qty, split.unitPrice);
+            const subtotal = lineAmount(split.qty, split.unitPrice);
             visibleMoney.total.push(subtotal);
             if (split.paymentMethod === 'transfer') visibleMoney.transfer.push(subtotal);
             else visibleMoney.cash.push(subtotal);
@@ -2531,17 +2514,19 @@ export const runRouter = router({
           if (item?.status !== 'purchased') continue;
           const price = split.unitPrice ?? item.unitPrice;
           if (!price) continue;
-          moneyItemParts.push(multiplyDecimalStrings(split.qty, price));
+          moneyItemParts.push(lineAmount(split.qty, price));
         }
+        // D1: each line rounded half-up to cents, summed in cents — the
+        // same figures as report.* and the frozen RunFinished totals.
         const moneyExpenseParts = expenses.flatMap((expense) =>
-          expense.storeSplits.map((split) => multiplyDecimalStrings(split.qty, expense.unitPrice)),
+          expense.storeSplits.map((split) => lineAmount(split.qty, expense.unitPrice)),
         );
-        const moneyItemsTotal = sumDecimalStrings(moneyItemParts);
-        const moneyExpensesTotal = sumDecimalStrings(moneyExpenseParts);
+        const moneyItemsTotal = sumMoney(moneyItemParts);
+        const moneyExpensesTotal = sumMoney(moneyExpenseParts);
         const money = {
           itemsTotal: moneyItemsTotal,
           expensesTotal: moneyExpensesTotal,
-          total: sumDecimalStrings([moneyItemsTotal, moneyExpensesTotal]),
+          total: sumMoney([moneyItemsTotal, moneyExpensesTotal]),
         };
 
         // DLV-14 (2026-10-30): a store-scoped deny on delivery.dispatch only
@@ -2609,13 +2594,13 @@ export const runRouter = router({
             ? {
                 plannedTotal: null,
                 actualTotal:
-                  run.actualTotal === null ? null : sumDecimalStrings(visibleMoney.total),
+                  run.actualTotal === null ? null : sumMoney(visibleMoney.total),
                 actualCashTotal:
-                  run.actualCashTotal === null ? null : sumDecimalStrings(visibleMoney.cash),
+                  run.actualCashTotal === null ? null : sumMoney(visibleMoney.cash),
                 actualTransferTotal:
                   run.actualTransferTotal === null
                     ? null
-                    : sumDecimalStrings(visibleMoney.transfer),
+                    : sumMoney(visibleMoney.transfer),
                 sessionIdsJson: visibleSessionIds,
               }
             : {}),

@@ -4,17 +4,17 @@ import { DateStringSchema, UuidSchema } from './common';
 /** Money is transported as a decimal string to avoid float drift. */
 export const SettlementMoneySchema = z
   .string()
-  .regex(/^\d{1,12}(\.\d{1,2})?$/, 'invalid money amount')
+  .regex(/^\d{1,12}(\.\d{1,2})?$/, 'settlement.errors.invalidMoney')
   .refine((value) => Number(value) <= 999_999_999_999.99, {
-    message: 'money amount is too large',
+    message: 'settlement.errors.invalidMoney',
   });
 
 /** Previous-procurement carry may be debt (+) or unused credit (-). */
 export const SignedSettlementMoneySchema = z
   .string()
-  .regex(/^-?\d{1,12}(\.\d{1,2})?$/, 'invalid signed money amount')
+  .regex(/^-?\d{1,12}(\.\d{1,2})?$/, 'settlement.errors.invalidMoney')
   .refine((value) => Math.abs(Number(value)) <= 999_999_999_999.99, {
-    message: 'money amount is too large',
+    message: 'settlement.errors.invalidMoney',
   });
 
 export const SettlementGetInputSchema = z.object({

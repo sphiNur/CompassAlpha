@@ -19,9 +19,19 @@
  * rows and therefore cannot drift apart. The frozen
  * market_runs_v.actual_total is the items-only part (see RunFinished).
  *
+ * D1 (2026-10-31): `amount` is ROUND(qty × price, 2) — each line rounded
+ * half-up to cents, the same rule as `lineCents` in @compass/contracts
+ * (the domain's frozen RunFinished totals, run.get and the web use that).
+ * Sums of these lines are exact 2-decimal numerics, so a store's total,
+ * a day's group and the headline figure always add up. Before, the lines
+ * kept the half cents (0.5 × 2.01 = 1.005) and every reader rounded at a
+ * different step, one cent apart on one screen (R2-HIS-1). Events keep
+ * their stored values; this changes only what is derived from them.
+ *
  * Columns: run_id, store_id, kind ('item' | 'expense'), sku_id,
  * expense_id, label, supplier_id, unit_price, qty, amount, payment_method.
  */
+import { sumMoney } from '@compass/contracts';
 import { sql, type SQL } from 'drizzle-orm';
 
 export function runMoneyLinesSql(args: {
@@ -45,7 +55,7 @@ export function runMoneyLinesSql(args: {
       ri.supplier_id,
       COALESCE(ris.unit_price, ri.unit_price, 0) AS unit_price,
       ris.qty,
-      ris.qty * COALESCE(ris.unit_price, ri.unit_price, 0) AS amount,
+      ROUND(ris.qty * COALESCE(ris.unit_price, ri.unit_price, 0), 2) AS amount,
       COALESCE(ris.payment_method, ri.payment_method, 'cash') AS payment_method
     FROM ${args.runsSql} money_runs
     INNER JOIN read_model.run_items_v ri ON ri.run_id = money_runs.id
@@ -64,8 +74,10 @@ export function runMoneyLinesSql(args: {
       NULL::uuid AS supplier_id,
       expense.unit_price,
       COALESCE(NULLIF(expense_split.value->>'qty', '')::numeric, 0) AS qty,
-      COALESCE(NULLIF(expense_split.value->>'qty', '')::numeric, 0)
-        * expense.unit_price AS amount,
+      ROUND(
+        COALESCE(NULLIF(expense_split.value->>'qty', '')::numeric, 0) * expense.unit_price,
+        2
+      ) AS amount,
       expense.payment_method
     FROM ${args.runsSql} money_runs
     INNER JOIN read_model.run_expenses_v expense ON expense.run_id = money_runs.id
@@ -87,7 +99,10 @@ export function uuidListSql(ids: readonly string[] | null): SQL | null {
   );
 }
 
-/** Money string with 2 decimals from a JS number. */
-export function money2(n: number): string {
-  return (Math.round(n * 100) / 100).toFixed(2);
+/**
+ * A numeric money text from SQL ("12.30", "0", null) as a 2-decimal
+ * string, without going through a float.
+ */
+export function moneyText(value: string | null | undefined): string {
+  return sumMoney([value ?? '0']);
 }

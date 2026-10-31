@@ -17,6 +17,8 @@
  */
 import { describe, expect, test } from 'bun:test';
 import {
+  DateStringSchema,
+  isCalendarDate,
   RunCancelInputSchema,
   RunHistoryInputSchema,
   RunReasonOnlyInputSchema,
@@ -101,5 +103,23 @@ describe('RunHistoryInputSchema', () => {
       RunHistoryInputSchema.parse({ dateFrom: '2026-08-02', dateTo: '2026-08-01' }),
     ).toThrow();
     expect(() => RunHistoryInputSchema.parse({ pageSize: 51 })).toThrow();
+  });
+});
+
+describe('DateStringSchema (B11 / BUY-15 / RE-AUTH-3)', () => {
+  test('refuses year 0000 and days that do not exist, with a catalog key', () => {
+    for (const bad of ['0000-01-01', '0001-06-01', '1899-12-31', '3000-01-01', '2026-02-29', '2026-1-5']) {
+      const result = DateStringSchema.safeParse(bad);
+      expect(result.success).toBe(false);
+      if (!result.success) expect(result.error.issues[0]?.message).toBe('common.errors.invalidDate');
+    }
+  });
+
+  test('accepts real days, leap days included', () => {
+    for (const good of ['2026-10-31', '2028-02-29', '1900-01-01', '2999-12-31']) {
+      expect(DateStringSchema.safeParse(good).success).toBe(true);
+    }
+    expect(isCalendarDate('2026-10-31')).toBe(true);
+    expect(isCalendarDate('2026-10-31T00:00:00Z')).toBe(false);
   });
 });

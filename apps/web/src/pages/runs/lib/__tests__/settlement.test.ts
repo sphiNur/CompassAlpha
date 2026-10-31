@@ -12,6 +12,7 @@
  */
 import { describe, it, expect } from 'bun:test';
 import {
+  expenseLine,
   splitUnitPrice,
   splitPaymentMethod,
   splitSubtotal,
@@ -270,5 +271,43 @@ describe('settlePerStore', () => {
 
   it('returns an empty map for a run with nothing settled', () => {
     expect(settlePerStore([], [], []).size).toBe(0);
+  });
+});
+
+describe('D1: lines rounded half-up to cents, sums on whole cents (R2-HIS-1)', () => {
+  it('rounds each split, not the item', () => {
+    expect(splitSubtotal({ qty: '0.5' }, { unitPrice: '2.01' })).toBe(1.01);
+    const r = settleItemLine({ unitPrice: '2.01', purchasedQty: '1', paymentMethod: 'cash' }, [
+      { qty: '0.5' },
+      { qty: '0.5' },
+    ]);
+    // Two lines of 1.005 → 1.01 each, as the server's report counts them.
+    expect(r).toEqual({ line: 2.02, cash: 2.02, transfer: 0 });
+  });
+
+  it('per-store totals and expense lines agree with the server', () => {
+    const byStore = settlePerStore(
+      [{ skuId: 'a', status: 'purchased', unitPrice: '4.03' }],
+      [
+        { skuId: 'a', storeId: 'S1', qty: '0.5' },
+        { skuId: 'a', storeId: 'S2', qty: '0.5', paymentMethod: 'transfer' },
+      ],
+      [
+        {
+          qty: '1',
+          unitPrice: '2.01',
+          paymentMethod: 'cash',
+          storeSplits: [
+            { storeId: 'S1', qty: '0.5' },
+            { storeId: 'S2', qty: '0.5' },
+          ],
+        },
+      ],
+    );
+    expect(byStore.get('S1')).toMatchObject({ total: 3.03, cash: 3.03, expensesTotal: 1.01 });
+    expect(byStore.get('S2')).toMatchObject({ total: 3.03, cash: 1.01, transfer: 2.02 });
+    expect(
+      expenseLine({ qty: '1', unitPrice: '2.01', storeSplits: [{ qty: '0.5' }, { qty: '0.5' }] }),
+    ).toBe(2.02);
   });
 });
