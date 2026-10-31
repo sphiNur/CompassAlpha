@@ -19,8 +19,21 @@ export function errorTextKey(message: string | undefined, fallbackKey: string): 
   if (typeof message === 'string' && I18N_KEY_RE.test(message)) return message;
   const fromZod = zodIssueKey(message);
   if (fromZod) return fromZod;
+  if (isServerSideFailure(message)) return 'common.errors.internal';
   if (isLikelyNetworkError({ message })) return 'common.networkError';
   return fallbackKey;
+}
+
+/**
+ * R2-AUTH-3 (2026-10-31): the request reached our side and the server or
+ * its proxy answered with an error — a 502 page while the API restarts,
+ * or a session refresh that got a 5xx. Those travel as network failures
+ * (so writes still go to the offline queue) but telling the user to
+ * "check your connection" sent them after the wrong problem.
+ */
+export function isServerSideFailure(message: string | undefined): boolean {
+  if (typeof message !== 'string') return false;
+  return /\((gateway \d{3}|session refresh did not complete: server \d{3})\)/.test(message);
 }
 
 /**
@@ -52,4 +65,19 @@ export function zodIssueKey(message: string | undefined): string | null {
  */
 export function withoutFinalStop(message: string): string {
   return message.replace(/[。．.!！]+$/u, '');
+}
+
+/**
+ * Which catalog key a write's transport failure gets (R2-CLS-1,
+ * 2026-10-31). Only a device that is offline knows the request never
+ * left; otherwise the server may have saved it and only the answer was
+ * lost, and "not saved" would send the user to redo (and conflict with)
+ * a change that is already there.
+ */
+export function networkFailureKey(
+  online: boolean,
+  retrySafe: boolean,
+): 'common.offlineNotSaved' | 'common.maybeSaved' | 'common.maybeSavedRetrySafe' {
+  if (!online) return 'common.offlineNotSaved';
+  return retrySafe ? 'common.maybeSavedRetrySafe' : 'common.maybeSaved';
 }

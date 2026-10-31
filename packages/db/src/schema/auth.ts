@@ -405,6 +405,9 @@ export const memberRoleBindings = authSchema.table(
   (t) => ({
     memberIdx: index('mrb_member_idx').on(t.memberId),
     roleIdx: index('mrb_role_idx').on(t.roleId),
+    // RE-ADM-1: one binding per (member, role, scope_type, scope_id) is
+    // enforced by mrb_binding_unique (migration 0056, NULLS NOT DISTINCT,
+    // which this builder cannot express). Insert with onConflictDoNothing.
   }),
 );
 
@@ -490,6 +493,10 @@ export const refreshTokens = authSchema.table(
     userAgent: text('user_agent'),
     ip: varchar('ip', { length: 64 }),
     revokedAt: timestamp('revoked_at', { withTimezone: true, mode: 'date' }),
+    /** Why it was revoked when that is not consumption, a sign-out or a
+     *  replay: 'switched' = the chain ended on a workspace switch
+     *  (R2-ADM-1, migration 0057). NULL otherwise. */
+    revokeReason: varchar('revoke_reason', { length: 32 }),
     expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }).notNull(),
     createdAt: createdAt(),
   },

@@ -1250,6 +1250,8 @@ export function ExpenseTemplatesSection() {
             <div className="grid grid-cols-2 gap-3">
               <Field label={`${i18n.t('admin.field.defaultQty')} *`}>
                 <Input
+                  // CAT-10: read "1,5" / "20 000" like every number field.
+                  type="number"
                   value={draft.defaultQty}
                   onChange={(e) =>
                     setDraft({ ...draft, defaultQty: e.target.value })
@@ -1260,6 +1262,8 @@ export function ExpenseTemplatesSection() {
               </Field>
               <Field label={`${i18n.t('admin.field.defaultUnitPrice')} *`}>
                 <Input
+                  // CAT-10: read "1,5" / "20 000" like every number field.
+                  type="number"
                   value={draft.defaultUnitPrice}
                   onChange={(e) =>
                     setDraft({ ...draft, defaultUnitPrice: e.target.value })
@@ -1732,7 +1736,7 @@ export function DishesSection() {
                       >
                         <div className="flex items-center gap-2">
                           <select
-                            className="h-9 min-w-0 flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface)] px-3 text-old-body ring-hairline"
+                            className="h-[var(--control-h)] min-w-0 flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface)] px-3 text-old-body ring-hairline"
                             value={ing.skuId}
                             onChange={(e) => {
                               const next = [...draft.ingredients];

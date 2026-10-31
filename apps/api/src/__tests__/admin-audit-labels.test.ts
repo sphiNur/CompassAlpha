@@ -5,7 +5,12 @@
  * Postgres and are covered by the PG-gated adminAuditList suites.
  */
 import { describe, expect, test } from 'bun:test';
-import { auditRowRefs, buildAuditLabels, type AuditLookups } from '../trpc/routers/admin';
+import {
+  auditLabelsAtWrite,
+  auditRowRefs,
+  buildAuditLabels,
+  type AuditLookups,
+} from '../trpc/routers/admin';
 
 const M = '00000000-0000-4000-8000-0000000000a1';
 const U = '00000000-0000-4000-8000-0000000000b1';
@@ -159,5 +164,21 @@ describe('buildAuditLabels', () => {
     );
     expect(labels.targetNames).toEqual({ en: 'Onion', zh: '洋葱' });
     expect(labels.targetName).toBeNull();
+  });
+
+  test('R2-ADM-3: names kept at write time fill in for deleted targets; live names win', () => {
+    const refs = auditRowRefs({
+      resourceType: 'role',
+      resourceId: R,
+      inputs: { roleId: R, labelsAtWrite: { roleName: 'Race 2' } },
+      scopeStoreId: null,
+    });
+    const atWrite = auditLabelsAtWrite({ roleId: R, labelsAtWrite: { roleName: 'Race 2' } });
+    expect(buildAuditLabels(refs, lookups(), atWrite).roleName).toBe('Race 2');
+    expect(
+      buildAuditLabels(refs, lookups({ roleNameById: new Map([[R, 'Race 3']]) }), atWrite).roleName,
+    ).toBe('Race 3');
+    expect(auditLabelsAtWrite(null)).toEqual({});
+    expect(auditLabelsAtWrite({ labelsAtWrite: 'x' })).toEqual({});
   });
 });

@@ -1,0 +1,13 @@
+-- 0058_idempotency_request_hash.sql
+--
+-- BUY-16 (2026-10-31): the idempotency cache answered any request that
+-- carried a known key with the first request's result, even when the
+-- body was different (another product, another price) — the second
+-- write was reported done without running. The key now remembers a hash
+-- of the body it was first used with; a different body is refused (409).
+--
+-- SAFETY: a nullable column with no default — catalogue-only, instant.
+-- Rows written before it stay NULL and are treated as matching, so
+-- replays in flight across the deploy behave as before. The table only
+-- holds rows for 24 hours.
+ALTER TABLE sync.idempotency_keys ADD COLUMN IF NOT EXISTS request_hash varchar(64);

@@ -44,6 +44,9 @@ export const ru = {
   'qty.enterNumber': 'Введите число',
   'qty.atLeast': 'Введите не меньше {min}',
   'qty.atMost': 'Введите не больше {max}',
+  'qty.maxDecimals':
+    'Не больше {decimals, plural, one {# знака} few {# знаков} many {# знаков} other {# знака}} после запятой',
+  'number.invalid': 'Это не число — пишите так: 1500 или 1,5',
   'photo.label': 'Фото чека',
   'photo.remove': 'Удалить фото',
   'photo.hint': 'Нажмите, чтобы сфотографировать',
@@ -111,10 +114,10 @@ export const ru = {
     'Нужно администрировать хотя бы один ДРУГОЙ магазин, чтобы клонировать из него. Попросите администратора более высокого уровня добавить вас.',
   'admin.clone.alsoMembers': 'Также назначить сотрудников источника',
   'admin.clone.alsoMembersHint':
-    'Если включено, каждый сотрудник с привязкой к магазину-источнику получит её и для целевого — они будут видеть и работать в обоих. По умолчанию выключено: клонируется только структура ролей.',
+    'Если включено, сотрудники магазина-источника будут добавлены в целевой магазин с их ролями и смогут работать в обоих. По умолчанию выключено: копируется только роль по умолчанию, без людей.',
   'admin.clone.whatTitle': 'Что произойдёт',
   'admin.clone.whatBody':
-    'Для каждой привязки роли в магазине-источнике создать такую же в {store} (дубликаты пропускаются). Роли вашего уровня или выше в {store} пропускаются — они считаются отдельно.',
+    'Сами роли (название, уровень, права) общие для всей организации, их копировать не нужно. Здесь для {store} задаётся роль по умолчанию магазина-источника. Только с включённым пунктом выше в {store} добавляются люди с их ролями; роли вашего уровня или выше в {store} или с правами, которых у вас нет, пропускаются и считаются отдельно.',
   'ops.activity.emptyTitle': 'Пока нет событий',
   'ops.activity.emptyBody': 'События появятся, когда заказы или закупки начнут двигаться.',
   'ops.history.emptyTitle': 'Пока ничего не отправлено',
@@ -245,6 +248,9 @@ export const ru = {
     'Глобальные роли уровня организации могут выдавать только администраторы организации. Роли по магазинам вы по-прежнему можете назначать там, где администрируете.',
   'people.pickScopeFirst': 'Сначала выберите область выше, чтобы увидеть доступные роли.',
   'ops.maint.resetTodayTitle': 'Сбросить весь поток за сегодня',
+  'ops.maint.bulkDisabledBody':
+    'Сброс сегодняшнего дня, сброс даты и очистка всего отключены на рабочем сервере. Свои отдельные тестовые заказы и закупки по-прежнему можно удалить выше.',
+  'ops.maint.bulkDisabledTitle': 'Массовая очистка отключена',
   'ops.maint.resetTodayBody':
     'Удаляет все заказы, закупки, поставки, уведомления и записи истории цен с датой {date} — независимо от того, кто их создал, — вместе с закупками этих заказов и заказами этих закупок, даже за другие даты. Каталог и участники не затрагиваются. Используйте, только если уверены, что за сегодня нет данных реальных пользователей.',
   'ops.activity.recentEvents': 'Последние события',
@@ -364,6 +370,8 @@ export const ru = {
     'Клонировано {n, plural, one {# привязка роли} few {# привязки роли} many {# привязок ролей} other {# привязки роли}}',
   'admin.clone.toastAlreadyExisted': 'уже существовало: {n}',
   'admin.clone.toastSkippedRank': 'пропущено: {n} (слишком высокий уровень)',
+  'admin.clone.toastDefaultRole': 'Роль по умолчанию скопирована',
+  'admin.clone.toastSkippedPermission': 'пропущено: {n} (права, которых у вас нет)',
   'admin.clone.toastAssigned':
     'назначено {n, plural, one {# участник} few {# участника} many {# участников} other {# участника}}',
   'people.newRoleButton': 'Новая роль',
@@ -417,16 +425,26 @@ export const ru = {
   'common.error': 'Что-то пошло не так',
   'common.errors.rateLimited': 'Слишком много запросов — подождите и повторите',
   'common.errors.requestInFlight': 'Предыдущая попытка ещё обрабатывается. Повторите чуть позже.',
+  'common.errors.idempotencyKeyReused':
+    'Этот запрос повторил идентификатор предыдущего, но с другим содержимым, поэтому он не сохранён. Обновите страницу и попробуйте снова.',
   'common.errors.internal': 'На сервере произошла ошибка. Попробуйте ещё раз.',
+  'common.errors.invalidDecimal': 'Введите число, не более 3 знаков после запятой.',
+  'common.errors.positiveDecimal': 'Введите число больше 0, не более 3 знаков после запятой.',
+  'common.errors.invalidDate': 'Неверная дата. Пишите так: 2026-10-31.',
   'order.errors.tooManyExtras': 'В заказе может быть не больше 50 других позиций.',
   'order.errors.invalidExtraName': 'Укажите название (до 200 символов).',
   'order.errors.invalidExtraUnit': 'Укажите единицу (до 16 символов).',
   'order.errors.invalidExtraQty': 'Укажите количество больше 0, не более 3 знаков после запятой.',
+  'order.errors.qtyTooLarge': 'В строке не больше 999 999,999.',
   'order.errors.extraNoteTooLong': 'Примечание слишком длинное (до 200 символов).',
   'run.errors.cannotPlan': 'У вас нет права планировать закупки.',
   'common.errors.validation': 'Неверный ввод — проверьте отмеченные поля',
   'common.networkError': 'Ошибка сети — проверьте соединение',
   'common.offlineNotSaved': 'Нет сети — изменение не сохранено. Повторите, когда появится связь.',
+  'common.offlineNoData': 'Нет сети — эти данные ещё не загружались на этот телефон. Они загрузятся сами, когда появится связь.',
+  'common.savingSlow': 'Сохраняем…',
+  'common.maybeSaved': 'Сервер не ответил — неизвестно, сохранено ли изменение. Обновите страницу и проверьте, прежде чем менять снова.',
+  'common.maybeSavedRetrySafe': 'Сервер не ответил — изменение, возможно, уже сохранено. Сохранить ещё раз безопасно: дважды оно не запишется.',
 
   // ── 3. Settings ────────────────────────────────────────────────
   'settings.language.title': 'Язык',
@@ -549,6 +567,8 @@ export const ru = {
     'Для неё нужна сеть. Она откроется сама, когда появится связь, или нажмите «Повторить».',
   'shell.offline.body':
     'Показано то, что было загружено раньше. Заказы, закупки и приёмка сохраняются на телефоне и отправятся при подключении; закрытие дня, продажи и управление сохраняются только онлайн.',
+  'shell.offline.lastUpdated': 'обновлено {time}',
+  'shell.offline.noDataBody': 'На этом телефоне ещё ничего не загружено; данные появятся, когда будет связь. Заказы, закупки и приёмка сохраняются на телефоне и отправятся при подключении; закрытие дня, продажи и управление сохраняются только онлайн.',
   'order.pendingSync':
     '{n, plural, one {# изменение ждёт} few {# изменения ждут} many {# изменений ждут} other {# изменения ждут}} синхронизации',
   'shell.pageError.title': 'На этой странице произошла ошибка',
@@ -580,6 +600,8 @@ export const ru = {
   'auth.errors.invalidRefresh': 'Сессия истекла — войдите снова',
   'auth.errors.refreshReplayDetected':
     'Обнаружена подозрительная активность — все сессии этого аккаунта прерваны. Войдите снова.',
+  'auth.errors.refreshChainSwitched':
+    'Этот аккаунт переключился на другое рабочее пространство в другом месте, поэтому здесь вход завершён. Откройте приложение снова.',
   'auth.errors.missingPermission':
     'У вас нет прав на это действие. Если считаете это ошибкой, обратитесь к администратору.',
   'auth.errors.nameLocked': 'Имя зафиксировано — изменить может только администратор',
@@ -790,6 +812,8 @@ export const ru = {
   'auth.errors.notAssignedToStore': 'Вы не привязаны к этому магазину',
   'auth.errors.userMissing': 'Пользователь не найден',
   'auth.errors.cannotGrantEqualOrHigher': 'Нельзя выдавать роль вашего уровня или выше',
+  'auth.errors.cannotGrantMissingPermission':
+    'В этой роли есть права, которых нет у вас самих, поэтому выдать её нельзя.',
   'auth.errors.cannotRevokeEqualOrHigher': 'Нельзя отзывать роль вашего уровня или выше',
   'auth.errors.rateLimited': 'Слишком много попыток — подождите минуту',
   'system.errors.logRateLimited': 'Слишком много клиентских логов — притормозите',
@@ -824,8 +848,14 @@ export const ru = {
     'В закупке есть заказы других людей — удалить нельзя',
   'admin.errors.sessionHasForeignAuthors':
     'В заказе есть позиции других людей — удалить нельзя. Здесь можно удалять только свои тестовые заказы',
+  'admin.errors.runActedOnByOthers':
+    'Эту закупку или её заказы уже обработал другой человек (взял, купил, принял или проверил), поэтому её нельзя удалить как тестовые данные.',
+  'admin.errors.sessionActedOnByOthers':
+    'Этот заказ уже обработал другой человек (проверил, взял или отклонил), поэтому его нельзя удалить как тестовые данные.',
   'admin.errors.bulkPurgeDisabledInProduction':
-    'Массовая очистка (всё рабочее пространство, сброс даты) отключена на рабочем сервере. Удалить отдельный заказ или закупку по-прежнему можно.',
+    'Массовая очистка (сброс сегодняшнего дня, сброс даты, очистка всего рабочего пространства) отключена на рабочем сервере. Удалить отдельный заказ или закупку по-прежнему можно.',
+  'admin.errors.purgeGuardWaiverDisabledInProduction':
+    'На рабочем сервере нельзя отключить проверку, которая защищает чужие заказы и закупки от удаления.',
   'admin.errors.purgeHasSettlements':
     'За эти даты есть закрытия дня. Историю закрытий удалять нельзя, поэтому очистка невозможна',
   'admin.errors.runNotFound': 'Закупка не найдена',
@@ -985,12 +1015,17 @@ export const ru = {
   'approval.confirmTakeover': '{who} не работает с этим заказом. Взять проверку на себя?',
   'approval.unknownReviewer': 'другой проверяющий',
   'approval.unapprove': 'Отменить одобрение',
+  'approval.undo': 'Отменить',
   'approval.toast.approved': 'Одобрено ✓',
   'approval.toast.rejected': 'Отклонено',
   'approval.toast.claimed': 'Взято на проверку',
   'approval.toast.released': 'Освобождено',
   'approval.toast.tookOver': 'Передано вам — теперь проверяете вы',
   'approval.toast.unapproved': 'Одобрение отменено',
+  'approval.toast.claimTimedOut':
+    'Заказ, который вы проверяли ({owner}), освобождён из-за долгого бездействия.',
+  'approval.toast.claimTakenOver': '{who} взял(а) на себя заказ, который вы проверяли ({owner}).',
+  'approval.toast.undoTooLate': 'Отменить нельзя: заказ уже обработал другой человек.',
   'approval.toast.approveFailed': 'Не удалось одобрить',
   'approval.toast.rejectFailed': 'Не удалось отклонить',
   'approval.items.loading': 'Загрузка позиций…',
@@ -1027,6 +1062,7 @@ export const ru = {
   'order.errors.extraIndexOutOfRange': 'Строка прочей позиции не найдена',
   'order.errors.notClaimable': 'Заказ не на проверке',
   'order.errors.alreadyClaimed': 'Уже взят другим проверяющим',
+  'order.errors.takeOverCooldown': 'Этот заказ только что взяли на себя. Попробуйте через минуту.',
   'order.errors.notClaimer': 'Снять может только взявший заказ или другой проверяющий',
   'order.errors.cannotApprove': 'Нет прав на одобрение',
   'order.errors.notApprovable': 'Заказ не на проверке',
@@ -1139,10 +1175,41 @@ export const ru = {
   'run.errors.notVisible': 'Закупка не найдена или недоступна вам',
   'run.errors.priceFormat': 'Цена должна быть больше 0: не более 12 цифр и 2 знаков после запятой.',
   'run.errors.qtyFormat': 'Количество должно быть больше 0: не более 9 цифр и 3 знаков после запятой.',
+  'run.errors.lineTooLarge': 'Сумма строки (количество × цена) не может быть больше 1 000 000 000 000.',
   'run.errors.itemServesOtherStores':
     'Этот товар нужен и магазинам, за которые вы не отвечаете; изменить его может их закупщик.',
   'run.errors.runHasOtherStores':
     'В закупке есть магазины, за которые вы не отвечаете; этот шаг должен сделать закупщик всех магазинов.',
+  'run.errors.expenseServesOtherStores':
+    'Этот расход разделён на магазины, за которые вы не отвечаете. Расходы можно делить только на свои магазины.',
+  'run.pendingSync.row': 'Сохранено офлайн — ждёт синхронизации',
+  'run.pendingSync.short': 'ждёт синхронизации',
+  'run.topUp.lineOtherStores': 'Другие магазины добавили потребность; этим занимается закупщик всех магазинов',
+  'run.extras.recordPriceOtherStore': 'Цену записывает закупщик этого магазина',
+  'run.action.deliverRemaining': 'Ещё не доставлено магазинам: {n}',
+  'run.action.waitingStoreConfirm': 'Ждём подтверждения приёмки: {stores}',
+  'run.action.finishBlocked.otherStores': 'Завершить может только закупщик всех магазинов',
+  'run.action.finishBlocked.noPermission': 'У вас нет права завершать закупку',
+  'common.listSeparator': ', ',
+  'offline.action.purchaseItem': 'Запись покупки',
+  'offline.action.markUnavailable': 'Отметка «нет в наличии»',
+  'offline.action.deliverToStore': 'Подтверждение доставки',
+  'offline.action.addPurchaserItem': 'Добавление товара',
+  'offline.action.addExpense': 'Запись расхода',
+  'offline.action.confirmStoreItem': 'Отметка приёмки',
+  'offline.action.markStoreItemsOk': 'Отметить всё как OK',
+  'offline.action.confirmStore': 'Подтверждение приёмки',
+  'offline.drop.withReason': '«{action}» не синхронизировано: {reason}',
+  'offline.drop.generic': '«{action}» не синхронизировано — проверьте',
+  'confirm.final.title': 'Подтвердить приёмку в этом магазине?',
+  'confirm.final.summary': 'OK: {ok} · недостача: {short} · не то или брак: {bad}',
+  'confirm.final.shortWarning': 'Строк с недостачей: {n}. На склад попадёт принятое количество, изменить потом нельзя.',
+  'confirm.final.body': 'После подтверждения магазин больше не сможет изменить ни одну строку.',
+  'confirm.final.submit': 'Подтвердить приёмку',
+  'confirm.queued': 'Приёмка подтверждена офлайн — ждёт синхронизации',
+  'run.history.amendAdded': 'Добавлено при исправлении: +{qty} {unit} ({store})',
+  'run.history.priceAfterReceipt': 'Цена изменена после приёмки: {from} → {to}',
+  'run.amend.reopenedGoing': 'Исправление открыто',
   'run.errors.archiveCascadeFailed':
     'Не удалось архивировать закупку вместе с заказами. Ничего не изменено — попробуйте ещё раз.',
   'run.errors.cannotEjectInStatus': 'Заказы можно возвращать только на этапе плана или закупки',
@@ -1226,7 +1293,7 @@ export const ru = {
   'run.confirm.finish.expenses': '🧾 {n} поз. вне каталога / расходов · {total} {currency}',
   'run.confirm.finish.perStoreHeading': 'Разбивка по магазинам:',
   'run.confirm.finish.receiptIssues':
-    'Строк с проблемой при приёмке: {n}; не получено примерно на {amount} {currency}. Разбивка по магазинам по-прежнему считается по распределённому количеству.',
+    'Строк с проблемой при приёмке: {n}; не получено примерно на {amount} {currency}. Счета магазинов по-прежнему считаются по распределённому количеству.',
   'run.confirm.finish.receiptIssueLine': '{sku} · {store}: принято {received}/{qty}',
   'run.confirm.finish.receiptIssuesMore': '…и ещё {n}',
   'run.errors.expenseLabelRequired': 'Укажите название',
@@ -1355,7 +1422,6 @@ export const ru = {
   'run.amend.bannerHint':
     'Правка завершённой закупки. Нажмите «Сохранить правки» внизу, чтобы пересчитать.',
   'run.step.amend': 'Правка',
-  'run.amend.reopened': 'Режим правки включён — продолжите на вкладке «Закупка»',
   'run.amend.entryLabel': 'Править эту закупку (суперадмин)',
   'run.amend.reasonPlaceholder': 'Причина правки (обязательно)',
   'run.amend.reopenButton': 'Открыть для правки',
@@ -1500,6 +1566,9 @@ export const ru = {
   'admin.workspace.financeSheet.warning':
     'Смена валюты НЕ переводит исторические суммы. Задаётся один раз для организации.',
   'admin.errors.taxRateOutOfRange': 'Ставка налога должна быть от 0 до 50.',
+  'admin.errors.taxRateFormat': 'Ставка налога — число от 0 до 50, не более 2 знаков после запятой.',
+  'admin.errors.timeZoneUnknown': 'Неизвестный часовой пояс. Укажите название вида Asia/Tashkent.',
+  'admin.errors.sortIndexInteger': 'Порядок — целое число (от -1000000 до 1000000).',
 
   // ── 15a. Shared admin form labels (M1.21-C) ────────────────────
   'admin.field.slug': 'Код',
@@ -1980,6 +2049,8 @@ export const ru = {
   'notify.order.withdrawn.body': 'Менеджер вернул ваш отправленный заказ в черновик.',
   'notify.order.attachedToRun.title': 'Заказ добавлен в закупку',
   'notify.order.attachedToRun.body': 'Ваш заказ сейчас закупается.',
+  'notify.order.claimTakenOver.title': 'Вашу проверку взял другой',
+  'notify.order.claimTakenOver.body': 'Другой проверяющий взял заказ, который проверяли вы.',
   'notify.run.planned.title': 'Запланирована новая закупка',
   'notify.run.planned.body': 'Одобренные заказы собраны в закупку — можно начинать.',
   'notify.run.storeDelivered.title': 'Доставка прибыла',

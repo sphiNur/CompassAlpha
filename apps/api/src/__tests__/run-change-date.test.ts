@@ -113,7 +113,8 @@ describe.skipIf(!SHOULD_RUN)('run.changeDate onto a day that has a run (PG-gated
       });
       await tx
         .insert(s.memberRoleBindings)
-        .values({ memberId, roleId: superAdmin!.id, scopeType: 'global' });
+        .values({ memberId, roleId: superAdmin!.id, scopeType: 'global' })
+        .onConflictDoNothing();
     });
     session = {
       userId,

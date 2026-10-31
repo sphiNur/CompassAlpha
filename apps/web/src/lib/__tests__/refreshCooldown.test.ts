@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { authFetch, resetRefreshCooldownForTests } from '../trpc';
 import { isLikelyNetworkError } from '../networkError';
+import { errorTextKey } from '../errorText';
 import { useAuthStore } from '../../stores/authStore';
 
 // RE-AUTH-5 (2026-10-30): a refresh that never completed was attempted
@@ -42,5 +43,27 @@ describe('authFetch when the session refresh does not complete', () => {
     const err = await authFetch('/trpc/order.todaySession').catch((e) => e);
     expect(isLikelyNetworkError(err)).toBe(true);
     expect(calls).toEqual(['order.todaySession']);
+  });
+});
+
+// R2-AUTH-3 (2026-10-31): a refresh the server answered with 500 is the
+// server's problem; the page must not say "check your connection".
+describe('authFetch when the session refresh gets a server error', () => {
+  it('still fails as a network error (writes queue) but names the server status', async () => {
+    resetRefreshCooldownForTests();
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('auth.refresh')) {
+        return new Response('{"error":{}}', { status: 500, headers: { 'content-type': 'application/json' } });
+      }
+      return new Response('{"error":{}}', { status: 401, headers: { 'content-type': 'application/json' } });
+    }) as typeof fetch;
+    const err = await authFetch('/trpc/order.todaySession').catch((e) => e);
+    expect(isLikelyNetworkError(err)).toBe(true);
+    expect(errorTextKey(err.message, 'common.errorUnknown')).toBe('common.errors.internal');
+    expect(useAuthStore.getState().refreshToken).toBe('good-refresh');
+    // The follow-up inside the cooldown says the same.
+    const again = await authFetch('/trpc/order.todaySession').catch((e) => e);
+    expect(errorTextKey(again.message, 'common.errorUnknown')).toBe('common.errors.internal');
   });
 });

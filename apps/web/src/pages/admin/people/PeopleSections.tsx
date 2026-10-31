@@ -259,8 +259,10 @@ export function PeopleSection({
           onClear={() => setSearchQuery('')}
           placeholder={i18n.t('admin.search.peoplePlaceholder')}
           clearAriaLabel={i18n.t('common.clear')}
+          className="flex-1"
         />
-        <Button size="sm" onClick={() => setInviteOpen(true)}>
+        {/* md: the same 44px as the search field beside it (D18). */}
+        <Button className="shrink-0" onClick={() => setInviteOpen(true)}>
           {i18n.t('admin.action.invite')}
         </Button>
       </div>
@@ -1846,8 +1848,11 @@ function ManageMemberSheet({
                 disabled={!canRename}
                 placeholder={i18n.t('admin.field.memberNamePlaceholder')}
               />
+              {/* md, not sm (RE-ADM-9): the field beside it is 44px, and at
+                  sm a 32px button truncated "Save" at 360px. shrink-0 keeps
+                  the label whole; the field takes what is left. */}
               <Button
-                size="sm"
+                className="shrink-0"
                 loading={renameMut.isPending}
                 disabled={!canRename || !name.trim() || name.trim() === target.displayName}
                 onClick={() =>

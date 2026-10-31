@@ -15,6 +15,7 @@ import {
   Card,
   Chip,
   ChipBar,
+  ConfirmSheet,
   DataState,
   EmptyState,
   NameCell,
@@ -32,6 +33,8 @@ import { useDateFormat, useI18n, useProductNameParts, useUnitLabel } from '../ho
 import { usePhotoUploader } from '../hooks/usePhotoUploader';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { PendingSyncNotice } from '../components/PendingSyncNotice';
+import { useOfflineDropToast } from '../lib/offlineDrop';
+import { overlayPendingWrites, pendingStoreIds, withData } from './runs/lib/pendingOverlay';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
 import { formatQty } from '../lib/format';
@@ -80,6 +83,10 @@ export function ConfirmPage() {
   const [issueReceived, setIssueReceived] = useState('');
   const [issuePhoto, setIssuePhoto] = useState<string | null>(null);
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  // U4 (2026-10-31): 确认收货 is irreversible; it now goes through a
+  // summary sheet instead of submitting on one tap.
+  const [finalConfirmOpen, setFinalConfirmOpen] = useState(false);
+  const offlineDropToast = useOfflineDropToast();
   const photoUploader = usePhotoUploader('issue');
 
   const runsQuery = trpc.run.list.useQuery();
@@ -89,6 +96,7 @@ export function ConfirmPage() {
     isLoading: runsQuery.isLoading,
     isError: runsQuery.isError,
     hasData: runsQuery.data !== undefined,
+    waitingOffline: runsQuery.fetchStatus === 'paused',
   });
   // CAT-7 (2026-10-30): include archived products so lines already ordered,
   // approved or bought still show their name and unit (they showed as an id
@@ -118,7 +126,8 @@ export function ConfirmPage() {
         void utils.run.get.invalidate();
       },
     },
-    { onDrop: () => toast.error(i18n.t('run.toast.syncFailed')) },
+    // R2-DLV-3: a refused replay says which action failed and why.
+    { onDrop: offlineDropToast },
   );
 
   /**
@@ -156,9 +165,21 @@ export function ConfirmPage() {
   }, [pickedRunId, candidateRuns]);
   const activeRunId = pickedRunId ?? defaultDeliveringRunId(candidateRuns, storeConfirmedByRun);
   const activeRun = candidateRuns.find((r) => r.id === activeRunId) ?? null;
-  const detailQuery = trpc.run.get.useQuery(activeRun ? { runId: activeRun.id } : { runId: '' }, {
-    enabled: !!activeRun,
-  });
+  const detailQueryRaw = trpc.run.get.useQuery(
+    activeRun ? { runId: activeRun.id } : { runId: '' },
+    { enabled: !!activeRun },
+  );
+  // RE-DLV-4 / R2-DLV-3 (2026-10-31): verdicts and the receipt saved
+  // offline show on the page (waiting to sync) instead of the list looking
+  // as if nothing was saved.
+  const detailData = useMemo(
+    () => overlayPendingWrites(detailQueryRaw.data, offline.pendingEntries),
+    [detailQueryRaw.data, offline.pendingEntries],
+  );
+  const detailQuery = withData(detailQueryRaw, detailData);
+  const confirmQueued = currentStoreId
+    ? pendingStoreIds(activeRun?.id, offline.pendingEntries, 'run.confirmStore').has(currentStoreId)
+    : false;
 
   const skuById = useMemo(() => {
     const m = new Map<string, { names: Record<string, string>; unit: string }>();
@@ -242,12 +263,14 @@ export function ConfirmPage() {
   const confirmStore = trpc.run.confirmStore.useMutation({
     onSuccess: () => {
       void utils.run.get.invalidate();
+      setFinalConfirmOpen(false);
       haptic('success');
       toast.success(i18n.t('confirm.toast.storeConfirmed'));
     },
     onError: (err, vars) => {
       if (isLikelyNetworkError(err)) {
         void offline.enqueue('run.confirmStore', vars);
+        setFinalConfirmOpen(false);
         toast.info(i18n.t('confirm.toast.savedOffline'));
       } else {
         errToast('common.error')(err);
@@ -304,6 +327,13 @@ export function ConfirmPage() {
   const decidedCount = myItems.filter((sp) => sp.confirmStatus != null).length;
   const undecided = myItems.filter((sp) => sp.confirmStatus == null);
   const allDecided = myItems.length > 0 && undecided.length === 0;
+  // U4: what the receipt being confirmed says, for the summary sheet.
+  const verdictCounts = {
+    ok: myItems.filter((sp) => sp.confirmStatus === 'ok').length,
+    short: myItems.filter((sp) => sp.confirmStatus === 'short').length,
+    bad: myItems.filter((sp) => sp.confirmStatus === 'wrong' || sp.confirmStatus === 'quality')
+      .length,
+  };
   /** True once the store-level confirmation has actually landed. The
    *  Confirm Store button must hide AFTER this, otherwise repeated taps
    *  used to fire repeated `confirmStore.mutate` calls — the user
@@ -369,11 +399,24 @@ export function ConfirmPage() {
   let mainBtnVisible = false;
   let mainBtnActive = false;
   let mainBtnClick = () => {};
+  const submitConfirmStore = () => {
+    if (!activeRun || !currentStoreId) return;
+    if (storeConfirmed || confirmStore.isPending || !allDecided) return;
+    confirmStore.mutate({ runId: activeRun.id, storeId: currentStoreId });
+  };
   if (issueOpen) {
     mainBtnText = i18n.t('confirm.issue.save');
     mainBtnVisible = true;
     mainBtnActive = issueReasonOk && !confirmItem.isPending;
     mainBtnClick = submitIssue;
+  } else if (finalConfirmOpen) {
+    // U4: the summary sheet's primary, as the issue sheet does above.
+    mainBtnText = confirmStore.isPending
+      ? i18n.t('confirm.confirmingHint')
+      : i18n.t('confirm.final.submit');
+    mainBtnVisible = true;
+    mainBtnActive = allDecided && !storeConfirmed && !confirmStore.isPending;
+    mainBtnClick = submitConfirmStore;
   } else {
     // 2026-07-30: when the gate is closed, SAY so on the button instead of
     // showing an inert "确认收货". The comment where the gating banner used
@@ -393,7 +436,8 @@ export function ConfirmPage() {
       if (!activeRun || !currentStoreId) return;
       if (storeConfirmed || confirmStore.isPending) return;
       if (!allDecided) return;
-      confirmStore.mutate({ runId: activeRun.id, storeId: currentStoreId });
+      haptic('light');
+      setFinalConfirmOpen(true);
     };
   }
   usePageMainButton(mainBtnText, mainBtnClick, {
@@ -492,6 +536,8 @@ export function ConfirmPage() {
           <div className="flex items-center justify-center py-12 text-[var(--c-fg-muted)]">
             <Spinner size={28} />
           </div>
+        ) : runsView.kind === 'offline' ? (
+          <EmptyState title={i18n.t('common.offlineNoData')} />
         ) : runsView.kind === 'error' ? null : !activeRun ? (
           <EmptyState
             title={i18n.t('confirm.empty.nothingToConfirm')}
@@ -548,9 +594,19 @@ export function ConfirmPage() {
                         ) : null}
                       </div>
                     ) : (
-                      <div className="border-b border-[var(--c-divider)] px-4 py-2 text-old-label font-semibold text-[var(--c-success)]">
-                        {i18n.t('confirm.storeConfirmedAt', { time: dates.dateTime(confirmedAt) })}
-                      </div>
+                      confirmQueued ? (
+                        // R2-DLV-3: confirmed offline — saved, not yet sent.
+                        <div
+                          data-testid="confirm-queued"
+                          className="border-b border-[var(--c-divider)] px-4 py-2 text-old-label font-semibold text-[var(--c-warning-fg)]"
+                        >
+                          {i18n.t('confirm.queued')}
+                        </div>
+                      ) : (
+                        <div className="border-b border-[var(--c-divider)] px-4 py-2 text-old-label font-semibold text-[var(--c-success)]">
+                          {i18n.t('confirm.storeConfirmedAt', { time: dates.dateTime(confirmedAt) })}
+                        </div>
+                      )
                     )}
                     <ul className="flex flex-col" role="list">
                       {myItems.map((it) => {
@@ -718,6 +774,35 @@ export function ConfirmPage() {
           card meta "Tap a status for each item" + the disabled
           MainButton already convey the same gating. The redundant
           banner was visual clutter. */}
+
+      <ConfirmSheet
+        open={finalConfirmOpen && !storeConfirmed}
+        title={i18n.t('confirm.final.title')}
+        banner={
+          <div className="flex flex-col gap-2">
+            <div
+              data-testid="confirm-final-summary"
+              className="text-old-body font-semibold tabular-nums text-[var(--c-fg)]"
+            >
+              {i18n.t('confirm.final.summary', verdictCounts)}
+            </div>
+            {verdictCounts.short > 0 ? (
+              <Banner
+                tone="warn"
+                title={i18n.t('confirm.final.shortWarning', { n: verdictCounts.short })}
+              />
+            ) : null}
+          </div>
+        }
+        body={i18n.t('confirm.final.body')}
+        confirmLabel={i18n.t('confirm.final.submit')}
+        cancelLabel={i18n.t('common.cancel')}
+        pending={confirmStore.isPending}
+        onConfirm={submitConfirmStore}
+        onCancel={() => {
+          if (!confirmStore.isPending) setFinalConfirmOpen(false);
+        }}
+      />
 
       <Sheet
         open={bulkConfirmOpen}

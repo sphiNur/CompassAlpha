@@ -78,6 +78,7 @@ import { useAppMutating, useNavigationBlocked } from '../hooks/useAppMutating';
 import { SettingsSheet } from '../components/SettingsSheet';
 import { StoreChip, useStoreContext } from '../components/StoreSwitcher';
 import { PageMenuProvider, usePageMenuRegistration } from './PageMenuContext';
+import { lastUpdatedLabel, useCachedDataAge } from '../hooks/useCachedDataAge';
 
 // Debug tab moved INTO Admin as a sub-tab. Reduces bottom-nav clutter
 // (was 6 items, now 5) and groups operator-only views together. Admins
@@ -247,6 +248,7 @@ function ShellInner() {
       window.removeEventListener('offline', down);
     };
   }, []);
+  const cachedAt = useCachedDataAge(!online);
   const session = useAuthStore((s) => s.session);
   // M1.12: contextual "this page" actions live in the same gear as the
   // global SettingsSheet. Pages register via usePageMenu(). When the
@@ -646,10 +648,22 @@ function ShellInner() {
       >
         {/* HIS-9 / CLS-6 (2026-10-30): offline, lists kept showing the last
             data (or "nothing yet") with no word that it was stale. */}
+        {/* R2-ENG-1 / R2-SHL-2 (2026-10-31): say how old the data on screen
+            is (the saved copy keeps its load time), or that there is none,
+            instead of always promising "the last loaded content". */}
         {!online ? (
           <div className="px-4 pt-3">
-            <Banner tone="warn" title={i18n.t('shell.offline.title')}>
-              {i18n.t('shell.offline.body')}
+            <Banner
+              tone="warn"
+              title={
+                cachedAt !== null
+                  ? `${i18n.t('shell.offline.title')} · ${i18n.t('shell.offline.lastUpdated', {
+                      time: lastUpdatedLabel(cachedAt),
+                    })}`
+                  : i18n.t('shell.offline.title')
+              }
+            >
+              {i18n.t(cachedAt !== null ? 'shell.offline.body' : 'shell.offline.noDataBody')}
             </Banner>
           </div>
         ) : null}

@@ -137,9 +137,10 @@ export function HistoryPage() {
           clearAriaLabel={i18n.t('common.clear')}
           className="flex-1"
         />
+        {/* md: the same 44px as the search field beside it (D18). */}
         <Button
           variant={activeFilterCount > 0 ? 'primary' : 'secondary'}
-          size="sm"
+          className="shrink-0"
           onClick={() => {
             setDraftFilters(filters);
             setFiltersOpen(true);
@@ -345,6 +346,7 @@ export function HistoryPage() {
       loading={historyQuery.isLoading}
       fetching={historyQuery.isFetching}
       failed={historyQuery.isError && !data}
+      waitingOffline={!data && historyQuery.fetchStatus === 'paused'}
       totalCount={data?.pageInfo.totalCount ?? 0}
       summaryTotal={data?.summary.total ?? '0'}
       summaryItemsTotal={data?.summary.itemsTotal ?? '0'}

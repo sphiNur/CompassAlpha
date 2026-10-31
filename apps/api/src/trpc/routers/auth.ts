@@ -32,6 +32,7 @@ import {
   revokeAllForUser,
   revokeFamilyForUser,
   RefreshReplayError,
+  RefreshChainSwitchedError,
   RefreshNotFoundError,
 } from '../../services/refreshTokens';
 import { logger } from '../../infra/log';
@@ -386,11 +387,14 @@ async function grantDevMockAdmin(db: DB, memberId: string, orgId: string): Promi
       ),
   });
   if (!binding) {
-    await db.insert(s.memberRoleBindings).values({
-      memberId,
-      roleId: role.id,
-      scopeType: 'global',
-    });
+    await db
+      .insert(s.memberRoleBindings)
+      .values({
+        memberId,
+        roleId: role.id,
+        scopeType: 'global',
+      })
+      .onConflictDoNothing();
   }
 }
 
@@ -1186,13 +1190,16 @@ export const authRouter = router({
             ),
         });
         if (!existing) {
-          await tx.insert(s.memberRoleBindings).values({
-            memberId: member.id,
-            roleId: role.id,
-            scopeType: grant.scopeType,
-            scopeId: grant.scopeType === 'store' ? grant.scopeId : null,
-            grantedBy: invite.invitedBy,
-          });
+          await tx
+            .insert(s.memberRoleBindings)
+            .values({
+              memberId: member.id,
+              roleId: role.id,
+              scopeType: grant.scopeType,
+              scopeId: grant.scopeType === 'store' ? grant.scopeId : null,
+              grantedBy: invite.invitedBy,
+            })
+            .onConflictDoNothing();
         }
       }
 
@@ -1582,6 +1589,12 @@ export const authRouter = router({
         userAgent: ctx.userAgent,
       });
     } catch (err) {
+      if (err instanceof RefreshChainSwitchedError) {
+        throw new TRPCError({
+          code: 'UNAUTHORIZED',
+          message: 'auth.errors.refreshChainSwitched',
+        });
+      }
       if (err instanceof RefreshReplayError) {
         throw new TRPCError({
           code: 'UNAUTHORIZED',

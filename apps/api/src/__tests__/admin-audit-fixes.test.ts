@@ -340,4 +340,19 @@ describe.skipIf(!SHOULD_RUN)('plan limits and platform subscription (PG-gated)',
     });
     expect(audit.length).toBe(2);
   });
+
+  test('RE-AUTH-3: a subscription date in year 0000 or a loose "2026-1-5" is refused', async () => {
+    const base = { orgId, planCode: 'growth', status: 'active' as const };
+    for (const bad of ['0000-01-01', '2026-1-5', '2026-02-30', 'tomorrow', '2026-10-31T10:00']) {
+      expect(
+        await errorMessage(() =>
+          caller(session()).platform.updateSubscription({ ...base, currentPeriodEnd: bad }),
+        ),
+      ).toBe('platform.errors.invalidDate');
+    }
+    await caller(session()).platform.updateSubscription({
+      ...base,
+      currentPeriodEnd: '2026-12-31T10:00:00.000Z',
+    });
+  });
 });

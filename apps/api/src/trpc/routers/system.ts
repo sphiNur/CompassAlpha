@@ -6,6 +6,8 @@ import { RecentLogsInputSchema } from '@compass/contracts';
 import { permissionProcedure, publicProcedure, router } from '../trpc';
 import { logger } from '../../infra/log';
 import { checkClientRate } from '../../services/rateLimit';
+import { bulkPurgeAllowed } from '../../services/bulkPurge';
+import { env } from '../../env';
 
 /**
  * Rate limit for the public `system.log` endpoint (M1.9 hardening,
@@ -134,6 +136,9 @@ export const systemRouter = router({
    */
   appConfig: publicProcedure.query(() => ({
     botUsername: process.env.TELEGRAM_BOT_USERNAME ?? null,
+    // R2-CAT-3: the maintenance page hides the bulk purges the server
+    // would refuse anyway.
+    bulkPurgeAllowed: bulkPurgeAllowed(env),
   })),
 
   /**

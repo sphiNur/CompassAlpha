@@ -22,10 +22,11 @@ import { formatMoney, formatQty } from '../../../lib/format';
 import { matchesNameLike, normalizeQuery } from '../../../lib/searchMatch';
 import { useUnitLabel } from '../../../hooks/useI18n';
 import type { useI18n } from '../../../hooks/useI18n';
-import { toDisplayPrice, fromDisplayPrice } from '../lib/priceMath';
+import { toDisplayPrice, fromDisplayPrice, isStorablePrice, readDisplayPrice } from '../lib/priceMath';
 import { evenSplitQty } from '../lib/splitQty';
 import { followPaymentMethod, followUnitPrice } from '../lib/purchaseOverrides';
 import { PriceInFull, PriceUnitSwitch } from '../components/PriceUnit';
+import { lineAmountNumber } from '@compass/contracts';
 
 /**
  * M3.41 + M3.44 (2026-05-21 / 2026-05-22): draft state for the "+ add"
@@ -187,15 +188,17 @@ export function PurchaseSheet({
 
   const splitMatches = draft && Math.abs(splitTotal - Number(draft.actualQty || 0)) < 0.001;
   const reasonOk = !draft?.isEdit || draft.reason.trim().length > 0;
+  // R2-BUY-2: prices in the server's format (above 0, ≤12 digits, ≤2
+  // decimals), so a refused figure never reaches the 5× check or the API.
   const splitPricesOk =
     !draft?.perStorePricing ||
     [...draft.splits.entries()]
       .filter(([, qty]) => Number(qty) > 0)
-      .every(([storeId]) => Number(draft.splitPrices.get(storeId) || draft.unitPrice) > 0);
+      .every(([storeId]) => isStorablePrice(draft.splitPrices.get(storeId) || draft.unitPrice));
   const canSubmit = !!(
     draft &&
     Number(draft.actualQty) > 0 &&
-    Number(draft.unitPrice) > 0 &&
+    isStorablePrice(draft.unitPrice) &&
     splitMatches &&
     reasonOk &&
     splitPricesOk
@@ -375,7 +378,7 @@ export function PurchaseSheet({
             <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
               {i18n.t('run.action.supplier')}
               <select
-                className="mt-1 h-11 w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3 ring-hairline"
+                className="mt-1 h-[var(--control-h)] w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3 ring-hairline"
                 value={draft.supplierId ?? ''}
                 onChange={(e) => onChange({ ...draft, supplierId: e.target.value || null })}
               >
@@ -679,13 +682,13 @@ export function AddItemSheet({
     !!selectedSkuExisting &&
     (draft.skuCostMode === 'separateExpense' || selectedStoreAlreadyHasSku);
 
+  // D1: the line as the server counts it — rounded half-up to cents.
   const totalHint = useMemo(() => {
     if (!draft) return null;
-    const q = Number(draft.actualQty);
-    const p = Number(priceInput);
-    if (!Number.isFinite(q) || !Number.isFinite(p) || q <= 0 || p <= 0) return null;
-    const effectiveP = priceInThousands ? p * 1000 : p;
-    return Math.round(q * effectiveP);
+    const qty = draft.actualQty.trim();
+    const raw = readDisplayPrice(priceInput, priceInThousands);
+    if (!/^\d+(\.\d+)?$/.test(qty) || Number(qty) <= 0 || raw === null) return null;
+    return lineAmountNumber(qty, raw);
   }, [draft, priceInput, priceInThousands]);
 
   // 2026-07-06: the >200,000 UZS "receipt photo required" gate on
@@ -710,7 +713,7 @@ export function AddItemSheet({
     draft &&
     (draft.mode === 'sku' ? draft.skuId : draft.label.trim().length > 0) &&
     Number(draft.actualQty) > 0 &&
-    Number(draft.unitPrice) > 0 &&
+    isStorablePrice(draft.unitPrice) &&
     draft.splits.size > 0 &&
     splitMatches &&
     draft.reason.trim().length > 0 &&
@@ -841,7 +844,7 @@ export function AddItemSheet({
           {/* 1) Identity section — mode-specific. */}
           {draft.mode === 'sku' ? (
             selectedSku ? (
-              <div className="flex items-center justify-between rounded-[6px] bg-[var(--c-surface-2)] px-3 py-2">
+              <div className="flex items-center justify-between rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-3 py-2">
                 <div className="min-w-0">
                   <div className="truncate text-old-body font-semibold">
                     {productName(selectedSku)}
@@ -869,7 +872,7 @@ export function AddItemSheet({
                   placeholder={i18n.t('run.action.addItem.searchPlaceholder')}
                   autoFocus
                 />
-                <ul className="flex max-h-72 flex-col overflow-y-auto rounded-[6px] border border-[var(--c-divider)]">
+                <ul className="flex max-h-72 flex-col overflow-y-auto rounded-[var(--r-utility)] border border-[var(--c-divider)]">
                   {filteredSkus.length === 0 ? (
                     <li className="px-3 py-2 text-old-body-sm text-[var(--c-fg-muted)]">
                       {i18n.t('run.action.addItem.noMatch')}
@@ -977,7 +980,7 @@ export function AddItemSheet({
               Lists the stores that already have demand so the user
               knows which stores aren't available in the dropdown. */}
           {draft.mode === 'sku' && selectedSku && selectedSkuExisting ? (
-            <div className="rounded-[6px] bg-[var(--c-warning)]/10 px-3 py-2 text-old-label text-[var(--c-fg)] ring-1 ring-[var(--c-warning)]">
+            <div className="rounded-[var(--r-utility)] bg-[var(--c-warning)]/10 px-3 py-2 text-old-label text-[var(--c-fg)] ring-1 ring-[var(--c-warning)]">
               {i18n.t('run.action.addItem.crossStoreHint', {
                 stores: [...selectedSkuExisting.storeIds]
                   .map((id) => storeById.get(id)?.name ?? id.slice(0, 8))
@@ -988,7 +991,7 @@ export function AddItemSheet({
           {/* 2) Store selection — SKU mode is single-store dropdown,
                  expense mode is multi-store chips with auto-even-split. */}
           {draft.mode === 'sku' && selectedSku && selectedSkuExisting ? (
-            <div className="rounded-[6px] bg-[var(--c-surface-2)] p-2">
+            <div className="rounded-[var(--r-utility)] bg-[var(--c-surface-2)] p-2">
               <div className="mb-1 text-old-label font-semibold text-[var(--c-fg-muted)]">
                 {i18n.t('run.action.addItem.costModeTitle')}
               </div>
@@ -1038,7 +1041,7 @@ export function AddItemSheet({
             <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
               {i18n.t('run.action.addItem.targetStore')}
               <select
-                className="mt-1 h-11 w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3 ring-hairline"
+                className="mt-1 h-[var(--control-h)] w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3 ring-hairline"
                 value={selectedStoreId}
                 onChange={(e) => {
                   const next = new Map<string, string>();

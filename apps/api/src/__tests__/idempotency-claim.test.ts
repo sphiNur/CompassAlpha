@@ -10,9 +10,10 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
 import { getDb, schema as s, withOrgContext } from '@compass/db';
 import { logger } from '../infra/log';
-import { idempotentMutation, router } from '../trpc/trpc';
+import { idempotencyRequestHash, idempotentMutation, router } from '../trpc/trpc';
 import type { RequestContext, SessionContext } from '../trpc/context';
 
 (function loadEnv() {
@@ -55,6 +56,12 @@ const testRouter = router({
     }
     return { n };
   }),
+  buy: idempotentMutation
+    .input(z.object({ item: z.string(), qty: z.number() }))
+    .mutation(async ({ input }) => {
+      runs += 1;
+      return { bought: input.item, n: runs };
+    }),
 });
 
 function caller(key: string) {
@@ -120,6 +127,29 @@ describe.skipIf(!SHOULD_RUN)('idempotency claim (PG-gated)', () => {
     const ok = await caller(key).slowWrite();
     expect(runs - before).toBe(1);
     expect(ok.n).toBe(runs);
+  });
+
+  test('BUY-16: one key with a different body is refused, not answered with the old result', async () => {
+    const key = randomUUID();
+    const first = await caller(key).buy({ item: 'apple', qty: 1 });
+    // The same request again (keys in another order) is the cached answer.
+    expect(await caller(key).buy({ qty: 1, item: 'apple' })).toEqual(first);
+    const before = runs;
+    let err: { code?: string; message: string } | null = null;
+    try {
+      await caller(key).buy({ item: 'chicken', qty: 1 });
+    } catch (e) {
+      err = { code: (e as { code?: string }).code, message: (e as Error).message };
+    }
+    expect(err).toEqual({ code: 'CONFLICT', message: 'common.errors.idempotencyKeyReused' });
+    expect(runs).toBe(before);
+  });
+
+  test('BUY-16: the body hash ignores key order and undefined fields', () => {
+    expect(idempotencyRequestHash({ a: 1, b: [1, { c: 2, d: undefined }] })).toBe(
+      idempotencyRequestHash({ b: [1, { c: 2 }], a: 1 }),
+    );
+    expect(idempotencyRequestHash({ a: 1 })).not.toBe(idempotencyRequestHash({ a: 2 }));
   });
 
   test('different keys still each run', async () => {

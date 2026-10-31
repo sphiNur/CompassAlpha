@@ -12,6 +12,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { expectTappable } from './tap-area';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -79,6 +80,24 @@ test('place an order', async () => {
   await add('Beef', 2, '1 kg');
   await evidence('order-picking');
 
+  // A typed quantity, one key at a time (R2-ORD-1 / R2-ORD-2): "1,000"
+  // used to pass through "1," and land as 1; "0.0004" offered "Set 0".
+  await item('Apple').getByRole('button', { name: /^Quantity/ }).click();
+  const custom = sheet().getByRole('textbox');
+  await custom.click();
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.type('1,000');
+  await expect(custom).toHaveValue('1,000');
+  await expect(sheet().getByRole('button', { name: 'Set 1000 kg' })).toBeEnabled();
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.type('0.0004');
+  await expect(sheet().getByRole('alert')).toHaveText('At most 3 decimals');
+  await expect(sheet().getByRole('button', { name: /^Set/ })).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await expect(item('Apple').getByRole('button', { name: /^Quantity/ })).toHaveAccessibleName(
+    'Quantity 2 kg — tap to choose',
+  );
+
   await expect(mainButton()).toHaveText('Review order (2)');
   await mainButton().click();
   await expect(sheet().getByRole('listitem').filter({ hasText: 'Apple' }).last()).toHaveText(
@@ -133,7 +152,29 @@ test('buy everything, one item in cash and one by transfer', async () => {
   };
   await buy('Apple', '12', 'Cash');
   await evidence('run-buying');
-  await buy('Beef', '90', 'Transfer');
+
+  // The purchaser's most-tapped controls take a tap across 44×44, not
+  // just look that big: nothing clips or covers them (R2-VIS-2, V4).
+  await main()
+    .getByRole('button', { name: /^Set price Beef/ })
+    .click();
+  await expectTappable({
+    'bought row: payment method': item('Apple').getByRole('button', {
+      name: 'Payment method: Cash',
+    }),
+    'open row: payment method': item('Beef').getByRole('button', {
+      name: 'Payment method: Cash',
+    }),
+    'open row: save': item('Beef').getByRole('button', { name: 'Save purchase: Beef' }),
+    '+ Add': main().getByRole('button', { name: '+ Add', exact: true }),
+    '+ Expense': main().getByRole('button', { name: '+ Expense', exact: true }),
+    'nav: Buying': tab('run'),
+  });
+  await item('Beef').getByRole('textbox', { name: 'unit price' }).fill('90');
+  await item('Beef').getByRole('button', { name: 'Payment method: Cash' }).click();
+  await item('Beef').getByRole('button', { name: 'Save purchase: Beef' }).click();
+  await expect(item('Beef').getByRole('button', { name: /^Bought Beef/ })).toBeVisible();
+  await expect(item('Beef').getByRole('button', { name: 'Payment method: Transfer' })).toBeVisible();
 
   await expect(main()).toContainText('2 bought · 0 n/a · 0 left');
   await expect(item('Apple')).toContainText('24,000 UZS');
@@ -147,6 +188,11 @@ test('deliver to the store', async () => {
   await sheet().getByRole('button', { name: 'Start delivery' }).click();
   await expect(main()).toContainText(/Stores\s*0\/1 confirmed/);
   await evidence('run-delivering');
+  // The rows that open the price editor and the store rows (R2-DLV-4).
+  await expectTappable({
+    'fill in prices: Apple': main().getByRole('button', { name: /^Apple/ }),
+    'store row': main().getByRole('button', { name: /Central Kitchen.*Not delivered/ }),
+  });
 
   await main()
     .getByRole('button', { name: /Central Kitchen.*Not delivered/ })
@@ -171,6 +217,9 @@ test('receive the delivery at the store', async () => {
   await evidence('receiving-checked');
   await expect(mainButton()).toHaveText('Confirm receipt');
   await mainButton().click();
+  // U4: the irreversible confirmation goes through a summary sheet.
+  await expect(sheet()).toContainText('OK: 2 · short: 0 · wrong or damaged: 0');
+  await sheet().getByRole('button', { name: 'Confirm receipt' }).click();
   await expect(mainButton()).toBeHidden();
 });
 

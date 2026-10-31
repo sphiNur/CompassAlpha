@@ -1,4 +1,5 @@
 import { initTRPC, TRPCError } from '@trpc/server';
+import { createHash } from 'node:crypto';
 import { ZodError } from 'zod';
 import { and, eq, gt, isNull, lte } from 'drizzle-orm';
 import { DomainError } from '@compass/domain';
@@ -206,6 +207,30 @@ const IDEMPOTENCY_WAIT_MS = 8 * 1000;
  */
 let capturedMiddlewareMarker: unknown;
 
+/** JSON with object keys sorted, so the same input always hashes alike. */
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object' && !(value instanceof Date)) {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableJson(v)}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+/**
+ * BUY-16 (2026-10-31): what the key was first used for. The cache used to
+ * answer any request carrying a known key with the first one's result, so
+ * a reused key with a different body (another product, another price)
+ * was silently "done" without running. Exported for tests.
+ */
+export function idempotencyRequestHash(rawInput: unknown): string {
+  return createHash('sha256')
+    .update(stableJson(rawInput ?? null))
+    .digest('hex');
+}
+
 const idempotencyMiddleware = t.middleware(async (opts) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ctx = opts.ctx as any;
@@ -217,6 +242,14 @@ const idempotencyMiddleware = t.middleware(async (opts) => {
     return opts.next();
   }
   const db = ctx.db as RequestContext['db'];
+  const requestHash = idempotencyRequestHash(await opts.getRawInput());
+  /** BUY-16: the key is held for a different request body. A row from
+   *  before the hash existed (NULL) is taken to match. */
+  const refuseIfOtherBody = (row: { requestHash: string | null }) => {
+    if (row.requestHash && row.requestHash !== requestHash) {
+      throw new TRPCError({ code: 'CONFLICT', message: 'common.errors.idempotencyKeyReused' });
+    }
+  };
 
   // R3 (2026-10-30): claim the key BEFORE running the handler. The old
   // check-then-run let two requests with the same key both miss the
@@ -237,6 +270,7 @@ const idempotencyMiddleware = t.middleware(async (opts) => {
           route: opts.path,
           userId,
           response: null,
+          requestHash,
           expiresAt: new Date(now.getTime() + IDEMPOTENCY_PENDING_MS),
         })
         .onConflictDoUpdate({
@@ -247,6 +281,7 @@ const idempotencyMiddleware = t.middleware(async (opts) => {
             route: opts.path,
             userId,
             response: null,
+            requestHash,
             expiresAt: new Date(now.getTime() + IDEMPOTENCY_PENDING_MS),
           },
           where: lte(s.idempotencyKeys.expiresAt, now),
@@ -298,6 +333,7 @@ const idempotencyMiddleware = t.middleware(async (opts) => {
         if (await claim()) break;
         return opts.next();
       }
+      refuseIfOtherBody(existing);
       if (existing.response !== null && existing.response !== undefined) {
         // M3.9: debug, not info — cache hits are the good path.
         logger.debug({ path: opts.path, userId, key }, 'idempotency cache hit — returning prior response');

@@ -112,7 +112,7 @@ export function SessionPicker({
           <span className="flex-1 text-old-body">{i18n.t('run.select.runDate')}</span>
           <input
             type="date"
-            className="rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-2 py-1 text-old-body tabular-nums ring-hairline"
+            className="h-[var(--control-h)] rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-3 text-old-body tabular-nums ring-hairline"
             value={runDate}
             max={today ?? undefined}
             onChange={(e) => onRunDateChange(e.target.value)}
