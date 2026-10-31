@@ -68,6 +68,8 @@ import {
   tabFromStartParam,
 } from '../lib/deepLink';
 import { publishMainButtonInset } from '../lib/mainButtonInset';
+import { subscribeAnnouncements } from '../lib/announce';
+import { setPageTitleBase } from '../lib/pageTitle';
 import { useI18n } from '../hooks/useI18n';
 import {
   getTg,
@@ -384,6 +386,20 @@ function ShellInner() {
   useEffect(() => {
     if (tab !== persistedTab) setPersistedTab(tab);
   }, [tab, persistedTab, setPersistedTab]);
+  // A11Y-10 (2026-10-31): the document title names the page and the store
+  // ("下单 · Central Kitchen · Compass"); it used to be "Compass" on every
+  // screen. Pages without a visible heading get a hidden <h1> below.
+  const activeTabDef = visible.find((t) => t.key === tab);
+  const tabLabel = activeTabDef
+    ? i18n.t(activeTabDef.labelKey as Parameters<typeof i18n.t>[0])
+    : null;
+  const titleStoreName =
+    storeCtx.kind === 'specific'
+      ? (session?.stores.find((st) => st.id === storeCtx.storeId)?.name ?? null)
+      : null;
+  useEffect(() => {
+    setPageTitleBase([tabLabel, titleStoreName]);
+  }, [tabLabel, titleStoreName]);
   // App-level language picker — wired into Telegram's gear icon in
   // the bot's `⋯` overflow menu (added 2026-05-05). Available on every
   // page for every user without consuming layout space. The Admin →
@@ -642,6 +658,7 @@ function ShellInner() {
         </header>
       )}
 
+      <LiveAnnouncer />
       <main
         className="min-h-0 flex-1 overflow-y-auto"
         // Native iOS momentum scrolling. Without this, scroll inside
@@ -686,6 +703,7 @@ function ShellInner() {
         ) : null}
         {/* SHL-3 (2026-10-30): a member whose roles open no tab (only
             reports.view, say) got an empty bar over the order page. */}
+        {tabLabel && !TABS_WITH_OWN_H1.has(tab) ? <h1 className="sr-only">{tabLabel}</h1> : null}
         {visibleKeys.length > 0 ? (
           <PageErrorBoundary
             key={tab}
@@ -827,6 +845,24 @@ function BottomNav({
   );
 }
 
+/** A11Y-10: pages that render their own visible <h1>. */
+const TABS_WITH_OWN_H1: ReadonlySet<Tab> = new Set<Tab>(['history', 'settlement', 'sales', 'admin']);
+
+/**
+ * A11Y-12 (2026-10-31): the app's one polite status region. Pages say
+ * things through `announce()` / `useAnnounce()` (lib/announce.ts): search
+ * and filter result counts, which used to change on screen in silence.
+ */
+function LiveAnnouncer() {
+  const [text, setText] = useState('');
+  useEffect(() => subscribeAnnouncements(setText), []);
+  return (
+    <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+      {text}
+    </div>
+  );
+}
+
 /**
  * In-DOM page primary action button (M3.49, 2026-05-23). Reads from the
  * module-level store written by usePageMainButton(). Renders nothing
@@ -880,6 +916,9 @@ function PageMainButton() {
 
   if (!state || !state.visible) return null;
   const interactable = state.active && !busy;
+  // A11Y-2: an inactive button whose page can say why stays in the Tab
+  // order (aria-disabled) and points at the problem when used.
+  const explains = !interactable && !busy && !!state.onInactiveClick;
   return (
     <div
       ref={barRef}
@@ -898,8 +937,9 @@ function PageMainButton() {
       <button
         type="button"
         data-testid="page-main-button"
-        disabled={!interactable}
-        onClick={guardTap(state.onClick, state.text)}
+        disabled={!interactable && !explains}
+        aria-disabled={explains || undefined}
+        onClick={explains ? state.onInactiveClick : guardTap(state.onClick, state.text)}
         aria-busy={busy || undefined}
         className={
           'flex h-12 w-full min-w-0 items-center justify-center rounded-[var(--r-pill)] px-4 text-old-h3 font-semibold ' +

@@ -806,8 +806,10 @@ export function ExpensesCard({
               key={e.id}
               className="border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0"
             >
-              <div className="flex items-baseline gap-2">
-                <span className="shrink-0 truncate text-old-body font-semibold">
+              {/* A11Y-1 (2026-10-31): wraps at 200% zoom instead of pushing
+                  the ✗ off the side of the screen. */}
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <span className="min-w-0 break-words text-old-body font-semibold">
                   {e.label}
                 </span>
                 <span className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-1.5 py-0.5 text-old-label text-[var(--c-fg-muted)] ring-hairline">
@@ -826,7 +828,7 @@ export function ExpensesCard({
                     {i18n.t('run.label.paymentTransfer')}
                   </span>
                 ) : null}
-                <span className="min-w-0 flex-1 truncate text-old-label text-[var(--c-fg-muted)]">
+                <span className="min-w-[5rem] flex-1 truncate text-old-label text-[var(--c-fg-muted)]">
                   {storeNames}
                 </span>
                 {editable && !(otherStoreExpenseIds ?? []).includes(e.id) ? (

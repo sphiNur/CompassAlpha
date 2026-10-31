@@ -44,6 +44,9 @@ export const uz = {
   'qty.decrement': 'Kamaytirish',
   'qty.increment': 'Oshirish',
   'qty.pickAria': 'Miqdor {value} — tanlash uchun bosing',
+  'qty.groupAria': '{item} miqdori',
+  'a11y.results.products': '{n, plural, =1 {1 ta mahsulot topildi} other {{n} ta mahsulot topildi}}',
+  'a11y.results.items': '{n, plural, =1 {1 ta qator koʻrsatildi} other {{n} ta qator koʻrsatildi}}',
   'qty.setTitle': 'Miqdorni kiritish',
   'qty.unitIs': 'Oʻlchov: {unit}',
   'qty.custom': 'Boshqa qiymat',
@@ -1042,6 +1045,7 @@ export const uz = {
   'approval.confirm.reject.body':
     'Yuboruvchi sababingizni koʻradi va oʻzgartirib qaytadan yuborishi mumkin.',
   'approval.confirm.reject.reasonPlaceholder': 'masalan: takroriy buyurtma',
+  'approval.confirm.reject.reasonLabel': 'Sabab (majburiy)',
   'approval.confirm.unapprove.title': 'Maʼqullash bekor qilinsinmi?',
   'approval.confirm.unapprove.body':
     'Buyurtma navbatga qaytariladi. Faqat xaridga qoʻshilmasdan oldin mumkin.',
@@ -1886,6 +1890,9 @@ export const uz = {
   'settlement.noEligibleStores.body':
     'Sizga biriktirilgan doʻkonlarning hech birida kun yakuni huquqi yoʻq. Rahbardan rolingizni tekshirishni soʻrang.',
   'settlement.errors.invalidMoney': 'Ikki kasrgacha boʻlgan toʻgʻri summani kiriting.',
+  'settlement.errors.fieldMoney': '{field}: ikki kasrgacha boʻlgan son kiriting.',
+  'settlement.errors.fieldsToFix': '{n, plural, =1 {1 ta maydonni tuzating} other {{n} ta maydonni tuzating}}',
+  'settlement.errors.goToFirst': 'Oʻtish',
   'settlement.errors.expensesManagerOnly':
     'Operatsion xarajatlarni kiritish uchun ushbu doʻkonning kun yakunini yuritish huquqi kerak.',
   'settlement.errors.invalidDetails': 'Har bir xarajat va ish haqi qatorini toʻldiring.',

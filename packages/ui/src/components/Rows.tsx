@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { cn } from '../cn';
 import { surfaceClass } from './Card';
 import { IconChevronRight } from './NavIcon';
+import { useRovingRadio } from '../rovingRadio';
 
 /**
  * iOS-settings drill-down row. Used as a top-level entry in the Admin
@@ -258,15 +259,34 @@ export interface PickerRowProps {
   disabled?: boolean;
   onClick: () => void;
   className?: string;
+  /** A11Y-3: the label's language when it is not the page's (「Русский」). */
+  lang?: string;
 }
 
-export function PickerRow({ label, hint, selected, disabled, onClick, className }: PickerRowProps) {
+/**
+ * A11Y-15 (2026-10-31): a PickerRow is one choice of several, so it is a
+ * radio (it said `aria-pressed`, a toggle) and its container is a
+ * {@link PickerGroup} radiogroup with arrow-key movement. Arrows only move
+ * focus here; Space / Enter chooses, because choosing a language or a
+ * workspace sends a request.
+ */
+export function PickerRow({
+  label,
+  hint,
+  selected,
+  disabled,
+  onClick,
+  className,
+  lang,
+}: PickerRowProps) {
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={onClick}
-      aria-pressed={selected}
+      role="radio"
+      aria-checked={!!selected}
+      tabIndex={selected ? 0 : -1}
       className={cn(
         'flex w-full items-center justify-between gap-3 rounded-[var(--r-card)] px-4 py-3 text-left',
         selected
@@ -277,12 +297,16 @@ export function PickerRow({ label, hint, selected, disabled, onClick, className 
       )}
     >
       <span className="min-w-0">
-        <span className="block truncate text-old-body font-semibold">{label}</span>
+        <span lang={lang} className="block truncate text-old-body font-semibold">
+          {label}
+        </span>
         {hint ? (
           <span
             className={cn(
               'mt-0.5 block truncate text-old-label',
-              selected ? 'opacity-80' : 'text-[var(--c-fg-muted)]',
+              // Full-strength ink on the selected fill: at opacity-80 the hint
+              // measured 3.92:1 on --c-action (axe, 2026-10-31).
+              selected ? undefined : 'text-[var(--c-fg-muted)]',
             )}
           >
             {hint}
@@ -295,6 +319,38 @@ export function PickerRow({ label, hint, selected, disabled, onClick, className 
         </span>
       ) : null}
     </button>
+  );
+}
+
+/**
+ * The container of a set of {@link PickerRow}s: the `bg-surface-2 p-2
+ * ring-hairline` panel every picker used, now also the radiogroup that
+ * names the choice and moves between rows with the arrow keys.
+ */
+export function PickerGroup({
+  label,
+  children,
+  className,
+}: {
+  /** What is being chosen, e.g. "Language". */
+  label: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  const roving = useRovingRadio<HTMLDivElement>({ followFocus: false });
+  return (
+    <div
+      ref={roving.ref}
+      onKeyDown={roving.onKeyDown}
+      role="radiogroup"
+      aria-label={label}
+      className={cn(
+        'flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline',
+        className,
+      )}
+    >
+      {children}
+    </div>
   );
 }
 
@@ -315,27 +371,48 @@ export function PickerRow({ label, hint, selected, disabled, onClick, className 
 export interface NameCellProps {
   primary: ReactNode;
   secondary?: ReactNode;
+  /**
+   * A11Y-3 (2026-10-31): the language each name is written in, when it is
+   * not the page's. A screen reader then reads «Говядина» with a Russian
+   * voice instead of spelling it out in Chinese.
+   */
+  primaryLang?: string;
+  secondaryLang?: string;
   size?: 'default' | 'prominent';
   className?: string;
 }
 
-export function NameCell({ primary, secondary, size = 'default', className }: NameCellProps) {
+export function NameCell({
+  primary,
+  secondary,
+  primaryLang,
+  secondaryLang,
+  size = 'default',
+  className,
+}: NameCellProps) {
   return (
     <div className={cn('min-w-0', className)}>
       {/* No explicit leading on the primary — each tier inherits its
           size token's line-height (text-old-h2 → 1.25, text-old-body → 1.4) so
           this matches the hand-rolled markup it replaced byte-for-byte.
-          The secondary line stays leading-tight (both originals did). */}
+          The secondary line stays leading-tight (both originals did).
+          A11Y-1 (2026-10-31): the primary name wraps to two lines instead
+          of truncating. At 200% zoom a row is ~195 px wide and `truncate`
+          cut the name down to nothing, leaving only the qty control. */}
       <div
+        lang={primaryLang}
         className={cn(
-          'truncate font-semibold text-[var(--c-fg)]',
+          'line-clamp-2 break-words font-semibold text-[var(--c-fg)]',
           size === 'prominent' ? 'text-old-h2' : 'text-old-body',
         )}
       >
         {primary}
       </div>
       {secondary ? (
-        <div className="truncate text-old-label font-normal leading-tight text-[var(--c-fg-subtle)]">
+        <div
+          lang={secondaryLang}
+          className="truncate text-old-label font-normal leading-tight text-[var(--c-fg-subtle)]"
+        >
           {secondary}
         </div>
       ) : null}

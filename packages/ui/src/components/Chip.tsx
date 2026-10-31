@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react';
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { cn } from '../cn';
+import { useRovingRadio } from '../rovingRadio';
 import { pillButtonClass } from './pill';
 
 /**
@@ -11,9 +12,11 @@ import { pillButtonClass } from './pill';
  * then grew on top of the same primitive and inherited roles that don't
  * describe them:
  *
- *   - 'tabs'    Single-select, always exactly one selected. Order page
- *               categories (全部 / 蔬菜水果 / …). The original case;
- *               stays the default so existing call sites are unchanged.
+ *   (A 'tabs' variant — role=tablist / tab — was the default until
+ *   A11Y-15, 2026-10-31. Nothing used it as real tabs: no tabpanels, no
+ *   aria-controls, no arrow keys, and every chip a separate Tab stop. The
+ *   order page's categories are a filter where exactly one is chosen, so
+ *   they are a radio group now, which is also the new default.)
  *
  *   - 'toggles' Zero-or-one selected, and tapping the selected chip
  *               DESELECTS it. The run view-mode strip (按门店 / 按摊位 /
@@ -24,20 +27,22 @@ import { pillButtonClass } from './pill';
  *               than the real state. They are toggle buttons, so they now
  *               say `aria-pressed` inside a plain group.
  *
- *   - 'radio'   Single-select where "nothing chosen yet" is a real,
- *               meaningful state. The receiving-page status chips
- *               (正常 / 数量不足 / 物品错误 / 质量问题) after the
- *               2026-07-30 fix that stopped defaulting undecided lines to
- *               正常. A radiogroup with no checked radio is valid; a
- *               tablist with no selected tab is not.
+ *   - 'radio'   Single-select (the default). The order page's category
+ *               filter (全部 / 蔬菜水果 / …, always one chosen), the run
+ *               switcher, the receiving-page status chips (正常 / 数量不足
+ *               / 物品错误 / 质量问题) where "nothing chosen yet" is a real,
+ *               meaningful state after the 2026-07-30 fix that stopped
+ *               defaulting undecided lines to 正常. A radiogroup with no
+ *               checked radio is valid. One Tab stop, arrow keys between
+ *               the chips (see rovingRadio.ts).
  *
  * The variant is declared once on ChipBar and reaches Chip through
  * context, so a call site can't set the container and its children to
  * disagree.
  */
-export type ChipVariant = 'tabs' | 'toggles' | 'radio';
+export type ChipVariant = 'toggles' | 'radio';
 
-const ChipVariantContext = createContext<ChipVariant>('tabs');
+const ChipVariantContext = createContext<ChipVariant>('radio');
 
 interface ChipProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   selected?: boolean;
@@ -52,9 +57,7 @@ export function Chip({ className, selected, children, ...rest }: ChipProps) {
   const semantics =
     variant === 'toggles'
       ? ({ role: undefined, 'aria-pressed': !!selected } as const)
-      : variant === 'radio'
-        ? ({ role: 'radio', 'aria-checked': !!selected } as const)
-        : ({ role: 'tab', 'aria-selected': !!selected } as const);
+      : ({ role: 'radio', 'aria-checked': !!selected, tabIndex: selected ? 0 : -1 } as const);
   return (
     <button
       type="button"
@@ -77,16 +80,31 @@ interface ChipBarProps {
   children: ReactNode;
   className?: string;
   ariaLabel?: string;
-  /** See the ChipVariant docblock. Defaults to 'tabs' (legacy behaviour). */
+  /** See the ChipVariant docblock. Defaults to 'radio'. */
   variant?: ChipVariant;
+  /**
+   * Radio variant: an arrow key also chooses the chip it moves to
+   * (default). Pass false where choosing does real work, so arrows only
+   * move focus and Space / Enter chooses.
+   */
+  followFocus?: boolean;
 }
 
-export function ChipBar({ children, className, ariaLabel, variant = 'tabs' }: ChipBarProps) {
-  const role = variant === 'toggles' ? 'group' : variant === 'radio' ? 'radiogroup' : 'tablist';
+export function ChipBar({
+  children,
+  className,
+  ariaLabel,
+  variant = 'radio',
+  followFocus = true,
+}: ChipBarProps) {
+  const roving = useRovingRadio<HTMLDivElement>({ followFocus });
+  const radio = variant === 'radio';
   return (
     <ChipVariantContext.Provider value={variant}>
       <div
-        role={role}
+        ref={radio ? roving.ref : undefined}
+        onKeyDown={radio ? roving.onKeyDown : undefined}
+        role={radio ? 'radiogroup' : 'group'}
         aria-label={ariaLabel}
         // overscroll-behavior: contain stops horizontal pulls from
         // bouncing the parent page on iOS — without it, a fast horizontal

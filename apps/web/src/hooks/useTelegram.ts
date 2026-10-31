@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { pushTelegramBackHandler } from '@compass/ui';
 import { createOwnerStack, type OwnerHandle } from '../lib/ownerStack';
 
@@ -330,6 +330,13 @@ interface PageMainButtonState {
   onClick: () => void;
   visible: boolean;
   active: boolean;
+  /**
+   * A11Y-2 (2026-10-31): set when the page can say why the button is
+   * inactive (fields to correct). The button then stays focusable with
+   * aria-disabled instead of `disabled`, and a tap runs this (the
+   * settlement page jumps to the first field to fix).
+   */
+  onInactiveClick?: () => void;
 }
 
 let _pageMainButton: PageMainButtonState | null = null;
@@ -361,12 +368,19 @@ export function usePageMainButtonState(): PageMainButtonState | null {
 export function usePageMainButton(
   text: string,
   onClick: () => void,
-  opts?: { visible?: boolean; active?: boolean },
+  opts?: { visible?: boolean; active?: boolean; onInactiveClick?: () => void },
 ): void {
   // Keep the click callback in a ref so re-renders don't republish
   // state — we only republish when text/visible/active actually flip.
   const onClickRef = useRef(onClick);
   onClickRef.current = onClick;
+  const onInactiveRef = useRef(opts?.onInactiveClick);
+  onInactiveRef.current = opts?.onInactiveClick;
+  const hasInactiveClick = !!opts?.onInactiveClick;
+  const inactiveClick = useMemo(
+    () => (hasInactiveClick ? () => onInactiveRef.current?.() : undefined),
+    [hasInactiveClick],
+  );
   const safeText = (text ?? '').trim();
   const wantVisible = opts?.visible !== false && !!safeText;
   const wantActive = opts?.active !== false;
@@ -381,6 +395,7 @@ export function usePageMainButton(
     text: safeText,
     visible: wantVisible,
     active: wantActive,
+    onInactiveClick: inactiveClick,
   };
   const handleRef = useRef<OwnerHandle<PageMainButtonState> | null>(null);
   // Register once per mount so a text/visibility change never reorders
@@ -399,6 +414,7 @@ export function usePageMainButton(
       text: safeText,
       visible: wantVisible,
       active: wantActive,
+      onInactiveClick: inactiveClick,
     });
-  }, [safeText, wantVisible, wantActive]);
+  }, [safeText, wantVisible, wantActive, inactiveClick]);
 }

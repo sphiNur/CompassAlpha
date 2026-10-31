@@ -44,8 +44,16 @@
   canvas {
     max-width: 100%;
   }
-  *:focus-visible {
-    outline: none;
+  /* CMP-INT-6 (2026-10-31): a visible keyboard focus ring everywhere.
+     This used to be `outline: none` on every element, which left chips,
+     the qty keys, nav tabs, picker rows and admin rows with no focus
+     indicator at all. --c-ring clears 3:1 against every page surface in
+     both themes (tokens.test.ts). Components that draw their own ring
+     (Button, Input, Tabs…) set `outline-none` and keep theirs. Only
+     keyboard focus shows it, so taps on the phone look as before. */
+  :focus-visible {
+    outline: 2px solid var(--c-ring);
+    outline-offset: 2px;
   }
   /* Hide scrollbars while keeping scroll behavior */
   .scrollbar-hide::-webkit-scrollbar {

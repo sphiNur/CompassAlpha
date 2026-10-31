@@ -37,6 +37,9 @@ export const ru = {
   'qty.decrement': 'Уменьшить',
   'qty.increment': 'Увеличить',
   'qty.pickAria': 'Количество {value} — нажмите, чтобы выбрать',
+  'qty.groupAria': 'Количество: {item}',
+  'a11y.results.products': '{n, plural, one {Найден # товар} few {Найдено {n} товара} many {Найдено {n} товаров} other {Найдено {n} товара}}',
+  'a11y.results.items': '{n, plural, one {Показана # позиция} few {Показано {n} позиции} many {Показано {n} позиций} other {Показано {n} позиции}}',
   'qty.setTitle': 'Указать количество',
   'qty.unitIs': 'Единица: {unit}',
   'qty.custom': 'Своё значение',
@@ -1033,6 +1036,7 @@ export const ru = {
   'approval.confirm.reject.title': 'Отклонить заказ?',
   'approval.confirm.reject.body': 'Отправитель увидит вашу причину и сможет пересоздать заказ.',
   'approval.confirm.reject.reasonPlaceholder': 'например: дублирующий заказ',
+  'approval.confirm.reject.reasonLabel': 'Причина (обязательно)',
   'approval.confirm.unapprove.title': 'Отменить одобрение?',
   'approval.confirm.unapprove.body':
     'Заказ вернётся в очередь. Возможно только до включения в закупку.',
@@ -1870,6 +1874,9 @@ export const ru = {
   'settlement.noEligibleStores.body':
     'У вас нет права закрывать день ни в одном назначенном магазине. Попросите руководителя проверить вашу роль.',
   'settlement.errors.invalidMoney': 'Введите корректную сумму, не более двух знаков после запятой.',
+  'settlement.errors.fieldMoney': '{field}: введите число, не более двух знаков после запятой.',
+  'settlement.errors.fieldsToFix': '{n, plural, one {Исправьте # поле} few {Исправьте {n} поля} many {Исправьте {n} полей} other {Исправьте {n} поля}}',
+  'settlement.errors.goToFirst': 'Перейти',
   'settlement.errors.expensesManagerOnly':
     'Для внесения операционных расходов нужно право вести закрытие дня этого магазина.',
   'settlement.errors.invalidDetails': 'Заполните каждую строку расхода и зарплаты.',

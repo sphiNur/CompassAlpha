@@ -29,6 +29,9 @@ import { cn } from '../cn';
  *
  * See FRONTEND_AUDIT_2026-07.md (T2 primitive-gap: sticky top strip).
  */
+/** Below this viewport height the bar stops being sticky. */
+export const STICKY_BAR_SHORT_VIEWPORT = '[@media(max-height:500px)]:static';
+
 export interface StickyPageBarProps {
   children: ReactNode;
   direction?: 'row' | 'col';
@@ -40,6 +43,11 @@ export function StickyPageBar({ children, direction = 'row', className }: Sticky
     <div
       className={cn(
         'sticky top-0 z-[1] border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-2',
+        // A11Y-1 (2026-10-31): on a short viewport (a phone at 200% zoom
+        // is ~420 CSS px tall, or landscape) the bar scrolls away with the
+        // content. Pinned, it took ~100 px of the ~240 left between the
+        // header, the main button and the nav.
+        STICKY_BAR_SHORT_VIEWPORT,
         direction === 'col' ? 'flex flex-col gap-2' : 'flex items-center gap-2',
         className,
       )}

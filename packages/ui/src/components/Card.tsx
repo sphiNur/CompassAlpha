@@ -11,9 +11,10 @@ import { cn } from '../cn';
  */
 export const surfaceClass = 'rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline';
 
-interface CardProps extends HTMLAttributes<HTMLDivElement> {
+interface CardProps extends HTMLAttributes<HTMLElement> {
   interactive?: boolean;
-  as?: 'div' | 'section' | 'article';
+  // 'li' (A11Y-14): a card that is an item of a <ul role="list">.
+  as?: 'div' | 'section' | 'article' | 'li';
 }
 
 export function Card({ className, interactive, as: As = 'div', ...rest }: CardProps) {
@@ -38,11 +39,18 @@ export function CardHeader({ className, children }: { className?: string; childr
   );
 }
 
-export function CardTitle({ className, children }: { className?: string; children: ReactNode }) {
+export function CardTitle({
+  className,
+  children,
+  as: As = 'h3',
+}: {
+  className?: string;
+  children: ReactNode;
+  /** A11Y-10: h2 for cards right under the page's <h1> (a list of cards). */
+  as?: 'h2' | 'h3';
+}) {
   return (
-    <h3 className={cn('text-old-h2 font-semibold text-[var(--c-fg)]', className)}>
-      {children}
-    </h3>
+    <As className={cn('text-old-h2 font-semibold text-[var(--c-fg)]', className)}>{children}</As>
   );
 }
 
