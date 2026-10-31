@@ -1531,10 +1531,6 @@ export const ru = {
   'finance.view.daily': 'По дням',
   'finance.view.bySupplier': 'По поставщикам',
   'finance.view.byStore': 'По магазинам',
-  'finance.label.lines':
-    '{n, plural, one {# позиция} few {# позиции} many {# позиций} other {# позиции}}',
-  'finance.label.runs':
-    '{n, plural, one {# закупка} few {# закупки} many {# закупок} other {# закупки}}',
   'finance.label.total': 'Итого',
   'finance.label.noSupplier': 'без поставщика',
   'finance.empty.title': 'Нет покупок за период',
@@ -1706,7 +1702,6 @@ export const ru = {
   'sales.form.recordBtn': 'Записать',
   'sales.form.noDishesYet':
     'Нет блюд. Сначала создайте в Админ › Каталог › Блюда.',
-  'sales.form.noDishesAskManager': 'Блюд пока нет. Попросите управляющего добавить их.',
   'sales.list.title': 'Продажи сегодня',
   'sales.list.capReached': 'Показаны только последние продажи ({n}) — итоги могут быть неполными.',
   'sales.empty.title': 'Сегодня продаж нет',
@@ -1766,7 +1761,6 @@ export const ru = {
   'run.history.sort.newest': 'Сначала новые',
   'run.history.sort.oldest': 'Сначала старые',
   'run.history.noMatches': 'Нет закупок, соответствующих этим фильтрам.',
-  'run.history.resultRange': '{from}–{to} из {total}',
   'run.history.previousPage': 'Предыдущая страница',
   'run.history.nextPage': 'Следующая страница',
 
@@ -2068,4 +2062,25 @@ export const ru = {
   'notify.run.finishedStore.body': 'Сегодняшняя закупка закрыта — доставок по ней больше не будет.',
   'notify.run.cancelled.title': 'Закупка отменена',
   'notify.run.cancelled.body': 'Закупка отменена. Ожидаемых доставок не будет.',
+  // 2026-10-31 (D6 / D10 / HIS-15 / R2-HIS-3 / CLS-24 / R2-INT-2).
+  'sales.errors.qtyPrecision': 'Порции — в сотых: не меньше 0,01, не более 2 знаков после запятой.',
+  'sales.form.noDishesAskAdmin': 'Блюд пока нет. Попросите администратора добавить их.',
+  'sales.form.noRecipeYet':
+    'Ни у одного блюда пока нет рецепта. Задайте рецепт в разделе Админ › Каталог › Блюда, чтобы записывать продажи.',
+  'sales.form.noRecipeAskAdmin': 'Ни у одного блюда пока нет рецепта, поэтому продажу записать нельзя. Попросите администратора задать рецепты.',
+  'finance.tsv.title': 'Финансовый отчёт {start} → {end}',
+  'finance.tsv.date': 'Дата',
+  'finance.tsv.run': 'Закупка',
+  'finance.tsv.item': 'Позиция',
+  'finance.tsv.store': 'Магазин',
+  'finance.tsv.supplier': 'Поставщик',
+  'finance.tsv.method': 'Оплата',
+  'finance.tsv.qty': 'Количество',
+  'finance.tsv.unit': 'Ед.',
+  'finance.tsv.unitPrice': 'Цена',
+  'finance.tsv.total': 'Сумма',
+  'finance.count.lines': '{n, plural, one {# позиция} few {# позиции} many {# позиций} other {# позиции}}',
+  'finance.count.runs': '{n, plural, one {# закупка} few {# закупки} many {# закупок} other {# закупки}}',
+  'run.history.tripRange': '{from}–{to} из {total, plural, one {# рейса} few {# рейсов} many {# рейсов} other {# рейса}}',
+  'settlement.confirm.allZero': 'Все суммы равны 0. Сохранить этот день как закрытый без денег?',
 } as const satisfies Record<CatalogKey, string>;

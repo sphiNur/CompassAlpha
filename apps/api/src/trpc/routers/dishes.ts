@@ -55,6 +55,11 @@ import { schema as s, type DB } from '@compass/db';
 import { UuidSchema } from '@compass/contracts';
 import { authedProcedure, router } from '../trpc';
 import { isUniqueViolation } from '../../services/pgErrors';
+import {
+  priceStoreIds,
+  pricesVisibleAnywhere,
+  pricesVisibleFor,
+} from '../../services/priceRedaction';
 
 /**
  * CLS-12 (2026-10-30): a dish code already used in the org tripped
@@ -250,20 +255,37 @@ export const dishesRouter = router({
   list: authedProcedure
     .input(
       z
-        .object({ includeArchived: z.boolean().optional() })
+        .object({
+          includeArchived: z.boolean().optional(),
+          /** D6: the store the list is shown for (sales panel); decides
+           *  whether selling prices are included. */
+          storeId: UuidSchema.optional(),
+        })
         .optional(),
     )
     .query(async ({ ctx, input }) => {
       return ctx.withOrg(async (tx) => {
         const orgId = ctx.session!.orgId;
         const includeArchived = input?.includeArchived ?? false;
-        const dishes = await tx.query.dishes.findMany({
+        // D6 (2026-10-31): selling prices are money. Shown to whoever sets
+        // them (dishes.manage) and to members with prices.view — in the
+        // given store, or anywhere when the caller names none.
+        const priceStores = await priceStoreIds(tx, ctx.session!);
+        const showPrices =
+          ctx.session!.permissions.has('dishes.manage') ||
+          (input?.storeId
+            ? pricesVisibleFor(priceStores, [input.storeId])
+            : pricesVisibleAnywhere(priceStores));
+        const rawDishes = await tx.query.dishes.findMany({
           where: includeArchived
             ? (d, { eq: eq2 }) => eq2(d.orgId, orgId)
             : (d, { eq: eq2, and: and2 }) =>
                 and2(eq2(d.orgId, orgId), eq2(d.isArchived, false)),
           orderBy: (d, { asc: asc2 }) => [asc2(d.sortIndex), asc2(d.id)],
         });
+        const dishes = showPrices
+          ? rawDishes
+          : rawDishes.map((dish) => ({ ...dish, unitPrice: null }));
         if (dishes.length === 0) return { dishes: [], ingredients: [] };
         const ids = dishes.map((d) => d.id);
         const ingredients = await tx

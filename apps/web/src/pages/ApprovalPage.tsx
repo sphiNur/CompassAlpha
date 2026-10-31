@@ -847,8 +847,10 @@ function SessionItems({
     () => (detail.data?.totals ?? []).filter((t) => Number(t.qty) > 0).map((t) => t.skuId),
     [detail.data],
   );
+  // D6 (2026-10-31): priced for the order's store (no amounts where the
+  // approver lacks prices.view).
   const priceStats = trpc.catalog.skuPriceStats.useQuery(
-    { skuIds: skuIdsForPrice },
+    { skuIds: skuIdsForPrice, storeId: detail.data?.storeId },
     { enabled: skuIdsForPrice.length > 0, staleTime: 60_000 },
   );
 

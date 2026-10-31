@@ -43,12 +43,15 @@ import { authedProcedure, router } from '../trpc';
 import { TRPCError } from '@trpc/server';
 import { FINANCE_KEYS, financeStoreIds } from '../../services/storeScope';
 import { moneyText, runMoneyLinesSql, uuidListSql } from '../../services/runMoney';
+import { priceStoreIds, pricesVisibleFor } from '../../services/priceRedaction';
 
 /**
- * 2026-10-21 CA-11: the runs a finance window covers. Live statuses are
- * included on purpose ('amending' keeps a run in the books while a
- * super-admin corrects it; purchasing/delivering show spend as it
- * happens).
+ * 2026-10-21 CA-11: the runs a finance window covers. 'amending' keeps a
+ * run in the books while a super-admin corrects it.
+ *
+ * D5 (2026-10-31): finished and amending only — the same runs History
+ * lists. Runs still being bought or delivered used to count here, so the
+ * two pages showed different totals for the same day.
  */
 function financeRunsSql(orgId: string, startDate: string, endDate: string) {
   return sql`(
@@ -57,7 +60,7 @@ function financeRunsSql(orgId: string, startDate: string, endDate: string) {
     WHERE mr.org_id = ${orgId}
       AND mr.run_date >= ${startDate}::date
       AND mr.run_date <= ${endDate}::date
-      AND mr.status IN ('purchasing', 'delivering', 'finished', 'amending')
+      AND mr.status IN ('finished', 'amending')
   )`;
 }
 
@@ -71,6 +74,21 @@ const PurchaseLinesInputSchema = z.object({
   /** Filter to one payment method. Omit to return both. */
   paymentMethod: z.enum(['cash', 'transfer']).optional(),
 });
+
+/**
+ * RE-HIS-4 (2026-10-31): a reversed range answered 200 with zeros, where
+ * run.history refuses it. Same rule here, with the catalog key the web
+ * already shows for it.
+ */
+function rangeInOrder(value: { startDate: string; endDate: string }, ctx: z.RefinementCtx) {
+  if (value.startDate > value.endDate) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['endDate'],
+      message: 'finance.range.invalid',
+    });
+  }
+}
 
 
 function requireFinanceRead(permissions: ReadonlySet<string> | undefined): void {
@@ -96,7 +114,7 @@ export const reportRouter = router({
    * by-day / by-store views carry them; they have no supplier.
    */
   purchaseLines: authedProcedure
-    .input(PurchaseLinesInputSchema)
+    .input(PurchaseLinesInputSchema.superRefine(rangeInOrder))
     .query(async ({ ctx, input }) => {
       requireFinanceRead(ctx.session?.permissions);
       return ctx.withOrg(async (tx) => {
@@ -169,7 +187,12 @@ export const reportRouter = router({
           amount: string;
         }>;
 
-        return rows.map((r) => ({
+        // D6 (2026-10-31): unit price and amount only on lines of stores
+        // where prices.view holds; what was bought and how much stays.
+        const priceStores = await priceStoreIds(tx, ctx.session!);
+        return rows.map((r) => {
+          const priced = pricesVisibleFor(priceStores, [r.store_id]);
+          return {
           runId: r.run_id,
           runDate: r.run_date,
           runIndex: r.run_index,
@@ -182,15 +205,17 @@ export const reportRouter = router({
           label: r.label,
           paymentMethod: r.payment_method as 'cash' | 'transfer',
           supplierId: r.supplier_id,
-          /** Effective price: the per-store override when one exists. */
-          unitPrice: r.unit_price,
+          /** Effective price: the per-store override when one exists.
+           *  Null without prices.view for this line's store (D6). */
+          unitPrice: priced ? r.unit_price : null,
           storeId: r.store_id,
           qty: r.qty,
           // Pre-compute lineTotal so the FE doesn't need to BigDecimal-
           // multiply for the common "sum these" reduction. D1: rounded
           // half-up to cents in SQL (runMoneyLinesSql), passed as is.
-          lineTotal: moneyText(r.amount),
-        }));
+          lineTotal: priced ? moneyText(r.amount) : null,
+          };
+        });
       });
     }),
 
@@ -201,7 +226,7 @@ export const reportRouter = router({
    * figures without rendering individual lines.
    */
   totals: authedProcedure
-    .input(PurchaseLinesInputSchema.omit({ paymentMethod: true }))
+    .input(PurchaseLinesInputSchema.omit({ paymentMethod: true }).superRefine(rangeInOrder))
     .query(async ({ ctx, input }) => {
       requireFinanceRead(ctx.session?.permissions);
       return ctx.withOrg(async (tx) => {
@@ -254,14 +279,30 @@ export const reportRouter = router({
           run_count: number;
         }>;
         const row = rows[0];
+        // D6 (2026-10-31): the money figures need prices.view in every
+        // store they add up (a sum over two stores gives each away);
+        // the counts stay.
+        const priceStores = await priceStoreIds(tx, ctx.session!);
+        const scopeStoreIds =
+          storeIds ??
+          (priceStores === null
+            ? []
+            : (
+                await tx.query.stores.findMany({
+                  where: (st, { eq: eq2 }) => eq2(st.orgId, orgId),
+                  columns: { id: true },
+                })
+              ).map((st) => st.id));
+        const priced = pricesVisibleFor(priceStores, scopeStoreIds);
         // D1: the lines are already in cents; exact text, no floats.
+        const money = (v: string | null | undefined) => (priced ? moneyText(v) : null);
         return {
-          totalCash: moneyText(row?.cash_total),
-          totalTransfer: moneyText(row?.transfer_total),
+          totalCash: money(row?.cash_total),
+          totalTransfer: money(row?.transfer_total),
           /** items + expenses. */
-          total: moneyText(row?.total),
-          itemsTotal: moneyText(row?.items_total),
-          expensesTotal: moneyText(row?.expenses_total),
+          total: money(row?.total),
+          itemsTotal: money(row?.items_total),
+          expensesTotal: money(row?.expenses_total),
           cashLines: row?.cash_lines ?? 0,
           transferLines: row?.transfer_lines ?? 0,
           runCount: row?.run_count ?? 0,

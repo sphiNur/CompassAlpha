@@ -60,6 +60,7 @@ import {
   effectivePermissionsForStore,
 } from '../../services/storeScope';
 import { storeTimeZone } from '../../services/timeZone';
+import { priceStoreIds, pricesVisibleFor } from '../../services/priceRedaction';
 
 // 2026-10-21 CA-10/CA-57: no `|| users.manage` fallback any more. It
 // made a store-level deny of sales.record a no-op for managers (who
@@ -81,7 +82,13 @@ const RecordInputSchema = z.object({
   // CLS-19 (2026-10-30): 1e9 servings overflowed the column as a 500.
   qty: PositiveDecimalStringSchema.refine((v) => Number(v) < 1_000_000, {
     message: 'sales.errors.qtyTooLarge',
-  }),
+  })
+    // RE-CLS-6 (2026-10-31): servings in hundredths, as the web form takes
+    // them. 0.001 of a dish deducted 0.000 of every ingredient — a sale
+    // with turnover and no stock movement.
+    .refine((v) => !/\.\d{3}$/.test(v) && Number(v) >= 0.01, {
+      message: 'sales.errors.qtyPrecision',
+    }),
   /** Optional ISO timestamp; defaults to NOW(). Lets shift leads
    *  back-fill the day's sales at close-out. Not in the future (CLS-19;
    *  a few minutes of clock skew allowed). */
@@ -497,7 +504,10 @@ export const salesRouter = router({
         )
         .orderBy(desc(s.sales.occurredAt))
         .limit(200);
-      return rows;
+      // D6 (2026-10-31): selling price and turnover only where prices.view
+      // holds for this store; counts and servings stay.
+      if (pricesVisibleFor(await priceStoreIds(tx, ctx.session!), [input.storeId])) return rows;
+      return rows.map((row) => ({ ...row, unitPrice: null }));
     });
   }),
 });
