@@ -4,9 +4,9 @@ import { Button, Banner, EmptyState, Input, Spinner, useToast } from '@compass/u
 import { useAuthStore, type AuthSession } from '../stores/authStore';
 import { noteSessionCleared, trpc } from '../lib/trpc';
 import { getTg, haptic } from '../hooks/useTelegram';
-import { useI18n } from '../hooks/useI18n';
+import { useI18n, useRoleLabels } from '../hooks/useI18n';
 import { useTranslateError } from '../lib/errToast';
-import { errorTextKey } from '../lib/errorText';
+import { errorTextKey, withoutFinalStop } from '../lib/errorText';
 import { isLikelyNetworkError } from '../lib/networkError';
 
 interface AuthGateProps {
@@ -292,7 +292,10 @@ export function AuthGate({ children }: AuthGateProps) {
       // landed in their old workspace believing they had joined.
       if (session) {
         toast.error(
-          i18n.t('auth.invite.failedStillIn', { reason: message, org: session.member.orgName }),
+          i18n.t('auth.invite.failedStillIn', {
+            reason: withoutFinalStop(message),
+            org: session.member.orgName,
+          }),
         );
       }
     },
@@ -310,7 +313,7 @@ export function AuthGate({ children }: AuthGateProps) {
       setError(null);
     },
     onError(err) {
-      setError(nonTelegramErrorMessage(err.message));
+      setError(nonTelegramErrorMessage(i18n, err.message));
     },
   });
   const nonTelegramLogin = trpc.auth.nonTelegramLogin.useMutation({
@@ -333,7 +336,7 @@ export function AuthGate({ children }: AuthGateProps) {
       setError(null);
     },
     onError(err) {
-      setError(nonTelegramErrorMessage(err.message));
+      setError(nonTelegramErrorMessage(i18n, err.message));
     },
   });
   const devPersonaLogin = trpc.auth.devPersonaLogin.useMutation({
@@ -349,7 +352,7 @@ export function AuthGate({ children }: AuthGateProps) {
       setError(null);
     },
     onError(err) {
-      setError(nonTelegramErrorMessage(err.message));
+      setError(nonTelegramErrorMessage(i18n, err.message));
     },
   });
 
@@ -510,7 +513,7 @@ export function AuthGate({ children }: AuthGateProps) {
         {authWaitTimedOut ? (
           <Banner tone="warn" title={i18n.t('auth.loginTimeout.title')}>
             {import.meta.env.DEV
-              ? loginDiagnosticText(loginModes.data, loginModes.error?.message)
+              ? loginDiagnosticText(i18n, loginModes.data, loginModes.error?.message)
               : i18n.t('auth.loginTimeout.body')}
           </Banner>
         ) : null}
@@ -523,7 +526,7 @@ export function AuthGate({ children }: AuthGateProps) {
           <DevPersonaPicker
             personas={(devPersonas.data ?? []) as DevPersona[]}
             loading={devPersonas.isLoading}
-            error={devPersonas.error ? nonTelegramErrorMessage(devPersonas.error.message) : null}
+            error={devPersonas.error ? nonTelegramErrorMessage(i18n, devPersonas.error.message) : null}
             pending={devPersonaLogin.isPending}
             onSelect={(memberId) => {
               setError(null);
@@ -584,10 +587,10 @@ export function AuthGate({ children }: AuthGateProps) {
           >
             <div className="text-center">
               <div className="text-old-h3 font-semibold text-[var(--c-fg)]">
-                开发/测试浏览器登录
+                {i18n.t('dev.browserLogin.title')}
               </div>
               <p className="mt-1 text-old-body-sm text-[var(--c-fg-muted)]">
-                仅限服务端白名单人员，正式发布环境不可用。
+                {i18n.t('dev.browserLogin.body')}
               </p>
             </div>
             <label className="block">
@@ -600,12 +603,12 @@ export function AuthGate({ children }: AuthGateProps) {
                 value={browserTgUserId}
                 onChange={(e) => setBrowserTgUserId(e.target.value)}
                 autoFocus={!browserTgUserId}
-                placeholder="例如 6402913074"
+                placeholder={i18n.t('dev.browserLogin.tgIdPlaceholder', { example: '6402913074' })}
               />
             </label>
             <label className="block">
               <span className="mb-1 block text-old-label font-semibold text-[var(--c-fg-muted)]">
-                访问码
+                {i18n.t('dev.browserLogin.accessCode')}
               </span>
               <Input
                 type="password"
@@ -613,7 +616,7 @@ export function AuthGate({ children }: AuthGateProps) {
                 value={browserAccessCode}
                 onChange={(e) => setBrowserAccessCode(e.target.value)}
                 autoFocus={!!browserTgUserId}
-                placeholder="由管理员提供"
+                placeholder={i18n.t('dev.browserLogin.accessCodePlaceholder')}
               />
             </label>
             <Button
@@ -622,7 +625,7 @@ export function AuthGate({ children }: AuthGateProps) {
               loading={nonTelegramLogin.isPending}
               disabled={!browserTgUserId.trim() || !browserAccessCode}
             >
-              进入测试环境
+              {i18n.t('dev.browserLogin.submit')}
             </Button>
           </form>
         ) : null}
@@ -652,33 +655,14 @@ export function AuthGate({ children }: AuthGateProps) {
   return <>{children}</>;
 }
 
-function nonTelegramErrorMessage(message: string): string {
-  switch (message) {
-    case 'auth.errors.nonTelegramLoginDisabled':
-      return '非 Telegram 测试登录未开启。';
-    case 'auth.errors.nonTelegramProductionDisabled':
-      return '正式环境不允许非 Telegram 测试登录。';
-    case 'auth.errors.nonTelegramAllowlistEmpty':
-      return '非 Telegram 测试登录白名单为空。';
-    case 'auth.errors.invalidNonTelegramLogin':
-      return 'Telegram ID 或访问码无效，或该用户不在允许名单中。';
-    case 'auth.errors.noMembership':
-      return '该用户没有可用的组织成员身份。';
-    case 'auth.errors.membershipSuspended':
-      return '该用户的成员身份已停用。';
-    case 'auth.errors.devBypassDisabled':
-      return '本地开发自动登录未开启，或当前不是 development 环境。';
-    case 'auth.errors.devLocalhostOnly':
-      return '开发登录只允许从 localhost 或 127.0.0.1 访问。';
-    case 'auth.errors.devDatabaseUnavailable':
-      return '本地开发数据库不可用。请启动本地 PostgreSQL，或确认 DATABASE_URL 指向可用的本地副本。';
-    case 'auth.errors.devBypassNoMember':
-      return '本地数据库里没有可用于自动登录的 active 成员。';
-    case 'auth.errors.devPersonaMissing':
-      return '选择的开发测试身份不存在或已停用。';
-    default:
-      return message;
-  }
+/**
+ * RE-COPY-9 (2026-10-31): the dev / test sign-in errors are catalog keys
+ * now (`auth.errors.*`), so these screens follow the UI language instead of
+ * a hard-coded Chinese switch. Anything else is shown as the server sent it.
+ */
+function nonTelegramErrorMessage(i18n: ReturnType<typeof useI18n>, message: string): string {
+  // An unknown message is not a key: format() hands it back unchanged.
+  return i18n.t(message as Parameters<typeof i18n.t>[0]);
 }
 
 interface LoginModeDiagnostics {
@@ -700,18 +684,27 @@ interface LoginModeDiagnostics {
 }
 
 function loginDiagnosticText(
+  i18n: ReturnType<typeof useI18n>,
   modes: LoginModeDiagnostics | undefined,
   queryError: string | undefined,
 ): string {
-  if (queryError) return `无法读取登录模式：${queryError}`;
-  if (!modes) return '正在等待 API 返回登录模式。';
+  if (queryError) return i18n.t('dev.diag.queryFailed', { error: queryError });
+  if (!modes) return i18n.t('dev.diag.waiting');
+  const reason = (r: string | null | undefined) =>
+    r ? nonTelegramErrorMessage(i18n, r) : i18n.t('dev.diag.unknownReason');
   const dev = modes.devPersona?.available
-    ? '开发登录可用'
-    : `开发登录不可用：${nonTelegramErrorMessage(modes.devPersona?.reason ?? '未知原因')}`;
+    ? i18n.t('dev.diag.devOk')
+    : i18n.t('dev.diag.devUnavailable', { reason: reason(modes.devPersona?.reason) });
   const browser = modes.nonTelegram?.available
-    ? '浏览器访问码登录可用'
-    : `浏览器访问码登录不可用：${nonTelegramErrorMessage(modes.nonTelegram?.reason ?? '未知原因')}`;
-  return `${dev}；${browser}；环境 ${modes.environment?.nodeEnv ?? '?'} / ${modes.environment?.releaseChannel ?? '?'}，本地请求 ${modes.environment?.localRequest ? '是' : '否'}。`;
+    ? i18n.t('dev.diag.browserOk')
+    : i18n.t('dev.diag.browserUnavailable', { reason: reason(modes.nonTelegram?.reason) });
+  return i18n.t('dev.diag.summary', {
+    dev,
+    browser,
+    env: modes.environment?.nodeEnv ?? '?',
+    channel: modes.environment?.releaseChannel ?? '?',
+    local: i18n.t(modes.environment?.localRequest ? 'dev.diag.yes' : 'dev.diag.no'),
+  });
 }
 
 function DevPersonaPicker({
@@ -729,16 +722,20 @@ function DevPersonaPicker({
   onSelect: (memberId: string) => void;
   onAutoLogin: () => void;
 }) {
+  const i18n = useI18n();
+  const roleText = useRoleLabels();
   return (
     <section className="mt-2 flex w-full max-w-sm flex-col gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] p-4 text-left ring-hairline">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="text-old-h3 font-semibold text-[var(--c-fg)]">开发测试身份登录</div>
+          <div className="text-old-h3 font-semibold text-[var(--c-fg)]">
+            {i18n.t('dev.persona.title')}
+          </div>
           <p className="mt-1 text-old-body-sm text-[var(--c-fg-muted)]">
-            只在本地 development 环境显示，用真实成员权限进入前端。
+            {i18n.t('dev.persona.body')}
           </p>
           <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
-            网址加 <code>?devAs=名字</code>（如 <code>?devAs=aziz</code>）可直接以该身份登录。
+            {i18n.t('dev.persona.urlHint', { param: '?devAs=…', example: '?devAs=aziz' })}
           </p>
         </div>
         <Button
@@ -748,7 +745,7 @@ function DevPersonaPicker({
           loading={pending}
           onClick={onAutoLogin}
         >
-          自动
+          {i18n.t('dev.persona.auto')}
         </Button>
       </div>
       {loading ? (
@@ -756,19 +753,24 @@ function DevPersonaPicker({
           <Spinner size={22} />
         </div>
       ) : error ? (
-        <Banner tone="danger" title="无法读取开发身份">
+        <Banner tone="danger" title={i18n.t('dev.persona.loadFailed')}>
           {error}
         </Banner>
       ) : personas.length === 0 ? (
-        <Banner tone="warn" title="没有可用身份">
-          本地数据库里没有 active 成员。请先迁移并初始化本地数据库。
+        <Banner tone="warn" title={i18n.t('dev.persona.emptyTitle')}>
+          {i18n.t('dev.persona.emptyBody')}
         </Banner>
       ) : (
         <div className="grid max-h-[52vh] grid-cols-[minmax(0,1fr)] gap-2 overflow-y-auto pr-1">
           {personas.map((persona) => {
             const stores =
-              persona.storeNames.length > 0 ? persona.storeNames.join(', ') : '未分配店铺';
-            const roles = persona.roleSlugs.length > 0 ? persona.roleSlugs.join(', ') : '无角色';
+              persona.storeNames.length > 0
+                ? persona.storeNames.join(', ')
+                : i18n.t('dev.persona.noStores');
+            const roles =
+              persona.roleSlugs.length > 0
+                ? persona.roleSlugs.map((slug) => roleText.name({ slug })).join(', ')
+                : i18n.t('dev.persona.noRoles');
             return (
               <button
                 key={persona.memberId}
@@ -782,14 +784,14 @@ function DevPersonaPicker({
                     {persona.displayName}
                   </div>
                   <div className="shrink-0 rounded-full bg-[var(--c-surface)] px-2 py-0.5 text-old-label font-semibold text-[var(--c-fg-muted)] ring-hairline">
-                    {persona.isAdmin ? 'Admin' : `R${persona.maxRank}`}
+                    {persona.isAdmin ? roleText.name({ slug: 'admin' }) : `R${persona.maxRank}`}
                   </div>
                 </div>
                 <div className="mt-1 truncate text-old-body-sm text-[var(--c-fg-muted)]">
                   {persona.orgName} · {roles}
                 </div>
                 <div className="mt-0.5 truncate text-old-label text-[var(--c-fg-muted)]">
-                  {stores} · {persona.permissionCount} permissions
+                  {stores} · {i18n.t('people.permissionCount', { n: persona.permissionCount })}
                   {persona.tgUserId ? ` · TG ${persona.tgUserId}` : ''}
                 </div>
               </button>

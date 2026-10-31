@@ -39,7 +39,7 @@ import { registerStoreChangeGuard, useStoreContext } from '../components/StoreSw
 import { usePageMainButton, haptic } from '../hooks/useTelegram';
 import { confirmNative } from '../lib/confirm';
 import { useErrToast } from '../lib/errToast';
-import { useDateFormat, useI18n } from '../hooks/useI18n';
+import { useDateFormat, useI18n, useRoleLabels } from '../hooks/useI18n';
 import { formatMoney, currencyOf } from '../lib/format';
 import { useAuthStore } from '../stores/authStore';
 import { registerTabChangeGuard } from '../stores/navStore';
@@ -378,6 +378,8 @@ function confirmSettlementAction(message: string, onConfirm: () => void): void {
 
 export function SettlementPage() {
   const i18n = useI18n();
+  const roleText = useRoleLabels();
+  const dates = useDateFormat();
   const toast = useToast();
   const errToast = useErrToast();
   const session = useAuthStore((state) => state.session);
@@ -1615,7 +1617,7 @@ export function SettlementPage() {
                     >
                       <span className="min-w-0">
                         <span className="block text-old-h3 font-semibold tabular-nums text-[var(--c-fg)]">
-                          {record.date}
+                          {dates.calendarDay(record.date)}
                         </span>
                         <span className="mt-0.5 block text-old-body-sm text-[var(--c-fg-muted)]">
                           {i18n.t('settlement.recent.version', { version: record.version })}
@@ -1662,7 +1664,7 @@ export function SettlementPage() {
               <option value="">{i18n.t('settlement.wages.allRoles')}</option>
               {wageRoleOptions.map((role) => (
                 <option key={role.id} value={role.id}>
-                  {role.name}
+                  {roleText.name(role)}
                 </option>
               ))}
             </Select>
@@ -1723,7 +1725,7 @@ export function SettlementPage() {
                       </span>
                       <span className="mt-0.5 block truncate text-old-label text-[var(--c-fg-muted)]">
                         {employee.roles.length > 0
-                          ? employee.roles.map((role) => role.name).join(' · ')
+                          ? employee.roles.map((role) => roleText.name(role)).join(' · ')
                           : i18n.t('settlement.wages.noRole')}
                       </span>
                     </span>

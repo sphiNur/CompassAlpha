@@ -44,3 +44,12 @@ export function zodIssueKey(message: string | undefined): string | null {
   }
   return null;
 }
+
+/**
+ * RE-AUTH-1 (2026-10-31): drop a message's own closing full stop before it
+ * goes into a template that ends the sentence itself — "{reason}。你仍在…"
+ * printed "…已被删除。。你仍在「Eden」。".
+ */
+export function withoutFinalStop(message: string): string {
+  return message.replace(/[。．.!！]+$/u, '');
+}

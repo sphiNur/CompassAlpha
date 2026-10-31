@@ -252,7 +252,11 @@ export function PurchaseSheet({
           ) : null}
           <div className="grid grid-cols-2 gap-3">
             <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
-              {i18n.t('run.action.actualQty', { unit: sku?.unit ?? '' })}
+              {/* R2-BUY-4: the localised unit ("升"), not the code ("L"); no
+                  empty brackets when the SKU has none. */}
+              {sku?.unit
+                ? i18n.t('run.action.actualQty', { unit: unitLabel(sku.unit) })
+                : i18n.t('run.action.actualQtyPlain')}
               <Input
                 className="mt-1"
                 type="number"
@@ -843,7 +847,7 @@ export function AddItemSheet({
                     {productName(selectedSku)}
                   </div>
                   <div className="text-old-label text-[var(--c-fg-muted)]">
-                    {selectedSku.unit}
+                    {unitLabel(selectedSku.unit)}
                   </div>
                 </div>
                 <button
@@ -1180,12 +1184,16 @@ export function AddItemSheet({
             <>
               <div className="grid grid-cols-2 gap-3">
                 <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
-                  {i18n.t('run.action.actualQty', {
-                    unit:
+                  {(() => {
+                    // R2-BUY-4: localised unit; no "（）" without one.
+                    const unit =
                       draft.mode === 'sku'
-                        ? selectedSku?.unit ?? ''
-                        : draft.unitHint.trim() || '',
-                  })}
+                        ? unitLabel(selectedSku?.unit)
+                        : draft.unitHint.trim();
+                    return unit
+                      ? i18n.t('run.action.actualQty', { unit })
+                      : i18n.t('run.action.actualQtyPlain');
+                  })()}
                   <Input
                     className="mt-1"
                     type="number"

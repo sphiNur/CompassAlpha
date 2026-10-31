@@ -9,9 +9,12 @@
  * is read by `apps/worker` once committed.
  */
 import type { DB } from '@compass/db';
+import { schema as s } from '@compass/db';
+import { eq } from 'drizzle-orm';
 import type { OrderEvent, OrderState } from '@compass/domain/order';
 import type { RunEvent, RunState } from '@compass/domain/run';
 import {
+  type NotifyEnvelope,
   dispatch,
   findRecipientsByPermissionInStore,
   findStoreStaff,
@@ -58,6 +61,7 @@ export async function dispatchOrderEventNotifications(
             template: 'order.submitted',
             title: 'Order submitted',
             body: 'A staff submitted an order awaiting your review.',
+            vars: { store: await storeName(db, state.storeId) },
             dedupKey: `order:${state.streamId}:submitted:${e.seq}`,
             payload: { sessionId: state.streamId, storeId: state.storeId },
             deepLink: '/approve',
@@ -87,6 +91,7 @@ export async function dispatchOrderEventNotifications(
               template: 'order.selfApproved',
               title: 'Order approved by its submitter',
               body: 'A manager approved an order they submitted themselves.',
+              vars: { store: await storeName(db, state.storeId) },
               dedupKey: `order:${state.streamId}:selfApproved:${e.seq}`,
               payload: { sessionId: state.streamId, storeId: state.storeId },
               deepLink: '/approve',
@@ -100,7 +105,8 @@ export async function dispatchOrderEventNotifications(
         await notifyOwner(db, orgId, state, actorUserId, {
           template: 'order.rejected',
           title: 'Order rejected',
-          body: e.payload.reason || 'Your order was rejected; please update and resubmit.',
+          body: 'Your order was rejected; please update and resubmit.',
+          reason: e.payload.reason || null,
           dedupKey: `order:${state.streamId}:rejected:${e.seq}`,
           deepLink: '/order',
           payload: { reason: e.payload.reason },
@@ -113,9 +119,8 @@ export async function dispatchOrderEventNotifications(
         await notifyOwner(db, orgId, state, actorUserId, {
           template: 'order.unapproved',
           title: 'Order returned for review',
-          body:
-            e.payload.reason ||
-            'An approver reopened your order for review.',
+          body: 'An approver reopened your order for review.',
+          reason: e.payload.reason || null,
           dedupKey: `order:${state.streamId}:unapproved:${e.seq}`,
           deepLink: '/order',
           payload: { reason: e.payload.reason },
@@ -186,6 +191,7 @@ export async function dispatchRunEventNotifications(
             template: 'run.storeDelivered',
             title: 'Delivery arrived',
             body: 'Items have been delivered to your store — please confirm.',
+            vars: { store: await storeName(db, e.payload.storeId) },
             // DLV-5 (2026-10-30): with the seq, a delivery made again after
             // a recall notifies again instead of deduping into silence.
             dedupKey: `run:${state.streamId}:store:${e.payload.storeId}:delivered:${e.seq}`,
@@ -204,6 +210,7 @@ export async function dispatchRunEventNotifications(
             template: 'run.storeDeliveryRecalled',
             title: 'Delivery recalled',
             body: 'The purchaser recalled this delivery. Wait until it is delivered again before confirming.',
+            vars: { store: await storeName(db, e.payload.storeId) },
             dedupKey: `run:${state.streamId}:store:${e.payload.storeId}:recalled:${e.seq}`,
             payload: { runId: state.streamId, storeId: e.payload.storeId },
             deepLink: '/confirm',
@@ -248,6 +255,7 @@ export async function dispatchRunEventNotifications(
           template: 'run.storeConfirmedWithIssues',
           title: 'Delivery received with problems',
           body: `A store confirmed delivery with ${issues.length} problem item(s) — please review.`,
+          vars: { store: await storeName(db, e.payload.storeId), n: issues.length },
           dedupKey: `run:${state.streamId}:store:${e.payload.storeId}:issues:${e.seq}`,
           payload: {
             runId: state.streamId,
@@ -287,6 +295,11 @@ export async function dispatchRunEventNotifications(
               body:
                 `Run complete · items ${itemsTotal.toFixed(2)} · expenses ` +
                 `${expensesTotal.toFixed(2)} · total ${grandTotal}.`,
+              vars: {
+                items: itemsTotal.toFixed(2),
+                expenses: expensesTotal.toFixed(2),
+                total: grandTotal,
+              },
               dedupKey: `run:${state.streamId}:finished`,
               payload: {
                 runId: state.streamId,
@@ -322,9 +335,8 @@ export async function dispatchRunEventNotifications(
         await notifyInvolvedStoreStaff(db, orgId, state, actorUserId, {
           template: 'run.cancelled',
           title: 'Run cancelled',
-          body:
-            e.payload.reason ??
-            'The market run was cancelled. Pending arrivals will not happen.',
+          body: 'The market run was cancelled. Pending arrivals will not happen.',
+          reason: e.payload.reason ?? null,
           dedupKey: `run:${state.streamId}:cancelled`,
           payload: { runId: state.streamId, reason: e.payload.reason },
           deepLink: '/run',
@@ -354,14 +366,7 @@ async function notifyInvolvedStoreStaff(
   orgId: string,
   state: RunState,
   actorUserId: string,
-  envelope: {
-    template: string;
-    title: string;
-    body: string;
-    dedupKey: string;
-    deepLink?: string;
-    payload?: Record<string, unknown>;
-  },
+  envelope: NotifyEnvelope,
 ): Promise<void> {
   if (state.sessionIds.length === 0) return;
   const sessions = await db.query.orderSessionsV.findMany({
@@ -393,14 +398,7 @@ async function notifyOwner(
   orgId: string,
   state: OrderState,
   actorUserId: string,
-  envelope: {
-    template: string;
-    title: string;
-    body: string;
-    dedupKey: string;
-    deepLink?: string;
-    payload?: Record<string, unknown>;
-  },
+  envelope: NotifyEnvelope,
 ): Promise<void> {
   const memberIds = new Set<string>();
   for (const item of state.items.values()) {
@@ -422,4 +420,15 @@ async function notifyOwner(
     .filter((uid) => uid !== actorUserId);
   if (userIds.length === 0) return;
   await dispatch(db, orgId, [...new Set(userIds)], envelope);
+}
+
+/** A store's name for a notification sentence; '' when it is gone. */
+async function storeName(db: DB, storeId: string | null | undefined): Promise<string> {
+  if (!storeId) return '';
+  const [row] = await db
+    .select({ name: s.stores.name })
+    .from(s.stores)
+    .where(eq(s.stores.id, storeId))
+    .limit(1);
+  return row?.name ?? '';
 }

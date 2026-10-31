@@ -50,7 +50,7 @@ import { useErrToast } from '../lib/errToast';
 import { useAuthStore } from '../stores/authStore';
 import { useNavStore } from '../stores/navStore';
 import { isInTelegram, useTelegramBackButton } from '../hooks/useTelegram';
-import { useI18n } from '../hooks/useI18n';
+import { useI18n, useRoleLabels } from '../hooks/useI18n';
 import { LANGUAGE_NATIVE_NAMES } from '@compass/i18n';
 import { LanguageSheet } from '../components/LanguageSheet';
 import { SubscriptionSummary } from '../components/SubscriptionSummary';
@@ -475,6 +475,7 @@ function WorkspaceSection() {
   const session = useAuthStore((s) => s.session);
   const patchSession = useAuthStore((s) => s.patchSession);
   const i18n = useI18n();
+  const roleText = useRoleLabels();
   const toast = useToast();
   const errToast = useErrToast();
   // Language picker moved here from OrderPage (2026-05-05). Telegram's
@@ -546,7 +547,12 @@ function WorkspaceSection() {
               in i18n catalogs in case super_admin tooling wants it. */}
           <DetailRow
             label={i18n.t('admin.workspace.yourRole')}
-            value={[...(session?.roleSlugs ?? [])].join(', ') || '—'}
+            // RE-AUTH-2: role names, not slugs ("super_admin").
+            value={
+              [...new Set(session?.roleSlugs ?? [])]
+                .map((slug) => roleText.name({ slug }))
+                .join(', ') || '—'
+            }
           />
           <DetailRow
             label={i18n.t('admin.workspace.telegram')}
@@ -622,10 +628,12 @@ function WorkspaceSection() {
                   RUB / KZT (neighbouring markets), USD (cross-border
                   contracts). Free-form input is rejected server-side
                   via /^[A-Z]{3}$/, so adding codes is one-liner. */}
-              <option value="UZS">UZS — Uzbek so&apos;m</option>
-              <option value="RUB">RUB — Russian ruble</option>
-              <option value="KZT">KZT — Kazakhstani tenge</option>
-              <option value="USD">USD — US dollar</option>
+              {/* ADM-17: currency names in the UI language. */}
+              {(['UZS', 'RUB', 'KZT', 'USD'] as const).map((code) => (
+                <option key={code} value={code}>
+                  {code} — {i18n.t(`admin.currency.${code}`)}
+                </option>
+              ))}
             </select>
           </Field>
           <Field

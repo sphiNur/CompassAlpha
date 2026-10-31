@@ -47,6 +47,11 @@ import { auditCategory, describeAuditRow, type AuditCategory } from './auditSent
 export function ActivitySection() {
   const dateFmt = useDateFormat();
   const i18n = useI18n();
+  const eventLabel = (streamType: string, type: string): string => {
+    const key = `ops.event.${type}` as Parameters<typeof i18n.t>[0];
+    const label = i18n.t(key);
+    return label === key ? `${streamType}.${type}` : label;
+  };
   const overview = trpc.admin.overview.useQuery();
   const eventsQuery = trpc.admin.recentEvents.useQuery({ limit: PAGE_SIZE.feed });
   const [showDebug, setShowDebug] = useState(false);
@@ -113,7 +118,7 @@ export function ActivitySection() {
                 >
                   <div className="flex items-baseline justify-between gap-2">
                     <span
-                      className="font-mono text-old-label font-semibold text-[var(--c-fg)]"
+                      className="text-old-label font-semibold text-[var(--c-fg)]"
                       title={
                         claimReason === 'override'
                           ? i18n.t('ops.activity.claimOverride')
@@ -122,7 +127,9 @@ export function ActivitySection() {
                             : undefined
                       }
                     >
-                      {e.streamType}.{e.type}
+                      {/* ADM-17: the event in words, from the catalog;
+                          an event type it does not know yet stays raw. */}
+                      {eventLabel(e.streamType, e.type)}
                       {claimReason ? (
                         <span
                           className={
@@ -141,7 +148,7 @@ export function ActivitySection() {
                   </div>
                   <div className="flex items-baseline justify-between gap-2 text-old-label text-[var(--c-fg-muted)]">
                     <span className="truncate">
-                      {e.actor?.displayName ?? 'system'}
+                      {e.actor?.displayName ?? i18n.t('ops.activity.system')}
                       {e.actor?.tgUsername ? ` · @${e.actor.tgUsername}` : ''}
                     </span>
                     <span className="font-mono text-old-tiny">
@@ -163,7 +170,7 @@ export function ActivitySection() {
             onClick={() => setShowDebug(!showDebug)}
             className="press mt-6 inline-flex items-center gap-1 text-old-label text-[var(--c-fg-muted)]"
           >
-            {showDebug ? '▾' : '▸'} Debug console
+            {showDebug ? '▾' : '▸'} {i18n.t('ops.debug.toggle')}
           </button>
           {showDebug ? (
             <div className="-mx-4 mt-2 border-t border-[var(--c-divider)]">
@@ -187,6 +194,7 @@ export function ActivitySection() {
  */
 export function HistorySection() {
   const i18n = useI18n();
+  const dates = useDateFormat();
   const [storeFilter, setStoreFilter] = useState<string | null>(null);
   const stores = trpc.admin.storeList.useQuery();
   const history = trpc.admin.submissionHistory.useQuery({
@@ -238,7 +246,7 @@ export function HistorySection() {
                       <div className="min-w-0">
                         <CardTitle>{r.storeName ?? r.storeId.slice(0, 8)}</CardTitle>
                         <CardMeta>
-                          {r.orderDate}
+                          {dates.calendarDay(r.orderDate)}
                           {r.submittedAt
                             ? ` · ${i18n.t('ops.history.submittedAgo', {
                                 when: formatRelative(r.submittedAt, i18n),
@@ -476,8 +484,9 @@ function TargetedPurgeBrowser() {
             <ul className="flex flex-col gap-1.5" role="list">
               {rows.map((sess) => {
                 const inRun = sess.status === 'in_run' || sess.status === 'archived' || sess.runId;
-                const attribLabel = sess.attribDisplayName ?? 'unattributed';
-                const label = `${sess.storeName ?? 'unknown store'} · ${attribLabel}`;
+                const attribLabel =
+                  sess.attribDisplayName ?? i18n.t('run.sessions.unknownSubmitter');
+                const label = `${sess.storeName ?? i18n.t('ops.purge.unknownStore')} · ${attribLabel}`;
                 return (
                   <li
                     key={sess.sessionId}
@@ -1110,6 +1119,7 @@ type FinancePreset = 'today' | 'yesterday' | 'thisMonth' | 'lastMonth' | 'custom
 
 export function FinanceSection() {
   const i18n = useI18n();
+  const dates = useDateFormat();
   const toast = useToast();
   const productName = useProductName();
   const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: true });
@@ -1375,7 +1385,7 @@ export function FinanceSection() {
               {formatMoney(totalsQuery.data.totalCash)}
             </div>
             <div className="text-old-label text-[var(--c-fg-muted)]">
-              {totalsQuery.data.cashLines} {i18n.t('finance.label.lines')}
+              {i18n.t('finance.label.lines', { n: totalsQuery.data.cashLines })}
             </div>
           </div>
           <div>
@@ -1384,7 +1394,7 @@ export function FinanceSection() {
               {formatMoney(totalsQuery.data.totalTransfer)}
             </div>
             <div className="text-old-label text-[var(--c-fg-muted)]">
-              {totalsQuery.data.transferLines} {i18n.t('finance.label.lines')}
+              {i18n.t('finance.label.lines', { n: totalsQuery.data.transferLines })}
             </div>
           </div>
           <div>
@@ -1393,7 +1403,7 @@ export function FinanceSection() {
               {formatMoney(totalsQuery.data.total)}
             </div>
             <div className="text-old-label text-[var(--c-fg-muted)]">
-              {totalsQuery.data.runCount} {i18n.t('finance.label.runs')}
+              {i18n.t('finance.label.runs', { n: totalsQuery.data.runCount })}
             </div>
           </div>
           {/* 2026-10-21 CA-11: total = items + expenses, shown as parts. */}
@@ -1464,7 +1474,9 @@ export function FinanceSection() {
                   onClick={() => setExpanded(isOpen ? null : g.date)}
                   className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left active:opacity-80"
                 >
-                  <span className="text-old-body font-semibold tabular-nums">{g.date}</span>
+                  <span className="text-old-body font-semibold tabular-nums">
+                    {dates.calendarDay(g.date)}
+                  </span>
                   <span className="font-mono text-old-body tabular-nums">
                     {formatMoney(g.cash + g.transfer)}
                   </span>
@@ -1564,7 +1576,7 @@ export function FinanceSection() {
                           className="flex items-baseline justify-between gap-2 border-b border-[var(--c-divider)] px-3 py-1.5 text-old-label last:border-b-0"
                         >
                           <span className="truncate">
-                            {l.runDate} ·{' '}
+                            {dates.calendarDay(l.runDate)} ·{' '}
                             {l.paymentMethod === 'transfer'
                               ? i18n.t('run.label.paymentTransfer')
                               : i18n.t('run.label.paymentCash')}{' '}
@@ -1621,7 +1633,7 @@ export function FinanceSection() {
                           className="flex items-baseline justify-between gap-2 border-b border-[var(--c-divider)] px-3 py-1.5 text-old-label last:border-b-0"
                         >
                           <span className="truncate">
-                            {l.runDate} ·{' '}
+                            {dates.calendarDay(l.runDate)} ·{' '}
                             {l.paymentMethod === 'transfer'
                               ? i18n.t('run.label.paymentTransfer')
                               : i18n.t('run.label.paymentCash')}{' '}
@@ -1920,7 +1932,7 @@ export function MaintenanceSection() {
             </div>
           ) : null}
 
-          <Field label={`Type "${orgSlug}" to confirm`}>
+          <Field label={i18n.t('ops.maint.confirmPurgeLabel')}>
             <Input
               value={confirmText}
               onChange={(e) => setConfirmText(e.target.value)}

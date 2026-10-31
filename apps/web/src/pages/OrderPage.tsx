@@ -40,7 +40,7 @@ import {
 // dropdown — kept in sync with CanonicalUnitSchema in
 // @compass/contracts. STEP map drives NumberInput's decimal vs
 // integer granularity per unit; UNIT_IS_INTEGER drives inputMode.
-const CANONICAL_UNITS = ['kg', 'g', 'L', 'ml', 'pcs', 'pack', 'pair', 'bunch', 'roll'] as const;
+const CANONICAL_UNITS = ['kg', 'g', 'L', 'ml', 'pcs', 'pack', 'pair', 'bunch', 'roll', 'box'] as const;
 const UNIT_STEP: Record<string, string> = {
   kg: '0.1',
   L: '0.1',
@@ -1613,7 +1613,7 @@ const SkuRow = memo(function SkuRow({
   productNameParts: (item: {
     names: Record<string, string> | null | undefined;
   }) => { primary: string; secondary: string | null };
-  unitLabel: (unit: string | null | undefined) => string;
+  unitLabel: (unit: string | null | undefined, qty?: string | number | null) => string;
   i18n: ReturnType<typeof useI18n>;
   onQtyChange: (storeId: string, skuId: string, qty: string) => void;
 }) {
@@ -1646,7 +1646,10 @@ const SkuRow = memo(function SkuRow({
             {otherContribCount > 0 && totalQty > 0 ? (
               <>
                 <span className="font-semibold text-[var(--c-fg)]">
-                  {i18n.t('order.totalQty', { qty: formatQty(totalQty), unit: unitLabel(sku.unit) })}
+                  {i18n.t('order.totalQty', {
+                    qty: formatQty(totalQty),
+                    unit: unitLabel(sku.unit, totalQty),
+                  })}
                 </span>
                 {' '}
                 ({otherContribCount + (myQty > 0 ? 1 : 0)})
@@ -1932,7 +1935,7 @@ function ReviewList({
                   </span>
                   <span className="flex shrink-0 items-baseline gap-2">
                     <span className="font-mono text-old-body tabular-nums text-[var(--c-fg-muted)]">
-                      {formatQty(r.qty)} {unitLabel(r.unit)}
+                      {formatQty(r.qty)} {unitLabel(r.unit, r.qty)}
                     </span>
                     {r.archived && onRemove ? (
                       <button
@@ -2189,7 +2192,7 @@ function SessionExtrasEditor({
             >
               <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">{r.name}</span>
               <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
-                {formatQty(r.qty)} {unitLabel(r.unit)}
+                {formatQty(r.qty)} {unitLabel(r.unit, r.qty)}
               </span>
             </li>
           ))}

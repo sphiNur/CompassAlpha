@@ -442,7 +442,7 @@ export function ConfirmPage() {
               store — which the page never named. Now named once, in
               Shell's top strip, on every page including this one. */}
           <span className="ml-auto truncate text-old-label tabular-nums text-[var(--c-fg-muted)]">
-            {i18n.t('confirm.runOnDate', { date: activeRun.runDate })}
+            {i18n.t('confirm.runOnDate', { date: dates.calendarDay(activeRun.runDate) })}
           </span>
         </StickyPageBar>
       ) : null}
@@ -479,7 +479,10 @@ export function ConfirmPage() {
                   setPickedRunId(r.id);
                 }}
               >
-                {i18n.t('confirm.runPicker.option', { n: r.runIndex + 1, date: r.runDate })}
+                {i18n.t('confirm.runPicker.option', {
+                  n: r.runIndex + 1,
+                  date: dates.calendarDay(r.runDate),
+                })}
                 {storeConfirmedByRun.get(r.id) ? ' ✓' : ''}
               </Chip>
             ))}
@@ -574,7 +577,7 @@ export function ConfirmPage() {
                                 size="default"
                               />
                               <span className="shrink-0 font-mono text-old-label tabular-nums text-[var(--c-fg-muted)]">
-                                {formatQty(it.qty)} {unitLabel(sku?.unit)}
+                                {formatQty(it.qty)} {unitLabel(sku?.unit, it.qty)}
                               </span>
                             </div>
                             {/* variant="radio" (2026-07-30): now that an
@@ -686,7 +689,7 @@ export function ConfirmPage() {
                                 {i18n.t('confirm.receivedOf', {
                                   received: formatQty(it.confirmReceivedQty),
                                   qty: formatQty(it.qty),
-                                  unit: unitLabel(sku?.unit),
+                                  unit: unitLabel(sku?.unit, it.qty),
                                 })}
                               </div>
                             ) : null}
@@ -802,7 +805,7 @@ export function ConfirmPage() {
               <span className="text-old-label font-semibold text-[var(--c-fg-muted)]">
                 {i18n.t('confirm.issue.receivedQty', {
                   max: formatQty(issueOpen.splitQty),
-                  unit: unitLabel(issueOpen.unit),
+                  unit: unitLabel(issueOpen.unit, issueOpen.splitQty),
                 })}
               </span>
               <Input
@@ -812,11 +815,11 @@ export function ConfirmPage() {
                 onChange={(e) => setIssueReceived(e.target.value)}
                 placeholder={i18n.t('confirm.issue.receivedQty', {
                   max: formatQty(issueOpen.splitQty),
-                  unit: unitLabel(issueOpen.unit),
+                  unit: unitLabel(issueOpen.unit, issueOpen.splitQty),
                 })}
                 aria-label={i18n.t('confirm.issue.receivedQty', {
                   max: formatQty(issueOpen.splitQty),
-                  unit: unitLabel(issueOpen.unit),
+                  unit: unitLabel(issueOpen.unit, issueOpen.splitQty),
                 })}
               />
               {issueReceivedCheck && !issueReceivedCheck.ok ? (

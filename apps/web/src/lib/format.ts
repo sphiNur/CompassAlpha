@@ -125,12 +125,19 @@ export function formatMoney(
  * 4,500). Exact — up to the 5 decimals a 2-dp amount needs once divided
  * by 1000 (33,333.33 → "33.33333K") — and trailing zeros dropped, so the
  * common whole-thousand price stays short.
+ *
+ * RE-COPY-2 (2026-10-31): the suffix is the catalog's
+ * `common.priceThousands` ("{n}千" / "{n} тыс." / "{n} ming"); pass it as
+ * `template`. The Latin "K" default is only the English form.
  */
-export function formatMoneyThousands(v: string | number | null | undefined): string {
+export function formatMoneyThousands(
+  v: string | number | null | undefined,
+  template = '{n}K',
+): string {
   if (v === null || v === undefined || v === '') return '';
   const n = typeof v === 'number' ? v : Number(v);
   if (!Number.isFinite(n)) return String(v);
-  return `${thousandsFormatter.format(n / 1000)}K`;
+  return template.replace('{n}', thousandsFormatter.format(n / 1000));
 }
 
 /**
