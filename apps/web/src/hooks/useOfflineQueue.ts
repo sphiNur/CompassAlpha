@@ -24,6 +24,10 @@
  * Deriving a stable key from `clientSeq` is tracked separately — do NOT
  * rely on this path being duplicate-safe for money mutations yet.
  *
+ * CMP-FE-3 (2026-10-31): the registry is now filled once, at app level,
+ * with every procedure (lib/outboxReplay.ts), and the flushes run there
+ * too; pages only enqueue and read the queue.
+ *
  * The hook returns:
  *   - `pendingCount`     — how many writes are waiting offline
  *   - `pendingEntries`   — those writes (procedure + input), so a page can
@@ -32,7 +36,7 @@
  *   - `flush()`          — trigger an immediate replay attempt
  *   - `online`           — current connectivity
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { nextSeq, outbox, type OutboxEntry } from '../lib/idb';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useAuthStore } from '../stores/authStore';
@@ -47,6 +51,39 @@ type ReplayFn = (entry: OutboxEntry) => Promise<void>;
  * which stay valid after the registering page unmounts.
  */
 const globalReplay: Record<string, ReplayFn> = {};
+
+/**
+ * CMP-FE-3 (2026-10-31): the replay handlers are registered once, at app
+ * level (lib/outboxReplay.ts), for every procedure any page queues. Before,
+ * each page registered its own when it mounted, so after a reload on the
+ * order tab a purchase queued offline waited until someone opened the
+ * purchase tab. Returns a function that removes them again.
+ */
+export function registerReplayHandlers(map: Record<string, ReplayFn>): () => void {
+  Object.assign(globalReplay, map);
+  return () => {
+    for (const [procedure, fn] of Object.entries(map)) {
+      if (globalReplay[procedure] === fn) delete globalReplay[procedure];
+    }
+  };
+}
+
+/** Is there a replay handler for this procedure? (tests, diagnostics) */
+export function hasReplayHandler(procedure: string): boolean {
+  return procedure in globalReplay;
+}
+
+/** Told when a queued write is dropped without being applied (app level). */
+let dropHandler: ((info: OfflineDropInfo) => void) | null = null;
+export function setOfflineDropHandler(fn: ((info: OfflineDropInfo) => void) | null): void {
+  dropHandler = fn;
+}
+
+/** Every mounted useOfflineQueue re-reads the outbox when it changes. */
+const outboxListeners = new Set<() => void>();
+function notifyOutboxChanged(): void {
+  for (const l of outboxListeners) l();
+}
 
 /**
  * Only discard an entry whose procedure NO live handler recognises after
@@ -145,6 +182,90 @@ export async function sendWriteAhead<P, R>(
     if (clientSeq !== null) liveSeqs.delete(clientSeq);
     settled(queued);
   }
+}
+
+/**
+ * Replay the outbox in order, for the signed-in person (CMP-FE-3: one
+ * function for the whole app, run by lib/outboxReplay.ts on reconnect and
+ * by pages that need the queue drained).
+ */
+export function flushOutbox(): Promise<void> {
+  // A caller that needs the queue drained (Submit) must be able to wait
+  // for a flush someone else already started, not return straight away.
+  if (flushInFlight) return flushInFlight;
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return Promise.resolve();
+  const currentUserId = useAuthStore.getState().session?.user.id;
+  if (!currentUserId) return Promise.resolve();
+  flushInFlight = (async () => {
+    try {
+      const all = (await outbox.list()).sort((a, b) => a.clientSeq - b.clientSeq);
+      for (const entry of all) {
+        const ageMs = Date.now() - entry.enqueuedAt;
+        if (!isOwnEntry(entry.ownerUserId, currentUserId)) {
+          // Queued by someone else on this device. Never send it under
+          // this session; keep it for its author unless it has gone stale.
+          if (classifyEntry(false, ageMs) === 'expire') {
+            await outbox.remove(entry.clientSeq);
+          }
+          continue;
+        }
+        // Its page is sending it right now (write-ahead): stop, so it is
+        // neither sent twice nor overtaken by a later write.
+        if (isLiveEntry(entry.clientSeq)) break;
+        const fn = globalReplay[entry.procedure];
+        if (!fn) {
+          // No handler for this procedure. Do NOT delete on sight — that
+          // was the C1 data-loss bug. Since CMP-FE-3 every procedure has an
+          // app-level handler, so this is an entry from another bundle;
+          // leave it for a later flush. Only discard entries old enough to be from a
+          // retired bundle, so a truly orphaned entry can't loop forever.
+          if (classifyEntry(false, ageMs) === 'expire') {
+            await outbox.remove(entry.clientSeq);
+            dropHandler?.({ procedure: entry.procedure, reason: 'stale' });
+          }
+          continue;
+        }
+        // Still backing off from its last failure: stop here rather than
+        // skip ahead, so later writes can't overtake it.
+        if (!isRetryDue(entry.retries, entry.lastAttemptAt, Date.now())) break;
+        try {
+          await fn(entry);
+          await outbox.remove(entry.clientSeq);
+        } catch (err) {
+          const code = (err as { data?: { code?: string } } | undefined)?.data?.code;
+          if (classifyReplayError(code, entry.procedure, entry.retries) === 'drop') {
+            // Server-side rejection — keeping it in the queue won't help.
+            await outbox.remove(entry.clientSeq);
+            const message = (err as { message?: unknown } | undefined)?.message;
+            dropHandler?.({
+              procedure: entry.procedure,
+              reason: 'rejected',
+              ...(typeof message === 'string' ? { message } : {}),
+            });
+            continue;
+          }
+          // No answer, or a lapsed session: the entry is not at fault.
+          // Leave it untouched and stop, preserving order for next time.
+          if (!countsTowardGiveUp(code)) break;
+          const nextRetries = entry.retries + 1;
+          if (shouldGiveUp(nextRetries)) {
+            // Transient failures exhausted — abandon this entry so it can't
+            // block the queue forever, but surface the loss (H3).
+            await outbox.remove(entry.clientSeq);
+            dropHandler?.({ procedure: entry.procedure, reason: 'gaveup' });
+            continue;
+          }
+          await outbox.add({ ...entry, retries: nextRetries, lastAttemptAt: Date.now() });
+          // Stop the loop on first transient — preserves order on next attempt.
+          break;
+        }
+      }
+    } finally {
+      flushInFlight = null;
+      notifyOutboxChanged();
+    }
+  })();
+  return flushInFlight;
 }
 
 /** While the outbox holds entries, how often to try again on our own:
@@ -314,17 +435,6 @@ export interface OfflineDropInfo {
   message?: string;
 }
 
-interface UseOfflineQueueOptions {
-  /**
-   * Called when an entry is permanently removed WITHOUT being applied —
-   * a terminal server rejection ('rejected'), the retry cap being reached
-   * ('gaveup'), or stale-bundle expiry ('stale'). Lets the host surface
-   * "a saved change didn't sync" instead of the write vanishing silently
-   * after the user was told it was saved. NOT called on successful replay.
-   */
-  onDrop?: (info: OfflineDropInfo) => void;
-}
-
 /** A queued write as a page needs it to show it as pending. */
 export type PendingWrite = Pick<OutboxEntry, 'clientSeq' | 'procedure' | 'input' | 'enqueuedAt'>;
 
@@ -356,30 +466,20 @@ interface UseOfflineQueueResult {
   online: boolean;
 }
 
-/** Pages register a per-procedure replay fn. The hook merges them into the
- *  shared registry and calls them in order when flushing. Anything that
- *  throws (transiently) stays in the queue with retries++ for the next
- *  online event, up to MAX_REPLAY_RETRIES. */
-export function useOfflineQueue(
-  replayMap: Record<string, ReplayFn>,
-  options: UseOfflineQueueOptions = {},
-): UseOfflineQueueResult {
+/**
+ * The outbox as a page sees it: how many writes wait, which ones (to show
+ * them on their rows), and enqueue / write-ahead send. Replaying is not
+ * the page's job any more (CMP-FE-3): lib/outboxReplay.ts registers every
+ * procedure's handler and runs the flushes for the whole app, so a write
+ * queued on one tab syncs whichever tab is open.
+ */
+export function useOfflineQueue(): UseOfflineQueueResult {
   const [pendingCount, setPendingCount] = useState(0);
   const [savingSlow, setSavingSlow] = useState(slowWrites > 0);
   const [pendingEntries, setPendingEntries] = useState<readonly PendingWrite[]>([]);
   const [online, setOnline] = useState<boolean>(
     typeof navigator !== 'undefined' ? navigator.onLine : true,
   );
-  // Keep the latest onDrop in a ref so the stable flush callback always
-  // calls the current handler without needing it in its dep list.
-  const onDropRef = useRef(options.onDrop);
-  onDropRef.current = options.onDrop;
-
-  // Merge this page's handlers into the shared registry, retained across
-  // unmounts. Pages pass inline object literals so identity changes every
-  // render; Object.assign is idempotent and cheap. (Mirrors the pre-existing
-  // pattern of refreshing handler refs during render.)
-  Object.assign(globalReplay, replayMap);
 
   const refresh = useCallback(async () => {
     try {
@@ -404,84 +504,7 @@ export function useOfflineQueue(
     }
   }, []);
 
-  const flush = useCallback((): Promise<void> => {
-    // A caller that needs the queue drained (Submit) must be able to wait
-    // for a flush someone else already started, not return straight away.
-    if (flushInFlight) return flushInFlight;
-    if (typeof navigator !== 'undefined' && !navigator.onLine) return Promise.resolve();
-    const currentUserId = useAuthStore.getState().session?.user.id;
-    if (!currentUserId) return Promise.resolve();
-    flushInFlight = (async () => {
-      try {
-        const all = (await outbox.list()).sort((a, b) => a.clientSeq - b.clientSeq);
-        for (const entry of all) {
-          const ageMs = Date.now() - entry.enqueuedAt;
-          if (!isOwnEntry(entry.ownerUserId, currentUserId)) {
-            // Queued by someone else on this device. Never send it under
-            // this session; keep it for its author unless it has gone stale.
-            if (classifyEntry(false, ageMs) === 'expire') {
-              await outbox.remove(entry.clientSeq);
-            }
-            continue;
-          }
-          // Its page is sending it right now (write-ahead): stop, so it is
-          // neither sent twice nor overtaken by a later write.
-          if (isLiveEntry(entry.clientSeq)) break;
-          const fn = globalReplay[entry.procedure];
-          if (!fn) {
-            // No live handler for this procedure. Do NOT delete on sight —
-            // that was the C1 data-loss bug. It is almost always a procedure
-            // owned by a page that isn't mounted right now; leave it for a
-            // later flush. Only discard entries old enough to be from a
-            // retired bundle, so a truly orphaned entry can't loop forever.
-            if (classifyEntry(false, ageMs) === 'expire') {
-              await outbox.remove(entry.clientSeq);
-              onDropRef.current?.({ procedure: entry.procedure, reason: 'stale' });
-            }
-            continue;
-          }
-          // Still backing off from its last failure: stop here rather than
-          // skip ahead, so later writes can't overtake it.
-          if (!isRetryDue(entry.retries, entry.lastAttemptAt, Date.now())) break;
-          try {
-            await fn(entry);
-            await outbox.remove(entry.clientSeq);
-          } catch (err) {
-            const code = (err as { data?: { code?: string } } | undefined)?.data?.code;
-            if (classifyReplayError(code, entry.procedure, entry.retries) === 'drop') {
-              // Server-side rejection — keeping it in the queue won't help.
-              await outbox.remove(entry.clientSeq);
-              const message = (err as { message?: unknown } | undefined)?.message;
-              onDropRef.current?.({
-                procedure: entry.procedure,
-                reason: 'rejected',
-                ...(typeof message === 'string' ? { message } : {}),
-              });
-              continue;
-            }
-            // No answer, or a lapsed session: the entry is not at fault.
-            // Leave it untouched and stop, preserving order for next time.
-            if (!countsTowardGiveUp(code)) break;
-            const nextRetries = entry.retries + 1;
-            if (shouldGiveUp(nextRetries)) {
-              // Transient failures exhausted — abandon this entry so it can't
-              // block the queue forever, but surface the loss (H3).
-              await outbox.remove(entry.clientSeq);
-              onDropRef.current?.({ procedure: entry.procedure, reason: 'gaveup' });
-              continue;
-            }
-            await outbox.add({ ...entry, retries: nextRetries, lastAttemptAt: Date.now() });
-            // Stop the loop on first transient — preserves order on next attempt.
-            break;
-          }
-        }
-      } finally {
-        flushInFlight = null;
-        await refresh();
-      }
-    })();
-    return flushInFlight;
-  }, [refresh]);
+  const flush = flushOutbox;
 
   const enqueue = useCallback(
     async <P,>(procedure: string, input: P, idempotencyKey?: string): Promise<number> => {
@@ -495,22 +518,22 @@ export function useOfflineQueue(
         idempotencyKey,
         ownerUserId: useAuthStore.getState().session?.user.id,
       });
-      await refresh();
+      notifyOutboxChanged();
       // Try immediately if we're online — if we're offline this will no-op.
-      void flush();
+      void flushOutbox();
       return clientSeq;
     },
-    [flush, refresh],
+    [],
   );
 
   const sendQueued = useCallback(
     <P, R>(procedure: string, input: P, send: () => Promise<R>, idempotencyKey?: string) =>
       sendWriteAhead(procedure, input, send, idempotencyKey, (queued) => {
-        void refresh();
+        notifyOutboxChanged();
         // Now an ordinary queued write: try it again as enqueue() would.
-        if (queued) void flush();
+        if (queued) void flushOutbox();
       }),
-    [flush, refresh],
+    [],
   );
 
   useEffect(() => {
@@ -523,30 +546,56 @@ export function useOfflineQueue(
   }, []);
 
   useEffect(() => {
-    void refresh();
-    const onOnline = () => {
-      setOnline(true);
-      void flush();
-    };
+    const onChange = () => void refresh();
+    outboxListeners.add(onChange);
+    onChange();
+    const onOnline = () => setOnline(true);
     const onOffline = () => setOnline(false);
-    // Back from the background (Telegram minimised) or a server that came
-    // back without the browser ever going offline: retry the backlog.
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') void flush();
-    };
-    const backlogTimer = window.setInterval(() => void flush(), BACKLOG_RETRY_MS);
     window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
-    document.addEventListener('visibilitychange', onVisible);
-    // Try once on mount in case there's backlog from a previous visit.
-    void flush();
     return () => {
-      window.clearInterval(backlogTimer);
+      outboxListeners.delete(onChange);
       window.removeEventListener('online', onOnline);
       window.removeEventListener('offline', onOffline);
-      document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [flush, refresh]);
+  }, [refresh]);
 
   return { pendingCount, pendingEntries, savingSlow, enqueue, sendQueued, flush, online };
+}
+
+/**
+ * The app-level replay loop (CMP-FE-3), mounted once by lib/outboxReplay.
+ * Flushes on start, when the browser comes back online, when the app
+ * returns from the background, after sign-in, and every BACKLOG_RETRY_MS
+ * (a server that was down while the browser stayed "online" fires no
+ * event).
+ */
+export function useOutboxFlushTriggers(): void {
+  useEffect(() => {
+    const onOnline = () => void flushOutbox();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void flushOutbox();
+    };
+    let userId = useAuthStore.getState().session?.user.id;
+    const unsubscribe = useAuthStore.subscribe((state) => {
+      const next = state.session?.user.id;
+      if (next === userId) return;
+      userId = next;
+      // Signed in (or switched person): their backlog, and what others
+      // see as pending, changes.
+      notifyOutboxChanged();
+      if (next) void flushOutbox();
+    });
+    const backlogTimer = window.setInterval(() => void flushOutbox(), BACKLOG_RETRY_MS);
+    window.addEventListener('online', onOnline);
+    document.addEventListener('visibilitychange', onVisible);
+    // Backlog from a previous visit.
+    void flushOutbox();
+    return () => {
+      unsubscribe();
+      window.clearInterval(backlogTimer);
+      window.removeEventListener('online', onOnline);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, []);
 }

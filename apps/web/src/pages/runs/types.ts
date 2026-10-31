@@ -166,6 +166,8 @@ export interface ActiveRun {
     reason: string;
     addedByMemberId: string;
     addedAt: string;
+    /** CMP-BUY-2: recorded offline, not on the server yet. */
+    pendingSync?: boolean;
   }>;
   /** M3.27: preferred-supplier per SKU (mirrors preview.supplierBySku),
    *  powers the active-run "by vendor" view. Null entries = SKUs
