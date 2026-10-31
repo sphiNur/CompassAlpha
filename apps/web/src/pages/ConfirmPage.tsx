@@ -630,6 +630,8 @@ export function ConfirmPage() {
                               <NameCell
                                 primary={nm ? nm.primary : it.skuId.slice(0, 8)}
                                 secondary={nm?.secondary}
+                                primaryLang={nm?.primaryLang}
+                                secondaryLang={nm?.secondaryLang}
                                 size="default"
                               />
                               <span className="shrink-0 font-mono text-old-label tabular-nums text-[var(--c-fg-muted)]">
@@ -641,7 +643,13 @@ export function ConfirmPage() {
                               with no selected tab would be invalid ARIA.
                               A radiogroup with nothing checked is exactly
                               the state we mean. */}
-                            <ChipBar variant="radio" ariaLabel={i18n.t('confirm.status.ariaLabel')}>
+                            <ChipBar
+                              variant="radio"
+                              // Choosing a status sends it (or opens the
+                              // problem sheet): arrows only move focus.
+                              followFocus={false}
+                              ariaLabel={i18n.t('confirm.status.ariaLabel')}
+                            >
                               {(['ok', 'short', 'wrong', 'quality'] as DecisionStatus[]).map(
                                 (s) => (
                                   <Chip

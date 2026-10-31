@@ -10,7 +10,7 @@
  * internal. The audit's ListEditor/NameFieldsML consolidation happens
  * on top of this split as its own pass.
  */
-import { useMemo, useRef, useState } from 'react';
+import { Fragment, useMemo, useRef, useState } from 'react';
 import {
   Badge,
   Banner,
@@ -40,8 +40,27 @@ import { useErrToast } from '../../../lib/errToast';
 import { formatMoney, formatQty } from '../../../lib/format';
 import { matchesNameLike, normalizeQuery } from '../../../lib/searchMatch';
 import { useI18n, useProductName, useUnitLabel } from '../../../hooks/useI18n';
+import { useAnnounce } from '../../../hooks/useAnnounce';
 import { nativeConfirm } from '../shared';
 import { CatalogImportSheet } from './CatalogImportSheet';
+
+/**
+ * A11Y-3 (2026-10-31): the "Mol go'shti · Говядина · Beef" line under a
+ * catalog name. Each name carries its own `lang`, so a screen reader
+ * reads the Russian one in Russian instead of in the interface's voice.
+ */
+function OtherLangNames({ names, langs }: { names: Record<string, string>; langs: string[] }) {
+  return (
+    <>
+      {langs.map((l, i) => (
+        <Fragment key={l}>
+          {i > 0 ? ' · ' : null}
+          <span lang={l}>{names[l]}</span>
+        </Fragment>
+      ))}
+    </>
+  );
+}
 
 /**
  * 2026-10-21 audit CA-16: every catalog write below (categories, SKUs,
@@ -201,18 +220,17 @@ export function CategoriesSection() {
               // Title shows the name in the user's preferred locale,
               // with the other 3 langs in a 12px row below so admins
               // can verify the catalog is fully translated at a glance.
-              const otherLangs = ['uz', 'ru', 'en', 'zh']
-                .filter((l) => names[l] && names[l] !== productName({ names }))
-                .map((l) => names[l])
-                .join(' · ');
+              const otherLangs = ['uz', 'ru', 'en', 'zh'].filter(
+                (l) => names[l] && names[l] !== productName({ names }),
+              );
               return (
-                <Card key={c.id}>
+                <Card as="li" key={c.id}>
                   <CardHeader>
                     <div className="min-w-0">
-                      <CardTitle>{productName({ names }) || c.slug}</CardTitle>
-                      {otherLangs ? (
+                      <CardTitle as="h2">{productName({ names }) || c.slug}</CardTitle>
+                      {otherLangs.length > 0 ? (
                         <div className="mt-0.5 truncate text-old-label text-[var(--c-fg-muted)]">
-                          {otherLangs}
+                          <OtherLangNames names={names} langs={otherLangs} />
                         </div>
                       ) : null}
                       <CardMeta>
@@ -428,6 +446,27 @@ export function SkusSection() {
   // M1.10 (2026-05-08): cross-language SKU search.
   const [searchQuery, setSearchQuery] = useState('');
   const tokens = useMemo(() => normalizeQuery(searchQuery), [searchQuery]);
+  // A11Y-12 (2026-10-31): read the number of matches out once typing
+  // settles. Same filter as the list below.
+  const matchCount = useMemo(
+    () =>
+      tokens && skusQuery.data
+        ? skusQuery.data.filter((sk) =>
+            matchesNameLike(
+              { names: sk.names as Record<string, string> | null, code: sk.code },
+              tokens,
+            ),
+          ).length
+        : null,
+    [tokens, skusQuery.data],
+  );
+  useAnnounce(
+    matchCount === null
+      ? null
+      : matchCount === 0
+        ? i18n.t('admin.search.noMatches.title')
+        : i18n.t('a11y.results.products', { n: matchCount }),
+  );
 
   const create = trpc.admin.skuCreate.useMutation({
     onSuccess: () => {
@@ -536,18 +575,17 @@ export function SkusSection() {
             {filtered.map((sk) => {
               const names = sk.names as Record<string, string>;
               const primary = productName({ names }) || sk.code || sk.id.slice(0, 6);
-              const otherLangs = ['uz', 'ru', 'en', 'zh']
-                .filter((l) => names[l] && names[l] !== primary)
-                .map((l) => names[l])
-                .join(' · ');
+              const otherLangs = ['uz', 'ru', 'en', 'zh'].filter(
+                (l) => names[l] && names[l] !== primary,
+              );
               return (
-                <Card key={sk.id}>
+                <Card as="li" key={sk.id}>
                   <CardHeader>
                     <div className="min-w-0">
-                      <CardTitle>{primary}</CardTitle>
-                      {otherLangs ? (
+                      <CardTitle as="h2">{primary}</CardTitle>
+                      {otherLangs.length > 0 ? (
                         <div className="mt-0.5 truncate text-old-label text-[var(--c-fg-muted)]">
-                          {otherLangs}
+                          <OtherLangNames names={names} langs={otherLangs} />
                         </div>
                       ) : null}
                       <CardMeta>
@@ -858,10 +896,10 @@ export function SuppliersSection() {
         {(rows) => (
           <ul className="flex flex-col gap-2" role="list">
             {rows.map((sp) => (
-              <Card key={sp.id}>
+              <Card as="li" key={sp.id}>
                 <CardHeader>
                   <div className="min-w-0">
-                    <CardTitle>{sp.name}</CardTitle>
+                    <CardTitle as="h2">{sp.name}</CardTitle>
                     <CardMeta>
                       {sp.contactPhone ? sp.contactPhone : ''}
                       {sp.contactTg ? ` · @${sp.contactTg}` : ''}
@@ -1094,10 +1132,10 @@ export function ExpenseTemplatesSection() {
               const lineTotal =
                 Number(tpl.defaultQty) * Number(tpl.defaultUnitPrice);
               return (
-                <Card key={tpl.id}>
+                <Card as="li" key={tpl.id}>
                   <CardHeader>
                     <div className="min-w-0">
-                      <CardTitle>{tpl.label}</CardTitle>
+                      <CardTitle as="h2">{tpl.label}</CardTitle>
                       <CardMeta>
                         {tpl.unitHint ? `${tpl.unitHint} · ` : ''}
                         {/* default qty × unit price, with the

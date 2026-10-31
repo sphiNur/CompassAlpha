@@ -37,6 +37,9 @@ export const zh = {
   'qty.decrement': '减少',
   'qty.increment': '增加',
   'qty.pickAria': '数量 {value}——点击选择',
+  'qty.groupAria': '{item}的数量',
+  'a11y.results.products': '找到 {n} 个商品',
+  'a11y.results.items': '显示 {n} 项',
   'qty.setTitle': '设置数量',
   'qty.unitIs': '单位：{unit}',
   'qty.custom': '自定义',
@@ -968,6 +971,7 @@ export const zh = {
   'approval.confirm.reject.title': '拒绝这份订单？',
   'approval.confirm.reject.body': '提交人会看到你填的原因，可以修改后重新提交。',
   'approval.confirm.reject.reasonPlaceholder': '例如：重复下单',
+  'approval.confirm.reject.reasonLabel': '拒绝原因（必填）',
   'approval.confirm.unapprove.title': '撤销通过？',
   'approval.confirm.unapprove.body': '订单回到待审核。仅在尚未并入采购单前可操作。',
 
@@ -1772,6 +1776,9 @@ export const zh = {
   'settlement.noEligibleStores.body':
     '你在已分配的门店中没有日结权限，请联系店长检查门店角色。',
   'settlement.errors.invalidMoney': '请输入有效金额，最多保留两位小数。',
+  'settlement.errors.fieldMoney': '{field}：请输入数字，最多两位小数。',
+  'settlement.errors.fieldsToFix': '有 {n} 栏需要改正',
+  'settlement.errors.goToFirst': '去改正',
   'settlement.errors.expensesManagerOnly': '需要本门店的日结录入权限才能录入日常支出。',
   'settlement.errors.invalidDetails': '请补全每一条支出和工资明细。',
   'settlement.errors.invalidDetailsBody':

@@ -23,7 +23,7 @@
  */
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Sheet, Button, Field, SectionLabel, PickerRow } from '@compass/ui';
+import { Sheet, Button, Field, SectionLabel, PickerGroup, PickerRow } from '@compass/ui';
 import { useToast } from '@compass/ui';
 import { LANGUAGE_NATIVE_NAMES, type Locale } from '@compass/i18n';
 import { trpc } from '../lib/trpc';
@@ -199,7 +199,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
               </Button>
             </div>
           ) : (
-            <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
+            <PickerGroup label={i18n.t('workspace.title')}>
               {(session?.memberships ?? []).map((membership) => {
                 const selected = membership.orgId === session?.member.orgId;
                 return (
@@ -222,7 +222,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
                   {i18n.t('workspace.create.action')}
                 </Button>
               ) : null}
-            </div>
+            </PickerGroup>
           )}
         </section>
 
@@ -234,13 +234,14 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
           <SectionLabel as="h3" padded={false} className="mb-2">
             {i18n.t('settings.language.title')}
           </SectionLabel>
-          <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
+          <PickerGroup label={i18n.t('settings.language.title')}>
             {LANGS.map((lang) => {
               const selected = (session?.user.locale ?? 'en') === lang.code;
               return (
                 <PickerRow
                   key={lang.code}
                   label={lang.label}
+                  lang={lang.code}
                   hint={lang.region}
                   selected={selected}
                   disabled={setLocale.isPending}
@@ -250,7 +251,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
                 />
               );
             })}
-          </div>
+          </PickerGroup>
         </section>
 
         {/* ── M3.45: Vendor display language ──────────────── */}
@@ -267,7 +268,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
           <div className="mb-2 text-old-label text-[var(--c-fg-muted)]">
             {i18n.t('settings.secondaryLanguage.hint')}
           </div>
-          <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
+          <PickerGroup label={i18n.t('settings.secondaryLanguage.title')}>
             {/* "Off" row first — explicit opt-out is clearer than a
                 tiny "clear" button hidden somewhere. */}
             {(() => {
@@ -290,6 +291,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
                 <PickerRow
                   key={lang.code}
                   label={lang.label}
+                  lang={lang.code}
                   hint={lang.region}
                   selected={selected}
                   disabled={setSecondaryLocale.isPending}
@@ -299,7 +301,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
                 />
               );
             })}
-          </div>
+          </PickerGroup>
         </section>
 
         {/* ── About ───────────────────────────────────────── */}

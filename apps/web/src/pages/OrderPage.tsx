@@ -37,6 +37,8 @@ import {
   useProductNameParts,
   useUnitLabel,
 } from '../hooks/useI18n';
+import type { ProductNameParts } from '../hooks/useI18n';
+import { useAnnounce } from '../hooks/useAnnounce';
 
 // M3.34 (2026-05-19): canonical units for the extras editor's unit
 // dropdown — kept in sync with CanonicalUnitSchema in
@@ -686,6 +688,15 @@ export function OrderPage() {
       return out;
     },
     [skus, activeCategory, searchQuery],
+  );
+  // A11Y-12 (2026-10-31): say how many products the search / category
+  // leaves, once typing settles; the list used to change in silence.
+  useAnnounce(
+    skusQuery.data && (searchQuery.trim() || activeCategory)
+      ? filteredSkus.length === 0
+        ? i18n.t('order.search.noMatches.title')
+        : i18n.t('a11y.results.products', { n: filteredSkus.length })
+      : null,
   );
 
   const items = sessionQuery.data?.items ?? [];
@@ -1554,33 +1565,43 @@ export function OrderPage() {
           </Button>
         }
       >
-        {/* CA-27: an extras-only batch shouldn't read "Nothing selected". */}
-        {totals.length > 0 || extrasCount === 0 ? (
-          <ReviewList
-            totals={totals}
-            skus={allSkus}
-            productName={productName}
-            onRemove={
-              currentStoreId ? (skuId) => handleQtyChange(currentStoreId, skuId, '0') : undefined
-            }
-          />
-        ) : null}
-        {extrasCount > 0 && sessionQuery.data && sessionQuery.data.id !== 'optimistic' ? (
-          <SessionExtrasEditor
-            sessionId={sessionQuery.data.id}
-            storeId={currentStoreId}
-            initialValue={(sessionQuery.data.extras ?? []).map((r) => ({
-              ...r,
-              unit: (CANONICAL_UNITS as readonly string[]).includes(r.unit)
-                ? (r.unit as (typeof CANONICAL_UNITS)[number])
-                : 'kg',
-            }))}
-            isReadOnly
-            onSave={async () => {
-              /* read-only — never called */
-            }}
-          />
-        ) : null}
+        {/* A11Y-7 (2026-10-31): the list is the sheet's first focus stop, so
+            opening 复核订单 with the keyboard lands on what is being
+            ordered. Focus used to land on 提交订单 itself, where a repeated
+            Enter submitted the order unread. */}
+        <div
+          tabIndex={0}
+          role="region"
+          aria-label={i18n.t('order.review.title')}
+          className="rounded-[var(--r-utility)]"
+        >
+          {totals.length > 0 || extrasCount === 0 ? (
+            <ReviewList
+              totals={totals}
+              skus={allSkus}
+              productName={productName}
+              onRemove={
+                currentStoreId ? (skuId) => handleQtyChange(currentStoreId, skuId, '0') : undefined
+              }
+            />
+          ) : null}
+          {extrasCount > 0 && sessionQuery.data && sessionQuery.data.id !== 'optimistic' ? (
+            <SessionExtrasEditor
+              sessionId={sessionQuery.data.id}
+              storeId={currentStoreId}
+              initialValue={(sessionQuery.data.extras ?? []).map((r) => ({
+                ...r,
+                unit: (CANONICAL_UNITS as readonly string[]).includes(r.unit)
+                  ? (r.unit as (typeof CANONICAL_UNITS)[number])
+                  : 'kg',
+              }))}
+              isReadOnly
+              onSave={async () => {
+                /* read-only — never called */
+              }}
+            />
+          ) : null}
+        </div>
       </Sheet>
     </div>
   );
@@ -1636,7 +1657,7 @@ const SkuRow = memo(function SkuRow({
   storeId: string;
   productNameParts: (item: {
     names: Record<string, string> | null | undefined;
-  }) => { primary: string; secondary: string | null };
+  }) => ProductNameParts;
   unitLabel: (unit: string | null | undefined, qty?: string | number | null) => string;
   i18n: ReturnType<typeof useI18n>;
   onQtyChange: (storeId: string, skuId: string, qty: string) => void;
@@ -1662,9 +1683,19 @@ const SkuRow = memo(function SkuRow({
   const hasSecondaryLine = otherContribCount > 0 && totalQty > 0;
   const nm = productNameParts(sku);
   return (
-    <li className="flex items-center justify-between border-b border-[var(--c-divider)] px-4 py-1.5 last:border-b-0">
-      <div className="min-w-0 flex-1 pr-3">
-        <NameCell primary={nm.primary} secondary={nm.secondary} size="prominent" />
+    // A11Y-1 (2026-10-31): the row wraps. Below ~7rem for the name (200%
+    // zoom makes the row ~195 px wide) the qty control moves under the
+    // name instead of squeezing it to nothing; at 320 px it still fits
+    // on one line.
+    <li className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-[var(--c-divider)] px-4 py-1.5 last:border-b-0">
+      <div className="min-w-[7rem] flex-1">
+        <NameCell
+          primary={nm.primary}
+          secondary={nm.secondary}
+          primaryLang={nm.primaryLang}
+          secondaryLang={nm.secondaryLang}
+          size="prominent"
+        />
         {hasSecondaryLine ? (
           <div className="mt-0.5 text-old-label leading-tight text-[var(--c-fg-muted)]">
             {otherContribCount > 0 && totalQty > 0 ? (
@@ -1697,6 +1728,7 @@ const SkuRow = memo(function SkuRow({
         // tell they'd opened the wrong SKU's picker. Now the title
         // reads e.g. "玉米淀粉" so a wrong row is obvious instantly.
         pickTitle={nm.primary}
+        className="ml-auto"
       />
     </li>
   );

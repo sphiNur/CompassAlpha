@@ -40,7 +40,7 @@
  *               being sent to Settings to hunt for it.
  */
 import { useState } from 'react';
-import { cn, SectionLabel, PickerRow, Sheet } from '@compass/ui';
+import { cn, SectionLabel, PickerGroup, PickerRow, Sheet } from '@compass/ui';
 import { useAuthStore, ALL_STORES } from '../stores/authStore';
 import type { AuthSession, StoreContext } from '../stores/authStore';
 import { useI18n } from '../hooks/useI18n';
@@ -159,7 +159,7 @@ export function StorePickerSection({
           {i18n.t('storeSwitcher.title')}
         </SectionLabel>
       ) : null}
-      <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
+      <PickerGroup label={i18n.t('storeSwitcher.title')}>
         {isOrgAdmin ? (
           <PickerRow
             label={i18n.t('storeSwitcher.allOrgStores')}
@@ -177,7 +177,7 @@ export function StorePickerSection({
             onClick={() => chooseStore(store.id)}
           />
         ))}
-      </div>
+      </PickerGroup>
     </section>
   );
 }

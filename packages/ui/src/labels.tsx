@@ -45,6 +45,11 @@ export interface UiLabels {
    * formatted value already suffixed with the unit, e.g. "0.5 公斤".
    */
   quantityPick: (valueWithUnit: string) => string;
+  /**
+   * A11Y-11: name of the − value + group. Receives what it is a quantity
+   * of (the product name), e.g. "Beef quantity".
+   */
+  quantityOf: (item: string) => string;
   /** Quick-pick sheet title when the caller passes no `pickTitle`. */
   setQuantity: string;
   /** Quick-pick sheet subtitle. Receives the localized unit label. */
@@ -94,6 +99,7 @@ export const DEFAULT_UI_LABELS: UiLabels = {
   decrement: 'Decrement',
   increment: 'Increment',
   quantityPick: (v) => `Quantity ${v} — tap to pick`,
+  quantityOf: (item) => `${item} quantity`,
   setQuantity: 'Set quantity',
   unitIs: (unit) => `Unit: ${unit}`,
   custom: 'Custom',

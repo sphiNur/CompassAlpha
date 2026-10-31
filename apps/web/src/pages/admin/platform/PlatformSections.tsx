@@ -70,7 +70,7 @@ export function PlatformSection() {
                   ? `${sub.usage.members}`
                   : `${sub.usage.members}/${sub.limits.members}`;
               return (
-                <Card key={org.orgId}>
+                <Card as="li" key={org.orgId}>
                   <CardHeader>
                     <div className="min-w-0">
                       <CardTitle>{org.name}</CardTitle>
