@@ -783,7 +783,7 @@ async function run() {
       await page.keyboard.press('Escape');
       await page.waitForTimeout(200);
     }
-    await page.click(`${PRIMARY_NAV_SELECTOR} button:has-text("Approve")`);
+    await page.click(`${PRIMARY_NAV_SELECTOR} button:has-text("Review")`);
     await page.waitForTimeout(500);
     const approveText = await page.evaluate(() => document.body.innerText);
     record(
@@ -942,7 +942,7 @@ async function run() {
       const w = window as unknown as { __compassConfirmCount?: number };
       return w.__compassConfirmCount ?? 0;
     });
-    await page.click(`${PRIMARY_NAV_SELECTOR} button:has-text("Confirm")`);
+    await page.click(`${PRIMARY_NAV_SELECTOR} button:has-text("Receive")`);
     await page
       .waitForFunction(
         () =>
