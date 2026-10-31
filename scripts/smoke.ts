@@ -250,11 +250,15 @@ async function checkWebSocket() {
 }
 
 async function checkDevLoginOff() {
-  // RE-ENG-3 (2026-10-30): dev login is gated on env (and, as a second
-  // line, on "looks local" — which trusts request headers). Against a real
-  // deployment, prove the env gate is shut: even with the headers that make
-  // a request look local, the answer must be "disabled", never a persona
-  // list and never just "localhost only". Skipped for a local BASE.
+  // RE-ENG-3 (2026-10-30): dev login is gated on env, then on "is this a
+  // direct connection from the machine or LAN" (D21, 2026-10-31: the
+  // socket's peer address with no proxy headers; Host / Origin /
+  // X-Forwarded-Host no longer count, so the headers below cannot make a
+  // request look local any more). Against a real deployment, prove the
+  // env gate itself is shut: the env check runs first, so the answer must
+  // be "disabled" — never a persona list, and never just "localhost
+  // only", which would mean only the locality check stands in the way.
+  // Skipped for a local BASE.
   const host = new URL(BASE).hostname;
   if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return;
   const r = await get('/trpc/auth.devPersonas', {

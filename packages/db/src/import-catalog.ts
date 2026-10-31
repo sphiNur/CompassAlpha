@@ -35,6 +35,7 @@ import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync } from 'node:fs';
 import { eq, and, inArray } from 'drizzle-orm';
 import { getDb, closeDb, schema as s } from './index';
+import { printable } from './printable';
 import { CATEGORIES, SKUS } from './catalog-uzbek';
 
 (function loadRootEnv() {
@@ -90,7 +91,7 @@ async function main() {
   });
   if (!org) throw new Error('Default org not found — run seed.ts first');
   const orgId = org.id;
-  console.log(c.dim(`  org: ${org.name} (${orgId})`));
+  console.log(c.dim(`  org: ${printable(org.name)} (${orgId})`));
 
   // --- Diff categories ------------------------------------------------------
   step('Categories — diffing against DB');
@@ -130,7 +131,7 @@ async function main() {
   console.log(`  ${c.red('-')} archive: ${catArchive.length}`);
   for (const cat of catInsert) console.log(c.dim(`    + ${cat.slug.padEnd(14)} ${cat.names.zh}`));
   for (const cat of catUpdate) console.log(c.dim(`    ~ ${cat.slug.padEnd(14)} ${cat.names.zh}`));
-  for (const cat of catArchive) console.log(c.dim(`    - ${cat.slug.padEnd(14)} (was: ${(cat.names as any).zh ?? cat.slug})`));
+  for (const cat of catArchive) console.log(c.dim(`    - ${printable(cat.slug).padEnd(14)} (was: ${printable((cat.names as any).zh ?? cat.slug)})`));
 
   // --- Apply categories -----------------------------------------------------
   if (APPLY) {
@@ -226,7 +227,7 @@ async function main() {
   for (const k of skuInsert) insertByCat.set(k.catSlug, (insertByCat.get(k.catSlug) ?? 0) + 1);
   for (const [cs, n] of insertByCat) console.log(c.dim(`    + ${cs.padEnd(12)} +${n}`));
   for (const k of skuArchive)
-    console.log(c.dim(`    - ${(k.code ?? 'no-code').padEnd(20)} ${(k.names as any).en ?? ''}`));
+    console.log(c.dim(`    - ${printable(k.code ?? 'no-code').padEnd(20)} ${printable((k.names as any).en)}`));
 
   // --- Apply SKUs -----------------------------------------------------------
   if (APPLY) {

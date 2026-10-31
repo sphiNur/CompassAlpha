@@ -10,7 +10,7 @@
  */
 import { TRPCError } from '@trpc/server';
 import { createHash, randomBytes } from 'node:crypto';
-import { and, desc, eq, gt, gte, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, gte, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { allowEventPurge, inSystem, schema as s, withOrgContext } from '@compass/db';
 import {
@@ -22,6 +22,8 @@ import {
   UuidSchema,
   TimeZoneSchema,
   DateStringSchema,
+  CONTROL_CHARS_MESSAGE,
+  noControlChars,
 } from '@compass/contracts';
 import { dateInTz, todayInTz } from '@compass/domain';
 import { authedProcedure, router } from '../trpc';
@@ -140,6 +142,33 @@ async function catalogSourceMemberships(
     others.map((r) => withOrgContext(ctx.db, r.orgId, (tx) => hasGlobalOrgAdmin(tx, r.memberId))),
   );
   return others.filter((_, i) => admin[i]);
+}
+
+/**
+ * D22 (2026-10-31, security scan F1): does this user also belong to
+ * another organisation? The display name lives on the shared
+ * `auth.users` row and shows in every organisation the person is in, so
+ * an admin here must not rename (or lock) someone another organisation
+ * also knows: only the person can. Any membership counts, suspended
+ * included. Read across tenants the way catalogSourceMemberships reads
+ * the caller's own memberships.
+ */
+async function userInAnotherOrg(ctx: AdminCtx, userId: string): Promise<boolean> {
+  const rows = await inSystem(ctx.db, 'auth', (tx) =>
+    tx
+      .select({ orgId: s.members.orgId })
+      .from(s.members)
+      .innerJoin(s.organizations, eq(s.organizations.id, s.members.orgId))
+      .where(
+        and(
+          eq(s.members.userId, userId),
+          ne(s.members.orgId, ctx.session!.orgId),
+          isNull(s.organizations.deletedAt),
+        ),
+      )
+      .limit(1),
+  );
+  return rows.length > 0;
 }
 
 /** Read the source catalog, after checking the caller administers it. */
@@ -451,6 +480,37 @@ async function getActorMaxRank(
     .innerJoin(s.members, eq(s.members.id, s.memberRoleBindings.memberId))
     .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
     .where(and(eq(s.members.orgId, orgId), eq(s.members.userId, actorUserId), bindingIsLive()));
+  let max = 0;
+  for (const r of rows) {
+    if (r.rank > max) max = r.rank;
+  }
+  return max;
+}
+
+/**
+ * Highest rank among the actor's GLOBAL bindings only (security scan F8,
+ * 2026-10-31). `getActorMaxRank` also counts store-scoped bindings, so a
+ * legacy store-scoped super_admin binding outranked `admin` for an
+ * org-wide grant.
+ */
+async function getActorMaxGlobalRank(
+  tx: import('@compass/db').DB,
+  orgId: string,
+  actorUserId: string,
+): Promise<number> {
+  const rows = await tx
+    .select({ rank: s.roles.rank })
+    .from(s.memberRoleBindings)
+    .innerJoin(s.members, eq(s.members.id, s.memberRoleBindings.memberId))
+    .innerJoin(s.roles, eq(s.roles.id, s.memberRoleBindings.roleId))
+    .where(
+      and(
+        eq(s.members.orgId, orgId),
+        eq(s.members.userId, actorUserId),
+        eq(s.memberRoleBindings.scopeType, 'global'),
+        bindingIsLive(),
+      ),
+    );
   let max = 0;
   for (const r of rows) {
     if (r.rank > max) max = r.rank;
@@ -836,7 +896,9 @@ const NamesSchema = z
     }
     return out;
   })
-  .refine((v) => Object.keys(v).length > 0, { message: 'admin.errors.namesRequired' });
+  .refine((v) => Object.keys(v).length > 0, { message: 'admin.errors.namesRequired' })
+  // F10: names are printed by the operator's scripts; no control characters.
+  .refine((v) => Object.values(v).every(noControlChars), { message: CONTROL_CHARS_MESSAGE });
 
 // M3.14 (2026-05-16) restricted step to {'0.5','1'}; 2026-07-30 widened
 // it to the canonical {'0.5','1','10','50','100'} grid and locked unit
@@ -863,9 +925,18 @@ const StoreTimeZoneSchema = z
 
 // ADM-11 (2026-10-30): names are trimmed before the length check, so
 // "   " is refused instead of stored; an empty code means no code.
-const TrimmedName = z.string().trim().min(1).max(200);
+// F10 (2026-10-31): and refuse control characters (an escape sequence in
+// a store name reached the operator's terminal through the ops scripts).
+const TrimmedName = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .refine(noControlChars, CONTROL_CHARS_MESSAGE);
+const CodeText = (max: number) =>
+  z.string().trim().max(max).refine(noControlChars, CONTROL_CHARS_MESSAGE);
 const StoreCodeSchema = z
-  .preprocess((value) => (typeof value === 'string' && value.trim() === '' ? null : value), z.string().trim().max(32).nullable())
+  .preprocess((value) => (typeof value === 'string' && value.trim() === '' ? null : value), CodeText(32).nullable())
   .optional();
 
 const StoreCreateInputSchema = z.object({
@@ -904,7 +975,7 @@ const StoreDeleteInputSchema = z.object({
 
 const SkuCreateInputSchema = z.object({
   categoryId: UuidSchema.optional().nullable(),
-  code: z.string().max(64).optional().nullable(),
+  code: z.string().max(64).refine(noControlChars, CONTROL_CHARS_MESSAGE).optional().nullable(),
   names: NamesSchema,
   unit: SkuUnitSchema,
   step: StepSchema.default('1'),
@@ -914,7 +985,7 @@ const SkuCreateInputSchema = z.object({
 const SkuUpdateInputSchema = z.object({
   skuId: UuidSchema,
   categoryId: UuidSchema.optional().nullable(),
-  code: z.string().max(64).optional().nullable(),
+  code: z.string().max(64).refine(noControlChars, CONTROL_CHARS_MESSAGE).optional().nullable(),
   names: NamesSchema.optional(),
   unit: SkuUnitSchema.optional(),
   step: StepSchema.optional(),
@@ -960,8 +1031,8 @@ const SupplierDeleteInputSchema = z.object({
 const DecimalStr = z.string().regex(/^(?!0+(\.0+)?$)\d{1,9}(\.\d{1,3})?$/);
 const PositiveDecimalStr = z.string().regex(/^(?!0+(\.0+)?$)\d{1,12}(\.\d{1,2})?$/);
 const ExpenseTemplateCreateInputSchema = z.object({
-  label: z.string().trim().min(1).max(200),
-  unitHint: z.string().trim().max(32).optional().nullable(),
+  label: TrimmedName,
+  unitHint: CodeText(32).optional().nullable(),
   defaultQty: DecimalStr.default('1'),
   defaultUnitPrice: PositiveDecimalStr,
   defaultPaymentMethod: z.enum(['cash', 'transfer']).default('cash'),
@@ -970,8 +1041,8 @@ const ExpenseTemplateCreateInputSchema = z.object({
 
 const ExpenseTemplateUpdateInputSchema = z.object({
   templateId: UuidSchema,
-  label: z.string().trim().min(1).max(200).optional(),
-  unitHint: z.string().trim().max(32).optional().nullable(),
+  label: TrimmedName.optional(),
+  unitHint: CodeText(32).optional().nullable(),
   defaultQty: DecimalStr.optional(),
   defaultUnitPrice: PositiveDecimalStr.optional(),
   defaultPaymentMethod: z.enum(['cash', 'transfer']).optional(),
@@ -1714,6 +1785,8 @@ export const adminRouter = router({
           ...input,
           memberStoreIds: await memberStoreIdsForAudit(tx, input.memberId),
         });
+        // F7: a suspended member's open sockets stop receiving now.
+        if (input.status !== 'active') hub.closeMember(orgId, input.memberId);
         broadcastPeople(orgId);
         return { ok: true };
       });
@@ -1803,15 +1876,7 @@ export const adminRouter = router({
               message: 'admin.errors.roleNotFound',
             });
           }
-          if (role.rank >= ADMIN_RANK) {
-            const actorRank = await getActorMaxRank(tx, orgId, ctx.session!.userId);
-            if (role.rank >= actorRank) {
-              throw new TRPCError({
-                code: 'FORBIDDEN',
-                message: 'auth.errors.cannotGrantEqualOrHigher',
-              });
-            }
-            await assertCanPassOnRole(tx, ctx, role.id, null);
+          if (await assertCanInviteWithRole(tx, ctx, role)) {
             grants.push({
               roleId: role.id,
               rank: role.rank,
@@ -2123,7 +2188,12 @@ export const adminRouter = router({
             })
             .returning();
           user = created;
-        } else if (input.displayName && user.displayName.startsWith('tg:')) {
+        } else if (
+          input.displayName &&
+          user.displayName.startsWith('tg:') &&
+          // D22: not a name another organisation also shows.
+          !(await userInAnotherOrg(ctx, user.id))
+        ) {
           // Existing placeholder — update with the more useful name.
           await tx
             .update(s.users)
@@ -2182,21 +2252,13 @@ export const adminRouter = router({
             throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.roleNotFound' });
           }
           // C1 (2026-05-06): rank gate is per-scope.
-          //   - Org-tier role (≥80) → global rank.
+          //   - Org-tier role (≥80) → global org admin, global rank (F8).
           //   - Sub-admin role → must outrank in EVERY target store.
           // The "every store" rule prevents a manager-of-A who's also
           // staff-of-B from inviting a manager-of-B (where A grants
           // them rank 30 but B only grants rank 10).
-          if (role.rank >= ADMIN_RANK) {
-            const actorRank = await getActorMaxRank(tx, orgId, ctx.session!.userId);
-            if (role.rank >= actorRank) {
-              throw new TRPCError({
-                code: 'FORBIDDEN',
-                message: 'auth.errors.cannotGrantEqualOrHigher',
-              });
-            }
-            await assertCanPassOnRole(tx, ctx, role.id, null);
-          } else {
+          const globalGrant = await assertCanInviteWithRole(tx, ctx, role);
+          if (!globalGrant) {
             for (const storeId of input.storeIds) {
               const actorRankInStore = await getActorMaxRankInStore(
                 tx,
@@ -2366,6 +2428,17 @@ export const adminRouter = router({
         });
         if (!member) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'admin.errors.memberNotFound' });
+        }
+        // D22 (2026-10-31, security scan F1): the name is shown in every
+        // organisation the person belongs to. When another organisation
+        // also has them, only the person may change it (renaming yourself
+        // still works here); members of this organisation alone are
+        // handled as before.
+        if (member.id !== ctx.session!.memberId && (await userInAnotherOrg(ctx, member.userId))) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'admin.errors.displayNameSharedWithOtherOrg',
+          });
         }
         // 2026-10-21 audit CA-07: the name lives on the global user row
         // (shown in every org the person belongs to), so `users.manage`
@@ -2859,6 +2932,11 @@ export const adminRouter = router({
                 message: 'auth.errors.cannotGrantEqualOrHigher',
               });
             }
+            // Security scan F9 (2026-10-31): mirroring is a grant in the
+            // destination, so D8 applies there too: the actor must hold
+            // the role's keys in that store, or a key held only in the
+            // source store could be carried across.
+            await assertCanPassOnRole(tx, ctx, b.roleId, input.toStoreId);
           }
         }
         // Inline the detach-from + (optionally mirror to + assign-to)
@@ -3009,6 +3087,8 @@ export const adminRouter = router({
         maxRank: targetMaxRank,
       });
       await tx.delete(s.members).where(eq(s.members.id, input.memberId));
+      // F7: and so do a removed member's.
+      hub.closeMember(orgId, input.memberId);
       broadcastPeople(orgId);
       return { ok: true };
     });
@@ -3181,7 +3261,7 @@ export const adminRouter = router({
           .min(1)
           .max(64)
           .regex(/^[a-z0-9-]+$/, 'lowercase letters, digits, hyphens only'),
-        name: z.string().min(1).max(100),
+        name: z.string().min(1).max(100).refine(noControlChars, CONTROL_CHARS_MESSAGE),
         description: z.string().max(500).optional().nullable(),
         rank: z.number().int().min(1).max(99),
         permissionKeys: z.array(z.string().min(1).max(100)).default([]),
@@ -3258,7 +3338,7 @@ export const adminRouter = router({
     .input(
       z.object({
         roleId: UuidSchema,
-        name: z.string().min(1).max(100).optional(),
+        name: z.string().min(1).max(100).refine(noControlChars, CONTROL_CHARS_MESSAGE).optional(),
         description: z.string().max(500).optional().nullable(),
         rank: z.number().int().min(1).max(99).optional(),
         permissionKeys: z.array(z.string().min(1).max(100)).optional(),
@@ -6579,6 +6659,39 @@ async function missingRoleKey(
       )
     : ctx.session!.permissions;
   return rows.find((r) => !held.has(r.key))?.key ?? null;
+}
+
+/**
+ * Security scan F8 (2026-10-31): the invite paths inline their own grant,
+ * and only asked for `users.manage` before creating a GLOBAL binding.
+ * Mirror grantRole: an org-tier role (rank ≥ 80, always bound globally)
+ * or any role carrying `org.admin` needs a global org admin, ranked by
+ * their global bindings alone; `org.admin` is never handed out per store.
+ * Returns whether the grant is a global one.
+ */
+async function assertCanInviteWithRole(
+  tx: OrgTx,
+  ctx: AdminCtx,
+  role: { id: string; rank: number },
+): Promise<boolean> {
+  const carriesOrgAdmin = !!(await tx.query.rolePermissions.findFirst({
+    where: (rp, { eq: eq2, and: and2 }) =>
+      and2(eq2(rp.roleId, role.id), eq2(rp.permissionKey, 'org.admin')),
+  }));
+  if (role.rank < ADMIN_RANK) {
+    if (carriesOrgAdmin) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'admin.errors.orgAdminMustBeGlobal' });
+    }
+    return false;
+  }
+  requireOrgAdmin(ctx.session!.permissions);
+  if (!(await hasGlobalOrgAdmin(tx, ctx.session!.memberId))) requireOrgAdmin(new Set());
+  const actorRank = await getActorMaxGlobalRank(tx, ctx.session!.orgId, ctx.session!.userId);
+  if (role.rank >= actorRank) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'auth.errors.cannotGrantEqualOrHigher' });
+  }
+  await assertCanPassOnRole(tx, ctx, role.id, null);
+  return true;
 }
 
 async function assertCanPassOnRole(
