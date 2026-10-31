@@ -802,7 +802,7 @@ async function run() {
     const runLoaded = await page
       .waitForFunction(
         () =>
-          /No approved sessions to plan/.test(document.body.innerText) ||
+          /No approved orders to plan/.test(document.body.innerText) ||
           /No active run/.test(document.body.innerText),
         { timeout: 8_000 },
       )
@@ -811,7 +811,7 @@ async function run() {
     const runText = await page.evaluate(() => document.body.innerText);
     record(
       'RunPage renders empty state when no approved sessions',
-      runLoaded && (/No approved sessions to plan/.test(runText) || /No active run/.test(runText)),
+      runLoaded && (/No approved orders to plan/.test(runText) || /No active run/.test(runText)),
       runText.split('\n').slice(0, 3).join(' / '),
     );
 
@@ -1100,8 +1100,8 @@ async function run() {
     await page.waitForTimeout(400);
     const opsHomeText = await page.evaluate(() => document.body.innerText);
     record(
-      'Operations home lists Live activity / Submission history / Maintenance',
-      /Live activity/i.test(opsHomeText) && /Submission history/i.test(opsHomeText),
+      'Operations home lists Live activity / Order history / Maintenance',
+      /Live activity/i.test(opsHomeText) && /Order history/i.test(opsHomeText),
       opsHomeText.split('\n').slice(0, 8).join(' / '),
     );
 
