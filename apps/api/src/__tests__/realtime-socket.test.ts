@@ -4,8 +4,8 @@
  *
  *   - RE-ENG-4 (2026-10-30): a plain GET with a valid token was answered
  *     500 "upgrade failed"; it is a client mistake and gets 426.
- *   - N1 (2026-10-30): `?probe=1` without a token upgrades, sends one
- *     probe frame and closes 4002, so the deploy smoke can prove the
+ *   - N1 (2026-10-30): `?probe=1` without a token upgrades, says hello,
+ *     echoes the client's message and closes 4002, so the deploy smoke can prove the
  *     upgrade crosses the proxies without a production token. The probe
  *     never joins the hub.
  */
@@ -73,8 +73,10 @@ function connect(query: string): Promise<Outcome> {
     });
     ws.addEventListener('message', (e) => {
       out.frames.push(String(e.data));
-      // A real socket stays open; record the hello and hang up.
+      // A real socket stays open; record the hello and hang up. A probe
+      // answers its hello with a message, as the deploy smoke does.
       if (!String(e.data).includes('"probe"')) ws.close(1000);
+      else if (String(e.data).includes('"hello"')) ws.send(JSON.stringify({ type: 'ping' }));
     });
     ws.addEventListener('close', (e) => {
       out.code = e.code;
@@ -121,12 +123,11 @@ describe('/ws handshake', () => {
     expect(JSON.parse(o.frames[0]!).type).toBe('ping');
   });
 
-  test('N1: the token-less probe upgrades, sends one probe frame and closes 4002', async () => {
+  test('N1: the token-less probe says hello, echoes a message and closes 4002', async () => {
     const subsBefore = hub.size(ORG);
     const o = await connect('?probe=1');
     expect(o.opened).toBe(true);
-    expect(o.frames).toHaveLength(1);
-    expect(JSON.parse(o.frames[0]!).type).toBe('probe');
+    expect(o.frames.map((f) => JSON.parse(f).stage)).toEqual(['hello', 'echo']);
     expect(o.code).toBe(WS_CLOSE_PROBE);
     // (the previous test's socket may still be closing server-side)
     expect(hub.size(ORG)).toBeLessThanOrEqual(subsBefore);

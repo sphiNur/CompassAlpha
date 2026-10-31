@@ -104,7 +104,13 @@ async function checkSpaShell() {
     const js = await jsRes.text();
     // User-facing strings that prove the latest source is bundled. If a
     // future deploy changes copy, update this list.
-    const expectedStrings = ['Compass', 'Sign in', 'Today', 'Approval queue', 'Tap a status'];
+    const expectedStrings = [
+      'Compass',
+      'Sign in',
+      'Today',
+      'Approval status filter',
+      'Reject this order?',
+    ];
     for (const s of expectedStrings) {
       record(`JS bundle contains "${s}"`, js.includes(s));
     }
