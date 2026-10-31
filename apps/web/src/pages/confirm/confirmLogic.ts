@@ -116,13 +116,22 @@ export function initialReceivedQty(
 export type RunsListView =
   | { kind: 'loading' }
   | { kind: 'error' }
+  | { kind: 'offline' }
   | { kind: 'ready'; stale: boolean };
+/**
+ *   - 'offline' — R2-ENG-1 (2026-10-31): offline with no saved copy the
+ *                 query waits (`waitingOffline` = fetchStatus 'paused')
+ *                 instead of failing; it is not "nothing to confirm" and
+ *                 loads by itself once back online.
+ */
 export function runsListView(q: {
   isLoading: boolean;
   isError: boolean;
   hasData: boolean;
+  waitingOffline?: boolean;
 }): RunsListView {
   if (q.hasData) return { kind: 'ready', stale: q.isError };
+  if (q.waitingOffline) return { kind: 'offline' };
   if (q.isError) return { kind: 'error' };
   if (q.isLoading) return { kind: 'loading' };
   // Disabled / idle query with no data: treat as loaded-and-empty.

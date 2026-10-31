@@ -31,6 +31,7 @@ import {
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { useDateFormat, useI18n, useProductName, useUnitLabel } from '../hooks/useI18n';
+import { isWaitingOffline } from '../components/PendingSpinner';
 import { haptic } from '../hooks/useTelegram';
 import { confirmThen } from '../lib/confirm';
 import { useErrToast } from '../lib/errToast';
@@ -758,6 +759,15 @@ function SessionItems({
     return (
       <div className="flex items-center gap-2 border-t border-[var(--c-divider)] px-4 py-3 text-old-body-sm text-[var(--c-fg-muted)]">
         <Spinner size={14} /> {i18n.t('approval.items.loading')}
+      </div>
+    );
+  }
+  if (isWaitingOffline(detail)) {
+    // R2-ENG-1 (2026-10-31): offline, an order never opened before has no
+    // saved lines; it is not an empty order.
+    return (
+      <div className="border-t border-[var(--c-divider)] px-4 py-3 text-old-body-sm text-[var(--c-fg-muted)]">
+        {i18n.t('common.offlineNoData')}
       </div>
     );
   }

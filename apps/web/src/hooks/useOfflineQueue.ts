@@ -34,6 +34,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { nextSeq, outbox, type OutboxEntry } from '../lib/idb';
+import { isLikelyNetworkError } from '../lib/networkError';
 import { useAuthStore } from '../stores/authStore';
 
 type ReplayFn = (entry: OutboxEntry) => Promise<void>;
@@ -62,6 +63,89 @@ const STALE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
  * let the next page start a second loop over the same entries.
  */
 let flushInFlight: Promise<void> | null = null;
+
+/**
+ * Write-ahead entries (R2-ORD-5, 2026-10-31) whose request this page
+ * lifetime is sending right now. flush() must not send them a second
+ * time, and they are not "waiting to sync" — unless the page closes
+ * mid-request, when the set is gone and the next start replays them.
+ */
+const liveSeqs = new Set<number>();
+
+/** After this long without an answer a write shows "saving…". */
+export const SLOW_WRITE_MS = 3_000;
+let slowWrites = 0;
+const slowListeners = new Set<(n: number) => void>();
+function setSlowWrites(n: number): void {
+  slowWrites = n;
+  for (const l of slowListeners) l(n);
+}
+
+/**
+ * Should flush() stop at this entry? A live entry is being sent by its
+ * page; replaying it (or anything after it, which would overtake it)
+ * would send the same write twice.
+ */
+export function isLiveEntry(clientSeq: number, live: ReadonlySet<number> = liveSeqs): boolean {
+  return live.has(clientSeq);
+}
+
+/**
+ * The write-ahead send behind `sendQueued` (R2-ORD-5). `settled(queued)`
+ * runs once the request is over; `queued` = it failed on the network and
+ * its entry stays in the outbox for replay.
+ */
+export async function sendWriteAhead<P, R>(
+  procedure: string,
+  input: P,
+  send: () => Promise<R>,
+  idempotencyKey: string | undefined,
+  settled: (queued: boolean) => void,
+  store: Pick<typeof outbox, 'add' | 'remove'> & { nextSeq: () => Promise<number> } = {
+    add: outbox.add,
+    remove: outbox.remove,
+    nextSeq,
+  },
+): Promise<R> {
+  let clientSeq: number | null = null;
+  try {
+    clientSeq = await store.nextSeq();
+    await store.add({
+      clientSeq,
+      procedure,
+      input,
+      enqueuedAt: Date.now(),
+      retries: 0,
+      idempotencyKey,
+      ownerUserId: useAuthStore.getState().session?.user.id,
+    });
+    liveSeqs.add(clientSeq);
+  } catch {
+    clientSeq = null; // IndexedDB unavailable: send as before, unprotected
+  }
+  let slow = false;
+  const slowTimer = setTimeout(() => {
+    slow = true;
+    setSlowWrites(slowWrites + 1);
+  }, SLOW_WRITE_MS);
+  let queued = false;
+  try {
+    const result = await send();
+    if (clientSeq !== null) await store.remove(clientSeq).catch(() => undefined);
+    return result;
+  } catch (err) {
+    if (clientSeq !== null) {
+      if (isLikelyNetworkError(err)) queued = true;
+      else await store.remove(clientSeq).catch(() => undefined);
+    }
+    throw err;
+  } finally {
+    clearTimeout(slowTimer);
+    if (slow) setSlowWrites(Math.max(0, slowWrites - 1));
+    if (clientSeq !== null) liveSeqs.delete(clientSeq);
+    settled(queued);
+  }
+}
 
 /** While the outbox holds entries, how often to try again on our own:
  *  a server that was unreachable while the browser stayed "online" never
@@ -246,6 +330,23 @@ export type PendingWrite = Pick<OutboxEntry, 'clientSeq' | 'procedure' | 'input'
 
 interface UseOfflineQueueResult {
   pendingCount: number;
+  /** A write has been waiting more than SLOW_WRITE_MS for its answer. */
+  savingSlow: boolean;
+  /**
+   * Send a write with its outbox entry stored FIRST (write-ahead,
+   * R2-ORD-5). On success the entry is removed; on a network failure it
+   * stays queued (the caller must not enqueue again); on a server
+   * rejection it is removed and the error rethrown. Closing the page
+   * while the request hangs no longer loses the change: the next start
+   * replays it — with `idempotencyKey`, or for absolute-value writes
+   * like order.adjustItem, without doubling it.
+   */
+  sendQueued<P, R>(
+    procedure: string,
+    input: P,
+    send: () => Promise<R>,
+    idempotencyKey?: string,
+  ): Promise<R>;
   /** R2-INT-1 (2026-10-31): the queued writes, oldest first. */
   pendingEntries: readonly PendingWrite[];
   /** `idempotencyKey`: pass the SAME key the first attempt used so the
@@ -264,6 +365,7 @@ export function useOfflineQueue(
   options: UseOfflineQueueOptions = {},
 ): UseOfflineQueueResult {
   const [pendingCount, setPendingCount] = useState(0);
+  const [savingSlow, setSavingSlow] = useState(slowWrites > 0);
   const [pendingEntries, setPendingEntries] = useState<readonly PendingWrite[]>([]);
   const [online, setOnline] = useState<boolean>(
     typeof navigator !== 'undefined' ? navigator.onLine : true,
@@ -283,9 +385,11 @@ export function useOfflineQueue(
     try {
       const all = await outbox.list();
       const userId = useAuthStore.getState().session?.user.id;
-      setPendingCount(all.length);
+      // In-flight write-ahead entries are not "waiting" yet (R2-ORD-5).
+      const waiting = all.filter((e) => !isLiveEntry(e.clientSeq));
+      setPendingCount(waiting.length);
       setPendingEntries(
-        all
+        waiting
           .filter((entry) => isOwnEntry(entry.ownerUserId, userId))
           .sort((a, b) => a.clientSeq - b.clientSeq)
           .map(({ clientSeq, procedure, input, enqueuedAt }) => ({
@@ -320,6 +424,9 @@ export function useOfflineQueue(
             }
             continue;
           }
+          // Its page is sending it right now (write-ahead): stop, so it is
+          // neither sent twice nor overtaken by a later write.
+          if (isLiveEntry(entry.clientSeq)) break;
           const fn = globalReplay[entry.procedure];
           if (!fn) {
             // No live handler for this procedure. Do NOT delete on sight —
@@ -396,6 +503,25 @@ export function useOfflineQueue(
     [flush, refresh],
   );
 
+  const sendQueued = useCallback(
+    <P, R>(procedure: string, input: P, send: () => Promise<R>, idempotencyKey?: string) =>
+      sendWriteAhead(procedure, input, send, idempotencyKey, (queued) => {
+        void refresh();
+        // Now an ordinary queued write: try it again as enqueue() would.
+        if (queued) void flush();
+      }),
+    [flush, refresh],
+  );
+
+  useEffect(() => {
+    const onSlowChange = (n: number) => setSavingSlow(n > 0);
+    slowListeners.add(onSlowChange);
+    onSlowChange(slowWrites);
+    return () => {
+      slowListeners.delete(onSlowChange);
+    };
+  }, []);
+
   useEffect(() => {
     void refresh();
     const onOnline = () => {
@@ -422,5 +548,5 @@ export function useOfflineQueue(
     };
   }, [flush, refresh]);
 
-  return { pendingCount, pendingEntries, enqueue, flush, online };
+  return { pendingCount, pendingEntries, savingSlow, enqueue, sendQueued, flush, online };
 }

@@ -96,6 +96,7 @@ export function ConfirmPage() {
     isLoading: runsQuery.isLoading,
     isError: runsQuery.isError,
     hasData: runsQuery.data !== undefined,
+    waitingOffline: runsQuery.fetchStatus === 'paused',
   });
   // CAT-7 (2026-10-30): include archived products so lines already ordered,
   // approved or bought still show their name and unit (they showed as an id
@@ -532,6 +533,8 @@ export function ConfirmPage() {
           <div className="flex items-center justify-center py-12 text-[var(--c-fg-muted)]">
             <Spinner size={28} />
           </div>
+        ) : runsView.kind === 'offline' ? (
+          <EmptyState title={i18n.t('common.offlineNoData')} />
         ) : runsView.kind === 'error' ? null : !activeRun ? (
           <EmptyState
             title={i18n.t('confirm.empty.nothingToConfirm')}

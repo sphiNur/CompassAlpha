@@ -102,6 +102,7 @@ export function RunHistoryPage({
   loading,
   fetching = false,
   failed = false,
+  waitingOffline = false,
   totalCount,
   summaryTotal,
   summaryItemsTotal,
@@ -121,6 +122,11 @@ export function RunHistoryPage({
   fetching?: boolean;
   /** F11: the list failed to load — no "0 · 0" count/total in the header. */
   failed?: boolean;
+  /**
+   * R2-SHL-2 (2026-10-31): offline with no saved copy of the list — say
+   * so, rather than "loading…" under a "0 · 0 UZS" header.
+   */
+  waitingOffline?: boolean;
   totalCount?: number;
   summaryTotal?: string;
   /** 2026-10-21 CA-11: parts of summaryTotal. */
@@ -198,8 +204,9 @@ export function RunHistoryPage({
           as={onBack ? undefined : 'h1'}
           // HIS-20 (2026-10-30): with a search, the total is of the whole
           // runs that matched, not of the product searched for.
+          // R2-SHL-2: no count or total until there is a list to count.
           meta={
-            failed
+            failed || loading || waitingOffline
               ? undefined
               : `${count} · ${formatMoney(total)} ${currency}${
                   hasSearchOrFilters ? ' ' + i18n.t('run.history.matchedRunsTotal') : ''
@@ -218,7 +225,11 @@ export function RunHistoryPage({
             })}
           </div>
         ) : null}
-        {loading ? (
+        {waitingOffline ? (
+          <div className="px-4 py-6 text-center text-old-body-sm text-[var(--c-fg-muted)]">
+            {i18n.t('common.offlineNoData')}
+          </div>
+        ) : loading ? (
           <div className="px-4 py-6 text-center text-old-body-sm text-[var(--c-fg-muted)]">
             {i18n.t('common.loading')}
           </div>
@@ -920,6 +931,12 @@ export function RunHistoryDetailSheet({
           <Button size="sm" variant="secondary" onClick={() => void detail.refetch()}>
             {i18n.t('common.retry')}
           </Button>
+        </div>
+      ) : !breakdown && detail.fetchStatus === 'paused' ? (
+        // HIS-18 (2026-10-31): offline, a detail never opened before waits
+        // for the network; it is not "no data" and loads once back online.
+        <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">
+          {i18n.t('common.offlineNoData')}
         </div>
       ) : !breakdown ? (
         <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">

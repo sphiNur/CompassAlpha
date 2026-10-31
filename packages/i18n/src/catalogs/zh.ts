@@ -346,6 +346,10 @@ export const zh = {
   'common.errors.validation': '输入无效——请检查高亮的字段',
   'common.networkError': '网络错误——请检查连接',
   'common.offlineNotSaved': '没有网络，这次修改没有保存。联网后请再试一次。',
+  'common.offlineNoData': '现在离线，这台手机上还没有这部分数据。联网后会自动加载。',
+  'common.savingSlow': '正在保存…',
+  'common.maybeSaved': '没有收到服务器的回复，不确定这次修改有没有保存。请先刷新看看，再决定要不要重新修改。',
+  'common.maybeSavedRetrySafe': '没有收到服务器的回复，这次修改可能已经保存了。再保存一次是安全的，不会重复记录。',
 
   // ── 3. Settings ────────────────────────────────────────────────
   'settings.language.title': '语言',
@@ -409,6 +413,8 @@ export const zh = {
     '需要联网才能打开。联网后会自动加载，也可以点重试。',
   'shell.offline.body':
     '看到的是上次加载的内容。下单、采购和验收的修改会先存在手机上，联网后自动同步；日结、销售和管理需要联网才能保存。',
+  'shell.offline.lastUpdated': '上次更新 {time}',
+  'shell.offline.noDataBody': '这台手机上还没有加载过数据，联网后才能看到。下单、采购和验收的修改会先存在手机上，联网后自动同步；日结、销售和管理需要联网才能保存。',
   'order.pendingSync': '{n} 项修改等待联网同步',
   'shell.pageError.title': '这个页面出错了',
   'shell.pageError.body': '其他页面不受影响。可以重试，或者先切到别的页面。',

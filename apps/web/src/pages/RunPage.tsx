@@ -2175,6 +2175,10 @@ export function RunPage() {
           // F11 (2026-10-30): a failed run list read as "no approved
           // orders to plan" — the buyer was told there was nothing to buy.
           <QueryErrorBanner query={runsQuery} />
+        ) : runsQuery.data === undefined && runsQuery.fetchStatus === 'paused' ? (
+          // R2-ENG-1 (2026-10-31): offline with no saved run list, not
+          // "nothing to plan"; it loads by itself once back online.
+          <EmptyState title={i18n.t('common.offlineNoData')} />
         ) : !activeRun ? (
           <DataState query={previewQuery}>
             {(p) =>

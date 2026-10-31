@@ -1,10 +1,17 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, onlineManager, useQueryClient } from '@tanstack/react-query';
 import { ThemeProvider, ToastProvider } from '@compass/ui';
 import { initLogger, getLogger } from '@compass/telemetry';
 import { trpc, buildTrpcClient, sendClientLogs } from '../lib/trpc';
 import { reportLastReload } from '../lib/reload';
+import {
+  cacheOwner,
+  clearPersistedQueries,
+  restoreQueryCache,
+  startQueryPersistence,
+} from '../lib/queryPersist';
+import { useAuthStore } from '../stores/authStore';
 import { useTelegramInit } from '../hooks/useTelegram';
 import { useTapGuard } from '../hooks/useTapGuard';
 import { useVersionCheck } from '../hooks/useVersionCheck';
@@ -45,12 +52,80 @@ if (compassWindow && !compassWindow.__compassLoggerBooted) {
   });
 }
 
+// R2-ENG-1 (2026-10-31): React Query assumes it is online until an
+// `offline` event fires, which never happens when the app STARTS offline
+// (a reload in the market, now that sw.js serves the shell). Every query
+// then failed at once into "network error". Start from what the browser
+// knows: offline, queries wait (paused) on the saved copy and run by
+// themselves when the network comes back.
+if (isBrowser && typeof navigator !== 'undefined') {
+  onlineManager.setOnline(navigator.onLine);
+}
+
+/**
+ * Keep the offline copy of the read queries (lib/queryPersist) in step
+ * with who is signed in. When the person or the organisation changes —
+ * or the session ends, however it ended — the in-memory cache and the
+ * saved copy both go, so the next person on this phone never sees the
+ * previous one's data, not even for the second before a refetch.
+ */
+function useQueryCachePersistence(): void {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    const stop = startQueryPersistence(queryClient, () =>
+      cacheOwner(useAuthStore.getState().session),
+    );
+    let owner = cacheOwner(useAuthStore.getState().session);
+    const unsubscribe = useAuthStore.subscribe((state) => {
+      const next = cacheOwner(state.session);
+      if (next === owner) return;
+      const previous = owner;
+      owner = next;
+      if (previous !== null) {
+        queryClient.clear();
+        void clearPersistedQueries();
+      }
+    });
+    return () => {
+      stop();
+      unsubscribe();
+    };
+  }, [queryClient]);
+}
+
 /** Hooks that need QueryClient (and downstream Toast). */
 function QueryConsumers({ children }: { children: ReactNode }) {
   useRealtime();
   useVersionCheck();
   useRefetchFailedOnReconnect();
+  useQueryCachePersistence();
   return <>{children}</>;
+}
+
+/** Longest the first screen waits for the saved copy before drawing anyway. */
+const RESTORE_WAIT_MS = 1_500;
+
+/**
+ * Draws the pages only once the saved copy of the read queries is back
+ * (a few milliseconds), so an offline start shows the last data rather
+ * than a spinner that never ends. A slow or broken IndexedDB never holds
+ * the app for longer than RESTORE_WAIT_MS.
+ */
+function CacheRestoreGate({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      setReady(true);
+    };
+    const timer = window.setTimeout(finish, RESTORE_WAIT_MS);
+    void restoreQueryCache(queryClient, cacheOwner(useAuthStore.getState().session)).finally(finish);
+    return () => window.clearTimeout(timer);
+  }, [queryClient]);
+  return ready ? <>{children}</> : null;
 }
 
 export function App() {
@@ -119,7 +194,9 @@ export function App() {
                 <QueryClientProvider client={queryClient}>
                   <QueryConsumers>
                     <AuthGate>
-                      <Shell />
+                      <CacheRestoreGate>
+                        <Shell />
+                      </CacheRestoreGate>
                     </AuthGate>
                   </QueryConsumers>
                 </QueryClientProvider>

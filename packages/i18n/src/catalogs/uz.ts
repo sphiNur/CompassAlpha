@@ -370,6 +370,10 @@ export const uz = {
   'common.errors.validation': 'Notoʻgʻri kiritish — belgilangan maydonlarni tekshiring',
   'common.networkError': 'Tarmoq xatosi — ulanishni tekshiring',
   'common.offlineNotSaved': 'Internet yoʻq — bu oʻzgarish saqlanmadi. Internet qaytganda qayta urinib koʻring.',
+  'common.offlineNoData': 'Internet yoʻq — bu maʼlumot bu telefonga hali yuklanmagan. Internet qaytganda oʻzi yuklanadi.',
+  'common.savingSlow': 'Saqlanmoqda…',
+  'common.maybeSaved': 'Serverdan javob kelmadi — bu oʻzgarish saqlangan-saqlanmagani nomaʼlum. Qayta oʻzgartirishdan oldin sahifani yangilab tekshiring.',
+  'common.maybeSavedRetrySafe': 'Serverdan javob kelmadi — bu oʻzgarish allaqachon saqlangan boʻlishi mumkin. Qayta saqlash xavfsiz: ikki marta yozilmaydi.',
 
   // ── 3. Settings ────────────────────────────────────────────────
   'settings.language.title': 'Til',
@@ -437,6 +441,8 @@ export const uz = {
     'Ochish uchun internet kerak. Internet qaytganda oʻzi yuklanadi yoki «Qayta urinish»ni bosing.',
   'shell.offline.body':
     'Oxirgi yuklangan maʼlumot koʻrsatilmoqda. Buyurtma, xarid va qabul telefonda saqlanadi va internet qaytganda yuboriladi; kun yakuni, savdo va boshqaruv faqat internet bilan saqlanadi.',
+  'shell.offline.lastUpdated': 'oxirgi yangilanish {time}',
+  'shell.offline.noDataBody': 'Bu telefonga hali hech narsa yuklanmagan; maʼlumot internet qaytganda koʻrinadi. Buyurtma, xarid va qabul telefonda saqlanadi va internet qaytganda yuboriladi; kun yakuni, savdo va boshqaruv faqat internet bilan saqlanadi.',
   'order.pendingSync': '{n} ta oʻzgarish sinxronlanishni kutmoqda',
   'shell.pageError.title': 'Bu sahifada xatolik yuz berdi',
   'shell.pageError.body': 'Boshqa sahifalar ishlaydi. Qayta urinib koʻring yoki boshqa sahifaga oʻting.',

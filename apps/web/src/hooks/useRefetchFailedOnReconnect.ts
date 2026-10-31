@@ -1,10 +1,20 @@
 import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import type { Query } from '@tanstack/react-query';
+import type { Query, QueryClient } from '@tanstack/react-query';
 
 /** Exported for tests: a query on screen whose last load failed. */
 export function failedQuery(query: Pick<Query, 'state'>): boolean {
   return query.state.status === 'error';
+}
+
+/**
+ * Load again every query on screen whose last load failed. R2-AUTH-2
+ * (2026-10-31): the order page's Retry reloaded only the session, so
+ * after a refresh that hung the products and categories kept their error
+ * banners until each Retry was tapped too.
+ */
+export function refetchFailedQueries(queryClient: QueryClient): Promise<void> {
+  return queryClient.refetchQueries({ type: 'active', predicate: failedQuery });
 }
 
 /**
@@ -20,7 +30,7 @@ export function useRefetchFailedOnReconnect(): void {
   const queryClient = useQueryClient();
   useEffect(() => {
     const onOnline = () => {
-      void queryClient.refetchQueries({ type: 'active', predicate: failedQuery });
+      void refetchFailedQueries(queryClient);
     };
     window.addEventListener('online', onOnline);
     return () => window.removeEventListener('online', onOnline);
