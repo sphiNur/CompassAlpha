@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync } from 'node:fs';
 import { sql } from 'drizzle-orm';
 import { getDb, closeDb } from './index';
+import { printable } from './printable';
 
 (function loadRootEnv() {
   let dir = dirname(fileURLToPath(import.meta.url));
@@ -70,7 +71,7 @@ async function main() {
     sql.raw(`SELECT stream_type, COUNT(*)::int AS n FROM domain.events GROUP BY stream_type ORDER BY 1`),
   );
   for (const row of byStream as any[]) {
-    console.log(`  ${row.stream_type.padEnd(12)} ${row.n}`);
+    console.log(`  ${printable(row.stream_type).padEnd(12)} ${row.n}`);
   }
 
   // Show stores + suppliers
@@ -79,7 +80,9 @@ async function main() {
     sql.raw(`SELECT code, name, is_active FROM inventory.stores ORDER BY sort_index`),
   );
   for (const row of stores as any[]) {
-    console.log(`  ${(row.code ?? '-').padEnd(10)} ${row.name}  ${row.is_active ? '' : '[inactive]'}`);
+    console.log(
+      `  ${printable(row.code ?? '-').padEnd(10)} ${printable(row.name)}  ${row.is_active ? '' : '[inactive]'}`,
+    );
   }
 
   console.log('\nSuppliers:');
@@ -87,7 +90,7 @@ async function main() {
     sql.raw(`SELECT name, is_archived FROM inventory.suppliers ORDER BY name`),
   );
   for (const row of suppliers as any[]) {
-    console.log(`  ${row.name}  ${row.is_archived ? '[archived]' : ''}`);
+    console.log(`  ${printable(row.name)}  ${row.is_archived ? '[archived]' : ''}`);
   }
 
   console.log('\nCategories:');
@@ -96,7 +99,7 @@ async function main() {
   );
   for (const row of cats as any[]) {
     console.log(
-      `  ${row.slug.padEnd(14)} zh="${row.names?.zh ?? ''}"${row.is_archived ? ' [archived]' : ''}`,
+      `  ${printable(row.slug).padEnd(14)} zh="${printable(row.names?.zh)}"${row.is_archived ? ' [archived]' : ''}`,
     );
   }
 

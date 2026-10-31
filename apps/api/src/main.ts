@@ -67,7 +67,9 @@ async function main() {
             trustedClientIp((name) => r.headers.get(name) ?? undefined, env.CLIENT_IP_PROXY_KEY),
         });
       }
-      return app.fetch(req);
+      // D21: the dev-login locality check needs the socket's own peer
+      // address, which only Bun.serve knows; Hono exposes it as c.env.
+      return app.fetch(req, { peerIp: server.requestIP(req)?.address ?? null });
     },
     websocket: createWebSocketHandler(logger),
     error(err) {

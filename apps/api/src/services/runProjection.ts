@@ -7,6 +7,7 @@
 import { and, asc, eq, inArray, isNull, lt, notInArray, sql } from 'drizzle-orm';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
+import { DomainError } from '@compass/domain';
 import type { RunEvent } from '@compass/domain/run';
 
 export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Promise<void> {
@@ -169,7 +170,7 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
         // domain layer guards against duplicate expenseId, but the
         // projector also uses ON CONFLICT DO NOTHING so a defensive
         // replay never crashes.
-        await db
+        const inserted = await db
           .insert(s.runExpensesV)
           .values({
             id: e.payload.expenseId,
@@ -186,7 +187,27 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
             addedByMemberId: e.payload.byMemberId,
             addedAt: e.occurredAt,
           })
-          .onConflictDoNothing();
+          .onConflictDoNothing()
+          .returning({ id: s.runExpensesV.id });
+        // Security scan F2 (2026-10-31): the id is chosen by the client
+        // and the domain only knows this run's own expenses. An id that
+        // already belongs to another run (or another organisation) used
+        // to be accepted with no row written here, and a later
+        // RunExpenseRemoved then soft-deleted the OTHER run's expense.
+        // Refuse it; the transaction (and the event) rolls back.
+        if (inserted.length === 0) {
+          const [own] = await db
+            .select({ id: s.runExpensesV.id })
+            .from(s.runExpensesV)
+            .where(
+              and(
+                eq(s.runExpensesV.id, e.payload.expenseId),
+                eq(s.runExpensesV.runId, e.streamId),
+              ),
+            )
+            .limit(1);
+          if (!own) throw new DomainError('VALIDATION', 'run.errors.expenseIdTaken');
+        }
         await bumpSeq(db, e.streamId, e.seq);
         break;
       }
@@ -201,7 +222,13 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
             removedByMemberId: e.payload.byMemberId,
             removeReason: e.payload.reason,
           })
-          .where(eq(s.runExpensesV.id, e.payload.expenseId));
+          // F2: only this run's expense, whatever the id names elsewhere.
+          .where(
+            and(
+              eq(s.runExpensesV.id, e.payload.expenseId),
+              eq(s.runExpensesV.runId, e.streamId),
+            ),
+          );
         await bumpSeq(db, e.streamId, e.seq);
         break;
       }
