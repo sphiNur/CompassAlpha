@@ -33,6 +33,7 @@ import { useErrToast } from '../../../lib/errToast';
 import { useRefreshSession } from '../../../lib/refreshSession';
 import { formatQty } from '../../../lib/format';
 import { useDateFormat, useI18n, useProductName, useUnitLabel } from '../../../hooks/useI18n';
+import { isWaitingOffline } from '../../../components/PendingSpinner';
 import { nativeConfirm, type StoreFocus, type StoreSub } from '../shared';
 import { PeopleSection } from '../people/PeopleSections';
 import { StoreSalesPanel } from '../../../components/sales/StoreSalesPanel';
@@ -573,6 +574,9 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
         <div className="py-6 text-center">
           <Spinner size={16} />
         </div>
+      ) : isWaitingOffline(levelsQuery) ? (
+        // R2-ENG-1 (2026-10-31): offline with no saved copy is not "no stock".
+        <EmptyState title={i18n.t('common.offlineNoData')} />
       ) : levelsQuery.isError ? (
         // CLS-1 (2026-10-30): a failed load used to read "no stock data
         // yet", with the opening-stock button still offered above it.
@@ -802,6 +806,8 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
               <div className="py-6 text-center">
                 <Spinner size={16} />
               </div>
+            ) : isWaitingOffline(movementsQuery) ? (
+              <EmptyState title={i18n.t('common.offlineNoData')} />
             ) : movementsQuery.isError ? (
               <QueryErrorBanner query={movementsQuery} />
             ) : (movementsQuery.data ?? []).length === 0 ? (
@@ -921,12 +927,18 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
     onError: errToast('common.error'),
   });
 
+  // ADM-5: the default is a grant by whoever sets it, and the server
+  // refuses a role at or above the actor's rank in this store. List only
+  // what they could set (same estimate as the grant sheet), plus the
+  // current value so the picker can still show it.
+  const myStoreRank = Math.max(session?.myMaxRank ?? 0, session?.storeRanks?.[storeId] ?? 0);
+  const currentDefault = store?.defaultRoleSlug ?? null;
   const storeTierRoles = useMemo(
     () =>
       [...(rolesQuery.data ?? [])]
-        .filter((r) => r.rank < ADMIN_RANK)
+        .filter((r) => r.rank < ADMIN_RANK && (r.rank < myStoreRank || r.slug === currentDefault))
         .sort((a, b) => b.rank - a.rank),
-    [rolesQuery.data],
+    [rolesQuery.data, myStoreRank, currentDefault],
   );
 
   if (storesQuery.isLoading || !draft || !store) {
@@ -1143,15 +1155,22 @@ function StoreCloneRolesSheet({
     onSuccess: (data) => {
       void utils.admin.storeList.invalidate();
       void utils.admin.memberList.invalidate();
-      const parts = [i18n.t('admin.clone.toastCloned', { n: data.cloned })];
+      // D7: without "also members" only the default role travels.
+      const parts =
+        data.cloned > 0 || includeMembers
+          ? [i18n.t('admin.clone.toastCloned', { n: data.cloned })]
+          : [];
+      if (data.defaultRoleCopied) parts.push(i18n.t('admin.clone.toastDefaultRole'));
       if (data.skippedExisting > 0)
         parts.push(
           i18n.t('admin.clone.toastAlreadyExisted', { n: data.skippedExisting }),
         );
       if (data.skippedRank > 0)
         parts.push(i18n.t('admin.clone.toastSkippedRank', { n: data.skippedRank }));
-      if (data.assigned > 0)
-        parts.push(i18n.t('admin.clone.toastAssigned', { n: data.assigned }));
+      if (data.skippedPermission > 0)
+        parts.push(i18n.t('admin.clone.toastSkippedPermission', { n: data.skippedPermission }));
+      if (parts.length === 0) parts.push(i18n.t('admin.clone.toastCloned', { n: 0 }));
+      if (data.assigned > 0) parts.push(i18n.t('admin.clone.toastAssigned', { n: data.assigned }));
       toast.success(parts.join(' · '));
       onClose();
     },

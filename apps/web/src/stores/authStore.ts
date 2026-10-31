@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { resetNavStore } from './navStore';
+import { clearPersistedQueries } from '../lib/queryPersist';
 
 export interface AuthSession {
   user: {
@@ -183,6 +184,8 @@ export const useAuthStore = create<AuthState>()(
         // 2026-10-21 audit CA-33: the next person to sign in on this
         // device must not inherit the previous session's tab / drill-down.
         resetNavStore();
+        // R2-ENG-1: the offline copy of their data goes with the session.
+        void clearPersistedQueries();
         set({ accessToken: null, refreshToken: null, session: null, currentStoreId: null });
       },
     }),

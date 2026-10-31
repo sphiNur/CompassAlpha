@@ -6,7 +6,7 @@
  * approve / reject. Per-card item view uses the dedicated
  * `order.sessionDetail({id})` endpoint.
  */
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Avatar,
   Badge,
@@ -31,16 +31,21 @@ import {
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { useDateFormat, useI18n, useProductName, useUnitLabel } from '../hooks/useI18n';
+import { isWaitingOffline } from '../components/PendingSpinner';
 import { haptic } from '../hooks/useTelegram';
 import { confirmThen } from '../lib/confirm';
 import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
 import { useStoreContext } from '../components/StoreSwitcher';
 import { sessionItemsView } from './approval/sessionItemsView';
+import { ORDER_QTY_MAX } from '@compass/contracts';
 
 type ApprovalTab = 'pending' | 'approved' | 'rejected';
 
 const confirmAction = confirmThen;
+
+/** D12: how long the approval toast offers to take it back. */
+const UNDO_APPROVE_MS = 5000;
 
 export function ApprovalPage() {
   const i18n = useI18n();
@@ -125,10 +130,28 @@ export function ApprovalPage() {
     );
   };
   const approve = trpc.order.approve.useMutation({
-    onSuccess: () => {
+    onSuccess: (data, vars) => {
       void utils.order.pendingList.invalidate();
       haptic('success');
-      toast.success(i18n.t('approval.toast.approved'));
+      // D12 (U1, 2026-10-31): the card's 通过 stays one tap, with five
+      // seconds to take it back. The undo is the normal unapprove, sent
+      // with the lastSeq this approval produced, so it is refused once
+      // anyone else has touched the order.
+      if (!session?.permissions.includes('order.unapprove')) {
+        toast.success(i18n.t('approval.toast.approved'));
+        return;
+      }
+      toast.show(i18n.t('approval.toast.approved'), {
+        tone: 'success',
+        ttlMs: UNDO_APPROVE_MS,
+        actions: [
+          {
+            label: i18n.t('approval.undo'),
+            onClick: () =>
+              undoApprove.mutate({ sessionId: vars.sessionId, expectedSeq: data.lastSeq }),
+          },
+        ],
+      });
     },
     onError: (err, vars) => {
       if (isOrderChanged(err)) return onOrderChanged(vars.sessionId);
@@ -173,6 +196,21 @@ export function ApprovalPage() {
     },
     onError: errToast('common.error'),
   });
+  const undoApprove = trpc.order.unapprove.useMutation({
+    onSuccess: () => {
+      void utils.order.pendingList.invalidate();
+      toast.info(i18n.t('approval.toast.unapproved'));
+    },
+    onError: (err) => {
+      void utils.order.pendingList.invalidate();
+      if (isOrderChanged(err)) {
+        haptic('warning');
+        toast.info(i18n.t('approval.toast.undoTooLate'));
+        return;
+      }
+      errToast('common.error')(err);
+    },
+  });
   const unapprove = trpc.order.unapprove.useMutation({
     onSuccess: () => {
       void utils.order.pendingList.invalidate();
@@ -184,6 +222,37 @@ export function ApprovalPage() {
       errToast('common.error')(err);
     },
   });
+
+  // D13 (APR-12 / APR-13, 2026-10-31): the reviewer whose claim timed out
+  // or was taken over saw the card quietly change. The server leaves an
+  // in-app notification; on this page say it at once. Orders this
+  // reviewer let go of themselves (release / approve / reject) are not
+  // reported.
+  const myClaims = useRef(new Set<string>());
+  const letGo = useRef(new Set<string>());
+  useEffect(() => {
+    if (tab !== 'pending' || !pendingQuery.data) return;
+    const me = session?.member.memberId;
+    const rows = new Map(pendingQuery.data.map((r) => [r.id, r]));
+    for (const id of myClaims.current) {
+      const r = rows.get(id);
+      if (!r || r.claimedByMemberId === me) continue;
+      if (letGo.current.delete(id)) continue;
+      haptic('warning');
+      toast.info(
+        r.claimedByMemberId
+          ? i18n.t('approval.toast.claimTakenOver', {
+              owner: r.attribDisplayName ?? '',
+              who: r.claimedByDisplayName ?? i18n.t('approval.unknownReviewer'),
+            })
+          : i18n.t('approval.toast.claimTimedOut', { owner: r.attribDisplayName ?? '' }),
+      );
+    }
+    myClaims.current = new Set(
+      pendingQuery.data.filter((r) => me && r.claimedByMemberId === me).map((r) => r.id),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingQuery.data, tab]);
 
   // 2026-07-30 (flow review): `step` was missing from this map while
   // SessionItems read `Number(sku.step ?? '1')` — and its prop type had
@@ -577,7 +646,10 @@ export function ApprovalPage() {
                             releaseClaim.isPending &&
                             releaseClaim.variables?.sessionId === row.id
                           }
-                          onClick={() => releaseClaim.mutate({ sessionId: row.id })}
+                          onClick={() => {
+                            letGo.current.add(row.id);
+                            releaseClaim.mutate({ sessionId: row.id });
+                          }}
                         >
                           {i18n.t('approval.release')}
                         </Button>
@@ -625,6 +697,15 @@ export function ApprovalPage() {
                       skuById={skuById}
                       productName={productName}
                       isClaimedByMe={isClaimedByMe}
+                      // U2: an unclaimed pending order can be edited too; the
+                      // first change claims it (server side, one write).
+                      claimOnEditSeq={
+                        tab === 'pending' &&
+                        !row.claimedByMemberId &&
+                        session.permissions.includes('order.claim')
+                          ? row.lastSeq
+                          : undefined
+                      }
                     />
                   ) : null}
                 </Card>
@@ -708,6 +789,7 @@ function SessionItems({
   skuById,
   productName,
   isClaimedByMe,
+  claimOnEditSeq,
 }: {
   sessionId: string;
   storeId: string;
@@ -716,8 +798,13 @@ function SessionItems({
   skuById: Map<string, { names: Record<string, string>; unit: string; step: string }>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
   isClaimedByMe: boolean;
+  /** U2 (2026-10-31): set when the order is unclaimed and the viewer may
+   *  claim it — the version on screen. A quantity change then claims the
+   *  order in the same write, refused if someone changed it since. */
+  claimOnEditSeq?: number;
 }) {
   const i18n = useI18n();
+  const canEdit = isClaimedByMe || claimOnEditSeq !== undefined;
   const unitLabel = useUnitLabel();
   // M1.21: pull org currency from session for the estimate-total
   // suffix. Hardcoded "UZS" pre-M1.21 blocked the multi-currency
@@ -731,13 +818,18 @@ function SessionItems({
       void utils.order.sessionDetail.invalidate({ sessionId });
       void utils.order.pendingList.invalidate();
     },
-    onError: errToast('order.toast.adjustFailed'),
+    onError: (err) => {
+      // U2: the order changed or someone claimed it first — show it as it is now.
+      void utils.order.sessionDetail.invalidate({ sessionId });
+      void utils.order.pendingList.invalidate();
+      errToast('order.toast.adjustFailed')(err);
+    },
   });
   // Member directory lookup so we can show who contributed each row.
   const membersQuery = trpc.admin.memberList.useQuery(undefined, {
     // memberList requires users.manage. Managers usually have it; if not,
     // fall back to showing the bare member id instead of erroring.
-    enabled: isClaimedByMe,
+    enabled: canEdit,
     retry: false,
   });
   const memberById = useMemo(() => {
@@ -763,6 +855,15 @@ function SessionItems({
     return (
       <div className="flex items-center gap-2 border-t border-[var(--c-divider)] px-4 py-3 text-old-body-sm text-[var(--c-fg-muted)]">
         <Spinner size={14} /> {i18n.t('approval.items.loading')}
+      </div>
+    );
+  }
+  if (isWaitingOffline(detail)) {
+    // R2-ENG-1 (2026-10-31): offline, an order never opened before has no
+    // saved lines; it is not an empty order.
+    return (
+      <div className="border-t border-[var(--c-divider)] px-4 py-3 text-old-body-sm text-[var(--c-fg-muted)]">
+        {i18n.t('common.offlineNoData')}
       </div>
     );
   }
@@ -906,12 +1007,13 @@ function SessionItems({
               <span className="min-w-0 flex-1 truncate font-semibold text-[var(--c-fg)]">
                 {sku ? productName(sku) : t.skuId.slice(0, 8)}
               </span>
-              {isClaimedByMe && isSingleContributor && sku && singleRow ? (
+              {canEdit && isSingleContributor && sku && singleRow ? (
                 <QtyControl
                   size="sm"
                   value={Number(singleRow.qty)}
                   step={Number(sku.step)}
                   unit={unitLabel(sku.unit)}
+                  max={ORDER_QTY_MAX}
                   disabled={adjust.isPending}
                   onChange={(next) =>
                     adjust.mutate({
@@ -927,6 +1029,7 @@ function SessionItems({
                       // APR-1: name the batch being reviewed; the server used to
                       // guess it and could edit the same person's other batch.
                       sessionId,
+                      expectedSeq: claimOnEditSeq,
                     })
                   }
                 />
@@ -977,12 +1080,13 @@ function SessionItems({
                       {memberById.get(r.contributorMemberId) ??
                         r.contributorMemberId.slice(0, 6)}
                     </span>
-                    {isClaimedByMe && sku ? (
+                    {canEdit && sku ? (
                       <QtyControl
                         size="sm"
                         value={Number(r.qty)}
                         step={Number(sku.step)}
                         unit={unitLabel(sku.unit)}
+                        max={ORDER_QTY_MAX}
                         disabled={adjust.isPending}
                         onChange={(next) =>
                           adjust.mutate({
@@ -994,6 +1098,7 @@ function SessionItems({
                             // APR-1: name the batch being reviewed; the server used to
                             // guess it and could edit the same person's other batch.
                             sessionId,
+                            expectedSeq: claimOnEditSeq,
                           })
                         }
                       />

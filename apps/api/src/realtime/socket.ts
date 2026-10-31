@@ -8,6 +8,7 @@
  */
 import type { Server, ServerWebSocket, WebSocketHandler } from 'bun';
 import { hub, WS_CLOSE_EVICTED } from './hub';
+import { checkClientRate } from '../services/rateLimit';
 
 export interface WSData {
   orgId: string;
@@ -50,6 +51,15 @@ export const WS_CLOSE_PROBE = 4002;
 const PROBE_IDLE_MS = 5_000;
 const PROBE_CLOSE_DELAY_MS = 300;
 
+/**
+ * R2-ENG-3 (2026-10-31): the probe needs no token, so anyone could open
+ * hundreds at once, each held up to PROBE_IDLE_MS. A deploy smoke opens
+ * one or two; allow a small burst per client address (the trusted one,
+ * see services/clientIp.ts; without one, the shared bucket with its
+ * larger budget).
+ */
+export const PROBE_LIMIT = { window: 10_000, max: 5 } as const;
+
 interface Claims {
   sub: string;
   org: string;
@@ -62,6 +72,8 @@ export interface SocketDeps {
   /** Resolves the member's live session; null when not an active member. */
   loadSession: (userId: string, orgId: string, memberId: string) => Promise<unknown>;
   onSessionLookupError?: (err: unknown) => void;
+  /** The trusted client address for rate limits; null when none. */
+  clientIp?: (req: Request) => string | null;
 }
 
 function isUpgradeRequest(req: Request): boolean {
@@ -94,6 +106,9 @@ export async function handleWsRequest(
   const token = url.searchParams.get('token') ?? '';
   if (!token) {
     if (url.searchParams.get('probe') === '1') {
+      if (!checkClientRate('ws.probe', deps.clientIp?.(req) ?? null, PROBE_LIMIT)) {
+        return new Response('too many probes', { status: 429, headers: { 'retry-after': '10' } });
+      }
       const probeData: WSData = {
         orgId: '',
         userId: '',

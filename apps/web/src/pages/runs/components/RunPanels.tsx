@@ -49,6 +49,7 @@ import type {
   PreviewSupplierGroup,
 } from '../types';
 import { otherStoreSkusOf } from '../types';
+import { itemProgressCounts } from '../lib/runProgress';
 import {
   buildStoreText as buildStoreTextPure,
   buildSupplierText as buildSupplierTextPure,
@@ -415,13 +416,20 @@ export function ActiveRunPanel({
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-old-body font-semibold">{nameOf(it.skuId)}</span>
                   <span className="block text-old-label text-[var(--c-warning-fg)]">
-                    {i18n.t(
-                      it.status === 'unavailable' ? 'run.topUp.lineUnavailable' : 'run.topUp.line',
-                      {
-                        bought: formatQty(it.purchasedQty ?? '0'),
-                        need: formatQty(it.topUpQty ?? '0'),
-                      },
-                    )}
+                    {/* R2-BUY-5: for an item shared with other stores the
+                        bought figure is this purchaser's share while the
+                        gap is everyone's, so neither number is given. */}
+                    {otherStoreSkusOf(run).has(it.skuId)
+                      ? i18n.t('run.topUp.lineOtherStores')
+                      : i18n.t(
+                          it.status === 'unavailable'
+                            ? 'run.topUp.lineUnavailable'
+                            : 'run.topUp.line',
+                          {
+                            bought: formatQty(it.purchasedQty ?? '0'),
+                            need: formatQty(it.topUpQty ?? '0'),
+                          },
+                        )}
                   </span>
                 </span>
                 {/* RE-BUY-1: an item that also serves stores this purchaser
@@ -573,11 +581,15 @@ export function ActiveRunPanel({
               Three counts, each labelled, counting in the direction the
               word implies. */}
           <SectionLabel
-            meta={i18n.t('run.label.itemsProgress', {
-              bought: run.items.filter((i) => i.status === 'purchased').length,
-              na: run.items.filter((i) => i.status === 'unavailable').length,
-              pending: run.items.filter((i) => i.status === 'pending').length,
-            })}
+            meta={i18n.t(
+              'run.label.itemsProgress',
+              // R2-BUY-5: the purchaser's own items only, counted like the
+              // bottom bar's "N left" (items of other stores are not
+              // theirs to clear).
+              itemProgressCounts(
+                run.items.filter((i) => !otherStoreSkusOf(run).has(i.skuId)),
+              ),
+            )}
           >
             {i18n.t('run.section.items')}
           </SectionLabel>
@@ -698,6 +710,7 @@ export function ActiveRunPanel({
           editable={editingPhase}
           onMarkExtraStatus={onMarkExtraStatus}
           onRecordExtraExpense={onRecordExtraExpense}
+          purchaseScopeStoreIds={run.purchaseScopeStoreIds}
         />
       ) : null}
 
@@ -720,6 +733,7 @@ export function ActiveRunPanel({
           editable={editingPhase}
           onRemove={onRemoveExpense}
           onOpenExpense={onOpenExpense}
+          otherStoreExpenseIds={run.otherStoreExpenseIds}
         />
       ) : null}
 
@@ -778,7 +792,8 @@ export function ActiveRunPanel({
           >
             {i18n.t('run.section.stores')}
           </SectionLabel>
-          <ul className="flex flex-col" role="list">
+          {/* U7: the bottom bar's "N stores to deliver" scrolls here. */}
+          <ul data-run-stores className="flex flex-col" role="list">
             {involvedStoreIds.map((storeId) => {
               const store = storeById.get(storeId);
               const storeName = store?.name ?? storeId.slice(0, 8);
@@ -796,10 +811,15 @@ export function ActiveRunPanel({
               // seeing English on every store row.
               const dispatchDenied =
                 stage !== 'confirmed' && (run.dispatchDeniedStoreIds ?? []).includes(storeId);
+              // RE-DLV-1 (2026-10-31): a delivery saved offline shows as
+              // delivered and waiting to sync; it cannot be recalled (or
+              // delivered again) until the server has it.
+              const pendingSync = splitsHere.some((sp) => sp.pendingSync);
               const subtitle = dispatchDenied
                 ? i18n.t('run.deliveryStage.dispatchDenied')
-                : i18n.t(('run.deliveryStage.' + stage) as Parameters<typeof i18n.t>[0]);
-              const tappable = stage !== 'confirmed' && !dispatchDenied;
+                : i18n.t(('run.deliveryStage.' + stage) as Parameters<typeof i18n.t>[0]) +
+                  (pendingSync ? ' · ' + i18n.t('run.pendingSync.short') : '');
+              const tappable = stage !== 'confirmed' && !dispatchDenied && !pendingSync;
               /* UIUX-B1 (2026-07-06): stage Badge deleted — the meta line
                  already states the stage (UI-2: status once per row);
                  the L1 delivery-stage rail lands in the B3 row pass. */

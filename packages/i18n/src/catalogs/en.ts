@@ -64,6 +64,8 @@ export const en = {
   'qty.enterNumber': 'Enter a number',
   'qty.atLeast': 'Enter {min} or more',
   'qty.atMost': 'Enter {max} or less',
+  'qty.maxDecimals': 'At most {decimals} decimals',
+  'number.invalid': 'Not a number — write it like 1500 or 1.5',
   'photo.label': 'Receipt photo',
   'photo.remove': 'Remove photo',
   'photo.hint': 'Tap to take a photo',
@@ -130,10 +132,10 @@ export const en = {
     'You need to administer at least one OTHER store to clone from. Ask a higher-level admin to add you to one first.',
   'admin.clone.alsoMembers': 'Also assign source members',
   'admin.clone.alsoMembersHint':
-    "When on, every member assigned to the source store is also assigned to the target — they'll see and work in both. Off (default) clones only the role shape; you staff the target with different people.",
+    "When on, the source store's people join the target with the roles they hold there, and will see and work in both. Off (default): only the store's default role is copied, no people.",
   'admin.clone.whatTitle': 'What this does',
   'admin.clone.whatBody':
-    "For every store-scoped role binding in the source store, create the same binding in {store} (skip duplicates). Roles you don't outrank in {store} are skipped — counted separately so you know what to do manually.",
+    "Roles themselves (name, level, permissions) are shared across the organisation, so nothing to copy there. This sets the source store's default role for newcomers on {store}. Only with the option above are people and their roles added to {store}; roles at or above your level in {store}, or with permissions you lack, are skipped and counted separately.",
   // 2026-07-30: Operations was the second-largest pocket of untranslated
   // copy. Titles AND their body paragraphs — see the note in
   // scripts/check-untranslated.ts about why the guard only counts titles.
@@ -276,6 +278,9 @@ export const en = {
     'Only org-level admins can grant global (org-tier) roles. You can still assign per-store roles in the stores you administer.',
   'people.pickScopeFirst': 'Pick a scope above to see available roles.',
   'ops.maint.resetTodayTitle': "Reset today's entire flow",
+  'ops.maint.bulkDisabledBody':
+    'Reset today, reset a date and wipe everything are switched off on the live server. You can still delete your own single test orders or market runs above.',
+  'ops.maint.bulkDisabledTitle': 'Workspace-wide purges are off',
   'ops.maint.resetTodayBody':
     'Wipes every order, run, delivery, notification and price-history row dated {date} — regardless of who created it — together with the runs these orders are in and the orders in these runs, even from other dates. Catalog and members untouched. Use only when you are sure no real users have data today.',
   'ops.activity.recentEvents': 'Recent events',
@@ -343,6 +348,8 @@ export const en = {
   'admin.clone.toastCloned': 'Cloned {n, plural, =1 {1 role binding} other {# role bindings}}',
   'admin.clone.toastAlreadyExisted': '{n} already existed',
   'admin.clone.toastSkippedRank': '{n} skipped (level too high)',
+  'admin.clone.toastDefaultRole': 'Default role copied',
+  'admin.clone.toastSkippedPermission': '{n} skipped (permissions you lack)',
   'admin.clone.toastAssigned': '{n, plural, =1 {1 member} other {# members}} assigned',
   // 2026-07-30: role/rank chrome. `+ New <thing>` slipped past the guard's
   // first rule because the line starts with '+', not a letter.
@@ -404,17 +411,27 @@ export const en = {
   'common.error': 'Something went wrong',
   'common.networkError': 'Network error — check your connection',
   'common.offlineNotSaved': 'No connection — this change was not saved. Try again once you are online.',
+  'common.offlineNoData': 'Offline — this has not been loaded on this phone yet. It loads by itself once you are back online.',
+  'common.savingSlow': 'Saving…',
+  'common.maybeSaved': 'No answer from the server — this change may or may not have been saved. Refresh to check before changing it again.',
+  'common.maybeSavedRetrySafe': 'No answer from the server — this change may already be saved. Saving again is safe: it will not be recorded twice.',
   // M1.20 (2026-05-08): generic rate-limit error returned by the
   // server-side mutation rate limiter when a (user, path) exceeds the
   // 120-per-minute budget. The auth-specific equivalent stays under
   // 'auth.errors.rateLimited' — same wording, different namespace.
   'common.errors.rateLimited': 'Too many requests — please wait a moment and try again',
   'common.errors.requestInFlight': 'The previous attempt is still being processed. Try again in a moment.',
+  'common.errors.idempotencyKeyReused':
+    'This request reused the identifier of an earlier one with different content, so it was not saved. Refresh and try again.',
   'common.errors.internal': 'Something went wrong on our side. Please try again.',
+  'common.errors.invalidDecimal': 'Enter a number with at most 3 decimals.',
+  'common.errors.positiveDecimal': 'Enter a number above 0 with at most 3 decimals.',
+  'common.errors.invalidDate': 'Not a valid date. Write it like 2026-10-31.',
   'order.errors.tooManyExtras': 'An order can have at most 50 other items.',
   'order.errors.invalidExtraName': 'Give the item a name (up to 200 characters).',
   'order.errors.invalidExtraUnit': 'Give a unit (up to 16 characters).',
   'order.errors.invalidExtraQty': 'Enter a quantity above 0, with at most 3 decimals.',
+  'order.errors.qtyTooLarge': 'A line can be at most 999,999.999.',
   'order.errors.extraNoteTooLong': 'The note is too long (up to 200 characters).',
   'run.errors.cannotPlan': "You don't have permission to plan purchase runs.",
   'common.errors.validation': 'Invalid input — check the highlighted fields',
@@ -489,6 +506,8 @@ export const en = {
     'It needs a connection to open. It loads by itself once you are online, or tap Retry.',
   'shell.offline.body':
     'You are seeing what was last loaded. Orders, purchases and receiving are kept on this phone and sync when you are back online; daily close, sales and admin need a connection to save.',
+  'shell.offline.lastUpdated': 'last updated {time}',
+  'shell.offline.noDataBody': 'Nothing has been loaded on this phone yet; data appears once you are back online. Orders, purchases and receiving are kept on this phone and sync when you are back online; daily close, sales and admin need a connection to save.',
   'order.pendingSync': '{n, plural, one {# change} other {# changes}} waiting to sync',
   'shell.pageError.title': 'This page ran into a problem',
   'shell.pageError.body': 'Other pages still work. Try again, or switch to another page.',
@@ -519,6 +538,8 @@ export const en = {
   'auth.errors.invalidRefresh': 'Session expired — please sign in again',
   'auth.errors.refreshReplayDetected':
     'Suspicious sign-in activity detected — all sessions for this account have been signed out. Please sign in again.',
+  'auth.errors.refreshChainSwitched':
+    'This account switched to another workspace elsewhere, so this sign-in has ended. Please open the app again.',
   'auth.errors.missingPermission':
     "You don't have permission to do that. Ask an admin if you think this is a mistake.",
   'auth.errors.nameLocked': 'Your name is locked — only an administrator can change it',
@@ -703,6 +724,8 @@ export const en = {
   'auth.errors.notAssignedToStore': 'You are not assigned to this store',
   'auth.errors.userMissing': 'User not found',
   'auth.errors.cannotGrantEqualOrHigher': 'You cannot grant a role at or above your own level',
+  'auth.errors.cannotGrantMissingPermission':
+    'This role includes permissions you do not have yourself, so you cannot grant it.',
   'auth.errors.cannotRevokeEqualOrHigher': 'You cannot revoke a role at or above your own level',
   'auth.errors.rateLimited': 'Too many attempts — please wait a minute and try again',
   'system.errors.logRateLimited': 'Too many client log events — slow down',
@@ -737,8 +760,14 @@ export const en = {
     "This run contains other people's orders — it cannot be deleted",
   'admin.errors.sessionHasForeignAuthors':
     "This order contains other people's entries and cannot be deleted. Only your own test orders can be deleted here",
+  'admin.errors.runActedOnByOthers':
+    'Someone else has already handled this market run or its orders (claimed, bought, received or reviewed), so it cannot be deleted as test data.',
+  'admin.errors.sessionActedOnByOthers':
+    'Someone else has already handled this order (reviewed, claimed or rejected it), so it cannot be deleted as test data.',
   'admin.errors.bulkPurgeDisabledInProduction':
-    'Workspace-wide purges (wipe everything, reset a date) are switched off on the live server. Deleting a single order or market run still works.',
+    'Workspace-wide purges (reset today, reset a date, wipe everything) are switched off on the live server. Deleting a single order or market run still works.',
+  'admin.errors.purgeGuardWaiverDisabledInProduction':
+    "On the live server the check that keeps other people's orders and runs from being deleted cannot be skipped.",
   'admin.errors.purgeHasSettlements':
     'There are daily closes in this range. Daily close history cannot be deleted, so this cannot be purged',
   'admin.errors.runNotFound': 'Market run not found',
@@ -915,12 +944,17 @@ export const en = {
   'approval.confirmTakeover': "{who} hasn't acted on this order. Take over the review?",
   'approval.unknownReviewer': 'another reviewer',
   'approval.unapprove': 'Reverse approval',
+  'approval.undo': 'Undo',
   'approval.toast.approved': 'Approved ✓',
   'approval.toast.rejected': 'Rejected',
   'approval.toast.claimed': 'Claimed for review',
   'approval.toast.released': 'Released',
   'approval.toast.tookOver': 'Taken over — you are reviewing it now',
   'approval.toast.unapproved': 'Approval reversed',
+  'approval.toast.claimTimedOut':
+    'The order you were reviewing ({owner}) was released after a while without activity.',
+  'approval.toast.claimTakenOver': '{who} took over the order you were reviewing ({owner}).',
+  'approval.toast.undoTooLate': 'Could not undo: someone else has already acted on this order.',
   'approval.toast.approveFailed': 'Could not approve',
   'approval.toast.rejectFailed': 'Could not reject',
   'approval.items.loading': 'Loading items…',
@@ -958,6 +992,7 @@ export const en = {
   'order.errors.extraIndexOutOfRange': 'Extra row not found',
   'order.errors.notClaimable': 'This order is not awaiting review',
   'order.errors.alreadyClaimed': 'Already claimed by another reviewer',
+  'order.errors.takeOverCooldown': 'This order was just taken over. Try again in a minute.',
   'order.errors.notClaimer': 'Only the claimer or another approver can release this claim',
   'order.errors.cannotApprove': "You don't have permission to approve",
   'order.errors.notApprovable': 'This order is not awaiting review',
@@ -1078,10 +1113,41 @@ export const en = {
   'run.errors.notVisible': 'This purchase run was not found or is not available to you',
   'run.errors.priceFormat': 'Price must be above 0, with at most 12 digits and 2 decimals.',
   'run.errors.qtyFormat': 'Quantity must be above 0, with at most 9 digits and 3 decimals.',
+  'run.errors.lineTooLarge': 'One line (quantity × price) cannot be more than 1,000,000,000,000.',
   'run.errors.itemServesOtherStores':
     'This item also serves stores you do not buy for; someone who buys for them must change it.',
   'run.errors.runHasOtherStores':
     'This run includes stores you do not buy for; this step needs someone who buys for all of them.',
+  'run.errors.expenseServesOtherStores':
+    'This expense is split to stores you do not buy for. You can split expenses only to your own stores.',
+  'run.pendingSync.row': 'Saved offline — waiting to sync',
+  'run.pendingSync.short': 'waiting to sync',
+  'run.topUp.lineOtherStores': 'Other stores asked for more; the purchaser for all stores handles it',
+  'run.extras.recordPriceOtherStore': "That store's purchaser records the price",
+  'run.action.deliverRemaining': '{n, plural, one {# store} other {# stores}} still to deliver',
+  'run.action.waitingStoreConfirm': 'Waiting for receipt confirmation: {stores}',
+  'run.action.finishBlocked.otherStores': 'Finishing needs someone who buys for all stores',
+  'run.action.finishBlocked.noPermission': 'You do not have permission to finish',
+  'common.listSeparator': ', ',
+  'offline.action.purchaseItem': 'Record purchase',
+  'offline.action.markUnavailable': 'Mark unavailable',
+  'offline.action.deliverToStore': 'Confirm delivery',
+  'offline.action.addPurchaserItem': 'Add item',
+  'offline.action.addExpense': 'Record expense',
+  'offline.action.confirmStoreItem': 'Mark receiving status',
+  'offline.action.markStoreItemsOk': 'Mark all OK',
+  'offline.action.confirmStore': 'Confirm receipt',
+  'offline.drop.withReason': '“{action}” did not sync: {reason}',
+  'offline.drop.generic': '“{action}” did not sync — please check',
+  'confirm.final.title': 'Confirm receipt for this store?',
+  'confirm.final.summary': 'OK: {ok} · short: {short} · wrong or damaged: {bad}',
+  'confirm.final.shortWarning': '{n, plural, one {# line is} other {# lines are}} short: stock is booked at the quantity received and cannot be changed later.',
+  'confirm.final.body': 'Once confirmed, this store can no longer change any line.',
+  'confirm.final.submit': 'Confirm receipt',
+  'confirm.queued': 'Receipt confirmed offline — waiting to sync',
+  'run.history.amendAdded': 'Added in a correction: +{qty} {unit} ({store})',
+  'run.history.priceAfterReceipt': 'Price changed after receipt: {from} → {to}',
+  'run.amend.reopenedGoing': 'Correction opened',
   'run.errors.archiveCascadeFailed':
     'Could not archive the run together with its orders. Nothing was changed — please try again.',
   'run.errors.cannotEjectInStatus':
@@ -1166,7 +1232,7 @@ export const en = {
   'run.confirm.finish.expenses': '🧾 {n, plural, one {# off-catalog item or expense} other {# off-catalog items or expenses}} · {total} {currency}',
   'run.confirm.finish.perStoreHeading': 'Per-store settlement:',
   'run.confirm.finish.receiptIssues':
-    '{n, plural, one {# line was} other {# lines were}} signed for with a problem; about {amount} {currency} was not received. The bills below still charge the split quantities.',
+    '{n, plural, one {# line was} other {# lines were}} signed for with a problem; about {amount} {currency} was not received. Store bills still charge the split quantities.',
   'run.confirm.finish.receiptIssueLine': '{sku} · {store}: received {received}/{qty}',
   'run.confirm.finish.receiptIssuesMore': '…and {n} more',
   'run.errors.expenseLabelRequired': 'A description is required',
@@ -1461,6 +1527,9 @@ export const en = {
   'admin.workspace.financeSheet.warning':
     'Changing currency does NOT convert past purchases. Set once per org.',
   'admin.errors.taxRateOutOfRange': 'Tax rate must be between 0 and 50.',
+  'admin.errors.taxRateFormat': 'Tax rate must be a number from 0 to 50, with at most 2 decimals.',
+  'admin.errors.timeZoneUnknown': 'Unknown time zone. Write a name like Asia/Tashkent.',
+  'admin.errors.sortIndexInteger': 'Sort order must be a whole number (from -1000000 to 1000000).',
 
   // ── 15a. Shared admin form labels (M1.21-C, 2026-05-08) ───────
   // The Admin section had ~40 form labels hardcoded in English JSX

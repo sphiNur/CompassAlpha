@@ -1,7 +1,8 @@
 import { forwardRef } from 'react';
 import type { InputHTMLAttributes } from 'react';
 import { cn } from '../cn';
-import { normalizeDecimalInput } from '../decimalText';
+import { useUiLabels } from '../labels';
+import { useDecimalField } from '../useDecimalField';
 
 export interface NumberInputProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'size'> {
@@ -10,6 +11,12 @@ export interface NumberInputProps
   width?: 'auto' | 'narrow' | 'wide';
   /** Display 1 decimal max, no trailing zeros (formatQty pattern). */
   oneDecimal?: boolean;
+  /**
+   * R2-ORD-2 (2026-10-31): text that is not one number ("1e3", "1.2.3")
+   * is kept and marked invalid; by default a line under the field says
+   * so. `none` for a caller that already shows its own message.
+   */
+  formatError?: 'inline' | 'none';
 }
 
 /**
@@ -29,10 +36,24 @@ export interface NumberInputProps
  */
 export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(
   function NumberInput(
-    { className, size = 'md', width = 'auto', oneDecimal: _oneDecimal, onChange, ...rest },
+    {
+      className,
+      size = 'md',
+      width = 'auto',
+      oneDecimal: _oneDecimal,
+      formatError = 'inline',
+      value,
+      onChange,
+      onBlur,
+      ...rest
+    },
     ref,
   ) {
     void _oneDecimal; // reserved for future use; kept on the prop type for clarity
+    const labels = useUiLabels();
+    // RE-CLS-4 / R2-ORD-1: the typed text stays while typing; the parent
+    // gets the normalised reading of the whole text. See useDecimalField.
+    const { inputProps, invalid } = useDecimalField({ value, onChange, onBlur });
     // D18 (2026-10-31): both sizes are --control-h (44px). `size` used to
     // pick 36 or 32; it is kept so callers compile, and only the tap
     // height changed.
@@ -40,11 +61,11 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(
     const hSize = 'h-[var(--control-h)]';
     const w =
       width === 'narrow' ? 'w-20' : width === 'wide' ? 'w-full' : 'w-full min-w-0';
-    return (
+    const input = (
       <input
         ref={ref}
         // R6: text + decimal keypad, so "1,5" is read as 1.5 instead of
-        // being dropped by type="number"; onChange gets the normalised value.
+        // being dropped by type="number".
         type="text"
         inputMode="decimal"
         className={cn(
@@ -56,20 +77,23 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(
           // V8: the browser's default placeholder grey was 2.19:1 here.
           'placeholder:text-[var(--c-fg-subtle)]',
           'focus:border-[var(--c-action)]',
+          invalid ? 'border-[var(--c-danger)]' : '',
           rest.disabled ? 'opacity-50' : '',
           className,
         )}
         {...rest}
-        onChange={
-          onChange
-            ? (e) => {
-                const next = normalizeDecimalInput(e.target.value);
-                if (next !== e.target.value) e.target.value = next;
-                onChange(e);
-              }
-            : undefined
-        }
+        {...inputProps}
+        aria-invalid={invalid || rest['aria-invalid'] || undefined}
       />
+    );
+    if (!invalid || formatError === 'none') return input;
+    return (
+      <>
+        {input}
+        <span role="alert" className="block text-old-label text-[var(--c-danger)]">
+          {labels.numberInvalid}
+        </span>
+      </>
     );
   },
 );

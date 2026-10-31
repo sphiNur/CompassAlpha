@@ -80,6 +80,24 @@ test('place an order', async () => {
   await add('Beef', 2, '1 kg');
   await evidence('order-picking');
 
+  // A typed quantity, one key at a time (R2-ORD-1 / R2-ORD-2): "1,000"
+  // used to pass through "1," and land as 1; "0.0004" offered "Set 0".
+  await item('Apple').getByRole('button', { name: /^Quantity/ }).click();
+  const custom = sheet().getByRole('textbox');
+  await custom.click();
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.type('1,000');
+  await expect(custom).toHaveValue('1,000');
+  await expect(sheet().getByRole('button', { name: 'Set 1000 kg' })).toBeEnabled();
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.type('0.0004');
+  await expect(sheet().getByRole('alert')).toHaveText('At most 3 decimals');
+  await expect(sheet().getByRole('button', { name: /^Set/ })).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await expect(item('Apple').getByRole('button', { name: /^Quantity/ })).toHaveAccessibleName(
+    'Quantity 2 kg — tap to choose',
+  );
+
   await expect(mainButton()).toHaveText('Review order (2)');
   await mainButton().click();
   await expect(sheet().getByRole('listitem').filter({ hasText: 'Apple' }).last()).toHaveText(
@@ -199,6 +217,9 @@ test('receive the delivery at the store', async () => {
   await evidence('receiving-checked');
   await expect(mainButton()).toHaveText('Confirm store');
   await mainButton().click();
+  // U4: the irreversible confirmation goes through a summary sheet.
+  await expect(sheet()).toContainText('OK: 2 · short: 0 · wrong or damaged: 0');
+  await sheet().getByRole('button', { name: 'Confirm receipt' }).click();
   await expect(mainButton()).toBeHidden();
 });
 

@@ -9,6 +9,7 @@
  *   - FinanceSection     daily / by-supplier / by-store expense views
  *   - MaintenanceSection danger zone (+ TargetedPurgeBrowser, internal)
  */
+import { addMoney } from '@compass/contracts';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Badge,
@@ -1213,9 +1214,9 @@ export function FinanceSection() {
         transfer: 0,
         lines: [] as typeof lines,
       };
-      const lt = Number(l.lineTotal);
-      if (l.paymentMethod === 'transfer') g.transfer += lt;
-      else g.cash += lt;
+      // D1: lines are cents already; the group sum stays on cents.
+      if (l.paymentMethod === 'transfer') g.transfer = addMoney(g.transfer, l.lineTotal);
+      else g.cash = addMoney(g.cash, l.lineTotal);
       g.lines.push(l);
       m.set(l.runDate, g);
     }
@@ -1245,9 +1246,9 @@ export function FinanceSection() {
         transfer: 0,
         lines: [] as typeof lines,
       };
-      const lt = Number(l.lineTotal);
-      if (l.paymentMethod === 'transfer') g.transfer += lt;
-      else g.cash += lt;
+      // D1: lines are cents already; the group sum stays on cents.
+      if (l.paymentMethod === 'transfer') g.transfer = addMoney(g.transfer, l.lineTotal);
+      else g.cash = addMoney(g.cash, l.lineTotal);
       g.lines.push(l);
       m.set(key, g);
     }
@@ -1267,9 +1268,9 @@ export function FinanceSection() {
         transfer: 0,
         lines: [] as typeof lines,
       };
-      const lt = Number(l.lineTotal);
-      if (l.paymentMethod === 'transfer') g.transfer += lt;
-      else g.cash += lt;
+      // D1: lines are cents already; the group sum stays on cents.
+      if (l.paymentMethod === 'transfer') g.transfer = addMoney(g.transfer, l.lineTotal);
+      else g.cash = addMoney(g.cash, l.lineTotal);
       g.lines.push(l);
       m.set(l.storeId, g);
     }
@@ -1467,7 +1468,7 @@ export function FinanceSection() {
                 >
                   <span className="text-old-body font-semibold tabular-nums">{g.date}</span>
                   <span className="font-mono text-old-body tabular-nums">
-                    {formatMoney(g.cash + g.transfer)}
+                    {formatMoney(addMoney(g.cash, g.transfer))}
                   </span>
                 </button>
                 {mixed ? (
@@ -1542,7 +1543,7 @@ export function FinanceSection() {
                 >
                   <span className="truncate text-old-body font-semibold">{name}</span>
                   <span className="font-mono text-old-body tabular-nums">
-                    {formatMoney(g.cash + g.transfer)}
+                    {formatMoney(addMoney(g.cash, g.transfer))}
                   </span>
                 </button>
                 {mixed ? (
@@ -1599,7 +1600,7 @@ export function FinanceSection() {
                 >
                   <span className="truncate text-old-body font-semibold">{name}</span>
                   <span className="font-mono text-old-body tabular-nums">
-                    {formatMoney(g.cash + g.transfer)}
+                    {formatMoney(addMoney(g.cash, g.transfer))}
                   </span>
                 </button>
                 {mixed ? (
@@ -1652,6 +1653,10 @@ export function MaintenanceSection() {
 
   const isSuperAdmin = session?.roleSlugs.includes('super_admin') ?? false;
   const orgSlug = session?.member.orgSlug ?? '';
+  // R2-CAT-3: the live server refuses the bulk purges; don't offer them.
+  // Until the config arrives (or from an older server) they stay shown.
+  const appConfig = trpc.system.appConfig.useQuery(undefined, { staleTime: Infinity });
+  const bulkPurgeAllowed = appConfig.data?.bulkPurgeAllowed !== false;
 
   // ---- by-date purge state ----
   const [dateInput, setDateInput] = useState<string>(todayIso());
@@ -1728,93 +1733,103 @@ export function MaintenanceSection() {
         </div>
       </Card>
 
-      {/* ============ Reset today (still useful when nothing real yet) ============ */}
-      <div className="mt-3">
-        <Card>
-          <div className="flex flex-col gap-3 px-4 py-4">
-            <div>
-              <div className="text-old-h2 font-semibold text-[var(--c-fg)]">
-                {i18n.t('ops.maint.resetTodayTitle')}
-              </div>
-              <p className="mt-0.5 text-old-body-sm text-[var(--c-fg-muted)]">
-                {i18n.t('ops.maint.resetTodayBody', { date: todayIso() })}
-              </p>
-            </div>
-            <Button
-              size="sm"
-              variant="pearl"
-              loading={datePreviewMut.isPending}
-              onClick={() => datePreviewMut.mutate({ date: todayIso(), dryRun: true })}
-            >
-              {i18n.t('ops.maint.resetToday')}
-            </Button>
-          </div>
-        </Card>
-      </div>
-
-      {/* ============ Reset another date ============ */}
-      <div className="mt-3">
-        <Card>
-          <div className="flex flex-col gap-3 px-4 py-4">
-            <div>
-              <div className="text-old-h2 font-semibold text-[var(--c-fg)]">
-                {i18n.t('ops.maint.resetDateTitle')}
-              </div>
-              <p className="mt-0.5 text-old-body-sm text-[var(--c-fg-muted)]">
-                {i18n.t('ops.maint.resetDateBody')}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="date"
-                value={dateInput}
-                onChange={(e) => setDateInput(e.target.value)}
-                className="h-[var(--control-h)] flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3 ring-hairline"
-              />
-              <Button
-                size="sm"
-                variant="pearl"
-                loading={datePreviewMut.isPending}
-                disabled={!/^\d{4}-\d{2}-\d{2}$/.test(dateInput)}
-                onClick={() => datePreviewMut.mutate({ date: dateInput, dryRun: true })}
-              >
-                {i18n.t('ops.maint.preview')}
-              </Button>
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      {/* ============ Nuclear option ============ */}
-      <div className="mt-6">
-        <Banner tone="danger" title={i18n.t('ops.maint.wipeTitle')}>
-          {i18n.t('ops.maint.wipeBody')}
-        </Banner>
-        <div className="mt-3">
-          <Card>
-            <div className="flex flex-col gap-3 px-4 py-4">
-              <div>
-                <div className="text-old-h2 font-semibold text-[var(--c-fg)]">
-                  {i18n.t('ops.maint.purgeAllTitle')}
+      {bulkPurgeAllowed ? (
+        <>
+          {/* ============ Reset today (still useful when nothing real yet) ============ */}
+          <div className="mt-3">
+            <Card>
+              <div className="flex flex-col gap-3 px-4 py-4">
+                <div>
+                  <div className="text-old-h2 font-semibold text-[var(--c-fg)]">
+                    {i18n.t('ops.maint.resetTodayTitle')}
+                  </div>
+                  <p className="mt-0.5 text-old-body-sm text-[var(--c-fg-muted)]">
+                    {i18n.t('ops.maint.resetTodayBody', { date: todayIso() })}
+                  </p>
                 </div>
-                <p className="mt-0.5 text-old-body-sm text-[var(--c-fg-muted)]">
-                  {i18n.t('ops.maint.purgeAllBody')}
-                </p>
+                <Button
+                  size="sm"
+                  variant="pearl"
+                  loading={datePreviewMut.isPending}
+                  onClick={() => datePreviewMut.mutate({ date: todayIso(), dryRun: true })}
+                >
+                  {i18n.t('ops.maint.resetToday')}
+                </Button>
               </div>
-              <Button
-                size="sm"
-                variant="pearl"
-                loading={allDryRun.isPending}
-                onClick={() => {
-                  allDryRun.mutate({ dryRun: true }, { onSuccess: () => setAllOpen(true) });
-                }}
-              >
-                {i18n.t('ops.maint.previewEverything')}
-              </Button>
+            </Card>
+          </div>
+
+          {/* ============ Reset another date ============ */}
+          <div className="mt-3">
+            <Card>
+              <div className="flex flex-col gap-3 px-4 py-4">
+                <div>
+                  <div className="text-old-h2 font-semibold text-[var(--c-fg)]">
+                    {i18n.t('ops.maint.resetDateTitle')}
+                  </div>
+                  <p className="mt-0.5 text-old-body-sm text-[var(--c-fg-muted)]">
+                    {i18n.t('ops.maint.resetDateBody')}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={dateInput}
+                    onChange={(e) => setDateInput(e.target.value)}
+                    className="h-[var(--control-h)] flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3 ring-hairline"
+                  />
+                  <Button
+                    size="sm"
+                    variant="pearl"
+                    loading={datePreviewMut.isPending}
+                    disabled={!/^\d{4}-\d{2}-\d{2}$/.test(dateInput)}
+                    onClick={() => datePreviewMut.mutate({ date: dateInput, dryRun: true })}
+                  >
+                    {i18n.t('ops.maint.preview')}
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          {/* ============ Nuclear option ============ */}
+          <div className="mt-6">
+            <Banner tone="danger" title={i18n.t('ops.maint.wipeTitle')}>
+              {i18n.t('ops.maint.wipeBody')}
+            </Banner>
+            <div className="mt-3">
+              <Card>
+                <div className="flex flex-col gap-3 px-4 py-4">
+                  <div>
+                    <div className="text-old-h2 font-semibold text-[var(--c-fg)]">
+                      {i18n.t('ops.maint.purgeAllTitle')}
+                    </div>
+                    <p className="mt-0.5 text-old-body-sm text-[var(--c-fg-muted)]">
+                      {i18n.t('ops.maint.purgeAllBody')}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="pearl"
+                    loading={allDryRun.isPending}
+                    onClick={() => {
+                      allDryRun.mutate({ dryRun: true }, { onSuccess: () => setAllOpen(true) });
+                    }}
+                  >
+                    {i18n.t('ops.maint.previewEverything')}
+                  </Button>
+                </div>
+              </Card>
             </div>
-          </Card>
+          </div>
+        </>
+      ) : (
+        <div className="mt-3">
+          <Banner tone="info" title={i18n.t('ops.maint.bulkDisabledTitle')}>
+            {i18n.t('ops.maint.bulkDisabledBody')}
+          </Banner>
         </div>
-      </div>
+      )}
 
       {/* ============ Date-purge confirm sheet ============ */}
       <Sheet

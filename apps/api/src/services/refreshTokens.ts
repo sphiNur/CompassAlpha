@@ -45,10 +45,25 @@ import type { DB } from '@compass/db';
 import { inSystem, schema as s, withSystemContext } from '@compass/db';
 import { signRefresh } from '../infra/jwt';
 
+/** refresh_tokens.revoke_reason for a chain ended by a workspace switch. */
+export const REVOKE_REASON_SWITCHED = 'switched';
+
 export class RefreshReplayError extends Error {
   constructor() {
     super('refresh token replay detected');
     this.name = 'RefreshReplayError';
+  }
+}
+
+/**
+ * R2-ADM-1 (2026-10-31): the token belongs to a chain that ended because
+ * its user switched workspace (revokeFamilyForUser). Nothing suspicious:
+ * another tab or device is still on the old chain.
+ */
+export class RefreshChainSwitchedError extends Error {
+  constructor() {
+    super('refresh chain ended by a workspace switch');
+    this.name = 'RefreshChainSwitchedError';
   }
 }
 
@@ -139,7 +154,8 @@ interface RotateOpts {
 type RotateOutcome =
   | { kind: 'rotated'; token: string; id: string; family: string; expiresAt: Date }
   | { kind: 'notFound' }
-  | { kind: 'replay'; family: string };
+  | { kind: 'replay'; family: string }
+  | { kind: 'switched' };
 
 /**
  * Exchange a tracked refresh token for its successor in the same family.
@@ -236,9 +252,18 @@ export async function rotateRefresh(
         };
       }
     }
+    // R2-ADM-1: a chain ended by a workspace switch is already fully
+    // revoked; a token from it is a stale tab, not a theft.
+    const ended = await tx.query.refreshTokens.findFirst({
+      where: (rt, { eq: eq2, and: and2 }) =>
+        and2(eq2(rt.family, row.family), eq2(rt.revokeReason, REVOKE_REASON_SWITCHED)),
+      columns: { id: true },
+    });
+    if (ended) return { kind: 'switched' };
     return { kind: 'replay', family: row.family };
   });
   if (outcome.kind === 'notFound') throw new RefreshNotFoundError();
+  if (outcome.kind === 'switched') throw new RefreshChainSwitchedError();
   if (outcome.kind === 'replay') {
     // Replay! Nuke the entire family — any descendant token is now
     // suspect. Caller turns this into a 401 + tells the client to
@@ -283,7 +308,9 @@ export async function revokeFamilyForUser(db: DB, family: string, userId: string
   const revoked = await inSystem(db, 'auth', (tx) =>
     tx
       .update(s.refreshTokens)
-      .set({ revokedAt: new Date() })
+      // R2-ADM-1: say why, so a later refresh from the old chain is told
+      // the session moved instead of "suspicious activity".
+      .set({ revokedAt: new Date(), revokeReason: REVOKE_REASON_SWITCHED })
       .where(
         and(
           eq(s.refreshTokens.family, family),

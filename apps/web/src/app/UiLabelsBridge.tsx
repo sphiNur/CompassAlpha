@@ -71,6 +71,10 @@ export function UiLabelsBridge({ children }: { children: ReactNode }) {
       },
       qtyAtLeast: (min) => i18n.t('qty.atLeast', { min }),
       qtyAtMost: (max) => i18n.t('qty.atMost', { max }),
+      qtyMaxDecimals: (decimals) => i18n.t('qty.maxDecimals', { decimals }),
+      get numberInvalid() {
+        return i18n.t('number.invalid');
+      },
       get errorTitle() {
         return i18n.t('common.error');
       },
@@ -82,6 +86,9 @@ export function UiLabelsBridge({ children }: { children: ReactNode }) {
       },
       get emptyNothingYet() {
         return i18n.t('common.empty');
+      },
+      get offlineNoData() {
+        return i18n.t('common.offlineNoData');
       },
       // 2026-10-21 FE-10: DataState showed `error.message` raw — usually an
       // untranslated server key. Same mapping as errToast's toasts.

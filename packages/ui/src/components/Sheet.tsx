@@ -179,6 +179,9 @@ export function Sheet({
         />
         <Dialog.Content
           ref={contentRef}
+          // U11: the toast layer reads where an open sheet sits so a toast
+          // never lands on its title (Toast.tsx).
+          data-sheet-content=""
           className={cn(
             'fixed inset-x-0 bottom-0 z-50 mx-auto flex w-full max-w-[var(--app-sheet-max-w)] flex-col',
             'rounded-t-[var(--r-sheet)] bg-[var(--c-surface)] text-[var(--c-fg)]',
@@ -250,6 +253,7 @@ export function SheetBody({ children, className }: { children: ReactNode; classN
 export function SheetFooter({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <div
+      data-sheet-footer=""
       className={cn(
         // M3.15 (2026-05-16): pt-3 / pb-4 → pt-2 / pb-3. The footer
         // CTA inside now reads as a peer of the bottom nav rather than

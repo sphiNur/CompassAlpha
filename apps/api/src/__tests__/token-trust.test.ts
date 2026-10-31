@@ -205,13 +205,40 @@ describe.skipIf(!SHOULD_RUN)('tokens and trust through the router (PG-gated)', (
     ).auth.switchOrganization({ orgId: orgB });
     expect(switched.session.member.orgId).toBe(orgB);
 
-    await expect(refresh(before.tokens.refreshToken)).rejects.toThrow();
+    // R2-ADM-1: the old chain ended because of the switch, not a theft;
+    // the answer says so instead of "all devices signed out".
+    await expect(refresh(before.tokens.refreshToken)).rejects.toThrow(
+      'auth.errors.refreshChainSwitched',
+    );
     // The failed refresh did not move the remembered workspace back.
     const user = await db().query.users.findFirst({ where: eq(s.users.id, userId) });
     expect(user!.lastOrgId).toBe(orgB);
 
     const after = await refresh(switched.tokens.refreshToken);
     expect(after.session.member.orgId).toBe(orgB);
+    await db().update(s.users).set({ lastOrgId: orgA }).where(eq(s.users.id, userId));
+  });
+
+  test('R2-ADM-1: a token rotated before the switch is also told the session moved', async () => {
+    const before = await login();
+    const rotated = await refresh(before.tokens.refreshToken);
+    // Past the retry grace window, reusing the first token is normally a replay.
+    const { jti } = await verifyRefresh(before.tokens.refreshToken);
+    await db()
+      .update(s.refreshTokens)
+      .set({ revokedAt: new Date(Date.now() - 10 * 60 * 1000) })
+      .where(eq(s.refreshTokens.id, jti!));
+    await (
+      await callerWith(bearer(rotated.tokens.accessToken))
+    ).auth.switchOrganization({
+      orgId: orgB,
+    });
+    await expect(refresh(before.tokens.refreshToken)).rejects.toThrow(
+      'auth.errors.refreshChainSwitched',
+    );
+    await expect(refresh(rotated.tokens.refreshToken)).rejects.toThrow(
+      'auth.errors.refreshChainSwitched',
+    );
     await db().update(s.users).set({ lastOrgId: orgA }).where(eq(s.users.id, userId));
   });
 

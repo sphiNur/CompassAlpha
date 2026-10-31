@@ -22,10 +22,11 @@ import { formatMoney, formatQty } from '../../../lib/format';
 import { matchesNameLike, normalizeQuery } from '../../../lib/searchMatch';
 import { useUnitLabel } from '../../../hooks/useI18n';
 import type { useI18n } from '../../../hooks/useI18n';
-import { toDisplayPrice, fromDisplayPrice } from '../lib/priceMath';
+import { toDisplayPrice, fromDisplayPrice, isStorablePrice, readDisplayPrice } from '../lib/priceMath';
 import { evenSplitQty } from '../lib/splitQty';
 import { followPaymentMethod, followUnitPrice } from '../lib/purchaseOverrides';
 import { PriceInFull, PriceUnitSwitch } from '../components/PriceUnit';
+import { lineAmountNumber } from '@compass/contracts';
 
 /**
  * M3.41 + M3.44 (2026-05-21 / 2026-05-22): draft state for the "+ add"
@@ -187,15 +188,17 @@ export function PurchaseSheet({
 
   const splitMatches = draft && Math.abs(splitTotal - Number(draft.actualQty || 0)) < 0.001;
   const reasonOk = !draft?.isEdit || draft.reason.trim().length > 0;
+  // R2-BUY-2: prices in the server's format (above 0, ≤12 digits, ≤2
+  // decimals), so a refused figure never reaches the 5× check or the API.
   const splitPricesOk =
     !draft?.perStorePricing ||
     [...draft.splits.entries()]
       .filter(([, qty]) => Number(qty) > 0)
-      .every(([storeId]) => Number(draft.splitPrices.get(storeId) || draft.unitPrice) > 0);
+      .every(([storeId]) => isStorablePrice(draft.splitPrices.get(storeId) || draft.unitPrice));
   const canSubmit = !!(
     draft &&
     Number(draft.actualQty) > 0 &&
-    Number(draft.unitPrice) > 0 &&
+    isStorablePrice(draft.unitPrice) &&
     splitMatches &&
     reasonOk &&
     splitPricesOk
@@ -675,13 +678,13 @@ export function AddItemSheet({
     !!selectedSkuExisting &&
     (draft.skuCostMode === 'separateExpense' || selectedStoreAlreadyHasSku);
 
+  // D1: the line as the server counts it — rounded half-up to cents.
   const totalHint = useMemo(() => {
     if (!draft) return null;
-    const q = Number(draft.actualQty);
-    const p = Number(priceInput);
-    if (!Number.isFinite(q) || !Number.isFinite(p) || q <= 0 || p <= 0) return null;
-    const effectiveP = priceInThousands ? p * 1000 : p;
-    return Math.round(q * effectiveP);
+    const qty = draft.actualQty.trim();
+    const raw = readDisplayPrice(priceInput, priceInThousands);
+    if (!/^\d+(\.\d+)?$/.test(qty) || Number(qty) <= 0 || raw === null) return null;
+    return lineAmountNumber(qty, raw);
   }, [draft, priceInput, priceInThousands]);
 
   // 2026-07-06: the >200,000 UZS "receipt photo required" gate on
@@ -706,7 +709,7 @@ export function AddItemSheet({
     draft &&
     (draft.mode === 'sku' ? draft.skuId : draft.label.trim().length > 0) &&
     Number(draft.actualQty) > 0 &&
-    Number(draft.unitPrice) > 0 &&
+    isStorablePrice(draft.unitPrice) &&
     draft.splits.size > 0 &&
     splitMatches &&
     draft.reason.trim().length > 0 &&

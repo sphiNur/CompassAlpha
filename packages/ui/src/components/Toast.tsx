@@ -67,6 +67,36 @@ const TONE: Record<ToastTone, string> = {
     'bg-[var(--c-danger-bg)] text-[var(--c-danger-ink)] ring-1 ring-[var(--c-danger)]',
 };
 
+/**
+ * U11 (2026-10-31): where toasts go while a sheet is open. They sat above
+ * the page's main button at z-index 100, so a toast fired just before a
+ * confirm sheet opened ("采购已记录", then 开始配送) landed on the sheet's
+ * title. Returns the toast stack's distance from the viewport bottom (px):
+ * just above the sheet when the space above it holds the stack, otherwise
+ * (a tall sheet) just above its footer — over the sheet's body, never its
+ * header. Exported for tests.
+ */
+export function toastOffsetForSheet(r: {
+  viewportH: number;
+  sheetTop: number;
+  /** Top edge of the sheet's footer, or null when it has none. */
+  footerTop: number | null;
+  /** Space the top chrome takes (Telegram's buttons, safe area). */
+  safeTop: number;
+  /** Height the toast stack needs, gap included. */
+  stackH: number;
+}): number {
+  const gap = 8;
+  if (r.sheetTop - r.safeTop >= r.stackH + gap) return r.viewportH - r.sheetTop + gap;
+  return r.viewportH - (r.footerTop ?? r.viewportH) + gap;
+}
+
+function cssPx(name: string): number {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name);
+  const n = parseFloat(raw);
+  return Number.isFinite(n) ? n : 0;
+}
+
 let counter = 0;
 const nextId = () => `toast-${++counter}-${Math.random().toString(36).slice(2, 6)}`;
 
@@ -85,6 +115,43 @@ export function ToastProvider({
 }: ToastProviderProps) {
   const [toasts, setToasts] = useState<ToastConfig[]>([]);
   const timersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const stackRef = useRef<HTMLDivElement | null>(null);
+  // U11: px from the viewport bottom while a sheet is open; null = the
+  // usual place above the main button.
+  const [sheetOffset, setSheetOffset] = useState<number | null>(null);
+  const hasToasts = toasts.length > 0;
+  useEffect(() => {
+    if (!hasToasts || typeof window === 'undefined') {
+      setSheetOffset(null);
+      return;
+    }
+    // Followed every frame while toasts are up: a sheet slides in, grows
+    // with its content and moves with the keyboard.
+    let frame = 0;
+    const follow = () => {
+      const sheets = document.querySelectorAll<HTMLElement>(
+        '[data-sheet-content][data-state="open"]',
+      );
+      const sheet = sheets[sheets.length - 1];
+      let next: number | null = null;
+      if (sheet) {
+        const footer = sheet.querySelector<HTMLElement>('[data-sheet-footer]');
+        next = Math.round(
+          toastOffsetForSheet({
+            viewportH: window.innerHeight,
+            sheetTop: sheet.getBoundingClientRect().top,
+            footerTop: footer ? footer.getBoundingClientRect().top : null,
+            safeTop: cssPx('--app-safe-top'),
+            stackH: stackRef.current?.offsetHeight ?? 48,
+          }),
+        );
+      }
+      setSheetOffset((cur) => (cur === next ? cur : next));
+      frame = window.requestAnimationFrame(follow);
+    };
+    follow();
+    return () => window.cancelAnimationFrame(frame);
+  }, [hasToasts]);
 
   const dismiss = useCallback((id: string) => {
     const t = timersRef.current.get(id);
@@ -108,7 +175,22 @@ export function ToastProvider({
         actions: opts.actions?.length ? opts.actions : undefined,
       };
       setToasts((prev) => {
-        const next = [...prev, config];
+        // R2-INT-5 (2026-10-31): a success means the last attempt worked;
+        // the error toast from the attempt before it no longer applies
+        // (it used to stay on screen next to "Saved").
+        const kept =
+          config.tone === 'success'
+            ? prev.filter((t) => {
+                const stale = t.tone === 'danger' && !t.actions;
+                if (stale) {
+                  const timer = timersRef.current.get(t.id);
+                  if (timer) clearTimeout(timer);
+                  timersRef.current.delete(t.id);
+                }
+                return !stale;
+              })
+            : prev;
+        const next = [...kept, config];
         // Over the limit, the oldest timed toast goes first: one that was
         // asked to stay must not be pushed out by passing notices.
         while (next.length > limit) {
@@ -150,8 +232,10 @@ export function ToastProvider({
     <ToastContext.Provider value={value}>
       {children}
       <div
+        ref={stackRef}
         aria-live="polite"
         aria-atomic="true"
+        data-toast-stack=""
         style={{
           // BOTTOM-anchored: Telegram's top chrome (Close + ⋯ + ⋄)
           // overlays ~60-80 px and isn't reported via env(safe-area-inset-top),
@@ -162,7 +246,9 @@ export function ToastProvider({
           // by the host Shell as --app-main-btn-h, 0 when none) so toasts
           // stack ABOVE "Submit / Save" instead of on top of it.
           bottom:
-            'calc(var(--app-safe-bottom, 0px) + var(--app-nav-h, 64px) + var(--app-main-btn-h, 0px) + 12px)',
+            sheetOffset !== null
+              ? `${sheetOffset}px`
+              : 'calc(var(--app-safe-bottom, 0px) + var(--app-nav-h, 64px) + var(--app-main-btn-h, 0px) + 12px)',
           left: 0,
           right: 0,
           display: 'flex',

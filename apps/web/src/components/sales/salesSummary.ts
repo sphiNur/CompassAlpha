@@ -40,12 +40,20 @@ export function normalizeVoidReason(raw: string): string | null {
  * re-enter sales that already exist and stock would be deducted twice.
  * An error wins over stale data too (a failed refetch of a cached list).
  */
-export type SalesListView = 'loading' | 'error' | 'empty' | 'list';
+export type SalesListView = 'loading' | 'error' | 'offline' | 'empty' | 'list';
+/**
+ * CLS-6 (2026-10-31): offline with no saved copy the list does not fail,
+ * it waits (paused) with no rows — and read "0 servings / no sales yet".
+ * `waitingOffline` = no data and `fetchStatus === 'paused'`; it is locked
+ * like an error and loads by itself once back online.
+ */
 export function salesListView(q: {
   isLoading: boolean;
   isError: boolean;
   rowCount: number;
+  waitingOffline?: boolean;
 }): SalesListView {
+  if (q.waitingOffline) return 'offline';
   if (q.isLoading) return 'loading';
   if (q.isError) return 'error';
   return q.rowCount === 0 ? 'empty' : 'list';

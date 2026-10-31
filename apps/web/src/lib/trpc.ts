@@ -71,10 +71,26 @@ let refreshInFlight: Promise<{ accessToken: string; refreshToken: string } | nul
 const REFRESH_TIMEOUT_MS = 10_000;
 const REFRESH_COOLDOWN_MS = 5_000;
 let refreshIncompleteAt = Number.NEGATIVE_INFINITY;
+/**
+ * R2-AUTH-3 (2026-10-31): why the last refresh did not complete — the
+ * server's own status when it answered with an error, null when no answer
+ * came. A 500 was reported as "check your connection".
+ */
+let refreshIncompleteStatus: number | null = null;
+
+/** The error a request fails with when its session refresh did not complete. */
+export function refreshIncompleteError(serverStatus: number | null): TypeError {
+  return new TypeError(
+    serverStatus === null
+      ? 'Failed to fetch (session refresh did not complete)'
+      : `Failed to fetch (session refresh did not complete: server ${serverStatus})`,
+  );
+}
 
 /** Tests only: forget the last incomplete refresh. */
 export function resetRefreshCooldownForTests(): void {
   refreshIncompleteAt = Number.NEGATIVE_INFINITY;
+  refreshIncompleteStatus = null;
 }
 
 async function refreshAccessToken(): Promise<{
@@ -109,6 +125,7 @@ async function refreshAccessToken(): Promise<{
           useAuthStore.getState().clear();
         } else {
           refreshIncompleteAt = Date.now();
+          refreshIncompleteStatus = res.status;
           noteRefreshIncomplete(`http ${res.status}`);
         }
         return null;
@@ -132,6 +149,8 @@ async function refreshAccessToken(): Promise<{
       return { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken };
     } catch (err) {
       refreshIncompleteAt = Date.now();
+      const gateway = /\(gateway (\d{3})\)/.exec(err instanceof Error ? err.message : '');
+      refreshIncompleteStatus = gateway ? Number(gateway[1]) : null;
       noteRefreshIncomplete(err instanceof Error ? err.message : 'fetch failed');
       return null;
     } finally {
@@ -237,7 +256,7 @@ export async function authFetch(input: RequestInfo | URL, init: RequestInit = {}
   const refreshed = await refreshAccessToken();
   if (!refreshed) {
     if (hadRefreshToken && useAuthStore.getState().refreshToken) {
-      throw new TypeError('Failed to fetch (session refresh did not complete)');
+      throw refreshIncompleteError(refreshIncompleteStatus);
     }
     return res;
   }
