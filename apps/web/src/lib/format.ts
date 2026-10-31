@@ -122,14 +122,19 @@ export function formatMoney(
 
 /**
  * A price in thousands, the purchase page's compact unit ("4.5K" for
- * 4,500). Exact — up to the 5 decimals a 2-dp amount needs once divided
- * by 1000 (33,333.33 → "33.33333K") — and trailing zeros dropped, so the
- * common whole-thousand price stays short.
+ * 4,500), trailing zeros dropped so the common whole-thousand price
+ * stays short.
+ *
+ * R2-BUY-3 (2026-10-31): only while the thousands figure needs at most
+ * two decimals. A price with cents read "92.0005K" — five decimals,
+ * against the rule that amounts show two; such a price is shown in full
+ * instead ("92,000.50"), exactly as everywhere else.
  */
 export function formatMoneyThousands(v: string | number | null | undefined): string {
   if (v === null || v === undefined || v === '') return '';
   const n = typeof v === 'number' ? v : Number(v);
   if (!Number.isFinite(n)) return String(v);
+  if (Math.round(n * 100) % 1000 !== 0) return formatMoney(n);
   return `${thousandsFormatter.format(n / 1000)}K`;
 }
 
@@ -150,7 +155,7 @@ const DEFAULT_MONEY_DECIMALS = 2;
 
 const thousandsFormatter = new Intl.NumberFormat('en-US', {
   minimumFractionDigits: 0,
-  maximumFractionDigits: DEFAULT_MONEY_DECIMALS + 3,
+  maximumFractionDigits: DEFAULT_MONEY_DECIMALS,
 });
 
 const qtyFormatter = new Intl.NumberFormat('en-US', {

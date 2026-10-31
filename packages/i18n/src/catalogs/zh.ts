@@ -33,6 +33,8 @@ export const zh = {
   'qty.enterNumber': '请输入数字',
   'qty.atLeast': '请输入不小于 {min} 的数',
   'qty.atMost': '请输入不大于 {max} 的数',
+  'qty.maxDecimals': '最多 {decimals} 位小数',
+  'number.invalid': '这不是一个数字，请写成 1500 或 1.5 这样',
   'photo.label': '票据照片',
   'photo.remove': '移除照片',
   'photo.hint': '点击拍照',
@@ -331,10 +333,14 @@ export const zh = {
   'common.errors.rateLimited': '请求过多——请稍等片刻后重试',
   'common.errors.requestInFlight': '上一次操作还在处理中，请稍候再试。',
   'common.errors.internal': '服务器出了点问题，请稍后再试。',
+  'common.errors.invalidDecimal': '请填写数字，最多 3 位小数。',
+  'common.errors.positiveDecimal': '请填写大于 0 的数字，最多 3 位小数。',
+  'common.errors.invalidDate': '日期无效，请写成 2026-10-31 这样的日期。',
   'order.errors.tooManyExtras': '一张订单最多 50 个其他物品。',
   'order.errors.invalidExtraName': '请填写物品名称（最多 200 个字）。',
   'order.errors.invalidExtraUnit': '请填写单位（最多 16 个字）。',
   'order.errors.invalidExtraQty': '数量要大于 0，最多 3 位小数。',
+  'order.errors.qtyTooLarge': '一行的数量不能超过 999,999.999。',
   'order.errors.extraNoteTooLong': '备注太长了（最多 200 个字）。',
   'run.errors.cannotPlan': '你没有安排采购的权限。',
   'common.errors.validation': '输入无效——请检查高亮的字段',
@@ -924,6 +930,7 @@ export const zh = {
   'run.errors.notVisible': '该采购单不存在，或你无权查看',
   'run.errors.priceFormat': '单价要大于 0，最多 12 位整数、2 位小数。',
   'run.errors.qtyFormat': '数量要大于 0，最多 9 位整数、3 位小数。',
+  'run.errors.lineTooLarge': '这一行的金额（数量 × 单价）不能超过 1,000,000,000,000。',
   'run.errors.itemServesOtherStores':
     '这个商品也供应你不负责的门店，只能由负责这些门店的人修改。',
   'run.errors.runHasOtherStores':
@@ -1291,6 +1298,9 @@ export const zh = {
   'admin.workspace.financeSheet.description': '组织级默认值——不会重新折算历史金额。',
   'admin.workspace.financeSheet.warning': '修改币种不会换算过去的采购金额。每个组织只应设置一次。',
   'admin.errors.taxRateOutOfRange': '税率应在 0–50 之间。',
+  'admin.errors.taxRateFormat': '税率要填 0 到 50 之间的数，最多 2 位小数。',
+  'admin.errors.timeZoneUnknown': '不认识这个时区，请写成 Asia/Tashkent 这样的名称。',
+  'admin.errors.sortIndexInteger': '排序要填整数（-1000000 到 1000000）。',
 
   // ── 15a. Shared admin form labels (M1.21-C) ────────────────────
   'admin.field.slug': '标识符',

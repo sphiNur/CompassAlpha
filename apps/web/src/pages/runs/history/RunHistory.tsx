@@ -18,6 +18,7 @@
  * comes from ../lib/settlement (unit-tested); only super-admin correction
  * actions mutate a finished run.
  */
+import { addMoney } from '@compass/contracts';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Badge, Button, Card, Input, SectionLabel, Sheet, useToast } from '@compass/ui';
 import { trpc } from '../../../lib/trpc';
@@ -27,7 +28,7 @@ import { useErrToast } from '../../../lib/errToast';
 import { formatMoney, formatQty } from '../../../lib/format';
 import { useUnitLabel } from '../../../hooks/useI18n';
 import type { useI18n, useProductName } from '../../../hooks/useI18n';
-import { splitSubtotal, settleItemLine, settlePerStore } from '../lib/settlement';
+import { expenseLine, splitSubtotal, settleItemLine, settlePerStore } from '../lib/settlement';
 import { dayStoreSummaries, groupRunsByDay, type HistoryDay } from '../lib/historyGroups';
 
 // ====================================================================
@@ -159,7 +160,7 @@ export function RunHistoryPage({
   const [dayFor, setDayFor] = useState<HistoryDay | null>(null);
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   const total =
-    summaryTotal ?? String(runs.reduce((sum, run) => sum + Number(run.actualTotal ?? 0), 0));
+    summaryTotal ?? String(runs.reduce((sum, run) => addMoney(sum, run.actualTotal), 0));
   const count = totalCount ?? runs.length;
   const firstResult =
     pagination && pagination.totalCount > 0 ? (pagination.page - 1) * pagination.pageSize + 1 : 0;
@@ -734,19 +735,19 @@ export function RunHistoryDetailSheet({
         (it.unitPrice || itemSplits.some((split) => split.unitPrice))
       ) {
         const { line, cash, transfer } = settleItemLine(it, itemSplits);
-        total += line;
-        totalCash += cash;
-        totalTransfer += transfer;
+        total = addMoney(total, line);
+        totalCash = addMoney(totalCash, cash);
+        totalTransfer = addMoney(totalTransfer, transfer);
       }
     }
     // M3.44: off-catalog expenses contribute to the run total + the
     // payment-method breakdown the same way SKU buys do.
     for (const ex of expenses) {
-      const line = Number(ex.qty) * Number(ex.unitPrice);
-      total += line;
-      expensesTotal += line;
-      if (ex.paymentMethod === 'transfer') totalTransfer += line;
-      else totalCash += line;
+      const line = expenseLine(ex);
+      total = addMoney(total, line);
+      expensesTotal = addMoney(expensesTotal, line);
+      if (ex.paymentMethod === 'transfer') totalTransfer = addMoney(totalTransfer, line);
+      else totalCash = addMoney(totalCash, line);
     }
     /**
      * M3.52 (2026-05-23): per-store settlement — strictly each store's
@@ -835,8 +836,7 @@ export function RunHistoryDetailSheet({
           qty: item.purchasedQty,
           lineTotal:
             item.status === 'purchased' && item.purchasedQty && hasVisiblePrice
-              ? itemSplits.reduce((sum, split) => sum + splitSubtotal(split, item), 0) ||
-                Number(item.unitPrice) * Number(item.purchasedQty)
+              ? settleItemLine(item, itemSplits).line
               : 0,
           perStoreSplits: itemSplits,
         };
@@ -943,7 +943,7 @@ export function RunHistoryDetailSheet({
                 {headlineExpenses > 0 ? (
                   <div className="text-old-label tabular-nums text-[var(--c-fg-muted)]">
                     {i18n.t('run.money.itemsExpenses', {
-                      items: formatMoney(headlineTotal - headlineExpenses),
+                      items: formatMoney(addMoney(headlineTotal, -headlineExpenses)),
                       expenses: formatMoney(headlineExpenses),
                     })}
                   </div>

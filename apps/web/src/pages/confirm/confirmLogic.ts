@@ -3,6 +3,7 @@
  * component so the two rules that decide WHAT a receiver signs for are
  * unit-tested.
  */
+import { readDecimalText } from '@compass/ui';
 
 export type ConfirmDecisionStatus = 'ok' | 'short' | 'wrong' | 'quality';
 
@@ -74,7 +75,13 @@ export function checkReceivedQty(
   splitQty: string,
 ): ReceivedQtyCheck {
   if (status === 'ok') return { ok: true, value: null };
-  const trimmed = raw.trim().replace(',', '.');
+  // R2-DLV-2 (2026-10-31): the same reading as every other number field
+  // (readDecimalText): "1,000" is a thousand in Chinese and English, 1 in
+  // Russian and Uzbek. A bare `replace(',', '.')` read it as 1 everywhere,
+  // so a short line could be saved as 1 when a thousand was typed.
+  const read = readDecimalText(raw);
+  if (!read.ok) return { ok: false, reason: 'invalid' };
+  const trimmed = read.value;
   if (trimmed === '') {
     return status === 'short' ? { ok: false, reason: 'required' } : { ok: true, value: '0' };
   }

@@ -6,11 +6,15 @@
  * the line. A value the user did not type is never offered now — the
  * button stays disabled and the sheet says why.
  *
- * Expects the field already normalised by NumberInput ("1,5" → "1.5").
+ * Expects the field already normalised by NumberInput ("1,5" → "1.5");
+ * text that is not one number arrives as typed and is refused here.
  */
 export type QtyDraft =
   | { ok: true; value: number }
-  | { ok: false; reason: 'empty' | 'notNumber' | 'belowMin' | 'aboveMax' };
+  | { ok: false; reason: 'empty' | 'notNumber' | 'tooPrecise' | 'belowMin' | 'aboveMax' };
+
+/** The DB keeps order quantities at 3 decimals (numeric(12,3)). */
+export const QTY_DECIMALS = 3;
 
 export function readQtyDraft(
   draft: string,
@@ -24,8 +28,13 @@ export function readQtyDraft(
   if (!Number.isFinite(n)) return { ok: false, reason: 'notNumber' };
   if (n < min) return { ok: false, reason: 'belowMin' };
   if (n > max) return { ok: false, reason: 'aboveMax' };
-  // The typed value, at the DB's 3 decimals — no longer snapped to the
-  // +/- step: with step 1, a typed 0.3 snapped to 0 and wiped the line
-  // the same way. M3.35 already made +/- keep off-step values.
-  return { ok: true, value: Number(n.toFixed(3)) };
+  // R2-ORD-2 (2026-10-31): a 4th decimal was rounded away, so "0.0004"
+  // offered "Set 0" and tapping it wiped the line. Say how many decimals
+  // the quantity keeps instead.
+  const fraction = s.includes('.') ? s.slice(s.indexOf('.') + 1).replace(/0+$/, '') : '';
+  if (fraction.length > QTY_DECIMALS) return { ok: false, reason: 'tooPrecise' };
+  // The typed value — no longer snapped to the +/- step: with step 1, a
+  // typed 0.3 snapped to 0 and wiped the line the same way. M3.35 already
+  // made +/- keep off-step values.
+  return { ok: true, value: n };
 }

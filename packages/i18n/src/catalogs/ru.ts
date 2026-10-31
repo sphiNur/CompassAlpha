@@ -33,6 +33,8 @@ export const ru = {
   'qty.enterNumber': 'Введите число',
   'qty.atLeast': 'Введите не меньше {min}',
   'qty.atMost': 'Введите не больше {max}',
+  'qty.maxDecimals': 'Не больше {decimals} знаков после запятой',
+  'number.invalid': 'Это не число — пишите так: 1500 или 1,5',
   'photo.label': 'Фото чека',
   'photo.remove': 'Удалить фото',
   'photo.hint': 'Нажмите, чтобы сфотографировать',
@@ -354,10 +356,14 @@ export const ru = {
   'common.errors.rateLimited': 'Слишком много запросов — подождите и повторите',
   'common.errors.requestInFlight': 'Предыдущая попытка ещё обрабатывается. Повторите чуть позже.',
   'common.errors.internal': 'На сервере произошла ошибка. Попробуйте ещё раз.',
+  'common.errors.invalidDecimal': 'Введите число, не более 3 знаков после запятой.',
+  'common.errors.positiveDecimal': 'Введите число больше 0, не более 3 знаков после запятой.',
+  'common.errors.invalidDate': 'Неверная дата. Пишите так: 2026-10-31.',
   'order.errors.tooManyExtras': 'В заказе может быть не больше 50 других позиций.',
   'order.errors.invalidExtraName': 'Укажите название (до 200 символов).',
   'order.errors.invalidExtraUnit': 'Укажите единицу (до 16 символов).',
   'order.errors.invalidExtraQty': 'Укажите количество больше 0, не более 3 знаков после запятой.',
+  'order.errors.qtyTooLarge': 'В строке не больше 999 999,999.',
   'order.errors.extraNoteTooLong': 'Примечание слишком длинное (до 200 символов).',
   'run.errors.cannotPlan': 'У вас нет права планировать закупки.',
   'common.errors.validation': 'Неверный ввод — проверьте отмеченные поля',
@@ -977,6 +983,7 @@ export const ru = {
   'run.errors.notVisible': 'Закупка не найдена или недоступна вам',
   'run.errors.priceFormat': 'Цена должна быть больше 0: не более 12 цифр и 2 знаков после запятой.',
   'run.errors.qtyFormat': 'Количество должно быть больше 0: не более 9 цифр и 3 знаков после запятой.',
+  'run.errors.lineTooLarge': 'Сумма строки (количество × цена) не может быть больше 1 000 000 000 000.',
   'run.errors.itemServesOtherStores':
     'Этот товар нужен и магазинам, за которые вы не отвечаете; изменить его может их закупщик.',
   'run.errors.runHasOtherStores':
@@ -1361,6 +1368,9 @@ export const ru = {
   'admin.workspace.financeSheet.warning':
     'Смена валюты НЕ переводит исторические суммы. Задаётся один раз для организации.',
   'admin.errors.taxRateOutOfRange': 'Ставка налога должна быть от 0 до 50.',
+  'admin.errors.taxRateFormat': 'Ставка налога — число от 0 до 50, не более 2 знаков после запятой.',
+  'admin.errors.timeZoneUnknown': 'Неизвестный часовой пояс. Укажите название вида Asia/Tashkent.',
+  'admin.errors.sortIndexInteger': 'Порядок — целое число (от -1000000 до 1000000).',
 
   // ── 15a. Shared admin form labels (M1.21-C) ────────────────────
   'admin.field.slug': 'Код',

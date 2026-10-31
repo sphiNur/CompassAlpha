@@ -40,6 +40,8 @@ export const uz = {
   'qty.enterNumber': 'Raqam kiriting',
   'qty.atLeast': 'Kamida {min} kiriting',
   'qty.atMost': 'Koʻpi bilan {max} kiriting',
+  'qty.maxDecimals': 'Koʻpi bilan {decimals} ta kasr xonasi',
+  'number.invalid': 'Bu son emas — 1500 yoki 1,5 kabi yozing',
   'photo.label': 'Chek rasmi',
   'photo.remove': 'Rasmni olib tashlash',
   'photo.hint': 'Rasm olish uchun bosing',
@@ -355,10 +357,14 @@ export const uz = {
   'common.errors.rateLimited': 'Juda koʻp soʻrov — biroz kutib qayta urining',
   'common.errors.requestInFlight': "Oldingi urinish hali bajarilmoqda. Birozdan soʻng qayta urinib koʻring.",
   'common.errors.internal': "Serverda xatolik yuz berdi. Qayta urinib koʻring.",
+  'common.errors.invalidDecimal': 'Koʻpi bilan 3 kasrli son kiriting.',
+  'common.errors.positiveDecimal': '0 dan katta, koʻpi bilan 3 kasrli son kiriting.',
+  'common.errors.invalidDate': 'Sana notoʻgʻri. 2026-10-31 kabi yozing.',
   'order.errors.tooManyExtras': "Bitta buyurtmada koʻpi bilan 50 ta boshqa mahsulot boʻlishi mumkin.",
   'order.errors.invalidExtraName': "Mahsulot nomini kiriting (200 belgigacha).",
   'order.errors.invalidExtraUnit': "Oʻlchov birligini kiriting (16 belgigacha).",
   'order.errors.invalidExtraQty': "Miqdor 0 dan katta boʻlsin, verguldan keyin koʻpi bilan 3 ta raqam.",
+  'order.errors.qtyTooLarge': 'Bir qatorda koʻpi bilan 999 999,999.',
   'order.errors.extraNoteTooLong': "Izoh juda uzun (200 belgigacha).",
   'run.errors.cannotPlan': "Xaridlarni rejalashtirishga ruxsatingiz yoʻq.",
   'common.errors.validation': 'Notoʻgʻri kiritish — belgilangan maydonlarni tekshiring',
@@ -985,6 +991,7 @@ export const uz = {
   'run.errors.notVisible': 'Xarid topilmadi yoki sizga mavjud emas',
   'run.errors.priceFormat': 'Narx 0 dan katta boʻlsin: koʻpi bilan 12 raqam va 2 kasr.',
   'run.errors.qtyFormat': 'Miqdor 0 dan katta boʻlsin: koʻpi bilan 9 raqam va 3 kasr.',
+  'run.errors.lineTooLarge': 'Bitta qator summasi (miqdor × narx) 1 000 000 000 000 dan oshmasin.',
   'run.errors.itemServesOtherStores':
     'Bu mahsulot siz javobgar boʻlmagan doʻkonlarga ham kerak; uni oʻsha doʻkonlar xaridori oʻzgartiradi.',
   'run.errors.runHasOtherStores':
@@ -1373,6 +1380,9 @@ export const uz = {
   'admin.workspace.financeSheet.warning':
     'Valyutani oʻzgartirish eski xaridlarni qayta hisoblamaydi. Tashkilot uchun bir marta belgilang.',
   'admin.errors.taxRateOutOfRange': 'Soliq stavkasi 0 dan 50 gacha boʻlishi kerak.',
+  'admin.errors.taxRateFormat': 'Soliq stavkasi 0 dan 50 gacha son boʻlsin, koʻpi bilan 2 kasr.',
+  'admin.errors.timeZoneUnknown': 'Nomaʼlum vaqt mintaqasi. Asia/Tashkent kabi nom yozing.',
+  'admin.errors.sortIndexInteger': 'Tartib butun son boʻlsin (-1000000 dan 1000000 gacha).',
 
   // ── 15a. Shared admin form labels (M1.21-C) ────────────────────
   'admin.field.slug': 'Kod',
