@@ -393,6 +393,27 @@
       "when": 1792540000003,
       "tag": "0055_event_store_append_only",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1792540000004,
+      "tag": "0056_role_binding_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1792540000005,
+      "tag": "0057_refresh_revoke_reason",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1792540000006,
+      "tag": "0058_idempotency_request_hash",
+      "breakpoints": true
     }
   ]
 }

@@ -192,8 +192,117 @@ describe.skipIf(!SHOULD_RUN)('maintenance purge guards (PG-gated)', () => {
     const err = await errorOf(() =>
       admin.admin.purgeRun({ runId, dryRun: false, requireOnlyTestSessions: true }),
     );
-    expect(err?.message).toBe('admin.errors.runHasForeignSessions');
-    expect(await db.query.marketRunsV.findFirst({ where: (x, o) => o.eq(x.id, runId) })).toBeTruthy();
+    // R2-CAT-1: the orders are not someone else's; say who did what.
+    expect(err?.message).toBe('admin.errors.runActedOnByOthers');
+    expect(
+      await db.query.marketRunsV.findFirst({ where: (x, o) => o.eq(x.id, runId) }),
+    ).toBeTruthy();
+  });
+
+  test("R2-CAT-1: one's own order that someone else reviewed is refused with that reason", async () => {
+    const { admin, db, orgId, storeId, memberId } = fix!;
+    const [approver] = await db
+      .insert(s.users)
+      .values({ displayName: 'Real approver', tgUserId: BigInt(`7${Date.now()}`.slice(-12)) })
+      .returning();
+    const sessionId = randomUUID();
+    await db.insert(s.orderSessionsV).values({
+      id: sessionId,
+      orgId,
+      storeId,
+      orderDate: '2026-06-04',
+      status: 'approved',
+      initiatedByMemberId: memberId,
+      submittedByMemberId: memberId,
+    });
+    await db.insert(s.events).values({
+      orgId,
+      streamType: 'order',
+      streamId: sessionId,
+      seq: 1,
+      type: 'Approved',
+      payload: {},
+      actorId: approver!.id,
+    });
+    const err = await errorOf(() => admin.admin.purgeSession({ sessionId, dryRun: true }));
+    expect(err?.message).toBe('admin.errors.sessionActedOnByOthers');
+  });
+
+  test('D2 / R2-CAT-2: on production the guard cannot be waived without the bulk switch', async () => {
+    const { admin, db, orgId } = fix!;
+    const [buyer] = await db
+      .insert(s.users)
+      .values({ displayName: 'Waiver buyer', tgUserId: BigInt(`6${Date.now()}`.slice(-12)) })
+      .returning();
+    const runId = randomUUID();
+    await db
+      .insert(s.marketRunsV)
+      .values({ id: runId, orgId, runDate: '2026-06-06', status: 'finished' });
+    await db.insert(s.events).values({
+      orgId,
+      streamType: 'run',
+      streamId: runId,
+      seq: 1,
+      type: 'ItemPurchased',
+      payload: {},
+      actorId: buyer!.id,
+    });
+    const e = env as { NODE_ENV: string; COMPASS_ALLOW_BULK_PURGE?: string };
+    const saved = { NODE_ENV: e.NODE_ENV, allow: e.COMPASS_ALLOW_BULK_PURGE };
+    try {
+      e.NODE_ENV = 'production';
+      e.COMPASS_ALLOW_BULK_PURGE = undefined;
+      for (const call of [
+        () => admin.admin.purgeRun({ runId, dryRun: true, requireOnlyTestSessions: false }),
+        () => admin.admin.purgeSession({ sessionId: randomUUID(), requireOnlyTestSessions: false }),
+      ]) {
+        const err = await errorOf(call);
+        expect(err?.code).toBe('FORBIDDEN');
+        expect(err?.message).toBe('admin.errors.purgeGuardWaiverDisabledInProduction');
+      }
+      // With the guard on, the real reason.
+      expect((await errorOf(() => admin.admin.purgeRun({ runId, dryRun: true })))?.message).toBe(
+        'admin.errors.runActedOnByOthers',
+      );
+      // The maintenance switch allows the waiver, as for the bulk purges.
+      e.COMPASS_ALLOW_BULK_PURGE = 'true';
+      expect(
+        await errorOf(() =>
+          admin.admin.purgeRun({ runId, dryRun: true, requireOnlyTestSessions: false }),
+        ),
+      ).toBeNull();
+      // R2-CAT-3: the page learns whether to offer the bulk purges.
+      expect((await admin.system.appConfig()).bulkPurgeAllowed).toBe(true);
+      e.COMPASS_ALLOW_BULK_PURGE = undefined;
+      expect((await admin.system.appConfig()).bulkPurgeAllowed).toBe(false);
+    } finally {
+      e.NODE_ENV = saved.NODE_ENV;
+      e.COMPASS_ALLOW_BULK_PURGE = saved.allow;
+    }
+    expect((await admin.system.appConfig()).bulkPurgeAllowed).toBe(true);
+  });
+
+  test('RE-CAT-4: the date and workspace previews count run expenses', async () => {
+    const { admin, db, orgId, memberId } = fix!;
+    const runId = randomUUID();
+    await db
+      .insert(s.marketRunsV)
+      .values({ id: runId, orgId, runDate: '2026-06-07', status: 'finished' });
+    await db.insert(s.runExpensesV).values({
+      id: randomUUID(),
+      runId,
+      orgId,
+      label: 'Taxi',
+      unitPrice: '10000',
+      storeSplitsJson: [],
+      reason: 'test',
+      addedByMemberId: memberId,
+      addedAt: new Date(),
+    });
+    const byDate = await admin.admin.purgeByDate({ date: '2026-06-07', dryRun: true });
+    expect(byDate.byTable['read_model.run_expenses_v']).toBe(1);
+    const all = await admin.admin.purgeAllTestData({ dryRun: true });
+    expect(all.byTable['read_model.run_expenses_v']).toBeGreaterThanOrEqual(1);
   });
 
   test('D1: the purges still delete the events of what they purge', async () => {

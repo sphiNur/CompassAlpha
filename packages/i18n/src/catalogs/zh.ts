@@ -98,10 +98,10 @@ export const zh = {
     '你至少要管理另外一家门店才能从它克隆。请让更高级别的管理员把你加进一家。',
   'admin.clone.alsoMembers': '同时把来源门店的人员也分配过去',
   'admin.clone.alsoMembersHint':
-    '打开后，来源门店里每个有门店分配记录的成员也会拿到目标门店的分配——这些成员能同时看到并操作两家。默认关闭，只克隆角色结构，目标门店由你另外安排人。',
+    '打开后，来源门店的人员连同他们在那里的角色一起加到目标门店，他们能同时看到并操作两家。默认关闭：只带过去门店的默认角色，不带任何人。',
   'admin.clone.whatTitle': '这个操作会做什么',
   'admin.clone.whatBody':
-    '把来源门店里每一条门店级角色绑定，在 {store} 里照样建一条（重复的跳过）。在 {store} 里你压不住级别的角色会被跳过——单独计数，方便你手动处理。',
+    '角色本身（名称、等级、权限）是整个组织共用的，不用复制。这里会把来源门店的新成员默认角色设到 {store}。只有勾选上面一项，才会把人员和他们的角色加进 {store}；你压不住级别、或者含有你没有的权限的角色会被跳过，单独计数。',
   'ops.activity.emptyTitle': '暂无动态',
   'ops.activity.emptyBody': '订单或采购单有进展后，动态会出现在这里。',
   'ops.history.emptyTitle': '还没有人提交过',
@@ -219,6 +219,9 @@ export const zh = {
     '只有组织级管理员能授予全局（组织级）角色。你仍然可以在自己管理的门店里分配门店级角色。',
   'people.pickScopeFirst': '先在上面选一个范围，才能看到可用角色。',
   'ops.maint.resetTodayTitle': '重置今天的整条流程',
+  'ops.maint.bulkDisabledBody':
+    '正式环境不允许重置今天、重置指定日期和清空整个工作区。上面仍可以删除你自己的单张测试订单或采购单。',
+  'ops.maint.bulkDisabledTitle': '整体清理已关闭',
   'ops.maint.resetTodayBody':
     '删掉日期为 {date} 的每一条订单、采购单、配送、通知和价格历史——不管是谁创建的；这些订单所在的采购单、这些采购单里的订单即使在别的日期也一起删掉。目录和成员不动。只在你确定今天没有真实用户数据时使用。',
   'ops.activity.recentEvents': '最近事件',
@@ -280,6 +283,8 @@ export const zh = {
   'admin.clone.toastCloned': '克隆了 {n} 条角色绑定',
   'admin.clone.toastAlreadyExisted': '{n} 条已存在',
   'admin.clone.toastSkippedRank': '跳过 {n} 条（等级过高）',
+  'admin.clone.toastDefaultRole': '已复制默认角色',
+  'admin.clone.toastSkippedPermission': '跳过 {n} 条（含有你没有的权限）',
   'admin.clone.toastAssigned': '分配了 {n} 位成员',
   'people.newRoleButton': '新建角色',
   'catalog.category.newButton': '新建分类',
@@ -330,6 +335,8 @@ export const zh = {
   'common.error': '出错了',
   'common.errors.rateLimited': '请求过多——请稍等片刻后重试',
   'common.errors.requestInFlight': '上一次操作还在处理中，请稍候再试。',
+  'common.errors.idempotencyKeyReused':
+    '这次提交和前一次用了同一个标识，但内容不同，所以没有保存。请刷新后再试一次。',
   'common.errors.internal': '服务器出了点问题，请稍后再试。',
   'order.errors.tooManyExtras': '一张订单最多 50 个其他物品。',
   'order.errors.invalidExtraName': '请填写物品名称（最多 200 个字）。',
@@ -431,6 +438,8 @@ export const zh = {
   'auth.errors.invalidInitData': 'Telegram 会话无效——请重新打开 app',
   'auth.errors.invalidRefresh': '会话已过期——请重新登录',
   'auth.errors.refreshReplayDetected': '检测到可疑登录活动——此账户所有设备已退出，请重新登录。',
+  'auth.errors.refreshChainSwitched':
+    '这个账号已在别处切换到另一个工作区，这里的登录随之结束。请重新打开。',
   'auth.errors.missingPermission': '你没有权限执行此操作。如有疑问请联系管理员。',
   'auth.errors.nameLocked': '名字已锁定——仅管理员可修改',
   'auth.errors.noMembership': '你还没有被加入任何门店。请让店长或管理员在 Compass 里邀请你。',
@@ -584,6 +593,7 @@ export const zh = {
   'auth.errors.notAssignedToStore': '你未被分配到该门店',
   'auth.errors.userMissing': '用户不存在',
   'auth.errors.cannotGrantEqualOrHigher': '不能授予等于或高于自己等级的角色',
+  'auth.errors.cannotGrantMissingPermission': '这个角色里有你自己没有的权限，不能授予别人。',
   'auth.errors.cannotRevokeEqualOrHigher': '不能撤销等于或高于自己等级的角色',
   'auth.errors.rateLimited': '尝试次数过多——请稍等一分钟后重试',
   'system.errors.logRateLimited': '客户端日志事件过多——请减慢速度',
@@ -616,8 +626,14 @@ export const zh = {
   'admin.errors.runHasForeignSessions': '此采购单里有其他人的订单，不能删除',
   'admin.errors.sessionHasForeignAuthors':
     '这张订单有其他人的内容，不能删除。这里只能删你自己的测试订单',
+  'admin.errors.runActedOnByOthers':
+    '其他人已经处理过这张采购单或其中的订单（认领、采购、确认收货或审核），不能当测试数据删除。',
+  'admin.errors.sessionActedOnByOthers':
+    '其他人已经处理过这张订单（审核、认领或拒绝），不能当测试数据删除。',
   'admin.errors.bulkPurgeDisabledInProduction':
-    '正式环境不允许整体清理（清空整个工作区、重置指定日期）。删除单张订单或单张采购单不受影响。',
+    '正式环境不允许整体清理（重置今天、重置指定日期、清空整个工作区）。删除单张订单或单张采购单不受影响。',
+  'admin.errors.purgeGuardWaiverDisabledInProduction':
+    '正式环境不允许跳过「别人处理过的单不能删」这条检查。',
   'admin.errors.purgeHasSettlements':
     '这些日期里有日结记录。日结的修改记录按规定不能删除，所以无法清理',
   'admin.errors.runNotFound': '采购单不存在',
@@ -771,12 +787,16 @@ export const zh = {
   'approval.confirmTakeover': '{who} 认领后未处理。接手审核？',
   'approval.unknownReviewer': '其他审核员',
   'approval.unapprove': '撤销审批',
+  'approval.undo': '撤销',
   'approval.toast.approved': '已通过 ✓',
   'approval.toast.rejected': '已拒绝',
   'approval.toast.claimed': '已认领',
   'approval.toast.released': '已释放',
   'approval.toast.tookOver': '已接手，现在由你审核',
   'approval.toast.unapproved': '审批已撤销',
+  'approval.toast.claimTimedOut': '你在审核的订单（{owner}）因长时间未操作已释放。',
+  'approval.toast.claimTakenOver': '你在审核的订单（{owner}）已被 {who} 接手。',
+  'approval.toast.undoTooLate': '撤销不了：已经有其他人处理过这张订单。',
   'approval.toast.approveFailed': '审批失败',
   'approval.toast.rejectFailed': '拒绝失败',
   'approval.items.loading': '加载明细中…',
@@ -812,6 +832,7 @@ export const zh = {
   'order.errors.extraIndexOutOfRange': '未找到对应的其他物品行',
   'order.errors.notClaimable': '订单未在等待审核',
   'order.errors.alreadyClaimed': '已被其他审核员认领',
+  'order.errors.takeOverCooldown': '这张订单刚被接手，请过一分钟再试。',
   'order.errors.notClaimer': '只有认领人或其他审批人可以释放',
   'order.errors.cannotApprove': '无审批权限',
   'order.errors.notApprovable': '订单未在等待审核',

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { closeDb, getDb, schema as s, withSystemContext, type DB } from '@compass/db';
 import {
@@ -8,6 +8,7 @@ import {
   claimRowForUpdateSql,
   isClaimExpired,
   nextSeq,
+  releaseClaimIfExpired,
   staleClaimCandidatesSql,
 } from './claimTimeout';
 
@@ -284,5 +285,26 @@ describe.skipIf(!SHOULD_RUN)('claim timeout SQL (PG-gated)', () => {
         timeoutMinutes: 30,
       }),
     ).toBe(false);
+  });
+
+  test('D13: releasing an idle order claim leaves the claimer one in-app notification', async () => {
+    const released = await withSystemContext(db, 'worker', (tx) =>
+      releaseClaimIfExpired(tx, 'order', { id: ids.idleOrder, orgId: ids.orgId }, 30),
+    );
+    expect(released).toBe(true);
+    const notes = await withSystemContext(db, 'worker', (tx) =>
+      tx
+        .select()
+        .from(s.notifications)
+        .where(eq(s.notifications.recipientUserId, ids.claimerUserId)),
+    );
+    expect(notes.map((n) => [n.template, n.channel])).toEqual([['order.claimTimedOut', 'inapp']]);
+    // No Telegram message: nothing queued for the bot.
+    const queued = await withSystemContext(db, 'worker', (tx) =>
+      tx.execute(
+        sql`SELECT count(*)::int AS n FROM sync.outbox WHERE payload->>'recipientUserId' = ${ids.claimerUserId}`,
+      ),
+    );
+    expect((queued as unknown as Array<{ n: number }>)[0]!.n).toBe(0);
   });
 });
