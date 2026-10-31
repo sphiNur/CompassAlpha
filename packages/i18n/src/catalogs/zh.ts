@@ -928,6 +928,8 @@ export const zh = {
     '这个商品也供应你不负责的门店，只能由负责这些门店的人修改。',
   'run.errors.runHasOtherStores':
     '这张采购单包含你不负责的门店，这一步需要由负责全部门店的人操作。',
+  'run.errors.expenseServesOtherStores':
+    '这笔开销分给了你不负责的门店。你只能把开销分给自己负责的门店。',
   'run.errors.archiveCascadeFailed': '无法将采购单连同其订单一起归档。未做任何更改，请重试。',
   'run.errors.cannotEjectInStatus': '只能在计划或采购阶段退回提交',
   'run.errors.sessionNotInRun': '该提交不在这张采购单中',

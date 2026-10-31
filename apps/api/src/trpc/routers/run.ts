@@ -64,6 +64,7 @@ import { canSeePrices, withoutPrices } from '../../services/priceRedaction';
 import { appendEvents, readStream } from '../../services/eventStore';
 import { isUniqueViolation, withStreamConflictRetry } from '../../services/pgErrors';
 import { projectRun } from '../../services/runProjection';
+import { runCorrections } from '../../services/runCorrections';
 import { projectOrder } from '../../services/orderProjection';
 import { hub } from '../../realtime/hub';
 import { dispatchRunEventNotifications } from '../../services/notifyForEvent';
@@ -1979,6 +1980,12 @@ export const runRouter = router({
           sessions,
           expenses,
           canAmend,
+          // D3 / D4 (2026-10-31): quantity added in a correction and price
+          // changes after receipt, for the history labels.
+          corrections: runCorrections(
+            (await readStream(tx, 'run', run.id)) as unknown as RunEvent[],
+            allowedStoreSet,
+          ),
         };
       }),
     ),
@@ -2083,6 +2090,9 @@ export const runRouter = router({
           status?: 'pending' | 'bought' | 'unavailable';
           sessionId: string;
           idx: number;
+          /** R2-BUY-1: the session's lastSeq, sent back as markExtraStatus's
+           *  expectedSeq (as in previewCreatable / historyDetail). */
+          sessionSeq: number;
         };
         const sessionNotesByStore: Record<string, string> = {};
         const sessionExtrasByStore: Record<string, ExtraItem[]> = {};
@@ -2109,6 +2119,7 @@ export const runRouter = router({
               submittedByMemberId: true,
               initiatedByMemberId: true,
               status: true,
+              lastSeq: true,
             },
           });
           const sessions = allowedStoreSet
@@ -2144,7 +2155,7 @@ export const runRouter = router({
               const arr = extrasAccumulator.get(s.storeId) ?? [];
               for (let i = 0; i < sessionExtras.length; i++) {
                 const ex = sessionExtras[i]!;
-                arr.push({ ...ex, sessionId: s.id, idx: i });
+                arr.push({ ...ex, sessionId: s.id, idx: i, sessionSeq: s.lastSeq });
               }
               extrasAccumulator.set(s.storeId, arr);
             }
@@ -2562,6 +2573,11 @@ export const runRouter = router({
           }
         }
 
+        // RE-DLV-3 (2026-10-31): whether this actor may finish (or close
+        // the correction of) the run, so the screen can say why up front
+        // instead of answering 403 after the summary sheet.
+        const finishBlockedReason = await finishBlockedReasonFor(tx, ctx, run);
+
         // BUY-6 (2026-10-30): the stores this actor purchases for (null =
         // all), so rows serving other stores can be shown read-only.
         const purchaseScopeStoreIds = await getActorStoreIdsForPermission(
@@ -2605,6 +2621,7 @@ export const runRouter = router({
           purchaseScopeStoreIds,
           otherStoreSkuIds,
           dispatchDeniedStoreIds,
+          finishBlockedReason,
           ...(allowedStoreSet
             ? {
                 plannedTotal: null,
@@ -2806,7 +2823,13 @@ export const runRouter = router({
           ...scope,
           actor: actorFromCtx(ctx),
         }),
-      { withRunStoreIds: true },
+      {
+        withRunStoreIds: true,
+        expense: {
+          expenseId: input.expenseId,
+          splitStoreIds: input.storeSplits.map((split) => split.storeId),
+        },
+      },
     ),
   ),
 
@@ -2819,13 +2842,17 @@ export const runRouter = router({
   removeExpense: authedProcedure
     .input(RemoveRunExpenseInputSchema)
     .mutation(async ({ ctx, input }) =>
-      runSimpleCommand(ctx, input.runId, (state) =>
-        decideRun(state, {
-          type: 'RemoveRunExpense',
-          expenseId: input.expenseId,
-          reason: input.reason,
-          actor: actorFromCtx(ctx),
-        }),
+      runSimpleCommand(
+        ctx,
+        input.runId,
+        (state) =>
+          decideRun(state, {
+            type: 'RemoveRunExpense',
+            expenseId: input.expenseId,
+            reason: input.reason,
+            actor: actorFromCtx(ctx),
+          }),
+        { expense: { expenseId: input.expenseId } },
       ),
     ),
 
@@ -3826,6 +3853,13 @@ async function runSimpleCommand(
      * that item serves (and every store the input splits it to) is theirs.
      */
     item?: { skuId: string; splitStoreIds?: readonly string[] };
+    /**
+     * D9 (2026-10-31): the command adds or removes an off-catalog expense.
+     * A purchaser of some of the run's stores may do so when the expense is
+     * split only to their stores (the input's splits when adding, the
+     * recorded ones when removing).
+     */
+    expense?: { expenseId: string; splitStoreIds?: readonly string[] };
   },
 ): Promise<{ lastSeq: number; eventCount: number }> {
   return withRunStreamRetry(ctx, async (tx) => {
@@ -3872,6 +3906,15 @@ async function runSimpleCommand(
                 (split) => split.storeId,
               ),
             }
+          : undefined,
+        options?.expense
+          ? [
+              ...(options.expense.splitStoreIds ?? []),
+              ...(
+                state.expenses.find((expense) => expense.id === options.expense!.expenseId)
+                  ?.storeSplits ?? []
+              ).map((split) => split.storeId),
+            ]
           : undefined,
       );
     }
@@ -4074,6 +4117,7 @@ async function assertRunPermissionForAllStores(
     splitStoreIds?: readonly string[];
     purchasedStoreIds: readonly string[];
   },
+  expenseStoreIds?: readonly string[],
 ): Promise<void> {
   const allowedStoreIds = await getActorStoreIdsForPermission(
     db,
@@ -4104,8 +4148,48 @@ async function assertRunPermissionForAllStores(
     }
     throw new TRPCError({ code: 'FORBIDDEN', message: 'run.errors.itemServesOtherStores' });
   }
+  // D9 (2026-10-31): an expense split only to the actor's stores is theirs
+  // to record.
+  if (expenseStoreIds) {
+    if (expenseStoreIds.length > 0 && expenseStoreIds.every((storeId) => allowed.has(storeId))) {
+      return;
+    }
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'run.errors.expenseServesOtherStores' });
+  }
   // Run-wide steps (start delivery, finish, expenses…) still need every store.
   throw new TRPCError({ code: 'FORBIDDEN', message: 'run.errors.runHasOtherStores' });
+}
+
+/**
+ * RE-DLV-3: why `run.finish` (or `run.refinalize` while amending) would
+ * refuse this actor, as the error key it would answer with; null when it
+ * would not refuse on permission grounds. Same checks as the two
+ * mutations, read-only. Other phases answer null: there is nothing to
+ * finish yet.
+ */
+async function finishBlockedReasonFor(
+  db: import('@compass/db').DB,
+  ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
+  run: { status: string; sessionIdsJson: unknown },
+): Promise<string | null> {
+  if (run.status === 'amending') {
+    return (await canAmendRun(db, ctx, run)) ? null : 'run.errors.cannotAmend';
+  }
+  if (run.status !== 'delivering') return null;
+  if (!ctx.session!.permissions.has('run.finish')) return 'run.errors.cannotFinish';
+  const allowedStoreIds = await getActorStoreIdsForPermission(
+    db,
+    ctx.session!.memberId,
+    'run.finish',
+    ctx.session!.permissions,
+  );
+  if (allowedStoreIds === null) return null;
+  const allowed = new Set(allowedStoreIds);
+  const involvedStoreIds = await runInvolvedStoreIds(db, run);
+  if (involvedStoreIds.length > 0 && involvedStoreIds.every((id) => allowed.has(id))) return null;
+  return involvedStoreIds.some((id) => allowed.has(id))
+    ? 'run.errors.runHasOtherStores'
+    : 'run.errors.cannotFinish';
 }
 
 /** Stores whose orders in this run ask for `skuId` (BUY-6). */

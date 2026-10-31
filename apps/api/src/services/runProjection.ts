@@ -4,7 +4,7 @@
  *
  * Same pattern as orderProjection.ts.
  */
-import { eq, and, isNull, notInArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lt, notInArray, sql } from 'drizzle-orm';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
 import type { RunEvent } from '@compass/domain/run';
@@ -100,6 +100,7 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
               },
             });
         }
+        await restoreAmendedVerdicts(db, e);
         // Append a price_history row for analytics — runs in same tx so RLS context applies.
         await insertPriceObservations(db, orgId, e);
         // Suppress unused-var warning if sql tag isn't used elsewhere in this file.
@@ -151,6 +152,7 @@ export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Pro
               },
             });
         }
+        await restoreAmendedVerdicts(db, e);
         await insertPriceObservations(db, orgId, e);
         await bumpSeq(db, e.streamId, e.seq);
         break;
@@ -786,6 +788,132 @@ async function insertPriceObservations(
       observedAt: e.occurredAt,
     })),
   );
+}
+
+/**
+ * R2-DLV-1 / D3 (2026-10-31). Undoing a purchase drops its split rows,
+ * and with them the store's delivery, receipt and per-line verdict. While
+ * a finished run is being corrected, buying the item again wrote fresh
+ * rows: the store's recorded shortage vanished from history, and closing
+ * the correction booked the whole allocation as received. The aggregate
+ * never forgot (its per-store state survives the undo), so the rows are
+ * given back what the stream says about each store up to this event:
+ * delivered / confirmed, and this product's verdict if the store gave
+ * one. A product new to a store that had already confirmed gets the
+ * store-level fields only — it counts as received (owner decision D3)
+ * and history labels it as added in a correction.
+ *
+ * Only while amending: in the normal flow nothing can be bought for a
+ * store after it was delivered to, and reading the stream on every
+ * purchase would be wasted work.
+ */
+async function restoreAmendedVerdicts(
+  db: DB,
+  e: Extract<RunEvent, { type: 'ItemPurchased' | 'PurchaserItemAdded' }>,
+): Promise<void> {
+  const [run] = await db
+    .select({ status: s.marketRunsV.status })
+    .from(s.marketRunsV)
+    .where(eq(s.marketRunsV.id, e.streamId))
+    .limit(1);
+  if (run?.status !== 'amending') return;
+  const rows = await db
+    .select({ type: s.events.type, payload: s.events.payload, occurredAt: s.events.occurredAt })
+    .from(s.events)
+    .where(
+      and(
+        eq(s.events.streamType, 'run'),
+        eq(s.events.streamId, e.streamId),
+        lt(s.events.seq, e.seq),
+        inArray(s.events.type, [
+          'StoreDelivered',
+          'StoreDeliveryUndone',
+          'StoreItemConfirmed',
+          'StoreConfirmed',
+        ]),
+      ),
+    )
+    .orderBy(asc(s.events.seq));
+  type Verdict = {
+    status: string;
+    note: string | null;
+    photoUrl: string | null;
+    receivedQty: string | null;
+  };
+  type StoreState = {
+    deliveredAt: Date | null;
+    deliveredByUserId: string | null;
+    confirmedAt: Date | null;
+    confirmedByUserId: string | null;
+    verdict: Verdict | null;
+  };
+  const stores = new Map<string, StoreState>();
+  const storeOf = (storeId: string): StoreState => {
+    let st = stores.get(storeId);
+    if (!st) {
+      st = {
+        deliveredAt: null,
+        deliveredByUserId: null,
+        confirmedAt: null,
+        confirmedByUserId: null,
+        verdict: null,
+      };
+      stores.set(storeId, st);
+    }
+    return st;
+  };
+  for (const row of rows) {
+    const p = row.payload as Record<string, unknown>;
+    const st = storeOf(String(p.storeId));
+    switch (row.type) {
+      case 'StoreDelivered':
+        st.deliveredAt = row.occurredAt;
+        st.deliveredByUserId = (p.deliveredByUserId as string | undefined) ?? null;
+        break;
+      case 'StoreDeliveryUndone':
+        st.deliveredAt = null;
+        st.deliveredByUserId = null;
+        st.verdict = null;
+        break;
+      case 'StoreItemConfirmed':
+        if (p.skuId === e.payload.skuId) {
+          st.verdict = {
+            status: String(p.status),
+            note: (p.note as string | null | undefined) ?? null,
+            photoUrl: (p.photoUrl as string | null | undefined) ?? null,
+            receivedQty: (p.receivedQty as string | null | undefined) ?? null,
+          };
+        }
+        break;
+      case 'StoreConfirmed':
+        st.confirmedAt = row.occurredAt;
+        st.confirmedByUserId = (p.confirmedByUserId as string | undefined) ?? null;
+        break;
+    }
+  }
+  for (const split of e.payload.storeSplits) {
+    const st = stores.get(split.storeId);
+    if (!st?.deliveredAt) continue;
+    await db
+      .update(s.runItemStoresV)
+      .set({
+        deliveredAt: st.deliveredAt,
+        deliveredByUserId: st.deliveredByUserId,
+        confirmedAt: st.confirmedAt,
+        confirmedByUserId: st.confirmedByUserId,
+        confirmStatus: st.verdict?.status ?? null,
+        confirmNote: st.verdict?.note ?? null,
+        confirmPhotoUrl: st.verdict?.photoUrl ?? null,
+        confirmReceivedQty: st.verdict?.receivedQty ?? null,
+      })
+      .where(
+        and(
+          eq(s.runItemStoresV.runId, e.streamId),
+          eq(s.runItemStoresV.skuId, e.payload.skuId),
+          eq(s.runItemStoresV.storeId, split.storeId),
+        ),
+      );
+  }
 }
 
 /**

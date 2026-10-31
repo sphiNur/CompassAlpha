@@ -989,6 +989,8 @@ export const uz = {
     'Bu mahsulot siz javobgar boʻlmagan doʻkonlarga ham kerak; uni oʻsha doʻkonlar xaridori oʻzgartiradi.',
   'run.errors.runHasOtherStores':
     'Bu xaridda siz javobgar boʻlmagan doʻkonlar bor; bu qadamni barcha doʻkonlar xaridori bajaradi.',
+  'run.errors.expenseServesOtherStores':
+    'Bu xarajat siz javobgar boʻlmagan doʻkonlarga taqsimlangan. Xarajatni faqat oʻz doʻkonlaringizga taqsimlash mumkin.',
   'run.errors.archiveCascadeFailed':
     'Xaridni buyurtmalari bilan birga arxivlab boʻlmadi. Hech narsa oʻzgarmadi — qayta urinib koʻring.',
   'run.errors.cannotEjectInStatus':

@@ -1082,6 +1082,8 @@ export const en = {
     'This item also serves stores you do not buy for; someone who buys for them must change it.',
   'run.errors.runHasOtherStores':
     'This run includes stores you do not buy for; this step needs someone who buys for all of them.',
+  'run.errors.expenseServesOtherStores':
+    'This expense is split to stores you do not buy for. You can split expenses only to your own stores.',
   'run.errors.archiveCascadeFailed':
     'Could not archive the run together with its orders. Nothing was changed — please try again.',
   'run.errors.cannotEjectInStatus':
