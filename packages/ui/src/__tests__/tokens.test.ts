@@ -125,6 +125,12 @@ describe.each([
       expect(contrast(theme, '--c-field-border', bg)).toBeGreaterThanOrEqual(3);
     });
   }
+  for (const bg of [...SURFACES, '--c-surface-3']) {
+    // CMP-INT-6: the global :focus-visible outline is drawn in --c-ring.
+    test(`--c-ring against ${bg} ≥ 3`, () => {
+      expect(contrast(theme, '--c-ring', bg)).toBeGreaterThanOrEqual(3);
+    });
+  }
   test('subtle stays lighter-weight than muted', () => {
     // The three inks keep their order (fg > muted > subtle) after the tuning.
     expect(contrast(theme, '--c-fg-muted', '--c-surface')).toBeGreaterThan(
@@ -289,5 +295,21 @@ describe('purchase row controls', () => {
     expect(ctrl).toContain('whitespace-nowrap');
     expect(ctrl).not.toMatch(/\bw-9\b/);
     expect(src).not.toContain('min-w-9');
+  });
+});
+
+describe('CMP-INT-6: keyboard focus is visible', () => {
+  const appCss = readFileSync(join(WEB_SRC, 'styles/index.css'), 'utf8').replace(
+    /\/\*[\s\S]*?\*\//g,
+    '',
+  );
+
+  test('no global rule removes the focus outline', () => {
+    expect(appCss).not.toMatch(/focus-visible\s*\{[^}]*outline:\s*none/);
+  });
+
+  test('a global :focus-visible ring drawn in the --c-ring token', () => {
+    const rule = /(?:^|\n)\s*:focus-visible\s*\{([^}]*)\}/.exec(appCss)?.[1] ?? '';
+    expect(rule).toContain('outline: 2px solid var(--c-ring)');
   });
 });

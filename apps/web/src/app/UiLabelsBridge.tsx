@@ -59,6 +59,7 @@ export function UiLabelsBridge({ children }: { children: ReactNode }) {
         return i18n.t('qty.increment');
       },
       quantityPick: (valueWithUnit) => i18n.t('qty.pickAria', { value: valueWithUnit }),
+      quantityOf: (item) => i18n.t('qty.groupAria', { item }),
       get setQuantity() {
         return i18n.t('qty.setTitle');
       },

@@ -209,7 +209,12 @@ export function HistorySection() {
   return (
     <div className="px-4 py-3">
       <div className="mb-3">
-        <Select value={storeFilter ?? ''} onChange={(e) => setStoreFilter(e.target.value || null)}>
+        {/* axe select-name (2026-10-31): the filter had no accessible name. */}
+        <Select
+          aria-label={i18n.t('run.history.storeFilter')}
+          value={storeFilter ?? ''}
+          onChange={(e) => setStoreFilter(e.target.value || null)}
+        >
           <option value="">{i18n.t('ops.history.allStores')}</option>
           {(stores.data ?? []).map((st) => (
             <option key={st.id} value={st.id}>
@@ -239,7 +244,7 @@ export function HistorySection() {
                     ? 'danger'
                     : 'info';
               return (
-                <Card key={r.sessionId}>
+                <Card as="li" key={r.sessionId}>
                   <button
                     type="button"
                     onClick={() => setOpenId(isOpen ? null : r.sessionId)}
@@ -247,7 +252,7 @@ export function HistorySection() {
                   >
                     <CardHeader>
                       <div className="min-w-0">
-                        <CardTitle>{r.storeName ?? r.storeId.slice(0, 8)}</CardTitle>
+                        <CardTitle as="h2">{r.storeName ?? r.storeId.slice(0, 8)}</CardTitle>
                         <CardMeta>
                           {dates.calendarDay(r.orderDate)}
                           {r.submittedAt
@@ -897,7 +902,7 @@ export function AdminAuditSection() {
                 // 2026-07-30: `undefined` meant "browser locale".
                 const when = dateFmt.dateTime(r.occurredAt);
                 return (
-                  <Card key={r.id}>
+                  <Card as="li" key={r.id}>
                     <div className="flex items-start gap-3 px-4 py-3">
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-baseline gap-2">

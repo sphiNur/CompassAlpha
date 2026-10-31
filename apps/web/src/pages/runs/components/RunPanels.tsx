@@ -67,6 +67,7 @@ import {
 import { groupStoreBySupplier } from '../lib/previewGrouping';
 import { buildStorePickList } from '../lib/storePickList';
 import { normalizeQuery } from '../../../lib/searchMatch';
+import { useAnnounce } from '../../../hooks/useAnnounce';
 import {
   countByStatus,
   visibleItems,
@@ -394,6 +395,14 @@ export function ActiveRunPanel({
     () => visibleItems(run.items, itemListView, { tokens: itemTokens, filter: itemFilter }),
     [run.items, itemListView, itemTokens, itemFilter],
   );
+  // A11Y-12 (2026-10-31): the result of a search or filter is read out.
+  useAnnounce(
+    itemTokens.length > 0 || itemFilter !== 'all'
+      ? visibleRunItems.length === 0
+        ? i18n.t('run.filter.noMatch')
+        : i18n.t('a11y.results.items', { n: visibleRunItems.length })
+      : null,
+  );
 
   // BUY-5 (2026-10-30): items an order asked for more of after they were
   // bought or marked unavailable.
@@ -612,6 +621,7 @@ export function ActiveRunPanel({
               {/* V4: -mt-1.5 pt-1.5 instead of pt-0 — same layout, and the
                   scroller keeps room for the chips' 44px tap areas. */}
               <ChipBar
+                variant="radio"
                 className="-mt-1.5 pt-1.5"
                 ariaLabel={i18n.t('run.filter.ariaLabel')}
               >
@@ -1630,6 +1640,13 @@ export function PreviewSummaryCard({
     view === 'byStore' ? countStoreLines(visibleByStore) : countSupplierLines(visibleBySupplier);
   const totalCount =
     view === 'byStore' ? countStoreLines(byStore) : countSupplierLines(bySupplier);
+  useAnnounce(
+    filtering
+      ? matchCount === 0
+        ? i18n.t('order.search.noMatches.title')
+        : i18n.t('run.preview.filterMatch', { n: matchCount, total: totalCount })
+      : null,
+  );
 
   const storeKeys = byStore.map((g) => g.storeId);
   const supplierKeys = bySupplier.map((b) => b.supplierId ?? '__unassigned__');
@@ -2286,18 +2303,24 @@ export function RunSessionsCard({
           const submitter =
             sessionRow.submittedByDisplayName ?? i18n.t('run.sessions.unknownSubmitter');
           return (
+            // A11Y-1 (2026-10-31): at 200% zoom the store name was cut to
+            // nothing and the submitter ran under 退回审核. The row wraps:
+            // the button drops below once the text has under ~7rem, and the
+            // store / submitter line wraps instead of truncating.
             <li
               key={sessionRow.id}
-              className="flex items-center gap-2 border-b border-[var(--c-divider)] px-3 py-2 last:border-b-0"
+              className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-[var(--c-divider)] px-3 py-2 last:border-b-0"
             >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="truncate text-old-body font-semibold">{storeName}</span>
-                  <span className="shrink-0 text-old-label text-[var(--c-fg-muted)]">
+              <div className="min-w-[7rem] flex-1">
+                <div className="flex flex-wrap items-baseline gap-x-2">
+                  <span className="min-w-0 break-words text-old-body font-semibold">
+                    {storeName}
+                  </span>
+                  <span className="min-w-0 break-words text-old-label text-[var(--c-fg-muted)]">
                     {submitter}
                   </span>
                 </div>
-                <div className="truncate text-old-label text-[var(--c-fg-muted)]">
+                <div className="line-clamp-2 break-words text-old-label text-[var(--c-fg-muted)]">
                   {i18n.t(
                     sessionRow.extrasCount > 0
                       ? 'run.sessions.stats'
@@ -2313,6 +2336,7 @@ export function RunSessionsCard({
               <Button
                 variant="pearl"
                 size="sm"
+                className="ml-auto"
                 disabled={ejecting}
                 loading={ejecting}
                 onClick={() => onEject(sessionRow)}

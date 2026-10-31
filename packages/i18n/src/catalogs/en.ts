@@ -68,6 +68,9 @@ export const en = {
   'qty.decrement': 'Decrease',
   'qty.increment': 'Increase',
   'qty.pickAria': 'Quantity {value} — tap to choose',
+  'qty.groupAria': '{item} quantity',
+  'a11y.results.products': '{n, plural, one {# product found} other {# products found}}',
+  'a11y.results.items': '{n, plural, one {# item shown} other {# items shown}}',
   'qty.setTitle': 'Set quantity',
   'qty.unitIs': 'Unit: {unit}',
   'qty.custom': 'Custom',
@@ -1150,6 +1153,7 @@ export const en = {
   'approval.confirm.reject.body':
     'The submitter will see your reason. They can revise and resubmit.',
   'approval.confirm.reject.reasonPlaceholder': 'e.g. duplicate order',
+  'approval.confirm.reject.reasonLabel': 'Reason (required)',
   'approval.confirm.unapprove.title': 'Reverse approval?',
   'approval.confirm.unapprove.body':
     'Returns this order to the queue. Only allowed before it is added to a market run.',
@@ -2049,6 +2053,9 @@ export const en = {
   'settlement.noEligibleStores.body':
     'You do not have daily-close permission in any assigned store. Ask a manager to review your store role.',
   'settlement.errors.invalidMoney': 'Enter a valid amount with up to two decimal places.',
+  'settlement.errors.fieldMoney': '{field}: enter a number with at most two decimals.',
+  'settlement.errors.fieldsToFix': '{n, plural, one {# field needs correcting} other {# fields need correcting}}',
+  'settlement.errors.goToFirst': 'Go to it',
   'settlement.errors.expensesManagerOnly':
     "Recording operating expenses requires permission to record this store's daily close.",
   'settlement.errors.invalidDetails': 'Complete every expense and wage entry.',

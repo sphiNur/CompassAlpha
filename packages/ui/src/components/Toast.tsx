@@ -91,6 +91,15 @@ export function toastOffsetForSheet(r: {
   return r.viewportH - (r.footerTop ?? r.viewportH) + gap;
 }
 
+/**
+ * A11Y-6 (2026-10-31): time left on a toast's timer when it is paused (a
+ * pointer over it, or keyboard focus inside it), never less than
+ * `minMs` so it does not vanish the moment the pointer leaves.
+ */
+export function remainingAfterPause(dueAt: number, now: number, minMs = 2000): number {
+  return Math.max(dueAt - now, minMs);
+}
+
 function cssPx(name: string): number {
   const raw = getComputedStyle(document.documentElement).getPropertyValue(name);
   const n = parseFloat(raw);
@@ -115,6 +124,9 @@ export function ToastProvider({
 }: ToastProviderProps) {
   const [toasts, setToasts] = useState<ToastConfig[]>([]);
   const timersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  // A11Y-6: when each timed toast is due, and the time left on paused ones.
+  const dueRef = useRef(new Map<string, number>());
+  const pausedRef = useRef(new Map<string, number>());
   const stackRef = useRef<HTMLDivElement | null>(null);
   // U11: px from the viewport bottom while a sheet is open; null = the
   // usual place above the main button.
@@ -159,8 +171,45 @@ export function ToastProvider({
       clearTimeout(t);
       timersRef.current.delete(id);
     }
+    dueRef.current.delete(id);
+    pausedRef.current.delete(id);
     setToasts((prev) => prev.filter((x) => x.id !== id));
   }, []);
+
+  const schedule = useCallback(
+    (id: string, ms: number) => {
+      timersRef.current.set(
+        id,
+        setTimeout(() => dismiss(id), ms),
+      );
+      dueRef.current.set(id, Date.now() + ms);
+    },
+    [dismiss],
+  );
+
+  // A11Y-6 (2026-10-31): a toast with an action (撤销 after 通过) paused
+  // neither on hover nor on focus, and lasted 5 s; a keyboard user had to
+  // Tab through the whole page to reach it. It now waits while the
+  // pointer is over it or focus is inside it.
+  const pause = useCallback((id: string) => {
+    const timer = timersRef.current.get(id);
+    const due = dueRef.current.get(id);
+    if (!timer || due === undefined || pausedRef.current.has(id)) return;
+    clearTimeout(timer);
+    timersRef.current.delete(id);
+    pausedRef.current.set(id, remainingAfterPause(due, Date.now()));
+  }, []);
+
+  const resume = useCallback(
+    (id: string, el: HTMLElement) => {
+      const left = pausedRef.current.get(id);
+      if (left === undefined) return;
+      if (el.matches(':hover') || el.contains(document.activeElement)) return;
+      pausedRef.current.delete(id);
+      schedule(id, left);
+    },
+    [schedule],
+  );
 
   const show = useCallback<ToastContextValue['show']>(
     (message, opts = {}) => {
@@ -186,6 +235,8 @@ export function ToastProvider({
                   const timer = timersRef.current.get(t.id);
                   if (timer) clearTimeout(timer);
                   timersRef.current.delete(t.id);
+                  dueRef.current.delete(t.id);
+                  pausedRef.current.delete(t.id);
                 }
                 return !stale;
               })
@@ -200,13 +251,10 @@ export function ToastProvider({
         return next;
       });
       const ttl = config.ttlMs;
-      if (ttl && ttl > 0) {
-        const handle = setTimeout(() => dismiss(id), ttl);
-        timersRef.current.set(id, handle);
-      }
+      if (ttl && ttl > 0) schedule(id, ttl);
       return id;
     },
-    [defaultTtlMs, limit, dismiss],
+    [defaultTtlMs, limit, schedule],
   );
 
   useEffect(() => {
@@ -266,6 +314,16 @@ export function ToastProvider({
             <div
               key={t.id}
               role="status"
+              onPointerEnter={() => pause(t.id)}
+              onPointerLeave={(e) => resume(t.id, e.currentTarget)}
+              onFocus={() => pause(t.id)}
+              onBlur={(e) => {
+                const el = e.currentTarget;
+                // Focus moving to the toast's other button keeps it paused.
+                if (!el.contains(e.relatedTarget as Node | null)) {
+                  setTimeout(() => resume(t.id, el), 0);
+                }
+              }}
               className={cn(
                 'flex min-w-[200px] max-w-[92vw] items-center gap-3 rounded-[var(--r-card)] px-4 py-2.5 text-left',
                 TONE[t.tone],

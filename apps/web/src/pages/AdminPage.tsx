@@ -24,7 +24,7 @@
  *
  * Self-protection rules are server-side; the FE just gives the UI.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   Banner,
   Button,
@@ -51,6 +51,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useNavStore } from '../stores/navStore';
 import { isInTelegram, useTelegramBackButton } from '../hooks/useTelegram';
 import { useI18n, useRoleLabels } from '../hooks/useI18n';
+import { setPageTitleSub } from '../lib/pageTitle';
 import { LANGUAGE_NATIVE_NAMES } from '@compass/i18n';
 import { LanguageSheet } from '../components/LanguageSheet';
 import { SubscriptionSummary } from '../components/SubscriptionSummary';
@@ -164,6 +165,15 @@ export function AdminPage() {
   // 2026-05-06: prior to this admin was English-only regardless of
   // user locale).
   const i18n = useI18n();
+  // A11Y-5 (2026-10-31): see useDrillDownFocus.
+  const drill = useDrillDownFocus(
+    [
+      section,
+      catalogSub ?? '',
+      opsSub ?? '',
+      storeFocus === null ? '' : storeFocus.kind === 'org-level' ? 'org' : storeFocus.storeId,
+    ].join('|'),
+  );
 
   // HIS-19 (2026-10-30): someone who reads finance (reports.view) without
   // managing people gets the finance report alone.
@@ -197,7 +207,10 @@ export function AdminPage() {
     return (
       <SectionFrame
         title={titleForSection(section, catalogSub, opsSub, storeFocus, storeSub, i18n)}
+        rootRef={drill.rootRef}
+        onClickCapture={drill.onClickCapture}
         onBack={() => {
+          drill.markReturn();
           // Drill-up: one level at a time. Sub-route → section root → home.
           if (section === 'stores' && storeFocus !== null) {
             setStoreFocus(null);
@@ -257,7 +270,9 @@ export function AdminPage() {
         removed. Telegram's chrome shows the bot name and BottomNav
         marks the Admin tab — the org name and username already live
         in SettingsSheet → Profile / About for users who want them. */
-    <div className="flex flex-col">
+    <div ref={drill.rootRef} onClickCapture={drill.onClickCapture} className="flex flex-col">
+      {/* A11Y-10: the admin home has no visible title; screen readers get one. */}
+      <h1 className="sr-only">{i18n.t('nav.admin')}</h1>
       <ul className="mx-4 mt-3 mb-6 flex flex-col gap-2" role="list">
         {/* 2026-10-21 audit CA-16 / E-12: a platform admin without
             `users.manage` now reaches this tab; the tenant sections would
@@ -425,13 +440,71 @@ function OperationsHome({
 
 // ============ Frame & primitive rows ============
 
+/**
+ * A11Y-5 (2026-10-31): entering an admin sub-page (or going back) swapped
+ * the whole screen and left focus on <body>; a screen reader said nothing
+ * and the next Tab started from the top of the page again.
+ *
+ * Now, when a tap inside the admin page leads to a deeper page, focus
+ * moves to that page's <h1>; when Back leads up, it returns to the row
+ * that was used to go in (matched by its text, remembered per level).
+ * Changes that come from neither (a restored navigation on load) leave
+ * focus alone.
+ */
+function useDrillDownFocus(levelKey: string) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const pending = useRef<'enter' | 'return' | null>(null);
+  const lastClick = useRef<{ level: string; text: string } | null>(null);
+  const entryRow = useRef(new Map<string, string>());
+  const previousLevel = useRef(levelKey);
+
+  useLayoutEffect(() => {
+    const from = previousLevel.current;
+    if (from === levelKey) return;
+    previousLevel.current = levelKey;
+    const direction = pending.current;
+    pending.current = null;
+    const root = rootRef.current;
+    if (!root || !direction) return;
+    if (direction === 'enter') {
+      if (lastClick.current?.level === from) entryRow.current.set(from, lastClick.current.text);
+      root.querySelector<HTMLElement>('h1')?.focus({ preventScroll: false });
+      return;
+    }
+    const text = entryRow.current.get(levelKey);
+    const row = text
+      ? [...root.querySelectorAll<HTMLButtonElement>('button')].find(
+          (b) => b.textContent === text,
+        )
+      : undefined;
+    (row ?? root.querySelector<HTMLElement>('h1'))?.focus();
+  }, [levelKey]);
+
+  return {
+    rootRef,
+    onClickCapture: (event: React.MouseEvent) => {
+      const button = (event.target as HTMLElement).closest('button');
+      if (!button) return;
+      lastClick.current = { level: levelKey, text: button.textContent ?? '' };
+      pending.current = 'enter';
+    },
+    markReturn: () => {
+      pending.current = 'return';
+    },
+  };
+}
+
 function SectionFrame({
   title,
   onBack,
+  rootRef,
+  onClickCapture,
   children,
 }: {
   title: string;
   onBack: () => void;
+  rootRef?: React.Ref<HTMLDivElement>;
+  onClickCapture?: (event: React.MouseEvent) => void;
   children: React.ReactNode;
 }) {
   // Wire Telegram's native BackButton (top-left in the WebView chrome).
@@ -450,8 +523,10 @@ function SectionFrame({
   // section is persisted to localStorage, so a reload came straight back
   // to the same page. `isInTelegram()` checks for real initData.
   const inTg = isInTelegram();
+  // A11Y-10: the section's name leads the document title while it is open.
+  useEffect(() => setPageTitleSub(title), [title]);
   return (
-    <div className="flex flex-col">
+    <div ref={rootRef} onClickCapture={onClickCapture} className="flex flex-col">
       {inTg ? null : (
         <header className="flex items-center gap-2 px-2 pt-3 pb-2">
           <button
@@ -469,7 +544,13 @@ function SectionFrame({
         </header>
       )}
       <div className="px-4 pb-2 pt-3">
-        <h1 className="text-old-h1 font-semibold leading-[1.15] text-[var(--c-fg)]">{title}</h1>
+        {/* tabIndex -1: useDrillDownFocus moves focus here on entering. */}
+        <h1
+          tabIndex={-1}
+          className="text-old-h1 font-semibold leading-[1.15] text-[var(--c-fg)] outline-none"
+        >
+          {title}
+        </h1>
       </div>
       {children}
     </div>
@@ -691,38 +772,48 @@ function CatalogHome({ onPick }: { onPick: (s: CatalogSub) => void }) {
   // / who you order from" data — categories, SKUs, suppliers.
   return (
     <ul className="mx-4 mt-2 flex flex-col gap-2" role="list">
-      <ListRow
-        label={i18n.t('admin.subsection.categories')}
-        hint={i18n.t('admin.subsection.categoriesHint')}
-        onClick={() => onPick('categories')}
-      />
-      <ListRow
-        label={i18n.t('admin.subsection.skus')}
-        hint={i18n.t('admin.subsection.skusHint')}
-        onClick={() => onPick('skus')}
-      />
-      <ListRow
-        label={i18n.t('admin.subsection.suppliers')}
-        hint={i18n.t('admin.subsection.suppliersHint')}
-        onClick={() => onPick('suppliers')}
-      />
+      <li>
+        <ListRow
+          label={i18n.t('admin.subsection.categories')}
+          hint={i18n.t('admin.subsection.categoriesHint')}
+          onClick={() => onPick('categories')}
+        />
+      </li>
+      <li>
+        <ListRow
+          label={i18n.t('admin.subsection.skus')}
+          hint={i18n.t('admin.subsection.skusHint')}
+          onClick={() => onPick('skus')}
+        />
+      </li>
+      <li>
+        <ListRow
+          label={i18n.t('admin.subsection.suppliers')}
+          hint={i18n.t('admin.subsection.suppliersHint')}
+          onClick={() => onPick('suppliers')}
+        />
+      </li>
       {/* M2.0b: menu items + recipe BOM. ERP step — lives next to
           SKUs because both are catalog data, but kept separate so the
           SKU list doesn't get cluttered with menu-only entries. */}
-      <ListRow
-        label={i18n.t('admin.subsection.dishes')}
-        hint={i18n.t('admin.subsection.dishesHint')}
-        onClick={() => onPick('dishes')}
-      />
+      <li>
+        <ListRow
+          label={i18n.t('admin.subsection.dishes')}
+          hint={i18n.t('admin.subsection.dishesHint')}
+          onClick={() => onPick('dishes')}
+        />
+      </li>
       {/* M3.57 (2026-05-23): recurring expense templates. Admin sets
           them once; the purchase page's expense sheet offers them as
           shortcuts, so porter/taxi/parking need not be re-typed. Nothing
           is attached to a run automatically (CMP-CAT-3). */}
-      <ListRow
-        label={i18n.t('admin.subsection.expenseTemplates')}
-        hint={i18n.t('admin.subsection.expenseTemplatesHint')}
-        onClick={() => onPick('expenseTemplates')}
-      />
+      <li>
+        <ListRow
+          label={i18n.t('admin.subsection.expenseTemplates')}
+          hint={i18n.t('admin.subsection.expenseTemplatesHint')}
+          onClick={() => onPick('expenseTemplates')}
+        />
+      </li>
     </ul>
   );
 }

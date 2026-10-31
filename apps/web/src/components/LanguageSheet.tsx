@@ -20,7 +20,7 @@
  * The 4 locales here are the same 4 that NamesSchema requires for
  * SKUs/categories — keep them in lockstep.
  */
-import { Sheet, Button, PickerRow } from '@compass/ui';
+import { Sheet, Button, PickerGroup, PickerRow } from '@compass/ui';
 import { LANGUAGE_NATIVE_NAMES, type Locale } from '@compass/i18n';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
@@ -79,13 +79,14 @@ export function LanguageSheet({ open, onOpenChange }: LanguageSheetProps) {
             language picker) so both entry points render identically —
             previously these rows were wrapper-less with a surface-2
             background and drifted from Settings' surface rows. */}
-        <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
+        <PickerGroup label={i18n.t('settings.language.title')}>
           {LANGS.map((lang) => {
             const selected = current === lang.code;
             return (
               <PickerRow
                 key={lang.code}
                 label={lang.label}
+                lang={lang.code}
                 hint={lang.region}
                 selected={selected}
                 disabled={setLocale.isPending}
@@ -99,7 +100,7 @@ export function LanguageSheet({ open, onOpenChange }: LanguageSheetProps) {
               />
             );
           })}
-        </div>
+        </PickerGroup>
       </div>
       {/* Cancel-only footer — user wanted a way out without picking
           a new lang. Tap-outside also dismisses (per ConfirmSheet rules

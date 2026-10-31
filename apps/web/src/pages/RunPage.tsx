@@ -45,6 +45,7 @@ import {
 import { trpc, newIdempotencyKey } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton, haptic } from '../hooks/useTelegram';
+import { scrollBehavior } from '../lib/reducedMotion';
 import { confirmThen } from '../lib/confirm';
 import { useDateFormat, useI18n, useProductName } from '../hooks/useI18n';
 import { usePhotoUploader } from '../hooks/usePhotoUploader';
@@ -1171,7 +1172,7 @@ export function RunPage() {
             text: i18n.t('run.action.remainingItems', { n: pendingCount }),
             onClick: () => {
               const next = document.querySelector('[data-run-item-pending]');
-              next?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+              next?.scrollIntoView({ block: 'center', behavior: scrollBehavior() });
             },
             visible: pendingCount > 0,
             active: true,
@@ -1211,7 +1212,7 @@ export function RunPage() {
               text: i18n.t('run.action.deliverRemaining', { n: waiting.undelivered.length }),
               onClick: () => {
                 const stores = document.querySelector('[data-run-stores]');
-                stores?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                stores?.scrollIntoView({ block: 'center', behavior: scrollBehavior() });
               },
               visible: true,
               active: true,
@@ -1972,7 +1973,7 @@ export function RunPage() {
           min-h-9 py-2 the area stuck out of the bar's top edge, under the
           sticky header (measured 39px; 43 at min-h-11). */}
       {activeRun ? (
-        <div className="sticky top-0 z-[1] flex min-h-12 items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-1">
+        <div className="sticky top-0 z-[1] flex min-h-12 items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-1 [@media(max-height:500px)]:static">
           {/* M3.36 shipped the "×1000" price-mode toggle here as a pill
               whose entire meaning lived in a `title` attribute. On a
               touch device there is no hover, so nothing ever revealed

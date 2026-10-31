@@ -342,7 +342,7 @@ export function PeopleSection({
           const renderCard = (m: (typeof rows)[number]) => {
             const isSelf = m.userId === session?.user.id;
             return (
-              <Card key={m.memberId}>
+              <Card as="li" key={m.memberId}>
                 <CardHeader>
                   <div className="flex min-w-0 items-center gap-3">
                     <Avatar src={m.avatarUrl} name={m.displayName} size={36} />
