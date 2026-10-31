@@ -180,7 +180,10 @@ journalctl -u compass-origin-watch -n 5             # "published … (signed)"
 cd infra/cloudflare/app-proxy && wrangler secret put ORIGIN_SIGNING_KEY
 ```
 The watchdog republishes every 6 h; the Worker rejects signed messages
-older than 7 days or more than 5 minutes in the future. If the app goes
+older than 6 h 30 min or more than 5 minutes in the future, and any
+message older than the newest one it already accepted (KV `signedTs`).
+After a Worker restart it serves the last accepted origin from KV `url`
+until a fresh message arrives. If the app goes
 unreachable after step 3, check the server clock and that both sides hold
 the same key; `wrangler secret delete ORIGIN_SIGNING_KEY` reverts the
 Worker to unsigned mode. Rotating: write the new key on the server, run
