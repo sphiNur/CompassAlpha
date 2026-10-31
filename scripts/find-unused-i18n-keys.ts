@@ -45,33 +45,57 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-const catalog = readFileSync('packages/i18n/src/catalogs/en.ts', 'utf8');
-const keys = [...catalog.matchAll(/^ {2}'([a-z][a-zA-Z0-9._]*)':/gm)].map((m) => m[1]!);
+/**
+ * R2-COPY-1 (2026-10-31): comments are dropped and a key counts only as a
+ * whole quoted string. The check used to be `blob.includes(key)`, so a key
+ * named in a comment (run.banner.readyToStart) or the prefix of another key
+ * (settlement.expenses.item ⊂ settlement.expenses.itemNumber) looked used —
+ * and so did auth.signOut, through `trpc.auth.signOut`.
+ */
+export function stripComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1');
+}
 
-const blob = ROOTS.flatMap((r) => walk(r))
-  .map((f) => readFileSync(f, 'utf8'))
-  .join('\n');
+/** Keys no source references, with the computed prefixes that were found. */
+export function findUnusedKeys(
+  keys: string[],
+  sources: string[],
+): { unused: string[]; dynamicPrefixes: string[] } {
+  const blob = sources.map(stripComments).join('\n');
+  // Every whole string literal ('a.b', "a.b", `a.b`).
+  const literals = new Set(
+    [...blob.matchAll(/(['"`])([a-z][a-zA-Z0-9._]*)\1/g)].map((m) => m[2]!),
+  );
+  // A key reached via `i18n.t('some.prefix.' + x)` or
+  // `i18n.t(`some.prefix.${x}`)` never appears literally.
+  const dynamicPrefixes = [
+    ...new Set([
+      ...[...blob.matchAll(/'([a-z][a-zA-Z0-9._]*\.)'\s*\+/g)].map((m) => m[1]!),
+      ...[...blob.matchAll(/`([a-z][a-zA-Z0-9._]*\.)\$\{/g)].map((m) => m[1]!),
+    ]),
+  ].sort();
+  const unused = keys.filter(
+    (k) => !literals.has(k) && !dynamicPrefixes.some((p) => k.startsWith(p)),
+  );
+  return { unused, dynamicPrefixes };
+}
 
-// A key reached via `i18n.t('some.prefix.' + x)` or
-// `i18n.t(`some.prefix.${x}`)` never appears literally.
-const dynamicPrefixes = [
-  ...new Set([
-    ...[...blob.matchAll(/'([a-z][a-zA-Z0-9._]*\.)'\s*\+/g)].map((m) => m[1]!),
-    ...[...blob.matchAll(/`([a-z][a-zA-Z0-9._]*\.)\$\{/g)].map((m) => m[1]!),
-  ]),
-];
+if (import.meta.main) {
+  const catalog = readFileSync('packages/i18n/src/catalogs/en.ts', 'utf8');
+  const keys = [...catalog.matchAll(/^ {2}'([a-z][a-zA-Z0-9._]*)':/gm)].map((m) => m[1]!);
+  const sources = ROOTS.flatMap((r) => walk(r)).map((f) => readFileSync(f, 'utf8'));
+  const { unused, dynamicPrefixes } = findUnusedKeys(keys, sources);
 
-const unused = keys.filter(
-  (k) => !blob.includes(k) && !dynamicPrefixes.some((p) => k.startsWith(p)),
-);
-
-console.log(`declared keys:      ${keys.length}`);
-console.log(`dynamic prefixes:   ${dynamicPrefixes.sort().join(', ') || '(none)'}`);
-console.log(`never referenced:   ${unused.length}`);
-if (unused.length) {
-  console.log('');
-  for (const k of unused) console.log('  ' + k);
-  console.log('');
-  console.log('Before deleting any of these, check for a computed lookup that');
-  console.log('builds the key at runtime — add its prefix above if you find one.');
+  console.log(`declared keys:      ${keys.length}`);
+  console.log(`dynamic prefixes:   ${dynamicPrefixes.join(', ') || '(none)'}`);
+  console.log(`never referenced:   ${unused.length}`);
+  if (unused.length) {
+    console.log('');
+    for (const k of unused) console.log('  ' + k);
+    console.log('');
+    console.log('Before deleting any of these, check for a computed lookup that');
+    console.log('builds the key at runtime — add its prefix above if you find one.');
+  }
 }
