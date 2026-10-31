@@ -39,7 +39,8 @@ import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
 import { useStoreContext } from '../components/StoreSwitcher';
 import { sessionItemsView } from './approval/sessionItemsView';
-import { ORDER_QTY_MAX } from '@compass/contracts';
+import { cardRequests, showPaymentSplit } from './approval/cardSummary';
+import { ORDER_QTY_MAX } from '@compass/contracts/limits';
 
 type ApprovalTab = 'pending' | 'approved' | 'rejected';
 
@@ -346,10 +347,14 @@ export function ApprovalPage() {
               const isClaimedByOther =
                 row.claimedByMemberId && row.claimedByMemberId !== session.member.memberId;
               const isOpen = activeSessionId === row.id;
+              const requests = cardRequests(row.notes, row.extrasJson);
               return (
-                <Card key={row.id}>
-                  <CardHeader>
-                    <div className="flex items-center gap-3">
+                <Card as="li" key={row.id}>
+                  {/* A11Y-1 (2026-10-31): the amounts move under the name when
+                      the card is too narrow (200% zoom) instead of running
+                      off its edge. */}
+                  <CardHeader className="flex-wrap">
+                    <div className="flex min-w-[8rem] flex-1 items-center gap-3">
                       {/* The avatar is the SUBMITTER's photo (`attribAvatarUrl`),
                           so `name` — which supplies both the alt text and the
                           initials fallback — has to be the submitter too.
@@ -374,7 +379,7 @@ export function ApprovalPage() {
                           submitter is the headline; on 所有门店 the store is,
                           because that's what distinguishes the rows.
                         */}
-                        <CardTitle>
+                        <CardTitle as="h2">
                           {storeScoped
                             ? (row.attribDisplayName ?? i18n.t('approval.unknownReviewer'))
                             : (row.storeName?.trim() ?? row.storeId.slice(0, 8))}
@@ -411,7 +416,7 @@ export function ApprovalPage() {
                         </CardMeta>
                       </div>
                     </div>
-                    <div className="flex shrink-0 flex-col items-end gap-1">
+                    <div className="ml-auto flex shrink-0 flex-col items-end gap-1">
                       {/* M1.11 cleanup (2026-05-08) dropped the
                           "{itemCount} · {totalQty}" Badge, reasoning that
                           "the View items expansion + the inline estimate
@@ -456,7 +461,9 @@ export function ApprovalPage() {
                           the last time it was bought. One under the other:
                           side by side they are wider than the card leaves
                           room for on a phone. */}
-                      {row.estimatedTotal && row.estimatedCash && row.estimatedTransfer ? (
+                      {/* CMP-APR-6: only when both parts are above 0. */}
+                      {row.estimatedTotal &&
+                      showPaymentSplit(row.estimatedCash, row.estimatedTransfer) ? (
                         <span
                           // V10: the figures in the same mono face as the
                           // card's total beside them.
@@ -480,12 +487,16 @@ export function ApprovalPage() {
                       {/* 2026-10-21 audit CA-27 (B-14): new orders only write
                           structured extras (M3.16-C), so a badge keyed on the
                           legacy `notes` alone never fired for them. */}
-                      {row.notes || extrasCountOf(row.extrasJson) > 0 ? (
+                      {/* CMP-APR-7: other items and the note each name
+                          themselves; "备注 · 2" counted the items. */}
+                      {requests.extras > 0 ? (
+                        <Badge tone="warn">
+                          {i18n.t('order.batches.extras', { n: requests.extras })}
+                        </Badge>
+                      ) : null}
+                      {requests.hasNote ? (
                         <Badge tone="warn" title={i18n.t('order.notes.hasNote')}>
                           {i18n.t('order.notes.badge')}
-                          {extrasCountOf(row.extrasJson) > 0
-                            ? ` · ${extrasCountOf(row.extrasJson)}`
-                            : null}
                         </Badge>
                       ) : null}
                     </div>
@@ -686,6 +697,10 @@ export function ApprovalPage() {
                     <Button
                       size="sm"
                       variant="ghost"
+                      // A11Y-13 (2026-10-31): says that it opens the lines
+                      // below, and whether they are open.
+                      aria-expanded={isOpen}
+                      aria-controls={isOpen ? `approval-items-${row.id}` : undefined}
                       onClick={() => setActiveSessionId(isOpen ? null : row.id)}
                     >
                       {isOpen ? i18n.t('approval.hideItems') : i18n.t('approval.viewItems')}
@@ -693,22 +708,24 @@ export function ApprovalPage() {
                   </div>
 
                   {isOpen ? (
-                    <SessionItems
-                      sessionId={row.id}
-                      storeId={row.storeId}
-                      skuById={skuById}
-                      productName={productName}
-                      isClaimedByMe={isClaimedByMe}
-                      // U2: an unclaimed pending order can be edited too; the
-                      // first change claims it (server side, one write).
-                      claimOnEditSeq={
-                        tab === 'pending' &&
-                        !row.claimedByMemberId &&
-                        session.permissions.includes('order.claim')
-                          ? row.lastSeq
-                          : undefined
-                      }
-                    />
+                    <div id={`approval-items-${row.id}`}>
+                      <SessionItems
+                        sessionId={row.id}
+                        storeId={row.storeId}
+                        skuById={skuById}
+                        productName={productName}
+                        isClaimedByMe={isClaimedByMe}
+                        // U2: an unclaimed pending order can be edited too; the
+                        // first change claims it (server side, one write).
+                        claimOnEditSeq={
+                          tab === 'pending' &&
+                          !row.claimedByMemberId &&
+                          session.permissions.includes('order.claim')
+                            ? row.lastSeq
+                            : undefined
+                        }
+                      />
+                    </div>
                   ) : null}
                 </Card>
               );
@@ -736,6 +753,9 @@ export function ApprovalPage() {
             setRejectReason('');
           }
         }}
+        // CMP-INT-2: a typed reason is not dropped by Esc / backdrop / back
+        // without asking (while saving, the sheet stays open anyway).
+        hasChanges={!reject.isPending && rejectReason.trim() !== ''}
         title={i18n.t('approval.confirm.reject.title')}
         description={i18n.t('approval.confirm.reject.body')}
         // M1.9-fix (2026-05-07): the reason input used to autoFocus on
@@ -765,14 +785,16 @@ export function ApprovalPage() {
         }
       >
         <div className="py-3">
-          {/* CNF-5 (2026-10-31): the field had only a placeholder, so the
-              disabled Reject button gave no hint that a reason is required. */}
+          {/* A11Y-9 (2026-10-31): a real label; the placeholder ("例如：重复
+              下单") was the field's only name and vanished on typing. */}
           <Field label={i18n.t('approval.confirm.reject.reasonLabel')}>
             <Input
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}
               placeholder={i18n.t('approval.confirm.reject.reasonPlaceholder')}
               maxLength={500}
+              required
+              aria-required
             />
           </Field>
         </div>
@@ -1018,6 +1040,7 @@ function SessionItems({
               {canEdit && isSingleContributor && sku && singleRow ? (
                 <QtyControl
                   size="sm"
+                  itemLabel={productName(sku)}
                   value={Number(singleRow.qty)}
                   step={Number(sku.step)}
                   unit={unitLabel(sku.unit)}
@@ -1091,6 +1114,10 @@ function SessionItems({
                     {canEdit && sku ? (
                       <QtyControl
                         size="sm"
+                        itemLabel={`${productName(sku)} · ${
+                          memberById.get(r.contributorMemberId) ??
+                          r.contributorMemberId.slice(0, 6)
+                        }`}
                         value={Number(r.qty)}
                         step={Number(sku.step)}
                         unit={unitLabel(sku.unit)}
@@ -1134,8 +1161,3 @@ function SessionItems({
 // entry sheet) — promoting to size="sm" gives ApprovalPage all of those
 // behaviors for free, and any future improvements to QtyControl land
 // here automatically.
-
-/** Rows in a session's structured extras (jsonb; typed loosely by the read model). */
-function extrasCountOf(extrasJson: unknown): number {
-  return Array.isArray(extrasJson) ? extrasJson.length : 0;
-}

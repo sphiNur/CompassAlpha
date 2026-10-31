@@ -34,7 +34,7 @@ export const uz = {
   'common.archived': 'arxivda',
   'common.unarchive': 'Tiklash',
   'common.name': 'Nomi',
-  'common.remove': 'O&apos;chirish',
+  'common.remove': 'Olib tashlash',
   'common.save': 'Saqlash',
   'common.back': 'Orqaga',
   'common.retry': 'Qayta urinish',
@@ -44,6 +44,9 @@ export const uz = {
   'qty.decrement': 'Kamaytirish',
   'qty.increment': 'Oshirish',
   'qty.pickAria': 'Miqdor {value} — tanlash uchun bosing',
+  'qty.groupAria': '{item} miqdori',
+  'a11y.results.products': '{n, plural, =1 {1 ta mahsulot topildi} other {{n} ta mahsulot topildi}}',
+  'a11y.results.items': '{n, plural, =1 {1 ta qator koʻrsatildi} other {{n} ta qator koʻrsatildi}}',
   'qty.setTitle': 'Miqdorni kiritish',
   'qty.unitIs': 'Oʻlchov: {unit}',
   'qty.custom': 'Boshqa qiymat',
@@ -51,6 +54,7 @@ export const uz = {
   'qty.enterNumber': 'Raqam kiriting',
   'qty.atLeast': 'Kamida {min} kiriting',
   'qty.atMost': 'Koʻpi bilan {max} kiriting',
+  'qty.notMultiple': '{step} ga karrali son kiriting',
   'qty.maxDecimals': 'Koʻpi bilan {decimals} ta kasr xonasi',
   'number.invalid': 'Bu son emas — 1500 yoki 1,5 kabi yozing',
   'photo.label': 'Chek rasmi',
@@ -172,6 +176,8 @@ export const uz = {
   'ops.maint.confirmPurgeBody': 'Tasdiqlash uchun ish maydoni identifikatorini «{slug}» kiriting.',
   'ops.maint.confirmPurgeLabel': 'Ish maydoni identifikatori',
   'people.tapToRevoke': 'Bekor qilish uchun bosing',
+  'people.readOnlyStore': 'Faqat koʻrish',
+  'people.orgLevelGroup': 'Butun ish maydoni ({n})',
   'people.orgLevelEmptyTitle': 'Ish maydoni darajasidagi aʼzolar yoʻq',
   'people.orgLevelEmptyBody':
     'Aniq doʻkonga biriktirilmagan administrator va superadminlar shu yerda chiqadi.',
@@ -323,6 +329,22 @@ export const uz = {
   'ops.purge.unknownStore': 'Nomaʼlum doʻkon',
   'ops.purge.deleteSessionTitle': 'Buyurtmani oʻchirish',
   'ops.purge.deleting': 'Oʻchirilmoqda…',
+  'ops.purge.kind.orders': 'Buyurtmalar',
+  'ops.purge.kind.orderLines': 'Buyurtma qatorlari',
+  'ops.purge.kind.runs': 'Xaridlar',
+  'ops.purge.kind.runLines': 'Xarid qatorlari',
+  'ops.purge.kind.runStoreLines': 'Doʻkonlar boʻyicha xarid qatorlari',
+  'ops.purge.kind.expenses': 'Xarid xarajatlari',
+  'ops.purge.kind.dailyCloses': 'Kun yakunlari',
+  'ops.purge.kind.stockMovements': 'Zaxira harakatlari',
+  'ops.purge.kind.priceHistory': 'Narx yozuvlari',
+  'ops.purge.kind.notifications': 'Bildirishnomalar',
+  'ops.purge.kind.pendingMessages': 'Hali yuborilmagan xabarlar',
+  'ops.purge.kind.history': 'Tarix yozuvlari',
+  'ops.purge.kind.appLogs': 'Ilova jurnallari',
+  'ops.purge.kind.other': 'Boshqa',
+  'ops.maint.confirmResetBody': 'Tasdiqlash uchun {date} sanasini kiriting. Buni ortga qaytarib boʻlmaydi.',
+  'ops.maint.confirmResetLabel': 'Tiklanadigan sana',
   'ops.purge.deleteRows': '{n} qatorni oʻchirish',
   'ops.purge.counting': 'Hisoblanmoqda…',
   'ops.purge.rowsWouldBeDeleted': '{n} qator oʻchiriladi',
@@ -442,6 +464,8 @@ export const uz = {
   'order.errors.extraNoteTooLong': "Izoh juda uzun (200 belgigacha).",
   'run.errors.cannotPlan':
     'Sizda xarid rejalashtirish huquqi yoʻq. Kerak boʻlsa, administratordan ruxsat soʻrang.',
+  'common.errors.controlCharacters':
+    'Nomda boshqaruv belgilari (tabulyatsiya, yangi qator) boʻlishi mumkin emas',
   'common.errors.validation': 'Notoʻgʻri kiritish — belgilangan maydonlarni tekshiring',
   'common.networkError': 'Tarmoq xatosi — ulanishni tekshiring',
   'common.offlineNotSaved': 'Internet yoʻq — bu oʻzgarish saqlanmadi. Internet qaytganda qayta urinib koʻring.',
@@ -592,6 +616,10 @@ export const uz = {
   'auth.noStoreYet.title': 'Hali doʻkon yoʻq',
   'auth.noStoreYet.body': 'Avval Boshqaruv › Doʻkonlar boʻlimida doʻkon yarating: buyurtma, qabul, kun yakuni va savdo doʻkon boʻyicha yuritiladi.',
   'auth.noStoreYet.action': 'Doʻkon yaratish',
+  'auth.blocked.signedInAs': 'Siz {name} sifatida kirgansiz',
+  'auth.blocked.signOut': 'Chiqish',
+  'auth.blocked.close': 'Yopish',
+  'auth.blocked.stillBlocked': 'Hali ham ruxsat yoʻq. Doʻkon boshqaruvchisiga murojaat qiling.',
   'auth.noStore.title': 'Hali doʻkon belgilanmagan',
   'auth.noStore.body':
     'Hisob tayyor, lekin sizni hali doʻkonga qoʻshishmagan. Doʻkon boshqaruvchisidan sizni qoʻshishni soʻrang.',
@@ -993,11 +1021,11 @@ export const uz = {
   'approval.estimateUnpriced': "+ {n} ta narxsiz",
 
   // ── Boshqa narsalar (sessiya darajasidagi izoh, M1.8) ────────────
-  'order.notes.label': 'Boshqa narsalar',
+  'order.notes.label': 'Izoh',
   'order.notes.saving': 'Saqlanyapti…',
   'order.notes.saved': 'Saqlandi ✓',
   'order.notes.badge': 'Izoh',
-  'order.notes.hasNote': 'Qoʻshimcha soʻrov bor',
+  'order.notes.hasNote': 'Doʻkon izoh qoldirdi',
 
   // M3.16-C: structured extras editor
   'order.extras.label': 'Boshqa narsalar',
@@ -1060,7 +1088,7 @@ export const uz = {
   'approval.confirm.reject.body':
     'Yuboruvchi sababingizni koʻradi va oʻzgartirib qaytadan yuborishi mumkin.',
   'approval.confirm.reject.reasonPlaceholder': 'masalan: takroriy buyurtma',
-  'approval.confirm.reject.reasonLabel': 'Sabab (yuboruvchi koʻradi)',
+  'approval.confirm.reject.reasonLabel': 'Sabab (majburiy, yuboruvchi koʻradi)',
   'approval.confirm.unapprove.title': 'Maʼqullash bekor qilinsinmi?',
   'approval.confirm.unapprove.body':
     'Buyurtma navbatga qaytariladi. Faqat xaridga qoʻshilmasdan oldin mumkin.',
@@ -1183,6 +1211,8 @@ export const uz = {
   'run.preview.noSupplierCount': 'Rastasiz: {n}',
   'run.preview.filterMatch': '{total} tadan {n} ta',
   'run.price.fillIn': 'Narx kiriting',
+  'run.offline.needNetworkToDeliver': 'Yetkazishni boshlash uchun tarmoq kerak',
+  'run.offline.waitForSync': '{n} ta saqlangan oʻzgarish sinxronlangach, yetkazishni boshlang',
   'run.offline.needNetworkToStart': 'Xaridni boshlash uchun tarmoq kerak',
   'run.toast.runAlreadyOpen': 'Xarid allaqachon ochiq — oʻsha ochildi',
   'run.price.daysAgo': '{n} kun oldin',
@@ -1348,6 +1378,8 @@ export const uz = {
     'Qabulda muammo boʻlgan qatorlar: {n}; taxminan {amount} {currency} qabul qilinmagan. Doʻkon hisoblari hali ham taqsimlangan miqdor boʻyicha.',
   'run.confirm.finish.receiptIssueLine': "{sku} · {store}: qabul {received}/{qty}",
   'run.confirm.finish.receiptIssuesMore': "…yana {n} ta",
+  'run.errors.expenseIdTaken':
+    'Bu xarajat boshqa xaridda yozilgan. Uni yangi xarajat sifatida qayta qoʻshing',
   'run.errors.expenseLabelRequired': 'Nomini kiriting',
   'run.errors.expenseLabelTooLong': 'Nom juda uzun (200 dan koʻp emas)',
   'run.errors.expenseReasonRequired': 'Sababni kiriting',
@@ -1582,6 +1614,7 @@ export const uz = {
   'confirm.issue.describe': 'Muammoni yozing — xaridor koʻrib tuzata oladi.',
   'confirm.issue.placeholder': 'Nima muammo?',
   'confirm.issue.photoOptional': 'Surat (ixtiyoriy)',
+  'confirm.issue.photoUploading': 'Rasm hali yuklanmoqda. Yuklangach saqlash mumkin.',
   'confirm.issue.save': 'Saqlash',
   'confirm.status.ariaLabel': 'Bu pozitsiyaning qabul holati',
   'confirm.status.ok': 'Yaxshi',
@@ -1679,24 +1712,25 @@ export const uz = {
   'inventory.empty.description':
     'Bu doʻkonda yetkazib berishni tasdiqlang — qoldiqlar shu yerda paydo boʻladi.',
   'inventory.action.stocktake': 'Inventarizatsiya',
-  'inventory.action.wastage': 'Yo&apos;qotish',
+  'inventory.action.wastage': 'Yoʻqotish',
   'inventory.sheet.stocktake.title': 'Inventarizatsiya',
   'inventory.sheet.stocktake.systemSays': 'Tizim boʻyicha: {qty}',
   'inventory.sheet.stocktake.targetLabel': 'Hozirgi haqiqiy qoldiq',
   'inventory.sheet.stocktake.targetHint': 'Javonni sanang — tizim farqni hisoblaydi.',
   'inventory.sheet.stocktake.notePlaceholder': 'Farq sababi (ixtiyoriy)',
-  'inventory.sheet.wastage.title': 'Yo&apos;qotishni yozish',
-  'inventory.sheet.wastage.qtyLabel': 'Yo&apos;qotilgan miqdor',
+  'inventory.sheet.wastage.title': 'Yoʻqotishni yozish',
+  'inventory.sheet.wastage.qtyLabel': 'Yoʻqotilgan miqdor',
   'inventory.sheet.wastage.notePlaceholder': 'buzilgan / sinilgan / yorliq / yoʻqolgan',
   'inventory.sheet.wastage.noteHint': 'Majburiy — sababsiz yozuv keyinroq foydasiz.',
   'inventory.sheet.note': 'Izoh',
   'inventory.toast.stocktakeSaved': 'Inventarizatsiya saqlandi.',
-  'inventory.toast.wastageSaved': 'Yo&apos;qotish yozildi.',
+  'inventory.toast.wastageSaved': 'Yoʻqotish yozildi.',
   'inventory.confirm.wastageNegative':
     'Hisobdan chiqarilgandan keyin qoldiq {after} (manfiy) boʻladi — demak hisob avval ham notoʻgʻri edi. Baribir saqlansinmi? Keyin inventarizatsiya qilish tavsiya etiladi.',
   'inventory.errors.cannotAdjust':
     'Inventarizatsiya yoki yoʻqotish uchun qoldiqni tuzatish ruxsati kerak. Kerak boʻlsa, doʻkon boshqaruvchisidan soʻrang.',
   'inventory.errors.invalidQty': 'Miqdor manfiy boʻlmasligi kerak.',
+  'inventory.sheet.wastage.needQty': 'Qancha yoʻqotilganini kiriting.',
   'inventory.errors.wastageNeedsNote': 'Yoʻqotish sababi kerak.',
 
   // ── 17. Dishes / Recipes (M2.0b) ───────────────────────
@@ -1720,14 +1754,14 @@ export const uz = {
   'admin.sheet.newExpenseTemplate': 'Yangi xarajat shabloni',
   'admin.sheet.editExpenseTemplate': 'Shablonni tahrirlash',
   'admin.confirm.archiveExpenseTemplate':
-    '«{label}» shablonini arxivlaysizmi? Keyingi xaridlar uni qoldirib ketadi.',
+    '«{label}» shablonini arxivlaysizmi? Xarid sahifasida xarajat qoʻshishda u endi taklif qilinmaydi. Yozib boʻlingan xarajatlar oʻzgarmaydi.',
   'admin.toast.expenseTemplateCreated': 'Shablon qoʻshildi',
   'admin.toast.expenseTemplateUpdated': 'Shablon yangilandi',
   'admin.toast.expenseTemplateArchived': 'Shablon arxivga olindi',
   'admin.errors.expenseTemplateNotFound':
     'Shablon topilmadi — hozirgina arxivlangan boʻlishi mumkin. Sahifani yangilang.',
   'admin.subsection.dishesHint': 'Menyu + har bir taom uchun retsept',
-  'dishes.empty.title': 'Hozircha taomlar yo&apos;q',
+  'dishes.empty.title': 'Hozircha taomlar yoʻq',
   'dishes.empty.description':
     'Menyu taomlarini qoʻshing; retsept har bir taomni ingredient mahsulotlar bilan bogʻlaydi.',
   'dishes.action.new': '+ Yangi taom',
@@ -1751,6 +1785,8 @@ export const uz = {
   'dishes.readOnly':
     'Taom retseptini koʻrishingiz mumkin; menyuni tahrirlash uchun administrator beradigan ruxsat kerak.',
   'dishes.errors.namesRequired': 'Kamida bitta tildagi nom kerak.',
+  'admin.errors.displayNameSharedWithOtherOrg':
+    'Bu odam boshqa ish maydonida ham bor, shuning uchun ismini faqat oʻzi oʻzgartira oladi',
   'admin.errors.namesRequired': 'Kamida bitta tildagi nom kerak.',
   'dishes.errors.ingredientQtyMustBePositive': 'Ingredient miqdori > 0 boʻlishi kerak.',
   'dishes.errors.ingredientSkuNotFound':
@@ -1951,6 +1987,9 @@ export const uz = {
   'settlement.noEligibleStores.body':
     'Sizga biriktirilgan doʻkonlarning hech birida kun yakuni huquqi yoʻq. Doʻkon boshqaruvchisidan rolingizni tekshirishni soʻrang.',
   'settlement.errors.invalidMoney': 'Ikki kasrgacha boʻlgan toʻgʻri summani kiriting.',
+  'settlement.errors.fieldMoney': '{field}: ikki kasrgacha boʻlgan son kiriting.',
+  'settlement.errors.fieldsToFix': '{n, plural, =1 {1 ta maydonni tuzating} other {{n} ta maydonni tuzating}}',
+  'settlement.errors.goToFirst': 'Oʻtish',
   'settlement.errors.expensesManagerOnly':
     'Operatsion xarajatlarni kiritish uchun ushbu doʻkonning kun yakunini yuritish huquqi kerak.',
   'settlement.errors.invalidDetails': 'Har bir xarajat va ish haqi qatorini toʻldiring.',

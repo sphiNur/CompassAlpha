@@ -23,7 +23,8 @@ import { usePageMainButton, haptic } from '../hooks/useTelegram';
 import { frozenOrderDate, useOfflineQueue } from '../hooks/useOfflineQueue';
 import { outbox } from '../lib/idb';
 import { isLikelyNetworkError } from '../lib/networkError';
-import { errorTextKey } from '../lib/errorText';
+import { errorTextOf } from '../lib/errorText';
+import { sentBatchCount } from './order/batchCount';
 import { PendingSyncNotice } from '../components/PendingSyncNotice';
 import { useQueryClient } from '@tanstack/react-query';
 import { refetchFailedQueries } from '../hooks/useRefetchFailedOnReconnect';
@@ -37,6 +38,8 @@ import {
   useProductNameParts,
   useUnitLabel,
 } from '../hooks/useI18n';
+import type { ProductNameParts } from '../hooks/useI18n';
+import { useAnnounce } from '../hooks/useAnnounce';
 
 // M3.34 (2026-05-19): canonical units for the extras editor's unit
 // dropdown — kept in sync with CanonicalUnitSchema in
@@ -67,7 +70,7 @@ function isLockedStatus(status: string | null | undefined): boolean {
 import { formatQty, formatMoney } from '../lib/format';
 import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
 import { useStoreContext } from '../components/StoreSwitcher';
-import { ORDER_QTY_MAX } from '@compass/contracts';
+import { ORDER_QTY_MAX } from '@compass/contracts/limits';
 
 /** Order writes still waiting in the offline outbox for this store (an
  *  entry without a storeId, e.g. extras keyed by session, counts too). */
@@ -186,37 +189,9 @@ export function OrderPage() {
 
   const utils = trpc.useUtils();
   const queryClient = useQueryClient();
-  // Replay map for the offline outbox. The hook calls back into our
-  // tRPC client when network returns; we use the imperative .mutate()
-  // form so the in-memory mutation state stays the same.
-  const offline = useOfflineQueue({
-    'order.adjustItem': async (entry) => {
-      await utils.client.order.adjustItem.mutate(
-        entry.input as Parameters<typeof utils.client.order.adjustItem.mutate>[0],
-      );
-      void utils.order.todaySession.invalidate();
-    },
-    // 2026-10-21 audit CA-27/CA-25: extras saves queue offline too, with
-    // the business date frozen like adjustItem's.
-    'order.setSessionExtras': async (entry) => {
-      await utils.client.order.setSessionExtras.mutate(
-        entry.input as Parameters<typeof utils.client.order.setSessionExtras.mutate>[0],
-      );
-      void utils.order.todaySession.invalidate();
-      void utils.order.todayBatches.invalidate();
-    },
-  }, {
-    // CA-25: say WHY when the server refused a replay because the day it
-    // was made on is over; anything else keeps the generic copy.
-    onDrop: (info) =>
-      toast.error(
-        i18n.t(
-          info.message === 'order.errors.staleOfflineEdit'
-            ? 'order.errors.staleOfflineEdit'
-            : 'run.toast.syncFailed',
-        ),
-      ),
-  });
+  // The offline outbox. Its replay (and the "did not sync" toast) lives at
+  // app level now (CMP-FE-3, lib/outboxReplay.ts).
+  const offline = useOfflineQueue();
   // OPTIMISTIC ADJUST — fire-and-forget pattern.
   //
   // Why no onSettled invalidate? Because invalidate triggers a refetch
@@ -687,6 +662,15 @@ export function OrderPage() {
     },
     [skus, activeCategory, searchQuery],
   );
+  // A11Y-12 (2026-10-31): say how many products the search / category
+  // leaves, once typing settles; the list used to change in silence.
+  useAnnounce(
+    skusQuery.data && (searchQuery.trim() || activeCategory)
+      ? filteredSkus.length === 0
+        ? i18n.t('order.search.noMatches.title')
+        : i18n.t('a11y.results.products', { n: filteredSkus.length })
+      : null,
+  );
 
   const items = sessionQuery.data?.items ?? [];
   const totals = sessionQuery.data?.totals ?? [];
@@ -996,11 +980,10 @@ export function OrderPage() {
         >
           {/* RE-AUTH-5 (2026-10-30): showed the raw transport text, e.g.
               "Failed to fetch (session refresh did not complete)". */}
-          {i18n.t(
-            errorTextKey(sessionQuery.error?.message, 'common.errorUnknown') as Parameters<
-              typeof i18n.t
-            >[0],
-          )}
+          {(() => {
+            const said = errorTextOf(sessionQuery.error, 'common.errorUnknown');
+            return i18n.t(said.key as Parameters<typeof i18n.t>[0], said.vars);
+          })()}
         </Banner>
       </div>
     );
@@ -1138,13 +1121,33 @@ export function OrderPage() {
           ) : (
             <Banner tone="info" title={i18n.t('order.status.archived')} />
           )}
-          <div>
-            <SectionLabel padded={false} className="mb-1.5">
-              {i18n.t('order.receipt.submittedItems')}
-            </SectionLabel>
-            <ReviewList totals={v.totals ?? []} skus={allSkus} productName={productName} />
-          </div>
+          {(v.totals ?? []).length > 0 || (v.extras ?? []).length === 0 ? (
+            <div>
+              <SectionLabel padded={false} className="mb-1.5">
+                {i18n.t('order.receipt.submittedItems')}
+              </SectionLabel>
+              <ReviewList totals={v.totals ?? []} skus={allSkus} productName={productName} />
+            </div>
+          ) : null}
         </div>
+        {/* CMP-ORD-2 (2026-10-31): a batch opened from today's list left its
+            extras out, so they looked lost. Read-only, like the current
+            batch's receipt below. `key` gives each batch its own editor. */}
+        <SessionExtrasEditor
+          key={v.id}
+          sessionId={v.id}
+          storeId={currentStoreId}
+          initialValue={(v.extras ?? []).map((r) => ({
+            ...r,
+            unit: (CANONICAL_UNITS as readonly string[]).includes(r.unit)
+              ? (r.unit as (typeof CANONICAL_UNITS)[number])
+              : 'kg',
+          }))}
+          isReadOnly
+          onSave={async () => {
+            /* read-only — never called */
+          }}
+        />
       </div>
     );
   }
@@ -1308,7 +1311,8 @@ export function OrderPage() {
               onClick={() => setBatchesOpen(true)}
               className="press hit-44 shrink-0 rounded-[var(--r-pill)] px-1.5 py-0.5 text-old-label tabular-nums text-[var(--c-action)]"
             >
-              {i18n.t('order.batches.today', { n: batchesQuery.data!.length })}
+              {/* U5: the draft being filled in is not counted. */}
+              {i18n.t('order.batches.today', { n: sentBatchCount(batchesQuery.data) })}
             </button>
           ) : null}
         </div>
@@ -1513,7 +1517,7 @@ export function OrderPage() {
       <Sheet
         open={batchesOpen}
         onOpenChange={setBatchesOpen}
-        title={i18n.t('order.batches.today', { n: batchesQuery.data?.length ?? 0 })}
+        title={i18n.t('order.batches.today', { n: sentBatchCount(batchesQuery.data) })}
       >
         <div className="py-3">
           <BatchStrip
@@ -1554,33 +1558,43 @@ export function OrderPage() {
           </Button>
         }
       >
-        {/* CA-27: an extras-only batch shouldn't read "Nothing selected". */}
-        {totals.length > 0 || extrasCount === 0 ? (
-          <ReviewList
-            totals={totals}
-            skus={allSkus}
-            productName={productName}
-            onRemove={
-              currentStoreId ? (skuId) => handleQtyChange(currentStoreId, skuId, '0') : undefined
-            }
-          />
-        ) : null}
-        {extrasCount > 0 && sessionQuery.data && sessionQuery.data.id !== 'optimistic' ? (
-          <SessionExtrasEditor
-            sessionId={sessionQuery.data.id}
-            storeId={currentStoreId}
-            initialValue={(sessionQuery.data.extras ?? []).map((r) => ({
-              ...r,
-              unit: (CANONICAL_UNITS as readonly string[]).includes(r.unit)
-                ? (r.unit as (typeof CANONICAL_UNITS)[number])
-                : 'kg',
-            }))}
-            isReadOnly
-            onSave={async () => {
-              /* read-only — never called */
-            }}
-          />
-        ) : null}
+        {/* A11Y-7 (2026-10-31): the list is the sheet's first focus stop, so
+            opening 复核订单 with the keyboard lands on what is being
+            ordered. Focus used to land on 提交订单 itself, where a repeated
+            Enter submitted the order unread. */}
+        <div
+          tabIndex={0}
+          role="region"
+          aria-label={i18n.t('order.review.title')}
+          className="rounded-[var(--r-utility)]"
+        >
+          {totals.length > 0 || extrasCount === 0 ? (
+            <ReviewList
+              totals={totals}
+              skus={allSkus}
+              productName={productName}
+              onRemove={
+                currentStoreId ? (skuId) => handleQtyChange(currentStoreId, skuId, '0') : undefined
+              }
+            />
+          ) : null}
+          {extrasCount > 0 && sessionQuery.data && sessionQuery.data.id !== 'optimistic' ? (
+            <SessionExtrasEditor
+              sessionId={sessionQuery.data.id}
+              storeId={currentStoreId}
+              initialValue={(sessionQuery.data.extras ?? []).map((r) => ({
+                ...r,
+                unit: (CANONICAL_UNITS as readonly string[]).includes(r.unit)
+                  ? (r.unit as (typeof CANONICAL_UNITS)[number])
+                  : 'kg',
+              }))}
+              isReadOnly
+              onSave={async () => {
+                /* read-only — never called */
+              }}
+            />
+          ) : null}
+        </div>
       </Sheet>
     </div>
   );
@@ -1636,7 +1650,7 @@ const SkuRow = memo(function SkuRow({
   storeId: string;
   productNameParts: (item: {
     names: Record<string, string> | null | undefined;
-  }) => { primary: string; secondary: string | null };
+  }) => ProductNameParts;
   unitLabel: (unit: string | null | undefined, qty?: string | number | null) => string;
   i18n: ReturnType<typeof useI18n>;
   onQtyChange: (storeId: string, skuId: string, qty: string) => void;
@@ -1662,9 +1676,19 @@ const SkuRow = memo(function SkuRow({
   const hasSecondaryLine = otherContribCount > 0 && totalQty > 0;
   const nm = productNameParts(sku);
   return (
-    <li className="flex items-center justify-between border-b border-[var(--c-divider)] px-4 py-1.5 last:border-b-0">
-      <div className="min-w-0 flex-1 pr-3">
-        <NameCell primary={nm.primary} secondary={nm.secondary} size="prominent" />
+    // A11Y-1 (2026-10-31): the row wraps. Below ~7rem for the name (200%
+    // zoom makes the row ~195 px wide) the qty control moves under the
+    // name instead of squeezing it to nothing; at 320 px it still fits
+    // on one line.
+    <li className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-[var(--c-divider)] px-4 py-1.5 last:border-b-0">
+      <div className="min-w-[7rem] flex-1">
+        <NameCell
+          primary={nm.primary}
+          secondary={nm.secondary}
+          primaryLang={nm.primaryLang}
+          secondaryLang={nm.secondaryLang}
+          size="prominent"
+        />
         {hasSecondaryLine ? (
           <div className="mt-0.5 text-old-label leading-tight text-[var(--c-fg-muted)]">
             {otherContribCount > 0 && totalQty > 0 ? (
@@ -1697,6 +1721,7 @@ const SkuRow = memo(function SkuRow({
         // tell they'd opened the wrong SKU's picker. Now the title
         // reads e.g. "玉米淀粉" so a wrong row is obvious instantly.
         pickTitle={nm.primary}
+        className="ml-auto"
       />
     </li>
   );
@@ -1744,7 +1769,7 @@ function BatchStrip({
     <div>
       {showHeading ? (
         <SectionLabel padded={false} className="mb-1.5">
-          {i18n.t('order.batches.today', { n: batches.length })}
+          {i18n.t('order.batches.today', { n: sentBatchCount(batches) })}
         </SectionLabel>
       ) : null}
       <ul className="flex flex-col gap-1" role="list">
@@ -2372,7 +2397,7 @@ function ExtraRowEditor({
           onChange={(e) =>
             onChange({ unit: e.target.value as (typeof CANONICAL_UNITS)[number] })
           }
-          className="h-[var(--control-h)] w-20 rounded-[var(--r-input)] bg-[var(--c-surface)] px-2 text-center text-old-body text-[var(--c-fg)] ring-hairline focus:outline-none focus:ring-2 focus:ring-[var(--c-action)]"
+          className="h-[var(--control-h)] w-20 rounded-[var(--r-pill)] bg-[var(--c-surface)] px-2 text-center text-old-body text-[var(--c-fg)] ring-hairline focus:outline-none focus:ring-2 focus:ring-[var(--c-action)]"
         >
           {CANONICAL_UNITS.map((u) => (
             <option key={u} value={u}>

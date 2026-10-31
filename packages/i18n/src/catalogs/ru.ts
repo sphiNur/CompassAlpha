@@ -27,7 +27,7 @@ export const ru = {
   'common.archived': 'в архиве',
   'common.unarchive': 'Восстановить',
   'common.name': 'Название',
-  'common.remove': 'Удалить',
+  'common.remove': 'Убрать',
   'common.save': 'Сохранить',
   'common.back': 'Назад',
   'common.retry': 'Повторить',
@@ -37,6 +37,9 @@ export const ru = {
   'qty.decrement': 'Уменьшить',
   'qty.increment': 'Увеличить',
   'qty.pickAria': 'Количество {value} — нажмите, чтобы выбрать',
+  'qty.groupAria': 'Количество: {item}',
+  'a11y.results.products': '{n, plural, one {Найден # товар} few {Найдено {n} товара} many {Найдено {n} товаров} other {Найдено {n} товара}}',
+  'a11y.results.items': '{n, plural, one {Показана # позиция} few {Показано {n} позиции} many {Показано {n} позиций} other {Показано {n} позиции}}',
   'qty.setTitle': 'Указать количество',
   'qty.unitIs': 'Единица: {unit}',
   'qty.custom': 'Своё значение',
@@ -44,6 +47,7 @@ export const ru = {
   'qty.enterNumber': 'Введите число',
   'qty.atLeast': 'Введите не меньше {min}',
   'qty.atMost': 'Введите не больше {max}',
+  'qty.notMultiple': 'Введите число, кратное {step}',
   'qty.maxDecimals':
     'Не больше {decimals, plural, one {# знака} few {# знаков} many {# знаков} other {# знака}} после запятой',
   'number.invalid': 'Это не число — пишите так: 1500 или 1,5',
@@ -166,6 +170,8 @@ export const ru = {
     'Введите идентификатор рабочего пространства «{slug}» для подтверждения.',
   'ops.maint.confirmPurgeLabel': 'Идентификатор пространства',
   'people.tapToRevoke': 'Нажмите, чтобы отозвать',
+  'people.readOnlyStore': 'Только просмотр',
+  'people.orgLevelGroup': 'Всё рабочее пространство ({n})',
   'people.orgLevelEmptyTitle': 'Нет участников уровня рабочего пространства',
   'people.orgLevelEmptyBody':
     'Здесь появляются администраторы и суперадмины, не привязанные к конкретному магазину.',
@@ -316,6 +322,22 @@ export const ru = {
   'ops.purge.unknownStore': 'Неизвестный магазин',
   'ops.purge.deleteSessionTitle': 'Удалить заказ',
   'ops.purge.deleting': 'Удаление…',
+  'ops.purge.kind.orders': 'Заказы',
+  'ops.purge.kind.orderLines': 'Строки заказов',
+  'ops.purge.kind.runs': 'Закупки',
+  'ops.purge.kind.runLines': 'Позиции закупок',
+  'ops.purge.kind.runStoreLines': 'Позиции закупок по магазинам',
+  'ops.purge.kind.expenses': 'Расходы закупок',
+  'ops.purge.kind.dailyCloses': 'Закрытия дня',
+  'ops.purge.kind.stockMovements': 'Движения запасов',
+  'ops.purge.kind.priceHistory': 'Записи цен',
+  'ops.purge.kind.notifications': 'Уведомления',
+  'ops.purge.kind.pendingMessages': 'Неотправленные сообщения',
+  'ops.purge.kind.history': 'Записи истории',
+  'ops.purge.kind.appLogs': 'Журналы приложения',
+  'ops.purge.kind.other': 'Прочее',
+  'ops.maint.confirmResetBody': 'Введите дату {date} для подтверждения. Это нельзя отменить.',
+  'ops.maint.confirmResetLabel': 'Дата сброса',
   'ops.purge.deleteRows': 'Удалить строк: {n}',
   'ops.purge.counting': 'Подсчёт…',
   'ops.purge.rowsWouldBeDeleted': 'Будет удалено строк: {n}',
@@ -444,6 +466,8 @@ export const ru = {
   'order.errors.extraNoteTooLong': 'Примечание слишком длинное (до 200 символов).',
   'run.errors.cannotPlan':
     'У вас нет права планировать закупки. Если нужно, попросите доступ у администратора.',
+  'common.errors.controlCharacters':
+    'Название не может содержать управляющие символы (табуляцию, перенос строки)',
   'common.errors.validation': 'Неверный ввод — проверьте отмеченные поля',
   'common.networkError': 'Ошибка сети — проверьте соединение',
   'common.offlineNotSaved': 'Нет сети — изменение не сохранено. Повторите, когда появится связь.',
@@ -597,6 +621,10 @@ export const ru = {
   'auth.noStoreYet.body':
     'Сначала создайте магазин в разделе Админ › Магазины: заказы, приёмка, закрытие дня и продажи ведутся по магазинам.',
   'auth.noStoreYet.action': 'Создать магазин',
+  'auth.blocked.signedInAs': 'Вы вошли как {name}',
+  'auth.blocked.signOut': 'Выйти',
+  'auth.blocked.close': 'Закрыть',
+  'auth.blocked.stillBlocked': 'Доступа всё ещё нет. Обратитесь к управляющему магазином.',
   'auth.noStore.title': 'Магазин ещё не назначен',
   'auth.noStore.body':
     'Учётная запись готова, но вас ещё не добавили в магазин. Попросите управляющего магазином добавить вас.',
@@ -994,11 +1022,11 @@ export const ru = {
   'approval.estimateUnpriced': '+ {n} без цены',
 
   // ── Прочие позиции (заметка к сессии, M1.8) ──────────────────────
-  'order.notes.label': 'Прочее',
+  'order.notes.label': 'Комментарий',
   'order.notes.saving': 'Сохраняю…',
   'order.notes.saved': 'Сохранено ✓',
-  'order.notes.badge': 'Заметка',
-  'order.notes.hasNote': 'Есть дополнительная просьба',
+  'order.notes.badge': 'Комментарий',
+  'order.notes.hasNote': 'Магазин оставил комментарий',
 
   // M3.16-C: structured extras editor
   'order.extras.label': 'Прочие позиции',
@@ -1059,7 +1087,7 @@ export const ru = {
   'approval.confirm.reject.title': 'Отклонить заказ?',
   'approval.confirm.reject.body': 'Отправитель увидит вашу причину и сможет пересоздать заказ.',
   'approval.confirm.reject.reasonPlaceholder': 'например: дублирующий заказ',
-  'approval.confirm.reject.reasonLabel': 'Причина (её увидит отправитель)',
+  'approval.confirm.reject.reasonLabel': 'Причина (обязательно, её увидит отправитель)',
   'approval.confirm.unapprove.title': 'Отменить одобрение?',
   'approval.confirm.unapprove.body':
     'Заказ вернётся в очередь. Возможно только до включения в закупку.',
@@ -1180,6 +1208,8 @@ export const ru = {
   'run.preview.noSupplierCount': 'Без прилавка: {n}',
   'run.preview.filterMatch': 'Показано {n} из {total}',
   'run.price.fillIn': 'Указать цену',
+  'run.offline.needNetworkToDeliver': 'Для начала доставки нужна сеть',
+  'run.offline.waitForSync': 'Доставку можно начать после синхронизации: {n, plural, one {# изменение} few {# изменения} many {# изменений} other {# изменения}}',
   'run.offline.needNetworkToStart': 'Для начала закупки нужна сеть',
   'run.toast.runAlreadyOpen': 'Закупка уже идёт — открыта она',
   'run.price.daysAgo': '{n} дн. назад',
@@ -1344,6 +1374,8 @@ export const ru = {
     'Строк с проблемой при приёмке: {n}; не получено примерно на {amount} {currency}. Счета магазинов по-прежнему считаются по распределённому количеству.',
   'run.confirm.finish.receiptIssueLine': '{sku} · {store}: принято {received}/{qty}',
   'run.confirm.finish.receiptIssuesMore': '…и ещё {n}',
+  'run.errors.expenseIdTaken':
+    'Этот расход уже записан в другой закупке. Добавьте его заново как новый расход',
   'run.errors.expenseLabelRequired': 'Укажите название',
   'run.errors.expenseLabelTooLong': 'Название слишком длинное (макс 200)',
   'run.errors.expenseReasonRequired': 'Укажите причину',
@@ -1575,6 +1607,7 @@ export const ru = {
   'confirm.issue.describe': 'Опишите проблему — закупщик увидит и сможет исправить.',
   'confirm.issue.placeholder': 'Что не так?',
   'confirm.issue.photoOptional': 'Фото (необязательно)',
+  'confirm.issue.photoUploading': 'Фото ещё загружается. Сохранить можно после загрузки.',
   'confirm.issue.save': 'Сохранить',
   'confirm.status.ariaLabel': 'Статус приёмки позиции',
   'confirm.status.ok': 'OK',
@@ -1690,6 +1723,7 @@ export const ru = {
   'inventory.errors.cannotAdjust':
     'Для инвентаризации и списания нужно право корректировать остатки. Если нужно, попросите доступ у управляющего магазином.',
   'inventory.errors.invalidQty': 'Количество должно быть неотрицательным.',
+  'inventory.sheet.wastage.needQty': 'Укажите, сколько потеряно.',
   'inventory.errors.wastageNeedsNote': 'Списание требует причины.',
 
   // ── 17. Dishes / Recipes (M2.0b) ───────────────────────
@@ -1713,7 +1747,7 @@ export const ru = {
   'admin.sheet.newExpenseTemplate': 'Новый шаблон расхода',
   'admin.sheet.editExpenseTemplate': 'Изменить шаблон',
   'admin.confirm.archiveExpenseTemplate':
-    'Архивировать шаблон «{label}»? Будущие закупки пропустят его.',
+    'Архивировать шаблон «{label}»? Он больше не будет предлагаться при добавлении расхода на странице закупки. Уже записанные расходы не изменятся.',
   'admin.toast.expenseTemplateCreated': 'Шаблон добавлен',
   'admin.toast.expenseTemplateUpdated': 'Шаблон обновлён',
   'admin.toast.expenseTemplateArchived': 'Шаблон в архиве',
@@ -1744,6 +1778,8 @@ export const ru = {
   'dishes.readOnly':
     'Вы можете посмотреть рецепт; для редактирования меню нужно право, которое выдаёт администратор.',
   'dishes.errors.namesRequired': 'Хотя бы одно название обязательно.',
+  'admin.errors.displayNameSharedWithOtherOrg':
+    'Этот человек состоит и в другом рабочем пространстве, поэтому имя может изменить только он сам',
   'admin.errors.namesRequired': 'Хотя бы одно название обязательно.',
   'dishes.errors.ingredientQtyMustBePositive': 'Кол-во ингредиента должно быть > 0.',
   'dishes.errors.ingredientSkuNotFound':
@@ -1943,6 +1979,9 @@ export const ru = {
   'settlement.noEligibleStores.body':
     'У вас нет права закрывать день ни в одном назначенном магазине. Попросите управляющего магазином проверить вашу роль.',
   'settlement.errors.invalidMoney': 'Введите корректную сумму, не более двух знаков после запятой.',
+  'settlement.errors.fieldMoney': '{field}: введите число, не более двух знаков после запятой.',
+  'settlement.errors.fieldsToFix': '{n, plural, one {Исправьте # поле} few {Исправьте {n} поля} many {Исправьте {n} полей} other {Исправьте {n} поля}}',
+  'settlement.errors.goToFirst': 'Перейти',
   'settlement.errors.expensesManagerOnly':
     'Для внесения операционных расходов нужно право вести закрытие дня этого магазина.',
   'settlement.errors.invalidDetails': 'Заполните каждую строку расхода и зарплаты.',

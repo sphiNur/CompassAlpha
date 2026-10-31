@@ -36,7 +36,8 @@ import type { ReactNode } from 'react';
 import { setDecimalLocale, UiLabelsProvider } from '@compass/ui';
 import type { UiLabels } from '@compass/ui';
 import { useI18n } from '../hooks/useI18n';
-import { errorTextKey } from '../lib/errorText';
+import { errorTextKey, errorTextOf } from '../lib/errorText';
+import { confirmNative } from '../lib/confirm';
 
 export function UiLabelsBridge({ children }: { children: ReactNode }) {
   const i18n = useI18n();
@@ -58,6 +59,7 @@ export function UiLabelsBridge({ children }: { children: ReactNode }) {
         return i18n.t('qty.increment');
       },
       quantityPick: (valueWithUnit) => i18n.t('qty.pickAria', { value: valueWithUnit }),
+      quantityOf: (item) => i18n.t('qty.groupAria', { item }),
       get setQuantity() {
         return i18n.t('qty.setTitle');
       },
@@ -72,6 +74,7 @@ export function UiLabelsBridge({ children }: { children: ReactNode }) {
       qtyAtLeast: (min) => i18n.t('qty.atLeast', { min }),
       qtyAtMost: (max) => i18n.t('qty.atMost', { max }),
       qtyMaxDecimals: (decimals) => i18n.t('qty.maxDecimals', { decimals }),
+      qtyNotMultiple: (step) => i18n.t('qty.notMultiple', { step }),
       get numberInvalid() {
         return i18n.t('number.invalid');
       },
@@ -92,8 +95,14 @@ export function UiLabelsBridge({ children }: { children: ReactNode }) {
       },
       // 2026-10-21 FE-10: DataState showed `error.message` raw — usually an
       // untranslated server key. Same mapping as errToast's toasts.
-      translateError: (message) =>
-        i18n.t(errorTextKey(message, 'common.errorUnknown') as Parameters<typeof i18n.t>[0]),
+      // CMP-FE-1: with the placeholders a server error carries.
+      translateError: (message, error) => {
+        const said =
+          error === undefined
+            ? { key: errorTextKey(message, 'common.errorUnknown'), vars: {} }
+            : errorTextOf(error, 'common.errorUnknown');
+        return i18n.t(said.key as Parameters<typeof i18n.t>[0], said.vars);
+      },
       get retry() {
         return i18n.t('common.retry');
       },
@@ -112,6 +121,12 @@ export function UiLabelsBridge({ children }: { children: ReactNode }) {
       get photoUploadFailed() {
         return i18n.t('photo.uploadFailed');
       },
+      // CMP-INV-2: a sheet with unsaved input asks before it closes, with
+      // Telegram's own confirm inside Telegram.
+      get discardChanges() {
+        return i18n.t('catalog.confirm.discardEdits');
+      },
+      confirmDiscard: (message) => confirmNative(message),
     }),
     [i18n],
   );

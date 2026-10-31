@@ -25,6 +25,7 @@ import {
 import { authedProcedure, publicProcedure, router } from '../trpc';
 import { verifyInitData, type TelegramUser } from '../../services/telegramAuth';
 import { checkClientRate } from '../../services/rateLimit';
+import { isLocalDevPeer } from '../../services/devLocality';
 import { signAccess, verifyRefresh } from '../../infra/jwt';
 import {
   issueRefresh,
@@ -190,41 +191,9 @@ function isDevMockLoginAvailable(): boolean {
   );
 }
 
-function isLocalhostValue(value: string | null | undefined): boolean {
-  if (!value) return false;
-  const trimmed = value.trim().toLowerCase();
-  if (!trimmed) return false;
-  try {
-    const url = new URL(trimmed.includes('://') ? trimmed : `http://${trimmed}`);
-    return (
-      url.hostname === 'localhost' ||
-      url.hostname === '127.0.0.1' ||
-      url.hostname === '[::1]' ||
-      url.hostname === '::1'
-    );
-  } catch {
-    return (
-      trimmed === 'localhost' ||
-      trimmed.startsWith('localhost:') ||
-      trimmed === '127.0.0.1' ||
-      trimmed.startsWith('127.0.0.1:') ||
-      trimmed === '::1' ||
-      trimmed.startsWith('[::1]:')
-    );
-  }
-}
-
+/** D21: only a direct connection from this machine or the LAN (services/devLocality.ts). */
 function isLocalDevRequest(ctx: RequestContext): boolean {
-  const host = ctx.hono.req.header('host');
-  const origin = ctx.hono.req.header('origin');
-  const forwardedHost = ctx.hono.req.header('x-forwarded-host');
-  return (
-    isLocalhostValue(host) ||
-    isLocalhostValue(origin) ||
-    isLocalhostValue(forwardedHost) ||
-    ctx.ip === '127.0.0.1' ||
-    ctx.ip === '::1'
-  );
+  return isLocalDevPeer(ctx.peerIp, (name) => ctx.hono.req.header(name));
 }
 
 function devLoginUnavailableReason(ctx: RequestContext): string | null {
@@ -2006,6 +1975,7 @@ async function readSessionPayload(
       // copy-template language.
       secondaryLocale: (user.secondaryLocale ?? null) as Session['user']['locale'] | null,
       tgUsername: user.tgUsername,
+      tgUserId: user.tgUserId === null ? null : String(user.tgUserId),
     },
     member: {
       memberId: member.id,

@@ -26,7 +26,7 @@
  * for backwards-incompatible operations, asks for a free-text reason that
  * goes into the audit log.
  */
-import { addMoney } from '@compass/contracts';
+import { addMoney } from '@compass/contracts/money';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Banner,
@@ -39,11 +39,13 @@ import {
   EmptyState,
   Input,
   Sheet,
+  Skeleton,
   useToast,
 } from '@compass/ui';
 import { trpc, newIdempotencyKey } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton, haptic } from '../hooks/useTelegram';
+import { scrollBehavior } from '../lib/reducedMotion';
 import { confirmThen } from '../lib/confirm';
 import { useDateFormat, useI18n, useProductName } from '../hooks/useI18n';
 import { usePhotoUploader } from '../hooks/usePhotoUploader';
@@ -52,6 +54,7 @@ import { usePhotoUploader } from '../hooks/usePhotoUploader';
 // through other paths if needed.
 import { usePageMenu } from '../app/PageMenuContext';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
+import { pollWhenOffline, useRealtimeLive } from '../hooks/useRealtime';
 import { PendingSyncNotice } from '../components/PendingSyncNotice';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
@@ -84,9 +87,8 @@ import { ActiveRunPanel, PreviewSummaryCard, RunSessionsCard } from './runs/comp
 import { SessionPicker } from './runs/components/SessionPicker';
 import { selectPreview, selectedSessionIds } from './runs/lib/sessionSelection';
 import { editPricingFromSplits, splitOverridesFor } from './runs/lib/purchaseOverrides';
-import { NEW_RUN, isBuying, liveRunsOf, pickActiveRun } from './runs/lib/liveRuns';
-import { overlayPendingWrites, withData } from './runs/lib/pendingOverlay';
-import { useOfflineDropToast } from '../lib/offlineDrop';
+import { NEW_RUN, isBuying, liveRunsOf, pickActiveRun, runListGate } from './runs/lib/liveRuns';
+import { overlayPendingWrites, startDeliveryBlock, withData } from './runs/lib/pendingOverlay';
 
 function newClientId(): string {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -210,8 +212,6 @@ export function RunPage() {
   });
 
   const utils = trpc.useUtils();
-  // RE-DLV-4 / R2-DLV-3: a refused replay says which action failed.
-  const offlineDropToast = useOfflineDropToast();
   const invalidateRunQuietly = useCallback(
     (includeList = false) => {
       setTimeout(() => {
@@ -221,58 +221,9 @@ export function RunPage() {
     },
     [utils],
   );
-  const offline = useOfflineQueue(
-    {
-      'run.purchaseItem': async (entry) => {
-        // H2: replay with the SAME idempotency key the first attempt used, so
-        // a request the server already committed (lost response) dedupes.
-        await utils.client.run.purchaseItem.mutate(
-          entry.input as Parameters<typeof utils.client.run.purchaseItem.mutate>[0],
-          entry.idempotencyKey ? { context: { idempotencyKey: entry.idempotencyKey } } : undefined,
-        );
-        void utils.run.get.invalidate();
-        void utils.run.list.invalidate();
-      },
-      'run.markUnavailable': async (entry) => {
-        await utils.client.run.markUnavailable.mutate(
-          entry.input as Parameters<typeof utils.client.run.markUnavailable.mutate>[0],
-          entry.idempotencyKey ? { context: { idempotencyKey: entry.idempotencyKey } } : undefined,
-        );
-        void utils.run.get.invalidate();
-      },
-      'run.deliverToStore': async (entry) => {
-        await utils.client.run.deliverToStore.mutate(
-          entry.input as Parameters<typeof utils.client.run.deliverToStore.mutate>[0],
-          entry.idempotencyKey ? { context: { idempotencyKey: entry.idempotencyKey } } : undefined,
-        );
-        void utils.run.get.invalidate();
-        void utils.run.list.invalidate();
-      },
-      // M3.41 (2026-05-21): purchaser-added items survive flaky bazaar
-      // LTE just like regular purchases.
-      'run.addPurchaserItem': async (entry) => {
-        // 2026-07-26: replay with the SAME key the first attempt used —
-        // see the mutation's onMutate. Without this a lost response
-        // recorded the off-catalog purchase twice.
-        await utils.client.run.addPurchaserItem.mutate(
-          entry.input as Parameters<typeof utils.client.run.addPurchaserItem.mutate>[0],
-          entry.idempotencyKey ? { context: { idempotencyKey: entry.idempotencyKey } } : undefined,
-        );
-        void utils.run.get.invalidate();
-        void utils.run.list.invalidate();
-      },
-      // M3.44 (2026-05-22): off-catalog expenses. Same retry pattern.
-      'run.addExpense': async (entry) => {
-        await utils.client.run.addExpense.mutate(
-          entry.input as Parameters<typeof utils.client.run.addExpense.mutate>[0],
-          entry.idempotencyKey ? { context: { idempotencyKey: entry.idempotencyKey } } : undefined,
-        );
-        void utils.run.get.invalidate();
-        void utils.run.list.invalidate();
-      },
-    },
-    { onDrop: offlineDropToast },
-  );
+  // Purchases queue offline; their replay (with the first attempt's
+  // idempotency key) is app-level now (CMP-FE-3, lib/outboxReplay.ts).
+  const offline = useOfflineQueue();
 
   // ---- Mutations ------------------------------------------------------
   // M1.9 (2026-05-07): hoisted into `lib/errToast.ts` so the same
@@ -737,6 +688,7 @@ export function RunPage() {
     () => pickActiveRun(runsQuery.data ?? [], { canAmend, selectedKey: selectedRunKey }),
     [runsQuery.data, canAmend, selectedRunKey],
   );
+  const runListState = runListGate(runsQuery);
   const liveRuns = useMemo(() => liveRunsOf(runsQuery.data ?? [], canAmend), [runsQuery.data, canAmend]);
   const hasBuyingRun = liveRuns.some((r) => isBuying(r.status));
   const previewSessionCount = previewQuery.data?.sessions.length ?? 0;
@@ -747,9 +699,12 @@ export function RunPage() {
   const amending = activeRun?.status === 'amending';
   const editing = activeRun?.status === 'purchasing' || amending;
 
+  const realtimeLive = useRealtimeLive();
   const runDetailQueryRaw = trpc.run.get.useQuery(
     activeRun ? { runId: activeRun.id } : { runId: '' },
-    { enabled: !!activeRun, refetchInterval: activeRun ? 6_000 : false },
+    // P-4 (2026-10-31): realtime `run.changed` already refreshes this; poll
+    // only while the socket is down instead of every 6 s on top of it.
+    { enabled: !!activeRun, refetchInterval: activeRun ? pollWhenOffline(6_000, realtimeLive) : false },
   );
   // R2-INT-1 / RE-DLV-1 (2026-10-31): writes saved offline show on their
   // item (bought, unavailable, delivered — waiting to sync) instead of the
@@ -1094,6 +1049,13 @@ export function RunPage() {
   // first". That's a noisy waste. Now: button is disabled (Telegram dims
   // it) when the precondition isn't met, and the *text* tells the user
   // what's missing.
+  // CMP-BUY-1: starting delivery needs the network and an empty queue.
+  const deliveryBlock = startDeliveryBlock(offline.online, offline.pendingEntries.length);
+  useEffect(() => {
+    // Went offline (or a write got queued) while the confirm sheet was open.
+    if (deliveryBlock && confirmAction === 'startDelivery') setConfirmAction(null);
+  }, [deliveryBlock, confirmAction]);
+
   const mainButton = useMemo<{
     text: string;
     onClick: () => void;
@@ -1210,10 +1172,26 @@ export function RunPage() {
             text: i18n.t('run.action.remainingItems', { n: pendingCount }),
             onClick: () => {
               const next = document.querySelector('[data-run-item-pending]');
-              next?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+              next?.scrollIntoView({ block: 'center', behavior: scrollBehavior() });
             },
             visible: pendingCount > 0,
             active: true,
+          };
+        }
+        // CMP-BUY-1 (2026-10-31): items bought offline count as handled
+        // (they show on their rows), but the server has not seen them
+        // yet. Starting delivery then only failed on the network — or,
+        // once online with the queue still sending, started a delivery the
+        // server thought was not fully bought. Say what it waits for.
+        if (deliveryBlock) {
+          return {
+            text:
+              deliveryBlock === 'offline'
+                ? i18n.t('run.offline.needNetworkToDeliver')
+                : i18n.t('run.offline.waitForSync', { n: offline.pendingEntries.length }),
+            onClick: () => {},
+            visible: true,
+            active: false,
           };
         }
         return {
@@ -1234,7 +1212,7 @@ export function RunPage() {
               text: i18n.t('run.action.deliverRemaining', { n: waiting.undelivered.length }),
               onClick: () => {
                 const stores = document.querySelector('[data-run-stores]');
-                stores?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                stores?.scrollIntoView({ block: 'center', behavior: scrollBehavior() });
               },
               visible: true,
               active: true,
@@ -1295,6 +1273,8 @@ export function RunPage() {
     activeRun,
     allItemsHandled,
     allStoresConfirmed,
+    deliveryBlock,
+    offline.pendingEntries.length,
     pendingCount,
     runDetailQuery.data?.otherStoreSkuIds,
     runDetailQuery.data?.splits,
@@ -1993,7 +1973,7 @@ export function RunPage() {
           min-h-9 py-2 the area stuck out of the bar's top edge, under the
           sticky header (measured 39px; 43 at min-h-11). */}
       {activeRun ? (
-        <div className="sticky top-0 z-[1] flex min-h-12 items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-1">
+        <div className="sticky top-0 z-[1] flex min-h-12 items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-1 [@media(max-height:500px)]:static">
           {/* M3.36 shipped the "×1000" price-mode toggle here as a pill
               whose entire meaning lived in a `title` attribute. On a
               touch device there is no hover, so nothing ever revealed
@@ -2185,14 +2165,17 @@ export function RunPage() {
       </Sheet>
 
       <div className="flex flex-col gap-2 px-4 pt-2">
-        {runsQuery.isError && !runsQuery.data ? (
+        {runListState === 'error' ? (
           // F11 (2026-10-30): a failed run list read as "no approved
           // orders to plan" — the buyer was told there was nothing to buy.
           <QueryErrorBanner query={runsQuery} />
-        ) : runsQuery.data === undefined && runsQuery.fetchStatus === 'paused' ? (
+        ) : runListState === 'offline' ? (
           // R2-ENG-1 (2026-10-31): offline with no saved run list, not
           // "nothing to plan"; it loads by itself once back online.
           <EmptyState title={i18n.t('common.offlineNoData')} />
+        ) : runListState === 'loading' ? (
+          // P-2 (2026-10-31): not "nothing to plan" while it loads.
+          <RunListSkeleton label={i18n.t('common.loading')} />
         ) : !activeRun ? (
           <DataState query={previewQuery}>
             {(p) =>
@@ -2890,6 +2873,18 @@ export function RunPage() {
           - Pending store rows: tap → deliver-confirm sheet
           - Delivered store rows: tap → recall-confirm sheet
           - Confirmed store rows: read-only, not tappable. */}
+    </div>
+  );
+}
+
+/** P-2: placeholder rows while run.list loads, shaped like the purchase list. */
+function RunListSkeleton({ label }: { label: string }) {
+  return (
+    <div role="status" aria-label={label} className="flex flex-col gap-2">
+      <Skeleton className="h-9 w-2/3 rounded-[var(--r-pill)]" />
+      {[0, 1, 2, 3].map((i) => (
+        <Skeleton key={i} className="h-14 rounded-[var(--r-card)]" />
+      ))}
     </div>
   );
 }

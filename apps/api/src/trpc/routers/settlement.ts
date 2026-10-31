@@ -133,11 +133,16 @@ export const SETTLEMENT_REASON_KEYS: Record<string, string> = {
   'required-for-correction': 'settlement.errors.correctionReasonRequired',
 };
 
-function detailValidation(field: string, reason: string): never {
+function detailValidation(
+  field: string,
+  reason: string,
+  context?: Record<string, string | number>,
+): never {
   throw new TRPCError({
     code: 'BAD_REQUEST',
     message: SETTLEMENT_REASON_KEYS[reason] ?? 'common.errors.validation',
-    cause: { field, reason },
+    // `context` fills the sentence's placeholders on the client (CMP-COPY-2).
+    cause: context ? { field, reason, context } : { field, reason },
   });
 }
 
@@ -914,7 +919,7 @@ export const settlementRouter = router({
       // CLS-14 (2026-10-30): a new close at most BACKDATE_LIMIT_DAYS back.
       // Correcting an existing older close stays possible.
       if (!existing && date < isoDateDaysBefore(storeToday, BACKDATE_LIMIT_DAYS)) {
-        detailValidation('date', 'too-old');
+        detailValidation('date', 'too-old', { days: BACKDATE_LIMIT_DAYS });
       }
 
       const roster = input.wageItems?.some((item) => !!item.memberId)

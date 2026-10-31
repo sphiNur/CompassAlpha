@@ -11,14 +11,17 @@
  */
 export type QtyDraft =
   | { ok: true; value: number }
-  | { ok: false; reason: 'empty' | 'notNumber' | 'tooPrecise' | 'belowMin' | 'aboveMax' };
+  | {
+      ok: false;
+      reason: 'empty' | 'notNumber' | 'tooPrecise' | 'belowMin' | 'aboveMax' | 'notMultiple';
+    };
 
 /** The DB keeps order quantities at 3 decimals (numeric(12,3)). */
 export const QTY_DECIMALS = 3;
 
 export function readQtyDraft(
   draft: string,
-  { min, max }: { min: number; max: number },
+  { min, max, step }: { min: number; max: number; step?: number },
 ): QtyDraft {
   const s = draft.trim();
   if (s === '') return { ok: false, reason: 'empty' };
@@ -33,8 +36,17 @@ export function readQtyDraft(
   // the quantity keeps instead.
   const fraction = s.includes('.') ? s.slice(s.indexOf('.') + 1).replace(/0+$/, '') : '';
   if (fraction.length > QTY_DECIMALS) return { ok: false, reason: 'tooPrecise' };
-  // The typed value — no longer snapped to the +/- step: with step 1, a
-  // typed 0.3 snapped to 0 and wiped the line the same way. M3.35 already
-  // made +/- keep off-step values.
+  // CMP-ORD-1 (2026-10-31): the server refuses an order line that is not a
+  // multiple of the product's step, and the toast then lost the step
+  // ("must be a multiple of  "). Refuse it here with the reason instead.
+  // Both values have at most 3 decimals, so compare them in thousandths.
+  if (step !== undefined && step > 0) {
+    const scaledStep = Math.round(step * 10 ** QTY_DECIMALS);
+    if (scaledStep > 0 && Math.round(n * 10 ** QTY_DECIMALS) % scaledStep !== 0) {
+      return { ok: false, reason: 'notMultiple' };
+    }
+  }
+  // The typed value — never snapped to the step: with step 1, a typed 0.3
+  // snapped to 0 and wiped the line the same way.
   return { ok: true, value: n };
 }

@@ -11,7 +11,7 @@
  * store's demand so the purchaser can see the store asked for them and
  * that they are deliberately not on the truck.
  */
-import { addMoney } from '@compass/contracts';
+import { addMoney } from '@compass/contracts/money';
 import { splitSubtotal, splitUnitPrice } from './settlement';
 
 export type PickLine = { skuId: string; qty: string; lineTotal: number | null };

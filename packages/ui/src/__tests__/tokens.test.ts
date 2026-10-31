@@ -125,6 +125,12 @@ describe.each([
       expect(contrast(theme, '--c-field-border', bg)).toBeGreaterThanOrEqual(3);
     });
   }
+  for (const bg of [...SURFACES, '--c-surface-3']) {
+    // CMP-INT-6: the global :focus-visible outline is drawn in --c-ring.
+    test(`--c-ring against ${bg} ≥ 3`, () => {
+      expect(contrast(theme, '--c-ring', bg)).toBeGreaterThanOrEqual(3);
+    });
+  }
   test('subtle stays lighter-weight than muted', () => {
     // The three inks keep their order (fg > muted > subtle) after the tuning.
     expect(contrast(theme, '--c-fg-muted', '--c-surface')).toBeGreaterThan(
@@ -141,6 +147,19 @@ function sources(dir: string): string[] {
   });
 }
 
+/**
+ * Custom properties the app sets from JavaScript (no stylesheet declares
+ * them; every reader has a fallback): the Telegram chrome insets measured
+ * in Shell.tsx and the MainButton height (lib/mainButtonInset.ts).
+ */
+const RUNTIME_VARS = [
+  '--app-chrome-reserve',
+  '--app-chrome-safe-top',
+  '--app-chrome-pad-left',
+  '--app-chrome-pad-right',
+  '--app-main-btn-h',
+];
+
 describe('colour tokens in use', () => {
   test('every var(--c-*) referenced by the web app and the UI kit is defined', () => {
     const used = new Set<string>();
@@ -149,6 +168,40 @@ describe('colour tokens in use', () => {
     }
     const missing = [...used].filter((name) => !(name in light));
     expect(missing).toEqual([]);
+  });
+
+  // N3 (2026-10-31): only `--c-*` was checked, so `--r-input` (never
+  // defined) left one select square in an all-pill screen. Now every
+  // custom property read anywhere — `var(--x)` or Tailwind's `[--x]` —
+  // must be declared in a stylesheet, or be one the app writes at run time.
+  test('every custom property referenced by the web app and the UI kit is defined', () => {
+    const files = [...sources(UI_SRC), ...sources(WEB_SRC)].filter((f) => !f.includes('__tests__'));
+    const declared = new Set<string>();
+    const used = new Map<string, string>();
+    for (const file of files) {
+      const src = readFileSync(file, 'utf8');
+      if (file.endsWith('.css')) {
+        for (const m of src.matchAll(/(--[a-z0-9-]+)\s*:/g)) declared.add(m[1]!);
+      }
+      // A name followed by `-` or `*` is a prose pattern (`--app-chrome-pad-*`).
+      for (const m of src.matchAll(/(?:var\(\s*|\[)(--[a-z0-9-]*[a-z0-9])(?![a-z0-9*-])/g)) {
+        if (!used.has(m[1]!)) used.set(m[1]!, file.slice(file.indexOf('/src/') + 1));
+      }
+    }
+    const missing = [...used]
+      .filter(([name]) => !declared.has(name) && !RUNTIME_VARS.includes(name))
+      .map(([name, file]) => `${name} (${file})`);
+    expect(missing).toEqual([]);
+  });
+
+  test('each run-time custom property is really written by the app', () => {
+    const code = [...sources(UI_SRC), ...sources(WEB_SRC)]
+      .filter((f) => !f.includes('__tests__') && !f.endsWith('.css'))
+      .map((f) => readFileSync(f, 'utf8'))
+      .join('\n');
+    for (const name of RUNTIME_VARS) {
+      expect({ name, written: code.includes(`'${name}'`) }).toEqual({ name, written: true });
+    }
   });
 
   test('status components take their colours from tokens', () => {
@@ -242,5 +295,21 @@ describe('purchase row controls', () => {
     expect(ctrl).toContain('whitespace-nowrap');
     expect(ctrl).not.toMatch(/\bw-9\b/);
     expect(src).not.toContain('min-w-9');
+  });
+});
+
+describe('CMP-INT-6: keyboard focus is visible', () => {
+  const appCss = readFileSync(join(WEB_SRC, 'styles/index.css'), 'utf8').replace(
+    /\/\*[\s\S]*?\*\//g,
+    '',
+  );
+
+  test('no global rule removes the focus outline', () => {
+    expect(appCss).not.toMatch(/focus-visible\s*\{[^}]*outline:\s*none/);
+  });
+
+  test('a global :focus-visible ring drawn in the --c-ring token', () => {
+    const rule = /(?:^|\n)\s*:focus-visible\s*\{([^}]*)\}/.exec(appCss)?.[1] ?? '';
+    expect(rule).toContain('outline: 2px solid var(--c-ring)');
   });
 });

@@ -34,7 +34,10 @@ test.afterAll(async () => {
 const tab = (name: string): Locator => page.getByTestId(`nav-${name}`);
 const mainButton = (): Locator => page.getByTestId('page-main-button');
 const main = (): Locator => page.getByRole('main');
-const item = (sku: string): Locator => main().getByRole('listitem').filter({ hasText: sku });
+// The innermost matching list item: an approval card is itself an item of
+// the order list (A11Y-14), with the product rows nested inside it.
+const item = (sku: string): Locator =>
+  main().getByRole('listitem').filter({ hasText: sku }).last();
 const sheet = (): Locator => page.getByRole('dialog');
 
 let shot = 0;

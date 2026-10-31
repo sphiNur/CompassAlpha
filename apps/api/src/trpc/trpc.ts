@@ -9,6 +9,18 @@ import { logger } from '../infra/log';
 import { checkRate } from '../services/rateLimit';
 import { isUniqueViolation } from '../services/pgErrors';
 
+/**
+ * Placeholders a non-domain refusal names for its sentence, thrown as
+ * `cause: { …, context: { days: 90 } }` (CMP-COPY-2). tRPC copies a plain
+ * object cause's fields onto the error it wraps it in.
+ */
+function causeContext(cause: unknown): Record<string, unknown> | undefined {
+  const context = (cause as { context?: unknown } | undefined)?.context;
+  return context && typeof context === 'object' && !Array.isArray(context)
+    ? (context as Record<string, unknown>)
+    : undefined;
+}
+
 const t = initTRPC.context<RequestContext>().create({
   errorFormatter({ shape, error }) {
     const cause = error.cause;
@@ -23,6 +35,10 @@ const t = initTRPC.context<RequestContext>().create({
           context: cause.context,
         },
       };
+    }
+    const context = causeContext(cause);
+    if (context && error.code !== 'INTERNAL_SERVER_ERROR') {
+      return { ...shape, data: { ...shape.data, context } };
     }
     if (cause instanceof ZodError) {
       return {

@@ -483,6 +483,93 @@ describe.skipIf(!SHOULD_RUN)('purchase page (PG-gated)', () => {
     expect(start?.message).toBe('run.errors.runHasOtherStores');
     await retire(runId);
   });
+
+  test("F2 (security scan): another run's expense id is refused and never removed", async () => {
+    const { db, orgId, admin, buyerA, storeA, storeB } = fix!;
+    // R1, already delivered, has a store-B expense E1.
+    const { runId: r1 } = await seedRun('delivered');
+    const e1 = randomUUID();
+    await withOrgContext(db, orgId, (tx) =>
+      tx.insert(s.runExpensesV).values({
+        id: e1,
+        runId: r1,
+        orgId,
+        label: 'Truck',
+        qty: '1',
+        unitPrice: '500000',
+        storeSplitsJson: [{ storeId: storeB, qty: '1' }],
+        paymentMethod: 'cash',
+        reason: 'delivery',
+        addedByMemberId: admin.memberId,
+        addedAt: new Date(),
+      }),
+    );
+    const e1Row = () =>
+      withOrgContext(db, orgId, async (tx) => {
+        const [row] = await tx
+          .select({ runId: s.runExpensesV.runId, removedAt: s.runExpensesV.removedAt })
+          .from(s.runExpensesV)
+          .where(eq(s.runExpensesV.id, e1));
+        return row;
+      });
+
+    // On the live run R2, a store-A purchaser reuses E1's id.
+    const { runId: r2 } = await seedRun('purchasing');
+    const err = await errorOf(() =>
+      buyerA.caller.run.addExpense({
+        runId: r2,
+        expenseId: e1,
+        label: 'Taxi',
+        qty: '1',
+        unitPrice: '1000',
+        storeSplits: [{ storeId: storeA, qty: '1' }],
+        paymentMethod: 'cash',
+        receiptPhotoUrl: null,
+        reason: 'x',
+      }),
+    );
+    expect(err?.code).toBe('BAD_REQUEST');
+    expect(err?.message).toBe('run.errors.expenseIdTaken');
+    // Nothing was recorded on R2, so there is nothing for it to remove.
+    const r2Events = await withOrgContext(db, orgId, (tx) =>
+      tx
+        .select({ type: s.events.type })
+        .from(s.events)
+        .where(eq(s.events.streamId, r2)),
+    );
+    expect(r2Events.some((e) => e.type === 'RunExpenseAdded')).toBe(false);
+    const removeErr = await errorOf(() =>
+      buyerA.caller.run.removeExpense({ runId: r2, expenseId: e1, reason: 'gone' }),
+    );
+    expect(removeErr).not.toBeNull();
+    expect(await e1Row()).toEqual({ runId: r1, removedAt: null });
+
+    // And the removal projection itself only touches its own run's row
+    // (checked in a transaction that is then rolled back).
+    const rolledBack = new Error('rollback');
+    await withOrgContext(db, orgId, async (tx) => {
+      await projectRun(tx, orgId, [
+        {
+          streamId: r2,
+          seq: 999,
+          occurredAt: new Date(),
+          actorUserId: buyerA.userId,
+          actorMemberId: buyerA.memberId,
+          type: 'RunExpenseRemoved',
+          payload: { expenseId: e1, reason: 'forged', byMemberId: buyerA.memberId },
+        } as RunEvent,
+      ]);
+      const [row] = await tx
+        .select({ removedAt: s.runExpensesV.removedAt })
+        .from(s.runExpensesV)
+        .where(eq(s.runExpensesV.id, e1));
+      expect(row?.removedAt).toBeNull();
+      throw rolledBack;
+    }).catch((e) => {
+      if (e !== rolledBack) throw e;
+    });
+    await retire(r2);
+  });
 });
 
 describe.skipIf(!SHOULD_RUN)('delivery and corrections (PG-gated)', () => {

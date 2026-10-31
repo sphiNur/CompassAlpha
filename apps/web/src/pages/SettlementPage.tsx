@@ -6,7 +6,7 @@
  * keeps a versioned correction trail.  This screen therefore never infers
  * cash from other modules or silently overwrites an existing close.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   Banner,
   Button,
@@ -28,11 +28,8 @@ import {
   useToast,
   QueryErrorBanner,
 } from '@compass/ui';
-import {
-  BACKDATE_LIMIT_DAYS,
-  isoDateDaysBefore,
-  type SettlementWageItem,
-} from '@compass/contracts';
+import type { SettlementWageItem } from '@compass/contracts';
+import { BACKDATE_LIMIT_DAYS, isoDateDaysBefore } from '@compass/contracts/limits';
 import { newIdempotencyKey, trpc } from '../lib/trpc';
 import { PendingSpinner } from '../components/PendingSpinner';
 import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
@@ -42,6 +39,7 @@ import { confirmNative } from '../lib/confirm';
 import { useErrToast } from '../lib/errToast';
 import { useDateFormat, useI18n, useRoleLabels } from '../hooks/useI18n';
 import { formatMoney, currencyOf } from '../lib/format';
+import { scrollBehavior } from '../lib/reducedMotion';
 import { useAuthStore } from '../stores/authStore';
 import { registerTabChangeGuard } from '../stores/navStore';
 import { StoreSalesPanel } from '../components/sales/StoreSalesPanel';
@@ -351,7 +349,13 @@ function AmountField({
   signed?: boolean;
   onChange: (value: string) => void;
 }) {
+  const i18n = useI18n();
+  const errorId = useId();
   const valid = isMoney(value, signed);
+  // A11Y-2 (2026-10-31): the reason sits under the field it is about and
+  // is tied to it with aria-describedby. It used to be one unnamed banner
+  // ~1,100 px further down, and the field only turned its edge red (hidden
+  // under the focus ring while typing).
   return (
     <Field label={label}>
       <NumberInput
@@ -362,11 +366,36 @@ function AmountField({
         placeholder="0"
         aria-label={label}
         aria-invalid={!valid || undefined}
+        aria-describedby={valid ? undefined : errorId}
+        // The line below covers "not a number" too; one message, not two.
+        formatError="none"
         className={!valid ? 'border-[var(--c-danger)]' : undefined}
         onChange={(event) => onChange(event.target.value)}
       />
+      {valid ? null : (
+        <span
+          id={errorId}
+          role="alert"
+          className="mt-1 flex items-start gap-1 text-old-label text-[var(--c-danger)]"
+        >
+          <span aria-hidden>⚠</span>
+          <span>{i18n.t('settlement.errors.fieldMoney', { field: label })}</span>
+        </span>
+      )}
     </Field>
   );
+}
+
+/**
+ * A11Y-2: focus the first field marked invalid inside `root` and bring it
+ * into view. Returns false when there is none.
+ */
+function focusFirstInvalid(root: HTMLElement | null): boolean {
+  const field = root?.querySelector<HTMLElement>('[aria-invalid="true"]');
+  if (!field) return false;
+  field.focus({ preventScroll: true });
+  field.scrollIntoView({ block: 'center', behavior: scrollBehavior() });
+  return true;
 }
 
 const confirmSettlement = confirmNative;
@@ -627,6 +656,20 @@ export function SettlementPage() {
     !versionConflict &&
     !closeQuery.isFetching &&
     !closeQuery.isError;
+  // A11Y-2: how many fields stop the save, for the banner under the form
+  // ("2 栏需要改正") and the save button, which now stays focusable and
+  // jumps to the first of them instead of being silently disabled.
+  const fieldsToFix =
+    DIRECT_MONEY_FIELDS.filter(
+      (field) => !isMoney(draft[field], field === 'priorPurchaseAdjustment'),
+    ).length +
+    draft.operatingExpenseItems.filter((item) => !isValidOperatingExpense(item)).length +
+    draft.wageItems.filter((item) => !isValidWageItem(item, wageSelectionRequired)).length +
+    (correctionReady ? 0 : 1);
+  const formRef = useRef<HTMLFieldSetElement>(null);
+  const showFirstFieldToFix = () => {
+    focusFirstInvalid(formRef.current);
+  };
   const canRecordOperatingExpenses = businessDate?.canRecordOperatingExpenses ?? false;
   const canEditOperatingExpenses =
     canRecordOperatingExpenses && !hasHistoricalOperatingExpenseTotal;
@@ -807,6 +850,7 @@ export function SettlementPage() {
       draftSynchronized &&
       !closeQuery.isError,
     active: canSave && !saveMutation.isPending,
+    onInactiveClick: fieldsToFix > 0 ? showFirstFieldToFix : undefined,
   });
 
   if (!session) return null;
@@ -1210,6 +1254,7 @@ export function SettlementPage() {
         {/* CLS-16: while a save is in flight the form is locked; whatever was
             typed meanwhile used to be overwritten by the saved record. */}
         <fieldset
+          ref={formRef}
           disabled={saveMutation.isPending}
           aria-busy={saveMutation.isPending}
           className="contents"
@@ -1588,12 +1633,21 @@ export function SettlementPage() {
         </Card>
         </fieldset>
 
-        {invalidMoney ? (
-          <Banner tone="warn" title={i18n.t('settlement.errors.invalidMoney')} />
-        ) : null}
-        {invalidDetails ? (
-          <Banner tone="warn" title={i18n.t('settlement.errors.invalidDetails')}>
-            {i18n.t('settlement.errors.invalidDetailsBody')}
+        {/* A11Y-2: one summary that counts what to fix and goes there. */}
+        {fieldsToFix > 0 && (invalidMoney || invalidDetails || !correctionReady) ? (
+          <Banner
+            tone="warn"
+            title={i18n.t('settlement.errors.fieldsToFix', { n: fieldsToFix })}
+            action={
+              <Button size="sm" variant="pearl" onClick={showFirstFieldToFix}>
+                {i18n.t('settlement.errors.goToFirst')}
+              </Button>
+            }
+          >
+            {invalidMoney ? <span className="block">{i18n.t('settlement.errors.invalidMoney')}</span> : null}
+            {invalidDetails ? (
+              <span className="block">{i18n.t('settlement.errors.invalidDetailsBody')}</span>
+            ) : null}
           </Banner>
         ) : null}
 

@@ -25,8 +25,9 @@ import {
   Switch,
   useToast,
   QueryErrorBanner,
+  readDecimalText,
 } from '@compass/ui';
-import { ADMIN_RANK } from '@compass/contracts';
+import { ADMIN_RANK } from '@compass/contracts/schemas/roles';
 import { newIdempotencyKey, trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
@@ -44,9 +45,11 @@ import { nativeConfirm, type StoreFocus, type StoreSub } from '../shared';
 import { PeopleSection } from '../people/PeopleSections';
 import { StoreSalesPanel } from '../../../components/sales/StoreSalesPanel';
 import {
+  inventoryDraftChanged,
   knownMovementReason,
   signedDelta,
   skusWithoutLevel,
+  wastageMissing,
   type MovementReason,
 } from './inventoryHelpers';
 
@@ -512,6 +515,8 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
     }
   }, [action]);
 
+  const wasteMissing = wastageMissing(draftWasteQty, draftNote, readDecimalText);
+
   const stocktake = trpc.inventory.stocktake.useMutation({
     onSuccess: () => {
       void utils.inventory.levels.invalidate({ storeId });
@@ -657,6 +662,12 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
       <Sheet
         open={action !== null}
         onOpenChange={(open) => !open && setAction(null)}
+        // CMP-INV-2: Esc / backdrop / back no longer drop a typed count.
+        hasChanges={inventoryDraftChanged(action, {
+          target: draftTarget,
+          wasteQty: draftWasteQty,
+          note: draftNote,
+        })}
         title={
           action?.kind === 'stocktake'
             ? i18n.t('inventory.sheet.stocktake.title')
@@ -675,51 +686,67 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
           // submit button in any environment. See the CatalogSections
           // dish-editor footer for the full write-up.
           action ? (
-            <Button
-              block
-              loading={stocktake.isPending || recordWastage.isPending}
-              disabled={!action.skuId}
-              onClick={() => {
-                if (!action || !action.skuId) return;
-                if (action.kind === 'stocktake') {
-                  stocktake.mutate({
-                    storeId,
-                    skuId: action.skuId,
-                    target: draftTarget,
-                    note: draftNote.trim() || undefined,
-                  });
-                } else {
-                  if (!draftNote.trim()) {
-                    errToast('common.error')(new Error('inventory.errors.wastageNeedsNote'));
-                    return;
-                  }
-                  const save = () =>
-                    recordWastage.mutate({
+            <>
+              {/* CMP-INV-3: wastage can only be saved once it is complete,
+                  and the line above Save says what is missing. */}
+              {action.kind === 'wastage' && wasteMissing ? (
+                <p
+                  id="wastage-missing"
+                  className="pb-2 text-center text-old-body-sm text-[var(--c-fg-muted)]"
+                >
+                  {i18n.t(
+                    wasteMissing === 'qty'
+                      ? 'inventory.sheet.wastage.needQty'
+                      : 'inventory.errors.wastageNeedsNote',
+                  )}
+                </p>
+              ) : null}
+              <Button
+                block
+                loading={stocktake.isPending || recordWastage.isPending}
+                disabled={!action.skuId || (action.kind === 'wastage' && wasteMissing !== null)}
+                aria-describedby={
+                  action.kind === 'wastage' && wasteMissing ? 'wastage-missing' : undefined
+                }
+                onClick={() => {
+                  if (!action || !action.skuId) return;
+                  if (action.kind === 'stocktake') {
+                    stocktake.mutate({
                       storeId,
                       skuId: action.skuId,
-                      qty: draftWasteQty,
-                      note: draftNote.trim(),
+                      target: draftTarget,
+                      note: draftNote.trim() || undefined,
                     });
-                  // CLS-8 (2026-10-30, owner decision): allowed, but said out
-                  // loud — stock that goes negative means the record was
-                  // already off, and a stocktake is the fix.
-                  const onHand = Number(
-                    (levelsQuery.data ?? []).find((l) => l.skuId === action.skuId)?.onHand ?? 0,
-                  );
-                  const after = onHand - Number(draftWasteQty.replace(',', '.'));
-                  if (after < 0) {
-                    nativeConfirm(
-                      i18n.t('inventory.confirm.wastageNegative', { after: formatQty(String(after)) }),
-                      save,
-                    );
                   } else {
-                    save();
+                    if (wasteMissing) return;
+                    const save = () =>
+                      recordWastage.mutate({
+                        storeId,
+                        skuId: action.skuId,
+                        qty: draftWasteQty,
+                        note: draftNote.trim(),
+                      });
+                    // CLS-8 (2026-10-30, owner decision): allowed, but said out
+                    // loud — stock that goes negative means the record was
+                    // already off, and a stocktake is the fix.
+                    const onHand = Number(
+                      (levelsQuery.data ?? []).find((l) => l.skuId === action.skuId)?.onHand ?? 0,
+                    );
+                    const after = onHand - Number(draftWasteQty.replace(',', '.'));
+                    if (after < 0) {
+                      nativeConfirm(
+                        i18n.t('inventory.confirm.wastageNegative', { after: formatQty(String(after)) }),
+                        save,
+                      );
+                    } else {
+                      save();
+                    }
                   }
-                }
-              }}
-            >
-              {i18n.t('common.save')}
-            </Button>
+                }}
+              >
+                {i18n.t('common.save')}
+              </Button>
+            </>
           ) : null
         }
       >

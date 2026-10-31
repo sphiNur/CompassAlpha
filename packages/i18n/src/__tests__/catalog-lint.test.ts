@@ -32,7 +32,9 @@
  *      allow-listed (brand names, unit symbols).
  *   8. The decided terminology (D15, 2026-10-31): one word per concept and
  *      language, so a new key cannot bring back 审批 / SKU / buyer.
- *   9. Workspace, never organization (D23), and no internal words the copy
+ *   9. No HTML entities. React renders catalog values as text, so `&apos;`
+ *      reached Uzbek store staff literally on every inventory row.
+ *  10. Workspace, never organization (D23), and no internal words the copy
  *      review took out (收件箱, 产品, 冻结, 步长, 认领 / 释放 …).
  *
  * The last block feeds each rule a small hand-made catalog with the mistake
@@ -538,7 +540,20 @@ function terminology(cats: Catalogs): string[] {
   return found;
 }
 
-// ── 9. Words the copy review took out (D23, 18-设计技能评审/03) ──────────
+// ── 9. HTML entities ────────────────────────────────────────────────────
+
+/** CMP-COPY-1 (2026-10-31): `&apos;`, `&amp;`, `&#39;` show up as written. */
+function htmlEntities(cats: Catalogs): string[] {
+  const found: string[] = [];
+  for (const lang of LANGS) {
+    for (const [k, v] of Object.entries(cats[lang])) {
+      if (/&(?:[a-z][a-z0-9]*|#\d+|#x[0-9a-f]+);/i.test(v)) found.push(`${lang} ${k}: ${v}`);
+    }
+  }
+  return found;
+}
+
+// ── 10. Words the copy review took out (D23, 18-设计技能评审/03) ──────────
 
 /**
  * 2026-10-31: decision D23 names the tenant 工作区 / workspace / рабочее
@@ -622,6 +637,7 @@ const RULES: Array<[string, (cats: Catalogs) => string[]]> = [
   ['en quotes with "", uz with «»', quoteStyle],
   ['no value is left in English', untranslated],
   ['D15 terminology: one word per concept', terminology],
+  ['no HTML entities in any language', htmlEntities],
   ['D23 and the copy review: workspace, no internal words', copyBanned],
 ];
 
@@ -639,6 +655,22 @@ describe('catalog lint', () => {
     // it used to be "O'zbekcha" in three hand-copied lists.
     expect(LANGUAGE_NATIVE_NAMES.uz).toBe('O\u02bbzbekcha');
     expect(uzbekApostrophes(one({ uz: LANGUAGE_NATIVE_NAMES.uz }))).toEqual([]);
+  });
+
+  test('CMP-CAT-3: archiving an expense template does not promise runs skip it', () => {
+    // Templates are shortcuts in the expense sheet; nothing is attached to
+    // a run automatically, so "future runs will skip it" was not true.
+    expect(en['admin.confirm.archiveExpenseTemplate']).not.toMatch(/future runs/i);
+    expect(zh['admin.confirm.archiveExpenseTemplate']).not.toContain('自动带入');
+    expect(ru['admin.confirm.archiveExpenseTemplate']).not.toContain('пропустят');
+    expect(uz['admin.confirm.archiveExpenseTemplate']).not.toContain('qoldirib ketadi');
+  });
+
+  test('"remove" (take out of a list) and "delete" are different words', () => {
+    // CMP-COPY-1: ru and uz used to write «Удалить» / «Oʻchirish» for both.
+    for (const lang of LANGS) {
+      expect(CATALOGS[lang]['common.remove'], lang).not.toBe(CATALOGS[lang]['common.delete']);
+    }
   });
 });
 
@@ -790,5 +822,12 @@ describe('catalog lint rules catch the original findings', () => {
     expect(englishApostrophes(one({ en: 'A built-in role’s level' }))).toHaveLength(1);
     expect(untranslated(one({ en: 'Import…', uz: 'Import…' }))).toHaveLength(1);
     expect(untranslated(one({ en: 'Shift Lead', zh: 'Shift Lead' }))).toHaveLength(1);
+  });
+
+  test('CMP-COPY-1: HTML entities are shown as written', () => {
+    expect(htmlEntities(one({ uz: 'Yo&apos;qotish' }))).toEqual(['uz k: Yo&apos;qotish']);
+    expect(htmlEntities(one({ en: 'Salt &amp; pepper' }))).toHaveLength(1);
+    expect(htmlEntities(one({ ru: 'Д&#39;Артаньян' }))).toHaveLength(1);
+    expect(htmlEntities(one({ en: 'Salt & pepper; to taste' }))).toEqual([]);
   });
 });

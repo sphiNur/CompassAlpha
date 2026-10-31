@@ -45,6 +45,11 @@ export interface UiLabels {
    * formatted value already suffixed with the unit, e.g. "0.5 公斤".
    */
   quantityPick: (valueWithUnit: string) => string;
+  /**
+   * A11Y-11: name of the − value + group. Receives what it is a quantity
+   * of (the product name), e.g. "Beef quantity".
+   */
+  quantityOf: (item: string) => string;
   /** Quick-pick sheet title when the caller passes no `pickTitle`. */
   setQuantity: string;
   /** Quick-pick sheet subtitle. Receives the localized unit label. */
@@ -61,6 +66,8 @@ export interface UiLabels {
   qtyAtMost: (max: string) => string;
   /** R2-ORD-2: more decimals than the quantity keeps. Receives the limit. */
   qtyMaxDecimals: (decimals: number) => string;
+  /** CMP-ORD-1: the typed value is not a multiple of the product's step. */
+  qtyNotMultiple: (step: string) => string;
 
   // --- NumberInput / Input type="number" ---
   /** R2-ORD-2: the text in a number field is not one number ("1e3"). */
@@ -76,9 +83,11 @@ export interface UiLabels {
   /**
    * 2026-10-21 FE-10: turns `query.error.message` (often a server i18n key
    * like `order.errors.notFound`, or a raw "Failed to fetch") into user
-   * copy. The default passes the message through, as before.
+   * copy. The default passes the message through, as before. `error` is
+   * the whole error, for the placeholders a server error carries
+   * (CMP-FE-1); hosts that ignore it keep working.
    */
-  translateError: (message: string | undefined) => string | undefined;
+  translateError: (message: string | undefined, error?: unknown) => string | undefined;
   /** 2026-10-21 FE-10: label of DataState's retry button. */
   retry: string;
 
@@ -88,12 +97,23 @@ export interface UiLabels {
   photoHint: string;
   uploading: string;
   photoUploadFailed: string;
+
+  // --- Sheet ---
+  /** CMP-INV-2: question asked before a sheet with unsaved input closes. */
+  discardChanges: string;
+  /**
+   * Asks a yes/no question and resolves true on yes. The host can use its
+   * platform's dialog (Telegram's native confirm); the default is the
+   * browser's own.
+   */
+  confirmDiscard: (message: string) => Promise<boolean>;
 }
 
 export const DEFAULT_UI_LABELS: UiLabels = {
   decrement: 'Decrement',
   increment: 'Increment',
   quantityPick: (v) => `Quantity ${v} — tap to pick`,
+  quantityOf: (item) => `${item} quantity`,
   setQuantity: 'Set quantity',
   unitIs: (unit) => `Unit: ${unit}`,
   custom: 'Custom',
@@ -102,6 +122,7 @@ export const DEFAULT_UI_LABELS: UiLabels = {
   qtyAtLeast: (min) => `Enter ${min} or more`,
   qtyAtMost: (max) => `Enter ${max} or less`,
   qtyMaxDecimals: (decimals) => `At most ${decimals} decimals`,
+  qtyNotMultiple: (step) => `Enter a multiple of ${step}`,
   numberInvalid: 'Not a number — write it like 1500 or 1.5',
   errorTitle: 'Something went wrong',
   errorUnknown: 'Unknown error',
@@ -115,6 +136,9 @@ export const DEFAULT_UI_LABELS: UiLabels = {
   photoHint: 'Tap to take a photo',
   uploading: 'Uploading…',
   photoUploadFailed: 'The photo did not upload. Try again.',
+  discardChanges: 'Discard your changes?',
+  confirmDiscard: (message) =>
+    Promise.resolve(typeof window === 'undefined' ? true : window.confirm(message)),
 };
 
 const UiLabelsContext = createContext<UiLabels>(DEFAULT_UI_LABELS);

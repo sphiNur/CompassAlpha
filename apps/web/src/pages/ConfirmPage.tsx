@@ -33,7 +33,6 @@ import { useDateFormat, useI18n, useProductNameParts, useUnitLabel } from '../ho
 import { usePhotoUploader } from '../hooks/usePhotoUploader';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { PendingSyncNotice } from '../components/PendingSyncNotice';
-import { useOfflineDropToast } from '../lib/offlineDrop';
 import { overlayPendingWrites, pendingStoreIds, withData } from './runs/lib/pendingOverlay';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
@@ -45,6 +44,7 @@ import {
   defaultDeliveringRunId,
   deliveringRunsForStore,
   initialReceivedQty,
+  issueSaveState,
   runsListView,
   type ConfirmDecisionStatus,
 } from './confirm/confirmLogic';
@@ -86,8 +86,9 @@ export function ConfirmPage() {
   // U4 (2026-10-31): 确认收货 is irreversible; it now goes through a
   // summary sheet instead of submitting on one tap.
   const [finalConfirmOpen, setFinalConfirmOpen] = useState(false);
-  const offlineDropToast = useOfflineDropToast();
   const photoUploader = usePhotoUploader('issue');
+  // CMP-DLV-6: Save waits for a photo that is still uploading.
+  const [photoUploading, setPhotoUploading] = useState(false);
 
   const runsQuery = trpc.run.list.useQuery();
   // 2026-10-21 FE-01 / F4-02: loading / failed run.list must not render as
@@ -104,31 +105,8 @@ export function ConfirmPage() {
   const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: true });
   const utils = trpc.useUtils();
   // Receivers also confirm from inside the store, often with terrible
-  // wifi. Same offline-replay treatment as the purchaser side.
-  const offline = useOfflineQueue(
-    {
-      'run.confirmStoreItem': async (entry) => {
-        await utils.client.run.confirmStoreItem.mutate(
-          entry.input as Parameters<typeof utils.client.run.confirmStoreItem.mutate>[0],
-        );
-        void utils.run.get.invalidate();
-      },
-      'run.confirmStore': async (entry) => {
-        await utils.client.run.confirmStore.mutate(
-          entry.input as Parameters<typeof utils.client.run.confirmStore.mutate>[0],
-        );
-        void utils.run.get.invalidate();
-      },
-      'run.markStoreItemsOk': async (entry) => {
-        await utils.client.run.markStoreItemsOk.mutate(
-          entry.input as Parameters<typeof utils.client.run.markStoreItemsOk.mutate>[0],
-        );
-        void utils.run.get.invalidate();
-      },
-    },
-    // R2-DLV-3: a refused replay says which action failed and why.
-    { onDrop: offlineDropToast },
-  );
+  // wifi: confirmations queue offline. Replay is app-level (CMP-FE-3).
+  const offline = useOfflineQueue();
 
   /**
    * 2026-10-21 CA-04: more than one run can be delivering at once (a new
@@ -372,9 +350,14 @@ export function ConfirmPage() {
     : null;
   const issueReasonOk =
     !!issueOpen && issueNote.trim().length > 0 && issueReceivedCheck?.ok === true;
+  const issueSave = issueSaveState({
+    reasonOk: issueReasonOk,
+    photoUploading,
+    saving: confirmItem.isPending,
+  });
   /** One submit path for the sheet footer and the Telegram MainButton. */
   const submitIssue = () => {
-    if (!issueOpen || !issueReasonOk || confirmItem.isPending) return;
+    if (!issueOpen || !issueSave.canSave) return;
     const receivedQty = issueReceivedCheck?.ok ? issueReceivedCheck.value : null;
     writeOptimisticItemConfirm(
       issueOpen.runId,
@@ -405,9 +388,11 @@ export function ConfirmPage() {
     confirmStore.mutate({ runId: activeRun.id, storeId: currentStoreId });
   };
   if (issueOpen) {
-    mainBtnText = i18n.t('confirm.issue.save');
+    mainBtnText = issueSave.waitingForPhoto
+      ? i18n.t('photo.uploading')
+      : i18n.t('confirm.issue.save');
     mainBtnVisible = true;
-    mainBtnActive = issueReasonOk && !confirmItem.isPending;
+    mainBtnActive = issueSave.canSave;
     mainBtnClick = submitIssue;
   } else if (finalConfirmOpen) {
     // U4: the summary sheet's primary, as the issue sheet does above.
@@ -630,6 +615,8 @@ export function ConfirmPage() {
                               <NameCell
                                 primary={nm ? nm.primary : it.skuId.slice(0, 8)}
                                 secondary={nm?.secondary}
+                                primaryLang={nm?.primaryLang}
+                                secondaryLang={nm?.secondaryLang}
                                 size="default"
                               />
                               <span className="shrink-0 font-mono text-old-label tabular-nums text-[var(--c-fg-muted)]">
@@ -641,7 +628,13 @@ export function ConfirmPage() {
                               with no selected tab would be invalid ARIA.
                               A radiogroup with nothing checked is exactly
                               the state we mean. */}
-                            <ChipBar variant="radio" ariaLabel={i18n.t('confirm.status.ariaLabel')}>
+                            <ChipBar
+                              variant="radio"
+                              // Choosing a status sends it (or opens the
+                              // problem sheet): arrows only move focus.
+                              followFocus={false}
+                              ariaLabel={i18n.t('confirm.status.ariaLabel')}
+                            >
                               {(['ok', 'short', 'wrong', 'quality'] as DecisionStatus[]).map(
                                 (s) => (
                                   <Chip
@@ -870,14 +863,26 @@ export function ConfirmPage() {
           // M3.49 (2026-05-23): dropped !getTg() — the in-page
           // PageMainButton sits behind any open sheet, so we
           // ALWAYS render the sheet's own footer button now.
-          <Button
-            block
-            disabled={!issueReasonOk || confirmItem.isPending}
-            loading={confirmItem.isPending}
-            onClick={submitIssue}
-          >
-            {i18n.t('confirm.issue.save')}
-          </Button>
+          <div className="flex flex-col gap-2">
+            {issueSave.waitingForPhoto ? (
+              <p
+                id="issue-save-reason"
+                role="status"
+                className="text-center text-old-label text-[var(--c-fg-muted)]"
+              >
+                {i18n.t('confirm.issue.photoUploading')}
+              </p>
+            ) : null}
+            <Button
+              block
+              disabled={!issueSave.canSave}
+              aria-describedby={issueSave.waitingForPhoto ? 'issue-save-reason' : undefined}
+              loading={confirmItem.isPending}
+              onClick={submitIssue}
+            >
+              {i18n.t('confirm.issue.save')}
+            </Button>
+          </div>
         }
       >
         <div className="flex flex-col gap-3 py-3">
@@ -934,6 +939,7 @@ export function ConfirmPage() {
             onCapture={(url) => setIssuePhoto(url)}
             onClear={() => setIssuePhoto(null)}
             uploader={photoUploader}
+            onBusyChange={setPhotoUploading}
           />
         </div>
       </Sheet>

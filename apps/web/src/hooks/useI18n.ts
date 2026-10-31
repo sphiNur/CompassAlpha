@@ -10,6 +10,7 @@ import { useAuthStore } from '../stores/authStore';
 import { makeDateFormatters } from '../lib/dateFormat';
 import { unitLabeller } from '../lib/unitLabel';
 import { roleLabeller } from '../lib/roleLabels';
+import { nameLang, otherLang } from '../lib/nameLang';
 
 const VALID_LOCALES = ['en', 'zh', 'ru', 'uz'] as const;
 function asLocale(v: string | null | undefined): Locale | null {
@@ -196,28 +197,35 @@ export function useProductNameParts() {
     () =>
       (item: {
         names: Record<string, string> | null | undefined;
-      }): { primary: string; secondary: string | null } => {
+      }): ProductNameParts => {
         const primary = pickName(item.names, i18n.locale);
-        if (!secondaryLocale || secondaryLocale === i18n.locale) return { primary, secondary: null };
+        // A11Y-3 (2026-10-31): say which language a name is in when it is
+        // not the interface's, so a screen reader switches voice for it.
+        const primaryLang = otherLang(nameLang(item.names, i18n.locale), i18n.locale);
+        if (!secondaryLocale || secondaryLocale === i18n.locale) {
+          return { primary, secondary: null, primaryLang };
+        }
         const secondary = pickName(item.names, secondaryLocale);
-        if (!secondary || secondary === primary) return { primary, secondary: null };
-        return { primary, secondary };
+        if (!secondary || secondary === primary) return { primary, secondary: null, primaryLang };
+        return {
+          primary,
+          secondary,
+          primaryLang,
+          secondaryLang: otherLang(nameLang(item.names, secondaryLocale), i18n.locale),
+        };
       },
     [i18n.locale, secondaryLocale],
   );
 }
 
-/**
- * M3.45 (2026-05-22): returns ONLY the secondary-locale name (no
- * parenthetical, no primary). Used by per-vendor copy templates —
- * when the operator pastes the list into the vendor's chat the
- * message should be pure Uzbek (or whatever secondary is), no
- * Chinese noise the vendor can't read.
- *
- * Falls back to the primary locale name when secondaryLocale is
- * null OR matches primary (so the copy still works for users who
- * haven't opted into bilingual mode).
- */
+export interface ProductNameParts {
+  primary: string;
+  secondary: string | null;
+  /** Set only when the name shown is in another language than the UI. */
+  primaryLang?: string;
+  secondaryLang?: string;
+}
+
 export function useVendorName() {
   const i18n = useI18n();
   const secondaryLocale = useAuthStore((s) => s.session?.user.secondaryLocale ?? null);

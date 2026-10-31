@@ -32,6 +32,12 @@ interface QtyControlProps {
    */
   pickTitle?: string;
   /**
+   * A11Y-11 / CMP-INT-4 (2026-10-31): what this quantity is of, e.g. the
+   * product name. Names the group, so "Increase" is heard as part of
+   * "Beef quantity". Defaults to `pickTitle`.
+   */
+  itemLabel?: string;
+  /**
    * Override the default preset chips. Falls back to a step-aware
    * default if not provided.
    */
@@ -53,6 +59,7 @@ export function QtyControl({
   size = 'md',
   className,
   pickTitle,
+  itemLabel = pickTitle,
   pickPresets,
 }: QtyControlProps) {
   // 2026-07-30: aria-labels and the entire quick-pick sheet were frozen
@@ -176,7 +183,11 @@ export function QtyControl({
 
   return (
     <>
-      <div className={cn('inline-flex items-center gap-2', className)}>
+      <div
+        role="group"
+        aria-label={itemLabel ? labels.quantityOf(itemLabel) : undefined}
+        className={cn('inline-flex items-center gap-2', className)}
+      >
         <button
           type="button"
           aria-label={labels.decrement}
@@ -233,6 +244,14 @@ export function QtyControl({
             ) : null}
           </span>
         </button>
+
+        {/* A11Y-11 (2026-10-31): after − / + the focus stays on the key,
+            and the new value only changed inside the middle button's
+            name, which nothing reads out. This polite region says it.
+            Its first content is not announced, only changes. */}
+        <span className="sr-only" aria-live="polite" aria-atomic="true">
+          {`${display}${unit ? ' ' + unit : ''}`}
+        </span>
 
         <button
           type="button"
@@ -329,7 +348,11 @@ function QtyQuickPickSheet({
 
   // F13 / ORD-8 (2026-10-30): empty, non-numeric and out-of-range input is
   // refused with a reason instead of becoming "Set 0". See readQtyDraft.
-  const read = useMemo(() => readQtyDraft(draft, { min, max }), [draft, min, max]);
+  // CMP-ORD-1: and so is a value off the step, which the server refuses.
+  const read = useMemo(
+    () => readQtyDraft(draft, { min, max, step }),
+    [draft, min, max, step],
+  );
   const sanitizedDraft = read.ok ? read.value : null;
   const draftProblem = read.ok
     ? null
@@ -339,7 +362,9 @@ function QtyQuickPickSheet({
         ? labels.qtyAtMost(formatQty(max, step))
         : read.reason === 'tooPrecise'
           ? labels.qtyMaxDecimals(QTY_DECIMALS)
-          : labels.qtyEnterNumber;
+          : read.reason === 'notMultiple'
+            ? labels.qtyNotMultiple(formatQty(step, step))
+            : labels.qtyEnterNumber;
   const draftDiffers = sanitizedDraft !== null && sanitizedDraft !== current;
 
   const setLabel = labels.setValue(
@@ -390,7 +415,7 @@ function QtyQuickPickSheet({
     >
       <div className="flex flex-col gap-3 py-3">
         {/* Preset chips — tap once = done. The most common path. */}
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-x-2 gap-y-4">
           {presets
             .filter((p) => p >= min && p <= max)
             .map((p) => {
@@ -400,13 +425,22 @@ function QtyQuickPickSheet({
                   key={p}
                   type="button"
                   onClick={() => onPick(p)}
+                  // A11Y-4 (2026-10-31): the current value was marked by
+                  // colour alone; aria-pressed says it, the ✓ shows it, and
+                  // hit-44 brings the 26 px chip to a 44 px tap area.
+                  aria-pressed={selected}
                   className={cn(
-                    'press rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium ring-hairline',
+                    'press hit-44 rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium ring-hairline',
                     selected
-                      ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
+                      ? 'bg-[var(--c-action)] font-semibold text-[var(--c-action-fg)]'
                       : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]',
                   )}
                 >
+                  {selected ? (
+                    <span aria-hidden className="mr-1">
+                      ✓
+                    </span>
+                  ) : null}
                   {formatQty(p, step)}
                   {unit ? <span className="ml-1 opacity-70">{unit}</span> : null}
                 </button>

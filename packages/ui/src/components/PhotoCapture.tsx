@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useUiLabels } from '../labels';
 import { cn } from '../cn.js';
 
@@ -35,6 +35,12 @@ export interface PhotoCaptureProps {
    * data: URI (useful in tests / when S3 isn't configured yet).
    */
   uploader?: PhotoUploader;
+  /**
+   * CMP-DLV-6 (2026-10-31): told when an upload starts and ends, so the
+   * form around it can hold its Save until the photo has a URL. Saving
+   * mid-upload stored the record without the photo, silently.
+   */
+  onBusyChange?: (busy: boolean) => void;
 }
 
 export interface PhotoUploader {
@@ -57,6 +63,7 @@ export function PhotoCapture({
   label,
   className,
   uploader,
+  onBusyChange,
 }: PhotoCaptureProps) {
   // 2026-07-30: label / remove / hint / uploading were English literals.
   // See packages/ui/src/labels.tsx.
@@ -65,6 +72,14 @@ export function PhotoCapture({
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const onBusyChangeRef = useRef(onBusyChange);
+  onBusyChangeRef.current = onBusyChange;
+  useEffect(() => {
+    onBusyChangeRef.current?.(busy);
+  }, [busy]);
+  // Closed mid-upload (the sheet unmounts us): nothing is uploading for
+  // the form any more.
+  useEffect(() => () => onBusyChangeRef.current?.(false), []);
 
   const handleFile = async (file: File) => {
     setBusy(true);
@@ -96,7 +111,7 @@ export function PhotoCapture({
       // BUY-19: the raw message ("Failed to fetch", "Upload failed (413)")
       // reached the screen in English. Name a network failure as such;
       // anything else is just "the photo did not upload".
-      const said = labels.translateError((err as Error).message);
+      const said = labels.translateError((err as Error).message, err);
       setError(said && said !== labels.errorUnknown ? said : labels.photoUploadFailed);
     } finally {
       setBusy(false);

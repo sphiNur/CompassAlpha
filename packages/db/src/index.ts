@@ -11,6 +11,7 @@ export {
   withSystemContext,
 } from './rls';
 export type { OrgTransactionOptions, SystemReason } from './rls';
+export { printable } from './printable';
 export { notifyRealtime, parseRealtimeNotice, REALTIME_CHANNEL } from './realtime';
 export type { DbRealtimeMessage } from './realtime';
 export {

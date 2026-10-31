@@ -241,6 +241,33 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
     const full = await owner.admin.memberList();
     expect(full.find((m) => m.memberId === both.m.id)?.statusOutOfReach).toBe(false);
   });
+  test('CMP-ADM-1: the member list gives each role its rank; the manager cannot revoke their own', async () => {
+    const { db, orgId, storeId, roleIds } = fix!;
+    const tag = `${Date.now()}`.slice(-9);
+    const [u] = await db
+      .insert(s.users)
+      .values({ displayName: 'ADM1 manager', tgUserId: BigInt(`5${tag}1`) })
+      .returning();
+    const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
+    await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId, assignedBy: u!.id });
+    await db
+      .insert(s.memberRoleBindings)
+      .values({ memberId: m!.id, roleId: roleIds.manager!, scopeType: 'store', scopeId: storeId });
+    const session = await loadSession(db, u!.id, orgId, m!.id);
+    const manager = appRouter.createCaller(buildCtx(db, session!));
+    const seen = await manager.admin.memberList();
+    const own = seen.find((x) => x.userId === u!.id)!.roles.find((r) => r.slug === 'manager')!;
+    expect(own.rank).toBe(BUILTIN_ROLES.find((r) => r.slug === 'manager')!.rank);
+    // What the web hides (lib/authority canRevokeRole) is what the server refuses.
+    const err = await errorOf(() => manager.admin.revokeRole({ bindingId: own.bindingId }));
+    expect(err?.message).toBe('auth.errors.cannotRevokeEqualOrHigher');
+  });
+  test('CMP-SHL-1: the session carries the person’s own Telegram id', async () => {
+    const { manager, db } = fix!;
+    const me = await manager.auth.me();
+    const [u] = await db.select().from(s.users).where(eq(s.users.id, me.user.id));
+    expect(me.user.tgUserId).toBe(String(u!.tgUserId));
+  });
   test('ADM-13: a store manager finds their own suspend in the audit log', async () => {
     const { db, orgId, storeId, roleIds } = fix!;
     const tag = `${Date.now()}`.slice(-9);

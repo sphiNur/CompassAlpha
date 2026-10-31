@@ -71,6 +71,7 @@ export {
   Field,
   FieldLabel,
   PickerRow,
+  PickerGroup,
   NameCell,
 } from './components/Rows';
 export type {

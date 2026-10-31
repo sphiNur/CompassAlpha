@@ -18,7 +18,7 @@
  * comes from ../lib/settlement (unit-tested); only super-admin correction
  * actions mutate a finished run.
  */
-import { addMoney } from '@compass/contracts';
+import { addMoney } from '@compass/contracts/money';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Badge, Button, Card, Input, SectionLabel, Sheet, useToast } from '@compass/ui';
 import { trpc } from '../../../lib/trpc';
@@ -271,7 +271,7 @@ export function RunHistoryPage({
                       raw status enum deleted (list is finished-only — it
                       never varied, and leaked English; UI-2). The mono
                       total takes the freed right slot (L2 settlement row). */}
-                  <div className="min-w-0 flex-1 text-old-body font-semibold tabular-nums">
+                  <div className="min-w-[7rem] flex-1 text-old-body font-semibold tabular-nums">
                     {/* D16 / RE-COPY-1: date in the UI language; the
                         trip number's sign comes from the catalog. */}
                     {single && single.runIndex > 0
@@ -293,7 +293,7 @@ export function RunHistoryPage({
                       </span>
                     ) : null}
                   </div>
-                  <span className="flex shrink-0 flex-col items-end">
+                  <span className="ml-auto flex shrink-0 flex-col items-end">
                     <span className="font-mono text-old-body tabular-nums">
                       {day.runs.some((r) => r.actualTotal) ? formatMoney(day.total) : '—'}
                     </span>
@@ -316,8 +316,10 @@ export function RunHistoryPage({
                   </span>
                 </>
               );
+              // A11Y-1 (2026-10-31): flex-wrap — at 200% zoom the totals drop
+              // under the date instead of running off the screen.
               const headerClass =
-                'flex w-full items-center justify-between gap-3 px-4 py-3 text-left';
+                'flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-3 text-left';
               // Trips without per-store rows (legacy) still need a way in.
               const bareTrips = single
                 ? []
