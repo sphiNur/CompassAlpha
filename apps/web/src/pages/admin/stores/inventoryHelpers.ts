@@ -41,3 +41,34 @@ export function signedDelta(delta: string): { sign: '+' | '-' | ''; abs: string 
   if (!Number.isFinite(n) || n === 0) return { sign: '', abs: '0' };
   return { sign: n > 0 ? '+' : '-', abs: String(Math.abs(n)) };
 }
+
+/**
+ * CMP-INV-3 (2026-10-31): what a wastage entry still lacks, or null when
+ * it can be saved. Save stayed tappable on an empty form and only then
+ * said what was wrong; now it is greyed out and this reason is shown.
+ */
+export function wastageMissing(
+  qtyText: string,
+  note: string,
+  read: (raw: string) => { ok: true; value: string } | { ok: false },
+): 'qty' | 'note' | null {
+  const qty = read(qtyText);
+  if (!qty.ok || qty.value === '' || !(Number(qty.value) > 0)) return 'qty';
+  if (!note.trim()) return 'note';
+  return null;
+}
+
+/**
+ * CMP-INV-2 (2026-10-31): has the stocktake / wastage sheet been typed
+ * into? Then closing it by Esc, backdrop or back asks first.
+ */
+export function inventoryDraftChanged(
+  action: { kind: 'stocktake'; current: string } | { kind: 'wastage' } | null,
+  draft: { target: string; wasteQty: string; note: string },
+): boolean {
+  if (!action) return false;
+  if (draft.note.trim() !== '') return true;
+  return action.kind === 'stocktake'
+    ? draft.target !== action.current
+    : draft.wasteQty.trim() !== '';
+}

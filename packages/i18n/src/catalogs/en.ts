@@ -205,6 +205,8 @@ export const en = {
   // bad word order in zh/ru/uz — those became whole sentences without
   // emphasis. A correctly-ordered sentence beats a bolded mistranslation.
   'people.tapToRevoke': 'Tap to revoke',
+  'people.readOnlyStore': 'View only',
+  'people.orgLevelGroup': 'Whole workspace ({n})',
   'people.orgLevelEmptyTitle': 'No org-level members',
   'people.orgLevelEmptyBody':
     "Admins and super admins who don't belong to any specific store appear here.",
@@ -355,6 +357,22 @@ export const en = {
   'ops.purge.unknownStore': 'Unknown store',
   'ops.purge.deleteSessionTitle': 'Delete order',
   'ops.purge.deleting': 'Deleting…',
+  'ops.purge.kind.orders': 'Orders',
+  'ops.purge.kind.orderLines': 'Order lines',
+  'ops.purge.kind.runs': 'Runs',
+  'ops.purge.kind.runLines': 'Run items',
+  'ops.purge.kind.runStoreLines': 'Run items per store',
+  'ops.purge.kind.expenses': 'Run expenses',
+  'ops.purge.kind.dailyCloses': 'Daily closes',
+  'ops.purge.kind.stockMovements': 'Stock movements',
+  'ops.purge.kind.priceHistory': 'Price records',
+  'ops.purge.kind.notifications': 'Notifications',
+  'ops.purge.kind.pendingMessages': 'Messages not yet sent',
+  'ops.purge.kind.history': 'History records',
+  'ops.purge.kind.appLogs': 'App logs',
+  'ops.purge.kind.other': 'Other',
+  'ops.maint.confirmResetBody': 'Type the date {date} to confirm. This cannot be undone.',
+  'ops.maint.confirmResetLabel': 'Date to reset',
   'ops.purge.deleteRows': 'Delete {n, plural, one {# row} other {# rows}}',
   'ops.purge.counting': 'Counting…',
   'ops.purge.rowsWouldBeDeleted': '{n, plural, one {# row would} other {# rows would}} be deleted',
@@ -649,9 +667,12 @@ export const en = {
   'auth.noStoreYet.title': 'No store yet',
   'auth.noStoreYet.body': 'Create a store in Admin › Stores first; ordering, receiving, daily close and sales work per store.',
   'auth.noStoreYet.action': 'Create a store',
+  'auth.blocked.signedInAs': 'Signed in as {name}',
+  'auth.blocked.signOut': 'Sign out',
+  'auth.blocked.close': 'Close',
+  'auth.blocked.stillBlocked': 'Still no access. Ask your administrator.',
   'auth.noStore.title': 'No store assigned yet',
-  'auth.noStore.body':
-    'Your account is set up but an administrator still needs to assign you to a store. Contact your manager.',
+  'auth.noStore.body': 'Your account is set up, but you have not been added to a store yet. Ask your administrator to add you.',
 
   // ── 5. Auth errors (server-thrown TRPCError messages) ──────────
   'auth.errors.botTokenMissing': 'Bot token not configured',
@@ -1240,6 +1261,8 @@ export const en = {
   'run.preview.noSupplierCount': 'No stall: {n}',
   'run.preview.filterMatch': '{n} of {total} shown',
   'run.price.fillIn': 'Set price',
+  'run.offline.needNetworkToDeliver': 'Network needed to start delivery',
+  'run.offline.waitForSync': 'Start delivery after {n, plural, one {# saved change syncs} other {# saved changes sync}}',
   'run.offline.needNetworkToStart': 'Network needed to start a run',
   'run.toast.runAlreadyOpen': 'A run is already open — opened that one',
   'run.price.daysAgo': '{n}d ago',
@@ -1771,6 +1794,7 @@ export const en = {
     'After this wastage the stock would be {after} (negative), so the record was already off. Save anyway? A stocktake afterwards is recommended.',
   'inventory.errors.cannotAdjust': 'You need permission to adjust stock to do a stocktake or record wastage.',
   'inventory.errors.invalidQty': 'Quantity must be a non-negative number.',
+  'inventory.sheet.wastage.needQty': 'Enter how much was lost.',
   'inventory.errors.wastageNeedsNote': 'Wastage requires a reason.',
 
   // ── 17. Dishes / Recipes (M2.0b) ───────────────────────

@@ -1975,6 +1975,7 @@ async function readSessionPayload(
       // copy-template language.
       secondaryLocale: (user.secondaryLocale ?? null) as Session['user']['locale'] | null,
       tgUsername: user.tgUsername,
+      tgUserId: user.tgUserId === null ? null : String(user.tgUserId),
     },
     member: {
       memberId: member.id,

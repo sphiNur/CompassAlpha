@@ -33,7 +33,6 @@ import { useDateFormat, useI18n, useProductNameParts, useUnitLabel } from '../ho
 import { usePhotoUploader } from '../hooks/usePhotoUploader';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { PendingSyncNotice } from '../components/PendingSyncNotice';
-import { useOfflineDropToast } from '../lib/offlineDrop';
 import { overlayPendingWrites, pendingStoreIds, withData } from './runs/lib/pendingOverlay';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
@@ -87,7 +86,6 @@ export function ConfirmPage() {
   // U4 (2026-10-31): 确认收货 is irreversible; it now goes through a
   // summary sheet instead of submitting on one tap.
   const [finalConfirmOpen, setFinalConfirmOpen] = useState(false);
-  const offlineDropToast = useOfflineDropToast();
   const photoUploader = usePhotoUploader('issue');
   // CMP-DLV-6: Save waits for a photo that is still uploading.
   const [photoUploading, setPhotoUploading] = useState(false);
@@ -107,31 +105,8 @@ export function ConfirmPage() {
   const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: true });
   const utils = trpc.useUtils();
   // Receivers also confirm from inside the store, often with terrible
-  // wifi. Same offline-replay treatment as the purchaser side.
-  const offline = useOfflineQueue(
-    {
-      'run.confirmStoreItem': async (entry) => {
-        await utils.client.run.confirmStoreItem.mutate(
-          entry.input as Parameters<typeof utils.client.run.confirmStoreItem.mutate>[0],
-        );
-        void utils.run.get.invalidate();
-      },
-      'run.confirmStore': async (entry) => {
-        await utils.client.run.confirmStore.mutate(
-          entry.input as Parameters<typeof utils.client.run.confirmStore.mutate>[0],
-        );
-        void utils.run.get.invalidate();
-      },
-      'run.markStoreItemsOk': async (entry) => {
-        await utils.client.run.markStoreItemsOk.mutate(
-          entry.input as Parameters<typeof utils.client.run.markStoreItemsOk.mutate>[0],
-        );
-        void utils.run.get.invalidate();
-      },
-    },
-    // R2-DLV-3: a refused replay says which action failed and why.
-    { onDrop: offlineDropToast },
-  );
+  // wifi: confirmations queue offline. Replay is app-level (CMP-FE-3).
+  const offline = useOfflineQueue();
 
   /**
    * 2026-10-21 CA-04: more than one run can be delivering at once (a new

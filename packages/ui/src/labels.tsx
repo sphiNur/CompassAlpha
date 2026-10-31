@@ -92,6 +92,16 @@ export interface UiLabels {
   photoHint: string;
   uploading: string;
   photoUploadFailed: string;
+
+  // --- Sheet ---
+  /** CMP-INV-2: question asked before a sheet with unsaved input closes. */
+  discardChanges: string;
+  /**
+   * Asks a yes/no question and resolves true on yes. The host can use its
+   * platform's dialog (Telegram's native confirm); the default is the
+   * browser's own.
+   */
+  confirmDiscard: (message: string) => Promise<boolean>;
 }
 
 export const DEFAULT_UI_LABELS: UiLabels = {
@@ -120,6 +130,9 @@ export const DEFAULT_UI_LABELS: UiLabels = {
   photoHint: 'Tap to take a photo',
   uploading: 'Uploading…',
   photoUploadFailed: 'The photo did not upload. Try again.',
+  discardChanges: 'Discard your changes?',
+  confirmDiscard: (message) =>
+    Promise.resolve(typeof window === 'undefined' ? true : window.confirm(message)),
 };
 
 const UiLabelsContext = createContext<UiLabels>(DEFAULT_UI_LABELS);

@@ -51,6 +51,46 @@ import {
   shareLink as makeShareLink,
 } from '../../../lib/telegramLinks';
 import { nativeConfirm } from '../shared';
+import {
+  canGrantRole,
+  canRevokeRole,
+  canSetOverride,
+  canSetStatus,
+  rankIn,
+  transferTargets,
+  type Actor,
+  type Binding,
+  type TargetMember,
+} from '../../../lib/authority';
+
+/**
+ * CMP-ADM-1: the signed-in person as lib/authority needs them — their own
+ * bindings come from their row in the member list (always included).
+ * Without that row the ranks are unknown and every action stays shown
+ * (the server decides, as before).
+ */
+function useActor(
+  members: ReadonlyArray<{ userId: string; roles: readonly Binding[] }> | undefined,
+): Actor {
+  const session = useAuthStore((s) => s.session);
+  return useMemo(() => {
+    const self = members?.find((m) => m.userId === session?.user.id);
+    return {
+      userId: session?.user.id ?? '',
+      isOrgAdmin: session?.permissions.includes('org.admin') ?? false,
+      adminStoreIds: session?.adminStoreIds ?? [],
+      bindings: self ? self.roles : [{ slug: '', scopeType: 'global', scopeId: null }],
+    };
+  }, [members, session]);
+}
+
+function targetOf(m: {
+  userId: string;
+  roles: readonly Binding[];
+  stores: ReadonlyArray<{ id: string }>;
+}): TargetMember {
+  return { userId: m.userId, bindings: m.roles, storeIds: m.stores.map((st) => st.id) };
+}
 
 // ============ People ============
 
@@ -89,6 +129,7 @@ export function PeopleSection({
 } = {}) {
   const session = useAuthStore((s) => s.session);
   const membersQuery = trpc.admin.memberList.useQuery();
+  const actor = useActor(membersQuery.data);
   const utils = trpc.useUtils();
   const toast = useToast();
   const errToast = useErrToast();
@@ -125,6 +166,7 @@ export function PeopleSection({
     memberId: string;
     userId: string;
     displayName: string;
+    member: TargetMember;
   } | null>(null);
   // Member-permission overrides editor target (added 2026-05-05).
   // Tap "Permissions" button on a member card → opens
@@ -138,6 +180,7 @@ export function PeopleSection({
     memberId: string;
     displayName: string;
     stores: Array<{ id: string; name: string }>;
+    member: TargetMember;
   } | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [manualDraft, setManualDraft] = useState<InviteDraft | null>(null);
@@ -157,6 +200,7 @@ export function PeopleSection({
     stores: Array<{ id: string; name: string }>;
     isSelf: boolean;
     statusOutOfReach: boolean;
+    member: TargetMember;
   } | null>(null);
 
   const setStatus = trpc.admin.memberSetStatus.useMutation({
@@ -365,6 +409,23 @@ export function PeopleSection({
                           r.scopeType === 'store' && r.scopeId
                             ? (m.stores.find((st) => st.id === r.scopeId)?.name ?? null)
                             : null;
+                        // CMP-ADM-1: a role the server would not let this
+                        // person take away (their own manager role, one at
+                        // or above their rank, another store's) is a plain
+                        // label, not a × that ends in "forbidden".
+                        if (!canRevokeRole(actor, m.userId, r)) {
+                          return (
+                            <span
+                              key={r.bindingId}
+                              className="inline-flex items-center gap-1 rounded-full bg-[var(--c-surface-2)] px-2 py-0.5 text-old-label ring-hairline"
+                            >
+                              <span className="font-semibold">{roleText.name(r)}</span>
+                              {scopedStoreName ? (
+                                <span className="text-[var(--c-fg-muted)]">· {scopedStoreName}</span>
+                              ) : null}
+                            </span>
+                          );
+                        }
                         return (
                           <button
                             key={r.bindingId}
@@ -413,6 +474,7 @@ export function PeopleSection({
                         memberId: m.memberId,
                         userId: m.userId,
                         displayName: m.displayName,
+                        member: targetOf(m),
                       })
                     }
                   >
@@ -448,6 +510,7 @@ export function PeopleSection({
                         stores: m.stores.map((st) => ({ id: st.id, name: st.name })),
                         isSelf,
                         statusOutOfReach: m.statusOutOfReach ?? false,
+                        member: targetOf(m),
                       })
                     }
                   >
@@ -517,7 +580,7 @@ export function PeopleSection({
               {orgLevel.length > 0 ? (
                 <section>
                   <SectionLabel as="h3" padded={false} className="mb-2">
-                    Org-level ({orgLevel.length})
+                    {i18n.t('people.orgLevelGroup', { n: orgLevel.length })}
                   </SectionLabel>
                   <ul className="flex flex-col gap-2" role="list">
                     {orgLevel.map(renderCard)}
@@ -539,9 +602,9 @@ export function PeopleSection({
         }}
       </DataState>
 
-      <GrantRoleSheet target={grantFor} onClose={() => setGrantFor(null)} />
-      <ManageMemberSheet target={manageFor} onClose={() => setManageFor(null)} />
-      <MemberPermissionsSheet target={permsFor} onClose={() => setPermsFor(null)} />
+      <GrantRoleSheet actor={actor} target={grantFor} onClose={() => setGrantFor(null)} />
+      <ManageMemberSheet actor={actor} target={manageFor} onClose={() => setManageFor(null)} />
+      <MemberPermissionsSheet actor={actor} target={permsFor} onClose={() => setPermsFor(null)} />
 
       {/* M1.11: per-member overflow menu. Houses the conditional
           actions that used to live as inline buttons in each card's
@@ -554,7 +617,11 @@ export function PeopleSection({
       >
         {memberMenuFor ? (
           <div className="flex flex-col gap-2 py-3">
-            {isGlobalAdminPeople ? (
+            {isGlobalAdminPeople &&
+            (canSetOverride(actor, memberMenuFor.member, null) ||
+              memberMenuFor.stores.some((st) =>
+                canSetOverride(actor, memberMenuFor.member, st.id),
+              )) ? (
               <Button
                 block
                 variant="pearl"
@@ -565,6 +632,7 @@ export function PeopleSection({
                     memberId: target.memberId,
                     displayName: target.displayName,
                     stores: target.stores,
+                    member: target.member,
                   });
                 }}
               >
@@ -573,7 +641,8 @@ export function PeopleSection({
             ) : null}
             {!memberMenuFor.isSelf &&
             !memberMenuFor.statusOutOfReach &&
-            memberMenuFor.status === 'active' ? (
+            memberMenuFor.status === 'active' &&
+            canSetStatus(actor, memberMenuFor.member, 'suspended') ? (
               <Button
                 block
                 variant="pearl"
@@ -590,7 +659,8 @@ export function PeopleSection({
             ) : null}
             {!memberMenuFor.isSelf &&
             !memberMenuFor.statusOutOfReach &&
-            memberMenuFor.status === 'suspended' ? (
+            memberMenuFor.status === 'suspended' &&
+            canSetStatus(actor, memberMenuFor.member, 'active') ? (
               <Button
                 block
                 variant="pearl"
@@ -1747,10 +1817,17 @@ function ManualInviteSheet({
  *   UI updates without a full refresh.
  */
 function ManageMemberSheet({
+  actor,
   target,
   onClose,
 }: {
-  target: { memberId: string; userId: string; displayName: string } | null;
+  actor: Actor;
+  target: {
+    memberId: string;
+    userId: string;
+    displayName: string;
+    member: TargetMember;
+  } | null;
   onClose: () => void;
 }) {
   const utils = trpc.useUtils();
@@ -1922,7 +1999,11 @@ function ManageMemberSheet({
                           row. M1.9 (2026-05-07): gated to global admins
                           only — store-scoped managers should use the
                           unassign+reassign workflow on this same grid. */}
-                      {checked && editable && isGlobalAdmin ? (
+                      {checked &&
+                      editable &&
+                      isGlobalAdmin &&
+                      transferTargets(actor, target.member, st.id, storesQuery.data ?? []).length >
+                        0 ? (
                         <button
                           type="button"
                           className="ml-auto rounded-full bg-[var(--c-surface)] px-2 py-0.5 text-old-label font-medium text-[var(--c-fg)] ring-hairline active:opacity-80"
@@ -1937,7 +2018,7 @@ function ManageMemberSheet({
                         </button>
                       ) : !editable ? (
                         <span className="ml-auto text-old-tiny uppercase tracking-wide text-[var(--c-fg-muted)]">
-                          read-only
+                          {i18n.t('people.readOnlyStore')}
                         </span>
                       ) : null}
                     </label>
@@ -1958,11 +2039,13 @@ function ManageMemberSheet({
       ) : null}
       {target && transferFrom ? (
         <TransferStoreSheet
+          actor={actor}
           target={{
             memberId: target.memberId,
             displayName: target.displayName,
             fromStoreId: transferFrom.storeId,
             fromStoreName: transferFrom.storeName,
+            member: target.member,
           }}
           onClose={() => setTransferFrom(null)}
         />
@@ -1989,14 +2072,17 @@ function ManageMemberSheet({
  * filtering is just UX.
  */
 function TransferStoreSheet({
+  actor,
   target,
   onClose,
 }: {
+  actor: Actor;
   target: {
     memberId: string;
     displayName: string;
     fromStoreId: string;
     fromStoreName: string;
+    member: TargetMember;
   } | null;
   onClose: () => void;
 }) {
@@ -2005,10 +2091,6 @@ function TransferStoreSheet({
   const toast = useToast();
   const errToast = useErrToast();
   const session = useAuthStore((s) => s.session);
-  const adminStoreIds = useMemo(
-    () => new Set(session?.adminStoreIds ?? []),
-    [session?.adminStoreIds],
-  );
   const sessionStores = session?.stores ?? [];
   const open = !!target;
 
@@ -2025,10 +2107,12 @@ function TransferStoreSheet({
 
   // Eligible destinations: stores actor admins, excluding the source
   // and (rare) inactive stores that may sneak into session.stores.
+  // CMP-ADM-1 / ADM-18: only stores the server would accept — and not
+  // one the member is already in.
   const destinationStores = useMemo(() => {
     if (!target) return [];
-    return sessionStores.filter((st) => adminStoreIds.has(st.id) && st.id !== target.fromStoreId);
-  }, [sessionStores, adminStoreIds, target]);
+    return transferTargets(actor, target.member, target.fromStoreId, sessionStores);
+  }, [sessionStores, actor, target]);
 
   const transferMut = trpc.admin.memberTransferStore.useMutation({
     onSuccess: (data) => {
@@ -2151,9 +2235,11 @@ function TransferStoreSheet({
  *   - Effective set is shown at top as a small badge count
  */
 function MemberPermissionsSheet({
+  actor,
   target,
   onClose,
 }: {
+  actor: Actor;
   target: {
     memberId: string;
     displayName: string;
@@ -2161,10 +2247,13 @@ function MemberPermissionsSheet({
      *  override tabs added 2026-05-06 in A2). Pass an empty
      *  array if the member is org-level. */
     stores: Array<{ id: string; name: string }>;
+    member: TargetMember;
   } | null;
   onClose: () => void;
 }) {
   const i18n = useI18n();
+  const roleText = useRoleLabels();
+  const toast = useToast();
   const utils = trpc.useUtils();
   const errToast = useErrToast();
   const session = useAuthStore((s) => s.session);
@@ -2189,9 +2278,19 @@ function MemberPermissionsSheet({
   const [scope, setScope] = useState<Scope>({ kind: 'global' });
   // Reset scope when sheet opens for a new target. Default to 'global'
   // so the operator lands on the familiar surface.
+  // CMP-ADM-1: a scope the server would refuse (the member outranks the
+  // actor there, or it is not the actor's store) is read-only.
+  const canEditScope = (storeId: string | null) =>
+    !!target && canSetOverride(actor, target.member, storeId);
   useEffect(() => {
-    if (target) setScope({ kind: 'global' });
-  }, [target]);
+    if (!target) return;
+    const firstStore = target.stores.find((st) => canSetOverride(actor, target.member, st.id));
+    setScope(
+      canSetOverride(actor, target.member, null) || !firstStore
+        ? { kind: 'global' }
+        : { kind: 'store', storeId: firstStore.id, storeName: firstStore.name },
+    );
+  }, [target, actor]);
 
   const editableStoreTabs = useMemo(
     () => (target?.stores ?? []).filter((st) => adminStoreIds.has(st.id)),
@@ -2203,6 +2302,7 @@ function MemberPermissionsSheet({
       void utils.admin.memberPermissionsList.invalidate({
         memberId: target?.memberId ?? '',
       });
+      toast.success(i18n.t('common.saved'));
     },
     onError: errToast('common.error'),
   });
@@ -2211,6 +2311,7 @@ function MemberPermissionsSheet({
       void utils.admin.memberPermissionsList.invalidate({
         memberId: target?.memberId ?? '',
       });
+      toast.success(i18n.t('common.saved'));
     },
     onError: errToast('common.error'),
   });
@@ -2246,11 +2347,14 @@ function MemberPermissionsSheet({
       arr.push({ key: p.key, description: p.description });
       m.set(ns, arr);
     }
-    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [allPerms.data]);
+    return [...m.entries()].sort((a, b) =>
+      roleText.permissionGroup(a[0]).localeCompare(roleText.permissionGroup(b[0])),
+    );
+  }, [allPerms.data, roleText]);
+  const scopeEditable = canEditScope(scope.kind === 'global' ? null : scope.storeId);
 
   const handleSet = (key: string, mode: 'role' | 'allow' | 'deny') => {
-    if (!target) return;
+    if (!target || !scopeEditable) return;
     const scopeArgs =
       scope.kind === 'global'
         ? { scopeType: 'global' as const }
@@ -2305,13 +2409,14 @@ function MemberPermissionsSheet({
             <div className="flex flex-wrap gap-1">
               <ScopeTab
                 active={scope.kind === 'global'}
+                disabled={!canEditScope(null)}
                 onClick={() => setScope({ kind: 'global' })}
                 count={overrideByScopeKey.get('global')?.size ?? 0}
               >
                 {i18n.t('people.scopeGlobal')}
               </ScopeTab>
               {(target?.stores ?? []).map((st) => {
-                const editable = adminStoreIds.has(st.id);
+                const editable = canEditScope(st.id);
                 const isActive = scope.kind === 'store' && scope.storeId === st.id;
                 const tabCount = overrideByScopeKey.get(`store:${st.id}`)?.size ?? 0;
                 return (
@@ -2343,7 +2448,9 @@ function MemberPermissionsSheet({
           </Banner>
           {grouped.map(([ns, keys]) => (
             <div key={ns}>
-              <SectionLabel padded={false}>{ns}</SectionLabel>
+              {/* CMP-ADM-2: localised group, name and description, not the
+                  English seed text and raw keys. */}
+              <SectionLabel padded={false}>{roleText.permissionGroup(ns)}</SectionLabel>
               <ul className="mt-1 flex flex-col gap-1">
                 {keys.map((p) => {
                   const override = overrideByKey.get(p.key) ?? null;
@@ -2355,13 +2462,8 @@ function MemberPermissionsSheet({
                       className="flex flex-col gap-1 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2"
                     >
                       <div className="flex items-baseline justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="font-mono text-old-label">{p.key}</div>
-                          {p.description ? (
-                            <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
-                              {p.description}
-                            </div>
-                          ) : null}
+                        <div className="min-w-0 text-old-body-sm text-[var(--c-fg)]">
+                          {roleText.permission(p.key, p.description)}
                         </div>
                         {fromRole ? <Badge tone="muted">{i18n.t('people.perm.fromRoleBadge')}</Badge> : null}
                       </div>
@@ -2387,6 +2489,8 @@ function MemberPermissionsSheet({
                           },
                         ]}
                         onChange={(next) => handleSet(p.key, next)}
+                        disabled={!scopeEditable || set.isPending || revoke.isPending}
+                        ariaLabel={roleText.permission(p.key, p.description)}
                       />
                     </li>
                   );
@@ -2494,15 +2598,15 @@ function ScopeTab({
  * scope + that store so the operator doesn't have to re-pick.
  */
 function GrantRoleSheet({
+  actor,
   target,
   onClose,
 }: {
+  actor: Actor;
   target: { userId: string; displayName: string; defaultStoreId?: string | null } | null;
   onClose: () => void;
 }) {
   const session = useAuthStore((s) => s.session);
-  const myGlobalMaxRank = session?.myMaxRank ?? 0;
-  const storeRanks = session?.storeRanks ?? {};
   const adminStoreIds = useMemo(
     () => new Set(session?.adminStoreIds ?? []),
     [session?.adminStoreIds],
@@ -2548,35 +2652,34 @@ function GrantRoleSheet({
   // for a single-store manager.
   const canGrantGlobal = session?.permissions.includes('org.admin') ?? false;
 
-  // Effective rank in the chosen scope.
-  //   global → myGlobalMaxRank (the actor's overall max)
-  //   store  → min over selected stores of max(globalMax, storeRanks[id])
-  // We use MIN because the grant fans out to N independent server
-  // calls, each gated on its own store rank — the weakest link wins.
+  // Effective rank in the chosen scope: the lowest over the selected
+  // stores, because the grant fans out to one server call per store and
+  // each is gated on its own store rank — the weakest link wins.
+  // CMP-ADM-1: rank in a store counts global bindings and that store's,
+  // as the server does; the old max(myMaxRank, storeRanks[id]) let a
+  // manager of A look like a manager of B.
   const effectiveRank = useMemo(() => {
-    if (scopeMode === 'global') return myGlobalMaxRank;
+    if (scopeMode === 'global') return rankIn(actor.bindings, null);
     if (selectedStoreIds.size === 0) return 0;
-    let min = Infinity;
-    for (const id of selectedStoreIds) {
-      const r = Math.max(myGlobalMaxRank, storeRanks[id] ?? 0);
-      if (r < min) min = r;
-    }
-    return min === Infinity ? 0 : min;
-  }, [scopeMode, selectedStoreIds, myGlobalMaxRank, storeRanks]);
+    return Math.min(...[...selectedStoreIds].map((id) => rankIn(actor.bindings, id)));
+  }, [scopeMode, selectedStoreIds, actor]);
 
   /**
-   * Filter roles. Three rules combined:
-   *   1. rank < effectiveRank (the existing "no equal/higher grants" rule)
-   *   2. scopeMode='global' → only org-tier roles (rank ≥ ADMIN_RANK)
-   *   3. scopeMode='store'  → only store-tier roles (rank < ADMIN_RANK)
-   * Server enforces the same — this just gives the FE a clean picker.
+   * Roles the server would grant in every chosen scope (lib/authority
+   * canGrantRole: org-tier roles only globally, store roles only in the
+   * actor's stores, always below the actor's rank there).
    */
   const grantableRoles = useMemo(() => {
     return [...(rolesQuery.data ?? [])]
-      .filter((r) => r.rank < effectiveRank)
-      .filter((r) => (scopeMode === 'global' ? r.rank >= ADMIN_RANK : r.rank < ADMIN_RANK))
+      .filter((r) =>
+        scopeMode === 'global'
+          ? canGrantRole(actor, r, { type: 'global' })
+          : [...selectedStoreIds].every((storeId) =>
+              canGrantRole(actor, r, { type: 'store', storeId }),
+            ),
+      )
       .sort((a, b) => b.rank - a.rank);
-  }, [rolesQuery.data, effectiveRank, scopeMode]);
+  }, [rolesQuery.data, actor, scopeMode, selectedStoreIds]);
 
   const toggleStore = (id: string) => {
     setSelectedStoreIds((prev) => {

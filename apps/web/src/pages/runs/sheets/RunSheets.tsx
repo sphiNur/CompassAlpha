@@ -27,6 +27,7 @@ import { evenSplitQty } from '../lib/splitQty';
 import { followPaymentMethod, followUnitPrice } from '../lib/purchaseOverrides';
 import { PriceInFull, PriceUnitSwitch } from '../components/PriceUnit';
 import { lineAmountNumber } from '@compass/contracts/money';
+import { useDraftChanged } from '../../../hooks/useDraftChanged';
 
 /**
  * M3.41 + M3.44 (2026-05-21 / 2026-05-22): draft state for the "+ add"
@@ -147,6 +148,12 @@ export function PurchaseSheet({
   const unitLabel = useUnitLabel();
   const sku = draft ? skuById.get(draft.skuId) : null;
   const candidateStores = useMemo(() => [...storeById.values()], [storeById]);
+  // CMP-BUY-4: what the buyer typed is not dropped by Esc / backdrop / back.
+  const changed = useDraftChanged(
+    draft,
+    (d) => `${d.skuId}:${d.isEdit}`,
+    (d) => [d.actualQty, d.unitPrice, d.reason, d.supplierId, d.receiptPhotoUrl, d.paymentMethod],
+  );
 
   // M3.36: local display state for the price input. Decoupled from
   // draft.unitPrice (which always holds raw UZS) so intermediate
@@ -211,6 +218,7 @@ export function PurchaseSheet({
     <Sheet
       open={!!draft}
       onOpenChange={(open) => !open && onCancel()}
+      hasChanges={changed && !submitting}
       title={
         draft?.isEdit
           ? i18n.t('run.confirm.editPurchase.title')
@@ -615,6 +623,11 @@ export function AddItemSheet({
   const [search, setSearch] = useState('');
   const [priceInput, setPriceInput] = useState('');
   const initializedExpenseScopeRef = useRef<string | null>(null);
+  const changed = useDraftChanged(
+    draft,
+    (d) => `${d.mode}:${d.expenseId}`,
+    (d) => [d.skuId, d.label, d.unitHint, d.actualQty, d.unitPrice, d.reason, d.receiptPhotoUrl],
+  );
 
   // Reset local input states when the sheet opens/closes for a new draft.
   useEffect(() => {
@@ -771,6 +784,8 @@ export function AddItemSheet({
     <Sheet
       open={!!draft}
       onOpenChange={(open) => !open && onCancel()}
+      // CMP-BUY-4: an expense or item being typed asks before it is lost.
+      hasChanges={changed && !submitting}
       title={
         draft?.mode === 'expense'
           ? i18n.t('run.action.addExpense.title')

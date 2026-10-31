@@ -17,6 +17,7 @@ import { useTapGuard } from '../hooks/useTapGuard';
 import { useVersionCheck } from '../hooks/useVersionCheck';
 import { useRealtime } from '../hooks/useRealtime';
 import { useRefetchFailedOnReconnect } from '../hooks/useRefetchFailedOnReconnect';
+import { useOutboxReplay } from '../lib/outboxReplay';
 import { AuthGate } from './AuthGate';
 import { Shell } from './Shell';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -99,6 +100,8 @@ function QueryConsumers({ children }: { children: ReactNode }) {
   useVersionCheck();
   useRefetchFailedOnReconnect();
   useQueryCachePersistence();
+  // CMP-FE-3: writes queued offline on any page replay from here.
+  useOutboxReplay();
   return <>{children}</>;
 }
 

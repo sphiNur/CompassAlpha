@@ -171,6 +171,8 @@ export const uz = {
   'ops.maint.confirmPurgeBody': 'Tasdiqlash uchun ish maydoni identifikatorini «{slug}» kiriting.',
   'ops.maint.confirmPurgeLabel': 'Ish maydoni identifikatori',
   'people.tapToRevoke': 'Bekor qilish uchun bosing',
+  'people.readOnlyStore': 'Faqat koʻrish',
+  'people.orgLevelGroup': 'Butun ish maydoni ({n})',
   'people.orgLevelEmptyTitle': 'Tashkilot darajasidagi aʼzolar yoʻq',
   'people.orgLevelEmptyBody':
     'Aniq doʻkonga biriktirilmagan administrator va superadminlar shu yerda chiqadi.',
@@ -321,6 +323,22 @@ export const uz = {
   'ops.purge.unknownStore': 'Nomaʼlum doʻkon',
   'ops.purge.deleteSessionTitle': 'Buyurtmani oʻchirish',
   'ops.purge.deleting': 'Oʻchirilmoqda…',
+  'ops.purge.kind.orders': 'Buyurtmalar',
+  'ops.purge.kind.orderLines': 'Buyurtma qatorlari',
+  'ops.purge.kind.runs': 'Xaridlar',
+  'ops.purge.kind.runLines': 'Xarid qatorlari',
+  'ops.purge.kind.runStoreLines': 'Doʻkonlar boʻyicha xarid qatorlari',
+  'ops.purge.kind.expenses': 'Xarid xarajatlari',
+  'ops.purge.kind.dailyCloses': 'Kun yakunlari',
+  'ops.purge.kind.stockMovements': 'Zaxira harakatlari',
+  'ops.purge.kind.priceHistory': 'Narx yozuvlari',
+  'ops.purge.kind.notifications': 'Bildirishnomalar',
+  'ops.purge.kind.pendingMessages': 'Hali yuborilmagan xabarlar',
+  'ops.purge.kind.history': 'Tarix yozuvlari',
+  'ops.purge.kind.appLogs': 'Ilova jurnallari',
+  'ops.purge.kind.other': 'Boshqa',
+  'ops.maint.confirmResetBody': 'Tasdiqlash uchun {date} sanasini kiriting. Buni ortga qaytarib boʻlmaydi.',
+  'ops.maint.confirmResetLabel': 'Tiklanadigan sana',
   'ops.purge.deleteRows': '{n} qatorni oʻchirish',
   'ops.purge.counting': 'Hisoblanmoqda…',
   'ops.purge.rowsWouldBeDeleted': '{n} qator oʻchiriladi',
@@ -591,9 +609,12 @@ export const uz = {
   'auth.noStoreYet.title': 'Hali doʻkon yoʻq',
   'auth.noStoreYet.body': 'Avval Boshqaruv › Doʻkonlar boʻlimida doʻkon yarating: buyurtma, qabul, kun yakuni va savdo doʻkon boʻyicha yuritiladi.',
   'auth.noStoreYet.action': 'Doʻkon yaratish',
+  'auth.blocked.signedInAs': 'Siz {name} sifatida kirgansiz',
+  'auth.blocked.signOut': 'Chiqish',
+  'auth.blocked.close': 'Yopish',
+  'auth.blocked.stillBlocked': 'Hali ham ruxsat yoʻq. Administratorga murojaat qiling.',
   'auth.noStore.title': 'Hali doʻkon belgilanmagan',
-  'auth.noStore.body':
-    'Hisob tayyor, ammo administrator hali sizni doʻkonga biriktirmagan. Menejer bilan bogʻlaning.',
+  'auth.noStore.body': 'Hisob tayyor, ammo sizni hali hech bir doʻkonga qoʻshishmagan. Administratordan sizni qoʻshishini soʻrang.',
 
   // ── 5. Auth errors ─────────────────────────────────────────────
   'auth.errors.botTokenMissing': 'Bot tokeni sozlanmagan',
@@ -1149,6 +1170,8 @@ export const uz = {
   'run.preview.noSupplierCount': 'Rastasiz: {n}',
   'run.preview.filterMatch': '{total} tadan {n} ta',
   'run.price.fillIn': 'Narx kiriting',
+  'run.offline.needNetworkToDeliver': 'Yetkazishni boshlash uchun tarmoq kerak',
+  'run.offline.waitForSync': '{n} ta saqlangan oʻzgarish sinxronlangach, yetkazishni boshlang',
   'run.offline.needNetworkToStart': 'Xaridni boshlash uchun tarmoq kerak',
   'run.toast.runAlreadyOpen': 'Xarid allaqachon ochiq — oʻsha ochildi',
   'run.price.daysAgo': '{n} kun oldin',
@@ -1644,6 +1667,7 @@ export const uz = {
   'inventory.errors.cannotAdjust':
     'Inventarizatsiya yoki yoʻqotish uchun qoldiqni tuzatish ruxsati kerak.',
   'inventory.errors.invalidQty': 'Miqdor manfiy boʻlmasligi kerak.',
+  'inventory.sheet.wastage.needQty': 'Qancha yoʻqotilganini kiriting.',
   'inventory.errors.wastageNeedsNote': 'Yoʻqotish sababi kerak.',
 
   // ── 17. Dishes / Recipes (M2.0b) ───────────────────────

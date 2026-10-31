@@ -87,8 +87,7 @@ import { SessionPicker } from './runs/components/SessionPicker';
 import { selectPreview, selectedSessionIds } from './runs/lib/sessionSelection';
 import { editPricingFromSplits, splitOverridesFor } from './runs/lib/purchaseOverrides';
 import { NEW_RUN, isBuying, liveRunsOf, pickActiveRun, runListGate } from './runs/lib/liveRuns';
-import { overlayPendingWrites, withData } from './runs/lib/pendingOverlay';
-import { useOfflineDropToast } from '../lib/offlineDrop';
+import { overlayPendingWrites, startDeliveryBlock, withData } from './runs/lib/pendingOverlay';
 
 function newClientId(): string {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -212,8 +211,6 @@ export function RunPage() {
   });
 
   const utils = trpc.useUtils();
-  // RE-DLV-4 / R2-DLV-3: a refused replay says which action failed.
-  const offlineDropToast = useOfflineDropToast();
   const invalidateRunQuietly = useCallback(
     (includeList = false) => {
       setTimeout(() => {
@@ -223,58 +220,9 @@ export function RunPage() {
     },
     [utils],
   );
-  const offline = useOfflineQueue(
-    {
-      'run.purchaseItem': async (entry) => {
-        // H2: replay with the SAME idempotency key the first attempt used, so
-        // a request the server already committed (lost response) dedupes.
-        await utils.client.run.purchaseItem.mutate(
-          entry.input as Parameters<typeof utils.client.run.purchaseItem.mutate>[0],
-          entry.idempotencyKey ? { context: { idempotencyKey: entry.idempotencyKey } } : undefined,
-        );
-        void utils.run.get.invalidate();
-        void utils.run.list.invalidate();
-      },
-      'run.markUnavailable': async (entry) => {
-        await utils.client.run.markUnavailable.mutate(
-          entry.input as Parameters<typeof utils.client.run.markUnavailable.mutate>[0],
-          entry.idempotencyKey ? { context: { idempotencyKey: entry.idempotencyKey } } : undefined,
-        );
-        void utils.run.get.invalidate();
-      },
-      'run.deliverToStore': async (entry) => {
-        await utils.client.run.deliverToStore.mutate(
-          entry.input as Parameters<typeof utils.client.run.deliverToStore.mutate>[0],
-          entry.idempotencyKey ? { context: { idempotencyKey: entry.idempotencyKey } } : undefined,
-        );
-        void utils.run.get.invalidate();
-        void utils.run.list.invalidate();
-      },
-      // M3.41 (2026-05-21): purchaser-added items survive flaky bazaar
-      // LTE just like regular purchases.
-      'run.addPurchaserItem': async (entry) => {
-        // 2026-07-26: replay with the SAME key the first attempt used —
-        // see the mutation's onMutate. Without this a lost response
-        // recorded the off-catalog purchase twice.
-        await utils.client.run.addPurchaserItem.mutate(
-          entry.input as Parameters<typeof utils.client.run.addPurchaserItem.mutate>[0],
-          entry.idempotencyKey ? { context: { idempotencyKey: entry.idempotencyKey } } : undefined,
-        );
-        void utils.run.get.invalidate();
-        void utils.run.list.invalidate();
-      },
-      // M3.44 (2026-05-22): off-catalog expenses. Same retry pattern.
-      'run.addExpense': async (entry) => {
-        await utils.client.run.addExpense.mutate(
-          entry.input as Parameters<typeof utils.client.run.addExpense.mutate>[0],
-          entry.idempotencyKey ? { context: { idempotencyKey: entry.idempotencyKey } } : undefined,
-        );
-        void utils.run.get.invalidate();
-        void utils.run.list.invalidate();
-      },
-    },
-    { onDrop: offlineDropToast },
-  );
+  // Purchases queue offline; their replay (with the first attempt's
+  // idempotency key) is app-level now (CMP-FE-3, lib/outboxReplay.ts).
+  const offline = useOfflineQueue();
 
   // ---- Mutations ------------------------------------------------------
   // M1.9 (2026-05-07): hoisted into `lib/errToast.ts` so the same
@@ -1100,6 +1048,13 @@ export function RunPage() {
   // first". That's a noisy waste. Now: button is disabled (Telegram dims
   // it) when the precondition isn't met, and the *text* tells the user
   // what's missing.
+  // CMP-BUY-1: starting delivery needs the network and an empty queue.
+  const deliveryBlock = startDeliveryBlock(offline.online, offline.pendingEntries.length);
+  useEffect(() => {
+    // Went offline (or a write got queued) while the confirm sheet was open.
+    if (deliveryBlock && confirmAction === 'startDelivery') setConfirmAction(null);
+  }, [deliveryBlock, confirmAction]);
+
   const mainButton = useMemo<{
     text: string;
     onClick: () => void;
@@ -1222,6 +1177,22 @@ export function RunPage() {
             active: true,
           };
         }
+        // CMP-BUY-1 (2026-10-31): items bought offline count as handled
+        // (they show on their rows), but the server has not seen them
+        // yet. Starting delivery then only failed on the network — or,
+        // once online with the queue still sending, started a delivery the
+        // server thought was not fully bought. Say what it waits for.
+        if (deliveryBlock) {
+          return {
+            text:
+              deliveryBlock === 'offline'
+                ? i18n.t('run.offline.needNetworkToDeliver')
+                : i18n.t('run.offline.waitForSync', { n: offline.pendingEntries.length }),
+            onClick: () => {},
+            visible: true,
+            active: false,
+          };
+        }
         return {
           text: i18n.t('run.action.startDelivery'),
           onClick: () => setConfirmAction('startDelivery'),
@@ -1301,6 +1272,8 @@ export function RunPage() {
     activeRun,
     allItemsHandled,
     allStoresConfirmed,
+    deliveryBlock,
+    offline.pendingEntries.length,
     pendingCount,
     runDetailQuery.data?.otherStoreSkuIds,
     runDetailQuery.data?.splits,

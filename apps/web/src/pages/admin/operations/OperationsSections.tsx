@@ -43,6 +43,7 @@ import { useReportStore } from '../../../hooks/useReportStore';
 import { DebugPage } from '../../DebugPage';
 import { financePresetRange, maintenanceToday } from './financeDates';
 import { auditCategory, describeAuditRow, type AuditCategory } from './auditSentence';
+import { purgeCountsByKind, resetConfirmMatches } from './purgeCounts';
 
 // ============ Activity ============
 
@@ -708,21 +709,23 @@ function CascadePreview({ byTable, total }: { byTable: Record<string, number>; t
       <div className="text-old-body font-semibold text-[var(--c-fg)]">
         {i18n.t('ops.purge.rowsWouldBeDeleted', { n: total })}
       </div>
-      <ul className="mt-2 flex flex-col gap-1">
-        {Object.entries(byTable)
-          .filter(([, n]) => n > 0)
-          .sort((a, b) => b[1] - a[1])
-          .map(([table, n]) => (
-            <li
-              key={table}
-              className="flex justify-between font-mono text-old-label text-[var(--c-fg-muted)]"
-            >
-              <span className="truncate">{table}</span>
-              <span className="tabular-nums">{n}</span>
-            </li>
-          ))}
-      </ul>
+      <PurgeCountList byTable={byTable} />
     </div>
+  );
+}
+
+/** CMP-OPS-6: what a purge deletes, in plain words, with counts. */
+function PurgeCountList({ byTable }: { byTable: Record<string, number> }) {
+  const i18n = useI18n();
+  return (
+    <ul className="mt-2 flex flex-col gap-1">
+      {purgeCountsByKind(byTable).map(({ kind, n }) => (
+        <li key={kind} className="flex justify-between text-old-label text-[var(--c-fg-muted)]">
+          <span className="truncate">{i18n.t(`ops.purge.kind.${kind}`)}</span>
+          <span className="tabular-nums">{n}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -1804,6 +1807,11 @@ export function MaintenanceSection() {
     byTable: Record<string, number>;
   } | null>(null);
   const [dateConfirmOpen, setDateConfirmOpen] = useState(false);
+  const [dateConfirmText, setDateConfirmText] = useState('');
+  const dateConfirmed = resetConfirmMatches(dateConfirmText, datePreview?.date ?? '');
+  useEffect(() => {
+    if (!dateConfirmOpen) setDateConfirmText('');
+  }, [dateConfirmOpen]);
 
   const datePreviewMut = trpc.admin.purgeByDate.useMutation({
     onSuccess: (data) => {
@@ -1980,9 +1988,9 @@ export function MaintenanceSection() {
             block
             variant="danger"
             loading={dateCommitMut.isPending}
-            disabled={!datePreview || datePreview.total === 0}
+            disabled={!datePreview || datePreview.total === 0 || !dateConfirmed}
             onClick={() => {
-              if (!datePreview) return;
+              if (!datePreview || !dateConfirmed) return;
               dateCommitMut.mutate({ date: datePreview.date, dryRun: false });
             }}
           >
@@ -2002,23 +2010,24 @@ export function MaintenanceSection() {
                   ? i18n.t('ops.maint.alreadyClean', { date: datePreview.date })
                   : i18n.t('ops.maint.rowsFromDate', { n: datePreview.total, date: datePreview.date })}
               </div>
-              {datePreview.total > 0 ? (
-                <ul className="mt-2 flex flex-col gap-1">
-                  {Object.entries(datePreview.byTable)
-                    .filter(([, n]) => n > 0)
-                    .sort((a, b) => b[1] - a[1])
-                    .map(([table, n]) => (
-                      <li
-                        key={table}
-                        className="flex justify-between font-mono text-old-label text-[var(--c-fg-muted)]"
-                      >
-                        <span className="truncate">{table}</span>
-                        <span className="tabular-nums">{n}</span>
-                      </li>
-                    ))}
-                </ul>
-              ) : null}
+              {datePreview.total > 0 ? <PurgeCountList byTable={datePreview.byTable} /> : null}
             </div>
+          ) : null}
+          {/* CMP-OPS-5: typed confirmation, like the full wipe. */}
+          {datePreview && datePreview.total > 0 ? (
+            <Field
+              label={i18n.t('ops.maint.confirmResetLabel')}
+              hint={i18n.t('ops.maint.confirmResetBody', { date: datePreview.date })}
+            >
+              <Input
+                value={dateConfirmText}
+                onChange={(e) => setDateConfirmText(e.target.value)}
+                placeholder={datePreview.date}
+                inputMode="numeric"
+                autoCapitalize="off"
+                autoCorrect="off"
+              />
+            </Field>
           ) : null}
         </div>
       </Sheet>
@@ -2052,20 +2061,7 @@ export function MaintenanceSection() {
               <div className="text-old-body font-semibold text-[var(--c-fg)]">
                 {i18n.t('ops.purge.rowsWouldBeDeleted', { n: allDryRun.data.total })}
               </div>
-              <ul className="mt-2 flex flex-col gap-1">
-                {Object.entries(allDryRun.data.byTable)
-                  .filter(([, n]) => n > 0)
-                  .sort((a, b) => b[1] - a[1])
-                  .map(([table, n]) => (
-                    <li
-                      key={table}
-                      className="flex justify-between font-mono text-old-label text-[var(--c-fg-muted)]"
-                    >
-                      <span className="truncate">{table}</span>
-                      <span className="tabular-nums">{n}</span>
-                    </li>
-                  ))}
-              </ul>
+              <PurgeCountList byTable={allDryRun.data.byTable} />
               {allDryRun.data.total === 0 ? (
                 <p className="mt-2 text-old-label text-[var(--c-fg-muted)]">
                   {i18n.t('ops.maint.nothingToPurge')}

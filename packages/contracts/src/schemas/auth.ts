@@ -123,6 +123,12 @@ export const SessionSchema = z.object({
      */
     secondaryLocale: LocaleSchema.nullable(),
     tgUsername: z.string().nullable(),
+    /**
+     * CMP-SHL-1 (2026-10-31): the person's own Telegram id, so the "no
+     * access" screens can show who is signed in and what to send the
+     * administrator. Optional: sessions saved by older builds lack it.
+     */
+    tgUserId: z.string().nullable().optional(),
   }),
   member: MemberSummarySchema,
   /** Active organisations this user belongs to. */

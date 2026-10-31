@@ -1635,6 +1635,7 @@ export const adminRouter = router({
             memberId: s.memberRoleBindings.memberId,
             roleSlug: s.roles.slug,
             roleName: s.roles.name,
+            roleRank: s.roles.rank,
             scopeType: s.memberRoleBindings.scopeType,
             scopeId: s.memberRoleBindings.scopeId,
           })
@@ -1664,6 +1665,8 @@ export const adminRouter = router({
           bindingId: string;
           slug: string;
           name: string;
+          /** CMP-ADM-1: lets the web hide actions the rank gates refuse. */
+          rank: number;
           scopeType: string;
           scopeId: string | null;
         }>
@@ -1674,6 +1677,7 @@ export const adminRouter = router({
           bindingId: b.bindingId,
           slug: b.roleSlug,
           name: b.roleName,
+          rank: b.roleRank,
           scopeType: b.scopeType,
           scopeId: b.scopeId,
         });
