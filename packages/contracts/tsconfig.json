@@ -2,7 +2,9 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    // P-5 (2026-10-31): `bun:test` in src/limits.test.ts, as in packages/i18n.
+    "types": ["bun"]
   },
   "include": ["src/**/*"]
 }

@@ -30,7 +30,7 @@ import {
 import { proportionalSplitQty } from '../lib/splitQty';
 import { PriceInFull, PriceUnitSwitch } from '../components/PriceUnit';
 import { otherStoreSkusOf, type ActiveRun } from '../types';
-import { lineAmountNumber, lineWithinCap } from '@compass/contracts';
+import { lineAmountNumber, lineWithinCap } from '@compass/contracts/money';
 
 /**
  * GroupCardHeader — the "group title + right-aligned count·qty meta"

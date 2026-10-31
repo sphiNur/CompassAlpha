@@ -1,5 +1,10 @@
 import { z } from 'zod';
 import { DecimalStringSchema, I18nNamesSchema, UuidSchema } from './common';
+import { SKU_STEPS, SKU_UNITS } from '../limits';
+
+// The lists live in ../limits (zod-free, P-5) so the web can import them
+// without zod; re-exported here for the barrel.
+export { SKU_STEPS, SKU_UNITS };
 
 export const CategorySchema = z.object({
   id: UuidSchema,
@@ -19,9 +24,8 @@ export const CategorySchema = z.object({
  * else; migration 0036 backfilled existing rows. `g` was retired —
  * weigh-and-pay goods are always kg (or L for liquids).
  */
-export const SkuUnitSchema = z.enum(['kg', 'L', 'pcs', 'pack', 'bunch', 'box', 'roll', 'pair']);
+export const SkuUnitSchema = z.enum(SKU_UNITS);
 export type SkuUnit = z.infer<typeof SkuUnitSchema>;
-export const SKU_UNITS = SkuUnitSchema.options;
 
 /**
  * SKU step (M3.14, 2026-05-16): restricted to a canonical grid.
@@ -36,9 +40,8 @@ export const SKU_UNITS = SkuUnitSchema.options;
  * rejects it and the admin SKU sheet renders a Select with these
  * options so it can't be mis-entered. Old rows are migrated (0023, 0036).
  */
-export const SkuStepSchema = z.enum(['0.5', '1', '10', '50', '100']);
+export const SkuStepSchema = z.enum(SKU_STEPS);
 export type SkuStep = z.infer<typeof SkuStepSchema>;
-export const SKU_STEPS = SkuStepSchema.options;
 
 export const SkuSchema = z.object({
   id: UuidSchema,
