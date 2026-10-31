@@ -95,13 +95,38 @@ type TabDef = {
   /** Hide the tab when the user ALSO holds this permission (2026-10-21). */
   hiddenWith?: string;
   labelKey: string;
+  /**
+   * D17 (2026-10-31): the bottom nav's own short label. ru / uz words such
+   * as «Согласование» or «Kun yakuni» do not fit seven tabs at 360 px, so
+   * the nav reads `nav.short.*`; page titles and the screen-reader name
+   * keep the full `labelKey`. zh / en short labels equal the full ones.
+   */
+  shortKey: string;
   Icon: IconComponent;
 };
 
 const TABS: TabDef[] = [
-  { key: 'order', permission: 'order.draft', labelKey: 'nav.order', Icon: IconOrder },
-  { key: 'approve', permission: 'order.approve', labelKey: 'nav.approve', Icon: IconApprove },
-  { key: 'run', permission: 'run.purchase', labelKey: 'nav.run', Icon: IconRun },
+  {
+    key: 'order',
+    permission: 'order.draft',
+    labelKey: 'nav.order',
+    shortKey: 'nav.short.order',
+    Icon: IconOrder,
+  },
+  {
+    key: 'approve',
+    permission: 'order.approve',
+    labelKey: 'nav.approve',
+    shortKey: 'nav.short.approve',
+    Icon: IconApprove,
+  },
+  {
+    key: 'run',
+    permission: 'run.purchase',
+    labelKey: 'nav.run',
+    shortKey: 'nav.short.run',
+    Icon: IconRun,
+  },
   // 2026-07-30: purchase history used to be reachable only from the
   // bottom of the Run tab, which meant only `run.purchase` holders
   // could see it — a store manager had no route to their own store's
@@ -109,11 +134,18 @@ const TABS: TabDef[] = [
   // + manager + admin + super_admin) and is the right gate for a
   // price-and-spend record. See HistoryPage.tsx for why this needed no
   // server-side change.
-  { key: 'history', permission: 'prices.view', labelKey: 'nav.history', Icon: IconHistory },
+  {
+    key: 'history',
+    permission: 'prices.view',
+    labelKey: 'nav.history',
+    shortKey: 'nav.short.history',
+    Icon: IconHistory,
+  },
   {
     key: 'settlement',
     permission: 'settlement.record',
     labelKey: 'nav.settlement',
+    shortKey: 'nav.short.settlement',
     Icon: IconSettlement,
   },
   // 2026-10-21: staff hold sales.record but not settlement.record, so
@@ -124,14 +156,22 @@ const TABS: TabDef[] = [
     permission: 'sales.record',
     hiddenWith: 'settlement.record',
     labelKey: 'nav.sales',
+    shortKey: 'nav.short.sales',
     Icon: IconCatalog,
   },
-  { key: 'confirm', permission: 'delivery.confirm', labelKey: 'nav.confirm', Icon: IconConfirm },
+  {
+    key: 'confirm',
+    permission: 'delivery.confirm',
+    labelKey: 'nav.confirm',
+    shortKey: 'nav.short.confirm',
+    Icon: IconConfirm,
+  },
   {
     key: 'admin',
     permission: 'users.manage',
     orPermission: 'reports.view',
     labelKey: 'nav.admin',
+    shortKey: 'nav.short.admin',
     Icon: IconAdmin,
   },
 ];
@@ -707,7 +747,13 @@ function BottomNav({
   setTab,
   i18n,
 }: {
-  visible: Array<{ key: Tab; permission: string | null; labelKey: string; Icon: IconComponent }>;
+  visible: Array<{
+    key: Tab;
+    permission: string | null;
+    labelKey: string;
+    shortKey: string;
+    Icon: IconComponent;
+  }>;
   tab: Tab;
   setTab: (k: Tab) => void;
   i18n: ReturnType<typeof useI18n>;
@@ -718,9 +764,13 @@ function BottomNav({
   return (
     <nav
       data-testid="primary-nav"
-      className="grid shrink-0 border-t border-[var(--c-divider)] bg-[var(--c-surface)]"
+      // D17 (2026-10-31): flex, not a grid of equal columns. Every tab
+      // still starts from an equal share (flex-1 = basis 0), but a tab
+      // never shrinks below its own label, so a long ru / uz word takes a
+      // few px from the short ones instead of ending in an ellipsis. Seven
+      // tabs at 360 px: ru labels need 321 px, uz 300 px.
+      className="flex shrink-0 border-t border-[var(--c-divider)] bg-[var(--c-surface)]"
       style={{
-        gridTemplateColumns: `repeat(${visible.length}, minmax(0, 1fr))`,
         paddingBottom: 'var(--app-safe-bottom)',
         height: 'calc(var(--app-nav-h) + var(--app-safe-bottom))',
         // M3.50: block tab switches during in-flight mutations.
@@ -734,18 +784,23 @@ function BottomNav({
       {visible.map((t) => {
         const active = tab === t.key;
         const Icon = t.Icon;
+        const label = i18n.t(t.labelKey as Parameters<typeof i18n.t>[0]);
+        const short = i18n.t(t.shortKey as Parameters<typeof i18n.t>[0]);
         return (
           <button
             key={t.key}
             type="button"
             data-testid={`nav-${t.key}`}
+            // The short nav word is an abbreviation in ru / uz; screen
+            // readers announce the section's full name.
+            aria-label={short === label ? undefined : label}
             onClick={() => setTab(t.key as Tab)}
             aria-current={active ? 'page' : undefined}
             disabled={busy}
             className={
               // V5: px-0.5 leaves each of seven tabs at 360 px about 47 px
               // of label room — enough for every zh and en label at 11 px.
-              'press flex min-w-0 flex-col items-center justify-center gap-1 px-0.5 ' +
+              'press flex flex-1 flex-col items-center justify-center gap-1 px-0.5 ' +
               (active ? 'text-[var(--c-action)]' : 'text-[var(--c-fg-muted)]')
             }
           >
@@ -753,8 +808,9 @@ function BottomNav({
             {/* V5 (2026-10-30): 11 px (text-old-label), was 9 px with the
                 line height equal to the size. Measured at 360 px with seven
                 tabs: zh and en fit; the longest ru / uz words
-                ("Согласование", "Tasdiqlash", "Kun yakuni") already
-                overflowed at 9 px and still end in an ellipsis. */}
+                ("Согласование", "Tasdiqlash", "Kun yakuni") overflowed, so
+                the nav uses the short labels (D17). `truncate` stays as a
+                guard for a future label that is too long. */}
             <span
               className={
                 active
@@ -762,7 +818,7 @@ function BottomNav({
                   : 'max-w-full truncate text-old-label leading-tight'
               }
             >
-              {i18n.t(t.labelKey as Parameters<typeof i18n.t>[0])}
+              {short}
             </span>
           </button>
         );

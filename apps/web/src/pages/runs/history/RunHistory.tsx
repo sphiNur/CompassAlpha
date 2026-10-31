@@ -26,7 +26,7 @@ import { useNavStore } from '../../../stores/navStore';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { formatMoney, formatQty } from '../../../lib/format';
-import { useUnitLabel } from '../../../hooks/useI18n';
+import { useDateFormat, useUnitLabel } from '../../../hooks/useI18n';
 import type { useI18n, useProductName } from '../../../hooks/useI18n';
 import { expenseLine, splitSubtotal, settleItemLine, settlePerStore } from '../lib/settlement';
 import { dayStoreSummaries, groupRunsByDay, type HistoryDay } from '../lib/historyGroups';
@@ -162,6 +162,7 @@ export function RunHistoryPage({
    */
   onBack?: () => void;
 }) {
+  const dates = useDateFormat();
   const [detailFor, setDetailFor] = useState<HistoryDetailTarget | null>(null);
   /** 2026-10-23: a day with several trips opens a day summary first. */
   const [dayFor, setDayFor] = useState<HistoryDay | null>(null);
@@ -271,8 +272,14 @@ export function RunHistoryPage({
                       never varied, and leaked English; UI-2). The mono
                       total takes the freed right slot (L2 settlement row). */}
                   <div className="min-w-0 flex-1 text-old-body font-semibold tabular-nums">
-                    {day.runDate}
-                    {single && single.runIndex > 0 ? ` #${single.runIndex + 1}` : ''}
+                    {/* D16 / RE-COPY-1: date in the UI language; the
+                        trip number's sign comes from the catalog. */}
+                    {single && single.runIndex > 0
+                      ? i18n.t('run.history.runTitle', {
+                          date: dates.calendarDay(day.runDate),
+                          n: single.runIndex + 1,
+                        })
+                      : dates.calendarDay(day.runDate)}
                     {/* D5 (2026-10-31): a run reopened for amending stays
                         listed, marked as such. */}
                     {day.runs.some((r) => r.status === 'amending') ? (
@@ -476,6 +483,7 @@ function RunHistoryDaySheet({
   onOpenRun: (target: HistoryDetailTarget) => void;
   onClose: () => void;
 }) {
+  const dates = useDateFormat();
   const stores = useMemo(() => (day ? dayStoreSummaries(day) : []), [day]);
   const trips = useMemo(
     () => (day ? [...day.runs].sort((a, b) => a.runIndex - b.runIndex) : []),
@@ -497,7 +505,7 @@ function RunHistoryDaySheet({
     <Sheet
       open={!!day}
       onOpenChange={(open) => !open && onClose()}
-      title={day?.runDate ?? ''}
+      title={dates.calendarDay(day?.runDate)}
       description={day ? i18n.t('run.history.tripCount', { n: day.runs.length }) : undefined}
     >
       {!day ? null : (
@@ -669,6 +677,7 @@ export function RunHistoryDetailSheet({
   // 2026-07-30 (flow review): history detail rows printed the raw canonical
   // unit ("kg") while the live run rows printed "公斤".
   const unitLabel = useUnitLabel();
+  const dates = useDateFormat();
   // M1.21: org-wide currency for the headline label.
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   const orgTimeZone = useAuthStore((s) => s.session?.member.timezone);
@@ -925,7 +934,14 @@ export function RunHistoryDetailSheet({
       open={!!target}
       onOpenChange={(open) => !open && onClose()}
       title={
-        target ? `${target.runDate}${target.runIndex > 0 ? ` #${target.runIndex + 1}` : ''}` : ''
+        !target
+          ? ''
+          : target.runIndex > 0
+            ? i18n.t('run.history.runTitle', {
+                date: dates.calendarDay(target.runDate),
+                n: target.runIndex + 1,
+              })
+            : dates.calendarDay(target.runDate)
       }
       // DLV-16 (2026-10-30): was the raw status ("finished", "amending").
       description={
@@ -1152,14 +1168,14 @@ export function RunHistoryDetailSheet({
                       <span className="min-w-0">
                         {activeStoreId ? (
                           it.status === 'purchased' ? (
-                            `${formatQty(row.qty)} ${unitLabel(sku?.unit)} × ${formatMoney(displayedUnitPrice)}`
+                            `${formatQty(row.qty)} ${unitLabel(sku?.unit, row.qty)} × ${formatMoney(displayedUnitPrice)}`
                           ) : (
                             (it.unavailableNote ?? '')
                           )
                         ) : (
                           <>
                             {it.status === 'purchased'
-                              ? `${formatQty(it.purchasedQty)} ${unitLabel(sku?.unit)}${it.unitPrice ? ` × ${formatMoney(it.unitPrice)}` : ''}`
+                              ? `${formatQty(it.purchasedQty)} ${unitLabel(sku?.unit, it.purchasedQty)}${it.unitPrice ? ` × ${formatMoney(it.unitPrice)}` : ''}`
                               : (it.unavailableNote ?? '')}
                           </>
                         )}
@@ -1191,7 +1207,7 @@ export function RunHistoryDetailSheet({
                             i18n.t('confirm.receivedOf', {
                               received: formatQty(perStoreSplits[0].confirmReceivedQty),
                               qty: formatQty(perStoreSplits[0].qty),
-                              unit: unitLabel(sku?.unit),
+                              unit: unitLabel(sku?.unit, perStoreSplits[0].qty),
                             })
                           : ''}
                         {perStoreSplits[0].confirmNote ? ` · ${perStoreSplits[0].confirmNote}` : ''}
@@ -1238,7 +1254,7 @@ export function RunHistoryDetailSheet({
                             >
                               <span className="font-medium text-[var(--c-fg)]">{storeName}</span>
                               <span className="font-mono tabular-nums text-[var(--c-fg-muted)]">
-                                {formatQty(sp.qty)} {unitLabel(sku?.unit)}
+                                {formatQty(sp.qty)} {unitLabel(sku?.unit, sp.qty)}
                                 {(sp.unitPrice ?? it.unitPrice)
                                   ? ` × ${formatMoney(sp.unitPrice ?? it.unitPrice)}`
                                   : ''}

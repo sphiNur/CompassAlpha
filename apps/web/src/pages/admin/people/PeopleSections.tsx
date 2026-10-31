@@ -43,7 +43,7 @@ import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { matchesAnyString, normalizeQuery } from '../../../lib/searchMatch';
-import { useDateFormat, useI18n } from '../../../hooks/useI18n';
+import { useDateFormat, useI18n, useRoleLabels } from '../../../hooks/useI18n';
 import { getTg } from '../../../hooks/useTelegram';
 import { useStoreContext } from '../../../components/StoreSwitcher';
 import {
@@ -93,6 +93,7 @@ export function PeopleSection({
   const toast = useToast();
   const errToast = useErrToast();
   const i18n = useI18n();
+  const roleText = useRoleLabels();
   const dateFmt = useDateFormat();
   // M1.9: per-key allow/deny override grid is power-user surface — gate
   // the "Permissions" button to global admins only. The 4 built-in
@@ -287,6 +288,7 @@ export function PeopleSection({
                     m.tgUsername,
                     ...m.roles.map((r) => r.slug),
                     ...m.roles.map((r) => r.name),
+                    ...m.roles.map((r) => roleText.name(r)),
                   ],
                   tokens,
                 ),
@@ -372,17 +374,20 @@ export function PeopleSection({
                               nativeConfirm(
                                 scopedStoreName
                                   ? i18n.t('people.revokeRoleInStoreConfirm', {
-                                      role: r.name,
+                                      role: roleText.name(r),
                                       store: scopedStoreName,
                                       name: m.displayName,
                                     })
-                                  : i18n.t('people.revokeRoleConfirm', { role: r.name, name: m.displayName }),
+                                  : i18n.t('people.revokeRoleConfirm', {
+                                      role: roleText.name(r),
+                                      name: m.displayName,
+                                    }),
                                 () => revoke.mutate({ bindingId: r.bindingId }),
                               )
                             }
                             title={i18n.t('people.tapToRevoke')}
                           >
-                            <span className="font-semibold">{r.name}</span>
+                            <span className="font-semibold">{roleText.name(r)}</span>
                             {scopedStoreName ? (
                               <span className="text-[var(--c-fg-muted)]">· {scopedStoreName}</span>
                             ) : null}
@@ -722,6 +727,7 @@ export function PeopleSection({
  */
 export function PermissionsSection({ isSuperAdmin }: { isSuperAdmin: boolean }) {
   const i18n = useI18n();
+  const roleText = useRoleLabels();
   const session = useAuthStore((s) => s.session);
   const myMaxRank = session?.myMaxRank ?? 0;
   const rolesQuery = trpc.admin.roleList.useQuery();
@@ -770,14 +776,15 @@ export function PermissionsSection({ isSuperAdmin }: { isSuperAdmin: boolean }) 
                   i18n.t('people.rankLine', { rank: r.rank }),
                   i18n.t('people.permissionCount', { n: r.permissionCount }),
                 ];
-                if (r.description) subtitleParts.push(r.description);
+                const description = roleText.description(r);
+                if (description) subtitleParts.push(description);
                 const subtitle = subtitleParts.join(' · ');
                 return (
                   <li key={r.id}>
                     <ListRow
                       label={
                         <span className="flex items-center gap-2">
-                          {r.name}
+                          {roleText.name(r)}
                           {r.isBuiltIn ? (
                             <Badge tone="muted">{i18n.t('admin.label.builtIn')}</Badge>
                           ) : null}
@@ -844,6 +851,7 @@ function RoleCreateSheet({
   const toast = useToast();
   const errToast = useErrToast();
   const i18n = useI18n();
+  const roleText = useRoleLabels();
   const permsQuery = trpc.admin.permissionList.useQuery(undefined, { enabled: open });
   const [slug, setSlug] = useState('');
   const [name, setName] = useState('');
@@ -970,14 +978,16 @@ function RoleCreateSheet({
         </Field>
         <div>
           {/* M2.1: SectionLabel (was ad-hoc eyebrow). */}
-          <SectionLabel className="mb-2 px-0">Permissions ({picked.size})</SectionLabel>
+          <SectionLabel className="mb-2 px-0">
+            {i18n.t('people.permissionsHeading', { n: picked.size })}
+          </SectionLabel>
           {permsQuery.isLoading ? (
             <Spinner size={16} />
           ) : (
             <ul className="flex flex-col gap-3">
               {grouped.map(([ns, keys]) => (
                 <li key={ns}>
-                  <SectionLabel padded={false}>{ns}</SectionLabel>
+                  <SectionLabel padded={false}>{roleText.permissionGroup(ns)}</SectionLabel>
                   <ul className="mt-1 flex flex-col gap-1">
                     {keys.map((p) => (
                       <li key={p.key}>
@@ -990,11 +1000,9 @@ function RoleCreateSheet({
                           />
                           <div className="min-w-0 flex-1">
                             <div className="font-mono text-old-label">{p.key}</div>
-                            {p.description ? (
-                              <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
-                                {p.description}
-                              </div>
-                            ) : null}
+                            <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
+                              {roleText.permission(p.key, p.description)}
+                            </div>
                           </div>
                         </label>
                       </li>
@@ -1029,6 +1037,7 @@ function RolePermissionsSheet({
   const toast = useToast();
   const errToast = useErrToast();
   const i18n = useI18n();
+  const roleText = useRoleLabels();
   const detail = trpc.admin.roleDetail.useQuery(
     { roleSlug: roleSlug ?? '' },
     { enabled: !!roleSlug },
@@ -1105,7 +1114,7 @@ function RolePermissionsSheet({
     <Sheet
       open={open}
       onOpenChange={(o) => !o && onClose()}
-      title={detail.data?.name ?? i18n.t('people.roleFallback')}
+      title={detail.data ? roleText.name(detail.data) : i18n.t('people.roleFallback')}
       description={
         detail.data
           ? i18n.t('people.roleMetaLine', {
@@ -1151,7 +1160,7 @@ function RolePermissionsSheet({
                 loading={remove.isPending}
                 onClick={() => {
                   nativeConfirm(
-                    i18n.t('people.confirmDeleteRole', { name: detail.data!.name }),
+                    i18n.t('people.confirmDeleteRole', { name: roleText.name(detail.data!) }),
                     () => remove.mutate({ roleId: detail.data!.id }),
                   );
                 }}
@@ -1201,10 +1210,14 @@ function RolePermissionsSheet({
                 </Field>
               )}
               {/* M2.1: SectionLabel (was ad-hoc eyebrow div). */}
-              <SectionLabel className="px-0">Permissions ({picked.size})</SectionLabel>
+              <SectionLabel className="px-0">
+                {i18n.t('people.permissionsHeading', { n: picked.size })}
+              </SectionLabel>
             </>
-          ) : detail.data.description ? (
-            <p className="text-old-body-sm text-[var(--c-fg-muted)]">{detail.data.description}</p>
+          ) : roleText.description(detail.data) ? (
+            <p className="text-old-body-sm text-[var(--c-fg-muted)]">
+              {roleText.description(detail.data)}
+            </p>
           ) : null}
           {grouped.length === 0 ? (
             <p className="text-old-body text-[var(--c-fg-muted)]">
@@ -1214,7 +1227,7 @@ function RolePermissionsSheet({
             <ul className="flex flex-col gap-3">
               {grouped.map(([ns, keys]) => (
                 <li key={ns}>
-                  <SectionLabel padded={false}>{ns}</SectionLabel>
+                  <SectionLabel padded={false}>{roleText.permissionGroup(ns)}</SectionLabel>
                   <ul className="mt-1 flex flex-col gap-1">
                     {keys.map((p) => {
                       if (editing) {
@@ -1229,11 +1242,9 @@ function RolePermissionsSheet({
                               />
                               <div className="min-w-0 flex-1">
                                 <div className="font-mono text-old-label">{p.key}</div>
-                                {p.description ? (
-                                  <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
-                                    {p.description}
-                                  </div>
-                                ) : null}
+                                <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
+                                  {roleText.permission(p.key, p.description)}
+                                </div>
                               </div>
                             </label>
                           </li>
@@ -1242,9 +1253,14 @@ function RolePermissionsSheet({
                       return (
                         <li
                           key={p.key}
-                          className="rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-1.5 font-mono text-old-label"
+                          className="rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-1.5 text-old-label"
                         >
-                          {p.key}
+                          {/* ADM-17: what the permission allows, in the UI
+                              language; the key stays as a hint. */}
+                          {roleText.permission(p.key, p.description)}
+                          <span className="ml-1.5 font-mono text-old-tiny text-[var(--c-fg-muted)]">
+                            {p.key}
+                          </span>
                         </li>
                       );
                     })}
@@ -1320,7 +1336,9 @@ function RoleAssigneesByStore({
 
   return (
     <div className="mt-2 border-t border-[var(--c-divider)] pt-3">
-      <SectionLabel padded={false}>Assignees · {assignees.length}</SectionLabel>
+      <SectionLabel padded={false}>
+        {i18n.t('people.assigneesHeading', { n: assignees.length })}
+      </SectionLabel>
       <div className="mt-1 flex flex-col gap-3">
         {grouped.map(([key, bucket]) => (
           <section key={key}>
@@ -1460,6 +1478,7 @@ function InviteHubSheet({
  */
 function PendingInvitesList({ enabled }: { enabled: boolean }) {
   const i18n = useI18n();
+  const roleText = useRoleLabels();
   const dateFmt = useDateFormat();
   const toast = useToast();
   const errToast = useErrToast();
@@ -1488,7 +1507,7 @@ function PendingInvitesList({ enabled }: { enabled: boolean }) {
       </SectionLabel>
       <div className="flex flex-col gap-1.5">
         {invites.map((inv) => {
-          const roles = inv.roles.map((r) => r.name).join(', ');
+          const roles = inv.roles.map((r) => roleText.name(r)).join(', ');
           const stores = inv.stores.map((st) => st.name).join(', ');
           const expires = dateFmt.date(inv.expiresAt);
           return (
@@ -1547,6 +1566,7 @@ function ManualInviteSheet({
 }) {
   const isLink = mode === 'link';
   const i18n = useI18n();
+  const roleText = useRoleLabels();
   const rolesQuery = trpc.admin.roleList.useQuery(undefined, { enabled: !!draft });
   const storesQuery = trpc.admin.storeList.useQuery(undefined, { enabled: !!draft });
   // C2 (2026-05-06): a store-scoped admin can only invite into the
@@ -1652,7 +1672,7 @@ function ManualInviteSheet({
                 <option value="">{i18n.t('admin.invite.noRoleYet')}</option>
                 {sortedRoles.map((r) => (
                   <option key={r.id} value={r.slug}>
-                    {r.name}
+                    {roleText.name(r)}
                   </option>
                 ))}
               </Select>
@@ -2489,6 +2509,7 @@ function GrantRoleSheet({
   );
   const sessionStores = session?.stores ?? [];
   const i18n = useI18n();
+  const roleText = useRoleLabels();
 
   const rolesQuery = trpc.admin.roleList.useQuery(undefined, { enabled: !!target });
   const utils = trpc.useUtils();
@@ -2711,10 +2732,12 @@ function GrantRoleSheet({
               className="press flex items-center justify-between rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 text-left ring-hairline"
             >
               <div>
-                <div className="text-old-body font-semibold text-[var(--c-fg)]">{r.name}</div>
+                <div className="text-old-body font-semibold text-[var(--c-fg)]">
+                  {roleText.name(r)}
+                </div>
                 <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
                   {i18n.t('people.rankLine', { rank: r.rank })}
-                  {r.description ? ` · ${r.description}` : ''}
+                  {roleText.description(r) ? ` · ${roleText.description(r)}` : ''}
                 </div>
               </div>
               {r.isBuiltIn ? <Badge tone="muted">{i18n.t('admin.label.builtIn')}</Badge> : null}

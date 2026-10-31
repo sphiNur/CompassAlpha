@@ -30,8 +30,8 @@
  * WHAT IT DOESN'T
  *
  * Only user-visible surfaces are scanned (apps/web/src, packages/ui/src).
- * Anything containing a non-ASCII character is assumed already-authored
- * copy and skipped. Single ASCII words that are legitimately
+ * Rules 1–4 skip anything containing a non-ASCII character; rule 5 then
+ * flags Chinese or Cyrillic text written in the code itself (2026-10-31). Single ASCII words that are legitimately
  * language-neutral (units, currency codes, brand names, `UZS`, `SKU`,
  * `OK`, `ID`, `#`) are allowlisted. DebugPage is exempt in full — it is
  * an operator diagnostic screen, gated on `system.logs.view`, and is
@@ -302,6 +302,18 @@ function scan(file: string): Finding[] {
           found.push({ file, line: lineNo, kind: 'ternary-literal', text: candidate });
         }
       }
+    }
+
+    // 5. Chinese or Cyrillic written straight into the code (RE-COPY-9,
+    //    2026-10-31). Rules 1–4 look for English and skip anything
+    //    non-ASCII as "already authored", so the dev sign-in screen's 24
+    //    Chinese literals were invisible. A key's own words live in the
+    //    catalogs; deliberate cases (a per-language example name) carry an
+    //    `i18n-exempt:` note.
+    const code = line.replace(/(^|[^:'"`\\])\/\/.*$/, '$1');
+    const native = code.match(/[\u3400-\u9fff\u0400-\u04ff][^'"`<>{}]*/);
+    if (native) {
+      found.push({ file, line: lineNo, kind: 'non-latin-literal', text: native[0].trim() });
     }
 
     // 4. nativeConfirm / confirmAction / confirm( with a template literal

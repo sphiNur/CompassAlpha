@@ -390,7 +390,8 @@ export function ApprovalPage() {
                           {row.contributorCount > 1
                             ? i18n.t('approval.contributorsCount', { n: row.contributorCount }) + ' · '
                             : ''}
-                          {row.orderDate}
+                          {/* D16: in the UI language, not "2026-10-31". */}
+                          {dates.calendarDay(row.orderDate)}
                           {/* APR-15 (2026-10-30): two cards from one person on
                               one day were indistinguishable; only then the
                               submit time tells them apart. */}
@@ -944,7 +945,7 @@ function SessionItems({
             >
               <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">{e.name}</span>
               <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
-                {formatQty(e.qty)} {unitLabel(e.unit)}
+                {formatQty(e.qty)} {unitLabel(e.unit, e.qty)}
               </span>
             </li>
           ))}
@@ -1037,7 +1038,7 @@ function SessionItems({
                 />
               ) : (
                 <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg)]">
-                  {formatQty(t.qty)} {unitLabel(sku?.unit ?? '')}
+                  {formatQty(t.qty)} {unitLabel(sku?.unit ?? '', t.qty)}
                 </span>
               )}
             </div>
@@ -1106,7 +1107,7 @@ function SessionItems({
                       />
                     ) : (
                       <span className="shrink-0 font-mono tabular-nums">
-                        {formatQty(r.qty)} {unitLabel(sku?.unit ?? '')}
+                        {formatQty(r.qty)} {unitLabel(sku?.unit ?? '', r.qty)}
                       </span>
                     )}
                   </li>

@@ -7,6 +7,9 @@ import {
   type Locale,
 } from '@compass/i18n';
 import { useAuthStore } from '../stores/authStore';
+import { makeDateFormatters } from '../lib/dateFormat';
+import { unitLabeller } from '../lib/unitLabel';
+import { roleLabeller } from '../lib/roleLabels';
 
 const VALID_LOCALES = ['en', 'zh', 'ru', 'uz'] as const;
 function asLocale(v: string | null | undefined): Locale | null {
@@ -94,82 +97,22 @@ export function useI18n() {
  * Accepts `Date | string | number | null`; returns '' for nullish input so
  * call sites can pipe possibly-absent server values straight through.
  */
-// ORD-19 (2026-10-30): where the runtime has no Uzbek data, Intl falls
-// back to a bare pattern ("M10 30, Fri"). Then format Uzbek (Latin) by
-// hand, following CLDR's uz patterns; runtimes that know uz are untouched.
-const UZ_MONTHS = ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun', 'iyul', 'avgust', 'sentyabr', 'oktyabr', 'noyabr', 'dekabr'];
-const UZ_MONTHS_SHORT = ['yan', 'fev', 'mar', 'apr', 'may', 'iyn', 'iyl', 'avg', 'sen', 'okt', 'noy', 'dek'];
-const UZ_WEEKDAYS = ['yakshanba', 'dushanba', 'seshanba', 'chorshanba', 'payshanba', 'juma', 'shanba'];
-
-function uzFallback(opts: Intl.DateTimeFormatOptions): (d: Date) => string {
-  const hhmm = (d: Date) =>
-    `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  if (opts.weekday) return (d) => `${UZ_WEEKDAYS[d.getDay()]}, ${d.getDate()}-${UZ_MONTHS[d.getMonth()]}`;
-  if (opts.month === 'long') return (d) => `${UZ_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
-  if (opts.month === 'short') {
-    return (d) =>
-      `${d.getDate()}-${UZ_MONTHS_SHORT[d.getMonth()]}, ${d.getFullYear()}` +
-      (opts.hour ? `, ${hhmm(d)}` : '');
-  }
-  return hhmm;
-}
-
-let uzProbe: boolean | null = null;
-function intlKnowsUzbek(): boolean {
-  if (uzProbe === null) {
-    try {
-      uzProbe = new Intl.DateTimeFormat('uz', { month: 'long' })
-        .format(new Date(2020, 0, 15))
-        .toLowerCase()
-        .includes('yanvar');
-    } catch {
-      uzProbe = false;
-    }
-  }
-  return uzProbe;
-}
-
 export function useDateFormat() {
   const i18n = useI18n();
-  return useMemo(() => {
-    const locale = i18n.locale;
-    // supportedLocalesOf can claim uz while formatting still falls back,
-    // so probe a real month name instead.
-    const handFormatUz = locale === 'uz' && !intlKnowsUzbek();
-    const fmt = (opts: Intl.DateTimeFormatOptions) => {
-      const f = handFormatUz ? { format: uzFallback(opts) } : new Intl.DateTimeFormat(locale, opts);
-      return (v: Date | string | number | null | undefined): string => {
-        if (v === null || v === undefined || v === '') return '';
-        const d = v instanceof Date ? v : new Date(v);
-        return Number.isNaN(d.getTime()) ? '' : f.format(d);
-      };
-    };
-    return {
-      /** "2026年7月30日星期四" / "Thursday, July 30" — order-review subtitle. */
-      weekdayLong: fmt({ weekday: 'long', month: 'long', day: 'numeric' }),
-      /** "2026年6月" / "June 2026" — run-history month group header. */
-      monthYear: fmt({ month: 'long', year: 'numeric' }),
-      /** Calendar date only. */
-      date: fmt({ year: 'numeric', month: 'short', day: 'numeric' }),
-      /** Date + HH:MM — audit rows, sales rows. */
-      dateTime: fmt({
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
-      /** HH:MM only. */
-      time: fmt({ hour: '2-digit', minute: '2-digit' }),
-    };
-  }, [i18n.locale]);
+  return useMemo(() => makeDateFormatters(i18n.locale), [i18n.locale]);
+}
+
+/** Built-in role names and permission descriptions; see lib/roleLabels.ts. */
+export function useRoleLabels() {
+  const i18n = useI18n();
+  return useMemo(() => roleLabeller(i18n.t), [i18n]);
 }
 
 /**
  * Hook for localized unit labels (M3.34, 2026-05-19).
  *
  * Backend stores unit as a short canonical string per the SKU schema
- * (kg / g / L / ml / pcs / pack / pair / bunch / roll). The user
+ * (kg / L / pcs / pack / pair / bunch / roll / box). The user
  * pointed out that "kg" / "pcs" / "bunch" displayed verbatim doesn't
  * read like the rest of a Chinese/Russian/Uzbek UI. This hook returns
  * a `(unit) => label` function that maps the canonical string to its
@@ -179,19 +122,9 @@ export function useDateFormat() {
  */
 export function useUnitLabel() {
   const i18n = useI18n();
-  return useMemo(() => {
-    return (unit: string | null | undefined): string => {
-      if (!unit) return '';
-      const canonical = unit.toLowerCase();
-      // i18n.t falls back to the key itself when missing; we want to
-      // fall back to the original unit string (with original case)
-      // so SKU-level lowercase fix doesn't hide non-canonical units.
-      const key = ('unit.' + canonical) as Parameters<typeof i18n.t>[0];
-      const localized = i18n.t(key);
-      return localized === key ? unit : localized;
-    };
-  }, [i18n]);
+  return useMemo(() => unitLabeller(i18n.t), [i18n]);
 }
+
 
 /**
  * Pick the best available name from a multi-locale SKU, with a
@@ -328,12 +261,6 @@ export function useVendorUnitLabel() {
         ? secondaryLocale
         : i18n.locale;
     const t = effective === i18n.locale ? i18n.t : createI18n(effective).t;
-    return (unit: string | null | undefined): string => {
-      if (!unit) return '';
-      const canonical = unit.toLowerCase();
-      const key = ('unit.' + canonical) as Parameters<typeof t>[0];
-      const localized = t(key);
-      return localized === key ? unit : localized;
-    };
+    return unitLabeller(t);
   }, [i18n, secondaryLocale]);
 }

@@ -108,6 +108,9 @@ export const SetSessionNoteInputSchema = z.object({
  * M3.34 the unit field was free-text and users typed "kg." "kgs" "公
  * 斤" inconsistently, breaking aggregation and i18n. The i18n labels
  * live at `unit.*` in each catalog.
+ *
+ * R2-COPY-3 (2026-10-31): `box` added — SkuUnitSchema has allowed it since
+ * 2026-07-30, so an extra could not name the unit a catalog SKU uses.
  */
 export const CanonicalUnitSchema = z.enum([
   'kg',
@@ -119,6 +122,7 @@ export const CanonicalUnitSchema = z.enum([
   'pair',
   'bunch',
   'roll',
+  'box',
 ]);
 export type CanonicalUnit = z.infer<typeof CanonicalUnitSchema>;
 

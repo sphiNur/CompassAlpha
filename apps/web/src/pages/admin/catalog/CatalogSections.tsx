@@ -39,7 +39,7 @@ import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { formatMoney, formatQty } from '../../../lib/format';
 import { matchesNameLike, normalizeQuery } from '../../../lib/searchMatch';
-import { useI18n, useProductName } from '../../../hooks/useI18n';
+import { useI18n, useProductName, useUnitLabel } from '../../../hooks/useI18n';
 import { nativeConfirm } from '../shared';
 import { CatalogImportSheet } from './CatalogImportSheet';
 
@@ -347,7 +347,7 @@ export function CategoriesSection() {
                 value={draft.nameRu}
                 onChange={(e) => setDraft({ ...draft, nameRu: e.target.value })}
                 maxLength={200}
-                placeholder="Овощи"
+                placeholder="Овощи" /* i18n-exempt: example word FOR that specific language field */
               />
             </Field>
             <Field label={`${i18n.t('admin.field.nameInLocale', { locale: LANGUAGE_NATIVE_NAMES.en })}`}>
@@ -363,7 +363,7 @@ export function CategoriesSection() {
                 value={draft.nameZh}
                 onChange={(e) => setDraft({ ...draft, nameZh: e.target.value })}
                 maxLength={200}
-                placeholder="蔬菜"
+                placeholder="蔬菜" /* i18n-exempt: example word FOR that specific language field */
               />
             </Field>
             <Field label={i18n.t('admin.field.sortIndex')}>
@@ -420,6 +420,7 @@ export function SkusSection() {
   const toast = useToast();
   const errToast = useErrToast();
   const i18n = useI18n();
+  const unitLabel = useUnitLabel();
   const productName = useProductName();
   const canWrite = useIsOrgAdmin();
   const [draft, setDraft] = useState<SkuDraft | null>(null);
@@ -550,7 +551,7 @@ export function SkusSection() {
                         </div>
                       ) : null}
                       <CardMeta>
-                        {categoryName(sk.categoryId)} · {sk.unit} ·{' '}
+                        {categoryName(sk.categoryId)} · {unitLabel(sk.unit)} ·{' '}
                         {i18n.t('catalog.sku.stepMeta', { step: sk.step })}
                         {sk.code ? ` · ${sk.code}` : ''}
                       </CardMeta>
@@ -681,7 +682,7 @@ export function SkusSection() {
                 value={draft.nameRu}
                 onChange={(e) => setDraft({ ...draft, nameRu: e.target.value })}
                 maxLength={200}
-                placeholder="Помидор"
+                placeholder="Помидор" /* i18n-exempt: example word FOR that specific language field */
               />
             </Field>
             <Field label={`${i18n.t('admin.field.nameInLocale', { locale: LANGUAGE_NATIVE_NAMES.en })}`}>
@@ -697,7 +698,7 @@ export function SkusSection() {
                 value={draft.nameZh}
                 onChange={(e) => setDraft({ ...draft, nameZh: e.target.value })}
                 maxLength={200}
-                placeholder="西红柿"
+                placeholder="西红柿" /* i18n-exempt: example word FOR that specific language field */
               />
             </Field>
             <Field label={i18n.t('admin.field.category')}>
@@ -731,9 +732,10 @@ export function SkusSection() {
                   value={draft.unit}
                   onChange={(e) => setDraft({ ...draft, unit: e.target.value as SkuUnit })}
                 >
+                  {/* R2-COPY-3: the localised unit, not the stored code. */}
                   {SKU_UNITS.map((u) => (
                     <option key={u} value={u}>
-                      {u}
+                      {unitLabel(u)}
                     </option>
                   ))}
                 </Select>
@@ -1359,6 +1361,7 @@ const EMPTY_DISH: DishDraft = {
 
 export function DishesSection() {
   const i18n = useI18n();
+  const unitLabel = useUnitLabel();
   const productName = useProductName();
   const toast = useToast();
   const errToast = useErrToast();
@@ -1775,7 +1778,7 @@ export function DishesSection() {
                             placeholder={i18n.t('dishes.field.qtyPlaceholder')}
                           />
                           <span className="text-old-label text-[var(--c-fg-muted)]">
-                            {sku?.unit ?? '—'}
+                            {sku?.unit ? unitLabel(sku.unit) : '—'}
                           </span>
                         </div>
                       </li>

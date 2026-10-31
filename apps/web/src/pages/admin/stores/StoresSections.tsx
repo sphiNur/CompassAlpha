@@ -32,7 +32,13 @@ import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { useRefreshSession } from '../../../lib/refreshSession';
 import { formatQty } from '../../../lib/format';
-import { useDateFormat, useI18n, useProductName, useUnitLabel } from '../../../hooks/useI18n';
+import {
+  useDateFormat,
+  useI18n,
+  useProductName,
+  useRoleLabels,
+  useUnitLabel,
+} from '../../../hooks/useI18n';
 import { isWaitingOffline } from '../../../components/PendingSpinner';
 import { nativeConfirm, type StoreFocus, type StoreSub } from '../shared';
 import { PeopleSection } from '../people/PeopleSections';
@@ -608,7 +614,7 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
                   >
                     <span className="truncate text-old-body font-semibold">{r.name}</span>
                     <span className="font-mono text-old-body tabular-nums">
-                      {formatQty(r.onHand)} {unitLabel(r.unit)}
+                      {formatQty(r.onHand)} {unitLabel(r.unit, r.onHand)}
                     </span>
                   </button>
                   {/* M3.17 (2026-05-16): inline pill buttons → Button
@@ -834,7 +840,7 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
                           }
                         >
                           {sign}
-                          {formatQty(abs)} {unitLabel(unit)}
+                          {formatQty(abs)} {unitLabel(unit, abs)}
                         </span>
                       </div>
                       <div className="text-old-label text-[var(--c-fg-muted)]">
@@ -877,6 +883,7 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
   const toast = useToast();
   const errToast = useErrToast();
   const i18n = useI18n();
+  const roleText = useRoleLabels();
   const refreshSession = useRefreshSession();
   const adminStoreIds = useMemo(
     () => new Set(session?.adminStoreIds ?? []),
@@ -1012,7 +1019,7 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
             <option value="">{i18n.t('admin.store.noDefaultRole')}</option>
             {storeTierRoles.map((r) => (
               <option key={r.id} value={r.slug}>
-                {i18n.t('people.roleNameWithRank', { name: r.name, rank: r.rank })}
+                {i18n.t('people.roleNameWithRank', { name: roleText.name(r), rank: r.rank })}
               </option>
             ))}
           </Select>

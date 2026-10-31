@@ -129,13 +129,20 @@ export function formatMoney(
  * two decimals. A price with cents read "92.0005K" — five decimals,
  * against the rule that amounts show two; such a price is shown in full
  * instead ("92,000.50"), exactly as everywhere else.
+ *
+ * RE-COPY-2 (2026-10-31): the suffix is the catalog's
+ * `common.priceThousands` ("{n}千" / "{n} тыс." / "{n} ming"); pass it as
+ * `template`. The Latin "K" default is only the English form.
  */
-export function formatMoneyThousands(v: string | number | null | undefined): string {
+export function formatMoneyThousands(
+  v: string | number | null | undefined,
+  template = '{n}K',
+): string {
   if (v === null || v === undefined || v === '') return '';
   const n = typeof v === 'number' ? v : Number(v);
   if (!Number.isFinite(n)) return String(v);
   if (Math.round(n * 100) % 1000 !== 0) return formatMoney(n);
-  return `${thousandsFormatter.format(n / 1000)}K`;
+  return template.replace('{n}', thousandsFormatter.format(n / 1000));
 }
 
 /**

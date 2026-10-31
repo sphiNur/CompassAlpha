@@ -26,13 +26,26 @@
 import { eq, and, ne, inArray, or, isNull, gt } from 'drizzle-orm';
 import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
+import { detectLocale, format, loadCatalog, lookup, type CatalogKey, type Locale } from '@compass/i18n';
 
 export type NotifyChannel = 'bot' | 'webpush' | 'inapp';
 
 export interface NotifyEnvelope {
   template: string;
+  /**
+   * English fallback. R2 (2026-10-31): each recipient gets the catalog's
+   * `notify.<template>.title` / `.body` in their own language, filled from
+   * `vars`; these strings are only used for a template the catalog lacks.
+   */
   title: string;
   body?: string;
+  /** Values for the catalog sentence ({store}, {n}, {total} …). */
+  vars?: Record<string, string | number>;
+  /**
+   * A reason the actor typed (reject / unapprove / cancel). It replaces
+   * the catalog body as is — it is the person's own words.
+   */
+  reason?: string | null;
   /** Deep link used by the bot send button — typically the Mini App URL. */
   deepLink?: string;
   /** Idempotency key, e.g. `order:${id}:submitted`. */
@@ -199,16 +212,18 @@ export async function dispatch(
 ): Promise<void> {
   if (recipientUserIds.length === 0) return;
 
+  const locales = await recipientLocales(db, orgId, recipientUserIds);
   const notificationRows = [];
   for (const userId of recipientUserIds) {
+    const text = await localizeEnvelope(envelope, locales.get(userId) ?? 'en');
     for (const channel of channels) {
       notificationRows.push({
         orgId,
         recipientUserId: userId,
         channel,
         template: envelope.template,
-        title: envelope.title,
-        body: envelope.body ?? null,
+        title: text.title,
+        body: text.body ?? null,
         payload: envelope.payload ?? {},
         deepLink: envelope.deepLink ?? null,
         dedupKey: `${envelope.dedupKey}:${userId}:${channel}`,
@@ -281,3 +296,44 @@ export async function notifyOthersWithPermission(
 export type { DB };
 // Suppress unused-import warning in some TS configs.
 void ne;
+
+/**
+ * Each recipient's UI language: their own setting, else the org default.
+ * Notifications used to go out in English to everyone (APR-16, DLV-5).
+ */
+async function recipientLocales(
+  db: DB,
+  orgId: string,
+  userIds: string[],
+): Promise<Map<string, Locale>> {
+  const [users, org] = await Promise.all([
+    db
+      .select({ id: s.users.id, locale: s.users.locale })
+      .from(s.users)
+      .where(inArray(s.users.id, userIds)),
+    db.query.organizations.findFirst({
+      where: (o, { eq: eq2 }) => eq2(o.id, orgId),
+      columns: { localeDefault: true },
+    }),
+  ]);
+  const fallback = detectLocale(org?.localeDefault);
+  return new Map(users.map((u) => [u.id, u.locale ? detectLocale(u.locale) : fallback]));
+}
+
+/** The envelope's title and body in `locale`, from `notify.<template>.*`. */
+export async function localizeEnvelope(
+  envelope: Pick<NotifyEnvelope, 'template' | 'title' | 'body' | 'vars' | 'reason'>,
+  locale: Locale,
+): Promise<{ title: string; body: string | undefined }> {
+  await loadCatalog(locale);
+  const titleKey = `notify.${envelope.template}.title` as CatalogKey;
+  const bodyKey = `notify.${envelope.template}.body` as CatalogKey;
+  const vars = envelope.vars ?? {};
+  const title = lookup(titleKey, locale) ? format(titleKey, locale, vars) : envelope.title;
+  const body = envelope.reason
+    ? envelope.reason
+    : lookup(bodyKey, locale)
+      ? format(bodyKey, locale, vars)
+      : envelope.body;
+  return { title, body };
+}

@@ -32,6 +32,7 @@ import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { shareLink } from '../../../lib/telegramLinks';
 import { formatMoney, formatQty } from '../../../lib/format';
+import { unitLabeller } from '../../../lib/unitLabel';
 import { useI18n, useUnitLabel } from '../../../hooks/useI18n';
 import { haptic, getTg } from '../../../hooks/useTelegram';
 import {
@@ -665,7 +666,7 @@ export function ActiveRunPanel({
                   item={it}
                   servesOtherStores={otherStoreSkusOf(run).has(it.skuId)}
                   skuName={skuName}
-                  unit={unitLabel(sku?.unit)}
+                  unitCode={sku?.unit}
                   step={sku?.step ?? '0.1'}
                   demand={demandBySku.get(it.skuId) ?? []}
                   storeById={storeById}
@@ -861,7 +862,7 @@ export function ActiveRunPanel({
                                   i18n.t('confirm.receivedOf', {
                                     received: formatQty(sp.confirmReceivedQty),
                                     qty: formatQty(sp.qty),
-                                    unit: unitLabel(sku?.unit),
+                                    unit: unitLabel(sku?.unit, sp.qty),
                                   })
                                 : ''}
                             </div>
@@ -922,7 +923,7 @@ export function ActiveRunPanel({
                           {sku ? productName(sku) : ln.skuId.slice(0, 8)}
                         </span>
                         <span className="shrink-0 font-mono text-old-body tabular-nums text-[var(--c-fg-muted)]">
-                          {formatQty(ln.qty)} {unitLabel(sku?.unit)}
+                          {formatQty(ln.qty)} {unitLabel(sku?.unit, ln.qty)}
                         </span>
                       </li>
                     );
@@ -1216,16 +1217,8 @@ export function PreviewSummaryCard({
     if (delta !== 0) scroller.scrollTop += delta;
   });
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
-  const currentUnitLabel = useCallback(
-    (unit: string | null | undefined): string => {
-      if (!unit) return '';
-      const canonical = unit.toLowerCase();
-      const key = ('unit.' + canonical) as Parameters<typeof i18n.t>[0];
-      const localized = i18n.t(key);
-      return localized === key ? unit : localized;
-    },
-    [i18n],
-  );
+  // R2-COPY-4: takes the quantity so the unit agrees with it («10 пар»).
+  const currentUnitLabel = useMemo(() => unitLabeller(i18n.t), [i18n]);
   const currentSkuName = useCallback(
     (item: { names: Record<string, string> | null | undefined }): string => {
       const names = item.names ?? {};
@@ -1312,7 +1305,7 @@ export function PreviewSummaryCard({
         skuId: row.skuId,
         name: sku ? productName(sku) : row.skuId.slice(0, 8),
         qty: row.qty,
-        unit: currentUnitLabel(sku?.unit),
+        unit: currentUnitLabel(sku?.unit, row.qty),
         unitPrice,
         total: previewLineTotal(row.qty, unitPrice),
         supplierId: supplier?.id ?? null,
@@ -1329,7 +1322,7 @@ export function PreviewSummaryCard({
           skuId: null,
           name: ex.name,
           qty: ex.qty,
-          unit: ex.unit,
+          unit: currentUnitLabel(ex.unit, ex.qty),
           unitPrice: null,
           total: null,
           note: ex.note,
@@ -1576,10 +1569,10 @@ export function PreviewSummaryCard({
   // object each render restores the live read the old inline closures
   // had; the builders themselves only run on a button tap.
   const shareDeps: ShareTextDeps = {
-    resolveSku: (skuId: string) => {
+    resolveSku: (skuId: string, qty?: string) => {
       const sku = skuById.get(skuId);
       if (!sku) return null;
-      return { name: currentSkuName(sku), unit: currentUnitLabel(sku.unit) };
+      return { name: currentSkuName(sku), unit: currentUnitLabel(sku.unit, qty) };
     },
     extrasLabel: i18n.t('order.extras.label'),
     notesLabel: i18n.t('order.notes.label'),

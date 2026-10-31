@@ -200,8 +200,10 @@ export function StoreSalesPanel({
             <div className="font-mono text-old-h2 font-semibold tabular-nums">
               {formatQty(summary.count.toString())}
             </div>
+            {/* R2-COPY-5: the noun agrees with the big figure above it
+                ("1 serving", «2 порции»). */}
             <div className="text-old-label text-[var(--c-fg-muted)]">
-              {i18n.t('sales.summary.servings')}
+              {i18n.t('sales.summary.servings', { n: summary.count })}
             </div>
           </div>
           {canSeePrices ? (
@@ -257,13 +259,16 @@ export function StoreSalesPanel({
               >
                 <option value="">{i18n.t('sales.form.pickDish')}</option>
                 {dishOptions.map((d) => {
-                  const label = productName({ names: d.names });
-                  const suffix =
-                    d.ingredientCount === 0 ? ` (${i18n.t('sales.form.noRecipe')})` : '';
+                  const name = productName({ names: d.names });
+                  // R2-CLS-5: one template per language, so zh gets
+                  // full-width brackets.
+                  const label =
+                    d.ingredientCount === 0
+                      ? i18n.t('sales.form.dishNoRecipe', { name })
+                      : name;
                   return (
                     <option key={d.id} value={d.id} disabled={d.ingredientCount === 0}>
                       {label}
-                      {suffix}
                     </option>
                   );
                 })}
@@ -373,7 +378,7 @@ export function StoreSalesPanel({
                       </div>
                     ) : (
                       <div className="text-old-label tabular-nums text-[var(--c-fg-muted)]">
-                        {formatQty(sale.qty)} {i18n.t('sales.summary.servings')}
+                        {formatQty(sale.qty)} {i18n.t('sales.summary.servings', { n: Number(sale.qty) })}
                       </div>
                     )}
                   </div>

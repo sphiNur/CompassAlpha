@@ -27,9 +27,11 @@
  *   5. Chinese uses full-width punctuation ，：？！；（）, quotes 「」 and the
  *      dash —— (11-文案 附 A).
  *   6. Small consistency rules: ru writes ещё with ё; en uses one apostrophe
- *      (ASCII ').
+ *      (ASCII ') and one quote style (ASCII "); uz quotes with «».
  *   7. A value identical to the English one is a missed translation unless
  *      allow-listed (brand names, unit symbols).
+ *   8. The decided terminology (D15, 2026-10-31): one word per concept and
+ *      language, so a new key cannot bring back 审批 / SKU / buyer.
  *
  * The last block feeds each rule a small hand-made catalog with the mistake
  * it exists for, so a rule that silently stops matching fails too.
@@ -115,10 +117,21 @@ function splitPlurals(value: string): { outside: string; blocks: PluralBlock[] }
   return { outside, blocks };
 }
 
-/** Every placeholder name in a value, including plural variables. */
+/**
+ * Every placeholder name in a value, including plural variables. A case
+ * body is plain text, so `one {pair}` names no placeholder `pair`.
+ */
 function placeholders(value: string): string[] {
   const names = new Set<string>();
-  for (const m of value.matchAll(/\{\s*(\w+)\s*(?:,\s*plural\s*,|\})/g)) names.add(m[1]!);
+  const walk = (text: string) => {
+    const { outside, blocks } = splitPlurals(text);
+    for (const m of outside.matchAll(/\{\s*(\w+)\s*\}/g)) names.add(m[1]!);
+    for (const block of blocks) {
+      names.add(block.variable);
+      for (const body of block.cases.values()) walk(body);
+    }
+  };
+  walk(value);
   return [...names].sort();
 }
 
@@ -180,6 +193,12 @@ const DEV_TERMS: Array<{ pattern: RegExp; what: string }> = [
   { pattern: /\b(?:allow|deny)\b/, what: 'override value' },
   { pattern: /\bMSA\b|\bslug\b|initData|VITE_/i, what: 'internal identifier' },
   { pattern: /\branks?\b|ранг/i, what: 'role rank (say level / уровень / 等级 / daraja)' },
+  // R2-COPY-1 (2026-10-31): the words 11-文案 C8 still found after the
+  // first pass. A recipe is a recipe, a date field is a date field.
+  { pattern: /\bBOM\b|\bTSV\b|\bKPIs?\b/, what: 'technical abbreviation' },
+  { pattern: /YYYY|ГГГГ/, what: 'date format mask' },
+  { pattern: /onboarding|онбординг/i, what: 'internal flow name (say first sign-in)' },
+  { pattern: /\bbindings?\b|绑定|store-scoped/i, what: 'role binding (say role assignment / per-store)' },
 ];
 
 function devTerms(cats: Catalogs): string[] {
@@ -201,30 +220,63 @@ function devTerms(cats: Catalogs): string[] {
 
 // ── 4. Plurals ──────────────────────────────────────────────────────────
 
-/** Placeholders that always carry a count. */
-const COUNT_VARS = new Set([
-  'n',
-  'count',
-  'days',
-  'items',
-  'stores',
-  'orders',
-  'runs',
-  'skus',
-  'categories',
-  'suppliers',
-  'members',
-  'tables',
-  'extras',
-  'known',
-  'unknown',
-  'pending',
-  'bought',
-  'na',
-  'ov',
-  'sessions',
-  'perms',
+/**
+ * Placeholders that carry text, money or a date — never a count.
+ *
+ * R2-COPY-1 (2026-10-31): this used to be the opposite, a fixed list of
+ * count names, and every count it did not know slipped through: "{qty}
+ * units" rendered "1 units", «{eff} действует» never agreed. Now every
+ * placeholder is treated as a count unless it is named here, so a new
+ * count is checked from the day it is added. Add a name only for a value
+ * that is not a number of things.
+ */
+const TEXT_VARS = new Set([
+  // people and places
+  'actor',
+  'member',
+  'name',
+  'who',
+  'prev',
+  'store',
+  'org',
+  'role',
+  'permission',
+  'item',
+  'sku',
+  'label',
+  'tab',
+  'status',
+  'object',
+  'verb',
+  'reason',
+  'value',
+  'slug',
+  'locale',
+  'language',
+  'supplier',
+  // money and amounts
+  'amount',
+  'money',
+  'total',
+  'currency',
+  'price',
+  'last',
+  'next',
+  // dates and times
+  'date',
+  'time',
+  'when',
+  'timezone',
+  // bounds and positions, not counts: "{min} or more", "21–40 of 87"
+  'min',
+  'max',
+  'from',
+  'to',
 ]);
+
+function isCountVar(name: string): boolean {
+  return !TEXT_VARS.has(name);
+}
 
 /**
  * Words that may follow a bare count without agreeing with it: unit
@@ -233,8 +285,8 @@ const COUNT_VARS = new Set([
  * so it belongs in a plural block.
  */
 const INVARIANT_AFTER_COUNT: Record<'en' | 'ru', RegExp> = {
-  en: /^(?:of|min|m|h|d|n\/a|new|selected|skipped|left|more|already|still|bought|priced|unpriced|unknown|unavailable|from|so)$/,
-  ru: /^(?:из|с|без|нет|старше|мин|ч|дн|дн\.|поз\.|ед\.|шт\.|куп\.|ост\.)$/,
+  en: /^(?:of|min|m|h|d|n\/a|new|selected|skipped|left|more|already|still|bought|priced|unpriced|unknown|unavailable|from|so|effective|confirmed|or|is|and|to|in|for|by|K)$/,
+  ru: /^(?:из|с|без|нет|старше|мин|ч|дн|дн\.|поз\.|ед\.|шт\.|куп\.|ост\.|тыс\.)$/,
 };
 
 /** `lang key` → why a count followed by a word is right as written. */
@@ -251,7 +303,7 @@ function countsOutsidePlural(cats: Catalogs): string[] {
       const { outside } = splitPlurals(value);
       for (const m of outside.matchAll(/\{(\w+)\}(?:[ \u00a0]+|(?=\p{L}))([^\s{}]+)/gu)) {
         const [, variable, word] = m as unknown as [string, string, string];
-        if (!COUNT_VARS.has(variable) || !/^\p{L}/u.test(word)) continue;
+        if (!isCountVar(variable) || !/^\p{L}/u.test(word)) continue;
         const bare = word.replace(/[,;:!?)]+$/, '');
         const invariant = INVARIANT_AFTER_COUNT[lang];
         if (invariant.test(word) || invariant.test(bare)) continue;
@@ -294,6 +346,18 @@ function pluralCategories(cats: Catalogs): string[] {
           (c) => !block.cases.has(c) && !(lang === 'en' && c === 'one' && block.cases.has('=1')),
         );
         if (missing.length) found.push(`${lang} ${key}: missing ${missing.join(', ')}`);
+        // R2-COPY-2 (2026-10-31): ru `one` also matches 21, 31, 101 … A
+        // block whose other cases print the count (`#`) must print it in
+        // `one` too, or 21 orders read as «Новый заказ» (one order). A
+        // block without any `#` only picks a word form for a number shown
+        // elsewhere ("10 {пара/пары/пар}") and is fine.
+        if (lang === 'ru') {
+          const one = block.cases.get('one');
+          const printsCount = [...block.cases.values()].some((b) => b.includes('#'));
+          if (one !== undefined && printsCount && !one.includes('#')) {
+            found.push(`ru ${key}: case "one" does not print the count (#) — it also covers 21`);
+          }
+        }
         for (const [selector, body] of block.cases) {
           // A category case must print the count it was chosen for: ru
           // `one` also matches 21, so a literal 1 would be wrong there.
@@ -312,7 +376,7 @@ function uzbekPluralAfterCount(cats: Catalogs): string[] {
   for (const [key, value] of Object.entries(cats.uz)) {
     for (const text of visibleTexts(value)) {
       for (const m of text.matchAll(/(?:\{(\w+)\}|#)\s+(?:ta\s+)?(\p{L}+)/gu)) {
-        if (m[1] && !COUNT_VARS.has(m[1])) continue;
+        if (m[1] && !isCountVar(m[1])) continue;
         if (/lar(?:i|ni|ga|da|dan|ning)?$/u.test(m[2]!)) found.push(`uz ${key}: "${m[0]}"`);
       }
     }
@@ -370,6 +434,18 @@ function englishApostrophes(cats: Catalogs): string[] {
     .map(([k, v]) => `en ${k}: ${v}`);
 }
 
+/** R2-COPY-8 (2026-10-31): en quotes with ASCII "…", uz with «…». */
+function quoteStyle(cats: Catalogs): string[] {
+  return [
+    ...Object.entries(cats.en)
+      .filter(([, v]) => /[“”]/.test(v))
+      .map(([k, v]) => `en ${k}: use ASCII "" instead of “” in ${v}`),
+    ...Object.entries(cats.uz)
+      .filter(([, v]) => /[“”"]/.test(v))
+      .map(([k, v]) => `uz ${k}: use «» in ${v}`),
+  ];
+}
+
 // ── 7. Values left in English ───────────────────────────────────────────
 
 /** `lang key` → why the value may equal the English one. */
@@ -383,6 +459,7 @@ const SAME_AS_EN_ALLOW: Record<string, string> = {
   'ru confirm.status.ok': '«OK» is the usual Russian status word',
   'uz unit.kg': 'unit symbol',
   'uz unit.ml': 'unit symbol',
+  'uz nav.short.admin': '«Admin» is the usual Uzbek word too (adminlar); «Boshqaruv» does not fit the nav',
 };
 
 function untranslated(cats: Catalogs): string[] {
@@ -395,6 +472,65 @@ function untranslated(cats: Catalogs): string[] {
       // zh copy without a single Chinese character is English in disguise.
       const latinOnlyZh = lang === 'zh' && !CJK.test(value);
       if (words && (sameAsEnglish || latinOnlyZh)) found.push(`${lang} ${key}: "${value}"`);
+    }
+  }
+  return found;
+}
+
+// ── 8. Terminology (D15) ────────────────────────────────────────────────
+
+/**
+ * The owner's terminology decision D15 (2026-10-31), one word per concept:
+ *
+ *   concept           zh        en                   ru               uz
+ *   order review      审核      review / approve     проверка /       tekshiruv /
+ *                                                   одобрить         maʼqullash
+ *   receiving         验收      receiving            приёмка          qabul
+ *   confirm button    确认收货  Confirm receipt      Подтвердить      Qabulni
+ *                                                   приёмку          tasdiqlash
+ *   catalog item      商品      product              товар            mahsulot
+ *   purchaser         采购员    purchaser            закупщик         xaridor
+ *   daily close       日结      daily close          закрытие дня     kun yakuni
+ *
+ * Each entry is a word that names one of these concepts the other way.
+ */
+const BANNED_TERMS: Record<Lang, Array<{ pattern: RegExp; use: string }>> = {
+  zh: [
+    { pattern: /审批/, use: '审核' },
+    { pattern: /签收/, use: '验收 / 确认收货' },
+    { pattern: /SKU/, use: '商品' },
+    { pattern: /买手/, use: '采购员' },
+    { pattern: /结算/, use: '日结 (or 计算 for run totals)' },
+  ],
+  en: [
+    { pattern: /\bSKUs?\b/, use: 'product' },
+    { pattern: /\bbuyers?\b/i, use: 'purchaser' },
+    { pattern: /\bapprovers?\b/i, use: 'reviewer' },
+    { pattern: /\bsettlements?\b|re-settle/i, use: 'daily close' },
+    { pattern: /\bsigned for\b/i, use: 'received' },
+  ],
+  ru: [
+    { pattern: /SKU/, use: 'товар' },
+    { pattern: /[Сс]огласов/, use: 'проверка / одобрить' },
+    { pattern: /[Пп]окупател/, use: 'закупщик' },
+    { pattern: /[Рр]асч[её]т/, use: 'закрытие дня / разбивка' },
+  ],
+  uz: [
+    { pattern: /SKU/, use: 'mahsulot' },
+    { pattern: /xaridchi/i, use: 'xaridor' },
+    { pattern: /taʼminotchi/i, use: 'yetkazib beruvchi' },
+  ],
+};
+
+function terminology(cats: Catalogs): string[] {
+  const found: string[] = [];
+  for (const lang of LANGS) {
+    for (const [key, value] of Object.entries(cats[lang])) {
+      const text = visibleTexts(value).join(' ');
+      for (const { pattern, use } of BANNED_TERMS[lang]) {
+        const m = text.match(pattern);
+        if (m) found.push(`${lang} ${key}: "${m[0]}" — D15 says ${use}`);
+      }
     }
   }
   return found;
@@ -413,7 +549,9 @@ const RULES: Array<[string, (cats: Catalogs) => string[]]> = [
   ['zh: full-width ，：？！；（）, quotes 「」, dash ——', chinesePunctuation],
   ['ru writes ещё with ё', russianYo],
   ['en uses the ASCII apostrophe throughout', englishApostrophes],
+  ['en quotes with "", uz with «»', quoteStyle],
   ['no value is left in English', untranslated],
+  ['D15 terminology: one word per concept', terminology],
 ];
 
 describe('catalog lint', () => {
@@ -447,6 +585,16 @@ function one(values: Partial<Record<Lang, string>>, key = 'k'): Catalogs {
 }
 
 describe('catalog lint rules catch the original findings', () => {
+  test('a one-word plural case is text, not a placeholder', () => {
+    const cats = one({
+      en: '{n, plural, one {pair} other {pairs}}',
+      zh: '{n, plural, other {副}}',
+      ru: '{n, plural, one {пара} few {пары} many {пар} other {пары}}',
+      uz: '{n, plural, other {juft}}',
+    });
+    expect(placeholderMismatches(cats)).toEqual([]);
+  });
+
   test('a placeholder renamed in one language', () => {
     const cats = one({ en: '{n} items', zh: '{n} 项', ru: '{count} поз.', uz: '{n} ta' });
     expect(placeholderMismatches(cats)).toEqual(['ru k: {count} vs en {n}']);
@@ -468,6 +616,11 @@ describe('catalog lint rules catch the original findings', () => {
       'outbox rows',
       'Higher rank',
       'allow (force on)',
+      'Recipe (BOM)',
+      'Copy as TSV',
+      'Enter a date (YYYY-MM-DD)',
+      'after onboarding',
+      'Mirror role bindings',
     ]) {
       expect(devTerms(one({ en: bad }))).not.toEqual([]);
     }
@@ -495,6 +648,38 @@ describe('catalog lint rules catch the original findings', () => {
     expect(pluralCategories(one({ en: '{n, plural, one {1 role} other {# roles}}' }))).toEqual([
       'en k: case "one" hardcodes a digit',
     ]);
+  });
+
+  test('R2-COPY-2: a ru `one` case that drops the count', () => {
+    const bad =
+      '{n, plural, one {Новый заказ} few {# новых заказа} many {# новых заказов} other {# новых заказа}}';
+    expect(pluralCategories(one({ ru: bad }))).toEqual([
+      'ru k: case "one" does not print the count (#) — it also covers 21',
+    ]);
+    // `=1` may drop it; a pure word-form block has no # anywhere.
+    const exact =
+      '{n, plural, =1 {Новый заказ} one {# новый заказ} few {# новых заказа} many {# новых заказов} other {# новых заказа}}';
+    expect(pluralCategories(one({ ru: exact }))).toEqual([]);
+    const form = '{n, plural, one {пара} few {пары} many {пар} other {пары}}';
+    expect(pluralCategories(one({ ru: form }))).toEqual([]);
+  });
+
+  test('R2-COPY-1: a count the old whitelist did not know', () => {
+    // {qty} and {eff} were not on the list, so "1 units" passed.
+    expect(countsOutsidePlural(one({ en: '{qty} units' }))).toHaveLength(1);
+    expect(countsOutsidePlural(one({ ru: '{eff} действует' }))).toHaveLength(1);
+    expect(countsOutsidePlural(one({ en: '{name} submitted · {date} closed' }))).toEqual([]);
+  });
+
+  test('D15 terminology and quote styles', () => {
+    expect(terminology(one({ zh: '撤销审批' }))).toHaveLength(1);
+    expect(terminology(one({ en: 'New SKU' }))).toHaveLength(1);
+    expect(terminology(one({ ru: 'Нет прав на согласование' }))).toHaveLength(1);
+    expect(terminology(one({ uz: 'SKU qidirish' }))).toHaveLength(1);
+    expect(terminology(one({ zh: '撤销审核', en: 'New product' }))).toEqual([]);
+    expect(quoteStyle(one({ en: 'Joined “{org}”' }))).toHaveLength(1);
+    expect(quoteStyle(one({ uz: '“{org}”ga qoʻshiling' }))).toHaveLength(1);
+    expect(quoteStyle(one({ en: 'Joined "{org}"', uz: '«{org}»ga qoʻshiling' }))).toEqual([]);
   });
 
   test('Uzbek plural suffix after a count', () => {

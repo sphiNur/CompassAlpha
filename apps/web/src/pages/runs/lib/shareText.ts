@@ -23,8 +23,9 @@ export type ShareTextDeps = {
    * Localized display name + localized unit label for a catalog SKU, or
    * null when the id isn't in the catalog map — in which case the line's
    * own `name` / `unit` are used verbatim (that is the "extra" path).
+   * `qty` lets the unit agree with the line's quantity (R2-COPY-4).
    */
-  resolveSku: (skuId: string) => { name: string; unit: string } | null;
+  resolveSku: (skuId: string, qty?: string) => { name: string; unit: string } | null;
   /** i18n.t('order.extras.label') */
   extrasLabel: string;
   /** i18n.t('order.notes.label') */
@@ -33,7 +34,7 @@ export type ShareTextDeps = {
 
 /** Localized `{name, unit}` for a line, falling back to the line's own. */
 function displayOf(line: PreviewLine, deps: ShareTextDeps): { name: string; unit: string } {
-  const sku = line.skuId ? deps.resolveSku(line.skuId) : null;
+  const sku = line.skuId ? deps.resolveSku(line.skuId, line.qty) : null;
   return sku ?? { name: line.name, unit: line.unit };
 }
 

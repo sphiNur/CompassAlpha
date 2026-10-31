@@ -2,6 +2,8 @@
  * Every error key the server throws has a sentence in the catalogs
  * (B15, 2026-10-30): 17 were missing, so users saw raw keys such as
  * order.errors.tooManyExtras. This scans the API and domain sources.
+ * 2026-10-31: the development / test sign-in keys are in the catalogs too
+ * (RE-COPY-9), so there is no exception list any more.
  */
 import { describe, expect, test } from 'bun:test';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -9,20 +11,6 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
-
-/** Development / test sign-in paths: the sign-in page maps these itself. */
-const SIGN_IN_ONLY = new Set([
-  'auth.errors.devBypassDisabled',
-  'auth.errors.devBypassNoMember',
-  'auth.errors.devDatabaseUnavailable',
-  'auth.errors.devLocalhostOnly',
-  'auth.errors.devMockSeedRequired',
-  'auth.errors.devPersonaMissing',
-  'auth.errors.invalidNonTelegramLogin',
-  'auth.errors.nonTelegramAllowlistEmpty',
-  'auth.errors.nonTelegramLoginDisabled',
-  'auth.errors.nonTelegramProductionDisabled',
-]);
 
 function sources(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -39,7 +27,7 @@ describe('thrown error keys', () => {
     const missing = new Set<string>();
     for (const file of [...sources(join(ROOT, 'apps/api/src')), ...sources(join(ROOT, 'packages/domain/src'))]) {
       for (const m of readFileSync(file, 'utf8').matchAll(/['"]([a-z]+\.errors\.[a-zA-Z0-9_]+)['"]/g)) {
-        if (!known.has(m[1]!) && !SIGN_IN_ONLY.has(m[1]!)) missing.add(m[1]!);
+        if (!known.has(m[1]!)) missing.add(m[1]!);
       }
     }
     expect([...missing].sort()).toEqual([]);

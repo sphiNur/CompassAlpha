@@ -30,13 +30,10 @@ import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { resetNavStore } from '../stores/navStore';
 import { isInTelegram } from '../hooks/useTelegram';
-import { useI18n } from '../hooks/useI18n';
+import { useI18n, useRoleLabels } from '../hooks/useI18n';
 import { useErrToast } from '../lib/errToast';
 import type { PageMenuRegistration } from '../app/PageMenuContext';
 import { StorePickerSection, useCanSeeStorePicker } from './StoreSwitcher';
-
-/** Built-in roles have a translated name; a custom role shows its slug. */
-const BUILTIN_ROLE_SLUGS = new Set(['super_admin', 'admin', 'manager', 'purchaser', 'cashier', 'staff']);
 import { CreateWorkspaceForm } from './CreateWorkspace';
 import { BLOCKS_NAVIGATION } from '../hooks/useAppMutating';
 
@@ -68,6 +65,7 @@ interface Props {
 
 export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
   const i18n = useI18n();
+  const roleText = useRoleLabels();
   const session = useAuthStore((s) => s.session);
   const setSession = useAuthStore((s) => s.setSession);
   const patchSession = useAuthStore((s) => s.patchSession);
@@ -323,11 +321,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
                   {/* AUTH-15 (2026-10-30): raw slugs, one per binding
                       ("super_admin, staff, cashier, staff"). */}
                   {[...new Set(session?.roleSlugs ?? [])]
-                    .map((slug) =>
-                      BUILTIN_ROLE_SLUGS.has(slug)
-                        ? i18n.t(`settings.about.roleName.${slug}` as Parameters<typeof i18n.t>[0])
-                        : slug,
-                    )
+                    .map((slug) => roleText.name({ slug }))
                     .join(', ')}
                 </span>
               </div>
@@ -351,7 +345,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
               onOpenChange(false);
             }}
           >
-            切换测试身份
+            {i18n.t('dev.switchPersona')}
           </Button>
         ) : null}
       </div>

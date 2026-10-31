@@ -45,7 +45,7 @@ import { trpc, newIdempotencyKey } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { usePageMainButton, haptic } from '../hooks/useTelegram';
 import { confirmThen } from '../lib/confirm';
-import { useI18n, useProductName } from '../hooks/useI18n';
+import { useDateFormat, useI18n, useProductName } from '../hooks/useI18n';
 import { usePhotoUploader } from '../hooks/usePhotoUploader';
 // M3.5: StoreSwitcher pill removed from page chrome; picker lives in
 // SettingsSheet now. RunPage still uses useStoreContext indirectly
@@ -116,6 +116,7 @@ type ConfirmKind =
 
 export function RunPage() {
   const i18n = useI18n();
+  const dates = useDateFormat();
   const productName = useProductName();
   const session = useAuthStore((s) => s.session);
   const currency = session?.member.currency ?? 'UZS';
@@ -1884,7 +1885,7 @@ export function RunPage() {
   usePageMenu(
     activeRun
       ? {
-          title: i18n.t('run.title') + ` #${activeRun.runIndex + 1}`,
+          title: i18n.t('run.titleWithIndex', { n: activeRun.runIndex + 1 }),
           actions: [
             ...(canUndoStartPurchase
               ? [
@@ -1941,28 +1942,31 @@ export function RunPage() {
 
   // 2026-07-30: drop the year for runs in the current year. The bar has to
   // fit `+ 新增`, this line and the staleness badge inside ~223 px once
-  // Telegram's chrome pads are subtracted; "2026-" is the least
-  // informative five characters available, and the badge now carries "how
-  // old" anyway.
-  const runDateShort =
-    activeRun && activeRun.runDate.slice(0, 4) === String(new Date().getFullYear())
-      ? activeRun.runDate.slice(5)
-      : (activeRun?.runDate ?? '');
+  // Telegram's chrome pads are subtracted; the year is the least
+  // informative part, and the badge now carries "how old" anyway.
+  // D16 (2026-10-31): in the UI language ("10月31日" / "31 окт."), not the
+  // stored "10-31".
+  const runDateShort = dates.calendarDay(activeRun?.runDate);
 
+  // RE-COPY-1: "#1 · 10月31日 · 采购" — the number sign (ru «№») and the
+  // order come from the catalog, like the switcher chips below.
   const runSubtitle = activeRun
-    ? `${runDateShort} · ${
-        activeRun.status === 'planned'
-          ? i18n.t('run.step.plan')
-          : activeRun.status === 'purchasing'
-            ? i18n.t('run.step.purchase')
-            : activeRun.status === 'delivering'
-              ? i18n.t('run.step.deliver')
-              : activeRun.status === 'finished'
-                ? i18n.t('run.step.done')
-                : activeRun.status === 'amending'
-                  ? i18n.t('run.step.amend')
-                  : activeRun.status
-      }`
+    ? i18n.t('run.switcher.option', {
+        n: activeRun.runIndex + 1,
+        date: runDateShort,
+        step:
+          activeRun.status === 'planned'
+            ? i18n.t('run.step.plan')
+            : activeRun.status === 'purchasing'
+              ? i18n.t('run.step.purchase')
+              : activeRun.status === 'delivering'
+                ? i18n.t('run.step.deliver')
+                : activeRun.status === 'finished'
+                  ? i18n.t('run.step.done')
+                  : activeRun.status === 'amending'
+                    ? i18n.t('run.step.amend')
+                    : activeRun.status,
+      })
     : i18n.t('run.empty.noActive');
 
   return (
@@ -2054,7 +2058,7 @@ export function RunPage() {
               saying so; a purchaser opening the app can't tell an active
               trip from one somebody forgot to close. */}
           <span className="min-w-0 flex-1 truncate text-old-body font-semibold tabular-nums text-[var(--c-fg)]">
-            #{activeRun.runIndex + 1} · {runSubtitle}
+            {runSubtitle}
           </span>
           {runAgeDays > 0 ? (
             <span className="shrink-0 whitespace-nowrap rounded-[var(--r-pill)] bg-[var(--c-warn-bg)] px-1.5 py-0.5 text-old-label text-[var(--c-warning-fg)]">
@@ -2079,14 +2083,20 @@ export function RunPage() {
               selected={activeRun?.id === r.id}
               onClick={() => setSelectedRunKey(r.id)}
             >
-              #{r.runIndex + 1} · {r.runDate.slice(5)} ·{' '}
-              {r.status === 'planned'
-                ? i18n.t('run.step.plan')
-                : r.status === 'purchasing'
-                  ? i18n.t('run.step.purchase')
-                  : r.status === 'delivering'
-                    ? i18n.t('run.step.deliver')
-                    : i18n.t('run.step.amend')}
+              {/* RE-COPY-1 (2026-10-31): number sign and date order come
+                  from the catalog (ru «№»), the date in the UI language. */}
+              {i18n.t('run.switcher.option', {
+                n: r.runIndex + 1,
+                date: dates.calendarDay(r.runDate),
+                step:
+                  r.status === 'planned'
+                    ? i18n.t('run.step.plan')
+                    : r.status === 'purchasing'
+                      ? i18n.t('run.step.purchase')
+                      : r.status === 'delivering'
+                        ? i18n.t('run.step.deliver')
+                        : i18n.t('run.step.amend'),
+              })}
             </Chip>
           ))}
           {canStartNewAlongside ? (

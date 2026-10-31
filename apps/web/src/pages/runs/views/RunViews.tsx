@@ -40,6 +40,14 @@ import { lineAmountNumber, lineWithinCap } from '@compass/contracts';
  * per-category view renders it inside its <summary> so the collapse
  * affordance is preserved while the chrome matches the other two views.
  */
+/**
+ * RE-COPY-2 (2026-10-31): a price in thousands with the catalog's suffix
+ * ("98千" / "98 тыс." / "98 ming"), not a Latin K in every language.
+ */
+function thousands(i18n: ReturnType<typeof useI18n>, v: string | number | null | undefined): string {
+  return formatMoneyThousands(v, i18n.t('common.priceThousands', { n: '{n}' }));
+}
+
 function GroupCardHeader({ title, meta }: { title: ReactNode; meta: ReactNode }) {
   return (
     <div className="flex items-baseline justify-between gap-2 px-4 py-1.5 text-old-label text-[var(--c-fg-muted)]">
@@ -140,7 +148,7 @@ export function PerStoreView({
                             ) : null}
                           </span>
                           <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
-                            {formatQty(e.qty)} {unitLabel(e.unit)}
+                            {formatQty(e.qty)} {unitLabel(e.unit, e.qty)}
                           </span>
                         </li>
                       ))}
@@ -195,7 +203,7 @@ export function PerStoreView({
                       </span>
                       <span className="min-w-0 flex-1 truncate text-old-body">{skuName}</span>
                       <span className="shrink-0 font-mono text-old-body tabular-nums text-[var(--c-fg-muted)]">
-                        {formatQty(r.qty)} {unitLabel(r.sku?.unit)}
+                        {formatQty(r.qty)} {unitLabel(r.sku?.unit, r.qty)}
                       </span>
                     </li>
                   );
@@ -436,7 +444,7 @@ export function PerVendorView({
                       >
                         <span className="min-w-0 flex-1 truncate text-old-body">{skuName}</span>
                         <span className="shrink-0 font-mono text-old-body tabular-nums text-[var(--c-fg-muted)]">
-                          {formatQty(r.plannedQty)} {unitLabel(r.sku?.unit)}
+                          {formatQty(r.plannedQty)} {unitLabel(r.sku?.unit, r.plannedQty)}
                         </span>
                       </li>
                     );
@@ -459,7 +467,7 @@ export function PerVendorView({
                       item={runItem}
                       servesOtherStores={otherStoreSkusOf(run).has(runItem.skuId)}
                       skuName={skuName}
-                      unit={unitLabel(r.sku?.unit)}
+                      unitCode={r.sku?.unit}
                       step={r.sku?.step ?? '0.1'}
                       demand={demandBySku.get(r.skuId) ?? []}
                       storeById={storeById}
@@ -649,7 +657,7 @@ export function RunExtrasCard({
                           ) : null}
                         </span>
                         <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
-                          {formatQty(e.qty)} {unitLabel(e.unit)}
+                          {formatQty(e.qty)} {unitLabel(e.unit, e.qty)}
                         </span>
                       </>
                     );
@@ -791,7 +799,7 @@ export function ExpensesCard({
             .map((sp) => storeById.get(sp.storeId)?.name ?? sp.storeId.slice(0, 8))
             .join(' · ');
           const unitPriceDisplay = priceInThousands
-            ? formatMoneyThousands(e.unitPrice)
+            ? thousands(i18n, e.unitPrice)
             : formatMoney(e.unitPrice);
           return (
             <li
@@ -916,8 +924,6 @@ export function PerCategoryView({
   ) => void;
   paymentBusySkuId: string | null;
 }) {
-  // See PerStoreView — raw unit codes leaked here too.
-  const unitLabel = useUnitLabel();
   const demandStoreIds = useMemo(() => {
     const ids = new Set<string>();
     for (const d of run.perStoreDemand ?? []) ids.add(d.storeId);
@@ -996,7 +1002,7 @@ export function PerCategoryView({
                   item={item}
                   servesOtherStores={otherStoreSkusOf(run).has(item.skuId)}
                   skuName={skuName}
-                  unit={unitLabel(sku?.unit)}
+                  unitCode={sku?.unit}
                   step={sku?.step ?? '0.1'}
                   demand={demandBySku.get(item.skuId) ?? []}
                   storeById={storeById}
@@ -1166,7 +1172,7 @@ function RowStateCell({ kind, label }: { kind: RowStateKind; label: string }) {
 export function PurchaseRow({
   item,
   skuName,
-  unit,
+  unitCode,
   step,
   demand,
   storeById,
@@ -1192,7 +1198,8 @@ export function PurchaseRow({
   servesOtherStores?: boolean;
   item: ActiveRun['items'][number];
   skuName: string;
-  unit: string;
+  /** The SKU's stored unit (kg / pair / …); the row localises it. */
+  unitCode: string | null | undefined;
   step: string;
   demand: Array<{ storeId: string; qty: string }>;
   /**
@@ -1286,6 +1293,10 @@ export function PurchaseRow({
   ) => void;
   paymentBusy: boolean;
 }) {
+  const unitLabel = useUnitLabel();
+  const unit = unitLabel(unitCode);
+  // R2-COPY-4: a quantity's unit agrees with it («10 пар», "2 packs").
+  const unitFor = (qty: string | number | null | undefined) => unitLabel(unitCode, qty);
   // Default qty = planned. Price defaults to the last observed market
   // price for this SKU — saves typing when prices are unchanged from
   // the previous run, which is the common case for staple goods. User
@@ -1574,12 +1585,15 @@ export function PurchaseRow({
             <span className="font-medium text-[var(--c-fg)]">{storeName}</span>
             {singleStore ? null : (
               <span className="font-mono tabular-nums text-[var(--c-fg-muted)]">
-                {formatQty(d.qty)} {unit}
+                {formatQty(d.qty)} {unitFor(d.qty)}
               </span>
             )}
             {overridePrice ? (
               <span className="font-mono tabular-nums text-[var(--c-fg-muted)]">
-                @{overridePrice}{priceInThousands ? 'K' : ''}
+                @
+                {priceInThousands
+                  ? i18n.t('common.priceThousands', { n: overridePrice })
+                  : overridePrice}
               </span>
             ) : null}
             {method === 'transfer' ? (
@@ -1637,7 +1651,7 @@ export function PurchaseRow({
 
   const refPriceText = lastPrice
     ? priceInThousands
-      ? formatMoneyThousands(lastPrice)
+      ? thousands(i18n, lastPrice)
       : formatMoney(lastPrice)
     : '';
   /* In thousands mode the visible figure is scaled, so long-press has to
@@ -1673,9 +1687,9 @@ export function PurchaseRow({
             {item.status === 'unavailable'
               ? i18n.t('run.extras.status.unavailable')
               : item.status === 'purchased'
-                ? `${formatQty(item.purchasedQty ?? item.plannedQty)} ${unit}` +
+                ? `${formatQty(item.purchasedQty ?? item.plannedQty)} ${unitFor(item.purchasedQty ?? item.plannedQty)}` +
                   (item.unitPrice ? ` × ${formatMoney(Number(item.unitPrice))}` : '')
-                : `${formatQty(item.plannedQty)} ${unit} · ${i18n.t('run.extras.status.pending')}`}
+                : `${formatQty(item.plannedQty)} ${unitFor(item.plannedQty)} · ${i18n.t('run.extras.status.pending')}`}
           </span>
         </div>
         <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
@@ -1736,7 +1750,7 @@ export function PurchaseRow({
                 wraps. Right-aligned so it lands in a column. */}
             <span className="shrink-0 whitespace-nowrap text-right text-old-label text-[var(--c-fg-muted)]">
               <span className="font-mono tabular-nums">{formatQty(item.plannedQty)}</span>{' '}
-              {unit}
+              {unitFor(item.plannedQty)}
             </span>
 
             {/* The money column. font-mono tabular-nums finally does
@@ -1819,7 +1833,7 @@ export function PurchaseRow({
               the qty and price the compressible things instead. */}
           <span className="min-w-0 break-words text-old-body font-semibold">{skuName}</span>
           <span className="min-w-0 flex-1 truncate text-old-label text-[var(--c-fg-muted)]">
-            {formatQty(item.plannedQty)} {unit}
+            {formatQty(item.plannedQty)} {unitFor(item.plannedQty)}
             {lastPrice ? (
               <>
                 {' · '}
@@ -1833,7 +1847,7 @@ export function PurchaseRow({
                   title={priceInThousands ? `${formatMoney(lastPrice)} ${currency}` : undefined}
                 >
                   {priceInThousands
-                    ? formatMoneyThousands(lastPrice)
+                    ? thousands(i18n, lastPrice)
                     : formatMoney(lastPrice)}
                 </span>
               </>
@@ -2127,7 +2141,7 @@ export function PurchaseRow({
               title={rawPriceTitle(item.unitPrice)}
             >
               {priceInThousands && item.unitPrice
-                ? formatMoneyThousands(item.unitPrice)
+                ? thousands(i18n, item.unitPrice)
                 : formatMoney(item.unitPrice)}
               {Number(item.purchasedQty) > 0 && Number(item.unitPrice) > 0 ? (
                 <span className="sr-only">

@@ -215,7 +215,7 @@ test('receive the delivery at the store', async () => {
   await expect(main()).toContainText(/Checked\s*2\/2/);
   await expect(item('Apple').getByRole('radio', { name: 'OK' })).toBeChecked();
   await evidence('receiving-checked');
-  await expect(mainButton()).toHaveText('Confirm store');
+  await expect(mainButton()).toHaveText('Confirm receipt');
   await mainButton().click();
   // U4: the irreversible confirmation goes through a summary sheet.
   await expect(sheet()).toContainText('OK: 2 · short: 0 · wrong or damaged: 0');
@@ -270,7 +270,7 @@ test('close the day', async () => {
   await expect(
     main().getByRole('button', { name: /Version 1 · Updated by E2E Admin/ }),
   ).toBeVisible();
-  await expect(main().getByRole('status').first()).toContainText('Editing an existing close');
+  await expect(main().getByRole('status').first()).toContainText('Editing an existing daily close');
   await evidence('daily-close-saved');
 });
 
