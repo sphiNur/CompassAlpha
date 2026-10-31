@@ -20,13 +20,29 @@
  * infra/tunnel/compass-origin-watch.sh. Without the secret the old
  * unsigned behaviour stays (with a one-time warning), so the server
  * script and this Worker can be rolled out in either order.
+ *
+ * 2026-10-31 security scan F3: a signed message stays valid for its
+ * whole age window, and anyone can re-post one to the topic. So the
+ * Worker no longer takes the last-posted valid message but the one with
+ * the largest signed timestamp, keeps the highest timestamp it ever
+ * accepted (KV `signedTs`, plus a per-isolate copy) and rejects anything
+ * older. A replayed message for a dead tunnel can then never displace a
+ * newer one.
  */
 const ORIGIN_CACHE_MS = 30_000;
-// The watchdog republishes every 6 h, so a week leaves ample slack for
-// a stalled server while still expiring a captured old message.
-const ORIGIN_SIGNATURE_MAX_AGE_S = 7 * 24 * 60 * 60;
+// The watchdog (infra/tunnel/compass-origin-watch.sh) republishes every
+// 6 h (republish_after_seconds=21600) from a once-a-minute timer, so a
+// healthy topic always holds a message younger than 6 h + 1 min. 30 min
+// of slack covers a slow or briefly failing publish; past that the
+// Worker serves the last accepted origin from KV (F3, 2026-10-31; was 7
+// days).
+const ORIGIN_SIGNATURE_MAX_AGE_S = 6 * 60 * 60 + 30 * 60;
 const ORIGIN_SIGNATURE_MAX_SKEW_S = 5 * 60;
 let originCache = { url: null, readAt: 0 };
+// Highest signed timestamp this isolate has accepted (F3). KV `signedTs`
+// carries it across isolates and deploys; this copy covers a KV read
+// that is still eventually consistent.
+let highestSignedTs = 0;
 let warnedUnsigned = false;
 const encoder = new TextEncoder();
 
@@ -67,8 +83,9 @@ function isTunnelOrigin(candidate) {
 }
 
 /**
- * Turn one ntfy message into an origin URL, or null if it must be
- * ignored. Signed form: `<url>|<ts>|<sig>`; unsigned: `<url>`.
+ * Turn one ntfy message into `{ url, ts }`, or null if it must be
+ * ignored. Signed form: `<url>|<ts>|<sig>` (ts is the signed unix time);
+ * unsigned: `<url>` (ts is null).
  */
 async function originFromMessage(message, env) {
   const parts = message.trim().split('|');
@@ -81,7 +98,7 @@ async function originFromMessage(message, env) {
     const expected = await hmacHex(env.ORIGIN_SIGNING_KEY, `${url}|${ts}`);
     if (!timingSafeEqual(expected, sig)) return null;
     const candidate = new URL(url);
-    return isTunnelOrigin(candidate) ? candidate.toString() : null;
+    return isTunnelOrigin(candidate) ? { url: candidate.toString(), ts: Number(ts) } : null;
   }
   if (!warnedUnsigned) {
     warnedUnsigned = true;
@@ -95,7 +112,45 @@ async function originFromMessage(message, env) {
   // Worker has no secret yet.
   if (parts.length !== 1 && parts.length !== 3) return null;
   const candidate = new URL(parts[0]);
-  return isTunnelOrigin(candidate) ? candidate.toString() : null;
+  return isTunnelOrigin(candidate) ? { url: candidate.toString(), ts: null } : null;
+}
+
+/**
+ * Pick the origin from the topic's ndjson lines, or null.
+ *
+ * Signed mode (F3): the valid message with the largest signed timestamp
+ * that is not older than `floorTs`, whatever order it was posted in.
+ * Unsigned mode keeps the old rule: the last-posted valid message.
+ */
+async function pickOrigin(lines, env, floorTs) {
+  let best = null;
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    try {
+      const event = JSON.parse(lines[i]);
+      if (event?.event !== 'message' || typeof event.message !== 'string') continue;
+      const found = await originFromMessage(event.message, env);
+      if (!found) continue;
+      if (found.ts === null) return found;
+      if (found.ts < floorTs) continue;
+      if (!best || found.ts > best.ts) best = found;
+    } catch {
+      // Ignore malformed/foreign/unsigned messages in the topic.
+    }
+  }
+  return best;
+}
+
+/**
+ * Build the upstream URL from the origin and the client's path and query
+ * only (F4, 2026-10-31). Resolving the path as a relative URL let `//host`
+ * or `/\host` replace the origin host. Returns null if the result would
+ * still leave the origin host.
+ */
+function proxyTarget(incoming, origin) {
+  const target = new URL(origin.origin);
+  target.pathname = incoming.pathname;
+  target.search = incoming.search;
+  return target.host === origin.host ? target : null;
 }
 
 function json(body, status = 200) {
@@ -127,18 +182,32 @@ async function currentOrigin(env) {
       );
       if (response.ok) {
         const lines = (await response.text()).trim().split('\n');
-        for (let i = lines.length - 1; i >= 0; i -= 1) {
+        let floorTs = highestSignedTs;
+        if (env.ORIGIN_SIGNING_KEY) {
           try {
-            const event = JSON.parse(lines[i]);
-            if (event?.event !== 'message' || typeof event.message !== 'string') continue;
-            const url = await originFromMessage(event.message, env);
-            if (url) {
-              originCache = { url, readAt: Date.now() };
-              return url;
-            }
+            floorTs = Math.max(floorTs, Number(await env.COMPASS_ORIGIN.get('signedTs')) || 0);
           } catch {
-            // Ignore malformed/foreign/unsigned messages in the topic.
+            // KV unavailable: the per-isolate floor still applies.
           }
+        }
+        highestSignedTs = floorTs;
+        const found = await pickOrigin(lines, env, floorTs);
+        if (found) {
+          if (found.ts !== null && found.ts > floorTs) {
+            highestSignedTs = found.ts;
+            try {
+              // Also the KV fallback below, so a topic that holds no
+              // fresh message (watchdog late, ntfy down) still serves the
+              // newest origin rather than a stale manual or wrangler.toml
+              // one.
+              await env.COMPASS_ORIGIN.put('signedTs', String(found.ts));
+              await env.COMPASS_ORIGIN.put('url', found.url);
+            } catch (error) {
+              console.warn('could not persist the accepted origin to KV', error);
+            }
+          }
+          originCache = { url: found.url, readAt: Date.now() };
+          return found.url;
         }
       }
     } catch {
@@ -185,7 +254,8 @@ export default {
     }
 
     const origin = new URL(await currentOrigin(env));
-    const target = new URL(incoming.pathname + incoming.search, origin);
+    const target = proxyTarget(incoming, origin);
+    if (!target) return json({ ok: false, error: 'bad request path' }, 400);
 
     const headers = new Headers(request.headers);
     // AUTH-6 (2026-10-30): the origin cannot tell clients apart — on the
@@ -247,3 +317,12 @@ export default {
     });
   },
 };
+
+// Test seams (scripts/__tests__/appProxyWorker.test.ts). Workers only
+// call the default export.
+export { pickOrigin, proxyTarget };
+export function resetStateForTests() {
+  originCache = { url: null, readAt: 0 };
+  highestSignedTs = 0;
+  warnedUnsigned = false;
+}
