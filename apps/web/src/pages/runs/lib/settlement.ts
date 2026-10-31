@@ -15,7 +15,14 @@
  * money math; they differed only in the metadata each kept alongside it
  * (skuIds / expense counters). So this is the union of the two, and the
  * callers pick the fields they render. Nothing about the numbers changed.
+ *
+ * D1 (2026-10-31): a money line is one split, qty × price rounded half-up
+ * to cents (`lineAmountNumber` from @compass/contracts — the rule the
+ * server's report, history and frozen totals use), and running totals
+ * stay on whole cents (`addMoney`). This page used to multiply in floats
+ * and show 1.005 where finance showed 1.01 (R2-HIS-1).
  */
+import { addMoney, lineAmountNumber } from '@compass/contracts';
 
 export function splitUnitPrice(
   split: { unitPrice?: string | null },
@@ -37,7 +44,11 @@ export function splitSubtotal(
 ): number {
   const unitPrice = splitUnitPrice(split, item);
   if (!unitPrice) return 0;
-  return Number(split.qty) * Number(unitPrice);
+  try {
+    return lineAmountNumber(split.qty, unitPrice);
+  } catch {
+    return 0;
+  }
 }
 
 /**
@@ -55,23 +66,37 @@ export function settleItemLine(
   item: { unitPrice?: string | null; purchasedQty?: string | null; paymentMethod?: string | null },
   itemSplits: Array<{ qty: string; unitPrice?: string | null; paymentMethod?: string | null }>,
 ): { line: number; cash: number; transfer: number } {
-  const hasSplitOverrides = itemSplits.some((sp) => sp.unitPrice || sp.paymentMethod);
   let line = 0;
   let cash = 0;
   let transfer = 0;
-  if (hasSplitOverrides) {
+  // D1: always line by line over the splits (they sum to purchasedQty),
+  // as the server does; the whole-item product is only a fallback.
+  if (itemSplits.length > 0) {
     for (const sp of itemSplits) {
       const subtotal = splitSubtotal(sp, item);
-      line += subtotal;
-      if (splitPaymentMethod(sp, item) === 'transfer') transfer += subtotal;
-      else cash += subtotal;
+      line = addMoney(line, subtotal);
+      if (splitPaymentMethod(sp, item) === 'transfer') transfer = addMoney(transfer, subtotal);
+      else cash = addMoney(cash, subtotal);
     }
   } else {
-    line = Number(item.unitPrice) * Number(item.purchasedQty);
-    if (item.paymentMethod === 'transfer') transfer += line;
-    else cash += line;
+    line = splitSubtotal({ qty: item.purchasedQty ?? '0' }, item);
+    if (item.paymentMethod === 'transfer') transfer = line;
+    else cash = line;
   }
   return { line, cash, transfer };
+}
+
+/**
+ * D1: what one off-catalog expense costs — one line per store split, as
+ * on the server; an expense without splits is one line.
+ */
+export function expenseLine(ex: {
+  qty: string;
+  unitPrice: string;
+  storeSplits?: ReadonlyArray<{ qty: string }> | null;
+}): number {
+  const splits = ex.storeSplits?.length ? ex.storeSplits : [{ qty: ex.qty }];
+  return splits.reduce((sum, sp) => addMoney(sum, splitSubtotal(sp, ex)), 0);
 }
 
 /** What one store owes for a run: goods + its share of run expenses. */
@@ -155,21 +180,21 @@ export function settlePerStore(
     if (!item || item.status !== 'purchased' || !splitUnitPrice(sp, item)) continue;
     const subtotal = splitSubtotal(sp, item);
     const cur = ensureStore(sp.storeId);
-    cur.total += subtotal;
-    if (splitPaymentMethod(sp, item) === 'transfer') cur.transfer += subtotal;
-    else cur.cash += subtotal;
+    cur.total = addMoney(cur.total, subtotal);
+    if (splitPaymentMethod(sp, item) === 'transfer') cur.transfer = addMoney(cur.transfer, subtotal);
+    else cur.cash = addMoney(cur.cash, subtotal);
     cur.skuIds.add(sp.skuId);
   }
 
   for (const ex of expenses) {
     for (const ss of ex.storeSplits) {
-      const subtotal = Number(ss.qty) * Number(ex.unitPrice);
+      const subtotal = splitSubtotal(ss, ex);
       const cur = ensureStore(ss.storeId);
-      cur.total += subtotal;
-      cur.expensesTotal += subtotal;
+      cur.total = addMoney(cur.total, subtotal);
+      cur.expensesTotal = addMoney(cur.expensesTotal, subtotal);
       cur.expensesCount += 1;
-      if (ex.paymentMethod === 'transfer') cur.transfer += subtotal;
-      else cur.cash += subtotal;
+      if (ex.paymentMethod === 'transfer') cur.transfer = addMoney(cur.transfer, subtotal);
+      else cur.cash = addMoney(cur.cash, subtotal);
     }
   }
 

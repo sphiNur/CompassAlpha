@@ -31,12 +31,14 @@ import {
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { useDateFormat, useI18n, useProductName, useUnitLabel } from '../hooks/useI18n';
+import { isWaitingOffline } from '../components/PendingSpinner';
 import { haptic } from '../hooks/useTelegram';
 import { confirmThen } from '../lib/confirm';
 import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
 import { useStoreContext } from '../components/StoreSwitcher';
 import { sessionItemsView } from './approval/sessionItemsView';
+import { ORDER_QTY_MAX } from '@compass/contracts';
 
 type ApprovalTab = 'pending' | 'approved' | 'rejected';
 
@@ -850,6 +852,15 @@ function SessionItems({
       </div>
     );
   }
+  if (isWaitingOffline(detail)) {
+    // R2-ENG-1 (2026-10-31): offline, an order never opened before has no
+    // saved lines; it is not an empty order.
+    return (
+      <div className="border-t border-[var(--c-divider)] px-4 py-3 text-old-body-sm text-[var(--c-fg-muted)]">
+        {i18n.t('common.offlineNoData')}
+      </div>
+    );
+  }
   if (detail.isError) {
     return (
       <div className="border-t border-[var(--c-divider)] px-4 py-3 text-old-body-sm text-[var(--c-danger)]">
@@ -996,6 +1007,7 @@ function SessionItems({
                   value={Number(singleRow.qty)}
                   step={Number(sku.step)}
                   unit={unitLabel(sku.unit)}
+                  max={ORDER_QTY_MAX}
                   disabled={adjust.isPending}
                   onChange={(next) =>
                     adjust.mutate({
@@ -1068,6 +1080,7 @@ function SessionItems({
                         value={Number(r.qty)}
                         step={Number(sku.step)}
                         unit={unitLabel(sku.unit)}
+                        max={ORDER_QTY_MAX}
                         disabled={adjust.isPending}
                         onChange={(next) =>
                           adjust.mutate({

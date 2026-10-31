@@ -85,3 +85,54 @@ export function allItemsHandled(items: readonly ItemStatusLike[]): boolean {
 export function pendingItemCount(items: readonly ItemStatusLike[]): number {
   return items.filter((i) => !isHandled(i)).length;
 }
+
+/**
+ * R2-BUY-5 (2026-10-31): the item card's "bought · unavailable · left"
+ * counts, over the same items and with the same "handled" rule as the
+ * bottom bar's `pendingItemCount`, so the two never disagree. An item
+ * still waiting on later demand counts as left, not bought.
+ */
+export function itemProgressCounts(items: readonly ItemStatusLike[]): {
+  bought: number;
+  na: number;
+  pending: number;
+} {
+  let bought = 0;
+  let na = 0;
+  for (const i of items) {
+    if (!isHandled(i)) continue;
+    if (i.status === 'purchased') bought += 1;
+    else na += 1;
+  }
+  return { bought, na, pending: pendingItemCount(items) };
+}
+
+/**
+ * U7 (2026-10-31): what delivery is still waiting for, so the bottom bar
+ * can say it instead of disappearing. `undelivered`: stores not yet
+ * handed their goods; `unconfirmed`: stores handed their goods that have
+ * not confirmed receipt. Each in first-seen order.
+ */
+export function deliveryWaiting(splits: readonly SplitLike[]): {
+  undelivered: string[];
+  unconfirmed: string[];
+} {
+  const order: string[] = [];
+  const byStore = new Map<string, SplitLike[]>();
+  for (const sp of splits) {
+    if (!byStore.has(sp.storeId)) {
+      byStore.set(sp.storeId, []);
+      order.push(sp.storeId);
+    }
+    byStore.get(sp.storeId)!.push(sp);
+  }
+  const undelivered: string[] = [];
+  const unconfirmed: string[] = [];
+  for (const storeId of order) {
+    const here = byStore.get(storeId)!;
+    if (here.every((sp) => !!sp.confirmedAt)) continue;
+    if (here.every((sp) => !!sp.deliveredAt)) unconfirmed.push(storeId);
+    else undelivered.push(storeId);
+  }
+  return { undelivered, unconfirmed };
+}

@@ -1,3 +1,4 @@
+import { centsToMoney, lineCents, lineWithinCap, MAX_LINE_AMOUNT } from '@compass/contracts';
 import { conflict, forbidden, preconditionFailed, validation } from '../shared/errors';
 import type { Clock } from '../shared/clock';
 import { systemClock } from '../shared/clock';
@@ -312,6 +313,7 @@ export function decideRun(
         throw validation('run.errors.splitSumMismatch', { actual, splitSum });
       }
       assertSplitOverrides(command.storeSplits);
+      assertLineCap(command.unitPrice, command.actualQty, command.storeSplits);
       // 2026-10-21 audit CA-29: a split to a store outside the run sends
       // goods to a store that cannot see (or confirm) the run, which then
       // blocks FinishRun forever.
@@ -389,6 +391,7 @@ export function decideRun(
         throw validation('run.errors.splitSumMismatch', { actual, splitSum });
       }
       assertSplitOverrides(command.storeSplits);
+      assertLineCap(command.unitPrice, command.actualQty, command.storeSplits);
 
       // Store-scope guard: every split's storeId must already be part
       // of THIS run's demand. Stretching the run to a brand-new store
@@ -467,6 +470,7 @@ export function decideRun(
       if (Math.abs(splitSum - qty) > TOLERANCE) {
         throw validation('run.errors.splitSumMismatch', { actual: qty, splitSum });
       }
+      assertLineCap(command.unitPrice, command.qty, []);
       // Store-scope: every split storeId must already be part of this
       // run. Mirrors AddPurchaserItem's same guard.
       assertStoresWithinRun(state, command.storeSplits, command.runStoreIds);
@@ -815,11 +819,11 @@ export function decideRun(
           ...baseFor(1),
           type: 'RunFinished',
           payload: {
-            totalActual: total.toFixed(2),
-            totalCash: totalCash.toFixed(2),
-            totalTransfer: totalTransfer.toFixed(2),
-            itemsTotal: total.toFixed(2),
-            expensesTotal: expensesTotal.toFixed(2),
+            totalActual: total,
+            totalCash,
+            totalTransfer,
+            itemsTotal: total,
+            expensesTotal,
           },
         },
       ];
@@ -953,11 +957,11 @@ export function decideRun(
           ...baseFor(1),
           type: 'RunRefinalized',
           payload: {
-            totalActual: total.toFixed(2),
-            totalCash: totalCash.toFixed(2),
-            totalTransfer: totalTransfer.toFixed(2),
-            itemsTotal: total.toFixed(2),
-            expensesTotal: expensesTotal.toFixed(2),
+            totalActual: total,
+            totalCash,
+            totalTransfer,
+            itemsTotal: total,
+            expensesTotal,
             byMemberId: command.actor.memberId,
           },
         },
@@ -1011,6 +1015,7 @@ export function decideRun(
         throw validation('run.errors.splitSumMismatch', { actual, splitSum });
       }
       assertSplitOverrides(command.storeSplits);
+      assertLineCap(command.unitPrice, command.actualQty, command.storeSplits);
       // 2026-10-21 audit CA-29: same store-scope guard as PurchaseItem.
       if (command.runStoreIds) {
         assertStoresWithinRun(state, command.storeSplits, command.runStoreIds);
@@ -1375,41 +1380,63 @@ function assertActive(state: RunState): void {
  * expenses, emitted alongside so the one purchase-money definition —
  * items + expenses, always shown as items / expenses / total — is on the
  * event itself. Exported for the domain tests.
+ *
+ * D1 (2026-10-31): a money line is one store split, qty × price rounded
+ * half-up to cents, and the totals are sums of those lines in integer
+ * cents (`lineCents` in @compass/contracts — the same rule as the SQL
+ * money lines every report and history view sums). It used to be float
+ * math over the whole item, so the frozen total could differ from the
+ * report by a cent (R2-HIS-1) or lose digits on a huge line (B13).
+ * Returned as 2-decimal money strings.
  */
 export function computeRunTotals(state: RunState): {
-  total: number;
-  totalCash: number;
-  totalTransfer: number;
-  expensesTotal: number;
+  total: string;
+  totalCash: string;
+  totalTransfer: string;
+  expensesTotal: string;
 } {
-  let total = 0;
-  let totalCash = 0;
-  let totalTransfer = 0;
+  let total = 0n;
+  let totalCash = 0n;
+  let totalTransfer = 0n;
   for (const item of state.items.values()) {
     if (item.status !== 'purchased' || !item.unitPrice || !item.purchasedQty) continue;
-    const hasSplitOverrides = item.storeSplits.some(
-      (split) => split.unitPrice !== undefined || split.paymentMethod !== undefined,
-    );
-    if (hasSplitOverrides) {
-      for (const split of item.storeSplits) {
-        const lineTotal = Number(split.unitPrice ?? item.unitPrice) * Number(split.qty);
-        total += lineTotal;
-        if ((split.paymentMethod ?? item.paymentMethod) === 'transfer') totalTransfer += lineTotal;
-        else totalCash += lineTotal;
-      }
-    } else {
-      const lineTotal = Number(item.unitPrice) * Number(item.purchasedQty);
-      total += lineTotal;
-      if (item.paymentMethod === 'transfer') totalTransfer += lineTotal;
-      else totalCash += lineTotal;
+    // Purchased items always carry splits summing to purchasedQty; the
+    // whole-item line is only a fallback for a stream without any.
+    const lines =
+      item.storeSplits.length > 0
+        ? item.storeSplits.map((split) => ({
+            cents: lineCents(split.qty, split.unitPrice ?? item.unitPrice!),
+            method: split.paymentMethod ?? item.paymentMethod,
+          }))
+        : [{ cents: lineCents(item.purchasedQty, item.unitPrice), method: item.paymentMethod }];
+    for (const line of lines) {
+      total += line.cents;
+      if (line.method === 'transfer') totalTransfer += line.cents;
+      else totalCash += line.cents;
     }
   }
-  let expensesTotal = 0;
+  let expensesTotal = 0n;
   for (const expense of state.expenses) {
-    const line = Number(expense.qty) * Number(expense.unitPrice);
-    if (Number.isFinite(line)) expensesTotal += line;
+    // Per store split, like the SQL lines; an expense without splits is
+    // one line.
+    const qtys = expense.storeSplits?.length
+      ? expense.storeSplits.map((split) => split.qty)
+      : [expense.qty];
+    for (const qty of qtys) {
+      try {
+        expensesTotal += lineCents(qty, expense.unitPrice);
+      } catch {
+        // A malformed historical value counts as nothing (it used to be
+        // dropped by the Number.isFinite guard).
+      }
+    }
   }
-  return { total, totalCash, totalTransfer, expensesTotal };
+  return {
+    total: centsToMoney(total),
+    totalCash: centsToMoney(totalCash),
+    totalTransfer: centsToMoney(totalTransfer),
+    expensesTotal: centsToMoney(expensesTotal),
+  };
 }
 
 /**
@@ -1510,6 +1537,30 @@ function assertSplitOverrides(splits: StoreSplitCommand[]): void {
       const price = num(split.unitPrice, 'run.errors.invalidQty');
       if (price <= 0) throw validation('run.errors.qtyMustBePositive');
     }
+  }
+}
+
+/**
+ * R2-ENG-2 (2026-10-31): qty and price each had a format limit but their
+ * product did not — a line of ~1e21 was accepted, and run.get and the
+ * report then disagreed on its total. D1 caps one money line at
+ * MAX_LINE_AMOUNT (well inside numeric(14,2) sums of a run).
+ */
+function assertLineCap(
+  unitPrice: string,
+  qty: string,
+  splits: ReadonlyArray<{ qty: string; unitPrice?: string }>,
+): void {
+  const lines: Array<[string, string]> = [[qty, unitPrice]];
+  for (const split of splits) lines.push([split.qty, split.unitPrice ?? unitPrice]);
+  for (const [lineQty, linePrice] of lines) {
+    let within: boolean;
+    try {
+      within = lineWithinCap(lineQty, linePrice);
+    } catch {
+      throw validation('run.errors.invalidQty', { value: lineQty });
+    }
+    if (!within) throw validation('run.errors.lineTooLarge', { max: MAX_LINE_AMOUNT });
   }
 }
 

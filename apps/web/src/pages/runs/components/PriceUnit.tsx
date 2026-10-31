@@ -12,8 +12,9 @@
  *                      to the field — nobody has to multiply in their
  *                      head to see that "30000" became thirty million.
  */
+import { useI18n } from '../../../hooks/useI18n';
 import { formatMoney } from '../../../lib/format';
-import { fromDisplayPrice } from '../lib/priceMath';
+import { readDisplayPrice } from '../lib/priceMath';
 
 export function PriceUnitSwitch({
   priceInThousands,
@@ -44,7 +45,12 @@ export function PriceUnitSwitch({
   );
 }
 
-/** What the typed figure means in money, or nothing while it is not a number. */
+/**
+ * What the typed figure means in money, or nothing while the field is
+ * empty. R2-BUY-2 (2026-10-31): a figure the server would refuse (a 3rd
+ * decimal, a 13th digit, 0, text) says so here instead of previewing a
+ * rounded amount that is then refused on save.
+ */
 export function PriceInFull({
   typed,
   priceInThousands,
@@ -56,8 +62,16 @@ export function PriceInFull({
   currency: string;
   unit?: string;
 }) {
-  const raw = Number(fromDisplayPrice(typed.trim(), priceInThousands));
-  if (!typed.trim() || !Number.isFinite(raw) || raw <= 0) return null;
+  const i18n = useI18n();
+  if (!typed.trim()) return null;
+  const raw = readDisplayPrice(typed, priceInThousands);
+  if (raw === null) {
+    return (
+      <span role="alert" data-testid="price-format-error" className="text-[var(--c-danger)]">
+        {i18n.t('run.errors.priceFormat')}
+      </span>
+    );
+  }
   return (
     <span
       data-testid="price-in-full"

@@ -26,6 +26,7 @@
  * for backwards-incompatible operations, asks for a free-text reason that
  * goes into the audit log.
  */
+import { addMoney } from '@compass/contracts';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Banner,
@@ -56,12 +57,13 @@ import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
 // Run money math — extracted to pages/runs/lib (Phase 4 step 1, unit-tested).
-import { settleItemLine, settlePerStore } from './runs/lib/settlement';
+import { expenseLine, settleItemLine, settlePerStore } from './runs/lib/settlement';
 import { countCarriedOver, STALE_PRICE_DAYS } from './runs/lib/priceState';
 import {
   allItemsHandled as allItemsHandledOf,
   pendingItemCount as pendingItemCountOf,
   allStoresConfirmed as allStoresConfirmedOf,
+  deliveryWaiting,
 } from './runs/lib/runProgress';
 // History subsystem lives in runs/history and is rendered by the 历史
 // tab (pages/HistoryPage.tsx) as of 2026-07-30 — this page no longer
@@ -83,6 +85,8 @@ import { SessionPicker } from './runs/components/SessionPicker';
 import { selectPreview, selectedSessionIds } from './runs/lib/sessionSelection';
 import { editPricingFromSplits, splitOverridesFor } from './runs/lib/purchaseOverrides';
 import { NEW_RUN, isBuying, liveRunsOf, pickActiveRun } from './runs/lib/liveRuns';
+import { overlayPendingWrites, withData } from './runs/lib/pendingOverlay';
+import { useOfflineDropToast } from '../lib/offlineDrop';
 
 function newClientId(): string {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -205,6 +209,8 @@ export function RunPage() {
   });
 
   const utils = trpc.useUtils();
+  // RE-DLV-4 / R2-DLV-3: a refused replay says which action failed.
+  const offlineDropToast = useOfflineDropToast();
   const invalidateRunQuietly = useCallback(
     (includeList = false) => {
       setTimeout(() => {
@@ -264,7 +270,7 @@ export function RunPage() {
         void utils.run.list.invalidate();
       },
     },
-    { onDrop: () => toast.error(i18n.t('run.toast.syncFailed')) },
+    { onDrop: offlineDropToast },
   );
 
   // ---- Mutations ------------------------------------------------------
@@ -572,6 +578,9 @@ export function RunPage() {
     onError: (err, vars, ctx) => {
       if (isLikelyNetworkError(err)) {
         void offline.enqueue('run.deliverToStore', vars, ctx?.idempotencyKey);
+        // RE-DLV-1: close the sheet; the store row shows the queued
+        // delivery, so a second tap cannot queue it again.
+        setConfirmAction(null);
         toast.info(i18n.t('run.toast.purchaseSavedOffline'));
       } else {
         errToast('common.error')(err);
@@ -737,15 +746,31 @@ export function RunPage() {
   const amending = activeRun?.status === 'amending';
   const editing = activeRun?.status === 'purchasing' || amending;
 
-  const runDetailQuery = trpc.run.get.useQuery(
+  const runDetailQueryRaw = trpc.run.get.useQuery(
     activeRun ? { runId: activeRun.id } : { runId: '' },
     { enabled: !!activeRun, refetchInterval: activeRun ? 6_000 : false },
   );
+  // R2-INT-1 / RE-DLV-1 (2026-10-31): writes saved offline show on their
+  // item (bought, unavailable, delivered — waiting to sync) instead of the
+  // screen looking as if nothing was saved.
+  const runDetailData = useMemo(
+    () => overlayPendingWrites(runDetailQueryRaw.data, offline.pendingEntries),
+    [runDetailQueryRaw.data, offline.pendingEntries],
+  );
+  const runDetailQuery = withData(runDetailQueryRaw, runDetailData);
 
   // 2026-10-21 audit CA-29: the stores this run serves. The purchase sheet
   // only offers these (plus any store already on the edited row), matching
   // the server's storeNotInRun guard.
   const runStoreIds = useMemo(() => runStoreIdsOf(runDetailQuery.data), [runDetailQuery.data]);
+  // D9 (2026-10-31): a purchaser of only some of the run's stores adds
+  // items and expenses for those stores only (the server refuses the
+  // rest); the add sheet offers just those, so a shared expense is shared
+  // among them instead of failing after the form is filled.
+  const addableStoreIds = useMemo(() => {
+    const scope = runDetailQuery.data?.purchaseScopeStoreIds;
+    return scope ? runStoreIds.filter((id) => scope.includes(id)) : runStoreIds;
+  }, [runStoreIds, runDetailQuery.data?.purchaseScopeStoreIds]);
   const purchaseStoreById = useMemo(() => {
     const allowed = new Set(runStoreIds);
     for (const storeId of purchaseDraft?.splits.keys() ?? []) allowed.add(storeId);
@@ -879,12 +904,12 @@ export function RunPage() {
       if (it.status === 'purchased' && it.unitPrice && it.purchasedQty) {
         const itemSplits = splits.filter((sp) => sp.skuId === it.skuId);
         const { line, cash, transfer } = settleItemLine(it, itemSplits);
-        total += line;
-        totalCash += cash;
-        totalTransfer += transfer;
+        total = addMoney(total, line);
+        totalCash = addMoney(totalCash, cash);
+        totalTransfer = addMoney(totalTransfer, transfer);
         if (it.addedByPurchaser) {
           addedSkus += 1;
-          addedTotal += line;
+          addedTotal = addMoney(addedTotal, line);
         }
       }
     }
@@ -896,12 +921,12 @@ export function RunPage() {
     let expensesCount = 0;
     let expensesTotal = 0;
     for (const ex of expenses) {
-      const line = Number(ex.qty) * Number(ex.unitPrice);
+      const line = expenseLine(ex);
       expensesCount += 1;
-      expensesTotal += line;
-      total += line;
-      if (ex.paymentMethod === 'transfer') totalTransfer += line;
-      else totalCash += line;
+      expensesTotal = addMoney(expensesTotal, line);
+      total = addMoney(total, line);
+      if (ex.paymentMethod === 'transfer') totalTransfer = addMoney(totalTransfer, line);
+      else totalCash = addMoney(totalCash, line);
     }
     /**
      * M3.52 (2026-05-23): per-store settlement preview shown in the
@@ -940,7 +965,7 @@ export function RunPage() {
      */
     const serverMoney = runDetailQuery.data?.money;
     const money = {
-      items: serverMoney ? Number(serverMoney.itemsTotal) : total - expensesTotal,
+      items: serverMoney ? Number(serverMoney.itemsTotal) : addMoney(total, -expensesTotal),
       expenses: serverMoney ? Number(serverMoney.expensesTotal) : expensesTotal,
       total: serverMoney ? Number(serverMoney.total) : total,
     };
@@ -1196,15 +1221,66 @@ export function RunPage() {
           visible: true,
           active: true,
         };
-      case 'delivering':
+      case 'delivering': {
+        // U7 (2026-10-31): the bar used to vanish until every store had
+        // confirmed. It now says what delivery is waiting for: stores
+        // still to be handed their goods (tap: go to the store list), then
+        // the stores that have not confirmed receipt, by name.
+        if (!allStoresConfirmed) {
+          const waiting = deliveryWaiting(runDetailQuery.data?.splits ?? []);
+          if (waiting.undelivered.length > 0) {
+            return {
+              text: i18n.t('run.action.deliverRemaining', { n: waiting.undelivered.length }),
+              onClick: () => {
+                const stores = document.querySelector('[data-run-stores]');
+                stores?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+              },
+              visible: true,
+              active: true,
+            };
+          }
+          return {
+            text: i18n.t('run.action.waitingStoreConfirm', {
+              stores: waiting.unconfirmed
+                .map((id) => storeById.get(id)?.name ?? id.slice(0, 8))
+                .join(i18n.t('common.listSeparator')),
+            }),
+            onClick: () => {},
+            visible: true,
+            active: false,
+          };
+        }
+        // RE-DLV-3: someone the server would refuse is told so here.
+        const blocked = runDetailQuery.data?.finishBlockedReason;
+        if (blocked) {
+          return {
+            text: i18n.t(
+              blocked === 'run.errors.runHasOtherStores'
+                ? 'run.action.finishBlocked.otherStores'
+                : 'run.action.finishBlocked.noPermission',
+            ),
+            onClick: () => {},
+            visible: true,
+            active: false,
+          };
+        }
         return {
           text: i18n.t('run.action.finish'),
-          onClick: () => allStoresConfirmed && setConfirmAction('finish'),
-          visible: allStoresConfirmed,
-          active: allStoresConfirmed,
+          onClick: () => setConfirmAction('finish'),
+          visible: true,
+          active: true,
         };
+      }
       case 'amending':
         // Super-admin correction session — close it by re-freezing totals.
+        if (runDetailQuery.data?.finishBlockedReason) {
+          return {
+            text: i18n.t('run.errors.cannotAmend'),
+            onClick: () => {},
+            visible: true,
+            active: false,
+          };
+        }
         return {
           text: i18n.t('run.action.refinalize'),
           onClick: () => setConfirmAction('refinalize'),
@@ -1220,6 +1296,9 @@ export function RunPage() {
     allStoresConfirmed,
     pendingCount,
     runDetailQuery.data?.otherStoreSkuIds,
+    runDetailQuery.data?.splits,
+    runDetailQuery.data?.finishBlockedReason,
+    storeById,
     i18n,
     previewSessionCount,
     chosenSessionIds,
@@ -2096,6 +2175,10 @@ export function RunPage() {
           // F11 (2026-10-30): a failed run list read as "no approved
           // orders to plan" — the buyer was told there was nothing to buy.
           <QueryErrorBanner query={runsQuery} />
+        ) : runsQuery.data === undefined && runsQuery.fetchStatus === 'paused' ? (
+          // R2-ENG-1 (2026-10-31): offline with no saved run list, not
+          // "nothing to plan"; it loads by itself once back online.
+          <EmptyState title={i18n.t('common.offlineNoData')} />
         ) : !activeRun ? (
           <DataState query={previewQuery}>
             {(p) =>
@@ -2532,7 +2615,7 @@ export function RunPage() {
           guard). */}
       <AddItemSheet
         draft={addItemDraft}
-        runStoreIds={runStoreIds}
+        runStoreIds={addableStoreIds}
         existingStoreIdsBySku={(() => {
           // M3.54 (2026-05-23): for each SKU in the run, which stores
           // already have demand. AddItemSheet uses this to (1) still

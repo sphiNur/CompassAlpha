@@ -64,6 +64,8 @@ export const en = {
   'qty.enterNumber': 'Enter a number',
   'qty.atLeast': 'Enter {min} or more',
   'qty.atMost': 'Enter {max} or less',
+  'qty.maxDecimals': 'At most {decimals} decimals',
+  'number.invalid': 'Not a number — write it like 1500 or 1.5',
   'photo.label': 'Receipt photo',
   'photo.remove': 'Remove photo',
   'photo.hint': 'Tap to take a photo',
@@ -409,6 +411,10 @@ export const en = {
   'common.error': 'Something went wrong',
   'common.networkError': 'Network error — check your connection',
   'common.offlineNotSaved': 'No connection — this change was not saved. Try again once you are online.',
+  'common.offlineNoData': 'Offline — this has not been loaded on this phone yet. It loads by itself once you are back online.',
+  'common.savingSlow': 'Saving…',
+  'common.maybeSaved': 'No answer from the server — this change may or may not have been saved. Refresh to check before changing it again.',
+  'common.maybeSavedRetrySafe': 'No answer from the server — this change may already be saved. Saving again is safe: it will not be recorded twice.',
   // M1.20 (2026-05-08): generic rate-limit error returned by the
   // server-side mutation rate limiter when a (user, path) exceeds the
   // 120-per-minute budget. The auth-specific equivalent stays under
@@ -418,10 +424,14 @@ export const en = {
   'common.errors.idempotencyKeyReused':
     'This request reused the identifier of an earlier one with different content, so it was not saved. Refresh and try again.',
   'common.errors.internal': 'Something went wrong on our side. Please try again.',
+  'common.errors.invalidDecimal': 'Enter a number with at most 3 decimals.',
+  'common.errors.positiveDecimal': 'Enter a number above 0 with at most 3 decimals.',
+  'common.errors.invalidDate': 'Not a valid date. Write it like 2026-10-31.',
   'order.errors.tooManyExtras': 'An order can have at most 50 other items.',
   'order.errors.invalidExtraName': 'Give the item a name (up to 200 characters).',
   'order.errors.invalidExtraUnit': 'Give a unit (up to 16 characters).',
   'order.errors.invalidExtraQty': 'Enter a quantity above 0, with at most 3 decimals.',
+  'order.errors.qtyTooLarge': 'A line can be at most 999,999.999.',
   'order.errors.extraNoteTooLong': 'The note is too long (up to 200 characters).',
   'run.errors.cannotPlan': "You don't have permission to plan purchase runs.",
   'common.errors.validation': 'Invalid input — check the highlighted fields',
@@ -496,6 +506,8 @@ export const en = {
     'It needs a connection to open. It loads by itself once you are online, or tap Retry.',
   'shell.offline.body':
     'You are seeing what was last loaded. Orders, purchases and receiving are kept on this phone and sync when you are back online; daily close, sales and admin need a connection to save.',
+  'shell.offline.lastUpdated': 'last updated {time}',
+  'shell.offline.noDataBody': 'Nothing has been loaded on this phone yet; data appears once you are back online. Orders, purchases and receiving are kept on this phone and sync when you are back online; daily close, sales and admin need a connection to save.',
   'order.pendingSync': '{n, plural, one {# change} other {# changes}} waiting to sync',
   'shell.pageError.title': 'This page ran into a problem',
   'shell.pageError.body': 'Other pages still work. Try again, or switch to another page.',
@@ -1101,10 +1113,41 @@ export const en = {
   'run.errors.notVisible': 'This purchase run was not found or is not available to you',
   'run.errors.priceFormat': 'Price must be above 0, with at most 12 digits and 2 decimals.',
   'run.errors.qtyFormat': 'Quantity must be above 0, with at most 9 digits and 3 decimals.',
+  'run.errors.lineTooLarge': 'One line (quantity × price) cannot be more than 1,000,000,000,000.',
   'run.errors.itemServesOtherStores':
     'This item also serves stores you do not buy for; someone who buys for them must change it.',
   'run.errors.runHasOtherStores':
     'This run includes stores you do not buy for; this step needs someone who buys for all of them.',
+  'run.errors.expenseServesOtherStores':
+    'This expense is split to stores you do not buy for. You can split expenses only to your own stores.',
+  'run.pendingSync.row': 'Saved offline — waiting to sync',
+  'run.pendingSync.short': 'waiting to sync',
+  'run.topUp.lineOtherStores': 'Other stores asked for more; the purchaser for all stores handles it',
+  'run.extras.recordPriceOtherStore': "That store's purchaser records the price",
+  'run.action.deliverRemaining': '{n, plural, one {# store} other {# stores}} still to deliver',
+  'run.action.waitingStoreConfirm': 'Waiting for receipt confirmation: {stores}',
+  'run.action.finishBlocked.otherStores': 'Finishing needs someone who buys for all stores',
+  'run.action.finishBlocked.noPermission': 'You do not have permission to finish',
+  'common.listSeparator': ', ',
+  'offline.action.purchaseItem': 'Record purchase',
+  'offline.action.markUnavailable': 'Mark unavailable',
+  'offline.action.deliverToStore': 'Confirm delivery',
+  'offline.action.addPurchaserItem': 'Add item',
+  'offline.action.addExpense': 'Record expense',
+  'offline.action.confirmStoreItem': 'Mark receiving status',
+  'offline.action.markStoreItemsOk': 'Mark all OK',
+  'offline.action.confirmStore': 'Confirm receipt',
+  'offline.drop.withReason': '“{action}” did not sync: {reason}',
+  'offline.drop.generic': '“{action}” did not sync — please check',
+  'confirm.final.title': 'Confirm receipt for this store?',
+  'confirm.final.summary': 'OK: {ok} · short: {short} · wrong or damaged: {bad}',
+  'confirm.final.shortWarning': '{n, plural, one {# line is} other {# lines are}} short: stock is booked at the quantity received and cannot be changed later.',
+  'confirm.final.body': 'Once confirmed, this store can no longer change any line.',
+  'confirm.final.submit': 'Confirm receipt',
+  'confirm.queued': 'Receipt confirmed offline — waiting to sync',
+  'run.history.amendAdded': 'Added in a correction: +{qty} {unit} ({store})',
+  'run.history.priceAfterReceipt': 'Price changed after receipt: {from} → {to}',
+  'run.amend.reopenedGoing': 'Correction opened',
   'run.errors.archiveCascadeFailed':
     'Could not archive the run together with its orders. Nothing was changed — please try again.',
   'run.errors.cannotEjectInStatus':
@@ -1189,7 +1232,7 @@ export const en = {
   'run.confirm.finish.expenses': '🧾 {n, plural, one {# off-catalog item or expense} other {# off-catalog items or expenses}} · {total} {currency}',
   'run.confirm.finish.perStoreHeading': 'Per-store settlement:',
   'run.confirm.finish.receiptIssues':
-    '{n, plural, one {# line was} other {# lines were}} signed for with a problem; about {amount} {currency} was not received. The bills below still charge the split quantities.',
+    '{n, plural, one {# line was} other {# lines were}} signed for with a problem; about {amount} {currency} was not received. Store bills still charge the split quantities.',
   'run.confirm.finish.receiptIssueLine': '{sku} · {store}: received {received}/{qty}',
   'run.confirm.finish.receiptIssuesMore': '…and {n} more',
   'run.errors.expenseLabelRequired': 'A description is required',
@@ -1484,6 +1527,9 @@ export const en = {
   'admin.workspace.financeSheet.warning':
     'Changing currency does NOT convert past purchases. Set once per org.',
   'admin.errors.taxRateOutOfRange': 'Tax rate must be between 0 and 50.',
+  'admin.errors.taxRateFormat': 'Tax rate must be a number from 0 to 50, with at most 2 decimals.',
+  'admin.errors.timeZoneUnknown': 'Unknown time zone. Write a name like Asia/Tashkent.',
+  'admin.errors.sortIndexInteger': 'Sort order must be a whole number (from -1000000 to 1000000).',
 
   // ── 15a. Shared admin form labels (M1.21-C, 2026-05-08) ───────
   // The Admin section had ~40 form labels hardcoded in English JSX

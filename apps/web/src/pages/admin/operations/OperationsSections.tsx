@@ -9,6 +9,7 @@
  *   - FinanceSection     daily / by-supplier / by-store expense views
  *   - MaintenanceSection danger zone (+ TargetedPurgeBrowser, internal)
  */
+import { addMoney } from '@compass/contracts';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Badge,
@@ -1213,9 +1214,9 @@ export function FinanceSection() {
         transfer: 0,
         lines: [] as typeof lines,
       };
-      const lt = Number(l.lineTotal);
-      if (l.paymentMethod === 'transfer') g.transfer += lt;
-      else g.cash += lt;
+      // D1: lines are cents already; the group sum stays on cents.
+      if (l.paymentMethod === 'transfer') g.transfer = addMoney(g.transfer, l.lineTotal);
+      else g.cash = addMoney(g.cash, l.lineTotal);
       g.lines.push(l);
       m.set(l.runDate, g);
     }
@@ -1245,9 +1246,9 @@ export function FinanceSection() {
         transfer: 0,
         lines: [] as typeof lines,
       };
-      const lt = Number(l.lineTotal);
-      if (l.paymentMethod === 'transfer') g.transfer += lt;
-      else g.cash += lt;
+      // D1: lines are cents already; the group sum stays on cents.
+      if (l.paymentMethod === 'transfer') g.transfer = addMoney(g.transfer, l.lineTotal);
+      else g.cash = addMoney(g.cash, l.lineTotal);
       g.lines.push(l);
       m.set(key, g);
     }
@@ -1267,9 +1268,9 @@ export function FinanceSection() {
         transfer: 0,
         lines: [] as typeof lines,
       };
-      const lt = Number(l.lineTotal);
-      if (l.paymentMethod === 'transfer') g.transfer += lt;
-      else g.cash += lt;
+      // D1: lines are cents already; the group sum stays on cents.
+      if (l.paymentMethod === 'transfer') g.transfer = addMoney(g.transfer, l.lineTotal);
+      else g.cash = addMoney(g.cash, l.lineTotal);
       g.lines.push(l);
       m.set(l.storeId, g);
     }
@@ -1466,7 +1467,7 @@ export function FinanceSection() {
                 >
                   <span className="text-old-body font-semibold tabular-nums">{g.date}</span>
                   <span className="font-mono text-old-body tabular-nums">
-                    {formatMoney(g.cash + g.transfer)}
+                    {formatMoney(addMoney(g.cash, g.transfer))}
                   </span>
                 </button>
                 {mixed ? (
@@ -1541,7 +1542,7 @@ export function FinanceSection() {
                 >
                   <span className="truncate text-old-body font-semibold">{name}</span>
                   <span className="font-mono text-old-body tabular-nums">
-                    {formatMoney(g.cash + g.transfer)}
+                    {formatMoney(addMoney(g.cash, g.transfer))}
                   </span>
                 </button>
                 {mixed ? (
@@ -1598,7 +1599,7 @@ export function FinanceSection() {
                 >
                   <span className="truncate text-old-body font-semibold">{name}</span>
                   <span className="font-mono text-old-body tabular-nums">
-                    {formatMoney(g.cash + g.transfer)}
+                    {formatMoney(addMoney(g.cash, g.transfer))}
                   </span>
                 </button>
                 {mixed ? (

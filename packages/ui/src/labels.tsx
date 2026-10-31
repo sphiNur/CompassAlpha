@@ -59,12 +59,20 @@ export interface UiLabels {
   qtyAtLeast: (min: string) => string;
   /** F13: the free-entry value is above the maximum. Receives the maximum. */
   qtyAtMost: (max: string) => string;
+  /** R2-ORD-2: more decimals than the quantity keeps. Receives the limit. */
+  qtyMaxDecimals: (decimals: number) => string;
+
+  // --- NumberInput / Input type="number" ---
+  /** R2-ORD-2: the text in a number field is not one number ("1e3"). */
+  numberInvalid: string;
 
   // --- DataState ---
   errorTitle: string;
   errorUnknown: string;
   emptyNoData: string;
   emptyNothingYet: string;
+  /** Offline with no saved copy: the query waits for the network. */
+  offlineNoData: string;
   /**
    * 2026-10-21 FE-10: turns `query.error.message` (often a server i18n key
    * like `order.errors.notFound`, or a raw "Failed to fetch") into user
@@ -93,10 +101,13 @@ export const DEFAULT_UI_LABELS: UiLabels = {
   qtyEnterNumber: 'Enter a number',
   qtyAtLeast: (min) => `Enter ${min} or more`,
   qtyAtMost: (max) => `Enter ${max} or less`,
+  qtyMaxDecimals: (decimals) => `At most ${decimals} decimals`,
+  numberInvalid: 'Not a number — write it like 1500 or 1.5',
   errorTitle: 'Something went wrong',
   errorUnknown: 'Unknown error',
   emptyNoData: 'No data',
   emptyNothingYet: 'Nothing here yet',
+  offlineNoData: 'Offline — this has not been loaded on this phone yet. It loads once you are back online.',
   translateError: (message) => message,
   retry: 'Retry',
   photoLabel: 'Receipt photo',

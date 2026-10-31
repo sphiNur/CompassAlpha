@@ -42,6 +42,12 @@ describe('salesListView (2026-10-21 FE-01)', () => {
   test('an error wins over stale rows', () => {
     expect(salesListView({ isLoading: false, isError: true, rowCount: 3 })).toBe('error');
   });
+  // CLS-6 (2026-10-31): offline with nothing saved is not "no sales yet".
+  test('waiting offline with no rows is offline, not empty', () => {
+    expect(salesListView({ isLoading: false, isError: false, rowCount: 0, waitingOffline: true })).toBe(
+      'offline',
+    );
+  });
   test('empty vs list', () => {
     expect(salesListView({ isLoading: false, isError: false, rowCount: 0 })).toBe('empty');
     expect(salesListView({ isLoading: false, isError: false, rowCount: 2 })).toBe('list');

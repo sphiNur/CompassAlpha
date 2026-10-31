@@ -25,6 +25,16 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(() => {
       /* unsupported or blocked: the app works as before, online only */
     });
+    // R2-SHL-1 (2026-10-31): this first page loaded before the worker
+    // existed; hand it the files already loaded (lazy page chunks among
+    // them) so an offline reload after this one visit finds them.
+    void navigator.serviceWorker.ready.then((registration) => {
+      const urls = performance
+        .getEntriesByType('resource')
+        .map((entry) => entry.name)
+        .filter((url) => url.startsWith(`${window.location.origin}/assets/`));
+      registration.active?.postMessage({ type: 'compass:cache-urls', urls });
+    });
   });
 }
 

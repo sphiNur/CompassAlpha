@@ -33,6 +33,7 @@ import { useErrToast } from '../../../lib/errToast';
 import { useRefreshSession } from '../../../lib/refreshSession';
 import { formatQty } from '../../../lib/format';
 import { useDateFormat, useI18n, useProductName, useUnitLabel } from '../../../hooks/useI18n';
+import { isWaitingOffline } from '../../../components/PendingSpinner';
 import { nativeConfirm, type StoreFocus, type StoreSub } from '../shared';
 import { PeopleSection } from '../people/PeopleSections';
 import { StoreSalesPanel } from '../../../components/sales/StoreSalesPanel';
@@ -573,6 +574,9 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
         <div className="py-6 text-center">
           <Spinner size={16} />
         </div>
+      ) : isWaitingOffline(levelsQuery) ? (
+        // R2-ENG-1 (2026-10-31): offline with no saved copy is not "no stock".
+        <EmptyState title={i18n.t('common.offlineNoData')} />
       ) : levelsQuery.isError ? (
         // CLS-1 (2026-10-30): a failed load used to read "no stock data
         // yet", with the opening-stock button still offered above it.
@@ -802,6 +806,8 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
               <div className="py-6 text-center">
                 <Spinner size={16} />
               </div>
+            ) : isWaitingOffline(movementsQuery) ? (
+              <EmptyState title={i18n.t('common.offlineNoData')} />
             ) : movementsQuery.isError ? (
               <QueryErrorBanner query={movementsQuery} />
             ) : (movementsQuery.data ?? []).length === 0 ? (

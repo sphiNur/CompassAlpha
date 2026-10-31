@@ -187,6 +187,12 @@ function assertSeenLatest(
   userId: string,
 ): void {
   if (expectedSeq === undefined) return;
+  // R2-APR-3 (2026-10-31): a seq the order never reached (ahead of the
+  // stream, or negative) is not a version anyone saw; it used to pass.
+  const currentSeq = events.reduce((max, e) => Math.max(max, e.seq), 0);
+  if (expectedSeq < 0 || expectedSeq > currentSeq) {
+    throw new TRPCError({ code: 'CONFLICT', message: 'order.errors.staleSeq' });
+  }
   if (changedByOthersSince(events, expectedSeq, userId)) {
     throw new TRPCError({ code: 'CONFLICT', message: 'order.errors.staleSeq' });
   }
