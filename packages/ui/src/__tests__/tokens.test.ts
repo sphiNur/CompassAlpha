@@ -181,3 +181,66 @@ describe('tap areas', () => {
     expect(rule).toContain('height: max(100%, 44px)');
   });
 });
+
+describe('D18: text fields are 44px', () => {
+  const read = (name: string) => readFileSync(join(UI_SRC, 'components', name), 'utf8');
+
+  test('--control-h is 44px', () => {
+    expect(light['--control-h']).toBe('44px');
+  });
+
+  test('every text field and the md Button take their height from --control-h', () => {
+    for (const name of ['Input.tsx', 'SearchInput.tsx', 'Select.tsx', 'NumberInput.tsx']) {
+      const src = read(name);
+      expect({ name, height: src.includes('h-[var(--control-h)]') }).toEqual({ name, height: true });
+      expect({ name, compact: /h-\[var\(--control-h-sm\)\]|'h-8'|\bh-9\b|\bh-10\b/.test(src) }).toEqual({
+        name,
+        compact: false,
+      });
+    }
+    expect(read('Button.tsx')).toContain("md: 'h-[var(--control-h)]");
+    expect(read('Textarea.tsx')).toContain('min-h-11');
+  });
+
+  test('no raw <input>, <select> or <textarea> in the web app is shorter than 44px', () => {
+    const short: string[] = [];
+    for (const file of sources(WEB_SRC)) {
+      if (!file.endsWith('.tsx')) continue;
+      const src = readFileSync(file, 'utf8');
+      for (const m of src.matchAll(/<(input|select|textarea)\b/g)) {
+        // The element's own attributes: up to its first className.
+        const attrs = src.slice(m.index!, m.index! + 1200);
+        const cls = /className="([^"]*)"/.exec(attrs)?.[1] ?? '';
+        const type = /type="([a-z]+)"/.exec(attrs.slice(0, attrs.indexOf('className=')))?.[1];
+        if (type && ['checkbox', 'radio', 'hidden', 'file'].includes(type)) continue;
+        if (/(^|\s)(h-([0-9]|10)|py-1)(\s|$)/.test(cls)) {
+          short.push(`${file.slice(WEB_SRC.length)}: ${cls}`);
+        }
+      }
+    }
+    expect(short).toEqual([]);
+  });
+});
+
+describe('V18: the sheet keeps its lift', () => {
+  test('the sheet draws its shadow and hairline in one box-shadow', () => {
+    const sheet = readFileSync(join(UI_SRC, 'components', 'Sheet.tsx'), 'utf8');
+    // shadow-[…] and ring-hairline both set box-shadow; the later one wins.
+    expect(sheet).toContain('shadow-sheet');
+    expect(sheet).not.toMatch(/shadow-\[var\(--shadow-product\)\][^'\n]*ring-hairline/);
+    const rule = /\.shadow-sheet\s*\{([^}]*)\}/.exec(css)![1]!;
+    expect(rule).toContain('var(--shadow-product)');
+    expect(rule).toContain('inset 0 0 0 1px var(--c-divider)');
+  });
+});
+
+describe('purchase row controls', () => {
+  test('the row controls are at least 44 wide and grow with their label', () => {
+    const src = readFileSync(join(WEB_SRC, 'pages/runs/views/RunViews.tsx'), 'utf8');
+    const ctrl = /const ROW_CTRL =\s*([\s\S]*?);/.exec(src)![1]!;
+    expect(ctrl).toContain('min-w-11');
+    expect(ctrl).toContain('whitespace-nowrap');
+    expect(ctrl).not.toMatch(/\bw-9\b/);
+    expect(src).not.toContain('min-w-9');
+  });
+});

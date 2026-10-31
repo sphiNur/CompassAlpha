@@ -36,11 +36,9 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   const input = (
     <input
       ref={ref}
-      // Height = --control-h (40px, the standard form-control tier;
-      // M3.15 lowered it from 44→40 to match the Button md baseline so
-      // an Input + Button row reads as same-rhythm controls). Select
-      // shares this token so Input and Select finally line up. Text
-      // stays text-old-h3 (14 px).
+      // Height = --control-h (44px since D18, 2026-10-31; was 40). The md
+      // Button and Select share the token, so an Input + Button row and
+      // Input + Select still line up. Text stays text-old-h3 (14 px).
       className={cn(
         'h-[var(--control-h)] w-full min-w-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3',
         'text-[var(--c-fg)] placeholder:text-[var(--c-fg-subtle)]',

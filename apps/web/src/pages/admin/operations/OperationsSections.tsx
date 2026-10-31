@@ -434,7 +434,7 @@ function TargetedPurgeBrowser() {
           type="date"
           value={date}
           onChange={(e) => setDate(e.target.value)}
-          className="h-10 flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 text-old-body ring-hairline"
+          className="h-[var(--control-h)] flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 text-old-body ring-hairline"
         />
         <button
           type="button"
@@ -1542,7 +1542,8 @@ export function FinanceSection() {
                 <button
                   type="button"
                   onClick={() => setExpanded(isOpen ? null : g.date)}
-                  className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left active:opacity-80"
+                  // min-h-11 (R2-HIS-5): the day row was 34px.
+                  className="flex min-h-11 w-full items-center justify-between gap-2 px-3 py-2 text-left active:opacity-80"
                 >
                   <span className="text-old-body font-semibold tabular-nums">{g.date}</span>
                   <GroupAmount group={g} />
@@ -1875,7 +1876,7 @@ export function MaintenanceSection() {
                     type="date"
                     value={dateInput}
                     onChange={(e) => setDateInput(e.target.value)}
-                    className="h-11 flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3 ring-hairline"
+                    className="h-[var(--control-h)] flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3 ring-hairline"
                   />
                   <Button
                     size="sm"

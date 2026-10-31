@@ -137,9 +137,10 @@ export function HistoryPage() {
           clearAriaLabel={i18n.t('common.clear')}
           className="flex-1"
         />
+        {/* md: the same 44px as the search field beside it (D18). */}
         <Button
           variant={activeFilterCount > 0 ? 'primary' : 'secondary'}
-          size="sm"
+          className="shrink-0"
           onClick={() => {
             setDraftFilters(filters);
             setFiltersOpen(true);
