@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import { LocaleSchema, TimeZoneSchema, UuidSchema } from './common';
+import {
+  CONTROL_CHARS_MESSAGE,
+  LocaleSchema,
+  noControlChars,
+  TimeZoneSchema,
+  UuidSchema,
+} from './common';
 
 export const TelegramLoginInputSchema = z.object({
   initData: z.string().min(1),
@@ -158,7 +164,8 @@ export const SessionSchema = z.object({
 
 export const CompleteOnboardingInputSchema = z.object({
   // AUTH-4: trim first, or "   " passes min(1) and locks an empty name.
-  displayName: z.string().trim().min(1).max(200),
+  // F10: no control characters (names reach the operator's terminal).
+  displayName: z.string().trim().min(1).max(200).refine(noControlChars, CONTROL_CHARS_MESSAGE),
 });
 
 export const SwitchOrganizationInputSchema = z.object({
@@ -166,7 +173,7 @@ export const SwitchOrganizationInputSchema = z.object({
 });
 
 export const CreateOrganizationInputSchema = z.object({
-  name: z.string().trim().min(2).max(200),
+  name: z.string().trim().min(2).max(200).refine(noControlChars, CONTROL_CHARS_MESSAGE),
   /** Optional operator-chosen slug; omitted lets the server derive one. */
   slug: z
     .string()

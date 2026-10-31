@@ -6,6 +6,26 @@ import { ORDER_QTY_MAX } from '../limits';
 export { BACKDATE_LIMIT_DAYS, ORDER_QTY_MAX, isoDateDaysBefore } from '../limits';
 
 export const UuidSchema = z.string().uuid();
+
+/**
+ * True when the text holds a C0/C1 control character (U+0000–U+001F,
+ * U+007F–U+009F). Security scan F10 (2026-10-31): names a tenant admin
+ * types are later printed raw by the operator's maintenance scripts, and
+ * an escape sequence in a store name could rewrite what the terminal
+ * showed before a destructive `--apply`. Names and codes refuse them.
+ */
+export function hasControlChars(text: string): boolean {
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (c < 0x20 || (c >= 0x7f && c <= 0x9f)) return true;
+  }
+  return false;
+}
+
+export const CONTROL_CHARS_MESSAGE = 'common.errors.controlCharacters';
+
+/** A one-line name: no control characters (F10). */
+export const noControlChars = (text: string): boolean => !hasControlChars(text);
 /**
  * A calendar date, YYYY-MM-DD. B11 (2026-10-30): the pattern alone let
  * "2026-02-31" or "2026-13-01" through, and the query then failed in

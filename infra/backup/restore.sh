@@ -27,6 +27,10 @@
 
 set -euo pipefail
 
+# F11: credentials go to pg_restore through PGPASSWORD, not argv.
+# shellcheck source=pg-url.sh
+source "$(dirname "${BASH_SOURCE[0]}")/pg-url.sh"
+
 ENV_FILE=${ENV_FILE:-/home/ubuntu/compass-alpha/.env}
 BACKUP_DIR=${BACKUP_DIR:-/home/ubuntu/compass-backups}
 
@@ -95,13 +99,15 @@ fi
 # --no-owner --no-privileges: matches how we dumped — keeps it portable.
 echo "[restore] starting pg_restore…"
 START=$(date +%s)
+# Password through the environment, not argv (pg-url.sh, F11).
+pg_url_split "$DATABASE_URL"
 pg_restore \
   --clean \
   --if-exists \
   --no-owner \
   --no-privileges \
   --single-transaction \
-  --dbname="$DATABASE_URL" \
+  --dbname="$PG_URL_NOPASS" \
   "$DUMP"
 ELAPSED=$(( $(date +%s) - START ))
 echo "[restore] done in ${ELAPSED}s"
