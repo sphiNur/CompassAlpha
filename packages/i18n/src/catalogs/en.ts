@@ -831,7 +831,7 @@ export const en = {
   // them.
   'admin.empty.adminOnly.title': 'Admin only',
   'admin.empty.adminOnly.description':
-    'You need permission to manage members to view this page. Ask an admin for access.',
+    'You need permission to manage members to view this page. Ask your store manager for access.',
   'admin.confirm.suspend': 'Suspend {name}? They cannot sign in until you reactivate them.',
   'admin.confirm.removeFromStore':
     'Remove {name} from {store}?\n\nTheir roles and store permissions here are revoked. Their other stores stay as they are.',
@@ -1175,7 +1175,7 @@ export const en = {
   'order.errors.cannotEditOthersLine': "You can't edit another person's line",
   'order.errors.emptyOrder': 'Add at least one item before submitting',
   'order.errors.cannotClaim':
-    "You don't have permission to review orders. Ask an admin for access.",
+    "You don't have permission to review orders. Ask your store manager for access.",
   // M3.37 (2026-05-19, Wave2 #5): MarkExtraStatus guard rails.
   'order.errors.cannotMarkExtra': 'Only purchasers can mark other items.',
   'order.errors.extraStatusOnlyDuringRun': 'Other items can only be marked once purchasing starts.',
@@ -1187,7 +1187,7 @@ export const en = {
   'order.errors.notClaimer':
     'Only the person reviewing this order or another reviewer can put it back.',
   'order.errors.cannotApprove':
-    "You don't have permission to review orders. Ask an admin for access.",
+    "You don't have permission to review orders. Ask your store manager for access.",
   'order.errors.notApprovable': 'This order is not awaiting review',
   'order.errors.claimedByOther': 'Another reviewer is currently working on this',
   'order.errors.notRejectable':
@@ -1202,7 +1202,7 @@ export const en = {
   'order.errors.cannotWithdrawWhileClaimed':
     "Someone is reviewing this order, so it can't be withdrawn right now.",
   'order.errors.cannotUnapprove':
-    "You don't have permission to reverse approvals. Ask an admin for access.",
+    "You don't have permission to reverse approvals. Ask your store manager for access.",
   'order.errors.notUnapprovable': 'This order is not approved',
   'order.errors.alreadyInRun': 'Already attached to a market run',
   'order.errors.cannotAttach': 'This order cannot be attached to a run',
@@ -1727,7 +1727,7 @@ export const en = {
   // Server error key emitted when a non-admin attempts to query the
   // finance reports.
   'admin.errors.financeRequiresManage':
-    'Viewing finance needs the reports permission; ask an admin.',
+    'Viewing finance needs the reports permission. Ask your store manager for access.',
 
   // ── 15. Org financial settings (M1.17) ────────────────
   // Currency + tax rate + price tax-inclusivity. Lives in Admin →

@@ -757,7 +757,7 @@ export const uz = {
   // M1.9-extra: P2 admin i18n
   'admin.empty.adminOnly.title': 'Faqat administrator',
   'admin.empty.adminOnly.description':
-    'Bu sahifani koʻrish uchun aʼzolarni boshqarish ruxsati kerak. Kerak boʻlsa, administratordan soʻrang.',
+    'Bu sahifani koʻrish uchun aʼzolarni boshqarish ruxsati kerak. Kerak boʻlsa, doʻkon boshqaruvchisidan soʻrang.',
   'admin.confirm.suspend':
     '{name} hisobi toʻxtatilsinmi? Siz qayta yoqmaguningizcha u kira olmaydi.',
   'admin.confirm.removeFromStore':
@@ -1090,7 +1090,7 @@ export const uz = {
   'order.errors.cannotEditOthersLine': 'Boshqa odamning qatorini tahrirlab boʻlmaydi',
   'order.errors.emptyOrder': 'Yuborishdan oldin kamida bitta mahsulot qoʻshing',
   'order.errors.cannotClaim':
-    'Sizda buyurtmalarni tekshirish huquqi yoʻq. Kerak boʻlsa, administratordan ruxsat soʻrang.',
+    'Sizda buyurtmalarni tekshirish huquqi yoʻq. Kerak boʻlsa, doʻkon boshqaruvchisidan ruxsat soʻrang.',
   // M3.37 (2026-05-19, Wave2 #5)
   'order.errors.cannotMarkExtra': 'Boshqa narsalarni faqat xaridor belgilashi mumkin',
   'order.errors.extraStatusOnlyDuringRun': 'Boshqa narsalar faqat xarid bosqichida belgilanadi',
@@ -1103,7 +1103,7 @@ export const uz = {
   'order.errors.notClaimer':
     'Buyurtmani navbatga faqat uni tekshirayotgan kishi yoki boshqa tekshiruvchi qaytara oladi.',
   'order.errors.cannotApprove':
-    'Sizda buyurtmalarni tekshirish huquqi yoʻq. Kerak boʻlsa, administratordan ruxsat soʻrang.',
+    'Sizda buyurtmalarni tekshirish huquqi yoʻq. Kerak boʻlsa, doʻkon boshqaruvchisidan ruxsat soʻrang.',
   'order.errors.notApprovable': 'Buyurtma tekshiruv navbatida emas',
   'order.errors.claimedByOther': 'Buyurtma ustida boshqa tekshiruvchi ishlamoqda',
   'order.errors.notRejectable':
@@ -1118,7 +1118,7 @@ export const uz = {
   'order.errors.cannotWithdrawWhileClaimed':
     'Bu buyurtma hozir tekshirilmoqda, shuning uchun uni hozircha qaytarib boʻlmaydi.',
   'order.errors.cannotUnapprove':
-    'Sizda maʼqullashni bekor qilish huquqi yoʻq. Kerak boʻlsa, administratordan ruxsat soʻrang.',
+    'Sizda maʼqullashni bekor qilish huquqi yoʻq. Kerak boʻlsa, doʻkon boshqaruvchisidan ruxsat soʻrang.',
   'order.errors.notUnapprovable': 'Buyurtma maʼqullanmagan',
   'order.errors.alreadyInRun': 'Allaqachon xaridga qoʻshilgan',
   'order.errors.cannotAttach': 'Buyurtmani xaridga qoʻshib boʻlmaydi',
@@ -1612,7 +1612,7 @@ export const uz = {
   'finance.export.copied': 'Hisobot nusxalandi — jadval dasturiga joylashtiring.',
   'finance.export.noClipboard': "Bufer mavjud emas, hech narsa nusxalanmadi.",
   'admin.errors.financeRequiresManage':
-    'Moliyani koʻrish uchun hisobot huquqi kerak; administratorga murojaat qiling.',
+    'Moliyani koʻrish uchun hisobot huquqi kerak. Kerak boʻlsa, doʻkon boshqaruvchisidan soʻrang.',
 
   // ── 15. Org financial settings (M1.17) ────────────────
   'admin.workspace.currency': 'Valyuta',

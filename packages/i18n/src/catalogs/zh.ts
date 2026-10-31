@@ -700,7 +700,7 @@ export const zh = {
   'admin.action.moreActions': '更多',
   // M1.9-extra: P2 admin i18n 续完
   'admin.empty.adminOnly.title': '仅管理员可访问',
-  'admin.empty.adminOnly.description': '需要管理成员的权限才能打开这一页。需要的话找管理员开通。',
+  'admin.empty.adminOnly.description': '需要管理成员的权限才能打开这一页。需要的话找店长开通。',
   'admin.confirm.suspend': '停用 {name}？他将无法登录，直到你重新启用。',
   'admin.confirm.removeFromStore': '将 {name} 从 {store} 移除？\n\n他在这家门店的角色和权限设置都会撤销，其他门店不受影响。',
   'admin.confirm.removeFromOrg': '把 {name} 移出这个工作区？他会失去这里所有的门店和角色，之后要重新邀请才能回来。',
@@ -987,7 +987,7 @@ export const zh = {
   'order.errors.cannotArchive': '你没有归档订单的权限。需要的话找店长开通。',
   'order.errors.cannotEditOthersLine': '不能修改他人下的条目',
   'order.errors.emptyOrder': '请至少添加一项再提交',
-  'order.errors.cannotClaim': '你没有审核订单的权限。需要的话找管理员开通。',
+  'order.errors.cannotClaim': '你没有审核订单的权限。需要的话找店长开通。',
   // M3.37 (2026-05-19, Wave2 #5)
   'order.errors.cannotMarkExtra': '只有采购员可以标记其他商品。',
   'order.errors.extraStatusOnlyDuringRun': '只能在采购阶段标记其他商品。',
@@ -996,7 +996,7 @@ export const zh = {
   'order.errors.alreadyClaimed': '另一位审核员已经在审核这份订单了。',
   'order.errors.takeOverCooldown': '这张订单刚被接手，请过一分钟再试。',
   'order.errors.notClaimer': '只有正在审核这份订单的人或其他审核员可以把它放回。',
-  'order.errors.cannotApprove': '你没有审核订单的权限。需要的话找管理员开通。',
+  'order.errors.cannotApprove': '你没有审核订单的权限。需要的话找店长开通。',
   'order.errors.notApprovable': '订单未在等待审核',
   'order.errors.claimedByOther': '正在由其他审核员处理',
   'order.errors.notRejectable': '这份订单已经不在等待审核了，不能拒绝。刷新看看现在的状态。',
@@ -1006,7 +1006,7 @@ export const zh = {
     '今天已经有一张草稿。请先提交或清空它，再撤回这一批',
   'order.errors.cannotWithdraw': '你没有撤回订单的权限。需要的话找店长开通。',
   'order.errors.cannotWithdrawWhileClaimed': '有人正在审核这份订单，暂时不能撤回。',
-  'order.errors.cannotUnapprove': '你没有撤销审核通过的权限。需要的话找管理员开通。',
+  'order.errors.cannotUnapprove': '你没有撤销审核通过的权限。需要的话找店长开通。',
   'order.errors.notUnapprovable': '订单未通过审核',
   'order.errors.alreadyInRun': '已并入采购单',
   'order.errors.cannotAttach': '无法并入采购单',
@@ -1452,8 +1452,7 @@ export const zh = {
   'finance.export.label': '复制为表格',
   'finance.export.copied': '已复制——粘贴到表格软件。',
   'finance.export.noClipboard': '无法使用剪贴板，没有复制。',
-  'admin.errors.financeRequiresManage':
-    '查看财务需要报表权限，请联系管理员。',
+  'admin.errors.financeRequiresManage': '查看财务需要报表权限。需要的话找店长开通。',
 
   // ── 15. Org financial settings (M1.17) ────────────────
   'admin.workspace.currency': '币种',
