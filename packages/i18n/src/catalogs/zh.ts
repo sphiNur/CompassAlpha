@@ -44,6 +44,7 @@ export const zh = {
   'qty.enterNumber': '请输入数字',
   'qty.atLeast': '请输入不小于 {min} 的数',
   'qty.atMost': '请输入不大于 {max} 的数',
+  'qty.notMultiple': '请输入 {step} 的倍数',
   'qty.maxDecimals': '最多 {decimals} 位小数',
   'number.invalid': '这不是一个数字，请写成 1500 或 1.5 这样',
   'photo.label': '票据照片',
@@ -909,11 +910,11 @@ export const zh = {
   'approval.estimateUnpriced': '另有 {n} 项无价',
 
   // ── 其他物品（会话级备注，M1.8） ──────────────────────────────────
-  'order.notes.label': '其他物品',
+  'order.notes.label': '备注',
   'order.notes.saving': '保存中…',
   'order.notes.saved': '已保存 ✓',
   'order.notes.badge': '备注',
-  'order.notes.hasNote': '有额外需求',
+  'order.notes.hasNote': '店员写了备注',
 
   // M3.16-C: structured extras editor
   'order.extras.label': '其他物品',
@@ -1426,6 +1427,7 @@ export const zh = {
   'confirm.issue.describe': '请描述问题，采购员收到后可以纠正。',
   'confirm.issue.placeholder': '哪里不对？',
   'confirm.issue.photoOptional': '照片（可选）',
+  'confirm.issue.photoUploading': '照片还在上传，传完才能保存',
   'confirm.issue.save': '保存',
   'confirm.status.ariaLabel': '本项收货状态',
   'confirm.status.ok': '正常',
@@ -1559,7 +1561,8 @@ export const zh = {
   'admin.field.defaultPaymentMethod': '默认付款方式',
   'admin.sheet.newExpenseTemplate': '新建开销模板',
   'admin.sheet.editExpenseTemplate': '编辑模板',
-  'admin.confirm.archiveExpenseTemplate': '归档模板「{label}」？以后的采购将不再自动带入此项。',
+  'admin.confirm.archiveExpenseTemplate':
+    '归档模板「{label}」？采购页记开销时不再提供这个快捷模板；已经记下的开销不受影响。',
   'admin.toast.expenseTemplateCreated': '模板已添加',
   'admin.toast.expenseTemplateUpdated': '模板已更新',
   'admin.toast.expenseTemplateArchived': '模板已归档',

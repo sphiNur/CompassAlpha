@@ -75,6 +75,7 @@ export const en = {
   'qty.enterNumber': 'Enter a number',
   'qty.atLeast': 'Enter {min} or more',
   'qty.atMost': 'Enter {max} or less',
+  'qty.notMultiple': 'Enter a multiple of {step}',
   'qty.maxDecimals': 'At most {decimals, plural, one {# decimal} other {# decimals}}',
   'number.invalid': 'Not a number — write it like 1500 or 1.5',
   'photo.label': 'Receipt photo',
@@ -1061,11 +1062,11 @@ export const en = {
   'approval.estimateUnpriced': '+ {n} unpriced',
 
   // ── Session-level "其他物品" / miscellaneous note (M1.8) ──────────
-  'order.notes.label': 'Other items',
+  'order.notes.label': 'Note',
   'order.notes.saving': 'Saving…',
   'order.notes.saved': 'Saved ✓',
   'order.notes.badge': 'Note',
-  'order.notes.hasNote': 'Has additional request',
+  'order.notes.hasNote': 'The store left a note',
 
   // ── M3.16-C: structured "Other items" (extras) editor ───────────
   'order.extras.label': 'Other items',
@@ -1628,6 +1629,7 @@ export const en = {
   'confirm.issue.describe': 'Please describe the issue so the purchaser can correct it.',
   'confirm.issue.placeholder': "What's wrong?",
   'confirm.issue.photoOptional': 'Photo (optional)',
+  'confirm.issue.photoUploading': 'The photo is still uploading. Save once it is done.',
   'confirm.issue.save': 'Save',
   // M1.9-fix (2026-05-07): the 4 receive-side decision chips. These
   // are the most-tapped UI on the entire page; rendering raw enum
@@ -1794,7 +1796,7 @@ export const en = {
   'admin.sheet.newExpenseTemplate': 'New expense template',
   'admin.sheet.editExpenseTemplate': 'Edit template',
   'admin.confirm.archiveExpenseTemplate':
-    'Archive template "{label}"? Future runs will skip this template.',
+    'Archive template "{label}"? It will no longer be offered as a shortcut when adding an expense on the purchase page. Expenses already recorded stay as they are.',
   'admin.toast.expenseTemplateCreated': 'Template added',
   'admin.toast.expenseTemplateUpdated': 'Template updated',
   'admin.toast.expenseTemplateArchived': 'Template archived',
