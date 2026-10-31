@@ -7,6 +7,7 @@ const catalog: Record<string, string> = {
   'offline.drop.withReason': '{action} did not sync: {reason}',
   'offline.drop.generic': '{action} did not sync — please check',
   'run.errors.storeItemsUnchecked': '2 lines still to check',
+  'order.errors.staleOfflineEdit': 'That day is over; the change was not saved',
 };
 const t = (key: string, values?: Record<string, string | number>) => {
   const text = catalog[key] ?? key;
@@ -41,5 +42,15 @@ describe('offlineDropText (RE-DLV-4 / R2-DLV-3)', () => {
     expect(offlineDropText(t as never, { procedure: 'order.adjustItem', reason: 'gaveup' })).toBe(
       'A saved change did not sync',
     );
+  });
+
+  test('an order change from a day that is over says so (CMP-FE-3, was OrderPage)', () => {
+    expect(
+      offlineDropText(t as never, {
+        procedure: 'order.adjustItem',
+        reason: 'rejected',
+        message: 'order.errors.staleOfflineEdit',
+      }),
+    ).toBe('That day is over; the change was not saved');
   });
 });

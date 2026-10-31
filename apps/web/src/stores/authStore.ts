@@ -19,6 +19,8 @@ export interface AuthSession {
      */
     secondaryLocale: string | null;
     tgUsername: string | null;
+    /** CMP-SHL-1: own Telegram id; absent in sessions from older builds. */
+    tgUserId?: string | null;
   };
   member: {
     memberId: string;

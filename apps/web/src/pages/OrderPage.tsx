@@ -186,37 +186,9 @@ export function OrderPage() {
 
   const utils = trpc.useUtils();
   const queryClient = useQueryClient();
-  // Replay map for the offline outbox. The hook calls back into our
-  // tRPC client when network returns; we use the imperative .mutate()
-  // form so the in-memory mutation state stays the same.
-  const offline = useOfflineQueue({
-    'order.adjustItem': async (entry) => {
-      await utils.client.order.adjustItem.mutate(
-        entry.input as Parameters<typeof utils.client.order.adjustItem.mutate>[0],
-      );
-      void utils.order.todaySession.invalidate();
-    },
-    // 2026-10-21 audit CA-27/CA-25: extras saves queue offline too, with
-    // the business date frozen like adjustItem's.
-    'order.setSessionExtras': async (entry) => {
-      await utils.client.order.setSessionExtras.mutate(
-        entry.input as Parameters<typeof utils.client.order.setSessionExtras.mutate>[0],
-      );
-      void utils.order.todaySession.invalidate();
-      void utils.order.todayBatches.invalidate();
-    },
-  }, {
-    // CA-25: say WHY when the server refused a replay because the day it
-    // was made on is over; anything else keeps the generic copy.
-    onDrop: (info) =>
-      toast.error(
-        i18n.t(
-          info.message === 'order.errors.staleOfflineEdit'
-            ? 'order.errors.staleOfflineEdit'
-            : 'run.toast.syncFailed',
-        ),
-      ),
-  });
+  // The offline outbox. Its replay (and the "did not sync" toast) lives at
+  // app level now (CMP-FE-3, lib/outboxReplay.ts).
+  const offline = useOfflineQueue();
   // OPTIMISTIC ADJUST — fire-and-forget pattern.
   //
   // Why no onSettled invalidate? Because invalidate triggers a refetch
