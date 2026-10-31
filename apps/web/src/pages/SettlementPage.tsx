@@ -684,6 +684,8 @@ export function SettlementPage() {
       toast.success(i18n.t('settlement.saved'));
       void utils.settlement.get.invalidate({ storeId: saved.storeId, date: saved.date });
       void utils.settlement.recent.invalidate({ storeId: saved.storeId });
+      // RE-CLS-1 (2026-10-31): the change history gained a version.
+      void utils.settlement.revisions.invalidate({ settlementId: savedRecord.id });
     },
     onError: (error) => {
       if (isVersionConflict(error)) {
@@ -701,7 +703,24 @@ export function SettlementPage() {
 
   savingRef.current = saveMutation.isPending;
 
+  // CLS-24 / R2-INT-3 (2026-10-31): a NEW close with every amount 0 and
+  // no lines is usually an untouched form, not a closed-and-empty day;
+  // it needs a yes before it is stored.
+  const allZeroNew =
+    !existing &&
+    DIRECT_MONEY_FIELDS.every((field) => normalizedMoney(draft[field]) === '0.00') &&
+    draft.operatingExpenseItems.length === 0 &&
+    draft.wageItems.length === 0;
   const save = () => {
+    if (!currentStoreId || !canSave || saveMutation.isPending) return;
+    if (allZeroNew) {
+      confirmSettlementAction(i18n.t('settlement.confirm.allZero'), submitSave);
+      return;
+    }
+    submitSave();
+  };
+
+  const submitSave = () => {
     if (!currentStoreId || !canSave || saveMutation.isPending) return;
     const operatingExpenseItems = draft.operatingExpenseItems.map((item) => ({
       ...(item.persistedId ? { id: item.persistedId } : {}),
@@ -783,7 +802,8 @@ export function SettlementPage() {
       !!currentStoreId &&
       currentStoreId === requestedStoreId &&
       !!businessDate &&
-      draftSynchronized,
+      draftSynchronized &&
+      !closeQuery.isError,
     active: canSave && !saveMutation.isPending,
   });
 
@@ -1180,6 +1200,11 @@ export function SettlementPage() {
           <SettlementHistory key={existing.id} settlementId={existing.id} />
         ) : null}
 
+        {/* CLS-15 (2026-10-31): while the day failed to load there is no
+            form — an empty one with 「保存日结」 read as "nothing saved yet"
+            when the day may already have a close. */}
+        {closeQuery.isError ? null : (
+        <>
         {/* CLS-16: while a save is in flight the form is locked; whatever was
             typed meanwhile used to be overwritten by the saved record. */}
         <fieldset
@@ -1597,6 +1622,8 @@ export function SettlementPage() {
             />
           </CardBody>
         </Card>
+        </>
+        )}
 
         <section className="flex flex-col gap-2">
           <SectionLabel as="h2">{i18n.t('settlement.recent.title')}</SectionLabel>

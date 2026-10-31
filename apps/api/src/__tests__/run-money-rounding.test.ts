@@ -271,7 +271,7 @@ describe('run money rounding (PG, D1)', () => {
       expect(lines.map((l) => l.lineTotal).sort()).toEqual(
         ['0.01', '0.01', '1.01', '1.01', '1.01', '1.01', '2.02', '2.02'].sort(),
       );
-      expect(sumMoney(lines.map((l) => l.lineTotal))).toBe(totals.total);
+      expect(sumMoney(lines.map((l) => l.lineTotal))).toBe(totals.total as string);
       expect(row).toMatchObject({
         actualTotal: '8.10',
         itemsTotal: '6.08',

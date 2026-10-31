@@ -30,6 +30,7 @@ import { useUnitLabel } from '../../../hooks/useI18n';
 import type { useI18n, useProductName } from '../../../hooks/useI18n';
 import { expenseLine, splitSubtotal, settleItemLine, settlePerStore } from '../lib/settlement';
 import { dayStoreSummaries, groupRunsByDay, type HistoryDay } from '../lib/historyGroups';
+import { localDateValue } from '../../admin/operations/financeDates';
 
 // ====================================================================
 // HISTORY VIEW
@@ -208,7 +209,9 @@ export function RunHistoryPage({
           meta={
             failed || loading || waitingOffline
               ? undefined
-              : `${count} · ${formatMoney(total)} ${currency}${
+              : // HIS-17 (2026-10-31): the rows are days, the count is trips —
+                // say "3 trips" so a day holding two doesn't read as missing.
+                `${i18n.t('run.history.tripCount', { n: count })} · ${formatMoney(total)} ${currency}${
                   hasSearchOrFilters ? ' ' + i18n.t('run.history.matchedRunsTotal') : ''
                 }`
           }
@@ -233,7 +236,9 @@ export function RunHistoryPage({
           <div className="px-4 py-6 text-center text-old-body-sm text-[var(--c-fg-muted)]">
             {i18n.t('common.loading')}
           </div>
-        ) : runs.length === 0 ? (
+        ) : failed ? null : runs.length === 0 ? (
+          // R2-HIS-2 (2026-10-31): a failed load shows its error banner
+          // above; "no runs match — clear all" under it blamed the filters.
           <div className="flex flex-col items-center gap-3 px-4 py-8 text-center text-old-body-sm text-[var(--c-fg-muted)]">
             <span>
               {i18n.t(hasSearchOrFilters ? 'run.history.noMatches' : 'run.history.subtitle')}
@@ -268,6 +273,13 @@ export function RunHistoryPage({
                   <div className="min-w-0 flex-1 text-old-body font-semibold tabular-nums">
                     {day.runDate}
                     {single && single.runIndex > 0 ? ` #${single.runIndex + 1}` : ''}
+                    {/* D5 (2026-10-31): a run reopened for amending stays
+                        listed, marked as such. */}
+                    {day.runs.some((r) => r.status === 'amending') ? (
+                      <Badge tone="warn" className="ml-2 align-middle">
+                        {i18n.t('run.status.amending')}
+                      </Badge>
+                    ) : null}
                     {!single ? (
                       <span className="ml-2 text-old-label font-normal text-[var(--c-fg-muted)]">
                         {i18n.t('run.history.tripCount', { n: day.runs.length })}
@@ -390,7 +402,7 @@ export function RunHistoryPage({
       {pagination && pagination.totalCount > 0 ? (
         <div className="flex items-center justify-between gap-2 px-1">
           <span className="min-w-0 text-old-label tabular-nums text-[var(--c-fg-muted)]">
-            {i18n.t('run.history.resultRange', {
+            {i18n.t('run.history.tripRange', {
               from: firstResult,
               to: lastResult,
               total: pagination.totalCount,
@@ -659,6 +671,8 @@ export function RunHistoryDetailSheet({
   const unitLabel = useUnitLabel();
   // M1.21: org-wide currency for the headline label.
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
+  const orgTimeZone = useAuthStore((s) => s.session?.member.timezone);
+  const orgToday = localDateValue(new Date(), orgTimeZone);
   // 2026-07-06: super-admins (run.amend) may reopen a finished run to
   // correct it. The reopen moves it to `amending`; editing continues on
   // the 采购 (Run) tab, and the correction is closed with "完成修改" there.
@@ -1003,16 +1017,20 @@ export function RunHistoryDetailSheet({
             <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3">
               <SectionLabel padded={false}>{i18n.t('run.date.label')}</SectionLabel>
               <p className="text-old-label text-[var(--c-fg-muted)]">{i18n.t('run.date.hint')}</p>
+              {/* HIS-7 (2026-10-31): the server refuses a date after the
+                  org's today; the picker stops there and the button waits. */}
               <Input
                 type="date"
                 value={dateDraft}
+                max={orgToday}
+                invalid={dateDraft > orgToday}
                 onChange={(e) => setDateDraft(e.target.value)}
                 aria-label={i18n.t('run.date.label')}
               />
               <Button
                 variant="pearl"
                 loading={changeDate.isPending}
-                disabled={!dateDraft || dateDraft === target.runDate}
+                disabled={!dateDraft || dateDraft === target.runDate || dateDraft > orgToday}
                 onClick={() => changeDate.mutate({ runId: target.runId, runDate: dateDraft })}
               >
                 {i18n.t('run.date.change')}

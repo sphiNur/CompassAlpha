@@ -3,7 +3,12 @@ import { z } from 'zod';
 import { schema as s } from '@compass/db';
 import { SkuListInputSchema } from '@compass/contracts';
 import { authedProcedure, router } from '../trpc';
-import { canSeePrices } from '../../services/priceRedaction';
+import {
+  canSeePrices,
+  priceStoreIds,
+  pricesVisibleAnywhere,
+  pricesVisibleFor,
+} from '../../services/priceRedaction';
 import { loadSkuPriceStats } from '../../services/priceStats';
 import {
   financeStoreIds,
@@ -171,6 +176,8 @@ export const catalogRouter = router({
       z
         .object({
           skuIds: z.array(z.string().uuid()).max(500).optional(),
+          /** D6: the store the estimate is shown for (order page). */
+          storeId: z.string().uuid().optional(),
         })
         .optional(),
     )
@@ -179,6 +186,13 @@ export const catalogRouter = router({
       // prices.view; an empty list keeps their screens working.
       if (!canSeePrices(ctx.session)) return [];
       return ctx.withOrg(async (tx) => {
+        // D6 (2026-10-31): prices.view as it is effective (store roles,
+        // overrides) — in the named store, else in any store.
+        const priceStores = await priceStoreIds(tx, ctx.session!);
+        const visible = input?.storeId
+          ? pricesVisibleFor(priceStores, [input.storeId])
+          : pricesVisibleAnywhere(priceStores);
+        if (!visible) return [];
         // 2026-07-30: the 30-line last/avg7d/avg30d accumulator that used
         // to live inline moved to services/priceStats.ts so
         // order.pendingList can put the SAME figure on approval cards.

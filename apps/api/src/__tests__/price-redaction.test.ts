@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { withoutPrices, canSeePrices } from '../services/priceRedaction';
+import {
+  withoutPrices,
+  canSeePrices,
+  pricesVisibleAnywhere,
+  pricesVisibleFor,
+} from '../services/priceRedaction';
 
 describe('withoutPrices (staff see no money)', () => {
   test('money fields go null, price maps empty, quantities and counts stay', () => {
@@ -34,5 +39,42 @@ describe('withoutPrices (staff see no money)', () => {
     expect(canSeePrices({ permissions: new Set(['prices.view']) })).toBe(true);
     expect(canSeePrices({ permissions: new Set(['order.draft']) })).toBe(false);
     expect(canSeePrices(null)).toBe(false);
+  });
+
+  test('D6: money for a set of stores needs prices.view in every one of them', () => {
+    expect(pricesVisibleFor(null, ['a', 'b'])).toBe(true);
+    expect(pricesVisibleFor(['a', 'b'], ['a', 'b'])).toBe(true);
+    // Manager at B, staff at A: a run or total over A and B shows no money.
+    expect(pricesVisibleFor(['b'], ['a', 'b'])).toBe(false);
+    expect(pricesVisibleFor(['b'], ['a'])).toBe(false);
+    expect(pricesVisibleFor([], ['a'])).toBe(false);
+    // Money tied to no store yet follows "anywhere".
+    expect(pricesVisibleFor(['b'], [])).toBe(true);
+    expect(pricesVisibleFor([], [])).toBe(false);
+    expect(pricesVisibleAnywhere(null)).toBe(true);
+    expect(pricesVisibleAnywhere(['a'])).toBe(true);
+    expect(pricesVisibleAnywhere([])).toBe(false);
+  });
+
+  test('D6: estimates and price hints are redacted too', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const out = withoutPrices({
+      estimatedTotal: '10',
+      estimatedCash: '4',
+      estimatedTransfer: '6',
+      estimatedKnown: 2,
+      lineTotal: '5.00',
+      qty: '2',
+      lastPurchasePriceBySku: { k: '1' },
+    }) as any;
+    expect(out).toEqual({
+      estimatedTotal: null,
+      estimatedCash: null,
+      estimatedTransfer: null,
+      estimatedKnown: 2,
+      lineTotal: null,
+      qty: '2',
+      lastPurchasePriceBySku: {},
+    });
   });
 });

@@ -2,6 +2,7 @@ import { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ComponentType, ReactNode, SVGProps } from 'react';
 import {
   Banner,
+  IconActivity,
   IconAdmin,
   IconApprove,
   IconCatalog,
@@ -228,10 +229,19 @@ function ShellInner() {
   const storeCtx = useStoreContext();
   const storePerms =
     storeCtx.kind === 'specific' ? session?.storePermissions?.[storeCtx.storeId] : undefined;
+  // RE-HIS-1 (2026-10-31): for someone who only reads finance, the Admin
+  // tab opens the finance report alone — call it that, not 「管理」 with
+  // a gear (AdminPage.tsx makes the same call).
+  const financeOnly =
+    !permissions.includes('users.manage') && !isPlatformAdmin && permissions.includes('reports.view');
   const visible = TABS.filter(
     (t) =>
       isTabVisible(t, storePerms && STORE_BOUND_TABS.has(t.key) ? storePerms : permissions) ||
       (t.key === 'admin' && isPlatformAdmin),
+  ).map((t) =>
+    t.key === 'admin' && financeOnly
+      ? { ...t, labelKey: 'admin.subsection.finance', Icon: IconActivity }
+      : t,
   );
 
   // Warm the AdminPage chunk in the background once we know the user

@@ -37,7 +37,7 @@ import { PAGE_SIZE } from '../../../config/timings';
 import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
-import { formatMoney, formatQty } from '../../../lib/format';
+import { formatMoney, formatQty, toQtyInput } from '../../../lib/format';
 import { useDateFormat, useI18n, useProductName, useUnitLabel } from '../../../hooks/useI18n';
 import { DebugPage } from '../../DebugPage';
 import { financePresetRange, maintenanceToday } from './financeDates';
@@ -1113,6 +1113,9 @@ export function FinanceSection() {
   const i18n = useI18n();
   const toast = useToast();
   const productName = useProductName();
+  const unitLabel = useUnitLabel();
+  // D10 (2026-10-31): copying as TSV needs reports.export.
+  const canExport = useAuthStore((s) => s.session?.permissions.includes('reports.export') ?? false);
   const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: true });
   // HIS-19: names only, and readable by finance readers who are not
   // admins; archived stalls keep their names in old periods.
@@ -1188,15 +1191,34 @@ export function FinanceSection() {
    * shows the same money as History and the finish sheet. One name
    * resolver for both kinds; expenses get a 🧾 marker.
    */
-  const lineName = useCallback(
+  const plainLineName = useCallback(
     (l: (typeof lines)[number]): string => {
-      if (l.kind === 'expense' || !l.skuId) {
-        return `🧾 ${l.label ?? i18n.t('finance.label.expense')}`;
-      }
+      if (l.kind === 'expense' || !l.skuId) return l.label ?? i18n.t('finance.label.expense');
       const sku = skuById.get(l.skuId);
       return sku ? productName({ names: sku.names }) : l.skuId.slice(0, 8);
     },
     [skuById, productName, i18n],
+  );
+  const lineName = useCallback(
+    (l: (typeof lines)[number]): string =>
+      l.kind === 'expense' || !l.skuId ? `🧾 ${plainLineName(l)}` : plainLineName(l),
+    [plainLineName],
+  );
+  // HIS-15 (2026-10-31): quantities as everywhere else — trailing zeros
+  // dropped, with the product's unit ("0.5 公斤", not "0.500").
+  const lineQty = useCallback(
+    (l: (typeof lines)[number]): string => {
+      const sku = l.skuId ? skuById.get(l.skuId) : undefined;
+      return sku ? `${formatQty(l.qty)} ${unitLabel(sku.unit)}` : formatQty(l.qty);
+    },
+    [skuById, unitLabel],
+  );
+  const methodLabel = useCallback(
+    (method: string) =>
+      method === 'transfer'
+        ? i18n.t('run.label.paymentTransfer')
+        : i18n.t('run.label.paymentCash'),
+    [i18n],
   );
   const lineKey = (l: (typeof lines)[number], i: number) =>
     `${l.runId}-${l.skuId ?? l.expenseId}-${l.storeId}-${i}`;
@@ -1205,15 +1227,19 @@ export function FinanceSection() {
   const dailyGroups = useMemo(() => {
     const m = new Map<
       string,
-      { date: string; cash: number; transfer: number; lines: typeof lines }
+      { date: string; cash: number; transfer: number; unpriced: number; lines: typeof lines }
     >();
     for (const l of lines) {
       const g = m.get(l.runDate) ?? {
         date: l.runDate,
         cash: 0,
         transfer: 0,
+        unpriced: 0,
         lines: [] as typeof lines,
       };
+      // D6: a line without an amount (no prices.view for its store)
+      // leaves the group's money unknown.
+      if (l.lineTotal === null) g.unpriced += 1;
       // D1: lines are cents already; the group sum stays on cents.
       if (l.paymentMethod === 'transfer') g.transfer = addMoney(g.transfer, l.lineTotal);
       else g.cash = addMoney(g.cash, l.lineTotal);
@@ -1232,6 +1258,7 @@ export function FinanceSection() {
         supplierId: string | null;
         cash: number;
         transfer: number;
+        unpriced: number;
         lines: typeof lines;
       }
     >();
@@ -1244,8 +1271,12 @@ export function FinanceSection() {
         supplierId: l.kind === 'expense' ? null : l.supplierId,
         cash: 0,
         transfer: 0,
+        unpriced: 0,
         lines: [] as typeof lines,
       };
+      // D6: a line without an amount (no prices.view for its store)
+      // leaves the group's money unknown.
+      if (l.lineTotal === null) g.unpriced += 1;
       // D1: lines are cents already; the group sum stays on cents.
       if (l.paymentMethod === 'transfer') g.transfer = addMoney(g.transfer, l.lineTotal);
       else g.cash = addMoney(g.cash, l.lineTotal);
@@ -1259,15 +1290,19 @@ export function FinanceSection() {
   const storeGroups = useMemo(() => {
     const m = new Map<
       string,
-      { storeId: string; cash: number; transfer: number; lines: typeof lines }
+      { storeId: string; cash: number; transfer: number; unpriced: number; lines: typeof lines }
     >();
     for (const l of lines) {
       const g = m.get(l.storeId) ?? {
         storeId: l.storeId,
         cash: 0,
         transfer: 0,
+        unpriced: 0,
         lines: [] as typeof lines,
       };
+      // D6: a line without an amount (no prices.view for its store)
+      // leaves the group's money unknown.
+      if (l.lineTotal === null) g.unpriced += 1;
       // D1: lines are cents already; the group sum stays on cents.
       if (l.paymentMethod === 'transfer') g.transfer = addMoney(g.transfer, l.lineTotal);
       else g.cash = addMoney(g.cash, l.lineTotal);
@@ -1286,21 +1321,37 @@ export function FinanceSection() {
   // The shape is human-readable + machine-parseable (TSV) so finance
   // can drop it straight into their spreadsheet.
   const exportText = useCallback(() => {
-    const lineHeader = 'date\trun\tsku\tstore\tsupplier\tmethod\tqty\tunit_price\ttotal';
+    // HIS-15 (2026-10-31): headers and payment methods in the reader's
+    // language; numbers stay plain (no thousands separators) so a
+    // spreadsheet reads them as numbers.
+    const lineHeader = [
+      i18n.t('finance.tsv.date'),
+      i18n.t('finance.tsv.run'),
+      i18n.t('finance.tsv.item'),
+      i18n.t('finance.tsv.store'),
+      i18n.t('finance.tsv.supplier'),
+      i18n.t('finance.tsv.method'),
+      i18n.t('finance.tsv.qty'),
+      i18n.t('finance.tsv.unit'),
+      i18n.t('finance.tsv.unitPrice'),
+      i18n.t('finance.tsv.total'),
+    ].join('\t');
     const tsv = [
-      `# Finance report ${startDate} → ${endDate}`,
+      `# ${i18n.t('finance.tsv.title', { start: startDate, end: endDate })}`,
       lineHeader,
       ...lines.map((l) => {
+        const sku = l.skuId ? skuById.get(l.skuId) : undefined;
         return [
           l.runDate,
           `#${l.runIndex + 1}`,
-          lineName(l),
+          plainLineName(l),
           storeById.get(l.storeId) ?? l.storeId.slice(0, 8),
           l.supplierId ? (supplierById.get(l.supplierId) ?? l.supplierId.slice(0, 8)) : '—',
-          l.paymentMethod,
-          l.qty,
-          l.unitPrice,
-          l.lineTotal,
+          methodLabel(l.paymentMethod),
+          toQtyInput(l.qty),
+          sku ? unitLabel(sku.unit) : '',
+          l.unitPrice ?? '',
+          l.lineTotal ?? '',
         ].join('\t');
       }),
     ].join('\n');
@@ -1318,7 +1369,19 @@ export function FinanceSection() {
       // hardening pass — privacy + CSP cleanliness).
       toast.error(i18n.t('finance.export.noClipboard'));
     }
-  }, [lines, lineName, storeById, supplierById, startDate, endDate, toast, i18n]);
+  }, [
+    lines,
+    plainLineName,
+    methodLabel,
+    skuById,
+    unitLabel,
+    storeById,
+    supplierById,
+    startDate,
+    endDate,
+    toast,
+    i18n,
+  ]);
 
   return (
     <div className="px-4 py-3">
@@ -1369,41 +1432,55 @@ export function FinanceSection() {
           <DataState query={totalsQuery}>{() => null}</DataState>
         </div>
       ) : totalsQuery.data ? (
-        <div className="mb-3 grid grid-cols-3 gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3">
-          <div>
+        // R2-HIS-4 (2026-10-31): three 2-dp amounts side by side overflowed
+        // at 360/390 wide; cash and transfer share a row, the total gets
+        // its own. D6: without prices.view the money is left out by the
+        // server and only the counts show.
+        <div className="mb-3 grid grid-cols-2 gap-x-2 gap-y-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3">
+          <div className="min-w-0">
             <SectionLabel padded={false}>{i18n.t('run.label.paymentCash')}</SectionLabel>
-            <div className="font-mono text-old-h2 font-semibold tabular-nums">
-              {formatMoney(totalsQuery.data.totalCash)}
-            </div>
+            {totalsQuery.data.totalCash !== null ? (
+              <div className="break-all font-mono text-old-h2 font-semibold tabular-nums">
+                {formatMoney(totalsQuery.data.totalCash)}
+              </div>
+            ) : null}
             <div className="text-old-label text-[var(--c-fg-muted)]">
-              {totalsQuery.data.cashLines} {i18n.t('finance.label.lines')}
+              {i18n.t('finance.count.lines', { n: totalsQuery.data.cashLines })}
             </div>
           </div>
-          <div>
+          <div className="min-w-0">
             <SectionLabel padded={false}>{i18n.t('run.label.paymentTransfer')}</SectionLabel>
-            <div className="font-mono text-old-h2 font-semibold tabular-nums">
-              {formatMoney(totalsQuery.data.totalTransfer)}
-            </div>
+            {totalsQuery.data.totalTransfer !== null ? (
+              <div className="break-all font-mono text-old-h2 font-semibold tabular-nums">
+                {formatMoney(totalsQuery.data.totalTransfer)}
+              </div>
+            ) : null}
             <div className="text-old-label text-[var(--c-fg-muted)]">
-              {totalsQuery.data.transferLines} {i18n.t('finance.label.lines')}
+              {i18n.t('finance.count.lines', { n: totalsQuery.data.transferLines })}
             </div>
           </div>
-          <div>
-            <SectionLabel padded={false}>Σ {i18n.t('finance.label.total')}</SectionLabel>
-            <div className="font-mono text-old-h2 font-semibold tabular-nums">
-              {formatMoney(totalsQuery.data.total)}
+          <div className="col-span-2 flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 border-t border-[var(--c-divider)] pt-2">
+            <div className="min-w-0">
+              <SectionLabel padded={false}>Σ {i18n.t('finance.label.total')}</SectionLabel>
+              {totalsQuery.data.total !== null ? (
+                <div className="break-all font-mono text-old-h2 font-semibold tabular-nums">
+                  {formatMoney(totalsQuery.data.total)}
+                </div>
+              ) : null}
             </div>
             <div className="text-old-label text-[var(--c-fg-muted)]">
-              {totalsQuery.data.runCount} {i18n.t('finance.label.runs')}
+              {i18n.t('finance.count.runs', { n: totalsQuery.data.runCount })}
             </div>
           </div>
           {/* 2026-10-21 CA-11: total = items + expenses, shown as parts. */}
-          <div className="col-span-3 border-t border-[var(--c-divider)] pt-2 text-old-label tabular-nums text-[var(--c-fg-muted)]">
-            {i18n.t('run.money.itemsExpenses', {
-              items: formatMoney(totalsQuery.data.itemsTotal),
-              expenses: formatMoney(totalsQuery.data.expensesTotal),
-            })}
-          </div>
+          {totalsQuery.data.itemsTotal !== null && totalsQuery.data.expensesTotal !== null ? (
+            <div className="col-span-2 text-old-label tabular-nums text-[var(--c-fg-muted)]">
+              {i18n.t('run.money.itemsExpenses', {
+                items: formatMoney(totalsQuery.data.itemsTotal),
+                expenses: formatMoney(totalsQuery.data.expensesTotal),
+              })}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -1425,15 +1502,17 @@ export function FinanceSection() {
           className="flex-1"
           ariaLabel={i18n.t('finance.view.daily')}
         />
-        <Button
-          size="sm"
-          variant="pearl"
-          onClick={exportText}
-          disabled={lines.length === 0}
-          aria-label={i18n.t('finance.export.label')}
-        >
-          {i18n.t('finance.export.label')}
-        </Button>
+        {canExport ? (
+          <Button
+            size="sm"
+            variant="pearl"
+            onClick={exportText}
+            disabled={lines.length === 0}
+            aria-label={i18n.t('finance.export.label')}
+          >
+            {i18n.t('finance.export.label')}
+          </Button>
+        ) : null}
       </div>
 
       {!rangeOk ? (
@@ -1467,11 +1546,9 @@ export function FinanceSection() {
                   className="flex min-h-11 w-full items-center justify-between gap-2 px-3 py-2 text-left active:opacity-80"
                 >
                   <span className="text-old-body font-semibold tabular-nums">{g.date}</span>
-                  <span className="font-mono text-old-body tabular-nums">
-                    {formatMoney(addMoney(g.cash, g.transfer))}
-                  </span>
+                  <GroupAmount group={g} />
                 </button>
-                {mixed ? (
+                {mixed && g.unpriced === 0 ? (
                   <div className="flex items-baseline gap-3 px-3 pb-1.5 text-old-label text-[var(--c-fg-muted)]">
                     <span>
                       {i18n.t('run.label.paymentCash')} {formatMoney(g.cash)}
@@ -1507,7 +1584,9 @@ export function FinanceSection() {
                             <span>{store}</span>
                             <span>· {supplier}</span>
                             <span className="ml-auto font-mono tabular-nums">
-                              {l.qty} × {formatMoney(l.unitPrice)}
+                              {l.unitPrice !== null
+                                ? `${lineQty(l)} × ${formatMoney(l.unitPrice)}`
+                                : lineQty(l)}
                             </span>
                           </div>
                         </li>
@@ -1542,11 +1621,9 @@ export function FinanceSection() {
                   className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left active:opacity-80"
                 >
                   <span className="truncate text-old-body font-semibold">{name}</span>
-                  <span className="font-mono text-old-body tabular-nums">
-                    {formatMoney(addMoney(g.cash, g.transfer))}
-                  </span>
+                  <GroupAmount group={g} />
                 </button>
-                {mixed ? (
+                {mixed && g.unpriced === 0 ? (
                   <div className="flex items-baseline gap-3 px-3 pb-1.5 text-old-label text-[var(--c-fg-muted)]">
                     <span>
                       {i18n.t('run.label.paymentCash')} {formatMoney(g.cash)}
@@ -1572,7 +1649,9 @@ export function FinanceSection() {
                               : i18n.t('run.label.paymentCash')}{' '}
                             {skuName}
                           </span>
-                          <span className="font-mono tabular-nums">{formatMoney(l.lineTotal)}</span>
+                          <span className="font-mono tabular-nums">
+                            {l.lineTotal !== null ? formatMoney(l.lineTotal) : lineQty(l)}
+                          </span>
                         </li>
                       );
                     })}
@@ -1599,11 +1678,9 @@ export function FinanceSection() {
                   className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left active:opacity-80"
                 >
                   <span className="truncate text-old-body font-semibold">{name}</span>
-                  <span className="font-mono text-old-body tabular-nums">
-                    {formatMoney(addMoney(g.cash, g.transfer))}
-                  </span>
+                  <GroupAmount group={g} />
                 </button>
-                {mixed ? (
+                {mixed && g.unpriced === 0 ? (
                   <div className="flex items-baseline gap-3 px-3 pb-1.5 text-old-label text-[var(--c-fg-muted)]">
                     <span>
                       {i18n.t('run.label.paymentCash')} {formatMoney(g.cash)}
@@ -1629,7 +1706,9 @@ export function FinanceSection() {
                               : i18n.t('run.label.paymentCash')}{' '}
                             {skuName}
                           </span>
-                          <span className="font-mono tabular-nums">{formatMoney(l.lineTotal)}</span>
+                          <span className="font-mono tabular-nums">
+                            {l.lineTotal !== null ? formatMoney(l.lineTotal) : lineQty(l)}
+                          </span>
                         </li>
                       );
                     })}
@@ -1641,6 +1720,27 @@ export function FinanceSection() {
         </ul>
       )}
     </div>
+  );
+}
+
+/**
+ * A finance group's amount, or — when some of its lines carry no amount
+ * (D6: no prices.view for their store) — how many lines it holds.
+ */
+function GroupAmount({
+  group,
+}: {
+  group: { cash: number; transfer: number; unpriced: number; lines: readonly unknown[] };
+}) {
+  const i18n = useI18n();
+  return group.unpriced === 0 ? (
+    <span className="font-mono text-old-body tabular-nums">
+      {formatMoney(addMoney(group.cash, group.transfer))}
+    </span>
+  ) : (
+    <span className="text-old-label text-[var(--c-fg-muted)]">
+      {i18n.t('finance.count.lines', { n: group.lines.length })}
+    </span>
   );
 }
 
