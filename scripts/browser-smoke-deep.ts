@@ -802,7 +802,7 @@ async function run() {
     const runLoaded = await page
       .waitForFunction(
         () =>
-          /No approved orders to plan/.test(document.body.innerText) ||
+          /No approved orders yet/.test(document.body.innerText) ||
           /No active run/.test(document.body.innerText),
         { timeout: 8_000 },
       )
@@ -811,7 +811,7 @@ async function run() {
     const runText = await page.evaluate(() => document.body.innerText);
     record(
       'RunPage renders empty state when no approved sessions',
-      runLoaded && (/No approved orders to plan/.test(runText) || /No active run/.test(runText)),
+      runLoaded && (/No approved orders yet/.test(runText) || /No active run/.test(runText)),
       runText.split('\n').slice(0, 3).join(' / '),
     );
 
@@ -946,7 +946,7 @@ async function run() {
     await page
       .waitForFunction(
         () =>
-          /Nothing to confirm/.test(document.body.innerText) ||
+          /Nothing to receive/.test(document.body.innerText) ||
           /No active delivery/.test(document.body.innerText),
         { timeout: 8_000 },
       )
@@ -964,13 +964,13 @@ async function run() {
     );
     record(
       'ConfirmPage shows nothing-to-confirm empty state',
-      /Nothing to confirm/.test(confirmText) || /No active delivery/.test(confirmText),
+      /Nothing to receive/.test(confirmText) || /No active delivery/.test(confirmText),
       confirmText.split('\n').slice(0, 3).join(' / '),
     );
 
     // ---- Admin tab ----
     // Admin landing page reorganized 2026-05-06 (M1.4 store-first) —
-    // 5 top-level sections: Organization, Stores (now top-level),
+    // 5 top-level sections: Workspace (D23, was Organization), Stores (now top-level),
     // Roles & Permissions (promoted from People sub-tab), Catalog
     // (Stores moved out), Operations. People management lives inside
     // Stores → <store> → Team.
@@ -978,7 +978,7 @@ async function run() {
     const adminHomeLoaded = await page
       .waitForFunction(
         () =>
-          /Organization/.test(document.body.innerText) &&
+          /Workspace/.test(document.body.innerText) &&
           /Stores/.test(document.body.innerText) &&
           /Roles & Permissions/.test(document.body.innerText) &&
           /Catalog/.test(document.body.innerText) &&
@@ -991,7 +991,7 @@ async function run() {
     record(
       'AdminPage shows the 5 store-first top-level sections',
       adminHomeLoaded &&
-        /Organization/.test(adminText) &&
+        /Workspace/.test(adminText) &&
         /Stores/.test(adminText) &&
         /Roles & Permissions/.test(adminText) &&
         /Catalog/.test(adminText) &&

@@ -936,7 +936,7 @@ function SessionItems({
   if (view.allEmpty) {
     return (
       <div className="border-t border-[var(--c-divider)] px-4 py-3 text-old-body-sm text-[var(--c-fg-muted)]">
-        {i18n.t('common.empty')}
+        {i18n.t('approval.items.empty')}
       </div>
     );
   }
@@ -1010,7 +1010,7 @@ function SessionItems({
     ) : null}
     {view.skuSectionEmpty ? (
       <div className="px-4 py-3 text-old-body-sm text-[var(--c-fg-muted)]">
-        {i18n.t('common.empty')}
+        {i18n.t('approval.items.noCatalogItems')}
       </div>
     ) : null}
     {view.hasSkus ? (

@@ -158,13 +158,6 @@ export function StoreSalesPanel({
   // 2026-10-21 FE-01 / F4-03: an errored list must not read as "0 sales" —
   // hide the summary and lock record/void until the list is back, so a
   // cashier can't re-enter sales that already exist.
-  const listView = salesListView({
-    isLoading: salesQuery.isLoading,
-    isError: salesQuery.isError,
-    rowCount: sales.length,
-    waitingOffline: salesQuery.data === undefined && salesQuery.fetchStatus === 'paused',
-  });
-  const listErrored = listView === 'error' || listView === 'offline';
 
   // Compute today's headline (revenue + count) for the summary row.
   // 2026-10-21: voided sales don't count (see salesSummary.ts).
@@ -182,6 +175,15 @@ export function StoreSalesPanel({
   const canManageDishes = session?.permissions.includes('dishes.manage') ?? false;
   const hasSellableDish = dishOptions.some((d) => d.ingredientCount > 0);
   const canRecordHere = canRecord && !dishesQuery.isLoading && hasSellableDish;
+  const listView = salesListView({
+    isLoading: salesQuery.isLoading,
+    isError: salesQuery.isError,
+    rowCount: sales.length,
+    waitingOffline: salesQuery.data === undefined && salesQuery.fetchStatus === 'paused',
+    // The record card shows the no-dishes / no-recipe reason.
+    recordingBlocked: canRecord && dishesQuery.data !== undefined && !hasSellableDish,
+  });
+  const listErrored = listView === 'error' || listView === 'offline';
 
   return (
     <div className={`flex flex-col gap-3 ${className}`}>
@@ -333,7 +335,7 @@ export function StoreSalesPanel({
           />
         ) : listView === 'offline' ? (
           <EmptyState title={i18n.t('common.offlineNoData')} />
-        ) : listView === 'empty' ? (
+        ) : listView === 'none' ? null : listView === 'empty' ? (
           <EmptyState
             title={i18n.t('sales.empty.title')}
             description={canRecordHere ? i18n.t('sales.empty.description') : undefined}
