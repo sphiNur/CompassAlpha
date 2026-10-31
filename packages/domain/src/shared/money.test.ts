@@ -1,3 +1,5 @@
+// The D1 money rule lives in @compass/contracts (no test runner types
+// there); the domain's RunFinished totals are its first user.
 import { describe, expect, it } from 'bun:test';
 import {
   addMoney,
@@ -8,7 +10,7 @@ import {
   lineWithinCap,
   sumMoney,
   toCents,
-} from '../money';
+} from '@compass/contracts';
 
 describe('D1 money rounding', () => {
   it('rounds each line half-up to cents', () => {

@@ -3,6 +3,7 @@
  * the received-qty rule on problem lines.
  */
 import { describe, it, expect } from 'bun:test';
+import { setDecimalLocale } from '@compass/ui';
 import {
   checkReceivedQty,
   defaultDeliveringRunId,
@@ -73,6 +74,20 @@ describe('checkReceivedQty', () => {
     expect(checkReceivedQty('short', '2.5', '2')).toEqual({ ok: false, reason: 'exceeds' });
     expect(checkReceivedQty('short', '-1', '2')).toEqual({ ok: false, reason: 'invalid' });
     expect(checkReceivedQty('short', '1.2345', '2')).toEqual({ ok: false, reason: 'invalid' });
+  });
+  it('R2-DLV-2: reads "1,000" by the interface language, like every number field', () => {
+    try {
+      setDecimalLocale('zh');
+      // A thousand of a 6 l split is more than arrived — not a silent 1.
+      expect(checkReceivedQty('short', '1,000', '6')).toEqual({ ok: false, reason: 'exceeds' });
+      expect(checkReceivedQty('short', '4,5', '6')).toEqual({ ok: true, value: '4.5' });
+      setDecimalLocale('ru');
+      expect(checkReceivedQty('short', '1,000', '6')).toEqual({ ok: true, value: '1.000' });
+      expect(checkReceivedQty('short', '1e0', '6')).toEqual({ ok: false, reason: 'invalid' });
+      expect(checkReceivedQty('short', '1.2.3', '6')).toEqual({ ok: false, reason: 'invalid' });
+    } finally {
+      setDecimalLocale(null);
+    }
   });
   it('wrong / quality default to 0', () => {
     expect(checkReceivedQty('wrong', '', '2')).toEqual({ ok: true, value: '0' });

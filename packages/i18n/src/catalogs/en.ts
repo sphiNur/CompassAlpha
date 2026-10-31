@@ -64,6 +64,8 @@ export const en = {
   'qty.enterNumber': 'Enter a number',
   'qty.atLeast': 'Enter {min} or more',
   'qty.atMost': 'Enter {max} or less',
+  'qty.maxDecimals': 'At most {decimals} decimals',
+  'number.invalid': 'Not a number — write it like 1500 or 1.5',
   'photo.label': 'Receipt photo',
   'photo.remove': 'Remove photo',
   'photo.hint': 'Tap to take a photo',
@@ -411,10 +413,14 @@ export const en = {
   'common.errors.rateLimited': 'Too many requests — please wait a moment and try again',
   'common.errors.requestInFlight': 'The previous attempt is still being processed. Try again in a moment.',
   'common.errors.internal': 'Something went wrong on our side. Please try again.',
+  'common.errors.invalidDecimal': 'Enter a number with at most 3 decimals.',
+  'common.errors.positiveDecimal': 'Enter a number above 0 with at most 3 decimals.',
+  'common.errors.invalidDate': 'Not a valid date. Write it like 2026-10-31.',
   'order.errors.tooManyExtras': 'An order can have at most 50 other items.',
   'order.errors.invalidExtraName': 'Give the item a name (up to 200 characters).',
   'order.errors.invalidExtraUnit': 'Give a unit (up to 16 characters).',
   'order.errors.invalidExtraQty': 'Enter a quantity above 0, with at most 3 decimals.',
+  'order.errors.qtyTooLarge': 'A line can be at most 999,999.999.',
   'order.errors.extraNoteTooLong': 'The note is too long (up to 200 characters).',
   'run.errors.cannotPlan': "You don't have permission to plan purchase runs.",
   'common.errors.validation': 'Invalid input — check the highlighted fields',
@@ -1462,6 +1468,9 @@ export const en = {
   'admin.workspace.financeSheet.warning':
     'Changing currency does NOT convert past purchases. Set once per org.',
   'admin.errors.taxRateOutOfRange': 'Tax rate must be between 0 and 50.',
+  'admin.errors.taxRateFormat': 'Tax rate must be a number from 0 to 50, with at most 2 decimals.',
+  'admin.errors.timeZoneUnknown': 'Unknown time zone. Write a name like Asia/Tashkent.',
+  'admin.errors.sortIndexInteger': 'Sort order must be a whole number (from -1000000 to 1000000).',
 
   // ── 15a. Shared admin form labels (M1.21-C, 2026-05-08) ───────
   // The Admin section had ~40 form labels hardcoded in English JSX

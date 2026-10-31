@@ -26,12 +26,24 @@ describe('readQtyDraft', () => {
   it('keeps what was typed — no snap to the +/- step', () => {
     expect(readQtyDraft('0.3', range)).toEqual({ ok: true, value: 0.3 });
     expect(readQtyDraft('1.25', range)).toEqual({ ok: true, value: 1.25 });
-    expect(readQtyDraft('2.0004', range)).toEqual({ ok: true, value: 2 });
     expect(readQtyDraft('.5', range)).toEqual({ ok: true, value: 0.5 });
     expect(readQtyDraft('7.', range)).toEqual({ ok: true, value: 7 });
   });
 
   it('a deliberate 0 is still allowed when the minimum is 0', () => {
     expect(readQtyDraft('0', range)).toEqual({ ok: true, value: 0 });
+  });
+
+  it('R2-ORD-2: a 4th decimal is refused, not rounded to a different number', () => {
+    expect(readQtyDraft('0.0004', range)).toEqual({ ok: false, reason: 'tooPrecise' });
+    expect(readQtyDraft('2.0004', range)).toEqual({ ok: false, reason: 'tooPrecise' });
+    expect(readQtyDraft('1.2500', range)).toEqual({ ok: true, value: 1.25 });
+    expect(readQtyDraft('1.000', range)).toEqual({ ok: true, value: 1 });
+  });
+
+  it('R2-ORD-2: text the field could not read is not a number', () => {
+    for (const s of ['1e3', '1.2.3', '12kg']) {
+      expect(readQtyDraft(s, range)).toEqual({ ok: false, reason: 'notNumber' });
+    }
   });
 });

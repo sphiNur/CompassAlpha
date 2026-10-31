@@ -31,7 +31,7 @@ export const ConfirmStoreItemInputSchema = z.object({
    */
   receivedQty: z
     .string()
-    .regex(/^\d+(\.\d{1,3})?$/, 'invalid decimal')
+    .regex(/^\d+(\.\d{1,3})?$/, 'common.errors.invalidDecimal')
     .nullable()
     .optional(),
   expectedSeq: z.number().int().optional(),

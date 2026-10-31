@@ -80,6 +80,21 @@ async function codeOf(fn: () => Promise<unknown>): Promise<string | null> {
   }
 }
 
+/** The catalog key a refused input came back with (first zod issue). */
+async function keyOf(fn: () => Promise<unknown>): Promise<string | null> {
+  try {
+    await fn();
+    return null;
+  } catch (err) {
+    const message = (err as { message?: string }).message ?? '';
+    try {
+      return (JSON.parse(message) as Array<{ message: string }>)[0]?.message ?? message;
+    } catch {
+      return message;
+    }
+  }
+}
+
 beforeAll(async () => {
   if (!SHOULD_RUN) return;
   const db = getDb(undefined, { system: 'maintenance' });
@@ -114,6 +129,43 @@ describe.skipIf(!SHOULD_RUN)('input checks (PG-gated)', () => {
   test('impossible dates are refused as input, not a 500', async () => {
     expect(await codeOf(() => owner!.run.changeDate({ runId, runDate: '2026-02-31' }))).toBe('BAD_REQUEST');
     expect(await codeOf(() => owner!.admin.purgeByDate({ date: '2026-13-01', dryRun: true }))).toBe('BAD_REQUEST');
+  });
+
+  test('B11 / BUY-15: year 0000 is a 400, not a 500 from Postgres', async () => {
+    expect(
+      await codeOf(() => owner!.report.totals({ startDate: '0000-01-01', endDate: '2026-01-01' })),
+    ).toBe('BAD_REQUEST');
+    expect(await codeOf(() => owner!.run.previewCreatable({ date: '0000-01-01' }))).toBe('BAD_REQUEST');
+    expect(await codeOf(() => owner!.run.changeDate({ runId, runDate: '0000-01-01' }))).toBe('BAD_REQUEST');
+    expect(await keyOf(() => owner!.run.changeDate({ runId, runDate: '0000-01-01' }))).toBe(
+      'common.errors.invalidDate',
+    );
+  });
+
+  test('admin form refusals carry catalog keys, not English sentences', async () => {
+    const finance = { currency: 'UZS', pricesIncludeTax: false };
+    expect(await keyOf(() => owner!.admin.orgFinanceUpdate({ ...finance, taxRatePct: '-1' }))).toBe(
+      'admin.errors.taxRateFormat',
+    );
+    expect(await keyOf(() => owner!.admin.orgFinanceUpdate({ ...finance, taxRatePct: '7.125' }))).toBe(
+      'admin.errors.taxRateFormat',
+    );
+    expect(await keyOf(() => owner!.admin.storeCreate({ name: 'Mars', timezone: 'Mars/Base' }))).toBe(
+      'admin.errors.timeZoneUnknown',
+    );
+    expect(
+      await keyOf(() => owner!.admin.categoryCreate({ slug: 'veg', names: { en: 'Veg' }, sortIndex: 1.5 })),
+    ).toBe('admin.errors.sortIndexInteger');
+    expect(
+      await keyOf(() => owner!.admin.categoryCreate({ slug: 'veg', names: { en: 'Veg' }, sortIndex: 1e12 })),
+    ).toBe('admin.errors.sortIndexInteger');
+    const order = { storeId: randomUUID(), skuId: randomUUID() };
+    expect(await keyOf(() => owner!.order.adjustItem({ ...order, qty: '1000000' }))).toBe(
+      'order.errors.qtyTooLarge',
+    );
+    expect(await keyOf(() => owner!.order.adjustItem({ ...order, qty: '0.0004' }))).toBe(
+      'common.errors.invalidDecimal',
+    );
   });
 
   test('a blank store name is refused; an empty code means none', async () => {

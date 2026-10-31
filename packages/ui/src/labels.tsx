@@ -59,6 +59,12 @@ export interface UiLabels {
   qtyAtLeast: (min: string) => string;
   /** F13: the free-entry value is above the maximum. Receives the maximum. */
   qtyAtMost: (max: string) => string;
+  /** R2-ORD-2: more decimals than the quantity keeps. Receives the limit. */
+  qtyMaxDecimals: (decimals: number) => string;
+
+  // --- NumberInput / Input type="number" ---
+  /** R2-ORD-2: the text in a number field is not one number ("1e3"). */
+  numberInvalid: string;
 
   // --- DataState ---
   errorTitle: string;
@@ -93,6 +99,8 @@ export const DEFAULT_UI_LABELS: UiLabels = {
   qtyEnterNumber: 'Enter a number',
   qtyAtLeast: (min) => `Enter ${min} or more`,
   qtyAtMost: (max) => `Enter ${max} or less`,
+  qtyMaxDecimals: (decimals) => `At most ${decimals} decimals`,
+  numberInvalid: 'Not a number — write it like 1500 or 1.5',
   errorTitle: 'Something went wrong',
   errorUnknown: 'Unknown error',
   emptyNoData: 'No data',
