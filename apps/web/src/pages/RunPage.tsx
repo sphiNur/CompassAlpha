@@ -84,7 +84,7 @@ import { SessionPicker } from './runs/components/SessionPicker';
 import { selectPreview, selectedSessionIds } from './runs/lib/sessionSelection';
 import { editPricingFromSplits, splitOverridesFor } from './runs/lib/purchaseOverrides';
 import { NEW_RUN, isBuying, liveRunsOf, pickActiveRun } from './runs/lib/liveRuns';
-import { overlayPendingWrites } from './runs/lib/pendingOverlay';
+import { overlayPendingWrites, withData } from './runs/lib/pendingOverlay';
 import { useOfflineDropToast } from '../lib/offlineDrop';
 
 function newClientId(): string {
@@ -756,7 +756,7 @@ export function RunPage() {
     () => overlayPendingWrites(runDetailQueryRaw.data, offline.pendingEntries),
     [runDetailQueryRaw.data, offline.pendingEntries],
   );
-  const runDetailQuery = { ...runDetailQueryRaw, data: runDetailData };
+  const runDetailQuery = withData(runDetailQueryRaw, runDetailData);
 
   // 2026-10-21 audit CA-29: the stores this run serves. The purchase sheet
   // only offers these (plus any store already on the edited row), matching

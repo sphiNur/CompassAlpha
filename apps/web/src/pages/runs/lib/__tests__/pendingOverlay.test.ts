@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { overlayPendingWrites, pendingStoreIds } from '../pendingOverlay';
+import { overlayPendingWrites, pendingStoreIds, withData } from '../pendingOverlay';
 import type { PendingWrite } from '../../../../hooks/useOfflineQueue';
 
 const run = {
@@ -122,5 +122,29 @@ describe('overlayPendingWrites (R2-INT-1 / RE-DLV-1 / RE-DLV-4 / R2-DLV-3)', () 
     expect([...pendingStoreIds('run-1', entries, 'run.confirmStore')]).toEqual(['A']);
     expect([...pendingStoreIds('run-1', entries, 'run.deliverToStore')]).toEqual(['B']);
     expect(pendingStoreIds(undefined, entries, 'run.confirmStore').size).toBe(0);
+  });
+});
+
+describe('withData', () => {
+  test('replaces data and reads everything else through, lazily', () => {
+    // TanStack Query's tracked result: non-configurable getters that record
+    // which fields were read.
+    const read: string[] = [];
+    const query = {} as { data: number; isFetching: boolean };
+    for (const [key, value] of [['data', 1], ['isFetching', true]] as const) {
+      Object.defineProperty(query, key, {
+        configurable: false,
+        enumerable: true,
+        get: () => {
+          read.push(key);
+          return value;
+        },
+      });
+    }
+    const wrapped = withData(query, 2);
+    expect(wrapped.data).toBe(2);
+    expect(read).toEqual([]);
+    expect(wrapped.isFetching).toBe(true);
+    expect(read).toEqual(['isFetching']);
   });
 });

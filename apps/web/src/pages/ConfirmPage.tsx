@@ -34,7 +34,7 @@ import { usePhotoUploader } from '../hooks/usePhotoUploader';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { PendingSyncNotice } from '../components/PendingSyncNotice';
 import { useOfflineDropToast } from '../lib/offlineDrop';
-import { overlayPendingWrites, pendingStoreIds } from './runs/lib/pendingOverlay';
+import { overlayPendingWrites, pendingStoreIds, withData } from './runs/lib/pendingOverlay';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
 import { formatQty } from '../lib/format';
@@ -175,7 +175,7 @@ export function ConfirmPage() {
     () => overlayPendingWrites(detailQueryRaw.data, offline.pendingEntries),
     [detailQueryRaw.data, offline.pendingEntries],
   );
-  const detailQuery = { ...detailQueryRaw, data: detailData };
+  const detailQuery = withData(detailQueryRaw, detailData);
   const confirmQueued = currentStoreId
     ? pendingStoreIds(activeRun?.id, offline.pendingEntries, 'run.confirmStore').has(currentStoreId)
     : false;

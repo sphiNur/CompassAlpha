@@ -197,3 +197,15 @@ export function pendingStoreIds(
   }
   return out;
 }
+
+/**
+ * The query result with `data` replaced. A Proxy rather than a spread:
+ * TanStack Query tracks which result fields a component reads, and a
+ * spread reads them all, so every background refetch (isFetching) would
+ * re-render the page.
+ */
+export function withData<Q extends { data: unknown }>(query: Q, data: Q['data']): Q {
+  return new Proxy(query, {
+    get: (target, key, receiver) => (key === 'data' ? data : Reflect.get(target, key, receiver)),
+  });
+}
