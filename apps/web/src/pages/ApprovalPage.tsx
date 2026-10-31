@@ -735,6 +735,9 @@ export function ApprovalPage() {
             setRejectReason('');
           }
         }}
+        // CMP-INT-2: a typed reason is not dropped by Esc / backdrop / back
+        // without asking (while saving, the sheet stays open anyway).
+        hasChanges={!reject.isPending && rejectReason.trim() !== ''}
         title={i18n.t('approval.confirm.reject.title')}
         description={i18n.t('approval.confirm.reject.body')}
         // M1.9-fix (2026-05-07): the reason input used to autoFocus on

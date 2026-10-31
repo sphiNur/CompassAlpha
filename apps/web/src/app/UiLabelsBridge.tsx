@@ -37,6 +37,7 @@ import { setDecimalLocale, UiLabelsProvider } from '@compass/ui';
 import type { UiLabels } from '@compass/ui';
 import { useI18n } from '../hooks/useI18n';
 import { errorTextKey } from '../lib/errorText';
+import { confirmNative } from '../lib/confirm';
 
 export function UiLabelsBridge({ children }: { children: ReactNode }) {
   const i18n = useI18n();
@@ -112,6 +113,12 @@ export function UiLabelsBridge({ children }: { children: ReactNode }) {
       get photoUploadFailed() {
         return i18n.t('photo.uploadFailed');
       },
+      // CMP-INV-2: a sheet with unsaved input asks before it closes, with
+      // Telegram's own confirm inside Telegram.
+      get discardChanges() {
+        return i18n.t('catalog.confirm.discardEdits');
+      },
+      confirmDiscard: (message) => confirmNative(message),
     }),
     [i18n],
   );
