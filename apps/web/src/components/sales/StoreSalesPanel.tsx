@@ -23,6 +23,7 @@ import { newIdempotencyKey, trpc } from '../../lib/trpc';
 import { useAuthStore } from '../../stores/authStore';
 import { useErrToast } from '../../lib/errToast';
 import { formatMoney, formatQty } from '../../lib/format';
+import { useCanSeePrices } from '../../lib/pricesVisible';
 import { useDateFormat, useI18n, useProductName } from '../../hooks/useI18n';
 import { normalizeVoidReason, salesListView, summarizeSales } from './salesSummary';
 
@@ -73,7 +74,10 @@ export function StoreSalesPanel({
 
   // CLS-9 (2026-10-30): archived dishes too, so today's sales of a dish
   // archived since keep its name; the picker offers active ones only.
-  const dishesQuery = trpc.dishes.list.useQuery({ includeArchived: true });
+  // D6 (2026-10-31): selling prices and turnover only with prices.view in
+  // this store; the server leaves them out too.
+  const canSeePrices = useCanSeePrices(storeId);
+  const dishesQuery = trpc.dishes.list.useQuery({ includeArchived: true, storeId });
   const salesQuery = trpc.sales.list.useQuery({ storeId });
 
   const dishById = useMemo(() => {
@@ -172,6 +176,11 @@ export function StoreSalesPanel({
       productName({ names: a.names }).localeCompare(productName({ names: b.names })),
     );
   }, [dishById, productName]);
+  // R2-INT-2 (2026-10-31): dishes without a recipe can't be sold; when that
+  // is all there is, say so instead of "tap Record for the first sale".
+  const canManageDishes = session?.permissions.includes('dishes.manage') ?? false;
+  const hasSellableDish = dishOptions.some((d) => d.ingredientCount > 0);
+  const canRecordHere = canRecord && !dishesQuery.isLoading && hasSellableDish;
 
   return (
     <div className={`flex flex-col gap-3 ${className}`}>
@@ -182,7 +191,9 @@ export function StoreSalesPanel({
       ) : null}
       {/* Today summary tile. */}
       {listErrored ? null : (
-        <div className="grid grid-cols-2 gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
+        <div
+          className={`grid ${canSeePrices ? 'grid-cols-2' : 'grid-cols-1'} gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline`}
+        >
           <div>
             <SectionLabel padded={false}>{i18n.t('sales.summary.today')}</SectionLabel>
             <div className="font-mono text-old-h2 font-semibold tabular-nums">
@@ -192,15 +203,17 @@ export function StoreSalesPanel({
               {i18n.t('sales.summary.servings')}
             </div>
           </div>
-          <div>
-            <SectionLabel padded={false}>{i18n.t('sales.summary.revenue')}</SectionLabel>
-            <div className="font-mono text-old-h2 font-semibold tabular-nums">
-              {formatMoney(summary.revenue)}
+          {canSeePrices ? (
+            <div>
+              <SectionLabel padded={false}>{i18n.t('sales.summary.revenue')}</SectionLabel>
+              <div className="font-mono text-old-h2 font-semibold tabular-nums">
+                {formatMoney(summary.revenue)}
+              </div>
+              <div className="text-old-label text-[var(--c-fg-muted)]">
+                {session?.member.currency ?? 'UZS'}
+              </div>
             </div>
-            <div className="text-old-label text-[var(--c-fg-muted)]">
-              {session?.member.currency ?? 'UZS'}
-            </div>
-          </div>
+          ) : null}
         </div>
       )}
 
@@ -219,12 +232,19 @@ export function StoreSalesPanel({
             <p className="text-old-label text-[var(--c-fg-muted)]">
               {/* CLS-21 (2026-10-30): the hint named an English path and was
                   shown to cashiers who cannot create dishes. */}
-              {session?.permissions.includes('dishes.manage')
+              {canManageDishes
                 ? i18n.t('sales.form.noDishesYet')
-                : i18n.t('sales.form.noDishesAskManager')}
+                : i18n.t('sales.form.noDishesAskAdmin')}
             </p>
           ) : (
             <>
+              {hasSellableDish ? null : (
+                <p className="text-old-label text-[var(--c-fg-muted)]">
+                  {canManageDishes
+                    ? i18n.t('sales.form.noRecipeYet')
+                    : i18n.t('sales.form.noRecipeAskAdmin')}
+                </p>
+              )}
               <select
                 className="h-10 w-full rounded-[var(--r-pill)] bg-[var(--c-surface)] px-3 text-old-body ring-hairline disabled:opacity-60"
                 value={draftDishId}
@@ -305,7 +325,7 @@ export function StoreSalesPanel({
         ) : listView === 'empty' ? (
           <EmptyState
             title={i18n.t('sales.empty.title')}
-            description={i18n.t('sales.empty.description')}
+            description={canRecordHere ? i18n.t('sales.empty.description') : undefined}
           />
         ) : (
           <ul className="flex flex-col gap-1" role="list">
@@ -315,7 +335,7 @@ export function StoreSalesPanel({
               // 2026-07-30: `undefined` meant "browser locale".
               const time = dateFmt.time(sale.occurredAt);
               const lineTotal =
-                sale.unitPrice && Number(sale.qty) > 0
+                canSeePrices && sale.unitPrice && Number(sale.qty) > 0
                   ? Number(sale.qty) * Number(sale.unitPrice)
                   : null;
               const voided = !!sale.voidedAt;
@@ -341,9 +361,13 @@ export function StoreSalesPanel({
                           {formatMoney(lineTotal)}
                         </span>
                       </div>
-                    ) : (
+                    ) : canSeePrices ? (
                       <div className="text-old-label text-[var(--c-fg-muted)]">
                         {formatQty(sale.qty)} × —
+                      </div>
+                    ) : (
+                      <div className="text-old-label tabular-nums text-[var(--c-fg-muted)]">
+                        {formatQty(sale.qty)} {i18n.t('sales.summary.servings')}
                       </div>
                     )}
                   </div>

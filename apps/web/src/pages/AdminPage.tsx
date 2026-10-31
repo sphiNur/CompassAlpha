@@ -169,7 +169,18 @@ export function AdminPage() {
   // managing people gets the finance report alone.
   const readsFinance = session?.permissions.includes('reports.view') ?? false;
   if (!isAdmin && !isPlatformAdmin && readsFinance) {
-    return <FinanceSection />;
+    // RE-HIS-1 (2026-10-31): with the page title the manager's drill-down
+    // shows; there is nowhere to go back to, so no back control.
+    return (
+      <div className="flex flex-col">
+        <div className="px-4 pb-2 pt-3">
+          <h1 className="text-old-h1 font-semibold leading-[1.15] text-[var(--c-fg)]">
+            {i18n.t('admin.subsection.finance')}
+          </h1>
+        </div>
+        <FinanceSection />
+      </div>
+    );
   }
   if (!isAdmin && !isPlatformAdmin) {
     return (

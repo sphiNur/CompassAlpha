@@ -1811,8 +1811,12 @@ function ReviewList({
     () => totals.filter((t) => Number(t.qty) > 0).map((t) => t.skuId),
     [totals],
   );
+  // D6 / RE-SHL-3 (2026-10-31): priced for the store being ordered for —
+  // a member who manages another store but is staff here gets no estimate.
+  const reviewStoreCtx = useStoreContext();
+  const reviewStoreId = reviewStoreCtx.kind === 'specific' ? reviewStoreCtx.storeId : undefined;
   const priceStats = trpc.catalog.skuPriceStats.useQuery(
-    { skuIds },
+    { skuIds, storeId: reviewStoreId },
     { enabled: skuIds.length > 0, staleTime: 60_000 },
   );
   const priceBySku = useMemo(() => {
