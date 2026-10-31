@@ -9,8 +9,12 @@
  * line still points at the run it came from, because the detail sheet is
  * per run.
  *
+ * D1 (2026-10-31): the sums stay on whole cents (addMoney), so a day's
+ * figure is exactly the sum of its runs' (R2-HIS-1).
+ *
  * Pure; tests in __tests__/historyGroups.test.ts.
  */
+import { addMoney } from '@compass/contracts';
 import type { RunListRow, RunListStoreTotal } from '../history/RunHistory';
 
 export type HistoryStoreLine = RunListStoreTotal & {
@@ -30,8 +34,6 @@ export type HistoryDay = {
   transfer: number | null;
   storeLines: HistoryStoreLine[];
 };
-
-const num = (v: string | null | undefined) => Number(v ?? 0) || 0;
 
 export function groupRunsByDay(runs: readonly RunListRow[]): HistoryDay[] {
   const days: HistoryDay[] = [];
@@ -53,13 +55,13 @@ export function groupRunsByDay(runs: readonly RunListRow[]): HistoryDay[] {
       days.push(day);
     }
     day.runs.push(run);
-    day.total += num(run.actualTotal);
-    day.itemsTotal += num(run.itemsTotal);
-    day.expensesTotal += num(run.expensesTotal);
+    day.total = addMoney(day.total, run.actualTotal);
+    day.itemsTotal = addMoney(day.itemsTotal, run.itemsTotal);
+    day.expensesTotal = addMoney(day.expensesTotal, run.expensesTotal);
     const hasSplit = run.actualCashTotal != null && run.actualTransferTotal != null;
-    day.cash = hasSplit && day.cash !== null ? day.cash + num(run.actualCashTotal) : null;
+    day.cash = hasSplit && day.cash !== null ? addMoney(day.cash, run.actualCashTotal) : null;
     day.transfer =
-      hasSplit && day.transfer !== null ? day.transfer + num(run.actualTransferTotal) : null;
+      hasSplit && day.transfer !== null ? addMoney(day.transfer, run.actualTransferTotal) : null;
   }
   for (const day of days) {
     // Trip numbers in run order (#1 first), whatever the list order.
@@ -101,10 +103,10 @@ export function dayStoreSummaries(day: HistoryDay): HistoryDayStore[] {
       };
       byStore.set(line.storeId, store);
     }
-    store.total += num(line.total);
-    store.cash += num(line.cash);
-    store.transfer += num(line.transfer);
-    store.expensesTotal += num(line.expensesTotal);
+    store.total = addMoney(store.total, line.total);
+    store.cash = addMoney(store.cash, line.cash);
+    store.transfer = addMoney(store.transfer, line.transfer);
+    store.expensesTotal = addMoney(store.expensesTotal, line.expensesTotal);
     store.itemCount += line.itemCount;
     store.lines.push(line);
   }

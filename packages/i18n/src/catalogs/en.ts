@@ -1078,6 +1078,7 @@ export const en = {
   'run.errors.notVisible': 'This purchase run was not found or is not available to you',
   'run.errors.priceFormat': 'Price must be above 0, with at most 12 digits and 2 decimals.',
   'run.errors.qtyFormat': 'Quantity must be above 0, with at most 9 digits and 3 decimals.',
+  'run.errors.lineTooLarge': 'One line (quantity × price) cannot be more than 1,000,000,000,000.',
   'run.errors.itemServesOtherStores':
     'This item also serves stores you do not buy for; someone who buys for them must change it.',
   'run.errors.runHasOtherStores':

@@ -985,6 +985,7 @@ export const uz = {
   'run.errors.notVisible': 'Xarid topilmadi yoki sizga mavjud emas',
   'run.errors.priceFormat': 'Narx 0 dan katta boʻlsin: koʻpi bilan 12 raqam va 2 kasr.',
   'run.errors.qtyFormat': 'Miqdor 0 dan katta boʻlsin: koʻpi bilan 9 raqam va 3 kasr.',
+  'run.errors.lineTooLarge': 'Bitta qator summasi (miqdor × narx) 1 000 000 000 000 dan oshmasin.',
   'run.errors.itemServesOtherStores':
     'Bu mahsulot siz javobgar boʻlmagan doʻkonlarga ham kerak; uni oʻsha doʻkonlar xaridori oʻzgartiradi.',
   'run.errors.runHasOtherStores':

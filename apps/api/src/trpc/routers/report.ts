@@ -42,7 +42,7 @@ import { DateStringSchema, UuidSchema } from '@compass/contracts';
 import { authedProcedure, router } from '../trpc';
 import { TRPCError } from '@trpc/server';
 import { FINANCE_KEYS, financeStoreIds } from '../../services/storeScope';
-import { money2, runMoneyLinesSql, uuidListSql } from '../../services/runMoney';
+import { moneyText, runMoneyLinesSql, uuidListSql } from '../../services/runMoney';
 
 /**
  * 2026-10-21 CA-11: the runs a finance window covers. Live statuses are
@@ -187,9 +187,9 @@ export const reportRouter = router({
           storeId: r.store_id,
           qty: r.qty,
           // Pre-compute lineTotal so the FE doesn't need to BigDecimal-
-          // multiply for the common "sum these" reduction. Computed in
-          // SQL numeric (exact) and rounded to cents here.
-          lineTotal: Number(r.amount).toFixed(2),
+          // multiply for the common "sum these" reduction. D1: rounded
+          // half-up to cents in SQL (runMoneyLinesSql), passed as is.
+          lineTotal: moneyText(r.amount),
         }));
       });
     }),
@@ -254,15 +254,14 @@ export const reportRouter = router({
           run_count: number;
         }>;
         const row = rows[0];
-        const cashTotal = Number(row?.cash_total ?? 0);
-        const transferTotal = Number(row?.transfer_total ?? 0);
+        // D1: the lines are already in cents; exact text, no floats.
         return {
-          totalCash: money2(cashTotal),
-          totalTransfer: money2(transferTotal),
+          totalCash: moneyText(row?.cash_total),
+          totalTransfer: moneyText(row?.transfer_total),
           /** items + expenses. */
-          total: money2(Number(row?.total ?? 0)),
-          itemsTotal: money2(Number(row?.items_total ?? 0)),
-          expensesTotal: money2(Number(row?.expenses_total ?? 0)),
+          total: moneyText(row?.total),
+          itemsTotal: moneyText(row?.items_total),
+          expensesTotal: moneyText(row?.expenses_total),
           cashLines: row?.cash_lines ?? 0,
           transferLines: row?.transfer_lines ?? 0,
           runCount: row?.run_count ?? 0,

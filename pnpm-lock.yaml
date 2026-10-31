@@ -227,6 +227,9 @@ importers:
 
   packages/domain:
     dependencies:
+      '@compass/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       ulid:
         specifier: ^2.3.0
         version: 2.4.0

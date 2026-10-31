@@ -26,6 +26,7 @@
  * for backwards-incompatible operations, asks for a free-text reason that
  * goes into the audit log.
  */
+import { addMoney } from '@compass/contracts';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Banner,
@@ -56,7 +57,7 @@ import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
 // Run money math — extracted to pages/runs/lib (Phase 4 step 1, unit-tested).
-import { settleItemLine, settlePerStore } from './runs/lib/settlement';
+import { expenseLine, settleItemLine, settlePerStore } from './runs/lib/settlement';
 import { countCarriedOver, STALE_PRICE_DAYS } from './runs/lib/priceState';
 import {
   allItemsHandled as allItemsHandledOf,
@@ -879,12 +880,12 @@ export function RunPage() {
       if (it.status === 'purchased' && it.unitPrice && it.purchasedQty) {
         const itemSplits = splits.filter((sp) => sp.skuId === it.skuId);
         const { line, cash, transfer } = settleItemLine(it, itemSplits);
-        total += line;
-        totalCash += cash;
-        totalTransfer += transfer;
+        total = addMoney(total, line);
+        totalCash = addMoney(totalCash, cash);
+        totalTransfer = addMoney(totalTransfer, transfer);
         if (it.addedByPurchaser) {
           addedSkus += 1;
-          addedTotal += line;
+          addedTotal = addMoney(addedTotal, line);
         }
       }
     }
@@ -896,12 +897,12 @@ export function RunPage() {
     let expensesCount = 0;
     let expensesTotal = 0;
     for (const ex of expenses) {
-      const line = Number(ex.qty) * Number(ex.unitPrice);
+      const line = expenseLine(ex);
       expensesCount += 1;
-      expensesTotal += line;
-      total += line;
-      if (ex.paymentMethod === 'transfer') totalTransfer += line;
-      else totalCash += line;
+      expensesTotal = addMoney(expensesTotal, line);
+      total = addMoney(total, line);
+      if (ex.paymentMethod === 'transfer') totalTransfer = addMoney(totalTransfer, line);
+      else totalCash = addMoney(totalCash, line);
     }
     /**
      * M3.52 (2026-05-23): per-store settlement preview shown in the
@@ -940,7 +941,7 @@ export function RunPage() {
      */
     const serverMoney = runDetailQuery.data?.money;
     const money = {
-      items: serverMoney ? Number(serverMoney.itemsTotal) : total - expensesTotal,
+      items: serverMoney ? Number(serverMoney.itemsTotal) : addMoney(total, -expensesTotal),
       expenses: serverMoney ? Number(serverMoney.expensesTotal) : expensesTotal,
       total: serverMoney ? Number(serverMoney.total) : total,
     };
