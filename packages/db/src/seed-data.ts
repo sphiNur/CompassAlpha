@@ -124,6 +124,8 @@ export const BUILTIN_ROLES = [
       'order.claim',
       'order.unapprove',
       'reports.view',
+      // D10 (2026-10-31): copying finance as TSV (existing orgs: 0056).
+      'reports.export',
       'prices.view',
       // 2026-05-07: store managers must be able to invite + assign staff
       // for their own store(s). The cross-store gates in

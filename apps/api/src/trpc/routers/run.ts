@@ -60,7 +60,12 @@ import {
 } from '@compass/domain/order';
 import { DomainError } from '@compass/domain';
 import { authedProcedure, idempotentMutation, rethrowDomainError, router } from '../trpc';
-import { canSeePrices, withoutPrices } from '../../services/priceRedaction';
+import {
+  canSeePrices,
+  priceStoreIds,
+  pricesVisibleFor,
+  withoutPrices,
+} from '../../services/priceRedaction';
 import { appendEvents, readStream } from '../../services/eventStore';
 import { isUniqueViolation, withStreamConflictRetry } from '../../services/pgErrors';
 import { projectRun } from '../../services/runProjection';
@@ -563,6 +568,23 @@ export const runRouter = router({
         }
       }
 
+      // D6 (2026-10-31): a planner without prices.view in every store of
+      // the plan gets quantities only — no stall prices, last paid prices
+      // or budgets.
+      const showPrices = pricesVisibleFor(await priceStoreIds(tx, ctx.session!), involvedStoreIds);
+      if (!showPrices) {
+        for (const skuId of Object.keys(supplierBySku)) {
+          const supplier = supplierBySku[skuId];
+          if (supplier) {
+            supplierBySku[skuId] = {
+              ...supplier,
+              defaultPrice: null,
+              lastSeenPrice: null,
+              estimatedUnitPrice: null,
+            };
+          }
+        }
+      }
       return {
         date,
         today,
@@ -582,8 +604,11 @@ export const runRouter = router({
         perStoreDemand,
         perSessionDemand,
         supplierBySku,
-        lastPurchasePriceBySku,
-        perStoreBudgets,
+        lastPurchasePriceBySku: showPrices ? lastPurchasePriceBySku : {},
+        // Hidden budgets are left out rather than nulled: clients decode
+        // estimatedTotal as a string (the Fine app fails the whole preview
+        // on a null there).
+        perStoreBudgets: showPrices ? perStoreBudgets : [],
         /** Per-store concatenated session notes (M1.8, legacy). Empty
          *  record when no notes anywhere. */
         sessionNotesByStore,
@@ -1148,14 +1173,19 @@ export const runRouter = router({
         ...new Set(runs.flatMap((r) => (r.sessionIdsJson as unknown as string[]) ?? [])),
       ];
       const allowedStoreSet = allowedStoreIds === null ? null : new Set(allowedStoreIds);
+      // D6 (2026-10-31): money per run only where prices.view holds in
+      // every store of the run the reader sees.
+      const priceStores = await priceStoreIds(tx, ctx.session!);
       const sessionStore = new Map<string, string>();
-      if (allowedStoreSet) {
-        if (allSessionIds.length === 0) return [];
+      if ((allowedStoreSet || priceStores !== null) && allSessionIds.length > 0) {
         const sessionStoreRows = await tx.query.orderSessionsV.findMany({
           where: (sess, { inArray }) => inArray(sess.id, allSessionIds),
           columns: { id: true, storeId: true },
         });
         for (const row of sessionStoreRows) sessionStore.set(row.id, row.storeId);
+      }
+      if (allowedStoreSet) {
+        if (allSessionIds.length === 0) return [];
         visibleRuns = runs.filter((r) => {
           const ids = (r.sessionIdsJson as unknown as string[]) ?? [];
           return ids.some((sid) => {
@@ -1241,7 +1271,23 @@ export const runRouter = router({
       }
 
       const moneyString = (n: number) => (Math.round(n * 100) / 100).toString();
+      const runStoreIds = (run: (typeof visibleRuns)[number]): string[] => {
+        const ids = new Set<string>();
+        for (const sessionId of (run.sessionIdsJson as unknown as string[]) ?? []) {
+          const storeId = sessionStore.get(sessionId);
+          if (storeId !== undefined && (!allowedStoreSet || allowedStoreSet.has(storeId))) {
+            ids.add(storeId);
+          }
+        }
+        for (const storeId of totalsByRun.get(run.id)?.keys() ?? []) ids.add(storeId);
+        return [...ids];
+      };
       return visibleRuns.map((run) => {
+        const row = listRow(run);
+        return pricesVisibleFor(priceStores, runStoreIds(run)) ? row : withoutPrices(row);
+      });
+
+      function listRow(run: (typeof visibleRuns)[number]) {
         const storeTotalRows = [...(totalsByRun.get(run.id)?.values() ?? [])].sort(
           (a, b) => b.total - a.total,
         );
@@ -1290,7 +1336,7 @@ export const runRouter = router({
           storeTotals,
           money,
         };
-      });
+      }
     });
   }),
 
@@ -1436,7 +1482,9 @@ export const runRouter = router({
             SELECT mr.*
             FROM read_model.market_runs_v mr
             WHERE mr.org_id = ${orgId}
-              AND mr.status = 'finished'
+              -- D5 (2026-10-31): the same runs finance counts; an
+              -- amending run is listed with its status (修改中).
+              AND mr.status IN ('finished', 'amending')
               ${dateFromSql}
               ${dateToSql}
               ${visibilitySql}
@@ -1692,10 +1740,13 @@ export const runRouter = router({
         }
 
         const run = await loadRun(tx, ctx.session!.orgId, input.runId);
-        if (run.status !== 'finished') {
+        // D5 (2026-10-31): a run reopened for amending stays in History
+        // (labelled 修改中) — finance counts it too.
+        if (run.status !== 'finished' && run.status !== 'amending') {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'run.errors.notVisible' });
         }
-        const canAmend = await canAmendRun(tx, ctx, run);
+        // Already reopened: nothing more to reopen from here.
+        const canAmend = run.status === 'finished' && (await canAmendRun(tx, ctx, run));
         const allowedStoreSet = allowedStoreIds === null ? null : new Set(allowedStoreIds);
         const sessionIds = (run.sessionIdsJson as string[] | null) ?? [];
         const rawSessions =
@@ -2599,7 +2650,7 @@ export const runRouter = router({
           otherStoreSkuIds.push(...other);
         }
 
-        return {
+        const payload = {
           ...run,
           money,
           purchaseScopeStoreIds,
@@ -2639,6 +2690,17 @@ export const runRouter = router({
           previousClaimerDisplayName,
           claimedAt: run.claimedAt?.toISOString() ?? null,
         };
+        // D6 (2026-10-31): prices only when prices.view holds in every
+        // store this reader is shown (a staff member at A who manages B
+        // reads a run serving both without money).
+        const shownStoreIds = new Set<string>([
+          ...splits.map((split) => split.storeId),
+          ...perStoreDemand.map((demand) => demand.storeId),
+          ...runSessions.map((sess) => sess.storeId),
+          ...expenses.flatMap((expense) => expense.storeSplits.map((split) => split.storeId)),
+        ]);
+        const priceStores = await priceStoreIds(tx, ctx.session!);
+        return pricesVisibleFor(priceStores, shownStoreIds) ? payload : withoutPrices(payload);
       });
     }),
 

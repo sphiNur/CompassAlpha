@@ -40,7 +40,7 @@ import {
   type SkuCtx,
 } from '@compass/domain/order';
 import { DomainError } from '@compass/domain';
-import { canSeePrices } from '../../services/priceRedaction';
+import { priceStoreIds, pricesVisibleFor } from '../../services/priceRedaction';
 import { authedProcedure, idempotentMutation, rethrowDomainError, router } from '../trpc';
 import { appendEvents, readStream } from '../../services/eventStore';
 import {
@@ -476,9 +476,11 @@ export const orderRouter = router({
         for (const perSku of qtyBySession.values()) {
           for (const skuId of perSku.keys()) allSkuIds.add(skuId);
         }
-        // Staff without prices.view get no estimate (HIS-4 / ORD-12).
+        // Staff without prices.view get no estimate (HIS-4 / ORD-12) —
+        // prices.view in THIS store (D6 / RE-SHL-3, 2026-10-31).
         const priceStats =
-          allSkuIds.size > 0 && canSeePrices(ctx.session)
+          allSkuIds.size > 0 &&
+          pricesVisibleFor(await priceStoreIds(tx, ctx.session!), [input.storeId])
             ? await loadSkuPriceStats(tx, ctx.session!.orgId, [...allSkuIds])
             : new Map();
 
@@ -779,6 +781,9 @@ export const orderRouter = router({
         allSkuIds.size > 0
           ? await loadSkuPriceStats(tx, ctx.session!.orgId, [...allSkuIds])
           : new Map();
+      // D6 (2026-10-31): an approver without prices.view in a store sees
+      // that store's cards without amounts (counts stay).
+      const priceStores = await priceStoreIds(tx, ctx.session!);
       // 2026-10-11: and how much of it is likely cash and how much
       // transfer, by how each product was last paid. One more scan for
       // the whole page.
@@ -809,6 +814,7 @@ export const orderRouter = router({
           cash: 0,
           transfer: 0,
         };
+        const priced = pricesVisibleFor(priceStores, [sess.storeId]);
         const store = storeById.get(sess.storeId);
         const attribMemberId = sess.submittedByMemberId ?? sess.initiatedByMemberId;
         const member = attribMemberId ? memberById.get(attribMemberId) : null;
@@ -848,12 +854,12 @@ export const orderRouter = router({
            * "~450K" honestly instead of passing off a partial sum as the
            * whole order. Null total when nothing could be priced at all.
            */
-          estimatedTotal: est.known > 0 ? est.total.toFixed(2) : null,
-          estimatedKnown: est.known,
-          estimatedUnknown: est.unknown,
+          estimatedTotal: priced && est.known > 0 ? est.total.toFixed(2) : null,
+          estimatedKnown: priced ? est.known : 0,
+          estimatedUnknown: priced ? est.unknown : 0,
           /** The same total, split by how each product was last paid. */
-          estimatedCash: est.known > 0 ? est.cash.toFixed(2) : null,
-          estimatedTransfer: est.known > 0 ? est.transfer.toFixed(2) : null,
+          estimatedCash: priced && est.known > 0 ? est.cash.toFixed(2) : null,
+          estimatedTransfer: priced && est.known > 0 ? est.transfer.toFixed(2) : null,
         };
       });
     });
