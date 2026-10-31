@@ -16,8 +16,8 @@
     "@compass/telemetry": "workspace:*",
     "@compass/ui": "workspace:*",
     "@tanstack/react-query": "^5.101.4",
-    "@trpc/client": "^11.0.0",
-    "@trpc/react-query": "^11.0.0",
+    "@trpc/client": "^11.19.0",
+    "@trpc/react-query": "^11.19.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zustand": "^5.0.1"
