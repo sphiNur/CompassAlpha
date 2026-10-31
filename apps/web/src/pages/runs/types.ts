@@ -61,6 +61,11 @@ export interface ActiveRun {
   purchaseScopeStoreIds?: string[] | null;
   /** BUY-6: items that also serve stores outside that scope (read-only). */
   otherStoreSkuIds?: string[];
+  /** D9: expenses split to stores outside that scope (not removable). */
+  otherStoreExpenseIds?: string[];
+  /** RE-DLV-3: why finish (or closing a correction) would be refused for
+   *  this actor, as an error key; null/absent = not refused. */
+  finishBlockedReason?: string | null;
   items: Array<{
     skuId: string;
     plannedQty: string;
@@ -80,6 +85,8 @@ export interface ActiveRun {
     addedByPurchaser?: boolean;
     /** BUY-5: demand that joined after the item was decided. */
     topUpQty?: string | null;
+    /** R2-INT-1: a queued (offline) purchase or mark, not yet synced. */
+    pendingSync?: boolean;
   }>;
   splits: Array<{
     runId: string;
@@ -97,6 +104,8 @@ export interface ActiveRun {
     /** DLV-7: the receiver's note and photo on a problem line. */
     confirmNote?: string | null;
     confirmPhotoUrl?: string | null;
+    /** R2-INT-1: a queued (offline) change to this split, not yet synced. */
+    pendingSync?: boolean;
   }>;
   perStoreDemand?: Array<{ storeId: string; skuId: string; qty: string }>;
   sessions?: Array<{

@@ -26,6 +26,8 @@
  *
  * The hook returns:
  *   - `pendingCount`     — how many writes are waiting offline
+ *   - `pendingEntries`   — those writes (procedure + input), so a page can
+ *                          show the queued change on the item it touches
  *   - `enqueue(proc, input)` — enqueue a write directly (used by host)
  *   - `flush()`          — trigger an immediate replay attempt
  *   - `online`           — current connectivity
@@ -239,8 +241,13 @@ interface UseOfflineQueueOptions {
   onDrop?: (info: OfflineDropInfo) => void;
 }
 
+/** A queued write as a page needs it to show it as pending. */
+export type PendingWrite = Pick<OutboxEntry, 'clientSeq' | 'procedure' | 'input' | 'enqueuedAt'>;
+
 interface UseOfflineQueueResult {
   pendingCount: number;
+  /** R2-INT-1 (2026-10-31): the queued writes, oldest first. */
+  pendingEntries: readonly PendingWrite[];
   /** `idempotencyKey`: pass the SAME key the first attempt used so the
    *  replay dedupes server-side (H2). Omit for non-idempotent procedures. */
   enqueue<P>(procedure: string, input: P, idempotencyKey?: string): Promise<number>;
@@ -257,6 +264,7 @@ export function useOfflineQueue(
   options: UseOfflineQueueOptions = {},
 ): UseOfflineQueueResult {
   const [pendingCount, setPendingCount] = useState(0);
+  const [pendingEntries, setPendingEntries] = useState<readonly PendingWrite[]>([]);
   const [online, setOnline] = useState<boolean>(
     typeof navigator !== 'undefined' ? navigator.onLine : true,
   );
@@ -273,7 +281,20 @@ export function useOfflineQueue(
 
   const refresh = useCallback(async () => {
     try {
-      setPendingCount(await outbox.size());
+      const all = await outbox.list();
+      const userId = useAuthStore.getState().session?.user.id;
+      setPendingCount(all.length);
+      setPendingEntries(
+        all
+          .filter((entry) => isOwnEntry(entry.ownerUserId, userId))
+          .sort((a, b) => a.clientSeq - b.clientSeq)
+          .map(({ clientSeq, procedure, input, enqueuedAt }) => ({
+            clientSeq,
+            procedure,
+            input,
+            enqueuedAt,
+          })),
+      );
     } catch {
       /* IDB unavailable */
     }
@@ -401,5 +422,5 @@ export function useOfflineQueue(
     };
   }, [flush, refresh]);
 
-  return { pendingCount, enqueue, flush, online };
+  return { pendingCount, pendingEntries, enqueue, flush, online };
 }

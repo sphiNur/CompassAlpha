@@ -3,6 +3,8 @@ import { describe, expect, it } from 'bun:test';
 import {
   allItemsHandled,
   allStoresConfirmed,
+  deliveryWaiting,
+  itemProgressCounts,
   pendingItemCount,
   type SplitLike,
 } from '../runProgress';
@@ -113,5 +115,40 @@ describe('pendingItemCount', () => {
     // count says "nothing pending"; the gate still refuses to advance.
     expect(pendingItemCount([])).toBe(0);
     expect(allItemsHandled([])).toBe(false);
+  });
+});
+
+describe('itemProgressCounts (R2-BUY-5)', () => {
+  it('counts like the bottom bar: an item with later demand is left, not bought', () => {
+    const items = [
+      { status: 'purchased' },
+      { status: 'purchased', topUpQty: '4' },
+      { status: 'unavailable' },
+      { status: 'pending' },
+    ];
+    const counts = itemProgressCounts(items);
+    expect(counts).toEqual({ bought: 1, na: 1, pending: 2 });
+    expect(counts.pending).toBe(pendingItemCount(items));
+  });
+});
+
+describe('deliveryWaiting (U7)', () => {
+  it('names stores to deliver to, then stores to confirm', () => {
+    const splits = [
+      split({ storeId: 'A', deliveredAt: 't', confirmedAt: 't' }),
+      split({ storeId: 'B', deliveredAt: 't' }),
+      split({ storeId: 'C' }),
+      split({ storeId: 'B', deliveredAt: 't' }),
+      split({ storeId: 'D', deliveredAt: 't' }),
+      split({ storeId: 'D' }),
+    ];
+    expect(deliveryWaiting(splits)).toEqual({ undelivered: ['C', 'D'], unconfirmed: ['B'] });
+  });
+
+  it('nothing to wait for once every store confirmed', () => {
+    expect(deliveryWaiting([split({ storeId: 'A', deliveredAt: 't', confirmedAt: 't' })])).toEqual({
+      undelivered: [],
+      unconfirmed: [],
+    });
   });
 });

@@ -2614,12 +2614,26 @@ export const runRouter = router({
           }
           otherStoreSkuIds.push(...other);
         }
+        // D9 (2026-10-31): expenses split to a store outside that scope are
+        // not this purchaser's to remove (run.get shows them only their
+        // own share, so the screen cannot tell otherwise).
+        const otherStoreExpenseIds =
+          purchaseScopeStoreIds === null
+            ? []
+            : rawExpenses
+                .filter((expense) =>
+                  (expense.storeSplitsJson as Array<{ storeId: string }>).some(
+                    (split) => !purchaseScopeStoreIds.includes(split.storeId),
+                  ),
+                )
+                .map((expense) => expense.id);
 
         return {
           ...run,
           money,
           purchaseScopeStoreIds,
           otherStoreSkuIds,
+          otherStoreExpenseIds,
           dispatchDeniedStoreIds,
           finishBlockedReason,
           ...(allowedStoreSet

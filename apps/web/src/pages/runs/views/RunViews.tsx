@@ -506,6 +506,7 @@ export function PerVendorView({
         editable={run.status === 'purchasing' || run.status === 'amending'}
         onMarkExtraStatus={onMarkExtraStatus}
         onRecordExtraExpense={onRecordExtraExpense}
+        purchaseScopeStoreIds={run.purchaseScopeStoreIds}
       />
     </div>
   );
@@ -526,7 +527,12 @@ export function RunExtrasCard({
   editable = false,
   onMarkExtraStatus,
   onRecordExtraExpense,
+  purchaseScopeStoreIds,
 }: {
+  /** D9: the stores this purchaser buys for (null/absent = all). Pricing
+   *  an extra records an expense for its store, so it is offered only for
+   *  those stores; the others say who does it. */
+  purchaseScopeStoreIds?: string[] | null;
   sessionExtrasByStore?: Record<
     string,
     Array<{
@@ -622,7 +628,10 @@ export function RunExtrasCard({
                     const hasAddress =
                       typeof e.sessionId === 'string' && typeof e.idx === 'number';
                     const canTap = editable && !!onMarkExtraStatus && hasAddress;
-                    const canRecordExpense = editable && !!onRecordExtraExpense;
+                    const ownStore =
+                      !purchaseScopeStoreIds || purchaseScopeStoreIds.includes(storeId);
+                    const canRecordExpense = editable && !!onRecordExtraExpense && ownStore;
+                    const recordElsewhere = editable && !!onRecordExtraExpense && !ownStore;
                     const inner = (
                       <>
                         <span aria-hidden className={`shrink-0 text-old-body ${v.tone}`}>
@@ -673,6 +682,10 @@ export function RunExtrasCard({
                             >
                               {i18n.t('run.extras.recordPrice')}
                             </button>
+                          ) : recordElsewhere ? (
+                            <span className="shrink-0 text-old-label text-[var(--c-fg-muted)]">
+                              {i18n.t('run.extras.recordPriceOtherStore')}
+                            </span>
                           ) : null}
                         </div>
                       </li>
@@ -717,7 +730,10 @@ export function ExpensesCard({
   editable,
   onRemove,
   onOpenExpense,
+  otherStoreExpenseIds,
 }: {
+  /** D9: expenses also split to stores this purchaser does not buy for. */
+  otherStoreExpenseIds?: string[];
   expenses: ActiveRun['expenses'];
   storeById: Map<string, { id: string; name: string; code: string | null }>;
   i18n: ReturnType<typeof useI18n>;
@@ -797,7 +813,7 @@ export function ExpensesCard({
                 <span className="min-w-0 flex-1 truncate text-old-label text-[var(--c-fg-muted)]">
                   {storeNames}
                 </span>
-                {editable ? (
+                {editable && !(otherStoreExpenseIds ?? []).includes(e.id) ? (
                   <button
                     type="button"
                     onClick={() => onRemove(e.id, e.label)}
@@ -1996,18 +2012,36 @@ export function PurchaseRow({
     );
   }
 
+  // R2-INT-1 (2026-10-31): a purchase or mark saved offline shows as done
+  // and waiting to sync; it cannot be edited until the server has it.
+  const pendingSync = item.pendingSync === true;
+  const pendingSyncLine = pendingSync ? (
+    <p
+      data-testid="run-row-pending-sync"
+      className={`${SUBLINE} text-old-label font-medium text-[var(--c-warning-fg)]`}
+    >
+      {i18n.t('run.pendingSync.row')}
+    </p>
+  ) : null;
+
   if (item.status === 'purchased') {
     return (
       <li className="border-b border-[var(--c-divider)] last:border-b-0">
         <div className={ROW_SHELL}>
           <button
             type="button"
-            onClick={() => onEdit(item)}
-            title={i18n.t('run.action.editPurchase')}
+            onClick={() => {
+              if (!pendingSync) onEdit(item);
+            }}
+            aria-disabled={pendingSync || undefined}
+            title={i18n.t(pendingSync ? 'run.pendingSync.row' : 'run.action.editPurchase')}
             className={ROW_TAP}
             style={{ gridTemplateColumns: ROW_TRACKS }}
           >
-            <RowStateCell kind="purchased" label={i18n.t('run.extras.status.bought')} />
+            <RowStateCell
+              kind={pendingSync ? 'saving' : 'purchased'}
+              label={i18n.t(pendingSync ? 'run.pendingSync.row' : 'run.extras.status.bought')}
+            />
 
             <span className="flex min-w-0 items-baseline gap-1">
               {/* One ink level down: finished work recedes so the eye
@@ -2095,10 +2129,10 @@ export function PurchaseRow({
               aria-pressed={isTransfer}
               aria-label={paymentAria}
               title={paymentLabel}
-              disabled={paymentBusy}
+              disabled={paymentBusy || pendingSync}
               onClick={() => onSetPaymentMethod(item, isTransfer ? 'cash' : 'transfer')}
               className={`${ROW_CTRL} ${
-                paymentBusy ? CTRL_OFF : isTransfer ? CTRL_TRANSFER : CTRL_QUIET
+                paymentBusy || pendingSync ? CTRL_OFF : isTransfer ? CTRL_TRANSFER : CTRL_QUIET
               }`}
             >
               <span className="text-old-label font-medium">{paymentLabel}</span>
@@ -2109,6 +2143,7 @@ export function PurchaseRow({
             for each store. May differ from planned demand when the qty
             bought diverged. */}
         {showBreakdown ? <div className={SUBLINE}>{breakdownChips}</div> : null}
+        {pendingSyncLine}
       </li>
     );
   }
@@ -2121,7 +2156,10 @@ export function PurchaseRow({
             identical geometry, no false affordance, and no way to
             fat-finger a closed line while walking. */}
         <div className={ROW_STATIC} style={{ gridTemplateColumns: ROW_TRACKS }}>
-          <RowStateCell kind="unavailable" label={i18n.t('run.extras.status.unavailable')} />
+          <RowStateCell
+            kind={pendingSync ? 'saving' : 'unavailable'}
+            label={i18n.t(pendingSync ? 'run.pendingSync.row' : 'run.extras.status.unavailable')}
+          />
 
           {/* line-through is a TEXTURE difference, so "dropped" survives
               greyscale without spending --c-danger on the eye. Muted,
@@ -2158,6 +2196,7 @@ export function PurchaseRow({
             RunPage's ConfirmSheet. */}
         <button
           type="button"
+          disabled={pendingSync}
           onClick={() => onUnmark(item.skuId, skuName)}
           aria-label={i18n.t('run.action.unmarkUnavailableAriaLabel', { name: skuName })}
           title={i18n.t('run.action.unmarkUnavailable')}
@@ -2179,6 +2218,7 @@ export function PurchaseRow({
           {item.unavailableNote}
         </p>
       ) : null}
+      {pendingSyncLine}
     </li>
   );
 }
