@@ -52,4 +52,16 @@ describe('salesListView (2026-10-21 FE-01)', () => {
     expect(salesListView({ isLoading: false, isError: false, rowCount: 0 })).toBe('empty');
     expect(salesListView({ isLoading: false, isError: false, rowCount: 2 })).toBe('list');
   });
+  // EMP-4 (2026-10-31): one empty state, the one that says why.
+  test('no list empty state while the record card says recording is blocked', () => {
+    expect(
+      salesListView({ isLoading: false, isError: false, rowCount: 0, recordingBlocked: true }),
+    ).toBe('none');
+    expect(
+      salesListView({ isLoading: false, isError: false, rowCount: 2, recordingBlocked: true }),
+    ).toBe('list');
+    expect(
+      salesListView({ isLoading: false, isError: true, rowCount: 0, recordingBlocked: true }),
+    ).toBe('error');
+  });
 });

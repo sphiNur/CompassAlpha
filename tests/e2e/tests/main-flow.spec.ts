@@ -54,7 +54,7 @@ test('sign in and confirm a display name', async () => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Welcome to Compass' })).toBeVisible();
   await page.getByRole('textbox').fill('E2E Admin');
-  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('button', { name: 'Save name' }).click();
   await expect(page.getByTestId('primary-nav')).toBeVisible();
   await evidence('signed-in');
 });
@@ -113,13 +113,13 @@ test('place an order', async () => {
 test('approve it', async () => {
   await tab('approve').click();
   await expect(main().getByRole('heading', { name: 'E2E Admin' })).toBeVisible();
-  await main().getByRole('button', { name: 'Claim' }).click();
+  await main().getByRole('button', { name: "I'll review" }).click();
   await expect(item('Apple').getByRole('button', { name: /^Quantity/ })).toHaveAccessibleName(
     /^Quantity 2 kg/,
   );
   await evidence('approval-claimed');
   await main().getByRole('button', { name: 'Approve', exact: true }).click();
-  await expect(main().getByRole('heading', { name: 'Inbox is empty' })).toBeVisible();
+  await expect(main().getByRole('heading', { name: 'No orders waiting for review' })).toBeVisible();
 });
 
 test('buy everything, one item in cash and one by transfer', async () => {
@@ -132,7 +132,7 @@ test('buy everything, one item in cash and one by transfer', async () => {
   // Prices are entered in thousands of UZS.
   const buy = async (sku: string, price: string, method: 'Cash' | 'Transfer') => {
     await main()
-      .getByRole('button', { name: new RegExp(`^Set price ${sku}`) })
+      .getByRole('button', { name: new RegExp(`^Enter price ${sku}`) })
       .click();
     await item(sku).getByRole('textbox', { name: 'unit price' }).fill(price);
     // The row writes the price out in full: "12" is twelve thousand.
@@ -156,7 +156,7 @@ test('buy everything, one item in cash and one by transfer', async () => {
   // The purchaser's most-tapped controls take a tap across 44×44, not
   // just look that big: nothing clips or covers them (R2-VIS-2, V4).
   await main()
-    .getByRole('button', { name: /^Set price Beef/ })
+    .getByRole('button', { name: /^Enter price Beef/ })
     .click();
   await expectTappable({
     'bought row: payment method': item('Apple').getByRole('button', {
@@ -166,8 +166,8 @@ test('buy everything, one item in cash and one by transfer', async () => {
       name: 'Payment method: Cash',
     }),
     'open row: save': item('Beef').getByRole('button', { name: 'Save purchase: Beef' }),
-    '+ Add': main().getByRole('button', { name: '+ Add', exact: true }),
-    '+ Expense': main().getByRole('button', { name: '+ Expense', exact: true }),
+    '+ Add product': main().getByRole('button', { name: '+ Add product', exact: true }),
+    '+ Add expense': main().getByRole('button', { name: '+ Add expense', exact: true }),
     'nav: Buying': tab('run'),
   });
   await item('Beef').getByRole('textbox', { name: 'unit price' }).fill('90');
@@ -197,7 +197,7 @@ test('deliver to the store', async () => {
   await main()
     .getByRole('button', { name: /Central Kitchen.*Not delivered/ })
     .click();
-  await sheet().getByRole('button', { name: 'Confirm delivery' }).click();
+  await sheet().getByRole('button', { name: 'Mark delivered' }).click();
   await expect(
     main().getByRole('button', { name: /Central Kitchen.*Awaiting confirm/ }),
   ).toBeVisible();
@@ -233,7 +233,7 @@ test('finish the run and find it in history', async () => {
   await expect(sheet()).toContainText('transfer 90,000');
   await evidence('run-finish-summary');
   await sheet().getByRole('button', { name: 'Finish run' }).click();
-  await expect(main().getByRole('heading', { name: 'No approved orders to plan' })).toBeVisible();
+  await expect(main().getByRole('heading', { name: 'No approved orders yet' })).toBeVisible();
 
   await tab('history').click();
   await expect(main().getByRole('heading', { level: 1 })).toHaveText(/History\s*1 trip · 114,000 UZS/);
@@ -312,9 +312,9 @@ test('a price typed in the wrong unit is asked about before it is saved', async 
   // The order from the last test is approved and bought. Apple cost
   // 12,000 last time; typing the full "12000" while the unit is
   // thousands would record twelve million.
-  await main().getByRole('button', { name: 'Claim' }).click();
+  await main().getByRole('button', { name: "I'll review" }).click();
   await main().getByRole('button', { name: 'Approve', exact: true }).click();
-  await expect(main().getByRole('heading', { name: 'Inbox is empty' })).toBeVisible();
+  await expect(main().getByRole('heading', { name: 'No orders waiting for review' })).toBeVisible();
   await tab('run').click();
   await mainButton().click();
   await expect(main()).toContainText('0 bought · 0 n/a · 2 left');
