@@ -32,4 +32,11 @@ describe('resolveDataStateError', () => {
   test('default (passthrough) keeps the old behaviour', () => {
     expect(resolveDataStateError({ message: 'raw' }, passthrough, 'Unknown')).toBe('raw');
   });
+
+  test('CMP-FE-1: the whole error reaches the host for its placeholders', () => {
+    const error = { message: 'order.errors.qtyNotMultipleOfStep', data: { context: { step: '0.5' } } };
+    const seen: unknown[] = [];
+    resolveDataStateError(error, (_m, e) => (seen.push(e), 'ok'), 'Unknown');
+    expect(seen).toEqual([error]);
+  });
 });
