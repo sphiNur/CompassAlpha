@@ -715,8 +715,9 @@ function CatalogHome({ onPick }: { onPick: (s: CatalogSub) => void }) {
         onClick={() => onPick('dishes')}
       />
       {/* M3.57 (2026-05-23): recurring expense templates. Admin sets
-          once; every new run auto-attaches them so the purchaser
-          doesn't have to re-type porter/taxi/parking on every run. */}
+          them once; the purchase page's expense sheet offers them as
+          shortcuts, so porter/taxi/parking need not be re-typed. Nothing
+          is attached to a run automatically (CMP-CAT-3). */}
       <ListRow
         label={i18n.t('admin.subsection.expenseTemplates')}
         hint={i18n.t('admin.subsection.expenseTemplatesHint')}

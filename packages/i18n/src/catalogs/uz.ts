@@ -34,7 +34,7 @@ export const uz = {
   'common.archived': 'arxivda',
   'common.unarchive': 'Tiklash',
   'common.name': 'Nomi',
-  'common.remove': 'O&apos;chirish',
+  'common.remove': 'Olib tashlash',
   'common.save': 'Saqlash',
   'common.back': 'Orqaga',
   'common.retry': 'Qayta urinish',
@@ -51,6 +51,7 @@ export const uz = {
   'qty.enterNumber': 'Raqam kiriting',
   'qty.atLeast': 'Kamida {min} kiriting',
   'qty.atMost': 'Koʻpi bilan {max} kiriting',
+  'qty.notMultiple': '{step} ga karrali son kiriting',
   'qty.maxDecimals': 'Koʻpi bilan {decimals} ta kasr xonasi',
   'number.invalid': 'Bu son emas — 1500 yoki 1,5 kabi yozing',
   'photo.label': 'Chek rasmi',
@@ -979,11 +980,11 @@ export const uz = {
   'approval.estimateUnpriced': "+ {n} ta narxsiz",
 
   // ── Boshqa narsalar (sessiya darajasidagi izoh, M1.8) ────────────
-  'order.notes.label': 'Boshqa narsalar',
+  'order.notes.label': 'Izoh',
   'order.notes.saving': 'Saqlanyapti…',
   'order.notes.saved': 'Saqlandi ✓',
   'order.notes.badge': 'Izoh',
-  'order.notes.hasNote': 'Qoʻshimcha soʻrov bor',
+  'order.notes.hasNote': 'Doʻkon izoh qoldirdi',
 
   // M3.16-C: structured extras editor
   'order.extras.label': 'Boshqa narsalar',
@@ -1527,6 +1528,7 @@ export const uz = {
   'confirm.issue.describe': 'Muammoni yozing — xaridor koʻrib tuzata oladi.',
   'confirm.issue.placeholder': 'Nima muammo?',
   'confirm.issue.photoOptional': 'Surat (ixtiyoriy)',
+  'confirm.issue.photoUploading': 'Rasm hali yuklanmoqda. Yuklangach saqlash mumkin.',
   'confirm.issue.save': 'Saqlash',
   'confirm.status.ariaLabel': 'Bu pozitsiyaning qabul holati',
   'confirm.status.ok': 'Yaxshi',
@@ -1624,19 +1626,19 @@ export const uz = {
   'inventory.empty.description':
     'Bu doʻkonda yetkazib berishni tasdiqlang — qoldiqlar shu yerda paydo boʻladi.',
   'inventory.action.stocktake': 'Inventarizatsiya',
-  'inventory.action.wastage': 'Yo&apos;qotish',
+  'inventory.action.wastage': 'Yoʻqotish',
   'inventory.sheet.stocktake.title': 'Inventarizatsiya',
   'inventory.sheet.stocktake.systemSays': 'Tizim boʻyicha: {qty}',
   'inventory.sheet.stocktake.targetLabel': 'Hozirgi haqiqiy qoldiq',
   'inventory.sheet.stocktake.targetHint': 'Javonni sanang — tizim farqni hisoblaydi.',
   'inventory.sheet.stocktake.notePlaceholder': 'Farq sababi (ixtiyoriy)',
-  'inventory.sheet.wastage.title': 'Yo&apos;qotishni yozish',
-  'inventory.sheet.wastage.qtyLabel': 'Yo&apos;qotilgan miqdor',
+  'inventory.sheet.wastage.title': 'Yoʻqotishni yozish',
+  'inventory.sheet.wastage.qtyLabel': 'Yoʻqotilgan miqdor',
   'inventory.sheet.wastage.notePlaceholder': 'buzilgan / sinilgan / yorliq / yoʻqolgan',
   'inventory.sheet.wastage.noteHint': 'Majburiy — sababsiz yozuv keyinroq foydasiz.',
   'inventory.sheet.note': 'Izoh',
   'inventory.toast.stocktakeSaved': 'Inventarizatsiya saqlandi.',
-  'inventory.toast.wastageSaved': 'Yo&apos;qotish yozildi.',
+  'inventory.toast.wastageSaved': 'Yoʻqotish yozildi.',
   'inventory.confirm.wastageNegative':
     'Hisobdan chiqarilgandan keyin qoldiq {after} (manfiy) boʻladi — demak hisob avval ham notoʻgʻri edi. Baribir saqlansinmi? Keyin inventarizatsiya qilish tavsiya etiladi.',
   'inventory.errors.cannotAdjust':
@@ -1665,13 +1667,13 @@ export const uz = {
   'admin.sheet.newExpenseTemplate': 'Yangi xarajat shabloni',
   'admin.sheet.editExpenseTemplate': 'Shablonni tahrirlash',
   'admin.confirm.archiveExpenseTemplate':
-    '«{label}» shablonini arxivlaysizmi? Keyingi xaridlar uni qoldirib ketadi.',
+    '«{label}» shablonini arxivlaysizmi? Xarid sahifasida xarajat qoʻshishda u endi taklif qilinmaydi. Yozib boʻlingan xarajatlar oʻzgarmaydi.',
   'admin.toast.expenseTemplateCreated': 'Shablon qoʻshildi',
   'admin.toast.expenseTemplateUpdated': 'Shablon yangilandi',
   'admin.toast.expenseTemplateArchived': 'Shablon arxivga olindi',
   'admin.errors.expenseTemplateNotFound': 'Shablon topilmadi',
   'admin.subsection.dishesHint': 'Menyu + har bir taom uchun retsept',
-  'dishes.empty.title': 'Hozircha taomlar yo&apos;q',
+  'dishes.empty.title': 'Hozircha taomlar yoʻq',
   'dishes.empty.description':
     'Menyu taomlarini qoʻshing; retsept har bir taomni ingredient mahsulotlar bilan bogʻlaydi.',
   'dishes.action.new': '+ Yangi taom',

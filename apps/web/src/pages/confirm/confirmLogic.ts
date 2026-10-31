@@ -137,3 +137,20 @@ export function runsListView(q: {
   // Disabled / idle query with no data: treat as loaded-and-empty.
   return { kind: 'ready', stale: false };
 }
+
+/**
+ * CMP-DLV-6 (2026-10-31): whether the issue sheet's Save may be pressed.
+ * Saving while the photo was still uploading stored the decision without
+ * it, and nothing said so; Save now waits for the upload, with the reason
+ * shown.
+ */
+export function issueSaveState(q: {
+  reasonOk: boolean;
+  photoUploading: boolean;
+  saving: boolean;
+}): { canSave: boolean; waitingForPhoto: boolean } {
+  return {
+    canSave: q.reasonOk && !q.photoUploading && !q.saving,
+    waitingForPhoto: q.photoUploading,
+  };
+}

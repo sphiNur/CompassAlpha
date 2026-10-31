@@ -36,7 +36,7 @@ import type { ReactNode } from 'react';
 import { setDecimalLocale, UiLabelsProvider } from '@compass/ui';
 import type { UiLabels } from '@compass/ui';
 import { useI18n } from '../hooks/useI18n';
-import { errorTextKey } from '../lib/errorText';
+import { errorTextKey, errorTextOf } from '../lib/errorText';
 
 export function UiLabelsBridge({ children }: { children: ReactNode }) {
   const i18n = useI18n();
@@ -72,6 +72,7 @@ export function UiLabelsBridge({ children }: { children: ReactNode }) {
       qtyAtLeast: (min) => i18n.t('qty.atLeast', { min }),
       qtyAtMost: (max) => i18n.t('qty.atMost', { max }),
       qtyMaxDecimals: (decimals) => i18n.t('qty.maxDecimals', { decimals }),
+      qtyNotMultiple: (step) => i18n.t('qty.notMultiple', { step }),
       get numberInvalid() {
         return i18n.t('number.invalid');
       },
@@ -92,8 +93,14 @@ export function UiLabelsBridge({ children }: { children: ReactNode }) {
       },
       // 2026-10-21 FE-10: DataState showed `error.message` raw — usually an
       // untranslated server key. Same mapping as errToast's toasts.
-      translateError: (message) =>
-        i18n.t(errorTextKey(message, 'common.errorUnknown') as Parameters<typeof i18n.t>[0]),
+      // CMP-FE-1: with the placeholders a server error carries.
+      translateError: (message, error) => {
+        const said =
+          error === undefined
+            ? { key: errorTextKey(message, 'common.errorUnknown'), vars: {} }
+            : errorTextOf(error, 'common.errorUnknown');
+        return i18n.t(said.key as Parameters<typeof i18n.t>[0], said.vars);
+      },
       get retry() {
         return i18n.t('common.retry');
       },
