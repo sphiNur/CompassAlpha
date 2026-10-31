@@ -32,6 +32,8 @@
  *      allow-listed (brand names, unit symbols).
  *   8. The decided terminology (D15, 2026-10-31): one word per concept and
  *      language, so a new key cannot bring back 审批 / SKU / buyer.
+ *   9. Workspace, never organization (D23), and no internal words the copy
+ *      review took out (收件箱, 产品, 冻结, 步长, 认领 / 释放 …).
  *
  * The last block feeds each rule a small hand-made catalog with the mistake
  * it exists for, so a rule that silently stops matching fails too.
@@ -536,6 +538,74 @@ function terminology(cats: Catalogs): string[] {
   return found;
 }
 
+// ── 9. Words the copy review took out (D23, 18-设计技能评审/03) ──────────
+
+/**
+ * 2026-10-31: decision D23 names the tenant 工作区 / workspace / рабочее
+ * пространство / ish maydoni in every user-visible string, never 组织 /
+ * organization. The copy review also replaced a metaphor the screen never
+ * uses (收件箱 / inbox), the one 产品 left after D15, and words that only
+ * make sense to whoever wrote the code: a run is not "frozen", an order
+ * step is not a "step length", a permission is not "in the dictionary",
+ * a run is not per "slot", and a review is not "claimed" and "released".
+ * Placeholders ({org}) are code and are not checked.
+ */
+const COPY_BANNED: Record<Lang, Array<{ pattern: RegExp; use: string }>> = {
+  zh: [
+    { pattern: /组织/, use: '工作区 (D23)' },
+    { pattern: /收件箱/, use: '待审核 / 等你审核的订单' },
+    { pattern: /产品/, use: '商品 (D15)' },
+    { pattern: /冻结/, use: '已经结束或取消，不能再改' },
+    { pattern: /步长/, use: '每次加减' },
+    { pattern: /字典/, use: 'say what is missing' },
+    { pattern: /时段/, use: 'say what happened' },
+    { pattern: /认领/, use: '我来审核 / 接手' },
+    { pattern: /释放/, use: '放回' },
+    { pattern: /后台自动/, use: '稍后会…' },
+  ],
+  en: [
+    { pattern: /\borgs?\b|organi[sz]ation/i, use: 'workspace (D23)' },
+    { pattern: /\binbox\b/i, use: 'orders waiting for review' },
+    { pattern: /\bfrozen\b/i, use: 'finished or cancelled' },
+    { pattern: /\bslot\b/i, use: 'say what happened' },
+    { pattern: /\bdictionary\b/i, use: 'say what is missing' },
+    { pattern: /\bclaim(?:s|ed|er|ing)?\b/i, use: 'review / take over / put back' },
+  ],
+  ru: [
+    { pattern: /организац/i, use: 'рабочее пространство (D23)' },
+    { pattern: /входящ/i, use: 'заказы на проверку' },
+    { pattern: /заморож/i, use: 'завершена или отменена' },
+    { pattern: /справочник/i, use: 'say what is missing' },
+    { pattern: /(?<!\p{L})слот/iu, use: 'say what happened' },
+  ],
+  uz: [
+    { pattern: /tashkilot/i, use: 'ish maydoni (D23)' },
+    { pattern: /kiruvchi/i, use: 'tekshiruvni kutayotgan buyurtmalar' },
+    { pattern: /muzlat/i, use: 'yakunlangan yoki bekor qilingan' },
+    { pattern: /lugʻat/i, use: 'say what is missing' },
+  ],
+};
+
+/** `lang key` → why the value may keep a word from COPY_BANNED. */
+const COPY_BANNED_ALLOW: Record<string, string> = {};
+
+function copyBanned(cats: Catalogs): string[] {
+  const found: string[] = [];
+  for (const lang of LANGS) {
+    for (const [key, value] of Object.entries(cats[lang])) {
+      if (COPY_BANNED_ALLOW[`${lang} ${key}`]) continue;
+      const text = visibleTexts(value)
+        .join(' ')
+        .replace(/\{\w+\}/g, '');
+      for (const { pattern, use } of COPY_BANNED[lang]) {
+        const m = text.match(pattern);
+        if (m) found.push(`${lang} ${key}: "${m[0]}" — use ${use}`);
+      }
+    }
+  }
+  return found;
+}
+
 // ── The gates ───────────────────────────────────────────────────────────
 
 const RULES: Array<[string, (cats: Catalogs) => string[]]> = [
@@ -552,6 +622,7 @@ const RULES: Array<[string, (cats: Catalogs) => string[]]> = [
   ['en quotes with "", uz with «»', quoteStyle],
   ['no value is left in English', untranslated],
   ['D15 terminology: one word per concept', terminology],
+  ['D23 and the copy review: workspace, no internal words', copyBanned],
 ];
 
 describe('catalog lint', () => {
@@ -680,6 +751,24 @@ describe('catalog lint rules catch the original findings', () => {
     expect(quoteStyle(one({ en: 'Joined “{org}”' }))).toHaveLength(1);
     expect(quoteStyle(one({ uz: '“{org}”ga qoʻshiling' }))).toHaveLength(1);
     expect(quoteStyle(one({ en: 'Joined "{org}"', uz: '«{org}»ga qoʻshiling' }))).toEqual([]);
+  });
+
+  test('D23 workspace and the internal words the copy review removed', () => {
+    expect(copyBanned(one({ zh: '这个组织还没有门店' }))).toHaveLength(1);
+    expect(copyBanned(one({ zh: '收件箱为空' }))).toHaveLength(1);
+    expect(copyBanned(one({ zh: '点击产品旁的 + 号' }))).toHaveLength(1);
+    expect(copyBanned(one({ zh: '采购单已冻结' }))).toHaveLength(1);
+    expect(copyBanned(one({ zh: '只有认领人可以释放' }))).toHaveLength(2);
+    expect(copyBanned(one({ en: 'No stores in this org' }))).toHaveLength(1);
+    expect(copyBanned(one({ en: 'Run already exists for this slot' }))).toHaveLength(1);
+    expect(copyBanned(one({ en: 'Claimed for review' }))).toHaveLength(1);
+    expect(copyBanned(one({ ru: 'В этой организации нет магазинов' }))).toHaveLength(1);
+    expect(copyBanned(one({ uz: 'Bu tashkilotda doʻkon yoʻq' }))).toHaveLength(1);
+    // A placeholder named {org} is code, not copy.
+    expect(copyBanned(one({ en: 'Joined "{org}"', zh: '已加入「{org}」' }))).toEqual([]);
+    expect(copyBanned(one({ zh: '工作区', en: 'Workspace', ru: 'Рабочее пространство' }))).toEqual(
+      [],
+    );
   });
 
   test('Uzbek plural suffix after a count', () => {

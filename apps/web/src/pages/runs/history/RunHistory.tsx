@@ -970,7 +970,7 @@ export function RunHistoryDetailSheet({
         </div>
       ) : !breakdown ? (
         <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">
-          {i18n.t('common.noData')}
+          {i18n.t('run.history.noDetail')}
         </div>
       ) : (
         <div className="flex flex-col gap-4 py-3">
@@ -1136,7 +1136,9 @@ export function RunHistoryDetailSheet({
             <ul className="flex flex-col rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline">
               {visibleHistoryRows.length === 0 ? (
                 <li className="px-4 py-3 text-center text-old-label text-[var(--c-fg-muted)]">
-                  {i18n.t('common.noData')}
+                  {activeStoreName
+                    ? i18n.t('run.history.noStoreItems')
+                    : i18n.t('run.history.noDetail')}
                 </li>
               ) : null}
               {visibleHistoryRows.map((row) => {

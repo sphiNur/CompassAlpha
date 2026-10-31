@@ -40,7 +40,7 @@ export function normalizeVoidReason(raw: string): string | null {
  * re-enter sales that already exist and stock would be deducted twice.
  * An error wins over stale data too (a failed refetch of a cached list).
  */
-export type SalesListView = 'loading' | 'error' | 'offline' | 'empty' | 'list';
+export type SalesListView = 'loading' | 'error' | 'offline' | 'empty' | 'none' | 'list';
 /**
  * CLS-6 (2026-10-31): offline with no saved copy the list does not fail,
  * it waits (paused) with no rows — and read "0 servings / no sales yet".
@@ -52,9 +52,16 @@ export function salesListView(q: {
   isError: boolean;
   rowCount: number;
   waitingOffline?: boolean;
+  /**
+   * EMP-4 (2026-10-31): the record card above already says sales cannot be
+   * recorded yet (no dishes, or none with a recipe). A second, larger
+   * "no sales today" under it read as the main message; show only one.
+   */
+  recordingBlocked?: boolean;
 }): SalesListView {
   if (q.waitingOffline) return 'offline';
   if (q.isLoading) return 'loading';
   if (q.isError) return 'error';
-  return q.rowCount === 0 ? 'empty' : 'list';
+  if (q.rowCount > 0) return 'list';
+  return q.recordingBlocked ? 'none' : 'empty';
 }
