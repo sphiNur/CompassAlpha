@@ -26,7 +26,7 @@ import {
   useToast,
   QueryErrorBanner,
 } from '@compass/ui';
-import { ADMIN_RANK } from '@compass/contracts';
+import { ADMIN_RANK } from '@compass/contracts/schemas/roles';
 import { newIdempotencyKey, trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';

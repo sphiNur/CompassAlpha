@@ -22,7 +22,7 @@
  * stay on whole cents (`addMoney`). This page used to multiply in floats
  * and show 1.005 where finance showed 1.01 (R2-HIS-1).
  */
-import { addMoney, lineAmountNumber } from '@compass/contracts';
+import { addMoney, lineAmountNumber } from '@compass/contracts/money';
 
 export function splitUnitPrice(
   split: { unitPrice?: string | null },

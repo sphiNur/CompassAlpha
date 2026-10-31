@@ -10,7 +10,7 @@
  *
  * Reconnect: exponential backoff up to 30 s. Closes cleanly on signOut.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { useAuthStore } from '../stores/authStore';
 import { trpc } from '../lib/trpc';
@@ -31,6 +31,51 @@ const WS_CLOSE_EVICTED = 4000;
 const WS_CLOSE_TOKEN_EXPIRED = 4001;
 /** Query-key roots refreshed when the socket re-opens (CA-35). */
 const REOPEN_INVALIDATE_KEYS = ['order', 'run', 'catalog', 'admin', 'notifications'] as const;
+
+// The server pings every socket every 25 s (apps/api/src/main.ts). An
+// open socket that has heard nothing for longer than this is treated as
+// dead (a phone that changed networks can keep a half-open TCP socket for
+// minutes without a close event), so pages fall back to polling.
+export const REALTIME_STALE_MS = 60_000;
+const STALE_CHECK_MS = 10_000;
+
+/** Is the socket delivering pushes? Open and heard from recently. */
+export function isRealtimeLive(open: boolean, lastMessageAt: number, now: number): boolean {
+  return open && now - lastMessageAt <= REALTIME_STALE_MS;
+}
+
+// P-4 (2026-10-31): one module-level flag so pages poll only while
+// realtime is down, instead of on top of a healthy socket. It changes only
+// on transitions, so subscribers do not re-render on every ping.
+let realtimeLive = false;
+const liveListeners = new Set<() => void>();
+
+export function setRealtimeLive(live: boolean): void {
+  if (realtimeLive === live) return;
+  realtimeLive = live;
+  liveListeners.forEach((l) => l());
+}
+
+export function getRealtimeLive(): boolean {
+  return realtimeLive;
+}
+
+function subscribeRealtimeLive(listener: () => void): () => void {
+  liveListeners.add(listener);
+  return () => {
+    liveListeners.delete(listener);
+  };
+}
+
+/** True while the WebSocket is delivering pushes. */
+export function useRealtimeLive(): boolean {
+  return useSyncExternalStore(subscribeRealtimeLive, getRealtimeLive, () => false);
+}
+
+/** A query's refetchInterval: poll only while realtime pushes are not arriving. */
+export function pollWhenOffline(intervalMs: number, live: boolean): number | false {
+  return live ? false : intervalMs;
+}
 
 interface RealtimeMessage {
   type:
@@ -123,6 +168,11 @@ export function useRealtime(): void {
     // After an eviction, keep the backoff growing instead of resetting it
     // on the next open, so repeated evictions can't spin at 1 s.
     let reopenAfterEviction = false;
+    // Liveness for pollers (P-4): open + heard from within REALTIME_STALE_MS.
+    let socketOpen = false;
+    let lastMessageAt = 0;
+    const updateLive = () => setRealtimeLive(isRealtimeLive(socketOpen, lastMessageAt, Date.now()));
+    const staleTimer = setInterval(updateLive, STALE_CHECK_MS);
 
     const connect = () => {
       if (stoppedRef.current) return;
@@ -140,6 +190,11 @@ export function useRealtime(): void {
       ws.addEventListener('open', () => {
         if (!reopenAfterEviction) reconnectAttemptsRef.current = 0;
         reopenAfterEviction = false;
+        if (wsRef.current === ws) {
+          socketOpen = true;
+          lastMessageAt = Date.now();
+          updateLive();
+        }
         if (hasOpened) {
           for (const key of REOPEN_INVALIDATE_KEYS) debouncedInvalidate([[key]]);
         }
@@ -147,6 +202,10 @@ export function useRealtime(): void {
       });
 
       ws.addEventListener('message', (e) => {
+        if (wsRef.current === ws) {
+          lastMessageAt = Date.now();
+          updateLive();
+        }
         let msg: RealtimeMessage;
         try {
           msg = JSON.parse(e.data) as RealtimeMessage;
@@ -204,7 +263,11 @@ export function useRealtime(): void {
       });
 
       ws.addEventListener('close', (ev) => {
-        if (wsRef.current === ws) wsRef.current = null;
+        if (wsRef.current === ws) {
+          wsRef.current = null;
+          socketOpen = false;
+          updateLive();
+        }
         if (disposed) return;
         if (ev.code === WS_CLOSE_EVICTED) reopenAfterEviction = true;
         if (ev.code === WS_CLOSE_TOKEN_EXPIRED) {
@@ -242,6 +305,8 @@ export function useRealtime(): void {
     return () => {
       disposed = true;
       stoppedRef.current = true;
+      clearInterval(staleTimer);
+      setRealtimeLive(false);
       if (timeoutHandle) clearTimeout(timeoutHandle);
       pendingInvalidates.forEach((t) => clearTimeout(t));
       pendingInvalidates.clear();

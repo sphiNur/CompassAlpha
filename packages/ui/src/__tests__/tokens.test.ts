@@ -141,6 +141,19 @@ function sources(dir: string): string[] {
   });
 }
 
+/**
+ * Custom properties the app sets from JavaScript (no stylesheet declares
+ * them; every reader has a fallback): the Telegram chrome insets measured
+ * in Shell.tsx and the MainButton height (lib/mainButtonInset.ts).
+ */
+const RUNTIME_VARS = [
+  '--app-chrome-reserve',
+  '--app-chrome-safe-top',
+  '--app-chrome-pad-left',
+  '--app-chrome-pad-right',
+  '--app-main-btn-h',
+];
+
 describe('colour tokens in use', () => {
   test('every var(--c-*) referenced by the web app and the UI kit is defined', () => {
     const used = new Set<string>();
@@ -149,6 +162,40 @@ describe('colour tokens in use', () => {
     }
     const missing = [...used].filter((name) => !(name in light));
     expect(missing).toEqual([]);
+  });
+
+  // N3 (2026-10-31): only `--c-*` was checked, so `--r-input` (never
+  // defined) left one select square in an all-pill screen. Now every
+  // custom property read anywhere — `var(--x)` or Tailwind's `[--x]` —
+  // must be declared in a stylesheet, or be one the app writes at run time.
+  test('every custom property referenced by the web app and the UI kit is defined', () => {
+    const files = [...sources(UI_SRC), ...sources(WEB_SRC)].filter((f) => !f.includes('__tests__'));
+    const declared = new Set<string>();
+    const used = new Map<string, string>();
+    for (const file of files) {
+      const src = readFileSync(file, 'utf8');
+      if (file.endsWith('.css')) {
+        for (const m of src.matchAll(/(--[a-z0-9-]+)\s*:/g)) declared.add(m[1]!);
+      }
+      // A name followed by `-` or `*` is a prose pattern (`--app-chrome-pad-*`).
+      for (const m of src.matchAll(/(?:var\(\s*|\[)(--[a-z0-9-]*[a-z0-9])(?![a-z0-9*-])/g)) {
+        if (!used.has(m[1]!)) used.set(m[1]!, file.slice(file.indexOf('/src/') + 1));
+      }
+    }
+    const missing = [...used]
+      .filter(([name]) => !declared.has(name) && !RUNTIME_VARS.includes(name))
+      .map(([name, file]) => `${name} (${file})`);
+    expect(missing).toEqual([]);
+  });
+
+  test('each run-time custom property is really written by the app', () => {
+    const code = [...sources(UI_SRC), ...sources(WEB_SRC)]
+      .filter((f) => !f.includes('__tests__') && !f.endsWith('.css'))
+      .map((f) => readFileSync(f, 'utf8'))
+      .join('\n');
+    for (const name of RUNTIME_VARS) {
+      expect({ name, written: code.includes(`'${name}'`) }).toEqual({ name, written: true });
+    }
   });
 
   test('status components take their colours from tokens', () => {

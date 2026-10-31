@@ -26,7 +26,7 @@ import { toDisplayPrice, fromDisplayPrice, isStorablePrice, readDisplayPrice } f
 import { evenSplitQty } from '../lib/splitQty';
 import { followPaymentMethod, followUnitPrice } from '../lib/purchaseOverrides';
 import { PriceInFull, PriceUnitSwitch } from '../components/PriceUnit';
-import { lineAmountNumber } from '@compass/contracts';
+import { lineAmountNumber } from '@compass/contracts/money';
 
 /**
  * M3.41 + M3.44 (2026-05-21 / 2026-05-22): draft state for the "+ add"

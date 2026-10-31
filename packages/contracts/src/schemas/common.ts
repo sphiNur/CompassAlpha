@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import { ORDER_QTY_MAX } from '../limits';
+
+// Zod-free limits live in ../limits so the web can import them without
+// pulling zod into its main chunk (P-5); re-exported for the barrel.
+export { BACKDATE_LIMIT_DAYS, ORDER_QTY_MAX, isoDateDaysBefore } from '../limits';
 
 export const UuidSchema = z.string().uuid();
 
@@ -87,12 +92,7 @@ export const DecimalStringSchema = z
   .string()
   .regex(/^-?\d+(\.\d{1,3})?$/, 'common.errors.invalidDecimal');
 
-/**
- * ORD-9 (2026-10-30): an order line quantity. A mistyped 1,000,000,000
- * overflowed numeric(12,3) as a 500, and 9,999,999 kg was saved without
- * a word. A million of anything per line is far beyond a kitchen order.
- */
-export const ORDER_QTY_MAX = 999_999.999;
+/** ORD-9: the order line quantity cap (defined in ../limits, zod-free). */
 export const OrderQtySchema = DecimalStringSchema.refine((v) => Math.abs(Number(v)) <= ORDER_QTY_MAX, {
   message: 'order.errors.qtyTooLarge',
 });
@@ -132,15 +132,3 @@ export const DomainErrorShape = z.object({
   context: z.record(z.unknown()).optional(),
 });
 
-/**
- * CLS-14 / CLS-19 (2026-10-30, user decision): how far back a new daily
- * close or a back-filled sale may be dated.
- */
-export const BACKDATE_LIMIT_DAYS = 90;
-
-/** A calendar date `days` before `isoDate` (YYYY-MM-DD in, out). */
-export function isoDateDaysBefore(isoDate: string, days: number): string {
-  const d = new Date(`${isoDate}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() - days);
-  return d.toISOString().slice(0, 10);
-}

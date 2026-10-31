@@ -25,18 +25,23 @@
  */
 (function () {
   // ---- 1. Locale detection ---------------------------------------------------
-  var tg = window.Telegram && window.Telegram.WebApp;
-  var langRaw =
-    (tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.language_code) ||
-    navigator.language ||
-    'en';
-  var lang = (function (l) {
-    l = String(l).toLowerCase();
+  // P-7 (2026-10-31): the Telegram SDK is now loaded with `defer`, so it
+  // runs after this script (still before the app's module script, which
+  // keeps document order). Until it has run, guess from navigator; when
+  // it has, detect again from Telegram's language (see onTelegramLoaded).
+  function detectLang() {
+    var tg = window.Telegram && window.Telegram.WebApp;
+    var raw =
+      (tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.language_code) ||
+      navigator.language ||
+      'en';
+    var l = String(raw).toLowerCase();
     if (l.indexOf('zh') === 0) return 'zh';
     if (l.indexOf('ru') === 0) return 'ru';
     if (l.indexOf('uz') === 0) return 'uz';
     return 'en';
-  })(langRaw);
+  }
+  var lang = detectLang();
   document.documentElement.lang = lang;
 
   var TEXT = {
@@ -71,15 +76,20 @@
   };
   var t = TEXT[lang];
 
-  // Set static labels.
-  var subEl = document.querySelector('[data-boot-starting]');
-  if (subEl) subEl.textContent = t.startingUp;
-  var failedEl = document.querySelector('#boot-error [data-msg]');
-  if (failedEl) failedEl.textContent = t.bootFailed;
-  var reloadBtn = document.getElementById('boot-reload-btn');
-  if (reloadBtn) reloadBtn.textContent = t.reload;
-  var resetBtn = document.getElementById('boot-reset-btn');
-  if (resetBtn) resetBtn.textContent = t.reset;
+  // Set static labels. This script runs in <head>, before the splash in
+  // <body> is parsed, so this is called again once the document is parsed
+  // (onTelegramLoaded / DOMContentLoaded); until P-7 the labels stayed
+  // English because this only ever ran here.
+  function applyLabels() {
+    var subEl = document.querySelector('[data-boot-starting]');
+    if (subEl) subEl.textContent = t.startingUp;
+    var failedEl = document.querySelector('#boot-error [data-msg]');
+    if (failedEl && !bootShown) failedEl.textContent = t.bootFailed;
+    var reloadBtn = document.getElementById('boot-reload-btn');
+    if (reloadBtn) reloadBtn.textContent = t.reload;
+    var resetBtn = document.getElementById('boot-reset-btn');
+    if (resetBtn) resetBtn.textContent = t.reset;
+  }
 
   // ---- 2. Error capture ------------------------------------------------------
   var bootShown = false;
@@ -106,11 +116,39 @@
   });
 
   // ---- 3. 12-second failsafe -------------------------------------------------
-  setTimeout(function () {
-    if (!document.documentElement.classList.contains('ready')) {
-      showBootError(t.timeout, '');
-    }
-  }, 12000);
+  // Counted from when the Telegram SDK has run (restarted below), as it
+  // was while the SDK blocked this script; if the SDK never loads, from
+  // here, so a stuck telegram.org still ends in the recovery UI.
+  var failsafe = null;
+  function startFailsafe() {
+    if (failsafe !== null) clearTimeout(failsafe);
+    failsafe = setTimeout(function () {
+      if (!document.documentElement.classList.contains('ready')) {
+        showBootError(t.timeout, '');
+      }
+    }, 12000);
+  }
+  startFailsafe();
+
+  // ---- 3b. Telegram SDK loaded (P-7) ----------------------------------------
+  // A deferred script's load event fires after it has run, and after the
+  // document is parsed, so the splash exists and window.Telegram is set.
+  function onTelegramLoaded() {
+    lang = detectLang();
+    document.documentElement.lang = lang;
+    t = TEXT[lang];
+    applyLabels();
+    startFailsafe();
+  }
+  var tgScript = document.querySelector('script[src*="telegram-web-app.js"]');
+  if (tgScript && !(window.Telegram && window.Telegram.WebApp)) {
+    tgScript.addEventListener('load', onTelegramLoaded);
+    tgScript.addEventListener('error', onTelegramLoaded);
+  } else if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', applyLabels);
+  } else {
+    applyLabels();
+  }
 
   // ---- 4. Bind buttons (CSP forbids inline onclick=) ------------------------
   // Same record apps/web/src/lib/reload.ts writes, so the next page load
