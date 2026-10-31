@@ -171,6 +171,9 @@ test('receive the delivery at the store', async () => {
   await evidence('receiving-checked');
   await expect(mainButton()).toHaveText('Confirm store');
   await mainButton().click();
+  // U4: the irreversible confirmation goes through a summary sheet.
+  await expect(sheet()).toContainText('OK: 2 · short: 0 · wrong or damaged: 0');
+  await sheet().getByRole('button', { name: 'Confirm receipt' }).click();
   await expect(mainButton()).toBeHidden();
 });
 
