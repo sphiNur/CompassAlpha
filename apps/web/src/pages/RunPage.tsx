@@ -1984,8 +1984,12 @@ export function RunPage() {
          reserved strip Shell renders above the scroll container; this bar
          is below that strip and was never underneath them. See the
          StickyPageBar docblock. */}
+      {/* min-h-12 py-1 (R2-VIS-2, 2026-10-31): the bar is taller than the
+          "+ Add" button's 44px tap area plus its 1px bottom border. At
+          min-h-9 py-2 the area stuck out of the bar's top edge, under the
+          sticky header (measured 39px; 43 at min-h-11). */}
       {activeRun ? (
-        <div className="sticky top-0 z-[1] flex min-h-9 items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-2">
+        <div className="sticky top-0 z-[1] flex min-h-12 items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-1">
           {/* M3.36 shipped the "×1000" price-mode toggle here as a pill
               whose entire meaning lived in a `title` attribute. On a
               touch device there is no hover, so nothing ever revealed

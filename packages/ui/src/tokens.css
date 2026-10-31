@@ -111,6 +111,8 @@
   --r-capsule: 12px;
   --r-card: 16px;
   --r-pill: 9999px;
+  /* The bottom sheet's top corners (was a literal 24px in Sheet.tsx). */
+  --r-sheet: 24px;
 
   /* Component sizing (2026-07-05, Phase 0 — FRONTEND_AUDIT_2026-07.md).
    * Canonical spacing/height so the SAME element renders at ONE value
@@ -119,14 +121,17 @@
    * `h-[var(--control-h)]` etc. — never re-type a raw px height.
    *
    *   --card-pad       Card body/footer inner padding (== px-4).
-   *   --control-h      Standard form control height: Input, Select.
-   *   --control-h-sm   Compact controls: NumberInput/SearchInput/Segmented.
+   *   --control-h      Every text field: Input, SearchInput, Select,
+   *                    NumberInput (and raw <input>/<select>), and the
+   *                    md Button that sits next to them.
+   *   --control-h-sm   Compact non-text controls: Segmented.
    *
-   * Two control tiers is deliberate (not drift): --control-h is the
-   * "form field" rhythm, --control-h-sm the "dense/compact" rhythm.
-   * Assign each control to a tier ON PURPOSE; don't invent a third. */
+   * D18 (2026-10-31, owner decision): text fields are 44px, the touch
+   * minimum, with no compact tier. They were 36/40, which left every
+   * field under 44 in the measured tap area. --control-h-sm stays for
+   * the segmented control, whose segments carry hit-44 instead. */
   --card-pad: 16px;
-  --control-h: 40px;
+  --control-h: 44px;
   --control-h-sm: 36px;
 
   /* Shadows */
@@ -143,7 +148,11 @@
   --app-subnav-h: 48px;
   --app-nav-h: 64px;
   --app-viewport-h: 100dvh;
-  --app-inline-x: clamp(12px, 4vw, 20px);
+  /* V12 (2026-10-31): 16px, the px-4 every page body uses. As
+   * clamp(12px, 4vw, 20px) it came out at 14.4 / 15.6 / 17.2px on 360 /
+   * 390 / 430 screens, so a sheet's or tab strip's text never lined up
+   * with the list under it and sat off the 4px grid. */
+  --app-inline-x: 16px;
   --app-sheet-max-w: 640px;
   /* Use the browser's native env() insets so iOS Telegram WebView's
    * status bar / dynamic island / chrome buttons stop clipping the header. */
@@ -363,6 +372,15 @@
 /* 1px hairline used by cards (avoids 0.5px sub-pixel issues on @1x) */
 .ring-hairline {
   box-shadow: inset 0 0 0 1px var(--c-divider);
+}
+
+/* V18 (2026-10-31): a raised surface (the bottom sheet) keeps its lift
+ * and its hairline. box-shadow is one property, so `ring-hairline` next
+ * to `shadow-[var(--shadow-product)]` silently dropped the lift. */
+.shadow-sheet {
+  box-shadow:
+    var(--shadow-product),
+    inset 0 0 0 1px var(--c-divider);
 }
 
 /* V9 (2026-10-30): the same inset line for text fields, in a colour

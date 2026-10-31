@@ -230,7 +230,7 @@ export function StoreSalesPanel({
           ) : (
             <>
               <select
-                className="h-10 w-full rounded-[var(--r-pill)] bg-[var(--c-surface)] px-3 text-old-body ring-hairline disabled:opacity-60"
+                className="h-[var(--control-h)] w-full rounded-[var(--r-pill)] bg-[var(--c-surface)] px-3 text-old-body ring-hairline disabled:opacity-60"
                 value={draftDishId}
                 disabled={listErrored}
                 onChange={(e) => setDraftDishId(e.target.value)}

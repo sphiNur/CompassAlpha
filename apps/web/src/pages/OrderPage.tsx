@@ -1080,7 +1080,11 @@ export function OrderPage() {
       !!v.claimedByMemberId && v.claimedByMemberId !== session.member.memberId;
     return (
       <div className="flex flex-col pb-4">
-        <StickyPageBar>
+        {/* min-h-12 py-1 (RE-VIS-3 / R2-VIS-2, 2026-10-31): the strip is
+            taller than the back button's 44px tap area plus its 1px border.
+            In the default 30px strip the area stuck out of the top edge,
+            under the header. */}
+        <StickyPageBar className="min-h-12 py-1">
           <button
             type="button"
             className="hit-44 text-old-label font-semibold text-[var(--c-action)]"
@@ -2361,7 +2365,7 @@ function ExtraRowEditor({
           onChange={(e) =>
             onChange({ unit: e.target.value as (typeof CANONICAL_UNITS)[number] })
           }
-          className="h-9 w-20 rounded-[var(--r-input)] bg-[var(--c-surface)] px-2 text-center text-old-body text-[var(--c-fg)] ring-hairline focus:outline-none focus:ring-2 focus:ring-[var(--c-action)]"
+          className="h-[var(--control-h)] w-20 rounded-[var(--r-input)] bg-[var(--c-surface)] px-2 text-center text-old-body text-[var(--c-fg)] ring-hairline focus:outline-none focus:ring-2 focus:ring-[var(--c-action)]"
         >
           {CANONICAL_UNITS.map((u) => (
             <option key={u} value={u}>

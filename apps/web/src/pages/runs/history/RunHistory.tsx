@@ -1044,6 +1044,10 @@ export function RunHistoryDetailSheet({
           ) : null}
 
           {storeOptions.length > 1 ? (
+            // R2-HIS-5 (2026-10-31): the segments are 36px (min-h-9) in a
+            // 44px strip. overflow-x-auto clips anything outside the strip,
+            // so a segment's hit-44 only works if the strip is 44 tall; at
+            // 26px segments the area was cut to 36.
             <div className="flex gap-1 overflow-x-auto rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-1 ring-hairline">
               <button
                 type="button"
@@ -1051,8 +1055,8 @@ export function RunHistoryDetailSheet({
                 onClick={() => setSelectedStoreId(null)}
                 className={
                   !activeStoreId
-                    ? 'hit-44 shrink-0 rounded-[var(--r-pill)] bg-[var(--c-bg)] px-3 py-1.5 text-old-label font-medium text-[var(--c-fg)] shadow-sm'
-                    : 'hit-44 shrink-0 rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium text-[var(--c-fg-muted)]'
+                    ? 'hit-44 flex min-h-9 shrink-0 items-center rounded-[var(--r-pill)] bg-[var(--c-bg)] px-3 py-1.5 text-old-label font-medium text-[var(--c-fg)] shadow-sm'
+                    : 'hit-44 flex min-h-9 shrink-0 items-center rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium text-[var(--c-fg-muted)]'
                 }
               >
                 {i18n.t('run.history.allStores')}
@@ -1069,8 +1073,8 @@ export function RunHistoryDetailSheet({
                     onClick={() => setSelectedStoreId(storeTotal.storeId)}
                     className={
                       selected
-                        ? 'hit-44 shrink-0 rounded-[var(--r-pill)] bg-[var(--c-bg)] px-3 py-1.5 text-old-label font-medium text-[var(--c-fg)] shadow-sm'
-                        : 'hit-44 shrink-0 rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium text-[var(--c-fg-muted)]'
+                        ? 'hit-44 flex min-h-9 shrink-0 items-center rounded-[var(--r-pill)] bg-[var(--c-bg)] px-3 py-1.5 text-old-label font-medium text-[var(--c-fg)] shadow-sm'
+                        : 'hit-44 flex min-h-9 shrink-0 items-center rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium text-[var(--c-fg-muted)]'
                     }
                   >
                     <span className="inline-block max-w-[9rem] truncate align-bottom">

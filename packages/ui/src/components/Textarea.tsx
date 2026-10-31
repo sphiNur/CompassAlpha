@@ -33,7 +33,8 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
       ref={ref}
       rows={rows}
       className={cn(
-        'w-full resize-none rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2',
+        // D18: never shorter than a 44px field, even at rows={1}.
+        'min-h-11 w-full resize-none rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2',
         'text-old-body leading-snug text-[var(--c-fg)]',
         'placeholder:text-[var(--c-fg-subtle)]',
         // V9: the field's edge at 3:1 against the page (--c-field-border).

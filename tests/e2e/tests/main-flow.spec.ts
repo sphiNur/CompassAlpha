@@ -12,6 +12,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { expectTappable } from './tap-area';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -151,7 +152,29 @@ test('buy everything, one item in cash and one by transfer', async () => {
   };
   await buy('Apple', '12', 'Cash');
   await evidence('run-buying');
-  await buy('Beef', '90', 'Transfer');
+
+  // The purchaser's most-tapped controls take a tap across 44×44, not
+  // just look that big: nothing clips or covers them (R2-VIS-2, V4).
+  await main()
+    .getByRole('button', { name: /^Set price Beef/ })
+    .click();
+  await expectTappable({
+    'bought row: payment method': item('Apple').getByRole('button', {
+      name: 'Payment method: Cash',
+    }),
+    'open row: payment method': item('Beef').getByRole('button', {
+      name: 'Payment method: Cash',
+    }),
+    'open row: save': item('Beef').getByRole('button', { name: 'Save purchase: Beef' }),
+    '+ Add': main().getByRole('button', { name: '+ Add', exact: true }),
+    '+ Expense': main().getByRole('button', { name: '+ Expense', exact: true }),
+    'nav: Buying': tab('run'),
+  });
+  await item('Beef').getByRole('textbox', { name: 'unit price' }).fill('90');
+  await item('Beef').getByRole('button', { name: 'Payment method: Cash' }).click();
+  await item('Beef').getByRole('button', { name: 'Save purchase: Beef' }).click();
+  await expect(item('Beef').getByRole('button', { name: /^Bought Beef/ })).toBeVisible();
+  await expect(item('Beef').getByRole('button', { name: 'Payment method: Transfer' })).toBeVisible();
 
   await expect(main()).toContainText('2 bought · 0 n/a · 0 left');
   await expect(item('Apple')).toContainText('24,000 UZS');
@@ -165,6 +188,11 @@ test('deliver to the store', async () => {
   await sheet().getByRole('button', { name: 'Start delivery' }).click();
   await expect(main()).toContainText(/Stores\s*0\/1 confirmed/);
   await evidence('run-delivering');
+  // The rows that open the price editor and the store rows (R2-DLV-4).
+  await expectTappable({
+    'fill in prices: Apple': main().getByRole('button', { name: /^Apple/ }),
+    'store row': main().getByRole('button', { name: /Central Kitchen.*Not delivered/ }),
+  });
 
   await main()
     .getByRole('button', { name: /Central Kitchen.*Not delivered/ })

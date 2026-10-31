@@ -658,7 +658,11 @@ export function RunExtrasCard({
                         key={`${e.sessionId ?? storeId}-${e.idx ?? idx}-${e.name}`}
                         className="text-old-body-sm"
                       >
-                        <div className="-mx-2 flex w-[calc(100%+1rem)] items-baseline gap-1 rounded-[6px] px-2 py-0.5">
+                        {/* R2-VIS-1 (2026-10-31): each line is a 44px row and
+                            the status button fills it. It was a 19px text line
+                            with 2px between lines, so a tap 16px off landed on
+                            the store heading or the next item. */}
+                        <div className="-mx-2 flex min-h-11 w-[calc(100%+1rem)] items-center gap-1 rounded-[var(--r-utility)] px-2">
                           {canTap ? (
                             <button
                               type="button"
@@ -666,12 +670,12 @@ export function RunExtrasCard({
                               onClick={() =>
                                 onMarkExtraStatus!(e.sessionId!, e.idx!, cycle(status), e.sessionSeq)
                               }
-                              className="flex min-w-0 flex-1 items-baseline gap-2 rounded-[6px] text-left active:bg-[var(--c-surface-2)]"
+                              className="flex min-h-11 min-w-0 flex-1 items-center gap-2 self-stretch rounded-[var(--r-utility)] text-left active:bg-[var(--c-surface-2)]"
                             >
                               {inner}
                             </button>
                           ) : (
-                            <div className="flex min-w-0 flex-1 items-baseline gap-2">
+                            <div className="flex min-w-0 flex-1 items-center gap-2">
                               {inner}
                             </div>
                           )}
@@ -757,7 +761,10 @@ export function ExpensesCard({
         {i18n.t('run.section.expenses')}
       </SectionLabel>
       {editable ? (
-        <div className="flex justify-end px-4 pb-2">
+        // pb-4, not pb-2 (R2-BUY-6): the button's 44px area reaches 11px
+        // below it and the first expense's ✗ reaches 12px above its row,
+        // so 8px of gap let a tap below "+ Expense" land on ✗.
+        <div className="flex justify-end px-4 pb-4">
           <button
             type="button"
             onClick={onOpenExpense}
@@ -1069,12 +1076,17 @@ const ROW_TAP =
   'text-left outline-none focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]';
 const ROW_STATIC = 'grid min-w-0 flex-1 items-center gap-x-1.5';
 
-/* 36 wide × 44 tall. The thumb travels VERTICALLY on a scrolling list,
- * so 44 is required in that dimension only; every pixel of width comes
- * straight out of the number the purchaser reads back to a vendor. This
- * is the reasoning already recorded for the existing ✓ button. */
+/* At least 44 × 44, and as wide as its label (2026-10-31, R2-COPY-11 /
+ * V4). It was a fixed 36 wide on the theory that only the vertical size
+ * matters on a scrolling list; in practice the 36px was the most-tapped
+ * control under 44 on the whole app (108 times in the audit), and the
+ * payment label overflowed it onto the price in every language but
+ * Chinese ("12KНаличные": ru Наличные is 57px, en Transfer 45px). The
+ * grid's name track is the flexible one, so a wider label takes width
+ * from the name, which truncates, never from a number. whitespace-nowrap
+ * keeps the label on one line; the right edge stays fixed. */
 const ROW_CTRL =
-  'flex h-11 w-9 shrink-0 items-center justify-center self-center ' +
+  'flex h-11 min-w-11 shrink-0 items-center justify-center self-center whitespace-nowrap px-2 ' +
   'rounded-[var(--r-pill)] text-old-body outline-none ' +
   'focus-visible:ring-1 focus-visible:ring-[var(--c-ring)]';
 
@@ -1864,7 +1876,12 @@ export function PurchaseRow({
                so it gets a full line where it can't be truncated. The
                price stays the single flexible track, which keeps the
                payment-button note below accurate. */}
-        <div className="mt-1.5 grid items-center gap-1.5"
+        {/* mt-3, and mt-3 on the line below (2026-10-31): the N/A pill
+            above and the unit switch below carry hit-44, which reaches
+            ~12px past them. At mt-1.5 / mt-1 those areas covered the top
+            and bottom of the payment and ✓ buttons, leaving ✓ 33px tall
+            to a finger (measured with elementFromPoint in the e2e run). */}
+        <div className="mt-3 grid items-center gap-1.5"
              style={{ gridTemplateColumns: '4.5rem auto minmax(4.25rem,1fr) auto auto' }}>
           {/* 2026-07-26 keyboard pass. Both fields arrive PRE-FILLED
               (qty from planned, price from the last observed market
@@ -1951,11 +1968,12 @@ export function PurchaseRow({
               // is the PRICE input, and `auto` tracks are maximized before
               // `fr` tracks expand — so every pixel taken here comes
               // straight out of the field the purchaser has to read back
-              // to the vendor. Hence 44px tall but only 36px wide
-              // (min-w-9), which costs the price field ~5px instead of
-              // ~21px. Do not widen this to min-w-11 without also giving
-              // column 3 a floor.
-              'flex h-11 min-w-9 items-center justify-center rounded-[var(--r-pill)] px-1.5 text-old-label font-medium active:opacity-70 ' +
+              // to the vendor. That track now has a 4.25rem floor (see the
+              // grid above), so since 2026-10-31 this is min-w-11: 44 wide
+              // and as wide as the label, which overflowed the 36px in
+              // en/ru/uz (R2-COPY-11). At 360px the ru label still leaves
+              // the price track above its floor.
+              'flex h-11 min-w-11 items-center justify-center whitespace-nowrap rounded-[var(--r-pill)] px-2 text-old-label font-medium active:opacity-70 ' +
               (paymentMethod === 'transfer'
                 ? 'bg-[var(--c-action)]/15 text-[var(--c-action)] ring-1 ring-[var(--c-action)]'
                 : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
@@ -1966,8 +1984,8 @@ export function PurchaseRow({
                 ignore the ink token, so 💵 vs 🏦 alone is a weak signal at
                 arm's length in sunlight" — and compensated with container
                 colour. The word is the signal; colour is now reinforcement
-                rather than the only carrier. Two CJK glyphs at text-old-label
-                fit the same 36 px slot the emoji occupied. */}
+                rather than the only carrier. The button grows to fit the
+                word in every language (min-w-11, 2026-10-31). */}
             {paymentMethod === 'cash'
               ? i18n.t('run.label.paymentCash')
               : i18n.t('run.label.paymentTransfer')}
@@ -1979,11 +1997,10 @@ export function PurchaseRow({
             aria-busy={saving || undefined}
             aria-label={i18n.t('run.action.savePurchaseAriaLabel', { name: skuName })}
             className={
-              // 44px tall / 36px wide — see the payment-method button
-              // above for why the width is deliberately not 44. This is
+              // 44 × 44 — see the payment-method button above. This is
               // the control that commits money, so it is the last one
               // that should be hard to hit.
-              'flex h-11 min-w-9 items-center justify-center rounded-[var(--r-pill)] px-2.5 text-old-body font-semibold ' +
+              'flex h-11 min-w-11 items-center justify-center rounded-[var(--r-pill)] px-2.5 text-old-body font-semibold ' +
               (canSave
                 ? 'bg-[var(--c-action)] text-[var(--c-action-fg)] active:opacity-80'
                 : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
@@ -1998,7 +2015,7 @@ export function PurchaseRow({
             truncated when the row runs out of width. Right-aligned under
             the price it belongs to. */}
         {
-          <div className="mt-1 flex flex-wrap items-center justify-end gap-x-2 gap-y-1 pr-1 text-right text-old-label text-[var(--c-fg-muted)]">
+          <div className="mt-3 flex flex-wrap items-center justify-end gap-x-2 gap-y-1 pr-1 text-right text-old-label text-[var(--c-fg-muted)]">
             {/* 2026-10-11: the unit, switchable and impossible to miss, and
                 the price as it will be saved — the total alone hides a
                 ×1000 slip whenever the quantity is not 1. */}
