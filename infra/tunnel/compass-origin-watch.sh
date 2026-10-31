@@ -16,6 +16,8 @@ topic_file="/home/ubuntu/.config/compass-origin.topic"
 key_file="/home/ubuntu/.config/compass-origin.key"
 state_file="/home/ubuntu/.config/compass-origin.last"
 publish_file="/home/ubuntu/.config/compass-origin.last-publish"
+# The app-proxy Worker rejects signed messages older than 6 h 30 min
+# (security scan F3, 2026-10-31), so keep this below that window.
 republish_after_seconds=21600
 
 origin="$(
