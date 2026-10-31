@@ -989,6 +989,39 @@ describe('D8 / RE-ADM-10 grant checks keys, not only rank', () => {
     expect(err?.message).toBe('auth.errors.cannotGrantMissingPermission');
   });
 
+  test.skipIf(!SHOULD_RUN)(
+    'a built-in role keeps the rank rule alone: a manager can still grant purchaser',
+    async () => {
+      const fx = fix!;
+      const db = getDb(undefined, { system: 'maintenance' });
+      const store = await makeStore(`D8b-${Math.random()}`);
+      let purchaser = await db.query.roles.findFirst({
+        where: (r, { and: and2, eq: eq2 }) => and2(eq2(r.orgId, fx.orgId), eq2(r.slug, 'purchaser')),
+      });
+      if (!purchaser) {
+        [purchaser] = await db
+          .insert(s.roles)
+          .values({ orgId: fx.orgId, slug: 'purchaser', name: 'Purchaser', rank: 40, isBuiltIn: true })
+          .returning();
+        await db.insert(s.permissions).values({ key: 'run.create', description: 'run.create' }).onConflictDoNothing();
+        await db.insert(s.rolePermissions).values({ roleId: purchaser!.id, permissionKey: 'run.create' });
+      }
+      const mu = await makeUser('D8 manager');
+      const mm = await makeMember(mu.id);
+      await bindRole(mm, fx.managerRoleId, { type: 'store', storeId: store.id });
+      const manager = appRouter.createCaller(buildCtx(db, await sessionFor(mm, mu.id)));
+      const target = await makeUser('D8 buyer');
+      await makeMember(target.id);
+      const res = await manager.admin.grantRole({
+        userId: target.id,
+        roleSlug: 'purchaser',
+        scopeType: 'store',
+        scopeId: store.id,
+      });
+      expect(res.granted).toBe(true);
+    },
+  );
+
   test.skipIf(!SHOULD_RUN)('the super admin is not limited to their own keys', async () => {
     const fx = fix!;
     const caller = appRouter.createCaller(fx.superAdminCtx);

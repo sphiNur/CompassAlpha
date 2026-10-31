@@ -6537,6 +6537,10 @@ async function exemptFromKeyCheck(ctx: AdminCtx): Promise<boolean> {
  * store's effective set for a store binding, the session's for a global
  * one). The rank gate alone let an admin grant a custom rank-70 role
  * carrying super-admin keys. Returns the first missing key, or null.
+ *
+ * Built-in roles keep the rank rule alone: their keys are fixed by the
+ * seed, and a store manager inviting a purchaser (whose run.* keys the
+ * manager does not hold) is a live workflow.
  */
 async function missingRoleKey(
   tx: OrgTx,
@@ -6545,6 +6549,11 @@ async function missingRoleKey(
   storeId: string | null,
 ): Promise<string | null> {
   if (await exemptFromKeyCheck(ctx)) return null;
+  const [role] = await tx
+    .select({ isBuiltIn: s.roles.isBuiltIn })
+    .from(s.roles)
+    .where(eq(s.roles.id, roleId));
+  if (!role || role.isBuiltIn) return null;
   const rows = await tx
     .select({ key: s.rolePermissions.permissionKey })
     .from(s.rolePermissions)
