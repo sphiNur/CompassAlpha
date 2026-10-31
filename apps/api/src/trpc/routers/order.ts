@@ -40,7 +40,11 @@ import {
   type SkuCtx,
 } from '@compass/domain/order';
 import { DomainError } from '@compass/domain';
-import { priceStoreIds, pricesVisibleFor } from '../../services/priceRedaction';
+import {
+  priceStoreIds,
+  pricesVisibleAnywhere,
+  pricesVisibleFor,
+} from '../../services/priceRedaction';
 import { authedProcedure, idempotentMutation, rethrowDomainError, router } from '../trpc';
 import { appendEvents, readStream } from '../../services/eventStore';
 import {
@@ -187,6 +191,12 @@ function assertSeenLatest(
   userId: string,
 ): void {
   if (expectedSeq === undefined) return;
+  // R2-APR-3 (2026-10-31): a seq the order never reached (ahead of the
+  // stream, or negative) is not a version anyone saw; it used to pass.
+  const currentSeq = events.reduce((max, e) => Math.max(max, e.seq), 0);
+  if (expectedSeq < 0 || expectedSeq > currentSeq) {
+    throw new TRPCError({ code: 'CONFLICT', message: 'order.errors.staleSeq' });
+  }
   if (changedByOthersSince(events, expectedSeq, userId)) {
     throw new TRPCError({ code: 'CONFLICT', message: 'order.errors.staleSeq' });
   }
@@ -777,13 +787,15 @@ export const orderRouter = router({
       for (const skuTotals of skuTotalsBySession.values()) {
         for (const [skuId, qty] of skuTotals) if (qty > 0) allSkuIds.add(skuId);
       }
+      // D12 (2026-10-31): the card's amount only for those with
+      // prices.view, like the batches list (HIS-4 / ORD-12).
+      // D6 (2026-10-31): prices.view as effective per store; a card from
+      // a store where it does not hold shows no amount (counts stay).
+      const priceStores = await priceStoreIds(tx, ctx.session!);
       const priceStats =
-        allSkuIds.size > 0
+        allSkuIds.size > 0 && pricesVisibleAnywhere(priceStores)
           ? await loadSkuPriceStats(tx, ctx.session!.orgId, [...allSkuIds])
           : new Map();
-      // D6 (2026-10-31): an approver without prices.view in a store sees
-      // that store's cards without amounts (counts stay).
-      const priceStores = await priceStoreIds(tx, ctx.session!);
       // 2026-10-11: and how much of it is likely cash and how much
       // transfer, by how each product was last paid. One more scan for
       // the whole page.
@@ -1070,6 +1082,37 @@ export const orderRouter = router({
         const events = (await readStream(tx, 'order', streamId)) as unknown as OrderEvent[];
         state = emptyState(streamId);
         for (const e of events) state = apply(state, e);
+        // D12 / U2 (2026-10-31): an approver changing a quantity on an
+        // unclaimed order claims it in the same write, instead of a
+        // separate Claim tap first. The claim is still taken (other
+        // approvers see who is reviewing and the submitter can no longer
+        // edit), and the edit is refused if anyone else changed the order
+        // after the version the approver was looking at (expectedSeq).
+        // Two approvers editing at once: the stream's seq lets one write
+        // in; the other is decided again and is refused (notEditor).
+        const ownerEditingOwn =
+          state.initiatedByMemberId === ctx.session!.memberId && effectivePerms.has('order.draft');
+        if (
+          isManagerEdit &&
+          state.status === 'submitted' &&
+          !state.claimedByMemberId &&
+          !ownerEditingOwn &&
+          effectivePerms.has('order.claim')
+        ) {
+          assertSeenLatest(events, input.expectedSeq, ctx.session!.userId);
+          try {
+            const claimEvents = decide(state, {
+              type: 'Claim',
+              actor: buildActor(ctx, state, effectivePerms),
+            });
+            for (const e of claimEvents) {
+              state = apply(state, e);
+              collected.push(e);
+            }
+          } catch (err) {
+            rethrowDomainError(err);
+          }
+        }
       }
 
       try {
@@ -1566,12 +1609,18 @@ export const orderRouter = router({
    *  ended. Taking over one's own claim writes nothing. */
   takeOverClaim: authedProcedure.input(TakeOverClaimInputSchema).mutation(async ({ ctx, input }) => {
     let from: string | null | undefined = input.fromMemberId;
-    return runSimpleCommand(ctx, input.sessionId, (state, perms) => {
+    return runSimpleCommand(ctx, input.sessionId, (state, perms, events) => {
       const actor = buildActor(ctx, state, perms);
       if (from === undefined) from = state.claimedByMemberId;
       if (state.claimedByMemberId === actor.memberId) return [];
       if (state.claimedByMemberId && state.claimedByMemberId !== from) {
         throw new TRPCError({ code: 'CONFLICT', message: 'order.errors.alreadyClaimed' });
+      }
+      // RE-APR-2 (2026-10-31): the approver whose claim was just taken
+      // over could take it straight back, and the two could pull it to
+      // and fro. Not for TAKEOVER_COOLDOWN_MS after losing it.
+      if (state.claimedByMemberId && claimTakenFrom(events, actor.memberId, state.claimedAt)) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'order.errors.takeOverCooldown' });
       }
       const released = decide(state, { type: 'ReleaseClaim', reason: 'manual', actor });
       const afterRelease = released.reduce(apply, state);
@@ -1653,17 +1702,49 @@ export const orderRouter = router({
     );
   }),
 
+  // D12 (2026-10-31): the approval toast's undo sends the lastSeq its
+  // approval returned, so it only goes through while nobody else has
+  // touched the order since. The approved tab's button sends none.
   unapprove: authedProcedure.input(UnapproveInputSchema).mutation(async ({ ctx, input }) =>
-    runSimpleCommand(ctx, input.sessionId, (state, perms) =>
-      decide(state, { type: 'Unapprove', reason: input.reason, actor: buildActor(ctx, state, perms) }),
+    runSimpleCommand(
+      ctx,
+      input.sessionId,
+      (state, perms) =>
+        decide(state, { type: 'Unapprove', reason: input.reason, actor: buildActor(ctx, state, perms) }),
+      { expectedSeq: input.expectedSeq },
     ),
   ),
 });
 
+/** RE-APR-2: how long an approver whose claim was taken over must wait
+ *  before taking it back. The claim timeout still frees an idle one. */
+export const TAKEOVER_COOLDOWN_MS = 60_000;
+
+/**
+ * RE-APR-2: was the current claim (taken at `claimedAt`) taken over from
+ * `memberId` less than TAKEOVER_COOLDOWN_MS ago? The take-over writes
+ * ClaimReleased{reason:'override', fromMemberId} then Claimed.
+ */
+export function claimTakenFrom(
+  events: OrderEvent[],
+  memberId: string,
+  claimedAt: Date | string | null,
+  now: number = Date.now(),
+): boolean {
+  if (!claimedAt || now - new Date(claimedAt).getTime() >= TAKEOVER_COOLDOWN_MS) return false;
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i]!;
+    if (e.type !== 'ClaimReleased') continue;
+    const p = e.payload as { reason?: string; fromMemberId?: string };
+    return p.reason === 'override' && p.fromMemberId === memberId;
+  }
+  return false;
+}
+
 async function runSimpleCommand(
   ctx: Awaited<ReturnType<typeof import('../context.js').createContext>>,
   sessionId: string,
-  produce: (state: OrderState, perms: ReadonlySet<string>) => OrderEvent[],
+  produce: (state: OrderState, perms: ReadonlySet<string>, events: OrderEvent[]) => OrderEvent[],
   opts: { expectedSeq?: number | undefined } = {},
 ): Promise<{ lastSeq: number }> {
   // APR-19 (2026-10-30): a write that lost the race for the stream (two
@@ -1697,7 +1778,7 @@ async function runSimpleCommand(
     let state = emptyState(session.id);
     for (const e of events) state = apply(state, e);
     try {
-      const out = produce(state, effectivePerms);
+      const out = produce(state, effectivePerms, events);
       if (out.length === 0) return { lastSeq: state.seq };
       assertSeenLatest(events, opts.expectedSeq, ctx.session!.userId);
       await appendEvents(tx, {

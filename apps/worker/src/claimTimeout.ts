@@ -218,6 +218,7 @@ export async function releaseClaimIfExpired(
   };
   if (stream === 'order') {
     await tx.update(s.orderSessionsV).set(released).where(eq(s.orderSessionsV.id, claim.id));
+    await notifyClaimTimedOut(tx, claim, cur.claimed_by_member_id, newSeq);
     await notifyRealtime(tx, {
       type: 'order.changed',
       orgId: claim.orgId,
@@ -234,4 +235,37 @@ export async function releaseClaimIfExpired(
     });
   }
   return true;
+}
+
+/**
+ * D13 / APR-12 (2026-10-31): the approver whose idle claim was released
+ * is told so with one in-app notification (no Telegram message: no
+ * outbox row). Same row shape and dedup key scheme as the API's
+ * dispatch() (apps/api/src/services/notify.ts).
+ */
+async function notifyClaimTimedOut(
+  tx: DB,
+  claim: { id: string; orgId: string },
+  memberId: string,
+  seq: number,
+): Promise<void> {
+  const [member] = await tx
+    .select({ userId: s.members.userId, status: s.members.status })
+    .from(s.members)
+    .where(eq(s.members.id, memberId));
+  if (!member || member.status !== 'active') return;
+  await tx
+    .insert(s.notifications)
+    .values({
+      orgId: claim.orgId,
+      recipientUserId: member.userId,
+      channel: 'inapp',
+      template: 'order.claimTimedOut',
+      title: 'Your review was released',
+      body: 'An order you were reviewing was released after a while without activity.',
+      payload: { sessionId: claim.id },
+      deepLink: '/approve',
+      dedupKey: `order:${claim.id}:claimTimedOut:${seq}:${member.userId}:inapp`,
+    })
+    .onConflictDoNothing();
 }

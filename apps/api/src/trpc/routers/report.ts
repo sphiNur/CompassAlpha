@@ -42,7 +42,7 @@ import { DateStringSchema, UuidSchema } from '@compass/contracts';
 import { authedProcedure, router } from '../trpc';
 import { TRPCError } from '@trpc/server';
 import { FINANCE_KEYS, financeStoreIds } from '../../services/storeScope';
-import { money2, runMoneyLinesSql, uuidListSql } from '../../services/runMoney';
+import { moneyText, runMoneyLinesSql, uuidListSql } from '../../services/runMoney';
 import { priceStoreIds, pricesVisibleFor } from '../../services/priceRedaction';
 
 /**
@@ -211,9 +211,9 @@ export const reportRouter = router({
           storeId: r.store_id,
           qty: r.qty,
           // Pre-compute lineTotal so the FE doesn't need to BigDecimal-
-          // multiply for the common "sum these" reduction. Computed in
-          // SQL numeric (exact) and rounded to cents here.
-          lineTotal: priced ? Number(r.amount).toFixed(2) : null,
+          // multiply for the common "sum these" reduction. D1: rounded
+          // half-up to cents in SQL (runMoneyLinesSql), passed as is.
+          lineTotal: priced ? moneyText(r.amount) : null,
           };
         });
       });
@@ -279,8 +279,6 @@ export const reportRouter = router({
           run_count: number;
         }>;
         const row = rows[0];
-        const cashTotal = Number(row?.cash_total ?? 0);
-        const transferTotal = Number(row?.transfer_total ?? 0);
         // D6 (2026-10-31): the money figures need prices.view in every
         // store they add up (a sum over two stores gives each away);
         // the counts stay.
@@ -296,14 +294,15 @@ export const reportRouter = router({
                 })
               ).map((st) => st.id));
         const priced = pricesVisibleFor(priceStores, scopeStoreIds);
-        const money = (n: number) => (priced ? money2(n) : null);
+        // D1: the lines are already in cents; exact text, no floats.
+        const money = (v: string | null | undefined) => (priced ? moneyText(v) : null);
         return {
-          totalCash: money(cashTotal),
-          totalTransfer: money(transferTotal),
+          totalCash: money(row?.cash_total),
+          totalTransfer: money(row?.transfer_total),
           /** items + expenses. */
-          total: money(Number(row?.total ?? 0)),
-          itemsTotal: money(Number(row?.items_total ?? 0)),
-          expensesTotal: money(Number(row?.expenses_total ?? 0)),
+          total: money(row?.total),
+          itemsTotal: money(row?.items_total),
+          expensesTotal: money(row?.expenses_total),
           cashLines: row?.cash_lines ?? 0,
           transferLines: row?.transfer_lines ?? 0,
           runCount: row?.run_count ?? 0,

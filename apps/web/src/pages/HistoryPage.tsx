@@ -345,6 +345,7 @@ export function HistoryPage() {
       loading={historyQuery.isLoading}
       fetching={historyQuery.isFetching}
       failed={historyQuery.isError && !data}
+      waitingOffline={!data && historyQuery.fetchStatus === 'paused'}
       totalCount={data?.pageInfo.totalCount ?? 0}
       summaryTotal={data?.summary.total ?? '0'}
       summaryItemsTotal={data?.summary.itemsTotal ?? '0'}

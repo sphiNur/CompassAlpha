@@ -15,13 +15,21 @@
  *
  * `hasData` is `data !== undefined`: `null` is a successful "no session".
  */
-export type SessionLoadState = 'ok' | 'blocked' | 'staleWarning';
+export type SessionLoadState = 'ok' | 'blocked' | 'staleWarning' | 'offline';
 
+/**
+ * R2-ENG-1 (2026-10-31): offline with no saved copy the query does not
+ * fail, it waits (`fetchStatus: 'paused'`) — and fell through to "no
+ * session", the same editable empty catalog FE-01 closed for errors.
+ * That is 'offline': blocked, but it loads by itself once back online.
+ */
 export function sessionLoadState(input: {
   isError: boolean;
   hasData: boolean;
   isNetworkError: boolean;
+  waitingOffline?: boolean;
 }): SessionLoadState {
+  if (!input.hasData && input.waitingOffline) return 'offline';
   if (!input.isError) return 'ok';
   if (!input.hasData) return 'blocked';
   return input.isNetworkError ? 'ok' : 'staleWarning';

@@ -870,9 +870,10 @@ describe('D3 per-store default role', () => {
 
 describe('D4 storeCloneRoles', () => {
   test.skipIf(!SHOULD_RUN)(
-    'clones store-scoped bindings from source to target; idempotent on re-run',
+    'D7 / RE-ADM-2: without members only the default role is copied; with members the bindings, idempotent on re-run',
     async () => {
       const fx = fix!;
+      const db = getDb(undefined, { system: 'maintenance' });
       const storeA = await makeStore(`A-${Math.random()}`);
       const storeB = await makeStore(`B-${Math.random()}`);
       const u1 = await makeUser('Staff1');
@@ -881,12 +882,28 @@ describe('D4 storeCloneRoles', () => {
       const m2 = await makeMember(u2.id);
       await bindRole(m1, fx.staffRoleId, { type: 'store', storeId: storeA.id });
       await bindRole(m2, fx.managerRoleId, { type: 'store', storeId: storeA.id });
-
       const caller = appRouter.createCaller(fx.superAdminCtx);
-      const first = await caller.admin.storeCloneRoles({
+      await caller.admin.storeUpdate({ storeId: storeA.id, defaultRoleSlug: 'staff' });
+
+      const structure = await caller.admin.storeCloneRoles({
         sourceStoreId: storeA.id,
         targetStoreId: storeB.id,
         includeMembers: false,
+      });
+      expect(structure.cloned).toBe(0);
+      expect(structure.defaultRoleCopied).toBe(true);
+      const bindingsInB = await db
+        .select({ id: s.memberRoleBindings.id })
+        .from(s.memberRoleBindings)
+        .where(eq(s.memberRoleBindings.scopeId, storeB.id));
+      expect(bindingsInB.length).toBe(0);
+      const [b] = await db.select().from(s.stores).where(eq(s.stores.id, storeB.id));
+      expect(b!.defaultRoleId).toBe(fx.staffRoleId);
+
+      const first = await caller.admin.storeCloneRoles({
+        sourceStoreId: storeA.id,
+        targetStoreId: storeB.id,
+        includeMembers: true,
       });
       expect(first.cloned).toBe(2);
       expect(first.skippedExisting).toBe(0);
@@ -894,12 +911,261 @@ describe('D4 storeCloneRoles', () => {
       const second = await caller.admin.storeCloneRoles({
         sourceStoreId: storeA.id,
         targetStoreId: storeB.id,
-        includeMembers: false,
+        includeMembers: true,
       });
       expect(second.cloned).toBe(0);
       expect(second.skippedExisting).toBe(2);
     },
   );
+});
+
+// ---------- D8: granting passes on only keys the actor holds -------------
+
+describe('D8 / RE-ADM-10 grant checks keys, not only rank', () => {
+  async function orgAdmin(): Promise<ReturnType<typeof appRouter.createCaller>> {
+    const fx = fix!;
+    const db = getDb(undefined, { system: 'maintenance' });
+    const u = await makeUser('Org Admin D8');
+    const m = await makeMember(u.id);
+    await bindRole(m, fx.adminRoleId, { type: 'global' });
+    return appRouter.createCaller(buildCtx(db, await sessionFor(m, u.id)));
+  }
+  async function dangerRole(): Promise<{ id: string; slug: string }> {
+    const fx = fix!;
+    const db = getDb(undefined, { system: 'maintenance' });
+    const slug = `danger-${Math.random().toString(36).slice(2, 8)}`;
+    // Rank 70 is below admin (80), so the rank gate alone let an admin grant it.
+    const [role] = await db
+      .insert(s.roles)
+      .values({ orgId: fx.orgId, slug, name: 'Danger', rank: 70 })
+      .returning();
+    for (const key of ['run.amend', 'order.draft']) {
+      await db.insert(s.permissions).values({ key, description: key }).onConflictDoNothing();
+      await db.insert(s.rolePermissions).values({ roleId: role!.id, permissionKey: key });
+    }
+    return { id: role!.id, slug };
+  }
+
+  test.skipIf(!SHOULD_RUN)('an admin cannot grant a role holding a key they lack', async () => {
+    const admin = await orgAdmin();
+    const store = await makeStore(`D8-${Math.random()}`);
+    const target = await makeUser('D8 target');
+    await makeMember(target.id);
+    const danger = await dangerRole();
+    let err: Error | null = null;
+    try {
+      await admin.admin.grantRole({
+        userId: target.id,
+        roleSlug: danger.slug,
+        scopeType: 'store',
+        scopeId: store.id,
+      });
+    } catch (e) {
+      err = e as Error;
+    }
+    expect(err?.message).toBe('auth.errors.cannotGrantMissingPermission');
+    // A role whose keys the admin holds still goes through.
+    const db = getDb(undefined, { system: 'maintenance' });
+    const viewerSlug = `viewer-${Math.random().toString(36).slice(2, 8)}`;
+    const [viewer] = await db
+      .insert(s.roles)
+      .values({ orgId: fix!.orgId, slug: viewerSlug, name: 'Viewer', rank: 10 })
+      .returning();
+    await db.insert(s.rolePermissions).values({ roleId: viewer!.id, permissionKey: 'prices.view' });
+    const ok = await admin.admin.grantRole({
+      userId: target.id,
+      roleSlug: viewerSlug,
+      scopeType: 'store',
+      scopeId: store.id,
+    });
+    expect(ok.granted).toBe(true);
+    // Nor can it be a store's default role, given to every newcomer.
+    err = null;
+    try {
+      await admin.admin.storeUpdate({ storeId: store.id, defaultRoleSlug: danger.slug });
+    } catch (e) {
+      err = e as Error;
+    }
+    expect(err?.message).toBe('auth.errors.cannotGrantMissingPermission');
+  });
+
+  test.skipIf(!SHOULD_RUN)(
+    'a built-in role keeps the rank rule alone: a manager can still grant purchaser',
+    async () => {
+      const fx = fix!;
+      const db = getDb(undefined, { system: 'maintenance' });
+      const store = await makeStore(`D8b-${Math.random()}`);
+      let purchaser = await db.query.roles.findFirst({
+        where: (r, { and: and2, eq: eq2 }) => and2(eq2(r.orgId, fx.orgId), eq2(r.slug, 'purchaser')),
+      });
+      if (!purchaser) {
+        [purchaser] = await db
+          .insert(s.roles)
+          .values({ orgId: fx.orgId, slug: 'purchaser', name: 'Purchaser', rank: 40, isBuiltIn: true })
+          .returning();
+        await db.insert(s.permissions).values({ key: 'run.create', description: 'run.create' }).onConflictDoNothing();
+        await db.insert(s.rolePermissions).values({ roleId: purchaser!.id, permissionKey: 'run.create' });
+      }
+      const mu = await makeUser('D8 manager');
+      const mm = await makeMember(mu.id);
+      await bindRole(mm, fx.managerRoleId, { type: 'store', storeId: store.id });
+      const manager = appRouter.createCaller(buildCtx(db, await sessionFor(mm, mu.id)));
+      const target = await makeUser('D8 buyer');
+      await makeMember(target.id);
+      const res = await manager.admin.grantRole({
+        userId: target.id,
+        roleSlug: 'purchaser',
+        scopeType: 'store',
+        scopeId: store.id,
+      });
+      expect(res.granted).toBe(true);
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)('the super admin is not limited to their own keys', async () => {
+    const fx = fix!;
+    const caller = appRouter.createCaller(fx.superAdminCtx);
+    const store = await makeStore(`D8s-${Math.random()}`);
+    const target = await makeUser('D8 target 2');
+    await makeMember(target.id);
+    const danger = await dangerRole();
+    // super_admin's own role lacks order.draft here; exempt anyway.
+    const res = await caller.admin.grantRole({
+      userId: target.id,
+      roleSlug: danger.slug,
+      scopeType: 'store',
+      scopeId: store.id,
+    });
+    expect(res.granted).toBe(true);
+  });
+
+  test.skipIf(!SHOULD_RUN)('an invite with such a role is refused too', async () => {
+    const admin = await orgAdmin();
+    const store = await makeStore(`D8i-${Math.random()}`);
+    const danger = await dangerRole();
+    let err: Error | null = null;
+    try {
+      await admin.admin.memberInviteByTgId({
+        tgUserId: `5${Date.now()}`.slice(-12),
+        roleSlug: danger.slug,
+        storeIds: [store.id],
+      });
+    } catch (e) {
+      err = e as Error;
+    }
+    expect(err?.message).toBe('auth.errors.cannotGrantMissingPermission');
+  });
+});
+
+// ---------- RE-ADM-1: one binding per member, role and scope ---------------
+
+describe('RE-ADM-1 role bindings are unique', () => {
+  test.skipIf(!SHOULD_RUN)('concurrent invites of the same member write one binding', async () => {
+    const fx = fix!;
+    const db = getDb(undefined, { system: 'maintenance' });
+    const caller = appRouter.createCaller(fx.superAdminCtx);
+    const store = await makeStore(`U-${Math.random()}`);
+    const u = await makeUser('Invited twice');
+    const m = await makeMember(u.id);
+    const results = await Promise.allSettled(
+      Array.from({ length: 4 }, () =>
+        caller.admin.memberInviteByTgId({
+          tgUserId: u.tgUserId.toString(),
+          roleSlug: 'staff',
+          storeIds: [store.id],
+        }),
+      ),
+    );
+    expect(results.every((r) => r.status === 'fulfilled')).toBe(true);
+    const rows = await db
+      .select({ id: s.memberRoleBindings.id })
+      .from(s.memberRoleBindings)
+      .where(
+        and(
+          eq(s.memberRoleBindings.memberId, m),
+          eq(s.memberRoleBindings.roleId, fx.staffRoleId),
+          eq(s.memberRoleBindings.scopeId, store.id),
+        ),
+      );
+    expect(rows.length).toBe(1);
+    // A grant of the same binding answers "already there", not an error.
+    const again = await caller.admin.grantRole({
+      userId: u.id,
+      roleSlug: 'staff',
+      scopeType: 'store',
+      scopeId: store.id,
+    });
+    expect(again.granted).toBe(false);
+    expect(again.bindingId).toBe(rows[0]!.id);
+    // The index refuses a raw duplicate, global ones included (NULL scope).
+    await expect(
+      (async () => {
+        await db.insert(s.memberRoleBindings).values({
+          memberId: m,
+          roleId: fx.staffRoleId,
+          scopeType: 'store',
+          scopeId: store.id,
+        });
+      })(),
+    ).rejects.toThrow();
+    await bindRole(m, fx.managerRoleId, { type: 'global' }).catch(() => {});
+    await expect(bindRole(m, fx.managerRoleId, { type: 'global' })).rejects.toThrow();
+  });
+});
+
+// ---------- R2-ADM-2: archived stores ------------------------------------
+
+describe('R2-ADM-2 bindings in an archived store can be removed', () => {
+  test.skipIf(!SHOULD_RUN)('revoke and detach work after the store is archived', async () => {
+    const fx = fix!;
+    const db = getDb(undefined, { system: 'maintenance' });
+    const caller = appRouter.createCaller(fx.superAdminCtx);
+    const keep = await makeStore(`Keep-${Math.random()}`);
+    const gone = await makeStore(`Gone-${Math.random()}`);
+    const u = await makeUser('Leftover');
+    const m = await makeMember(u.id);
+    await bindRole(m, fx.staffRoleId, { type: 'store', storeId: keep.id });
+    await bindRole(m, fx.staffRoleId, { type: 'store', storeId: gone.id });
+    await bindRole(m, fx.managerRoleId, { type: 'store', storeId: gone.id });
+    await caller.admin.storeDelete({ storeId: gone.id });
+    const [staffInGone] = await db
+      .select({ id: s.memberRoleBindings.id })
+      .from(s.memberRoleBindings)
+      .where(
+        and(
+          eq(s.memberRoleBindings.memberId, m),
+          eq(s.memberRoleBindings.roleId, fx.staffRoleId),
+          eq(s.memberRoleBindings.scopeId, gone.id),
+        ),
+      );
+    expect((await caller.admin.revokeRole({ bindingId: staffInGone!.id })).revoked).toBe(true);
+    const detached = await caller.admin.memberDetachFromStore({ memberId: m, storeId: gone.id });
+    expect(detached.revokedBindings).toBe(1);
+    const left = await db
+      .select({ scopeId: s.memberRoleBindings.scopeId })
+      .from(s.memberRoleBindings)
+      .where(eq(s.memberRoleBindings.memberId, m));
+    expect(left.map((r) => r.scopeId)).toEqual([keep.id]);
+  });
+});
+
+// ---------- R2-ADM-3: audit keeps names of deleted things ------------------
+
+describe('R2-ADM-3 audit rows keep the names they were written with', () => {
+  test.skipIf(!SHOULD_RUN)('a deleted role is still named in its audit rows', async () => {
+    const fx = fix!;
+    const caller = appRouter.createCaller(fx.superAdminCtx);
+    const slug = `gone-${Math.random().toString(36).slice(2, 8)}`;
+    const { id } = await caller.admin.roleCreate({ slug, name: 'Vanishing role', rank: 10 });
+    await caller.admin.roleUpdate({ roleId: id, name: 'Vanishing role 2' });
+    await caller.admin.roleDelete({ roleId: id });
+    const rows = (await caller.admin.adminAuditList({ limit: 50 })).filter(
+      (r) => r.resourceId === id,
+    );
+    const byAction = new Map(rows.map((r) => [r.action, r.labels.roleName]));
+    expect(byAction.get('admin.role.update')).toBe('Vanishing role 2');
+    expect(byAction.get('admin.role.delete')).toBe('Vanishing role 2');
+  });
 });
 
 // ---------- B1: roleDetail.assignees -------------------------------------

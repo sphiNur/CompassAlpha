@@ -13,6 +13,7 @@ import type { OrderEvent, OrderState } from '@compass/domain/order';
 import type { RunEvent, RunState } from '@compass/domain/run';
 import {
   dispatch,
+  type NotifyEnvelope,
   findRecipientsByPermissionInStore,
   findStoreStaff,
   notifyOthersWithPermission,
@@ -105,6 +106,26 @@ export async function dispatchOrderEventNotifications(
           deepLink: '/order',
           payload: { reason: e.payload.reason },
         });
+        break;
+      }
+      case 'ClaimReleased': {
+        // D13 / APR-13 (2026-10-31): the approver whose claim another one
+        // took over is told so, in the app only (no Telegram message).
+        const p = e.payload as { reason?: string; fromMemberId?: string; byMemberId?: string };
+        if (p.reason === 'override' && p.fromMemberId) {
+          await notifyClaimLost(db, orgId, p.fromMemberId, {
+            template: 'order.claimTakenOver',
+            title: 'Your review was taken over',
+            body: 'Another approver took over an order you were reviewing.',
+            dedupKey: `order:${state.streamId}:claimTakenOver:${e.seq}`,
+            deepLink: '/approve',
+            payload: {
+              sessionId: state.streamId,
+              storeId: state.storeId,
+              byMemberId: p.byMemberId,
+            },
+          });
+        }
         break;
       }
       case 'Unapproved': {
@@ -388,6 +409,20 @@ async function notifyInvolvedStoreStaff(
  * each distinct member exactly once. Falls back to the initiator if no
  * line authorship is available.
  */
+/** D13: one in-app notification to the member who lost a claim. */
+async function notifyClaimLost(
+  db: DB,
+  orgId: string,
+  memberId: string,
+  envelope: NotifyEnvelope,
+): Promise<void> {
+  const member = await db.query.members.findFirst({
+    where: (m, { and, eq }) => and(eq(m.id, memberId), eq(m.orgId, orgId), eq(m.status, 'active')),
+  });
+  if (!member) return;
+  await dispatch(db, orgId, [member.userId], envelope, ['inapp']);
+}
+
 async function notifyOwner(
   db: DB,
   orgId: string,

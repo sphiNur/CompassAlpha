@@ -12,9 +12,11 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { Server } from 'bun';
 import { hub } from '../realtime/hub';
+import { _resetRateBuckets } from '../services/rateLimit';
 import {
   createWebSocketHandler,
   handleWsRequest,
+  PROBE_LIMIT,
   WS_CLOSE_PROBE,
   type WSData,
 } from '../realtime/socket';
@@ -41,6 +43,7 @@ beforeAll(() => {
           lookups++;
           return lastToken === 'gone' ? null : {};
         },
+        clientIp: (r) => r.headers.get('x-test-ip'),
       });
     },
     websocket: createWebSocketHandler(quietLog),
@@ -132,6 +135,19 @@ describe('/ws handshake', () => {
     // (the previous test's socket may still be closing server-side)
     expect(hub.size(ORG)).toBeLessThanOrEqual(subsBefore);
     expect(hub.size('')).toBe(0);
+  });
+
+  test('R2-ENG-3: token-less probes are limited per client address', async () => {
+    const probe = (ip: string) =>
+      plainGet('?probe=1', { upgrade: 'websocket', connection: 'Upgrade', 'x-test-ip': ip });
+    // The malformed handshake is refused (400) after the limit check.
+    for (let i = 0; i < PROBE_LIMIT.max; i++) {
+      expect((await probe('203.0.113.7')).status).toBe(400);
+    }
+    expect((await probe('203.0.113.7')).status).toBe(429);
+    // Another address has its own budget.
+    expect((await probe('203.0.113.8')).status).toBe(400);
+    _resetRateBuckets();
   });
 
   test('a token-less upgrade without probe=1 is still refused', async () => {

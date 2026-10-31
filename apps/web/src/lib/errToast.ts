@@ -33,7 +33,7 @@ import type { ReactNode } from 'react';
 import { useToast } from '@compass/ui';
 import { useI18n } from '../hooks/useI18n';
 import { haptic } from '../hooks/useTelegram';
-import { I18N_KEY_RE, zodIssueKey } from './errorText';
+import { I18N_KEY_RE, isServerSideFailure, networkFailureKey, zodIssueKey } from './errorText';
 import { isLikelyNetworkError } from './networkError';
 
 interface ErrLike {
@@ -45,25 +45,43 @@ interface ErrLike {
  * key (used when the server message isn't recognizable as an i18n
  * key); receive a function suitable for `useMutation({ onError })`.
  */
+export interface ErrToastOptions {
+  /**
+   * The write sends the same idempotency key when repeated with the same
+   * content, so after a lost answer the toast may say trying again is safe.
+   */
+  retrySafe?: boolean;
+}
+
 export function useErrToast(): (
   defaultKey: Parameters<ReturnType<typeof useI18n>['t']>[0],
+  options?: ErrToastOptions,
 ) => (err: unknown) => void {
   const i18n = useI18n();
   const toast = useToast();
-  return (defaultKey) => (err: unknown) => {
+  return (defaultKey, options) => (err: unknown) => {
     haptic('error');
     const raw = (err as ErrLike | null)?.message;
     // A schema refusal carries its key inside the zod issue list.
     const msg = zodIssueKey(raw) ?? raw;
     const looksLikeKey = typeof msg === 'string' && I18N_KEY_RE.test(msg);
     // RE-CLS-3 (2026-10-30): writes that reach here were NOT queued (the
-    // queued ones say "saved offline" themselves). Say plainly that nothing
-    // was saved, instead of a generic failure next to a banner promising
-    // that changes sync later.
+    // queued ones say "saved offline" themselves). Say what is known about
+    // whether it was saved (R2-CLS-1, networkFailureKey), instead of a
+    // generic failure next to a banner promising that changes sync later.
+    // A server that answered with a gateway error is not the user's
+    // connection (R2-AUTH-3).
     const text: ReactNode = looksLikeKey
       ? i18n.t(msg as Parameters<typeof i18n.t>[0])
       : isLikelyNetworkError(err)
-        ? i18n.t('common.offlineNotSaved')
+        ? i18n.t(
+            isServerSideFailure(raw)
+              ? 'common.errors.internal'
+              : networkFailureKey(
+                  typeof navigator === 'undefined' ? true : navigator.onLine !== false,
+                  options?.retrySafe ?? false,
+                ),
+          )
         : i18n.t(defaultKey);
     toast.error(text);
   };

@@ -34,6 +34,7 @@ import {
   type SettlementWageItem,
 } from '@compass/contracts';
 import { newIdempotencyKey, trpc } from '../lib/trpc';
+import { PendingSpinner } from '../components/PendingSpinner';
 import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
 import { registerStoreChangeGuard, useStoreContext } from '../components/StoreSwitcher';
 import { usePageMainButton, haptic } from '../hooks/useTelegram';
@@ -581,7 +582,10 @@ export function SettlementPage() {
   useEffect(
     () =>
       registerTabChangeGuard((nextTab) => {
-        if (nextTab === 'settlement' || !hasUnsavedChanges) return true;
+        // R2-CLS-2 (2026-10-31): a save already on its way finishes after
+        // the page closes (its "saved" toast shows on the next tab), so
+        // asking to "discard" it was false. Only unsent changes ask.
+        if (nextTab === 'settlement' || !hasUnsavedChanges || savingRef.current) return true;
         return confirmSettlement(i18n.t('settlement.confirm.discard'));
       }),
     [hasUnsavedChanges, i18n],
@@ -662,6 +666,8 @@ export function SettlementPage() {
   // get a new one, so a retry after a lost response looked like someone
   // else's edit ("changed elsewhere"). Same content → same key.
   const saveIdemCtx = useRef<{ idempotencyKey?: string }>({}).current;
+  // Read by the tab guard above, which is registered before the mutation.
+  const savingRef = useRef(false);
   const saveIdemFor = useRef('');
   const saveMutation = trpc.settlement.save.useMutation({
     trpc: { context: saveIdemCtx },
@@ -689,9 +695,13 @@ export function SettlementPage() {
       }
       // The server names what to fix (an employee who left, totals that do not
       // add up, a missing correction reason); show that, not "try again".
-      errToast('settlement.errors.save')(error);
+      // CLS-17: the same content is sent with the same key, so saving
+      // again after a lost answer cannot record it twice.
+      errToast('settlement.errors.save', { retrySafe: true })(error);
     },
   });
+
+  savingRef.current = saveMutation.isPending;
 
   // CLS-24 / R2-INT-3 (2026-10-31): a NEW close with every amount 0 and
   // no lines is usually an untouched form, not a closed-and-empty day;
@@ -851,7 +861,7 @@ export function SettlementPage() {
       <div className="flex flex-col gap-3 px-4 pb-4 pt-3">
         {pageHeading}
         <div className="flex justify-center py-8">
-          <Spinner size={20} />
+          <PendingSpinner query={storesQuery} />
         </div>
       </div>
     );
@@ -920,7 +930,7 @@ export function SettlementPage() {
           />
         ) : (
           <div className="flex justify-center py-8">
-            <Spinner size={20} />
+            <PendingSpinner query={businessDateQuery} />
           </div>
         )}
       </div>
@@ -1144,7 +1154,7 @@ export function SettlementPage() {
 
         {closeQuery.isPending ? (
           <div className="flex justify-center py-4" aria-label={i18n.t('settlement.title')}>
-            <Spinner size={20} />
+            <PendingSpinner query={closeQuery} />
           </div>
         ) : null}
 
@@ -1619,7 +1629,7 @@ export function SettlementPage() {
           <SectionLabel as="h2">{i18n.t('settlement.recent.title')}</SectionLabel>
           {recentQuery.isPending ? (
             <div className="flex justify-center py-3">
-              <Spinner size={18} />
+              <PendingSpinner query={recentQuery} size={18} />
             </div>
           ) : recentQuery.isError && !recentQuery.data ? (
             // F11 (2026-10-30): a failed load read "no settlements yet".
@@ -1705,7 +1715,7 @@ export function SettlementPage() {
 
           {wageRosterQuery.isPending ? (
             <div className="flex justify-center py-5">
-              <Spinner size={20} />
+              <PendingSpinner query={wageRosterQuery} />
             </div>
           ) : null}
           {wageRosterQuery.isError ? (

@@ -3,6 +3,7 @@
  * component so the two rules that decide WHAT a receiver signs for are
  * unit-tested.
  */
+import { readDecimalText } from '@compass/ui';
 
 export type ConfirmDecisionStatus = 'ok' | 'short' | 'wrong' | 'quality';
 
@@ -74,7 +75,13 @@ export function checkReceivedQty(
   splitQty: string,
 ): ReceivedQtyCheck {
   if (status === 'ok') return { ok: true, value: null };
-  const trimmed = raw.trim().replace(',', '.');
+  // R2-DLV-2 (2026-10-31): the same reading as every other number field
+  // (readDecimalText): "1,000" is a thousand in Chinese and English, 1 in
+  // Russian and Uzbek. A bare `replace(',', '.')` read it as 1 everywhere,
+  // so a short line could be saved as 1 when a thousand was typed.
+  const read = readDecimalText(raw);
+  if (!read.ok) return { ok: false, reason: 'invalid' };
+  const trimmed = read.value;
   if (trimmed === '') {
     return status === 'short' ? { ok: false, reason: 'required' } : { ok: true, value: '0' };
   }
@@ -109,13 +116,22 @@ export function initialReceivedQty(
 export type RunsListView =
   | { kind: 'loading' }
   | { kind: 'error' }
+  | { kind: 'offline' }
   | { kind: 'ready'; stale: boolean };
+/**
+ *   - 'offline' — R2-ENG-1 (2026-10-31): offline with no saved copy the
+ *                 query waits (`waitingOffline` = fetchStatus 'paused')
+ *                 instead of failing; it is not "nothing to confirm" and
+ *                 loads by itself once back online.
+ */
 export function runsListView(q: {
   isLoading: boolean;
   isError: boolean;
   hasData: boolean;
+  waitingOffline?: boolean;
 }): RunsListView {
   if (q.hasData) return { kind: 'ready', stale: q.isError };
+  if (q.waitingOffline) return { kind: 'offline' };
   if (q.isError) return { kind: 'error' };
   if (q.isLoading) return { kind: 'loading' };
   // Disabled / idle query with no data: treat as loaded-and-empty.

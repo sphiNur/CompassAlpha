@@ -7,7 +7,7 @@
  *    run plan. prices.view is resolved per store (store roles, overrides),
  *    so a member who is staff at A and manager at B sees no money at A
  *    (RE-CLS-2 / RE-HIS-3 / RE-SHL-3).
- *  - D10: migration 0056 gives built-in roles that read reports the
+ *  - D10: migration 0059 gives built-in roles that read reports the
  *    `reports.export` key; custom roles are left alone.
  *  - D5 / HIS-5: History and finance both count finished and amending runs,
  *    nothing still being bought.
@@ -537,7 +537,7 @@ describe.skipIf(!SHOULD_RUN)('D5: History and finance count finished and amendin
   });
 });
 
-describe.skipIf(!SHOULD_RUN)('D10: migration 0056 (reports.export for built-in report readers)', () => {
+describe.skipIf(!SHOULD_RUN)('D10: migration 0059 (reports.export for built-in report readers)', () => {
   test('built-in roles holding reports.view get reports.export; others do not', async () => {
     const { db, roleIds } = fix!;
     // An organisation created before the key was seeded for managers.
@@ -545,7 +545,7 @@ describe.skipIf(!SHOULD_RUN)('D10: migration 0056 (reports.export for built-in r
       DELETE FROM auth.role_permissions
       WHERE role_id = ${roleIds.manager!}::uuid AND permission_key = 'reports.export'
     `);
-    const file = resolve(HERE, '../../../../packages/db/migrations/0056_reports_export_builtin.sql');
+    const file = resolve(HERE, '../../../../packages/db/migrations/0059_reports_export_builtin.sql');
     for (const statement of readFileSync(file, 'utf8').split('--> statement-breakpoint')) {
       if (statement.replace(/--.*$/gm, '').trim()) await db.execute(sql.raw(statement));
     }

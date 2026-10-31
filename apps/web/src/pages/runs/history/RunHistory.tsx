@@ -18,15 +18,17 @@
  * comes from ../lib/settlement (unit-tested); only super-admin correction
  * actions mutate a finished run.
  */
+import { addMoney } from '@compass/contracts';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Badge, Button, Card, Input, SectionLabel, Sheet, useToast } from '@compass/ui';
 import { trpc } from '../../../lib/trpc';
+import { useNavStore } from '../../../stores/navStore';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { formatMoney, formatQty } from '../../../lib/format';
 import { useUnitLabel } from '../../../hooks/useI18n';
 import type { useI18n, useProductName } from '../../../hooks/useI18n';
-import { splitSubtotal, settleItemLine, settlePerStore } from '../lib/settlement';
+import { expenseLine, splitSubtotal, settleItemLine, settlePerStore } from '../lib/settlement';
 import { dayStoreSummaries, groupRunsByDay, type HistoryDay } from '../lib/historyGroups';
 import { localDateValue } from '../../admin/operations/financeDates';
 
@@ -101,6 +103,7 @@ export function RunHistoryPage({
   loading,
   fetching = false,
   failed = false,
+  waitingOffline = false,
   totalCount,
   summaryTotal,
   summaryItemsTotal,
@@ -120,6 +123,11 @@ export function RunHistoryPage({
   fetching?: boolean;
   /** F11: the list failed to load — no "0 · 0" count/total in the header. */
   failed?: boolean;
+  /**
+   * R2-SHL-2 (2026-10-31): offline with no saved copy of the list — say
+   * so, rather than "loading…" under a "0 · 0 UZS" header.
+   */
+  waitingOffline?: boolean;
   totalCount?: number;
   summaryTotal?: string;
   /** 2026-10-21 CA-11: parts of summaryTotal. */
@@ -159,7 +167,7 @@ export function RunHistoryPage({
   const [dayFor, setDayFor] = useState<HistoryDay | null>(null);
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   const total =
-    summaryTotal ?? String(runs.reduce((sum, run) => sum + Number(run.actualTotal ?? 0), 0));
+    summaryTotal ?? String(runs.reduce((sum, run) => addMoney(sum, run.actualTotal), 0));
   const count = totalCount ?? runs.length;
   const firstResult =
     pagination && pagination.totalCount > 0 ? (pagination.page - 1) * pagination.pageSize + 1 : 0;
@@ -197,8 +205,9 @@ export function RunHistoryPage({
           as={onBack ? undefined : 'h1'}
           // HIS-20 (2026-10-30): with a search, the total is of the whole
           // runs that matched, not of the product searched for.
+          // R2-SHL-2: no count or total until there is a list to count.
           meta={
-            failed
+            failed || loading || waitingOffline
               ? undefined
               : // HIS-17 (2026-10-31): the rows are days, the count is trips —
                 // say "3 trips" so a day holding two doesn't read as missing.
@@ -219,7 +228,11 @@ export function RunHistoryPage({
             })}
           </div>
         ) : null}
-        {loading ? (
+        {waitingOffline ? (
+          <div className="px-4 py-6 text-center text-old-body-sm text-[var(--c-fg-muted)]">
+            {i18n.t('common.offlineNoData')}
+          </div>
+        ) : loading ? (
           <div className="px-4 py-6 text-center text-old-body-sm text-[var(--c-fg-muted)]">
             {i18n.t('common.loading')}
           </div>
@@ -674,9 +687,13 @@ export function RunHistoryDetailSheet({
       // the reopened (now amending) run must drop out of it right away.
       void utils.run.history.invalidate();
       void utils.run.historyDetail.invalidate();
-      toast.success(i18n.t('run.amend.reopened'));
+      toast.success(i18n.t('run.amend.reopenedGoing'));
       setReopenReason('');
       onClose();
+      // R2-INT-4 (2026-10-31): take the corrector to the purchase tab,
+      // which opens on the run being corrected (pickActiveRun prefers an
+      // amending run for run.amend holders); they used to have to go there.
+      useNavStore.getState().setTab('run');
     },
     onError: errToast('common.error'),
   });
@@ -743,19 +760,19 @@ export function RunHistoryDetailSheet({
         (it.unitPrice || itemSplits.some((split) => split.unitPrice))
       ) {
         const { line, cash, transfer } = settleItemLine(it, itemSplits);
-        total += line;
-        totalCash += cash;
-        totalTransfer += transfer;
+        total = addMoney(total, line);
+        totalCash = addMoney(totalCash, cash);
+        totalTransfer = addMoney(totalTransfer, transfer);
       }
     }
     // M3.44: off-catalog expenses contribute to the run total + the
     // payment-method breakdown the same way SKU buys do.
     for (const ex of expenses) {
-      const line = Number(ex.qty) * Number(ex.unitPrice);
-      total += line;
-      expensesTotal += line;
-      if (ex.paymentMethod === 'transfer') totalTransfer += line;
-      else totalCash += line;
+      const line = expenseLine(ex);
+      total = addMoney(total, line);
+      expensesTotal = addMoney(expensesTotal, line);
+      if (ex.paymentMethod === 'transfer') totalTransfer = addMoney(totalTransfer, line);
+      else totalCash = addMoney(totalCash, line);
     }
     /**
      * M3.52 (2026-05-23): per-store settlement — strictly each store's
@@ -844,8 +861,7 @@ export function RunHistoryDetailSheet({
           qty: item.purchasedQty,
           lineTotal:
             item.status === 'purchased' && item.purchasedQty && hasVisiblePrice
-              ? itemSplits.reduce((sum, split) => sum + splitSubtotal(split, item), 0) ||
-                Number(item.unitPrice) * Number(item.purchasedQty)
+              ? settleItemLine(item, itemSplits).line
               : 0,
           perStoreSplits: itemSplits,
         };
@@ -930,6 +946,12 @@ export function RunHistoryDetailSheet({
             {i18n.t('common.retry')}
           </Button>
         </div>
+      ) : !breakdown && detail.fetchStatus === 'paused' ? (
+        // HIS-18 (2026-10-31): offline, a detail never opened before waits
+        // for the network; it is not "no data" and loads once back online.
+        <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">
+          {i18n.t('common.offlineNoData')}
+        </div>
       ) : !breakdown ? (
         <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">
           {i18n.t('common.noData')}
@@ -952,7 +974,7 @@ export function RunHistoryDetailSheet({
                 {headlineExpenses > 0 ? (
                   <div className="text-old-label tabular-nums text-[var(--c-fg-muted)]">
                     {i18n.t('run.money.itemsExpenses', {
-                      items: formatMoney(headlineTotal - headlineExpenses),
+                      items: formatMoney(addMoney(headlineTotal, -headlineExpenses)),
                       expenses: formatMoney(headlineExpenses),
                     })}
                   </div>
@@ -1171,6 +1193,33 @@ export function RunHistoryDetailSheet({
                         {perStoreSplits[0].confirmNote ? ` · ${perStoreSplits[0].confirmNote}` : ''}
                       </div>
                     ) : null}
+                    {/* D3 / D4 (2026-10-31): what changed on this line after
+                       a store confirmed receipt — quantity a correction
+                       added (counted as received) and later price changes. */}
+                    {(detail.data?.corrections ?? [])
+                      .filter(
+                        (c) =>
+                          c.skuId === it.skuId &&
+                          (!activeStoreId || c.storeId === null || c.storeId === activeStoreId),
+                      )
+                      .map((c, i) => (
+                        <div
+                          key={`${c.kind}-${i}`}
+                          data-testid="history-correction"
+                          className="mt-1 text-old-label font-medium tabular-nums text-[var(--c-fg-muted)]"
+                        >
+                          {c.kind === 'amendAdded'
+                            ? i18n.t('run.history.amendAdded', {
+                                qty: formatQty(c.qty),
+                                unit: unitLabel(sku?.unit),
+                                store: storeById.get(c.storeId)?.name ?? c.storeId.slice(0, 8),
+                              })
+                            : i18n.t('run.history.priceAfterReceipt', {
+                                from: c.from ? formatMoney(c.from) : '—',
+                                to: formatMoney(c.to),
+                              }) + (c.reason ? ` · ${c.reason}` : '')}
+                        </div>
+                      ))}
                     {/* M3.52: per-store chips on history rows. Same
                        visual pattern as the in-run PurchaseRow chips. */}
                     {isMulti && it.status === 'purchased' && perStoreSplits.length > 0 ? (

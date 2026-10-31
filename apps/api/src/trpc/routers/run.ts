@@ -37,6 +37,10 @@ import {
   UndoPurchaseInputSchema,
   UnmarkUnavailableInputSchema,
   DismissTopUpInputSchema,
+  centsToMoney,
+  lineAmount,
+  sumMoney,
+  toCents,
 } from '@compass/contracts';
 import {
   assertActorAssignedToStore,
@@ -69,10 +73,11 @@ import {
 import { appendEvents, readStream } from '../../services/eventStore';
 import { isUniqueViolation, withStreamConflictRetry } from '../../services/pgErrors';
 import { projectRun } from '../../services/runProjection';
+import { runCorrections } from '../../services/runCorrections';
 import { projectOrder } from '../../services/orderProjection';
 import { hub } from '../../realtime/hub';
 import { dispatchRunEventNotifications } from '../../services/notifyForEvent';
-import { money2, runMoneyLinesSql, uuidListSql } from '../../services/runMoney';
+import { moneyText, runMoneyLinesSql, uuidListSql } from '../../services/runMoney';
 import { todayInTz } from '@compass/domain';
 import {
   hiddenSplits,
@@ -125,27 +130,6 @@ function sumDecimalStrings(values: readonly string[]): string {
   }
   const negative = total < 0n;
   const digits = (negative ? -total : total).toString().padStart(scale + 1, '0');
-  if (scale === 0) return `${negative ? '-' : ''}${digits}`;
-  const whole = digits.slice(0, -scale) || '0';
-  const fraction = digits.slice(-scale).replace(/0+$/, '');
-  return `${negative ? '-' : ''}${whole}${fraction ? `.${fraction}` : ''}`;
-}
-
-/** Exact multiplication for DB decimal strings (quantity × unit price). */
-function multiplyDecimalStrings(left: string, right: string): string {
-  const parse = (value: string): { units: bigint; scale: number } => {
-    const negative = value.startsWith('-');
-    const unsigned = negative ? value.slice(1) : value;
-    const [whole = '0', fraction = ''] = unsigned.split('.');
-    const units = BigInt(`${whole || '0'}${fraction}`);
-    return { units: negative ? -units : units, scale: fraction.length };
-  };
-  const a = parse(left);
-  const b = parse(right);
-  const scale = a.scale + b.scale;
-  const product = a.units * b.units;
-  const negative = product < 0n;
-  const digits = (negative ? -product : product).toString().padStart(scale + 1, '0');
   if (scale === 0) return `${negative ? '-' : ''}${digits}`;
   const whole = digits.slice(0, -scale) || '0';
   const fraction = digits.slice(-scale).replace(/0+$/, '');
@@ -1201,16 +1185,18 @@ export const runRouter = router({
       // override, item price) PLUS active expenses — so run.list agrees
       // with run.history and report.*. Before, this was items-only JS
       // float math and silently dropped expenses.
+      // D1 (2026-10-31): integer cents — the lines are rounded to cents
+      // in SQL, and adding them as floats could drift.
       type MutableStoreTotal = {
         storeId: string;
-        total: number;
-        itemsTotal: number;
-        expensesTotal: number;
-        cash: number;
-        transfer: number;
+        total: bigint;
+        itemsTotal: bigint;
+        expensesTotal: bigint;
+        cash: bigint;
+        transfer: bigint;
         /** Items-only cash/transfer — partitions the frozen actual_total. */
-        itemsCash: number;
-        itemsTransfer: number;
+        itemsCash: bigint;
+        itemsTransfer: bigint;
         itemCount: number;
       };
       const totalsByRun = new Map<string, Map<string, MutableStoreTotal>>();
@@ -1259,18 +1245,19 @@ export const runRouter = router({
         }
         runTotals.set(row.store_id, {
           storeId: row.store_id,
-          total: Number(row.total),
-          itemsTotal: Number(row.items_total),
-          expensesTotal: Number(row.expenses_total),
-          cash: Number(row.cash),
-          transfer: Number(row.transfer),
-          itemsCash: Number(row.items_cash),
-          itemsTransfer: Number(row.items_transfer),
+          total: toCents(row.total),
+          itemsTotal: toCents(row.items_total),
+          expensesTotal: toCents(row.expenses_total),
+          cash: toCents(row.cash),
+          transfer: toCents(row.transfer),
+          itemsCash: toCents(row.items_cash),
+          itemsTransfer: toCents(row.items_transfer),
           itemCount: row.item_count,
         });
       }
 
-      const moneyString = (n: number) => (Math.round(n * 100) / 100).toString();
+      const moneyString = centsToMoney;
+      const sumCents = (values: bigint[]) => values.reduce((sum, v) => sum + v, 0n);
       const runStoreIds = (run: (typeof visibleRuns)[number]): string[] => {
         const ids = new Set<string>();
         for (const sessionId of (run.sessionIdsJson as unknown as string[]) ?? []) {
@@ -1288,8 +1275,8 @@ export const runRouter = router({
       });
 
       function listRow(run: (typeof visibleRuns)[number]) {
-        const storeTotalRows = [...(totalsByRun.get(run.id)?.values() ?? [])].sort(
-          (a, b) => b.total - a.total,
+        const storeTotalRows = [...(totalsByRun.get(run.id)?.values() ?? [])].sort((a, b) =>
+          b.total > a.total ? 1 : b.total < a.total ? -1 : 0,
         );
         const storeTotals = storeTotalRows.map((total) => ({
           storeId: total.storeId,
@@ -1301,12 +1288,12 @@ export const runRouter = router({
           itemCount: total.itemCount,
         }));
         // items / expenses / total over the visible stores, live.
-        const itemsSum = storeTotalRows.reduce((sum, row) => sum + row.itemsTotal, 0);
-        const expensesSum = storeTotalRows.reduce((sum, row) => sum + row.expensesTotal, 0);
+        const itemsSum = sumCents(storeTotalRows.map((row) => row.itemsTotal));
+        const expensesSum = sumCents(storeTotalRows.map((row) => row.expensesTotal));
         const money = {
-          itemsTotal: money2(itemsSum),
-          expensesTotal: money2(expensesSum),
-          total: money2(itemsSum + expensesSum),
+          itemsTotal: centsToMoney(itemsSum),
+          expensesTotal: centsToMoney(expensesSum),
+          total: centsToMoney(itemsSum + expensesSum),
         };
         if (!allowedStoreSet) return { ...run, storeTotals, money };
 
@@ -1318,11 +1305,8 @@ export const runRouter = router({
         );
         // actual_total keeps its items-only meaning for partial readers too.
         const visibleActualTotal = itemsSum;
-        const visibleCashTotal = storeTotalRows.reduce((total, row) => total + row.itemsCash, 0);
-        const visibleTransferTotal = storeTotalRows.reduce(
-          (total, row) => total + row.itemsTransfer,
-          0,
-        );
+        const visibleCashTotal = sumCents(storeTotalRows.map((row) => row.itemsCash));
+        const visibleTransferTotal = sumCents(storeTotalRows.map((row) => row.itemsTransfer));
         return {
           ...run,
           // These columns are aggregates over the entire run. Never expose
@@ -1661,11 +1645,11 @@ export const runRouter = router({
             const totals = storeTotalsByRun.get(row.run_id) ?? [];
             totals.push({
               storeId: row.store_id,
-              total: row.total,
-              itemsTotal: row.items_total,
-              expensesTotal: row.expenses_total,
-              cash: row.cash,
-              transfer: row.transfer,
+              total: moneyText(row.total),
+              itemsTotal: moneyText(row.items_total),
+              expensesTotal: moneyText(row.expenses_total),
+              cash: moneyText(row.cash),
+              transfer: moneyText(row.transfer),
               itemCount: row.item_count,
             });
             storeTotalsByRun.set(row.run_id, totals);
@@ -1682,11 +1666,11 @@ export const runRouter = router({
             // 2026-10-21 CA-11: actualTotal = itemsTotal + expensesTotal
             // over the reader's visible stores (unchanged meaning here —
             // history always included expenses).
-            actualTotal: row.actual_total,
-            itemsTotal: row.items_total,
-            expensesTotal: row.expenses_total,
-            actualCashTotal: row.actual_cash_total,
-            actualTransferTotal: row.actual_transfer_total,
+            actualTotal: moneyText(row.actual_total),
+            itemsTotal: moneyText(row.items_total),
+            expensesTotal: moneyText(row.expenses_total),
+            actualCashTotal: moneyText(row.actual_cash_total),
+            actualTransferTotal: moneyText(row.actual_transfer_total),
             finishedAt: row.finished_at,
             itemCount: row.item_count,
             storeCount: row.store_count,
@@ -1701,11 +1685,11 @@ export const runRouter = router({
             hasNext: query.page * query.pageSize < totalCount,
           },
           summary: {
-            total: summary.total,
-            itemsTotal: summary.items_total,
-            expensesTotal: summary.expenses_total,
-            cash: summary.cash,
-            transfer: summary.transfer,
+            total: moneyText(summary.total),
+            itemsTotal: moneyText(summary.items_total),
+            expensesTotal: moneyText(summary.expenses_total),
+            cash: moneyText(summary.cash),
+            transfer: moneyText(summary.transfer),
           },
         };
       },
@@ -2030,6 +2014,12 @@ export const runRouter = router({
           sessions,
           expenses,
           canAmend,
+          // D3 / D4 (2026-10-31): quantity added in a correction and price
+          // changes after receipt, for the history labels.
+          corrections: runCorrections(
+            (await readStream(tx, 'run', run.id)) as unknown as RunEvent[],
+            allowedStoreSet,
+          ),
         };
       }),
     ),
@@ -2134,6 +2124,9 @@ export const runRouter = router({
           status?: 'pending' | 'bought' | 'unavailable';
           sessionId: string;
           idx: number;
+          /** R2-BUY-1: the session's lastSeq, sent back as markExtraStatus's
+           *  expectedSeq (as in previewCreatable / historyDetail). */
+          sessionSeq: number;
         };
         const sessionNotesByStore: Record<string, string> = {};
         const sessionExtrasByStore: Record<string, ExtraItem[]> = {};
@@ -2160,6 +2153,7 @@ export const runRouter = router({
               submittedByMemberId: true,
               initiatedByMemberId: true,
               status: true,
+              lastSeq: true,
             },
           });
           const sessions = allowedStoreSet
@@ -2195,7 +2189,7 @@ export const runRouter = router({
               const arr = extrasAccumulator.get(s.storeId) ?? [];
               for (let i = 0; i < sessionExtras.length; i++) {
                 const ex = sessionExtras[i]!;
-                arr.push({ ...ex, sessionId: s.id, idx: i });
+                arr.push({ ...ex, sessionId: s.id, idx: i, sessionSeq: s.lastSeq });
               }
               extrasAccumulator.set(s.storeId, arr);
             }
@@ -2565,7 +2559,7 @@ export const runRouter = router({
           for (const split of splits) {
             const item = itemBySkuId.get(split.skuId);
             if (item?.status !== 'purchased' || split.unitPrice === null) continue;
-            const subtotal = multiplyDecimalStrings(split.qty, split.unitPrice);
+            const subtotal = lineAmount(split.qty, split.unitPrice);
             visibleMoney.total.push(subtotal);
             if (split.paymentMethod === 'transfer') visibleMoney.transfer.push(subtotal);
             else visibleMoney.cash.push(subtotal);
@@ -2582,17 +2576,19 @@ export const runRouter = router({
           if (item?.status !== 'purchased') continue;
           const price = split.unitPrice ?? item.unitPrice;
           if (!price) continue;
-          moneyItemParts.push(multiplyDecimalStrings(split.qty, price));
+          moneyItemParts.push(lineAmount(split.qty, price));
         }
+        // D1: each line rounded half-up to cents, summed in cents — the
+        // same figures as report.* and the frozen RunFinished totals.
         const moneyExpenseParts = expenses.flatMap((expense) =>
-          expense.storeSplits.map((split) => multiplyDecimalStrings(split.qty, expense.unitPrice)),
+          expense.storeSplits.map((split) => lineAmount(split.qty, expense.unitPrice)),
         );
-        const moneyItemsTotal = sumDecimalStrings(moneyItemParts);
-        const moneyExpensesTotal = sumDecimalStrings(moneyExpenseParts);
+        const moneyItemsTotal = sumMoney(moneyItemParts);
+        const moneyExpensesTotal = sumMoney(moneyExpenseParts);
         const money = {
           itemsTotal: moneyItemsTotal,
           expensesTotal: moneyExpensesTotal,
-          total: sumDecimalStrings([moneyItemsTotal, moneyExpensesTotal]),
+          total: sumMoney([moneyItemsTotal, moneyExpensesTotal]),
         };
 
         // DLV-14 (2026-10-30): a store-scoped deny on delivery.dispatch only
@@ -2612,6 +2608,11 @@ export const runRouter = router({
             if (!perms.has('delivery.dispatch')) dispatchDeniedStoreIds.push(storeId);
           }
         }
+
+        // RE-DLV-3 (2026-10-31): whether this actor may finish (or close
+        // the correction of) the run, so the screen can say why up front
+        // instead of answering 403 after the summary sheet.
+        const finishBlockedReason = await finishBlockedReasonFor(tx, ctx, run);
 
         // BUY-6 (2026-10-30): the stores this actor purchases for (null =
         // all), so rows serving other stores can be shown read-only.
@@ -2649,24 +2650,39 @@ export const runRouter = router({
           }
           otherStoreSkuIds.push(...other);
         }
+        // D9 (2026-10-31): expenses split to a store outside that scope are
+        // not this purchaser's to remove (run.get shows them only their
+        // own share, so the screen cannot tell otherwise).
+        const otherStoreExpenseIds =
+          purchaseScopeStoreIds === null
+            ? []
+            : rawExpenses
+                .filter((expense) =>
+                  (expense.storeSplitsJson as Array<{ storeId: string }>).some(
+                    (split) => !purchaseScopeStoreIds.includes(split.storeId),
+                  ),
+                )
+                .map((expense) => expense.id);
 
         const payload = {
           ...run,
           money,
           purchaseScopeStoreIds,
           otherStoreSkuIds,
+          otherStoreExpenseIds,
           dispatchDeniedStoreIds,
+          finishBlockedReason,
           ...(allowedStoreSet
             ? {
                 plannedTotal: null,
                 actualTotal:
-                  run.actualTotal === null ? null : sumDecimalStrings(visibleMoney.total),
+                  run.actualTotal === null ? null : sumMoney(visibleMoney.total),
                 actualCashTotal:
-                  run.actualCashTotal === null ? null : sumDecimalStrings(visibleMoney.cash),
+                  run.actualCashTotal === null ? null : sumMoney(visibleMoney.cash),
                 actualTransferTotal:
                   run.actualTransferTotal === null
                     ? null
-                    : sumDecimalStrings(visibleMoney.transfer),
+                    : sumMoney(visibleMoney.transfer),
                 sessionIdsJson: visibleSessionIds,
               }
             : {}),
@@ -2868,7 +2884,13 @@ export const runRouter = router({
           ...scope,
           actor: actorFromCtx(ctx),
         }),
-      { withRunStoreIds: true },
+      {
+        withRunStoreIds: true,
+        expense: {
+          expenseId: input.expenseId,
+          splitStoreIds: input.storeSplits.map((split) => split.storeId),
+        },
+      },
     ),
   ),
 
@@ -2881,13 +2903,17 @@ export const runRouter = router({
   removeExpense: authedProcedure
     .input(RemoveRunExpenseInputSchema)
     .mutation(async ({ ctx, input }) =>
-      runSimpleCommand(ctx, input.runId, (state) =>
-        decideRun(state, {
-          type: 'RemoveRunExpense',
-          expenseId: input.expenseId,
-          reason: input.reason,
-          actor: actorFromCtx(ctx),
-        }),
+      runSimpleCommand(
+        ctx,
+        input.runId,
+        (state) =>
+          decideRun(state, {
+            type: 'RemoveRunExpense',
+            expenseId: input.expenseId,
+            reason: input.reason,
+            actor: actorFromCtx(ctx),
+          }),
+        { expense: { expenseId: input.expenseId } },
       ),
     ),
 
@@ -3888,6 +3914,13 @@ async function runSimpleCommand(
      * that item serves (and every store the input splits it to) is theirs.
      */
     item?: { skuId: string; splitStoreIds?: readonly string[] };
+    /**
+     * D9 (2026-10-31): the command adds or removes an off-catalog expense.
+     * A purchaser of some of the run's stores may do so when the expense is
+     * split only to their stores (the input's splits when adding, the
+     * recorded ones when removing).
+     */
+    expense?: { expenseId: string; splitStoreIds?: readonly string[] };
   },
 ): Promise<{ lastSeq: number; eventCount: number }> {
   return withRunStreamRetry(ctx, async (tx) => {
@@ -3934,6 +3967,15 @@ async function runSimpleCommand(
                 (split) => split.storeId,
               ),
             }
+          : undefined,
+        options?.expense
+          ? [
+              ...(options.expense.splitStoreIds ?? []),
+              ...(
+                state.expenses.find((expense) => expense.id === options.expense!.expenseId)
+                  ?.storeSplits ?? []
+              ).map((split) => split.storeId),
+            ]
           : undefined,
       );
     }
@@ -4136,6 +4178,7 @@ async function assertRunPermissionForAllStores(
     splitStoreIds?: readonly string[];
     purchasedStoreIds: readonly string[];
   },
+  expenseStoreIds?: readonly string[],
 ): Promise<void> {
   const allowedStoreIds = await getActorStoreIdsForPermission(
     db,
@@ -4166,8 +4209,48 @@ async function assertRunPermissionForAllStores(
     }
     throw new TRPCError({ code: 'FORBIDDEN', message: 'run.errors.itemServesOtherStores' });
   }
+  // D9 (2026-10-31): an expense split only to the actor's stores is theirs
+  // to record.
+  if (expenseStoreIds) {
+    if (expenseStoreIds.length > 0 && expenseStoreIds.every((storeId) => allowed.has(storeId))) {
+      return;
+    }
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'run.errors.expenseServesOtherStores' });
+  }
   // Run-wide steps (start delivery, finish, expenses…) still need every store.
   throw new TRPCError({ code: 'FORBIDDEN', message: 'run.errors.runHasOtherStores' });
+}
+
+/**
+ * RE-DLV-3: why `run.finish` (or `run.refinalize` while amending) would
+ * refuse this actor, as the error key it would answer with; null when it
+ * would not refuse on permission grounds. Same checks as the two
+ * mutations, read-only. Other phases answer null: there is nothing to
+ * finish yet.
+ */
+async function finishBlockedReasonFor(
+  db: import('@compass/db').DB,
+  ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
+  run: { status: string; sessionIdsJson: unknown },
+): Promise<string | null> {
+  if (run.status === 'amending') {
+    return (await canAmendRun(db, ctx, run)) ? null : 'run.errors.cannotAmend';
+  }
+  if (run.status !== 'delivering') return null;
+  if (!ctx.session!.permissions.has('run.finish')) return 'run.errors.cannotFinish';
+  const allowedStoreIds = await getActorStoreIdsForPermission(
+    db,
+    ctx.session!.memberId,
+    'run.finish',
+    ctx.session!.permissions,
+  );
+  if (allowedStoreIds === null) return null;
+  const allowed = new Set(allowedStoreIds);
+  const involvedStoreIds = await runInvolvedStoreIds(db, run);
+  if (involvedStoreIds.length > 0 && involvedStoreIds.every((id) => allowed.has(id))) return null;
+  return involvedStoreIds.some((id) => allowed.has(id))
+    ? 'run.errors.runHasOtherStores'
+    : 'run.errors.cannotFinish';
 }
 
 /** Stores whose orders in this run ask for `skuId` (BUY-6). */

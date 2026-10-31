@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { normalizeDecimalInput, setDecimalLocale } from '../decimalText';
+import { normalizeDecimalInput, readDecimalText, setDecimalLocale } from '../decimalText';
 
 describe('normalizeDecimalInput (R6)', () => {
   test('a decimal comma becomes a point', () => {
@@ -20,13 +20,19 @@ describe('normalizeDecimalInput (R6)', () => {
     expect(normalizeDecimalInput('1.234.567,8')).toBe('1234567.8');
   });
 
-  test('keeps one point, a leading minus, and digits only', () => {
-    expect(normalizeDecimalInput('1.2.3')).toBe('1.23');
+  test('a leading minus and partial input are kept', () => {
     expect(normalizeDecimalInput('-2,5')).toBe('-2.5');
-    expect(normalizeDecimalInput('2-5')).toBe('25');
-    expect(normalizeDecimalInput('12kg')).toBe('12');
     expect(normalizeDecimalInput('')).toBe('');
-    expect(normalizeDecimalInput('.')).toBe('.');
+    expect(normalizeDecimalInput('12,')).toBe('12.');
+    expect(normalizeDecimalInput('.5')).toBe('.5');
+  });
+
+  test('R2-ORD-2 / R2-CLS-3: text that is not one number is refused, not guessed', () => {
+    for (const v of ['1.2.3', '2-5', '12kg', '1e3', '0x10', '.', '-', '1,2,3', '1,23.5', '1.5,000']) {
+      expect(readDecimalText(v)).toEqual({ ok: false });
+      // and stays as typed instead of becoming 1.23 / 25 / 12 / 13
+      expect(normalizeDecimalInput(v)).toBe(v);
+    }
   });
 
   test('plain numbers pass through unchanged', () => {
@@ -45,8 +51,29 @@ describe('normalizeDecimalInput (R6)', () => {
       expect(normalizeDecimalInput('2,000')).toBe('2000');
       setDecimalLocale('ru');
       expect(normalizeDecimalInput('1,000')).toBe('1.000');
+      expect(normalizeDecimalInput('1.000.000')).toBe('1000000');
+      expect(normalizeDecimalInput('12,500.5')).toBe('12500.5');
       setDecimalLocale('uz');
       expect(normalizeDecimalInput('1,500')).toBe('1.500');
+      setDecimalLocale('zh');
+      expect(readDecimalText('1.000.000')).toEqual({ ok: false });
+    } finally {
+      setDecimalLocale(null);
+    }
+  });
+
+  test('R2-ORD-1: every prefix of a typed number reads the whole text again', () => {
+    // What the field hands its parent after each keystroke. The last one
+    // is what counts — no keystroke rewrites what came before it.
+    const typeOut = (text: string) =>
+      [...text].map((_, i) => normalizeDecimalInput(text.slice(0, i + 1)));
+    try {
+      setDecimalLocale('zh');
+      expect(typeOut('1,000')).toEqual(['1', '1.', '1.0', '1.00', '1000']);
+      expect(typeOut('12,500.5').at(-1)).toBe('12500.5');
+      setDecimalLocale('ru');
+      expect(typeOut('12,500.5').at(-1)).toBe('12500.5');
+      expect(typeOut('1,000').at(-1)).toBe('1.000');
     } finally {
       setDecimalLocale(null);
     }
