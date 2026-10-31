@@ -33,7 +33,7 @@ import type { ReactNode } from 'react';
 import { useToast } from '@compass/ui';
 import { useI18n } from '../hooks/useI18n';
 import { haptic } from '../hooks/useTelegram';
-import { I18N_KEY_RE, isServerSideFailure, networkFailureKey, zodIssueKey } from './errorText';
+import { errorVars, isServerSideFailure, networkFailureKey, serverErrorKey } from './errorText';
 import { isLikelyNetworkError } from './networkError';
 
 interface ErrLike {
@@ -63,16 +63,16 @@ export function useErrToast(): (
     haptic('error');
     const raw = (err as ErrLike | null)?.message;
     // A schema refusal carries its key inside the zod issue list.
-    const msg = zodIssueKey(raw) ?? raw;
-    const looksLikeKey = typeof msg === 'string' && I18N_KEY_RE.test(msg);
+    const key = serverErrorKey(err);
     // RE-CLS-3 (2026-10-30): writes that reach here were NOT queued (the
     // queued ones say "saved offline" themselves). Say what is known about
     // whether it was saved (R2-CLS-1, networkFailureKey), instead of a
     // generic failure next to a banner promising that changes sync later.
     // A server that answered with a gateway error is not the user's
     // connection (R2-AUTH-3).
-    const text: ReactNode = looksLikeKey
-      ? i18n.t(msg as Parameters<typeof i18n.t>[0])
+    // CMP-FE-1: with the placeholders the server sent (`data.context`).
+    const text: ReactNode = key
+      ? i18n.t(key as Parameters<typeof i18n.t>[0], errorVars(err))
       : isLikelyNetworkError(err)
         ? i18n.t(
             isServerSideFailure(raw)
@@ -99,11 +99,8 @@ export function useTranslateError(): (
 ) => string {
   const i18n = useI18n();
   return (err, defaultKey) => {
-    const raw = (err as ErrLike | null)?.message;
-    const msg = zodIssueKey(raw) ?? raw;
-    if (typeof msg === 'string' && I18N_KEY_RE.test(msg)) {
-      return i18n.t(msg as Parameters<typeof i18n.t>[0]);
-    }
+    const key = serverErrorKey(err);
+    if (key) return i18n.t(key as Parameters<typeof i18n.t>[0], errorVars(err));
     return i18n.t(defaultKey);
   };
 }
