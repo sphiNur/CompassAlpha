@@ -348,7 +348,11 @@ function QtyQuickPickSheet({
 
   // F13 / ORD-8 (2026-10-30): empty, non-numeric and out-of-range input is
   // refused with a reason instead of becoming "Set 0". See readQtyDraft.
-  const read = useMemo(() => readQtyDraft(draft, { min, max }), [draft, min, max]);
+  // CMP-ORD-1: and so is a value off the step, which the server refuses.
+  const read = useMemo(
+    () => readQtyDraft(draft, { min, max, step }),
+    [draft, min, max, step],
+  );
   const sanitizedDraft = read.ok ? read.value : null;
   const draftProblem = read.ok
     ? null
@@ -358,7 +362,9 @@ function QtyQuickPickSheet({
         ? labels.qtyAtMost(formatQty(max, step))
         : read.reason === 'tooPrecise'
           ? labels.qtyMaxDecimals(QTY_DECIMALS)
-          : labels.qtyEnterNumber;
+          : read.reason === 'notMultiple'
+            ? labels.qtyNotMultiple(formatQty(step, step))
+            : labels.qtyEnterNumber;
   const draftDiffers = sanitizedDraft !== null && sanitizedDraft !== current;
 
   const setLabel = labels.setValue(

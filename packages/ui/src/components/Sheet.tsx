@@ -1,7 +1,8 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { cn } from '../cn';
 import { pushTelegramBackHandler } from '../telegramBackStack';
+import { useUiLabels } from '../labels';
 
 /**
  * Shared "how many sheets are currently open?" counter (M1.5,
@@ -114,6 +115,41 @@ interface SheetProps {
    * Mutually exclusive with `disableAutoFocus`; the latter wins.
    */
   deferAutoFocusMs?: number;
+
+  /**
+   * CMP-INV-2 / CMP-BUY-4 / CMP-INT-2 (2026-10-31): the sheet holds input
+   * the person has not saved. Esc, a backdrop tap and Telegram's back
+   * button then ask "discard changes?" first instead of throwing the
+   * input away. Buttons inside the sheet that close it on purpose (Save,
+   * Cancel) call `onOpenChange(false)` themselves and are not asked.
+   */
+  hasChanges?: boolean;
+}
+
+/**
+ * The close handler a sheet gives Radix and the Telegram back button:
+ * with unsaved changes it asks first (one question at a time) and closes
+ * only on "discard". Exported for tests.
+ */
+export function guardedClose(
+  hasChanges: boolean,
+  close: () => void,
+  confirmDiscard: () => Promise<boolean>,
+  asking: { current: boolean },
+): void {
+  if (!hasChanges) {
+    close();
+    return;
+  }
+  if (asking.current) return;
+  asking.current = true;
+  void confirmDiscard()
+    .then((discard) => {
+      if (discard) close();
+    })
+    .finally(() => {
+      asking.current = false;
+    });
 }
 
 export function Sheet({
@@ -125,8 +161,34 @@ export function Sheet({
   footer,
   disableAutoFocus = false,
   deferAutoFocusMs,
+  hasChanges = false,
 }: SheetProps) {
   const contentRef = useRef<HTMLDivElement | null>(null);
+  // A11Y-16 (2026-10-31): was the fixed id "sheet-desc", so a sheet opened
+  // over another one pointed both dialogs' aria-describedby at whichever
+  // element the browser found first.
+  const descriptionId = useId();
+  const labels = useUiLabels();
+  const asking = useRef(false);
+  const hasChangesRef = useRef(hasChanges);
+  hasChangesRef.current = hasChanges;
+  const onOpenChangeRef = useRef(onOpenChange);
+  onOpenChangeRef.current = onOpenChange;
+  const requestOpenChange = useCallback(
+    (next: boolean) => {
+      if (next) {
+        onOpenChangeRef.current(true);
+        return;
+      }
+      guardedClose(
+        hasChangesRef.current,
+        () => onOpenChangeRef.current(false),
+        () => labels.confirmDiscard(labels.discardChanges),
+        asking,
+      );
+    },
+    [labels],
+  );
 
   // Deferred-focus implementation: when `deferAutoFocusMs` is set, we
   // preventDefault on Radix's onOpenAutoFocus (so it doesn't fire
@@ -165,10 +227,10 @@ export function Sheet({
     }, deferAutoFocusMs);
     return () => clearTimeout(timer);
   }, [open, disableAutoFocus, deferAutoFocusMs]);
-  useSheetPresence(open, onOpenChange);
+  useSheetPresence(open, requestOpenChange);
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog.Root open={open} onOpenChange={requestOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay
           className={cn(
@@ -196,7 +258,7 @@ export function Sheet({
             maxHeight:
               'min(calc(90dvh - var(--app-safe-top)), calc(var(--app-viewport-h) - var(--app-safe-top) - 8px))',
           }}
-          aria-describedby={description ? 'sheet-desc' : undefined}
+          aria-describedby={description ? descriptionId : undefined}
           onOpenAutoFocus={
             disableAutoFocus || deferAutoFocusMs
               ? (e) => e.preventDefault()
@@ -219,7 +281,7 @@ export function Sheet({
               </Dialog.Title>
             ) : null}
             {description ? (
-              <Dialog.Description id="sheet-desc" className="mt-1 text-center text-old-body-sm text-[var(--c-fg-muted)]">
+              <Dialog.Description id={descriptionId} className="mt-1 text-center text-old-body-sm text-[var(--c-fg-muted)]">
                 {description}
               </Dialog.Description>
             ) : null}

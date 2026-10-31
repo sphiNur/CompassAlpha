@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import { LocaleSchema, TimeZoneSchema, UuidSchema } from './common';
+import {
+  CONTROL_CHARS_MESSAGE,
+  LocaleSchema,
+  noControlChars,
+  TimeZoneSchema,
+  UuidSchema,
+} from './common';
 
 export const TelegramLoginInputSchema = z.object({
   initData: z.string().min(1),
@@ -117,6 +123,12 @@ export const SessionSchema = z.object({
      */
     secondaryLocale: LocaleSchema.nullable(),
     tgUsername: z.string().nullable(),
+    /**
+     * CMP-SHL-1 (2026-10-31): the person's own Telegram id, so the "no
+     * access" screens can show who is signed in and what to send the
+     * administrator. Optional: sessions saved by older builds lack it.
+     */
+    tgUserId: z.string().nullable().optional(),
   }),
   member: MemberSummarySchema,
   /** Active organisations this user belongs to. */
@@ -158,7 +170,8 @@ export const SessionSchema = z.object({
 
 export const CompleteOnboardingInputSchema = z.object({
   // AUTH-4: trim first, or "   " passes min(1) and locks an empty name.
-  displayName: z.string().trim().min(1).max(200),
+  // F10: no control characters (names reach the operator's terminal).
+  displayName: z.string().trim().min(1).max(200).refine(noControlChars, CONTROL_CHARS_MESSAGE),
 });
 
 export const SwitchOrganizationInputSchema = z.object({
@@ -166,7 +179,7 @@ export const SwitchOrganizationInputSchema = z.object({
 });
 
 export const CreateOrganizationInputSchema = z.object({
-  name: z.string().trim().min(2).max(200),
+  name: z.string().trim().min(2).max(200).refine(noControlChars, CONTROL_CHARS_MESSAGE),
   /** Optional operator-chosen slug; omitted lets the server derive one. */
   slug: z
     .string()

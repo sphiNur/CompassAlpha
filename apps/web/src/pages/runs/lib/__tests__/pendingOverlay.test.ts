@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { overlayPendingWrites, pendingStoreIds, withData } from '../pendingOverlay';
+import {
+  overlayPendingWrites,
+  pendingStoreIds,
+  startDeliveryBlock,
+  withData,
+} from '../pendingOverlay';
 import type { PendingWrite } from '../../../../hooks/useOfflineQueue';
 
 const run = {
@@ -146,5 +151,93 @@ describe('withData', () => {
     expect(read).toEqual([]);
     expect(wrapped.isFetching).toBe(true);
     expect(read).toEqual(['isFetching']);
+  });
+});
+
+describe('offline expenses and added items show as pending rows (CMP-BUY-2)', () => {
+  const expenseInput = {
+    runId: 'run-1',
+    expenseId: 'exp-1',
+    label: 'Porter',
+    qty: '1',
+    unitPrice: '20000',
+    storeSplits: [{ storeId: 'A', qty: '1' }],
+    paymentMethod: 'cash',
+    receiptPhotoUrl: null,
+    reason: 'carried rice',
+  };
+
+  test('a queued expense is listed, marked pending', () => {
+    const out = overlayPendingWrites({ ...run, expenses: [] }, [entry('run.addExpense', expenseInput)])!;
+    expect(out.expenses).toHaveLength(1);
+    expect(out.expenses![0]).toMatchObject({
+      id: 'exp-1',
+      label: 'Porter',
+      qty: '1',
+      unitPrice: '20000',
+      pendingSync: true,
+    });
+  });
+
+  test('a run without an expenses list still gets the queued one', () => {
+    const out = overlayPendingWrites(run, [entry('run.addExpense', expenseInput)])!;
+    expect(out.expenses?.map((e) => e.id)).toEqual(['exp-1']);
+  });
+
+  test('once the server has the expense it is not listed twice', () => {
+    const synced = { ...expenseInput, id: 'exp-1', unitHint: null, addedByMemberId: 'm', addedAt: 'x' };
+    const out = overlayPendingWrites({ ...run, expenses: [synced] }, [
+      entry('run.addExpense', expenseInput),
+    ])!;
+    expect(out.expenses).toHaveLength(1);
+    expect(out.expenses![0]!.pendingSync).toBeUndefined();
+  });
+
+  test('a queued added item appears bought, with its store split, marked pending', () => {
+    const out = overlayPendingWrites(run, [
+      entry('run.addPurchaserItem', {
+        runId: 'run-1',
+        skuId: 'sugar',
+        supplierId: null,
+        unitPrice: '9000',
+        actualQty: '3',
+        storeSplits: [{ storeId: 'A', qty: '3' }],
+        paymentMethod: 'transfer',
+        reason: 'store asked',
+      }),
+    ])!;
+    const sugar = out.items.find((i) => i.skuId === 'sugar');
+    expect(sugar).toMatchObject({
+      status: 'purchased',
+      purchasedQty: '3',
+      unitPrice: '9000',
+      paymentMethod: 'transfer',
+      addedByPurchaser: true,
+      pendingSync: true,
+    });
+    expect(out.splits.filter((s) => s.skuId === 'sugar')).toEqual([
+      expect.objectContaining({ storeId: 'A', qty: '3', pendingSync: true }),
+    ]);
+  });
+
+  test('an added item already on the run is left to the server', () => {
+    const out = overlayPendingWrites(run, [
+      entry('run.addPurchaserItem', { runId: 'run-1', skuId: 'rice', actualQty: '1', unitPrice: '1', storeSplits: [] }),
+    ])!;
+    expect(out.items.filter((i) => i.skuId === 'rice')).toHaveLength(1);
+    expect(out.items.find((i) => i.skuId === 'rice')!.status).toBe('pending');
+  });
+});
+
+describe('startDeliveryBlock (CMP-BUY-1)', () => {
+  test('offline: needs the network', () => {
+    expect(startDeliveryBlock(false, 0)).toBe('offline');
+    expect(startDeliveryBlock(false, 3)).toBe('offline');
+  });
+  test('online with writes still queued: wait for them', () => {
+    expect(startDeliveryBlock(true, 2)).toBe('queued');
+  });
+  test('online and nothing queued: can start', () => {
+    expect(startDeliveryBlock(true, 0)).toBeNull();
   });
 });

@@ -9,7 +9,7 @@
  *   - FinanceSection     daily / by-supplier / by-store expense views
  *   - MaintenanceSection danger zone (+ TargetedPurgeBrowser, internal)
  */
-import { addMoney } from '@compass/contracts';
+import { addMoney } from '@compass/contracts/money';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Badge,
@@ -39,9 +39,11 @@ import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { formatMoney, formatQty, toQtyInput } from '../../../lib/format';
 import { useDateFormat, useI18n, useProductName, useUnitLabel } from '../../../hooks/useI18n';
+import { useReportStore } from '../../../hooks/useReportStore';
 import { DebugPage } from '../../DebugPage';
 import { financePresetRange, maintenanceToday } from './financeDates';
 import { auditCategory, describeAuditRow, type AuditCategory } from './auditSentence';
+import { purgeCountsByKind, resetConfirmMatches } from './purgeCounts';
 
 // ============ Activity ============
 
@@ -712,21 +714,23 @@ function CascadePreview({ byTable, total }: { byTable: Record<string, number>; t
       <div className="text-old-body font-semibold text-[var(--c-fg)]">
         {i18n.t('ops.purge.rowsWouldBeDeleted', { n: total })}
       </div>
-      <ul className="mt-2 flex flex-col gap-1">
-        {Object.entries(byTable)
-          .filter(([, n]) => n > 0)
-          .sort((a, b) => b[1] - a[1])
-          .map(([table, n]) => (
-            <li
-              key={table}
-              className="flex justify-between font-mono text-old-label text-[var(--c-fg-muted)]"
-            >
-              <span className="truncate">{table}</span>
-              <span className="tabular-nums">{n}</span>
-            </li>
-          ))}
-      </ul>
+      <PurgeCountList byTable={byTable} />
     </div>
+  );
+}
+
+/** CMP-OPS-6: what a purge deletes, in plain words, with counts. */
+function PurgeCountList({ byTable }: { byTable: Record<string, number> }) {
+  const i18n = useI18n();
+  return (
+    <ul className="mt-2 flex flex-col gap-1">
+      {purgeCountsByKind(byTable).map(({ kind, n }) => (
+        <li key={kind} className="flex justify-between text-old-label text-[var(--c-fg-muted)]">
+          <span className="truncate">{i18n.t(`ops.purge.kind.${kind}`)}</span>
+          <span className="tabular-nums">{n}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -1137,6 +1141,10 @@ export function FinanceSection() {
   const suppliersQuery = trpc.catalog.suppliers.useQuery({ includeArchived: true });
   // HIS-19: the stores finance covers (reports.view ∪ users.manage).
   const storesQuery = trpc.catalog.stores.useQuery({ permission: 'finance' });
+  // CMP-HIS-1 (2026-10-31): the top bar's store, not every store's money
+  // under one store's name. '' = all stores.
+  const reportStore = useReportStore(storesQuery.data ?? (storesQuery.isError ? [] : undefined));
+  const storeId = reportStore.storeId || undefined;
 
   // Date range. Default to "this month" since that's the most common
   // reconciliation cadence (monthly bank statement vs. cash drawer
@@ -1172,10 +1180,13 @@ export function FinanceSection() {
     /^\d{4}-\d{2}-\d{2}$/.test(endDate) &&
     startDate <= endDate;
   const linesQuery = trpc.report.purchaseLines.useQuery(
-    { startDate, endDate },
-    { enabled: rangeOk },
+    { startDate, endDate, storeId },
+    { enabled: rangeOk && reportStore.ready },
   );
-  const totalsQuery = trpc.report.totals.useQuery({ startDate, endDate }, { enabled: rangeOk });
+  const totalsQuery = trpc.report.totals.useQuery(
+    { startDate, endDate, storeId },
+    { enabled: rangeOk && reportStore.ready },
+  );
 
   // Lookup tables for joining ids → display names.
   const skuById = useMemo(() => {
@@ -1352,7 +1363,11 @@ export function FinanceSection() {
       i18n.t('finance.tsv.total'),
     ].join('\t');
     const tsv = [
-      `# ${i18n.t('finance.tsv.title', { start: startDate, end: endDate })}`,
+      `# ${i18n.t('finance.tsv.title', { start: startDate, end: endDate })} · ${
+        reportStore.storeId
+          ? (storeById.get(reportStore.storeId) ?? reportStore.storeId.slice(0, 8))
+          : i18n.t('run.history.allStores')
+      }`,
       lineHeader,
       ...lines.map((l) => {
         const sku = l.skuId ? skuById.get(l.skuId) : undefined;
@@ -1394,6 +1409,7 @@ export function FinanceSection() {
     supplierById,
     startDate,
     endDate,
+    reportStore.storeId,
     toast,
     i18n,
   ]);
@@ -1403,6 +1419,19 @@ export function FinanceSection() {
       {/* Range picker — preset segmented control + two date inputs.
           M3.17 (2026-05-16): preset chips migrated to shared <Segmented>. */}
       <div className="mb-3 flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3">
+        {/* CMP-HIS-1: which stores every amount below covers. */}
+        <Select
+          value={reportStore.storeId}
+          onChange={(e) => reportStore.setStoreId(e.currentTarget.value)}
+          aria-label={i18n.t('run.history.storeFilter')}
+        >
+          <option value="">{i18n.t('run.history.allStores')}</option>
+          {(storesQuery.data ?? []).map((store) => (
+            <option key={store.id} value={store.id}>
+              {store.name}
+            </option>
+          ))}
+        </Select>
         <Segmented<'today' | 'yesterday' | 'thisMonth' | 'lastMonth' | 'custom'>
           value={preset}
           equalWidth={false}
@@ -1783,6 +1812,11 @@ export function MaintenanceSection() {
     byTable: Record<string, number>;
   } | null>(null);
   const [dateConfirmOpen, setDateConfirmOpen] = useState(false);
+  const [dateConfirmText, setDateConfirmText] = useState('');
+  const dateConfirmed = resetConfirmMatches(dateConfirmText, datePreview?.date ?? '');
+  useEffect(() => {
+    if (!dateConfirmOpen) setDateConfirmText('');
+  }, [dateConfirmOpen]);
 
   const datePreviewMut = trpc.admin.purgeByDate.useMutation({
     onSuccess: (data) => {
@@ -1959,9 +1993,9 @@ export function MaintenanceSection() {
             block
             variant="danger"
             loading={dateCommitMut.isPending}
-            disabled={!datePreview || datePreview.total === 0}
+            disabled={!datePreview || datePreview.total === 0 || !dateConfirmed}
             onClick={() => {
-              if (!datePreview) return;
+              if (!datePreview || !dateConfirmed) return;
               dateCommitMut.mutate({ date: datePreview.date, dryRun: false });
             }}
           >
@@ -1981,23 +2015,24 @@ export function MaintenanceSection() {
                   ? i18n.t('ops.maint.alreadyClean', { date: datePreview.date })
                   : i18n.t('ops.maint.rowsFromDate', { n: datePreview.total, date: datePreview.date })}
               </div>
-              {datePreview.total > 0 ? (
-                <ul className="mt-2 flex flex-col gap-1">
-                  {Object.entries(datePreview.byTable)
-                    .filter(([, n]) => n > 0)
-                    .sort((a, b) => b[1] - a[1])
-                    .map(([table, n]) => (
-                      <li
-                        key={table}
-                        className="flex justify-between font-mono text-old-label text-[var(--c-fg-muted)]"
-                      >
-                        <span className="truncate">{table}</span>
-                        <span className="tabular-nums">{n}</span>
-                      </li>
-                    ))}
-                </ul>
-              ) : null}
+              {datePreview.total > 0 ? <PurgeCountList byTable={datePreview.byTable} /> : null}
             </div>
+          ) : null}
+          {/* CMP-OPS-5: typed confirmation, like the full wipe. */}
+          {datePreview && datePreview.total > 0 ? (
+            <Field
+              label={i18n.t('ops.maint.confirmResetLabel')}
+              hint={i18n.t('ops.maint.confirmResetBody', { date: datePreview.date })}
+            >
+              <Input
+                value={dateConfirmText}
+                onChange={(e) => setDateConfirmText(e.target.value)}
+                placeholder={datePreview.date}
+                inputMode="numeric"
+                autoCapitalize="off"
+                autoCorrect="off"
+              />
+            </Field>
           ) : null}
         </div>
       </Sheet>
@@ -2031,20 +2066,7 @@ export function MaintenanceSection() {
               <div className="text-old-body font-semibold text-[var(--c-fg)]">
                 {i18n.t('ops.purge.rowsWouldBeDeleted', { n: allDryRun.data.total })}
               </div>
-              <ul className="mt-2 flex flex-col gap-1">
-                {Object.entries(allDryRun.data.byTable)
-                  .filter(([, n]) => n > 0)
-                  .sort((a, b) => b[1] - a[1])
-                  .map(([table, n]) => (
-                    <li
-                      key={table}
-                      className="flex justify-between font-mono text-old-label text-[var(--c-fg-muted)]"
-                    >
-                      <span className="truncate">{table}</span>
-                      <span className="tabular-nums">{n}</span>
-                    </li>
-                  ))}
-              </ul>
+              <PurgeCountList byTable={allDryRun.data.byTable} />
               {allDryRun.data.total === 0 ? (
                 <p className="mt-2 text-old-label text-[var(--c-fg-muted)]">
                   {i18n.t('ops.maint.nothingToPurge')}

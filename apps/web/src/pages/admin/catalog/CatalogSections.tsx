@@ -30,7 +30,7 @@ import {
   Switch,
   useToast,
 } from '@compass/ui';
-import { SKU_STEPS, SKU_UNITS } from '@compass/contracts';
+import { SKU_STEPS, SKU_UNITS } from '@compass/contracts/limits';
 import type { SkuStep, SkuUnit } from '@compass/contracts';
 import { LANGUAGE_NATIVE_NAMES } from '@compass/i18n';
 import { snapStepToCanonical } from './skuStep';

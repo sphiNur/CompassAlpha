@@ -18,9 +18,12 @@ import {
   classifyReplayError,
   countsTowardGiveUp,
   frozenOrderDate,
+  hasReplayHandler,
   localDateString,
+  registerReplayHandlers,
   isOwnEntry,
   isRetryDue,
+  samePendingWrites,
   shouldGiveUp,
   MAX_OVERRIDE_RETRIES,
   MAX_REPLAY_RETRIES,
@@ -188,5 +191,40 @@ describe('frozenOrderDate (CA-25)', () => {
   });
   it('formats local dates zero-padded', () => {
     expect(localDateString(new Date(2026, 0, 5, 0, 1))).toBe('2026-01-05');
+  });
+});
+
+describe('registerReplayHandlers (CMP-FE-3)', () => {
+  it('registers app-wide handlers and removes only its own on cleanup', async () => {
+    const mine = async () => {};
+    const release = registerReplayHandlers({ 'test.one': mine, 'test.two': mine });
+    expect(hasReplayHandler('test.one')).toBe(true);
+    // A later registration of the same procedure wins and survives the
+    // first one's cleanup.
+    const other = async () => {};
+    const releaseOther = registerReplayHandlers({ 'test.two': other });
+    release();
+    expect(hasReplayHandler('test.one')).toBe(false);
+    expect(hasReplayHandler('test.two')).toBe(true);
+    releaseOther();
+    expect(hasReplayHandler('test.two')).toBe(false);
+  });
+});
+
+describe('samePendingWrites (P-3: no re-render when the outbox is unchanged)', () => {
+  const w = (clientSeq: number) => ({ clientSeq, procedure: 'p', input: {}, enqueuedAt: 1 });
+
+  it('two empty reads are the same, so the old [] is kept', () => {
+    expect(samePendingWrites([], [])).toBe(true);
+  });
+
+  it('same clientSeqs in the same order are the same', () => {
+    expect(samePendingWrites([w(1), w(2)], [w(1), w(2)])).toBe(true);
+  });
+
+  it('an added, removed or replaced entry is a change', () => {
+    expect(samePendingWrites([w(1)], [w(1), w(2)])).toBe(false);
+    expect(samePendingWrites([w(1), w(2)], [w(2)])).toBe(false);
+    expect(samePendingWrites([w(1)], [w(3)])).toBe(false);
   });
 });

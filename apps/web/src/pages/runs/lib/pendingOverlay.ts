@@ -33,6 +33,9 @@ type Split = {
 
 type Item = {
   skuId: string;
+  plannedQty?: string;
+  supplierId?: string | null;
+  addedByPurchaser?: boolean;
   status: string;
   purchasedQty: string | null;
   unitPrice: string | null;
@@ -42,13 +45,29 @@ type Item = {
   pendingSync?: boolean;
 };
 
-export type OverlayRun = { id: string; items: Item[]; splits: Split[] };
+type Expense = {
+  id: string;
+  label: string;
+  unitHint: string | null;
+  qty: string;
+  unitPrice: string;
+  storeSplits: StoreSplitInput[];
+  paymentMethod: string;
+  receiptPhotoUrl: string | null;
+  reason: string;
+  addedByMemberId: string;
+  addedAt: string;
+  /** CMP-BUY-2: recorded offline, not on the server yet. */
+  pendingSync?: boolean;
+};
+
+export type OverlayRun = { id: string; items: Item[]; splits: Split[]; expenses?: Expense[] };
 
 type StoreSplitInput = {
   storeId: string;
   qty: string;
   unitPrice?: string;
-  paymentMethod?: string;
+  paymentMethod?: 'cash' | 'transfer';
 };
 
 /** Procedures whose queued writes these overlays understand. */
@@ -59,6 +78,11 @@ export const OVERLAID_PROCEDURES = new Set([
   'run.confirmStoreItem',
   'run.markStoreItemsOk',
   'run.confirmStore',
+  // CMP-BUY-2 (2026-10-31): an expense or an added item recorded offline
+  // only bumped the "waiting to sync" count; the list looked unchanged and
+  // buyers recorded it again.
+  'run.addExpense',
+  'run.addPurchaserItem',
 ]);
 
 function inputOf(entry: PendingWrite): Record<string, unknown> {
@@ -81,6 +105,7 @@ export function overlayPendingWrites<T extends OverlayRun>(
   if (mine.length === 0) return run;
   let items = run.items;
   let splits = run.splits;
+  let expenses = run.expenses;
   const at = (entry: PendingWrite) => new Date(entry.enqueuedAt).toISOString();
   for (const entry of mine) {
     const input = inputOf(entry);
@@ -118,6 +143,67 @@ export function overlayPendingWrites<T extends OverlayRun>(
             ),
           ];
         }
+        break;
+      }
+      case 'run.addPurchaserItem': {
+        const skuId = String(input.skuId);
+        // Already on the run (the server has it, or it merges into an
+        // existing row): nothing to add.
+        if (items.some((item) => item.skuId === skuId)) break;
+        const storeSplits = (input.storeSplits ?? []) as StoreSplitInput[];
+        items = [
+          ...items,
+          {
+            skuId,
+            plannedQty: '0',
+            supplierId: (input.supplierId as string | null | undefined) ?? null,
+            addedByPurchaser: true,
+            status: 'purchased',
+            purchasedQty: String(input.actualQty),
+            unitPrice: String(input.unitPrice),
+            unavailableNote: null,
+            paymentMethod: (input.paymentMethod as string | undefined) ?? 'cash',
+            pendingSync: true,
+          },
+        ];
+        splits = [
+          ...splits,
+          ...storeSplits.map(
+            (sp): Split => ({
+              runId: run.id,
+              skuId,
+              storeId: sp.storeId,
+              qty: sp.qty,
+              unitPrice: sp.unitPrice ?? null,
+              paymentMethod: sp.paymentMethod ?? null,
+              deliveredAt: null,
+              confirmedAt: null,
+              pendingSync: true,
+            }),
+          ),
+        ];
+        break;
+      }
+      case 'run.addExpense': {
+        const id = String(input.expenseId);
+        if ((expenses ?? []).some((e) => e.id === id)) break;
+        expenses = [
+          ...(expenses ?? []),
+          {
+            id,
+            label: String(input.label ?? ''),
+            unitHint: (input.unitHint as string | undefined) ?? null,
+            qty: String(input.qty),
+            unitPrice: String(input.unitPrice),
+            storeSplits: (input.storeSplits ?? []) as StoreSplitInput[],
+            paymentMethod: (input.paymentMethod as string | undefined) ?? 'cash',
+            receiptPhotoUrl: (input.receiptPhotoUrl as string | null | undefined) ?? null,
+            reason: String(input.reason ?? ''),
+            addedByMemberId: '',
+            addedAt: at(entry),
+            pendingSync: true,
+          },
+        ];
         break;
       }
       case 'run.markUnavailable': {
@@ -180,7 +266,7 @@ export function overlayPendingWrites<T extends OverlayRun>(
       }
     }
   }
-  return { ...run, items, splits } as T;
+  return { ...run, items, splits, ...(expenses ? { expenses } : {}) } as T;
 }
 
 /** Stores with a queued delivery or receipt confirmation. */
@@ -208,4 +294,15 @@ export function withData<Q extends { data: unknown }>(query: Q, data: Q['data'])
   return new Proxy(query, {
     get: (target, key, receiver) => (key === 'data' ? data : Reflect.get(target, key, receiver)),
   });
+}
+
+/**
+ * CMP-BUY-1 (2026-10-31): why "start delivery" must wait, or null. It is a
+ * run-wide step the server checks against what it has recorded, so it
+ * needs the network and every write queued on this phone sent first.
+ */
+export function startDeliveryBlock(online: boolean, queued: number): 'offline' | 'queued' | null {
+  if (!online) return 'offline';
+  if (queued > 0) return 'queued';
+  return null;
 }

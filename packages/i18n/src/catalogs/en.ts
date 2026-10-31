@@ -78,6 +78,7 @@ export const en = {
   'qty.enterNumber': 'Enter a number',
   'qty.atLeast': 'Enter {min} or more',
   'qty.atMost': 'Enter {max} or less',
+  'qty.notMultiple': 'Enter a multiple of {step}',
   'qty.maxDecimals': 'At most {decimals, plural, one {# decimal} other {# decimals}}',
   'number.invalid': 'Not a number — write it like 1500 or 1.5',
   'photo.label': 'Receipt photo',
@@ -207,6 +208,8 @@ export const en = {
   // bad word order in zh/ru/uz — those became whole sentences without
   // emphasis. A correctly-ordered sentence beats a bolded mistranslation.
   'people.tapToRevoke': 'Tap to revoke',
+  'people.readOnlyStore': 'View only',
+  'people.orgLevelGroup': 'Whole workspace ({n})',
   'people.orgLevelEmptyTitle': 'No org-level members',
   'people.orgLevelEmptyBody':
     "Admins and super admins who don't belong to any specific store appear here.",
@@ -357,6 +360,22 @@ export const en = {
   'ops.purge.unknownStore': 'Unknown store',
   'ops.purge.deleteSessionTitle': 'Delete order',
   'ops.purge.deleting': 'Deleting…',
+  'ops.purge.kind.orders': 'Orders',
+  'ops.purge.kind.orderLines': 'Order lines',
+  'ops.purge.kind.runs': 'Runs',
+  'ops.purge.kind.runLines': 'Run items',
+  'ops.purge.kind.runStoreLines': 'Run items per store',
+  'ops.purge.kind.expenses': 'Run expenses',
+  'ops.purge.kind.dailyCloses': 'Daily closes',
+  'ops.purge.kind.stockMovements': 'Stock movements',
+  'ops.purge.kind.priceHistory': 'Price records',
+  'ops.purge.kind.notifications': 'Notifications',
+  'ops.purge.kind.pendingMessages': 'Messages not yet sent',
+  'ops.purge.kind.history': 'History records',
+  'ops.purge.kind.appLogs': 'App logs',
+  'ops.purge.kind.other': 'Other',
+  'ops.maint.confirmResetBody': 'Type the date {date} to confirm. This cannot be undone.',
+  'ops.maint.confirmResetLabel': 'Date to reset',
   'ops.purge.deleteRows': 'Delete {n, plural, one {# row} other {# rows}}',
   'ops.purge.counting': 'Counting…',
   'ops.purge.rowsWouldBeDeleted': '{n, plural, one {# row would} other {# rows would}} be deleted',
@@ -501,6 +520,8 @@ export const en = {
   'order.errors.qtyTooLarge': 'A line can be at most 999,999.999.',
   'order.errors.extraNoteTooLong': 'The note is too long (up to 200 characters).',
   'run.errors.cannotPlan': "You don't have permission to plan purchase runs.",
+  'common.errors.controlCharacters':
+    'Names cannot contain control characters (such as tabs or line breaks)',
   'common.errors.validation': 'Invalid input — check the highlighted fields',
 
   // ── 3. Settings ────────────────────────────────────────────────
@@ -649,9 +670,12 @@ export const en = {
   'auth.noStoreYet.title': 'No store yet',
   'auth.noStoreYet.body': 'Create a store in Admin › Stores first; ordering, receiving, daily close and sales work per store.',
   'auth.noStoreYet.action': 'Create a store',
+  'auth.blocked.signedInAs': 'Signed in as {name}',
+  'auth.blocked.signOut': 'Sign out',
+  'auth.blocked.close': 'Close',
+  'auth.blocked.stillBlocked': 'Still no access. Ask your administrator.',
   'auth.noStore.title': 'No store assigned yet',
-  'auth.noStore.body':
-    'Your account is set up but an administrator still needs to assign you to a store. Contact your manager.',
+  'auth.noStore.body': 'Your account is set up, but you have not been added to a store yet. Ask your administrator to add you.',
 
   // ── 5. Auth errors (server-thrown TRPCError messages) ──────────
   'auth.errors.botTokenMissing': 'Bot token not configured',
@@ -1064,11 +1088,11 @@ export const en = {
   'approval.estimateUnpriced': '+ {n} unpriced',
 
   // ── Session-level "其他物品" / miscellaneous note (M1.8) ──────────
-  'order.notes.label': 'Other items',
+  'order.notes.label': 'Note',
   'order.notes.saving': 'Saving…',
   'order.notes.saved': 'Saved ✓',
   'order.notes.badge': 'Note',
-  'order.notes.hasNote': 'Has additional request',
+  'order.notes.hasNote': 'The store left a note',
 
   // ── M3.16-C: structured "Other items" (extras) editor ───────────
   'order.extras.label': 'Other items',
@@ -1241,6 +1265,8 @@ export const en = {
   'run.preview.noSupplierCount': 'No stall: {n}',
   'run.preview.filterMatch': '{n} of {total} shown',
   'run.price.fillIn': 'Set price',
+  'run.offline.needNetworkToDeliver': 'Network needed to start delivery',
+  'run.offline.waitForSync': 'Start delivery after {n, plural, one {# saved change syncs} other {# saved changes sync}}',
   'run.offline.needNetworkToStart': 'Network needed to start a run',
   'run.toast.runAlreadyOpen': 'A run is already open — opened that one',
   'run.price.daysAgo': '{n}d ago',
@@ -1403,6 +1429,8 @@ export const en = {
     '{n, plural, one {# line was} other {# lines were}} received with a problem; about {amount} {currency} was not received. Store bills still charge the split quantities.',
   'run.confirm.finish.receiptIssueLine': '{sku} · {store}: received {received}/{qty}',
   'run.confirm.finish.receiptIssuesMore': '…and {n} more',
+  'run.errors.expenseIdTaken':
+    'This expense is already recorded on another run. Add it again as a new expense',
   'run.errors.expenseLabelRequired': 'A description is required',
   'run.errors.expenseLabelTooLong': 'Description too long (200 max)',
   'run.errors.expenseReasonRequired': 'Reason is required',
@@ -1632,6 +1660,7 @@ export const en = {
   'confirm.issue.describe': 'Please describe the issue so the purchaser can correct it.',
   'confirm.issue.placeholder': "What's wrong?",
   'confirm.issue.photoOptional': 'Photo (optional)',
+  'confirm.issue.photoUploading': 'The photo is still uploading. Save once it is done.',
   'confirm.issue.save': 'Save',
   // M1.9-fix (2026-05-07): the 4 receive-side decision chips. These
   // are the most-tapped UI on the entire page; rendering raw enum
@@ -1769,6 +1798,7 @@ export const en = {
     'After this wastage the stock would be {after} (negative), so the record was already off. Save anyway? A stocktake afterwards is recommended.',
   'inventory.errors.cannotAdjust': 'You need permission to adjust stock to do a stocktake or record wastage.',
   'inventory.errors.invalidQty': 'Quantity must be a non-negative number.',
+  'inventory.sheet.wastage.needQty': 'Enter how much was lost.',
   'inventory.errors.wastageNeedsNote': 'Wastage requires a reason.',
 
   // ── 17. Dishes / Recipes (M2.0b) ───────────────────────
@@ -1798,7 +1828,7 @@ export const en = {
   'admin.sheet.newExpenseTemplate': 'New expense template',
   'admin.sheet.editExpenseTemplate': 'Edit template',
   'admin.confirm.archiveExpenseTemplate':
-    'Archive template "{label}"? Future runs will skip this template.',
+    'Archive template "{label}"? It will no longer be offered as a shortcut when adding an expense on the purchase page. Expenses already recorded stay as they are.',
   'admin.toast.expenseTemplateCreated': 'Template added',
   'admin.toast.expenseTemplateUpdated': 'Template updated',
   'admin.toast.expenseTemplateArchived': 'Template archived',
@@ -1826,6 +1856,8 @@ export const en = {
   'dishes.readOnly':
     "You can view this dish's recipe; editing the menu needs a permission an admin can give you.",
   'dishes.errors.namesRequired': 'At least one language name is required.',
+  'admin.errors.displayNameSharedWithOtherOrg':
+    'This person also belongs to another workspace, so only they can change their name',
   'admin.errors.namesRequired': 'At least one language name is required.',
   'dishes.errors.ingredientQtyMustBePositive': 'Ingredient qty must be > 0.',
   'dishes.errors.ingredientSkuNotFound': 'One or more ingredients reference an unknown product.',

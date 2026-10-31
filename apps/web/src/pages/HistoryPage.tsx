@@ -12,12 +12,14 @@ import { RunHistoryPage } from './runs/history/RunHistory';
 // 2026-10-21 audit CA-23: shared with the Finance presets (one local-
 // calendar date helper instead of two copies).
 import { useAuthStore } from '../stores/authStore';
+import { useReportStore } from '../hooks/useReportStore';
 import { localDateValue } from './admin/operations/financeDates';
 
 type PaymentFilter = 'all' | 'cash' | 'transfer' | 'mixed';
 type SortOrder = 'newest' | 'oldest';
 
 interface HistoryFilters {
+  /** Not used for the query: the store comes from useReportStore. */
   storeId: string;
   dateFrom: string;
   dateTo: string;
@@ -46,7 +48,7 @@ export function HistoryPage() {
   const productName = useProductName();
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [filters, setFilters] = useState<HistoryFilters>(EMPTY_FILTERS);
+  const [otherFilters, setFilters] = useState<HistoryFilters>(EMPTY_FILTERS);
   const [draftFilters, setDraftFilters] = useState<HistoryFilters>(EMPTY_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [page, setPage] = useState(1);
@@ -56,6 +58,18 @@ export function HistoryPage() {
     const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
     return () => window.clearTimeout(timer);
   }, [search]);
+
+  const storesQuery = trpc.catalog.stores.useQuery({ permission: 'prices.view' });
+  // CMP-HIS-1 (2026-10-31): start on the top bar's store, not all stores.
+  const reportStore = useReportStore(storesQuery.data ?? (storesQuery.isError ? [] : undefined));
+  const filters: HistoryFilters = useMemo(
+    () => ({ ...otherFilters, storeId: reportStore.storeId }),
+    [otherFilters, reportStore.storeId],
+  );
+  const applyFilters = (next: HistoryFilters) => {
+    reportStore.setStoreId(next.storeId);
+    setFilters(next);
+  };
 
   useEffect(() => {
     setPage(1);
@@ -72,11 +86,10 @@ export function HistoryPage() {
       page,
       pageSize,
     },
-    { placeholderData: (previous) => previous },
+    { placeholderData: (previous) => previous, enabled: reportStore.ready },
   );
   // Historical rows must retain names for SKUs archived after purchase.
   const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: true });
-  const storesQuery = trpc.catalog.stores.useQuery({ permission: 'prices.view' });
 
   const skuById = useMemo(() => {
     const map = new Map<
@@ -119,7 +132,7 @@ export function HistoryPage() {
   const clearAll = () => {
     setSearch('');
     setDebouncedSearch('');
-    setFilters(EMPTY_FILTERS);
+    applyFilters(EMPTY_FILTERS);
     setDraftFilters(EMPTY_FILTERS);
     setPage(1);
   };
@@ -162,17 +175,23 @@ export function HistoryPage() {
         />
       ) : null}
 
-      {hasSearchOrFilters ? (
-        <div
-          className="flex flex-wrap items-center gap-1.5"
-          aria-label={i18n.t('run.history.activeFilters')}
-        >
-          {filters.storeId ? (
-            <FilterChip
-              label={storeById.get(filters.storeId)?.name ?? filters.storeId.slice(0, 8)}
-              onRemove={() => setFilters((current) => ({ ...current, storeId: '' }))}
-            />
-          ) : null}
+      <div
+        className="flex flex-wrap items-center gap-1.5"
+        aria-label={i18n.t('run.history.activeFilters')}
+      >
+        {/* CMP-HIS-1: always say which stores the list and its total cover. */}
+        {filters.storeId ? (
+          <FilterChip
+            label={storeById.get(filters.storeId)?.name ?? filters.storeId.slice(0, 8)}
+            onRemove={() => reportStore.setStoreId('')}
+          />
+        ) : (
+          <span className="px-1 text-old-label font-semibold text-[var(--c-fg-muted)]">
+            {i18n.t('run.history.allStores')}
+          </span>
+        )}
+        {hasSearchOrFilters ? (
+          <>
           {filters.dateFrom || filters.dateTo ? (
             <FilterChip
               label={`${filters.dateFrom || '…'} – ${filters.dateTo || '…'}`}
@@ -198,8 +217,9 @@ export function HistoryPage() {
           >
             {i18n.t('run.history.clearAll')}
           </button>
-        </div>
-      ) : null}
+          </>
+        ) : null}
+      </div>
 
       <Sheet
         open={filtersOpen}
@@ -222,7 +242,7 @@ export function HistoryPage() {
               className="flex-[2]"
               disabled={invalidDateRange}
               onClick={() => {
-                setFilters(draftFilters);
+                applyFilters(draftFilters);
                 setFiltersOpen(false);
               }}
             >

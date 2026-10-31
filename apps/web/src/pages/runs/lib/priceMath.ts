@@ -10,7 +10,7 @@
  * FRONTEND_AUDIT_2026-07.md run-domain split). Pure functions; unit
  * tests in __tests__/priceMath.test.ts.
  */
-import { PurchasePriceSchema } from '@compass/contracts';
+import { isPurchasePrice } from '@compass/contracts/limits';
 
 /**
  * Move the decimal point of a plain decimal string by `places` (positive =
@@ -66,7 +66,7 @@ export function fromDisplayPrice(displayStr: string, inThousands: boolean): stri
  * back refused by the server.
  */
 export function isStorablePrice(raw: string | null | undefined): boolean {
-  return raw != null && PurchasePriceSchema.safeParse(raw.trim()).success;
+  return raw != null && isPurchasePrice(raw.trim());
 }
 
 /** The raw price a typed figure stands for, or null (see isStorablePrice). */

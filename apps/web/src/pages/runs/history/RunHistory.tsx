@@ -18,7 +18,7 @@
  * comes from ../lib/settlement (unit-tested); only super-admin correction
  * actions mutate a finished run.
  */
-import { addMoney } from '@compass/contracts';
+import { addMoney } from '@compass/contracts/money';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Badge, Button, Card, Input, SectionLabel, Sheet, useToast } from '@compass/ui';
 import { trpc } from '../../../lib/trpc';

@@ -9,14 +9,14 @@
  */
 export function resolveDataStateError(
   error: { message?: string } | null | undefined,
-  translateError: (message: string | undefined) => string | undefined,
+  translateError: (message: string | undefined, error?: unknown) => string | undefined,
   fallback: string,
 ): string {
   const raw =
     typeof error?.message === 'string' && error.message.trim() ? error.message : undefined;
   let text: string | undefined;
   try {
-    text = translateError(raw);
+    text = translateError(raw, error ?? undefined);
   } catch {
     text = undefined;
   }

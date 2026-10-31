@@ -30,7 +30,7 @@ import {
 import { proportionalSplitQty } from '../lib/splitQty';
 import { PriceInFull, PriceUnitSwitch } from '../components/PriceUnit';
 import { otherStoreSkusOf, type ActiveRun } from '../types';
-import { lineAmountNumber, lineWithinCap } from '@compass/contracts';
+import { lineAmountNumber, lineWithinCap } from '@compass/contracts/money';
 
 /**
  * GroupCardHeader — the "group title + right-aligned count·qty meta"
@@ -831,7 +831,7 @@ export function ExpensesCard({
                 <span className="min-w-[5rem] flex-1 truncate text-old-label text-[var(--c-fg-muted)]">
                   {storeNames}
                 </span>
-                {editable && !(otherStoreExpenseIds ?? []).includes(e.id) ? (
+                {editable && !e.pendingSync && !(otherStoreExpenseIds ?? []).includes(e.id) ? (
                   <button
                     type="button"
                     onClick={() => onRemove(e.id, e.label)}
@@ -857,6 +857,16 @@ export function ExpensesCard({
                   </>
                 ) : null}
               </div>
+              {/* CMP-BUY-2: recorded offline; shown so it is not entered
+                  twice, removable once it has synced. */}
+              {e.pendingSync ? (
+                <p
+                  data-testid="run-expense-pending-sync"
+                  className="mt-0.5 text-old-label font-medium text-[var(--c-warning-fg)]"
+                >
+                  {i18n.t('run.pendingSync.row')}
+                </p>
+              ) : null}
             </li>
           );
         })}

@@ -12,7 +12,7 @@ import { I18N_KEY_RE } from './errorText';
 
 type Key = Parameters<ReturnType<typeof useI18n>['t']>[0];
 
-/** The action label for each procedure the run and receiving pages queue. */
+/** The action label for each run / receiving procedure (order changes use the generic text). */
 const ACTION_KEYS: Record<string, Key> = {
   'run.purchaseItem': 'offline.action.purchaseItem',
   'run.markUnavailable': 'offline.action.markUnavailable',
@@ -29,6 +29,9 @@ export function offlineDropText(
   t: (key: Key, values?: Record<string, string | number>) => string,
   info: OfflineDropInfo,
 ): string {
+  // CA-25: an order change refused because the day it was made on is
+  // over says so (was OrderPage's own drop handler before CMP-FE-3).
+  if (info.message === 'order.errors.staleOfflineEdit') return t('order.errors.staleOfflineEdit');
   const actionKey = ACTION_KEYS[info.procedure];
   if (!actionKey) return t('run.toast.syncFailed');
   const action = t(actionKey);

@@ -39,7 +39,8 @@ import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
 import { useStoreContext } from '../components/StoreSwitcher';
 import { sessionItemsView } from './approval/sessionItemsView';
-import { ORDER_QTY_MAX } from '@compass/contracts';
+import { cardRequests, showPaymentSplit } from './approval/cardSummary';
+import { ORDER_QTY_MAX } from '@compass/contracts/limits';
 
 type ApprovalTab = 'pending' | 'approved' | 'rejected';
 
@@ -346,6 +347,7 @@ export function ApprovalPage() {
               const isClaimedByOther =
                 row.claimedByMemberId && row.claimedByMemberId !== session.member.memberId;
               const isOpen = activeSessionId === row.id;
+              const requests = cardRequests(row.notes, row.extrasJson);
               return (
                 <Card as="li" key={row.id}>
                   {/* A11Y-1 (2026-10-31): the amounts move under the name when
@@ -459,7 +461,9 @@ export function ApprovalPage() {
                           the last time it was bought. One under the other:
                           side by side they are wider than the card leaves
                           room for on a phone. */}
-                      {row.estimatedTotal && row.estimatedCash && row.estimatedTransfer ? (
+                      {/* CMP-APR-6: only when both parts are above 0. */}
+                      {row.estimatedTotal &&
+                      showPaymentSplit(row.estimatedCash, row.estimatedTransfer) ? (
                         <span
                           // V10: the figures in the same mono face as the
                           // card's total beside them.
@@ -483,12 +487,16 @@ export function ApprovalPage() {
                       {/* 2026-10-21 audit CA-27 (B-14): new orders only write
                           structured extras (M3.16-C), so a badge keyed on the
                           legacy `notes` alone never fired for them. */}
-                      {row.notes || extrasCountOf(row.extrasJson) > 0 ? (
+                      {/* CMP-APR-7: other items and the note each name
+                          themselves; "备注 · 2" counted the items. */}
+                      {requests.extras > 0 ? (
+                        <Badge tone="warn">
+                          {i18n.t('order.batches.extras', { n: requests.extras })}
+                        </Badge>
+                      ) : null}
+                      {requests.hasNote ? (
                         <Badge tone="warn" title={i18n.t('order.notes.hasNote')}>
                           {i18n.t('order.notes.badge')}
-                          {extrasCountOf(row.extrasJson) > 0
-                            ? ` · ${extrasCountOf(row.extrasJson)}`
-                            : null}
                         </Badge>
                       ) : null}
                     </div>
@@ -745,6 +753,9 @@ export function ApprovalPage() {
             setRejectReason('');
           }
         }}
+        // CMP-INT-2: a typed reason is not dropped by Esc / backdrop / back
+        // without asking (while saving, the sheet stays open anyway).
+        hasChanges={!reject.isPending && rejectReason.trim() !== ''}
         title={i18n.t('approval.confirm.reject.title')}
         description={i18n.t('approval.confirm.reject.body')}
         // M1.9-fix (2026-05-07): the reason input used to autoFocus on
@@ -1150,8 +1161,3 @@ function SessionItems({
 // entry sheet) — promoting to size="sm" gives ApprovalPage all of those
 // behaviors for free, and any future improvements to QtyControl land
 // here automatically.
-
-/** Rows in a session's structured extras (jsonb; typed loosely by the read model). */
-function extrasCountOf(extrasJson: unknown): number {
-  return Array.isArray(extrasJson) ? extrasJson.length : 0;
-}

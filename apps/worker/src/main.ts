@@ -41,6 +41,7 @@ import {
 } from '@compass/db';
 import type { DB } from '@compass/db';
 import { assertRelayDelivered, RelayError } from './relay';
+import { escapeMd } from './markdown';
 import { orphanRepairFor } from './orphanRepair';
 import { deleteInBatches, RETENTION_RULES, retentionDeleteSql } from './retention';
 import {
@@ -365,12 +366,6 @@ async function deferOutboxTx(tx: Tx, id: string, currentRetries: number): Promis
       nextAttemptAt: sql`now() + ${delay}::int * interval '1 second'`,
     })
     .where(eq(s.outbox.id, id));
-}
-
-function escapeMd(text: string): string {
-  // MarkdownV2 reserved characters per
-  // https://core.telegram.org/bots/api#markdownv2-style
-  return text.replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&');
 }
 
 function resolveDeepLink(path: string): string {

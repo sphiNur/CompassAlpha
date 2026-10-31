@@ -28,11 +28,8 @@ import {
   useToast,
   QueryErrorBanner,
 } from '@compass/ui';
-import {
-  BACKDATE_LIMIT_DAYS,
-  isoDateDaysBefore,
-  type SettlementWageItem,
-} from '@compass/contracts';
+import type { SettlementWageItem } from '@compass/contracts';
+import { BACKDATE_LIMIT_DAYS, isoDateDaysBefore } from '@compass/contracts/limits';
 import { newIdempotencyKey, trpc } from '../lib/trpc';
 import { PendingSpinner } from '../components/PendingSpinner';
 import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
