@@ -118,13 +118,16 @@ export async function provisionOrganization(
       .returning();
     if (!member) throw new Error('owner membership insert returned no row');
     ownerMemberId = member.id;
-    await tx.insert(s.memberRoleBindings).values({
-      memberId: member.id,
-      roleId: ownerRoleId,
-      scopeType: 'global',
-      scopeId: null,
-      grantedBy: input.ownerUserId,
-    });
+    await tx
+      .insert(s.memberRoleBindings)
+      .values({
+        memberId: member.id,
+        roleId: ownerRoleId,
+        scopeType: 'global',
+        scopeId: null,
+        grantedBy: input.ownerUserId,
+      })
+      .onConflictDoNothing();
   }
 
   // Keep the caller's "last org" pointer consistent in the same

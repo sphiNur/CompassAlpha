@@ -132,10 +132,10 @@ export const en = {
     'You need to administer at least one OTHER store to clone from. Ask a higher-level admin to add you to one first.',
   'admin.clone.alsoMembers': 'Also assign source members',
   'admin.clone.alsoMembersHint':
-    "When on, every member assigned to the source store is also assigned to the target — they'll see and work in both. Off (default) clones only the role shape; you staff the target with different people.",
+    "When on, the source store's people join the target with the roles they hold there, and will see and work in both. Off (default): only the store's default role is copied, no people.",
   'admin.clone.whatTitle': 'What this does',
   'admin.clone.whatBody':
-    "For every store-scoped role binding in the source store, create the same binding in {store} (skip duplicates). Roles you don't outrank in {store} are skipped — counted separately so you know what to do manually.",
+    "Roles themselves (name, level, permissions) are shared across the organisation, so nothing to copy there. This sets the source store's default role for newcomers on {store}. Only with the option above are people and their roles added to {store}; roles at or above your level in {store}, or with permissions you lack, are skipped and counted separately.",
   // 2026-07-30: Operations was the second-largest pocket of untranslated
   // copy. Titles AND their body paragraphs — see the note in
   // scripts/check-untranslated.ts about why the guard only counts titles.
@@ -278,6 +278,9 @@ export const en = {
     'Only org-level admins can grant global (org-tier) roles. You can still assign per-store roles in the stores you administer.',
   'people.pickScopeFirst': 'Pick a scope above to see available roles.',
   'ops.maint.resetTodayTitle': "Reset today's entire flow",
+  'ops.maint.bulkDisabledBody':
+    'Reset today, reset a date and wipe everything are switched off on the live server. You can still delete your own single test orders or market runs above.',
+  'ops.maint.bulkDisabledTitle': 'Workspace-wide purges are off',
   'ops.maint.resetTodayBody':
     'Wipes every order, run, delivery, notification and price-history row dated {date} — regardless of who created it — together with the runs these orders are in and the orders in these runs, even from other dates. Catalog and members untouched. Use only when you are sure no real users have data today.',
   'ops.activity.recentEvents': 'Recent events',
@@ -345,6 +348,8 @@ export const en = {
   'admin.clone.toastCloned': 'Cloned {n, plural, =1 {1 role binding} other {# role bindings}}',
   'admin.clone.toastAlreadyExisted': '{n} already existed',
   'admin.clone.toastSkippedRank': '{n} skipped (level too high)',
+  'admin.clone.toastDefaultRole': 'Default role copied',
+  'admin.clone.toastSkippedPermission': '{n} skipped (permissions you lack)',
   'admin.clone.toastAssigned': '{n, plural, =1 {1 member} other {# members}} assigned',
   // 2026-07-30: role/rank chrome. `+ New <thing>` slipped past the guard's
   // first rule because the line starts with '+', not a letter.
@@ -416,6 +421,8 @@ export const en = {
   // 'auth.errors.rateLimited' — same wording, different namespace.
   'common.errors.rateLimited': 'Too many requests — please wait a moment and try again',
   'common.errors.requestInFlight': 'The previous attempt is still being processed. Try again in a moment.',
+  'common.errors.idempotencyKeyReused':
+    'This request reused the identifier of an earlier one with different content, so it was not saved. Refresh and try again.',
   'common.errors.internal': 'Something went wrong on our side. Please try again.',
   'common.errors.invalidDecimal': 'Enter a number with at most 3 decimals.',
   'common.errors.positiveDecimal': 'Enter a number above 0 with at most 3 decimals.',
@@ -531,6 +538,8 @@ export const en = {
   'auth.errors.invalidRefresh': 'Session expired — please sign in again',
   'auth.errors.refreshReplayDetected':
     'Suspicious sign-in activity detected — all sessions for this account have been signed out. Please sign in again.',
+  'auth.errors.refreshChainSwitched':
+    'This account switched to another workspace elsewhere, so this sign-in has ended. Please open the app again.',
   'auth.errors.missingPermission':
     "You don't have permission to do that. Ask an admin if you think this is a mistake.",
   'auth.errors.nameLocked': 'Your name is locked — only an administrator can change it',
@@ -715,6 +724,8 @@ export const en = {
   'auth.errors.notAssignedToStore': 'You are not assigned to this store',
   'auth.errors.userMissing': 'User not found',
   'auth.errors.cannotGrantEqualOrHigher': 'You cannot grant a role at or above your own level',
+  'auth.errors.cannotGrantMissingPermission':
+    'This role includes permissions you do not have yourself, so you cannot grant it.',
   'auth.errors.cannotRevokeEqualOrHigher': 'You cannot revoke a role at or above your own level',
   'auth.errors.rateLimited': 'Too many attempts — please wait a minute and try again',
   'system.errors.logRateLimited': 'Too many client log events — slow down',
@@ -749,8 +760,14 @@ export const en = {
     "This run contains other people's orders — it cannot be deleted",
   'admin.errors.sessionHasForeignAuthors':
     "This order contains other people's entries and cannot be deleted. Only your own test orders can be deleted here",
+  'admin.errors.runActedOnByOthers':
+    'Someone else has already handled this market run or its orders (claimed, bought, received or reviewed), so it cannot be deleted as test data.',
+  'admin.errors.sessionActedOnByOthers':
+    'Someone else has already handled this order (reviewed, claimed or rejected it), so it cannot be deleted as test data.',
   'admin.errors.bulkPurgeDisabledInProduction':
-    'Workspace-wide purges (wipe everything, reset a date) are switched off on the live server. Deleting a single order or market run still works.',
+    'Workspace-wide purges (reset today, reset a date, wipe everything) are switched off on the live server. Deleting a single order or market run still works.',
+  'admin.errors.purgeGuardWaiverDisabledInProduction':
+    "On the live server the check that keeps other people's orders and runs from being deleted cannot be skipped.",
   'admin.errors.purgeHasSettlements':
     'There are daily closes in this range. Daily close history cannot be deleted, so this cannot be purged',
   'admin.errors.runNotFound': 'Market run not found',
@@ -927,12 +944,17 @@ export const en = {
   'approval.confirmTakeover': "{who} hasn't acted on this order. Take over the review?",
   'approval.unknownReviewer': 'another reviewer',
   'approval.unapprove': 'Reverse approval',
+  'approval.undo': 'Undo',
   'approval.toast.approved': 'Approved ✓',
   'approval.toast.rejected': 'Rejected',
   'approval.toast.claimed': 'Claimed for review',
   'approval.toast.released': 'Released',
   'approval.toast.tookOver': 'Taken over — you are reviewing it now',
   'approval.toast.unapproved': 'Approval reversed',
+  'approval.toast.claimTimedOut':
+    'The order you were reviewing ({owner}) was released after a while without activity.',
+  'approval.toast.claimTakenOver': '{who} took over the order you were reviewing ({owner}).',
+  'approval.toast.undoTooLate': 'Could not undo: someone else has already acted on this order.',
   'approval.toast.approveFailed': 'Could not approve',
   'approval.toast.rejectFailed': 'Could not reject',
   'approval.items.loading': 'Loading items…',
@@ -970,6 +992,7 @@ export const en = {
   'order.errors.extraIndexOutOfRange': 'Extra row not found',
   'order.errors.notClaimable': 'This order is not awaiting review',
   'order.errors.alreadyClaimed': 'Already claimed by another reviewer',
+  'order.errors.takeOverCooldown': 'This order was just taken over. Try again in a minute.',
   'order.errors.notClaimer': 'Only the claimer or another approver can release this claim',
   'order.errors.cannotApprove': "You don't have permission to approve",
   'order.errors.notApprovable': 'This order is not awaiting review',

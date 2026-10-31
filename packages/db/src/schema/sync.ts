@@ -50,6 +50,9 @@ export const idempotencyKeys = syncSchema.table(
     route: varchar('route', { length: 100 }).notNull(),
     userId: uuid('user_id'),
     response: jsonb('response'),
+    /** sha256 of the request body the key was first used with (BUY-16,
+     *  migration 0058). NULL on rows written before it existed. */
+    requestHash: varchar('request_hash', { length: 64 }),
     expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()

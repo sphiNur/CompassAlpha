@@ -21,6 +21,7 @@ import { verifyAccess } from './infra/jwt';
 import { hub } from './realtime/hub';
 import { relayDatabaseNotices } from './realtime/dbRelay';
 import { createWebSocketHandler, handleWsRequest, type WSData } from './realtime/socket';
+import { trustedClientIp } from './services/clientIp';
 import { loadSession } from './trpc/context';
 
 async function main() {
@@ -62,6 +63,8 @@ async function main() {
           loadSession: (userId, orgId, memberId) => loadSession(db, userId, orgId, memberId),
           onSessionLookupError: (err) =>
             logger.warn({ err: (err as Error).message }, 'ws session lookup failed'),
+          clientIp: (r) =>
+            trustedClientIp((name) => r.headers.get(name) ?? undefined, env.CLIENT_IP_PROXY_KEY),
         });
       }
       return app.fetch(req);

@@ -1,0 +1,12 @@
+-- 0057_refresh_revoke_reason.sql
+--
+-- R2-ADM-1 (2026-10-31): switching workspace ends the refresh chain the
+-- caller is leaving. Another tab or device still on that chain then got
+-- "suspicious login activity — all devices signed out", because a revoked
+-- token was always read as a replay. The chain now records why it ended
+-- ('switched'), and a refresh from it gets an honest answer.
+--
+-- SAFETY: a nullable column with no default — a catalogue-only change,
+-- instant on any amount of data. Existing rows stay NULL (old switches
+-- keep the old answer until those tokens expire, at most 30 days).
+ALTER TABLE auth.refresh_tokens ADD COLUMN IF NOT EXISTS revoke_reason varchar(32);
