@@ -59,6 +59,9 @@ describe('confirmCancelPolicy (DX-IX-6)', () => {
     expect(confirmCancelPolicy({ danger: true })).toEqual({ showCancel: true, focusCancel: true });
     expect(confirmCancelPolicy({ irreversible: true })).toEqual({ showCancel: true, focusCancel: true });
   });
+  test('a caller can ask for it (the price check), which also shows Cancel', () => {
+    expect(confirmCancelPolicy({ focusCancel: true })).toEqual({ showCancel: true, focusCancel: true });
+  });
   test('with a required reason the field takes focus; Cancel is still shown', () => {
     expect(confirmCancelPolicy({ danger: true, requireReason: true })).toEqual({
       showCancel: true,

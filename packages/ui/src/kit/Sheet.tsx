@@ -28,7 +28,7 @@ export interface SheetProps {
 export function Sheet({ open, onOpenChange, title, children, actions, keepFocus }: SheetProps) {
   useSheetPresence(open, onOpenChange);
   const contentRef = useRef<HTMLDivElement | null>(null);
-  const focus = useSheetFocus(open, contentRef, !!keepFocus);
+  const focus = useSheetFocus(open, contentRef, { keepKeyboardDown: !!keepFocus });
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>

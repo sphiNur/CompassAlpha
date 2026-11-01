@@ -43,13 +43,15 @@ import { useReportStore } from '../../../hooks/useReportStore';
 import { DebugPage } from '../../DebugPage';
 import { financePresetRange, maintenanceToday } from './financeDates';
 import { auditCategory, describeAuditRow, type AuditCategory } from './auditSentence';
-import { purgeCountsByKind, resetConfirmMatches } from './purgeCounts';
+import { purgeCountsByKind, resetConfirmMatches, wipeConfirmMatches } from './purgeCounts';
+import { activityDetail } from './activityDetail';
 
 // ============ Activity ============
 
 export function ActivitySection() {
   const dateFmt = useDateFormat();
   const i18n = useI18n();
+  const productName = useProductName();
   const eventLabel = (streamType: string, type: string): string => {
     const key = `ops.event.${type}` as Parameters<typeof i18n.t>[0];
     const label = i18n.t(key);
@@ -114,41 +116,39 @@ export function ActivitySection() {
               const rowBg = isIntervention
                 ? 'bg-[var(--c-warn-bg)]'
                 : 'bg-[var(--c-surface)] ring-hairline';
+              // DX-CAT-2 (2026-11-01): which product, store and order or
+              // run — in place of "seq N". Older servers send no context.
+              const detail = activityDetail(e.context, {
+                productName: (names) => productName({ names }),
+                qty: formatQty,
+                day: (d) => dateFmt.calendarDay(d),
+                orderOf: (date) => i18n.t('ops.activity.orderOf', { date }),
+                runLabel: (date, n) => i18n.t('ops.purge.runLabel', { date, n }),
+              });
+              // The reason a claim went back, in words; the routine ones
+              // (released by hand, page closed) need none.
+              const claimNote =
+                claimReason === 'override'
+                  ? i18n.t('ops.activity.claimOverride')
+                  : claimReason === 'timeout'
+                    ? i18n.t('ops.activity.claimTimeout')
+                    : null;
               return (
                 <li
                   key={e.id}
                   className={`flex flex-col gap-0.5 rounded-[var(--r-card)] px-3 py-2 ring-hairline ${rowBg}`}
                 >
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span
-                      className="text-old-label font-semibold text-[var(--c-fg)]"
-                      title={
-                        claimReason === 'override'
-                          ? i18n.t('ops.activity.claimOverride')
-                          : claimReason === 'timeout'
-                            ? i18n.t('ops.activity.claimTimeout')
-                            : undefined
-                      }
-                    >
-                      {/* ADM-17: the event in words, from the catalog;
-                          an event type it does not know yet stays raw. */}
-                      {eventLabel(e.streamType, e.type)}
-                      {claimReason ? (
-                        <span
-                          className={
-                            isIntervention
-                              ? 'ml-1.5 text-old-tiny font-medium uppercase tracking-wider text-[var(--c-warn-ink)]'
-                              : 'ml-1.5 text-old-tiny font-medium uppercase tracking-wider text-[var(--c-fg-muted)]'
-                          }
-                        >
-                          · {claimReason}
-                        </span>
-                      ) : null}
-                    </span>
-                    <span className="font-mono text-old-tiny text-[var(--c-fg-muted)]">
-                      seq {e.seq}
-                    </span>
-                  </div>
+                  <span className="text-old-label font-semibold text-[var(--c-fg)]">
+                    {/* ADM-17: the event in words, from the catalog;
+                        an event type it does not know yet stays raw. */}
+                    {eventLabel(e.streamType, e.type)}
+                  </span>
+                  {detail ? (
+                    <span className="text-old-label text-[var(--c-fg)]">{detail}</span>
+                  ) : null}
+                  {claimNote ? (
+                    <span className="text-old-label text-[var(--c-warn-ink)]">{claimNote}</span>
+                  ) : null}
                   <div className="flex items-baseline justify-between gap-2 text-old-label text-[var(--c-fg-muted)]">
                     <span className="truncate">
                       {e.actor?.displayName ?? i18n.t('ops.activity.system')}
@@ -480,9 +480,12 @@ function TargetedPurgeBrowser() {
           {(rows) => (
             <ul className="flex flex-col gap-1.5" role="list">
               {rows.map((sess) => {
-                const inRun = sess.status === 'in_run' || sess.status === 'archived' || sess.runId;
                 const attribLabel =
                   sess.attribDisplayName ?? i18n.t('run.sessions.unknownSubmitter');
+                // DX-CAT-3 (2026-11-01): the server says whether this order
+                // can be deleted here; a row that can't says why, and has
+                // no red Delete that only refuses after a tap.
+                const blockText = sessionBlockText(i18n, sess.deleteBlock, attribLabel);
                 const label = `${sess.storeName ?? i18n.t('ops.purge.unknownStore')} · ${attribLabel}`;
                 return (
                   <li
@@ -511,9 +514,9 @@ function TargetedPurgeBrowser() {
                         })}
                       </div>
                     </div>
-                    {inRun ? (
-                      <span className="text-old-tiny text-[var(--c-fg-muted)]">
-                        {i18n.t('ops.purge.inRun')}
+                    {blockText ? (
+                      <span className="max-w-[45%] text-right text-old-label text-[var(--c-fg-muted)]">
+                        {blockText}
                       </span>
                     ) : (
                       <Button
@@ -554,6 +557,7 @@ function TargetedPurgeBrowser() {
             <ul className="flex flex-col gap-1.5" role="list">
               {rows.map((r) => {
                 const label = i18n.t('ops.purge.runLabel', { date: r.runDate, n: r.runIndex + 1 });
+                const blockText = runBlockText(i18n, r.deleteBlock);
                 return (
                   <li
                     key={r.runId}
@@ -582,6 +586,11 @@ function TargetedPurgeBrowser() {
                           : ''}
                       </div>
                     </div>
+                    {blockText ? (
+                      <span className="max-w-[45%] text-right text-old-label text-[var(--c-fg-muted)]">
+                        {blockText}
+                      </span>
+                    ) : (
                     <Button
                       size="sm"
                       variant="danger"
@@ -596,6 +605,7 @@ function TargetedPurgeBrowser() {
                     >
                       {i18n.t('common.delete')}
                     </Button>
+                    )}
                   </li>
                 );
               })}
@@ -694,6 +704,47 @@ function TargetedPurgeBrowser() {
       </Sheet>
     </div>
   );
+}
+
+type I18n = ReturnType<typeof useI18n>;
+
+/** DX-CAT-3: why an order can't be deleted here, or null when it can. */
+function sessionBlockText(
+  i18n: I18n,
+  block: 'notSuperAdmin' | 'inRun' | 'othersOrder' | 'othersLines' | 'actedOnByOthers' | null,
+  author: string,
+): string | null {
+  switch (block) {
+    case 'notSuperAdmin':
+      return i18n.t('ops.purge.block.notSuperAdmin');
+    case 'inRun':
+      return i18n.t('ops.purge.block.inRun');
+    case 'othersOrder':
+      return i18n.t('ops.purge.block.othersOrder', { name: author });
+    case 'othersLines':
+      return i18n.t('ops.purge.block.othersLines');
+    case 'actedOnByOthers':
+      return i18n.t('ops.purge.block.orderActedOn');
+    default:
+      return null;
+  }
+}
+
+/** DX-CAT-3: why a run can't be deleted here, or null when it can. */
+function runBlockText(
+  i18n: I18n,
+  block: 'notSuperAdmin' | 'foreignSessions' | 'actedOnByOthers' | null,
+): string | null {
+  switch (block) {
+    case 'notSuperAdmin':
+      return i18n.t('ops.purge.block.notSuperAdmin');
+    case 'foreignSessions':
+      return i18n.t('ops.purge.block.runForeign');
+    case 'actedOnByOthers':
+      return i18n.t('ops.purge.block.runActedOn');
+    default:
+      return null;
+  }
 }
 
 function CascadePreview({ byTable, total }: { byTable: Record<string, number>; total: number }) {
@@ -1785,9 +1836,12 @@ export function MaintenanceSection() {
   const toast = useToast();
   const errToast = useErrToast();
   const i18n = useI18n();
+  const dates = useDateFormat();
 
   const isSuperAdmin = session?.roleSlugs.includes('super_admin') ?? false;
-  const orgSlug = session?.member.orgSlug ?? '';
+  // DX-CAT-17: the wipe is confirmed with the name shown on the workspace
+  // page, not the slug nobody sees.
+  const orgName = session?.member.orgName ?? '';
   // R2-CAT-3: the live server refuses the bulk purges; don't offer them.
   // Until the config arrives (or from an older server) they stay shown.
   const appConfig = trpc.system.appConfig.useQuery(undefined, { staleTime: Infinity });
@@ -1799,6 +1853,12 @@ export function MaintenanceSection() {
     date: string;
     total: number;
     byTable: Record<string, number>;
+    // DX-CAT-5: absent from an older server's answer.
+    scope?: {
+      sameDay: { orders: number; runs: number };
+      linkedOrders: Array<{ orderDate: string; storeName: string | null; count: number }>;
+      linkedRuns: Array<{ runDate: string; runIndex: number }>;
+    };
   } | null>(null);
   const [dateConfirmOpen, setDateConfirmOpen] = useState(false);
   const [dateConfirmText, setDateConfirmText] = useState('');
@@ -1809,7 +1869,12 @@ export function MaintenanceSection() {
 
   const datePreviewMut = trpc.admin.purgeByDate.useMutation({
     onSuccess: (data) => {
-      setDatePreview({ date: data.date, total: data.total, byTable: data.byTable });
+      setDatePreview({
+        date: data.date,
+        total: data.total,
+        byTable: data.byTable,
+        scope: data.scope,
+      });
       setDateConfirmOpen(true);
     },
     onError: errToast('common.error'),
@@ -1827,7 +1892,7 @@ export function MaintenanceSection() {
   // ---- nuclear-purge state ----
   const [confirmText, setConfirmText] = useState('');
   const [allOpen, setAllOpen] = useState(false);
-  const slugMatches = confirmText === orgSlug;
+  const nameMatches = wipeConfirmMatches(confirmText, orgName);
   const allDryRun = trpc.admin.purgeAllTestData.useMutation({
     onError: errToast('common.error'),
   });
@@ -2009,6 +2074,46 @@ export function MaintenanceSection() {
               {datePreview.total > 0 ? <PurgeCountList byTable={datePreview.byTable} /> : null}
             </div>
           ) : null}
+          {/* DX-CAT-5 (2026-11-01): what is this day's, and what goes with
+              it from other dates because an order and its run are deleted
+              together — each with its date. */}
+          {datePreview && datePreview.total > 0 && datePreview.scope ? (
+            <div className="flex flex-col gap-2 text-old-body-sm text-[var(--c-fg)]">
+              <p>
+                {i18n.t('ops.maint.scopeSameDay', {
+                  date: dates.calendarDay(datePreview.date),
+                  orders: i18n.t('run.label.sessionsCount', {
+                    n: datePreview.scope.sameDay.orders,
+                  }),
+                  runs: i18n.t('finance.count.runs', { n: datePreview.scope.sameDay.runs }),
+                })}
+              </p>
+              {datePreview.scope.linkedOrders.length > 0 ||
+              datePreview.scope.linkedRuns.length > 0 ? (
+                <Banner tone="warn" title={i18n.t('ops.maint.scopeLinkedTitle')}>
+                  <ul className="mt-1 flex flex-col gap-0.5" role="list">
+                    {datePreview.scope.linkedRuns.map((r) => (
+                      <li key={`run-${r.runDate}-${r.runIndex}`}>
+                        {i18n.t('ops.purge.runLabel', {
+                          date: dates.calendarDay(r.runDate),
+                          n: r.runIndex + 1,
+                        })}
+                      </li>
+                    ))}
+                    {datePreview.scope.linkedOrders.map((o) => (
+                      <li key={`order-${o.orderDate}-${o.storeName ?? ''}`}>
+                        {i18n.t('ops.maint.scopeLinkedOrders', {
+                          date: dates.calendarDay(o.orderDate),
+                          store: o.storeName ?? i18n.t('ops.purge.unknownStore'),
+                          orders: i18n.t('run.label.sessionsCount', { n: o.count }),
+                        })}
+                      </li>
+                    ))}
+                  </ul>
+                </Banner>
+              ) : null}
+            </div>
+          ) : null}
           {/* CMP-OPS-5: typed confirmation, like the full wipe. */}
           {datePreview && datePreview.total > 0 ? (
             <Field
@@ -2019,7 +2124,8 @@ export function MaintenanceSection() {
                 value={dateConfirmText}
                 onChange={(e) => setDateConfirmText(e.target.value)}
                 placeholder={datePreview.date}
-                inputMode="numeric"
+                // DX-CAT-4: no number pad — it has no "-" on an iPhone;
+                // resetConfirmMatches compares the digits only anyway.
                 autoCapitalize="off"
                 autoCorrect="off"
               />
@@ -2033,16 +2139,17 @@ export function MaintenanceSection() {
         open={allOpen}
         onOpenChange={(o) => !o && !allCommit.isPending && setAllOpen(false)}
         title={i18n.t('ops.maint.confirmPurgeTitle')}
-        description={i18n.t('ops.maint.confirmPurgeBody', { slug: orgSlug })}
+        description={i18n.t('ops.maint.confirmPurgeByName', { name: orgName })}
         footer={
           <Button
             block
             variant="danger"
             loading={allCommit.isPending}
-            disabled={!slugMatches}
+            // DX-CAT-17: nothing to delete, nothing to confirm.
+            disabled={!nameMatches || !allDryRun.data || allDryRun.data.total === 0}
             onClick={() => {
-              if (!slugMatches) return;
-              allCommit.mutate({ dryRun: false, confirmText });
+              if (!nameMatches) return;
+              allCommit.mutate({ dryRun: false, confirmText: confirmText.trim() });
             }}
           >
             {allCommit.isPending
@@ -2066,11 +2173,11 @@ export function MaintenanceSection() {
             </div>
           ) : null}
 
-          <Field label={i18n.t('ops.maint.confirmPurgeLabel')}>
+          <Field label={i18n.t('ops.maint.confirmPurgeNameLabel')}>
             <Input
               value={confirmText}
               onChange={(e) => setConfirmText(e.target.value)}
-              placeholder={orgSlug}
+              placeholder={i18n.t('ops.maint.confirmPurgeNamePlaceholder')}
               autoFocus
               autoCapitalize="off"
               autoCorrect="off"

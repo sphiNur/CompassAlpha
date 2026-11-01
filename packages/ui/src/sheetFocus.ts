@@ -58,17 +58,25 @@ function activeElement(): HTMLElement | null {
 }
 
 /**
- * Wires a Radix Dialog.Content for the behaviour above. `keepKeyboardDown`
- * replaces Radix's "focus the first field" with focusing the sheet itself.
+ * Wires a Radix Dialog.Content for the behaviour above. The one place a
+ * sheet's open and close focus is decided:
+ *
+ * - open: `keepKeyboardDown` focuses the sheet itself; otherwise a control
+ *   marked `data-autofocus` (a confirm's safe answer, DX-IX-6 / DX-IX-7)
+ *   takes focus; otherwise Radix focuses the first focusable (a field's
+ *   `autoFocus` also wins there, since focus is then already inside).
+ * - close: `returnFocusRef` when given and still on the page (DX-ORD-9),
+ *   else the element focused at open, else the page fallback.
  */
 export function useSheetFocus(
   open: boolean,
   contentRef: RefObject<HTMLElement | null>,
-  keepKeyboardDown: boolean,
+  options: { keepKeyboardDown?: boolean; returnFocusRef?: RefObject<HTMLElement | null> } = {},
 ): {
-  onOpenAutoFocus: ((e: Event) => void) | undefined;
+  onOpenAutoFocus: (e: Event) => void;
   onCloseAutoFocus: (e: Event) => void;
 } {
+  const { keepKeyboardDown = false, returnFocusRef } = options;
   const opener = useRef<HTMLElement | null>(null);
   // A layout effect runs before Radix's FocusScope moves focus into the
   // sheet (that happens in a passive effect), so this still sees the
@@ -79,26 +87,38 @@ export function useSheetFocus(
 
   const onOpenAutoFocus = useCallback(
     (e: Event) => {
+      const content = contentRef.current;
+      if (keepKeyboardDown) {
+        e.preventDefault();
+        content?.focus({ preventScroll: true });
+        return;
+      }
+      const preferred = content?.querySelector<HTMLElement>('[data-autofocus]');
+      if (!preferred) return; // Radix: first focusable
       e.preventDefault();
-      contentRef.current?.focus({ preventScroll: true });
+      preferred.focus();
     },
-    [contentRef],
+    [contentRef, keepKeyboardDown],
   );
 
-  const onCloseAutoFocus = useCallback((e: Event) => {
-    e.preventDefault();
-    if (typeof document === 'undefined') return;
-    const target = pickReturnFocus(
-      opener.current,
-      activeElement(),
-      document.body,
-      document.querySelector<HTMLElement>(FOCUS_FALLBACK_SELECTOR),
-    );
-    opener.current = null;
-    target?.focus({ preventScroll: true });
-  }, []);
+  const onCloseAutoFocus = useCallback(
+    (e: Event) => {
+      e.preventDefault();
+      if (typeof document === 'undefined') return;
+      const named = returnFocusRef?.current;
+      const target = pickReturnFocus(
+        named && named.isConnected ? named : opener.current,
+        activeElement(),
+        document.body,
+        document.querySelector<HTMLElement>(FOCUS_FALLBACK_SELECTOR),
+      );
+      opener.current = null;
+      target?.focus({ preventScroll: true });
+    },
+    [returnFocusRef],
+  );
 
-  return { onOpenAutoFocus: keepKeyboardDown ? onOpenAutoFocus : undefined, onCloseAutoFocus };
+  return { onOpenAutoFocus, onCloseAutoFocus };
 }
 
 /**

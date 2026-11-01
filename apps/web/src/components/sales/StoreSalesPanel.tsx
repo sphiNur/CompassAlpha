@@ -125,13 +125,27 @@ export function StoreSalesPanel({
 
   const record = trpc.sales.record.useMutation({
     trpc: { context: recordIdemCtx },
-    onSuccess: () => {
+    onSuccess: (data) => {
       recordIdemCtx.idempotencyKey = newIdempotencyKey();
       void utils.sales.list.invalidate({ storeId });
       // M2.0c: also invalidate inventory levels — consumption rows
       // just landed in the ledger.
       void utils.inventory.levels.invalidate({ storeId });
-      toast.success(i18n.t('sales.toast.recorded'));
+      // DX-SAL-1 (2026-11-01): the sale is kept, but stock it drove below
+      // zero is said out loud — the toast used to read "stock deducted
+      // automatically" for an apple nobody had ever received.
+      // (`negativeStock` is absent from an older server's answer.)
+      const negative = data.negativeStock ?? [];
+      if (negative.length > 0) {
+        toast.show(
+          i18n.t('sales.toast.recordedNegative', {
+            items: negative.map((n) => productName({ names: n.names })).join(i18n.t('common.listSeparator')),
+          }),
+          { tone: 'warn', ttlMs: 8000 },
+        );
+      } else {
+        toast.success(i18n.t('sales.toast.recorded'));
+      }
       setDraftDishId('');
       setDraftQty('1');
     },
@@ -353,14 +367,17 @@ export function StoreSalesPanel({
                   : null;
               const voided = !!sale.voidedAt;
               return (
+                // DX-SAL-4 (2026-11-01): a voided row is struck through,
+                // not faded — 60 % opacity put the void reason at 2.6:1.
+                // The strike stays on the dish and quantity; the reason
+                // reads at full muted contrast.
                 <li
                   key={sale.id}
-                  className={
-                    'flex items-baseline justify-between gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 ring-hairline ' +
-                    (voided ? 'opacity-60' : '')
-                  }
+                  className="flex items-baseline justify-between gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 ring-hairline"
                 >
-                  <div className={`min-w-0 flex-1 ${voided ? 'line-through' : ''}`}>
+                  <div
+                    className={`min-w-0 flex-1 ${voided ? 'text-[var(--c-fg-muted)] line-through' : ''}`}
+                  >
                     <div className="flex items-baseline gap-2">
                       <span className="text-old-label tabular-nums text-[var(--c-fg-muted)]">
                         {time}

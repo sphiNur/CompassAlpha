@@ -119,6 +119,28 @@ export function canGrantRole(
   return outranks(rankIn(actor.bindings, scope.storeId), role.rank);
 }
 
+/** Where the actor may hand a role on as far as its keys go (roleList `passOn`). */
+export interface PassOn {
+  global: boolean;
+  storeIds: readonly string[];
+}
+
+/**
+ * D8 key rule (missingRoleKey): a custom role carries only keys the actor
+ * holds where the binding applies. DX-ADM-1: the grant, default-role and
+ * invite lists hid nothing on this and learnt it from a 403. A role from
+ * an older server without `passOn` passes; the server still decides.
+ */
+export function rolePassesOn(
+  role: { passOn?: PassOn },
+  scope: { type: 'global' } | { type: 'store'; storeId: string },
+): boolean {
+  if (!role.passOn) return true;
+  return scope.type === 'global'
+    ? role.passOn.global
+    : role.passOn.storeIds.includes(scope.storeId);
+}
+
 /**
  * memberTransferStore: the actor manages both stores and outranks the
  * member in the one they leave. Destinations are stores the member is

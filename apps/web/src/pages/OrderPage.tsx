@@ -21,12 +21,14 @@ import {
 } from '@compass/ui';
 import { trpc, newIdempotencyKey } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
-import { usePageMainButton, haptic } from '../hooks/useTelegram';
+import { usePageMainButton, useTelegramBackButton, haptic } from '../hooks/useTelegram';
 import { frozenOrderDate, useOfflineQueue } from '../hooks/useOfflineQueue';
 import { outbox } from '../lib/idb';
+import { registerLocalWrites } from '../lib/localWrites';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { errorTextOf } from '../lib/errorText';
 import { sentBatchCount } from './order/batchCount';
+import { groupCatalog, orderableSkus } from './order/catalogGroups';
 import { PendingSyncNotice } from '../components/PendingSyncNotice';
 import { useQueryClient } from '@tanstack/react-query';
 import { refetchFailedQueries } from '../hooks/useRefetchFailedOnReconnect';
@@ -351,6 +353,11 @@ export function OrderPage() {
    * replay after midnight can't land in the next day's order.
    */
   const { sendQueued } = offline;
+  // DX-PFE-4 (2026-11-01): the mutation's result object is new on every
+  // render, so depending on it re-created flushOne → handleQtyChange each
+  // render and every memo'd SkuRow re-rendered on each push. mutateAsync
+  // itself is stable.
+  const adjustAsync = adjust.mutateAsync;
   const flushOne = useCallback(
     (payload: PendingPayload): Promise<unknown> =>
       serializeOnStore(payload.storeId, () =>
@@ -360,10 +367,10 @@ export function OrderPage() {
             ...payload,
             date: frozenOrderDate(utils.order.todaySession.getData({ storeId: payload.storeId })),
           },
-          () => adjust.mutateAsync(payload),
+          () => adjustAsync(payload),
         ),
       ),
-    [adjust, sendQueued, serializeOnStore, utils.order.todaySession],
+    [adjustAsync, sendQueued, serializeOnStore, utils.order.todaySession],
   );
 
   /**
@@ -393,6 +400,18 @@ export function OrderPage() {
     promises.push(...inFlight.current.values());
     await Promise.allSettled(promises);
   }, [flushOne]);
+
+  // DX-ORD-1 (2026-11-01): taps waiting out their debounce, or sent and not
+  // answered yet, hold realtime's refetch (useRealtime). A refetch that
+  // landed among them wrote the server's older value over the last tap,
+  // and the next tap built on it: 5 taps stored 4.
+  useEffect(
+    () =>
+      registerLocalWrites(
+        () => pendingPayloads.current.size > 0 || inFlight.current.size > 0,
+      ),
+    [],
+  );
 
   // 2026-10-21 audit CA-25: on unmount (tab switch) and on pagehide
   // (WebView closed / backgrounded) SEND the taps still inside their
@@ -446,6 +465,11 @@ export function OrderPage() {
       // Light haptic on every tap. Cheap, frequent, matches iOS feel.
       haptic('light');
 
+      // DX-ORD-1: a read already on its way carries the server's value from
+      // before this tap; cancelling it (state reverts first) keeps it from
+      // landing on top of the tap below.
+      void utils.order.todaySession.cancel(queryKey);
+
       // Step 1: immediate optimistic cache update.
       utils.order.todaySession.setData(queryKey, (old) => {
         // CA-24: in new-batch mode a cached SENT batch is not what we're
@@ -474,6 +498,7 @@ export function OrderPage() {
             submittedAt: null,
             decidedAt: null,
             decidedByMemberId: null,
+            decidedByDisplayName: null,
             rejectReason: null,
             runId: null,
             lastSeq: 0,
@@ -644,8 +669,30 @@ export function OrderPage() {
   });
 
   const allSkus = useMemo(() => skusQuery.data ?? [], [skusQuery.data]);
-  // The catalogue offers only active products.
-  const skus = useMemo(() => allSkus.filter((s) => !s.isArchived), [allSkus]);
+
+  const items = sessionQuery.data?.items ?? [];
+  const totals = sessionQuery.data?.totals ?? [];
+  const myMemberId = session?.member.memberId ?? null;
+
+  /** Aggregate qty per SKU (sum across all contributors). For the header. */
+  const totalQtyBySku = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const t of totals) m.set(t.skuId, Number(t.qty));
+    return m;
+  }, [totals]);
+
+  /** MY contribution per SKU. The +/- always edits this row. */
+  const myQtyBySku = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const it of items) {
+      if (it.contributorMemberId === myMemberId) m.set(it.skuId, Number(it.qty));
+    }
+    return m;
+  }, [items, myMemberId]);
+
+  // The catalogue offers active products, plus (DX-ORD-16) archived ones
+  // still in my draft, so the line can be seen and taken out.
+  const skus = useMemo(() => orderableSkus(allSkus, myQtyBySku), [allSkus, myQtyBySku]);
   const filteredSkus = useMemo(
     () => {
       // Two filters compose: category chip + cross-language search.
@@ -677,26 +724,18 @@ export function OrderPage() {
         : i18n.t('a11y.results.products', { n: filteredSkus.length })
       : null,
   );
-
-  const items = sessionQuery.data?.items ?? [];
-  const totals = sessionQuery.data?.totals ?? [];
-  const myMemberId = session?.member.memberId ?? null;
-
-  /** Aggregate qty per SKU (sum across all contributors). For the header. */
-  const totalQtyBySku = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const t of totals) m.set(t.skuId, Number(t.qty));
-    return m;
-  }, [totals]);
-
-  /** MY contribution per SKU. The +/- always edits this row. */
-  const myQtyBySku = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const it of items) {
-      if (it.contributorMemberId === myMemberId) m.set(it.skuId, Number(it.qty));
+  // DX-ORD-6 (2026-11-01): grouped by category in the admin's order.
+  const catalogGroups = useMemo(
+    () => groupCatalog(filteredSkus, categoriesQuery.data ?? [], { archivedFirst: true }),
+    [filteredSkus, categoriesQuery.data],
+  );
+  const categoryNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of categoriesQuery.data ?? []) {
+      m.set(c.id, productName({ names: c.names as Record<string, string> }));
     }
     return m;
-  }, [items, myMemberId]);
+  }, [categoriesQuery.data, productName]);
 
   /** All non-zero contributor rows per SKU — for the "added by N people" hint. */
   const contributorsBySku = useMemo(() => {
@@ -844,6 +883,13 @@ export function OrderPage() {
     // so a second tap used to start a second submit. Ref-lock the whole
     // logical submit instead.
     if (submittingRef.current) return;
+    // DX-ORD-5 (2026-11-01): offline, say that submitting needs a network.
+    // It used to fall through to the outbox check and say "still syncing,
+    // tap again in a moment", and people kept waiting.
+    if (!offline.online) {
+      toast.info(i18n.t('order.review.needsNetwork'));
+      return;
+    }
     submittingRef.current = true;
     const storeId = currentStoreId;
     try {
@@ -855,7 +901,9 @@ export function OrderPage() {
       // writes (offline, or the server refused to answer), don't submit.
       await offline.flush();
       if (await hasQueuedOrderWrites(storeId)) {
-        toast.info(i18n.t('order.toast.syncing'));
+        toast.info(
+          i18n.t(navigator.onLine ? 'order.toast.syncing' : 'order.review.needsNetwork'),
+        );
         return;
       }
 
@@ -923,9 +971,29 @@ export function OrderPage() {
       // button would still act on the current draft — tapping it submitted
       // a batch the user was not looking at. No main button there.
       visible: canSubmit && selectedCount > 0 && !sessionBlocked && !viewingOtherBatch,
-      active: selectedCount > 0 && !submit.isPending && !sessionBlocked,
+      active:
+        selectedCount > 0 &&
+        !submit.isPending &&
+        !sessionBlocked &&
+        !(reviewOpen && !offline.online),
     },
   );
+
+  /**
+   * DX-ORD-10 (2026-11-01): a way back out of 再下一单. With one batch today
+   * the "今日 N 批" button is hidden, so the empty catalog had no exit but
+   * switching tabs. Until the first tap creates the new draft, going back
+   * shows the receipt again. Telegram's back button does the same, and
+   * also closes a batch opened from today's list.
+   */
+  const canLeaveNewBatch = newBatch && !sessionQuery.data;
+  const leaveNewBatch = useCallback(() => {
+    setNewBatch(false);
+    newBatchRef.current = false;
+    if (currentStoreId) void utils.order.todaySession.invalidate({ storeId: currentStoreId });
+  }, [currentStoreId, utils.order.todaySession]);
+  useTelegramBackButton(leaveNewBatch, canLeaveNewBatch && !viewingOtherBatch);
+  useTelegramBackButton(() => setViewBatchId(null), viewingOtherBatch);
 
   if (!session) return null;
   if (!currentStoreId) {
@@ -1044,6 +1112,26 @@ export function OrderPage() {
     setBatchesOpen(false);
     setViewBatchId(id === sessionQuery.data?.id ? null : id);
   };
+  /** DX-ORD-3: the reviewer's reason, then who rejected it and when. */
+  const rejectionBody = (b: {
+    rejectReason: string | null;
+    decidedAt: string | null;
+    decidedByDisplayName?: string | null;
+  }) => {
+    const who = b.decidedByDisplayName || i18n.t('approval.unknownReviewer');
+    return (
+      <>
+        <p className="whitespace-pre-line">
+          {b.rejectReason || i18n.t('order.status.rejectedNoReason')}
+        </p>
+        {b.decidedAt ? (
+          <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
+            {i18n.t('order.status.rejectedBy', { who, time: dateFmt.time(b.decidedAt) })}
+          </p>
+        ) : null}
+      </>
+    );
+  };
   /** ORD-4: a batch sent back by a reviewer, said on every view. */
   const rejectedNotice = (shownId: string | undefined) => {
     const b = (batchesQuery.data ?? []).find((x) => x.status === 'rejected' && x.id !== shownId);
@@ -1095,13 +1183,9 @@ export function OrderPage() {
           />
           {rejectedNotice(v.id)}
           {v.status === 'rejected' ? (
-            <Banner
-              tone="warn"
-              title={i18n.t('order.status.rejected', {
-                reason: v.rejectReason || i18n.t('order.status.rejectedNoReason'),
-              })}
-            >
-              {i18n.t('order.batches.rejectedFinishDraft')}
+            <Banner tone="warn" title={i18n.t('order.status.rejectedTitle')}>
+              {rejectionBody(v)}
+              <p className="mt-1">{i18n.t('order.batches.rejectedFinishDraft')}</p>
             </Banner>
           ) : v.status === 'submitted' ? (
             <Banner
@@ -1132,7 +1216,12 @@ export function OrderPage() {
               <SectionLabel padded={false} className="mb-1.5">
                 {i18n.t('order.receipt.submittedItems')}
               </SectionLabel>
-              <ReviewList totals={v.totals ?? []} skus={allSkus} productName={productName} />
+              <ReviewList
+                totals={v.totals ?? []}
+                skus={allSkus}
+                categories={categoriesQuery.data ?? []}
+                productName={productName}
+              />
             </div>
           ) : null}
         </div>
@@ -1231,7 +1320,12 @@ export function OrderPage() {
               <SectionLabel padded={false} className="mb-1.5">
                 {i18n.t('order.receipt.submittedItems')}
               </SectionLabel>
-              <ReviewList totals={totals} skus={allSkus} productName={productName} />
+              <ReviewList
+                totals={totals}
+                skus={allSkus}
+                categories={categoriesQuery.data ?? []}
+                productName={productName}
+              />
             </div>
           ) : null}
         </div>
@@ -1278,6 +1372,15 @@ export function OrderPage() {
           The sticky strip now carries only the SearchInput + category
           ChipBar — the actual filters the user interacts with. */}
       <StickyPageBar direction="col">
+        {canLeaveNewBatch ? (
+          <button
+            type="button"
+            className="hit-44 self-start text-old-label font-semibold text-[var(--c-action)]"
+            onClick={leaveNewBatch}
+          >
+            ‹ {i18n.t('order.batches.backToReceipt')}
+          </button>
+        ) : null}
         {/* 2026-07-30 (flow review): the store you are ordering for was
             stated NOWHERE on this page. See the StoreChip docblock —
             with the picker two taps deep in Telegram's overflow and the
@@ -1388,21 +1491,15 @@ export function OrderPage() {
               })}
             />
           ) : null}
-          {sessionStatus === 'rejected' ? (
-            <Banner
-              tone="danger"
-              title={i18n.t('order.status.rejected', { reason: sessionQuery.data?.rejectReason ?? '—' })}
-              action={
-                <Button
-                  size="sm"
-                  variant="pearl"
-                  loading={withdraw.isPending}
-                  onClick={() => sessionQuery.data && withdraw.mutate({ sessionId: sessionQuery.data.id })}
-                >
-                  {i18n.t('order.withdraw')}
-                </Button>
-              }
-            />
+          {/* DX-ORD-3 (2026-11-01): no 撤回 here. A rejected batch is edited
+              in place already; withdrawing it only turned it back into a
+              draft and took the reviewer's reason off the screen. The
+              reason is the body (it was the bold red title), with who
+              sent it back and when. */}
+          {sessionStatus === 'rejected' && sessionQuery.data ? (
+            <Banner tone="danger" title={i18n.t('order.status.rejectedTitle')}>
+              {rejectionBody(sessionQuery.data)}
+            </Banner>
           ) : null}
           {sessionStatus === 'submitted' && !sessionQuery.data?.claimedByMemberId ? (
             <Banner
@@ -1433,10 +1530,21 @@ export function OrderPage() {
         </div>
       ) : null}
 
+      {/* DX-ORD-4 (2026-11-01): "empty" is judged on what can be ordered —
+          it was judged on the list including archived products, so a
+          catalog of only archived ones showed a blank page — and says why,
+          not "tap + next to a product" when there is none to tap. */}
       <DataState
         query={skusQuery}
-        emptyWhen={(d) => d.length === 0}
-        empty={<EmptyState title={i18n.t('order.empty.title')} description={i18n.t('order.empty.description')} />}
+        emptyWhen={() => skus.length === 0}
+        empty={
+          <EmptyState
+            title={i18n.t('order.catalogEmpty.title')}
+            description={i18n.t('order.catalogEmpty.description', {
+              path: `${i18n.t('nav.admin')} › ${i18n.t('admin.section.catalog')}`,
+            })}
+          />
+        }
       >
         {() => (
           <ul className="flex flex-col" role="list">
@@ -1448,24 +1556,49 @@ export function OrderPage() {
                 />
               </li>
             ) : null}
-            {filteredSkus.map((sku) => (
-              <SkuRow
-                key={sku.id}
-                sku={sku}
-                myQty={myQtyBySku.get(sku.id) ?? 0}
-                totalQty={totalQtyBySku.get(sku.id) ?? 0}
-                otherContribCount={
-                  (contributorsBySku.get(sku.id) ?? [])
-                    .filter((c) => c.memberId !== myMemberId).length
-                }
-                isReadOnly={isReadOnly}
-                storeId={currentStoreId}
-                productNameParts={productNameParts}
-                unitLabel={unitLabel}
-                i18n={i18n}
-                onQtyChange={handleQtyChange}
-              />
-            ))}
+            {catalogGroups.map((group) => {
+              // DX-ORD-6: headings under "All"; a picked category is its own
+              // heading already. Archived lines always say what they are.
+              const showHeading = group.archived || activeCategory === null;
+              const heading = group.archived
+                ? i18n.t('order.review.archived')
+                : group.categoryId
+                  ? (categoryNameById.get(group.categoryId) ?? '')
+                  : i18n.t('order.categories.uncategorized');
+              return (
+                <li key={group.key}>
+                  {showHeading ? (
+                    <SectionLabel
+                      as="h3"
+                      className={cn('pt-3', group.archived && 'text-[var(--c-warning-fg)]')}
+                    >
+                      {heading}
+                    </SectionLabel>
+                  ) : null}
+                  <ul className="flex flex-col" role="list">
+                    {group.skus.map((sku) => (
+                      <SkuRow
+                        key={sku.id}
+                        sku={sku}
+                        archived={!!sku.isArchived}
+                        myQty={myQtyBySku.get(sku.id) ?? 0}
+                        totalQty={totalQtyBySku.get(sku.id) ?? 0}
+                        otherContribCount={
+                          (contributorsBySku.get(sku.id) ?? [])
+                            .filter((c) => c.memberId !== myMemberId).length
+                        }
+                        isReadOnly={isReadOnly}
+                        storeId={currentStoreId}
+                        productNameParts={productNameParts}
+                        unitLabel={unitLabel}
+                        i18n={i18n}
+                        onQtyChange={handleQtyChange}
+                      />
+                    ))}
+                  </ul>
+                </li>
+              );
+            })}
           </ul>
         )}
       </DataState>
@@ -1542,26 +1675,39 @@ export function OrderPage() {
         onOpenChange={(open) => !open && !submit.isPending && setReviewOpen(false)}
         title={i18n.t('order.review.title')}
         description={
-          dateLabel + ' · ' + i18n.t('order.review.itemsCount', { n: selectedCount })
+          // DX-ORD-12: "7 items + 1 other item" — other items are not products.
+          dateLabel +
+          ' · ' +
+          i18n.t('order.review.itemsCount', { n: totals.length }) +
+          (extrasCount > 0 ? ' + ' + i18n.t('order.batches.extras', { n: extrasCount }) : '')
         }
         footer={
           // M3.49: in-page PageMainButton sits behind any open sheet —
           // we must render the sheet's own footer button so the user
           // has something to tap.
-          <Button
-            block
-            size="lg"
-            loading={submit.isPending}
-            disabled={selectedCount === 0}
-            onClick={() => {
-              if (!sessionQuery.data) return;
-              void handleSubmit();
-            }}
-          >
-            {submit.isPending
-              ? i18n.t('order.action.submitting')
-              : i18n.t('order.action.submitOrder')}
-          </Button>
+          <div className="flex flex-col gap-2">
+            {/* DX-ORD-5: offline the button is off and says why. */}
+            {!offline.online ? (
+              <p id="order-submit-offline" className="text-center text-old-label text-[var(--c-fg-muted)]">
+                {i18n.t('order.review.needsNetwork')}
+              </p>
+            ) : null}
+            <Button
+              block
+              size="lg"
+              loading={submit.isPending}
+              disabled={selectedCount === 0 || !offline.online}
+              aria-describedby={!offline.online ? 'order-submit-offline' : undefined}
+              onClick={() => {
+                if (!sessionQuery.data) return;
+                void handleSubmit();
+              }}
+            >
+              {submit.isPending
+                ? i18n.t('order.action.submitting')
+                : i18n.t('order.action.submitOrder')}
+            </Button>
+          </div>
         }
       >
         {/* A11Y-7 (2026-10-31): the list is the sheet's first focus stop, so
@@ -1578,6 +1724,7 @@ export function OrderPage() {
             <ReviewList
               totals={totals}
               skus={allSkus}
+              categories={categoriesQuery.data ?? []}
               productName={productName}
               onRemove={
                 currentStoreId ? (skuId) => handleQtyChange(currentStoreId, skuId, '0') : undefined
@@ -1595,6 +1742,7 @@ export function OrderPage() {
                   : 'kg',
               }))}
               isReadOnly
+              inSheet
               onSave={async () => {
                 /* read-only — never called */
               }}
@@ -1638,6 +1786,7 @@ type SkuRowSku = {
 
 const SkuRow = memo(function SkuRow({
   sku,
+  archived = false,
   myQty,
   totalQty,
   otherContribCount,
@@ -1649,6 +1798,9 @@ const SkuRow = memo(function SkuRow({
   onQtyChange,
 }: {
   sku: SkuRowSku;
+  /** DX-ORD-16: archived but still in my draft — can only go down. The
+   *  group heading above says "No longer sold". */
+  archived?: boolean;
   myQty: number;
   totalQty: number;
   otherContribCount: number;
@@ -1720,7 +1872,9 @@ const SkuRow = memo(function SkuRow({
         onChange={(next) => onQtyChange(storeId, sku.id, String(next))}
         // ORD-9 (2026-10-31): the server refuses a line of a million or
         // more; the sheet now says so instead of a retry-forever toast.
-        max={ORDER_QTY_MAX}
+        // DX-ORD-16: an archived product can only be reduced (the server
+        // refuses adding to it).
+        max={archived ? myQty : ORDER_QTY_MAX}
         // M3.55 (2026-05-23): show the SKU name in the qty quick-pick
         // sheet title. Without this the popup was a context-less "Set
         // quantity" — when the user mis-tapped a row, they couldn't
@@ -1840,6 +1994,7 @@ interface ReviewTotal {
 function ReviewList({
   totals,
   skus,
+  categories,
   productName,
   onRemove,
 }: {
@@ -1847,11 +2002,15 @@ function ReviewList({
   skus: Array<{
     id: string;
     categoryId: string | null;
+    code: string | null;
+    sortIndex?: number | null;
     names: unknown;
     unit: string;
     step: string;
     isArchived?: boolean;
   }>;
+  /** DX-ORD-12: names and order of the category headings. */
+  categories: ReadonlyArray<{ id: string; names?: unknown; sortIndex?: number | null }>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
   /** ORD-10: take a line out (only offered for archived products, which
    *  the catalog list no longer shows). Omitted on read-only reviews. */
@@ -1914,27 +2073,32 @@ function ReviewList({
     return m;
   }, [skus]);
 
+  // DX-ORD-12 (2026-11-01): grouped by category in the catalog's order,
+  // each group under its category name. The cards used to have no
+  // heading, so they looked grouped at random.
   const groups = useMemo(() => {
-    const byCat = new Map<
-      string | null,
-      Array<{ skuId: string; name: string; qty: string; unit: string; archived: boolean }>
-    >();
+    const lines: Array<(typeof skus)[number] & { qty: string }> = [];
     for (const t of totals) {
       if (Number(t.qty) <= 0) continue;
       const sku = skuById.get(t.skuId);
-      if (!sku) continue;
-      const arr = byCat.get(sku.categoryId) ?? [];
-      arr.push({
-        skuId: t.skuId,
+      if (sku) lines.push({ ...sku, qty: t.qty });
+    }
+    return groupCatalog(lines, categories).map((g) => ({
+      key: g.key,
+      heading: g.categoryId
+        ? productName({
+            names: categories.find((c) => c.id === g.categoryId)?.names as Record<string, string>,
+          })
+        : i18n.t('order.categories.uncategorized'),
+      rows: g.skus.map((sku) => ({
+        skuId: sku.id,
         name: productName({ names: sku.names as Record<string, string> }),
-        qty: t.qty,
+        qty: sku.qty,
         unit: sku.unit,
         archived: !!sku.isArchived,
-      });
-      byCat.set(sku.categoryId, arr);
-    }
-    return [...byCat.entries()];
-  }, [totals, skuById, productName]);
+      })),
+    }));
+  }, [totals, skuById, categories, productName, i18n]);
 
   if (groups.length === 0) {
     return (
@@ -1974,14 +2138,17 @@ function ReviewList({
           </div>
         </div>
       ) : null}
-      <ul className="flex flex-col gap-3" role="list">
-        {groups.map(([catId, rows]) => (
-          <li key={catId ?? 'other'}>
-            <ul className="flex flex-col rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline">
-              {rows.map((r, i) => (
+      <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline">
+        {groups.map((g) => (
+          <section key={g.key} className="border-b border-[var(--c-divider)] last:border-b-0">
+            <SectionLabel as="h3" className="pt-2.5">
+              {g.heading}
+            </SectionLabel>
+            <ul className="flex flex-col" role="list">
+              {g.rows.map((r) => (
                 <li
-                  key={r.name + i}
-                  className="flex items-baseline justify-between border-b border-[var(--c-divider)] px-4 py-2.5 last:border-b-0"
+                  key={r.skuId}
+                  className="flex items-baseline justify-between border-t border-[var(--c-divider)] px-4 py-2.5 first:border-t-0"
                 >
                   {/* 2026-07-05: match the prominent SKU-name tier used
                       by SkuRow above (the Order surface is the "browse"
@@ -1996,14 +2163,14 @@ function ReviewList({
                     ) : null}
                   </span>
                   <span className="flex shrink-0 items-baseline gap-2">
-                    <span className="font-mono text-old-body tabular-nums text-[var(--c-fg-muted)]">
+                    <span className="text-old-body tabular-nums text-[var(--c-fg-muted)]">
                       {formatQty(r.qty)} {unitLabel(r.unit, r.qty)}
                     </span>
                     {r.archived && onRemove ? (
                       <button
                         type="button"
                         onClick={() => onRemove(r.skuId)}
-                        className="rounded-[var(--r-pill)] px-2 py-0.5 text-old-label font-medium text-[var(--c-danger)] ring-hairline active:opacity-70"
+                        className="hit-44 rounded-[var(--r-pill)] px-2 py-0.5 text-old-label font-medium text-[var(--c-danger)] ring-hairline active:opacity-70"
                       >
                         {i18n.t('order.review.remove')}
                       </button>
@@ -2012,9 +2179,9 @@ function ReviewList({
                 </li>
               ))}
             </ul>
-          </li>
+          </section>
         ))}
-      </ul>
+      </div>
     </div>
   );
 }
@@ -2056,7 +2223,10 @@ function SessionExtrasEditor({
   initialValue,
   isReadOnly,
   onSave,
+  inSheet = false,
 }: {
+  /** DX-ORD-12: inside a sheet, which pads its body already. */
+  inSheet?: boolean;
   /** null = no session yet (CA-27); the first save lazy-creates it. */
   sessionId: string | null;
   storeId: string;
@@ -2140,11 +2310,13 @@ function SessionExtrasEditor({
   const pendingFireRef = useRef<(() => Promise<void>) | null>(null);
 
   const scheduleSave = useCallback(
-    (next: ExtraDraft[], { immediate = false } = {}) => {
+    (next: ExtraDraft[], { immediate = false, onCommit = false } = {}) => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       pendingFireRef.current = null;
       const fire = async () => {
-        const cleaned = sanitize(next);
+        // DX-ORD-13: "1.5 个" is not saved either; the row says why. (Only
+        // here: rows saved like that before still show on receipts.)
+        const cleaned = sanitize(next).filter((r) => !wholeNumberRequired(r));
         const cleanedJson = JSON.stringify(cleaned);
         // 2026-10-21 audit CA-27 (B-09): rows sanitize() drops (no name,
         // bad / zero qty) are NOT persisted — don't claim "Saved ✓" while
@@ -2170,6 +2342,10 @@ function SessionExtrasEditor({
       };
       if (immediate) {
         void fire();
+      } else if (onCommit) {
+        // DX-ORD-13: a name being typed waits for the field to be left (or
+        // Enter). Unmount / pagehide still send it (flushPendingSave).
+        pendingFireRef.current = fire;
       } else {
         pendingFireRef.current = fire;
         debounceRef.current = setTimeout(() => {
@@ -2207,11 +2383,19 @@ function SessionExtrasEditor({
   if (isReadOnly && cleanedView.length === 0) return null;
 
   const updateRow = (idx: number, patch: Partial<ExtraDraft>) => {
+    // DX-ORD-13 (2026-11-01): a pause while typing the name saved the half
+    // typed word ("Lau") into the order's history. Name edits are saved
+    // when the name field is left; quantity and unit after a short pause.
+    const nameOnly = Object.keys(patch).every((k) => k === 'name');
     setRows((prev) => {
       const next = prev.map((r, i) => (i === idx ? { ...r, ...patch } : r));
-      scheduleSave(next);
+      scheduleSave(next, { onCommit: nameOnly });
       return next;
     });
+  };
+  // After the render that applied the last edit, so the save sees it.
+  const commitName = () => {
+    setTimeout(flushPendingSave, 0);
   };
   const removeRow = (idx: number) => {
     setRows((prev) => {
@@ -2231,7 +2415,7 @@ function SessionExtrasEditor({
   };
 
   return (
-    <section className="mt-2 px-4 pb-4 pt-1">
+    <section className={cn('mt-2 pb-4 pt-1', !inSheet && 'px-4')}>
       <div className="mb-1.5 flex items-baseline justify-between gap-2">
         <SectionLabel padded={false}>
           {i18n.t('order.extras.label')}
@@ -2253,7 +2437,7 @@ function SessionExtrasEditor({
               className="flex items-baseline justify-between gap-2 text-old-body"
             >
               <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">{r.name}</span>
-              <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
+              <span className="shrink-0 tabular-nums text-[var(--c-fg-muted)]">
                 {formatQty(r.qty)} {unitLabel(r.unit, r.qty)}
               </span>
             </li>
@@ -2268,6 +2452,7 @@ function SessionExtrasEditor({
               invalid={isInvalidExtraRow(row)}
               storeId={storeId}
               onChange={(patch) => updateRow(idx, patch)}
+              onNameCommit={commitName}
               onRemove={() => removeRow(idx)}
             />
           ))}
@@ -2301,7 +2486,18 @@ function isInvalidExtraRow(row: ExtraDraft): boolean {
   if (!row.name.trim()) return false;
   const qty = row.qty.trim();
   // ORD-9: the server's upper bound too, so the row is flagged before save.
-  return !/^\d+(\.\d{1,3})?$/.test(qty) || Number(qty) <= 0 || Number(qty) > ORDER_QTY_MAX;
+  return (
+    !/^\d+(\.\d{1,3})?$/.test(qty) ||
+    Number(qty) <= 0 ||
+    Number(qty) > ORDER_QTY_MAX ||
+    wholeNumberRequired(row)
+  );
+}
+
+/** DX-ORD-13: a whole-number unit (个, 包 …) with a fractional qty. */
+function wholeNumberRequired(row: ExtraDraft): boolean {
+  const qty = Number(row.qty.trim());
+  return UNIT_IS_INTEGER.has(row.unit) && Number.isFinite(qty) && !Number.isInteger(qty);
 }
 
 function ExtraRowEditor({
@@ -2309,6 +2505,7 @@ function ExtraRowEditor({
   invalid = false,
   storeId,
   onChange,
+  onNameCommit,
   onRemove,
 }: {
   row: ExtraDraft;
@@ -2316,6 +2513,8 @@ function ExtraRowEditor({
   invalid?: boolean;
   storeId: string;
   onChange: (patch: Partial<ExtraDraft>) => void;
+  /** DX-ORD-13: the name is done (field left, Enter, suggestion picked). */
+  onNameCommit: () => void;
   onRemove: () => void;
 }) {
   const i18n = useI18n();
@@ -2341,16 +2540,29 @@ function ExtraRowEditor({
       )}
     >
       <div className="flex items-center gap-2">
-        <div className="relative min-w-0 flex-1">
+        <div
+          className="relative min-w-0 flex-1"
+          // Focus moving to a suggestion (Tab) stays "in" the name field;
+          // leaving both commits the name and closes the list. Delayed so
+          // a suggestion's tap registers before the list hides.
+          onBlur={(e) => {
+            if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+            onNameCommit();
+            setTimeout(() => setFocusing(false), 120);
+          }}
+        >
+          {/* DX-ORD-8 (2026-11-01): the placeholder was the only name, and
+              it is gone once something is typed. */}
           <Input
             value={row.name}
             placeholder={i18n.t('order.extras.namePlaceholder')}
+            aria-label={i18n.t('order.extras.namePlaceholder')}
             maxLength={200}
             onChange={(e) => onChange({ name: e.target.value })}
             onFocus={() => setFocusing(true)}
-            // Delay onBlur so the suggestion dropdown's click can
-            // register before this fires and hides it.
-            onBlur={() => setTimeout(() => setFocusing(false), 120)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') onNameCommit();
+            }}
           />
           {focusing && suggestions.length > 0 ? (
             <ul
@@ -2366,6 +2578,14 @@ function ExtraRowEditor({
                       // miss because blur hides the dropdown first.
                       e.preventDefault();
                       onChange({ name: s.name });
+                      onNameCommit();
+                      setFocusing(false);
+                    }}
+                    // Keyboard: Enter / Space on a suggestion reached by Tab.
+                    onClick={(e) => {
+                      if (e.detail !== 0) return; // pointer taps went through mousedown
+                      onChange({ name: s.name });
+                      onNameCommit();
                       setFocusing(false);
                     }}
                     className="press flex min-h-11 w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-old-body hover:bg-[var(--c-surface-2)]"
@@ -2390,12 +2610,14 @@ function ExtraRowEditor({
           step={UNIT_STEP[row.unit] ?? '0.1'}
           min="0"
           aria-invalid={invalid || undefined}
+          aria-label={i18n.t('order.extras.qtyLabel')}
           className="w-16 text-center"
           onChange={(e) => onChange({ qty: e.target.value })}
         />
         <div className="w-20 shrink-0">
           <Select
             value={row.unit}
+            aria-label={i18n.t('order.extras.unitLabel')}
             // M3.34: constrained to canonical units (CanonicalUnitSchema).
             // Free-text caused "kg"/"kgs"/"公斤" drift that broke
             // aggregation + i18n. Labels go through useUnitLabel so the
@@ -2435,7 +2657,9 @@ function ExtraRowEditor({
       </div>
       {invalid ? (
         <p className="mt-1 px-1 text-old-label text-[var(--c-danger)]">
-          {i18n.t('order.errors.invalidQty')}
+          {wholeNumberRequired(row)
+            ? i18n.t('order.extras.wholeNumber')
+            : i18n.t('order.errors.invalidQty')}
         </p>
       ) : null}
     </div>

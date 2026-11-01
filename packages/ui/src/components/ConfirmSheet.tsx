@@ -47,6 +47,11 @@ export interface ConfirmSheetProps {
    *  needs an explicit "back out" target. Pass true to override e.g.
    *  for desktop-only flows. */
   showCancelInSheet?: boolean;
+  /** Open with focus on the cancel button (the safe answer), so a
+   *  second Enter from the field that opened the sheet does not confirm
+   *  it. Shows the cancel button. `danger` / `irreversible` imply it
+   *  (confirmCancelPolicy). */
+  focusCancel?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -63,11 +68,15 @@ export function confirmCancelPolicy(o: {
   irreversible?: boolean;
   requireReason?: boolean;
   showCancelInSheet?: boolean;
+  /** The caller asks for it explicitly (the `focusCancel` prop). */
+  focusCancel?: boolean;
 }): { showCancel: boolean; focusCancel: boolean } {
   const guarded = !!(o.danger || o.irreversible);
+  const focusCancel = (guarded && !o.requireReason) || !!o.focusCancel;
   return {
-    showCancel: guarded || (o.showCancelInSheet ?? !!o.requireReason),
-    focusCancel: guarded && !o.requireReason,
+    // A Cancel the sheet starts on must be on screen.
+    showCancel: guarded || focusCancel || (o.showCancelInSheet ?? !!o.requireReason),
+    focusCancel,
   };
 }
 
@@ -102,6 +111,7 @@ export function ConfirmSheet({
   onReasonChange,
   showPrimaryInSheet = true,
   showCancelInSheet,
+  focusCancel,
   onConfirm,
   onCancel,
 }: ConfirmSheetProps) {
@@ -111,11 +121,12 @@ export function ConfirmSheet({
   // Cancel is force-shown when there's a reason input (keyboard covers
   // the backdrop) OR when the consumer explicitly opts in. Otherwise we
   // rely on tap-outside / swipe-down / Telegram BackButton.
-  const { showCancel, focusCancel } = confirmCancelPolicy({
+  const { showCancel, focusCancel: startOnCancel } = confirmCancelPolicy({
     danger,
     irreversible,
     requireReason,
     showCancelInSheet,
+    focusCancel,
   });
   const hasFooter = showPrimaryInSheet || showCancel;
   return (
@@ -143,8 +154,7 @@ export function ConfirmSheet({
                 variant="pearl"
                 onClick={onCancel}
                 disabled={pending}
-                autoFocus={focusCancel}
-                data-confirm-cancel=""
+                data-autofocus={startOnCancel || undefined}
               >
                 {cancelLabel}
               </Button>
