@@ -225,6 +225,10 @@ describe.skipIf(!SHOULD_RUN)('order visibility across claim / reject (PG-gated)'
     expect(rejected?.id).toBe(sessionId);
     expect(rejected?.status).toBe('rejected');
     expect(rejected?.rejectReason).toBe('too many');
+    // DX-ORD-3: and who sent it back, and when.
+    expect(rejected?.decidedByDisplayName).toBe('Manager Mia');
+    expect(rejected?.decidedAt).not.toBeNull();
+    expect(claimed?.decidedByDisplayName).toBeNull();
 
     // Owner edits the SAME stream — no lazily-created second draft.
     const edit = await staff.order.adjustItem({ ...input, skuId: fix.skuId, qty: '0.5' });
