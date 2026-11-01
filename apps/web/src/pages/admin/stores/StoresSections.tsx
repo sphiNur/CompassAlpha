@@ -32,6 +32,7 @@ import { newIdempotencyKey, trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
 import { useRefreshSession } from '../../../lib/refreshSession';
+import { rolePassesOn } from '../../../lib/authority';
 import { formatQty } from '../../../lib/format';
 import {
   useDateFormat,
@@ -283,6 +284,12 @@ export function StoresHomeSection({
       <Sheet
         open={!!createDraft}
         onOpenChange={(open) => !open && setCreateDraft(null)}
+        // DX-IX-10: Esc / backdrop / Back ask before dropping what was typed.
+        hasChanges={
+          !!createDraft &&
+          !create.isPending &&
+          Object.values(createDraft).some((v) => v.trim() !== '')
+        }
         title={i18n.t('admin.store.new')}
         footer={
           <Button
@@ -967,12 +974,19 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
   // current value so the picker can still show it.
   const myStoreRank = Math.max(session?.myMaxRank ?? 0, session?.storeRanks?.[storeId] ?? 0);
   const currentDefault = store?.defaultRoleSlug ?? null;
+  // DX-ADM-1: a custom role with a key the actor lacks in this store
+  // (D8) stays visible, greyed, with the reason, unless it is the
+  // current value.
   const storeTierRoles = useMemo(
     () =>
       [...(rolesQuery.data ?? [])]
         .filter((r) => r.rank < ADMIN_RANK && (r.rank < myStoreRank || r.slug === currentDefault))
-        .sort((a, b) => b.rank - a.rank),
-    [rolesQuery.data, myStoreRank, currentDefault],
+        .map((r) => ({
+          ...r,
+          keysMissing: r.slug !== currentDefault && !rolePassesOn(r, { type: 'store', storeId }),
+        }))
+        .sort((a, b) => Number(a.keysMissing) - Number(b.keysMissing) || b.rank - a.rank),
+    [rolesQuery.data, myStoreRank, currentDefault, storeId],
   );
 
   if (storesQuery.isLoading || !draft || !store) {
@@ -1045,8 +1059,10 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
           >
             <option value="">{i18n.t('admin.store.noDefaultRole')}</option>
             {storeTierRoles.map((r) => (
-              <option key={r.id} value={r.slug}>
-                {i18n.t('people.roleNameWithRank', { name: roleText.name(r), rank: r.rank })}
+              <option key={r.id} value={r.slug} disabled={r.keysMissing}>
+                {r.keysMissing
+                  ? i18n.t('people.roleNameKeysYouLack', { name: roleText.name(r) })
+                  : i18n.t('people.roleNameWithRank', { name: roleText.name(r), rank: r.rank })}
               </option>
             ))}
           </Select>
