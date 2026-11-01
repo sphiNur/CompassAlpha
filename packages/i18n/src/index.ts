@@ -1,9 +1,9 @@
 /**
  * Tiny ICU-aware i18n runtime.
  *
- * Catalogs are loaded per-locale (see ./catalogs/index.ts). en is
- * statically imported as the fallback; zh/ru/uz are dynamic imports
- * resolved on demand (M3.14-D, 2026-05-16). Lookup walks
+ * Catalogs are loaded per-locale (see ./catalogs/index.ts): all four,
+ * en included, are dynamic imports resolved on demand (M3.14-D,
+ * 2026-05-16; en since DX-PFE-2, 2026-11-01). Lookup walks
  * locale → en → any-other-loaded so missing keys degrade gracefully.
  *
  * Interpolation is `{name}`; plurals are real ICU `{n, plural, ...}` blocks
@@ -15,9 +15,15 @@
 import { getLoadedCatalog, type Locale, type CatalogKey } from './catalogs/index';
 
 export type { Locale, CatalogKey, CatalogModule } from './catalogs/index';
-export { loadCatalog, preloadCatalog, isLoaded, getLoadedCatalog } from './catalogs/index';
+export {
+  loadCatalog,
+  ensureCatalog,
+  preloadCatalog,
+  isLoaded,
+  getLoadedCatalog,
+} from './catalogs/index';
 
-// Walk order: requested locale → en (always loaded) → other-loaded
+// Walk order: requested locale → en (when loaded) → other-loaded
 // locales in a stable order. The "other loaded" tail is rarely hit
 // (only when the active locale's catalog is mid-load and a key is
 // missing from en — should be ~never).

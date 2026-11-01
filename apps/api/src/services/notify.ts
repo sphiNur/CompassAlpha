@@ -325,7 +325,8 @@ export async function localizeEnvelope(
   envelope: Pick<NotifyEnvelope, 'template' | 'title' | 'body' | 'vars' | 'reason'>,
   locale: Locale,
 ): Promise<{ title: string; body: string | undefined }> {
-  await loadCatalog(locale);
+  // en is the lookup fallback and no longer loaded up front (DX-PFE-2).
+  await Promise.all([loadCatalog(locale), loadCatalog('en')]);
   const titleKey = `notify.${envelope.template}.title` as CatalogKey;
   const bodyKey = `notify.${envelope.template}.body` as CatalogKey;
   const vars = envelope.vars ?? {};

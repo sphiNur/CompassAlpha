@@ -1,9 +1,11 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { detectLocale, preloadCatalog } from '@compass/i18n';
+import { preloadCatalog } from '@compass/i18n';
 import { App } from './app/App';
 import './styles/index.css';
 import { reloadForStaleChunk } from './lib/reload';
+import { startLocale } from './lib/startLocale';
+import { preloadPage, savedTab } from './app/pageChunks';
 
 // F10 (2026-10-30): after a deploy, a client that stayed open asks for
 // lazy page chunks that no longer exist; the import failed into the root
@@ -46,20 +48,23 @@ if (!container) throw new Error('Root not found');
 const splash = document.getElementById('boot-splash');
 if (splash) splash.remove();
 
-// M3.14-D (2026-05-16): kick off the active locale's catalog chunk
-// in parallel with the first React render. We don't know the
-// authenticated user's preferred locale yet (auth store hasn't
-// hydrated) so we guess from Telegram + navigator.language. If the
-// guess is wrong (user is logged in as Uzbek but Telegram reports
-// English), useEnsureLocale inside useI18n will load the correct
-// one on the first hook call — at the cost of one extra fetch.
-//
-// en is statically imported and always available — no preload needed.
-// M3.18: window.Telegram is now globally typed via src/types/telegram.d.ts.
-const bootGuess = detectLocale(
-  window.Telegram?.WebApp?.initDataUnsafe?.user?.language_code ?? navigator.language,
-);
-if (bootGuess !== 'en') preloadCatalog(bootGuess);
+// M3.14-D (2026-05-16): kick off the active locale's catalog chunk in
+// parallel with the first React render. I18nGate (hooks/useI18n) hides
+// the screens until it is in: no catalog is bundled, en included
+// (DX-PFE-2). startLocale reads the signed-in user's own choice from the
+// persisted session, else guesses from Telegram + navigator.language.
+preloadCatalog(startLocale());
+// DX-PFE-3 (2026-11-01): the page the app reopens on is a lazy chunk;
+// start it now rather than after auth and the saved-data restore have
+// drawn the Shell — they used to run one after the other.
+const reopenTab = (() => {
+  try {
+    return savedTab(window.localStorage);
+  } catch {
+    return null;
+  }
+})();
+if (reopenTab) preloadPage(reopenTab);
 
 // `/?kit` shows the component kit on its own, without signing in. The
 // condition is a build-time constant, so a production bundle contains
