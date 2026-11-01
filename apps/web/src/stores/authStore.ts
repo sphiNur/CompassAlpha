@@ -127,6 +127,50 @@ function resolveCurrentStore(currentStoreId: StoreContext, session: AuthSession)
   return session.stores[0]?.id ?? null;
 }
 
+/**
+ * DX-SHL-16 (2026-11-01): the stored session is outside the type system
+ * (an older build, a half-written entry, a hand edit). A session whose
+ * shape the screens rely on is wrong (`stores` not an array, say) crashed
+ * the whole app on every start. Such a session is dropped, which signs
+ * the person in again; navStore validates its payload the same way.
+ */
+export function isUsableSession(value: unknown): value is AuthSession {
+  if (!value || typeof value !== 'object') return false;
+  const s = value as Partial<AuthSession>;
+  const isStrings = (v: unknown) => Array.isArray(v) && v.every((x) => typeof x === 'string');
+  return (
+    !!s.user &&
+    typeof s.user === 'object' &&
+    typeof s.user.id === 'string' &&
+    typeof s.user.locale === 'string' &&
+    !!s.member &&
+    typeof s.member === 'object' &&
+    typeof s.member.orgId === 'string' &&
+    Array.isArray(s.stores) &&
+    s.stores.every((x) => !!x && typeof x === 'object' && typeof x.id === 'string') &&
+    isStrings(s.permissions) &&
+    (s.memberships === undefined || Array.isArray(s.memberships))
+  );
+}
+
+type PersistedAuth = Pick<AuthState, 'accessToken' | 'refreshToken' | 'session' | 'currentStoreId'>;
+
+/** What a stored payload restores: all of it, or nothing when the session is unusable. */
+export function mergePersistedAuth<T extends PersistedAuth>(persisted: unknown, current: T): T {
+  const p = (persisted ?? {}) as Partial<PersistedAuth>;
+  if (!isUsableSession(p.session)) return current;
+  return {
+    ...current,
+    accessToken: typeof p.accessToken === 'string' ? p.accessToken : null,
+    refreshToken: typeof p.refreshToken === 'string' ? p.refreshToken : null,
+    session: p.session,
+    currentStoreId: resolveCurrentStore(
+      typeof p.currentStoreId === 'string' ? p.currentStoreId : null,
+      p.session,
+    ),
+  };
+}
+
 interface AuthState {
   accessToken: string | null;
   refreshToken: string | null;
@@ -199,6 +243,7 @@ export const useAuthStore = create<AuthState>()(
         session: state.session,
         currentStoreId: state.currentStoreId,
       }),
+      merge: mergePersistedAuth,
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);
       },

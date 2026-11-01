@@ -442,8 +442,11 @@ function QtyQuickPickSheet({
       }
     >
       <div className="flex flex-col gap-3 py-3">
-        {/* Preset chips — tap once = done. The most common path. */}
-        <div className="flex flex-wrap gap-x-2 gap-y-4">
+        {/* Preset chips — tap once = done. The most common path.
+            DX-VIS-8 (2026-11-01): each 26px chip's hit-44 area reaches 9px
+            above and below it, so wrapped rows need 18px between them or
+            the bottom of "0.5 kg" taps "2 kg" on the next row. */}
+        <div className="flex flex-wrap gap-x-2 gap-y-[18px]">
           {presets
             .filter((p) => p >= min && p <= max)
             .map((p) => {

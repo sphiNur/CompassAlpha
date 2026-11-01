@@ -18,6 +18,7 @@ import {
   Sheet,
   Spinner,
   useToast,
+  Select,
 } from '@compass/ui';
 import { newIdempotencyKey, trpc } from '../../lib/trpc';
 import { useAuthStore } from '../../stores/authStore';
@@ -267,8 +268,7 @@ export function StoreSalesPanel({
                     : i18n.t('sales.form.noRecipeAskAdmin')}
                 </p>
               )}
-              <select
-                className="h-[var(--control-h)] w-full rounded-[var(--r-pill)] bg-[var(--c-surface)] px-3 text-old-body ring-hairline disabled:opacity-60"
+              <Select
                 value={draftDishId}
                 disabled={listErrored}
                 onChange={(e) => setDraftDishId(e.target.value)}
@@ -288,7 +288,7 @@ export function StoreSalesPanel({
                     </option>
                   );
                 })}
-              </select>
+              </Select>
               <div className="flex items-center gap-2">
                 <Input
                   type="number"

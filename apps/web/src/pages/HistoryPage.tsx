@@ -175,8 +175,10 @@ export function HistoryPage() {
         />
       ) : null}
 
+      {/* DX-VIS-6 / DX-VIS-8 (2026-11-01): the chips tap at 44px; 12px
+          between wrapped rows keeps one row's tap area off the next. */}
       <div
-        className="flex flex-wrap items-center gap-1.5"
+        className="flex flex-wrap items-center gap-x-1.5 gap-y-3"
         aria-label={i18n.t('run.history.activeFilters')}
       >
         {/* CMP-HIS-1: always say which stores the list and its total cover. */}
@@ -212,7 +214,7 @@ export function HistoryPage() {
           ) : null}
           <button
             type="button"
-            className="px-2 py-1 text-old-label font-semibold text-[var(--c-action)]"
+            className="hit-44 px-2 py-1 text-old-label font-semibold text-[var(--c-action)]"
             onClick={clearAll}
           >
             {i18n.t('run.history.clearAll')}
@@ -396,7 +398,7 @@ function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }
     <button
       type="button"
       onClick={onRemove}
-      className="inline-flex min-h-8 items-center gap-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 text-old-label font-medium ring-hairline"
+      className="press hit-44 inline-flex min-h-8 items-center gap-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 text-old-label font-medium ring-hairline"
     >
       <span className="max-w-40 truncate">{label}</span>
       <span aria-hidden className="text-[var(--c-fg-muted)]">

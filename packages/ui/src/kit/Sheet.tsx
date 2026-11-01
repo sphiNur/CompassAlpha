@@ -1,7 +1,8 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { cn } from '../cn';
 import { useSheetPresence } from '../components/Sheet';
+import { useSheetFocus } from '../sheetFocus';
 
 export interface SheetProps {
   open: boolean;
@@ -14,7 +15,8 @@ export interface SheetProps {
   /**
    * Leave focus where it is when the sheet opens. For sheets with a text
    * field the person may not want first: focusing it would raise the
-   * keyboard over the other choices.
+   * keyboard over the other choices. DX-IX-2: the sheet itself takes
+   * focus then, so it does not stay on the page behind.
    */
   keepFocus?: boolean;
 }
@@ -25,13 +27,18 @@ export interface SheetProps {
  */
 export function Sheet({ open, onOpenChange, title, children, actions, keepFocus }: SheetProps) {
   useSheetPresence(open, onOpenChange);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const focus = useSheetFocus(open, contentRef, { keepKeyboardDown: !!keepFocus });
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-ink/40" />
         <Dialog.Content
+          ref={contentRef}
           aria-describedby={undefined}
-          onOpenAutoFocus={keepFocus ? (e) => e.preventDefault() : undefined}
+          tabIndex={-1}
+          onOpenAutoFocus={focus.onOpenAutoFocus}
+          onCloseAutoFocus={focus.onCloseAutoFocus}
           className={cn(
             'fixed inset-x-0 bottom-0 z-50 flex max-h-[90dvh] flex-col rounded-t-lg bg-surface text-ink',
             'shadow-raised outline-none',

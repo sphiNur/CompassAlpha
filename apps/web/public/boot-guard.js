@@ -44,32 +44,34 @@
   var lang = detectLang();
   document.documentElement.lang = lang;
 
+  // DX-SHL-17 (2026-11-01): `timeout` is shown to staff; it says what to
+  // do, without "JS module" or a timer.
   var TEXT = {
     en: {
       startingUp: 'Starting up…',
       bootFailed: 'Boot failed',
-      timeout: 'App did not start within 12 s. Likely a JS module loading error.',
+      timeout: 'The app could not start. Check your connection and reload.',
       reload: 'Reload',
       reset: 'Reset & reload',
     },
     zh: {
       startingUp: '启动中…',
       bootFailed: '启动失败',
-      timeout: '应用 12 秒内未启动，可能是 JS 模块加载失败。',
+      timeout: '应用没能启动。请检查网络后重新加载。',
       reload: '重新加载',
       reset: '清除数据并重启',
     },
     ru: {
       startingUp: 'Запуск…',
       bootFailed: 'Ошибка запуска',
-      timeout: 'Приложение не запустилось за 12 секунд. Вероятно, ошибка загрузки JS.',
+      timeout: 'Приложение не запустилось. Проверьте связь и перезагрузите.',
       reload: 'Перезагрузить',
       reset: 'Сбросить и перезагрузить',
     },
     uz: {
       startingUp: 'Ishga tushmoqda…',
       bootFailed: 'Ishga tushishda xato',
-      timeout: '12 soniya ichida ishga tushmadi. JS modulini yuklashda xato boʻlishi mumkin.',
+      timeout: 'Ilova ishga tushmadi. Internetni tekshirib, qayta yuklang.',
       reload: 'Qayta yuklash',
       reset: 'Tozalab qayta yuklash',
     },

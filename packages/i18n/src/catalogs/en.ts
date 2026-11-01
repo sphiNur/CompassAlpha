@@ -485,9 +485,8 @@ export const en = {
   'admin.store.sectionAria': 'Store section',
   // 2026-07-30: the crash screen was the LAST English-only surface —
   // and it's the only thing a user sees when the app breaks.
-  'boot.crashTitle': 'Something broke before the app could render.',
-  'boot.crashBody':
-    'The error has been reported. Try closing and reopening the Mini App. If it keeps happening, share the trace below with your administrator.',
+  'boot.crashTitle': 'Something went wrong',
+  'boot.crashBody': 'The error has been reported. Try again, or close and reopen the Mini App. If it keeps happening, copy the error details and send them to your administrator.',
   'boot.tryAgain': 'Try again',
   'boot.resetAndReload': 'Reset session and reload',
   'common.noData': 'No data',
@@ -663,9 +662,19 @@ export const en = {
   'shell.pageNotLoaded.body':
     'It needs a connection to open. It loads by itself once you are online, or tap Retry.',
   'shell.offline.body':
-    'You are seeing what was last loaded. Orders, purchases and receiving are kept on this phone and sync when you are back online; daily close, sales and admin need a connection to save.',
+    'You are seeing what was last loaded. Orders, purchases and receiving are kept on this phone and sync when you are back online; review, daily close, sales and admin need a connection to save.',
   'shell.offline.lastUpdated': 'last updated {time}',
-  'shell.offline.noDataBody': 'Nothing has been loaded on this phone yet; data appears once you are back online. Orders, purchases and receiving are kept on this phone and sync when you are back online; daily close, sales and admin need a connection to save.',
+  'shell.skip.mainAction': 'Skip to main action',
+  'shell.skip.nav': 'Skip to navigation',
+  'approval.offline.needsConnection': 'Review needs a connection: approvals and rejections are not kept on this phone.',
+  'workspace.switchConfirm': 'Switch to {name}? Anything not saved on this page will be lost.',
+  'storeSwitcher.switched': 'Now working in {store}',
+  'run.alloc.qtyFor': 'Quantity for {store}',
+  'run.alloc.priceFor': 'Unit price for {store}',
+  'ops.purge.dateLabel': 'Date',
+  'boot.copyDetails': 'Copy error details',
+  'boot.detailsCopied': 'Copied. Send it to your administrator.',
+  'shell.offline.noDataBody': 'Nothing has been loaded on this phone yet; data appears once you are back online. Orders, purchases and receiving are kept on this phone and sync when you are back online; review, daily close, sales and admin need a connection to save.',
   'order.pendingSync': '{n, plural, one {# change} other {# changes}} waiting to sync',
   'shell.pageError.title': 'This page ran into a problem',
   'shell.pageError.body': 'Other pages still work. Try again, or switch to another page.',

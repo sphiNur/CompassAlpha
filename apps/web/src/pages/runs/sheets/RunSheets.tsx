@@ -15,7 +15,18 @@
  * them; RunPage imports the types to hold the useState.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Banner, Button, Input, PhotoCapture, Sheet, useToast } from '@compass/ui';
+import {
+  Banner,
+  Button,
+  Input,
+  PhotoCapture,
+  Segmented,
+  Select,
+  Sheet,
+  confirmCancelPolicy,
+  pillButtonClass,
+  useToast,
+} from '@compass/ui';
 import { PaymentMethodChips } from '../../../components/PaymentMethodChips';
 import { useAuthStore } from '../../../stores/authStore';
 import { formatMoney, formatQty } from '../../../lib/format';
@@ -400,7 +411,8 @@ export function PurchaseSheet({
                 onChange({ ...draft, perStorePricing: false });
               }
             }}
-            className="press rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-2 text-old-label font-semibold text-[var(--c-fg)] ring-hairline"
+            // DX-VIS-6 (2026-11-01): 31px tall; hit-44 makes it a 44px tap.
+            className="press hit-44 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 py-2 text-old-label font-semibold text-[var(--c-fg)] ring-hairline"
           >
             {/* 2026-07-26: both labels were hard-coded Chinese. */}
             {draft.perStorePricing
@@ -410,18 +422,19 @@ export function PurchaseSheet({
           {suppliers.length > 0 ? (
             <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
               {i18n.t('run.action.supplier')}
-              <select
-                className="mt-1 h-[var(--control-h)] w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3 ring-hairline"
-                value={draft.supplierId ?? ''}
-                onChange={(e) => onChange({ ...draft, supplierId: e.target.value || null })}
-              >
-                <option value="">—</option>
-                {suppliers.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
+              <span className="mt-1 block">
+                <Select
+                  value={draft.supplierId ?? ''}
+                  onChange={(e) => onChange({ ...draft, supplierId: e.target.value || null })}
+                >
+                  <option value="">—</option>
+                  {suppliers.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </Select>
+              </span>
             </label>
           ) : null}
           <PhotoCapture
@@ -457,6 +470,8 @@ export function PurchaseSheet({
                         step={sku?.step ?? '1'}
                         value={splitQty}
                         disabled={draft.qtyLocked}
+                        // DX-IX-8 (2026-11-01): was read out as "edit text".
+                        aria-label={i18n.t('run.alloc.qtyFor', { store: store.name })}
                         onChange={(e) => {
                           const next = new Map(draft.splits);
                           if (e.target.value === '') next.delete(store.id);
@@ -471,6 +486,7 @@ export function PurchaseSheet({
                         <Input
                           type="number"
                           inputMode="decimal"
+                          aria-label={i18n.t('run.alloc.priceFor', { store: store.name })}
                           value={toDisplayPrice(
                             draft.splitPrices.get(store.id) ?? draft.unitPrice,
                             priceInThousands,
@@ -482,33 +498,23 @@ export function PurchaseSheet({
                           }}
                           className="text-right"
                         />
-                        <div className="flex rounded-[var(--r-pill)] bg-[var(--c-surface)] p-1 ring-hairline">
-                          {(['cash', 'transfer'] as const).map((method) => {
-                            const selected =
-                              (draft.splitPaymentMethods.get(store.id) ?? draft.paymentMethod) === method;
-                            return (
-                              <button
-                                key={method}
-                                type="button"
-                                onClick={() => {
-                                  const next = new Map(draft.splitPaymentMethods);
-                                  next.set(store.id, method);
-                                  onChange({ ...draft, splitPaymentMethods: next });
-                                }}
-                                className={
-                                  'rounded-[var(--r-pill)] px-2 py-1 text-old-label font-semibold ' +
-                                  (selected
-                                    ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                                    : 'text-[var(--c-fg-muted)]')
-                                }
-                              >
-                                {method === 'cash'
-                                  ? i18n.t('run.label.paymentCash')
-                                  : i18n.t('run.label.paymentTransfer')}
-                              </button>
-                            );
-                          })}
-                        </div>
+                        {/* DX-VIS-6 / DX-VIS-7 (2026-11-01): was a hand-rolled
+                            pair of 31px buttons, selected by colour only. */}
+                        <Segmented
+                          size="sm"
+                          equalWidth={false}
+                          ariaLabel={i18n.t('run.label.paymentMethod')}
+                          value={draft.splitPaymentMethods.get(store.id) ?? draft.paymentMethod}
+                          onChange={(method) => {
+                            const next = new Map(draft.splitPaymentMethods);
+                            next.set(store.id, method);
+                            onChange({ ...draft, splitPaymentMethods: next });
+                          }}
+                          options={[
+                            { value: 'cash', label: i18n.t('run.label.paymentCash') },
+                            { value: 'transfer', label: i18n.t('run.label.paymentTransfer') },
+                          ]}
+                        />
                       </div>
                     ) : null}
                   </li>
@@ -535,13 +541,11 @@ export function PurchaseSheet({
               here) and puts deliberate distance between it and the ✓.
               It still routes through RunPage's ConfirmSheet. */}
           {draft.isEdit && onUndo && !draft.qtyLocked ? (
-            <button
-              type="button"
-              onClick={onUndo}
-              className="w-full rounded-[var(--r-utility)] py-2 text-old-label font-semibold text-[var(--c-danger)] active:bg-[var(--c-surface-2)]"
-            >
+            // DX-VIS-6 (2026-11-01): a 31px hand-rolled text button; the
+            // kit's soft-danger button is 44px to tap and reads as one.
+            <Button block size="sm" variant="danger-ghost" onClick={onUndo}>
               {i18n.t('run.action.undoPurchase')}
-            </button>
+            </Button>
           ) : null}
         </div>
       ) : null}
@@ -842,44 +846,31 @@ export function AddItemSheet({
               shape; the shared fields (qty / price / payment / reason)
               stay populated so a mistaken-mode tap doesn't wipe what
               the user typed. */}
-          <div className="flex gap-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] p-1">
-            {(['sku', 'expense'] as const).map((m) => {
-              const selected = draft.mode === m;
-              return (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => {
-                    if (draft.mode === m) return;
-                    // Mode switch: clear identity-specific fields
-                    // (skuId / label) and reset splits because the
-                    // store-selection UI is different across modes.
-                    onChange({
-                      ...draft,
-                      mode: m,
-                      skuId: m === 'sku' ? null : draft.skuId,
-                      skuCostMode: 'merge',
-                      label: m === 'expense' ? '' : draft.label,
-                      splits: new Map(),
-                      splitPrices: new Map(),
-                      splitPaymentMethods: new Map(),
-                      perStorePricing: false,
-                    });
-                  }}
-                  className={
-                    'hit-44 flex-1 rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium ' +
-                    (selected
-                      ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                      : 'text-[var(--c-fg-muted)]')
-                  }
-                >
-                  {m === 'sku'
-                    ? i18n.t('run.action.addItem.modeSku')
-                    : i18n.t('run.action.addItem.modeExpense')}
-                </button>
-              );
-            })}
-          </div>
+          {/* DX-VIS-7 (2026-11-01): Segmented, so the selected mode is
+              announced, not only coloured. */}
+          <Segmented
+            value={draft.mode}
+            onChange={(m) => {
+              // Mode switch: clear identity-specific fields
+              // (skuId / label) and reset splits because the
+              // store-selection UI is different across modes.
+              onChange({
+                ...draft,
+                mode: m,
+                skuId: m === 'sku' ? null : draft.skuId,
+                skuCostMode: 'merge',
+                label: m === 'expense' ? '' : draft.label,
+                splits: new Map(),
+                splitPrices: new Map(),
+                splitPaymentMethods: new Map(),
+                perStorePricing: false,
+              });
+            }}
+            options={[
+              { value: 'sku', label: i18n.t('run.action.addItem.modeSku') },
+              { value: 'expense', label: i18n.t('run.action.addItem.modeExpense') },
+            ]}
+          />
 
           {/* 1) Identity section — mode-specific. */}
           {draft.mode === 'sku' ? (
@@ -898,7 +889,8 @@ export function AddItemSheet({
                   onClick={() =>
                     onChange({ ...draft, skuId: null, skuCostMode: 'merge' })
                   }
-                  className="shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-old-label text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
+                  // DX-VIS-6: hit-44 (it was 22px tall to a finger).
+                  className="hit-44 shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-old-label text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
                 >
                   {i18n.t('run.action.addItem.changeSku')}
                 </button>
@@ -1020,7 +1012,7 @@ export function AddItemSheet({
               Lists the stores that already have demand so the user
               knows which stores aren't available in the dropdown. */}
           {draft.mode === 'sku' && selectedSku && selectedSkuExisting ? (
-            <div className="rounded-[var(--r-utility)] bg-[var(--c-warning)]/10 px-3 py-2 text-old-label text-[var(--c-fg)] ring-1 ring-[var(--c-warning)]">
+            <div className="rounded-[var(--r-utility)] bg-[color:color-mix(in_oklch,var(--c-warning)_10%,transparent)] px-3 py-2 text-old-label text-[var(--c-fg)] ring-1 ring-[var(--c-warning)]">
               {i18n.t('run.action.addItem.crossStoreHint', {
                 stores: [...selectedSkuExisting.storeIds]
                   .map((id) => storeById.get(id)?.name ?? id.slice(0, 8))
@@ -1039,9 +1031,12 @@ export function AddItemSheet({
                 <button
                   type="button"
                   disabled={selectedStoreAlreadyHasSku}
+                  // DX-VIS-6 / DX-VIS-7: one option can be disabled, so these
+                  // stay two buttons; they say which is chosen and tap at 44px.
+                  aria-pressed={!skuRecordsAsExpense}
                   onClick={() => onChange({ ...draft, skuCostMode: 'merge' })}
                   className={
-                    'rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium ring-hairline disabled:opacity-40 ' +
+                    'hit-44 rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium ring-hairline disabled:opacity-40 ' +
                     (!skuRecordsAsExpense
                       ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
                       : 'bg-[var(--c-bg)] text-[var(--c-fg-muted)]')
@@ -1054,8 +1049,9 @@ export function AddItemSheet({
                   onClick={() =>
                     onChange({ ...draft, skuCostMode: 'separateExpense' })
                   }
+                  aria-pressed={skuRecordsAsExpense}
                   className={
-                    'rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium ring-hairline ' +
+                    'hit-44 rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium ring-hairline ' +
                     (skuRecordsAsExpense
                       ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
                       : 'bg-[var(--c-bg)] text-[var(--c-fg-muted)]')
@@ -1080,35 +1076,36 @@ export function AddItemSheet({
           {draft.mode === 'sku' && selectedSku ? (
             <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
               {i18n.t('run.action.addItem.targetStore')}
-              <select
-                className="mt-1 h-[var(--control-h)] w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3 ring-hairline"
-                value={selectedStoreId}
-                onChange={(e) => {
-                  const next = new Map<string, string>();
-                  if (e.target.value && draft.actualQty) {
-                    next.set(e.target.value, draft.actualQty);
-                  } else if (e.target.value) {
-                    next.set(e.target.value, '');
-                  }
-                  onChange({
-                    ...draft,
-                    splits: next,
-                    skuCostMode: selectedSkuExisting?.storeIds.has(e.target.value)
-                      ? 'separateExpense'
-                      : draft.skuCostMode,
-                  });
-                }}
-              >
-                <option value="">{i18n.t('run.action.addItem.pickStore')}</option>
-                {storeChoices.map((st) => (
-                  <option key={st.id} value={st.id}>
-                    {st.name}
-                    {selectedSkuExisting?.storeIds.has(st.id)
-                      ? ` (${i18n.t('run.action.addItem.storeAlreadyHasSkuShort')})`
-                      : ''}
-                  </option>
-                ))}
-              </select>
+              <span className="mt-1 block">
+                <Select
+                  value={selectedStoreId}
+                  onChange={(e) => {
+                    const next = new Map<string, string>();
+                    if (e.target.value && draft.actualQty) {
+                      next.set(e.target.value, draft.actualQty);
+                    } else if (e.target.value) {
+                      next.set(e.target.value, '');
+                    }
+                    onChange({
+                      ...draft,
+                      splits: next,
+                      skuCostMode: selectedSkuExisting?.storeIds.has(e.target.value)
+                        ? 'separateExpense'
+                        : draft.skuCostMode,
+                    });
+                  }}
+                >
+                  <option value="">{i18n.t('run.action.addItem.pickStore')}</option>
+                  {storeChoices.map((st) => (
+                    <option key={st.id} value={st.id}>
+                      {st.name}
+                      {selectedSkuExisting?.storeIds.has(st.id)
+                        ? ` (${i18n.t('run.action.addItem.storeAlreadyHasSkuShort')})`
+                        : ''}
+                    </option>
+                  ))}
+                </Select>
+              </span>
             </label>
           ) : null}
           {draft.mode === 'expense' && draft.label.trim() ? (
@@ -1117,37 +1114,25 @@ export function AddItemSheet({
                 <div className="mb-1 text-old-label font-semibold text-[var(--c-fg-muted)]">
                   {i18n.t('run.action.addExpense.scopeTitle')}
                 </div>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {(['shared', 'store'] as const).map((scope) => {
-                    const selected = draft.expenseScope === scope;
-                    return (
-                      <button
-                        key={scope}
-                        type="button"
-                        onClick={() =>
-                          onChange({
-                            ...draft,
-                            expenseScope: scope,
-                            splits:
-                              scope === 'shared'
-                                ? evenSplit(storeChoices.map((store) => store.id), draft.actualQty)
-                                : new Map(),
-                          })
-                        }
-                        className={
-                          'rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium ring-hairline ' +
-                          (selected
-                            ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                            : 'bg-[var(--c-bg)] text-[var(--c-fg-muted)]')
-                        }
-                      >
-                        {scope === 'shared'
-                          ? i18n.t('run.action.addExpense.scopeShared')
-                          : i18n.t('run.action.addExpense.scopeStore')}
-                      </button>
-                    );
-                  })}
-                </div>
+                {/* DX-VIS-7 (2026-11-01): Segmented (selection announced). */}
+                <Segmented
+                  value={draft.expenseScope}
+                  ariaLabel={i18n.t('run.action.addExpense.scopeTitle')}
+                  onChange={(scope) =>
+                    onChange({
+                      ...draft,
+                      expenseScope: scope,
+                      splits:
+                        scope === 'shared'
+                          ? evenSplit(storeChoices.map((store) => store.id), draft.actualQty)
+                          : new Map(),
+                    })
+                  }
+                  options={[
+                    { value: 'shared', label: i18n.t('run.action.addExpense.scopeShared') },
+                    { value: 'store', label: i18n.t('run.action.addExpense.scopeStore') },
+                  ]}
+                />
                 <p className="mt-1 text-old-label leading-snug text-[var(--c-fg-muted)]">
                   {draft.expenseScope === 'shared'
                     ? i18n.t('run.action.addExpense.scopeSharedHint')
@@ -1166,7 +1151,10 @@ export function AddItemSheet({
                   })}
                 </span>
               </div>
-              <div className="flex flex-wrap gap-1.5">
+              {/* DX-VIS-6 / DX-VIS-8 (2026-11-01): kit pills (44px taps) with
+                  12px between wrapped rows so one row's tap area does not
+                  cover the next; aria-pressed says which stores are in. */}
+              <div className="flex flex-wrap gap-x-1.5 gap-y-3">
                 {storeChoices.map((st) => {
                   const selected = draft.splits.has(st.id);
                   return (
@@ -1185,12 +1173,8 @@ export function AddItemSheet({
                           splits: evenSplit(nextIds, draft.actualQty),
                         });
                       }}
-                      className={
-                        'rounded-[var(--r-pill)] px-3 py-1 text-old-label font-medium ' +
-                        (selected
-                          ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                          : 'bg-[var(--c-surface-2)] text-[var(--c-fg)] ring-hairline')
-                      }
+                      aria-pressed={selected}
+                      className={pillButtonClass(selected)}
                     >
                       {st.name}
                       {selected && draft.splits.size > 1 ? (
@@ -1211,7 +1195,8 @@ export function AddItemSheet({
                       splits: evenSplit([...draft.splits.keys()], draft.actualQty),
                     })
                   }
-                  className="mt-2 text-old-label text-[var(--c-action)] active:opacity-70"
+                  // DX-VIS-6: hit-44 on the text link.
+                  className="hit-44 mt-2 text-old-label text-[var(--c-action)] active:opacity-70"
                 >
                   {i18n.t('run.action.addExpense.resplitEvenly')}
                 </button>
@@ -1381,6 +1366,12 @@ export function ConfirmSheet({
         body: string;
         confirmLabel: string;
         danger: boolean;
+        /**
+         * DX-IX-6 (2026-11-01): the person cannot take it back (finishing
+         * the purchase locks it; only a super admin reopens). Like
+         * `danger`, the sheet then shows Cancel and starts on it.
+         */
+        irreversible?: boolean;
         requireReason: boolean;
         /**
          * M1.7-A (2026-05-06): "soft" reason — when true, the reason
@@ -1435,7 +1426,15 @@ export function ConfirmSheet({
   // open sheet — so we always show the confirm sheet's own primary
   // button now, regardless of Telegram presence. Was `!inTelegram`
   // (Telegram MainButton was the canonical CTA), no longer correct.
-  const showCancel = isHardReason || (isSoftReason && reasonExpanded);
+  // DX-IX-6 (2026-11-01): destructive and locking confirms always offer
+  // Cancel and focus it, so Enter on the opener followed by a repeated
+  // Enter cannot finish a purchase (confirmCancelPolicy).
+  const { showCancel, focusCancel } = confirmCancelPolicy({
+    danger: config?.danger,
+    irreversible: config?.irreversible,
+    requireReason: isHardReason,
+    showCancelInSheet: isHardReason || (isSoftReason && reasonExpanded),
+  });
   const showPrimary = true;
   const hasFooter = showPrimary || showCancel;
   return (
@@ -1467,7 +1466,13 @@ export function ConfirmSheet({
               </Button>
             ) : null}
             {showCancel ? (
-              <Button block variant="pearl" onClick={onCancel}>
+              <Button
+                block
+                variant="pearl"
+                onClick={onCancel}
+                // DX-IX-6: Sheet focuses [data-autofocus] when it opens.
+                data-autofocus={focusCancel || undefined}
+              >
                 {i18n.t('common.cancel')}
               </Button>
             ) : null}
@@ -1498,7 +1503,8 @@ export function ConfirmSheet({
             <button
               type="button"
               onClick={() => setReasonExpanded(true)}
-              className="self-start text-old-label text-[var(--c-action)] active:opacity-70"
+              // DX-VIS-6 (2026-11-01): was a 16px-tall tap target.
+              className="hit-44 self-start py-1 text-old-label text-[var(--c-action)] active:opacity-70"
             >
               {i18n.t('run.label.addReasonOptional')}
             </button>

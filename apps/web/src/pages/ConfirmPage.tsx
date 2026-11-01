@@ -789,6 +789,8 @@ export function ConfirmPage() {
         }
         body={i18n.t('confirm.final.body')}
         confirmLabel={i18n.t('confirm.final.submit')}
+        // DX-IX-6: confirming locks the receipt; start on Cancel.
+        irreversible
         cancelLabel={i18n.t('common.cancel')}
         pending={confirmStore.isPending}
         onConfirm={submitConfirmStore}

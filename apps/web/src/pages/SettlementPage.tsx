@@ -7,6 +7,7 @@
  * cash from other modules or silently overwrites an existing close.
  */
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { flushSync } from 'react-dom';
 import {
   Banner,
   Button,
@@ -36,6 +37,7 @@ import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
 import { registerStoreChangeGuard, useStoreContext } from '../components/StoreSwitcher';
 import { usePageMainButton, haptic } from '../hooks/useTelegram';
 import { confirmNative } from '../lib/confirm';
+import { showFieldError, withTouched } from '../lib/fieldErrors';
 import { useErrToast } from '../lib/errToast';
 import { useDateFormat, useI18n, useRoleLabels } from '../hooks/useI18n';
 import { formatMoney, currencyOf } from '../lib/format';
@@ -693,7 +695,16 @@ export function SettlementPage() {
     draft.wageItems.filter((item) => !isValidWageItem(item, wageSelectionRequired)).length +
     (correctionReady ? 0 : 1);
   const formRef = useRef<HTMLFieldSetElement>(null);
+  // DX-VIS-15 (2026-11-01): expense and wage lines are marked red only
+  // after their field was left or a save was tried, not as they appear.
+  const [touchedFields, setTouchedFields] = useState<ReadonlySet<string>>(() => new Set());
+  const [saveTried, setSaveTried] = useState(false);
+  const touch = (key: string) => setTouchedFields((cur) => withTouched(cur, key));
+  const showError = (invalid: boolean, key: string) =>
+    showFieldError(invalid, touchedFields, key, saveTried);
   const showFirstFieldToFix = () => {
+    // The marks must be on screen before focus can find the first one.
+    flushSync(() => setSaveTried(true));
     focusFirstInvalid(formRef.current);
   };
   const canRecordOperatingExpenses = businessDate?.canRecordOperatingExpenses ?? false;
@@ -1377,11 +1388,21 @@ export function SettlementPage() {
                       const itemLabel = i18n.t('settlement.expenses.itemNumber', { n: index + 1 });
                       const amountLabel = `${itemLabel} · ${i18n.t('settlement.expenses.amount')}`;
                       const reasonLabel = `${itemLabel} · ${i18n.t('settlement.expenses.reason')}`;
-                      const amountProblem = expense.isHistorical
+                      // DX-VIS-15: a problem shows once the field was left
+                      // or a save was tried, not as the line appears.
+                      const rawAmountProblem = expense.isHistorical
                         ? null
                         : moneyProblem(expense.amount, { positive: true });
-                      const reasonMissing =
-                        !expense.isHistorical && expense.reason.trim().length === 0;
+                      const amountProblem = showError(
+                        rawAmountProblem !== null,
+                        `${expense.id}:amount`,
+                      )
+                        ? rawAmountProblem
+                        : null;
+                      const reasonMissing = showError(
+                        !expense.isHistorical && expense.reason.trim().length === 0,
+                        `${expense.id}:reason`,
+                      );
                       const amountErrorId = `expense-${expense.id}-amount-error`;
                       const reasonErrorId = `expense-${expense.id}-reason-error`;
                       return (
@@ -1417,6 +1438,7 @@ export function SettlementPage() {
                               aria-describedby={amountProblem ? amountErrorId : undefined}
                               formatError="none"
                               className={amountProblem ? 'border-[var(--c-danger)]' : undefined}
+                              onBlur={() => touch(`${expense.id}:amount`)}
                               onChange={(event) =>
                                 updateOperatingExpense(expense.id, {
                                   amount: event.currentTarget.value,
@@ -1449,6 +1471,7 @@ export function SettlementPage() {
                                     aria-describedby={
                                       !valid && reasonMissing ? reasonErrorId : undefined
                                     }
+                                    onBlur={() => touch(`${expense.id}:reason`)}
                                     onChange={(event) =>
                                       updateOperatingExpense(expense.id, {
                                         reason: event.currentTarget.value,
@@ -1520,10 +1543,17 @@ export function SettlementPage() {
                       const itemLabel = i18n.t('settlement.wages.itemNumber', { n: index + 1 });
                       const amountLabel = `${itemLabel} · ${i18n.t('settlement.wages.amount')}`;
                       const reasonLabel = `${itemLabel} · ${i18n.t('settlement.wages.reason')}`;
-                      const amountProblem = wage.isHistorical
+                      // DX-VIS-15: as for expense lines above.
+                      const rawAmountProblem = wage.isHistorical
                         ? null
                         : moneyProblem(wage.amount, { positive: true });
-                      const reasonMissing = !wage.isHistorical && wage.reason.trim().length === 0;
+                      const amountProblem = showError(rawAmountProblem !== null, `${wage.id}:amount`)
+                        ? rawAmountProblem
+                        : null;
+                      const reasonMissing = showError(
+                        !wage.isHistorical && wage.reason.trim().length === 0,
+                        `${wage.id}:reason`,
+                      );
                       const employeeMissing =
                         !wage.isHistorical && wageSelectionRequired && !wage.memberId;
                       const amountErrorId = `wage-${wage.id}-amount-error`;
@@ -1614,6 +1644,7 @@ export function SettlementPage() {
                                 aria-describedby={amountProblem ? amountErrorId : undefined}
                                 formatError="none"
                                 className={amountProblem ? 'border-[var(--c-danger)]' : undefined}
+                                onBlur={() => touch(`${wage.id}:amount`)}
                                 onChange={(event) =>
                                   updateWageItem(wage.id, {
                                     amount: event.currentTarget.value,
@@ -1646,6 +1677,7 @@ export function SettlementPage() {
                                     aria-describedby={
                                       !valid && reasonMissing ? reasonErrorId : undefined
                                     }
+                                    onBlur={() => touch(`${wage.id}:reason`)}
                                     onChange={(event) =>
                                       updateWageItem(wage.id, {
                                         reason: event.currentTarget.value,
