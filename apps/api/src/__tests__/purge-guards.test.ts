@@ -345,12 +345,25 @@ describe.skipIf(!SHOULD_RUN)('maintenance purge guards (PG-gated)', () => {
     expect(before.length).toBeGreaterThan(0);
     const preview = await admin.admin.purgeAllTestData({ dryRun: true });
     expect(preview.byTable['domain.policy_decisions']).toBeUndefined();
-    const [org] = await db.select({ slug: s.organizations.slug }).from(s.organizations).where(eq(s.organizations.id, orgId));
+    const [org] = await db
+      .select({ slug: s.organizations.slug, name: s.organizations.name })
+      .from(s.organizations)
+      .where(eq(s.organizations.id, orgId));
+    // DX-CAT-17: confirmed with the workspace name people can see; a
+    // wrong answer (the old hidden "default"-style slug guess) is refused.
+    expect(
+      (await errorOf(() => admin.admin.purgeAllTestData({ dryRun: false, confirmText: 'default' })))
+        ?.message,
+    ).toBe('admin.errors.purgeConfirmMismatch');
     // Runs before the CAT-2 test adds a daily close (which blocks this).
-    await admin.admin.purgeAllTestData({ dryRun: false, confirmText: org!.slug });
+    await admin.admin.purgeAllTestData({ dryRun: false, confirmText: ` ${org!.name} ` });
     const after = await db.query.policyDecisions.findMany({ where: (x, o) => o.eq(x.orgId, orgId) });
     expect(after.length).toBe(before.length + 1);
     expect(after.some((r) => r.action === 'admin.purge.all')).toBe(true);
+    // An older client still sends the slug; that keeps working.
+    expect(
+      await errorOf(() => admin.admin.purgeAllTestData({ dryRun: false, confirmText: org!.slug })),
+    ).toBeNull();
   });
 
   test('CAT-4: reset by date takes the run of its orders and the orders of its runs', async () => {
@@ -456,5 +469,155 @@ describe.skipIf(!SHOULD_RUN)('maintenance purge guards (PG-gated)', () => {
       e.NODE_ENV = saved.NODE_ENV;
       e.COMPASS_ALLOW_BULK_PURGE = saved.allow;
     }
+  });
+});
+
+describe.skipIf(!SHOULD_RUN)('maintenance list and previews say what they will do (PG-gated)', () => {
+  // The lists and the feed read through the admin's read scope; make the
+  // fixture admin a workspace admin, as the super admin is in real orgs.
+  beforeAll(async () => {
+    const { db, orgId, memberId } = fix!;
+    await db.insert(s.permissions).values({ key: 'org.admin', description: 'org.admin' }).onConflictDoNothing();
+    const [role] = await db
+      .insert(s.roles)
+      .values({ orgId, slug: 'org-admin-dx', name: 'Admin', rank: 90 })
+      .returning();
+    await db.insert(s.rolePermissions).values({ roleId: role!.id, permissionKey: 'org.admin' });
+    await db
+      .insert(s.memberRoleBindings)
+      .values({ memberId, roleId: role!.id, scopeType: 'global', scopeId: null });
+  });
+
+  test('DX-CAT-3: the lists say per row whether it can be deleted here, and why not', async () => {
+    const { admin, staff, db, orgId, storeId, skuId, memberId } = fix!;
+    const date = '2026-07-14';
+    const theirs = await staff.order.adjustItem({ storeId, skuId, qty: '1' });
+    await db
+      .update(s.orderSessionsV)
+      .set({ orderDate: date })
+      .where(eq(s.orderSessionsV.id, theirs.sessionId));
+    const mine = randomUUID();
+    await db.insert(s.orderSessionsV).values({
+      id: mine,
+      orgId,
+      storeId,
+      orderDate: date,
+      status: 'submitted',
+      initiatedByMemberId: memberId,
+      submittedByMemberId: memberId,
+    });
+    const reviewed = randomUUID();
+    await db.insert(s.orderSessionsV).values({
+      id: reviewed,
+      orgId,
+      storeId,
+      orderDate: date,
+      status: 'approved',
+      initiatedByMemberId: memberId,
+      submittedByMemberId: memberId,
+    });
+    const [approver] = await db
+      .insert(s.users)
+      .values({ displayName: 'List approver', tgUserId: BigInt(`5${Date.now()}`.slice(-12)) })
+      .returning();
+    await db.insert(s.events).values({
+      orgId,
+      streamType: 'order',
+      streamId: reviewed,
+      seq: 1,
+      type: 'Approved',
+      payload: {},
+      actorId: approver!.id,
+    });
+    const runId = randomUUID();
+    const inRun = randomUUID();
+    await db.insert(s.marketRunsV).values({ id: runId, orgId, runDate: date, status: 'finished' });
+    await db.insert(s.orderSessionsV).values({
+      id: inRun,
+      orgId,
+      storeId,
+      orderDate: date,
+      status: 'archived',
+      runId,
+      initiatedByMemberId: memberId,
+      submittedByMemberId: memberId,
+    });
+
+    const sessions = await admin.admin.sessionList({ date, limit: 50 });
+    const block = (id: string) => sessions.find((x) => x.sessionId === id)?.deleteBlock;
+    expect(block(theirs.sessionId)).toBe('othersOrder');
+    expect(block(mine)).toBeNull();
+    expect(block(reviewed)).toBe('actedOnByOthers');
+    expect(block(inRun)).toBe('inRun');
+    // The list agrees with what the delete itself does.
+    expect(await errorOf(() => admin.admin.purgeSession({ sessionId: mine, dryRun: true }))).toBeNull();
+
+    const runs = await admin.admin.runList({ date, limit: 50 });
+    expect(runs.find((r) => r.runId === runId)?.deleteBlock).toBeNull();
+    await db.insert(s.events).values({
+      orgId,
+      streamType: 'run',
+      streamId: runId,
+      seq: 1,
+      type: 'ItemPurchased',
+      payload: {},
+      actorId: approver!.id,
+    });
+    const after = await admin.admin.runList({ date, limit: 50 });
+    expect(after.find((r) => r.runId === runId)?.deleteBlock).toBe('actedOnByOthers');
+  });
+
+  test('DX-CAT-5: the date preview lists what goes with it from other dates', async () => {
+    const { admin, db, orgId, storeId } = fix!;
+    const runId = randomUUID();
+    const ownOrder = randomUUID();
+    const laterOrder = randomUUID();
+    // A run of 07-20 holding an order of 07-20 and one of 07-21.
+    await db.insert(s.marketRunsV).values({ id: runId, orgId, runDate: '2026-07-20', status: 'finished' });
+    await db.insert(s.orderSessionsV).values({ id: ownOrder, orgId, storeId, orderDate: '2026-07-20', status: 'archived', runId });
+    await db.insert(s.orderSessionsV).values({ id: laterOrder, orgId, storeId, orderDate: '2026-07-21', status: 'archived', runId });
+
+    const preview = await admin.admin.purgeByDate({ date: '2026-07-20', dryRun: true });
+    expect(preview.scope.sameDay).toEqual({ orders: 1, runs: 1 });
+    expect(preview.scope.linkedOrders).toEqual([
+      { orderDate: '2026-07-21', storeName: 'Store', count: 1 },
+    ]);
+    expect(preview.scope.linkedRuns).toEqual([]);
+
+    // Reset the later day instead: the run of 07-20 goes with it.
+    const other = await admin.admin.purgeByDate({ date: '2026-07-21', dryRun: true });
+    expect(other.scope.sameDay).toEqual({ orders: 1, runs: 0 });
+    expect(other.scope.linkedRuns).toEqual([{ runDate: '2026-07-20', runIndex: 0 }]);
+    expect(other.scope.linkedOrders).toEqual([
+      { orderDate: '2026-07-20', storeName: 'Store', count: 1 },
+    ]);
+  });
+
+  test('DX-CAT-2: activity events name their product, store and order, in a stable order', async () => {
+    const { admin, db, orgId, storeId, skuId } = fix!;
+    const sessionId = randomUUID();
+    await db.insert(s.orderSessionsV).values({ id: sessionId, orgId, storeId, orderDate: '2026-07-25', status: 'draft' });
+    const at = new Date(Date.now() + 60_000);
+    for (const seq of [2, 1, 3]) {
+      await db.insert(s.events).values({
+        orgId,
+        streamType: 'order',
+        streamId: sessionId,
+        seq,
+        type: 'ItemAdjusted',
+        payload: { skuId, qty: `${seq}.500` },
+        occurredAt: at,
+      });
+    }
+    const events = await admin.admin.recentEvents({ limit: 3 });
+    expect(events.map((e) => e.seq)).toEqual([3, 2, 1]);
+    expect(events[0]!.context).toEqual({
+      storeName: 'Store',
+      orderDate: '2026-07-25',
+      runDate: null,
+      runIndex: null,
+      skuNames: { en: 'Rice' },
+      qty: '3.500',
+    });
   });
 });

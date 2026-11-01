@@ -15,6 +15,7 @@ import { useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { useAuthStore } from '../stores/authStore';
 import { trpc } from '../lib/trpc';
 import { useRefreshSession } from '../lib/refreshSession';
+import { ORDER_CHANGED_KEYS, RUN_CHANGED_KEYS } from './realtimeKeys';
 import { hasLocalWrites } from '../lib/localWrites';
 
 const RECONNECT_BASE_MS = 1_000;
@@ -234,16 +235,12 @@ export function useRealtime(): void {
           return;
         }
         switch (msg.type) {
-          // HIS-6 (2026-10-30): finance, price reports and order history
-          // live under other prefixes and kept old numbers until reopened.
+          // HIS-6 / DX-CAT-1: see realtimeKeys.ts for what each makes stale.
           case 'order.changed':
-            debouncedInvalidate([['order']]);
-            debouncedInvalidate([['admin', 'submissionHistory']]);
+            for (const key of ORDER_CHANGED_KEYS) debouncedInvalidate([key]);
             break;
           case 'run.changed':
-            debouncedInvalidate([['run']]);
-            debouncedInvalidate([['report']]);
-            debouncedInvalidate([['catalog', 'skuPriceStats']]);
+            for (const key of RUN_CHANGED_KEYS) debouncedInvalidate([key]);
             break;
           case 'catalog.changed':
             // Catalog changes ripple into many admin queries AND into

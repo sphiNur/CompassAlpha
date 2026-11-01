@@ -590,7 +590,8 @@ export function SkusSection() {
                       ) : null}
                       <CardMeta>
                         {categoryName(sk.categoryId)} · {unitLabel(sk.unit)} ·{' '}
-                        {i18n.t('catalog.sku.stepMeta', { step: sk.step })}
+                        {/* DX-CAT-8 (2026-11-01): "0.5", not the column's "0.500". */}
+                        {i18n.t('catalog.sku.stepMeta', { step: formatQty(sk.step) })}
                         {sk.code ? ` · ${sk.code}` : ''}
                       </CardMeta>
                     </div>
@@ -1412,14 +1413,24 @@ export function DishesSection() {
 
   const [includeArchived, setIncludeArchived] = useState(false);
   const dishesQuery = trpc.dishes.list.useQuery({ includeArchived });
-  const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: false });
+  // DX-DSH-1 (2026-11-01): archived products too, so a recipe row whose
+  // product was taken off the catalog shows its name marked "archived"
+  // instead of an empty "pick an ingredient"; the picker offers active
+  // ones only.
+  const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: true });
 
   const [draft, setDraft] = useState<DishDraft | null>(null);
 
   const skuById = useMemo(() => {
     const m = new Map<
       string,
-      { id: string; names: Record<string, string>; unit: string; step: string }
+      {
+        id: string;
+        names: Record<string, string>;
+        unit: string;
+        step: string;
+        isArchived: boolean;
+      }
     >();
     for (const sku of skusQuery.data ?? []) {
       m.set(sku.id, {
@@ -1427,10 +1438,15 @@ export function DishesSection() {
         names: sku.names as Record<string, string>,
         unit: sku.unit,
         step: sku.step,
+        isArchived: sku.isArchived,
       });
     }
     return m;
   }, [skusQuery.data]);
+  const activeSkus = useMemo(
+    () => (skusQuery.data ?? []).filter((sku) => !sku.isArchived),
+    [skusQuery.data],
+  );
 
   // Group ingredients by dish for quick lookup at render time.
   const ingredientsByDish = useMemo(() => {
@@ -1513,6 +1529,12 @@ export function DishesSection() {
     // rounded by toFixed. Only a row left completely blank is skipped now;
     // anything half-filled or with too many digits stops the save.
     const filled = draft.ingredients.filter((i) => i.skuId || i.qtyPerServing.trim());
+    // DX-DSH-1: an archived product must be replaced or its row removed;
+    // the row itself says so. The server refuses it as well.
+    if (filled.some((i) => skuById.get(i.skuId)?.isArchived)) {
+      errToast('common.error')(new Error('dishes.errors.archivedIngredient'));
+      return;
+    }
     if (filled.some((i) => !i.skuId || !(Number(i.qtyPerServing) > 0))) {
       errToast('common.error')(new Error('dishes.errors.incompleteIngredient'));
       return;
@@ -1599,7 +1621,11 @@ export function DishesSection() {
         empty={
           <EmptyState
             title={i18n.t('dishes.empty.title')}
-            description={i18n.t('dishes.empty.description')}
+            // DX-DSH-2 (2026-11-01): "add menu items here" to someone who
+            // has no New button and can't add any.
+            description={i18n.t(
+              canManage ? 'dishes.empty.description' : 'dishes.empty.readOnlyDescription',
+            )}
           />
         }
       >
@@ -1767,6 +1793,8 @@ export function DishesSection() {
                 <ul className="flex flex-col gap-2" role="list">
                   {draft.ingredients.map((ing, idx) => {
                     const sku = skuById.get(ing.skuId);
+                    const archivedSku = sku?.isArchived ? sku : null;
+                    const archivedNoteId = `dish-ing-${idx}-archived`;
                     return (
                       <li
                         key={idx}
@@ -1774,8 +1802,14 @@ export function DishesSection() {
                       >
                         <div className="flex items-center gap-2">
                           <select
-                            className="h-[var(--control-h)] min-w-0 flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface)] px-3 text-old-body ring-hairline"
+                            className={
+                              'h-[var(--control-h)] min-w-0 flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface)] px-3 text-old-body ' +
+                              (archivedSku ? 'ring-1 ring-[var(--c-danger)]' : 'ring-hairline')
+                            }
                             value={ing.skuId}
+                            aria-label={i18n.t('dishes.field.pickSku')}
+                            aria-invalid={archivedSku ? true : undefined}
+                            aria-describedby={archivedSku ? archivedNoteId : undefined}
                             onChange={(e) => {
                               const next = [...draft.ingredients];
                               next[idx] = { ...next[idx]!, skuId: e.target.value };
@@ -1783,7 +1817,14 @@ export function DishesSection() {
                             }}
                           >
                             <option value="">{i18n.t('dishes.field.pickSku')}</option>
-                            {(skusQuery.data ?? []).map((skuRow) => (
+                            {archivedSku ? (
+                              <option value={archivedSku.id} disabled>
+                                {i18n.t('dishes.label.archivedSku', {
+                                  name: productName({ names: archivedSku.names }),
+                                })}
+                              </option>
+                            ) : null}
+                            {activeSkus.map((skuRow) => (
                               <option key={skuRow.id} value={skuRow.id}>
                                 {productName({ names: skuRow.names as Record<string, string> })}
                               </option>
@@ -1819,6 +1860,15 @@ export function DishesSection() {
                             {sku?.unit ? unitLabel(sku.unit) : '—'}
                           </span>
                         </div>
+                        {archivedSku ? (
+                          <span
+                            id={archivedNoteId}
+                            className="flex items-start gap-1 text-old-label text-[var(--c-danger)]"
+                          >
+                            <span aria-hidden>⚠</span>
+                            <span>{i18n.t('dishes.errors.archivedIngredientRow')}</span>
+                          </span>
+                        ) : null}
                       </li>
                     );
                   })}

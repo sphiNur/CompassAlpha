@@ -6,7 +6,7 @@
  * keeps a versioned correction trail.  This screen therefore never infers
  * cash from other modules or silently overwrites an existing close.
  */
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Banner,
   Button,
@@ -43,6 +43,11 @@ import { scrollBehavior } from '../lib/reducedMotion';
 import { useAuthStore } from '../stores/authStore';
 import { registerTabChangeGuard } from '../stores/navStore';
 import { StoreSalesPanel } from '../components/sales/StoreSalesPanel';
+import {
+  ITEM_MONEY_PROBLEM_MESSAGE,
+  MONEY_PROBLEM_MESSAGE,
+  moneyProblem,
+} from './settlement/moneyProblem';
 
 type MoneyField =
   | 'onlineRevenue'
@@ -322,12 +327,30 @@ function isVersionConflict(error: unknown): boolean {
   return candidate.data?.code === 'CONFLICT' || candidate.message === 'order.errors.staleSeq';
 }
 
-function SummaryRow({ label, value }: { label: string; value: string }) {
+/** DX-CLS-4: `null` while a field it adds up is invalid — shown as "—". */
+function SummaryRow({ label, value }: { label: string; value: string | null }) {
   return (
     <div className="flex items-baseline justify-between gap-3 py-1 text-old-body-sm">
       <span className="text-[var(--c-fg-muted)]">{label}</span>
-      <strong className="shrink-0 tabular-nums text-[var(--c-fg)]">{value}</strong>
+      <strong className="shrink-0 tabular-nums text-[var(--c-fg)]">{value ?? '—'}</strong>
     </div>
+  );
+}
+
+/**
+ * DX-CLS-3 (2026-11-01): the reason under an expense / wage field, tied to
+ * it with aria-describedby (same look as AmountField's line).
+ */
+function FieldError({ id, children }: { id: string; children: ReactNode }) {
+  return (
+    <span
+      id={id}
+      role="alert"
+      className="mt-1 flex items-start gap-1 text-old-label text-[var(--c-danger)]"
+    >
+      <span aria-hidden>⚠</span>
+      <span>{children}</span>
+    </span>
   );
 }
 
@@ -352,6 +375,9 @@ function AmountField({
   const i18n = useI18n();
   const errorId = useId();
   const valid = isMoney(value, signed);
+  // DX-CLS-4 (2026-11-01): one sentence per reason; negative, empty and
+  // too long all read "enter a number, at most two decimals".
+  const problem = valid ? null : (moneyProblem(value, { signed }) ?? 'notNumber');
   // A11Y-2 (2026-10-31): the reason sits under the field it is about and
   // is tied to it with aria-describedby. It used to be one unnamed banner
   // ~1,100 px further down, and the field only turned its edge red (hidden
@@ -379,7 +405,7 @@ function AmountField({
           className="mt-1 flex items-start gap-1 text-old-label text-[var(--c-danger)]"
         >
           <span aria-hidden>⚠</span>
-          <span>{i18n.t('settlement.errors.fieldMoney', { field: label })}</span>
+          <span>{i18n.t(MONEY_PROBLEM_MESSAGE[problem ?? 'notNumber'], { field: label })}</span>
         </span>
       )}
     </Field>
@@ -699,12 +725,23 @@ export function SettlementPage() {
   const nextPurchaseReserve = moneyNumber(draft.nextPurchaseReserve);
   const priorPurchaseAdjustment = moneyNumber(draft.priorPurchaseAdjustment);
   const cashOnHand = moneyNumber(draft.cashOnHand);
+  // DX-CLS-4 (2026-11-01): a line whose inputs are not valid amounts shows
+  // "—" instead of e.g. "-5 UZS" or "99,999,999,999,999 UZS".
   const summary = {
-    totalRevenue: onlineRevenue + invoicedCashRevenue,
-    paidOutflows: operatingExpenses + wagesPaid,
-    futureCommitments: wagesAccrued + nextPurchaseReserve,
-    priorPurchaseAdjustment,
-    endingCash: cashOnHand,
+    totalRevenue:
+      isMoney(draft.onlineRevenue) && isMoney(draft.invoicedCashRevenue)
+        ? onlineRevenue + invoicedCashRevenue
+        : null,
+    paidOutflows:
+      operatingExpenseTotal.valid && paidWageTotal.valid ? operatingExpenses + wagesPaid : null,
+    futureCommitments:
+      unpaidWageTotal.valid && isMoney(draft.nextPurchaseReserve)
+        ? wagesAccrued + nextPurchaseReserve
+        : null,
+    priorPurchaseAdjustment: isMoney(draft.priorPurchaseAdjustment, true)
+      ? priorPurchaseAdjustment
+      : null,
+    endingCash: isMoney(draft.cashOnHand) ? cashOnHand : null,
   };
 
   // CLS-17 (2026-10-30): one key per logical save. Every request used to
@@ -1289,7 +1326,9 @@ export function SettlementPage() {
               </Banner>
 
               <div className="flex flex-col gap-3">
-                <div className="flex items-start justify-between gap-3">
+                {/* The add button keeps its full label; in ru / uz at 360 px it was
+                    squeezed and cut off. The row wraps instead. */}
+                <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
                     <h3 className="text-old-h3 font-semibold text-[var(--c-fg)]">
                       {i18n.t('settlement.expenses.title')}
@@ -1301,6 +1340,7 @@ export function SettlementPage() {
                     </p>
                   </div>
                   <Button
+                    className="shrink-0"
                     size="sm"
                     variant="secondary"
                     disabled={
@@ -1331,6 +1371,19 @@ export function SettlementPage() {
                   <div className="flex flex-col gap-3">
                     {draft.operatingExpenseItems.map((expense, index) => {
                       const valid = isValidOperatingExpense(expense);
+                      // DX-CLS-3 (2026-11-01): each bad field says why, and
+                      // its name carries the line number for a screen reader
+                      // ("支出 2 · 金额"); the rows only turned red before.
+                      const itemLabel = i18n.t('settlement.expenses.itemNumber', { n: index + 1 });
+                      const amountLabel = `${itemLabel} · ${i18n.t('settlement.expenses.amount')}`;
+                      const reasonLabel = `${itemLabel} · ${i18n.t('settlement.expenses.reason')}`;
+                      const amountProblem = expense.isHistorical
+                        ? null
+                        : moneyProblem(expense.amount, { positive: true });
+                      const reasonMissing =
+                        !expense.isHistorical && expense.reason.trim().length === 0;
+                      const amountErrorId = `expense-${expense.id}-amount-error`;
+                      const reasonErrorId = `expense-${expense.id}-reason-error`;
                       return (
                         <div
                           key={expense.id}
@@ -1359,12 +1412,11 @@ export function SettlementPage() {
                               step="0.01"
                               placeholder="0"
                               readOnly={!canEditOperatingExpenses}
-                              aria-invalid={(moneyToCents(expense.amount) ?? 0n) <= 0n || undefined}
-                              className={
-                                (moneyToCents(expense.amount) ?? 0n) <= 0n
-                                  ? 'border-[var(--c-danger)]'
-                                  : undefined
-                              }
+                              aria-label={amountLabel}
+                              aria-invalid={amountProblem !== null || undefined}
+                              aria-describedby={amountProblem ? amountErrorId : undefined}
+                              formatError="none"
+                              className={amountProblem ? 'border-[var(--c-danger)]' : undefined}
                               onChange={(event) =>
                                 updateOperatingExpense(expense.id, {
                                   amount: event.currentTarget.value,
@@ -1372,6 +1424,13 @@ export function SettlementPage() {
                                 })
                               }
                             />
+                            {amountProblem ? (
+                              <FieldError id={amountErrorId}>
+                                {i18n.t(ITEM_MONEY_PROBLEM_MESSAGE[amountProblem], {
+                                  field: amountLabel,
+                                })}
+                              </FieldError>
+                            ) : null}
                           </Field>
                           <div className="mt-3">
                             <Field label={i18n.t('settlement.expenses.reason')}>
@@ -1380,18 +1439,31 @@ export function SettlementPage() {
                                   {i18n.t('settlement.expenses.historicalReason')}
                                 </p>
                               ) : (
-                                <Textarea
-                                  value={expense.reason}
-                                  maxLength={500}
-                                  readOnly={!canEditOperatingExpenses}
-                                  invalid={!valid && expense.reason.trim().length === 0}
-                                  onChange={(event) =>
-                                    updateOperatingExpense(expense.id, {
-                                      reason: event.currentTarget.value,
-                                      isHistorical: false,
-                                    })
-                                  }
-                                />
+                                <>
+                                  <Textarea
+                                    value={expense.reason}
+                                    maxLength={500}
+                                    readOnly={!canEditOperatingExpenses}
+                                    aria-label={reasonLabel}
+                                    invalid={!valid && reasonMissing}
+                                    aria-describedby={
+                                      !valid && reasonMissing ? reasonErrorId : undefined
+                                    }
+                                    onChange={(event) =>
+                                      updateOperatingExpense(expense.id, {
+                                        reason: event.currentTarget.value,
+                                        isHistorical: false,
+                                      })
+                                    }
+                                  />
+                                  {!valid && reasonMissing ? (
+                                    <FieldError id={reasonErrorId}>
+                                      {i18n.t('settlement.errors.itemReasonEmpty', {
+                                        field: reasonLabel,
+                                      })}
+                                    </FieldError>
+                                  ) : null}
+                                </>
                               )}
                             </Field>
                           </div>
@@ -1405,7 +1477,9 @@ export function SettlementPage() {
               <div className="border-t border-[var(--c-divider)]" />
 
               <div className="flex flex-col gap-3">
-                <div className="flex items-start justify-between gap-3">
+                {/* The add button keeps its full label; in ru / uz at 360 px it was
+                    squeezed and cut off. The row wraps instead. */}
+                <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
                     <h3 className="text-old-h3 font-semibold text-[var(--c-fg)]">
                       {i18n.t('settlement.wages.title')}
@@ -1418,6 +1492,7 @@ export function SettlementPage() {
                     </p>
                   </div>
                   <Button
+                    className="shrink-0"
                     size="sm"
                     variant="secondary"
                     disabled={hasHistoricalWageTotal || draft.wageItems.length >= MAX_DETAIL_ITEMS}
@@ -1441,6 +1516,19 @@ export function SettlementPage() {
                   <div className="flex flex-col gap-3">
                     {draft.wageItems.map((wage, index) => {
                       const valid = isValidWageItem(wage, wageSelectionRequired);
+                      // DX-CLS-3: as for expense lines above.
+                      const itemLabel = i18n.t('settlement.wages.itemNumber', { n: index + 1 });
+                      const amountLabel = `${itemLabel} · ${i18n.t('settlement.wages.amount')}`;
+                      const reasonLabel = `${itemLabel} · ${i18n.t('settlement.wages.reason')}`;
+                      const amountProblem = wage.isHistorical
+                        ? null
+                        : moneyProblem(wage.amount, { positive: true });
+                      const reasonMissing = !wage.isHistorical && wage.reason.trim().length === 0;
+                      const employeeMissing =
+                        !wage.isHistorical && wageSelectionRequired && !wage.memberId;
+                      const amountErrorId = `wage-${wage.id}-amount-error`;
+                      const reasonErrorId = `wage-${wage.id}-reason-error`;
+                      const employeeErrorId = `wage-${wage.id}-employee-error`;
                       const displayedEmployee = wage.isHistorical
                         ? i18n.t('settlement.wages.historicalEmployee')
                         : wage.personName || i18n.t('settlement.wages.chooseEmployee');
@@ -1470,9 +1558,8 @@ export function SettlementPage() {
                                 type="button"
                                 variant="secondary"
                                 className="w-full justify-between text-left"
-                                aria-invalid={
-                                  (wageSelectionRequired && !wage.memberId) || undefined
-                                }
+                                aria-invalid={employeeMissing || undefined}
+                                aria-describedby={employeeMissing ? employeeErrorId : undefined}
                                 disabled={wage.isHistorical}
                                 onClick={() => {
                                   setWagePickerFor(wage.id);
@@ -1488,6 +1575,11 @@ export function SettlementPage() {
                                 <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
                                   {i18n.t('settlement.wages.legacyEmployee')}
                                 </p>
+                              ) : null}
+                              {employeeMissing ? (
+                                <FieldError id={employeeErrorId}>
+                                  {i18n.t('settlement.errors.employeeRequired')}
+                                </FieldError>
                               ) : null}
                             </Field>
                             <Field label={i18n.t('settlement.wages.status')}>
@@ -1517,12 +1609,11 @@ export function SettlementPage() {
                                 step="0.01"
                                 placeholder="0"
                                 readOnly={wage.isHistorical}
-                                aria-invalid={(moneyToCents(wage.amount) ?? 0n) <= 0n || undefined}
-                                className={
-                                  (moneyToCents(wage.amount) ?? 0n) <= 0n
-                                    ? 'border-[var(--c-danger)]'
-                                    : undefined
-                                }
+                                aria-label={amountLabel}
+                                aria-invalid={amountProblem !== null || undefined}
+                                aria-describedby={amountProblem ? amountErrorId : undefined}
+                                formatError="none"
+                                className={amountProblem ? 'border-[var(--c-danger)]' : undefined}
                                 onChange={(event) =>
                                   updateWageItem(wage.id, {
                                     amount: event.currentTarget.value,
@@ -1530,6 +1621,13 @@ export function SettlementPage() {
                                   })
                                 }
                               />
+                              {amountProblem ? (
+                                <FieldError id={amountErrorId}>
+                                  {i18n.t(ITEM_MONEY_PROBLEM_MESSAGE[amountProblem], {
+                                    field: amountLabel,
+                                  })}
+                                </FieldError>
+                              ) : null}
                             </Field>
                           </div>
                           <div className="mt-3">
@@ -1539,17 +1637,30 @@ export function SettlementPage() {
                                   {i18n.t('settlement.wages.historicalReason')}
                                 </p>
                               ) : (
-                                <Textarea
-                                  value={wage.reason}
-                                  maxLength={500}
-                                  invalid={!valid && wage.reason.trim().length === 0}
-                                  onChange={(event) =>
-                                    updateWageItem(wage.id, {
-                                      reason: event.currentTarget.value,
-                                      isHistorical: false,
-                                    })
-                                  }
-                                />
+                                <>
+                                  <Textarea
+                                    value={wage.reason}
+                                    maxLength={500}
+                                    aria-label={reasonLabel}
+                                    invalid={!valid && reasonMissing}
+                                    aria-describedby={
+                                      !valid && reasonMissing ? reasonErrorId : undefined
+                                    }
+                                    onChange={(event) =>
+                                      updateWageItem(wage.id, {
+                                        reason: event.currentTarget.value,
+                                        isHistorical: false,
+                                      })
+                                    }
+                                  />
+                                  {!valid && reasonMissing ? (
+                                    <FieldError id={reasonErrorId}>
+                                      {i18n.t('settlement.errors.itemReasonEmpty', {
+                                        field: reasonLabel,
+                                      })}
+                                    </FieldError>
+                                  ) : null}
+                                </>
                               )}
                             </Field>
                           </div>
@@ -1658,23 +1769,31 @@ export function SettlementPage() {
           <CardBody>
             <SummaryRow
               label={i18n.t('settlement.summary.totalRevenue')}
-              value={formatMoney(summary.totalRevenue, currency)}
+              value={summary.totalRevenue === null ? null : formatMoney(summary.totalRevenue, currency)}
             />
             <SummaryRow
               label={i18n.t('settlement.summary.paidOutflows')}
-              value={formatMoney(summary.paidOutflows, currency)}
+              value={summary.paidOutflows === null ? null : formatMoney(summary.paidOutflows, currency)}
             />
             <SummaryRow
               label={i18n.t('settlement.summary.futureCommitments')}
-              value={formatMoney(summary.futureCommitments, currency)}
+              value={
+                summary.futureCommitments === null
+                  ? null
+                  : formatMoney(summary.futureCommitments, currency)
+              }
             />
             <SummaryRow
               label={i18n.t('settlement.summary.priorPurchaseAdjustment')}
-              value={formatSignedMoney(summary.priorPurchaseAdjustment, currency)}
+              value={
+                summary.priorPurchaseAdjustment === null
+                  ? null
+                  : formatSignedMoney(summary.priorPurchaseAdjustment, currency)
+              }
             />
             <SummaryRow
               label={i18n.t('settlement.summary.endingCash')}
-              value={formatMoney(summary.endingCash, currency)}
+              value={summary.endingCash === null ? null : formatMoney(summary.endingCash, currency)}
             />
           </CardBody>
         </Card>
