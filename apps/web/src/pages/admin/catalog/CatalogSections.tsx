@@ -161,7 +161,7 @@ export function CategoriesSection() {
       toast.success(i18n.t('admin.toast.categoryCreated'));
       setDraft(null);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const update = trpc.admin.categoryUpdate.useMutation({
     onSuccess: () => {
@@ -169,14 +169,14 @@ export function CategoriesSection() {
       toast.success(i18n.t('admin.toast.categoryUpdated'));
       setDraft(null);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const remove = trpc.admin.categoryDelete.useMutation({
     onSuccess: () => {
       void utils.admin.categoryList.invalidate();
       toast.info(i18n.t('admin.toast.categoryArchived'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   const closeEditor = useEditorClose(draft, setDraft, create.isPending || update.isPending);
@@ -475,7 +475,7 @@ export function SkusSection() {
       toast.success(i18n.t('admin.toast.skuCreated'));
       setDraft(null);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const update = trpc.admin.skuUpdate.useMutation({
     onSuccess: () => {
@@ -483,14 +483,14 @@ export function SkusSection() {
       toast.success(i18n.t('admin.toast.skuUpdated'));
       setDraft(null);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const remove = trpc.admin.skuDelete.useMutation({
     onSuccess: () => {
       void utils.admin.skuList.invalidate();
       toast.info(i18n.t('admin.toast.skuArchived'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   const categoryName = (id: string | null): string => {
@@ -836,7 +836,7 @@ export function SuppliersSection() {
       toast.success(i18n.t('admin.toast.supplierCreated'));
       setDraft(null);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const update = trpc.admin.supplierUpdate.useMutation({
     onSuccess: () => {
@@ -844,14 +844,14 @@ export function SuppliersSection() {
       toast.success(i18n.t('admin.toast.supplierUpdated'));
       setDraft(null);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const remove = trpc.admin.supplierDelete.useMutation({
     onSuccess: () => {
       void utils.admin.supplierList.invalidate();
       toast.info(i18n.t('admin.toast.supplierArchived'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   const closeEditor = useEditorClose(draft, setDraft, create.isPending || update.isPending);
@@ -1063,7 +1063,7 @@ export function ExpenseTemplatesSection() {
       toast.success(i18n.t('admin.toast.expenseTemplateCreated'));
       setDraft(null);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const update = trpc.admin.expenseTemplateUpdate.useMutation({
     onSuccess: () => {
@@ -1071,14 +1071,14 @@ export function ExpenseTemplatesSection() {
       toast.success(i18n.t('admin.toast.expenseTemplateUpdated'));
       setDraft(null);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const remove = trpc.admin.expenseTemplateDelete.useMutation({
     onSuccess: () => {
       void utils.admin.expenseTemplateList.invalidate();
       toast.info(i18n.t('admin.toast.expenseTemplateArchived'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
@@ -1464,18 +1464,18 @@ export function DishesSection() {
       toast.success(i18n.t('common.saved'));
       setDraft(null);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const archive = trpc.dishes.archive.useMutation({
     onSuccess: () => {
       invalidate();
       toast.success(i18n.t('common.saved'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const unarchive = trpc.dishes.unarchive.useMutation({
     onSuccess: invalidate,
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   const openForEdit = (dishId: string) => {
@@ -1507,7 +1507,7 @@ export function DishesSection() {
       if (t) cleanNames[k] = t;
     }
     if (Object.keys(cleanNames).length === 0) {
-      errToast('common.error')(new Error('dishes.errors.namesRequired'));
+      errToast('common.errors.actionFailed')(new Error('dishes.errors.namesRequired'));
       return;
     }
     // CLS-11 (2026-10-30): a row with a product but no amount (or the
@@ -1518,20 +1518,20 @@ export function DishesSection() {
     // DX-DSH-1: an archived product must be replaced or its row removed;
     // the row itself says so. The server refuses it as well.
     if (filled.some((i) => skuById.get(i.skuId)?.isArchived)) {
-      errToast('common.error')(new Error('dishes.errors.archivedIngredient'));
+      errToast('common.errors.actionFailed')(new Error('dishes.errors.archivedIngredient'));
       return;
     }
     if (filled.some((i) => !i.skuId || !(Number(i.qtyPerServing) > 0))) {
-      errToast('common.error')(new Error('dishes.errors.incompleteIngredient'));
+      errToast('common.errors.actionFailed')(new Error('dishes.errors.incompleteIngredient'));
       return;
     }
     if (filled.some((i) => !/^\d{1,8}(\.\d{1,4})?$/.test(i.qtyPerServing.trim()))) {
-      errToast('common.error')(new Error('dishes.errors.qtyTooLarge'));
+      errToast('common.errors.actionFailed')(new Error('dishes.errors.qtyTooLarge'));
       return;
     }
     const price = draft.unitPrice.trim();
     if (price && !/^\d{1,12}(\.\d{1,2})?$/.test(price)) {
-      errToast('common.error')(new Error('dishes.errors.priceTooLarge'));
+      errToast('common.errors.actionFailed')(new Error('dishes.errors.priceTooLarge'));
       return;
     }
     const cleanIngredients = filled.map((i) => ({
@@ -1542,7 +1542,7 @@ export function DishesSection() {
     // 2026-10-21 CA-55: the server rejects a SKU listed twice; say so
     // before the round trip.
     if (new Set(cleanIngredients.map((i) => i.skuId)).size !== cleanIngredients.length) {
-      errToast('common.error')(new Error('dishes.errors.duplicateIngredient'));
+      errToast('common.errors.actionFailed')(new Error('dishes.errors.duplicateIngredient'));
       return;
     }
     save.mutate({

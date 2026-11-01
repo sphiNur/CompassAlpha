@@ -12,6 +12,13 @@ interface QtyControlProps {
   min?: number;
   max?: number;
   unit?: string;
+  /**
+   * DX-COPY-11 (2026-11-01): the unit as it reads after a number, which in
+   * ru / en agrees with it («0 пар», "2 packs"; `unit` alone is the
+   * dictionary form, «пара»). Used wherever a quantity is printed or read
+   * out; `unit` stays for the "Unit: …" caption. Defaults to `unit`.
+   */
+  unitFor?: (qty: number) => string;
   disabled?: boolean;
   onChange: (next: number) => void;
   /**
@@ -53,6 +60,7 @@ export function QtyControl({
   min = 0,
   max = Number.MAX_SAFE_INTEGER,
   unit,
+  unitFor,
   disabled,
   onChange,
   onRequestManualEntry,
@@ -187,6 +195,8 @@ export function QtyControl({
     );
 
   const display = formatQty(value, step);
+  const unitAt = (qty: number): string | undefined => (unitFor ? unitFor(qty) : unit);
+  const shownUnit = unitAt(value);
   const showZero = value === 0;
 
   const presets = useMemo(
@@ -238,7 +248,7 @@ export function QtyControl({
         <button
           ref={valueButtonRef}
           type="button"
-          aria-label={labels.quantityPick(`${display}${unit ? ' ' + unit : ''}`)}
+          aria-label={labels.quantityPick(`${display}${shownUnit ? ' ' + shownUnit : ''}`)}
           onClick={openQuickPick}
           disabled={disabled}
           className={cn(
@@ -263,8 +273,8 @@ export function QtyControl({
           {/* Clipping lives here, not on the button, so hit-44 still taps. */}
           <span className="flex min-w-0 items-baseline overflow-hidden">
             <span>{display}</span>
-            {unit ? (
-              <span className="ml-0.5 text-old-label text-[var(--c-fg-muted)]">{unit}</span>
+            {shownUnit ? (
+              <span className="ml-0.5 text-old-label text-[var(--c-fg-muted)]">{shownUnit}</span>
             ) : null}
           </span>
         </button>
@@ -274,7 +284,7 @@ export function QtyControl({
             name, which nothing reads out. This polite region says it.
             Its first content is not announced, only changes. */}
         <span className="sr-only" aria-live="polite" aria-atomic="true">
-          {`${display}${unit ? ' ' + unit : ''}`}
+          {`${display}${shownUnit ? ' ' + shownUnit : ''}`}
         </span>
 
         <button
@@ -306,6 +316,7 @@ export function QtyControl({
           min={min}
           max={max}
           unit={unit}
+          unitAt={unitAt}
           presets={presets}
           onPick={(next) => {
             onChange(next);
@@ -350,6 +361,7 @@ function QtyQuickPickSheet({
   min,
   max,
   unit,
+  unitAt,
   presets,
   onPick,
 }: {
@@ -362,6 +374,7 @@ function QtyQuickPickSheet({
   min: number;
   max: number;
   unit?: string;
+  unitAt: (qty: number) => string | undefined;
   presets: number[];
   onPick: (value: number) => void;
 }) {
@@ -394,9 +407,10 @@ function QtyQuickPickSheet({
             : labels.qtyEnterNumber;
   const draftDiffers = sanitizedDraft !== null && sanitizedDraft !== current;
 
+  const draftUnit = unitAt(sanitizedDraft ?? current);
   const setLabel = labels.setValue(
     (sanitizedDraft !== null ? formatQty(sanitizedDraft, step) : '—') +
-      (unit ? ' ' + unit : ''),
+      (draftUnit ? ' ' + draftUnit : ''),
   );
 
   // 2026-07-30: this sheet used to commandeer Telegram's native
@@ -473,7 +487,7 @@ function QtyQuickPickSheet({
                     </span>
                   ) : null}
                   {formatQty(p, step)}
-                  {unit ? <span className="ml-1 opacity-70">{unit}</span> : null}
+                  {unitAt(p) ? <span className="ml-1 opacity-70">{unitAt(p)}</span> : null}
                 </button>
               );
             })}

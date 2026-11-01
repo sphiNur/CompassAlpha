@@ -153,7 +153,7 @@ export function StoresHomeSection({
         onPickStore({ kind: 'store', storeId: data.id, storeName: vars.name }),
       );
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   // Aggregate member counts per store from the cached memberList.
@@ -551,7 +551,7 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
       toast.success(i18n.t('inventory.toast.stocktakeSaved'));
       setAction(null);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const recordWastage = trpc.inventory.recordWastage.useMutation({
     trpc: { context: wastageIdemCtx },
@@ -562,7 +562,7 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
       toast.success(i18n.t('inventory.toast.wastageSaved'));
       setAction(null);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   const rows = useMemo(() => {
@@ -1029,7 +1029,7 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
       // 2026-10-21 FE-06: name / active state live in session.stores too.
       void refreshSession();
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const remove = trpc.admin.storeDelete.useMutation({
     onSuccess: () => {
@@ -1038,7 +1038,7 @@ function StoreSettingsTab({ storeId }: { storeId: string }) {
       // 2026-10-21 FE-06: drop the archived store from session pickers.
       void refreshSession();
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   // ADM-5: the default is a grant by whoever sets it, and the server
@@ -1297,7 +1297,7 @@ function StoreCloneRolesSheet({
       toast.success(parts.join(' · '));
       onClose();
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   return (

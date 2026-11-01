@@ -110,7 +110,7 @@ export function ApprovalPage() {
       void utils.order.pendingList.invalidate();
       toast.info(i18n.t('approval.toast.claimed'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   // 2026-10-21 audit CA-43 "approve what you saw": approve / reject send
   // the `lastSeq` of the row on screen; the server answers CONFLICT
@@ -206,7 +206,7 @@ export function ApprovalPage() {
     // RE-APR-2: someone else took it over first — show who has it now.
     onError: (err) => {
       void utils.order.pendingList.invalidate();
-      errToast('common.error')(err);
+      errToast('common.errors.actionFailed')(err);
     },
   });
   const dates = useDateFormat();
@@ -215,7 +215,7 @@ export function ApprovalPage() {
       void utils.order.pendingList.invalidate();
       toast.info(i18n.t('approval.toast.released'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const undoApprove = trpc.order.unapprove.useMutation({
     onSuccess: () => {
@@ -229,7 +229,7 @@ export function ApprovalPage() {
         toast.info(i18n.t('approval.toast.undoTooLate'));
         return;
       }
-      errToast('common.error')(err);
+      errToast('common.errors.actionFailed')(err);
     },
   });
   const unapprove = trpc.order.unapprove.useMutation({
@@ -240,7 +240,7 @@ export function ApprovalPage() {
     onError: (err) => {
       // APR-8: the card may be stale (a run took the order); refresh it.
       void utils.order.pendingList.invalidate();
-      errToast('common.error')(err);
+      errToast('common.errors.actionFailed')(err);
     },
   });
 
@@ -1086,6 +1086,7 @@ function SessionItems({
                   value={Number(singleRow.qty)}
                   step={Number(sku.step)}
                   unit={unitLabel(sku.unit)}
+                  unitFor={(qty) => unitLabel(sku.unit, qty)}
                   max={ORDER_QTY_MAX}
                   disabled={adjust.isPending}
                   onChange={(next) =>
@@ -1163,6 +1164,7 @@ function SessionItems({
                         value={Number(r.qty)}
                         step={Number(sku.step)}
                         unit={unitLabel(sku.unit)}
+                        unitFor={(qty) => unitLabel(sku.unit, qty)}
                         max={ORDER_QTY_MAX}
                         disabled={adjust.isPending}
                         onChange={(next) =>

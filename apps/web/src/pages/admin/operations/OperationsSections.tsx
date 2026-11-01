@@ -396,7 +396,7 @@ function TargetedPurgeBrowser() {
       );
     },
     onError: (err) => {
-      errToast('common.error')(err);
+      errToast('common.errors.actionFailed')(err);
       setSessionTarget(null);
     },
   });
@@ -408,7 +408,7 @@ function TargetedPurgeBrowser() {
       void utils.admin.runList.invalidate();
       void utils.invalidate(); // also bump any open OrderPage / ApprovalPage
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   const runDryRun = trpc.admin.purgeRun.useMutation({
@@ -427,7 +427,7 @@ function TargetedPurgeBrowser() {
       );
     },
     onError: (err) => {
-      errToast('common.error')(err);
+      errToast('common.errors.actionFailed')(err);
       setRunTarget(null);
     },
   });
@@ -439,7 +439,7 @@ function TargetedPurgeBrowser() {
       void utils.admin.sessionList.invalidate();
       void utils.invalidate();
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   return (
@@ -1275,7 +1275,7 @@ export function FinanceSection() {
   const lineQty = useCallback(
     (l: (typeof lines)[number]): string => {
       const sku = l.skuId ? skuById.get(l.skuId) : undefined;
-      return sku ? `${formatQty(l.qty)} ${unitLabel(sku.unit)}` : formatQty(l.qty);
+      return sku ? `${formatQty(l.qty)} ${unitLabel(sku.unit, l.qty)}` : formatQty(l.qty);
     },
     [skuById, unitLabel],
   );
@@ -1877,7 +1877,7 @@ export function MaintenanceSection() {
       });
       setDateConfirmOpen(true);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const dateCommitMut = trpc.admin.purgeByDate.useMutation({
     onSuccess: (data) => {
@@ -1886,7 +1886,7 @@ export function MaintenanceSection() {
       setDatePreview(null);
       void utils.invalidate();
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   // ---- nuclear-purge state ----
@@ -1894,7 +1894,7 @@ export function MaintenanceSection() {
   const [allOpen, setAllOpen] = useState(false);
   const nameMatches = wipeConfirmMatches(confirmText, orgName);
   const allDryRun = trpc.admin.purgeAllTestData.useMutation({
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const allCommit = trpc.admin.purgeAllTestData.useMutation({
     onSuccess: (data) => {
@@ -1908,7 +1908,7 @@ export function MaintenanceSection() {
       setConfirmText('');
       void utils.invalidate();
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   if (!isSuperAdmin) {

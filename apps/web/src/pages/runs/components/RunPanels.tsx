@@ -1561,7 +1561,7 @@ export function PreviewSummaryCard({
       haptic('success');
       return;
     }
-    toast.error(i18n.t('common.error'));
+    toast.error(i18n.t('admin.toast.couldNotCopy'));
   };
 
   /**
@@ -2195,7 +2195,7 @@ function VendorPickerSheet({
       );
       onClose();
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   return (

@@ -62,7 +62,7 @@ export function LanguageSheet({ open, onOpenChange }: LanguageSheetProps) {
       patchSession(next as never);
       onOpenChange(false);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   const current = (session?.user.locale ?? 'en') as Locale;

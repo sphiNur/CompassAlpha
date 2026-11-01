@@ -616,7 +616,7 @@ function WorkspaceSection() {
       toast.success(i18n.t('common.saved'));
       setFinanceSheetOpen(false);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   return (

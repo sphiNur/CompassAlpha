@@ -218,21 +218,21 @@ export function PeopleSection({
       void utils.admin.memberList.invalidate();
       toast.info(i18n.t('admin.toast.memberUpdated'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const remove = trpc.admin.memberRemove.useMutation({
     onSuccess: () => {
       void utils.admin.memberList.invalidate();
       toast.success(i18n.t('admin.toast.memberRemoved'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const revoke = trpc.admin.revokeRole.useMutation({
     onSuccess: () => {
       void utils.admin.memberList.invalidate();
       toast.info(i18n.t('admin.toast.roleRevoked'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   // D1 (2026-05-06): one-shot detach. Server atomically deletes the
   // MSA row + revokes any store-scoped role bindings + drops store-
@@ -248,7 +248,7 @@ export function PeopleSection({
         parts.push(i18n.t('people.toastOverridesDropped', { n: data.revokedOverrides }));
       toast.info(parts.join(' · '));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const invite = trpc.admin.memberInviteByTgId.useMutation({
     onSuccess: (data) => {
@@ -258,7 +258,7 @@ export function PeopleSection({
       );
       setManualDraft(null);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const appConfig = trpc.system.appConfig.useQuery(undefined, {
     staleTime: STALE.long,
@@ -297,7 +297,7 @@ export function PeopleSection({
       }
       setLinkDraft(null);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   // M1.10 (2026-05-08): people directory search by name + tg + role.
@@ -1037,7 +1037,7 @@ function RoleCreateSheet({
       toast.success(i18n.t('admin.toast.roleCreated'));
       onClose();
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   const togglePerm = (key: string) => {
@@ -1267,7 +1267,7 @@ function RolePermissionsSheet({
       toast.success(i18n.t('admin.toast.roleUpdated'));
       setEditing(false);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const remove = trpc.admin.roleDelete.useMutation({
     onSuccess: () => {
@@ -1275,7 +1275,7 @@ function RolePermissionsSheet({
       toast.success(i18n.t('admin.toast.roleDeleted'));
       onClose();
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   const togglePerm = (key: string) => {
@@ -1680,7 +1680,7 @@ function PendingInvitesList({ enabled }: { enabled: boolean }) {
     },
     onError: (err) => {
       void utils.admin.memberInviteList.invalidate();
-      errToast('common.error')(err);
+      errToast('common.errors.actionFailed')(err);
     },
   });
   const invites = invitesQuery.data ?? [];
@@ -2026,13 +2026,13 @@ function ManageMemberSheet({
       void utils.admin.memberList.invalidate();
       toast.success(i18n.t('admin.toast.memberUpdated'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const assignMut = trpc.admin.memberAssignStore.useMutation({
     onSuccess: () => {
       void utils.admin.memberStoreAssignments.invalidate();
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   // ADM-8 (2026-10-30, owner decision): unticking a store takes the person
   // out of it — assignment, the store's roles and its permission
@@ -2043,7 +2043,7 @@ function ManageMemberSheet({
       void utils.admin.memberStoreAssignments.invalidate();
       void utils.admin.memberList.invalidate();
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   const assignedIds = useMemo(
@@ -2284,7 +2284,7 @@ function TransferStoreSheet({
       toast.success(parts.join(' · '));
       onClose();
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   return (
@@ -2463,7 +2463,7 @@ function MemberPermissionsSheet({
       });
       toast.success(i18n.t('common.saved'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const revoke = trpc.admin.memberPermissionRevoke.useMutation({
     onSuccess: () => {
@@ -2472,7 +2472,7 @@ function MemberPermissionsSheet({
       });
       toast.success(i18n.t('common.saved'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   /**
@@ -2779,7 +2779,7 @@ function GrantRoleSheet({
   const toast = useToast();
   const errToast = useErrToast();
   const grant = trpc.admin.grantRole.useMutation({
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   // Two-step state.

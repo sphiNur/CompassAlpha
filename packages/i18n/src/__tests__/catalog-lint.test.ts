@@ -36,6 +36,12 @@
  *      reached Uzbek store staff literally on every inventory row.
  *  10. Workspace, never organization (D23), and no internal words the copy
  *      review took out (收件箱, 产品, 冻结, 步长, 认领 / 释放 …).
+ *  11. No mojibake (â€™ — UTF-8 read as Latin-1) and no ISO dates written
+ *      into a sentence (D16: dates follow the interface language).
+ *  12. ru: no «(а)» gender shortcuts; say it without the past tense.
+ *  13. Words that must not mean two things (DX-COPY-1/2/3): uz «tiklash»
+ *      (restore) is never a reset; void / undo / revoke buttons never read
+ *      like Cancel; "separate price" is not "store expense".
  *
  * The last block feeds each rule a small hand-made catalog with the mistake
  * it exists for, so a rule that silently stops matching fails too.
@@ -203,12 +209,25 @@ const DEV_TERMS: Array<{ pattern: RegExp; what: string }> = [
   { pattern: /YYYY|ГГГГ/, what: 'date format mask' },
   { pattern: /onboarding|онбординг/i, what: 'internal flow name (say first sign-in)' },
   { pattern: /\bbindings?\b|绑定|store-scoped/i, what: 'role binding (say role assignment / per-store)' },
+  // DX-COPY-26 (2026-11-01): the words 19-前端全面诊断/11 still found. A
+  // kitchen worker has no server, a ru order is not a «сессия», and a
+  // change kept on the phone is "waiting to send", not "to sync".
+  { pattern: /привязк/i, what: 'role binding (say назначение)' },
+  { pattern: /(?<!\p{L})[Сс]есси/u, what: 'session (say заказ / вход)' },
+  { pattern: /\bservers?\b|сервер|服务器|服务端/i, what: 'server (say what happened to the user)' },
+  { pattern: /\bsync(?:s|ed|ing)?\b|синхрон|sinxron|同步/i, what: 'sync (say send / 发送)' },
+];
+
+/** `lang key` prefixes whose screens only developers see. */
+const DEV_TERMS_ALLOW_PREFIX: Array<[string, string]> = [
+  ['dev.', 'the local-development sign-in screen, never shown in production'],
 ];
 
 function devTerms(cats: Catalogs): string[] {
   const found: string[] = [];
   for (const lang of LANGS) {
     for (const [key, value] of Object.entries(cats[lang])) {
+      if (DEV_TERMS_ALLOW_PREFIX.some(([prefix]) => key.startsWith(prefix))) continue;
       // Placeholder names ({slug}, {rank}) are code, not copy.
       const text = visibleTexts(value)
         .join(' ')
@@ -621,6 +640,87 @@ function copyBanned(cats: Catalogs): string[] {
   return found;
 }
 
+// ── 11. Mojibake and ISO dates ──────────────────────────────────────────
+
+/**
+ * DX-COPY-18 / DX-COPY-15 (2026-11-01): "this storeâ€™s personnel" reached
+ * English users (UTF-8 decoded as Latin-1 once), and every language taught
+ * users to type "2026-10-31". Dates are formatted per language (D16), so a
+ * literal ISO date in copy is always wrong.
+ */
+function mojibakeAndIsoDates(cats: Catalogs): string[] {
+  const found: string[] = [];
+  for (const lang of LANGS) {
+    for (const [key, value] of Object.entries(cats[lang])) {
+      const m = value.match(/â€|Ã[\u0080-¿]|Â[ -¿]|�/);
+      if (m) found.push(`${lang} ${key}: mojibake "${m[0]}" in ${value}`);
+      const d = value.match(/\b\d{4}-\d{2}-\d{2}\b/);
+      if (d) found.push(`${lang} ${key}: ISO date "${d[0]}" — dates follow the interface language`);
+    }
+  }
+  return found;
+}
+
+// ── 12. ru gender shortcuts ─────────────────────────────────────────────
+
+/**
+ * DX-COPY-10 (2026-11-01): «импортировал(а)», «удалён(а)» read as a form
+ * being filled in. Name the role instead («участник … удалён») or drop the
+ * past tense («отправитель: …»).
+ */
+function russianGenderShortcuts(cats: Catalogs): string[] {
+  return Object.entries(cats.ru)
+    .filter(([, v]) => /\p{L}\((?:а|ла|на)\)/u.test(v))
+    .map(([k, v]) => `ru ${k}: ${v}`);
+}
+
+// ── 13. Words that must not mean two things ─────────────────────────────
+
+/**
+ * DX-COPY-1 (2026-11-01): uz «tiklash» is "restore". It was the label of
+ * every reset and wipe button, so "delete today's data" read "restore
+ * today". A key whose English says reset / wipe / clear may not use it.
+ */
+function uzbekResetIsNotRestore(cats: Catalogs): string[] {
+  const found: string[] = [];
+  for (const [key, english] of Object.entries(cats.en)) {
+    if (!/\b(?:reset|wipe|clear)/i.test(english)) continue;
+    const uzbek = cats.uz[key] ?? '';
+    if (/tikla/i.test(uzbek)) found.push(`uz ${key}: "${uzbek}" — tiklash means restore`);
+  }
+  return found;
+}
+
+/**
+ * DX-COPY-2 / DX-COPY-3 (2026-11-01): one translation for two different
+ * actions. uz wrote «Bekor qilish» for cancel, void, undo and revoke, so the
+ * void-sale sheet had two identical buttons; en / ru / uz named the
+ * purchaser's "separate price" exactly like a "store expense". Each pair
+ * below sits on the same screen and must read differently in every
+ * language.
+ */
+const MUST_DIFFER: Array<[string, string, string]> = [
+  ['sales.void.confirmBtn', 'common.cancel', 'void-sale sheet'],
+  ['sales.action.void', 'common.cancel', 'sales row'],
+  ['run.action.undoPurchase', 'common.cancel', 'undo-purchase sheet'],
+  ['approval.undo', 'common.cancel', 'approval undo toast'],
+  ['approval.unapprove', 'common.cancel', 'reverse-approval sheet'],
+  ['people.revokeInvite', 'common.cancel', 'invite row'],
+  ['run.action.addItem.costModeSeparate', 'run.action.addExpense.scopeStore', 'add-item sheet'],
+];
+
+function distinctActions(cats: Catalogs): string[] {
+  const found: string[] = [];
+  for (const lang of LANGS) {
+    for (const [a, b, where] of MUST_DIFFER) {
+      const va = cats[lang][a];
+      const vb = cats[lang][b];
+      if (va !== undefined && va === vb) found.push(`${lang} ${a} = ${b} = "${va}" (${where})`);
+    }
+  }
+  return found;
+}
+
 // ── The gates ───────────────────────────────────────────────────────────
 
 const RULES: Array<[string, (cats: Catalogs) => string[]]> = [
@@ -639,6 +739,10 @@ const RULES: Array<[string, (cats: Catalogs) => string[]]> = [
   ['D15 terminology: one word per concept', terminology],
   ['no HTML entities in any language', htmlEntities],
   ['D23 and the copy review: workspace, no internal words', copyBanned],
+  ['no mojibake and no ISO dates in copy', mojibakeAndIsoDates],
+  ['ru: no «(а)» gender shortcuts', russianGenderShortcuts],
+  ['uz: a reset is not «tiklash» (restore)', uzbekResetIsNotRestore],
+  ['actions on the same screen read differently', distinctActions],
 ];
 
 describe('catalog lint', () => {
@@ -742,6 +846,7 @@ describe('catalog lint rules catch the original findings', () => {
   test('"(s)" and "(ов)" shortcuts', () => {
     expect(pluralShortcuts(one({ en: '{n} item(s)' }))).toHaveLength(1);
     expect(pluralShortcuts(one({ ru: '{n} заказ(ов)' }))).toHaveLength(1);
+    // «(а)» is not a plural; russianGenderShortcuts handles it.
     expect(pluralShortcuts(one({ ru: 'импортировал(а)' }))).toEqual([]);
   });
 
@@ -822,6 +927,47 @@ describe('catalog lint rules catch the original findings', () => {
     expect(englishApostrophes(one({ en: 'A built-in role’s level' }))).toHaveLength(1);
     expect(untranslated(one({ en: 'Import…', uz: 'Import…' }))).toHaveLength(1);
     expect(untranslated(one({ en: 'Shift Lead', zh: 'Shift Lead' }))).toHaveLength(1);
+  });
+
+  test('DX-COPY-26: server, sync, session and binding words', () => {
+    expect(devTerms(one({ en: 'No answer from the server' }))).toHaveLength(1);
+    expect(devTerms(one({ zh: '联网后自动同步' }))).toHaveLength(1);
+    expect(devTerms(one({ ru: 'Сессия для этой даты уже существует' }))).toHaveLength(1);
+    expect(devTerms(one({ ru: 'Продублировать привязки ролей' }))).toHaveLength(1);
+    expect(devTerms(one({ uz: 'sinxronlanishni kutmoqda' }))).toHaveLength(1);
+    expect(devTerms(one({ en: 'Saved offline — waiting to send' }))).toEqual([]);
+    expect(devTerms(one({ en: 'Only for people on the server allowlist' }, 'dev.x'))).toEqual([]);
+  });
+
+  test('DX-COPY-18 / DX-COPY-15: mojibake and ISO dates', () => {
+    expect(mojibakeAndIsoDates(one({ en: 'this storeâ€™s personnel' }))).toHaveLength(1);
+    expect(mojibakeAndIsoDates(one({ ru: 'Пишите так: 2026-10-31.' }))).toHaveLength(1);
+    expect(mojibakeAndIsoDates(one({ en: "this store's employees · {date}" }))).toEqual([]);
+  });
+
+  test('DX-COPY-10: ru gender shortcuts', () => {
+    expect(russianGenderShortcuts(one({ ru: '{actor} импортировал(а) товары' }))).toHaveLength(1);
+    expect(russianGenderShortcuts(one({ ru: '{actor}: участник {member} удалён' }))).toEqual([]);
+  });
+
+  test('DX-COPY-1: uz reset written as restore', () => {
+    expect(uzbekResetIsNotRestore(one({ en: 'Reset today', uz: 'Bugunni tiklash' }))).toHaveLength(1);
+    expect(uzbekResetIsNotRestore(one({ en: 'Unarchive', uz: 'Tiklash' }))).toEqual([]);
+    expect(
+      uzbekResetIsNotRestore(one({ en: 'Reset today', uz: 'Bugungi maʼlumotlarni tozalash' })),
+    ).toEqual([]);
+  });
+
+  test('DX-COPY-2: a void button that reads like Cancel', () => {
+    const cats: Catalogs = {
+      en: { 'sales.void.confirmBtn': 'Void sale', 'common.cancel': 'Cancel' },
+      zh: { 'sales.void.confirmBtn': '确认作废', 'common.cancel': '取消' },
+      ru: { 'sales.void.confirmBtn': 'Аннулировать', 'common.cancel': 'Отмена' },
+      uz: { 'sales.void.confirmBtn': 'Bekor qilish', 'common.cancel': 'Bekor qilish' },
+    };
+    expect(distinctActions(cats)).toEqual([
+      'uz sales.void.confirmBtn = common.cancel = "Bekor qilish" (void-sale sheet)',
+    ]);
   });
 
   test('CMP-COPY-1: HTML entities are shown as written', () => {

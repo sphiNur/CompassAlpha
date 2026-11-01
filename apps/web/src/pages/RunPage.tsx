@@ -295,7 +295,7 @@ export function RunPage() {
       haptic('success');
       toast.success(i18n.t('run.toast.purchaseStarted'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   // M3.41 (2026-05-21): mid-run addition. Mirrors purchaseItem's
   // success/offline-queue pattern so the bazaar UX (flaky LTE) survives
@@ -369,7 +369,7 @@ export function RunPage() {
       haptic('success');
       toast.info(i18n.t('run.toast.expenseRemoved'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const ejectSession = trpc.run.ejectSession.useMutation({
     onSuccess: () => {
@@ -477,7 +477,7 @@ export function RunPage() {
         setUnavailableNote('');
         toast.info(i18n.t('run.toast.purchaseSavedOffline'));
       } else {
-        errToast('common.error')(err);
+        errToast('common.errors.actionFailed')(err);
       }
     },
   });
@@ -488,7 +488,7 @@ export function RunPage() {
       invalidateRunQuietly(true);
       toast.info(i18n.t('run.topUp.dismissed'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const unmarkUnavailable = trpc.run.unmarkUnavailable.useMutation({
     onSuccess: () => {
@@ -496,7 +496,7 @@ export function RunPage() {
       haptic('success');
       toast.success(i18n.t('run.toast.unmarkedUnavailable'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const undoPurchase = trpc.run.undoPurchase.useMutation({
     onSuccess: () => {
@@ -504,7 +504,7 @@ export function RunPage() {
       haptic('success');
       toast.success(i18n.t('run.toast.purchaseUndone'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const startDelivery = trpc.run.startDelivery.useMutation({
     onSuccess: () => {
@@ -512,7 +512,7 @@ export function RunPage() {
       haptic('success');
       toast.success(i18n.t('run.toast.deliveryStarted'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const deliverIdemCtx = useRef<{ idempotencyKey?: string }>({}).current;
   const deliverToStore = trpc.run.deliverToStore.useMutation({
@@ -536,7 +536,7 @@ export function RunPage() {
         setConfirmAction(null);
         toast.info(i18n.t('run.toast.purchaseSavedOffline'));
       } else {
-        errToast('common.error')(err);
+        errToast('common.errors.actionFailed')(err);
       }
     },
   });
@@ -546,7 +546,7 @@ export function RunPage() {
       haptic('success');
       toast.success(i18n.t('run.toast.deliveryRecalled'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const undoStartPurchase = trpc.run.undoStartPurchase.useMutation({
     onSuccess: () => {
@@ -554,7 +554,7 @@ export function RunPage() {
       haptic('success');
       toast.success(i18n.t('run.toast.startPurchaseUndone'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const undoStartDelivery = trpc.run.undoStartDelivery.useMutation({
     onSuccess: () => {
@@ -562,7 +562,7 @@ export function RunPage() {
       haptic('success');
       toast.success(i18n.t('run.toast.startDeliveryUndone'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const cancelRun = trpc.run.cancel.useMutation({
     onSuccess: (result) => {
@@ -585,7 +585,7 @@ export function RunPage() {
         toast.success(i18n.t('run.toast.runCancelled'));
       }
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const finish = trpc.run.finish.useMutation({
     onSuccess: () => {
@@ -593,7 +593,7 @@ export function RunPage() {
       haptic('success');
       toast.success(i18n.t('run.toast.runFinished'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   // 2026-07-06: close a super-admin correction — recompute + re-freeze
   // totals and return amending → finished.
@@ -604,7 +604,7 @@ export function RunPage() {
       haptic('success');
       toast.success(i18n.t('run.toast.amendSaved'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   // M3.37 (2026-05-19, Wave2 #5): purchaser cycles an extra row's
   // outcome (pending → bought → unavailable → pending). One mutation
@@ -623,7 +623,7 @@ export function RunPage() {
     // this page read it; show the current rows.
     onError: (err) => {
       invalidateRunQuietly();
-      errToast('common.error')(err);
+      errToast('common.errors.actionFailed')(err);
     },
   });
   // UIUX-B1 (2026-07-06): the C.2/M3.38 exclusive-claim subsystem

@@ -149,7 +149,7 @@ export function StoreSalesPanel({
       setDraftDishId('');
       setDraftQty('1');
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   // 2026-10-21: void flow — the sale being voided + the typed reason.
@@ -165,7 +165,7 @@ export function StoreSalesPanel({
       setVoidTarget(null);
       setVoidReason('');
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const normalizedVoidReason = normalizeVoidReason(voidReason);
 

@@ -838,7 +838,7 @@ function OnboardingScreen() {
       haptic('error');
       // 2026-10-21 audit CA-48: server keys (e.g. auth.errors.nameLocked)
       // were shown raw.
-      setError(translateError(err, 'common.error'));
+      setError(translateError(err, 'auth.onboarding.failed'));
     },
   });
 

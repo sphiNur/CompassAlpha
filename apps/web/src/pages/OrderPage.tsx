@@ -617,7 +617,7 @@ export function OrderPage() {
     // order.errors.cannotWithdrawWhileClaimed) used to just stop the
     // spinner. Surface it, and refetch so the banner reflects reality.
     onError: (err) => {
-      errToast('common.error')(err);
+      errToast('common.errors.actionFailed')(err);
       void utils.order.todaySession.invalidate();
     },
   });
@@ -1868,6 +1868,7 @@ const SkuRow = memo(function SkuRow({
         value={myQty}
         step={Number(sku.step)}
         unit={unitLabel(sku.unit)}
+        unitFor={(qty) => unitLabel(sku.unit, qty)}
         disabled={isReadOnly}
         onChange={(next) => onQtyChange(storeId, sku.id, String(next))}
         // ORD-9 (2026-10-31): the server refuses a line of a million or
