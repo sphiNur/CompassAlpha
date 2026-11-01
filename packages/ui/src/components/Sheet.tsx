@@ -152,7 +152,29 @@ export function guardedClose(
     });
 }
 
-export function Sheet({
+/**
+ * True from the first time `open` is true onwards. DX-PFE-5 (2026-11-01):
+ * every closed sheet still rendered Radix's Dialog root, provider, portal
+ * and presence — six components per sheet on every parent render, and
+ * most rows carry one (142 Dialog instances on the purchase screen's
+ * first draw). A sheet now mounts the first time it opens and then stays
+ * mounted, so closing still animates out, focus still returns to the
+ * opener, and a reopened sheet behaves exactly as before.
+ */
+export function useOpenedOnce(open: boolean): boolean {
+  const [opened, setOpened] = useState(open);
+  // Adjusting state during render (React's documented pattern): the sheet
+  // mounts in the same render that opens it, not one frame later.
+  if (open && !opened) setOpened(true);
+  return open || opened;
+}
+
+export function Sheet(props: SheetProps) {
+  const mounted = useOpenedOnce(props.open);
+  return mounted ? <OpenedSheet {...props} /> : null;
+}
+
+function OpenedSheet({
   open,
   onOpenChange,
   title,
