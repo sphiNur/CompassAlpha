@@ -1432,19 +1432,27 @@ export function FinanceSection() {
             </option>
           ))}
         </Select>
-        <Segmented<'today' | 'yesterday' | 'thisMonth' | 'lastMonth' | 'custom'>
-          value={preset}
-          equalWidth={false}
-          options={[
-            { value: 'today', label: i18n.t('finance.preset.today') },
-            { value: 'yesterday', label: i18n.t('finance.preset.yesterday') },
-            { value: 'thisMonth', label: i18n.t('finance.preset.thisMonth') },
-            { value: 'lastMonth', label: i18n.t('finance.preset.lastMonth') },
-            { value: 'custom', label: i18n.t('finance.preset.custom') },
-          ]}
-          onChange={setPreset}
-          ariaLabel={i18n.t('finance.range.start')}
-        />
+        {/* DX-HIS-3 (2026-11-01): wrapping chips, not a segmented bar. In
+            ru / uz at 360 px the five presets were 465 px wide in a 304 px
+            card and «Произвольный» ran off screen. */}
+        <ChipBar
+          ariaLabel={i18n.t('finance.range.presets')}
+          className="flex-wrap overflow-visible px-0 py-0"
+        >
+          {(
+            [
+              ['today', 'finance.preset.today'],
+              ['yesterday', 'finance.preset.yesterday'],
+              ['thisMonth', 'finance.preset.thisMonth'],
+              ['lastMonth', 'finance.preset.lastMonth'],
+              ['custom', 'finance.preset.custom'],
+            ] as const
+          ).map(([value, label]) => (
+            <Chip key={value} selected={preset === value} onClick={() => setPreset(value)}>
+              {i18n.t(label)}
+            </Chip>
+          ))}
+        </ChipBar>
         {preset === 'custom' ? (
           <div className="flex items-center gap-2">
             <Input
@@ -1531,7 +1539,9 @@ export function FinanceSection() {
       {/* View switcher + export.
           M3.17 (2026-05-16): view toggle migrated to <Segmented>; the
           export button is a real <Button> at sm/pearl. */}
-      <div className="mb-2 flex items-center gap-2">
+      {/* DX-HIS-3: the export button gets its own line when the three
+          views need the width (ru / uz at 360 px squeezed it to 24 px). */}
+      <div className="mb-2 flex flex-wrap items-center justify-end gap-2">
         <Segmented<'daily' | 'bySupplier' | 'byStore'>
           value={view}
           options={[
@@ -1543,7 +1553,7 @@ export function FinanceSection() {
             setView(next);
             setExpanded(null);
           }}
-          className="flex-1"
+          className="min-w-[min(100%,18rem)] flex-1"
           ariaLabel={i18n.t('finance.view.daily')}
         />
         {canExport ? (

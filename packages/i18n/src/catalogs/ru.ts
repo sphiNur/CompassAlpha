@@ -1510,7 +1510,7 @@ export const ru = {
   'run.amend.bannerHint':
     'Правка завершённой закупки. Нажмите «Сохранить правки» внизу, чтобы пересчитать.',
   'run.step.amend': 'Правка',
-  'run.amend.entryLabel': 'Править эту закупку (суперадмин)',
+  'run.amend.entryLabel': 'Исправить закупку',
   'run.amend.reasonPlaceholder': 'Причина правки (обязательно)',
   'run.amend.reopenButton': 'Открыть для правки',
   'run.errors.itemNotInRun':
@@ -2225,4 +2225,10 @@ export const ru = {
   'order.banner.onTheWay.title': 'Куплено · везут в ваш магазин',
   'order.banner.recalled.title': 'Закупщик отозвал доставку · дождитесь повторной доставки',
   'order.banner.checked.title': 'Товар проверен',
+  'run.history.supplier': 'Поставщик: {name}',
+  'run.history.receiptOf': 'Фото чека: {item}',
+  'run.history.expensesHeading': 'Расходы',
+  'run.history.correctionsHeading': 'Исправления',
+  'run.history.receivingIssues': 'Проблемы при приёмке: {n, plural, one {# позиция} few {# позиции} many {# позиций} other {# позиции}}',
+  'finance.range.presets': 'Период',
 } as const satisfies Record<CatalogKey, string>;

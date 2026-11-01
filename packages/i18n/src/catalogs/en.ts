@@ -1624,7 +1624,7 @@ export const en = {
   'run.amend.bannerHint':
     'Editing a finished run. Tap "Save changes" at the bottom to recalculate when done.',
   'run.step.amend': 'Correcting',
-  'run.amend.entryLabel': 'Amend this run (super admin)',
+  'run.amend.entryLabel': 'Amend what was bought',
   'run.amend.reasonPlaceholder': 'Reason for the correction (required)',
   'run.amend.reopenButton': 'Reopen for correction',
   'run.errors.itemNotInRun':
@@ -2366,4 +2366,10 @@ export const en = {
   'order.banner.onTheWay.title': 'Bought · on the way to your store',
   'order.banner.recalled.title': 'The purchaser recalled the delivery · wait until it is delivered again',
   'order.banner.checked.title': 'Goods checked',
+  'run.history.supplier': 'From {name}',
+  'run.history.receiptOf': 'Receipt photo: {item}',
+  'run.history.expensesHeading': 'Expenses',
+  'run.history.correctionsHeading': 'Corrections',
+  'run.history.receivingIssues': 'Problems on receipt: {n, plural, one {# line} other {# lines}}',
+  'finance.range.presets': 'Period',
 } as const;

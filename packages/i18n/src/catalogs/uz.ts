@@ -1517,7 +1517,7 @@ export const uz = {
   'run.amend.bannerHint':
     'Tugallangan xarid tahrirlanmoqda. Tugagach pastdagi «Saqlash» tugmasini bosing.',
   'run.step.amend': 'Tuzatish',
-  'run.amend.entryLabel': 'Bu xaridni tuzatish (superadmin)',
+  'run.amend.entryLabel': 'Xaridni tuzatish',
   'run.amend.reasonPlaceholder': 'Tuzatish sababi (majburiy)',
   'run.amend.reopenButton': 'Tuzatish uchun ochish',
   'run.errors.itemNotInRun':
@@ -2229,4 +2229,10 @@ export const uz = {
   'order.banner.onTheWay.title': 'Sotib olindi · doʻkoningizga olib kelinmoqda',
   'order.banner.recalled.title': 'Xaridor yetkazishni qaytarib oldi · qayta yetkazilishini kuting',
   'order.banner.checked.title': 'Tovar qabul qilindi',
+  'run.history.supplier': 'Taʼminotchi: {name}',
+  'run.history.receiptOf': 'Chek surati: {item}',
+  'run.history.expensesHeading': 'Xarajatlar',
+  'run.history.correctionsHeading': 'Tuzatishlar',
+  'run.history.receivingIssues': 'Qabulda muammo: {n} ta qator',
+  'finance.range.presets': 'Davr',
 } as const satisfies Record<CatalogKey, string>;

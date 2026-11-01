@@ -94,6 +94,9 @@ interface HistoryPagination {
   totalPages: number;
   hasPrevious: boolean;
   hasNext: boolean;
+  /** DX-HIS-5: positions of the page's first / last run (pages hold whole days). */
+  firstRun?: number;
+  lastRun?: number;
   onPrevious: () => void;
   onNext: () => void;
 }
@@ -170,11 +173,14 @@ export function RunHistoryPage({
   const total =
     summaryTotal ?? String(runs.reduce((sum, run) => addMoney(sum, run.actualTotal), 0));
   const count = totalCount ?? runs.length;
+  // DX-HIS-5 (2026-11-01): a page holds whole days, so it can hold more or
+  // fewer runs than pageSize; the server says which ones.
   const firstResult =
-    pagination && pagination.totalCount > 0 ? (pagination.page - 1) * pagination.pageSize + 1 : 0;
-  const lastResult = pagination
-    ? Math.min(pagination.page * pagination.pageSize, pagination.totalCount)
-    : count;
+    pagination?.firstRun ??
+    (pagination && pagination.totalCount > 0 ? (pagination.page - 1) * pagination.pageSize + 1 : 0);
+  const lastResult =
+    pagination?.lastRun ??
+    (pagination ? Math.min(pagination.page * pagination.pageSize, pagination.totalCount) : count);
 
   return (
     <div className="flex flex-col gap-3 px-4 pb-24 pt-3">
@@ -746,6 +752,9 @@ export function RunHistoryDetailSheet({
   // trust the per-run answer derived from persisted bindings by the server.
   const canAmend = detail.data?.canAmend ?? false;
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
+  const [photoFor, setPhotoFor] = useState<{ url: string; label: string } | null>(null);
+  const supplierName = (id: string | null | undefined): string | null =>
+    id ? (detail.data?.supplierNameById?.[id] ?? null) : null;
 
   useEffect(() => {
     setSelectedStoreId(target?.initialStoreId ?? null);
@@ -919,6 +928,11 @@ export function RunHistoryDetailSheet({
   const visibleUnavailableCount = activeStoreId
     ? visibleHistoryRows.filter((row) => row.item.status === 'unavailable').length
     : (breakdown?.unavailableCount ?? 0);
+  const receivingIssueCount = visibleHistoryRows.reduce(
+    (n, row) =>
+      n + row.perStoreSplits.filter((sp) => sp.confirmStatus && sp.confirmStatus !== 'ok').length,
+    0,
+  );
   const headlineTotal = activeStoreTotal?.total ?? breakdown?.total ?? 0;
   const headlineCash = activeStoreTotal?.cash ?? breakdown?.totalCash ?? 0;
   const headlineTransfer = activeStoreTotal?.transfer ?? breakdown?.totalTransfer ?? 0;
@@ -1007,6 +1021,16 @@ export function RunHistoryDetailSheet({
                 {i18n.t('run.history.storeSummary', { stores: headlineStoreCount })}
               </div>
             </div>
+            {/* DX-DLV-03 (2026-11-01): problems the stores reported on
+                receipt, counted up front in every view. */}
+            {receivingIssueCount > 0 ? (
+              <div
+                data-testid="history-issue-summary"
+                className="text-old-label font-medium text-[var(--c-warning-fg)]"
+              >
+                {i18n.t('run.history.receivingIssues', { n: receivingIssueCount })}
+              </div>
+            ) : null}
             {/* M1.14: payment-method breakdown row. 2026-10-23: shown
                 whenever there is money, not only when both methods were
                 used — a one-store, all-cash day still needs to say how
@@ -1026,58 +1050,6 @@ export function RunHistoryDetailSheet({
               </div>
             ) : null}
           </div>
-
-          {/* 2026-07-30: purchase-date correction. Separate from the
-              reopen block below on purpose — changing when a run is
-              booked is not an edit to what was bought, so it neither
-              needs nor triggers the amend cycle. */}
-          {canAmend && target ? (
-            <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3">
-              <SectionLabel padded={false}>{i18n.t('run.date.label')}</SectionLabel>
-              <p className="text-old-label text-[var(--c-fg-muted)]">{i18n.t('run.date.hint')}</p>
-              {/* HIS-7 (2026-10-31): the server refuses a date after the
-                  org's today; the picker stops there and the button waits. */}
-              <Input
-                type="date"
-                value={dateDraft}
-                max={orgToday}
-                invalid={dateDraft > orgToday}
-                onChange={(e) => setDateDraft(e.target.value)}
-                aria-label={i18n.t('run.date.label')}
-              />
-              <Button
-                variant="pearl"
-                loading={changeDate.isPending}
-                disabled={!dateDraft || dateDraft === target.runDate || dateDraft > orgToday}
-                onClick={() => changeDate.mutate({ runId: target.runId, runDate: dateDraft })}
-              >
-                {i18n.t('run.date.change')}
-              </Button>
-            </div>
-          ) : null}
-
-          {/* 2026-07-06: super-admin correction entry. Reopens the
-              finished run to `amending`; editing continues on the Run
-              tab, closed there with "完成修改". Requires a reason (audit). */}
-          {canAmend && target ? (
-            <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-warn-bg)] px-4 py-3">
-              <SectionLabel padded={false}>{i18n.t('run.amend.entryLabel')}</SectionLabel>
-              <Input
-                value={reopenReason}
-                onChange={(e) => setReopenReason(e.target.value)}
-                placeholder={i18n.t('run.amend.reasonPlaceholder')}
-                maxLength={500}
-              />
-              <Button
-                variant="pearl"
-                loading={reopen.isPending}
-                disabled={reopenReason.trim().length === 0}
-                onClick={() => reopen.mutate({ runId: target.runId, reason: reopenReason.trim() })}
-              >
-                {i18n.t('run.amend.reopenButton')}
-              </Button>
-            </div>
-          ) : null}
 
           {storeOptions.length > 1 ? (
             // R2-HIS-5 (2026-10-31): the segments are 36px (min-h-9) in a
@@ -1196,25 +1168,50 @@ export function RunHistoryDetailSheet({
                       ) : null}
                     </div>
                     {/* 2026-10-21 CA-06: the store's receiving verdict on
-                       a problem line, with what it actually received. */}
-                    {activeStoreId &&
-                    perStoreSplits[0]?.confirmStatus &&
-                    perStoreSplits[0].confirmStatus !== 'ok' ? (
-                      <div className="mt-1 text-old-label font-medium tabular-nums text-[var(--c-warning-fg)]">
-                        {i18n.t(
-                          ('confirm.status.' + perStoreSplits[0].confirmStatus) as Parameters<
-                            typeof i18n.t
-                          >[0],
-                        )}
-                        {perStoreSplits[0].confirmReceivedQty != null
-                          ? ' · ' +
-                            i18n.t('confirm.receivedOf', {
-                              received: formatQty(perStoreSplits[0].confirmReceivedQty),
-                              qty: formatQty(perStoreSplits[0].qty),
-                              unit: unitLabel(sku?.unit, perStoreSplits[0].qty),
-                            })
-                          : ''}
-                        {perStoreSplits[0].confirmNote ? ` · ${perStoreSplits[0].confirmNote}` : ''}
+                       a problem line, with what it actually received.
+                       DX-DLV-03 (2026-11-01): also in 「全部门店」, one line
+                       per store with a problem, named — the combined view
+                       showed none, so a run read as received in full. */}
+                    {perStoreSplits
+                      .filter((sp) => sp.confirmStatus && sp.confirmStatus !== 'ok')
+                      .map((sp) => (
+                        <div
+                          key={`issue-${sp.storeId}`}
+                          data-testid="history-receiving-issue"
+                          className="mt-1 text-old-label font-medium tabular-nums text-[var(--c-warning-fg)]"
+                        >
+                          {activeStoreId
+                            ? ''
+                            : `${storeById.get(sp.storeId)?.name ?? sp.storeId.slice(0, 8)} · `}
+                          {i18n.t(('confirm.status.' + sp.confirmStatus) as Parameters<typeof i18n.t>[0])}
+                          {sp.confirmReceivedQty != null
+                            ? ' · ' +
+                              i18n.t('confirm.receivedOf', {
+                                received: formatQty(sp.confirmReceivedQty),
+                                qty: formatQty(sp.qty),
+                                unit: unitLabel(sku?.unit, sp.qty),
+                              })
+                            : ''}
+                          {sp.confirmNote ? ` · ${sp.confirmNote}` : ''}
+                        </div>
+                      ))}
+                    {/* DX-HIS-6 (2026-11-01): who it was bought from and the
+                       receipt photo, both recorded at purchase and never
+                       shown here. */}
+                    {it.status === 'purchased' && (supplierName(it.supplierId) || it.receiptPhotoUrl) ? (
+                      <div className="mt-1 flex items-center gap-2 text-old-label text-[var(--c-fg-muted)]">
+                        {supplierName(it.supplierId) ? (
+                          <span data-testid="history-line-supplier" className="min-w-0 truncate">
+                            {i18n.t('run.history.supplier', { name: supplierName(it.supplierId)! })}
+                          </span>
+                        ) : null}
+                        {it.receiptPhotoUrl ? (
+                          <ReceiptThumb
+                            url={it.receiptPhotoUrl}
+                            label={i18n.t('run.history.receiptOf', { item: skuName })}
+                            onOpen={setPhotoFor}
+                          />
+                        ) : null}
                       </div>
                     ) : null}
                     {/* D3 / D4 (2026-10-31): what changed on this line after
@@ -1344,8 +1341,156 @@ export function RunHistoryDetailSheet({
               </ul>
             </div>
           ) : null}
+
+          {/* DX-HIS-6 (2026-11-01): the expenses themselves, not only
+              "n expenses" inside a store's row. */}
+          {breakdown.expenses.length > 0 ? (
+            <div>
+              <SectionLabel padded={false} className="mb-2">
+                {i18n.t('run.history.expensesHeading')}
+              </SectionLabel>
+              <ul className="flex flex-col rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline">
+                {breakdown.expenses
+                  .filter(
+                    (ex) =>
+                      !activeStoreId || ex.storeSplits.some((sp) => sp.storeId === activeStoreId),
+                  )
+                  .map((ex) => (
+                    <li
+                      key={ex.id}
+                      data-testid="history-expense"
+                      className="flex flex-col gap-1 border-b border-[var(--c-divider)] px-4 py-3 last:border-b-0"
+                    >
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="min-w-0 truncate text-old-body font-semibold">{ex.label}</span>
+                        <span className="font-mono text-old-body font-semibold tabular-nums">
+                          {ex.unitPrice != null ? formatMoney(expenseLine(ex)) : '—'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2 text-old-label text-[var(--c-fg-muted)]">
+                        <span className="min-w-0">
+                          {`${formatQty(ex.qty)}${ex.unitHint ? ` ${ex.unitHint}` : ''}`}
+                          {ex.unitPrice != null ? ` × ${formatMoney(ex.unitPrice)}` : ''}
+                          {ex.reason ? ` · ${ex.reason}` : ''}
+                        </span>
+                        <span className="flex shrink-0 items-center gap-2 font-medium text-[var(--c-fg)]">
+                          {i18n.t(
+                            ex.paymentMethod === 'transfer'
+                              ? 'run.label.paymentTransfer'
+                              : 'run.label.paymentCash',
+                          )}
+                          {ex.receiptPhotoUrl ? (
+                            <ReceiptThumb
+                              url={ex.receiptPhotoUrl}
+                              label={i18n.t('run.history.receiptOf', { item: ex.label })}
+                              onOpen={setPhotoFor}
+                            />
+                          ) : null}
+                        </span>
+                      </div>
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {/* DX-HIS-13 (2026-11-01): the two correction forms come after
+              the record they correct; they used to sit above the lines,
+              so reading the run meant scrolling past two forms first. */}
+          {canAmend && target ? (
+            <SectionLabel padded={false} as="h3" className="-mb-2">
+              {i18n.t('run.history.correctionsHeading')}
+            </SectionLabel>
+          ) : null}
+          {/* 2026-07-30: purchase-date correction. Separate from the
+              reopen block below on purpose — changing when a run is
+              booked is not an edit to what was bought, so it neither
+              needs nor triggers the amend cycle. */}
+          {canAmend && target ? (
+            <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3">
+              <SectionLabel padded={false}>{i18n.t('run.date.label')}</SectionLabel>
+              <p className="text-old-label text-[var(--c-fg-muted)]">{i18n.t('run.date.hint')}</p>
+              {/* HIS-7 (2026-10-31): the server refuses a date after the
+                  org's today; the picker stops there and the button waits. */}
+              <Input
+                type="date"
+                value={dateDraft}
+                max={orgToday}
+                invalid={dateDraft > orgToday}
+                onChange={(e) => setDateDraft(e.target.value)}
+                aria-label={i18n.t('run.date.label')}
+              />
+              <Button
+                variant="pearl"
+                loading={changeDate.isPending}
+                disabled={!dateDraft || dateDraft === target.runDate || dateDraft > orgToday}
+                onClick={() => changeDate.mutate({ runId: target.runId, runDate: dateDraft })}
+              >
+                {i18n.t('run.date.change')}
+              </Button>
+            </div>
+          ) : null}
+
+          {/* 2026-07-06: super-admin correction entry. Reopens the
+              finished run to `amending`; editing continues on the Run
+              tab, closed there with "完成修改". Requires a reason (audit). */}
+          {canAmend && target ? (
+            <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-warn-bg)] px-4 py-3">
+              <SectionLabel padded={false}>{i18n.t('run.amend.entryLabel')}</SectionLabel>
+              <Input
+                value={reopenReason}
+                onChange={(e) => setReopenReason(e.target.value)}
+                placeholder={i18n.t('run.amend.reasonPlaceholder')}
+                maxLength={500}
+              />
+              <Button
+                variant="pearl"
+                loading={reopen.isPending}
+                disabled={reopenReason.trim().length === 0}
+                onClick={() => reopen.mutate({ runId: target.runId, reason: reopenReason.trim() })}
+              >
+                {i18n.t('run.amend.reopenButton')}
+              </Button>
+            </div>
+          ) : null}
         </div>
       )}
+      <Sheet
+        open={!!photoFor}
+        onOpenChange={(open) => !open && setPhotoFor(null)}
+        title={photoFor?.label ?? ''}
+      >
+        {photoFor ? (
+          <img
+            src={photoFor.url}
+            alt={photoFor.label}
+            className="mx-auto max-h-[70dvh] w-auto rounded-[var(--r-card)] py-3"
+          />
+        ) : null}
+      </Sheet>
     </Sheet>
+  );
+}
+
+/** DX-HIS-6: a receipt photo as a small thumbnail that opens it large. */
+function ReceiptThumb({
+  url,
+  label,
+  onOpen,
+}: {
+  url: string;
+  label: string;
+  onOpen: (photo: { url: string; label: string }) => void;
+}) {
+  return (
+    <button
+      type="button"
+      data-testid="history-receipt"
+      aria-label={label}
+      onClick={() => onOpen({ url, label })}
+      className="hit-44 relative h-8 w-8 shrink-0 overflow-hidden rounded-[var(--r-pill)] ring-1 ring-[var(--c-divider)]"
+    >
+      <img src={url} alt="" className="h-full w-full object-cover" loading="lazy" />
+    </button>
   );
 }
