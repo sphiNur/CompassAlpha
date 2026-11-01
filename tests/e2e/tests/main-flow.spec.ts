@@ -195,11 +195,11 @@ test('deliver to the store', async () => {
   await expectTappable({
     'fill in prices: Apple': main().getByRole('button', { name: /^Apple/ }),
     'store row': main().getByRole('button', { name: /Central Kitchen.*Not delivered/ }),
+    // DX-DLV-10: the row opens the pick list; delivering is its own button.
+    'deliver button': main().getByRole('button', { name: 'Mark delivered to Central Kitchen' }),
   });
 
-  await main()
-    .getByRole('button', { name: /Central Kitchen.*Not delivered/ })
-    .click();
+  await main().getByRole('button', { name: 'Mark delivered to Central Kitchen' }).click();
   await sheet().getByRole('button', { name: 'Mark delivered' }).click();
   await expect(
     main().getByRole('button', { name: /Central Kitchen.*Awaiting confirm/ }),
