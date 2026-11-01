@@ -16,42 +16,46 @@ import {
   Spinner, useTapGuard } from '@compass/ui';
 import { OrderPage } from '../pages/OrderPage';
 import { PageErrorBoundary } from './PageErrorBoundary';
-import { ApprovalPage } from '../pages/ApprovalPage';
-import { ConfirmPage } from '../pages/ConfirmPage';
+import {
+  importAdminPage,
+  importApprovalPage,
+  importConfirmPage,
+  importHistoryPage,
+  importRunPage,
+  importSalesPage,
+  importSettlementPage,
+  preloadPage,
+} from './pageChunks';
+// Every page but Order is lazy: its own chunk, downloaded when the tab is
+// first opened (or prefetched below / in main.tsx). OrderPage stays in the
+// entry chunk because nearly every user lands on it.
+//
 // AdminPage is the heaviest screen in the bundle (~5k LoC + the role
 // editor + the audit list etc.). Most users will never open it — the
-// `users.manage` permission gate hides the tab — yet a static import
-// puts it in the initial JS chunk every fresh load downloads. Lazy +
-// Suspense splits it out to its own chunk that only admins pay for.
-// (M1.3, 2026-05-06.) The other tabs stay eagerly imported because
-// every authenticated user reaches at least one of them.
-const importAdminPage = () => import('../pages/AdminPage').then((m) => ({ default: m.AdminPage }));
+// `users.manage` permission gate hides the tab. (M1.3, 2026-05-06.)
 const AdminPage = resilientLazy(importAdminPage);
 // M3.11 (2026-05-16): same treatment for RunPage. ~3.4k LoC + heavy
 // purchase / delivery / confirm sheets + history detail. The
 // `run.purchase` permission gate hides the tab from staff, cashiers,
 // receivers etc. — typical deployment has 1 purchaser per N stores,
-// so 90% of users pay for the chunk without ever opening it. Pulling
-// it behind lazy() saves ~60 kB off the initial bundle. Prefetch
+// so 90% of users pay for the chunk without ever opening it. Prefetch
 // (below) keeps the tap-to-open latency snappy for actual purchasers.
-const importRunPage = () => import('../pages/RunPage').then((m) => ({ default: m.RunPage }));
 const RunPage = resilientLazy(importRunPage);
 // 2026-07-30: history is its own tab now. Lazy for the same reason as
 // RunPage — it pulls in the ~800-line history subsystem plus the money
 // settlement helpers. Rollup hoists RunHistory.tsx into a chunk shared
 // with RunPage, so a purchaser who opens both downloads it once.
-const importHistoryPage = () =>
-  import('../pages/HistoryPage').then((m) => ({ default: m.HistoryPage }));
 const HistoryPage = resilientLazy(importHistoryPage);
 // Daily close is a financial, permission-gated surface. Keep its form and
 // recent-ledger query code out of the startup bundle for everyone else.
-const importSettlementPage = () =>
-  import('../pages/SettlementPage').then((m) => ({ default: m.SettlementPage }));
 const SettlementPage = resilientLazy(importSettlementPage);
 // 2026-10-21: staff-only sales tab. Small page, but lazy like Settlement
 // so the many users who never see it don't parse it.
-const importSalesPage = () => import('../pages/SalesPage').then((m) => ({ default: m.SalesPage }));
 const SalesPage = resilientLazy(importSalesPage);
+// DX-PFE-2 (2026-11-01): review and receiving were in the entry chunk
+// (~60 KB raw together) although only approvers and receivers open them.
+const ApprovalPage = resilientLazy(importApprovalPage);
+const ConfirmPage = resilientLazy(importConfirmPage);
 import { resilientLazy } from '../lib/resilientLazy';
 import { useAuthStore } from '../stores/authStore';
 import {
@@ -70,6 +74,8 @@ import {
 import { publishMainButtonInset } from '../lib/mainButtonInset';
 import { subscribeAnnouncements } from '../lib/announce';
 import { setPageTitleBase } from '../lib/pageTitle';
+import { createTabScrollMemory, restoreScroll } from '../lib/tabScroll';
+import { scrollBehavior } from '../lib/reducedMotion';
 import { useI18n } from '../hooks/useI18n';
 import {
   getTg,
@@ -206,7 +212,11 @@ function PageLoading() {
 
 const PAGES: Record<Tab, () => ReactNode> = {
   order: () => <OrderPage />,
-  approve: () => <ApprovalPage />,
+  approve: () => (
+    <Suspense fallback={<PageLoading />}>
+      <ApprovalPage />
+    </Suspense>
+  ),
   run: () => (
     <Suspense fallback={<PageLoading />}>
       <RunPage />
@@ -227,7 +237,11 @@ const PAGES: Record<Tab, () => ReactNode> = {
       <SalesPage />
     </Suspense>
   ),
-  confirm: () => <ConfirmPage />,
+  confirm: () => (
+    <Suspense fallback={<PageLoading />}>
+      <ConfirmPage />
+    </Suspense>
+  ),
   admin: () => (
     <Suspense fallback={<PageLoading />}>
       <AdminPage />
@@ -327,20 +341,25 @@ function ShellInner() {
   // of users, so a non-purchaser saves the 60 kB of RunPage chunk
   // entirely; purchasers get the chunk prefetched right after login.
   const canRun = !!session?.permissions.includes('run.purchase');
+  // DX-PFE-2: review and receiving left the entry chunk; warm them the
+  // same way for the people who have those tabs.
+  const canApprove = !!session?.permissions.includes('order.approve');
+  const canConfirm = !!session?.permissions.includes('delivery.confirm');
   useEffect(() => {
-    if (!canAdmin && !canRun) return;
+    if (!canAdmin && !canRun && !canApprove && !canConfirm) return;
     type IdleCB = (cb: () => void) => number;
     const ric = (window as { requestIdleCallback?: IdleCB }).requestIdleCallback;
     const kick = () => {
-      // Fire both prefetches if applicable. Each is a Promise we
-      // intentionally drop — React.lazy will reuse the same Promise
-      // when the user actually taps in.
-      if (canAdmin) void importAdminPage();
-      if (canRun) void importRunPage();
+      // Fire the prefetches that apply. Each failure is dropped here —
+      // the page's own import retries when the user actually taps in.
+      if (canAdmin) preloadPage('admin');
+      if (canRun) preloadPage('run');
+      if (canApprove) preloadPage('approve');
+      if (canConfirm) preloadPage('confirm');
     };
     if (ric) ric(kick);
     else setTimeout(kick, 0);
-  }, [canAdmin, canRun]);
+  }, [canAdmin, canRun, canApprove, canConfirm]);
 
   // M3.16-B (2026-05-16): tab state lives in navStore (persisted to
   // localStorage). On hydration, resolve the persisted tab against
@@ -351,8 +370,30 @@ function ShellInner() {
   const visibleKeys = visible.map((t) => t.key as Tab);
   const tab = resolveVisibleTab(persistedTab, visibleKeys);
   const setTab = setPersistedTab;
+  // DX-SHL-10 (2026-11-01): <main> is the one scroller; each tab's
+  // position is recorded as it scrolls and put back when the tab returns.
+  const mainRef = useRef<HTMLElement | null>(null);
+  const scrollMemory = useRef(createTabScrollMemory<Tab>()).current;
+  const tabRef = useRef(tab);
+  useLayoutEffect(() => {
+    tabRef.current = tab;
+    const main = mainRef.current;
+    if (!main) return;
+    const stop = restoreScroll(main, scrollMemory.get(tab));
+    // The person's own scroll wins over a restore still waiting for rows.
+    const events = ['wheel', 'touchstart', 'keydown'] as const;
+    events.forEach((type) => main.addEventListener(type, stop, { passive: true, once: true }));
+    return () => {
+      stop();
+      events.forEach((type) => main.removeEventListener(type, stop));
+    };
+  }, [tab, scrollMemory]);
   const requestSetTab = (nextTab: Tab) => {
-    if (nextTab === tab) return;
+    // DX-SHL-10: tapping the tab you are on goes back to its top.
+    if (nextTab === tab) {
+      mainRef.current?.scrollTo({ top: 0, behavior: scrollBehavior() });
+      return;
+    }
     void requestTabChange(nextTab).then((allowed) => {
       if (allowed) setTab(nextTab);
     });
@@ -604,6 +645,7 @@ function ShellInner() {
       className="flex min-h-0 flex-col bg-[var(--c-bg)]"
       style={{ height: 'var(--app-viewport-h, 100dvh)' }}
     >
+      <SkipLinks />
       <SettingsSheet open={settingsOpen} onOpenChange={setSettingsOpen} pageMenu={pageMenu} />
       {inTelegram ? (
         // Reserved strip lets Telegram's chrome (Close + bot title + ⋯)
@@ -693,7 +735,15 @@ function ShellInner() {
 
       <LiveAnnouncer />
       <main
-        className="min-h-0 flex-1 overflow-y-auto"
+        ref={mainRef}
+        id="main-content"
+        // DX-IX-3 / DX-IX-4: where focus lands when the element that had it
+        // is gone (a sheet's opener removed by its action). Focusable from
+        // script only; no ring, it is the page itself.
+        tabIndex={-1}
+        data-focus-fallback=""
+        onScroll={(e) => scrollMemory.save(tabRef.current, e.currentTarget.scrollTop)}
+        className="min-h-0 flex-1 overflow-y-auto outline-none"
         // Native iOS momentum scrolling. Without this, scroll inside
         // the WebView feels stuttery and stops abruptly when you lift
         // your finger — Telegram's WebView doesn't enable this by
@@ -911,6 +961,38 @@ function BottomNav({
 
 /** A11Y-10: pages that render their own visible <h1>. */
 const TABS_WITH_OWN_H1: ReadonlySet<Tab> = new Set<Tab>(['history', 'settlement', 'sales', 'admin']);
+
+/**
+ * DX-IX-5 (2026-11-01): the page's main button and the bottom nav come
+ * after the whole list in the DOM, 40+ Tab presses away. Two links, shown
+ * only while focused, jump there first (WCAG 2.4.1). Visual order stays.
+ */
+function SkipLinks() {
+  const i18n = useI18n();
+  const mainButton = usePageMainButtonState();
+  const jump = (selector: string) => () => {
+    document.querySelector<HTMLElement>(selector)?.focus();
+  };
+  const linkClass =
+    'sr-only focus:not-sr-only focus:fixed focus:left-2 focus:top-2 focus:z-[60] focus:rounded-[var(--r-pill)] ' +
+    'focus:bg-[var(--c-surface)] focus:px-4 focus:py-2 focus:text-old-h3 focus:text-[var(--c-action)] focus:shadow-sheet';
+  return (
+    <>
+      {mainButton?.visible ? (
+        <button type="button" className={linkClass} onClick={jump('[data-testid="page-main-button"]')}>
+          {i18n.t('shell.skip.mainAction')}
+        </button>
+      ) : null}
+      <button
+        type="button"
+        className={linkClass}
+        onClick={jump('[data-testid="primary-nav"] [aria-current="page"], [data-testid="primary-nav"] button')}
+      >
+        {i18n.t('shell.skip.nav')}
+      </button>
+    </>
+  );
+}
 
 /**
  * A11Y-12 (2026-10-31): the app's one polite status region. Pages say

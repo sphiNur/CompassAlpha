@@ -224,9 +224,18 @@ jobs:
 
       - name: Lint
         # apps/web only for now (the one workspace with a lint script).
-        # react-hooks/rules-of-hooks is enforced; exhaustive-deps is wired
-        # but off — see apps/web/eslint.config.js.
+        # react-hooks/rules-of-hooks is enforced; exhaustive-deps is on
+        # except for a baseline of older files — see apps/web/eslint.config.js.
         run: pnpm lint
+
+      - name: Startup JavaScript budget
+        # DX-PFE-2 (2026-11-01): the scripts every cold start downloads
+        # (entry chunk + modulepreloads) were 183 KB gzip, with the English
+        # catalog and two pages in them. One static import brings that
+        # back; fail when they pass the budget in scripts/check-entry-budget.ts.
+        run: |
+          pnpm --filter @compass/web exec vite build --outDir "$RUNNER_TEMP/web-dist" --emptyOutDir --logLevel warn
+          bun run scripts/check-entry-budget.ts "$RUNNER_TEMP/web-dist"
 
       - name: No console.log in user-facing code
         # M3.18 (launch hardening): a leftover console.log(tsv) in

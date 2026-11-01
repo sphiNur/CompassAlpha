@@ -1,8 +1,9 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { cn } from '../cn';
 import { pushTelegramBackHandler } from '../telegramBackStack';
 import { useUiLabels } from '../labels';
+import { useSheetFocus } from '../sheetFocus';
 
 /**
  * Shared "how many sheets are currently open?" counter (M1.5,
@@ -90,8 +91,10 @@ interface SheetProps {
   children: ReactNode;
   footer?: ReactNode;
   /**
-   * Suppress Radix Dialog's default first-focusable autofocus
-   * entirely. User taps to focus.
+   * Suppress Radix Dialog's default first-focusable autofocus: no field
+   * is focused, so no keyboard rises. DX-IX-2 (2026-11-01): focus moves
+   * to the sheet itself instead (it used to stay on the button behind
+   * the sheet). User taps to focus a field.
    *
    * Use when the sheet has multiple equal-priority interactive
    * elements (e.g. ConfirmPage's issue sheet has a note input AND a
@@ -126,13 +129,22 @@ interface SheetProps {
   hasChanges?: boolean;
 
   /**
-   * DX-DLV-08 (2026-11-01): on open, move focus to the sheet's title
-   * instead of the first input. Screen-reader and keyboard users land in
-   * the dialog (with `disableAutoFocus` focus stayed behind the scrim),
-   * and no input is focused, so the iOS keyboard does not pop. Wins over
-   * `disableAutoFocus` / `deferAutoFocusMs`.
+   * DX-DLV-08 (2026-11-01): on open, move focus to the sheet's title. No
+   * input is focused, so the iOS keyboard does not pop, and screen-reader
+   * users hear which form opened (focusing the sheet box, as
+   * `disableAutoFocus` does, names nothing). Wins over `deferAutoFocusMs`.
    */
   focusTitleOnOpen?: boolean;
+
+  /**
+   * DX-ORD-9 (2026-11-01): where focus goes when the sheet closes. A sheet
+   * opened from code (no Radix Trigger) otherwise dropped focus on <body>,
+   * and a keyboard user had to Tab from the top of the page back to the row.
+   * Since DX-IX-3 every sheet returns focus to the element that had it when
+   * it opened; this names a better one (the row's value button when the
+   * opener was a field inside it) and wins while it is still on the page.
+   */
+  returnFocusRef?: RefObject<HTMLElement | null>;
 }
 
 /**
@@ -161,7 +173,29 @@ export function guardedClose(
     });
 }
 
-export function Sheet({
+/**
+ * True from the first time `open` is true onwards. DX-PFE-5 (2026-11-01):
+ * every closed sheet still rendered Radix's Dialog root, provider, portal
+ * and presence — six components per sheet on every parent render, and
+ * most rows carry one (142 Dialog instances on the purchase screen's
+ * first draw). A sheet now mounts the first time it opens and then stays
+ * mounted, so closing still animates out, focus still returns to the
+ * opener, and a reopened sheet behaves exactly as before.
+ */
+export function useOpenedOnce(open: boolean): boolean {
+  const [opened, setOpened] = useState(open);
+  // Adjusting state during render (React's documented pattern): the sheet
+  // mounts in the same render that opens it, not one frame later.
+  if (open && !opened) setOpened(true);
+  return open || opened;
+}
+
+export function Sheet(props: SheetProps) {
+  const mounted = useOpenedOnce(props.open);
+  return mounted ? <OpenedSheet {...props} /> : null;
+}
+
+function OpenedSheet({
   open,
   onOpenChange,
   title,
@@ -172,6 +206,7 @@ export function Sheet({
   deferAutoFocusMs,
   hasChanges = false,
   focusTitleOnOpen = false,
+  returnFocusRef,
 }: SheetProps) {
   const contentRef = useRef<HTMLDivElement | null>(null);
   const titleRef = useRef<HTMLHeadingElement | null>(null);
@@ -239,6 +274,17 @@ export function Sheet({
     return () => clearTimeout(timer);
   }, [open, disableAutoFocus, deferAutoFocusMs, focusTitleOnOpen]);
   useSheetPresence(open, requestOpenChange);
+  // DX-IX-2 / DX-IX-3: sheets that must not raise the keyboard (or raise
+  // it later) take focus themselves; every sheet gives focus back to the
+  // element that opened it when it closes.
+  // DX-DLV-08: `focusTitleOnOpen` keeps the keyboard down too, but lands
+  // on the title rather than the sheet box, so the form is announced by
+  // its name.
+  const focus = useSheetFocus(open, contentRef, {
+    keepKeyboardDown: disableAutoFocus || !!deferAutoFocusMs || focusTitleOnOpen,
+    keyboardDownTargetRef: focusTitleOnOpen ? titleRef : undefined,
+    returnFocusRef,
+  });
 
   return (
     <Dialog.Root open={open} onOpenChange={requestOpenChange}>
@@ -270,16 +316,9 @@ export function Sheet({
               'min(calc(90dvh - var(--app-safe-top)), calc(var(--app-viewport-h) - var(--app-safe-top) - 8px))',
           }}
           aria-describedby={description ? descriptionId : undefined}
-          onOpenAutoFocus={
-            focusTitleOnOpen
-              ? (e) => {
-                  e.preventDefault();
-                  (titleRef.current ?? contentRef.current)?.focus({ preventScroll: true });
-                }
-              : disableAutoFocus || deferAutoFocusMs
-                ? (e) => e.preventDefault()
-                : undefined
-          }
+          tabIndex={-1}
+          onOpenAutoFocus={focus.onOpenAutoFocus}
+          onCloseAutoFocus={focus.onCloseAutoFocus}
         >
           <SheetHeader>
             {/* Drag handle — slightly bolder + wider than the previous

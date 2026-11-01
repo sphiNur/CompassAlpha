@@ -30,6 +30,7 @@ import {
   Switch,
   useToast,
 } from '@compass/ui';
+import { PaymentMethodChips } from '../../../components/PaymentMethodChips';
 import { SKU_STEPS, SKU_UNITS } from '@compass/contracts/limits';
 import type { SkuStep, SkuUnit } from '@compass/contracts';
 import { LANGUAGE_NATIVE_NAMES } from '@compass/i18n';
@@ -43,6 +44,7 @@ import { useI18n, useProductName, useUnitLabel } from '../../../hooks/useI18n';
 import { useAnnounce } from '../../../hooks/useAnnounce';
 import { nativeConfirm } from '../shared';
 import { CatalogImportSheet } from './CatalogImportSheet';
+import { moneyLine } from '../../../lib/money';
 
 /**
  * A11Y-3 (2026-10-31): the "Mol go'shti · Говядина · Beef" line under a
@@ -160,7 +162,7 @@ export function CategoriesSection() {
       toast.success(i18n.t('admin.toast.categoryCreated'));
       setDraft(null);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const update = trpc.admin.categoryUpdate.useMutation({
     onSuccess: () => {
@@ -168,14 +170,14 @@ export function CategoriesSection() {
       toast.success(i18n.t('admin.toast.categoryUpdated'));
       setDraft(null);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const remove = trpc.admin.categoryDelete.useMutation({
     onSuccess: () => {
       void utils.admin.categoryList.invalidate();
       toast.info(i18n.t('admin.toast.categoryArchived'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   const closeEditor = useEditorClose(draft, setDraft, create.isPending || update.isPending);
@@ -474,7 +476,7 @@ export function SkusSection() {
       toast.success(i18n.t('admin.toast.skuCreated'));
       setDraft(null);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const update = trpc.admin.skuUpdate.useMutation({
     onSuccess: () => {
@@ -482,14 +484,14 @@ export function SkusSection() {
       toast.success(i18n.t('admin.toast.skuUpdated'));
       setDraft(null);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const remove = trpc.admin.skuDelete.useMutation({
     onSuccess: () => {
       void utils.admin.skuList.invalidate();
       toast.info(i18n.t('admin.toast.skuArchived'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   const categoryName = (id: string | null): string => {
@@ -590,7 +592,8 @@ export function SkusSection() {
                       ) : null}
                       <CardMeta>
                         {categoryName(sk.categoryId)} · {unitLabel(sk.unit)} ·{' '}
-                        {i18n.t('catalog.sku.stepMeta', { step: sk.step })}
+                        {/* DX-CAT-8 (2026-11-01): "0.5", not the column's "0.500". */}
+                        {i18n.t('catalog.sku.stepMeta', { step: formatQty(sk.step) })}
                         {sk.code ? ` · ${sk.code}` : ''}
                       </CardMeta>
                     </div>
@@ -834,7 +837,7 @@ export function SuppliersSection() {
       toast.success(i18n.t('admin.toast.supplierCreated'));
       setDraft(null);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const update = trpc.admin.supplierUpdate.useMutation({
     onSuccess: () => {
@@ -842,14 +845,14 @@ export function SuppliersSection() {
       toast.success(i18n.t('admin.toast.supplierUpdated'));
       setDraft(null);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const remove = trpc.admin.supplierDelete.useMutation({
     onSuccess: () => {
       void utils.admin.supplierList.invalidate();
       toast.info(i18n.t('admin.toast.supplierArchived'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   const closeEditor = useEditorClose(draft, setDraft, create.isPending || update.isPending);
@@ -1061,7 +1064,7 @@ export function ExpenseTemplatesSection() {
       toast.success(i18n.t('admin.toast.expenseTemplateCreated'));
       setDraft(null);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const update = trpc.admin.expenseTemplateUpdate.useMutation({
     onSuccess: () => {
@@ -1069,14 +1072,14 @@ export function ExpenseTemplatesSection() {
       toast.success(i18n.t('admin.toast.expenseTemplateUpdated'));
       setDraft(null);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const remove = trpc.admin.expenseTemplateDelete.useMutation({
     onSuccess: () => {
       void utils.admin.expenseTemplateList.invalidate();
       toast.info(i18n.t('admin.toast.expenseTemplateArchived'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
@@ -1129,8 +1132,7 @@ export function ExpenseTemplatesSection() {
         {(rows) => (
           <ul className="flex flex-col gap-2" role="list">
             {rows.map((tpl) => {
-              const lineTotal =
-                Number(tpl.defaultQty) * Number(tpl.defaultUnitPrice);
+              const lineTotal = moneyLine(tpl.defaultQty, tpl.defaultUnitPrice) ?? 0;
               return (
                 <Card as="li" key={tpl.id}>
                   <CardHeader>
@@ -1312,27 +1314,12 @@ export function ExpenseTemplatesSection() {
               </Field>
             </div>
             <Field label={i18n.t('admin.field.defaultPaymentMethod')}>
-              <div className="flex gap-2">
-                {(['cash', 'transfer'] as const).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() =>
-                      setDraft({ ...draft, defaultPaymentMethod: m })
-                    }
-                    className={
-                      'flex-1 rounded-[var(--r-pill)] px-3 py-2 text-old-label font-medium ring-hairline ' +
-                      (draft.defaultPaymentMethod === m
-                        ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                        : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
-                    }
-                  >
-                    {m === 'cash'
-                      ? `💵 ${i18n.t('run.label.paymentCash')}`
-                      : `🏦 ${i18n.t('run.label.paymentTransfer')}`}
-                  </button>
-                ))}
-              </div>
+              {/* DX-VIS-7 (2026-11-01): the shared cash / transfer control
+                  (Segmented underneath), not a third hand-rolled copy. */}
+              <PaymentMethodChips
+                value={draft.defaultPaymentMethod === 'transfer' ? 'transfer' : 'cash'}
+                onChange={(m) => setDraft({ ...draft, defaultPaymentMethod: m })}
+              />
             </Field>
             <Field label={i18n.t('admin.field.sortIndex')}>
               <Input
@@ -1412,14 +1399,24 @@ export function DishesSection() {
 
   const [includeArchived, setIncludeArchived] = useState(false);
   const dishesQuery = trpc.dishes.list.useQuery({ includeArchived });
-  const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: false });
+  // DX-DSH-1 (2026-11-01): archived products too, so a recipe row whose
+  // product was taken off the catalog shows its name marked "archived"
+  // instead of an empty "pick an ingredient"; the picker offers active
+  // ones only.
+  const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: true });
 
   const [draft, setDraft] = useState<DishDraft | null>(null);
 
   const skuById = useMemo(() => {
     const m = new Map<
       string,
-      { id: string; names: Record<string, string>; unit: string; step: string }
+      {
+        id: string;
+        names: Record<string, string>;
+        unit: string;
+        step: string;
+        isArchived: boolean;
+      }
     >();
     for (const sku of skusQuery.data ?? []) {
       m.set(sku.id, {
@@ -1427,10 +1424,15 @@ export function DishesSection() {
         names: sku.names as Record<string, string>,
         unit: sku.unit,
         step: sku.step,
+        isArchived: sku.isArchived,
       });
     }
     return m;
   }, [skusQuery.data]);
+  const activeSkus = useMemo(
+    () => (skusQuery.data ?? []).filter((sku) => !sku.isArchived),
+    [skusQuery.data],
+  );
 
   // Group ingredients by dish for quick lookup at render time.
   const ingredientsByDish = useMemo(() => {
@@ -1462,18 +1464,18 @@ export function DishesSection() {
       toast.success(i18n.t('common.saved'));
       setDraft(null);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const archive = trpc.dishes.archive.useMutation({
     onSuccess: () => {
       invalidate();
       toast.success(i18n.t('common.saved'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const unarchive = trpc.dishes.unarchive.useMutation({
     onSuccess: invalidate,
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   const openForEdit = (dishId: string) => {
@@ -1505,7 +1507,7 @@ export function DishesSection() {
       if (t) cleanNames[k] = t;
     }
     if (Object.keys(cleanNames).length === 0) {
-      errToast('common.error')(new Error('dishes.errors.namesRequired'));
+      errToast('common.errors.actionFailed')(new Error('dishes.errors.namesRequired'));
       return;
     }
     // CLS-11 (2026-10-30): a row with a product but no amount (or the
@@ -1513,17 +1515,23 @@ export function DishesSection() {
     // rounded by toFixed. Only a row left completely blank is skipped now;
     // anything half-filled or with too many digits stops the save.
     const filled = draft.ingredients.filter((i) => i.skuId || i.qtyPerServing.trim());
+    // DX-DSH-1: an archived product must be replaced or its row removed;
+    // the row itself says so. The server refuses it as well.
+    if (filled.some((i) => skuById.get(i.skuId)?.isArchived)) {
+      errToast('common.errors.actionFailed')(new Error('dishes.errors.archivedIngredient'));
+      return;
+    }
     if (filled.some((i) => !i.skuId || !(Number(i.qtyPerServing) > 0))) {
-      errToast('common.error')(new Error('dishes.errors.incompleteIngredient'));
+      errToast('common.errors.actionFailed')(new Error('dishes.errors.incompleteIngredient'));
       return;
     }
     if (filled.some((i) => !/^\d{1,8}(\.\d{1,4})?$/.test(i.qtyPerServing.trim()))) {
-      errToast('common.error')(new Error('dishes.errors.qtyTooLarge'));
+      errToast('common.errors.actionFailed')(new Error('dishes.errors.qtyTooLarge'));
       return;
     }
     const price = draft.unitPrice.trim();
     if (price && !/^\d{1,12}(\.\d{1,2})?$/.test(price)) {
-      errToast('common.error')(new Error('dishes.errors.priceTooLarge'));
+      errToast('common.errors.actionFailed')(new Error('dishes.errors.priceTooLarge'));
       return;
     }
     const cleanIngredients = filled.map((i) => ({
@@ -1534,7 +1542,7 @@ export function DishesSection() {
     // 2026-10-21 CA-55: the server rejects a SKU listed twice; say so
     // before the round trip.
     if (new Set(cleanIngredients.map((i) => i.skuId)).size !== cleanIngredients.length) {
-      errToast('common.error')(new Error('dishes.errors.duplicateIngredient'));
+      errToast('common.errors.actionFailed')(new Error('dishes.errors.duplicateIngredient'));
       return;
     }
     save.mutate({
@@ -1599,7 +1607,11 @@ export function DishesSection() {
         empty={
           <EmptyState
             title={i18n.t('dishes.empty.title')}
-            description={i18n.t('dishes.empty.description')}
+            // DX-DSH-2 (2026-11-01): "add menu items here" to someone who
+            // has no New button and can't add any.
+            description={i18n.t(
+              canManage ? 'dishes.empty.description' : 'dishes.empty.readOnlyDescription',
+            )}
           />
         }
       >
@@ -1767,28 +1779,43 @@ export function DishesSection() {
                 <ul className="flex flex-col gap-2" role="list">
                   {draft.ingredients.map((ing, idx) => {
                     const sku = skuById.get(ing.skuId);
+                    const archivedSku = sku?.isArchived ? sku : null;
+                    const archivedNoteId = `dish-ing-${idx}-archived`;
                     return (
                       <li
                         key={idx}
                         className="flex flex-col gap-1 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline"
                       >
                         <div className="flex items-center gap-2">
-                          <select
-                            className="h-[var(--control-h)] min-w-0 flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface)] px-3 text-old-body ring-hairline"
-                            value={ing.skuId}
-                            onChange={(e) => {
-                              const next = [...draft.ingredients];
-                              next[idx] = { ...next[idx]!, skuId: e.target.value };
-                              setDraft({ ...draft, ingredients: next });
-                            }}
-                          >
-                            <option value="">{i18n.t('dishes.field.pickSku')}</option>
-                            {(skusQuery.data ?? []).map((skuRow) => (
-                              <option key={skuRow.id} value={skuRow.id}>
-                                {productName({ names: skuRow.names as Record<string, string> })}
-                              </option>
-                            ))}
-                          </select>
+                          {/* DX-VIS-5: the kit Select (field edge at 3:1);
+                              an archived product is marked by its danger ring. */}
+                          <div className="min-w-0 flex-1">
+                            <Select
+                              value={ing.skuId}
+                              aria-label={i18n.t('dishes.field.pickSku')}
+                              invalid={!!archivedSku}
+                              aria-describedby={archivedSku ? archivedNoteId : undefined}
+                              onChange={(e) => {
+                                const next = [...draft.ingredients];
+                                next[idx] = { ...next[idx]!, skuId: e.target.value };
+                                setDraft({ ...draft, ingredients: next });
+                              }}
+                            >
+                              <option value="">{i18n.t('dishes.field.pickSku')}</option>
+                              {archivedSku ? (
+                                <option value={archivedSku.id} disabled>
+                                  {i18n.t('dishes.label.archivedSku', {
+                                    name: productName({ names: archivedSku.names }),
+                                  })}
+                                </option>
+                              ) : null}
+                              {activeSkus.map((skuRow) => (
+                                <option key={skuRow.id} value={skuRow.id}>
+                                  {productName({ names: skuRow.names as Record<string, string> })}
+                                </option>
+                              ))}
+                            </Select>
+                          </div>
                           <button
                             type="button"
                             onClick={() => {
@@ -1819,6 +1846,15 @@ export function DishesSection() {
                             {sku?.unit ? unitLabel(sku.unit) : '—'}
                           </span>
                         </div>
+                        {archivedSku ? (
+                          <span
+                            id={archivedNoteId}
+                            className="flex items-start gap-1 text-old-label text-[var(--c-danger)]"
+                          >
+                            <span aria-hidden>⚠</span>
+                            <span>{i18n.t('dishes.errors.archivedIngredientRow')}</span>
+                          </span>
+                        ) : null}
                       </li>
                     );
                   })}

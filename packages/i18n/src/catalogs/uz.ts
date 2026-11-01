@@ -32,7 +32,7 @@ export const uz = {
   'common.cancel': 'Bekor qilish',
   'common.archive': 'Arxivlash',
   'common.archived': 'arxivda',
-  'common.unarchive': 'Tiklash',
+  'common.unarchive': 'Arxivdan chiqarish',
   'common.name': 'Nomi',
   'common.remove': 'Olib tashlash',
   'common.save': 'Saqlash',
@@ -125,9 +125,9 @@ export const uz = {
   'admin.clone.noSourceTitle': 'Mos manba yoʻq',
   'admin.clone.noSourceBody':
     'Klonlash uchun kamida bitta BOSHQA doʻkonni boshqarishingiz kerak. Administratordan sizni qoʻshishni soʻrang.',
-  'admin.clone.alsoMembers': 'Manba doʻkon xodimlarini ham tayinlash',
+  'admin.clone.alsoMembers': 'Manba doʻkon aʼzolarini ham tayinlash',
   'admin.clone.alsoMembersHint':
-    'Yoqilganda, manba doʻkon xodimlari oʻz rollari bilan maqsadli doʻkonga qoʻshiladi va ikkalasida ishlaydi. Standart holatda oʻchirilgan: faqat doʻkonning standart roli koʻchiriladi, odamlar emas.',
+    'Yoqilganda, manba doʻkon aʼzolari oʻz rollari bilan maqsadli doʻkonga qoʻshiladi va ikkalasida ishlaydi. Standart holatda oʻchirilgan: faqat doʻkonning standart roli koʻchiriladi, odamlar emas.',
   'admin.clone.whatTitle': 'Bu nima qiladi',
   'admin.clone.whatBody':
     'Rollarning oʻzi (nomi, darajasi, huquqlari) butun ish maydoni uchun umumiy, ularni koʻchirish shart emas. Bu yerda {store} uchun manba doʻkonning standart roli oʻrnatiladi. Faqat yuqoridagi band yoqilganda {store} ga odamlar oʻz rollari bilan qoʻshiladi; {store} da darajasi sizdan past boʻlmagan yoki sizda yoʻq huquqli rollar oʻtkazib yuboriladi va alohida hisoblanadi.',
@@ -135,7 +135,7 @@ export const uz = {
   'ops.activity.emptyBody': 'Buyurtma yoki xaridlar harakatlansa, hodisalar shu yerda chiqadi.',
   'ops.history.emptyTitle': 'Hozircha hech narsa yuborilmagan',
   'ops.history.emptyBody': 'Xodimlar «Yuborish»ni bosgach, buyurtmalar shu yerda koʻrinadi.',
-  'ops.history.contributorBreakdown': 'Ishtirokchilar boʻyicha taqsimot',
+  'ops.history.contributorBreakdown': 'Yuboruvchilar boʻyicha',
   'ops.purge.tabOrders': 'Buyurtmalar',
   'ops.purge.tabRuns': 'Xaridlar',
   'ops.purge.noSessionsTitle': 'Buyurtma yoʻq',
@@ -145,7 +145,7 @@ export const uz = {
   'ops.purge.deleteRunTitle': 'Xaridni oʻchirish',
   'ops.purge.cascadeTitle': 'Unga bogʻlangan buyurtmalar ham oʻchadi',
   'ops.purge.cascadeBody':
-    'Bu xaridni oʻchirish unga bogʻlangan {n} ta buyurtmani ham oʻchiradi. Agar ulardan biri haqiqiy foydalanuvchiga tegishli boʻlsa, server rad etadi — u holda alohida buyurtma boʻyicha tozalashdan foydalaning.',
+    'Bu xaridni oʻchirish unga bogʻlangan {n} ta buyurtmani ham oʻchiradi. Buni qaytarib boʻlmaydi.',
   'ops.audit.allScopes': 'Barcha sohalar',
   'ops.audit.inputs': 'kirish maʼlumotlari',
   'ops.price.howTitle': 'Buni qanday oʻqish kerak',
@@ -159,8 +159,8 @@ export const uz = {
   'ops.maint.targetedTitle': 'Muayyan test buyurtmasi yoki xaridini oʻchirish',
   'ops.maint.targetedBody':
     'Test va haqiqiy maʼlumot bir kunga tushganda ishlatiladi. Roʻyxatni koʻrib, test buyurtmasi yoki xaridini tanlang, nima kaskad oʻchishini koʻring, keyin tasdiqlang. Haqiqiy foydalanuvchilarning buyurtmalariga tegilmaydi.',
-  'ops.maint.resetToday': 'Bugunni tiklash',
-  'ops.maint.resetDateTitle': 'Muayyan kunni tiklash',
+  'ops.maint.resetToday': 'Bugungi maʼlumotlarni tozalash',
+  'ops.maint.resetDateTitle': 'Muayyan kunni tozalash',
   'ops.maint.resetDateBody': 'Qamrov yuqoridagidek, faqat kun boshqa. Pastda kunni tanlang.',
   'ops.maint.preview': 'Oldindan koʻrish',
   'ops.maint.wipeTitle': 'Butun ish maydonini tozalash',
@@ -170,12 +170,11 @@ export const uz = {
   'ops.maint.purgeAllBody':
     '1-qadam qatorlar sonini koʻrsatadi. 2-qadam siz ish maydoni identifikatorini kiritganingizdan keyin oʻchiradi.',
   'ops.maint.previewEverything': 'Hammasini oldindan koʻrish',
-  'ops.maint.resetSheetTitle': '{date} ni tiklash',
+  'ops.maint.resetSheetTitle': '{date} maʼlumotlarini tozalash',
   'ops.maint.resetSheetBody': 'Nima oʻchirilishini koʻrib chiqing, keyin tasdiqlang.',
   'ops.maint.confirmPurgeTitle': 'Tozalashni tasdiqlang',
   'ops.maint.confirmPurgeBody': 'Tasdiqlash uchun ish maydoni identifikatorini «{slug}» kiriting.',
   'ops.maint.confirmPurgeLabel': 'Ish maydoni identifikatori',
-  'people.tapToRevoke': 'Bekor qilish uchun bosing',
   'people.readOnlyStore': 'Faqat koʻrish',
   'people.orgLevelGroup': 'Butun ish maydoni ({n})',
   'people.orgLevelEmptyTitle': 'Ish maydoni darajasidagi aʼzolar yoʻq',
@@ -186,12 +185,25 @@ export const uz = {
     'Rol — ruxsatlar toʻplami. Daraja yuqori boʻlsa, vakolat koʻproq. Rolni aʼzoga faqat uning darajasi sizdan ({rank}) qatʼiy past boʻlsa berish mumkin. Ichki rollarni oʻchirib boʻlmaydi, lekin nomi, tavsifi va ruxsatlari tahrirlanadi.',
   'people.rolesHeading': 'Rollar',
   'people.rolesEmptyTitle': 'Rollar yoʻq',
-  'people.rolesEmptyBody': 'Ichki rollar topilmadi — yordam xizmatiga murojaat qiling.',
+  'people.rolesEmptyBody': 'Ichki rollar topilmadi. Platforma administratoriga xabar bering.',
   'people.newRoleTitle': 'Yangi rol',
   'people.newRoleHint': 'Maxsus rollar 1 dan {max} gacha darajaga ega boʻlishi mumkin.',
   'people.rolePlaceholderName': 'Smena boshligʻi',
   'people.rolePlaceholderDesc': 'Majburiy emas',
   'people.rankField': 'Daraja (1–{max})',
+  'people.slugRule': 'Kichik lotin harflari, raqamlar va chiziqcha, masalan night-shift.',
+  'people.slugInvalid': 'Faqat kichik lotin harflari, raqamlar va chiziqcha (-), masalan night-shift.',
+  'people.slugRequired': 'Majburiy.',
+  'people.rankInvalid': '1 dan {max} gacha butun son kiriting.',
+  'people.roleHasKeysYouLack': 'Bu rolda sizda yoʻq ruxsatlar bor, uni bu yerda bera olmaysiz.',
+  'people.roleNameKeysYouLack': '{name} (sizda yoʻq ruxsatlar bor)',
+  'people.rolesOfMember': 'Rollar',
+  'people.revokeRole': 'Olib tashlash',
+  'people.revokeRoleAria': '{name} dan «{role}» rolini olib tashlash',
+  'people.revokeRoleInStoreAria': '{name} dan {store} dagi «{role}» rolini olib tashlash',
+  'people.searchNoMatch': '«{q}» boʻyicha hech kim topilmadi',
+  'people.clearSearch': 'Qidiruvni tozalash',
+  'admin.invite.tgIdInvalid': 'Telegram ID 4–15 ta raqamdan iborat, telefon raqami yoki @username emas.',
   'people.deleteRole': 'Rolni oʻchirish',
   'people.confirmDeleteRole': '«{name}» roli oʻchirilsinmi?',
   'people.noRole': 'Rol yoʻq',
@@ -201,7 +213,8 @@ export const uz = {
   'people.inviteHint': 'Usulni tanlang',
   'people.inviteViaTelegram': 'Telegram orqali ulashish',
   'people.inviteViaTelegramHint': 'Kontaktni tanlang; havola uni kerakli doʻkonga qoʻshadi.',
-  'people.inviteNoBot': 'Telegram bot hali sozlanmagan.',
+  'people.inviteNoBot':
+    'Telegram bot sozlanmagani uchun hozircha taklif yuborib boʻlmaydi. Platforma administratoriga xabar bering.',
   'people.inviteMessage':
     'Compassʼdagi «{org}»ga qoʻshiling — taklifni qabul qilish uchun havolani oching:',
   'people.inviteCopyLink': 'Taklif havolasini nusxalash',
@@ -264,9 +277,9 @@ export const uz = {
   'people.globalGrantLockedHint':
     'Global (ish maydoni darajasidagi) rollarni faqat ish maydoni administratorlari berishi mumkin. Siz boshqaradigan doʻkonlarda doʻkon darajasidagi rollarni baribir tayinlay olasiz.',
   'people.pickScopeFirst': 'Mavjud rollarni koʻrish uchun yuqorida qamrovni tanlang.',
-  'ops.maint.resetTodayTitle': 'Bugungi butun jarayonni tiklash',
+  'ops.maint.resetTodayTitle': 'Bugungi butun jarayonni tozalash',
   'ops.maint.bulkDisabledBody':
-    'Ishchi serverda bugunni tiklash, sanani tiklash va hammasini tozalash oʻchirilgan. Oʻzingizning alohida test buyurtma yoki xaridlaringizni yuqorida oʻchirishingiz mumkin.',
+    'Ishchi versiyada bugungi maʼlumotlarni tozalash, sanani tozalash va hammasini tozalash oʻchirilgan. Oʻzingizning alohida test buyurtma yoki xaridlaringizni yuqorida oʻchirishingiz mumkin.',
   'ops.maint.bulkDisabledTitle': 'Ommaviy tozalash oʻchirilgan',
   'ops.maint.resetTodayBody':
     '{date} sanasidagi har bir buyurtma, xarid, yetkazish, bildirishnoma va narx tarixi yozuvini oʻchiradi — kim yaratganidan qatʼi nazar — shu buyurtmalar kirgan xaridlar va shu xaridlardagi buyurtmalar bilan birga, boshqa sanada boʻlsa ham. Katalog va aʼzolarga tegilmaydi. Faqat bugun haqiqiy foydalanuvchi maʼlumoti yoʻqligiga ishonchingiz boʻlsa ishlating.',
@@ -285,7 +298,7 @@ export const uz = {
   'ops.event.Approved': 'Buyurtma maʼqullandi',
   'ops.event.Rejected': 'Buyurtma rad etildi',
   'ops.event.Withdrawn': 'Buyurtma qaytarib olindi',
-  'ops.event.Unapproved': 'Maʼqullash bekor qilindi',
+  'ops.event.Unapproved': 'Maʼqullash qaytarib olindi',
   'ops.event.AttachedToRun': 'Buyurtma xaridga qoʻshildi',
   'ops.event.EjectedFromRun': 'Buyurtma xariddan chiqarildi',
   'ops.event.Archived': 'Buyurtma arxivlandi',
@@ -305,10 +318,10 @@ export const uz = {
   'ops.event.PurchaseRevised': 'Xarid tuzatildi',
   'ops.event.UnavailableUndone': '«Mavjud emas» belgisi olib tashlandi',
   'ops.event.TopUpDismissed': 'Qoʻshimcha xarid rad etildi',
-  'ops.event.PurchaseUndone': 'Xarid yozuvi bekor qilindi',
+  'ops.event.PurchaseUndone': 'Xarid yozuvi ortga qaytarildi',
   'ops.event.StoreDeliveryUndone': 'Yetkazish qaytarib olindi',
-  'ops.event.PurchaseStartUndone': 'Xarid boshlanishi bekor qilindi',
-  'ops.event.DeliveryStartUndone': 'Yetkazish boshlanishi bekor qilindi',
+  'ops.event.PurchaseStartUndone': 'Xarid boshlanishi ortga qaytarildi',
+  'ops.event.DeliveryStartUndone': 'Yetkazish boshlanishi ortga qaytarildi',
   'ops.event.SessionsAttachedToRun': 'Buyurtmalar xaridga qoʻshildi',
   'ops.event.SessionEjectedFromRun': 'Buyurtma bu xariddan chiqarildi',
   'ops.event.PurchaserItemAdded': 'Xaridor mahsulot qoʻshdi',
@@ -344,14 +357,14 @@ export const uz = {
   'ops.purge.kind.appLogs': 'Ilova jurnallari',
   'ops.purge.kind.other': 'Boshqa',
   'ops.maint.confirmResetBody': 'Tasdiqlash uchun {date} sanasini kiriting. Buni ortga qaytarib boʻlmaydi.',
-  'ops.maint.confirmResetLabel': 'Tiklanadigan sana',
+  'ops.maint.confirmResetLabel': 'Tozalanadigan sana',
   'ops.purge.deleteRows': '{n} qatorni oʻchirish',
   'ops.purge.counting': 'Hisoblanmoqda…',
   'ops.purge.rowsWouldBeDeleted': '{n} qator oʻchiriladi',
   'ops.price.avg7d': '7 kunlik oʻrtacha',
   'ops.price.avg30d': '30 kunlik oʻrtacha',
   'ops.price.observations': '{n} ta yozuv',
-  'ops.maint.resetting': 'Tiklanmoqda…',
+  'ops.maint.resetting': 'Tozalanmoqda…',
   'ops.maint.nothingToDelete': 'Oʻchiradigan narsa yoʻq',
   'ops.maint.alreadyClean': '{date} uchun maʼlumot yoʻq — allaqachon toza.',
   'ops.maint.rowsFromDate': '{date} dan {n} qator',
@@ -379,11 +392,11 @@ export const uz = {
   'admin.store.defaultRoleHint':
     'Belgilangan boʻlsa, bu doʻkonga aniq rol tanlanmasdan taklif qilingan yangi aʼzolar avtomatik shu rolni oladi.',
   'people.toastRemovedFromStore': 'Doʻkondan olib tashlandi',
-  'people.toastRolesRevoked': '{n} ta rol bekor qilindi',
+  'people.toastRolesRevoked': '{n} ta rol qaytarib olindi',
   'people.toastOverridesDropped': '{n} ta alohida sozlama olib tashlandi',
   'people.toastTransferred': 'Oʻtkazildi',
   'people.toastRolesMirrored': '{n} ta rol nusxalandi',
-  'people.toastFromSideRevoked': 'Manba tomonda {n} ta rol bekor qilindi',
+  'people.toastFromSideRevoked': 'Manba doʻkonda {n} ta rol qaytarib olindi',
   'people.toastGrantedInStores': '{n} ta doʻkonda rol berildi',
   'people.toastAlreadyHad': '({n} tasida allaqachon bor edi)',
   'people.toastAlreadyEverywhere': 'Tanlangan barcha joylarda bu rol allaqachon tayinlangan',
@@ -392,7 +405,7 @@ export const uz = {
   'people.assigneesHeading': 'Tayinlanganlar · {n}',
   'people.effectiveOverridesLine': '{eff} ta amalda · {ov} ta alohida sozlama',
   'ops.history.skuTotalLine': '{n} ta mahsulot · jami {total}',
-  'ops.history.contributorCount': '{n} ta ishtirokchi',
+  'ops.history.contributorCount': '{n} ta yuboruvchi',
   'admin.clone.toastCloned': '{n} ta rol biriktirmasi klonlandi',
   'admin.clone.toastAlreadyExisted': '{n} tasi allaqachon mavjud edi',
   'admin.clone.toastSkippedRank': '{n} tasi oʻtkazib yuborildi (daraja juda yuqori)',
@@ -427,9 +440,8 @@ export const uz = {
   'ops.purge.sessionMeta': '{status} · {items} · {date}',
   'ops.purge.runMeta': '{status} · {sessions}',
   'admin.store.sectionAria': 'Doʻkon boʻlimi',
-  'boot.crashTitle': 'Ilova ishga tushishidan oldin xatolik yuz berdi.',
-  'boot.crashBody':
-    'Xato yuborildi. Mini-ilovani yopib, qaytadan ochib koʻring. Takrorlanaversa, pastdagi maʼlumotni administratorga yuboring.',
+  'boot.crashTitle': 'Nimadir xato ketdi',
+  'boot.crashBody': 'Xato yuborildi. Qayta urinib koʻring yoki mini-ilovani yopib, qaytadan oching. Takrorlanaversa, xato maʼlumotini nusxalab, administratorga yuboring.',
   'boot.tryAgain': 'Qayta urinish',
   'boot.resetAndReload': 'Sessiyani tozalab qayta yuklash',
   'common.noData': 'Maʼlumot yoʻq',
@@ -442,7 +454,7 @@ export const uz = {
   'unit.l': 'L',
   'unit.ml': 'mL',
   'unit.pcs': 'dona',
-  'unit.pack': '{n, plural, other {pochka}}',
+  'unit.pack': '{n, plural, other {qadoq}}',
   'unit.pair': '{n, plural, other {juft}}',
   'unit.bunch': '{n, plural, other {bogʻlam}}',
   'unit.roll': '{n, plural, other {rulon}}',
@@ -452,15 +464,17 @@ export const uz = {
   'common.errors.requestInFlight': "Oldingi urinish hali bajarilmoqda. Birozdan soʻng qayta urinib koʻring.",
   'common.errors.idempotencyKeyReused':
     'Bu soʻrov avvalgisining identifikatorini boshqa mazmun bilan takrorladi, shuning uchun saqlanmadi. Sahifani yangilab, qayta urinib koʻring.',
-  'common.errors.internal': "Serverda xatolik yuz berdi. Qayta urinib koʻring.",
+  'common.errors.internal': 'Bizning tomonda xatolik yuz berdi. Qayta urinib koʻring.',
+  'common.errors.actionFailed':
+    'Amalga oshmadi. Qayta urinib koʻring; takrorlansa, sahifani yangilang.',
   'common.errors.invalidDecimal': 'Koʻpi bilan 3 kasrli son kiriting.',
   'common.errors.positiveDecimal': '0 dan katta, koʻpi bilan 3 kasrli son kiriting.',
-  'common.errors.invalidDate': 'Sana notoʻgʻri. 2026-10-31 kabi yozing.',
+  'common.errors.invalidDate': 'Sana notoʻgʻri. Uni taqvimdan qayta tanlang.',
   'order.errors.tooManyExtras': "Bitta buyurtmada koʻpi bilan 50 ta boshqa mahsulot boʻlishi mumkin.",
   'order.errors.invalidExtraName': "Mahsulot nomini kiriting (200 belgigacha).",
   'order.errors.invalidExtraUnit': "Oʻlchov birligini kiriting (16 belgigacha).",
   'order.errors.invalidExtraQty': "Miqdor 0 dan katta boʻlsin, verguldan keyin koʻpi bilan 3 ta raqam.",
-  'order.errors.qtyTooLarge': 'Bir qatorda koʻpi bilan 999 999,999.',
+  'order.errors.qtyTooLarge': 'Bitta mahsulotda koʻpi bilan 999 999,999.',
   'order.errors.extraNoteTooLong': "Izoh juda uzun (200 belgigacha).",
   'run.errors.cannotPlan':
     'Sizda xarid rejalashtirish huquqi yoʻq. Kerak boʻlsa, administratordan ruxsat soʻrang.',
@@ -471,8 +485,10 @@ export const uz = {
   'common.offlineNotSaved': 'Internet yoʻq — bu oʻzgarish saqlanmadi. Internet qaytganda qayta urinib koʻring.',
   'common.offlineNoData': 'Internet yoʻq — bu maʼlumot bu telefonga hali yuklanmagan. Internet qaytganda oʻzi yuklanadi.',
   'common.savingSlow': 'Saqlanmoqda…',
-  'common.maybeSaved': 'Serverdan javob kelmadi — bu oʻzgarish saqlangan-saqlanmagani nomaʼlum. Qayta oʻzgartirishdan oldin sahifani yangilab tekshiring.',
-  'common.maybeSavedRetrySafe': 'Serverdan javob kelmadi — bu oʻzgarish allaqachon saqlangan boʻlishi mumkin. Qayta saqlash xavfsiz: ikki marta yozilmaydi.',
+  'common.maybeSaved':
+    'Javob kelmadi — bu oʻzgarish saqlangan-saqlanmagani nomaʼlum. Qayta oʻzgartirishdan oldin sahifani yangilab tekshiring.',
+  'common.maybeSavedRetrySafe':
+    'Javob kelmadi — bu oʻzgarish allaqachon saqlangan boʻlishi mumkin. Qayta saqlash xavfsiz: ikki marta yozilmaydi.',
 
   // ── 3. Settings ────────────────────────────────────────────────
   'settings.language.title': 'Til',
@@ -497,12 +513,12 @@ export const uz = {
   'workspace.create.action': 'Yangi ish maydoni yaratish',
   'workspace.create.title': 'Ish maydoni yaratish',
   'workspace.create.body':
-    'Oʻz doʻkonlari, xodimlari, katalogi va hisobotlariga ega alohida ish maydoni.',
+    'Oʻz doʻkonlari, aʼzolari, katalogi va hisobotlariga ega alohida ish maydoni.',
   'workspace.create.name': 'Ish maydoni nomi',
   'workspace.create.namePlaceholder': 'masalan, Riverside Restaurant',
   'workspace.create.submit': 'Ish maydonini yaratish',
   'workspace.create.created': 'Ish maydoni yaratildi',
-  'workspace.create.failed': 'Ish maydonini yaratib boʻlmadi',
+  'workspace.create.failed': 'Ish maydonini yaratib boʻlmadi. Birozdan soʻng qayta urinib koʻring.',
   'settings.about.role': 'Rol',
   'settings.about.roleName.super_admin': "Superadmin",
   'settings.about.roleName.admin': "Administrator",
@@ -525,7 +541,7 @@ export const uz = {
   'permission.order.submit': 'Oʻz buyurtmasini tekshiruvga yuborish',
   'permission.order.approve': 'Buyurtmalarni maʼqullash yoki rad etish',
   'permission.order.claim': 'Buyurtmani tekshiruvga olish',
-  'permission.order.unapprove': 'Maʼqullashni bekor qilish (xariddan oldin)',
+  'permission.order.unapprove': 'Maʼqullashni qaytarib olish (xariddan oldin)',
   'permission.run.create': 'Oʻz doʻkonlari uchun xarid rejalashtirish',
   'permission.run.create.org': 'Butun ish maydoni uchun xarid rejalashtirish',
   'permission.run.purchase': 'Mahsulotlarni xarid qilingan yoki mavjud emas deb belgilash',
@@ -583,7 +599,8 @@ export const uz = {
   'auth.loginTimeout.title': 'Kirish juda uzoq davom etmoqda',
   'auth.loginTimeout.body': 'Internet aloqasini tekshiring, soʻng ilovani yopib, qayta oching.',
   'auth.noAccess.title': 'Hozircha ruxsat yoʻq',
-  'auth.noAccess.body': 'Telegram akkauntingiz tanildi, lekin bu ish maydonida hali rolingiz yoʻq.',
+  'auth.noAccess.body':
+    'Telegram akkauntingiz tanildi, lekin bu ish maydonida hali rolingiz yoʻq. Administratordan rol berishni soʻrang.',
   'shell.noTabs.title':
     'Hozircha siz uchun boʻlim yoʻq',
   'shell.noTabs.body':
@@ -593,10 +610,20 @@ export const uz = {
   'shell.pageNotLoaded.body':
     'Ochish uchun internet kerak. Internet qaytganda oʻzi yuklanadi yoki «Qayta urinish»ni bosing.',
   'shell.offline.body':
-    'Oxirgi yuklangan maʼlumot koʻrsatilmoqda. Buyurtma, xarid va qabul telefonda saqlanadi va internet qaytganda yuboriladi; kun yakuni, savdo va boshqaruv faqat internet bilan saqlanadi.',
+    'Oxirgi yuklangan maʼlumot koʻrsatilmoqda. Buyurtma, xarid va qabul telefonda saqlanadi va internet qaytganda yuboriladi; tekshiruv, kun yakuni, savdo va boshqaruv faqat internet bilan saqlanadi.',
   'shell.offline.lastUpdated': 'oxirgi yangilanish {time}',
-  'shell.offline.noDataBody': 'Bu telefonga hali hech narsa yuklanmagan; maʼlumot internet qaytganda koʻrinadi. Buyurtma, xarid va qabul telefonda saqlanadi va internet qaytganda yuboriladi; kun yakuni, savdo va boshqaruv faqat internet bilan saqlanadi.',
-  'order.pendingSync': '{n} ta oʻzgarish sinxronlanishni kutmoqda',
+  'shell.skip.mainAction': 'Asosiy amalga oʻtish',
+  'shell.skip.nav': 'Navigatsiyaga oʻtish',
+  'approval.offline.needsConnection': 'Tekshiruv uchun internet kerak: tasdiqlash va rad etish telefonda saqlanmaydi.',
+  'workspace.switchConfirm': '{name} ga oʻtilsinmi? Bu sahifadagi saqlanmagan maʼlumotlar yoʻqoladi.',
+  'storeSwitcher.switched': '{store} tanlandi',
+  'run.alloc.qtyFor': '{store} uchun miqdor',
+  'run.alloc.priceFor': '{store} uchun birlik narxi',
+  'ops.purge.dateLabel': 'Sana',
+  'boot.copyDetails': 'Xato maʼlumotini nusxalash',
+  'boot.detailsCopied': 'Nusxalandi. Administratorga yuboring.',
+  'shell.offline.noDataBody': 'Bu telefonga hali hech narsa yuklanmagan; maʼlumot internet qaytganda koʻrinadi. Buyurtma, xarid va qabul telefonda saqlanadi va internet qaytganda yuboriladi; tekshiruv, kun yakuni, savdo va boshqaruv faqat internet bilan saqlanadi.',
+  'order.pendingSync': '{n} ta oʻzgarish yuborilishini kutmoqda',
   'shell.pageError.title': 'Bu sahifada xatolik yuz berdi',
   'shell.pageError.body': 'Boshqa sahifalar ishlaydi. Qayta urinib koʻring yoki boshqa sahifaga oʻting.',
   'auth.invite.failedStillIn':
@@ -612,7 +639,7 @@ export const uz = {
   'auth.onboarding.nameLabel': 'Ismingiz',
   'auth.onboarding.namePlaceholder': 'masalan, Ali',
   'auth.onboarding.continue': 'Ismni saqlash',
-  'auth.onboarding.failed': 'Ismni saqlab boʻlmadi',
+  'auth.onboarding.failed': 'Ismni saqlab boʻlmadi. Qayta urinib koʻring.',
   'auth.noStoreYet.title': 'Hali doʻkon yoʻq',
   'auth.noStoreYet.body': 'Avval Boshqaruv › Doʻkonlar boʻlimida doʻkon yarating: buyurtma, qabul, kun yakuni va savdo doʻkon boʻyicha yuritiladi.',
   'auth.noStoreYet.action': 'Doʻkon yaratish',
@@ -625,7 +652,8 @@ export const uz = {
     'Hisob tayyor, lekin sizni hali doʻkonga qoʻshishmagan. Doʻkon boshqaruvchisidan sizni qoʻshishni soʻrang.',
 
   // ── 5. Auth errors ─────────────────────────────────────────────
-  'auth.errors.botTokenMissing': 'Bot tokeni sozlanmagan',
+  'auth.errors.botTokenMissing':
+    'Telegram orqali kirish hali sozlanmagan. Platforma administratoriga xabar bering.',
   'auth.errors.invalidInitData': 'Telegram sessiyasi notoʻgʻri — ilovani qayta oching',
   'auth.errors.invalidRefresh': 'Sessiya muddati tugagan — qaytadan kiring',
   'auth.errors.refreshReplayDetected':
@@ -687,14 +715,16 @@ export const uz = {
   'dev.switchPersona': 'Test foydalanuvchisini almashtirish',
   'auth.errors.noOrg': 'Ish maydoni topilmadi — oʻchirilgan boʻlishi mumkin.',
   'auth.errors.required': 'Kirish talab qilinadi',
-  'auth.errors.signInFailed': 'Kirish bajarilmadi',
+  'auth.errors.signInFailed': 'Kirib boʻlmadi. Ilovani yopib, Telegramdan qayta oching.',
   'auth.retryInvite': 'Taklifni qayta urinish',
   'auth.errors.noInitData':
     'Compassʼni Telegram ichida oching (bot yoki taklif havolasi orqali).',
-  'auth.errors.inviteNotFound': 'Taklif havolasi yaroqsiz yoki oʻchirilgan.',
+  'auth.errors.inviteNotFound':
+    'Taklif havolasi yaroqsiz yoki oʻchirilgan. Havolani yuborgan odamdan yangisini soʻrang.',
   'auth.errors.inviteExpired':
     'Taklif muddati tugagan. Doʻkon boshqaruvchisidan yangi havola soʻrang.',
-  'auth.errors.inviteUsed': 'Bu taklif allaqachon ishlatilgan.',
+  'auth.errors.inviteUsed':
+    'Bu taklif allaqachon ishlatilgan. Havolani yuborgan odamdan yangisini soʻrang.',
   'auth.errors.inviteMemberSuspended':
     'Bu ish maydonidagi aʼzoligingiz toʻxtatilgan. Tiklash uchun administratorga murojaat qiling.',
   'auth.errors.invalidTimezone': 'Vaqt mintaqasi notoʻgʻri.',
@@ -720,7 +750,7 @@ export const uz = {
   'subscription.trialEnds': 'Sinov muddati tugaydi',
   'subscription.periodEnds': 'Toʻlangan davr tugaydi',
   'subscription.storesUsage': 'Doʻkonlar',
-  'subscription.membersUsage': 'Xodimlar',
+  'subscription.membersUsage': 'Aʼzolar',
   'subscription.unlimited': 'cheksiz',
   'subscription.readOnlyTitle': 'Faqat oʻqish rejimi',
   'subscription.readOnlyBody':
@@ -731,10 +761,12 @@ export const uz = {
   'subscription.status.suspended': 'Toʻxtatilgan',
   'subscription.status.canceled': 'Bekor qilingan',
   'subscription.errors.readOnly': 'Obuna tugagan, ish maydoni faqat oʻqish rejimida.',
-  'subscription.errors.storeLimit': 'Tarifdagi doʻkonlar limiti tugadi. Tarifni yangilang.',
-  'subscription.errors.memberLimit': 'Tarifdagi xodimlar limiti tugadi. Tarifni yangilang.',
+  'subscription.errors.storeLimit':
+    'Tarifdagi doʻkonlar limiti tugadi. Tarifni yangilang yoki platforma administratoriga murojaat qiling.',
+  'subscription.errors.memberLimit':
+    'Tarifdagi aʼzolar limiti tugadi. Tarifni yangilang yoki platforma administratoriga murojaat qiling.',
   'platform.empty': 'Ish maydonlari yoʻq',
-  'platform.usage': '{stores} doʻkon · {members} xodim',
+  'platform.usage': '{stores} ta doʻkon · {members} ta aʼzo',
   'platform.manage': 'Boshqarish',
   'platform.saved': 'Obuna yangilandi',
   'platform.sheet.title': '{name}ni boshqarish',
@@ -762,7 +794,7 @@ export const uz = {
   'admin.subsection.financeHint':
     'Naqd va oʻtkazma solishtiruvi · kun / yetkazib beruvchi / doʻkon',
   'admin.subsection.maintenance': 'Xizmat',
-  'admin.subsection.activityHint': 'Asosiy koʻrsatkichlar + soʻnggi audit hodisalari',
+  'admin.subsection.activityHint': 'Asosiy koʻrsatkichlar + buyurtma va xaridlardagi soʻnggi oʻzgarishlar',
   'admin.subsection.historyHint': 'Oxirgi 30 kun buyurtmalari',
   'admin.subsection.auditHint': 'Katalog, rol, ruxsat oʻzgarishlari',
   'admin.subsection.priceReportHint': 'Kunlik narxlar · mahsulot boʻyicha 7k / 30k oʻrtacha',
@@ -789,7 +821,7 @@ export const uz = {
   'admin.confirm.suspend':
     '{name} hisobi toʻxtatilsinmi? Siz qayta yoqmaguningizcha u kira olmaydi.',
   'admin.confirm.removeFromStore':
-    '{name} {store} doʻkonidan olib tashlansinmi?\n\nBu doʻkondagi rollari va ruxsatlari bekor qilinadi. Boshqa doʻkonlari oʻzgarmaydi.',
+    '{name} {store} doʻkonidan olib tashlansinmi?\n\nBu doʻkondagi rollari va ruxsatlari qaytarib olinadi. Boshqa doʻkonlari oʻzgarmaydi.',
   'admin.confirm.removeFromOrg':
     '{name} bu ish maydonidan olib tashlansinmi? Bu yerdagi barcha doʻkon va rollarini yoʻqotadi, qaytish uchun yangi taklif kerak boʻladi.',
   'admin.label.thisStore': 'bu doʻkon',
@@ -805,7 +837,7 @@ export const uz = {
   'admin.field.storesPickAtLeastOne': 'Doʻkonlar * (kamida bittasini tanlang)',
   'admin.invite.byTgId.title': 'Telegram ID bilan qoʻshish',
   'admin.invite.byTgId.description':
-    'Shaxsiy maʼlumotlar bot bilan /start qilingach avtomatik toʻldiriladi.',
+    'Darhol qoʻshiladi; mini-ilovani birinchi marta ochganda maʼlumotlari avtomatik toʻldiriladi.',
   'admin.invite.byTgId.submit': 'Bu odamni qoʻshish',
   'admin.invite.link.title': 'Taklif havolasini yaratish',
   'admin.invite.link.description':
@@ -813,7 +845,8 @@ export const uz = {
   'admin.invite.link.hint':
     'Havola bir marta ishlatiladi, 7 kundan keyin eskiradi va faqat Telegram ichida ochiladi.',
   'admin.invite.link.submit': 'Taklif havolasini yaratish',
-  'admin.invite.tgIdHint': 'Foydalanuvchi oʻz ID sini bilmasa, botga /id yozsin.',
+  'admin.invite.tgIdHint':
+    'ID ni bilmaysizmi? Undan mini-ilovani ochishni soʻrang: ekranda uning Telegram ID si chiqadi, uni sizga yuborsin.',
   'admin.invite.noRoleYet': '— hozircha rolsiz (keyinroq beriladi) —',
   'admin.invite.staffNeedStoreHint':
     'Xodimlar buyurtma berishlari uchun doʻkonga biriktirilishi kerak.',
@@ -845,9 +878,11 @@ export const uz = {
   'admin.workspace.yourRole': 'Sizning rolingiz',
   'admin.workspace.telegram': 'Telegram',
   'auth.errors.sessionStale': 'Sessiya eskirgan — sahifani yangilang',
-  'auth.errors.storeArchived': 'Bu doʻkon arxivlangan',
-  'auth.errors.storeForbidden': 'Siz bu doʻkonga biriktirilmagansiz',
-  'auth.errors.notAssignedToStore': 'Siz bu doʻkonga biriktirilmagansiz',
+  'auth.errors.storeArchived': 'Bu doʻkon arxivlangan. Boshqa doʻkonni tanlang.',
+  'auth.errors.storeForbidden':
+    'Siz bu doʻkonga biriktirilmagansiz. Boshqa doʻkonni tanlang yoki administratordan sizni qoʻshishni soʻrang.',
+  'auth.errors.notAssignedToStore':
+    'Siz bu doʻkonga biriktirilmagansiz. Boshqa doʻkonni tanlang yoki administratordan sizni qoʻshishni soʻrang.',
   'auth.errors.userMissing': 'Hisob topilmadi — oʻchirilgan boʻlishi mumkin. Ilovani qayta oching.',
   'auth.errors.cannotGrantEqualOrHigher':
     'Oʻz darajangizdagi yoki undan yuqori rolni bera olmaysiz',
@@ -863,7 +898,7 @@ export const uz = {
   'admin.errors.slugTaken': 'Bu identifikator allaqachon band.',
   'admin.errors.codeTaken': 'Bu kod allaqachon band.',
   'admin.errors.invalidExpiresAt': 'Amal qilish muddati kelajakdagi toʻgʻri sana boʻlishi kerak.',
-  'admin.errors.cannotLeaveZeroStores': 'Xodim kamida bitta doʻkonga biriktirilgan boʻlishi shart',
+  'admin.errors.cannotLeaveZeroStores': 'Aʼzo kamida bitta doʻkonga biriktirilgan boʻlishi shart',
   'admin.errors.cannotRemoveLastAdmin':
     'Ish maydonidagi oxirgi administratorni olib tashlab boʻlmaydi. Avval boshqa kishini administrator qiling.',
   'admin.errors.cannotRemoveSelf': 'Oʻzingizni oʻchira olmaysiz',
@@ -872,12 +907,14 @@ export const uz = {
   'admin.errors.categoryNotFound':
     'Toifa topilmadi — hozirgina arxivlangan boʻlishi mumkin. Sahifani yangilang.',
   'admin.errors.inviteNeedsStore': 'Admin boʻlmagan taklif uchun kamida bitta doʻkon kerak',
-  'admin.errors.inviteCreateFailed': 'Taklifni yaratib boʻlmadi',
-  'admin.errors.memberCreateFailed': 'Xodim yozuvini yarata olmadik',
+  'admin.errors.inviteCreateFailed': 'Taklifni yaratib boʻlmadi. Qayta urinib koʻring.',
+  'admin.errors.memberCreateFailed':
+    'Aʼzoni qoʻshib boʻlmadi. Roʻyxatni yangilab, qayta urinib koʻring.',
   'admin.errors.memberNotFound':
     'Aʼzo topilmadi — hozirgina olib tashlangan boʻlishi mumkin. Sahifani yangilang.',
   'admin.errors.orgNotFound': 'Ish maydoni topilmadi — oʻchirilgan boʻlishi mumkin.',
-  'admin.errors.purgeConfirmMismatch': 'Tasdiq matni mos kelmadi — tozalash bekor qilindi',
+  'admin.errors.purgeConfirmMismatch':
+    'Tasdiq matni mos kelmadi, hech narsa oʻchirilmadi. Uni koʻrsatilganidek aniq kiriting.',
   'admin.errors.purgeRequiresSuperAdmin': 'Maʼlumotlarni faqat superadmin tozalashi mumkin',
   'admin.errors.orgAdminMustBeGlobal':
     'Ish maydoni darajasidagi rol va ruxsatlar faqat global berilishi mumkin',
@@ -889,17 +926,17 @@ export const uz = {
   'admin.errors.unknownPermission': 'Bunday ruxsat yoʻq',
   'admin.errors.builtinRankLocked': 'Ichki rolning darajasini oʻzgartirib boʻlmaydi',
   'admin.errors.runHasForeignSessions':
-    'Bu xaridda boshqa odamlarning buyurtmalari bor — oʻchirib boʻlmaydi',
+    'Bu xaridda boshqa odamlarning buyurtmalari bor — oʻchirib boʻlmaydi.',
   'admin.errors.sessionHasForeignAuthors':
-    'Bu buyurtmada boshqa odamlarning yozuvlari bor — oʻchirib boʻlmaydi. Bu yerda faqat oʻzingizning sinov buyurtmalaringizni oʻchirish mumkin',
+    'Bu buyurtmada boshqa odamlarning yozuvlari bor — oʻchirib boʻlmaydi. Bu yerda faqat oʻzingizning sinov buyurtmalaringizni oʻchirish mumkin.',
   'admin.errors.runActedOnByOthers':
     'Bu xarid yoki undagi buyurtmalar bilan boshqa odam allaqachon ishlagan (olgan, sotib olgan, qabul qilgan yoki tekshirgan), shuning uchun uni test maʼlumoti sifatida oʻchirib boʻlmaydi.',
   'admin.errors.sessionActedOnByOthers':
     'Bu buyurtma bilan boshqa odam allaqachon ishlagan (tekshirgan, olgan yoki rad etgan), shuning uchun uni test maʼlumoti sifatida oʻchirib boʻlmaydi.',
   'admin.errors.bulkPurgeDisabledInProduction':
-    'Ishchi serverda ommaviy tozalash (bugunni tiklash, sanani qayta tiklash, hammasini tozalash) oʻchirilgan. Bitta buyurtma yoki xaridni oʻchirish ishlaydi.',
+    'Ishchi versiyada ommaviy tozalash (bugungi maʼlumotlarni tozalash, sanani tozalash, hammasini tozalash) oʻchirilgan. Bitta buyurtma yoki xaridni oʻchirish ishlaydi.',
   'admin.errors.purgeGuardWaiverDisabledInProduction':
-    'Ishchi serverda boshqalarning buyurtma va xaridlarini oʻchirishdan saqlaydigan tekshiruvni oʻtkazib boʻlmaydi.',
+    'Ishchi versiyada boshqalarning buyurtma va xaridlarini oʻchirishdan saqlaydigan tekshiruvni oʻtkazib boʻlmaydi.',
   'admin.errors.purgeHasSettlements':
     'Bu sanalarda kun yakunlari bor. Kun yakuni tarixini oʻchirib boʻlmaydi, shuning uchun tozalab boʻlmaydi',
   'admin.errors.runNotFound':
@@ -915,11 +952,11 @@ export const uz = {
     'Doʻkon topilmadi — hozirgina arxivlangan boʻlishi mumkin. Sahifani yangilang.',
   'admin.errors.supplierNotFound':
     'Yetkazib beruvchi topilmadi — hozirgina arxivlangan boʻlishi mumkin. Sahifani yangilang.',
-  'admin.errors.userCreateFailed': 'Foydalanuvchini yarata olmadik',
+  'admin.errors.userCreateFailed': 'Bu odamni qoʻshib boʻlmadi. Qayta urinib koʻring.',
   'admin.errors.cannotDeleteBuiltinRole':
     'Oʻrnatilgan rollarni oʻchirib boʻlmaydi, lekin nomi, tavsifi va ruxsatlarini oʻzgartirish mumkin.',
   'admin.errors.roleHasBindings':
-    'Bu rol hali xodimlarga biriktirilgan — avval ularni qaytarib oling',
+    'Bu rol hali aʼzolarga biriktirilgan — avval ularni qaytarib oling',
   'admin.errors.permissionNotFound': 'Bunday ruxsat yoʻq.',
   'admin.errors.notAdminOfStore': 'Bu doʻkon administratori siz emas — bu amalni bajara olmaysiz',
   'admin.errors.memberNotInSourceStore':
@@ -931,14 +968,14 @@ export const uz = {
     'Standart rol doʻkon darajasidagi rol boʻlishi kerak — administrator va superadmin yaroqsiz',
 
   'admin.action.invite': '+ Taklif qilish',
-  'admin.empty.members.title': 'Hali xodimlar yoʻq',
+  'admin.empty.members.title': 'Hali aʼzolar yoʻq',
   'admin.empty.members.description': 'Birinchisini qoʻshish uchun yuqorida «+ Taklif»ga teging.',
   'admin.empty.noStoresInThisStore.title': 'Bu doʻkonda xodim yoʻq',
   'admin.empty.noStoresInThisStore.description':
-    'Sarlavhadagi doʻkon kontekstini oʻzgartiring yoki «Taklif» tugmasini bosing.',
-  'admin.toast.memberUpdated': 'Xodim yangilandi',
-  'admin.toast.memberRemoved': 'Xodim oʻchirildi',
-  'admin.toast.memberAdded': 'Xodim qoʻshildi',
+    'Kimnidir qoʻshish uchun «Taklif qilish» tugmasini bosing.',
+  'admin.toast.memberUpdated': 'Aʼzo yangilandi',
+  'admin.toast.memberRemoved': 'Aʼzo olib tashlandi',
+  'admin.toast.memberAdded': 'Aʼzo qoʻshildi',
   'admin.toast.userExists': 'Allaqachon bu ish maydonida — tanlangan doʻkonlar va rollar qoʻshildi',
   'admin.toast.roleRevoked': 'Rol qaytarib olindi',
   'admin.toast.roleCreated': 'Rol yaratildi',
@@ -946,7 +983,7 @@ export const uz = {
   'admin.toast.roleDeleted': 'Rol oʻchirildi',
   'admin.toast.linkCopied': 'Taklif havolasi nusxalandi',
   'admin.toast.clipboardUnavailable': 'Vaqtinchalik xotira mavjud emas',
-  'admin.toast.couldNotCopy': 'Nusxalab boʻlmadi',
+  'admin.toast.couldNotCopy': 'Nusxalab boʻlmadi. Matnni belgilab, qoʻlda nusxalang.',
   'admin.toast.storeCreated': 'Doʻkon yaratildi',
   'admin.toast.storeUpdated': 'Doʻkon yangilandi',
   'admin.toast.storeArchived': 'Doʻkon arxivlandi',
@@ -961,11 +998,12 @@ export const uz = {
   'admin.toast.supplierArchived': 'Yetkazib beruvchi arxivlandi',
   'admin.toast.sessionDeleted': 'Buyurtma oʻchirildi — {n} ta yozuv',
   'admin.toast.runDeleted': 'Xarid oʻchirildi — {n} ta yozuv',
-  'admin.toast.dateReset': '{date} tiklandi: {n} ta yozuv oʻchirildi',
+  'admin.toast.dateReset': '{date} tozalandi: {n} ta yozuv oʻchirildi',
   'admin.toast.dataPurged': '{n} ta yozuv {tables} ta jadvaldan tozalandi',
 
   // ── 7. Upload errors ───────────────────────────────────────────
-  'upload.errors.notConfigured': 'Serverda fayl yuklash sozlanmagan',
+  'upload.errors.notConfigured':
+    'Hozir rasm yuklab boʻlmaydi. Rasmsiz saqlang yoki administratorga xabar bering.',
   'upload.errors.unsupportedContentType': 'Bu fayl turiga ruxsat yoʻq',
 
   // ── 8. Order page ──────────────────────────────────────────────
@@ -1006,9 +1044,10 @@ export const uz = {
   'order.toast.submitted': 'Buyurtma yuborildi ✓',
   'order.toast.submitFailedNetwork':
     'Internet yoʻq — buyurtma yuborilmadi. Internet qaytgach, «Buyurtmani yuborish»ni yana bosing.',
-  'order.toast.submitFailed': 'Buyurtmani yuborib boʻlmadi',
+  'order.toast.submitFailed':
+    'Buyurtmani yuborib boʻlmadi. Qoralama saqlangan — «Buyurtmani yuborish»ni yana bosing.',
   'order.toast.adjustFailed': 'Oʻzgarish saqlanmadi. Qayta urinib koʻring.',
-  'order.toast.syncing': 'Hali sinxronlanmoqda — birozdan soʻng «Buyurtmani yuborish»ni bosing.',
+  'order.toast.syncing': 'Hali yuborilmoqda — birozdan soʻng «Buyurtmani yuborish»ni bosing.',
   'order.action.submitOrder': 'Buyurtmani yuborish',
   'order.action.submitting': 'Yuborilmoqda…',
   'order.review.title': 'Buyurtmani koʻrib chiqing',
@@ -1040,8 +1079,17 @@ export const uz = {
   'run.extras.recordExpenseReason': 'Xodim buyurtmasidagi boshqa narsa',
   'order.extras.add': '+ Boshqa mahsulot',
   'order.extras.namePlaceholder': 'Mahsulot nomi',
+  'order.status.rejectedBy': '{who} · {time}',
+  'order.catalogEmpty.title': 'Hali mahsulotlar yoʻq',
+  'order.catalogEmpty.description': 'Ularni administrator «{path}» boʻlimida qoʻshadi. Katalogda yoʻq narsalarni pastdagi «Boshqa narsalar»ga yozing.',
+  'order.review.needsNetwork': 'Yuborish uchun internet kerak. Oʻzgarishlar telefonda saqlangan.',
+  'order.extras.qtyLabel': 'Miqdor',
+  'order.extras.unitLabel': 'Birlik',
+  'order.extras.wholeNumber': 'Bu birlik uchun faqat butun son.',
+  'order.categories.uncategorized': 'Turkumsiz',
+  'order.batches.backToReceipt': 'Bugungi partiyalarga qaytish',
   'order.extras.remove': 'Oʻchirish',
-  'order.toast.extrasSaveFailed': 'Saqlash imkonsiz boʻldi — qayta urinib koʻring.',
+  'order.toast.extrasSaveFailed': 'Boshqa narsalarni saqlab boʻlmadi. Qayta urinib koʻring.',
 
   // ── ApprovalPage ────────────────────────────────────────────────
   'approval.empty.title': 'Tekshiruvni kutayotgan buyurtma yoʻq',
@@ -1055,8 +1103,8 @@ export const uz = {
   'approval.viewItems': 'Mahsulotlarni koʻrish',
   'approval.tabsAriaLabel': 'Tekshiruv holati boʻyicha filtr',
   'approval.submittedBy': '{name} tomonidan yuborilgan',
-  'approval.itemsCount': '{n, plural, =1 {1 pozitsiya} other {{n} ta pozitsiya}}',
-  'approval.contributorsCount': '{n, plural, =1 {1 ishtirokchi} other {{n} ta ishtirokchi}}',
+  'approval.itemsCount': '{n, plural, =1 {1 ta mahsulot} other {{n} ta mahsulot}}',
+  'approval.contributorsCount': '{n, plural, =1 {1 yuboruvchi} other {{n} ta yuboruvchi}}',
   'approval.hideItems': 'Yashirish',
   'approval.approve': 'Maʼqullash',
   'approval.reject': 'Rad etish',
@@ -1066,8 +1114,8 @@ export const uz = {
   'approval.confirmTakeover':
     '{who} buyurtmani ochdi, lekin hech narsa qilmadi. Uni oʻzingiz tekshirasizmi?',
   'approval.unknownReviewer': 'boshqa tekshiruvchi',
-  'approval.undo': 'Bekor qilish',
-  'approval.unapprove': 'Maʼqullashni bekor qilish',
+  'approval.undo': 'Ortga qaytarish',
+  'approval.unapprove': 'Maʼqullashni qaytarib olish',
   'approval.toast.approved': 'Maʼqullandi ✓',
   'approval.toast.rejected': 'Rad etildi',
   'approval.toast.claimed': 'Endi siz tekshiryapsiz',
@@ -1078,18 +1126,19 @@ export const uz = {
   'approval.toast.claimTakenOver':
     'Siz tekshirayotgan buyurtmani ({owner}) {who} oʻz zimmasiga oldi.',
   'approval.toast.undoTooLate':
-    'Bekor qilib boʻlmadi: bu buyurtma bilan boshqa odam allaqachon ishlagan.',
-  'approval.toast.unapproved': 'Maʼqullash bekor qilindi',
+    'Ortga qaytarib boʻlmadi: bu buyurtma bilan boshqa odam allaqachon ishlagan.',
+  'approval.toast.unapproved': 'Maʼqullash qaytarib olindi',
   'approval.toast.approveFailed': 'Buyurtmani maʼqullab boʻlmadi. Qayta urinib koʻring.',
   'approval.toast.rejectFailed': 'Buyurtmani rad etib boʻlmadi. Qayta urinib koʻring.',
   'approval.items.loading': 'Mahsulotlar yuklanmoqda…',
-  'approval.items.failed': 'Mahsulotlarni yuklab boʻlmadi.',
+  'approval.items.failed':
+    'Mahsulotlarni yuklab boʻlmadi. Sahifani yangilab, qayta urinib koʻring.',
   'approval.confirm.reject.title': 'Buyurtmani rad etamizmi?',
   'approval.confirm.reject.body':
     'Yuboruvchi sababingizni koʻradi va oʻzgartirib qaytadan yuborishi mumkin.',
   'approval.confirm.reject.reasonPlaceholder': 'masalan: takroriy buyurtma',
   'approval.confirm.reject.reasonLabel': 'Sabab (majburiy, yuboruvchi koʻradi)',
-  'approval.confirm.unapprove.title': 'Maʼqullash bekor qilinsinmi?',
+  'approval.confirm.unapprove.title': 'Maʼqullash qaytarib olinsinmi?',
   'approval.confirm.unapprove.body':
     'Buyurtma navbatga qaytariladi. Faqat xaridga qoʻshilmasdan oldin mumkin.',
 
@@ -1115,7 +1164,7 @@ export const uz = {
     'Sizda buyurtma berish huquqi yoʻq. Kerak boʻlsa, doʻkon boshqaruvchisidan ruxsat soʻrang.',
   'order.errors.cannotArchive':
     'Sizda buyurtmalarni arxivlash huquqi yoʻq. Kerak boʻlsa, doʻkon boshqaruvchisidan ruxsat soʻrang.',
-  'order.errors.cannotEditOthersLine': 'Boshqa odamning qatorini tahrirlab boʻlmaydi',
+  'order.errors.cannotEditOthersLine': 'Boshqa odam qoʻshgan mahsulotni tahrirlab boʻlmaydi',
   'order.errors.emptyOrder': 'Yuborishdan oldin kamida bitta mahsulot qoʻshing',
   'order.errors.cannotClaim':
     'Sizda buyurtmalarni tekshirish huquqi yoʻq. Kerak boʻlsa, doʻkon boshqaruvchisidan ruxsat soʻrang.',
@@ -1146,11 +1195,14 @@ export const uz = {
   'order.errors.cannotWithdrawWhileClaimed':
     'Bu buyurtma hozir tekshirilmoqda, shuning uchun uni hozircha qaytarib boʻlmaydi.',
   'order.errors.cannotUnapprove':
-    'Sizda maʼqullashni bekor qilish huquqi yoʻq. Kerak boʻlsa, doʻkon boshqaruvchisidan ruxsat soʻrang.',
+    'Sizda maʼqullashni qaytarib olish huquqi yoʻq. Kerak boʻlsa, doʻkon boshqaruvchisidan ruxsat soʻrang.',
   'order.errors.notUnapprovable': 'Buyurtma maʼqullanmagan',
-  'order.errors.alreadyInRun': 'Allaqachon xaridga qoʻshilgan',
-  'order.errors.cannotAttach': 'Buyurtmani xaridga qoʻshib boʻlmaydi',
-  'order.errors.cannotEject': 'Buyurtmani xariddan olib boʻlmaydi',
+  'order.errors.alreadyInRun':
+    'Bu buyurtma allaqachon xaridda. Uni koʻrish uchun sahifani yangilang.',
+  'order.errors.cannotAttach':
+    'Bu buyurtmani xaridga qoʻshib boʻlmaydi: u endi maʼqullangan holatda emas. Sahifani yangilab, holatini tekshiring.',
+  'order.errors.cannotEject':
+    'Bu buyurtmani xariddan chiqarib boʻlmaydi: undagi biror mahsulot allaqachon olingan yoki mavjud emas deb belgilangan, yoki sizda bunga huquq yoʻq. Avval oʻsha mahsulotlarni ortga qaytaring.',
   'order.errors.streamMissing': 'Buyurtma boshlanmagan',
   'order.errors.sessionMissing':
     'Buyurtma topilmadi — hozirgina oʻchirilgan boʻlishi mumkin. Sahifani yangilang.',
@@ -1158,7 +1210,8 @@ export const uz = {
   'order.errors.lockedByStatus':
     'Bu buyurtma allaqachon maʼqullangan yoki xaridga qoʻshilgan, uni endi oʻzgartirib boʻlmaydi.',
   'order.errors.notEditor': 'Faqat egasi yoki tekshiruvchi tahrirlay oladi',
-  'order.errors.targetLineNotFound': 'Bu qator allaqachon oʻchirilgan',
+  'order.errors.targetLineNotFound':
+    'Bu mahsulot allaqachon olib tashlangan. Joriy buyurtmani koʻrish uchun sahifani yangilang.',
   'order.errors.staleSeq':
     'Buni hozirgina kimdir oʻzgartirdi. Sahifani yangilab, soʻnggi holatni koʻring va oʻzgarishni qayta kiriting.',
 
@@ -1203,7 +1256,7 @@ export const uz = {
   'run.previewShare.openedWithCopy': 'Kontakt tanlash ochildi; roʻyxat ham nusxalandi',
   'run.preview.groupTotal': 'Jami',
   'run.preview.priceUnknown': 'Narx soʻralsin',
-  'run.preview.unknownPrices': 'narxsiz: {n}',
+  'run.preview.unknownPrices': '{n} ta mahsulot narxsiz',
   'run.view.perCategory': 'Turkum boʻyicha',
   'run.view.uncategorized': 'Turkumsiz',
   'run.preview.estimateTitle': 'Taxminiy',
@@ -1212,7 +1265,7 @@ export const uz = {
   'run.preview.filterMatch': '{total} tadan {n} ta',
   'run.price.fillIn': 'Narx kiriting',
   'run.offline.needNetworkToDeliver': 'Yetkazishni boshlash uchun tarmoq kerak',
-  'run.offline.waitForSync': '{n} ta saqlangan oʻzgarish sinxronlangach, yetkazishni boshlang',
+  'run.offline.waitForSync': '{n} ta saqlangan oʻzgarish yuborilgach, yetkazishni boshlang',
   'run.offline.needNetworkToStart': 'Xaridni boshlash uchun tarmoq kerak',
   'run.toast.runAlreadyOpen': 'Xarid allaqachon ochiq — oʻsha ochildi',
   'run.price.daysAgo': '{n} kun oldin',
@@ -1244,24 +1297,26 @@ export const uz = {
   'run.eject.reasonPlaceholder': 'Sabab (ixtiyoriy)',
   'run.confirm.ejectSession.title': '{store} / {who} buyurtmasini xariddan chiqarasizmi?',
   'run.confirm.ejectSession.body':
-    'Bu buyurtmaning hali olinmagan miqdorlari xariddan olib tashlanadi, buyurtma esa «Maʼqullangan»ga qaytadi. Agar undagi mahsulot allaqachon olingan yoki mavjud emas deb belgilangan boʻlsa, avval shuni bekor qiling.',
+    'Bu buyurtmaning hali olinmagan miqdorlari xariddan olib tashlanadi, buyurtma esa «Maʼqullangan»ga qaytadi. Agar undagi mahsulot allaqachon olingan yoki mavjud emas deb belgilangan boʻlsa, avval shuni ortga qaytaring.',
   'run.toast.sessionEjected': 'Buyurtma chiqarildi va yana maʼqullanganlar orasida',
   'run.toast.couldNotEjectSession': 'Buyurtmani chiqarib boʻlmadi. Qayta urinib koʻring.',
   'run.errors.cannotEjectSession':
     'Sizda buyurtmalarni xariddan chiqarish huquqi yoʻq. Kerak boʻlsa, administratordan ruxsat soʻrang.',
   'run.errors.storeAlreadyConfirmed': 'Doʻkon qabul qilishni allaqachon tasdiqlagan',
-  'run.errors.notVisible': 'Xarid topilmadi yoki sizga mavjud emas',
+  'run.errors.notVisible':
+    'Xarid topilmadi yoki sizga ochiq emas. Roʻyxatni yangilang; ruxsat kerak boʻlsa, administratorga murojaat qiling.',
   'run.errors.priceFormat': 'Narx 0 dan katta boʻlsin: koʻpi bilan 12 raqam va 2 kasr.',
   'run.errors.qtyFormat': 'Miqdor 0 dan katta boʻlsin: koʻpi bilan 9 raqam va 3 kasr.',
-  'run.errors.lineTooLarge': 'Bitta qator summasi (miqdor × narx) 1 000 000 000 000 dan oshmasin.',
+  'run.errors.lineTooLarge':
+    'Bitta mahsulot summasi (miqdor × narx) 1 000 000 000 000 dan oshmasin.',
   'run.errors.itemServesOtherStores':
     'Bu mahsulot siz javobgar boʻlmagan doʻkonlarga ham kerak; uni oʻsha doʻkonlar xaridori oʻzgartiradi.',
   'run.errors.runHasOtherStores':
     'Bu xaridda siz javobgar boʻlmagan doʻkonlar bor; bu qadamni barcha doʻkonlar xaridori bajaradi.',
   'run.errors.expenseServesOtherStores':
     'Bu xarajat siz javobgar boʻlmagan doʻkonlarga taqsimlangan. Xarajatni faqat oʻz doʻkonlaringizga taqsimlash mumkin.',
-  'run.pendingSync.row': 'Oflayn saqlandi — sinxronlanishni kutmoqda',
-  'run.pendingSync.short': 'sinxronlanishni kutmoqda',
+  'run.pendingSync.row': 'Oflayn saqlandi — yuborilishini kutmoqda',
+  'run.pendingSync.short': 'yuborilishini kutmoqda',
   'run.topUp.lineOtherStores': 'Boshqa doʻkonlar qoʻshimcha soʻradi; buni barcha doʻkonlar xaridori hal qiladi',
   'run.extras.recordPriceOtherStore': 'Narxni oʻsha doʻkon xaridori kiritadi',
   'run.action.deliverRemaining': 'Yetkazilmagan doʻkonlar: {n}',
@@ -1277,15 +1332,17 @@ export const uz = {
   'offline.action.confirmStoreItem': 'Qabul holatini belgilash',
   'offline.action.markStoreItemsOk': 'Hammasini OK deb belgilash',
   'offline.action.confirmStore': 'Qabulni tasdiqlash',
-  'offline.drop.withReason': '«{action}» sinxronlanmadi: {reason}',
+  'offline.drop.withReason':
+    '«{action}» yuborilmadi: {reason}. Ochib, kerak boʻlsa qayta kiriting.',
   'offline.drop.generic':
-    '«{action}» sinxronlanmadi va bekor qilindi. Shu bandni ochib, kerak boʻlsa qayta kiriting.',
+    '«{action}» yuborilmadi va bekor qilindi. Shu mahsulotni ochib, kerak boʻlsa qayta kiriting.',
   'confirm.final.title': 'Bu doʻkon uchun qabulni tasdiqlaysizmi?',
   'confirm.final.summary': 'OK: {ok} · kam: {short} · notoʻgʻri yoki sifatsiz: {bad}',
-  'confirm.final.shortWarning': 'Kam kelgan qatorlar: {n}. Omborga qabul qilingan miqdor yoziladi, keyin oʻzgartirib boʻlmaydi.',
-  'confirm.final.body': 'Tasdiqlangandan keyin doʻkon hech bir qatorni oʻzgartira olmaydi.',
+  'confirm.final.shortWarning':
+    '{n} ta mahsulot kam keldi. Omborga qabul qilingan miqdor yoziladi, keyin oʻzgartirib boʻlmaydi.',
+  'confirm.final.body': 'Tasdiqlangandan keyin doʻkon hech bir mahsulotni oʻzgartira olmaydi.',
   'confirm.final.submit': 'Qabulni tasdiqlash',
-  'confirm.queued': 'Qabul oflayn tasdiqlandi — sinxronlanishni kutmoqda',
+  'confirm.queued': 'Qabul oflayn tasdiqlandi — yuborilishini kutmoqda',
   'run.history.amendAdded': 'Tuzatishda qoʻshildi: +{qty} {unit} ({store})',
   'run.history.priceAfterReceipt': 'Qabuldan keyin narx oʻzgardi: {from} → {to}',
   'run.amend.reopenedGoing': 'Tuzatish ochildi',
@@ -1301,7 +1358,8 @@ export const uz = {
   'run.action.attachSessions': 'Xaridga qoʻshish',
   'run.attach.banner.title': '{n} ta yangi maʼqullangan buyurtma qoʻshishga tayyor',
   'run.toast.sessionsAttached': 'Buyurtmalar qoʻshildi',
-  'run.toast.couldNotAttach': 'Buyurtmalarni qoʻshib boʻlmadi',
+  'run.toast.couldNotAttach':
+    'Buyurtmalarni xaridga qoʻshib boʻlmadi. Sahifani yangilab, qayta urinib koʻring.',
   'run.errors.cannotAttachInStatus': 'Faqat reja yoki xarid bosqichida qoʻshish mumkin',
   'run.errors.sessionAlreadyInRun': 'Bu buyurtma allaqachon xaridda',
   'run.errors.allSessionsAlreadyInRun': 'Tanlangan buyurtmalar allaqachon xaridda',
@@ -1313,7 +1371,7 @@ export const uz = {
   'run.action.cancelRun': 'Xaridni bekor qilish',
   'run.action.markNa': 'Yoʻq',
   'run.action.editPurchase': 'Xaridni oʻzgartirish',
-  'run.action.undoPurchase': 'Bekor qilish',
+  'run.action.undoPurchase': 'Ortga qaytarish',
   'run.action.unmarkUnavailable': 'Yana mavjud deb belgilash',
   'run.action.recallDelivery': 'Yetkazishni qaytarib olish',
   'run.action.undoStartPurchase': 'Rejaga qaytish',
@@ -1336,20 +1394,20 @@ export const uz = {
   'run.action.addItem.changeSku': 'Oʻzgartirish',
   'run.action.addItem.targetStore': 'Qaysi doʻkonga?',
   'run.action.addItem.crossStoreHint':
-    'Bu mahsulot {stores} uchun xaridda allaqachon bor. Doʻkon narxi boshqacha boʻlsa, alohida xarajat sifatida saqlang; faqat bir xil partiya va narxda qatorga qoʻshing.',
+    'Bu mahsulot {stores} uchun xaridda allaqachon bor. Doʻkon narxi boshqacha boʻlsa, «Alohida narx»ni tanlang; faqat bir xil partiya va narxda mavjudiga qoʻshing.',
   'run.action.addItem.defaultCrossStoreReason': 'Boshqa doʻkonning qoʻshimcha talabi',
   'run.action.addItem.pickStore': '— Doʻkon tanlang —',
-  'run.action.addItem.totalHint': 'Qator boʻyicha jami',
+  'run.action.addItem.totalHint': 'Mahsulot boʻyicha jami',
   'run.action.addItem.reasonLabel': 'Nima uchun qoʻshilyapti?',
   'run.action.addItem.reasonPlaceholder':
     'masalan: Oshpaz qoʻngʻiroq qildi / Bozorda chegirma / Sotuvchi bonusi',
   'run.action.addItem.save': 'Saqlash',
   'run.label.addedByPurchaser': 'Xaridor xarid davomida qoʻshgan',
   'run.confirm.finish.addedByPurchaser':
-    '➕ Buyurtmadan tashqari {n} pozitsiya qoʻshildi · {total} {currency}',
-  'run.toast.itemAdded': 'Pozitsiya qoʻshildi',
+    '➕ Buyurtmadan tashqari {n} ta mahsulot qoʻshildi · {total} {currency}',
+  'run.toast.itemAdded': 'Mahsulot qoʻshildi',
   'run.toast.couldNotAddItem': 'Mahsulotni qoʻshib boʻlmadi. Qayta urinib koʻring.',
-  'run.errors.alreadyInRun': 'Bu mahsulot xaridda allaqachon bor — mavjud qatorni tahrirlang',
+  'run.errors.alreadyInRun': 'Bu mahsulot xaridda allaqachon bor — mavjud mahsulotni tahrirlang',
   'run.errors.storeNotInRun': 'Bu doʻkon hozirgi xaridda ishtirok etmaydi',
   'run.errors.addReasonRequired': 'Qoʻshish sababini koʻrsating',
   // M3.44 (2026-05-22): katalogdan tashqari xarajatlar
@@ -1359,7 +1417,7 @@ export const uz = {
   'run.action.addExpense.subtitle':
     'Yuk tashuvchi · taksi · sotuvchi bonusi · katalogdan tashqari xarid',
   'run.action.addExpense.labelInput': 'Nomi',
-  'run.action.addExpense.labelPlaceholder': 'masalan: Yuk tashuvchi / Sochiq / Qaytish taksi',
+  'run.action.addExpense.labelPlaceholder': 'masalan: Yuk tashuvchi / Salfetka / Qaytishdagi taksi',
   'run.action.addExpense.unitHint': 'Birlik (ixtiyoriy)',
   'run.action.addExpense.unitHintPlaceholder': 'masalan: safar / qadoq / —',
   'run.action.addExpense.targetStores': 'Qaysi doʻkonlar toʻlaydi?',
@@ -1368,14 +1426,15 @@ export const uz = {
   'run.action.addExpense.receiptOptional': 'Chek (ixtiyoriy)',
   'run.action.addExpense.save': 'Xarajatni saqlash',
   'run.action.removeExpense': 'Xarajatni oʻchirish',
-  'run.section.expenses': 'Katalogdan tashqari va xarajatlar',
+  'run.section.expenses': 'Katalogdan tashqari, xarajat',
   'run.toast.expenseAdded': 'Xarajat qoʻshildi',
   'run.toast.expenseRemoved': 'Xarajat oʻchirildi',
-  'run.toast.couldNotAddExpense': 'Xarajatni saqlab boʻlmadi',
+  'run.toast.couldNotAddExpense':
+    'Xarajatni saqlab boʻlmadi. Summani tekshirib, qayta urinib koʻring.',
   'run.confirm.finish.expenses': '🧾 {n} ta katalogdan tashqari / xarajat · {total} {currency}',
   'run.confirm.finish.perStoreHeading': 'Doʻkonlar boʻyicha taqsimot:',
   'run.confirm.finish.receiptIssues':
-    'Qabulda muammo boʻlgan qatorlar: {n}; taxminan {amount} {currency} qabul qilinmagan. Doʻkon hisoblari hali ham taqsimlangan miqdor boʻyicha.',
+    'Qabulda muammo boʻlgan mahsulot: {n} ta; taxminan {amount} {currency} qabul qilinmagan. Doʻkon hisoblari hali ham taqsimlangan miqdor boʻyicha.',
   'run.confirm.finish.receiptIssueLine': "{sku} · {store}: qabul {received}/{qty}",
   'run.confirm.finish.receiptIssuesMore': "…yana {n} ta",
   'run.errors.expenseIdTaken':
@@ -1389,8 +1448,7 @@ export const uz = {
   // UZS tenant uchun standart yoqilgan.
   'run.action.unitPriceUzsThousands': 'Birlik narxi (×1000 {currency})',
   'run.label.staleRun': '{days} kun',
-  'run.label.priceUnitAria':
-    'Narx birligi — {currency} va minglik oʻrtasida almashtirish uchun bosing',
+  'run.label.priceUnitAria': '×1000 (narxlar mingda)',
   'run.price.check.title': 'Narx toʻgʻrimi?',
   'run.price.check.body': '{name}: oʻtgan safar {last} {currency}, hozir {next} {currency}.',
   'run.price.check.confirm': 'Ha, saqlash',
@@ -1418,6 +1476,8 @@ export const uz = {
   'run.label.paymentMethod': 'Toʻlov usuli',
   'run.label.paymentCash': 'Naqd',
   'run.label.paymentTransfer': 'Oʻtkazma',
+  'run.label.paymentPerStore': 'Doʻkon boʻyicha',
+  'run.label.splitPreview': 'Doʻkonlarga: {split}',
   'run.action.unmarkUnavailableAriaLabel': 'Yana mavjud deb belgilash: {name}',
   'run.reason.paymentMethodChanged': 'Roʻyxatda toʻlov usuli tuzatildi',
   'run.confirm.finish.paymentBreakdown': '💵 naqd {cash} · 🏦 oʻtkazma {transfer}',
@@ -1430,11 +1490,11 @@ export const uz = {
   'run.confirm.editPurchase.title': 'Xaridni oʻzgartirish',
   'run.confirm.editPurchase.body':
     'Yozilgan miqdor, narx, yetkazib beruvchi, surat yoki doʻkonlar taqsimotini yangilang. Asl yozuv auditda qoladi.',
-  'run.confirm.undoPurchase.title': 'Bu xaridni bekor qilamizmi?',
+  'run.confirm.undoPurchase.title': 'Bu xarid yozuvi ortga qaytarilsinmi?',
   'run.confirm.undoPurchase.body':
     'Mahsulotni «kutilmoqda»ga qaytaradi va qayta yozsa boʻladi. Asl yozuv auditda qoladi. Faqat hech bir doʻkon qabul qilmagan boʻlsa.',
   'run.confirm.undoPurchase.bodyAdded':
-    'Bu mahsulot xarid paytida qoʻshilgan; bekor qilinsa, qator xariddan olib tashlanadi. Asl yozuv auditda qoladi. Faqat hech bir doʻkon qabul qilmagan boʻlsa.',
+    'Bu mahsulot xarid paytida qoʻshilgan; ortga qaytarilsa, u xariddan olib tashlanadi. Asl yozuv auditda qoladi. Faqat hech bir doʻkon qabul qilmagan boʻlsa.',
   'run.confirm.unmarkUnavailable.title': 'Yana mavjud deb belgilaymizmi?',
   'run.confirm.unmarkUnavailable.body':
     'Mahsulotni «kutilmoqda»ga qaytaradi va xaridni yozish mumkin boʻladi. Asl «yoʻq» eslatmasi auditda qoladi.',
@@ -1451,16 +1511,18 @@ export const uz = {
   'run.toast.runPlanned': 'Xarid rejalashtirildi',
   'run.toast.purchaseStarted': 'Xarid boshlandi',
   'run.toast.deliveryStarted': 'Yetkazib berish boshlandi',
-  'run.toast.couldNotPlan': 'Xaridni rejalashtirib boʻlmadi',
+  'run.toast.couldNotPlan':
+    'Xaridni rejalashtirib boʻlmadi. Sahifani yangilab, maʼqullangan buyurtmalarni tekshiring va qayta urinib koʻring.',
   'run.toast.purchaseRecorded': 'Xarid yozildi',
-  'run.toast.purchaseSavedOffline': 'Oflayn saqlandi — internet qaytganda sinxronlanadi',
+  'run.toast.purchaseSavedOffline': 'Oflayn saqlandi — internet qaytganda yuboriladi',
   'run.toast.syncFailed':
-    'Telefonda saqlangan oʻzgarish sinxronlanmadi va bekor qilindi. Bandni ochib, kerak boʻlsa qayta kiriting.',
-  'run.toast.couldNotSavePurchase': 'Xaridni saqlab boʻlmadi',
+    'Telefonda saqlangan oʻzgarish yuborilmadi va bekor qilindi. Mahsulotni ochib, kerak boʻlsa qayta kiriting.',
+  'run.toast.couldNotSavePurchase':
+    'Xaridni saqlab boʻlmadi. Miqdor va narxni tekshirib, qayta urinib koʻring.',
   'run.toast.markedUnavailable': '«Yoʻq» deb belgilandi',
   'run.toast.purchaseRevised': 'Xarid yangilandi',
   'run.toast.unmarkedUnavailable': 'Yana mavjud deb belgilandi',
-  'run.toast.purchaseUndone': 'Xarid bekor qilindi — kutishga qaytdi',
+  'run.toast.purchaseUndone': 'Xarid yozuvi ortga qaytarildi — mahsulot yana olinishi kerak',
   'run.toast.deliveryRecalled': 'Yetkazish qaytarildi',
   'run.toast.delivered': "Yetkazildi deb belgilandi",
   'run.toast.runCancelled': 'Xarid bekor qilindi',
@@ -1472,7 +1534,7 @@ export const uz = {
   'run.toast.runFinished': 'Xarid tugadi',
   'run.history.title': 'Tarix',
   'run.history.subtitle': 'Oʻtgan xaridlar — batafsil koʻrish uchun bosing',
-  'run.history.matchedRunsTotal': '(topilgan xaridlar jami)',
+  'run.history.matchedRunsTotal': '(topilganlar)',
   'run.history.allStores': 'Barcha doʻkonlar',
   // M3.9: bekor qilingan run endi tarixda ko'rinmaydi — 4 kalit olib tashlandi.
   'run.cancel.reasonPlaceholder':
@@ -1522,7 +1584,7 @@ export const uz = {
   'run.amend.reopenButton': 'Tuzatish uchun ochish',
   'run.errors.itemNotInRun':
     'Bu mahsulot xaridda yoʻq — hozirgina olib tashlangan boʻlishi mumkin. Sahifani yangilang.',
-  'run.errors.invalidQty': 'Notoʻgʻri miqdor',
+  'run.errors.invalidQty': 'Miqdor yoki narx toʻgʻri son emas. Qayta kiriting.',
   'run.errors.qtyMustBePositive': 'Miqdor 0 dan katta boʻlishi kerak',
   'run.errors.splitSumMismatch': 'Doʻkonlar yigʻindisi haqiqiy miqdorga teng boʻlishi kerak',
   'run.errors.unavailableNoteRequired': 'Yoʻqlik sababini yozing',
@@ -1534,7 +1596,8 @@ export const uz = {
   'run.errors.cannotCancelAfterDelivery':
     'Mahsulot doʻkonga yetkazilgan, xaridni bekor qilib boʻlmaydi. Avval yetkazishni qaytarib oling',
   'run.errors.noteTooLong': 'Eslatma juda uzun (500 belgi gacha)',
-  'run.errors.notReadyToDeliver': 'Yetkazishni hali boshlab boʻlmaydi',
+  'run.errors.notReadyToDeliver':
+    'Yetkazishni hali boshlab boʻlmaydi: xarid hali yetkazish bosqichida emas. Sahifani yangilab, holatini tekshiring.',
   'run.errors.itemsPending': 'Hali ishlanmagan mahsulotlar bor',
   'run.topUp.title': 'Yangi qoʻshilgan buyurtmalarga yana kerak',
   'run.topUp.line': 'olindi {bought}, yana kerak {need}',
@@ -1544,6 +1607,7 @@ export const uz = {
   'run.topUp.dismissConfirm': 'Qoʻshimcha {qty} olinmaydimi? Qoʻshilgan doʻkon buni olmaydi.',
   'run.topUp.dismissed': 'Belgilandi: qoʻshimcha olinmaydi',
   'run.topUp.reason': 'Yangi buyurtma uchun qoʻshimcha xarid',
+  'run.topUp.sheetBody': 'Avval olingan: {qty}, narxi {price}. Pastdagi narx faqat shu qoʻshimcha miqdor uchun, avvalgi xaridning narxi oʻzgarmaydi.',
   'run.prices.title': 'Narxlarni kiritish',
   'run.prices.hint': 'miqdor va taqsimot oʻzgarmaydi',
   'run.prices.lockedHint': 'Mahsulot joʻnatilgan: faqat narx, yetkazib beruvchi, toʻlov usuli va chekni oʻzgartirish mumkin.',
@@ -1569,7 +1633,8 @@ export const uz = {
     'Xarid topilmadi — hozirgina oʻchirilgan boʻlishi mumkin. Sahifani yangilang.',
   'run.errors.sessionMissing':
     'Buyurtma topilmadi — hozirgina oʻchirilgan boʻlishi mumkin. Sahifani yangilang.',
-  'run.errors.sessionNotApproved': 'Buyurtma maʼqullanmagan',
+  'run.errors.sessionNotApproved':
+    'Buyurtma hali maʼqullanmagan, uni xaridga qoʻshib boʻlmaydi. Avval uni tekshiring.',
   'run.errors.staleSeq':
     'Buni hozirgina kimdir oʻzgartirdi. Sahifani yangilab, soʻnggi holatni koʻring va oʻzgarishni qayta kiriting.',
   'run.errors.notPurchased': 'Bu mahsulot hali xarid qilinmagan',
@@ -1578,11 +1643,12 @@ export const uz = {
   'run.errors.notUnavailable': 'Bu mahsulot «yoʻq» holatida emas',
   'run.errors.alreadyConfirmed': 'Qaytarib boʻlmaydi — doʻkon allaqachon qabul qildi',
   'run.errors.notPurchasing': 'Xarid bosqichida emas',
-  'run.errors.deliveryAlreadyProgressed': 'Bekor qilib boʻlmaydi — bironta doʻkon qabul qildi',
+  'run.errors.deliveryAlreadyProgressed':
+    'Ortga qaytarib boʻlmaydi — bir doʻkon allaqachon qabul qilgan',
   'run.errors.reviseReasonRequired': 'Nima oʻzgarganini yozing',
   'run.errors.unmarkReasonRequired': 'Hozir nima uchun mavjudligini yozing',
   'run.errors.recallReasonRequired': 'Qaytarish sababini yozing',
-  'run.errors.undoReasonRequired': 'Bekor qilish sababini yozing',
+  'run.errors.undoReasonRequired': 'Ortga qaytarish sababini yozing',
   'run.errors.splitsMustSum': 'Taqsimot yigʻindisi haqiqiy miqdorga teng boʻlishi shart',
 
   // ── 12. Confirm page ───────────────────────────────────────────
@@ -1594,21 +1660,21 @@ export const uz = {
   'confirm.confirmStore': 'Qabulni tasdiqlash',
   'confirm.progress': 'Tekshirildi {done}/{total}',
   'confirm.markAllOk': 'Hammasi toʻgʻri',
-  'confirm.bulk.title': 'Qolgan {n} ta pozitsiyani toʻgʻri deb belgilaysizmi?',
+  'confirm.bulk.title': 'Qolgan {n} ta mahsulot toʻgʻri deb belgilansinmi?',
   'confirm.bulk.body':
-    'Faqat hali tekshirilmagan pozitsiyalar oʻzgaradi. Bu doʻkon qabulini tasdiqlamaydi.',
+    'Faqat hali tekshirilmagan mahsulotlar oʻzgaradi. Bu doʻkon qabulini tasdiqlamaydi.',
   'confirm.bulk.hint':
-    'Har bir pozitsiya toʻgʻri qabul qilingan deb yoziladi. Keyin alohida oʻzgartirish mumkin.',
-  'confirm.bulk.submit': '{n} ta pozitsiyani belgilash',
+    'Har bir mahsulot toʻgʻri qabul qilingan deb yoziladi. Keyin alohida oʻzgartirish mumkin.',
+  'confirm.bulk.submit': '{n} ta mahsulotni belgilash',
   'confirm.confirmStoreBlocked': '{n} ta tekshirilmagan',
   'confirm.confirmStoreFinal': '✓ Tasdiqlandi',
   'confirm.confirmingHint': 'Tasdiqlanmoqda…',
   'confirm.toast.markedOk': 'Yaxshi deb belgilandi',
-  'confirm.toast.allMarkedOk': '{n} ta pozitsiya toʻgʻri deb belgilandi',
-  'confirm.toast.nothingToMark': 'Barcha pozitsiyalar allaqachon belgilangan',
+  'confirm.toast.allMarkedOk': '{n} ta mahsulot toʻgʻri deb belgilandi',
+  'confirm.toast.nothingToMark': 'Barcha mahsulotlar allaqachon belgilangan',
   'confirm.toast.issueNoted': 'Muammo qayd etildi',
   'confirm.toast.storeConfirmed': 'Qabul tasdiqlandi',
-  'confirm.toast.savedOffline': 'Oflayn saqlandi — internet qaytganda sinxronlanadi',
+  'confirm.toast.savedOffline': 'Oflayn saqlandi — internet qaytganda yuboriladi',
   'confirm.issue.markAs': '{status} deb belgilash',
   'confirm.issue.markItemAs': '{item}: «{status}» deb belgilash',
   'confirm.issue.describe': 'Muammoni yozing — xaridor koʻrib tuzata oladi.',
@@ -1616,7 +1682,7 @@ export const uz = {
   'confirm.issue.photoOptional': 'Surat (ixtiyoriy)',
   'confirm.issue.photoUploading': 'Rasm hali yuklanmoqda. Yuklangach saqlash mumkin.',
   'confirm.issue.save': 'Saqlash',
-  'confirm.status.ariaLabel': 'Bu pozitsiyaning qabul holati',
+  'confirm.status.ariaLabel': 'Bu mahsulotning qabul holati',
   'confirm.status.ok': 'Yaxshi',
   'confirm.status.short': 'Miqdori kam',
   'confirm.status.wrong': 'Notoʻgʻri mahsulot',
@@ -1798,10 +1864,10 @@ export const uz = {
   'dishes.errors.codeTaken': 'Bu kod boshqa taomda ishlatilgan.',
   'dishes.errors.priceTooLarge': 'Narx: koʻpi bilan 12 raqam va 2 kasr.',
   'dishes.errors.qtyTooLarge': 'Miqdor: koʻpi bilan 8 raqam va 4 kasr.',
-  'sales.errors.qtyTooLarge': 'Porsiyalar soni juda katta.',
+  'sales.errors.qtyTooLarge': 'Porsiyalar soni juda katta. Kiritilgan sonni tekshiring.',
   'sales.errors.occurredInFuture': 'Sotuv vaqti kelajakda boʻlishi mumkin emas.',
   'sales.errors.occurredTooOld': 'Sotuvni koʻpi bilan 90 kun oldingisiga kiritish mumkin.',
-  'inventory.errors.qtyTooLarge': 'Miqdor juda katta.',
+  'inventory.errors.qtyTooLarge': 'Miqdor juda katta. Kiritilgan sonni tekshiring.',
   'dishes.errors.changedElsewhere': 'Bu taomni hozirgina boshqa kishi oʻzgartirdi. Yopib, qayta oching va soʻnggi holatini koʻring.',
 
   // ── 18. Sales (M2.0c) ──────────────────────────────────
@@ -1825,20 +1891,20 @@ export const uz = {
     'Sizda bu doʻkonda savdo yozish huquqi yoʻq. Kerak boʻlsa, doʻkon boshqaruvchisidan ruxsat soʻrang.',
   'sales.errors.dishNotFound':
     'Taom topilmadi — hozirgina arxivlangan boʻlishi mumkin. Sahifani yangilang.',
-  'sales.errors.dishArchived': 'Taom arxivda. Avval tiklang.',
+  'sales.errors.dishArchived': 'Taom arxivda. Sotuvni yozishdan oldin uni arxivdan chiqaring.',
   'sales.errors.storeNotFound':
     'Doʻkon topilmadi — hozirgina arxivlangan boʻlishi mumkin. Sahifani yangilang.',
   'sales.errors.dishHasNoRecipe': 'Sotuvni yozishdan oldin taom uchun retsept belgilang.',
   'run.action.addItem.storeAlreadyHasSkuShort': 'bor',
   'run.action.addItem.costModeTitle': 'Bir xil mahsulot narxi',
-  'run.action.addItem.costModeMerge': 'Qatorga qoʻshish',
-  'run.action.addItem.costModeSeparate': 'Doʻkon xarajati',
+  'run.action.addItem.costModeMerge': 'Mavjudiga qoʻshish',
+  'run.action.addItem.costModeSeparate': 'Alohida narx',
   'run.action.addItem.storeAlreadyHasSkuHint':
     'Bu doʻkonda bu mahsulot allaqachon bor, shuning uchun yozuv eski narxni almashtirmasdan alohida doʻkon xarajati sifatida saqlanadi.',
   'run.action.addItem.separatePriceHint':
     'Agar shu mahsulot boshqa vaqtda, boshqa yetkazib beruvchidan yoki boshqa narxda olingan boʻlsa, tanlangan doʻkon uchun alohida xarajat sifatida saqlang.',
   'run.action.addItem.mergePriceHint':
-    'Mavjud xarid qatoriga qoʻshiladi va mahsulot bitta umumiy birlik narxi bilan qayta hisoblanadi.',
+    'Mavjud xarid mahsulotiga qoʻshiladi va mahsulot bitta umumiy birlik narxi bilan qayta hisoblanadi.',
   'run.action.addExpense.templates': 'Xarajat shablonlari',
   'run.action.addExpense.scopeTitle': 'Xarajat turi',
   'run.action.addExpense.scopeShared': 'Umumiy xarajat',
@@ -1850,10 +1916,10 @@ export const uz = {
   'run.section.sharedExpenses': 'Umumiy xarajatlar',
   'run.section.storeExpenses': 'Doʻkon xarajatlari',
   'run.history.storePurchases': 'Doʻkonlarning shu kundagi xaridlari',
-  'run.history.trip': '{n}-reys',
+  'run.history.trip': '{n}-xarid',
   'run.history.runTitle': '{date} #{n}',
-  'run.history.tripCount': '{n} ta reys',
-  'run.history.tripsHeading': 'Reyslar',
+  'run.history.tripCount': '{n} ta xarid',
+  'run.history.tripsHeading': 'Xaridlar',
   'run.history.storeItemsHeading': '{store}ning shu kundagi xaridlari',
   'run.history.searchPlaceholder': 'Xaridlarni qidirish',
   'run.history.filters': 'Filtrlar ({n})',
@@ -1861,7 +1927,7 @@ export const uz = {
   'run.history.clearAll': 'Hammasini tozalash',
   'run.history.filterTitle': 'Tarixni filtrlash',
   'run.history.filterDescription': 'Natijalarni doʻkon, sana va toʻlov usuli boʻyicha saralang.',
-  'run.history.resetFilters': 'Filtrlarni tiklash',
+  'run.history.resetFilters': 'Filtrlarni tozalash',
   'run.history.applyFilters': 'Filtrlarni qoʻllash',
   'run.history.storeFilter': 'Doʻkon',
   'run.history.dateRange': 'Sana oraligʻi',
@@ -1939,7 +2005,8 @@ export const uz = {
   'settlement.wages.roleFilter': 'Vazifa',
   'settlement.wages.allRoles': 'Barcha vazifalar',
   'settlement.wages.searchEmployees': 'Xodimlarni qidirish',
-  'settlement.wages.rosterError': 'Doʻkon xodimlarini yuklab boʻlmadi',
+  'settlement.wages.rosterError':
+    'Doʻkon xodimlarini yuklab boʻlmadi. Sahifani yangilab, qayta urinib koʻring.',
   'settlement.wages.rosterEmptyTitle': 'Doʻkonda faol xodim yoʻq',
   'settlement.wages.rosterEmptyBody':
     'Ish haqini kiritishdan oldin Boshqaruv › Doʻkonlar › Jamoa boʻlimida xodimlarni bu doʻkonga qoʻshing yoki biriktiring.',
@@ -1997,8 +2064,10 @@ export const uz = {
     'Har bir operatsion xarajat uchun musbat summa va sababni kiriting; har bir ish haqi qatori uchun xodimni ham tanlang.',
   'settlement.errors.detailLimit':
     'Har bir kun yakunida koʻpi bilan {count} ta xarajat va {count} ta ish haqi qatori boʻlishi mumkin.',
-  'settlement.errors.stores': 'Kun yakuni uchun doʻkonlarni yuklab boʻlmadi.',
-  'settlement.errors.businessDate': 'Doʻkonning hisob sanasini yuklab boʻlmadi.',
+  'settlement.errors.stores':
+    'Kun yakuni uchun doʻkonlarni yuklab boʻlmadi. Sahifani yangilab, qayta urinib koʻring.',
+  'settlement.errors.businessDate':
+    'Doʻkonning hisob sanasini yuklab boʻlmadi. Sahifani yangilab, qayta urinib koʻring.',
   'settlement.errors.save': 'Kun yakunini saqlab boʻlmadi. Qayta urinib koʻring.',
   'settlement.errors.load': 'Bu kunning kun yakunini yuklab boʻlmadi. Sahifani yangilang.',
   'settlement.errors.totalTooLarge': "Jami summa juda katta. Summalarni tekshiring.",
@@ -2026,6 +2095,7 @@ export const uz = {
   'confirm.issue.receivedQtyNotShort':
     '{max} — bu hammasi, «Yaxshi»ni tanlang; kamomad boʻlsa {max} dan kam kiriting',
   'confirm.receivedOf': 'qabul qilindi {received} / {qty} {unit}',
+  'confirm.receivedPlusAmend': 'qabul qilindi {received} + tuzatishda {added} = {total} / {qty} {unit}',
   'confirm.issue.photoOf': '{name} muammo rasmi',
   'confirm.runPicker.ariaLabel': 'Qaysi yetkazib berishni tekshirish',
   'confirm.runPicker.option': '#{n} · {date}',
@@ -2057,16 +2127,16 @@ export const uz = {
   // invite list/revoke, offline/stale-order messages.
   'nav.sales': 'Sotuvlar',
   'sales.page.title': 'Sotuvlar',
-  'sales.action.void': 'Bekor qilish',
-  'sales.void.title': 'Sotuvni bekor qilish',
+  'sales.action.void': 'Oʻchirish',
+  'sales.void.title': 'Sotuvni oʻchirish',
   'sales.void.description': '{dish} — masalliqlar omborga qaytariladi.',
   'sales.void.reasonLabel': 'Sabab',
   'sales.void.reasonPlaceholder': 'masalan: notoʻgʻri taom, ikki marta kiritilgan',
-  'sales.void.confirmBtn': 'Bekor qilish',
-  'sales.void.voidedLabel': 'Bekor qilingan: {reason}',
-  'sales.toast.voided': 'Sotuv bekor qilindi — qoldiq tiklandi.',
+  'sales.void.confirmBtn': 'Sotuvni oʻchirish',
+  'sales.void.voidedLabel': 'Oʻchirilgan: {reason}',
+  'sales.toast.voided': 'Sotuv oʻchirildi — qoldiq tiklandi.',
   'sales.errors.saleNotFound':
-    'Savdo topilmadi — hozirgina bekor qilingan boʻlishi mumkin. Sahifani yangilang.',
+    'Sotuv topilmadi — hozirgina oʻchirilgan boʻlishi mumkin. Sahifani yangilang.',
   'dishes.errors.duplicateIngredient':
     'Retseptda bitta mahsulot ikki marta koʻrsatilgan — bitta qatorga birlashtiring.',
   'inventory.action.addStocktake': 'Boshqa mahsulotni inventarizatsiya qilish',
@@ -2078,30 +2148,32 @@ export const uz = {
   'inventory.reason.stocktake': 'Inventarizatsiya',
   'inventory.reason.wastage': 'Isrof',
   'inventory.reason.consumption': 'Sotuv sarfi',
-  'inventory.reason.consumption_reversed': 'Sotuv bekor qilindi',
+  'inventory.reason.consumption_reversed': 'Sotuv oʻchirildi',
   'inventory.reason.transfer_in': 'Koʻchirish (kirim)',
   'inventory.reason.transfer_out': 'Koʻchirish (chiqim)',
   'inventory.reason.adjustment': 'Tuzatish',
   'auth.errors.inviteRevoked':
-    'Bu taklif havolasi bekor qilingan. Doʻkon boshqaruvchisidan yangi havola soʻrang.',
+    'Bu taklif havolasi qaytarib olingan. Doʻkon boshqaruvchisidan yangi havola soʻrang.',
   'auth.errors.inviteInviterNoLongerAuthorized':
     'Taklif endi amal qilmaydi: uni yuborgan kishi endi aʼzo qoʻsha olmaydi. Doʻkon boshqaruvchisidan yangi havola soʻrang.',
   'admin.errors.inviteNotFound':
-    'Taklif topilmadi — hozirgina bekor qilingan boʻlishi mumkin. Sahifani yangilang.',
-  'admin.errors.inviteNotPending': 'Bu taklif allaqachon ishlatilgan yoki bekor qilingan.',
-  'admin.toast.inviteRevoked': 'Taklif bekor qilindi',
+    'Taklif topilmadi — hozirgina qaytarib olingan boʻlishi mumkin. Sahifani yangilang.',
+  'admin.errors.inviteNotPending':
+    'Bu taklif allaqachon ishlatilgan yoki qaytarib olingan. Kerak boʻlsa, yangi taklif yarating.',
+  'admin.toast.inviteRevoked': 'Taklif qaytarib olindi',
   'people.pendingInvitesCount': '{n} ta kutilayotgan taklif',
   'people.pendingInviteDefaultRole': 'Doʻkon uchun standart rol',
   'people.pendingInviteRoleDeleted': 'rol oʻchirilgan',
   'people.pendingInviteOrgWide': 'Butun ish maydoni',
   'people.pendingInviteMeta': '{name} yubordi · {date} gacha',
   'people.pendingInviteExpires': '{date} gacha',
-  'people.revokeInvite': 'Bekor qilish',
+  'people.revokeInvite': 'Qaytarib olish',
   'people.confirmRevokeInvite':
-    'Bu taklif havolasini bekor qilasizmi? Havolasi borlar endi qoʻshila olmaydi.',
-  'order.errors.staleOfflineEdit': 'Bu oʻzgarish oldingi kuni oflayn qilingan va qoʻllanmadi',
+    'Bu taklif havolasi qaytarib olinsinmi? Havolasi borlar endi qoʻshila olmaydi.',
+  'order.errors.staleOfflineEdit':
+    'Bu oʻzgarish oldingi kuni oflayn qilingan, shuning uchun qoʻllanmadi. Bugungi buyurtmani tekshiring va kerak boʻlsa qayta oʻzgartiring.',
   'order.errors.deviceDateAhead':
-    'Telefon sanasi serverdan oldinda, oʻzgarish saqlanmadi. Telefon sana va vaqtini tekshiring',
+    'Telefon sanasi bugungidan oldinda, oʻzgarish saqlanmadi. Telefonda sana va vaqtni avtomatik qilib, qayta urinib koʻring',
   'order.errors.approveEmpty': 'Buyurtmada mahsulot qolmadi — maʼqullab boʻlmaydi. Uni rad eting',
   'approval.toast.orderChanged':
     'Buyurtma siz ochganingizdan keyin oʻzgardi — eng soʻnggi variantini koʻrib chiqing',
@@ -2109,7 +2181,7 @@ export const uz = {
   'app.update.reload': 'Yangilash',
   'app.update.later': 'Keyinroq',
   'run.action.addItem.mergePurchasedHint':
-    'Doʻkonni mavjud xarid qatoriga qoʻshish: narx, yetkazib beruvchi va chek saqlanadi; bu yerdagi boshqa narx faqat shu doʻkon uchun qoʻllanadi.',
+    'Doʻkonni mavjud xarid mahsulotiga qoʻshish: narx, yetkazib beruvchi va chek saqlanadi; bu yerdagi boshqa narx faqat shu doʻkon uchun qoʻllanadi.',
   'ops.audit.filterLabel': 'Turi boʻyicha filtr',
   'ops.audit.emptyTitle': 'Hozircha admin amallari yoʻq',
   'ops.audit.emptyBody': 'Katalog va rol oʻzgarishlari shu yerda koʻrinadi.',
@@ -2124,9 +2196,9 @@ export const uz = {
   'ops.audit.s.roleDelete': '{actor} «{role}» rolini oʻchirdi',
   'ops.audit.s.permissionAllow': '{actor} {member} uchun {permission} ga ruxsat berdi',
   'ops.audit.s.permissionDeny': '{actor} {member} uchun {permission} ni taqiqladi',
-  'ops.audit.s.permissionRevoke': '{actor} {member} uchun {permission} sozlamasini bekor qildi',
+  'ops.audit.s.permissionRevoke': '{actor} {member} uchun {permission} sozlamasini olib tashladi',
   'ops.audit.s.inviteCreate': '{actor} taklif havolasini yaratdi',
-  'ops.audit.s.inviteRevoke': '{actor} taklif havolasini bekor qildi',
+  'ops.audit.s.inviteRevoke': '{actor} taklif havolasini qaytarib oldi',
   'ops.audit.s.inviteByTgId': '{actor} {member} ni Telegram ID orqali qoʻshdi',
   'ops.audit.s.memberRemove': '{actor} {member} ni oʻchirdi',
   'ops.audit.s.memberSuspend': '{actor} {member} ni toʻxtatdi',
@@ -2144,7 +2216,7 @@ export const uz = {
   'ops.audit.s.catalogImport': '{actor} boshqa ish maydonidan {n} ta mahsulot import qildi',
   'ops.audit.s.catalogUpdate': '{actor} «{name}» ni tahrirladi',
   'ops.audit.s.catalogArchive': '{actor} «{name}» ni arxivladi',
-  'ops.audit.s.catalogRestore': '{actor} «{name}» ni tikladi',
+  'ops.audit.s.catalogRestore': '{actor} «{name}»ni arxivdan chiqardi',
   'ops.audit.s.financeUpdate': '{actor} moliya sozlamalarini oʻzgartirdi',
   'ops.audit.s.subscriptionUpdate': '{actor} obunani yangiladi',
   'ops.audit.s.generic': '{actor}: {object} · {verb}',
@@ -2201,9 +2273,9 @@ export const uz = {
   'finance.tsv.unit': 'Birlik',
   'finance.tsv.unitPrice': 'Narx',
   'finance.tsv.total': 'Summa',
-  'finance.count.lines': '{n} ta qator',
+  'finance.count.lines': '{n} ta mahsulot',
   'finance.count.runs': '{n} ta xarid',
-  'run.history.tripRange': '{total} ta reysdan {from}–{to}',
+  'run.history.tripRange': '{total} tadan {from}–{to}',
   'settlement.confirm.allZero': 'Barcha summalar 0. Bu kunni umuman pulsiz yopilgan deb saqlaysizmi?',
   'nav.badge.count': '{label}, kutmoqda: {n}',
   'nav.badge.due': '{label}, bugun hali qilinmagan',
@@ -2261,4 +2333,38 @@ export const uz = {
   'approval.toast.withdrawnWhileOpen': 'Buyurtmachi siz ochgan buyurtmani qaytarib oldi.',
   'approval.toast.decidedElsewhere': 'Siz ochgan buyurtmani boshqa tekshiruvchi allaqachon koʻrib chiqdi.',
   'finance.view.label': 'Koʻrinish',
+  // fix/stock-settle-catalog (2026-11-01): DX-INV-1 / DX-SAL-1 / DX-DSH-1 / DX-CLS-3 / DX-CAT-*.
+  'inventory.errors.countRequired': 'Javondagi miqdorni kiriting.',
+  'inventory.errors.countNegative': 'Qoldiq manfiy boʻlishi mumkin emas. Yoʻq boʻlsa, 0 kiriting.',
+  'inventory.errors.countNotNumber': 'Raqam kiriting, masalan 12,5.',
+  'inventory.errors.countDecimals': 'Verguldan keyin koʻpi bilan 3 ta raqam.',
+  'inventory.errors.countTooLarge': 'Juda katta: koʻpi bilan 99 999 999.',
+  'inventory.badge.negative': 'Noldan kam — sanang',
+  'sales.toast.recordedNegative': 'Yozildi. {items} qoldigʻi noldan kam boʻldi — sanab chiqing.',
+  'dishes.errors.archivedIngredient': 'Retseptda arxivdagi mahsulot bor. Boshqa mahsulot tanlang yoki shu qatorni oʻchiring.',
+  'dishes.errors.archivedIngredientRow': 'Bu mahsulot arxivda. Boshqasini tanlang yoki qatorni oʻchiring.',
+  'dishes.label.archivedSku': '{name} (arxivda)',
+  'dishes.empty.readOnlyDescription': 'Menyuni administrator yuritadi. Bu yerda faqat koʻrish mumkin.',
+  'settlement.errors.moneyEmpty': '{field}: summa boʻlmasa, 0 kiriting.',
+  'settlement.errors.moneyNegative': '{field}: manfiy boʻlishi mumkin emas.',
+  'settlement.errors.moneyNotNumber': '{field}: raqam kiriting, masalan 1250,50.',
+  'settlement.errors.moneyDecimals': '{field}: verguldan keyin koʻpi bilan 2 ta raqam.',
+  'settlement.errors.moneyTooLarge': '{field}: summa juda katta — verguldan oldin koʻpi bilan 12 ta raqam.',
+  'settlement.errors.itemAmountEmpty': '{field}: summani kiriting.',
+  'settlement.errors.itemAmountZero': '{field}: summa 0 dan katta boʻlishi kerak.',
+  'settlement.errors.itemReasonEmpty': '{field}: sababini kiriting.',
+  'ops.activity.orderOf': '{date} buyurtmasi',
+  'ops.purge.block.notSuperAdmin': 'Bu yerda faqat superadmin oʻchira oladi.',
+  'ops.purge.block.inRun': 'Xaridga qoʻshilgan — xaridni oʻchiring.',
+  'ops.purge.block.othersOrder': 'Bu {name} buyurtmasi. Bu yerda faqat oʻzingizning sinov buyurtmalaringizni oʻchirish mumkin.',
+  'ops.purge.block.othersLines': 'Bu buyurtmaga boshqa kishi ham mahsulot qoʻshgan — bu yerda oʻchirib boʻlmaydi.',
+  'ops.purge.block.orderActedOn': 'Buyurtmani boshqa kishi koʻrib chiqqan yoki ishlagan — bu sinov maʼlumoti emas.',
+  'ops.purge.block.runForeign': 'Unda boshqa odamlarning buyurtmalari bor — bu yerda oʻchirib boʻlmaydi.',
+  'ops.purge.block.runActedOn': 'Uni boshqa kishi olgan, sotib olgan yoki qabul qilgan — bu sinov maʼlumoti emas.',
+  'ops.maint.scopeSameDay': '{date} kunining oʻzidan: {orders}, {runs}.',
+  'ops.maint.scopeLinkedTitle': 'Ular bilan bogʻliq boʻlgani uchun boshqa sanalardagilar ham oʻchadi:',
+  'ops.maint.scopeLinkedOrders': '{date} · {store}: {orders}',
+  'ops.maint.confirmPurgeByName': 'Tasdiqlash uchun ish maydoni nomini kiriting: «{name}».',
+  'ops.maint.confirmPurgeNameLabel': 'Ish maydoni nomi',
+  'ops.maint.confirmPurgeNamePlaceholder': 'Nomini kiriting',
 } as const satisfies Record<CatalogKey, string>;

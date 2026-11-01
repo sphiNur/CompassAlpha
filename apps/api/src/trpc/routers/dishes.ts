@@ -170,13 +170,24 @@ async function assertIngredientsValid(
   if (ingredients.length === 0) return;
   const skuIds = ingredients.map((i) => i.skuId);
   const owned = await tx
-    .select({ id: s.skus.id })
+    .select({ id: s.skus.id, isArchived: s.skus.isArchived })
     .from(s.skus)
     .where(and(eq(s.skus.orgId, orgId), inArray(s.skus.id, skuIds)));
   if (owned.length !== skuIds.length) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
       message: 'dishes.errors.ingredientSkuNotFound',
+    });
+  }
+  // DX-DSH-1 (2026-11-01): a product taken off the catalog can't stay in
+  // a recipe. The editor showed such a row as "pick an ingredient" and
+  // the save kept the archived product without a word, so every sale
+  // went on deducting stock nobody buys any more. The editor now marks
+  // the row and asks for a replacement; this refuses the rest.
+  if (owned.some((k) => k.isArchived)) {
+    throw new TRPCError({
+      code: 'BAD_REQUEST',
+      message: 'dishes.errors.archivedIngredient',
     });
   }
 }

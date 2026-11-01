@@ -74,7 +74,7 @@ describe('networkFailureKey', () => {
 // dropped, so every sentence with a placeholder printed a blank.
 describe('errorTextOf: placeholders from the server', () => {
   beforeAll(async () => {
-    await Promise.all((['zh', 'ru', 'uz'] as const).map((l) => loadCatalog(l)));
+    await Promise.all((['en', 'zh', 'ru', 'uz'] as const).map((l) => loadCatalog(l)));
   });
   /** What tRPC hands a mutation's onError for a DomainError. */
   const domainError = (key: string, context: Record<string, unknown>) => ({

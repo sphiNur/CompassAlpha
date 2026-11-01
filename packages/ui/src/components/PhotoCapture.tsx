@@ -164,6 +164,13 @@ export function PhotoCapture({
         type="file"
         accept="image/*"
         capture="environment"
+        // DX-IX-8 (2026-11-01): the visible button above opens this. As a
+        // plain sr-only input it was an extra Tab stop the browser named
+        // "Choose File" in English; now it is out of the Tab order and the
+        // accessibility tree, and its name is the localized field label.
+        tabIndex={-1}
+        aria-hidden
+        aria-label={effectiveLabel}
         className="sr-only"
         onChange={(e) => {
           const f = e.target.files?.[0];

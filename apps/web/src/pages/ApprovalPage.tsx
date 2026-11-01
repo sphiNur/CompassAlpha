@@ -7,6 +7,8 @@
  * `order.sessionDetail({id})` endpoint.
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useMutationState } from '@tanstack/react-query';
+import { getMutationKey } from '@trpc/react-query';
 import {
   Avatar,
   Badge,
@@ -27,6 +29,7 @@ import {
   StickyPageBar,
   Tab,
   Tabs,
+  focusAfter,
   useToast,
 } from '@compass/ui';
 import { trpc } from '../lib/trpc';
@@ -34,6 +37,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useDateFormat, useI18n, useProductName, useUnitLabel } from '../hooks/useI18n';
 import { isWaitingOffline } from '../components/PendingSpinner';
 import { haptic } from '../hooks/useTelegram';
+import { useOnline } from '../hooks/useOnline';
 import { confirmThen } from '../lib/confirm';
 import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
@@ -48,7 +52,13 @@ import {
   type SeenOrder,
 } from './approval/reviewDiff';
 import { QtyDrafts } from './approval/qtyDrafts';
+import { adjustingSessionIds } from './approval/adjustInFlight';
 import { ORDER_QTY_MAX } from '@compass/contracts/limits';
+import { moneyLine } from '../lib/money';
+import { addMoney } from '@compass/contracts/money';
+
+/** DX-IX-4: where focus goes after a card is decided (the list's first card title). */
+const NEXT_CARD = '[data-approval-list] > li h2';
 
 type ApprovalTab = 'pending' | 'approved' | 'rejected';
 
@@ -108,6 +118,7 @@ export function ApprovalPage() {
   const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: true });
 
   const utils = trpc.useUtils();
+  const online = useOnline();
   const toast = useToast();
   // Audit-found 2026-05-05: every mutation here used to onError ONLY haptic.
   // Manager taps Approve, network fails, they feel a buzz and assume "done"
@@ -122,7 +133,7 @@ export function ApprovalPage() {
       void utils.order.pendingList.invalidate();
       toast.info(i18n.t('approval.toast.claimed'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   // 2026-10-21 audit CA-43 "approve what you saw": approve / reject send
   // the `lastSeq` of the row on screen; the server answers CONFLICT
@@ -153,9 +164,19 @@ export function ApprovalPage() {
       { onSettled: () => approving.current.delete(sessionId) },
     );
   };
+  // DX-APR-1 (2026-11-01): orders with a quantity change still on its way
+  // (see approval/adjustInFlight.ts). Their 通过 / 驳回 wait for it.
+  const adjustingIds = adjustingSessionIds(
+    useMutationState({
+      filters: { mutationKey: getMutationKey(trpc.order.adjustItem), status: 'pending' },
+      select: (m) => m.state.variables,
+    }),
+  );
   const approve = trpc.order.approve.useMutation({
     onSuccess: (data, vars) => {
-      void utils.order.pendingList.invalidate();
+      // DX-IX-4 (2026-11-01): the approved card (and its button) leaves the
+      // list; focus moves to the next card's title, not to <body>.
+      void utils.order.pendingList.invalidate().then(() => focusAfter(NEXT_CARD));
       haptic('success');
       // D12 (U1, 2026-10-31): the card's 通过 stays one tap, with five
       // seconds to take it back. The undo is the normal unapprove, sent
@@ -184,7 +205,7 @@ export function ApprovalPage() {
   });
   const reject = trpc.order.reject.useMutation({
     onSuccess: () => {
-      void utils.order.pendingList.invalidate();
+      void utils.order.pendingList.invalidate().then(() => focusAfter(NEXT_CARD));
       setRejectFor(null);
       setRejectReason('');
       haptic('warning');
@@ -209,7 +230,7 @@ export function ApprovalPage() {
     // RE-APR-2: someone else took it over first — show who has it now.
     onError: (err) => {
       void utils.order.pendingList.invalidate();
-      errToast('common.error')(err);
+      errToast('common.errors.actionFailed')(err);
     },
   });
   const dates = useDateFormat();
@@ -218,7 +239,7 @@ export function ApprovalPage() {
       void utils.order.pendingList.invalidate();
       toast.info(i18n.t('approval.toast.released'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const undoApprove = trpc.order.unapprove.useMutation({
     onSuccess: () => {
@@ -232,7 +253,7 @@ export function ApprovalPage() {
         toast.info(i18n.t('approval.toast.undoTooLate'));
         return;
       }
-      errToast('common.error')(err);
+      errToast('common.errors.actionFailed')(err);
     },
   });
   const unapprove = trpc.order.unapprove.useMutation({
@@ -243,7 +264,7 @@ export function ApprovalPage() {
     onError: (err) => {
       // APR-8: the card may be stale (a run took the order); refresh it.
       void utils.order.pendingList.invalidate();
-      errToast('common.error')(err);
+      errToast('common.errors.actionFailed')(err);
     },
   });
 
@@ -392,9 +413,10 @@ export function ApprovalPage() {
         }
       >
         {(rows) => (
-          <ul className="flex flex-col gap-2" role="list">
+          <ul className="flex flex-col gap-2" role="list" data-approval-list="">
             {rows.map((row) => {
               const isClaimedByMe = row.claimedByMemberId === session.member.memberId;
+              const adjusting = adjustingIds.has(row.id);
               const isClaimedByOther =
                 row.claimedByMemberId && row.claimedByMemberId !== session.member.memberId;
               const isOpen = activeSessionId === row.id;
@@ -636,6 +658,14 @@ export function ApprovalPage() {
                   ) : null}
 
                   <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+                    {/* DX-IX-9 (2026-11-01): review decisions are not kept
+                        on the phone, so offline they are disabled with the
+                        reason, rather than failing after the tap. */}
+                    {!online && (tab === 'pending' || tab === 'approved') ? (
+                      <p className="w-full text-old-label text-[var(--c-fg-muted)]">
+                        {i18n.t('approval.offline.needsConnection')}
+                      </p>
+                    ) : null}
                     {/* 2026-10-21 CA-42: an unclaimed order can be approved or
                         rejected directly — the domain already allows it
                         (commands.ts Approve/Reject only conflict when someone
@@ -663,18 +693,22 @@ export function ApprovalPage() {
                           variant="primary"
                           loading={approve.isPending && approve.variables?.sessionId === row.id}
                           disabled={
-                            (claim.isPending && claim.variables?.sessionId === row.id) ||
-                            held.has(row.id)
+                            !online ||
+                            adjusting ||
+                            held.has(row.id) ||
+                            (claim.isPending && claim.variables?.sessionId === row.id)
                           }
                           onClick={() => approveOnce(row.id, row.lastSeq)}
                         >
-                          {i18n.t('approval.approve')}
+                          {adjusting ? i18n.t('common.savingSlow') : i18n.t('approval.approve')}
                         </Button>
                         ) : null}
                         <Button
                           size="sm"
                           variant="danger"
                           disabled={
+                            !online ||
+                            adjusting ||
                             (claim.isPending && claim.variables?.sessionId === row.id) ||
                             (approve.isPending && approve.variables?.sessionId === row.id)
                           }
@@ -689,7 +723,7 @@ export function ApprovalPage() {
                           size="sm"
                           variant="pearl"
                           loading={claim.isPending && claim.variables?.sessionId === row.id}
-                          disabled={approve.isPending && approve.variables?.sessionId === row.id}
+                          disabled={!online || (approve.isPending && approve.variables?.sessionId === row.id)}
                           onClick={() => {
                             claim.mutate({ sessionId: row.id });
                             setActiveSessionId(row.id);
@@ -706,15 +740,16 @@ export function ApprovalPage() {
                           size="sm"
                           variant="primary"
                           loading={approve.isPending && approve.variables?.sessionId === row.id}
-                          disabled={held.has(row.id)}
+                          disabled={!online || adjusting || held.has(row.id)}
                           onClick={() => approveOnce(row.id, row.lastSeq)}
                         >
-                          {i18n.t('approval.approve')}
+                          {adjusting ? i18n.t('common.savingSlow') : i18n.t('approval.approve')}
                         </Button>
                         ) : null}
                         <Button
                           size="sm"
                           variant="danger"
+                          disabled={!online || adjusting}
                           onClick={() => {
                             setRejectFor(row.id);
                             setRejectSeq(row.lastSeq);
@@ -729,6 +764,7 @@ export function ApprovalPage() {
                             releaseClaim.isPending &&
                             releaseClaim.variables?.sessionId === row.id
                           }
+                          disabled={!online}
                           onClick={() => {
                             letGo.current.add(row.id);
                             releaseClaim.mutate({ sessionId: row.id });
@@ -752,6 +788,7 @@ export function ApprovalPage() {
                         loading={
                           unapprove.isPending && unapprove.variables?.sessionId === row.id
                         }
+                        disabled={!online}
                         // APR-7 (2026-10-30): one tap used to send the order
                         // back at once; the prompt was written but unused.
                         onClick={() =>
@@ -917,13 +954,18 @@ function SessionItems({
   const utils = trpc.useUtils();
   const errToast = useErrToast();
   const adjust = trpc.order.adjustItem.useMutation({
+    // DX-APR-1: returning the refetch keeps the write pending until the
+    // card's version (lastSeq) includes this change, so 通过 stays held
+    // until then and the approval carries the version the reviewer saw.
+    // DX-APR-3: our own edit moves the seq too; it is not a change by
+    // someone else, so the copy of the order that includes it is the
+    // new baseline.
     onSuccess: (data) => {
-      // DX-APR-3: our own edit moves the seq too; it is not a change by
-      // someone else, so the copy of the order that includes it is the
-      // new baseline.
       rebaselineAt.current = Math.max(rebaselineAt.current ?? 0, data.lastSeq);
-      void utils.order.sessionDetail.invalidate({ sessionId });
-      void utils.order.pendingList.invalidate();
+      return Promise.all([
+        utils.order.sessionDetail.invalidate({ sessionId }),
+        utils.order.pendingList.invalidate(),
+      ]);
     },
     onError: (err) => {
       // U2: the order changed or someone claimed it first — show it as it is now.
@@ -1051,7 +1093,8 @@ function SessionItems({
     for (const t of totals) {
       const price = priceMap.get(t.skuId);
       if (price) {
-        sum += Number(price) * Number(t.qty);
+        // DX-PFE-12: half-up cents per line, added in cents (D1).
+        sum = addMoney(sum, moneyLine(t.qty, price));
         known++;
       } else {
         unknown++;
@@ -1239,6 +1282,7 @@ function SessionItems({
                   }
                   step={Number(sku.step)}
                   unit={unitLabel(sku.unit)}
+                  unitFor={(qty) => unitLabel(sku.unit, qty)}
                   max={ORDER_QTY_MAX}
                   disabled={drafts.isSaving(qtyKey(t.skuId, singleRow.contributorMemberId))}
                   onChange={(next) =>
@@ -1273,7 +1317,7 @@ function SessionItems({
                 </span>
                 {unitPrice ? (
                   <span className="shrink-0 font-mono">
-                    ~{formatMoney(unitPrice * Number(t.qty))}
+                    ~{formatMoney(moneyLine(t.qty, priceBySku.get(t.skuId)))}
                   </span>
                 ) : null}
               </div>
@@ -1304,6 +1348,7 @@ function SessionItems({
                         }
                         step={Number(sku.step)}
                         unit={unitLabel(sku.unit)}
+                        unitFor={(qty) => unitLabel(sku.unit, qty)}
                         max={ORDER_QTY_MAX}
                         disabled={drafts.isSaving(qtyKey(t.skuId, r.contributorMemberId))}
                         onChange={(next) => drafts.set(qtyKey(t.skuId, r.contributorMemberId), next)}
@@ -1347,6 +1392,7 @@ function SessionItems({
                   value={drafts.value(key) ?? 0}
                   step={Number(sku.step)}
                   unit={unitLabel(sku.unit)}
+                  unitFor={(qty) => unitLabel(sku.unit, qty)}
                   max={ORDER_QTY_MAX}
                   disabled={drafts.isSaving(key)}
                   onChange={(next) => drafts.set(key, next)}

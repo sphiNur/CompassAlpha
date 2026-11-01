@@ -153,14 +153,98 @@ describe('proportionalSplitQty with a step (BUY-13)', () => {
     { storeId: 'A', qty: '6' },
     { storeId: 'B', qty: '10' },
   ];
-  it('rounds shares down to whole pieces; the last store takes the rest', () => {
+  it('gives whole pieces; the leftover piece goes to the larger fraction (DX-BUY-3)', () => {
+    // Claims 5.625 and 9.375: A has the larger fraction, so A gets the
+    // 15th piece (BUY-13 gave it to whichever store came last).
     expect(proportionalSplitQty(demand, '15', '1')).toEqual([
-      { storeId: 'A', qty: '5.000' },
-      { storeId: 'B', qty: '10.000' },
+      { storeId: 'A', qty: '6.000' },
+      { storeId: 'B', qty: '9.000' },
     ]);
   });
   it('gives up (full sheet) rather than send a zero share', () => {
     expect(proportionalSplitQty(demand, '0.001')).toBeNull();
     expect(proportionalSplitQty(demand, '1', '1')).toBeNull();
+  });
+});
+
+describe('proportionalSplitQty largest remainder (DX-BUY-3)', () => {
+  it('does not put the whole shortfall on the first store', () => {
+    // Planned 1.5 + 2 at step 0.5, bought 2.5 (5 steps). BUY-13 rounded
+    // CK down and gave RH the rest; the shares now follow the fractions.
+    const out = proportionalSplitQty(
+      [
+        { storeId: 'CK', qty: '1.5' },
+        { storeId: 'RH', qty: '2' },
+      ],
+      '2.5',
+      '0.5',
+    );
+    // Claims 1.071 / 1.429 kg = 2.14 / 2.86 steps: RH has the larger fraction.
+    expect(out).toEqual([
+      { storeId: 'CK', qty: '1.000' },
+      { storeId: 'RH', qty: '1.500' },
+    ]);
+  });
+
+  it('breaks a tie toward the store that planned more, then list order', () => {
+    expect(
+      proportionalSplitQty(
+        [
+          { storeId: 'A', qty: '1' },
+          { storeId: 'B', qty: '1' },
+          { storeId: 'C', qty: '2' },
+        ],
+        '3',
+        '1',
+      ),
+    ).toEqual([
+      // Claims 0.75 / 0.75 / 1.5: C's fraction (0.5) is the smallest, so
+      // A and B (0.75 each) get a step before C does.
+      { storeId: 'A', qty: '1.000' },
+      { storeId: 'B', qty: '1.000' },
+      { storeId: 'C', qty: '1.000' },
+    ]);
+    expect(
+      proportionalSplitQty(
+        [
+          { storeId: 'A', qty: '1.5' },
+          { storeId: 'B', qty: '1.5' },
+        ],
+        '2.5',
+        '0.5',
+      ),
+    ).toEqual([
+      { storeId: 'A', qty: '1.500' },
+      { storeId: 'B', qty: '1.000' },
+    ]);
+  });
+
+  it('every share is a whole number of steps and the parts sum exactly', () => {
+    const out = proportionalSplitQty(
+      [
+        { storeId: 'a', qty: '3' },
+        { storeId: 'b', qty: '2' },
+        { storeId: 'c', qty: '7' },
+      ],
+      '9',
+      '0.5',
+    )!;
+    for (const o of out) expect((Number(o.qty) * 2) % 1).toBe(0);
+    expect(sum(out.map((o) => o.qty))).toBe(9);
+  });
+
+  it('a remainder below one step goes to the next store in line', () => {
+    const out = proportionalSplitQty(
+      [
+        { storeId: 'a', qty: '1' },
+        { storeId: 'b', qty: '1' },
+      ],
+      '2.3',
+      '0.5',
+    )!;
+    expect(out).toEqual([
+      { storeId: 'a', qty: '1.300' },
+      { storeId: 'b', qty: '1.000' },
+    ]);
   });
 });

@@ -28,12 +28,13 @@ import { useToast } from '@compass/ui';
 import { LANGUAGE_NATIVE_NAMES, type Locale } from '@compass/i18n';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
-import { resetNavStore } from '../stores/navStore';
+import { requestTabChange, resetNavStore, type Tab } from '../stores/navStore';
 import { isInTelegram } from '../hooks/useTelegram';
 import { useI18n, useRoleLabels } from '../hooks/useI18n';
 import { useErrToast } from '../lib/errToast';
 import type { PageMenuRegistration } from '../app/PageMenuContext';
-import { StorePickerSection, useCanSeeStorePicker } from './StoreSwitcher';
+import { StorePickerSection, requestStoreChange, useCanSeeStorePicker } from './StoreSwitcher';
+import { confirmNative } from '../lib/confirm';
 import { CreateWorkspaceForm } from './CreateWorkspace';
 import { BLOCKS_NAVIGATION } from '../hooks/useAppMutating';
 
@@ -63,6 +64,23 @@ interface Props {
   pageMenu?: PageMenuRegistration | null;
 }
 
+/**
+ * DX-SHL-3 (2026-11-01): switching workspace replaces every page, so it
+ * asks first and then lets the pages' unsaved-draft guards (daily close)
+ * veto it, like a tab or store change does. After the switch the shell
+ * lands on the order tab with the new workspace's first store, which is
+ * what the guards are asked about. Exported for tests.
+ */
+export async function mayLeaveWorkspace(deps: {
+  confirm: () => Promise<boolean>;
+  requestTabChange: (next: Tab) => Promise<boolean>;
+  requestStoreChange: (next: null) => Promise<boolean>;
+}): Promise<boolean> {
+  if (!(await deps.confirm())) return false;
+  if (!(await deps.requestTabChange('order'))) return false;
+  return deps.requestStoreChange(null);
+}
+
 export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
   const i18n = useI18n();
   const roleText = useRoleLabels();
@@ -86,7 +104,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
     onSuccess: (next) => {
       patchSession(next as never);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   // M3.45 (2026-05-22): secondary display language. Drives bilingual
   // product names + vendor-language copy templates. See useProductName
@@ -95,7 +113,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
     onSuccess: (next) => {
       patchSession(next as never);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const switchOrganization = trpc.auth.switchOrganization.useMutation({
     meta: BLOCKS_NAVIGATION,
@@ -112,7 +130,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
       toast.success(i18n.t('workspace.switched'));
       onOpenChange(false);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);
@@ -210,9 +228,17 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
                     selected={selected}
                     disabled={switchOrganization.isPending}
                     onClick={() => {
-                      if (!selected) {
-                        switchOrganization.mutate({ orgId: membership.orgId });
-                      }
+                      if (selected) return;
+                      void mayLeaveWorkspace({
+                        confirm: () =>
+                          confirmNative(
+                            i18n.t('workspace.switchConfirm', { name: membership.orgName }),
+                          ),
+                        requestTabChange,
+                        requestStoreChange,
+                      }).then((ok) => {
+                        if (ok) switchOrganization.mutate({ orgId: membership.orgId });
+                      });
                     }}
                   />
                 );

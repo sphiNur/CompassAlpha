@@ -440,6 +440,53 @@ describe.skipIf(!SHOULD_RUN)('purchase page (PG-gated)', () => {
     await retire(runId);
   });
 
+  test('DX-BUY-2: a top-up saved as its own batch keeps the earlier price', async () => {
+    const { admin, storeA, storeB, skuIds } = fix!;
+    const { runId } = await seedRun('purchasing');
+    try {
+      await admin.caller.run.purchaseItem({
+        runId,
+        skuId: skuIds[0],
+        supplierId: null,
+        unitPrice: '80000',
+        actualQty: '2',
+        receiptPhotoUrl: null,
+        storeSplits: [{ storeId: storeA, qty: '2' }],
+        paymentMethod: 'cash',
+      });
+      // What the web's topUpRevision sends: the row keeps 80,000; the
+      // store that only gets the extra is priced at this batch's 82,000.
+      await admin.caller.run.revisePurchase({
+        runId,
+        skuId: skuIds[0],
+        supplierId: null,
+        unitPrice: '80000',
+        actualQty: '4',
+        receiptPhotoUrl: null,
+        storeSplits: [
+          { storeId: storeA, qty: '2' },
+          { storeId: storeB, qty: '2', unitPrice: '82000', paymentMethod: 'transfer' },
+        ],
+        paymentMethod: 'cash',
+        reason: 'top-up',
+      });
+      const run = await admin.caller.run.get({ runId });
+      const item = run.items.find((it) => it.skuId === skuIds[0])!;
+      expect(Number(item.unitPrice)).toBe(80000);
+      expect(Number(item.purchasedQty)).toBe(4);
+      // 2 × 80,000 + 2 × 82,000 = 324,000 paid, not 4 × 82,000.
+      const riceSplits = run.splits.filter((sp) => sp.skuId === skuIds[0]);
+      expect(
+        riceSplits.reduce(
+          (sum, sp) => sum + Number(sp.qty) * Number(sp.unitPrice ?? item.unitPrice),
+          0,
+        ),
+      ).toBe(324000);
+    } finally {
+      await retire(runId);
+    }
+  });
+
   test('D9: a purchaser of store A records and removes expenses split to store A only', async () => {
     const { admin, buyerA, storeA, storeB } = fix!;
     const { runId } = await seedRun('purchasing');
@@ -657,6 +704,60 @@ describe.skipIf(!SHOULD_RUN)('delivery and corrections (PG-gated)', () => {
     expect(detail.corrections).toEqual([
       { kind: 'amendAdded', skuId: skuIds[2], storeId: storeA, qty: '3' },
     ]);
+  });
+
+  test('DX-DLV-01: quantity a correction adds to a short line reaches stock', async () => {
+    const { admin, storeA, storeB, skuIds } = fix!;
+    const { runId } = await seedRun('delivered');
+    // Store A received only 1 of its 2 kg of rice.
+    await admin.caller.run.confirmStoreItem({
+      runId,
+      storeId: storeA,
+      skuId: skuIds[0],
+      status: 'short',
+      note: 'one bag short',
+      photoUrl: null,
+      receivedQty: '1',
+    });
+    await admin.caller.run.confirmStore({ runId, storeId: storeA });
+    await admin.caller.run.markStoreItemsOk({ runId, storeId: storeB, skuIds: [skuIds[1]] });
+    await admin.caller.run.confirmStore({ runId, storeId: storeB });
+    await admin.caller.run.finish({ runId });
+    expect(await stockOf(storeA, skuIds[0], runId)).toBe(1);
+
+    // The correction gives store A 2 kg more (2 → 4).
+    await admin.caller.run.reopen({ runId, reason: 'two more bags went out' });
+    await admin.caller.run.revisePurchase({
+      runId,
+      skuId: skuIds[0],
+      supplierId: null,
+      unitPrice: '1000',
+      actualQty: '4',
+      receiptPhotoUrl: null,
+      storeSplits: [{ storeId: storeA, qty: '4' }],
+      paymentMethod: 'cash',
+      reason: 'two more bags',
+    });
+    await admin.caller.run.refinalize({ runId });
+
+    // D3: received 1 + added 2 — the shortfall stays recorded, the added
+    // quantity is stock (it used to stay at 1).
+    expect(await stockOf(storeA, skuIds[0], runId)).toBe(3);
+    const detail = await admin.caller.run.historyDetail({ runId });
+    expect(detail.corrections).toContainEqual({
+      kind: 'amendAdded',
+      skuId: skuIds[0],
+      storeId: storeA,
+      qty: '2',
+    });
+    const split = detail.splits.find((sp) => sp.skuId === skuIds[0] && sp.storeId === storeA);
+    expect(split).toMatchObject({ confirmStatus: 'short' });
+    expect(Number(split!.confirmReceivedQty)).toBe(1);
+
+    // A second close rewrites the same rows (no double booking).
+    await admin.caller.run.reopen({ runId, reason: 'look again' });
+    await admin.caller.run.refinalize({ runId });
+    expect(await stockOf(storeA, skuIds[0], runId)).toBe(3);
   });
 
   test('D4: a price changed after receipt changes the amount, not stock, and is kept', async () => {

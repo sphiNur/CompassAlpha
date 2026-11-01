@@ -28,6 +28,8 @@
  */
 import { addMoney } from '@compass/contracts/money';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { cacheOwner } from '../lib/queryPersist';
+import { hintStorage, saveRunHint } from '../lib/runHint';
 import {
   Banner,
   Button,
@@ -89,9 +91,11 @@ import { buildStorePickList } from './runs/lib/storePickList';
 import { ActiveRunPanel, PreviewSummaryCard, RunSessionsCard } from './runs/components/RunPanels';
 import { SessionPicker } from './runs/components/SessionPicker';
 import { selectPreview, selectedSessionIds } from './runs/lib/sessionSelection';
-import { editPricingFromSplits, splitOverridesFor } from './runs/lib/purchaseOverrides';
+import { editPricingFromSplits, paidPerStore, splitOverridesFor } from './runs/lib/purchaseOverrides';
+import { topUpRevision } from './runs/lib/topUp';
 import { NEW_RUN, isBuying, liveRunsOf, pickActiveRun, runListGate } from './runs/lib/liveRuns';
 import { overlayPendingWrites, startDeliveryBlock, withData } from './runs/lib/pendingOverlay';
+import { moneyLine as moneyLineAmount } from '../lib/money';
 
 function newClientId(): string {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -297,7 +301,7 @@ export function RunPage() {
       haptic('success');
       toast.success(i18n.t('run.toast.purchaseStarted'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   // M3.41 (2026-05-21): mid-run addition. Mirrors purchaseItem's
   // success/offline-queue pattern so the bazaar UX (flaky LTE) survives
@@ -371,7 +375,7 @@ export function RunPage() {
       haptic('success');
       toast.info(i18n.t('run.toast.expenseRemoved'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const ejectSession = trpc.run.ejectSession.useMutation({
     onSuccess: () => {
@@ -479,7 +483,7 @@ export function RunPage() {
         setUnavailableNote('');
         toast.info(i18n.t('run.toast.purchaseSavedOffline'));
       } else {
-        errToast('common.error')(err);
+        errToast('common.errors.actionFailed')(err);
       }
     },
   });
@@ -490,7 +494,7 @@ export function RunPage() {
       invalidateRunQuietly(true);
       toast.info(i18n.t('run.topUp.dismissed'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const unmarkUnavailable = trpc.run.unmarkUnavailable.useMutation({
     onSuccess: () => {
@@ -498,7 +502,7 @@ export function RunPage() {
       haptic('success');
       toast.success(i18n.t('run.toast.unmarkedUnavailable'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const undoPurchase = trpc.run.undoPurchase.useMutation({
     onSuccess: () => {
@@ -506,7 +510,7 @@ export function RunPage() {
       haptic('success');
       toast.success(i18n.t('run.toast.purchaseUndone'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const startDelivery = trpc.run.startDelivery.useMutation({
     onSuccess: () => {
@@ -514,7 +518,7 @@ export function RunPage() {
       haptic('success');
       toast.success(i18n.t('run.toast.deliveryStarted'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const deliverIdemCtx = useRef<{ idempotencyKey?: string }>({}).current;
   const deliverToStore = trpc.run.deliverToStore.useMutation({
@@ -538,7 +542,7 @@ export function RunPage() {
         setConfirmAction(null);
         toast.info(i18n.t('run.toast.purchaseSavedOffline'));
       } else {
-        errToast('common.error')(err);
+        errToast('common.errors.actionFailed')(err);
       }
     },
   });
@@ -548,7 +552,7 @@ export function RunPage() {
       haptic('success');
       toast.success(i18n.t('run.toast.deliveryRecalled'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const undoStartPurchase = trpc.run.undoStartPurchase.useMutation({
     onSuccess: () => {
@@ -556,7 +560,7 @@ export function RunPage() {
       haptic('success');
       toast.success(i18n.t('run.toast.startPurchaseUndone'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const undoStartDelivery = trpc.run.undoStartDelivery.useMutation({
     onSuccess: () => {
@@ -564,7 +568,7 @@ export function RunPage() {
       haptic('success');
       toast.success(i18n.t('run.toast.startDeliveryUndone'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const cancelRun = trpc.run.cancel.useMutation({
     onSuccess: (result) => {
@@ -587,7 +591,7 @@ export function RunPage() {
         toast.success(i18n.t('run.toast.runCancelled'));
       }
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const finish = trpc.run.finish.useMutation({
     onSuccess: () => {
@@ -595,7 +599,7 @@ export function RunPage() {
       haptic('success');
       toast.success(i18n.t('run.toast.runFinished'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   // 2026-07-06: close a super-admin correction — recompute + re-freeze
   // totals and return amending → finished.
@@ -606,7 +610,7 @@ export function RunPage() {
       haptic('success');
       toast.success(i18n.t('run.toast.amendSaved'));
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   // M3.37 (2026-05-19, Wave2 #5): purchaser cycles an extra row's
   // outcome (pending → bought → unavailable → pending). One mutation
@@ -625,7 +629,7 @@ export function RunPage() {
     // this page read it; show the current rows.
     onError: (err) => {
       invalidateRunQuietly();
-      errToast('common.error')(err);
+      errToast('common.errors.actionFailed')(err);
     },
   });
   // UIUX-B1 (2026-07-06): the C.2/M3.38 exclusive-claim subsystem
@@ -692,6 +696,14 @@ export function RunPage() {
     [runsQuery.data, canAmend, selectedRunKey],
   );
   const runListState = runListGate(runsQuery);
+  // DX-PFE-3: remember the run on screen so the next start can ask for it
+  // without waiting for run.list (hooks/useWarmRunQueries).
+  const runHintOwner = cacheOwner(session);
+  const activeRunId = activeRun?.id ?? null;
+  const runListAnswered = runsQuery.isSuccess;
+  useEffect(() => {
+    if (runListAnswered) saveRunHint(hintStorage(), runHintOwner, activeRunId);
+  }, [runListAnswered, runHintOwner, activeRunId]);
   const liveRuns = useMemo(() => liveRunsOf(runsQuery.data ?? [], canAmend), [runsQuery.data, canAmend]);
   const hasBuyingRun = liveRuns.some((r) => isBuying(r.status));
   const previewSessionCount = previewQuery.data?.sessions.length ?? 0;
@@ -988,6 +1000,31 @@ export function RunPage() {
 
   const submitPurchaseDraft = useCallback(
     (d: PurchaseDraft) => {
+      // DX-BUY-2: a top-up is its own batch on the row (lib/topUp.ts).
+      const topUp =
+        d.topUp && !d.perStorePricing
+          ? topUpRevision({
+              item: d.topUp.item,
+              base: d.topUp.base,
+              next: d.splits,
+              topUpPrice: d.unitPrice,
+              topUpMethod: d.paymentMethod,
+            })
+          : null;
+      if (topUp) {
+        withPriceCheck(d.skuId, [d.unitPrice], (confirmed) => {
+          revisePurchase.mutate({
+            runId: d.runId,
+            skuId: d.skuId,
+            supplierId: d.supplierId,
+            receiptPhotoUrl: d.receiptPhotoUrl,
+            ...topUp,
+            reason: d.reason,
+            ...(confirmed ? { priceConfirmed: true } : {}),
+          });
+        });
+        return;
+      }
       const payload = {
         runId: d.runId,
         skuId: d.skuId,
@@ -1576,9 +1613,11 @@ export function RunPage() {
             (runDetailQuery.data?.items ?? []).map((it) => [it.skuId, it.unitPrice]),
           );
           const missingValue = receiptIssues.reduce((sum, sp) => {
-            const price = Number(sp.unitPrice ?? itemPrice.get(sp.skuId) ?? 0);
+            const price = sp.unitPrice ?? itemPrice.get(sp.skuId) ?? 0;
             const missing = Number(sp.qty) - Number(sp.confirmReceivedQty ?? 0);
-            return sum + (missing > 0 ? missing * price : 0);
+            // DX-PFE-12: half-up cents per line (D1); toFixed(3) drops the
+            // float noise of the subtraction (quantities have 3 decimals).
+            return missing > 0 ? addMoney(sum, moneyLineAmount(missing.toFixed(3), price)) : sum;
           }, 0);
           const receiptLine =
             receiptIssues.length > 0
@@ -1625,6 +1664,8 @@ export function RunPage() {
               receiptLine,
             confirmLabel: i18n.t('run.action.finish'),
             danger: false,
+            // DX-IX-6: locks the purchase; Cancel shown and focused.
+            irreversible: true,
             requireReason: false,
             isPending: finish.isPending,
             run: () => finish.mutate({ runId }, { onSuccess: () => setConfirmAction(null) }),
@@ -1652,6 +1693,8 @@ export function RunPage() {
               }),
             confirmLabel: i18n.t('run.action.refinalize'),
             danger: false,
+            // DX-IX-6: locks the purchase; Cancel shown and focused.
+            irreversible: true,
             requireReason: false,
             isPending: refinalize.isPending,
             run: () => refinalize.mutate({ runId }, { onSuccess: () => setConfirmAction(null) }),
@@ -2457,21 +2500,25 @@ export function RunPage() {
               );
               // A row with per-store payment overrides has no single
               // method to flip — send it to the sheet, where those fields
-              // exist. (The row already renders a static indicator in that
-              // case; this is defence in depth.)
-              if (rows.some((sp) => sp.paymentMethod) || !item.unitPrice || !item.purchasedQty) {
+              // exist. (The row already opens the sheet in that case; this
+              // is defence in depth.) DX-BUY-1: a split that only repeats
+              // the item's method is not an override.
+              if (paidPerStore(item, rows) || !item.unitPrice || !item.purchasedQty) {
                 openPurchaseEdit(item);
                 return;
               }
               const storeSplits = rows
                 .filter((sp) => Number(sp.qty) > 0)
                 // Preserve per-store PRICE overrides; omit paymentMethod
-                // so the projection writes null, which is what it already
-                // was on every split of this row.
+                // so the projection writes null: every store follows the
+                // item's new method. A split price equal to the item's is
+                // not an override (store-scoped readers get it resolved).
                 .map((sp) => ({
                   storeId: sp.storeId,
                   qty: sp.qty,
-                  ...(sp.unitPrice ? { unitPrice: sp.unitPrice } : {}),
+                  ...(sp.unitPrice && Number(sp.unitPrice) !== Number(item.unitPrice)
+                    ? { unitPrice: sp.unitPrice }
+                    : {}),
                 }));
               if (storeSplits.length === 0) {
                 openPurchaseEdit(item);
@@ -2512,6 +2559,27 @@ export function RunPage() {
                 return;
               }
               openPurchaseEdit(item);
+              // DX-BUY-2: what was bought before, with each store's effective
+              // price and method, so the sheet's price is this batch's only.
+              const baseRows = (runDetailQuery.data?.splits ?? []).filter(
+                (sp) => sp.skuId === item.skuId && Number(sp.qty) > 0,
+              );
+              const basePricing = editPricingFromSplits(item, baseRows);
+              const baseItemPrice = item.unitPrice ?? basePricing.unitPrice;
+              const asMethod = (m: string | null | undefined): 'cash' | 'transfer' =>
+                m === 'transfer' ? 'transfer' : 'cash';
+              const topUpBase =
+                baseItemPrice && baseRows.every((sp) => sp.unitPrice ?? baseItemPrice)
+                  ? {
+                      item: { unitPrice: baseItemPrice, paymentMethod: basePricing.paymentMethod },
+                      base: baseRows.map((sp) => ({
+                        storeId: sp.storeId,
+                        qty: sp.qty,
+                        unitPrice: sp.unitPrice ?? baseItemPrice,
+                        paymentMethod: asMethod(sp.paymentMethod ?? item.paymentMethod),
+                      })),
+                    }
+                  : undefined;
               // Prefill the extra where the demand is not yet covered, so it
               // goes to the stores that asked for it, not spread over all.
               const demand = (runDetailQuery.data?.perStoreDemand ?? []).filter(
@@ -2535,6 +2603,18 @@ export function RunPage() {
                   splits,
                   actualQty: String(Number(total.toFixed(3))),
                   reason: i18n.t('run.topUp.reason'),
+                  ...(topUpBase
+                    ? {
+                        topUp: topUpBase,
+                        // One price for this batch; the stores' earlier
+                        // prices are kept by the revision itself.
+                        perStorePricing: false,
+                        splitPrices: new Map(),
+                        splitPaymentMethods: new Map(),
+                        unitPrice: topUpBase.item.unitPrice,
+                        paymentMethod: topUpBase.item.paymentMethod,
+                      }
+                    : {}),
                 };
               });
             }}
@@ -2902,6 +2982,9 @@ export function RunPage() {
         confirmLabel={i18n.t('run.price.check.confirm')}
         cancelLabel={i18n.t('run.price.check.fix')}
         showCancelInSheet
+        // DX-IX-7 (2026-11-01): Enter in the price field opens this; focus
+        // starts on 改价格 so a second Enter does not save the outlier.
+        focusCancel
         onConfirm={() => {
           const go = priceCheck?.run;
           setPriceCheck(null);

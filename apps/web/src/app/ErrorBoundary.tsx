@@ -9,47 +9,23 @@ import { Component } from 'react';
 import { reloadApp } from '../lib/reload';
 import { NAV_STORAGE_KEY } from '../stores/navStore';
 import type { ErrorInfo, ReactNode } from 'react';
-import { createI18n, detectLocale, isLoaded, loadCatalog, type Locale } from '@compass/i18n';
+import { createI18n, ensureCatalog, isLoaded, type Locale } from '@compass/i18n';
+import { startLocale } from '../lib/startLocale';
 
 /**
  * Resolve the user's locale WITHOUT hooks (2026-07-30).
  *
  * ErrorBoundary is the outermost component — it wraps ThemeProvider and
  * UiLabelsBridge — so it can't use `useI18n()` and can't read any React
- * context: it is the ancestor of all of them. It also has to keep working
- * when the tree below it has just blown up.
+ * context: it is the ancestor of all of them. lib/bootLocale reads the
+ * persisted session straight from storage, then the platform hint.
  *
- * Preference order:
- *   1. The persisted session's `user.locale` — the language the user
- *      actually chose, and what every other screen is rendering in.
- *   2. Telegram's `language_code` / `navigator.language`, same signal
- *      /boot-guard.js uses to set <html lang> before React boots.
- *
- * `lookup()` falls back through `en`, and `en` is the statically-bundled
- * catalog, so a crash that happens BEFORE the locale chunk resolves
- * degrades to English rather than rendering keys. That's the honest
- * outcome for a boot-time crash; a mid-session crash (the realistic case,
- * and the one observed on 2026-07-30) has the catalog long since loaded.
+ * A crash before any catalog arrived (no catalog is bundled since
+ * DX-PFE-2) draws keys for the moment componentDidCatch takes to fetch
+ * the language — or English when that fails — and draw again. A
+ * mid-session crash (the realistic case) has the catalog long loaded.
  */
-function crashLocale(): Locale {
-  try {
-    const raw = window.localStorage.getItem('compass.auth');
-    if (raw) {
-      const persisted = JSON.parse(raw) as {
-        state?: { session?: { user?: { locale?: string } } };
-      };
-      const chosen = persisted.state?.session?.user?.locale;
-      if (chosen) return detectLocale(chosen);
-    }
-  } catch {
-    /* unparseable / storage blocked — fall through to the platform hint */
-  }
-  const tgLang =
-    typeof window !== 'undefined'
-      ? window.Telegram?.WebApp?.initDataUnsafe?.user?.language_code
-      : undefined;
-  return detectLocale(tgLang ?? (typeof navigator !== 'undefined' ? navigator.language : 'en'));
-}
+const crashLocale = (): Locale => startLocale();
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -57,6 +33,20 @@ interface ErrorBoundaryProps {
 
 interface ErrorBoundaryState {
   error: Error | null;
+  copied?: boolean;
+}
+
+/**
+ * DX-SHL-16 (2026-11-01): the error text and stack the administrator may
+ * need, kept off the screen (staff saw an English trace) and copied on
+ * request instead.
+ */
+export function crashDetails(error: Error): string {
+  const message = error.message ?? String(error);
+  const stack = error.stack ?? '';
+  return [message, stack.split('\n').slice(0, 8).join('\n'), `at ${new Date().toISOString()}`]
+    .filter(Boolean)
+    .join('\n\n');
 }
 
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
@@ -84,18 +74,14 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     // the screen in English until a retry. Fetch it now and draw again.
     const locale = crashLocale();
     if (!isLoaded(locale)) {
-      void loadCatalog(locale)
-        .then(() => this.forceUpdate())
-        .catch(() => {
-          /* offline: English it is */
-        });
+      // Offline, ensureCatalog falls back to English.
+      void ensureCatalog(locale).then(() => this.forceUpdate());
     }
   }
 
   override render(): ReactNode {
     if (this.state.error) {
-      const message = this.state.error.message ?? String(this.state.error);
-      const stack = this.state.error.stack ?? '';
+      const error = this.state.error;
       // Resolved per render rather than in a field: the locale catalog may
       // land between the crash and a re-render, and this screen is sticky
       // (the user sits on it), so picking the language up late still helps.
@@ -123,27 +109,32 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           <p style={{ fontSize: 14, opacity: 0.7, margin: 0, maxWidth: 320 }}>
             {t('boot.crashBody')}
           </p>
-          <pre
-            style={{
-              maxWidth: '92vw',
-              maxHeight: '40vh',
-              overflow: 'auto',
-              background: 'rgba(0,0,0,0.06)',
-              padding: 12,
-              borderRadius: 12,
-              fontSize: 11,
-              textAlign: 'left',
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-            }}
-          >
-            {message}
-            {stack ? '\n\n' + stack.split('\n').slice(0, 8).join('\n') : ''}
-          </pre>
           <button
             type="button"
             onClick={() => {
-              this.setState({ error: null });
+              void navigator.clipboard
+                ?.writeText(crashDetails(error))
+                .then(() => this.setState({ copied: true }))
+                .catch(() => {
+                  /* clipboard refused: nothing to copy to */
+                });
+            }}
+            style={{
+              padding: '10px 20px',
+              borderRadius: 9999,
+              background: 'transparent',
+              color: 'var(--c-action, #0066cc)',
+              border: 0,
+              fontSize: 14,
+              cursor: 'pointer',
+            }}
+          >
+            {this.state.copied ? t('boot.detailsCopied') : t('boot.copyDetails')}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              this.setState({ error: null, copied: false });
             }}
             style={{
               padding: '10px 20px',

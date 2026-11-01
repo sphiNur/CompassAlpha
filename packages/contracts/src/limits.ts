@@ -45,3 +45,36 @@ export const PURCHASE_PRICE_RE = /^\d{1,12}(\.\d{1,2})?$/;
 export function isPurchasePrice(v: string): boolean {
   return PURCHASE_PRICE_RE.test(v) && Number(v) > 0;
 }
+
+/** CLS-19 (2026-10-30): a stocktake count has at most 8 integer digits. */
+export const STOCKTAKE_COUNT_MAX = 99_999_999.999;
+
+export type StocktakeCountProblem = 'empty' | 'negative' | 'notNumber' | 'decimals' | 'tooLarge';
+
+/**
+ * DX-INV-1 (2026-11-01): why a counted on-hand quantity can't be saved,
+ * or null when it can. Empty, negative, letters, four decimals and a huge
+ * number were all answered "quantity too large". The server refuses with
+ * the matching `inventory.errors.count*` key; the stocktake sheet runs the
+ * same check before Save. `value` is the plain decimal text (the web reads
+ * the field with readDecimalText first, so "1,5" arrives as "1.5").
+ */
+export function stocktakeCountProblem(value: string): StocktakeCountProblem | null {
+  const v = value.trim();
+  if (v === '') return 'empty';
+  if (/^-\s*(\d+\.?\d*|\.\d+)$/.test(v) && Number(v) < 0) return 'negative';
+  if (!/^(\d+\.?\d*|\.\d+)$/.test(v)) return 'notNumber';
+  const [whole = '', fraction = ''] = v.split('.');
+  if (fraction.length > 3) return 'decimals';
+  if (whole.replace(/^0+(?=\d)/, '').length > 8) return 'tooLarge';
+  return null;
+}
+
+/** The catalog key the server and the stocktake sheet show for each problem. */
+export const STOCKTAKE_COUNT_MESSAGE = {
+  empty: 'inventory.errors.countRequired',
+  negative: 'inventory.errors.countNegative',
+  notNumber: 'inventory.errors.countNotNumber',
+  decimals: 'inventory.errors.countDecimals',
+  tooLarge: 'inventory.errors.countTooLarge',
+} as const satisfies Record<StocktakeCountProblem, string>;

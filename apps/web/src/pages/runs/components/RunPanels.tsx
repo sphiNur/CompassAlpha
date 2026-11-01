@@ -26,6 +26,7 @@ import {
   SectionLabel,
   Sheet,
   useToast,
+  Segmented,
 } from '@compass/ui';
 import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
@@ -74,6 +75,8 @@ import {
   type ItemFilter,
   type ItemView,
 } from '../lib/itemList';
+import { moneyLine } from '../../../lib/money';
+import { addMoney } from '@compass/contracts/money';
 
 // formatQty / formatMoney are imported from `../lib/format` —
 // thousand-separator + max-1-decimal display rule applied everywhere.
@@ -1135,16 +1138,14 @@ function scrollParentOf(el: HTMLElement | null): HTMLElement | null {
 
 function previewLineTotal(qty: string, unitPrice: string | null): number | null {
   if (!unitPrice) return null;
-  const qtyNum = Number(qty);
-  const priceNum = Number(unitPrice);
-  if (!Number.isFinite(qtyNum) || !Number.isFinite(priceNum)) return null;
-  return qtyNum * priceNum;
+  // DX-PFE-12: half-up cents (D1); null when either is not a number.
+  return moneyLine(qty, unitPrice);
 }
 
 function addPreviewLine(group: PreviewStoreGroup, line: PreviewLine): void {
   group.items.push(line);
   if (line.total === null) group.unknownCount += 1;
-  else group.total += line.total;
+  else group.total = addMoney(group.total, line.total);
 }
 
 export function PreviewSummaryCard({
@@ -1610,7 +1611,7 @@ export function PreviewSummaryCard({
       haptic('success');
       return;
     }
-    toast.error(i18n.t('common.error'));
+    toast.error(i18n.t('admin.toast.couldNotCopy'));
   };
 
   /**
@@ -1856,24 +1857,16 @@ export function PreviewSummaryCard({
           ) : null}
         </div>
       </div>
-      <div className="flex gap-1 px-3 pb-2 pt-1">
-        {(['byStore', 'bySupplier'] as const).map((v) => (
-          <button
-            key={v}
-            type="button"
-            onClick={() => chooseView(v)}
-            className={
-              'press hit-44 flex-1 rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium ring-hairline ' +
-              (view === v
-                ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]')
-            }
-          >
-            {i18n.t(
-              v === 'byStore' ? 'run.previewView.byStore' : 'run.previewView.bySupplier',
-            )}
-          </button>
-        ))}
+      {/* DX-VIS-7 (2026-11-01): Segmented, so the chosen view is announced. */}
+      <div className="px-3 pb-2 pt-1">
+        <Segmented
+          value={view}
+          onChange={chooseView}
+          options={[
+            { value: 'byStore', label: i18n.t('run.previewView.byStore') },
+            { value: 'bySupplier', label: i18n.t('run.previewView.bySupplier') },
+          ]}
+        />
       </div>
 
       {/* Run-wide header. Renders above BOTH views on purpose — "what
@@ -2252,7 +2245,7 @@ function VendorPickerSheet({
       );
       onClose();
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   return (
@@ -2270,6 +2263,8 @@ function VendorPickerSheet({
           type="button"
           onClick={() => setSupplier.mutate({ skuId, supplierId: null })}
           disabled={setSupplier.isPending}
+          // DX-VIS-7: the ✓ is aria-hidden; this says it is the current choice.
+          aria-pressed={currentSupplierId === null}
           className={
             'press flex items-center justify-between gap-3 rounded-[var(--r-card)] px-4 py-3 text-left ring-hairline ' +
             (currentSupplierId === null
@@ -2304,6 +2299,7 @@ function VendorPickerSheet({
               type="button"
               onClick={() => setSupplier.mutate({ skuId, supplierId: sup.id })}
               disabled={setSupplier.isPending}
+              aria-pressed={selected}
               className={
                 'press flex items-center justify-between gap-3 rounded-[var(--r-card)] px-4 py-3 text-left ring-hairline ' +
                 (selected

@@ -9,6 +9,7 @@ import {
 } from 'react';
 import type { ReactNode } from 'react';
 import { cn } from '../cn.js';
+import { useSheetCount } from './Sheet';
 
 export type ToastTone = 'info' | 'success' | 'warn' | 'danger';
 
@@ -76,6 +77,11 @@ const TONE: Record<ToastTone, string> = {
  * (a tall sheet) just above its footer — over the sheet's body, never its
  * header. Exported for tests.
  */
+/** DX-PFE-6: the toast stack follows a sheet only while both are up. */
+export function shouldFollowSheet(hasToasts: boolean, sheetOpen: boolean): boolean {
+  return hasToasts && sheetOpen;
+}
+
 export function toastOffsetForSheet(r: {
   viewportH: number;
   sheetTop: number;
@@ -132,13 +138,18 @@ export function ToastProvider({
   // usual place above the main button.
   const [sheetOffset, setSheetOffset] = useState<number | null>(null);
   const hasToasts = toasts.length > 0;
+  // DX-PFE-6 (2026-11-01): the per-frame follow forces a layout each
+  // frame, so it runs only while a toast AND a sheet are both up. It
+  // used to run for as long as any toast showed (a sticky "new version"
+  // toast kept it going indefinitely) with no sheet to follow.
+  const sheetOpen = useSheetCount() > 0;
   useEffect(() => {
-    if (!hasToasts || typeof window === 'undefined') {
+    if (!shouldFollowSheet(hasToasts, sheetOpen) || typeof window === 'undefined') {
       setSheetOffset(null);
       return;
     }
-    // Followed every frame while toasts are up: a sheet slides in, grows
-    // with its content and moves with the keyboard.
+    // Followed every frame while a sheet is open under toasts: it slides
+    // in, grows with its content and moves with the keyboard.
     let frame = 0;
     const follow = () => {
       const sheets = document.querySelectorAll<HTMLElement>(
@@ -163,7 +174,7 @@ export function ToastProvider({
     };
     follow();
     return () => window.cancelAnimationFrame(frame);
-  }, [hasToasts]);
+  }, [hasToasts, sheetOpen]);
 
   const dismiss = useCallback((id: string) => {
     const t = timersRef.current.get(id);

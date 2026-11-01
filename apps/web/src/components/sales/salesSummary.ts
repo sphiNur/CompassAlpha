@@ -5,6 +5,8 @@
  * unit test without React.
  */
 
+import { sumMoneyLines } from '../../lib/money';
+
 export interface SaleSummaryRow {
   qty: string;
   unitPrice: string | null;
@@ -17,15 +19,15 @@ export function summarizeSales(sales: ReadonlyArray<SaleSummaryRow>): {
   revenue: number;
 } {
   let count = 0;
-  let revenue = 0;
+  const priced: Array<[string, string]> = [];
   for (const sale of sales) {
     // 2026-10-21: a voided sale's stock was put back — it isn't revenue.
     if (sale.voidedAt) continue;
-    const qty = Number(sale.qty);
-    count += qty;
-    if (sale.unitPrice) revenue += qty * Number(sale.unitPrice);
+    count += Number(sale.qty);
+    if (sale.unitPrice) priced.push([sale.qty, sale.unitPrice]);
   }
-  return { count, revenue };
+  // DX-PFE-12: each sale rounded to cents, then added in cents (D1).
+  return { count, revenue: sumMoneyLines(priced) };
 }
 
 /** Void reason as the server accepts it (trimmed, 1..300 chars). */

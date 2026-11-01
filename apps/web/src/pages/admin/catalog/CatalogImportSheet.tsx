@@ -51,7 +51,7 @@ export function CatalogImportSheet({
       );
       onOpenChange(false);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   const p = preview.data;
@@ -100,7 +100,7 @@ export function CatalogImportSheet({
           onChange={(e) => setIncludeSuppliers(e.target.checked)}
         />
         {preview.isError ? (
-          <Banner tone="danger" title={i18n.t('common.error')} />
+          <Banner tone="danger" title={i18n.t('common.errors.actionFailed')} />
         ) : p ? (
           nothingNew ? (
             <Banner tone="success" title={i18n.t('catalog.import.nothingNew')} />
