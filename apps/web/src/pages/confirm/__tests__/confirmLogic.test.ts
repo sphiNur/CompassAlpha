@@ -10,7 +10,9 @@ import {
   deliveringRunsForStore,
   initialReceivedQty,
   issueSaveState,
+  receivingWait,
   runsListView,
+  unboughtForStore,
 } from '../confirmLogic';
 
 const run = (
@@ -74,7 +76,7 @@ describe('checkReceivedQty', () => {
     expect(checkReceivedQty('short', '2', '2')).toEqual({ ok: false, reason: 'notShort' });
     expect(checkReceivedQty('short', '2.5', '2')).toEqual({ ok: false, reason: 'exceeds' });
     expect(checkReceivedQty('short', '-1', '2')).toEqual({ ok: false, reason: 'invalid' });
-    expect(checkReceivedQty('short', '1.2345', '2')).toEqual({ ok: false, reason: 'invalid' });
+    expect(checkReceivedQty('short', '1.2345', '2')).toEqual({ ok: false, reason: 'tooPrecise' });
   });
   it('R2-DLV-2: reads "1,000" by the interface language, like every number field', () => {
     try {
@@ -102,6 +104,11 @@ describe('initialReceivedQty', () => {
     expect(initialReceivedQty('wrong', undefined)).toBe('0');
     expect(initialReceivedQty('quality', null)).toBe('0');
     expect(initialReceivedQty('short', '1.5')).toBe('1.5');
+  });
+  it('DX-DLV-07: drops the trailing zeros the server keeps', () => {
+    expect(initialReceivedQty('short', '5.000')).toBe('5');
+    expect(initialReceivedQty('short', '1.500')).toBe('1.5');
+    expect(initialReceivedQty('short', '10')).toBe('10');
   });
 });
 
@@ -157,5 +164,39 @@ describe('issueSaveState (CMP-DLV-6)', () => {
     expect(issueSaveState({ reasonOk: true, photoUploading: false, saving: true }).canSave).toBe(
       false,
     );
+  });
+});
+
+describe('DX-DLV-13: the store sees what is coming', () => {
+  it('a run naming its stores keeps an unbought-only store and drops others', () => {
+    const rows = [
+      { id: 'r1', status: 'delivering', runDate: '2026-11-01', runIndex: 0, storeTotals: [], storeIds: ['A'] },
+    ];
+    expect(deliveringRunsForStore(rows, 'A').map((r) => r.id)).toEqual(['r1']);
+    expect(deliveringRunsForStore(rows, 'B')).toEqual([]);
+  });
+
+  it('tells recalled, on the way, being bought and nothing apart', () => {
+    const runs = [{ status: 'purchasing', storeIds: ['A'] }];
+    expect(receivingWait({ storeId: 'A', runs, active: { recalledStoreIds: ['A'] } })).toBe('recalled');
+    expect(receivingWait({ storeId: 'A', runs, active: { recalledStoreIds: [] } })).toBe('onTheWay');
+    expect(receivingWait({ storeId: 'A', runs, active: null })).toBe('buying');
+    expect(receivingWait({ storeId: 'B', runs, active: null })).toBe('nothing');
+  });
+
+  it('lists the products not found for this store, with what it ordered', () => {
+    const items = [
+      { skuId: 's1', status: 'unavailable', unavailableNote: 'sold out' },
+      { skuId: 's2', status: 'purchased', unavailableNote: null },
+      { skuId: 's3', status: 'unavailable', unavailableNote: null },
+    ];
+    const demand = [
+      { storeId: 'A', skuId: 's1', qty: '2' },
+      { storeId: 'A', skuId: 's2', qty: '1' },
+      { storeId: 'B', skuId: 's3', qty: '4' },
+    ];
+    expect(unboughtForStore(items, demand, 'A')).toEqual([
+      { skuId: 's1', status: 'unavailable', unavailableNote: 'sold out', orderedQty: '2' },
+    ]);
   });
 });

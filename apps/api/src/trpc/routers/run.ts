@@ -1161,7 +1161,10 @@ export const runRouter = router({
       // every store of the run the reader sees.
       const priceStores = await priceStoreIds(tx, ctx.session!);
       const sessionStore = new Map<string, string>();
-      if ((allowedStoreSet || priceStores !== null) && allSessionIds.length > 0) {
+      // DX-DLV-13 (2026-11-01): always resolved now — each row names the
+      // visible stores it serves (`storeIds`), so a store's receiving page
+      // can tell "on the way" from "nothing for you".
+      if (allSessionIds.length > 0) {
         const sessionStoreRows = await tx.query.orderSessionsV.findMany({
           where: (sess, { inArray }) => inArray(sess.id, allSessionIds),
           columns: { id: true, storeId: true },
@@ -1270,8 +1273,9 @@ export const runRouter = router({
         return [...ids];
       };
       return visibleRuns.map((run) => {
-        const row = listRow(run);
-        return pricesVisibleFor(priceStores, runStoreIds(run)) ? row : withoutPrices(row);
+        const storeIds = runStoreIds(run);
+        const row = { ...listRow(run), storeIds };
+        return pricesVisibleFor(priceStores, storeIds) ? row : withoutPrices(row);
       });
 
       function listRow(run: (typeof visibleRuns)[number]) {

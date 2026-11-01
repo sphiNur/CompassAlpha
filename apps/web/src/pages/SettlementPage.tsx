@@ -731,6 +731,8 @@ export function SettlementPage() {
       void utils.settlement.recent.invalidate({ storeId: saved.storeId });
       // RE-CLS-1 (2026-10-31): the change history gained a version.
       void utils.settlement.revisions.invalidate({ settlementId: savedRecord.id });
+      // DX-SHL-23: the 日结 tab's "not filed today" dot.
+      void utils.nav.counts.invalidate();
     },
     onError: (error) => {
       if (isVersionConflict(error)) {

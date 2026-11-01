@@ -43,8 +43,23 @@ export function offlineDropText(
   return t('offline.drop.generic', { action });
 }
 
+/**
+ * DX-DLV-06 (2026-11-01): a write that was saved offline and then refused
+ * is lost; a 3.5-second toast went by before people read it, and the
+ * page then said "nothing to receive" as if nothing had happened. The
+ * toast now stays until it is dismissed with 知道了.
+ */
+export function offlineDropToastOptions(gotIt: string): {
+  tone: 'danger';
+  ttlMs: 0;
+  actions: Array<{ label: string }>;
+} {
+  return { tone: 'danger', ttlMs: 0, actions: [{ label: gotIt }] };
+}
+
 export function useOfflineDropToast(): (info: OfflineDropInfo) => void {
   const i18n = useI18n();
   const toast = useToast();
-  return (info) => toast.error(offlineDropText(i18n.t, info));
+  return (info) =>
+    toast.show(offlineDropText(i18n.t, info), offlineDropToastOptions(i18n.t('common.gotIt')));
 }

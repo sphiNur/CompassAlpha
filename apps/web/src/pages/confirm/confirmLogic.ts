@@ -13,6 +13,8 @@ type DeliveringRunRow = {
   runDate: string;
   runIndex: number;
   storeTotals?: ReadonlyArray<{ storeId: string; itemCount: number }>;
+  /** DX-DLV-13 (2026-11-01): the visible stores the run serves. */
+  storeIds?: readonly string[];
 };
 
 /**
@@ -37,10 +39,64 @@ export function deliveringRunsForStore<T extends DeliveringRunRow>(
       a.runDate === b.runDate ? a.runIndex - b.runIndex : a.runDate < b.runDate ? -1 : 1,
     );
   if (!storeId) return delivering.slice(0, 1);
-  const mine = delivering.filter((r) =>
-    (r.storeTotals ?? []).some((st) => st.storeId === storeId && st.itemCount > 0),
+  const mine = delivering.filter(
+    (r) =>
+      (r.storeTotals ?? []).some((st) => st.storeId === storeId && st.itemCount > 0) ||
+      // DX-DLV-13: a run serving this store whose goods were all not found
+      // still belongs here — the store sees them as 没买到.
+      (r.storeIds ?? []).includes(storeId),
   );
-  return mine.length > 0 ? mine : delivering.slice(0, 1);
+  if (mine.length > 0) return mine;
+  // A server that names the stores said this one is not served.
+  if (delivering.some((r) => r.storeIds !== undefined)) return [];
+  return delivering.slice(0, 1);
+}
+
+/**
+ * DX-DLV-13 (2026-11-01): what the receiving page says when there is no
+ * list to check. It used to say "nothing to receive" in every case.
+ *   - 'recalled' — the purchaser took the delivery back; wait for it again;
+ *   - 'onTheWay' — a delivering run serves this store, not handed over yet;
+ *   - 'buying'   — a run serving this store is still being bought;
+ *   - 'nothing'  — no run is bringing anything here.
+ */
+export type ReceivingWait = 'recalled' | 'onTheWay' | 'buying' | 'nothing';
+
+export function receivingWait(input: {
+  storeId: string;
+  runs: ReadonlyArray<{ status: string; storeIds?: readonly string[] }>;
+  /** The delivering run on screen, when there is one. */
+  active: { recalledStoreIds?: readonly string[] } | null;
+}): ReceivingWait {
+  if (input.active) {
+    return (input.active.recalledStoreIds ?? []).includes(input.storeId) ? 'recalled' : 'onTheWay';
+  }
+  const buying = input.runs.some(
+    (r) =>
+      (r.status === 'planned' || r.status === 'purchasing') &&
+      (r.storeIds ?? []).includes(input.storeId),
+  );
+  return buying ? 'buying' : 'nothing';
+}
+
+/**
+ * DX-DLV-13: products the purchaser did not find for this store — on the
+ * run as `unavailable`, with this store's demand — listed as 没买到 so the
+ * store knows they are not coming.
+ */
+export function unboughtForStore<
+  T extends { skuId: string; status: string; unavailableNote?: string | null },
+>(
+  items: readonly T[],
+  perStoreDemand: ReadonlyArray<{ storeId: string; skuId: string; qty: string }>,
+  storeId: string,
+): Array<T & { orderedQty: string }> {
+  const demand = new Map(
+    perStoreDemand.filter((d) => d.storeId === storeId).map((d) => [d.skuId, d.qty]),
+  );
+  return items
+    .filter((it) => it.status === 'unavailable' && demand.has(it.skuId))
+    .map((it) => ({ ...it, orderedQty: demand.get(it.skuId)! }));
 }
 
 /**
@@ -61,7 +117,7 @@ export function defaultDeliveringRunId(
 
 export type ReceivedQtyCheck =
   | { ok: true; value: string | null }
-  | { ok: false; reason: 'required' | 'invalid' | 'exceeds' | 'notShort' };
+  | { ok: false; reason: 'required' | 'invalid' | 'tooPrecise' | 'exceeds' | 'notShort' };
 
 /**
  * 2026-10-21 CA-06: client mirror of the domain's receivedQty rule.
@@ -85,7 +141,10 @@ export function checkReceivedQty(
   if (trimmed === '') {
     return status === 'short' ? { ok: false, reason: 'required' } : { ok: true, value: '0' };
   }
-  if (!/^\d+(\.\d{1,3})?$/.test(trimmed)) return { ok: false, reason: 'invalid' };
+  // DX-DLV-07 (2026-11-01): "not a number" and "too many decimals" are
+  // different mistakes; one sentence ("0 to 10") covered both.
+  if (!/^\d+(\.\d+)?$/.test(trimmed)) return { ok: false, reason: 'invalid' };
+  if (!/^\d+(\.\d{1,3})?$/.test(trimmed)) return { ok: false, reason: 'tooPrecise' };
   if (Number(trimmed) - Number(splitQty) > 1e-6) return { ok: false, reason: 'exceeds' };
   // DLV-12: all of it arrived — that is "ok", not "short".
   if (status === 'short' && Number(splitQty) - Number(trimmed) <= 1e-6) {
@@ -99,7 +158,8 @@ export function initialReceivedQty(
   status: ConfirmDecisionStatus,
   existing: string | null | undefined,
 ): string {
-  if (existing != null) return existing;
+  // DX-DLV-07: the server keeps 3 decimals; "5.000" reads as 5.
+  if (existing != null) return existing.includes('.') ? existing.replace(/\.?0+$/, '') : existing;
   return status === 'wrong' || status === 'quality' ? '0' : '';
 }
 

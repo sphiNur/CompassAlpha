@@ -124,6 +124,15 @@ interface SheetProps {
    * Cancel) call `onOpenChange(false)` themselves and are not asked.
    */
   hasChanges?: boolean;
+
+  /**
+   * DX-DLV-08 (2026-11-01): on open, move focus to the sheet's title
+   * instead of the first input. Screen-reader and keyboard users land in
+   * the dialog (with `disableAutoFocus` focus stayed behind the scrim),
+   * and no input is focused, so the iOS keyboard does not pop. Wins over
+   * `disableAutoFocus` / `deferAutoFocusMs`.
+   */
+  focusTitleOnOpen?: boolean;
 }
 
 /**
@@ -162,8 +171,10 @@ export function Sheet({
   disableAutoFocus = false,
   deferAutoFocusMs,
   hasChanges = false,
+  focusTitleOnOpen = false,
 }: SheetProps) {
   const contentRef = useRef<HTMLDivElement | null>(null);
+  const titleRef = useRef<HTMLHeadingElement | null>(null);
   // A11Y-16 (2026-10-31): was the fixed id "sheet-desc", so a sheet opened
   // over another one pointed both dialogs' aria-describedby at whichever
   // element the browser found first.
@@ -197,7 +208,7 @@ export function Sheet({
   // slideUp completes (240ms), the sheet is in final position; the
   // keyboard pops without scroll-jumping the WebView.
   useEffect(() => {
-    if (!open || disableAutoFocus || !deferAutoFocusMs) return;
+    if (!open || disableAutoFocus || !deferAutoFocusMs || focusTitleOnOpen) return;
     const timer = setTimeout(() => {
       const root = contentRef.current;
       if (!root) return;
@@ -226,7 +237,7 @@ export function Sheet({
       }
     }, deferAutoFocusMs);
     return () => clearTimeout(timer);
-  }, [open, disableAutoFocus, deferAutoFocusMs]);
+  }, [open, disableAutoFocus, deferAutoFocusMs, focusTitleOnOpen]);
   useSheetPresence(open, requestOpenChange);
 
   return (
@@ -260,9 +271,14 @@ export function Sheet({
           }}
           aria-describedby={description ? descriptionId : undefined}
           onOpenAutoFocus={
-            disableAutoFocus || deferAutoFocusMs
-              ? (e) => e.preventDefault()
-              : undefined
+            focusTitleOnOpen
+              ? (e) => {
+                  e.preventDefault();
+                  (titleRef.current ?? contentRef.current)?.focus({ preventScroll: true });
+                }
+              : disableAutoFocus || deferAutoFocusMs
+                ? (e) => e.preventDefault()
+                : undefined
           }
         >
           <SheetHeader>
@@ -276,7 +292,11 @@ export function Sheet({
               aria-hidden
             />
             {title ? (
-              <Dialog.Title className="mt-3 text-center text-old-h2 font-semibold">
+              <Dialog.Title
+                ref={titleRef}
+                tabIndex={focusTitleOnOpen ? -1 : undefined}
+                className="mt-3 text-center text-old-h2 font-semibold outline-none"
+              >
                 {title}
               </Dialog.Title>
             ) : null}

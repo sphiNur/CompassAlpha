@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'bun:test';
 import {
   resolveDeepLinkTab,
+  storeFromDeepLinkSearch,
   stripDeepLinkPath,
+  stripStoreParam,
   tabFromDeepLinkPath,
   tabFromStartParam,
 } from '../deepLink';
@@ -55,5 +57,20 @@ describe('tabFromStartParam (atlas SHL-6)', () => {
     expect(tabFromStartParam('inv_abc')).toBeNull();
     expect(tabFromStartParam('tab_nope')).toBeNull();
     expect(tabFromStartParam(undefined)).toBeNull();
+  });
+});
+
+describe('store in a notification link (DX-APR-7)', () => {
+  const id = '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
+  it('reads a store id and ignores anything else', () => {
+    expect(storeFromDeepLinkSearch(`?store=${id}`)).toBe(id);
+    expect(storeFromDeepLinkSearch(`?x=1&store=${id.toUpperCase()}`)).toBe(id);
+    expect(storeFromDeepLinkSearch('?store=central')).toBeNull();
+    expect(storeFromDeepLinkSearch('')).toBeNull();
+  });
+  it('takes the store out of the query and keeps the rest', () => {
+    expect(stripStoreParam(`?store=${id}`)).toBe('');
+    expect(stripStoreParam(`?devAs=Aziz&store=${id}`)).toBe('?devAs=Aziz');
+    expect(stripStoreParam('?devAs=Aziz')).toBe('?devAs=Aziz');
   });
 });

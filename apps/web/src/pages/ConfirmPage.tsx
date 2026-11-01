@@ -20,6 +20,7 @@ import {
   EmptyState,
   NameCell,
   PhotoCapture,
+  SectionLabel,
   Sheet,
   StickyPageBar,
   Input,
@@ -45,8 +46,11 @@ import {
   deliveringRunsForStore,
   initialReceivedQty,
   issueSaveState,
+  receivingWait,
   runsListView,
+  unboughtForStore,
   type ConfirmDecisionStatus,
+  type ReceivingWait,
 } from './confirm/confirmLogic';
 
 type DecisionStatus = ConfirmDecisionStatus;
@@ -81,6 +85,10 @@ export function ConfirmPage() {
   // 2026-10-21 CA-06: how much of the split actually arrived. Empty for
   // 'short' (must be typed), "0" for 'wrong' / 'quality'.
   const [issueReceived, setIssueReceived] = useState('');
+  // DX-DLV-07 (2026-11-01): errors show once the field was typed into or
+  // left, or Save was tried — not the moment the form opens.
+  const [issueReceivedTouched, setIssueReceivedTouched] = useState(false);
+  const [issueSaveTried, setIssueSaveTried] = useState(false);
   const [issuePhoto, setIssuePhoto] = useState<string | null>(null);
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   // U4 (2026-10-31): 确认收货 is irreversible; it now goes through a
@@ -277,7 +285,29 @@ export function ConfirmPage() {
     },
   });
 
+  useEffect(() => {
+    setIssueReceivedTouched(false);
+    setIssueSaveTried(false);
+  }, [issueOpen]);
+
   const myAllItems = (detailQuery.data?.splits ?? []).filter((sp) => sp.storeId === currentStoreId);
+  // DX-DLV-13 (2026-11-01): products the purchaser did not find for this
+  // store; they are listed as 没买到 so the store knows they are not coming.
+  const unbought = currentStoreId
+    ? unboughtForStore(
+        detailQuery.data?.items ?? [],
+        detailQuery.data?.perStoreDemand ?? [],
+        currentStoreId,
+      )
+    : [];
+  // DX-DLV-13: why there is nothing to check yet.
+  const wait: ReceivingWait = currentStoreId
+    ? receivingWait({
+        storeId: currentStoreId,
+        runs: runsQuery.data ?? [],
+        active: activeRun ? (detailQuery.data ?? {}) : null,
+      })
+    : 'nothing';
   // 2026-10-21 audit CA-30: lines are only checkable once the purchaser
   // has handed them over (the server now refuses item confirms before
   // StoreDelivered). Until then the store sees the waiting state instead
@@ -355,8 +385,30 @@ export function ConfirmPage() {
     photoUploading,
     saving: confirmItem.isPending,
   });
+  const receivedShown = issueReceivedTouched || issueSaveTried;
+  const receivedError =
+    issueOpen && issueReceivedCheck && !issueReceivedCheck.ok && receivedShown
+      ? issueReceivedCheck.reason === 'required'
+        ? i18n.t('confirm.issue.receivedQtyRequired')
+        : issueReceivedCheck.reason === 'notShort'
+          ? i18n.t('confirm.issue.receivedQtyNotShort', { max: formatQty(issueOpen.splitQty) })
+          : issueReceivedCheck.reason === 'invalid'
+            ? i18n.t('confirm.issue.receivedQtyNotNumber')
+            : issueReceivedCheck.reason === 'tooPrecise'
+              ? i18n.t('confirm.issue.receivedQtyTooPrecise')
+              : i18n.t('confirm.issue.receivedQtyRange', { max: formatQty(issueOpen.splitQty) })
+      : null;
+  const noteMissing = !!issueOpen && issueNote.trim().length === 0;
+  const noteMissingShown = noteMissing && issueSaveTried;
+  // DX-DLV-07: say why Save is grey instead of leaving a dead button.
+  const issueSaveReason = issueSave.waitingForPhoto
+    ? i18n.t('confirm.issue.photoUploading')
+    : noteMissing
+      ? i18n.t('confirm.issue.noteRequired')
+      : null;
   /** One submit path for the sheet footer and the Telegram MainButton. */
   const submitIssue = () => {
+    if (issueOpen) setIssueSaveTried(true);
     if (!issueOpen || !issueSave.canSave) return;
     const receivedQty = issueReceivedCheck?.ok ? issueReceivedCheck.value : null;
     writeOptimisticItemConfirm(
@@ -524,19 +576,19 @@ export function ConfirmPage() {
         ) : runsView.kind === 'offline' ? (
           <EmptyState title={i18n.t('common.offlineNoData')} />
         ) : runsView.kind === 'error' ? null : !activeRun ? (
-          <EmptyState
-            title={i18n.t('confirm.empty.nothingToConfirm')}
-            description={i18n.t('confirm.empty.nothingDesc')}
-          />
+          <ReceivingWaitState wait={wait} />
         ) : (
           <DataState query={detailQuery}>
             {() => (
               <>
                 {!myItems.length ? (
                   awaitingDelivery ? (
+                    <ReceivingWaitState wait={wait} />
+                  ) : unbought.length > 0 ? (
+                    // Everything this store ordered on the run was not found.
                     <EmptyState
-                      title={i18n.t('confirm.empty.nothingToConfirm')}
-                      description={i18n.t('confirm.empty.nothingDesc')}
+                      title={i18n.t('confirm.unbought.allTitle')}
+                      description={i18n.t('confirm.unbought.hint')}
                     />
                   ) : (
                     <EmptyState title={i18n.t('confirm.empty.noItems')} />
@@ -757,6 +809,51 @@ export function ConfirmPage() {
                       storeConfirmed guard exists to fight. One CTA. */}
                   </Card>
                 )}
+                {unbought.length > 0 ? (
+                  <Card data-testid="confirm-unbought">
+                    <SectionLabel as="h2" meta={String(unbought.length)}>
+                      {i18n.t('confirm.unbought.title')}
+                    </SectionLabel>
+                    {myItems.length > 0 ? (
+                      <p className="px-4 pb-2 text-old-label text-[var(--c-fg-muted)]">
+                        {i18n.t('confirm.unbought.hint')}
+                      </p>
+                    ) : null}
+                    <ul className="flex flex-col" role="list">
+                      {unbought.map((it) => {
+                        const sku = skuById.get(it.skuId);
+                        const nm = sku ? productNameParts(sku) : null;
+                        return (
+                          <li
+                            key={it.skuId}
+                            className="flex flex-col gap-1 border-t border-[var(--c-divider)] px-4 py-2 text-[var(--c-fg-muted)]"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <NameCell
+                                primary={nm ? nm.primary : it.skuId.slice(0, 8)}
+                                secondary={nm?.secondary}
+                                primaryLang={nm?.primaryLang}
+                                secondaryLang={nm?.secondaryLang}
+                                size="default"
+                              />
+                              <span className="shrink-0 text-old-label tabular-nums">
+                                {i18n.t('confirm.unbought.ordered', {
+                                  qty: formatQty(it.orderedQty),
+                                  unit: unitLabel(sku?.unit, it.orderedQty),
+                                })}
+                              </span>
+                            </div>
+                            {it.unavailableNote ? (
+                              <div className="text-old-label">
+                                {i18n.t('confirm.unbought.reason', { reason: it.unavailableNote })}
+                              </div>
+                            ) : null}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </Card>
+                ) : null}
               </>
             )}
           </DataState>
@@ -858,25 +955,28 @@ export function ConfirmPage() {
         // popped the iOS keyboard mid-slideUp, pushing the
         // PhotoCapture row below the fold. Receiver who wants to
         // attach a photo first now sees both inputs.
-        disableAutoFocus
+        // DX-DLV-08 (2026-11-01): focus still moves into the form — to
+        // its title, which pops no keyboard — instead of staying on the
+        // chip behind the scrim.
+        focusTitleOnOpen
         footer={
           // M3.49 (2026-05-23): dropped !getTg() — the in-page
           // PageMainButton sits behind any open sheet, so we
           // ALWAYS render the sheet's own footer button now.
           <div className="flex flex-col gap-2">
-            {issueSave.waitingForPhoto ? (
+            {issueSaveReason ? (
               <p
                 id="issue-save-reason"
                 role="status"
                 className="text-center text-old-label text-[var(--c-fg-muted)]"
               >
-                {i18n.t('confirm.issue.photoUploading')}
+                {issueSaveReason}
               </p>
             ) : null}
             <Button
               block
               disabled={!issueSave.canSave}
-              aria-describedby={issueSave.waitingForPhoto ? 'issue-save-reason' : undefined}
+              aria-describedby={issueSaveReason ? 'issue-save-reason' : undefined}
               loading={confirmItem.isPending}
               onClick={submitIssue}
             >
@@ -891,48 +991,66 @@ export function ConfirmPage() {
               spoiled item (nothing usable arrived) and editable. */}
           {issueOpen ? (
             <div className="flex flex-col gap-1">
-              {/* DLV-10: once typed into, the field had no visible label. */}
-              <span className="text-old-label font-semibold text-[var(--c-fg-muted)]">
+              {/* DLV-10: once typed into, the field had no visible label.
+                  DX-DLV-07: the label is the field's name (no placeholder
+                  or aria-label repeating it), and the error waits until
+                  the field was used or Save was tried. */}
+              <label
+                htmlFor="issue-received"
+                className="text-old-label font-semibold text-[var(--c-fg-muted)]"
+              >
                 {i18n.t('confirm.issue.receivedQty', {
                   max: formatQty(issueOpen.splitQty),
                   unit: unitLabel(issueOpen.unit, issueOpen.splitQty),
                 })}
-              </span>
+              </label>
               <Input
+                id="issue-received"
                 type="text"
                 inputMode="decimal"
                 value={issueReceived}
-                onChange={(e) => setIssueReceived(e.target.value)}
-                placeholder={i18n.t('confirm.issue.receivedQty', {
-                  max: formatQty(issueOpen.splitQty),
-                  unit: unitLabel(issueOpen.unit, issueOpen.splitQty),
-                })}
-                aria-label={i18n.t('confirm.issue.receivedQty', {
-                  max: formatQty(issueOpen.splitQty),
-                  unit: unitLabel(issueOpen.unit, issueOpen.splitQty),
-                })}
+                onChange={(e) => {
+                  setIssueReceived(e.target.value);
+                  setIssueReceivedTouched(true);
+                }}
+                onBlur={() => setIssueReceivedTouched(true)}
+                aria-invalid={receivedError ? true : undefined}
+                aria-describedby={receivedError ? 'issue-received-error' : undefined}
               />
-              {issueReceivedCheck && !issueReceivedCheck.ok ? (
-                <span className="text-old-label text-[var(--c-warning-fg)]">
-                  {issueReceivedCheck.reason === 'required'
-                    ? i18n.t('confirm.issue.receivedQtyRequired')
-                    : issueReceivedCheck.reason === 'notShort'
-                      ? i18n.t('confirm.issue.receivedQtyNotShort', {
-                          max: formatQty(issueOpen.splitQty),
-                        })
-                      : i18n.t('confirm.issue.receivedQtyRange', {
-                        max: formatQty(issueOpen.splitQty),
-                      })}
+              {receivedError ? (
+                <span
+                  id="issue-received-error"
+                  className="text-old-label text-[var(--c-warning-fg)]"
+                >
+                  {receivedError}
                 </span>
               ) : null}
             </div>
           ) : null}
-          <Input
-            value={issueNote}
-            onChange={(e) => setIssueNote(e.target.value)}
-            placeholder={i18n.t('confirm.issue.placeholder')}
-            maxLength={500}
-          />
+          <div className="flex flex-col gap-1">
+            <label
+              htmlFor="issue-note"
+              className="text-old-label font-semibold text-[var(--c-fg-muted)]"
+            >
+              {i18n.t('confirm.issue.noteLabel')}
+            </label>
+            <Input
+              id="issue-note"
+              value={issueNote}
+              onChange={(e) => setIssueNote(e.target.value)}
+              placeholder={i18n.t('confirm.issue.placeholder')}
+              maxLength={500}
+              required
+              aria-required
+              aria-invalid={noteMissingShown ? true : undefined}
+              aria-describedby={noteMissingShown ? 'issue-note-error' : undefined}
+            />
+            {noteMissingShown ? (
+              <span id="issue-note-error" className="text-old-label text-[var(--c-warning-fg)]">
+                {i18n.t('confirm.issue.noteRequired')}
+              </span>
+            ) : null}
+          </div>
           <PhotoCapture
             label={i18n.t('confirm.issue.photoOptional')}
             value={issuePhoto}
@@ -943,6 +1061,22 @@ export function ConfirmPage() {
           />
         </div>
       </Sheet>
+    </div>
+  );
+}
+
+/** DX-DLV-13 (2026-11-01): why the receiving page has nothing to check. */
+function ReceivingWaitState({ wait }: { wait: ReceivingWait }) {
+  const i18n = useI18n();
+  const copy: Record<ReceivingWait, { title: Parameters<typeof i18n.t>[0]; body: Parameters<typeof i18n.t>[0] }> = {
+    recalled: { title: 'confirm.wait.recalled.title', body: 'confirm.wait.recalled.body' },
+    onTheWay: { title: 'confirm.wait.onTheWay.title', body: 'confirm.wait.onTheWay.body' },
+    buying: { title: 'confirm.wait.buying.title', body: 'confirm.wait.buying.body' },
+    nothing: { title: 'confirm.empty.nothingToConfirm', body: 'confirm.wait.nothing.body' },
+  };
+  return (
+    <div data-testid={`confirm-wait-${wait}`}>
+      <EmptyState title={i18n.t(copy[wait].title)} description={i18n.t(copy[wait].body)} />
     </div>
   );
 }

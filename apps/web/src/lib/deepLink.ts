@@ -63,3 +63,24 @@ export function tabFromStartParam(startParam: string | null | undefined): Tab | 
   const key = raw.slice(4) as Tab;
   return DEEP_LINK_TABS.includes(key) ? key : null;
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The store a notification link names (`/approve?store=<id>`, DX-APR-7,
+ * 2026-11-01), or null. The app switches to it before opening the tab, so
+ * a manager of two stores lands on the store the notification is about.
+ */
+export function storeFromDeepLinkSearch(search: string): string | null {
+  const raw = new URLSearchParams(search).get('store');
+  return raw && UUID_RE.test(raw) ? raw.toLowerCase() : null;
+}
+
+/** The query string with `store` taken out, so a reload does not re-apply it. */
+export function stripStoreParam(search: string): string {
+  const params = new URLSearchParams(search);
+  if (!params.has('store')) return search;
+  params.delete('store');
+  const rest = params.toString();
+  return rest ? `?${rest}` : '';
+}

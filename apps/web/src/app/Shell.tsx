@@ -82,6 +82,11 @@ import { SettingsSheet } from '../components/SettingsSheet';
 import { StoreChip, useStoreContext } from '../components/StoreSwitcher';
 import { PageMenuProvider, usePageMenuRegistration } from './PageMenuContext';
 import { lastUpdatedLabel, useCachedDataAge } from '../hooks/useCachedDataAge';
+import { trpc } from '../lib/trpc';
+import { navBadges, type NavBadge } from '../lib/navBadges';
+import { pollWhenOffline, useRealtimeLive } from '../hooks/useRealtime';
+import { requestStoreChange } from '../components/StoreSwitcher';
+import { storeFromDeepLinkSearch, stripStoreParam } from '../lib/deepLink';
 
 // Debug tab moved INTO Admin as a sub-tab. Reduces bottom-nav clutter
 // (was 6 items, now 5) and groups operator-only views together. Admins
@@ -286,6 +291,23 @@ function ShellInner() {
       : t,
   );
 
+  // DX-SHL-23 / DX-APR-5 / DX-DLV-13 (2026-11-01): badges on the tabs where
+  // something waits for this person (requirement 03 §2.4): orders to
+  // review, orders to buy, goods to receive, today's close not filed. One
+  // small query for the store in the header; realtime invalidates it with
+  // the order / run pushes, and it polls only while realtime is down.
+  const realtimeLive = useRealtimeLive();
+  const navCountsQuery = trpc.nav.counts.useQuery(
+    storeCtx.kind === 'specific' ? { storeId: storeCtx.storeId } : {},
+    {
+      enabled: !!session && storeCtx.kind !== 'none',
+      refetchInterval: pollWhenOffline(60_000, realtimeLive),
+      // An older server without nav.counts: no badges, no retries.
+      retry: false,
+    },
+  );
+  const badges = navBadges(navCountsQuery.data, visible.map((t) => t.key as Tab));
+
   // Warm the AdminPage chunk in the background once we know the user
   // can see the tab. The static `lazy()` above splits it into a
   // separate JS chunk so non-admins never download it; this `import()`
@@ -366,19 +388,30 @@ function ShellInner() {
       return;
     }
     const target = resolveDeepLinkTab(pathname, visible);
+    // DX-APR-7 (2026-11-01): the link may name the store it is about.
+    const linkedStore = storeFromDeepLinkSearch(search);
     try {
       window.history.replaceState(
         window.history.state,
         '',
-        `${stripDeepLinkPath(pathname)}${search}${hash}`,
+        `${stripDeepLinkPath(pathname)}${stripStoreParam(search)}${hash}`,
       );
     } catch {
       /* the tab switch below still applies */
     }
-    if (!target || target === useNavStore.getState().tab) return;
-    void requestTabChange(target).then((allowed) => {
-      if (allowed) setPersistedTab(target);
-    });
+    void (async () => {
+      const auth = useAuthStore.getState();
+      if (
+        linkedStore &&
+        linkedStore !== auth.currentStoreId &&
+        auth.session?.stores.some((st) => st.id === linkedStore) &&
+        (await requestStoreChange(linkedStore))
+      ) {
+        auth.setCurrentStore(linkedStore);
+      }
+      if (!target || target === useNavStore.getState().tab) return;
+      if (await requestTabChange(target)) setPersistedTab(target);
+    })();
   }, [visibleKey, setPersistedTab]);
   // If the resolved tab differs from what's persisted (permission
   // lost since last session), write the corrected value back so we
@@ -739,7 +772,13 @@ function ShellInner() {
           usePageMainButton hook every page already uses. */}
       <PageMainButton />
 
-      <BottomNav visible={visible} tab={tab} setTab={requestSetTab} i18n={i18n} />
+      <BottomNav
+        visible={visible}
+        tab={tab}
+        setTab={requestSetTab}
+        i18n={i18n}
+        badges={badges}
+      />
     </div>
   );
 }
@@ -764,7 +803,9 @@ function BottomNav({
   tab,
   setTab,
   i18n,
+  badges,
 }: {
+  badges: Partial<Record<Tab, NavBadge>>;
   visible: Array<{
     key: Tab;
     permission: string | null;
@@ -804,6 +845,14 @@ function BottomNav({
         const Icon = t.Icon;
         const label = i18n.t(t.labelKey as Parameters<typeof i18n.t>[0]);
         const short = i18n.t(t.shortKey as Parameters<typeof i18n.t>[0]);
+        const badge = badges[t.key];
+        // The badge is read with the name: 「审核，2 件待处理」.
+        const badgeText =
+          badge === undefined
+            ? null
+            : badge === 'dot'
+              ? i18n.t('nav.badge.due', { label })
+              : i18n.t('nav.badge.count', { label, n: badge });
         return (
           <button
             key={t.key}
@@ -811,7 +860,7 @@ function BottomNav({
             data-testid={`nav-${t.key}`}
             // The short nav word is an abbreviation in ru / uz; screen
             // readers announce the section's full name.
-            aria-label={short === label ? undefined : label}
+            aria-label={badgeText ?? (short === label ? undefined : label)}
             onClick={() => setTab(t.key as Tab)}
             aria-current={active ? 'page' : undefined}
             disabled={busy}
@@ -822,7 +871,22 @@ function BottomNav({
               (active ? 'text-[var(--c-action)]' : 'text-[var(--c-fg-muted)]')
             }
           >
-            <Icon size={visible.length >= 5 ? 21 : 22} />
+            <span className="relative inline-flex">
+              <Icon size={visible.length >= 5 ? 21 : 22} />
+              {badge !== undefined ? (
+                <span
+                  aria-hidden
+                  data-testid={`nav-badge-${t.key}`}
+                  className={
+                    badge === 'dot'
+                      ? 'absolute -right-1 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-[var(--c-surface)] bg-[var(--c-danger)]'
+                      : 'absolute -right-2.5 -top-1.5 min-w-[18px] rounded-full border-2 border-[var(--c-surface)] bg-[var(--c-danger)] px-1 text-center text-[10px] font-semibold leading-[14px] text-[var(--c-danger-fg)] tabular-nums'
+                  }
+                >
+                  {badge === 'dot' ? null : badge > 99 ? '99+' : badge}
+                </span>
+              ) : null}
+            </span>
             {/* V5 (2026-10-30): 11 px (text-old-label), was 9 px with the
                 line height equal to the size. Measured at 360 px with seven
                 tabs: zh and en fit; the longest ru / uz words

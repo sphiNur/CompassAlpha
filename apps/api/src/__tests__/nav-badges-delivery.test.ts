@@ -374,6 +374,10 @@ describe.skipIf(!SHOULD_RUN)('nav badges and delivery links (PG-gated)', () => {
     expect((await admin.caller.nav.counts({ storeId: storeB })).confirm).toBe(0);
     expect((await buyerB.caller.nav.counts({ storeId: storeB })).confirm).toBeNull();
     expect((await staff.caller.run.get({ runId })).recalledStoreIds).toEqual([]);
+    // run.list names the stores each run serves (the onion-only store
+    // would otherwise look like "nothing coming").
+    const listed = (await admin.caller.run.list()).find((r) => r.id === runId);
+    expect(listed?.storeIds).toEqual([storeA]);
 
     await write({ type: 'UndeliverStore', storeId: storeA, reason: 'wrong van', actor: actorOf(admin) });
     expect((await staff.caller.nav.counts({ storeId: storeA })).confirm).toBe(before);
