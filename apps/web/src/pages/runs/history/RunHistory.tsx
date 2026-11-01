@@ -29,6 +29,7 @@ import { formatMoney, formatQty } from '../../../lib/format';
 import { useDateFormat, useUnitLabel } from '../../../hooks/useI18n';
 import type { useI18n, useProductName } from '../../../hooks/useI18n';
 import { expenseLine, splitSubtotal, settleItemLine, settlePerStore } from '../lib/settlement';
+import { amendAddedFor, receivedTotal } from '../lib/receivedLine';
 import { dayStoreSummaries, groupRunsByDay, type HistoryDay } from '../lib/historyGroups';
 import { localDateValue } from '../../admin/operations/financeDates';
 
@@ -1153,6 +1154,18 @@ export function RunHistoryDetailSheet({
                   ? (perStoreSplits[0]?.unitPrice ?? it.unitPrice)
                   : it.unitPrice;
                 const isMulti = !activeStoreId && breakdown.perStore.size > 1;
+                // DX-DLV-01: on a problem line the store reported, a
+                // correction's added quantity joins the receiving line.
+                const problemSplit =
+                  activeStoreId &&
+                  perStoreSplits[0]?.confirmStatus &&
+                  perStoreSplits[0].confirmStatus !== 'ok' &&
+                  perStoreSplits[0].confirmReceivedQty != null
+                    ? perStoreSplits[0]
+                    : null;
+                const receivedAmend = problemSplit
+                  ? amendAddedFor(detail.data?.corrections ?? [], it.skuId, activeStoreId!)
+                  : null;
                 return (
                   <li
                     key={it.skuId}
@@ -1208,11 +1221,23 @@ export function RunHistoryDetailSheet({
                         )}
                         {perStoreSplits[0].confirmReceivedQty != null
                           ? ' · ' +
-                            i18n.t('confirm.receivedOf', {
-                              received: formatQty(perStoreSplits[0].confirmReceivedQty),
-                              qty: formatQty(perStoreSplits[0].qty),
-                              unit: unitLabel(sku?.unit, perStoreSplits[0].qty),
-                            })
+                            (receivedAmend
+                              ? // DX-DLV-01: the quantity a correction added counts
+                                // as received; one line says both.
+                                i18n.t('confirm.receivedPlusAmend', {
+                                  received: formatQty(perStoreSplits[0].confirmReceivedQty),
+                                  added: formatQty(receivedAmend),
+                                  total: formatQty(
+                                    receivedTotal(perStoreSplits[0].confirmReceivedQty, receivedAmend),
+                                  ),
+                                  qty: formatQty(perStoreSplits[0].qty),
+                                  unit: unitLabel(sku?.unit, perStoreSplits[0].qty),
+                                })
+                              : i18n.t('confirm.receivedOf', {
+                                  received: formatQty(perStoreSplits[0].confirmReceivedQty),
+                                  qty: formatQty(perStoreSplits[0].qty),
+                                  unit: unitLabel(sku?.unit, perStoreSplits[0].qty),
+                                }))
                           : ''}
                         {perStoreSplits[0].confirmNote ? ` · ${perStoreSplits[0].confirmNote}` : ''}
                       </div>
@@ -1224,7 +1249,8 @@ export function RunHistoryDetailSheet({
                       .filter(
                         (c) =>
                           c.skuId === it.skuId &&
-                          (!activeStoreId || c.storeId === null || c.storeId === activeStoreId),
+                          (!activeStoreId || c.storeId === null || c.storeId === activeStoreId) &&
+                          !(receivedAmend && c.kind === 'amendAdded'),
                       )
                       .map((c, i) => (
                         <div

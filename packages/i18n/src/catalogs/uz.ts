@@ -1389,8 +1389,7 @@ export const uz = {
   // UZS tenant uchun standart yoqilgan.
   'run.action.unitPriceUzsThousands': 'Birlik narxi (×1000 {currency})',
   'run.label.staleRun': '{days} kun',
-  'run.label.priceUnitAria':
-    'Narx birligi — {currency} va minglik oʻrtasida almashtirish uchun bosing',
+  'run.label.priceUnitAria': '×1000 (narxlar mingda)',
   'run.price.check.title': 'Narx toʻgʻrimi?',
   'run.price.check.body': '{name}: oʻtgan safar {last} {currency}, hozir {next} {currency}.',
   'run.price.check.confirm': 'Ha, saqlash',
@@ -1418,6 +1417,8 @@ export const uz = {
   'run.label.paymentMethod': 'Toʻlov usuli',
   'run.label.paymentCash': 'Naqd',
   'run.label.paymentTransfer': 'Oʻtkazma',
+  'run.label.paymentPerStore': 'Doʻkon boʻyicha',
+  'run.label.splitPreview': 'Doʻkonlarga: {split}',
   'run.action.unmarkUnavailableAriaLabel': 'Yana mavjud deb belgilash: {name}',
   'run.reason.paymentMethodChanged': 'Roʻyxatda toʻlov usuli tuzatildi',
   'run.confirm.finish.paymentBreakdown': '💵 naqd {cash} · 🏦 oʻtkazma {transfer}',
@@ -1544,6 +1545,7 @@ export const uz = {
   'run.topUp.dismissConfirm': 'Qoʻshimcha {qty} olinmaydimi? Qoʻshilgan doʻkon buni olmaydi.',
   'run.topUp.dismissed': 'Belgilandi: qoʻshimcha olinmaydi',
   'run.topUp.reason': 'Yangi buyurtma uchun qoʻshimcha xarid',
+  'run.topUp.sheetBody': 'Avval olingan: {qty}, narxi {price}. Pastdagi narx faqat shu qoʻshimcha miqdor uchun, avvalgi xaridning narxi oʻzgarmaydi.',
   'run.prices.title': 'Narxlarni kiritish',
   'run.prices.hint': 'miqdor va taqsimot oʻzgarmaydi',
   'run.prices.lockedHint': 'Mahsulot joʻnatilgan: faqat narx, yetkazib beruvchi, toʻlov usuli va chekni oʻzgartirish mumkin.',
@@ -2026,6 +2028,7 @@ export const uz = {
   'confirm.issue.receivedQtyNotShort':
     '{max} — bu hammasi, «Yaxshi»ni tanlang; kamomad boʻlsa {max} dan kam kiriting',
   'confirm.receivedOf': 'qabul qilindi {received} / {qty} {unit}',
+  'confirm.receivedPlusAmend': 'qabul qilindi {received} + tuzatishda {added} = {total} / {qty} {unit}',
   'confirm.issue.photoOf': '{name} muammo rasmi',
   'confirm.runPicker.ariaLabel': 'Qaysi yetkazib berishni tekshirish',
   'confirm.runPicker.option': '#{n} · {date}',

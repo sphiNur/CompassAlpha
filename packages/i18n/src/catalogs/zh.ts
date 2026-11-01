@@ -1259,7 +1259,7 @@ export const zh = {
   // 默认开启 (UZS 单租户主要面值在 2-15 万范围); localStorage 持久化.
   'run.action.unitPriceUzsThousands': '单价（千 {currency}）',
   'run.label.staleRun': '{days} 天前',
-  'run.label.priceUnitAria': '价格单位——点击在 {currency} 和「千」之间切换',
+  'run.label.priceUnitAria': '×1000（价格按千输入）',
   'run.price.check.title': '这个价格对吗？',
   'run.price.check.body': '{name}：上次 {last} {currency}，这次 {next} {currency}。',
   'run.price.check.confirm': '没错，保存',
@@ -1284,6 +1284,8 @@ export const zh = {
   'run.label.paymentMethod': '支付方式',
   'run.label.paymentCash': '现金',
   'run.label.paymentTransfer': '转账',
+  'run.label.paymentPerStore': '各店不同',
+  'run.label.splitPreview': '各店分到：{split}',
   'run.action.unmarkUnavailableAriaLabel': '改为可购：{name}',
   'run.reason.paymentMethodChanged': '在列表中更正付款方式',
   'run.confirm.finish.paymentBreakdown': '💵 现金 {cash} · 🏦 转账 {transfer}',
@@ -1395,6 +1397,7 @@ export const zh = {
   'run.topUp.dismissConfirm': '差额 {qty} 不买了？新加入的门店这一项将拿不到货。',
   'run.topUp.dismissed': '已记录：差额不买',
   'run.topUp.reason': '补买新加入订单的差额',
+  'run.topUp.sheetBody': '之前已买 {qty}，单价 {price}。下面的单价只算这次补买的量，之前那批的价格不变。',
   'run.prices.title': '填价格',
   'run.prices.hint': '数量和分配不能改',
   'run.prices.lockedHint': '货已送出：只能改价格、供应商、付款方式和收据。',
@@ -1839,6 +1842,7 @@ export const zh = {
   'confirm.issue.receivedQtyNotShort':
     '实收 {max} 就是全部到齐了，请选「正常」；数量不足时请填少于 {max} 的数',
   'confirm.receivedOf': '实收 {received} / {qty} {unit}',
+  'confirm.receivedPlusAmend': '实收 {received} + 补记 {added} = {total} / {qty} {unit}',
   'confirm.issue.photoOf': '{name} 的问题照片',
   'confirm.runPicker.ariaLabel': '选择要验收的配送',
   'confirm.runPicker.option': '#{n} · {date}',

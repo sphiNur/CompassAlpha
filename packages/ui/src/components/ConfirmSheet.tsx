@@ -40,6 +40,10 @@ export interface ConfirmSheetProps {
    *  needs an explicit "back out" target. Pass true to override e.g.
    *  for desktop-only flows. */
   showCancelInSheet?: boolean;
+  /** Open with focus on the cancel button (the safe answer), so a
+   *  second Enter from the field that opened the sheet does not confirm
+   *  it. Needs the cancel button shown. */
+  focusCancel?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -74,6 +78,7 @@ export function ConfirmSheet({
   onReasonChange,
   showPrimaryInSheet = true,
   showCancelInSheet,
+  focusCancel,
   onConfirm,
   onCancel,
 }: ConfirmSheetProps) {
@@ -105,7 +110,13 @@ export function ConfirmSheet({
               </Button>
             ) : null}
             {showCancel ? (
-              <Button block variant="pearl" onClick={onCancel} disabled={pending}>
+              <Button
+                block
+                variant="pearl"
+                onClick={onCancel}
+                disabled={pending}
+                data-autofocus={focusCancel || undefined}
+              >
                 {cancelLabel}
               </Button>
             ) : null}

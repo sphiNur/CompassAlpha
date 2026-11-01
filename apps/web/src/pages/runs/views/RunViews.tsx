@@ -28,6 +28,8 @@ import {
   GUESS_DAYS,
 } from '../lib/priceState';
 import { proportionalSplitQty } from '../lib/splitQty';
+import { paidPerStore } from '../lib/purchaseOverrides';
+import { expenseLine, expensesTotal } from '../lib/expenseMoney';
 import { PriceInFull, PriceUnitSwitch } from '../components/PriceUnit';
 import { otherStoreSkusOf, type ActiveRun } from '../types';
 import { lineAmountNumber, lineWithinCap } from '@compass/contracts/money';
@@ -759,13 +761,17 @@ export function ExpensesCard({
 }) {
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   const list = expenses ?? [];
-  const grandTotal = list.reduce(
-    (s, e) => s + Number(e.qty) * Number(e.unitPrice),
-    0,
-  );
+  // DX-HIS-2: no amount when a price is hidden (not "0"); D1 cents.
+  const grandTotal = expensesTotal(list);
   return (
     <Card>
-      <SectionLabel meta={`${list.length} · ${formatMoney(grandTotal)} ${currency}`}>
+      <SectionLabel
+        meta={
+          grandTotal === null
+            ? String(list.length)
+            : `${list.length} · ${formatMoney(grandTotal)} ${currency}`
+        }
+      >
         {i18n.t('run.section.expenses')}
       </SectionLabel>
       {editable ? (
@@ -789,7 +795,7 @@ export function ExpensesCard({
       ) : null}
       <ul className="flex flex-col" role="list">
         {list.map((e) => {
-          const total = Number(e.qty) * Number(e.unitPrice);
+          const total = expenseLine(e);
           const isTransfer = e.paymentMethod === 'transfer';
           // Show the store names this expense was allocated to,
           // helpful for the "shared porter" / "split between 3 stores"
@@ -798,9 +804,12 @@ export function ExpensesCard({
           const storeNames = e.storeSplits
             .map((sp) => storeById.get(sp.storeId)?.name ?? sp.storeId.slice(0, 8))
             .join(' · ');
-          const unitPriceDisplay = priceInThousands
-            ? thousands(i18n, e.unitPrice)
-            : formatMoney(e.unitPrice);
+          const unitPriceDisplay =
+            total === null
+              ? null
+              : priceInThousands
+                ? thousands(i18n, e.unitPrice)
+                : formatMoney(e.unitPrice);
           return (
             <li
               key={e.id}
@@ -844,12 +853,17 @@ export function ExpensesCard({
               </div>
               <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
                 <span className="font-mono tabular-nums">
-                  {formatQty(e.qty)} {e.unitHint ?? ''} × {unitPriceDisplay}
+                  {formatQty(e.qty)} {e.unitHint ?? ''}
+                  {unitPriceDisplay === null ? null : <> × {unitPriceDisplay}</>}
                 </span>
-                {' = '}
-                <span className="font-mono font-semibold tabular-nums text-[var(--c-fg)]">
-                  {formatMoney(total)} {currency}
-                </span>
+                {total === null ? null : (
+                  <>
+                    {' = '}
+                    <span className="font-mono font-semibold tabular-nums text-[var(--c-fg)]">
+                      {formatMoney(total)} {currency}
+                    </span>
+                  </>
+                )}
                 {e.reason ? (
                   <>
                     {' · '}
@@ -1522,6 +1536,18 @@ export function PurchaseRow({
   const lineTooLarge =
     totalHint !== null && rawPrice !== null && !lineWithinCap(qty.trim(), rawPrice);
 
+  // DX-BUY-3 (2026-11-01): when the quantity differs from the plan on a
+  // row several stores asked for, say how it will be split before ✓ —
+  // it used to show up only on the store chips after saving.
+  const plannedSum = demand.reduce((total, d) => total + Number(d.qty), 0);
+  const splitPreview =
+    demand.length > 1 &&
+    /^\d+(\.\d{1,3})?$/.test(qty.trim()) &&
+    Number(qty) > 0 &&
+    Math.abs(Number(qty) - plannedSum) > 1e-9
+      ? proportionalSplitQty(demand, qty.trim(), step)
+      : null;
+
   const canSave =
     item.status === 'pending' &&
     !saving &&
@@ -1675,9 +1701,10 @@ export function PurchaseRow({
   const isAdded = item.addedByPurchaser === true;
   /* A row carrying per-store payment overrides has no single method, so
    * a one-tap switch would be a lie about what it is changing. Those
-   * rows show a static indicator and are corrected in the sheet, which
-   * is where the per-store fields exist. */
-  const perStorePayment = actualSplits.some((s) => s.paymentMethod != null);
+   * rows open the sheet, which is where the per-store fields exist.
+   * DX-BUY-1: only a store paid differently from the item counts; a
+   * split repeating the item's method is not an override. */
+  const perStorePayment = paidPerStore(item, actualSplits);
   const paymentLabel = i18n.t(
     isTransfer ? 'run.label.paymentTransfer' : 'run.label.paymentCash',
   );
@@ -1952,7 +1979,13 @@ export function PurchaseRow({
               if (canSave) handleSave('editor');
             }}
             placeholder={i18n.t('run.action.unitPriceAriaLabel')}
-            aria-label={i18n.t('run.action.unitPriceAriaLabel')}
+            // DX-IX-7: the name carries the unit in force, as the sheet's
+            // label does ("单价（千 UZS）").
+            aria-label={
+              priceInThousands
+                ? i18n.t('run.action.unitPriceUzsThousands', { currency })
+                : i18n.t('run.action.unitPriceUzs', { currency })
+            }
           />
           {/* The unit used to sit here as a small dotted suffix that was
               also the toggle. It now lives on the line below, as a switch
@@ -2072,6 +2105,21 @@ export function PurchaseRow({
             ) : null}
           </div>
         }
+        {splitPreview ? (
+          <p
+            data-testid="run-split-preview"
+            className="mt-1 pr-1 text-right text-old-label text-[var(--c-fg-muted)]"
+          >
+            {i18n.t('run.label.splitPreview', {
+              split: splitPreview
+                .map(
+                  (sp) =>
+                    `${storeById.get(sp.storeId)?.name ?? sp.storeId.slice(0, 8)} ${formatQty(sp.qty)} ${unitFor(sp.qty)}`,
+                )
+                .join(' · '),
+            })}
+          </p>
+        ) : null}
       </li>
     );
   }
@@ -2158,10 +2206,7 @@ export function PurchaseRow({
               {Number(item.purchasedQty) > 0 && Number(item.unitPrice) > 0 ? (
                 <span className="sr-only">
                   {' = '}
-                  {formatMoney(
-                    Number(item.purchasedQty) * Number(item.unitPrice),
-                    currency,
-                  )}
+                  {formatMoney(lineAmountNumber(item.purchasedQty!, item.unitPrice!), currency)}
                 </span>
               ) : null}
             </span>
@@ -2175,13 +2220,21 @@ export function PurchaseRow({
               Every purchased row now shows its method as a persistent,
               tappable object at a fixed x. */}
           {perStorePayment ? (
-            <span
-              className={`${ROW_CTRL} ${isTransfer ? CTRL_TRANSFER : CTRL_QUIET}`}
-              title={i18n.t('run.label.paymentMethod')}
+            // DX-BUY-1: was static text that looked like the switch and did
+            // nothing. Per-store methods are changed in the sheet.
+            <button
+              type="button"
+              aria-haspopup="dialog"
+              aria-label={i18n.t('common.labelValue', {
+                label: i18n.t('run.label.paymentMethod'),
+                value: i18n.t('run.label.paymentPerStore'),
+              })}
+              disabled={pendingSync}
+              onClick={() => onEdit(item)}
+              className={`${ROW_CTRL} ${pendingSync ? CTRL_OFF : CTRL_QUIET}`}
             >
-              <span className="text-old-label font-medium">{paymentLabel}</span>
-              <span className="sr-only">{paymentAria}</span>
-            </span>
+              <span className="text-old-label font-medium">{i18n.t('run.label.paymentPerStore')}</span>
+            </button>
           ) : (
             <button
               type="button"

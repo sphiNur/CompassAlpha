@@ -75,16 +75,27 @@ export function evenSplitQty(
  * Three stores planning 1 + 1.5 + 0.5 kg who only got 2 kg become
  * 0.667 + 1.0 + 0.333.
  *
+ * DX-BUY-3 (2026-11-01): largest remainder, in whole steps. BUY-13
+ * rounded every share DOWN to the product's step and gave the rest to
+ * the last store, so the shortfall always landed on whichever store
+ * happened to be first (planned 1.5 + 1.5, bought 2.5 at step 0.5 → 1 +
+ * 1.5). Now every store gets the whole steps its share covers, and the
+ * steps left over go to the stores with the largest fractions — ties to
+ * the store that planned more, then list order. A remainder smaller
+ * than one step (bought 2.3 at step 0.5) goes to the next store in that
+ * same order. Exact: the arithmetic is in integer thousandths.
+ *
  * Returns null when there is nothing to scale — no demand rows (a
  * legacy run recorded before per-store demand existed), a non-positive
- * actual quantity, or a planned total of zero. Callers fall back to the
+ * actual quantity, or a planned total of zero — and when a store would
+ * get nothing (the server refuses a 0 split). Callers fall back to the
  * full purchase sheet.
  */
 export function proportionalSplitQty(
   demand: ReadonlyArray<{ storeId: string; qty: string }>,
   actualQtyStr: string,
-  /** BUY-13 (2026-10-30): the product's order step. Shares are rounded
-   *  down to it (no 5.625 pieces); the last store takes the remainder. */
+  /** BUY-13 (2026-10-30): the product's order step. Shares are whole
+   *  steps (no 5.625 pieces). */
   step?: string,
 ): Array<{ storeId: string; qty: string }> | null {
   if (demand.length === 0) return null;
@@ -97,25 +108,49 @@ export function proportionalSplitQty(
     return [{ storeId: demand[0]!.storeId, qty: actualQtyStr }];
   }
 
+  const toMilli = (v: number) => BigInt(Math.round(v * 10 ** SCALE));
+  const actualM = toMilli(actual);
   const stepNum = Number(step);
-  const roundDown = (v: number) =>
-    Number.isFinite(stepNum) && stepNum > 0
-      ? Math.floor(v / stepNum + 1e-9) * stepNum
-      : v;
-  const out: Array<{ storeId: string; qty: string }> = [];
-  let allocated = 0;
-  for (let i = 0; i < demand.length; i++) {
-    const d = demand[i]!;
-    if (i === demand.length - 1) {
-      out.push({ storeId: d.storeId, qty: (actual - allocated).toFixed(SCALE) });
-    } else {
-      const portion = roundDown((Number(d.qty) / plannedTotal) * actual).toFixed(SCALE);
-      allocated += Number(portion);
-      out.push({ storeId: d.storeId, qty: portion });
-    }
-  }
+  const stepM = Number.isFinite(stepNum) && stepNum > 0 ? toMilli(stepNum) : 1n;
+  const unit = stepM > 0n ? stepM : 1n;
+  const planned = demand.map((d) => {
+    const q = Number(d.qty);
+    return Number.isFinite(q) && q > 0 ? toMilli(q) : 0n;
+  });
+  const plannedM = planned.reduce((s, q) => s + q, 0n);
+  if (plannedM <= 0n) return null;
+
+  const units = actualM / unit;
+  // Each store's exact claim is planned × units / plannedTotal steps:
+  // `whole` steps plus a fraction `rest / plannedM`.
+  const shares = planned.map((p, index) => {
+    const claim = p * units;
+    return { index, whole: claim / plannedM, rest: claim % plannedM, planned: p };
+  });
+  const ranked = [...shares].sort((a, b) =>
+    a.rest !== b.rest
+      ? a.rest > b.rest ? -1 : 1
+      : a.planned !== b.planned
+        ? a.planned > b.planned ? -1 : 1
+        : a.index - b.index,
+  );
+  const leftoverUnits = Number(units - shares.reduce((s, x) => s + x.whole, 0n));
+  const qtyM = shares.map((x) => x.whole * unit);
+  for (let i = 0; i < leftoverUnits; i++) qtyM[ranked[i]!.index]! += unit;
+  // Less than one step left (the bought quantity is not a whole number
+  // of steps): the next store in line takes it.
+  const below = actualM - units * unit;
+  if (below > 0n) qtyM[ranked[leftoverUnits % ranked.length]!.index]! += below;
+
+  const out = demand.map((d, i) => ({ storeId: d.storeId, qty: milliText(qtyM[i]!) }));
   // BUY-13: a store left with nothing (a tiny quantity, or rounding to the
   // step) was sent as "0.000" and refused; let the full sheet decide.
-  if (out.some((o) => !(Number(o.qty) > 0))) return null;
+  if (qtyM.some((q) => q <= 0n)) return null;
   return out;
+}
+
+function milliText(m: bigint): string {
+  const whole = m / 1000n;
+  const frac = (m % 1000n).toString().padStart(SCALE, '0');
+  return `${whole}.${frac}`;
 }
