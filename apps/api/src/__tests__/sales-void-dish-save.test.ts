@@ -321,3 +321,42 @@ describe('dishes.save', () => {
     );
   });
 });
+
+describe('DX-DSH-1 an archived product in a recipe', () => {
+  test.skipIf(!SHOULD_RUN)('is refused on save instead of being kept silently', async () => {
+    const storeId = await makeStore(`dish-archived-${Math.random()}`);
+    const caller = await memberCaller(fix!.dishesRoleId, storeId);
+    const db = getDb(undefined, { system: 'maintenance' });
+    const [gone] = await db
+      .insert(s.skus)
+      .values({
+        orgId: fix!.orgId,
+        code: `VA-${Math.random().toString(36).slice(2, 10)}`,
+        names: { en: 'Banana' },
+        unit: 'kg',
+        isArchived: true,
+      })
+      .returning();
+    const created = await caller.dishes.save({
+      names: { en: 'Porridge' },
+      ingredients: [{ skuId: fix!.skuId, qtyPerServing: '0.1' }],
+    });
+    const err = await errorOf(() =>
+      caller.dishes.save({
+        dishId: created.dishId,
+        names: { en: 'Porridge' },
+        unitPrice: '7.00',
+        ingredients: [
+          { skuId: fix!.skuId, qtyPerServing: '0.1' },
+          { skuId: gone!.id, qtyPerServing: '0.1' },
+        ],
+      }),
+    );
+    expect(err?.code).toBe('BAD_REQUEST');
+    expect(err?.message).toBe('dishes.errors.archivedIngredient');
+    const { ingredients } = await caller.dishes.list();
+    expect(ingredients.filter((i) => i.dishId === created.dishId).map((i) => i.skuId)).toEqual([
+      fix!.skuId,
+    ]);
+  });
+});

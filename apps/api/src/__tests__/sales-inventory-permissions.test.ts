@@ -99,7 +99,11 @@ describe('CA-10 migration 0048 backfills the missing built-in grants only', () =
 
 const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
 
-function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {
+function buildCtx(
+  db: ReturnType<typeof getDb>,
+  session: SessionContext,
+  idempotencyKey: string | null = null,
+): RequestContext {
   return {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     hono: {} as any,
@@ -108,7 +112,7 @@ function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): Reques
     traceId: `test-${Date.now()}`,
     ip: null,
     userAgent: null,
-    idempotencyKey: null,
+    idempotencyKey,
     session,
     async withOrg(fn, options) {
       return withOrgContext(db, session.orgId, fn, options);
@@ -204,7 +208,12 @@ async function makeStore(name: string): Promise<string> {
 }
 
 /** A member holding `roleId` scoped to `storeId`, plus a caller for them. */
-async function memberCaller(roleId: string, storeId: string, denies: string[] = []) {
+async function memberCaller(
+  roleId: string,
+  storeId: string,
+  denies: string[] = [],
+  idempotencyKey: string | null = null,
+) {
   const db = getDb(undefined, { system: 'maintenance' });
   const tgUserId = BigInt(`${fix!.suffix}${Math.floor(Math.random() * 1e6)}`.slice(-12));
   const [user] = await db.insert(s.users).values({ displayName: 'CA10', tgUserId }).returning();
@@ -229,7 +238,7 @@ async function memberCaller(roleId: string, storeId: string, denies: string[] = 
   }
   const session = await loadSession(db, user!.id, fix!.orgId, member!.id);
   if (!session) throw new Error('session failed to load');
-  return appRouter.createCaller(buildCtx(db, session));
+  return appRouter.createCaller(buildCtx(db, session, idempotencyKey));
 }
 
 async function errorOf(
@@ -323,5 +332,58 @@ describe('CA-10 inventory.adjust has no users.manage fallback', () => {
     );
     expect(err?.code).toBe('FORBIDDEN');
     expect(err?.message).toBe('inventory.errors.cannotAdjust');
+  });
+});
+
+describe('DX-INV-1 / DX-INV-2 stocktake counts', () => {
+  test.skipIf(!SHOULD_RUN)('each bad count is refused with its own reason', async () => {
+    const storeId = await makeStore(`DX-INV1-${Math.random()}`);
+    const caller = await memberCaller(fix!.managerRoleId, storeId);
+    const cases: Array<[string, string]> = [
+      ['', 'inventory.errors.countRequired'],
+      ['-3', 'inventory.errors.countNegative'],
+      ['abc', 'inventory.errors.countNotNumber'],
+      ['20.0001', 'inventory.errors.countDecimals'],
+      ['100000000', 'inventory.errors.countTooLarge'],
+    ];
+    for (const [target, key] of cases) {
+      const err = await errorOf(() =>
+        caller.inventory.stocktake({ storeId, skuId: fix!.skuId, target }),
+      );
+      expect(err?.code).toBe('BAD_REQUEST');
+      expect(err?.message).toContain(key);
+    }
+  });
+
+  test.skipIf(!SHOULD_RUN)('a retried count with the same key is not posted twice', async () => {
+    const storeId = await makeStore(`DX-INV2-${Math.random()}`);
+    const key = `dx-inv2-${Date.now()}-${Math.random()}`;
+    const counter = await memberCaller(fix!.managerRoleId, storeId, [], key);
+    const first = await counter.inventory.stocktake({ storeId, skuId: fix!.skuId, target: '5' });
+    expect(first.skipped).toBe(false);
+    // A sale moves the stock between the first post and its retry.
+    const seller = await memberCaller(fix!.managerRoleId, storeId);
+    await seller.sales.record({ storeId, dishId: fix!.dishId, qty: '2' });
+    const retry = await counter.inventory.stocktake({ storeId, skuId: fix!.skuId, target: '5' });
+    expect(retry).toEqual(first);
+    const levels = await seller.inventory.levels({ storeId });
+    // 5 counted, then 2 × 0.25 sold; the retry did not re-count to 5.
+    expect(levels.find((l) => l.skuId === fix!.skuId)?.onHand).toBe('4.500');
+  });
+});
+
+describe('DX-SAL-1 a sale that drives stock below zero', () => {
+  test.skipIf(!SHOULD_RUN)('is kept, and names the ingredients now below zero', async () => {
+    const storeId = await makeStore(`DX-SAL1-${Math.random()}`);
+    const caller = await memberCaller(fix!.managerRoleId, storeId);
+    const res = await caller.sales.record({ storeId, dishId: fix!.dishId, qty: '2' });
+    expect(res.saleId).toBeTruthy();
+    expect(res.negativeStock).toEqual([
+      { skuId: fix!.skuId, names: { en: 'Flour' }, onHand: '-0.500' },
+    ]);
+
+    await caller.inventory.stocktake({ storeId, skuId: fix!.skuId, target: '10' });
+    const covered = await caller.sales.record({ storeId, dishId: fix!.dishId, qty: '1' });
+    expect(covered.negativeStock).toEqual([]);
   });
 });

@@ -13,9 +13,10 @@
  *                              — Operator counted the shelf and got
  *                              `target` units. We compute current
  *                              SUM, derive the delta, write a single
- *                              row with reason='stocktake'. Idempotent
- *                              by (sourceType=null) — operators can
- *                              re-tally and post again.
+ *                              row with reason='stocktake'. Operators
+ *                              can re-tally and post again; a retry of
+ *                              the same post (same idempotency key)
+ *                              replays instead (DX-INV-2).
  *
  *   recordWastage(storeId, sku, qty, note)
  *                              — Subtract `qty` from on-hand with a
@@ -42,7 +43,9 @@ import { schema as s, type DB } from '@compass/db';
 import {
   DecimalStringSchema,
   PositiveDecimalStringSchema,
+  STOCKTAKE_COUNT_MESSAGE,
   UuidSchema,
+  stocktakeCountProblem,
 } from '@compass/contracts';
 import { authedProcedure, idempotentMutation, router } from '../trpc';
 import {
@@ -99,10 +102,13 @@ const StocktakeInputSchema = z.object({
   storeId: UuidSchema,
   skuId: UuidSchema,
   /** Target on-hand qty after the stocktake. Must be ≥ 0. */
-  target: z
-    .string()
-    // CLS-19 (2026-10-30): at most 8 integer digits; 99999999999 was a 500.
-    .regex(/^\d{1,8}(\.\d{1,3})?$/, 'inventory.errors.qtyTooLarge'),
+  // CLS-19 (2026-10-30): at most 8 integer digits; 99999999999 was a 500.
+  // DX-INV-1 (2026-11-01): one message per reason — empty, negative,
+  // letters and four decimals all used to say "quantity too large".
+  target: z.string().superRefine((v, ctx) => {
+    const problem = stocktakeCountProblem(v);
+    if (problem) ctx.addIssue({ code: 'custom', message: STOCKTAKE_COUNT_MESSAGE[problem] });
+  }),
   note: z.string().max(500).optional(),
 });
 
@@ -220,7 +226,11 @@ export const inventoryRouter = router({
    * counted exactly what the system thought, delta = 0 and no row is
    * written (keep the ledger lean).
    */
-  stocktake: authedProcedure
+  // DX-INV-2 (2026-11-01): idempotent. A lost-response retry with the
+  // same X-Idempotency-Key replays the first answer; without it the retry
+  // recomputed the delta against stock that sales had moved meanwhile and
+  // posted a second correction.
+  stocktake: idempotentMutation
     .input(StocktakeInputSchema)
     .mutation(async ({ ctx, input }) => {
       requireInventoryAdjust(ctx.session!.permissions);

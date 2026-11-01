@@ -44,7 +44,7 @@
  * Clients must therefore send a stable key per logical sale.
  */
 import { TRPCError } from '@trpc/server';
-import { and, desc, eq, gte, lt } from 'drizzle-orm';
+import { and, desc, eq, gte, lt, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { schema as s } from '@compass/db';
 import {
@@ -335,9 +335,36 @@ export const salesRouter = router({
           )
           .onConflictDoNothing();
 
+        // DX-SAL-1 (2026-11-01): which ingredients this sale left below
+        // zero. The sale is not refused — the food was served, the record
+        // was already off — but the cashier is told, so someone counts
+        // the shelf (wastage asks the same way, CLS-8).
+        const negativeRows = (await tx.execute(sql`
+          SELECT m.sku_id::text AS sku_id, SUM(m.delta)::text AS on_hand, k.names
+          FROM inventory.movements m
+          JOIN inventory.skus k ON k.id = m.sku_id
+          WHERE m.org_id = ${orgId}
+            AND m.store_id = ${input.storeId}
+            AND m.sku_id IN (${sql.join(
+              deductions.map((d) => sql`${d.skuId}::uuid`),
+              sql`, `,
+            )})
+          GROUP BY m.sku_id, k.names
+          HAVING SUM(m.delta) < 0
+        `)) as unknown as Array<{
+          sku_id: string;
+          on_hand: string;
+          names: Record<string, string>;
+        }>;
+
         return {
           saleId,
           deducted: deductions.map(({ skuId, qty }) => ({ skuId, qty })),
+          negativeStock: negativeRows.map((r) => ({
+            skuId: r.sku_id,
+            names: r.names,
+            onHand: r.on_hand,
+          })),
         };
       });
     }),

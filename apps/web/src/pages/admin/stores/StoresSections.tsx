@@ -18,6 +18,7 @@ import {
   EmptyState,
   Field,
   Input,
+  NumberInput,
   Segmented,
   Select,
   Sheet,
@@ -28,6 +29,7 @@ import {
   readDecimalText,
 } from '@compass/ui';
 import { ADMIN_RANK } from '@compass/contracts/schemas/roles';
+import { STOCKTAKE_COUNT_MESSAGE, stocktakeCountProblem } from '@compass/contracts/limits';
 import { newIdempotencyKey, trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
@@ -49,6 +51,8 @@ import {
   knownMovementReason,
   signedDelta,
   skusWithoutLevel,
+  sortLevelRows,
+  stocktakePrefill,
   wastageMissing,
   type MovementReason,
 } from './inventoryHelpers';
@@ -453,7 +457,10 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
   const productName = useProductName();
   const dateFmt = useDateFormat();
   const levelsQuery = trpc.inventory.levels.useQuery({ storeId });
-  const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: false });
+  // Archived products too: stock of a product archived since still has a
+  // level row and showed as an 8-character id. Opening counts offer
+  // active ones only (skusWithoutLevel).
+  const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: true });
   const utils = trpc.useUtils();
   // 2026-10-21 audit CA-16: mirror the server's requireInventoryAdjust
   // exactly — read-only members saw both buttons and got a 403 on save.
@@ -466,7 +473,7 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
   const skuById = useMemo(() => {
     const m = new Map<
       string,
-      { id: string; names: Record<string, string>; unit: string; step: string }
+      { id: string; names: Record<string, string>; unit: string; step: string; isArchived: boolean }
     >();
     for (const sku of skusQuery.data ?? []) {
       m.set(sku.id, {
@@ -474,6 +481,7 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
         names: sku.names as Record<string, string>,
         unit: sku.unit,
         step: sku.step,
+        isArchived: sku.isArchived,
       });
     }
     return m;
@@ -504,6 +512,12 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
   useEffect(() => {
     wastageIdemCtx.idempotencyKey = newIdempotencyKey();
   }, [wastageIdemCtx, action, draftWasteQty, draftNote]);
+  // DX-INV-2 (2026-11-01): the same for a stocktake. A retry of one count
+  // replays on the server instead of posting a second correction.
+  const stocktakeIdemCtx = useRef<{ idempotencyKey?: string }>({}).current;
+  useEffect(() => {
+    stocktakeIdemCtx.idempotencyKey = newIdempotencyKey();
+  }, [stocktakeIdemCtx, action, draftTarget, draftNote]);
 
   useEffect(() => {
     if (!action) {
@@ -511,14 +525,20 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
       setDraftWasteQty('');
       setDraftNote('');
     } else if (action.kind === 'stocktake') {
-      setDraftTarget(action.current);
+      setDraftTarget(stocktakePrefill(action.current));
     }
   }, [action]);
 
   const wasteMissing = wastageMissing(draftWasteQty, draftNote, readDecimalText);
+  // DX-INV-1 (2026-11-01): the server's count check, run before Save. The
+  // field hands us the normalised number, or the text as typed when it
+  // is not one ("abc"), which the check calls notNumber.
+  const countProblem = action?.kind === 'stocktake' ? stocktakeCountProblem(draftTarget) : null;
 
   const stocktake = trpc.inventory.stocktake.useMutation({
+    trpc: { context: stocktakeIdemCtx },
     onSuccess: () => {
+      stocktakeIdemCtx.idempotencyKey = newIdempotencyKey();
       void utils.inventory.levels.invalidate({ storeId });
       void utils.inventory.recentMovements.invalidate({ storeId });
       toast.success(i18n.t('inventory.toast.stocktakeSaved'));
@@ -599,16 +619,18 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
         />
       ) : (
         <ul className="flex flex-col gap-1" role="list">
-          {rows
-            .sort((a, b) => a.name.localeCompare(b.name))
-            .map((r) => {
-              const stockedOut = r.onHandNum <= 0;
+          {sortLevelRows(rows, i18n.locale).map((r) => {
+              // DX-INV-3 (2026-11-01): negative stock stands out instead of
+              // fading — the whole row was at 70 % opacity, so the item
+              // that most needed a count was the hardest to see. Zero is
+              // shown plainly; negative gets a red edge and a badge.
+              const negative = r.onHandNum < 0;
               return (
                 <li
                   key={r.skuId}
                   className={
-                    'rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 ring-hairline ' +
-                    (stockedOut ? 'opacity-70' : '')
+                    'rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 ' +
+                    (negative ? 'ring-1 ring-[var(--c-danger)]' : 'ring-hairline')
                   }
                 >
                   {/* 2026-10-21: tap → recent movements sheet. */}
@@ -617,8 +639,20 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
                     className="flex w-full items-baseline justify-between gap-2 text-left active:opacity-80"
                     onClick={() => setMovementsFor({ skuId: r.skuId, name: r.name })}
                   >
-                    <span className="truncate text-old-body font-semibold">{r.name}</span>
-                    <span className="font-mono text-old-body tabular-nums">
+                    <span className="flex min-w-0 items-baseline gap-2">
+                      <span className="truncate text-old-body font-semibold">{r.name}</span>
+                      {negative ? (
+                        <Badge tone="danger" className="shrink-0 whitespace-nowrap">
+                          {i18n.t('inventory.badge.negative')}
+                        </Badge>
+                      ) : null}
+                    </span>
+                    <span
+                      className={
+                        'shrink-0 font-mono text-old-body tabular-nums ' +
+                        (negative ? 'font-semibold text-[var(--c-danger-ink)]' : '')
+                      }
+                    >
                       {formatQty(r.onHand)} {unitLabel(r.unit, r.onHand)}
                     </span>
                   </button>
@@ -689,6 +723,16 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
             <>
               {/* CMP-INV-3: wastage can only be saved once it is complete,
                   and the line above Save says what is missing. */}
+              {/* DX-INV-1: an empty count says what is missing here, like
+                  wastage; a wrong one says why under the field. */}
+              {action.kind === 'stocktake' && countProblem === 'empty' ? (
+                <p
+                  id="stocktake-missing"
+                  className="pb-2 text-center text-old-body-sm text-[var(--c-fg-muted)]"
+                >
+                  {i18n.t(STOCKTAKE_COUNT_MESSAGE.empty)}
+                </p>
+              ) : null}
               {action.kind === 'wastage' && wasteMissing ? (
                 <p
                   id="wastage-missing"
@@ -704,13 +748,24 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
               <Button
                 block
                 loading={stocktake.isPending || recordWastage.isPending}
-                disabled={!action.skuId || (action.kind === 'wastage' && wasteMissing !== null)}
+                disabled={
+                  !action.skuId ||
+                  (action.kind === 'wastage' && wasteMissing !== null) ||
+                  (action.kind === 'stocktake' && countProblem !== null)
+                }
                 aria-describedby={
-                  action.kind === 'wastage' && wasteMissing ? 'wastage-missing' : undefined
+                  action.kind === 'wastage' && wasteMissing
+                    ? 'wastage-missing'
+                    : countProblem === 'empty'
+                      ? 'stocktake-missing'
+                      : countProblem
+                        ? 'stocktake-error'
+                        : undefined
                 }
                 onClick={() => {
                   if (!action || !action.skuId) return;
                   if (action.kind === 'stocktake') {
+                    if (countProblem) return;
                     stocktake.mutate({
                       storeId,
                       skuId: action.skuId,
@@ -779,15 +834,33 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
                   label={i18n.t('inventory.sheet.stocktake.targetLabel')}
                   hint={i18n.t('inventory.sheet.stocktake.targetHint')}
                 >
-                  <Input
-                    type="number"
-                    inputMode="decimal"
-                    step={skuById.get(action.skuId)?.step ?? '0.1'}
-                    min="0"
+                  {/* DX-INV-1: the reason a count can't be saved sits under
+                      the field and is tied to it, as in the daily close. */}
+                  <NumberInput
+                    formatError="none"
                     value={draftTarget}
+                    aria-invalid={(countProblem !== null && countProblem !== 'empty') || undefined}
+                    aria-describedby={
+                      countProblem && countProblem !== 'empty' ? 'stocktake-error' : undefined
+                    }
+                    className={
+                      countProblem && countProblem !== 'empty'
+                        ? 'border-[var(--c-danger)]'
+                        : undefined
+                    }
                     onChange={(e) => setDraftTarget(e.target.value)}
                     autoFocus
                   />
+                  {countProblem && countProblem !== 'empty' ? (
+                    <span
+                      id="stocktake-error"
+                      role="alert"
+                      className="mt-1 flex items-start gap-1 text-old-label text-[var(--c-danger)]"
+                    >
+                      <span aria-hidden>⚠</span>
+                      <span>{i18n.t(STOCKTAKE_COUNT_MESSAGE[countProblem])}</span>
+                    </span>
+                  ) : null}
                 </Field>
                 <Field label={i18n.t('inventory.sheet.note')}>
                   <Input
