@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { purgeCountsByKind, resetConfirmMatches } from '../purgeCounts';
+import { purgeCountsByKind, resetConfirmMatches, wipeConfirmMatches } from '../purgeCounts';
 
 describe('purgeCountsByKind (CMP-OPS-6)', () => {
   test('table names become kinds; parts of one thing are added; zeros dropped', () => {
@@ -36,5 +36,29 @@ describe('resetConfirmMatches (CMP-OPS-5)', () => {
     expect(resetConfirmMatches('2026-10-30', '2026-10-31')).toBe(false);
     expect(resetConfirmMatches('', '2026-10-31')).toBe(false);
     expect(resetConfirmMatches('', '')).toBe(false);
+  });
+});
+
+describe('resetConfirmMatches on a phone number pad (DX-CAT-4)', () => {
+  test('the digits of the date confirm it, in any separator', () => {
+    expect(resetConfirmMatches('20261031', '2026-10-31')).toBe(true);
+    expect(resetConfirmMatches('2026/10/31', '2026-10-31')).toBe(true);
+    expect(resetConfirmMatches('2026.10.31', '2026-10-31')).toBe(true);
+  });
+  test('another order of the digits does not', () => {
+    expect(resetConfirmMatches('31.10.2026', '2026-10-31')).toBe(false);
+    expect(resetConfirmMatches('2026103', '2026-10-31')).toBe(false);
+  });
+});
+
+describe('wipeConfirmMatches (DX-CAT-17)', () => {
+  test('the visible workspace name confirms, spaces around ignored', () => {
+    expect(wipeConfirmMatches('Eden', 'Eden')).toBe(true);
+    expect(wipeConfirmMatches(' Eden ', 'Eden')).toBe(true);
+  });
+  test('anything else does not', () => {
+    expect(wipeConfirmMatches('default', 'Eden')).toBe(false);
+    expect(wipeConfirmMatches('eden', 'Eden')).toBe(false);
+    expect(wipeConfirmMatches('', '')).toBe(false);
   });
 });

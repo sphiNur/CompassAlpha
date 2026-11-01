@@ -34,6 +34,7 @@ import { isPlatformAdmin } from '../../services/platformAdmin';
 import { assertCanAddMember, assertCanAddStore } from '../../services/subscription';
 import { isUniqueViolation } from '../../services/pgErrors';
 import { bulkPurgeAllowed } from '../../services/bulkPurge';
+import { recentEventContext } from '../../services/eventContext';
 import { env } from '../../env';
 import {
   applyCatalogCopy,
@@ -1151,9 +1152,10 @@ const MemberTransferStoreInputSchema = z.object({
  *
  * Two-phase by design:
  *   - dryRun=true (default) returns row counts WITHOUT deleting.
- *   - dryRun=false requires `confirmText` to match the org slug
- *     exactly. The FE shows the slug in the confirm sheet so the user
- *     literally types it; if they fat-finger, nothing happens.
+ *   - dryRun=false requires `confirmText` to match the workspace name
+ *     (DX-CAT-17; the slug is still accepted from older clients). The FE
+ *     shows the name in the confirm sheet so the user literally types
+ *     it; if they fat-finger, nothing happens.
  */
 const PurgeAllTestDataInputSchema = z.object({
   dryRun: z.boolean().default(true),
@@ -5168,9 +5170,12 @@ export const adminRouter = router({
           })
           .from(s.events)
           .where(and(eq(s.events.orgId, orgId), ...(scopeFilter ? [scopeFilter] : [])))
-          .orderBy(desc(s.events.occurredAt))
+          // DX-CAT-2 (2026-11-01): events of one command share occurredAt;
+          // without a tie-break they came back as seq 15, 13, 14.
+          .orderBy(desc(s.events.occurredAt), desc(s.events.seq), desc(s.events.id))
           .limit(limit);
         if (rows.length === 0) return [];
+        const context = await recentEventContext(tx, orgId, rows);
         const userIds = [...new Set(rows.map((r) => r.actorId).filter(Boolean) as string[])];
         const users = userIds.length
           ? await tx
@@ -5192,6 +5197,7 @@ export const adminRouter = router({
           actor: r.actorId ? (userById.get(r.actorId) ?? null) : null,
           occurredAt: r.occurredAt.toISOString(),
           payload: r.payload as unknown,
+          context: context.get(r.id) ?? null,
         }));
       });
     }),
@@ -5530,8 +5536,11 @@ export const adminRouter = router({
           return { dryRun: true, total, byTable: counts, orgSlug: org.slug };
         }
 
-        // Destructive path requires confirmText match.
-        if (input.confirmText !== org.slug) {
+        // Destructive path requires confirmText match. DX-CAT-17
+        // (2026-11-01): the workspace's name, which the person can see;
+        // the slug is still accepted from older clients.
+        const typed = (input.confirmText ?? '').trim();
+        if (typed === '' || (typed !== org.name.trim() && typed !== org.slug)) {
           throw new TRPCError({
             code: 'BAD_REQUEST',
             message: 'admin.errors.purgeConfirmMismatch',
@@ -5645,7 +5654,20 @@ export const adminRouter = router({
       // run_date, which differ when a run takes earlier orders. Deleting
       // one side left the other pointing at nothing, and those orphans
       // could not be deleted afterwards. An order and its run go together.
+      const ownSessions = new Set(sessionIds);
+      const ownRuns = new Set(runIds);
       await closeOverRunLinks(tx, orgId, sessionIds, runIds);
+      // DX-CAT-5 (2026-11-01): the preview says what is this day's and
+      // what goes with it from other dates (an order of 11-01 on a run of
+      // 10-30, or the 10-31 run holding today's orders), with the dates.
+      // Only the totals were shown, under a title naming the one date.
+      const scope = await purgeDateScope(
+        tx,
+        orgId,
+        sessionIds.filter((id) => !ownSessions.has(id)),
+        runIds.filter((id) => !ownRuns.has(id)),
+        { orders: ownSessions.size, runs: ownRuns.size },
+      );
 
       const allStreamIds = [...sessionIds, ...runIds];
 
@@ -5759,7 +5781,7 @@ export const adminRouter = router({
       const total = Object.values(counts).reduce((a, b) => a + b, 0);
 
       if (input.dryRun) {
-        return { dryRun: true, total, byTable: counts, date };
+        return { dryRun: true, total, byTable: counts, date, scope };
       }
 
       // Commit pass — same id sets, dependency-safe order.
@@ -5834,7 +5856,7 @@ export const adminRouter = router({
         runIds,
       });
       broadcastPurged(orgId, sessionIds, runIds);
-      return { dryRun: false, total, byTable: counts, date };
+      return { dryRun: false, total, byTable: counts, date, scope };
     });
   }),
 
@@ -5946,6 +5968,44 @@ export const adminRouter = router({
         });
         const callerMemberId = callerMemberRow?.id ?? null;
 
+        // DX-CAT-3 (2026-11-01): say on each row whether it can be deleted
+        // here and why not — the same checks purgeSession makes, in the
+        // same order. The list offered a red Delete on every order that
+        // was not in a run, and the refusal only came after a tap.
+        const isSuperAdmin = ctx.session!.roleSlugs.has('super_admin');
+        const sessionIds = rows.map((r) => r.id);
+        const linkedRunIds = [...new Set(rows.map((r) => r.runId).filter(Boolean) as string[])];
+        const [liveRuns, foreignSessions, actedOnSessions] = await Promise.all([
+          linkedRunIds.length
+            ? tx
+                .select({ id: s.marketRunsV.id })
+                .from(s.marketRunsV)
+                .where(
+                  and(eq(s.marketRunsV.orgId, orgId), inArray(s.marketRunsV.id, linkedRunIds)),
+                )
+            : Promise.resolve([] as Array<{ id: string }>),
+          sessionsWithForeignAuthors(tx, callerMemberId, sessionIds),
+          streamsActedOnByOthers(tx, ctx.session!.userId, 'order', sessionIds),
+        ]);
+        const liveRunIds = new Set(liveRuns.map((r) => r.id));
+        const deleteBlockOf = (r: (typeof rows)[number]): SessionDeleteBlock | null => {
+          if (!isSuperAdmin) return 'notSuperAdmin';
+          const orphaned = r.runId !== null && !liveRunIds.has(r.runId);
+          if (
+            !orphaned &&
+            (r.status === 'in_run' || r.status === 'archived' || (r.runId && liveRunIds.has(r.runId)))
+          ) {
+            return 'inRun';
+          }
+          if (foreignSessions.has(r.id)) {
+            // Someone else's order, or the caller's with others' lines in it.
+            const author = r.submittedByMemberId ?? r.initiatedByMemberId;
+            return author && author !== callerMemberId ? 'othersOrder' : 'othersLines';
+          }
+          if (actedOnSessions.has(r.id)) return 'actedOnByOthers';
+          return null;
+        };
+
         // Per-session: aggregate qty across contributors per SKU.
         const skuTotalsBySession = new Map<string, Map<string, number>>();
         const sessionsWhereImAuthor = new Set<string>();
@@ -5995,6 +6055,7 @@ export const adminRouter = router({
                 itemCount: agg.itemCount,
                 totalQty: agg.totalQty.toFixed(3).replace(/\.?0+$/, ''),
                 updatedAt: r.updatedAt.toISOString(),
+                deleteBlock: deleteBlockOf(r),
               };
             })
             // #4: an "empty" session (every contributor's qty is 0) shouldn't
@@ -6066,10 +6127,38 @@ export const adminRouter = router({
               .where(inArray(s.members.id, memberIds))
           : [];
         const memberById = new Map(memberJoins.map((m) => [m.memberId, m]));
+        // DX-CAT-3 (2026-11-01): the checks purgeRun makes, per row.
+        const isSuperAdmin = ctx.session!.roleSlugs.has('super_admin');
+        const callerMember = await tx.query.members.findFirst({
+          where: (m, { eq: eq2, and: and2 }) =>
+            and2(eq2(m.orgId, orgId), eq2(m.userId, ctx.session!.userId)),
+          columns: { id: true },
+        });
+        const allSessionIds = [
+          ...new Set(rows.flatMap((r) => (r.sessionIdsJson as unknown as string[]) ?? [])),
+        ];
+        const [foreignSessions, actedOnRuns, actedOnSessions] = await Promise.all([
+          sessionsWithForeignAuthors(tx, callerMember?.id ?? null, allSessionIds),
+          streamsActedOnByOthers(
+            tx,
+            ctx.session!.userId,
+            'run',
+            rows.map((r) => r.id),
+          ),
+          streamsActedOnByOthers(tx, ctx.session!.userId, 'order', allSessionIds),
+        ]);
         return rows.map((r) => {
           const sessionIds = (r.sessionIdsJson as unknown as string[]) ?? [];
           const m = r.purchaserMemberId ? memberById.get(r.purchaserMemberId) : null;
+          const deleteBlock: RunDeleteBlock | null = !isSuperAdmin
+            ? 'notSuperAdmin'
+            : sessionIds.some((id) => foreignSessions.has(id))
+              ? 'foreignSessions'
+              : actedOnRuns.has(r.id) || sessionIds.some((id) => actedOnSessions.has(id))
+                ? 'actedOnByOthers'
+                : null;
           return {
+            deleteBlock,
             runId: r.id,
             runDate: r.runDate,
             runIndex: r.runIndex,
@@ -6421,6 +6510,65 @@ export const adminRouter = router({
 // ---------- purge predicates ----------
 
 /**
+ * DX-CAT-5 (2026-11-01): how many orders and runs belong to the reset
+ * date, and which ones from other dates go with them because they are
+ * linked — orders grouped by date and store, runs by date and number.
+ */
+async function purgeDateScope(
+  tx: OrgTx,
+  orgId: string,
+  linkedSessionIds: string[],
+  linkedRunIds: string[],
+  sameDay: { orders: number; runs: number },
+): Promise<{
+  sameDay: { orders: number; runs: number };
+  linkedOrders: Array<{ orderDate: string; storeName: string | null; count: number }>;
+  linkedRuns: Array<{ runDate: string; runIndex: number }>;
+}> {
+  const orders = linkedSessionIds.length
+    ? await tx
+        .select({
+          orderDate: s.orderSessionsV.orderDate,
+          storeName: s.stores.name,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(s.orderSessionsV)
+        .leftJoin(s.stores, eq(s.stores.id, s.orderSessionsV.storeId))
+        .where(
+          and(eq(s.orderSessionsV.orgId, orgId), inArray(s.orderSessionsV.id, linkedSessionIds)),
+        )
+        .groupBy(s.orderSessionsV.orderDate, s.stores.name)
+        .orderBy(s.orderSessionsV.orderDate, s.stores.name)
+    : [];
+  const runs = linkedRunIds.length
+    ? await tx
+        .select({ runDate: s.marketRunsV.runDate, runIndex: s.marketRunsV.runIndex })
+        .from(s.marketRunsV)
+        .where(and(eq(s.marketRunsV.orgId, orgId), inArray(s.marketRunsV.id, linkedRunIds)))
+        .orderBy(s.marketRunsV.runDate, s.marketRunsV.runIndex)
+    : [];
+  return {
+    sameDay,
+    linkedOrders: orders.map((o) => ({
+      orderDate: o.orderDate,
+      storeName: o.storeName ?? null,
+      count: o.count,
+    })),
+    linkedRuns: runs,
+  };
+}
+
+/** DX-CAT-3: why the maintenance list can't delete an order here. */
+type SessionDeleteBlock =
+  | 'notSuperAdmin'
+  | 'inRun'
+  | 'othersOrder'
+  | 'othersLines'
+  | 'actedOnByOthers';
+/** DX-CAT-3: why the maintenance list can't delete a run here. */
+type RunDeleteBlock = 'notSuperAdmin' | 'foreignSessions' | 'actedOnByOthers';
+
+/**
  * D2 / R2-CAT-2 (2026-10-31): `requireOnlyTestSessions: false` skips the
  * "someone else wrote or handled it" guard. On production that is the
  * same kind of switch as the bulk purges, so it needs the same opt-in.
@@ -6515,6 +6663,62 @@ async function othersActedOn(
     if (row) return true;
   }
   return false;
+}
+
+/**
+ * DX-CAT-3 (2026-11-01): which of these streams someone other than
+ * `userId` wrote an event on — othersActedOn for a whole list at once,
+ * so the maintenance list can say up front what can't be deleted.
+ */
+async function streamsActedOnByOthers(
+  tx: OrgTx,
+  userId: string,
+  type: 'run' | 'order',
+  ids: string[],
+): Promise<Set<string>> {
+  if (ids.length === 0) return new Set();
+  const rows = await tx
+    .selectDistinct({ streamId: s.events.streamId })
+    .from(s.events)
+    .where(
+      and(
+        eq(s.events.streamType, type),
+        inArray(s.events.streamId, ids),
+        sql`${s.events.actorId} IS NOT NULL`,
+        sql`${s.events.actorId} <> ${userId}`,
+      ),
+    );
+  return new Set(rows.map((r) => r.streamId));
+}
+
+/**
+ * DX-CAT-3: the sessions (of these) that someone other than the caller
+ * wrote — the same rule as foreignAuthors, per session. `null` caller
+ * member means every author is someone else.
+ */
+async function sessionsWithForeignAuthors(
+  tx: OrgTx,
+  myMemberId: string | null,
+  sessionIds: string[],
+): Promise<Set<string>> {
+  if (sessionIds.length === 0) return new Set();
+  const sessions = await tx.query.orderSessionsV.findMany({
+    where: (sess, { inArray: ia }) => ia(sess.id, sessionIds),
+  });
+  const items = await tx.query.orderItemsV.findMany({
+    where: (it, { inArray: ia }) => ia(it.sessionId, sessionIds),
+  });
+  const foreign = new Set<string>();
+  for (const sess of sessions) {
+    const author = sess.submittedByMemberId ?? sess.initiatedByMemberId;
+    if (author && author !== myMemberId) foreign.add(sess.id);
+  }
+  for (const it of items) {
+    if (it.contributorMemberId && it.contributorMemberId !== myMemberId) {
+      foreign.add(it.sessionId);
+    }
+  }
+  return foreign;
 }
 
 async function foreignAuthors(
