@@ -35,12 +35,19 @@ export function PriceUnitSwitch({
     <button
       type="button"
       onClick={onToggle}
+      // DX-IX-7 (2026-11-01): a toggle says which way it sits — pressed =
+      // prices are typed in thousands — and its name starts with the
+      // "×1000" people see on it (WCAG 2.5.3). The currency segment is
+      // the unpressed state, so it is left out of the name.
+      aria-pressed={priceInThousands}
       aria-label={ariaLabel}
       data-testid="price-unit-switch"
       className="press hit-44 inline-flex shrink-0 items-center rounded-[var(--r-pill)] bg-[var(--c-surface-2)] p-0.5 text-old-label ring-hairline active:opacity-70"
     >
       <span className={segment(priceInThousands)}>×1000</span>
-      <span className={segment(!priceInThousands)}>{currency}</span>
+      <span aria-hidden="true" className={segment(!priceInThousands)}>
+        {currency}
+      </span>
     </button>
   );
 }
