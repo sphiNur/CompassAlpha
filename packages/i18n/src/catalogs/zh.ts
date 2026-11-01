@@ -2051,4 +2051,13 @@ export const zh = {
   'run.sessions.collapsed': '{n} 份订单',
   'run.sessions.storeJoiner': '、',
   'run.confirm.startDelivery.pendingExtras': '还有 {n} 项「其他物品」没处理：{names}。开始配送后，采购页上就不再显示它们。',
+  'approval.changed.title': '这份订单在你打开后有变化',
+  'approval.changed.body': '有变化的行已标出。看过后再通过。',
+  'approval.changed.ack': '我看过了',
+  'approval.changed.line': '有变化：{from} → {to} {unit}',
+  'approval.changed.removed': '{item}：{from} {unit} → 已删除',
+  'approval.zeroed': '审核时改成了 0，点 + 可以加回来',
+  'approval.allZeroRejectOnly': '所有商品都改成了 0，也没有其他物品，不能通过。可以把商品加回来，或者拒绝这份订单。',
+  'approval.toast.withdrawnWhileOpen': '下单人撤回了你打开的这份订单。',
+  'approval.toast.decidedElsewhere': '你打开的这份订单已被别的审核人处理。',
 } as const satisfies Record<CatalogKey, string>;

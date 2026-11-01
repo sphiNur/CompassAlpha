@@ -2247,4 +2247,13 @@ export const ru = {
   'run.sessions.collapsed': '{n, plural, one {# заказ} few {# заказа} many {# заказов} other {# заказа}}',
   'run.sessions.storeJoiner': ', ',
   'run.confirm.startDelivery.pendingExtras': 'Не отмечено — прочие товары от магазинов ({n}): {names}. После начала доставки они пропадут со страницы закупки.',
+  'approval.changed.title': 'Заказ изменился после того, как вы его открыли',
+  'approval.changed.body': 'Изменённые позиции отмечены. Одобряйте, когда посмотрите их.',
+  'approval.changed.ack': 'Посмотрел',
+  'approval.changed.line': 'Изменено: {from} → {to} {unit}',
+  'approval.changed.removed': '{item}: {from} {unit} → удалено',
+  'approval.zeroed': 'При проверке поставлено 0 — нажмите +, чтобы вернуть',
+  'approval.allZeroRejectOnly': 'Все позиции равны 0 и прочих товаров нет, одобрить нельзя. Верните позицию или отклоните заказ.',
+  'approval.toast.withdrawnWhileOpen': 'Автор отозвал открытый у вас заказ.',
+  'approval.toast.decidedElsewhere': 'Открытый у вас заказ уже рассмотрел другой проверяющий.',
 } as const satisfies Record<CatalogKey, string>;

@@ -6,7 +6,7 @@
  * approve / reject. Per-card item view uses the dedicated
  * `order.sessionDetail({id})` endpoint.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   Avatar,
   Badge,
@@ -40,6 +40,14 @@ import { formatQty, formatMoney } from '../lib/format';
 import { useStoreContext } from '../components/StoreSwitcher';
 import { sessionItemsView } from './approval/sessionItemsView';
 import { cardRequests, showPaymentSplit } from './approval/cardSummary';
+import {
+  approvable,
+  changedSinceSeen,
+  snapshotOrder,
+  zeroedInReview,
+  type SeenOrder,
+} from './approval/reviewDiff';
+import { QtyDrafts } from './approval/qtyDrafts';
 import { ORDER_QTY_MAX } from '@compass/contracts/limits';
 
 type ApprovalTab = 'pending' | 'approved' | 'rejected';
@@ -59,6 +67,19 @@ export function ApprovalPage() {
   const [rejectReason, setRejectReason] = useState('');
   // CA-43: the row version the reject sheet was opened on.
   const [rejectSeq, setRejectSeq] = useState<number | undefined>(undefined);
+  // DX-APR-2 / DX-APR-3 (2026-11-01): orders whose 「通过」 waits — a
+  // quantity not yet saved, or changes made by someone else since the
+  // card was opened that the reviewer has not acknowledged.
+  const [held, setHeld] = useState<ReadonlySet<string>>(new Set());
+  const onHold = useCallback((sessionId: string, hold: boolean) => {
+    setHeld((prev) => {
+      if (prev.has(sessionId) === hold) return prev;
+      const next = new Set(prev);
+      if (hold) next.add(sessionId);
+      else next.delete(sessionId);
+      return next;
+    });
+  }, []);
   // Store-context comes from the global header picker (added 2026-05-05).
   // Replaces the local chip-bar filter — same UX outcome but now the
   // selection follows the user across pages.
@@ -126,6 +147,7 @@ export function ApprovalPage() {
   const approveOnce = (sessionId: string, expectedSeq: number) => {
     if (approving.current.has(sessionId)) return;
     approving.current.add(sessionId);
+    decidedByMe.current.add(sessionId);
     approve.mutate(
       { sessionId, expectedSeq },
       { onSettled: () => approving.current.delete(sessionId) },
@@ -256,6 +278,35 @@ export function ApprovalPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingQuery.data, tab]);
 
+  // DX-APR-3 (2026-11-01): the open card vanished from the queue without
+  // this reviewer deciding it — say what happened (the submitter withdrew
+  // it, or another reviewer decided it) instead of letting it disappear.
+  const decidedByMe = useRef(new Set<string>());
+  const lastPendingIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (tab !== 'pending' || !pendingQuery.data) return;
+    const ids = new Set(pendingQuery.data.map((r) => r.id));
+    const openId = activeSessionId;
+    if (openId && lastPendingIds.current.has(openId) && !ids.has(openId)) {
+      if (!decidedByMe.current.delete(openId)) {
+        void utils.order.sessionDetail.fetch({ sessionId: openId }).then(
+          (d) => {
+            haptic('warning');
+            toast.show(
+              d.status === 'draft'
+                ? i18n.t('approval.toast.withdrawnWhileOpen')
+                : i18n.t('approval.toast.decidedElsewhere'),
+              { tone: 'info', ttlMs: 8000 },
+            );
+          },
+          () => undefined,
+        );
+      }
+    }
+    lastPendingIds.current = ids;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingQuery.data, tab]);
+
   // 2026-07-30 (flow review): `step` was missing from this map while
   // SessionItems read `Number(sku.step ?? '1')` — and its prop type had
   // `step?: string`, so TS never complained. Net effect: the approver's
@@ -348,6 +399,7 @@ export function ApprovalPage() {
                 row.claimedByMemberId && row.claimedByMemberId !== session.member.memberId;
               const isOpen = activeSessionId === row.id;
               const requests = cardRequests(row.notes, row.extrasJson);
+              const canApproveRow = approvable(row.itemCount, requests.extras);
               return (
                 <Card as="li" key={row.id}>
                   {/* A11Y-1 (2026-10-31): the amounts move under the name when
@@ -593,17 +645,32 @@ export function ApprovalPage() {
                         is in flight the other actions wait, so a quick
                         Claim → Approve can't race two writes onto the same
                         order stream (the loser would fail with staleSeq). */}
+                    {tab === 'pending' && (!row.claimedByMemberId || isClaimedByMe) && !canApproveRow ? (
+                      // DX-APR-8: every line set to 0 and no other items —
+                      // the server refuses to approve; say so instead.
+                      <p
+                        data-testid="approval-empty-order"
+                        className="w-full text-old-label text-[var(--c-warning-fg)]"
+                      >
+                        {i18n.t('approval.allZeroRejectOnly')}
+                      </p>
+                    ) : null}
                     {tab === 'pending' && !row.claimedByMemberId ? (
                       <>
+                        {canApproveRow ? (
                         <Button
                           size="sm"
                           variant="primary"
                           loading={approve.isPending && approve.variables?.sessionId === row.id}
-                          disabled={claim.isPending && claim.variables?.sessionId === row.id}
+                          disabled={
+                            (claim.isPending && claim.variables?.sessionId === row.id) ||
+                            held.has(row.id)
+                          }
                           onClick={() => approveOnce(row.id, row.lastSeq)}
                         >
                           {i18n.t('approval.approve')}
                         </Button>
+                        ) : null}
                         <Button
                           size="sm"
                           variant="danger"
@@ -634,14 +701,17 @@ export function ApprovalPage() {
                     ) : null}
                     {tab === 'pending' && isClaimedByMe ? (
                       <>
+                        {canApproveRow ? (
                         <Button
                           size="sm"
                           variant="primary"
                           loading={approve.isPending && approve.variables?.sessionId === row.id}
+                          disabled={held.has(row.id)}
                           onClick={() => approveOnce(row.id, row.lastSeq)}
                         >
                           {i18n.t('approval.approve')}
                         </Button>
+                        ) : null}
                         <Button
                           size="sm"
                           variant="danger"
@@ -724,6 +794,7 @@ export function ApprovalPage() {
                             ? row.lastSeq
                             : undefined
                         }
+                        onHold={onHold}
                       />
                     </div>
                   ) : null}
@@ -773,6 +844,7 @@ export function ApprovalPage() {
             loading={reject.isPending}
             onClick={() => {
               if (!rejectFor) return;
+              decidedByMe.current.add(rejectFor);
               reject.mutate({
                 sessionId: rejectFor,
                 reason: rejectReason.trim(),
@@ -818,7 +890,10 @@ function SessionItems({
   productName,
   isClaimedByMe,
   claimOnEditSeq,
+  onHold,
 }: {
+  /** DX-APR-2 / 3: holds the card's 「通过」 while edits or unseen changes are pending. */
+  onHold: (sessionId: string, hold: boolean) => void;
   sessionId: string;
   storeId: string;
   // `step` is REQUIRED (2026-07-30) — see the skuById docblock in the
@@ -842,7 +917,11 @@ function SessionItems({
   const utils = trpc.useUtils();
   const errToast = useErrToast();
   const adjust = trpc.order.adjustItem.useMutation({
-    onSuccess: () => {
+    onSuccess: (data) => {
+      // DX-APR-3: our own edit moves the seq too; it is not a change by
+      // someone else, so the copy of the order that includes it is the
+      // new baseline.
+      rebaselineAt.current = Math.max(rebaselineAt.current ?? 0, data.lastSeq);
       void utils.order.sessionDetail.invalidate({ sessionId });
       void utils.order.pendingList.invalidate();
     },
@@ -853,6 +932,60 @@ function SessionItems({
       errToast('order.toast.adjustFailed')(err);
     },
   });
+  // DX-APR-2: taps add up locally; the final value goes out once they stop.
+  const [, rerender] = useReducer((n: number) => n + 1, 0);
+  /** The seq of our own last write; the first copy at or past it is the new baseline. */
+  const rebaselineAt = useRef<number | null>(null);
+  const adjustRef = useRef(adjust);
+  adjustRef.current = adjust;
+  const editCtx = useRef({ date: undefined as string | undefined, claimOnEditSeq });
+  editCtx.current = { date: detail.data?.orderDate, claimOnEditSeq };
+  const drafts = useMemo(
+    () =>
+      new QtyDrafts(async (key, value) => {
+        const [skuId, targetMemberId] = key.split('|') as [string, string];
+        try {
+          await adjustRef.current.mutateAsync({
+            storeId,
+            // 2026-07-30 (flow review): pass the SESSION's date. Omitting
+            // it made the server default to today, so adjusting a session
+            // submitted on an earlier day looked up the wrong row.
+            date: editCtx.current.date,
+            skuId,
+            qty: String(value),
+            targetMemberId,
+            // APR-1: name the batch being reviewed; the server used to
+            // guess it and could edit the same person's other batch.
+            sessionId,
+            expectedSeq: editCtx.current.claimOnEditSeq,
+          });
+        } catch {
+          /* onError shows it and refreshes the order */
+        }
+      }, rerender),
+    [sessionId, storeId],
+  );
+  useEffect(() => () => drafts.dispose(), [drafts]);
+  const qtyKey = (skuId: string, memberId: string) => `${skuId}|${memberId}`;
+
+  // DX-APR-3: the order as first seen (or last acknowledged).
+  const seen = useRef<SeenOrder | null>(null);
+  const now = detail.data ? snapshotOrder(detail.data.lastSeq, detail.data.totals ?? []) : null;
+  if (
+    now &&
+    (!seen.current ||
+      (rebaselineAt.current !== null && now.seq >= rebaselineAt.current && !drafts.busy))
+  ) {
+    seen.current = now;
+    rebaselineAt.current = null;
+  }
+  const changed = now ? changedSinceSeen(seen.current, now) : new Map<string, number>();
+  const hold = drafts.busy || changed.size > 0;
+  useEffect(() => {
+    onHold(sessionId, hold);
+  }, [hold, onHold, sessionId]);
+  useEffect(() => () => onHold(sessionId, false), [onHold, sessionId]);
+
   // Member directory lookup so we can show who contributed each row.
   const membersQuery = trpc.admin.memberList.useQuery(undefined, {
     // memberList requires users.manage. Managers usually have it; if not,
@@ -933,7 +1066,48 @@ function SessionItems({
   // Now "empty" covers the SKU section only; the whole block reads empty
   // only when SKUs, extras and notes are all absent.
   const view = sessionItemsView({ totals, extras: sessionExtras, notes: sessionNotes });
-  if (view.allEmpty) {
+  // DX-APR-8: lines set to 0 in review stay, struck through and restorable.
+  const zeroed = zeroedInReview(rawItems);
+  // DX-APR-3: lines that changed since opening and are no longer on the order.
+  const removedSinceSeen = [...changed.entries()].filter(
+    ([skuId]) => !totals.some((t) => t.skuId === skuId),
+  );
+  const changeBanner =
+    changed.size > 0 ? (
+      <div className="px-4 pt-3">
+        <Banner
+          tone="warn"
+          title={i18n.t('approval.changed.title')}
+          action={
+            <Button
+              size="sm"
+              variant="pearl"
+              data-testid="approval-changes-seen"
+              onClick={() => {
+                seen.current = now;
+                rerender();
+              }}
+            >
+              {i18n.t('approval.changed.ack')}
+            </Button>
+          }
+        >
+          {removedSinceSeen.length > 0
+            ? removedSinceSeen
+                .map(([skuId, from]) => {
+                  const sku = skuById.get(skuId);
+                  return i18n.t('approval.changed.removed', {
+                    item: sku ? productName(sku) : skuId.slice(0, 8),
+                    from: formatQty(from),
+                    unit: unitLabel(sku?.unit ?? '', from),
+                  });
+                })
+                .join(' · ')
+            : i18n.t('approval.changed.body')}
+        </Banner>
+      </div>
+    ) : null;
+  if (view.allEmpty && zeroed.length === 0) {
     return (
       <div className="border-t border-[var(--c-divider)] px-4 py-3 text-old-body-sm text-[var(--c-fg-muted)]">
         {i18n.t('approval.items.empty')}
@@ -953,6 +1127,7 @@ function SessionItems({
 
   return (
     <div className="border-t border-[var(--c-divider)]">
+    {changeBanner}
     {/* Session-level "其他物品" requests. M1.8 carried free-text in
         `notes`; M3.16-C ships a structured list in `extras`. Both
         surfaces render side-by-side here (legacy notes from pre-M3.16
@@ -1008,7 +1183,7 @@ function SessionItems({
         </span>
       </div>
     ) : null}
-    {view.skuSectionEmpty ? (
+    {view.skuSectionEmpty && zeroed.length === 0 ? (
       <div className="px-4 py-3 text-old-body-sm text-[var(--c-fg-muted)]">
         {i18n.t('approval.items.noCatalogItems')}
       </div>
@@ -1031,8 +1206,25 @@ function SessionItems({
         const isSingleContributor = rows.length === 1;
         const singleRow = isSingleContributor ? rows[0]! : null;
         const unitPrice = Number(priceBySku.get(t.skuId) ?? 0) || null;
+        const before = changed.get(t.skuId);
         return (
-          <li key={t.skuId} className="border-b border-[var(--c-divider)] py-3 last:border-b-0">
+          <li
+            key={t.skuId}
+            data-changed={before !== undefined || undefined}
+            className={
+              'border-b border-[var(--c-divider)] py-3 last:border-b-0' +
+              (before !== undefined ? ' -mx-4 bg-[var(--c-warn-bg)] px-4' : '')
+            }
+          >
+            {before !== undefined ? (
+              <div className="mb-1 text-old-label font-semibold tabular-nums text-[var(--c-warning-fg)]">
+                {i18n.t('approval.changed.line', {
+                  from: formatQty(before),
+                  to: formatQty(t.qty),
+                  unit: unitLabel(sku?.unit ?? '', t.qty),
+                })}
+              </div>
+            ) : null}
             <div className="flex items-center justify-between gap-2 text-old-body">
               <span className="min-w-0 flex-1 truncate font-semibold text-[var(--c-fg)]">
                 {sku ? productName(sku) : t.skuId.slice(0, 8)}
@@ -1041,27 +1233,16 @@ function SessionItems({
                 <QtyControl
                   size="sm"
                   itemLabel={productName(sku)}
-                  value={Number(singleRow.qty)}
+                  value={
+                    drafts.value(qtyKey(t.skuId, singleRow.contributorMemberId)) ??
+                    Number(singleRow.qty)
+                  }
                   step={Number(sku.step)}
                   unit={unitLabel(sku.unit)}
                   max={ORDER_QTY_MAX}
-                  disabled={adjust.isPending}
+                  disabled={drafts.isSaving(qtyKey(t.skuId, singleRow.contributorMemberId))}
                   onChange={(next) =>
-                    adjust.mutate({
-                      storeId,
-                      // 2026-07-30 (flow review): pass the SESSION's date.
-                      // Omitting it made the server default to today, so
-                      // adjusting a session submitted on an earlier day
-                      // looked up the wrong (store, date) row entirely.
-                      date: detail.data?.orderDate,
-                      skuId: t.skuId,
-                      qty: String(next),
-                      targetMemberId: singleRow.contributorMemberId,
-                      // APR-1: name the batch being reviewed; the server used to
-                      // guess it and could edit the same person's other batch.
-                      sessionId,
-                      expectedSeq: claimOnEditSeq,
-                    })
+                    drafts.set(qtyKey(t.skuId, singleRow.contributorMemberId), next)
                   }
                 />
               ) : (
@@ -1118,24 +1299,14 @@ function SessionItems({
                           memberById.get(r.contributorMemberId) ??
                           r.contributorMemberId.slice(0, 6)
                         }`}
-                        value={Number(r.qty)}
+                        value={
+                          drafts.value(qtyKey(t.skuId, r.contributorMemberId)) ?? Number(r.qty)
+                        }
                         step={Number(sku.step)}
                         unit={unitLabel(sku.unit)}
                         max={ORDER_QTY_MAX}
-                        disabled={adjust.isPending}
-                        onChange={(next) =>
-                          adjust.mutate({
-                            storeId,
-                            date: detail.data?.orderDate,
-                            skuId: t.skuId,
-                            qty: String(next),
-                            targetMemberId: r.contributorMemberId,
-                            // APR-1: name the batch being reviewed; the server used to
-                            // guess it and could edit the same person's other batch.
-                            sessionId,
-                            expectedSeq: claimOnEditSeq,
-                          })
-                        }
+                        disabled={drafts.isSaving(qtyKey(t.skuId, r.contributorMemberId))}
+                        onChange={(next) => drafts.set(qtyKey(t.skuId, r.contributorMemberId), next)}
                       />
                     ) : (
                       <span className="shrink-0 font-mono tabular-nums">
@@ -1150,6 +1321,41 @@ function SessionItems({
         );
       })}
     </ul>
+    ) : null}
+    {zeroed.length > 0 ? (
+      <ul className="flex flex-col px-4 pb-2" role="list" data-testid="approval-zeroed">
+        {zeroed.map((z) => {
+          const sku = skuById.get(z.skuId);
+          const key = qtyKey(z.skuId, z.contributorMemberId);
+          return (
+            <li
+              key={key}
+              className="flex items-center justify-between gap-2 border-b border-[var(--c-divider)] py-3 text-old-body last:border-b-0"
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[var(--c-fg-muted)] line-through">
+                  {sku ? productName(sku) : z.skuId.slice(0, 8)}
+                </span>
+                <span className="text-old-label text-[var(--c-fg-muted)]">
+                  {i18n.t('approval.zeroed')}
+                </span>
+              </span>
+              {canEdit && sku ? (
+                <QtyControl
+                  size="sm"
+                  itemLabel={productName(sku)}
+                  value={drafts.value(key) ?? 0}
+                  step={Number(sku.step)}
+                  unit={unitLabel(sku.unit)}
+                  max={ORDER_QTY_MAX}
+                  disabled={drafts.isSaving(key)}
+                  onChange={(next) => drafts.set(key, next)}
+                />
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
     ) : null}
     </div>
   );

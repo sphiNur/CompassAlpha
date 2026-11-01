@@ -2251,4 +2251,13 @@ export const uz = {
   'run.sessions.collapsed': '{n} ta buyurtma',
   'run.sessions.storeJoiner': ', ',
   'run.confirm.startDelivery.pendingExtras': 'Hali belgilanmagan — doʻkonlar soʻragan boshqa narsalar ({n}): {names}. Yetkazish boshlangach, ular xarid sahifasida koʻrinmaydi.',
+  'approval.changed.title': 'Buyurtma siz ochganingizdan keyin oʻzgardi',
+  'approval.changed.body': 'Oʻzgargan qatorlar belgilandi. Koʻrib chiqqach tasdiqlang.',
+  'approval.changed.ack': 'Koʻrdim',
+  'approval.changed.line': 'Oʻzgardi: {from} → {to} {unit}',
+  'approval.changed.removed': '{item}: {from} {unit} → oʻchirildi',
+  'approval.zeroed': 'Tekshiruvda 0 qilindi — qaytarish uchun + ni bosing',
+  'approval.allZeroRejectOnly': 'Barcha qatorlar 0 va boshqa narsa yoʻq, tasdiqlab boʻlmaydi. Qatorni qaytaring yoki buyurtmani rad eting.',
+  'approval.toast.withdrawnWhileOpen': 'Buyurtmachi siz ochgan buyurtmani qaytarib oldi.',
+  'approval.toast.decidedElsewhere': 'Siz ochgan buyurtmani boshqa tekshiruvchi allaqachon koʻrib chiqdi.',
 } as const satisfies Record<CatalogKey, string>;

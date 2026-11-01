@@ -2388,4 +2388,13 @@ export const en = {
   'run.sessions.collapsed': '{n, plural, one {# order} other {# orders}}',
   'run.sessions.storeJoiner': ', ',
   'run.confirm.startDelivery.pendingExtras': 'Not handled yet — other items the stores asked for ({n}): {names}. Once delivery starts they no longer show on the purchase page.',
+  'approval.changed.title': 'This order changed after you opened it',
+  'approval.changed.body': 'The changed lines are marked. Approve once you have looked at them.',
+  'approval.changed.ack': 'I\'ve seen it',
+  'approval.changed.line': 'Changed: {from} → {to} {unit}',
+  'approval.changed.removed': '{item}: {from} {unit} → removed',
+  'approval.zeroed': 'Set to 0 in review — tap + to bring it back',
+  'approval.allZeroRejectOnly': 'Every line is set to 0 and there are no other items, so it cannot be approved. Bring a line back, or reject the order.',
+  'approval.toast.withdrawnWhileOpen': 'The submitter withdrew the order you had open.',
+  'approval.toast.decidedElsewhere': 'Another reviewer has already decided the order you had open.',
 } as const;
