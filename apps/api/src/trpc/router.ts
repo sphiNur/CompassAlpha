@@ -4,6 +4,7 @@ import { authRouter } from './routers/auth';
 import { catalogRouter } from './routers/catalog';
 import { dishesRouter } from './routers/dishes';
 import { inventoryRouter } from './routers/inventory';
+import { navRouter } from './routers/nav';
 import { orderRouter } from './routers/order';
 import { platformRouter } from './routers/platform';
 import { reportRouter } from './routers/report';
@@ -25,6 +26,8 @@ export const appRouter = router({
   // wastage). First step of the ERP direction; consumption via BOM
   // (M2.0c) will be the next consumer of the same ledger.
   inventory: inventoryRouter,
+  // DX-SHL-23 (2026-11-01): the bottom nav's badges.
+  nav: navRouter,
   order: orderRouter,
   platform: platformRouter,
   // M1.15: finance reconciliation reports (cash daily / transfer / by
