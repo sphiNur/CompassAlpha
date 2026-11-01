@@ -317,6 +317,18 @@ async function run() {
       body: trpcOk({ tokens: fakeTokens, session: fakeSession }),
     });
   });
+  // nav.counts (#177): the bottom-nav badges. Unstubbed, it reaches the
+  // live API with the fake token, gets 401 and the refresh then signs the
+  // smoke out.
+  await context.route('**/trpc/nav.counts*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        result: { data: { approve: null, run: null, confirm: null, settlementDue: null } },
+      }),
+    });
+  });
   await context.route('**/trpc/auth.me*', async (route) => {
     await route.fulfill({
       status: 200,

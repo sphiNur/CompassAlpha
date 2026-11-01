@@ -102,6 +102,12 @@ async function checkSpaShell() {
       `Cache-Control=${jsCC}`,
     );
     const js = await jsRes.text();
+    // The English catalog is a lazy chunk since #178, so the copy checks
+    // read the entry plus that chunk (named ./en-<hash>.js in the entry).
+    const enChunk = js.match(/["'`]\.\/(en-[A-Za-z0-9_-]+\.js)["'`]/)?.[1];
+    record('entry references the lazy en catalog chunk', Boolean(enChunk), enChunk ?? 'not found');
+    const enJs = enChunk ? await (await get(`/assets/${enChunk}`)).text() : '';
+    const copy = js + enJs;
     // User-facing strings that prove the latest source is bundled. If a
     // future deploy changes copy, update this list.
     const expectedStrings = [
@@ -112,7 +118,7 @@ async function checkSpaShell() {
       'Reject this order?',
     ];
     for (const s of expectedStrings) {
-      record(`JS bundle contains "${s}"`, js.includes(s));
+      record(`JS bundle contains "${s}"`, copy.includes(s));
     }
     // Strings that should NEVER appear in a healthy bundle.
     const forbiddenStrings = ['Run network diagnostic', 'TgBotGemini'];
