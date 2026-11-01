@@ -2363,7 +2363,7 @@ export function RunSessionsCard({
         aria-controls={open ? 'run-sessions-list' : undefined}
         className="press flex min-h-11 w-full items-center gap-2 px-4 py-2 text-left"
       >
-        <span className="shrink-0 text-old-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+        <span className="shrink-0 text-old-label font-semibold text-[var(--c-fg-muted)]">
           {i18n.t('run.sessions.collapsed', { n: sessions.length })}
         </span>
         <span className="min-w-0 flex-1 truncate text-old-label text-[var(--c-fg-muted)]">
