@@ -16,6 +16,8 @@ import {
   Sheet,
   StickyPageBar,
   useToast,
+  focusAfter,
+  Select,
 } from '@compass/ui';
 import { trpc, newIdempotencyKey } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
@@ -606,6 +608,10 @@ export function OrderPage() {
     setNewBatch(true);
     newBatchRef.current = true;
     utils.order.todaySession.setData({ storeId: currentStoreId }, null);
+    // DX-IX-4 (2026-11-01): the button goes away with the receipt; start
+    // keyboard focus at the top of the new order (the page heading), not
+    // in the search field, which would raise the keyboard.
+    focusAfter('#main-content h1');
   }, [currentStoreId, utils.order.todaySession]);
 
   // Switching stores must not carry new-batch mode across — the other
@@ -1786,7 +1792,7 @@ function BatchStrip({
                   'flex min-h-11 w-full items-center justify-between gap-2 rounded-[var(--r-card)] px-3 py-2 text-left text-old-label ring-hairline ' +
                   (onSelect && !isCurrent ? 'press ' : '') +
                   (isCurrent
-                    ? 'bg-[var(--c-action)]/10 ring-1 ring-[var(--c-action)]'
+                    ? 'bg-[color:color-mix(in_oklch,var(--c-action)_10%,transparent)] ring-1 ring-[var(--c-action)]'
                     : 'bg-[var(--c-surface-2)]')
                 }
               >
@@ -2387,24 +2393,26 @@ function ExtraRowEditor({
           className="w-16 text-center"
           onChange={(e) => onChange({ qty: e.target.value })}
         />
-        <select
-          value={row.unit}
-          // M3.34: constrained to canonical units (CanonicalUnitSchema).
-          // Free-text caused "kg"/"kgs"/"公斤" drift that broke
-          // aggregation + i18n. Labels go through useUnitLabel so the
-          // visible option text matches the rest of the UI in the
-          // user's locale.
-          onChange={(e) =>
-            onChange({ unit: e.target.value as (typeof CANONICAL_UNITS)[number] })
-          }
-          className="h-[var(--control-h)] w-20 rounded-[var(--r-pill)] bg-[var(--c-surface)] px-2 text-center text-old-body text-[var(--c-fg)] ring-hairline focus:outline-none focus:ring-2 focus:ring-[var(--c-action)]"
-        >
-          {CANONICAL_UNITS.map((u) => (
-            <option key={u} value={u}>
-              {unitLabel(u)}
-            </option>
-          ))}
-        </select>
+        <div className="w-20 shrink-0">
+          <Select
+            value={row.unit}
+            // M3.34: constrained to canonical units (CanonicalUnitSchema).
+            // Free-text caused "kg"/"kgs"/"公斤" drift that broke
+            // aggregation + i18n. Labels go through useUnitLabel so the
+            // visible option text matches the rest of the UI in the
+            // user's locale.
+            onChange={(e) =>
+              onChange({ unit: e.target.value as (typeof CANONICAL_UNITS)[number] })
+            }
+            className="pl-3 pr-7 text-old-body"
+          >
+            {CANONICAL_UNITS.map((u) => (
+              <option key={u} value={u}>
+                {unitLabel(u)}
+              </option>
+            ))}
+          </Select>
+        </div>
         <button
           type="button"
           aria-label={i18n.t('order.extras.remove')}

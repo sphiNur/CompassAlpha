@@ -7,6 +7,7 @@
  * cash from other modules or silently overwrites an existing close.
  */
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import {
   Banner,
   Button,
@@ -36,6 +37,7 @@ import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
 import { registerStoreChangeGuard, useStoreContext } from '../components/StoreSwitcher';
 import { usePageMainButton, haptic } from '../hooks/useTelegram';
 import { confirmNative } from '../lib/confirm';
+import { showFieldError, withTouched } from '../lib/fieldErrors';
 import { useErrToast } from '../lib/errToast';
 import { useDateFormat, useI18n, useRoleLabels } from '../hooks/useI18n';
 import { formatMoney, currencyOf } from '../lib/format';
@@ -667,7 +669,16 @@ export function SettlementPage() {
     draft.wageItems.filter((item) => !isValidWageItem(item, wageSelectionRequired)).length +
     (correctionReady ? 0 : 1);
   const formRef = useRef<HTMLFieldSetElement>(null);
+  // DX-VIS-15 (2026-11-01): expense and wage lines are marked red only
+  // after their field was left or a save was tried, not as they appear.
+  const [touchedFields, setTouchedFields] = useState<ReadonlySet<string>>(() => new Set());
+  const [saveTried, setSaveTried] = useState(false);
+  const touch = (key: string) => setTouchedFields((cur) => withTouched(cur, key));
+  const showError = (invalid: boolean, key: string) =>
+    showFieldError(invalid, touchedFields, key, saveTried);
   const showFirstFieldToFix = () => {
+    // The marks must be on screen before focus can find the first one.
+    flushSync(() => setSaveTried(true));
     focusFirstInvalid(formRef.current);
   };
   const canRecordOperatingExpenses = businessDate?.canRecordOperatingExpenses ?? false;
@@ -1359,12 +1370,21 @@ export function SettlementPage() {
                               step="0.01"
                               placeholder="0"
                               readOnly={!canEditOperatingExpenses}
-                              aria-invalid={(moneyToCents(expense.amount) ?? 0n) <= 0n || undefined}
+                              aria-invalid={
+                                showError(
+                                  (moneyToCents(expense.amount) ?? 0n) <= 0n,
+                                  `${expense.id}:amount`,
+                                ) || undefined
+                              }
                               className={
-                                (moneyToCents(expense.amount) ?? 0n) <= 0n
+                                showError(
+                                  (moneyToCents(expense.amount) ?? 0n) <= 0n,
+                                  `${expense.id}:amount`,
+                                )
                                   ? 'border-[var(--c-danger)]'
                                   : undefined
                               }
+                              onBlur={() => touch(`${expense.id}:amount`)}
                               onChange={(event) =>
                                 updateOperatingExpense(expense.id, {
                                   amount: event.currentTarget.value,
@@ -1384,7 +1404,11 @@ export function SettlementPage() {
                                   value={expense.reason}
                                   maxLength={500}
                                   readOnly={!canEditOperatingExpenses}
-                                  invalid={!valid && expense.reason.trim().length === 0}
+                                  invalid={showError(
+                                    !valid && expense.reason.trim().length === 0,
+                                    `${expense.id}:reason`,
+                                  )}
+                                  onBlur={() => touch(`${expense.id}:reason`)}
                                   onChange={(event) =>
                                     updateOperatingExpense(expense.id, {
                                       reason: event.currentTarget.value,
@@ -1517,12 +1541,21 @@ export function SettlementPage() {
                                 step="0.01"
                                 placeholder="0"
                                 readOnly={wage.isHistorical}
-                                aria-invalid={(moneyToCents(wage.amount) ?? 0n) <= 0n || undefined}
+                                aria-invalid={
+                                  showError(
+                                    (moneyToCents(wage.amount) ?? 0n) <= 0n,
+                                    `${wage.id}:amount`,
+                                  ) || undefined
+                                }
                                 className={
-                                  (moneyToCents(wage.amount) ?? 0n) <= 0n
+                                  showError(
+                                    (moneyToCents(wage.amount) ?? 0n) <= 0n,
+                                    `${wage.id}:amount`,
+                                  )
                                     ? 'border-[var(--c-danger)]'
                                     : undefined
                                 }
+                                onBlur={() => touch(`${wage.id}:amount`)}
                                 onChange={(event) =>
                                   updateWageItem(wage.id, {
                                     amount: event.currentTarget.value,
@@ -1542,7 +1575,11 @@ export function SettlementPage() {
                                 <Textarea
                                   value={wage.reason}
                                   maxLength={500}
-                                  invalid={!valid && wage.reason.trim().length === 0}
+                                  invalid={showError(
+                                    !valid && wage.reason.trim().length === 0,
+                                    `${wage.id}:reason`,
+                                  )}
+                                  onBlur={() => touch(`${wage.id}:reason`)}
                                   onChange={(event) =>
                                     updateWageItem(wage.id, {
                                       reason: event.currentTarget.value,

@@ -449,32 +449,21 @@ function TargetedPurgeBrowser() {
           type="date"
           value={date}
           onChange={(e) => setDate(e.target.value)}
-          className="h-[var(--control-h)] flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 text-old-body ring-hairline"
+          // DX-IX-8 / DX-VIS-5 (2026-11-01): named, and the field edge at 3:1.
+          aria-label={i18n.t('ops.purge.dateLabel')}
+          className="h-[var(--control-h)] flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 text-old-body ring-field"
         />
-        <button
-          type="button"
-          onClick={() => setTab('orders')}
-          className={
-            'press rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium ring-hairline ' +
-            (tab === 'orders'
-              ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-              : 'bg-transparent text-[var(--c-fg-muted)]')
-          }
-        >
-          {i18n.t('ops.purge.tabOrders')}
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab('runs')}
-          className={
-            'press rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium ring-hairline ' +
-            (tab === 'runs'
-              ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-              : 'bg-transparent text-[var(--c-fg-muted)]')
-          }
-        >
-          {i18n.t('ops.purge.tabRuns')}
-        </button>
+        {/* DX-VIS-7 (2026-11-01): was two hand-rolled pills whose state
+            was colour only; Segmented says which is selected. */}
+        <Segmented
+          value={tab}
+          onChange={setTab}
+          equalWidth={false}
+          options={[
+            { value: 'orders', label: i18n.t('ops.purge.tabOrders') },
+            { value: 'runs', label: i18n.t('ops.purge.tabRuns') },
+          ]}
+        />
       </div>
 
       {tab === 'orders' ? (
@@ -1927,7 +1916,9 @@ export function MaintenanceSection() {
                     type="date"
                     value={dateInput}
                     onChange={(e) => setDateInput(e.target.value)}
-                    className="h-[var(--control-h)] flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3 ring-hairline"
+                    // DX-IX-8 / DX-VIS-5 (2026-11-01): named, and the field edge at 3:1.
+                    aria-label={i18n.t('ops.maint.resetDateTitle')}
+                    className="h-[var(--control-h)] flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3 ring-field"
                   />
                   <Button
                     size="sm"

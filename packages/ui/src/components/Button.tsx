@@ -39,7 +39,7 @@ const button = cva(
         // was outweighing Edit in admin lists and pulling the user's
         // eye to the dangerous button.
         'danger-ghost':
-          'bg-transparent text-[var(--c-danger)] rounded-[var(--r-pill)] ring-1 ring-[var(--c-danger)]/40',
+          'bg-transparent text-[var(--c-danger)] rounded-[var(--r-pill)] ring-1 ring-[color:color-mix(in_oklch,var(--c-danger)_40%,transparent)]',
         pearl:
           'bg-[var(--c-surface-2)] text-[var(--c-fg)] rounded-[var(--r-capsule)] ring-hairline',
       },

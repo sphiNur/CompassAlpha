@@ -15,7 +15,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Card, NumberInput, SectionLabel } from '@compass/ui';
+import { Card, NumberInput, SectionLabel, focusAfter } from '@compass/ui';
 import { useAuthStore } from '../../../stores/authStore';
 import { formatMoney, formatMoneyThousands, formatQty, toQtyInput } from '../../../lib/format';
 import { useI18n, useUnitLabel } from '../../../hooks/useI18n';
@@ -823,7 +823,7 @@ export function ExpensesCard({
                   <span
                     aria-label={i18n.t('run.label.paymentTransfer')}
                     title={i18n.t('run.label.paymentTransfer')}
-                    className="shrink-0 rounded-[var(--r-pill)] bg-[var(--c-action)]/15 px-1.5 py-0.5 text-old-label text-[var(--c-action)] ring-1 ring-[var(--c-action)]"
+                    className="shrink-0 rounded-[var(--r-pill)] bg-[color:color-mix(in_oklch,var(--c-action)_15%,transparent)] px-1.5 py-0.5 text-old-label text-[var(--c-action)] ring-1 ring-[var(--c-action)]"
                   >
                     {i18n.t('run.label.paymentTransfer')}
                   </span>
@@ -1121,7 +1121,7 @@ const CTRL_COMMIT =
 const CTRL_OFF = 'bg-[var(--c-surface-2)] font-semibold text-[var(--c-fg-muted)]';
 const CTRL_QUIET = 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)] active:opacity-70';
 const CTRL_TRANSFER =
-  'bg-[var(--c-action)]/15 text-[var(--c-action)] ring-1 ring-[var(--c-action)] active:opacity-70';
+  'bg-[color:color-mix(in_oklch,var(--c-action)_15%,transparent)] text-[var(--c-action)] ring-1 ring-[var(--c-action)] active:opacity-70';
 
 /* px-4 (16) + state cell (20) + gap (6) — lines a second line up with
  * the name's left edge. */
@@ -1496,6 +1496,10 @@ export function PurchaseRow({
       paymentMethod: source === 'collapsed' ? 'cash' : paymentMethod,
       storeSplits: splits,
     });
+    // DX-IX-4 (2026-11-01): the editor closes once the line is bought;
+    // keyboard focus moves on to the next line still to buy (or the page)
+    // instead of dropping to <body>.
+    focusAfter(() => document.querySelector<HTMLElement>('[data-run-item-pending] button'), 3000);
   };
 
   // Live "total = qty × price" hint shown below the inputs. Helps the
@@ -2001,7 +2005,7 @@ export function PurchaseRow({
               // the price track above its floor.
               'flex h-11 min-w-11 items-center justify-center whitespace-nowrap rounded-[var(--r-pill)] px-2 text-old-label font-medium active:opacity-70 ' +
               (paymentMethod === 'transfer'
-                ? 'bg-[var(--c-action)]/15 text-[var(--c-action)] ring-1 ring-[var(--c-action)]'
+                ? 'bg-[color:color-mix(in_oklch,var(--c-action)_15%,transparent)] text-[var(--c-action)] ring-1 ring-[var(--c-action)]'
                 : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
             }
           >

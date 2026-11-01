@@ -61,8 +61,13 @@ export function purgeCountsByKind(
 /**
  * CMP-OPS-5 (2026-10-31): resetting a day deleted on one tap (307 rows in
  * one test). Like the full wipe, it now waits until the date being reset
- * is typed. Accepts the date as shown (YYYY-MM-DD), spaces ignored.
+ * is typed.
+ *
+ * DX-CAT-4 (2026-11-01): the field opens the numeric keyboard, and the
+ * iPhone one has no "-". Only the digits are compared, in the date's own
+ * order: 20261030, 2026-10-30 and 2026/10/30 all confirm 2026-10-30.
  */
 export function resetConfirmMatches(typed: string, date: string): boolean {
-  return date !== '' && typed.replace(/\s/g, '') === date;
+  const digits = (s: string) => s.replace(/\D/g, '');
+  return digits(date).length === 8 && digits(typed) === digits(date);
 }

@@ -37,4 +37,11 @@ describe('resetConfirmMatches (CMP-OPS-5)', () => {
     expect(resetConfirmMatches('', '2026-10-31')).toBe(false);
     expect(resetConfirmMatches('', '')).toBe(false);
   });
+
+  test('DX-CAT-4: digits only (the iPhone numeric keyboard has no "-")', () => {
+    expect(resetConfirmMatches('20261030', '2026-10-30')).toBe(true);
+    expect(resetConfirmMatches('2026/10/30', '2026-10-30')).toBe(true);
+    expect(resetConfirmMatches('2026103', '2026-10-30')).toBe(false);
+    expect(resetConfirmMatches('30102026', '2026-10-30')).toBe(false);
+  });
 });

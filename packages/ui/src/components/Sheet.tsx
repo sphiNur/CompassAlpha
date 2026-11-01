@@ -3,6 +3,7 @@ import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 
 import { cn } from '../cn';
 import { pushTelegramBackHandler } from '../telegramBackStack';
 import { useUiLabels } from '../labels';
+import { useSheetFocus } from '../sheetFocus';
 
 /**
  * Shared "how many sheets are currently open?" counter (M1.5,
@@ -90,8 +91,10 @@ interface SheetProps {
   children: ReactNode;
   footer?: ReactNode;
   /**
-   * Suppress Radix Dialog's default first-focusable autofocus
-   * entirely. User taps to focus.
+   * Suppress Radix Dialog's default first-focusable autofocus: no field
+   * is focused, so no keyboard rises. DX-IX-2 (2026-11-01): focus moves
+   * to the sheet itself instead (it used to stay on the button behind
+   * the sheet). User taps to focus a field.
    *
    * Use when the sheet has multiple equal-priority interactive
    * elements (e.g. ConfirmPage's issue sheet has a note input AND a
@@ -228,6 +231,10 @@ export function Sheet({
     return () => clearTimeout(timer);
   }, [open, disableAutoFocus, deferAutoFocusMs]);
   useSheetPresence(open, requestOpenChange);
+  // DX-IX-2 / DX-IX-3: sheets that must not raise the keyboard (or raise
+  // it later) take focus themselves; every sheet gives focus back to the
+  // element that opened it when it closes.
+  const focus = useSheetFocus(open, contentRef, disableAutoFocus || !!deferAutoFocusMs);
 
   return (
     <Dialog.Root open={open} onOpenChange={requestOpenChange}>
@@ -259,11 +266,9 @@ export function Sheet({
               'min(calc(90dvh - var(--app-safe-top)), calc(var(--app-viewport-h) - var(--app-safe-top) - 8px))',
           }}
           aria-describedby={description ? descriptionId : undefined}
-          onOpenAutoFocus={
-            disableAutoFocus || deferAutoFocusMs
-              ? (e) => e.preventDefault()
-              : undefined
-          }
+          tabIndex={-1}
+          onOpenAutoFocus={focus.onOpenAutoFocus}
+          onCloseAutoFocus={focus.onCloseAutoFocus}
         >
           <SheetHeader>
             {/* Drag handle — slightly bolder + wider than the previous

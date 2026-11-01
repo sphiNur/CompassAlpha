@@ -30,6 +30,7 @@ import {
   Switch,
   useToast,
 } from '@compass/ui';
+import { PaymentMethodChips } from '../../../components/PaymentMethodChips';
 import { SKU_STEPS, SKU_UNITS } from '@compass/contracts/limits';
 import type { SkuStep, SkuUnit } from '@compass/contracts';
 import { LANGUAGE_NATIVE_NAMES } from '@compass/i18n';
@@ -1312,27 +1313,12 @@ export function ExpenseTemplatesSection() {
               </Field>
             </div>
             <Field label={i18n.t('admin.field.defaultPaymentMethod')}>
-              <div className="flex gap-2">
-                {(['cash', 'transfer'] as const).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() =>
-                      setDraft({ ...draft, defaultPaymentMethod: m })
-                    }
-                    className={
-                      'flex-1 rounded-[var(--r-pill)] px-3 py-2 text-old-label font-medium ring-hairline ' +
-                      (draft.defaultPaymentMethod === m
-                        ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                        : 'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)]')
-                    }
-                  >
-                    {m === 'cash'
-                      ? `💵 ${i18n.t('run.label.paymentCash')}`
-                      : `🏦 ${i18n.t('run.label.paymentTransfer')}`}
-                  </button>
-                ))}
-              </div>
+              {/* DX-VIS-7 (2026-11-01): the shared cash / transfer control
+                  (Segmented underneath), not a third hand-rolled copy. */}
+              <PaymentMethodChips
+                value={draft.defaultPaymentMethod === 'transfer' ? 'transfer' : 'cash'}
+                onChange={(m) => setDraft({ ...draft, defaultPaymentMethod: m })}
+              />
             </Field>
             <Field label={i18n.t('admin.field.sortIndex')}>
               <Input
@@ -1773,22 +1759,23 @@ export function DishesSection() {
                         className="flex flex-col gap-1 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline"
                       >
                         <div className="flex items-center gap-2">
-                          <select
-                            className="h-[var(--control-h)] min-w-0 flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface)] px-3 text-old-body ring-hairline"
-                            value={ing.skuId}
-                            onChange={(e) => {
-                              const next = [...draft.ingredients];
-                              next[idx] = { ...next[idx]!, skuId: e.target.value };
-                              setDraft({ ...draft, ingredients: next });
-                            }}
-                          >
-                            <option value="">{i18n.t('dishes.field.pickSku')}</option>
-                            {(skusQuery.data ?? []).map((skuRow) => (
-                              <option key={skuRow.id} value={skuRow.id}>
-                                {productName({ names: skuRow.names as Record<string, string> })}
-                              </option>
-                            ))}
-                          </select>
+                          <div className="min-w-0 flex-1">
+                            <Select
+                              value={ing.skuId}
+                              onChange={(e) => {
+                                const next = [...draft.ingredients];
+                                next[idx] = { ...next[idx]!, skuId: e.target.value };
+                                setDraft({ ...draft, ingredients: next });
+                              }}
+                            >
+                              <option value="">{i18n.t('dishes.field.pickSku')}</option>
+                              {(skusQuery.data ?? []).map((skuRow) => (
+                                <option key={skuRow.id} value={skuRow.id}>
+                                  {productName({ names: skuRow.names as Record<string, string> })}
+                                </option>
+                              ))}
+                            </Select>
+                          </div>
                           <button
                             type="button"
                             onClick={() => {

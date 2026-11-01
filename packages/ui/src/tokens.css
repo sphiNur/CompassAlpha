@@ -301,7 +301,10 @@
   --c-bg: oklch(15% 0.01 240);
   --c-surface: oklch(20% 0.012 240);
   --c-surface-2: oklch(24% 0.012 240);
-  --c-surface-elevated: oklch(22% 0.012 240);
+  /* DX-VIS-14 (2026-11-01): was 22%, darker than surface-2 (24%), so a
+   * raised layer (info toast, dropdown) sank below the cards. One step
+   * above surface-2; lightness only, same hue. */
+  --c-surface-elevated: oklch(27% 0.012 240);
   --c-surface-3: oklch(28% 0.012 240);
   --c-fg: oklch(96% 0 0);
   /* V8: subtle was 55% (3.4:1 on surface-2); 64% is 4.9:1. Muted moves
@@ -353,8 +356,14 @@
   --shadow-product: 0 16px 32px oklch(0% 0 0 / 0.14), 0 2px 4px oklch(0% 0 0 / 0.08);
 }
 
+/* DX-VIS-4 / DX-IX-1 (2026-11-01): the defaults sit on
+ * `:root[data-theme='native']` (0,2,0) and ThemeProvider always sets
+ * data-theme, so a plain `:root` (0,1,0) here never won and reduced
+ * motion was never applied. `:root[data-theme]` matches the defaults'
+ * specificity and comes later, so it wins for every theme. */
 @media (prefers-reduced-motion: reduce) {
-  :root {
+  :root,
+  :root[data-theme] {
     --t-snap: 0ms;
     --t-quick: 0ms;
     --t-base: 0ms;
@@ -367,6 +376,12 @@
 }
 .press:active {
   transform: scale(0.96);
+}
+/* DX-IX-1: no press shrink under reduced motion (after the rule above, so it wins). */
+@media (prefers-reduced-motion: reduce) {
+  .press:active {
+    transform: none;
+  }
 }
 
 /* 1px hairline used by cards (avoids 0.5px sub-pixel issues on @1x) */

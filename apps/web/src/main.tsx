@@ -1,9 +1,10 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { detectLocale, preloadCatalog } from '@compass/i18n';
+import { loadCatalog } from '@compass/i18n';
 import { App } from './app/App';
 import './styles/index.css';
 import { reloadForStaleChunk } from './lib/reload';
+import { bootLocale, waitAtMost } from './lib/bootLocale';
 
 // F10 (2026-10-30): after a deploy, a client that stayed open asks for
 // lazy page chunks that no longer exist; the import failed into the root
@@ -41,47 +42,56 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 const container = document.getElementById('root');
 if (!container) throw new Error('Root not found');
 
-// Replace the inline boot splash. We clear the splash node *before*
-// createRoot renders so React doesn't have to fight an existing subtree.
-const splash = document.getElementById('boot-splash');
-if (splash) splash.remove();
-
-// M3.14-D (2026-05-16): kick off the active locale's catalog chunk
-// in parallel with the first React render. We don't know the
-// authenticated user's preferred locale yet (auth store hasn't
-// hydrated) so we guess from Telegram + navigator.language. If the
-// guess is wrong (user is logged in as Uzbek but Telegram reports
-// English), useEnsureLocale inside useI18n will load the correct
-// one on the first hook call — at the cost of one extra fetch.
-//
-// en is statically imported and always available — no preload needed.
-// M3.18: window.Telegram is now globally typed via src/types/telegram.d.ts.
-const bootGuess = detectLocale(
+// M3.14-D (2026-05-16): fetch the active locale's catalog chunk before
+// the first render. DX-PFE-1 (2026-11-01): the locale is the persisted
+// session's own language when there is one (Telegram / navigator.language
+// only for a first visit), and the first render waits for it (at most
+// 2.5 s, under the boot splash), so a zh user no longer sees an English
+// screen first. en is statically imported and always available.
+let storage: Storage | null = null;
+try {
+  storage = window.localStorage;
+} catch {
+  /* storage blocked */
+}
+const locale = bootLocale(
+  storage,
   window.Telegram?.WebApp?.initDataUnsafe?.user?.language_code ?? navigator.language,
 );
-if (bootGuess !== 'en') preloadCatalog(bootGuess);
+const catalogReady =
+  locale === 'en' ? Promise.resolve() : waitAtMost(loadCatalog(locale), 2500);
+
+void catalogReady.then(() => {
+  // Replace the inline boot splash. We clear the splash node *before*
+  // createRoot renders so React doesn't have to fight an existing subtree.
+  const splash = document.getElementById('boot-splash');
+  if (splash) splash.remove();
+  render(container);
+});
 
 // `/?kit` shows the component kit on its own, without signing in. The
 // condition is a build-time constant, so a production bundle contains
 // neither the branch nor the page.
-if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('kit')) {
-  void import('./pages/KitGallery').then(({ KitGallery }) => {
+function render(container: HTMLElement): void {
+  if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('kit')) {
+    void import('./pages/KitGallery').then(({ KitGallery }) => {
+      createRoot(container).render(
+        <StrictMode>
+          <KitGallery />
+        </StrictMode>,
+      );
+    });
+  } else {
     createRoot(container).render(
       <StrictMode>
-        <KitGallery />
+        <App />
       </StrictMode>,
     );
-  });
-} else {
-  createRoot(container).render(
-    <StrictMode>
-      <App />
-    </StrictMode>,
-  );
-}
+  }
 
-// Tell index.html that React mounted; the splash CSS guard hides any
-// remaining boot error UI.
-requestAnimationFrame(() => {
-  document.documentElement.classList.add('ready');
-});
+  // Tell index.html that React mounted; the splash CSS guard hides any
+  // remaining boot error UI.
+  requestAnimationFrame(() => {
+    document.documentElement.classList.add('ready');
+  });
+}

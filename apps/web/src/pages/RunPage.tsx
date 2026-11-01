@@ -1581,6 +1581,8 @@ export function RunPage() {
               receiptLine,
             confirmLabel: i18n.t('run.action.finish'),
             danger: false,
+            // DX-IX-6: locks the purchase; Cancel shown and focused.
+            irreversible: true,
             requireReason: false,
             isPending: finish.isPending,
             run: () => finish.mutate({ runId }, { onSuccess: () => setConfirmAction(null) }),
@@ -1608,6 +1610,8 @@ export function RunPage() {
               }),
             confirmLabel: i18n.t('run.action.refinalize'),
             danger: false,
+            // DX-IX-6: locks the purchase; Cancel shown and focused.
+            irreversible: true,
             requireReason: false,
             isPending: refinalize.isPending,
             run: () => refinalize.mutate({ runId }, { onSuccess: () => setConfirmAction(null) }),

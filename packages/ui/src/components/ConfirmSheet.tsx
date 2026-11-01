@@ -19,6 +19,13 @@ export interface ConfirmSheetProps {
   cancelLabel?: ReactNode;
   /** Color treatment of the primary action. `danger` = red. */
   danger?: boolean;
+  /**
+   * DX-IX-6 (2026-11-01): the action cannot be taken back by the person
+   * (confirm receipt locks the store). Like `danger`, the sheet then
+   * always shows Cancel and focuses it, so Enter-Enter from the opener
+   * cannot run the action.
+   */
+  irreversible?: boolean;
   /** When true, a free-text reason input is shown and submit is gated
    *  on it being non-empty. Reason is passed back via `onConfirm`. */
   requireReason?: boolean;
@@ -45,6 +52,26 @@ export interface ConfirmSheetProps {
 }
 
 /**
+ * DX-IX-6 (2026-11-01): a destructive or locking confirm always offers
+ * Cancel and starts on it (the safe action, as for a native <dialog>), so
+ * Enter on the opener followed by a repeated Enter cannot run it. Not when
+ * a required reason keeps the confirm button disabled until typed: the
+ * reason field takes focus there. Shared with RunPage's confirm sheet.
+ */
+export function confirmCancelPolicy(o: {
+  danger?: boolean;
+  irreversible?: boolean;
+  requireReason?: boolean;
+  showCancelInSheet?: boolean;
+}): { showCancel: boolean; focusCancel: boolean } {
+  const guarded = !!(o.danger || o.irreversible);
+  return {
+    showCancel: guarded || (o.showCancelInSheet ?? !!o.requireReason),
+    focusCancel: guarded && !o.requireReason,
+  };
+}
+
+/**
  * Generic two-button confirmation sheet — promoted from `RunPage` so
  * any page can use the same look-and-feel. Used for:
  *
@@ -66,6 +93,7 @@ export function ConfirmSheet({
   confirmLabel,
   cancelLabel = 'Cancel',
   danger,
+  irreversible,
   requireReason,
   reasonPlaceholder,
   reasonLabel,
@@ -83,7 +111,12 @@ export function ConfirmSheet({
   // Cancel is force-shown when there's a reason input (keyboard covers
   // the backdrop) OR when the consumer explicitly opts in. Otherwise we
   // rely on tap-outside / swipe-down / Telegram BackButton.
-  const showCancel = showCancelInSheet ?? !!requireReason;
+  const { showCancel, focusCancel } = confirmCancelPolicy({
+    danger,
+    irreversible,
+    requireReason,
+    showCancelInSheet,
+  });
   const hasFooter = showPrimaryInSheet || showCancel;
   return (
     <Sheet
@@ -105,7 +138,14 @@ export function ConfirmSheet({
               </Button>
             ) : null}
             {showCancel ? (
-              <Button block variant="pearl" onClick={onCancel} disabled={pending}>
+              <Button
+                block
+                variant="pearl"
+                onClick={onCancel}
+                disabled={pending}
+                autoFocus={focusCancel}
+                data-confirm-cancel=""
+              >
                 {cancelLabel}
               </Button>
             ) : null}

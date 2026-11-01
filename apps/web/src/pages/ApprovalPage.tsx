@@ -27,6 +27,7 @@ import {
   StickyPageBar,
   Tab,
   Tabs,
+  focusAfter,
   useToast,
 } from '@compass/ui';
 import { trpc } from '../lib/trpc';
@@ -34,6 +35,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useDateFormat, useI18n, useProductName, useUnitLabel } from '../hooks/useI18n';
 import { isWaitingOffline } from '../components/PendingSpinner';
 import { haptic } from '../hooks/useTelegram';
+import { useOnline } from '../hooks/useOnline';
 import { confirmThen } from '../lib/confirm';
 import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
@@ -41,6 +43,9 @@ import { useStoreContext } from '../components/StoreSwitcher';
 import { sessionItemsView } from './approval/sessionItemsView';
 import { cardRequests, showPaymentSplit } from './approval/cardSummary';
 import { ORDER_QTY_MAX } from '@compass/contracts/limits';
+
+/** DX-IX-4: where focus goes after a card is decided (the list's first card title). */
+const NEXT_CARD = '[data-approval-list] > li h2';
 
 type ApprovalTab = 'pending' | 'approved' | 'rejected';
 
@@ -87,6 +92,7 @@ export function ApprovalPage() {
   const skusQuery = trpc.catalog.skus.useQuery({ includeArchived: true });
 
   const utils = trpc.useUtils();
+  const online = useOnline();
   const toast = useToast();
   // Audit-found 2026-05-05: every mutation here used to onError ONLY haptic.
   // Manager taps Approve, network fails, they feel a buzz and assume "done"
@@ -133,7 +139,9 @@ export function ApprovalPage() {
   };
   const approve = trpc.order.approve.useMutation({
     onSuccess: (data, vars) => {
-      void utils.order.pendingList.invalidate();
+      // DX-IX-4 (2026-11-01): the approved card (and its button) leaves the
+      // list; focus moves to the next card's title, not to <body>.
+      void utils.order.pendingList.invalidate().then(() => focusAfter(NEXT_CARD));
       haptic('success');
       // D12 (U1, 2026-10-31): the card's 通过 stays one tap, with five
       // seconds to take it back. The undo is the normal unapprove, sent
@@ -162,7 +170,7 @@ export function ApprovalPage() {
   });
   const reject = trpc.order.reject.useMutation({
     onSuccess: () => {
-      void utils.order.pendingList.invalidate();
+      void utils.order.pendingList.invalidate().then(() => focusAfter(NEXT_CARD));
       setRejectFor(null);
       setRejectReason('');
       haptic('warning');
@@ -341,7 +349,7 @@ export function ApprovalPage() {
         }
       >
         {(rows) => (
-          <ul className="flex flex-col gap-2" role="list">
+          <ul className="flex flex-col gap-2" role="list" data-approval-list="">
             {rows.map((row) => {
               const isClaimedByMe = row.claimedByMemberId === session.member.memberId;
               const isClaimedByOther =
@@ -584,6 +592,14 @@ export function ApprovalPage() {
                   ) : null}
 
                   <div className="flex flex-wrap items-center gap-2 px-4 py-3">
+                    {/* DX-IX-9 (2026-11-01): review decisions are not kept
+                        on the phone, so offline they are disabled with the
+                        reason, rather than failing after the tap. */}
+                    {!online && (tab === 'pending' || tab === 'approved') ? (
+                      <p className="w-full text-old-label text-[var(--c-fg-muted)]">
+                        {i18n.t('approval.offline.needsConnection')}
+                      </p>
+                    ) : null}
                     {/* 2026-10-21 CA-42: an unclaimed order can be approved or
                         rejected directly — the domain already allows it
                         (commands.ts Approve/Reject only conflict when someone
@@ -599,7 +615,7 @@ export function ApprovalPage() {
                           size="sm"
                           variant="primary"
                           loading={approve.isPending && approve.variables?.sessionId === row.id}
-                          disabled={claim.isPending && claim.variables?.sessionId === row.id}
+                          disabled={!online || (claim.isPending && claim.variables?.sessionId === row.id)}
                           onClick={() => approveOnce(row.id, row.lastSeq)}
                         >
                           {i18n.t('approval.approve')}
@@ -608,6 +624,7 @@ export function ApprovalPage() {
                           size="sm"
                           variant="danger"
                           disabled={
+                            !online ||
                             (claim.isPending && claim.variables?.sessionId === row.id) ||
                             (approve.isPending && approve.variables?.sessionId === row.id)
                           }
@@ -622,7 +639,7 @@ export function ApprovalPage() {
                           size="sm"
                           variant="pearl"
                           loading={claim.isPending && claim.variables?.sessionId === row.id}
-                          disabled={approve.isPending && approve.variables?.sessionId === row.id}
+                          disabled={!online || (approve.isPending && approve.variables?.sessionId === row.id)}
                           onClick={() => {
                             claim.mutate({ sessionId: row.id });
                             setActiveSessionId(row.id);
@@ -638,6 +655,7 @@ export function ApprovalPage() {
                           size="sm"
                           variant="primary"
                           loading={approve.isPending && approve.variables?.sessionId === row.id}
+                          disabled={!online}
                           onClick={() => approveOnce(row.id, row.lastSeq)}
                         >
                           {i18n.t('approval.approve')}
@@ -645,6 +663,7 @@ export function ApprovalPage() {
                         <Button
                           size="sm"
                           variant="danger"
+                          disabled={!online}
                           onClick={() => {
                             setRejectFor(row.id);
                             setRejectSeq(row.lastSeq);
@@ -659,6 +678,7 @@ export function ApprovalPage() {
                             releaseClaim.isPending &&
                             releaseClaim.variables?.sessionId === row.id
                           }
+                          disabled={!online}
                           onClick={() => {
                             letGo.current.add(row.id);
                             releaseClaim.mutate({ sessionId: row.id });
@@ -682,6 +702,7 @@ export function ApprovalPage() {
                         loading={
                           unapprove.isPending && unapprove.variables?.sessionId === row.id
                         }
+                        disabled={!online}
                         // APR-7 (2026-10-30): one tap used to send the order
                         // back at once; the prompt was written but unused.
                         onClick={() =>
