@@ -19,6 +19,13 @@ export interface ConfirmSheetProps {
   cancelLabel?: ReactNode;
   /** Color treatment of the primary action. `danger` = red. */
   danger?: boolean;
+  /**
+   * DX-IX-6 (2026-11-01): the action cannot be taken back by the person
+   * (confirm receipt locks the store). Like `danger`, the sheet then
+   * always shows Cancel and focuses it, so Enter-Enter from the opener
+   * cannot run the action.
+   */
+  irreversible?: boolean;
   /** When true, a free-text reason input is shown and submit is gated
    *  on it being non-empty. Reason is passed back via `onConfirm`. */
   requireReason?: boolean;
@@ -40,8 +47,37 @@ export interface ConfirmSheetProps {
    *  needs an explicit "back out" target. Pass true to override e.g.
    *  for desktop-only flows. */
   showCancelInSheet?: boolean;
+  /** Open with focus on the cancel button (the safe answer), so a
+   *  second Enter from the field that opened the sheet does not confirm
+   *  it. Shows the cancel button. `danger` / `irreversible` imply it
+   *  (confirmCancelPolicy). */
+  focusCancel?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
+}
+
+/**
+ * DX-IX-6 (2026-11-01): a destructive or locking confirm always offers
+ * Cancel and starts on it (the safe action, as for a native <dialog>), so
+ * Enter on the opener followed by a repeated Enter cannot run it. Not when
+ * a required reason keeps the confirm button disabled until typed: the
+ * reason field takes focus there. Shared with RunPage's confirm sheet.
+ */
+export function confirmCancelPolicy(o: {
+  danger?: boolean;
+  irreversible?: boolean;
+  requireReason?: boolean;
+  showCancelInSheet?: boolean;
+  /** The caller asks for it explicitly (the `focusCancel` prop). */
+  focusCancel?: boolean;
+}): { showCancel: boolean; focusCancel: boolean } {
+  const guarded = !!(o.danger || o.irreversible);
+  const focusCancel = (guarded && !o.requireReason) || !!o.focusCancel;
+  return {
+    // A Cancel the sheet starts on must be on screen.
+    showCancel: guarded || focusCancel || (o.showCancelInSheet ?? !!o.requireReason),
+    focusCancel,
+  };
 }
 
 /**
@@ -66,6 +102,7 @@ export function ConfirmSheet({
   confirmLabel,
   cancelLabel = 'Cancel',
   danger,
+  irreversible,
   requireReason,
   reasonPlaceholder,
   reasonLabel,
@@ -74,6 +111,7 @@ export function ConfirmSheet({
   onReasonChange,
   showPrimaryInSheet = true,
   showCancelInSheet,
+  focusCancel,
   onConfirm,
   onCancel,
 }: ConfirmSheetProps) {
@@ -83,7 +121,13 @@ export function ConfirmSheet({
   // Cancel is force-shown when there's a reason input (keyboard covers
   // the backdrop) OR when the consumer explicitly opts in. Otherwise we
   // rely on tap-outside / swipe-down / Telegram BackButton.
-  const showCancel = showCancelInSheet ?? !!requireReason;
+  const { showCancel, focusCancel: startOnCancel } = confirmCancelPolicy({
+    danger,
+    irreversible,
+    requireReason,
+    showCancelInSheet,
+    focusCancel,
+  });
   const hasFooter = showPrimaryInSheet || showCancel;
   return (
     <Sheet
@@ -105,7 +149,13 @@ export function ConfirmSheet({
               </Button>
             ) : null}
             {showCancel ? (
-              <Button block variant="pearl" onClick={onCancel} disabled={pending}>
+              <Button
+                block
+                variant="pearl"
+                onClick={onCancel}
+                disabled={pending}
+                data-autofocus={startOnCancel || undefined}
+              >
                 {cancelLabel}
               </Button>
             ) : null}

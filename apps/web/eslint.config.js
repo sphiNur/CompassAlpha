@@ -123,7 +123,9 @@ export default [
         'error',
         {
           selector:
-            "BinaryExpression[operator='*'] > CallExpression[callee.name=/^(Number|parseFloat)$/]",
+            // Scaling by a literal (`Number(v) * 1000` to thousandths) is
+            // not a money line and is allowed.
+            "BinaryExpression[operator='*']:not([left.type='Literal']):not([right.type='Literal']) > CallExpression[callee.name=/^(Number|parseFloat)$/]",
           message:
             'Money: use moneyLine / sumMoneyLines (src/lib/money.ts) or the @compass/contracts/money helpers, not float multiplication (D1). Not money? Disable this line with a reason.',
         },

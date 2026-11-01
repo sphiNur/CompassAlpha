@@ -62,8 +62,8 @@ describe('plural selection — English', () => {
     expect(one).toContain('its 1 attached order.');
     expect(many).toContain('its 3 attached orders.');
     // The tail after the plural block must survive in both.
-    expect(one).toContain('use the per-order purge');
-    expect(many).toContain('use the per-order purge');
+    expect(one).toContain("This can't be undone.");
+    expect(many).toContain("This can't be undone.");
   });
 });
 
@@ -80,9 +80,9 @@ describe('plural selection — Russian three-way split', () => {
 
   test('21 takes the `one` form, 5 and 11 take `many`', () => {
     // Russian: 21 ends in 1 (but not 11) -> one; 5 and 11 -> many.
-    expect(t('approval.contributorsCount', 21)).toBe('21 участник');
-    expect(t('approval.contributorsCount', 5)).toBe('5 участников');
-    expect(t('approval.contributorsCount', 11)).toBe('11 участников');
+    expect(t('approval.contributorsCount', 21)).toBe('21 автор заказа');
+    expect(t('approval.contributorsCount', 5)).toBe('5 авторов заказа');
+    expect(t('approval.contributorsCount', 11)).toBe('11 авторов заказа');
   });
 
   test('a fraction takes `other`, which reads like `few`', () => {
@@ -103,15 +103,15 @@ describe('plural selection — locales without number inflection', () => {
   test('zh renders the same noun for every count', () => {
     const t = (n: number) =>
       createI18n('zh').t('approval.contributorsCount' as CatalogKey, { n });
-    expect(t(1)).toBe('1 位贡献者');
-    expect(t(9)).toBe('9 位贡献者');
+    expect(t(1)).toBe('1 位提交人');
+    expect(t(9)).toBe('9 位提交人');
   });
 
   test('uz selects its two authored forms', () => {
     const t = (n: number) =>
       createI18n('uz').t('approval.contributorsCount' as CatalogKey, { n });
-    expect(t(1)).toBe('1 ishtirokchi');
-    expect(t(4)).toBe('4 ta ishtirokchi');
+    expect(t(1)).toBe('1 yuboruvchi');
+    expect(t(4)).toBe('4 ta yuboruvchi');
   });
 });
 

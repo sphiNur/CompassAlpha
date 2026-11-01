@@ -79,6 +79,16 @@ describe('receivedDelta (CA-06)', () => {
       '0',
     );
   });
+
+  test('DX-DLV-01: quantity a correction added is received on a problem line too', () => {
+    expect(
+      receivedDelta({ qty: '12.000', confirmStatus: 'short', confirmReceivedQty: '5.000' }, '2'),
+    ).toBe('7.000');
+    // ok lines already book the whole (grown) split.
+    expect(receivedDelta({ qty: '12.000', confirmStatus: 'ok', confirmReceivedQty: null }, '2')).toBe(
+      '12.000',
+    );
+  });
 });
 
 function buildCtx(db: ReturnType<typeof getDb>, session: SessionContext): RequestContext {

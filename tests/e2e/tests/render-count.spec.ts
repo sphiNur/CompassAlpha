@@ -181,12 +181,10 @@ test('a realtime push redraws the order list once, without the closed sheets', a
   // One push: the refetch, its pending-state flips and the shell's badge —
   // five commits today. A push storm (a refetch loop) would be dozens.
   expect(push.commits, JSON.stringify(push.byComp)).toBeLessThanOrEqual(8);
-  // At most one pass over the list per commit. DX-PFE-4 (order page, its
-  // own change) makes the rows memoize properly; once it is in, only the
-  // changed row redraws and this can drop to a handful.
-  expect(rendersOf(push, 'SkuRow'), JSON.stringify(push.byComp)).toBeLessThanOrEqual(
-    rows * push.commits,
-  );
+  // DX-PFE-4: the rows are memoized, so only the changed row redraws —
+  // not the whole list (every row on every commit before the fix).
+  expect(rows, 'the list has rows to compare against').toBeGreaterThan(4);
+  expect(rendersOf(push, 'SkuRow'), JSON.stringify(push.byComp)).toBeLessThanOrEqual(3);
 
   expect((await adjust('0')).ok()).toBe(true);
 });

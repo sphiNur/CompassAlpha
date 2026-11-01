@@ -44,6 +44,7 @@ import {
   Sheet,
   Switch,
   useToast,
+  Select,
 } from '@compass/ui';
 import { trpc } from '../lib/trpc';
 import { useErrToast } from '../lib/errToast';
@@ -615,7 +616,7 @@ function WorkspaceSection() {
       toast.success(i18n.t('common.saved'));
       setFinanceSheetOpen(false);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   return (
@@ -711,8 +712,7 @@ function WorkspaceSection() {
       >
         <div className="flex flex-col gap-3 py-3">
           <Field label={i18n.t('admin.workspace.currency')}>
-            <select
-              className="h-[var(--control-h)] w-full rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3 ring-hairline"
+            <Select
               value={draftCurrency}
               onChange={(e) => setDraftCurrency(e.target.value)}
             >
@@ -726,7 +726,7 @@ function WorkspaceSection() {
                   {code} — {i18n.t(`admin.currency.${code}`)}
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
           <Field
             label={i18n.t('admin.workspace.taxRate')}

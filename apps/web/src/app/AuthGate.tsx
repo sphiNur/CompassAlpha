@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Button, Banner, Input, Spinner, useToast } from '@compass/ui';
 import { useAuthStore, type AuthSession } from '../stores/authStore';
@@ -830,6 +830,7 @@ function OnboardingScreen() {
       : '';
   const [name, setName] = useState(initial);
   const [error, setError] = useState<string | null>(null);
+  const nameId = useId();
   const translateError = useTranslateError();
 
   const complete = trpc.auth.completeOnboarding.useMutation({
@@ -843,12 +844,22 @@ function OnboardingScreen() {
       haptic('error');
       // 2026-10-21 audit CA-48: server keys (e.g. auth.errors.nameLocked)
       // were shown raw.
-      setError(translateError(err, 'common.error'));
+      setError(translateError(err, 'auth.onboarding.failed'));
     },
   });
 
+  // DX-SHL-6 (2026-11-01): a real form, so Enter (the keyboard's "done")
+  // submits, and the label is tied to the field (it was read out as the
+  // placeholder only).
+  const canSubmit = name.trim().length >= 1 && !complete.isPending;
   return (
-    <div className="flex h-full flex-col px-6 pt-12 pb-8">
+    <form
+      className="flex h-full flex-col px-6 pt-12 pb-8"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (canSubmit) complete.mutate({ displayName: name.trim() });
+      }}
+    >
       <div className="flex-1 flex flex-col justify-center gap-4">
         <h1 className="text-old-h1 font-semibold leading-tight text-[var(--c-fg)]">
           {i18n.t('auth.onboarding.title')}
@@ -857,10 +868,16 @@ function OnboardingScreen() {
           {i18n.t('auth.onboarding.body')}
         </p>
         <div>
-          <label className="block text-old-label font-semibold text-[var(--c-fg-muted)]">
+          <label
+            htmlFor={nameId}
+            className="block text-old-label font-semibold text-[var(--c-fg-muted)]"
+          >
             {i18n.t('auth.onboarding.nameLabel')}
           </label>
           <Input
+            id={nameId}
+            enterKeyHint="done"
+            autoComplete="name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             maxLength={200}
@@ -878,13 +895,13 @@ function OnboardingScreen() {
       <Button
         block
         size="lg"
+        type="submit"
         loading={complete.isPending}
         disabled={name.trim().length < 1}
-        onClick={() => complete.mutate({ displayName: name.trim() })}
       >
         {i18n.t('auth.onboarding.continue')}
       </Button>
-    </div>
+    </form>
   );
 }
 

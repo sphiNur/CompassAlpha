@@ -239,7 +239,7 @@ test('finish the run and find it in history', async () => {
   await expect(main().getByRole('heading', { name: 'No approved orders yet' })).toBeVisible();
 
   await tab('history').click();
-  await expect(main().getByRole('heading', { level: 1 })).toHaveText(/History\s*1 trip · 114,000 UZS/);
+  await expect(main().getByRole('heading', { level: 1 })).toHaveText(/History\s*1 run · 114,000 UZS/);
   await expect(
     main().getByRole('button', { name: /Central Kitchen 2 items 114,000/ }),
   ).toBeVisible();

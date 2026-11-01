@@ -112,3 +112,13 @@ describe('boot-guard with a deferred Telegram SDK', () => {
     expect(g.timers.filter((t) => t.ms === 12000 && !t.cleared).length).toBe(1);
   });
 });
+
+describe('boot timeout text (DX-SHL-17)', () => {
+  it('says what to do, without developer terms or the timer', () => {
+    const lines = [...guard.matchAll(/timeout: '([^']*)'/g)].map((m) => m[1]!);
+    expect(lines.length).toBe(4);
+    for (const text of lines) {
+      expect(text).not.toMatch(/JS|module|модул|modul|12/i);
+    }
+  });
+});

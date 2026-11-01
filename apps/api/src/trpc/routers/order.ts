@@ -355,6 +355,16 @@ export const orderRouter = router({
             .where(eq(s.members.id, session.claimedByMemberId))
             .limit(1)
         : [];
+      // DX-ORD-3 (2026-11-01): a rejected batch says who sent it back.
+      const deciderRow =
+        session.status === 'rejected' && session.decidedByMemberId
+          ? await tx
+              .select({ displayName: s.users.displayName })
+              .from(s.members)
+              .innerJoin(s.users, eq(s.users.id, s.members.userId))
+              .where(eq(s.members.id, session.decidedByMemberId))
+              .limit(1)
+          : [];
       // Per-(sku, member) rows. Aggregate by sku for the UI's running
       // total; also expose the raw per-contributor rows so the OrderPage
       // can show "Apple — your 3, total 5" and ApprovalPage can show
@@ -377,6 +387,8 @@ export const orderRouter = router({
         submittedAt: session.submittedAt?.toISOString() ?? null,
         decidedAt: session.decidedAt?.toISOString() ?? null,
         decidedByMemberId: session.decidedByMemberId,
+        /** Who rejected it (rejected batches only; null otherwise). */
+        decidedByDisplayName: deciderRow[0]?.displayName ?? null,
         rejectReason: session.rejectReason,
         runId: session.runId,
         lastSeq: session.lastSeq,

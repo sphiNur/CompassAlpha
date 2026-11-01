@@ -74,6 +74,8 @@ import {
 import { publishMainButtonInset } from '../lib/mainButtonInset';
 import { subscribeAnnouncements } from '../lib/announce';
 import { setPageTitleBase } from '../lib/pageTitle';
+import { createTabScrollMemory, restoreScroll } from '../lib/tabScroll';
+import { scrollBehavior } from '../lib/reducedMotion';
 import { useI18n } from '../hooks/useI18n';
 import {
   getTg,
@@ -346,8 +348,30 @@ function ShellInner() {
   const visibleKeys = visible.map((t) => t.key as Tab);
   const tab = resolveVisibleTab(persistedTab, visibleKeys);
   const setTab = setPersistedTab;
+  // DX-SHL-10 (2026-11-01): <main> is the one scroller; each tab's
+  // position is recorded as it scrolls and put back when the tab returns.
+  const mainRef = useRef<HTMLElement | null>(null);
+  const scrollMemory = useRef(createTabScrollMemory<Tab>()).current;
+  const tabRef = useRef(tab);
+  useLayoutEffect(() => {
+    tabRef.current = tab;
+    const main = mainRef.current;
+    if (!main) return;
+    const stop = restoreScroll(main, scrollMemory.get(tab));
+    // The person's own scroll wins over a restore still waiting for rows.
+    const events = ['wheel', 'touchstart', 'keydown'] as const;
+    events.forEach((type) => main.addEventListener(type, stop, { passive: true, once: true }));
+    return () => {
+      stop();
+      events.forEach((type) => main.removeEventListener(type, stop));
+    };
+  }, [tab, scrollMemory]);
   const requestSetTab = (nextTab: Tab) => {
-    if (nextTab === tab) return;
+    // DX-SHL-10: tapping the tab you are on goes back to its top.
+    if (nextTab === tab) {
+      mainRef.current?.scrollTo({ top: 0, behavior: scrollBehavior() });
+      return;
+    }
     void requestTabChange(nextTab).then((allowed) => {
       if (allowed) setTab(nextTab);
     });
@@ -588,6 +612,7 @@ function ShellInner() {
       className="flex min-h-0 flex-col bg-[var(--c-bg)]"
       style={{ height: 'var(--app-viewport-h, 100dvh)' }}
     >
+      <SkipLinks />
       <SettingsSheet open={settingsOpen} onOpenChange={setSettingsOpen} pageMenu={pageMenu} />
       {inTelegram ? (
         // Reserved strip lets Telegram's chrome (Close + bot title + ⋯)
@@ -677,7 +702,15 @@ function ShellInner() {
 
       <LiveAnnouncer />
       <main
-        className="min-h-0 flex-1 overflow-y-auto"
+        ref={mainRef}
+        id="main-content"
+        // DX-IX-3 / DX-IX-4: where focus lands when the element that had it
+        // is gone (a sheet's opener removed by its action). Focusable from
+        // script only; no ring, it is the page itself.
+        tabIndex={-1}
+        data-focus-fallback=""
+        onScroll={(e) => scrollMemory.save(tabRef.current, e.currentTarget.scrollTop)}
+        className="min-h-0 flex-1 overflow-y-auto outline-none"
         // Native iOS momentum scrolling. Without this, scroll inside
         // the WebView feels stuttery and stops abruptly when you lift
         // your finger — Telegram's WebView doesn't enable this by
@@ -864,6 +897,38 @@ function BottomNav({
 
 /** A11Y-10: pages that render their own visible <h1>. */
 const TABS_WITH_OWN_H1: ReadonlySet<Tab> = new Set<Tab>(['history', 'settlement', 'sales', 'admin']);
+
+/**
+ * DX-IX-5 (2026-11-01): the page's main button and the bottom nav come
+ * after the whole list in the DOM, 40+ Tab presses away. Two links, shown
+ * only while focused, jump there first (WCAG 2.4.1). Visual order stays.
+ */
+function SkipLinks() {
+  const i18n = useI18n();
+  const mainButton = usePageMainButtonState();
+  const jump = (selector: string) => () => {
+    document.querySelector<HTMLElement>(selector)?.focus();
+  };
+  const linkClass =
+    'sr-only focus:not-sr-only focus:fixed focus:left-2 focus:top-2 focus:z-[60] focus:rounded-[var(--r-pill)] ' +
+    'focus:bg-[var(--c-surface)] focus:px-4 focus:py-2 focus:text-old-h3 focus:text-[var(--c-action)] focus:shadow-sheet';
+  return (
+    <>
+      {mainButton?.visible ? (
+        <button type="button" className={linkClass} onClick={jump('[data-testid="page-main-button"]')}>
+          {i18n.t('shell.skip.mainAction')}
+        </button>
+      ) : null}
+      <button
+        type="button"
+        className={linkClass}
+        onClick={jump('[data-testid="primary-nav"] [aria-current="page"], [data-testid="primary-nav"] button')}
+      >
+        {i18n.t('shell.skip.nav')}
+      </button>
+    </>
+  );
+}
 
 /**
  * A11Y-12 (2026-10-31): the app's one polite status region. Pages say

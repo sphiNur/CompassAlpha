@@ -1,4 +1,4 @@
-import { cn } from '@compass/ui';
+import { Segmented } from '@compass/ui';
 import { useI18n } from '../hooks/useI18n';
 
 /**
@@ -27,27 +27,24 @@ export interface PaymentMethodChipsProps {
 
 export function PaymentMethodChips({ value, onChange, className }: PaymentMethodChipsProps) {
   const i18n = useI18n();
+  // DX-VIS-6 / DX-VIS-7 (2026-11-01): was two hand-rolled 32px buttons
+  // whose state was colour only. Segmented gives each a 44px tap area and
+  // tells a screen reader which method is selected.
   return (
-    <div className={cn('flex gap-2', className)}>
-      {(['cash', 'transfer'] as const).map((m) => {
-        const selected = value === m;
-        return (
-          <button
-            key={m}
-            type="button"
-            onClick={() => onChange(m)}
-            className={cn(
-              'press flex-1 rounded-[var(--r-pill)] px-3 py-2 text-old-label font-medium ring-hairline',
-              selected
-                ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]',
-            )}
-          >
-            {m === 'cash' ? '💵 ' : '🏦 '}
+    <Segmented
+      className={className}
+      value={value}
+      onChange={onChange}
+      ariaLabel={i18n.t('run.label.paymentMethod')}
+      options={(['cash', 'transfer'] as const).map((m) => ({
+        value: m,
+        label: (
+          <>
+            <span aria-hidden>{m === 'cash' ? '💵 ' : '🏦 '}</span>
             {m === 'cash' ? i18n.t('run.label.paymentCash') : i18n.t('run.label.paymentTransfer')}
-          </button>
-        );
-      })}
-    </div>
+          </>
+        ),
+      }))}
+    />
   );
 }

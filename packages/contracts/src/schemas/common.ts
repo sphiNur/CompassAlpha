@@ -3,7 +3,15 @@ import { ORDER_QTY_MAX } from '../limits';
 
 // Zod-free limits live in ../limits so the web can import them without
 // pulling zod into its main chunk (P-5); re-exported for the barrel.
-export { BACKDATE_LIMIT_DAYS, ORDER_QTY_MAX, isoDateDaysBefore } from '../limits';
+export {
+  BACKDATE_LIMIT_DAYS,
+  ORDER_QTY_MAX,
+  STOCKTAKE_COUNT_MAX,
+  STOCKTAKE_COUNT_MESSAGE,
+  isoDateDaysBefore,
+  stocktakeCountProblem,
+} from '../limits';
+export type { StocktakeCountProblem } from '../limits';
 
 export const UuidSchema = z.string().uuid();
 

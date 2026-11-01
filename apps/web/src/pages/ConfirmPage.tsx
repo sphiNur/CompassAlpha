@@ -234,7 +234,7 @@ export function ConfirmPage() {
       } else {
         // Roll back the optimistic write since the server refused it.
         void utils.run.get.invalidate();
-        errToast('common.error')(err);
+        errToast('common.errors.actionFailed')(err);
       }
     },
   });
@@ -251,7 +251,7 @@ export function ConfirmPage() {
         setFinalConfirmOpen(false);
         toast.info(i18n.t('confirm.toast.savedOffline'));
       } else {
-        errToast('common.error')(err);
+        errToast('common.errors.actionFailed')(err);
       }
     },
   });
@@ -272,7 +272,7 @@ export function ConfirmPage() {
         setBulkConfirmOpen(false);
         toast.info(i18n.t('confirm.toast.savedOffline'));
       } else {
-        errToast('common.error')(err);
+        errToast('common.errors.actionFailed')(err);
       }
     },
   });
@@ -789,6 +789,8 @@ export function ConfirmPage() {
         }
         body={i18n.t('confirm.final.body')}
         confirmLabel={i18n.t('confirm.final.submit')}
+        // DX-IX-6: confirming locks the receipt; start on Cancel.
+        irreversible
         cancelLabel={i18n.t('common.cancel')}
         pending={confirmStore.isPending}
         onConfirm={submitConfirmStore}
