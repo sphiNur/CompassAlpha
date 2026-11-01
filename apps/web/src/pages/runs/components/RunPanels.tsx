@@ -74,6 +74,8 @@ import {
   type ItemFilter,
   type ItemView,
 } from '../lib/itemList';
+import { moneyLine } from '../../../lib/money';
+import { addMoney } from '@compass/contracts/money';
 
 // formatQty / formatMoney are imported from `../lib/format` —
 // thousand-separator + max-1-decimal display rule applied everywhere.
@@ -1097,16 +1099,14 @@ function scrollParentOf(el: HTMLElement | null): HTMLElement | null {
 
 function previewLineTotal(qty: string, unitPrice: string | null): number | null {
   if (!unitPrice) return null;
-  const qtyNum = Number(qty);
-  const priceNum = Number(unitPrice);
-  if (!Number.isFinite(qtyNum) || !Number.isFinite(priceNum)) return null;
-  return qtyNum * priceNum;
+  // DX-PFE-12: half-up cents (D1); null when either is not a number.
+  return moneyLine(qty, unitPrice);
 }
 
 function addPreviewLine(group: PreviewStoreGroup, line: PreviewLine): void {
   group.items.push(line);
   if (line.total === null) group.unknownCount += 1;
-  else group.total += line.total;
+  else group.total = addMoney(group.total, line.total);
 }
 
 export function PreviewSummaryCard({

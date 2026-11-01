@@ -43,6 +43,7 @@ import { scrollBehavior } from '../lib/reducedMotion';
 import { useAuthStore } from '../stores/authStore';
 import { registerTabChangeGuard } from '../stores/navStore';
 import { StoreSalesPanel } from '../components/sales/StoreSalesPanel';
+import { addMoney } from '@compass/contracts/money';
 
 type MoneyField =
   | 'onlineRevenue'
@@ -700,9 +701,10 @@ export function SettlementPage() {
   const priorPurchaseAdjustment = moneyNumber(draft.priorPurchaseAdjustment);
   const cashOnHand = moneyNumber(draft.cashOnHand);
   const summary = {
-    totalRevenue: onlineRevenue + invoicedCashRevenue,
-    paidOutflows: operatingExpenses + wagesPaid,
-    futureCommitments: wagesAccrued + nextPurchaseReserve,
+    // DX-PFE-12: added in cents, so 0.10 + 0.20 shows 0.30 (D1).
+    totalRevenue: addMoney(onlineRevenue, invoicedCashRevenue),
+    paidOutflows: addMoney(operatingExpenses, wagesPaid),
+    futureCommitments: addMoney(wagesAccrued, nextPurchaseReserve),
     priorPurchaseAdjustment,
     endingCash: cashOnHand,
   };

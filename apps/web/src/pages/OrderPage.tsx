@@ -71,6 +71,8 @@ import { formatQty, formatMoney } from '../lib/format';
 import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
 import { useStoreContext } from '../components/StoreSwitcher';
 import { ORDER_QTY_MAX } from '@compass/contracts/limits';
+import { moneyLine } from '../lib/money';
+import { addMoney } from '@compass/contracts/money';
 
 /** Order writes still waiting in the offline outbox for this store (an
  *  entry without a storeId, e.g. extras keyed by session, counts too). */
@@ -1892,7 +1894,8 @@ function ReviewList({
       // The last price paid: the same rule as the server's estimateLines.
       const price = stats?.lastPrice;
       if (price) {
-        total += Number(price) * qty;
+        // DX-PFE-12: half-up cents per line, added in cents (D1).
+        total = addMoney(total, moneyLine(t.qty, price));
         known += 1;
       } else {
         unknown += 1;

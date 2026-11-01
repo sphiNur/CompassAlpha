@@ -26,6 +26,7 @@ import { formatMoney, formatQty } from '../../lib/format';
 import { useCanSeePrices } from '../../lib/pricesVisible';
 import { useDateFormat, useI18n, useProductName } from '../../hooks/useI18n';
 import { normalizeVoidReason, salesListView, summarizeSales } from './salesSummary';
+import { moneyLine } from '../../lib/money';
 
 /** Server-side row cap of `sales.list` (apps/api/src/trpc/routers/sales.ts). */
 export const SALES_LIST_CAP = 200;
@@ -349,7 +350,7 @@ export function StoreSalesPanel({
               const time = dateFmt.time(sale.occurredAt);
               const lineTotal =
                 canSeePrices && sale.unitPrice && Number(sale.qty) > 0
-                  ? Number(sale.qty) * Number(sale.unitPrice)
+                  ? moneyLine(sale.qty, sale.unitPrice)
                   : null;
               const voided = !!sale.voidedAt;
               return (

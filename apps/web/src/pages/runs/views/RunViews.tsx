@@ -31,6 +31,7 @@ import { proportionalSplitQty } from '../lib/splitQty';
 import { PriceInFull, PriceUnitSwitch } from '../components/PriceUnit';
 import { otherStoreSkusOf, type ActiveRun } from '../types';
 import { lineAmountNumber, lineWithinCap } from '@compass/contracts/money';
+import { moneyLine, sumMoneyLines } from '../../../lib/money';
 
 /**
  * GroupCardHeader — the "group title + right-aligned count·qty meta"
@@ -759,10 +760,7 @@ export function ExpensesCard({
 }) {
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   const list = expenses ?? [];
-  const grandTotal = list.reduce(
-    (s, e) => s + Number(e.qty) * Number(e.unitPrice),
-    0,
-  );
+  const grandTotal = sumMoneyLines(list.map((e) => [e.qty, e.unitPrice] as const));
   return (
     <Card>
       <SectionLabel meta={`${list.length} · ${formatMoney(grandTotal)} ${currency}`}>
@@ -789,7 +787,7 @@ export function ExpensesCard({
       ) : null}
       <ul className="flex flex-col" role="list">
         {list.map((e) => {
-          const total = Number(e.qty) * Number(e.unitPrice);
+          const total = moneyLine(e.qty, e.unitPrice) ?? 0;
           const isTransfer = e.paymentMethod === 'transfer';
           // Show the store names this expense was allocated to,
           // helpful for the "shared porter" / "split between 3 stores"
@@ -2158,10 +2156,7 @@ export function PurchaseRow({
               {Number(item.purchasedQty) > 0 && Number(item.unitPrice) > 0 ? (
                 <span className="sr-only">
                   {' = '}
-                  {formatMoney(
-                    Number(item.purchasedQty) * Number(item.unitPrice),
-                    currency,
-                  )}
+                  {formatMoney(moneyLine(item.purchasedQty, item.unitPrice), currency)}
                 </span>
               ) : null}
             </span>

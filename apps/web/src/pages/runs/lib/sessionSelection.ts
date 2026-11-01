@@ -15,6 +15,8 @@
  *
  * Pure functions; tests in __tests__/sessionSelection.test.ts.
  */
+import { addMoney } from '@compass/contracts/money';
+import { moneyLine } from '../../../lib/money';
 
 export type SelectableSession = {
   id: string;
@@ -166,7 +168,8 @@ export function selectPreview<P extends PreviewShape>(
         unknownPriceCount += 1;
         continue;
       }
-      estimatedTotal += qty * Number(price);
+      // DX-PFE-12: half-up cents per line, added in cents (D1).
+      estimatedTotal = addMoney(estimatedTotal, moneyLine(qty, price));
     }
     return {
       storeId,
