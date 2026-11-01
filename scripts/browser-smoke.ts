@@ -250,6 +250,18 @@ async function run() {
       }),
     });
   });
+  // nav.counts (#177): the bottom-nav badges. Unstubbed, it reaches the
+  // live API with the fake token, gets 401 and the refresh then signs the
+  // smoke out.
+  await context.route('**/trpc/nav.counts*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        result: { data: { approve: null, run: null, confirm: null, settlementDue: null } },
+      }),
+    });
+  });
   await context.route('**/trpc/auth.me*', async (route) => {
     await route.fulfill({
       status: 200,
@@ -681,7 +693,11 @@ async function run() {
       consoleErrors.filter(
         (e) => !/WebSocket connection to.*\/ws/i.test(e) && !/HTTP Authentication failed/.test(e),
       ).length + pageErrors.length;
-    for (const tab of tabs) {
+    // Re-query each time: a tab click can re-render the nav (badges), which
+    // detaches the handles collected above.
+    for (let i = 0; i < tabs.length; i++) {
+      const tab = (await page.$$(`${PRIMARY_NAV_SELECTOR} button`))[i];
+      if (!tab) break;
       const label = (await tab.textContent())?.replace(/\s+/g, ' ').trim() ?? '?';
       const errorsBefore = realErrorCount();
       await tab.click();
