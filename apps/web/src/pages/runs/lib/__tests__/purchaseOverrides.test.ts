@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  paidPerStore,
   editPricingFromSplits,
   followPaymentMethod,
   followUnitPrice,
@@ -94,5 +95,43 @@ describe('follow the item-level value', () => {
       ['a', '120'],
       ['b', '90'],
     ]);
+  });
+});
+
+describe('paidPerStore (DX-BUY-1)', () => {
+  test('splits repeating the item method are not per-store payment', () => {
+    // What run.get sent a store-scoped buyer: the inherited method resolved.
+    expect(
+      paidPerStore({ paymentMethod: 'cash' }, [
+        { storeId: 'a', qty: '1', paymentMethod: 'cash' },
+        { storeId: 'b', qty: '2', paymentMethod: 'cash' },
+      ]),
+    ).toBe(false);
+    expect(paidPerStore({ paymentMethod: 'transfer' }, [{ storeId: 'a', qty: '1' }])).toBe(false);
+  });
+
+  test('a store paid differently from the item is per-store payment', () => {
+    expect(
+      paidPerStore({ paymentMethod: 'cash' }, [
+        { storeId: 'a', qty: '1', paymentMethod: null },
+        { storeId: 'b', qty: '2', paymentMethod: 'transfer' },
+      ]),
+    ).toBe(true);
+    // Mixed stores: the server reports no single item method.
+    expect(
+      paidPerStore({ paymentMethod: null }, [
+        { storeId: 'a', qty: '1', paymentMethod: 'cash' },
+        { storeId: 'b', qty: '2', paymentMethod: 'transfer' },
+      ]),
+    ).toBe(true);
+  });
+
+  test('an emptied split does not count', () => {
+    expect(
+      paidPerStore({ paymentMethod: 'cash' }, [
+        { storeId: 'a', qty: '1' },
+        { storeId: 'b', qty: '0', paymentMethod: 'transfer' },
+      ]),
+    ).toBe(false);
   });
 });

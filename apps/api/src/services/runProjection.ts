@@ -9,6 +9,8 @@ import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
 import { DomainError } from '@compass/domain';
 import type { RunEvent } from '@compass/domain/run';
+import { readStream } from './eventStore';
+import { runCorrections } from './runCorrections';
 
 export async function projectRun(db: DB, orgId: string, events: RunEvent[]): Promise<void> {
   for (const e of events) {
@@ -991,6 +993,15 @@ async function syncAmendMovements(
     );
   const signedStores = new Set(booked.map((b) => b.storeId));
   for (const sp of splits) if (sp.confirmedAt) signedStores.add(sp.storeId);
+  // DX-DLV-01: what corrections added beyond each store's confirmed
+  // quantity, from the stream up to this close (so a replay agrees).
+  const events = (await readStream(db, 'run', runId)).filter(
+    (ev) => ev.seq <= e.seq,
+  ) as unknown as RunEvent[];
+  const amendAdded = new Map<string, string>();
+  for (const c of runCorrections(events, null)) {
+    if (c.kind === 'amendAdded') amendAdded.set(`${c.storeId}|${c.skuId}`, c.qty);
+  }
 
   // Thousandths, as integers: qty columns are numeric(12,3).
   const milli = (v: string) => Math.round(Number(v) * 1000);
@@ -999,7 +1010,7 @@ async function syncAmendMovements(
   for (const sp of splits) {
     if (!signedStores.has(sp.storeId)) continue;
     const k = key(sp.storeId, sp.skuId);
-    now.set(k, (now.get(k) ?? 0) + milli(receivedDelta(sp)));
+    now.set(k, (now.get(k) ?? 0) + milli(receivedDelta(sp, amendAdded.get(k))));
   }
   const before = new Map<string, number>();
   for (const b of booked) before.set(key(b.storeId, b.skuId), milli(b.delta));
@@ -1034,17 +1045,31 @@ async function syncAmendMovements(
   if (rows.length > 0) await db.insert(s.inventoryMovements).values(rows);
 }
 
-export function receivedDelta(split: {
-  qty: string;
-  confirmStatus: string | null;
-  confirmReceivedQty: string | null;
-}): string {
+export function receivedDelta(
+  split: {
+    qty: string;
+    confirmStatus: string | null;
+    confirmReceivedQty: string | null;
+  },
+  /** DX-DLV-01: quantity a correction of the finished run gave this store
+   *  beyond what it confirmed (runCorrections' `amendAdded`). */
+  amendAdded?: string,
+): string {
   if (
     split.confirmStatus &&
     split.confirmStatus !== 'ok' &&
     split.confirmReceivedQty !== null &&
     split.confirmReceivedQty !== undefined
   ) {
+    // DX-DLV-01 (2026-11-01, D3): quantity added in a correction counts as
+    // received on a line the store reported a problem with too. Only the
+    // received figure was booked, so the added quantity never reached
+    // stock while history said "修改时补记 +2". The recorded shortfall
+    // stays: received = what the store counted + what was added later.
+    if (amendAdded && Number(amendAdded) > 0) {
+      const milli = (v: string) => Math.round(Number(v) * 1000);
+      return ((milli(split.confirmReceivedQty) + milli(amendAdded)) / 1000).toFixed(3);
+    }
     return split.confirmReceivedQty;
   }
   return split.qty;

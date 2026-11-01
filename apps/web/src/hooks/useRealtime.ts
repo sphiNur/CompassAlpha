@@ -16,6 +16,7 @@ import { useAuthStore } from '../stores/authStore';
 import { trpc } from '../lib/trpc';
 import { useRefreshSession } from '../lib/refreshSession';
 import { ORDER_CHANGED_KEYS, RUN_CHANGED_KEYS } from './realtimeKeys';
+import { hasLocalWrites } from '../lib/localWrites';
 
 const RECONNECT_BASE_MS = 1_000;
 const RECONNECT_MAX_MS = 30_000;
@@ -27,6 +28,24 @@ const RECONNECT_MAX_MS = 30_000;
 const INVALIDATE_DEBOUNCE_MS = 400;
 const MUTATION_QUIET_RETRY_MS = 250;
 const MUTATION_QUIET_MAX_WAIT_MS = 2_500;
+// DX-ORD-1: taps still in a screen's debounce or in flight hold the
+// refetch longer — a refetch landing among them undoes a tap on screen.
+// Bounded so a stuck write can't freeze the page's data for good.
+const LOCAL_WRITES_MAX_WAIT_MS = 10_000;
+
+/**
+ * Should a due invalidate wait? While mutations run (any screen) for up to
+ * MUTATION_QUIET_MAX_WAIT_MS, and while a screen holds unsent local writes
+ * (DX-ORD-1) for up to LOCAL_WRITES_MAX_WAIT_MS. Exported for tests.
+ */
+export function shouldDeferInvalidate(
+  mutating: boolean,
+  localWrites: boolean,
+  waitedMs: number,
+): boolean {
+  if (localWrites && waitedMs < LOCAL_WRITES_MAX_WAIT_MS) return true;
+  return mutating && waitedMs < MUTATION_QUIET_MAX_WAIT_MS;
+}
 // 2026-10-21 audit CA-35: close codes the API's WS layer uses.
 const WS_CLOSE_EVICTED = 4000;
 const WS_CLOSE_TOKEN_EXPIRED = 4001;
@@ -145,9 +164,11 @@ export function useRealtime(): void {
       const existing = pendingInvalidates.get(id);
       if (existing) clearTimeout(existing);
       const t = setTimeout(() => {
-        const waitForLocalWrites =
-          queryClient.isMutating() > 0 &&
-          Date.now() - startedAt < MUTATION_QUIET_MAX_WAIT_MS;
+        const waitForLocalWrites = shouldDeferInvalidate(
+          queryClient.isMutating() > 0,
+          hasLocalWrites(),
+          Date.now() - startedAt,
+        );
         if (waitForLocalWrites) {
           const retry = setTimeout(() => {
             pendingInvalidates.delete(id);

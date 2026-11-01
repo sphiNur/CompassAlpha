@@ -7,6 +7,8 @@
  * `order.sessionDetail({id})` endpoint.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMutationState } from '@tanstack/react-query';
+import { getMutationKey } from '@trpc/react-query';
 import {
   Avatar,
   Badge,
@@ -40,6 +42,7 @@ import { formatQty, formatMoney } from '../lib/format';
 import { useStoreContext } from '../components/StoreSwitcher';
 import { sessionItemsView } from './approval/sessionItemsView';
 import { cardRequests, showPaymentSplit } from './approval/cardSummary';
+import { adjustingSessionIds } from './approval/adjustInFlight';
 import { ORDER_QTY_MAX } from '@compass/contracts/limits';
 
 type ApprovalTab = 'pending' | 'approved' | 'rejected';
@@ -131,6 +134,14 @@ export function ApprovalPage() {
       { onSettled: () => approving.current.delete(sessionId) },
     );
   };
+  // DX-APR-1 (2026-11-01): orders with a quantity change still on its way
+  // (see approval/adjustInFlight.ts). Their 通过 / 驳回 wait for it.
+  const adjustingIds = adjustingSessionIds(
+    useMutationState({
+      filters: { mutationKey: getMutationKey(trpc.order.adjustItem), status: 'pending' },
+      select: (m) => m.state.variables,
+    }),
+  );
   const approve = trpc.order.approve.useMutation({
     onSuccess: (data, vars) => {
       void utils.order.pendingList.invalidate();
@@ -344,6 +355,7 @@ export function ApprovalPage() {
           <ul className="flex flex-col gap-2" role="list">
             {rows.map((row) => {
               const isClaimedByMe = row.claimedByMemberId === session.member.memberId;
+              const adjusting = adjustingIds.has(row.id);
               const isClaimedByOther =
                 row.claimedByMemberId && row.claimedByMemberId !== session.member.memberId;
               const isOpen = activeSessionId === row.id;
@@ -599,15 +611,18 @@ export function ApprovalPage() {
                           size="sm"
                           variant="primary"
                           loading={approve.isPending && approve.variables?.sessionId === row.id}
-                          disabled={claim.isPending && claim.variables?.sessionId === row.id}
+                          disabled={
+                            adjusting || (claim.isPending && claim.variables?.sessionId === row.id)
+                          }
                           onClick={() => approveOnce(row.id, row.lastSeq)}
                         >
-                          {i18n.t('approval.approve')}
+                          {adjusting ? i18n.t('common.savingSlow') : i18n.t('approval.approve')}
                         </Button>
                         <Button
                           size="sm"
                           variant="danger"
                           disabled={
+                            adjusting ||
                             (claim.isPending && claim.variables?.sessionId === row.id) ||
                             (approve.isPending && approve.variables?.sessionId === row.id)
                           }
@@ -638,13 +653,15 @@ export function ApprovalPage() {
                           size="sm"
                           variant="primary"
                           loading={approve.isPending && approve.variables?.sessionId === row.id}
+                          disabled={adjusting}
                           onClick={() => approveOnce(row.id, row.lastSeq)}
                         >
-                          {i18n.t('approval.approve')}
+                          {adjusting ? i18n.t('common.savingSlow') : i18n.t('approval.approve')}
                         </Button>
                         <Button
                           size="sm"
                           variant="danger"
+                          disabled={adjusting}
                           onClick={() => {
                             setRejectFor(row.id);
                             setRejectSeq(row.lastSeq);
@@ -842,10 +859,14 @@ function SessionItems({
   const utils = trpc.useUtils();
   const errToast = useErrToast();
   const adjust = trpc.order.adjustItem.useMutation({
-    onSuccess: () => {
-      void utils.order.sessionDetail.invalidate({ sessionId });
-      void utils.order.pendingList.invalidate();
-    },
+    // DX-APR-1: returning the refetch keeps the write pending until the
+    // card's version (lastSeq) includes this change, so 通过 stays held
+    // until then and the approval carries the version the reviewer saw.
+    onSuccess: () =>
+      Promise.all([
+        utils.order.sessionDetail.invalidate({ sessionId }),
+        utils.order.pendingList.invalidate(),
+      ]),
     onError: (err) => {
       // U2: the order changed or someone claimed it first — show it as it is now.
       void utils.order.sessionDetail.invalidate({ sessionId });

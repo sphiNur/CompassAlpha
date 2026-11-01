@@ -5,6 +5,7 @@ import {
   canSetOverride,
   canSetStatus,
   rankIn,
+  rolePassesOn,
   transferTargets,
   type Actor,
   type Binding,
@@ -105,6 +106,19 @@ describe('canGrantRole', () => {
     );
     expect(canGrantRole(admin, { rank: 10 }, { type: 'global' })).toBe(false);
     expect(canGrantRole(manager, { rank: 80 }, { type: 'global' })).toBe(false);
+  });
+});
+
+describe('rolePassesOn (DX-ADM-1)', () => {
+  test('a store grant needs the keys in that store, a global one org-wide', () => {
+    const role = { passOn: { global: false, storeIds: ['A'] } };
+    expect(rolePassesOn(role, { type: 'store', storeId: 'A' })).toBe(true);
+    expect(rolePassesOn(role, { type: 'store', storeId: 'B' })).toBe(false);
+    expect(rolePassesOn(role, { type: 'global' })).toBe(false);
+    expect(rolePassesOn({ passOn: { global: true, storeIds: [] } }, { type: 'global' })).toBe(true);
+  });
+  test('a role from an older server without passOn is left to the server', () => {
+    expect(rolePassesOn({}, { type: 'store', storeId: 'A' })).toBe(true);
   });
 });
 
