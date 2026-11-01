@@ -152,6 +152,72 @@ describe.skipIf(!SHOULD_RUN)('role guards (PG-gated)', () => {
     expect(await errorOf(() => admin.admin.roleUpdate({ roleId: roleIds.manager!, permissionKeys: current }))).toBeNull();
   });
 
+  test('DX-ADM-2: a key held in one store only cannot go into an org-wide role', async () => {
+    const { db, orgId, storeId, roleIds, admin } = fix!;
+    const tag = `${Date.now()}`.slice(-9);
+    // A custom store role carrying run.amend, which the built-in admin lacks.
+    const [night] = await db
+      .insert(s.roles)
+      .values({ orgId, slug: `night-${tag}`, name: 'Night shift', rank: 30 })
+      .returning();
+    await db.insert(s.rolePermissions).values({ roleId: night!.id, permissionKey: 'run.amend' });
+    const [u] = await db
+      .insert(s.users)
+      .values({ displayName: 'DX-ADM-2 admin', tgUserId: BigInt(`4${tag}2`) })
+      .returning();
+    const [m] = await db.insert(s.members).values({ orgId, userId: u!.id, status: 'active' }).returning();
+    await db.insert(s.memberStoreAssignments).values({ memberId: m!.id, storeId, assignedBy: u!.id });
+    await db.insert(s.memberRoleBindings).values([
+      { memberId: m!.id, roleId: roleIds.admin!, scopeType: 'global', scopeId: null },
+      { memberId: m!.id, roleId: night!.id, scopeType: 'store', scopeId: storeId },
+    ]);
+    const session = await loadSession(db, u!.id, orgId, m!.id);
+    // The flat session set has the key, which is what used to let it through.
+    expect(session!.permissions.has('run.amend')).toBe(true);
+    const kamola = appRouter.createCaller(buildCtx(db, session!));
+
+    const createErr = await errorOf(() =>
+      kamola.admin.roleCreate({ slug: `amender-${tag}`, name: 'Amender', rank: 70, permissionKeys: ['run.amend'] }),
+    );
+    expect(createErr?.code).toBe('FORBIDDEN');
+    expect(createErr?.message).toBe('auth.errors.missingPermission');
+
+    const managerKeys = (
+      await db
+        .select({ key: s.rolePermissions.permissionKey })
+        .from(s.rolePermissions)
+        .where(eq(s.rolePermissions.roleId, roleIds.manager!))
+    ).map((r) => r.key);
+    const updateErr = await errorOf(() =>
+      kamola.admin.roleUpdate({ roleId: roleIds.manager!, permissionKeys: [...managerKeys, 'run.amend'] }),
+    );
+    expect(updateErr?.code).toBe('FORBIDDEN');
+    expect(updateErr?.message).toBe('auth.errors.missingPermission');
+    const after = await db
+      .select({ key: s.rolePermissions.permissionKey })
+      .from(s.rolePermissions)
+      .where(eq(s.rolePermissions.roleId, roleIds.manager!));
+    expect(after.some((r) => r.key === 'run.amend')).toBe(false);
+
+    // Keys held org-wide still go in.
+    expect(
+      await errorOf(() =>
+        kamola.admin.roleCreate({ slug: `drafter-${tag}`, name: 'Drafter', rank: 20, permissionKeys: ['order.draft'] }),
+      ),
+    ).toBeNull();
+
+    // DX-ADM-1: roleList says where each role can be handed on.
+    const mine = (await kamola.admin.roleList()).find((r) => r.id === night!.id)!;
+    expect(mine.passOn.global).toBe(false);
+    expect(mine.passOn.storeIds).toContain(storeId);
+    const plain = await admin.admin.roleList();
+    const theirs = plain.find((r) => r.id === night!.id)!;
+    expect(theirs.passOn).toEqual({ global: false, storeIds: [] });
+    const builtIn = plain.find((r) => r.id === roleIds.manager!)!;
+    expect(builtIn.passOn.global).toBe(true);
+    expect(builtIn.passOn.storeIds).toContain(storeId);
+  });
+
   test('ADM-22: a built-in role keeps its rank, and says so', async () => {
     const { admin, roleIds } = fix!;
     const err = await errorOf(() => admin.admin.roleUpdate({ roleId: roleIds.manager!, rank: 55 }));

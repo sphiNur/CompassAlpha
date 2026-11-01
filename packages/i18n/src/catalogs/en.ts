@@ -209,7 +209,6 @@ export const en = {
   // than split a sentence into fragments around the tags — which produces
   // bad word order in zh/ru/uz — those became whole sentences without
   // emphasis. A correctly-ordered sentence beats a bolded mistranslation.
-  'people.tapToRevoke': 'Tap to revoke',
   'people.readOnlyStore': 'View only',
   'people.orgLevelGroup': 'Whole workspace ({n})',
   'people.orgLevelEmptyTitle': 'No workspace-level members',
@@ -226,6 +225,19 @@ export const en = {
   'people.rolePlaceholderName': 'Shift Lead',
   'people.rolePlaceholderDesc': 'Optional',
   'people.rankField': 'Level (1–{max})',
+  'people.slugRule': 'Lowercase Latin letters, digits and hyphens, e.g. night-shift.',
+  'people.slugInvalid': 'Only lowercase Latin letters, digits and hyphens (-), e.g. night-shift.',
+  'people.slugRequired': 'Required.',
+  'people.rankInvalid': 'Enter a whole number from 1 to {max}.',
+  'people.roleHasKeysYouLack': "This role has permissions you don't have yourself, so you can't give it here.",
+  'people.roleNameKeysYouLack': '{name} (has permissions you lack)',
+  'people.rolesOfMember': 'Roles',
+  'people.revokeRole': 'Revoke',
+  'people.revokeRoleAria': 'Revoke {role} from {name}',
+  'people.revokeRoleInStoreAria': 'Revoke {role} in {store} from {name}',
+  'people.searchNoMatch': 'No one matches "{q}"',
+  'people.clearSearch': 'Clear search',
+  'admin.invite.tgIdInvalid': 'A Telegram ID is 4–15 digits, not a phone number or @username.',
   'people.deleteRole': 'Delete role',
   'people.confirmDeleteRole': 'Delete role "{name}"?',
   'people.noRole': 'No role',
@@ -877,7 +889,7 @@ export const en = {
   'admin.field.storesPickAtLeastOne': 'Stores * (pick at least one)',
   'admin.invite.byTgId.title': 'Add by Telegram ID',
   'admin.invite.byTgId.description':
-    'Auto-creates a placeholder user; their profile fills in when they /start the bot.',
+    'Adds them right away; their profile fills in the first time they open the Mini App.',
   'admin.invite.byTgId.submit': 'Add this person',
   'admin.invite.link.title': 'Create an invite link',
   'admin.invite.link.description':
@@ -885,7 +897,8 @@ export const en = {
   'admin.invite.link.hint':
     'The link can be used once, expires in 7 days, and works only inside Telegram.',
   'admin.invite.link.submit': 'Create invite link',
-  'admin.invite.tgIdHint': "Ask the user to send /id to the bot if they don't know their ID.",
+  'admin.invite.tgIdHint':
+    "Don't know their ID? Ask them to open the Mini App: it shows their Telegram ID on screen, and they can send it to you.",
   'admin.invite.noRoleYet': '— no role yet (grant later) —',
   'admin.invite.staffNeedStoreHint': 'Staff need an assigned store before they can place orders.',
   'admin.invite.onlyYourStoresHint': 'You can only invite into stores you administer.',
@@ -1009,7 +1022,7 @@ export const en = {
   'admin.empty.members.description': 'Tap "+ Invite" above to add the first one.',
   'admin.empty.noStoresInThisStore.title': 'No members in this store',
   'admin.empty.noStoresInThisStore.description':
-    'Switch the store context in the header to see other stores, or use Invite to add someone.',
+    'Tap Invite to add someone.',
   'admin.toast.memberUpdated': 'Member updated',
   'admin.toast.memberRemoved': 'Member removed',
   'admin.toast.memberAdded': 'Member added',
@@ -1496,7 +1509,7 @@ export const en = {
   // input/display is divided.
   'run.action.unitPriceUzsThousands': 'Unit price (×1000 {currency})',
   'run.label.staleRun': '{days}d old',
-  'run.label.priceUnitAria': 'Price unit — tap to switch between {currency} and thousands',
+  'run.label.priceUnitAria': '×1000 (prices in thousands)',
   'run.price.check.title': 'Is this price right?',
   'run.price.check.body': '{name}: last time {last} {currency}, this time {next} {currency}.',
   'run.price.check.confirm': 'Yes, save',
@@ -1526,6 +1539,8 @@ export const en = {
   'run.label.paymentMethod': 'Payment method',
   'run.label.paymentCash': 'Cash',
   'run.label.paymentTransfer': 'Transfer',
+  'run.label.paymentPerStore': 'Per store',
+  'run.label.splitPreview': 'Split: {split}',
   'run.action.unmarkUnavailableAriaLabel': 'Mark available again: {name}',
   'run.reason.paymentMethodChanged': 'Payment method corrected on the row',
   'run.confirm.finish.paymentBreakdown': '💵 cash {cash} · 🏦 transfer {transfer}',
@@ -1660,6 +1675,7 @@ export const en = {
   'run.topUp.dismissConfirm': 'Not buying the extra {qty}? The store that joined will not get it.',
   'run.topUp.dismissed': 'Noted: the extra will not be bought',
   'run.topUp.reason': 'Buying the extra for a newly joined order',
+  'run.topUp.sheetBody': 'Already bought: {qty}, price {price}. The price below is for this extra quantity only; the earlier purchase keeps its price.',
   'run.prices.title': 'Enter prices',
   'run.prices.hint': 'quantities and splits are fixed',
   'run.prices.lockedHint': 'The goods have gone out: only price, supplier, payment method and receipt can change.',
@@ -2168,6 +2184,7 @@ export const en = {
   'confirm.issue.receivedQtyNotShort':
     '{max} is everything — choose "OK"; for a shortfall enter less than {max}',
   'confirm.receivedOf': 'received {received} / {qty} {unit}',
+  'confirm.receivedPlusAmend': 'received {received} + added in a correction {added} = {total} / {qty} {unit}',
   'confirm.issue.photoOf': 'Problem photo for {name}',
   'confirm.runPicker.ariaLabel': 'Which delivery to check',
   'confirm.runPicker.option': '#{n} · {date}',

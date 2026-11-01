@@ -304,6 +304,58 @@ export async function effectivePermissionsForStore(
 }
 
 /**
+ * DX-ADM-2 (2026-11-01): keys the member holds everywhere in the
+ * organisation — what an org-wide change (a role's key list) may hand on.
+ * Only global bindings and global allows count; a global deny removes a
+ * key, and so does a deny in any one store, since an org-wide role would
+ * carry the key into that store too. The flat session set was used
+ * before: a key from one store's custom role let an admin add it to the
+ * built-in manager role for every store.
+ */
+export async function effectiveGlobalPermissions(db: DB, memberId: string): Promise<Set<string>> {
+  const now = new Date();
+  const [roleRows, overrides] = await Promise.all([
+    db
+      .select({ permissionKey: s.rolePermissions.permissionKey })
+      .from(s.memberRoleBindings)
+      .innerJoin(s.rolePermissions, eq(s.rolePermissions.roleId, s.memberRoleBindings.roleId))
+      .where(
+        and(
+          eq(s.memberRoleBindings.memberId, memberId),
+          eq(s.memberRoleBindings.scopeType, 'global'),
+          or(isNull(s.memberRoleBindings.expiresAt), gt(s.memberRoleBindings.expiresAt, now)),
+        ),
+      ),
+    db
+      .select({
+        permissionKey: s.memberPermissionOverrides.permissionKey,
+        effect: s.memberPermissionOverrides.effect,
+        scopeType: s.memberPermissionOverrides.scopeType,
+      })
+      .from(s.memberPermissionOverrides)
+      .where(
+        and(
+          eq(s.memberPermissionOverrides.memberId, memberId),
+          or(
+            isNull(s.memberPermissionOverrides.expiresAt),
+            gt(s.memberPermissionOverrides.expiresAt, now),
+          ),
+        ),
+      ),
+  ]);
+  const effective = new Set(roleRows.map((row) => row.permissionKey));
+  for (const o of overrides) {
+    if (o.effect === 'allow' && o.scopeType === 'global' && o.permissionKey) {
+      effective.add(o.permissionKey);
+    }
+  }
+  for (const o of overrides) {
+    if (o.effect === 'deny' && o.permissionKey) effective.delete(o.permissionKey);
+  }
+  return effective;
+}
+
+/**
  * Assert a permission in the context of one store. This is kept separate
  * from store membership because callers sometimes need to distinguish a
  * missing permission from access to the wrong store.

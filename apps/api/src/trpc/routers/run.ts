@@ -82,6 +82,7 @@ import { todayInTz } from '@compass/domain';
 import {
   hiddenSplits,
   mergeScopedRevision,
+  splitsInheritingItemPayment,
   StoreOutOfScopeError,
 } from '../../services/scopedRunRevision';
 
@@ -2687,7 +2688,9 @@ export const runRouter = router({
               }
             : {}),
           items,
-          splits,
+          // DX-BUY-1: a split paid like its item reads as "same as the item",
+          // so the row's 现金 / 转账 switch works for a store-scoped buyer.
+          splits: allowedStoreSet ? splitsInheritingItemPayment(items, splits) : splits,
           perStoreDemand,
           lastPriceBySku,
           lastPriceObservedAtBySku,

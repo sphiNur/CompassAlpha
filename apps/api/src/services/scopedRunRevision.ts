@@ -113,3 +113,31 @@ export function mergeScopedRevision<T extends ScopedRevisionInput>(
     receiptPhotoUrl: input.receiptPhotoUrl ?? item.receiptPhotoUrl,
   };
 }
+
+/**
+ * DX-BUY-1 (2026-11-01): what a store-scoped reader is sent as each
+ * split's payment method.
+ *
+ * run.get resolves a split's inherited (null) method to the item's
+ * method for store-scoped readers, so their money math never needs the
+ * org-wide item. The web reads a non-null split method as "this store
+ * was paid separately", so every bought row of a store-scoped purchaser
+ * looked per-store paid: the one-tap 现金 / 转账 switch turned into
+ * static text, and each store chip repeated "转账". When every visible
+ * split of an item resolves to the method the item itself reports, the
+ * splits go back to null ("same as the item"); the item's method is
+ * then the whole truth, as it is for an org-wide reader. Rows that
+ * really are paid per store (the item reports null) keep their
+ * resolved methods.
+ */
+export function splitsInheritingItemPayment<
+  S extends { skuId: string; paymentMethod: string | null },
+>(items: ReadonlyArray<{ skuId: string; paymentMethod: string | null }>, splits: readonly S[]): S[] {
+  const itemMethod = new Map(items.map((item) => [item.skuId, item.paymentMethod]));
+  return splits.map((split) => {
+    const method = itemMethod.get(split.skuId);
+    return method != null && split.paymentMethod === method
+      ? { ...split, paymentMethod: null }
+      : split;
+  });
+}

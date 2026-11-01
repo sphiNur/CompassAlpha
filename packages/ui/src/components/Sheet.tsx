@@ -270,7 +270,16 @@ export function Sheet({
           onOpenAutoFocus={
             disableAutoFocus || deferAutoFocusMs
               ? (e) => e.preventDefault()
-              : undefined
+              : (e) => {
+                  // DX-IX-7 (2026-11-01): a sheet can name the control that
+                  // takes focus first (e.g. the safe answer of a check)
+                  // instead of Radix's first focusable.
+                  const preferred =
+                    contentRef.current?.querySelector<HTMLElement>('[data-autofocus]');
+                  if (!preferred) return;
+                  e.preventDefault();
+                  preferred.focus();
+                }
           }
           onCloseAutoFocus={
             returnFocusRef

@@ -120,3 +120,21 @@ export function followUnitPrice(
   for (const [storeId, price] of next) if (samePrice(price, from)) next.set(storeId, to);
   return next;
 }
+
+/**
+ * DX-BUY-1 (2026-11-01): is this bought row paid per store, so that a
+ * one-tap 现金 / 转账 switch on the row would not say what it changes?
+ * Only a live split whose method differs from the item's counts. A split
+ * that merely repeats the item's method (run.get used to resolve the
+ * inherited value that way for store-scoped readers) is the same as the
+ * item, so the row keeps its switch.
+ */
+export function paidPerStore(
+  item: { paymentMethod?: string | null },
+  splits: readonly SplitIn[],
+): boolean {
+  const itemMethod = asMethod(item.paymentMethod);
+  return splits.some(
+    (sp) => Number(sp.qty) > 0 && sp.paymentMethod != null && asMethod(sp.paymentMethod) !== itemMethod,
+  );
+}
