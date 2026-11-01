@@ -1,4 +1,4 @@
-import { eq, and, inArray, isNull } from 'drizzle-orm';
+import { asc, eq, and, inArray, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { schema as s } from '@compass/db';
 import { SkuListInputSchema } from '@compass/contracts';
@@ -43,7 +43,10 @@ export const catalogRouter = router({
                 eq(s.skus.orgId, ctx.session!.orgId),
                 eq(s.skus.isArchived, input.includeArchived ? s.skus.isArchived : false),
               ),
-        );
+        )
+        // DX-ORD-6 (2026-11-01): the order the admin set, then code — rows
+        // came back in whatever order Postgres found them.
+        .orderBy(asc(s.skus.sortIndex), asc(s.skus.code));
       return rows.map((r) => ({
         id: r.id,
         categoryId: r.categoryId,

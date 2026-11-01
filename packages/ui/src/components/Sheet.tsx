@@ -1,5 +1,5 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { cn } from '../cn';
 import { pushTelegramBackHandler } from '../telegramBackStack';
 import { useUiLabels } from '../labels';
@@ -124,6 +124,13 @@ interface SheetProps {
    * Cancel) call `onOpenChange(false)` themselves and are not asked.
    */
   hasChanges?: boolean;
+
+  /**
+   * DX-ORD-9 (2026-11-01): where focus goes when the sheet closes. A sheet
+   * opened from code (no Radix Trigger) otherwise dropped focus on <body>,
+   * and a keyboard user had to Tab from the top of the page back to the row.
+   */
+  returnFocusRef?: RefObject<HTMLElement | null>;
 }
 
 /**
@@ -162,6 +169,7 @@ export function Sheet({
   disableAutoFocus = false,
   deferAutoFocusMs,
   hasChanges = false,
+  returnFocusRef,
 }: SheetProps) {
   const contentRef = useRef<HTMLDivElement | null>(null);
   // A11Y-16 (2026-10-31): was the fixed id "sheet-desc", so a sheet opened
@@ -262,6 +270,16 @@ export function Sheet({
           onOpenAutoFocus={
             disableAutoFocus || deferAutoFocusMs
               ? (e) => e.preventDefault()
+              : undefined
+          }
+          onCloseAutoFocus={
+            returnFocusRef
+              ? (e) => {
+                  const el = returnFocusRef.current;
+                  if (!el || !el.isConnected) return;
+                  e.preventDefault();
+                  el.focus({ preventScroll: true });
+                }
               : undefined
           }
         >
