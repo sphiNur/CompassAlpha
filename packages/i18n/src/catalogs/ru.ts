@@ -1398,7 +1398,7 @@ export const ru = {
   // вместо 147500. Включён по умолчанию для тенанта UZS.
   'run.action.unitPriceUzsThousands': 'Цена за единицу (×1000 {currency})',
   'run.label.staleRun': '{days} дн.',
-  'run.label.priceUnitAria': 'Единица цены — нажмите, чтобы переключить {currency} / тысячи',
+  'run.label.priceUnitAria': '×1000 (цены в тысячах)',
   'run.price.check.title': 'Цена верная?',
   'run.price.check.body': '{name}: в прошлый раз {last} {currency}, сейчас {next} {currency}.',
   'run.price.check.confirm': 'Да, сохранить',
@@ -1425,6 +1425,8 @@ export const ru = {
   'run.label.paymentMethod': 'Способ оплаты',
   'run.label.paymentCash': 'Наличные',
   'run.label.paymentTransfer': 'Перевод',
+  'run.label.paymentPerStore': 'По магазинам',
+  'run.label.splitPreview': 'По магазинам: {split}',
   'run.action.unmarkUnavailableAriaLabel': 'Снова доступно: {name}',
   'run.reason.paymentMethodChanged': 'Способ оплаты исправлен в списке',
   'run.confirm.finish.paymentBreakdown': '💵 наличные {cash} · 🏦 перевод {transfer}',
@@ -1550,6 +1552,7 @@ export const ru = {
   'run.topUp.dismissConfirm': 'Не покупать ещё {qty}? Присоединившийся магазин это не получит.',
   'run.topUp.dismissed': 'Отмечено: докупать не будем',
   'run.topUp.reason': 'Докупка для нового заказа',
+  'run.topUp.sheetBody': 'Уже куплено: {qty}, цена {price}. Цена ниже — только для этой докупки, цена прежней покупки не меняется.',
   'run.prices.title': 'Указать цены',
   'run.prices.hint': 'количество и распределение не меняются',
   'run.prices.lockedHint': 'Товар уже отправлен: можно менять только цену, поставщика, способ оплаты и чек.',
@@ -2031,6 +2034,7 @@ export const ru = {
   'confirm.issue.receivedQtyNotShort':
     '{max} — это всё, выберите «OK»; при недостаче введите меньше {max}',
   'confirm.receivedOf': 'получено {received} / {qty} {unit}',
+  'confirm.receivedPlusAmend': 'получено {received} + при исправлении {added} = {total} / {qty} {unit}',
   'confirm.issue.photoOf': 'Фото проблемы: {name}',
   'confirm.runPicker.ariaLabel': 'Какую поставку проверить',
   'confirm.runPicker.option': '№{n} · {date}',

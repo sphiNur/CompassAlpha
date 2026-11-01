@@ -99,6 +99,18 @@ export interface PurchaseDraft {
   /** M1.14: cash | transfer. Defaults to 'cash' for new purchases (the
    *  common case at the market). Edit pre-fills from the existing item. */
   paymentMethod: 'cash' | 'transfer';
+  /** DX-BUY-2 (2026-11-01): set when the sheet buys the extra a newly
+   *  attached order asks for. The row as bought before; the price and
+   *  method in the sheet are this batch's only (lib/topUp.ts). */
+  topUp?: {
+    item: { unitPrice: string; paymentMethod: 'cash' | 'transfer' };
+    base: Array<{
+      storeId: string;
+      qty: string;
+      unitPrice: string;
+      paymentMethod: 'cash' | 'transfer';
+    }>;
+  };
 }
 
 interface PurchaseSheetProps {
@@ -220,9 +232,11 @@ export function PurchaseSheet({
       onOpenChange={(open) => !open && onCancel()}
       hasChanges={changed && !submitting}
       title={
-        draft?.isEdit
-          ? i18n.t('run.confirm.editPurchase.title')
-          : i18n.t('run.action.recordPurchase')
+        draft?.topUp
+          ? i18n.t('run.topUp.buy')
+          : draft?.isEdit
+            ? i18n.t('run.confirm.editPurchase.title')
+            : i18n.t('run.action.recordPurchase')
       }
       description={sku ? productName(sku) : ''}
       footer={
@@ -253,7 +267,18 @@ export function PurchaseSheet({
     >
       {draft ? (
         <div className="flex flex-col gap-3 py-3">
-          {draft.isEdit ? (
+          {draft.topUp ? (
+            // DX-BUY-2: the earlier batch stays as it was bought.
+            <Banner
+              tone="info"
+              title={i18n.t('run.topUp.sheetBody', {
+                qty: `${formatQty(
+                  draft.topUp.base.reduce((sum, b) => sum + Number(b.qty), 0),
+                )} ${sku ? unitLabel(sku.unit) : ''}`.trim(),
+                price: `${formatMoney(draft.topUp.item.unitPrice)} ${currency}`,
+              })}
+            />
+          ) : draft.isEdit ? (
             <Banner
               tone="info"
               title={i18n.t(

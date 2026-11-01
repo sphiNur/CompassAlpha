@@ -1500,7 +1500,7 @@ export const en = {
   // input/display is divided.
   'run.action.unitPriceUzsThousands': 'Unit price (×1000 {currency})',
   'run.label.staleRun': '{days}d old',
-  'run.label.priceUnitAria': 'Price unit — tap to switch between {currency} and thousands',
+  'run.label.priceUnitAria': '×1000 (prices in thousands)',
   'run.price.check.title': 'Is this price right?',
   'run.price.check.body': '{name}: last time {last} {currency}, this time {next} {currency}.',
   'run.price.check.confirm': 'Yes, save',
@@ -1530,6 +1530,8 @@ export const en = {
   'run.label.paymentMethod': 'Payment method',
   'run.label.paymentCash': 'Cash',
   'run.label.paymentTransfer': 'Transfer',
+  'run.label.paymentPerStore': 'Per store',
+  'run.label.splitPreview': 'Split: {split}',
   'run.action.unmarkUnavailableAriaLabel': 'Mark available again: {name}',
   'run.reason.paymentMethodChanged': 'Payment method corrected on the row',
   'run.confirm.finish.paymentBreakdown': '💵 cash {cash} · 🏦 transfer {transfer}',
@@ -1664,6 +1666,7 @@ export const en = {
   'run.topUp.dismissConfirm': 'Not buying the extra {qty}? The store that joined will not get it.',
   'run.topUp.dismissed': 'Noted: the extra will not be bought',
   'run.topUp.reason': 'Buying the extra for a newly joined order',
+  'run.topUp.sheetBody': 'Already bought: {qty}, price {price}. The price below is for this extra quantity only; the earlier purchase keeps its price.',
   'run.prices.title': 'Enter prices',
   'run.prices.hint': 'quantities and splits are fixed',
   'run.prices.lockedHint': 'The goods have gone out: only price, supplier, payment method and receipt can change.',
@@ -2172,6 +2175,7 @@ export const en = {
   'confirm.issue.receivedQtyNotShort':
     '{max} is everything — choose "OK"; for a shortfall enter less than {max}',
   'confirm.receivedOf': 'received {received} / {qty} {unit}',
+  'confirm.receivedPlusAmend': 'received {received} + added in a correction {added} = {total} / {qty} {unit}',
   'confirm.issue.photoOf': 'Problem photo for {name}',
   'confirm.runPicker.ariaLabel': 'Which delivery to check',
   'confirm.runPicker.option': '#{n} · {date}',
