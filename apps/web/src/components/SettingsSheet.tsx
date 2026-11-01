@@ -86,7 +86,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
     onSuccess: (next) => {
       patchSession(next as never);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   // M3.45 (2026-05-22): secondary display language. Drives bilingual
   // product names + vendor-language copy templates. See useProductName
@@ -95,7 +95,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
     onSuccess: (next) => {
       patchSession(next as never);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const switchOrganization = trpc.auth.switchOrganization.useMutation({
     meta: BLOCKS_NAVIGATION,
@@ -112,7 +112,7 @@ export function SettingsSheet({ open, onOpenChange, pageMenu }: Props) {
       toast.success(i18n.t('workspace.switched'));
       onOpenChange(false);
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   const [creatingWorkspace, setCreatingWorkspace] = useState(false);

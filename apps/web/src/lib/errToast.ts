@@ -26,8 +26,13 @@
  * — e.g. `isLikelyNetworkError` branch):
  *   onError: (err) => {
  *     if (isLikelyNetworkError(err)) { ... return; }
- *     errToast('common.error')(err);
+ *     errToast('common.errors.actionFailed')(err);
  *   }
+ *
+ * DX-COPY-8 (2026-11-01): pass the action's own failure sentence when the
+ * catalog has one; `common.errors.actionFailed` ("try again, then
+ * refresh") otherwise. `common.error` ("Something went wrong") is a
+ * title, not a toast: it says neither why nor what to do.
  */
 import type { ReactNode } from 'react';
 import { useToast } from '@compass/ui';

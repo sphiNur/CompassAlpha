@@ -706,7 +706,7 @@ export function RunHistoryDetailSheet({
       // amending run for run.amend holders); they used to have to go there.
       useNavStore.getState().setTab('run');
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   /**
@@ -736,7 +736,7 @@ export function RunHistoryDetailSheet({
       toast.success(i18n.t('run.date.changed'));
       onClose();
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
   const detail = trpc.run.historyDetail.useQuery(target ? { runId: target.runId } : { runId: '' }, {
     enabled: !!target,
@@ -1235,7 +1235,7 @@ export function RunHistoryDetailSheet({
                           {c.kind === 'amendAdded'
                             ? i18n.t('run.history.amendAdded', {
                                 qty: formatQty(c.qty),
-                                unit: unitLabel(sku?.unit),
+                                unit: unitLabel(sku?.unit, c.qty),
                                 store: storeById.get(c.storeId)?.name ?? c.storeId.slice(0, 8),
                               })
                             : i18n.t('run.history.priceAfterReceipt', {

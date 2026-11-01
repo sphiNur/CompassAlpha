@@ -136,7 +136,7 @@ function SubscriptionSheet({
       toast.success(i18n.t('platform.saved'));
       onClose();
     },
-    onError: errToast('common.error'),
+    onError: errToast('common.errors.actionFailed'),
   });
 
   return (
