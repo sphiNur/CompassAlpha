@@ -7,6 +7,7 @@ import {
   itemProgressCounts,
   pendingItemCount,
   type SplitLike,
+  pendingExtrasOf,
 } from '../runProgress';
 
 const split = (over: Partial<SplitLike> & { storeId: string }): SplitLike => ({
@@ -150,5 +151,19 @@ describe('deliveryWaiting (U7)', () => {
       undelivered: [],
       unconfirmed: [],
     });
+  });
+});
+
+describe('pendingExtrasOf (DX-BUY-5)', () => {
+  it("lists the stores' other items not yet marked, across stores", () => {
+    const extras = {
+      A: [
+        { name: 'Detergent', status: 'pending' },
+        { name: 'Bags', status: 'bought' },
+      ],
+      B: [{ name: 'Foil' }, { name: 'Gloves', status: 'unavailable' }],
+    };
+    expect(pendingExtrasOf(extras).map((e) => e.name)).toEqual(['Detergent', 'Foil']);
+    expect(pendingExtrasOf(undefined)).toEqual([]);
   });
 });

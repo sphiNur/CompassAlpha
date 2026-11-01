@@ -136,3 +136,16 @@ export function deliveryWaiting(splits: readonly SplitLike[]): {
   }
   return { undelivered, unconfirmed };
 }
+
+/**
+ * DX-BUY-5 (2026-11-01): the stores' 「其他物品」 the purchaser has not marked
+ * bought or not found. They are not run items, so `pendingItemCount` does
+ * not see them; starting delivery warns about them instead.
+ */
+export function pendingExtrasOf<T extends { name: string; status?: string }>(
+  extrasByStore: Readonly<Record<string, readonly T[]>> | undefined,
+): T[] {
+  return Object.values(extrasByStore ?? {})
+    .flat()
+    .filter((e) => !e.status || e.status === 'pending');
+}

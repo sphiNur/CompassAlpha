@@ -1162,7 +1162,10 @@ export const runRouter = router({
       // every store of the run the reader sees.
       const priceStores = await priceStoreIds(tx, ctx.session!);
       const sessionStore = new Map<string, string>();
-      if ((allowedStoreSet || priceStores !== null) && allSessionIds.length > 0) {
+      // DX-DLV-13 (2026-11-01): always resolved now — each row names the
+      // visible stores it serves (`storeIds`), so a store's receiving page
+      // can tell "on the way" from "nothing for you".
+      if (allSessionIds.length > 0) {
         const sessionStoreRows = await tx.query.orderSessionsV.findMany({
           where: (sess, { inArray }) => inArray(sess.id, allSessionIds),
           columns: { id: true, storeId: true },
@@ -1271,8 +1274,9 @@ export const runRouter = router({
         return [...ids];
       };
       return visibleRuns.map((run) => {
-        const row = listRow(run);
-        return pricesVisibleFor(priceStores, runStoreIds(run)) ? row : withoutPrices(row);
+        const storeIds = runStoreIds(run);
+        const row = { ...listRow(run), storeIds };
+        return pricesVisibleFor(priceStores, storeIds) ? row : withoutPrices(row);
       });
 
       function listRow(run: (typeof visibleRuns)[number]) {
@@ -1568,11 +1572,39 @@ export const runRouter = router({
           query.sort === 'oldest'
             ? sql`run_date ASC, run_index ASC, id ASC`
             : sql`run_date DESC, run_index DESC, id DESC`;
-        const offset = (query.page - 1) * query.pageSize;
-        const pageRows = executeRows<PageDbRow>(
+        // DX-HIS-5 (2026-11-01): the list shows one row per day, so a page
+        // never splits a day. A day belongs to the page where its first
+        // run falls (pages of `pageSize` runs); a page holding no day start
+        // (one day longer than a page) is skipped, so pages stay dense.
+        // Before, the second trip of a day could open the next page with
+        // half the day's total on each.
+        const pagedCte = sql`
+          ${historyCte},
+          ordered AS (
+            SELECT f.*, (ROW_NUMBER() OVER (ORDER BY ${directionSql}) - 1)::int AS pos
+            FROM filtered f
+          ),
+          day_started AS (
+            SELECT o.*, MIN(o.pos) OVER (PARTITION BY o.run_date)::int AS day_pos
+            FROM ordered o
+          ),
+          paged AS (
+            SELECT d.*, DENSE_RANK() OVER (ORDER BY d.day_pos / ${query.pageSize}::int)::int AS page_no
+            FROM day_started d
+          )
+        `;
+        const pageCountRows = executeRows<{ pages: number }>(
           await tx.execute(sql`
-          ${historyCte}
+          ${pagedCte}
+          SELECT COALESCE(MAX(page_no), 0)::int AS pages FROM paged
+        `),
+        );
+        const totalPages = Number(pageCountRows[0]?.pages ?? 0);
+        const pageRows = executeRows<PageDbRow & { pos: number }>(
+          await tx.execute(sql`
+          ${pagedCte}
           SELECT
+            pos,
             id::text AS id,
             run_date::text AS run_date,
             run_index,
@@ -1585,10 +1617,9 @@ export const runRouter = router({
             actual_transfer_total::text AS actual_transfer_total,
             item_count,
             store_count
-          FROM filtered
-          ORDER BY ${directionSql}
-          LIMIT ${query.pageSize}
-          OFFSET ${offset}
+          FROM paged
+          WHERE page_no = ${query.page}
+          ORDER BY pos
         `),
         );
 
@@ -1681,9 +1712,13 @@ export const runRouter = router({
             page: query.page,
             pageSize: query.pageSize,
             totalCount,
-            totalPages: Math.ceil(totalCount / query.pageSize),
+            totalPages,
             hasPrevious: query.page > 1,
-            hasNext: query.page * query.pageSize < totalCount,
+            hasNext: query.page < totalPages,
+            /** 1-based positions of this page's first and last run (a page
+             *  holds whole days, so it is not always `pageSize` runs). */
+            firstRun: pageRows.length > 0 ? pageRows[0]!.pos + 1 : 0,
+            lastRun: pageRows.length > 0 ? pageRows[pageRows.length - 1]!.pos + 1 : 0,
           },
           summary: {
             total: moneyText(summary.total),
@@ -2001,6 +2036,21 @@ export const runRouter = router({
           ];
         });
 
+        // DX-HIS-6 (2026-11-01): the detail names each line's supplier.
+        // Names come with the payload: catalog.suppliers is not readable
+        // by every history reader (a store manager).
+        const supplierIds = [
+          ...new Set(items.map((item) => item.supplierId).filter((id): id is string => !!id)),
+        ];
+        const supplierNameById: Record<string, string> = {};
+        if (supplierIds.length > 0) {
+          const rows = await tx
+            .select({ id: s.suppliers.id, name: s.suppliers.name })
+            .from(s.suppliers)
+            .where(and(eq(s.suppliers.orgId, ctx.session!.orgId), inArray(s.suppliers.id, supplierIds)));
+          for (const row of rows) supplierNameById[row.id] = row.name;
+        }
+
         return {
           id: run.id,
           runDate: run.runDate,
@@ -2014,6 +2064,7 @@ export const runRouter = router({
           sessionExtrasByStore,
           sessions,
           expenses,
+          supplierNameById,
           canAmend,
           // D3 / D4 (2026-10-31): quantity added in a correction and price
           // changes after receipt, for the history labels.
@@ -2324,6 +2375,7 @@ export const runRouter = router({
             });
         }
 
+        const recalledStoreIds: string[] = [];
         // BUY-5 (2026-10-30): "still need X" lives in the domain state only
         // (no read-model column); a run stream is a few dozen events.
         {
@@ -2334,6 +2386,20 @@ export const runRouter = router({
             ...it,
             topUpQty: domainState.items.get(it.skuId)?.topUpQty ?? null,
           }));
+          // DX-DLV-13 (2026-11-01): a store whose delivery was recalled
+          // and not made again. Its receiving page said "nothing to
+          // receive", as if the goods had never been on the way.
+          const lastDeliveryEvent = new Map<string, string>();
+          for (const e of events) {
+            if (e.type === 'StoreDelivered' || e.type === 'StoreDeliveryUndone') {
+              lastDeliveryEvent.set(e.payload.storeId, e.type);
+            }
+          }
+          for (const [storeId, type] of lastDeliveryEvent) {
+            if (type !== 'StoreDeliveryUndone') continue;
+            if (allowedStoreSet && !allowedStoreSet.has(storeId)) continue;
+            recalledStoreIds.push(storeId);
+          }
         }
 
         // M3.27 (2026-05-18): preferred-supplier mapping for the
@@ -2698,6 +2764,7 @@ export const runRouter = router({
           sessionExtrasByStore,
           supplierBySku,
           sessions: runSessions,
+          recalledStoreIds,
           // M3.44: off-catalog expenses (purchaser-recorded). FE
           // renders these in an "Off-catalog / Expenses" card and
           // sums them into the finish-summary breakdown.
@@ -4080,7 +4147,7 @@ async function resolveRunReadStoreScope(
  * This also prevents an unrelated Store-B staff assignment from widening a
  * Store-A purchaser's planning scope.
  */
-async function resolveRunCreateStoreScope(
+export async function resolveRunCreateStoreScope(
   db: import('@compass/db').DB,
   ctx: Awaited<ReturnType<typeof import('../context').createContext>>,
 ): Promise<string[] | null> {

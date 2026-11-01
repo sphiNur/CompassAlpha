@@ -2712,18 +2712,18 @@ describe('purchase history permission scope', () => {
       const fx = fix!;
       const db = getDb(undefined, { system: 'maintenance' });
       const store = await makeStore(`History pages ${Math.random()}`);
-      const runDate = '2043-08-05';
-      const fixtures = Array.from({ length: 11 }, (_, runIndex) => ({
+      // One run a day: a page is whole days (DX-HIS-5), tested below.
+      const fixtures = Array.from({ length: 11 }, (_, i) => ({
         runId: randomUUID(),
         sessionId: randomUUID(),
-        runIndex,
+        runDate: `2043-08-${String(i + 1).padStart(2, '0')}`,
       }));
       await db.insert(s.marketRunsV).values(
-        fixtures.map(({ runId, sessionId, runIndex }) => ({
+        fixtures.map(({ runId, sessionId, runDate }) => ({
           id: runId,
           orgId: fx.orgId,
           runDate,
-          runIndex,
+          runIndex: 0,
           status: 'finished',
           actualTotal: '0',
           actualCashTotal: '0',
@@ -2733,7 +2733,7 @@ describe('purchase history permission scope', () => {
         })),
       );
       await db.insert(s.orderSessionsV).values(
-        fixtures.map(({ runId, sessionId }) => ({
+        fixtures.map(({ runId, sessionId, runDate }) => ({
           id: sessionId,
           orgId: fx.orgId,
           storeId: store.id,
@@ -2745,24 +2745,23 @@ describe('purchase history permission scope', () => {
       );
 
       const caller = appRouter.createCaller(fx.superAdminCtx);
-      const first = await caller.run.history({
-        dateFrom: runDate,
-        dateTo: runDate,
-        page: 1,
-        pageSize: 10,
-        sort: 'newest',
-      });
-      const second = await caller.run.history({
-        dateFrom: runDate,
-        dateTo: runDate,
-        page: 2,
-        pageSize: 10,
-        sort: 'newest',
-      });
+      const page = (n: number) =>
+        caller.run.history({
+          storeId: store.id,
+          dateFrom: '2043-08-01',
+          dateTo: '2043-08-11',
+          page: n,
+          pageSize: 10,
+          sort: 'newest',
+        });
+      const first = await page(1);
+      const second = await page(2);
       expect(first.rows).toHaveLength(10);
       expect(second.rows).toHaveLength(1);
-      expect(first.rows.map((row) => row.runIndex)).toEqual([10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);
-      expect(second.rows[0]!.runIndex).toBe(0);
+      expect(first.rows.map((row) => row.runDate.slice(-2))).toEqual([
+        '11', '10', '09', '08', '07', '06', '05', '04', '03', '02',
+      ]);
+      expect(second.rows[0]!.runDate).toBe('2043-08-01');
       expect(first.pageInfo).toEqual({
         page: 1,
         pageSize: 10,
@@ -2770,9 +2769,83 @@ describe('purchase history permission scope', () => {
         totalPages: 2,
         hasPrevious: false,
         hasNext: true,
+        firstRun: 1,
+        lastRun: 10,
       });
       expect(second.pageInfo.hasPrevious).toBe(true);
       expect(second.pageInfo.hasNext).toBe(false);
+      expect(second.pageInfo.firstRun).toBe(11);
+    },
+  );
+
+  test.skipIf(!SHOULD_RUN)(
+    'DX-HIS-5: a page never splits a day; a day longer than a page is one page',
+    async () => {
+      const fx = fix!;
+      const db = getDb(undefined, { system: 'maintenance' });
+      const store = await makeStore(`History days ${Math.random()}`);
+      // Days (newest first): 09-03 ×4, 09-02 ×7, 09-01 ×12. Pages of 10
+      // runs: 09-03 starts at 0 and 09-02 at 4 → page 1 (11 runs); 09-01
+      // starts at 11 → page 2 (12 runs), not split across pages 2 and 3.
+      const plan: Array<[string, number]> = [
+        ['2044-09-01', 12],
+        ['2044-09-02', 7],
+        ['2044-09-03', 4],
+      ];
+      const fixtures = plan.flatMap(([runDate, n]) =>
+        Array.from({ length: n }, (_, runIndex) => ({
+          runId: randomUUID(),
+          sessionId: randomUUID(),
+          runDate,
+          runIndex,
+        })),
+      );
+      await db.insert(s.marketRunsV).values(
+        fixtures.map(({ runId, sessionId, runDate, runIndex }) => ({
+          id: runId,
+          orgId: fx.orgId,
+          runDate,
+          runIndex,
+          status: 'finished',
+          actualTotal: '0',
+          actualCashTotal: '0',
+          actualTransferTotal: '0',
+          sessionIdsJson: [sessionId],
+          finishedAt: new Date('2044-09-03T12:00:00Z'),
+        })),
+      );
+      await db.insert(s.orderSessionsV).values(
+        fixtures.map(({ runId, sessionId, runDate }) => ({
+          id: sessionId,
+          orgId: fx.orgId,
+          storeId: store.id,
+          orderDate: runDate,
+          status: 'archived',
+          initiatedByMemberId: fx.superAdminMemberId,
+          runId,
+        })),
+      );
+      const caller = appRouter.createCaller(fx.superAdminCtx);
+      const page = (n: number) =>
+        caller.run.history({
+          storeId: store.id,
+          dateFrom: '2044-09-01',
+          dateTo: '2044-09-03',
+          page: n,
+          pageSize: 10,
+          sort: 'newest',
+        });
+      const first = await page(1);
+      const second = await page(2);
+      const third = await page(3);
+      expect(first.rows.map((r) => r.runDate)).toEqual([
+        ...Array(4).fill('2044-09-03'),
+        ...Array(7).fill('2044-09-02'),
+      ]);
+      expect(second.rows.map((r) => r.runDate)).toEqual(Array(12).fill('2044-09-01'));
+      expect(third.rows).toHaveLength(0);
+      expect(first.pageInfo).toMatchObject({ totalPages: 2, hasNext: true, firstRun: 1, lastRun: 11 });
+      expect(second.pageInfo).toMatchObject({ hasNext: false, firstRun: 12, lastRun: 23 });
     },
   );
 });

@@ -64,7 +64,7 @@ export async function dispatchOrderEventNotifications(
             vars: { store: await storeName(db, state.storeId) },
             dedupKey: `order:${state.streamId}:submitted:${e.seq}`,
             payload: { sessionId: state.streamId, storeId: state.storeId },
-            deepLink: '/approve',
+            deepLink: linkForStore('/approve', state.storeId),
           },
           { storeId: state.storeId ?? undefined },
         );
@@ -94,7 +94,7 @@ export async function dispatchOrderEventNotifications(
               vars: { store: await storeName(db, state.storeId) },
               dedupKey: `order:${state.streamId}:selfApproved:${e.seq}`,
               payload: { sessionId: state.streamId, storeId: state.storeId },
-              deepLink: '/approve',
+              deepLink: linkForStore('/approve', state.storeId),
             },
             { storeId: state.storeId ?? undefined },
           );
@@ -123,7 +123,7 @@ export async function dispatchOrderEventNotifications(
             title: 'Your review was taken over',
             body: 'Another reviewer took over an order you were reviewing.',
             dedupKey: `order:${state.streamId}:claimTakenOver:${e.seq}`,
-            deepLink: '/approve',
+            deepLink: linkForStore('/approve', state.storeId),
             payload: {
               sessionId: state.streamId,
               storeId: state.storeId,
@@ -216,7 +216,7 @@ export async function dispatchRunEventNotifications(
             // a recall notifies again instead of deduping into silence.
             dedupKey: `run:${state.streamId}:store:${e.payload.storeId}:delivered:${e.seq}`,
             payload: { runId: state.streamId, storeId: e.payload.storeId },
-            deepLink: '/confirm',
+            deepLink: linkForStore('/confirm', e.payload.storeId),
           });
         }
         break;
@@ -233,7 +233,7 @@ export async function dispatchRunEventNotifications(
             vars: { store: await storeName(db, e.payload.storeId) },
             dedupKey: `run:${state.streamId}:store:${e.payload.storeId}:recalled:${e.seq}`,
             payload: { runId: state.streamId, storeId: e.payload.storeId },
-            deepLink: '/confirm',
+            deepLink: linkForStore('/confirm', e.payload.storeId),
           });
         }
         break;
@@ -250,7 +250,12 @@ export async function dispatchRunEventNotifications(
           ([, c]) => c.status !== 'ok',
         );
         if (issues.length === 0) break;
+        // DX-DLV-02 (2026-11-01): the link depends on who reads it. The
+        // purchasers get the Run page; a store manager has no Run tab
+        // (the link used to open whatever tab was last used), so they get
+        // this store's receiving page, which lists the problem lines.
         const recipients = new Set<string>();
+        const purchaserUserIds: string[] = [];
         const purchaserMemberIds = [state.purchaserMemberId, state.claimedByMemberId].filter(
           (id): id is string => !!id,
         );
@@ -259,7 +264,10 @@ export async function dispatchRunEventNotifications(
             where: (m, { inArray, and, eq }) =>
               and(inArray(m.id, purchaserMemberIds), eq(m.status, 'active')),
           });
-          for (const m of members) recipients.add(m.userId);
+          for (const m of members) {
+            recipients.add(m.userId);
+            purchaserUserIds.push(m.userId);
+          }
         }
         for (const u of await findRecipientsByPermissionInStore(
           db,
@@ -271,7 +279,18 @@ export async function dispatchRunEventNotifications(
         }
         recipients.delete(actorUserId);
         if (recipients.size === 0) break;
-        await dispatch(db, orgId, [...recipients], {
+        const purchasers = new Set(purchaserUserIds);
+        for (const u of await findRecipientsByPermissionInStore(
+          db,
+          orgId,
+          'run.purchase',
+          e.payload.storeId,
+        )) {
+          purchasers.add(u);
+        }
+        const toRun = [...recipients].filter((u) => purchasers.has(u));
+        const toConfirm = [...recipients].filter((u) => !purchasers.has(u));
+        const issuesEnvelope = {
           template: 'run.storeConfirmedWithIssues',
           title: 'Delivery received with problems',
           body: `A store confirmed delivery with ${issues.length} problem item(s) — please review.`,
@@ -287,8 +306,16 @@ export async function dispatchRunEventNotifications(
               note: c.note,
             })),
           },
-          deepLink: '/run',
-        });
+        };
+        if (toRun.length > 0) {
+          await dispatch(db, orgId, toRun, { ...issuesEnvelope, deepLink: '/run' });
+        }
+        if (toConfirm.length > 0) {
+          await dispatch(db, orgId, toConfirm, {
+            ...issuesEnvelope,
+            deepLink: linkForStore('/confirm', e.payload.storeId),
+          });
+        }
         break;
       }
       case 'RunFinished': {
@@ -454,6 +481,16 @@ async function notifyOwner(
     .filter((uid) => uid !== actorUserId);
   if (userIds.length === 0) return;
   await dispatch(db, orgId, [...new Set(userIds)], envelope);
+}
+
+/**
+ * A deep link that also names the store (DX-APR-7, 2026-11-01): the app
+ * switches to that store before opening the tab, so a manager of two
+ * stores lands on the store the notification is about. Older web bundles
+ * read the path only and ignore the query.
+ */
+export function linkForStore(path: string, storeId: string | null | undefined): string {
+  return storeId ? `${path}?store=${encodeURIComponent(storeId)}` : path;
 }
 
 /** A store's name for a notification sentence; '' when it is gone. */

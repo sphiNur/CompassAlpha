@@ -61,7 +61,8 @@ function activeElement(): HTMLElement | null {
  * Wires a Radix Dialog.Content for the behaviour above. The one place a
  * sheet's open and close focus is decided:
  *
- * - open: `keepKeyboardDown` focuses the sheet itself; otherwise a control
+ * - open: `keepKeyboardDown` focuses the sheet itself (or
+ *   `keyboardDownTargetRef`, its title, DX-DLV-08); otherwise a control
  *   marked `data-autofocus` (a confirm's safe answer, DX-IX-6 / DX-IX-7)
  *   takes focus; otherwise Radix focuses the first focusable (a field's
  *   `autoFocus` also wins there, since focus is then already inside).
@@ -71,12 +72,17 @@ function activeElement(): HTMLElement | null {
 export function useSheetFocus(
   open: boolean,
   contentRef: RefObject<HTMLElement | null>,
-  options: { keepKeyboardDown?: boolean; returnFocusRef?: RefObject<HTMLElement | null> } = {},
+  options: {
+    keepKeyboardDown?: boolean;
+    /** DX-DLV-08: with `keepKeyboardDown`, focus this (the title) instead of the sheet box. */
+    keyboardDownTargetRef?: RefObject<HTMLElement | null>;
+    returnFocusRef?: RefObject<HTMLElement | null>;
+  } = {},
 ): {
   onOpenAutoFocus: (e: Event) => void;
   onCloseAutoFocus: (e: Event) => void;
 } {
-  const { keepKeyboardDown = false, returnFocusRef } = options;
+  const { keepKeyboardDown = false, keyboardDownTargetRef, returnFocusRef } = options;
   const opener = useRef<HTMLElement | null>(null);
   // A layout effect runs before Radix's FocusScope moves focus into the
   // sheet (that happens in a passive effect), so this still sees the
@@ -90,7 +96,7 @@ export function useSheetFocus(
       const content = contentRef.current;
       if (keepKeyboardDown) {
         e.preventDefault();
-        content?.focus({ preventScroll: true });
+        (keyboardDownTargetRef?.current ?? content)?.focus({ preventScroll: true });
         return;
       }
       const preferred = content?.querySelector<HTMLElement>('[data-autofocus]');
@@ -98,7 +104,7 @@ export function useSheetFocus(
       e.preventDefault();
       preferred.focus();
     },
-    [contentRef, keepKeyboardDown],
+    [contentRef, keepKeyboardDown, keyboardDownTargetRef],
   );
 
   const onCloseAutoFocus = useCallback(

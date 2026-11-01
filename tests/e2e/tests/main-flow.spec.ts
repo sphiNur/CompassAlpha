@@ -193,13 +193,14 @@ test('deliver to the store', async () => {
   await evidence('run-delivering');
   // The rows that open the price editor and the store rows (R2-DLV-4).
   await expectTappable({
-    'fill in prices: Apple': main().getByRole('button', { name: /^Apple/ }),
+    // DX-DLV-17: every price is in, so the price card is one line.
+    'prices complete': main().getByRole('button', { name: /^All prices are in/ }),
     'store row': main().getByRole('button', { name: /Central Kitchen.*Not delivered/ }),
+    // DX-DLV-10: the row opens the pick list; delivering is its own button.
+    'deliver button': main().getByRole('button', { name: 'Mark delivered to Central Kitchen' }),
   });
 
-  await main()
-    .getByRole('button', { name: /Central Kitchen.*Not delivered/ })
-    .click();
+  await main().getByRole('button', { name: 'Mark delivered to Central Kitchen' }).click();
   await sheet().getByRole('button', { name: 'Mark delivered' }).click();
   await expect(
     main().getByRole('button', { name: /Central Kitchen.*Awaiting confirm/ }),

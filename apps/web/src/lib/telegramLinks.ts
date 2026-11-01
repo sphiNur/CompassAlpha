@@ -42,3 +42,17 @@ export function userLink(username: string | null | undefined): string {
   if (!username) return `${T_ME}/`;
   return `${T_ME}/${username.replace(/^@/, '')}`;
 }
+
+/**
+ * DX-BUY-4 (2026-11-01): how 「发送」 hands a list over. Inside Telegram,
+ * Telegram's share picker. Outside it the SDK object still exists (it is
+ * loaded in every browser), and `openTelegramLink` navigated the whole app
+ * away to t.me; there the system share sheet is used when the browser has
+ * one, otherwise the list is only copied.
+ */
+export type ShareRoute = 'telegram' | 'system' | 'copy';
+
+export function shareRoute(inTelegram: boolean, hasSystemShare: boolean): ShareRoute {
+  if (inTelegram) return 'telegram';
+  return hasSystemShare ? 'system' : 'copy';
+}

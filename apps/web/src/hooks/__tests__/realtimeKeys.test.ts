@@ -15,5 +15,8 @@ describe('realtime invalidation keys (DX-CAT-1)', () => {
     expect(RUN_CHANGED_KEYS).toContainEqual(['run']);
     expect(RUN_CHANGED_KEYS).toContainEqual(['report']);
     expect(RUN_CHANGED_KEYS).toContainEqual(['catalog', 'skuPriceStats']);
+    // DX-SHL-23: nav badges follow both.
+    expect(ORDER_CHANGED_KEYS).toContainEqual(['nav']);
+    expect(RUN_CHANGED_KEYS).toContainEqual(['nav']);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { offlineDropText } from '../offlineDrop';
+import { offlineDropText, offlineDropToastOptions } from '../offlineDrop';
 
 const catalog: Record<string, string> = {
   'run.toast.syncFailed': 'A saved change did not sync',
@@ -52,5 +52,13 @@ describe('offlineDropText (RE-DLV-4 / R2-DLV-3)', () => {
         message: 'order.errors.staleOfflineEdit',
       }),
     ).toBe('That day is over; the change was not saved');
+  });
+});
+
+describe('the dropped-write toast stays (DX-DLV-06)', () => {
+  test('no timeout, dismissed with an explicit button', () => {
+    const opts = offlineDropToastOptions('Got it');
+    expect(opts.ttlMs).toBe(0);
+    expect(opts.actions).toEqual([{ label: 'Got it' }]);
   });
 });

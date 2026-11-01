@@ -33,6 +33,7 @@ import { PendingSyncNotice } from '../components/PendingSyncNotice';
 import { useQueryClient } from '@tanstack/react-query';
 import { refetchFailedQueries } from '../hooks/useRefetchFailedOnReconnect';
 import { sessionLoadState } from './order/sessionLoadState';
+import { InRunBanner } from './order/InRunBanner';
 import { useErrToast } from '../lib/errToast';
 import { matchesNameLike, normalizeQuery } from '../lib/searchMatch';
 import {
@@ -1208,8 +1209,8 @@ export function OrderPage() {
             />
           ) : v.status === 'approved' ? (
             <Banner tone="success" title={i18n.t('order.banner.approved.title')} />
-          ) : v.status === 'in_run' ? (
-            <Banner tone="info" title={i18n.t('order.banner.inRun.title')} />
+          ) : v.status === 'in_run' && currentStoreId ? (
+            <InRunBanner runId={v.runId} storeId={currentStoreId} showBody={false} />
           ) : (
             <Banner tone="info" title={i18n.t('order.status.archived')} />
           )}
@@ -1304,10 +1305,8 @@ export function OrderPage() {
             <Banner tone="success" title={i18n.t('order.banner.approved.title')}>
               {i18n.t('order.banner.approved.body')}
             </Banner>
-          ) : sessionStatus === 'in_run' ? (
-            <Banner tone="info" title={i18n.t('order.banner.inRun.title')}>
-              {i18n.t('order.banner.inRun.body')}
-            </Banner>
+          ) : sessionStatus === 'in_run' && currentStoreId ? (
+            <InRunBanner runId={locked.runId} storeId={currentStoreId} />
           ) : (
             <Banner tone="info" title={i18n.t('order.status.archived')} />
           )}
@@ -1524,10 +1523,8 @@ export function OrderPage() {
               {i18n.t('order.banner.approved.body')}
             </Banner>
           ) : null}
-          {sessionStatus === 'in_run' ? (
-            <Banner tone="info" title={i18n.t('order.banner.inRun.title')}>
-              {i18n.t('order.banner.inRun.body')}
-            </Banner>
+          {sessionStatus === 'in_run' && currentStoreId ? (
+            <InRunBanner runId={sessionQuery.data?.runId} storeId={currentStoreId} />
           ) : null}
         </div>
       ) : null}

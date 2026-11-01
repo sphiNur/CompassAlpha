@@ -14,10 +14,14 @@ const ACTIVITY_KEYS: QueryKey[] = [
   ['admin', 'overview'],
 ];
 
+/** DX-SHL-23 (2026-11-01): the bottom nav's badges count orders and runs. */
+const NAV_KEYS: QueryKey[] = [['nav']];
+
 export const ORDER_CHANGED_KEYS: QueryKey[] = [
   ['order'],
   ['admin', 'submissionHistory'],
   ...ACTIVITY_KEYS,
+  ...NAV_KEYS,
 ];
 
 export const RUN_CHANGED_KEYS: QueryKey[] = [
@@ -25,4 +29,5 @@ export const RUN_CHANGED_KEYS: QueryKey[] = [
   ['report'],
   ['catalog', 'skuPriceStats'],
   ...ACTIVITY_KEYS,
+  ...NAV_KEYS,
 ];

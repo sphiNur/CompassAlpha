@@ -61,6 +61,9 @@ import { PendingSyncNotice } from '../components/PendingSyncNotice';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
+import { useCanSeePrices } from '../lib/pricesVisible';
+import { itemProgressCounts, pendingExtrasOf } from './runs/lib/runProgress';
+import { otherStoreSkusOf } from './runs/types';
 // Run money math — extracted to pages/runs/lib (Phase 4 step 1, unit-tested).
 import { expenseLine, settleItemLine, settlePerStore } from './runs/lib/settlement';
 import { countCarriedOver, STALE_PRICE_DAYS } from './runs/lib/priceState';
@@ -852,6 +855,7 @@ export function RunPage() {
     return (runDetailQuery.data?.splits ?? []).every((sp) => !sp.deliveredAt && !sp.confirmedAt);
   }, [activeRun?.status, session?.permissions, runDetailQuery.data]);
 
+  const canSeeMoney = useCanSeePrices();
   const finishSummary = useMemo(() => {
     const items = runDetailQuery.data?.items ?? [];
     const splits = runDetailQuery.data?.splits ?? [];
@@ -1087,6 +1091,32 @@ export function RunPage() {
   // it) when the precondition isn't met, and the *text* tells the user
   // what's missing.
   // CMP-BUY-1: starting delivery needs the network and an empty queue.
+  // DX-BUY-6: the purchase gauge's numbers — the purchaser's own items
+  // (like the item card and the "N left" bar) and the money of the run.
+  const gauge = useMemo(() => {
+    const run = runDetailQuery.data;
+    if (!run) return null;
+    const own = run.items.filter((i) => !otherStoreSkusOf(run).has(i.skuId));
+    const counts = itemProgressCounts(own);
+    const bought = run.items.filter((i) => i.status === 'purchased').length;
+    // Amounts withheld by the server (no prices.view) read as 0: say
+    // nothing rather than "spent 0".
+    const moneyShown = canSeeMoney && (finishSummary.total > 0 || bought === 0);
+    return {
+      bought: counts.bought,
+      na: counts.na,
+      done: counts.bought + counts.na,
+      total: own.length,
+      money: moneyShown
+        ? {
+            total: finishSummary.total,
+            cash: finishSummary.totalCash,
+            transfer: finishSummary.totalTransfer,
+          }
+        : null,
+    };
+  }, [runDetailQuery.data, canSeeMoney, finishSummary]);
+
   const deliveryBlock = startDeliveryBlock(offline.online, offline.pendingEntries.length);
   useEffect(() => {
     // Went offline (or a write got queued) while the confirm sheet was open.
@@ -1436,16 +1466,30 @@ export function RunPage() {
             isPending: startPurchase.isPending,
             run: () => startPurchase.mutate({ runId }, { onSuccess: () => setConfirmAction(null) }),
           };
-        case 'startDelivery':
+        case 'startDelivery': {
+          // DX-BUY-5 (2026-11-01): 「其他物品」 the stores asked for and the
+          // purchaser has not handled do not count in "N left", and went
+          // out of sight once delivery started. Say so here — a warning
+          // only; whether to block is an owner decision (#8).
+          const pendingExtras = pendingExtrasOf(runDetailQuery.data?.sessionExtrasByStore);
+          const extrasLine =
+            pendingExtras.length > 0
+              ? '\n\n' +
+                i18n.t('run.confirm.startDelivery.pendingExtras', {
+                  n: pendingExtras.length,
+                  names: pendingExtras.map((e) => e.name).join(i18n.t('run.sessions.storeJoiner')),
+                })
+              : '';
           return {
             title: i18n.t('run.confirm.startDelivery.title'),
-            body: i18n.t('run.confirm.startDelivery.body'),
+            body: i18n.t('run.confirm.startDelivery.body') + extrasLine,
             confirmLabel: i18n.t('run.action.startDelivery'),
             danger: false,
             requireReason: false,
             isPending: startDelivery.isPending,
             run: () => startDelivery.mutate({ runId }, { onSuccess: () => setConfirmAction(null) }),
           };
+        }
         case 'finish': {
           // M1.14: include cash / transfer breakdown when the run mixed
           // both methods. Single-method runs see only the lump sum.
@@ -2015,8 +2059,10 @@ export function RunPage() {
           "+ Add" button's 44px tap area plus its 1px bottom border. At
           min-h-9 py-2 the area stuck out of the bar's top edge, under the
           sticky header (measured 39px; 43 at min-h-11). */}
+      {/* DX-BUY-6: one sticky block — the run line and the gauge under it. */}
+      <div className="sticky top-0 z-[1] [@media(max-height:500px)]:static">
       {activeRun ? (
-        <div className="sticky top-0 z-[1] flex min-h-12 items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-1 [@media(max-height:500px)]:static">
+        <div className="flex min-h-12 items-center gap-2 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 py-1">
           {/* M3.36 shipped the "×1000" price-mode toggle here as a pill
               whose entire meaning lived in a `title` attribute. On a
               touch device there is no hover, so nothing ever revealed
@@ -2090,6 +2136,54 @@ export function RunPage() {
           ) : null}
         </div>
       ) : null}
+      {/* DX-BUY-6 (2026-11-01): the purchase gauge, under the run line and
+          sticky with it — how far along (bought x / y) and how much money
+          has gone out, cash and transfer apart. The page had counts only;
+          purchasers counting cash at a stall did the sum in their head. */}
+      {activeRun && editing && gauge ? (
+        <div
+          data-testid="run-gauge"
+          className="flex flex-col gap-1 border-b border-[var(--c-divider)] bg-[var(--c-bg)] px-4 pb-1.5 pt-1"
+        >
+          <div className="flex flex-wrap items-baseline gap-x-2 text-old-label tabular-nums">
+            <span className="font-semibold text-[var(--c-fg)]">
+              {i18n.t('run.gauge.bought', { done: gauge.bought, total: gauge.total })}
+            </span>
+            {gauge.na > 0 ? (
+              <span className="text-[var(--c-fg-muted)]">
+                · {i18n.t('run.gauge.notFound', { n: gauge.na })}
+              </span>
+            ) : null}
+            {gauge.money ? (
+              <>
+                <span className="font-semibold text-[var(--c-fg)]">
+                  · {i18n.t('run.gauge.spent', { total: formatMoney(gauge.money.total) })}
+                </span>
+                <span className="text-[var(--c-fg-muted)]">
+                  {i18n.t('run.gauge.split', {
+                    cash: formatMoney(gauge.money.cash),
+                    transfer: formatMoney(gauge.money.transfer),
+                  })}
+                </span>
+              </>
+            ) : null}
+          </div>
+          <div
+            role="progressbar"
+            aria-label={i18n.t('run.gauge.progressLabel')}
+            aria-valuemin={0}
+            aria-valuemax={gauge.total}
+            aria-valuenow={gauge.done}
+            className="h-[3px] overflow-hidden rounded-full bg-[var(--c-surface-2)]"
+          >
+            <div
+              className="h-full bg-[var(--c-action)]"
+              style={{ width: `${gauge.total > 0 ? (gauge.done / gauge.total) * 100 : 0}%` }}
+            />
+          </div>
+        </div>
+      ) : null}
+      </div>
 
       {/* BUY-8 (2026-10-30): purchases saved offline used to look unsaved. */}
       <PendingSyncNotice count={offline.pendingCount} />

@@ -93,9 +93,14 @@ export function SectionLabel({
   padded = true,
 }: SectionLabelProps) {
   const color = tone === 'strong' ? 'text-[var(--c-fg)]' : 'text-[var(--c-fg-muted)]';
+  // DX-HIS-4 (2026-11-01): the row wraps. The meta used to be shrink-0
+  // next to a truncating title, so at 360 px a long meta ("39 trips ·
+  // 118,112,379.90 UZS (total of …)") squeezed the page heading to a
+  // single dot, and in ru / uz ran past the card edge. Now the meta drops
+  // to its own line and wraps there; the title keeps the first line.
   const layout = padded
-    ? 'flex items-baseline justify-between gap-2 px-4 py-1.5'
-    : 'flex items-baseline justify-between gap-2';
+    ? 'flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 px-4 py-1.5'
+    : 'flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5';
   // Polymorphic element. JSX accepts a tag-name string as a Component;
   // the resulting cast keeps TS happy without requiring per-tag prop
   // forwarding (we don't need refs into a SectionLabel).
@@ -109,9 +114,9 @@ export function SectionLabel({
         className,
       )}
     >
-      <span className="truncate">{children}</span>
+      <span className="max-w-full truncate">{children}</span>
       {meta ? (
-        <span className="shrink-0 font-normal tabular-nums text-[var(--c-fg-muted)]">
+        <span className="min-w-0 break-words font-normal tabular-nums text-[var(--c-fg-muted)]">
           {meta}
         </span>
       ) : null}

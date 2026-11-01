@@ -50,7 +50,7 @@ export function shouldDeferInvalidate(
 const WS_CLOSE_EVICTED = 4000;
 const WS_CLOSE_TOKEN_EXPIRED = 4001;
 /** Query-key roots refreshed when the socket re-opens (CA-35). */
-const REOPEN_INVALIDATE_KEYS = ['order', 'run', 'catalog', 'admin', 'notifications'] as const;
+const REOPEN_INVALIDATE_KEYS = ['order', 'run', 'catalog', 'admin', 'notifications', 'nav'] as const;
 
 // The server pings every socket every 25 s (apps/api/src/main.ts). An
 // open socket that has heard nothing for longer than this is treated as

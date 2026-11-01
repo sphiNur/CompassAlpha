@@ -31,11 +31,11 @@ import {
 import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
 import { useErrToast } from '../../../lib/errToast';
-import { shareLink } from '../../../lib/telegramLinks';
+import { shareLink, shareRoute } from '../../../lib/telegramLinks';
 import { formatMoney, formatQty } from '../../../lib/format';
 import { unitLabeller } from '../../../lib/unitLabel';
 import { useI18n, useUnitLabel } from '../../../hooks/useI18n';
-import { haptic, getTg } from '../../../hooks/useTelegram';
+import { haptic, getTg, isInTelegram } from '../../../hooks/useTelegram';
 import {
   PerStoreView,
   PerVendorView,
@@ -361,6 +361,10 @@ export function ActiveRunPanel({
   const [itemQuery, setItemQuery] = useState('');
   // 2026-10-21 FE-03: delivering store rows expand into a read-only pick
   // list; ids of the expanded stores.
+  const [pricesOpen, setPricesOpen] = useState(false);
+  const pricesComplete = run.items
+    .filter((it) => it.status === 'purchased')
+    .every((it) => !!it.unitPrice);
   const [openPickStores, setOpenPickStores] = useState<ReadonlySet<string>>(
     () => new Set<string>(),
   );
@@ -704,53 +708,9 @@ export function ActiveRunPanel({
         </Card>
       ) : null}
 
-      {/* M3.31 (2026-05-18, A.1): "其他物品" footer for the aggregate edit
-          surface too. Until this fix, staff-typed extras (structured
-          M3.16-C entries) disappeared from the purchaser's view the
-          moment a run started — they only existed in the preview
-          UI. Now they sit right under the per-SKU list so the
-          purchaser sees them while recording buys. */}
-      {(!showViewToggle ||
-        viewMode === 'aggregate' ||
-        (viewMode === 'perStore' && !showPerStore) ||
-        (viewMode === 'perVendor' && !showPerVendor) ||
-        (viewMode === 'perCategory' && !showPerCategory)) &&
-      plannedOrEditing ? (
-        <RunExtrasCard
-          sessionExtrasByStore={run.sessionExtrasByStore}
-          sessionNotesByStore={run.sessionNotesByStore}
-          storeById={storeById}
-          i18n={i18n}
-          editable={editingPhase}
-          onMarkExtraStatus={onMarkExtraStatus}
-          onRecordExtraExpense={onRecordExtraExpense}
-          purchaseScopeStoreIds={run.purchaseScopeStoreIds}
-        />
-      ) : null}
-
-      {/* M3.44 (2026-05-22): off-catalog expenses card. Rendered in
-          aggregate / perVendor view BELOW the items + extras
-          sections. Always visible (read-only in non-purchasing
-          phases) so the manager can see "what off-plan was spent"
-          from any page state. */}
-      {(!showViewToggle ||
-        viewMode === 'aggregate' ||
-        (viewMode === 'perStore' && !showPerStore) ||
-        (viewMode === 'perVendor' && !showPerVendor) ||
-        (viewMode === 'perCategory' && !showPerCategory)) &&
-      (editingPhase || (run.expenses?.length ?? 0) > 0) ? (
-        <ExpensesCard
-          expenses={run.expenses}
-          storeById={storeById}
-          i18n={i18n}
-          priceInThousands={priceInThousands}
-          editable={editingPhase}
-          onRemove={onRemoveExpense}
-          onOpenExpense={onOpenExpense}
-          otherStoreExpenseIds={run.otherStoreExpenseIds}
-        />
-      ) : null}
-
+      {/* DX-DLV-17 (2026-11-01): while delivering, the store list comes
+          first; it sat under the expenses and the price card, below the
+          first screen. */}
       {/* A trip where nothing could be bought reaches `delivering` with
           zero splits, so the store list below renders nothing at all and
           the screen went blank. Say so instead — and note that Finish is
@@ -762,34 +722,6 @@ export function ActiveRunPanel({
             title={i18n.t('run.empty.nothingToDeliver')}
             description={i18n.t('run.empty.nothingToDeliverBody')}
           />
-        </Card>
-      ) : null}
-
-      {/* 2026-10-30 (owner decision): prices are often filled in after the
-          goods went out. Quantities and splits stay fixed here. */}
-      {run.status === 'delivering' && run.items.some((it) => it.status === 'purchased') ? (
-        <Card>
-          <SectionLabel meta={i18n.t('run.prices.hint')}>{i18n.t('run.prices.title')}</SectionLabel>
-          <ul className="flex flex-col" role="list">
-            {run.items
-              .filter((it) => it.status === 'purchased')
-              .map((it) => (
-                <li key={it.skuId} className="border-t border-[var(--c-divider)] first:border-t-0">
-                  <button
-                    type="button"
-                    // min-h-11 (R2-DLV-4): was a 34px row.
-                    className="press flex min-h-11 w-full items-center gap-2 px-4 py-2 text-left"
-                    onClick={() => onEditPrice(it)}
-                  >
-                    <span className="min-w-0 flex-1 truncate text-old-body">{nameOf(it.skuId)}</span>
-                    <span className="shrink-0 font-mono text-old-label tabular-nums text-[var(--c-fg-muted)]">
-                      {formatQty(it.purchasedQty ?? '0')} ×{' '}
-                      {it.unitPrice ? formatMoney(Number(it.unitPrice)) : '—'}
-                    </span>
-                  </button>
-                </li>
-              ))}
-          </ul>
         </Card>
       ) : null}
 
@@ -962,49 +894,54 @@ export function ActiveRunPanel({
                   })}
                 </ul>
               ) : null;
-              const pickToggle = (
-                <button
-                  type="button"
-                  onClick={() => togglePickStore(storeId)}
-                  aria-expanded={pickOpen}
-                  aria-controls={pickOpen ? `run-pick-${storeId}` : undefined}
-                  aria-label={`${storeName} · ${i18n.t('run.section.items')}`}
-                  className="flex h-11 w-11 shrink-0 items-center justify-center text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
-                >
-                  <span
-                    aria-hidden
-                    className={'inline-block transition-transform ' + (pickOpen ? 'rotate-90' : '')}
+              // DX-DLV-10 (2026-11-01): tapping the row used to deliver
+              // (or, once delivered, recall) — the same spot doing opposite
+              // things, with no verb on screen, and a › that only opened
+              // the pick list. Now the row opens the pick list (▾ / ▴) and
+              // the action is a labelled button at the end.
+              const verb =
+                !tappable ? null : stage === 'pending' ? (
+                  <Button
+                    size="sm"
+                    data-testid={`deliver-store-${storeId}`}
+                    onClick={() => onDeliverStore(storeId, storeName)}
+                    aria-label={i18n.t('run.delivery.deliverTo', { store: storeName })}
                   >
-                    ›
-                  </span>
-                </button>
-              );
+                    {i18n.t('run.delivery.deliver')}
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    data-testid={`recall-store-${storeId}`}
+                    onClick={() => onRecallStore(storeId, storeName)}
+                    aria-label={i18n.t('run.delivery.recallFrom', { store: storeName })}
+                  >
+                    {i18n.t('run.delivery.recall')}
+                  </Button>
+                );
               return (
                 <li
                   key={storeId}
                   className="border-b border-[var(--c-divider)] last:border-b-0"
                 >
-                  <div className="flex items-center">
-                    {tappable ? (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          stage === 'pending'
-                            ? onDeliverStore(storeId, storeName)
-                            : onRecallStore(storeId, storeName)
-                        }
-                        // min-h-11 (R2-DLV-4): as tall as the 44px pick-list
-                        // toggle beside it; it was 34.
-                        className="flex min-h-11 min-w-0 flex-1 items-center gap-2 py-2 pl-4 text-left active:bg-[var(--c-surface-2)]"
-                      >
-                        {inner}
-                      </button>
-                    ) : (
-                      <div className="flex min-h-11 min-w-0 flex-1 items-center gap-2 py-2 pl-4 text-[var(--c-fg-muted)]">
-                        {inner}
-                      </div>
-                    )}
-                    {pickToggle}
+                  <div className="flex items-center gap-2 pr-3">
+                    <button
+                      type="button"
+                      onClick={() => togglePickStore(storeId)}
+                      aria-expanded={pickOpen}
+                      aria-controls={pickOpen ? `run-pick-${storeId}` : undefined}
+                      className={
+                        'flex min-h-11 min-w-0 flex-1 items-center gap-2 py-2 pl-4 text-left active:bg-[var(--c-surface-2)]' +
+                        (tappable ? '' : ' text-[var(--c-fg-muted)]')
+                      }
+                    >
+                      {inner}
+                      <span aria-hidden className="shrink-0 text-[var(--c-fg-muted)]">
+                        {pickOpen ? '▴' : '▾'}
+                      </span>
+                    </button>
+                    {verb}
                   </div>
                   {issues}
                   {pickList}
@@ -1014,6 +951,107 @@ export function ActiveRunPanel({
           </ul>
         </Card>
       ) : null}
+
+      {/* 2026-10-30 (owner decision): prices are often filled in after the
+          goods went out. Quantities and splits stay fixed here.
+          DX-DLV-17 (2026-11-01): once every price is in, the card is one
+          line (「价格已齐 · 改价」) that opens the list; rows name the unit. */}
+      {run.status === 'delivering' && run.items.some((it) => it.status === 'purchased') ? (
+        <Card>
+          {pricesComplete && !pricesOpen ? (
+            <button
+              type="button"
+              onClick={() => setPricesOpen(true)}
+              aria-expanded={false}
+              className="press flex min-h-11 w-full items-center gap-2 px-4 py-2 text-left"
+            >
+              <span className="min-w-0 flex-1 text-old-body text-[var(--c-fg-muted)]">
+                {i18n.t('run.prices.complete')}
+              </span>
+              <span className="shrink-0 text-old-label font-semibold text-[var(--c-action)]">
+                {i18n.t('run.prices.edit')} ›
+              </span>
+            </button>
+          ) : (
+            <>
+              <SectionLabel meta={i18n.t('run.prices.hint')}>
+                {i18n.t(pricesComplete ? 'run.prices.titleDone' : 'run.prices.title')}
+              </SectionLabel>
+              <ul className="flex flex-col" role="list">
+                {run.items
+                  .filter((it) => it.status === 'purchased')
+                  .map((it) => {
+                    const unit = skuById.get(it.skuId)?.unit;
+                    return (
+                      <li key={it.skuId} className="border-t border-[var(--c-divider)] first:border-t-0">
+                        <button
+                          type="button"
+                          // min-h-11 (R2-DLV-4): was a 34px row.
+                          className="press flex min-h-11 w-full items-center gap-2 px-4 py-2 text-left"
+                          onClick={() => onEditPrice(it)}
+                        >
+                          <span className="min-w-0 flex-1 truncate text-old-body">{nameOf(it.skuId)}</span>
+                          <span className="shrink-0 font-mono text-old-label tabular-nums text-[var(--c-fg-muted)]">
+                            {formatQty(it.purchasedQty ?? '0')} {unitLabel(unit, it.purchasedQty ?? '0')} ×{' '}
+                            {it.unitPrice ? formatMoney(Number(it.unitPrice)) : '—'}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+              </ul>
+            </>
+          )}
+        </Card>
+      ) : null}
+
+      {/* M3.31 (2026-05-18, A.1): "其他物品" footer for the aggregate edit
+          surface too. Until this fix, staff-typed extras (structured
+          M3.16-C entries) disappeared from the purchaser's view the
+          moment a run started — they only existed in the preview
+          UI. Now they sit right under the per-SKU list so the
+          purchaser sees them while recording buys. */}
+      {(!showViewToggle ||
+        viewMode === 'aggregate' ||
+        (viewMode === 'perStore' && !showPerStore) ||
+        (viewMode === 'perVendor' && !showPerVendor) ||
+        (viewMode === 'perCategory' && !showPerCategory)) &&
+      plannedOrEditing ? (
+        <RunExtrasCard
+          sessionExtrasByStore={run.sessionExtrasByStore}
+          sessionNotesByStore={run.sessionNotesByStore}
+          storeById={storeById}
+          i18n={i18n}
+          editable={editingPhase}
+          onMarkExtraStatus={onMarkExtraStatus}
+          onRecordExtraExpense={onRecordExtraExpense}
+          purchaseScopeStoreIds={run.purchaseScopeStoreIds}
+        />
+      ) : null}
+
+      {/* M3.44 (2026-05-22): off-catalog expenses card. Rendered in
+          aggregate / perVendor view BELOW the items + extras
+          sections. Always visible (read-only in non-purchasing
+          phases) so the manager can see "what off-plan was spent"
+          from any page state. */}
+      {(!showViewToggle ||
+        viewMode === 'aggregate' ||
+        (viewMode === 'perStore' && !showPerStore) ||
+        (viewMode === 'perVendor' && !showPerVendor) ||
+        (viewMode === 'perCategory' && !showPerCategory)) &&
+      (editingPhase || (run.expenses?.length ?? 0) > 0) ? (
+        <ExpensesCard
+          expenses={run.expenses}
+          storeById={storeById}
+          i18n={i18n}
+          priceInThousands={priceInThousands}
+          editable={editingPhase}
+          onRemove={onRemoveExpense}
+          onOpenExpense={onOpenExpense}
+          otherStoreExpenseIds={run.otherStoreExpenseIds}
+        />
+      ) : null}
+
 
       {/* M1.11: dropped run.banner.readyToStart — its content
           ("Tap Start Purchase when ready") is already conveyed by the
@@ -1537,17 +1575,27 @@ export function PreviewSummaryCard({
   const shareOrCopyText = async (text: string): Promise<void> => {
     const copied = await copyToClipboard(text);
     let opened = false;
-    const url = shareLink({ url: '', text });
+    // DX-BUY-4 (2026-11-01): outside Telegram this used to navigate the
+    // app itself to t.me (the SDK object exists in every browser).
+    const route = shareRoute(
+      isInTelegram(),
+      typeof navigator !== 'undefined' && typeof navigator.share === 'function',
+    );
     try {
-      const tg = getTg();
-      if (tg?.openTelegramLink) {
-        tg.openTelegramLink(url);
+      if (route === 'telegram') {
+        getTg()?.openTelegramLink?.(shareLink({ url: '', text }));
         opened = true;
-      } else if (typeof window !== 'undefined') {
-        opened = window.open(url, '_blank', 'noopener,noreferrer') !== null;
+      } else if (route === 'system') {
+        await navigator.share({ text });
+        opened = true;
       }
     } catch {
+      // Dismissed share sheet or a refused call: the list is still copied.
       opened = false;
+    }
+    if (opened && route === 'system') {
+      haptic('success');
+      return;
     }
     if (opened) {
       toast.success(
@@ -1557,7 +1605,9 @@ export function PreviewSummaryCard({
       return;
     }
     if (copied) {
-      toast.success(i18n.t('run.previewStore.copied'));
+      toast.success(
+        i18n.t(route === 'copy' ? 'run.previewShare.copiedPaste' : 'run.previewStore.copied'),
+      );
       haptic('success');
       return;
     }
@@ -2287,12 +2337,40 @@ export function RunSessionsCard({
   ejecting: boolean;
   onEject: (session: NonNullable<ActiveRun['sessions']>[number]) => void;
 }) {
+  // DX-BUY-7 (2026-11-01): collapsed to one line by default. The cards and
+  // their 「移出采购单」 buttons (a rare, reversing action) took the top of
+  // the screen and pushed the first item to y≈440–560.
+  const [open, setOpen] = useState(false);
+  const storeCounts = new Map<string, number>();
+  for (const s of sessions) storeCounts.set(s.storeId, (storeCounts.get(s.storeId) ?? 0) + 1);
+  const storesLine = [...storeCounts.entries()]
+    .map(([storeId, n]) => {
+      const name = storeById.get(storeId)?.name ?? storeId.slice(0, 8);
+      return n > 1 ? `${name} ×${n}` : name;
+    })
+    .join(i18n.t('run.sessions.storeJoiner'));
   return (
     <Card>
-      <SectionLabel meta={i18n.t('run.sessions.meta', { n: sessions.length })}>
-        {i18n.t('run.section.sessions')}
-      </SectionLabel>
-      <ul className="flex flex-col" role="list">
+      <button
+        type="button"
+        data-testid="run-sessions-toggle"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-controls={open ? 'run-sessions-list' : undefined}
+        className="press flex min-h-11 w-full items-center gap-2 px-4 py-2 text-left"
+      >
+        <span className="shrink-0 text-old-label font-semibold text-[var(--c-fg-muted)]">
+          {i18n.t('run.sessions.collapsed', { n: sessions.length })}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-old-label text-[var(--c-fg-muted)]">
+          {storesLine}
+        </span>
+        <span aria-hidden className="shrink-0 text-[var(--c-fg-muted)]">
+          {open ? '▴' : '▾'}
+        </span>
+      </button>
+      {!open ? null : (
+      <ul id="run-sessions-list" className="flex flex-col border-t border-[var(--c-divider)]" role="list">
         {sessions.map((sessionRow) => {
           const storeName =
             storeById.get(sessionRow.storeId)?.name ?? sessionRow.storeId.slice(0, 8);
@@ -2343,6 +2421,7 @@ export function RunSessionsCard({
           );
         })}
       </ul>
+      )}
       {/* UIUX-B1: the permanent eject-rules footer is gone — the eject
           ConfirmSheet body already states the exact constraint at the
           moment it matters. */}

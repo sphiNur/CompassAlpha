@@ -129,6 +129,14 @@ interface SheetProps {
   hasChanges?: boolean;
 
   /**
+   * DX-DLV-08 (2026-11-01): on open, move focus to the sheet's title. No
+   * input is focused, so the iOS keyboard does not pop, and screen-reader
+   * users hear which form opened (focusing the sheet box, as
+   * `disableAutoFocus` does, names nothing). Wins over `deferAutoFocusMs`.
+   */
+  focusTitleOnOpen?: boolean;
+
+  /**
    * DX-ORD-9 (2026-11-01): where focus goes when the sheet closes. A sheet
    * opened from code (no Radix Trigger) otherwise dropped focus on <body>,
    * and a keyboard user had to Tab from the top of the page back to the row.
@@ -197,9 +205,11 @@ function OpenedSheet({
   disableAutoFocus = false,
   deferAutoFocusMs,
   hasChanges = false,
+  focusTitleOnOpen = false,
   returnFocusRef,
 }: SheetProps) {
   const contentRef = useRef<HTMLDivElement | null>(null);
+  const titleRef = useRef<HTMLHeadingElement | null>(null);
   // A11Y-16 (2026-10-31): was the fixed id "sheet-desc", so a sheet opened
   // over another one pointed both dialogs' aria-describedby at whichever
   // element the browser found first.
@@ -233,7 +243,7 @@ function OpenedSheet({
   // slideUp completes (240ms), the sheet is in final position; the
   // keyboard pops without scroll-jumping the WebView.
   useEffect(() => {
-    if (!open || disableAutoFocus || !deferAutoFocusMs) return;
+    if (!open || disableAutoFocus || !deferAutoFocusMs || focusTitleOnOpen) return;
     const timer = setTimeout(() => {
       const root = contentRef.current;
       if (!root) return;
@@ -262,13 +272,17 @@ function OpenedSheet({
       }
     }, deferAutoFocusMs);
     return () => clearTimeout(timer);
-  }, [open, disableAutoFocus, deferAutoFocusMs]);
+  }, [open, disableAutoFocus, deferAutoFocusMs, focusTitleOnOpen]);
   useSheetPresence(open, requestOpenChange);
   // DX-IX-2 / DX-IX-3: sheets that must not raise the keyboard (or raise
   // it later) take focus themselves; every sheet gives focus back to the
   // element that opened it when it closes.
+  // DX-DLV-08: `focusTitleOnOpen` keeps the keyboard down too, but lands
+  // on the title rather than the sheet box, so the form is announced by
+  // its name.
   const focus = useSheetFocus(open, contentRef, {
-    keepKeyboardDown: disableAutoFocus || !!deferAutoFocusMs,
+    keepKeyboardDown: disableAutoFocus || !!deferAutoFocusMs || focusTitleOnOpen,
+    keyboardDownTargetRef: focusTitleOnOpen ? titleRef : undefined,
     returnFocusRef,
   });
 
@@ -317,7 +331,11 @@ function OpenedSheet({
               aria-hidden
             />
             {title ? (
-              <Dialog.Title className="mt-3 text-center text-old-h2 font-semibold">
+              <Dialog.Title
+                ref={titleRef}
+                tabIndex={focusTitleOnOpen ? -1 : undefined}
+                className="mt-3 text-center text-old-h2 font-semibold outline-none"
+              >
                 {title}
               </Dialog.Title>
             ) : null}
