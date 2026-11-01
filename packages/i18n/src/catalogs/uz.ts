@@ -2229,7 +2229,7 @@ export const uz = {
   'order.banner.onTheWay.title': 'Sotib olindi · doʻkoningizga olib kelinmoqda',
   'order.banner.recalled.title': 'Xaridor yetkazishni qaytarib oldi · qayta yetkazilishini kuting',
   'order.banner.checked.title': 'Tovar qabul qilindi',
-  'run.history.supplier': 'Taʼminotchi: {name}',
+  'run.history.supplier': 'Yetkazib beruvchi: {name}',
   'run.history.receiptOf': 'Chek surati: {item}',
   'run.history.expensesHeading': 'Xarajatlar',
   'run.history.correctionsHeading': 'Tuzatishlar',
@@ -2260,4 +2260,5 @@ export const uz = {
   'approval.allZeroRejectOnly': 'Barcha qatorlar 0 va boshqa narsa yoʻq, tasdiqlab boʻlmaydi. Qatorni qaytaring yoki buyurtmani rad eting.',
   'approval.toast.withdrawnWhileOpen': 'Buyurtmachi siz ochgan buyurtmani qaytarib oldi.',
   'approval.toast.decidedElsewhere': 'Siz ochgan buyurtmani boshqa tekshiruvchi allaqachon koʻrib chiqdi.',
+  'finance.view.label': 'Koʻrinish',
 } as const satisfies Record<CatalogKey, string>;

@@ -814,7 +814,7 @@ export function ConfirmPage() {
                     <SectionLabel as="h2" meta={String(unbought.length)}>
                       {i18n.t('confirm.unbought.title')}
                     </SectionLabel>
-                    {myItems.length > 0 ? (
+                    {myItems.length > 0 || awaitingDelivery ? (
                       <p className="px-4 pb-2 text-old-label text-[var(--c-fg-muted)]">
                         {i18n.t('confirm.unbought.hint')}
                       </p>

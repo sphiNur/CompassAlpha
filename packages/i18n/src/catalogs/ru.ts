@@ -2256,4 +2256,5 @@ export const ru = {
   'approval.allZeroRejectOnly': 'Все позиции равны 0 и прочих товаров нет, одобрить нельзя. Верните позицию или отклоните заказ.',
   'approval.toast.withdrawnWhileOpen': 'Автор отозвал открытый у вас заказ.',
   'approval.toast.decidedElsewhere': 'Открытый у вас заказ уже рассмотрел другой проверяющий.',
+  'finance.view.label': 'Вид',
 } as const satisfies Record<CatalogKey, string>;

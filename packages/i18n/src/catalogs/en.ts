@@ -2342,7 +2342,7 @@ export const en = {
   'finance.count.runs': '{n, plural, one {# run} other {# runs}}',
   'run.history.tripRange': '{from}–{to} of {total, plural, one {# trip} other {# trips}}',
   'settlement.confirm.allZero': 'Every amount is 0. Save this day as closed with no money at all?',
-  'nav.badge.count': '{label}, {n} waiting',
+  'nav.badge.count': '{label}, waiting: {n}',
   'nav.badge.due': '{label}, not done today',
   'confirm.wait.recalled.title': 'The purchaser recalled this delivery',
   'confirm.wait.recalled.body': 'Check the goods once they are delivered again.',
@@ -2397,4 +2397,5 @@ export const en = {
   'approval.allZeroRejectOnly': 'Every line is set to 0 and there are no other items, so it cannot be approved. Bring a line back, or reject the order.',
   'approval.toast.withdrawnWhileOpen': 'The submitter withdrew the order you had open.',
   'approval.toast.decidedElsewhere': 'Another reviewer has already decided the order you had open.',
+  'finance.view.label': 'View',
 } as const;

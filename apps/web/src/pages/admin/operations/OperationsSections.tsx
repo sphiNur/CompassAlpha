@@ -26,7 +26,6 @@ import {
   Field,
   Input,
   SectionLabel,
-  Segmented,
   Select,
   Sheet,
   Spinner,
@@ -1542,20 +1541,31 @@ export function FinanceSection() {
       {/* DX-HIS-3: the export button gets its own line when the three
           views need the width (ru / uz at 360 px squeezed it to 24 px). */}
       <div className="mb-2 flex flex-wrap items-center justify-end gap-2">
-        <Segmented<'daily' | 'bySupplier' | 'byStore'>
-          value={view}
-          options={[
-            { value: 'daily', label: i18n.t('finance.view.daily') },
-            { value: 'bySupplier', label: i18n.t('finance.view.bySupplier') },
-            { value: 'byStore', label: i18n.t('finance.view.byStore') },
-          ]}
-          onChange={(next) => {
-            setView(next);
-            setExpanded(null);
-          }}
-          className="min-w-[min(100%,18rem)] flex-1"
-          ariaLabel={i18n.t('finance.view.daily')}
-        />
+        {/* DX-HIS-3: chips that wrap; in uz at 360 px the three views
+            were 355 px in 328 and 「Doʻkon boʻyicha」 was cut off. */}
+        <ChipBar
+          ariaLabel={i18n.t('finance.view.label')}
+          className="min-w-[11rem] flex-1 flex-wrap overflow-visible px-0 py-0"
+        >
+          {(
+            [
+              ['daily', 'finance.view.daily'],
+              ['bySupplier', 'finance.view.bySupplier'],
+              ['byStore', 'finance.view.byStore'],
+            ] as const
+          ).map(([value, label]) => (
+            <Chip
+              key={value}
+              selected={view === value}
+              onClick={() => {
+                setView(value);
+                setExpanded(null);
+              }}
+            >
+              {i18n.t(label)}
+            </Chip>
+          ))}
+        </ChipBar>
         {canExport ? (
           <Button
             size="sm"
