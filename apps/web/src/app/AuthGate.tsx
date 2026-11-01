@@ -4,7 +4,7 @@ import { Button, Banner, Input, Spinner, useToast } from '@compass/ui';
 import { useAuthStore, type AuthSession } from '../stores/authStore';
 import { noteSessionCleared, trpc } from '../lib/trpc';
 import { getTg, haptic } from '../hooks/useTelegram';
-import { useI18n, useRoleLabels } from '../hooks/useI18n';
+import { I18nGate, useI18n, useRoleLabels } from '../hooks/useI18n';
 import { useTranslateError } from '../lib/errToast';
 import { errorTextKey, withoutFinalStop } from '../lib/errorText';
 import { isLikelyNetworkError } from '../lib/networkError';
@@ -112,6 +112,12 @@ function inviteTokenFromLaunch(): string | null {
  *    No retries.
  */
 export function AuthGate({ children }: AuthGateProps) {
+  // DX-PFE-2 (2026-11-01): the sign-in check runs at once; only what this
+  // gate draws (its own screens and the app) waits for the catalog.
+  return <I18nGate>{useAuthGateScreen(children)}</I18nGate>;
+}
+
+function useAuthGateScreen(children: ReactNode): ReactNode {
   const accessToken = useAuthStore((s) => s.accessToken);
   const session = useAuthStore((s) => s.session);
   const authHydrated = useAuthStore((s) => s.hasHydrated);

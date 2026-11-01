@@ -14,7 +14,7 @@ import { formatMoneyThousands } from '../format';
 import { BUILTIN_ROLES, PERMISSIONS } from '../../../../../packages/db/src/seed-data';
 
 beforeAll(async () => {
-  await Promise.all(['zh', 'ru', 'uz'].map((l) => loadCatalog(l as 'zh' | 'ru' | 'uz')));
+  await Promise.all(['en', 'zh', 'ru', 'uz'].map((l) => loadCatalog(l as 'en' | 'zh' | 'ru' | 'uz')));
 });
 
 describe('D16: business dates follow the UI language', () => {

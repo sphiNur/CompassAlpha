@@ -9,47 +9,23 @@ import { Component } from 'react';
 import { reloadApp } from '../lib/reload';
 import { NAV_STORAGE_KEY } from '../stores/navStore';
 import type { ErrorInfo, ReactNode } from 'react';
-import { createI18n, detectLocale, isLoaded, loadCatalog, type Locale } from '@compass/i18n';
+import { createI18n, ensureCatalog, isLoaded, type Locale } from '@compass/i18n';
+import { startLocale } from '../lib/startLocale';
 
 /**
  * Resolve the user's locale WITHOUT hooks (2026-07-30).
  *
  * ErrorBoundary is the outermost component — it wraps ThemeProvider and
  * UiLabelsBridge — so it can't use `useI18n()` and can't read any React
- * context: it is the ancestor of all of them. It also has to keep working
- * when the tree below it has just blown up.
+ * context: it is the ancestor of all of them. lib/bootLocale reads the
+ * persisted session straight from storage, then the platform hint.
  *
- * Preference order:
- *   1. The persisted session's `user.locale` — the language the user
- *      actually chose, and what every other screen is rendering in.
- *   2. Telegram's `language_code` / `navigator.language`, same signal
- *      /boot-guard.js uses to set <html lang> before React boots.
- *
- * `lookup()` falls back through `en`, and `en` is the statically-bundled
- * catalog, so a crash that happens BEFORE the locale chunk resolves
- * degrades to English rather than rendering keys. That's the honest
- * outcome for a boot-time crash; a mid-session crash (the realistic case,
- * and the one observed on 2026-07-30) has the catalog long since loaded.
+ * A crash before any catalog arrived (no catalog is bundled since
+ * DX-PFE-2) draws keys for the moment componentDidCatch takes to fetch
+ * the language — or English when that fails — and draw again. A
+ * mid-session crash (the realistic case) has the catalog long loaded.
  */
-function crashLocale(): Locale {
-  try {
-    const raw = window.localStorage.getItem('compass.auth');
-    if (raw) {
-      const persisted = JSON.parse(raw) as {
-        state?: { session?: { user?: { locale?: string } } };
-      };
-      const chosen = persisted.state?.session?.user?.locale;
-      if (chosen) return detectLocale(chosen);
-    }
-  } catch {
-    /* unparseable / storage blocked — fall through to the platform hint */
-  }
-  const tgLang =
-    typeof window !== 'undefined'
-      ? window.Telegram?.WebApp?.initDataUnsafe?.user?.language_code
-      : undefined;
-  return detectLocale(tgLang ?? (typeof navigator !== 'undefined' ? navigator.language : 'en'));
-}
+const crashLocale = (): Locale => startLocale();
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -98,11 +74,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     // the screen in English until a retry. Fetch it now and draw again.
     const locale = crashLocale();
     if (!isLoaded(locale)) {
-      void loadCatalog(locale)
-        .then(() => this.forceUpdate())
-        .catch(() => {
-          /* offline: English it is */
-        });
+      // Offline, ensureCatalog falls back to English.
+      void ensureCatalog(locale).then(() => this.forceUpdate());
     }
   }
 

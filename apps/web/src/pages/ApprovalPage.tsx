@@ -46,6 +46,8 @@ import { sessionItemsView } from './approval/sessionItemsView';
 import { cardRequests, showPaymentSplit } from './approval/cardSummary';
 import { adjustingSessionIds } from './approval/adjustInFlight';
 import { ORDER_QTY_MAX } from '@compass/contracts/limits';
+import { moneyLine } from '../lib/money';
+import { addMoney } from '@compass/contracts/money';
 
 /** DX-IX-4: where focus goes after a card is decided (the list's first card title). */
 const NEXT_CARD = '[data-approval-list] > li h2';
@@ -960,7 +962,8 @@ function SessionItems({
     for (const t of totals) {
       const price = priceMap.get(t.skuId);
       if (price) {
-        sum += Number(price) * Number(t.qty);
+        // DX-PFE-12: half-up cents per line, added in cents (D1).
+        sum = addMoney(sum, moneyLine(t.qty, price));
         known++;
       } else {
         unknown++;
@@ -1135,7 +1138,7 @@ function SessionItems({
                 </span>
                 {unitPrice ? (
                   <span className="shrink-0 font-mono">
-                    ~{formatMoney(unitPrice * Number(t.qty))}
+                    ~{formatMoney(moneyLine(t.qty, priceBySku.get(t.skuId)))}
                   </span>
                 ) : null}
               </div>

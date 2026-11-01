@@ -1,10 +1,12 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { loadCatalog } from '@compass/i18n';
+import { ensureCatalog } from '@compass/i18n';
 import { App } from './app/App';
 import './styles/index.css';
 import { reloadForStaleChunk } from './lib/reload';
-import { bootLocale, waitAtMost } from './lib/bootLocale';
+import { waitAtMost } from './lib/bootLocale';
+import { startLocale } from './lib/startLocale';
+import { preloadPage, savedTab } from './app/pageChunks';
 
 // F10 (2026-10-30): after a deploy, a client that stayed open asks for
 // lazy page chunks that no longer exist; the import failed into the root
@@ -39,34 +41,49 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   });
 }
 
+/**
+ * Longest the splash waits for the catalog: well inside boot-guard.js's
+ * 12 s failsafe. Past it the screens stay hidden (I18nGate) until the
+ * catalog lands rather than showing keys.
+ */
+const SPLASH_MAX_MS = 8_000;
+
 const container = document.getElementById('root');
 if (!container) throw new Error('Root not found');
 
-// M3.14-D (2026-05-16): fetch the active locale's catalog chunk before
-// the first render. DX-PFE-1 (2026-11-01): the locale is the persisted
-// session's own language when there is one (Telegram / navigator.language
-// only for a first visit), and the first render waits for it (at most
-// 2.5 s, under the boot splash), so a zh user no longer sees an English
-// screen first. en is statically imported and always available.
-let storage: Storage | null = null;
-try {
-  storage = window.localStorage;
-} catch {
-  /* storage blocked */
-}
-const locale = bootLocale(
-  storage,
-  window.Telegram?.WebApp?.initDataUnsafe?.user?.language_code ?? navigator.language,
-);
-const catalogReady =
-  locale === 'en' ? Promise.resolve() : waitAtMost(loadCatalog(locale), 2500);
+// M3.14-D / DX-PFE-1 / DX-PFE-2 (2026-11-01): one startup path.
+//   - The start language is the persisted session's own choice, else
+//     Telegram's / the browser's (startLocale → lib/bootLocale).
+//   - No catalog is bundled, English included, so there is no English to
+//     flash: the boot splash stays up until that catalog is in (or English,
+//     when it cannot be fetched — ensureCatalog).
+//   - React renders at once underneath it, so auth, the saved-data restore
+//     and the page's queries run while the catalog downloads; I18nGate keeps
+//     the screens hidden until the catalog is in, so no raw key is ever shown
+//     (also after the splash's time limit below).
+//   - DX-PFE-3: the page the app reopens on is a lazy chunk; start it now.
+const catalogReady = waitAtMost(ensureCatalog(startLocale()), SPLASH_MAX_MS);
+const reopenTab = (() => {
+  try {
+    return savedTab(window.localStorage);
+  } catch {
+    return null;
+  }
+})();
+if (reopenTab) preloadPage(reopenTab);
 
+// The splash lives inside #root; React would replace it on the first
+// render. Lift it above the app instead and remove it once the catalog is
+// in (`.ready` also tells boot-guard.js's failsafe that the app started).
+const splash = document.getElementById('boot-splash');
+if (splash) {
+  splash.style.zIndex = '2147483000';
+  document.body.appendChild(splash);
+}
+render(container);
 void catalogReady.then(() => {
-  // Replace the inline boot splash. We clear the splash node *before*
-  // createRoot renders so React doesn't have to fight an existing subtree.
-  const splash = document.getElementById('boot-splash');
-  if (splash) splash.remove();
-  render(container);
+  document.documentElement.classList.add('ready');
+  splash?.remove();
 });
 
 // `/?kit` shows the component kit on its own, without signing in. The
@@ -74,6 +91,8 @@ void catalogReady.then(() => {
 // neither the branch nor the page.
 function render(container: HTMLElement): void {
   if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('kit')) {
+    // The kit draws no translated text: no splash to wait under.
+    document.getElementById('boot-splash')?.remove();
     void import('./pages/KitGallery').then(({ KitGallery }) => {
       createRoot(container).render(
         <StrictMode>
@@ -88,10 +107,4 @@ function render(container: HTMLElement): void {
       </StrictMode>,
     );
   }
-
-  // Tell index.html that React mounted; the splash CSS guard hides any
-  // remaining boot error UI.
-  requestAnimationFrame(() => {
-    document.documentElement.classList.add('ready');
-  });
 }

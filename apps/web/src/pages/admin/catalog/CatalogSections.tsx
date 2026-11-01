@@ -44,6 +44,7 @@ import { useI18n, useProductName, useUnitLabel } from '../../../hooks/useI18n';
 import { useAnnounce } from '../../../hooks/useAnnounce';
 import { nativeConfirm } from '../shared';
 import { CatalogImportSheet } from './CatalogImportSheet';
+import { moneyLine } from '../../../lib/money';
 
 /**
  * A11Y-3 (2026-10-31): the "Mol go'shti · Говядина · Beef" line under a
@@ -1131,8 +1132,7 @@ export function ExpenseTemplatesSection() {
         {(rows) => (
           <ul className="flex flex-col gap-2" role="list">
             {rows.map((tpl) => {
-              const lineTotal =
-                Number(tpl.defaultQty) * Number(tpl.defaultUnitPrice);
+              const lineTotal = moneyLine(tpl.defaultQty, tpl.defaultUnitPrice) ?? 0;
               return (
                 <Card as="li" key={tpl.id}>
                   <CardHeader>

@@ -18,6 +18,7 @@ import { useVersionCheck } from '../hooks/useVersionCheck';
 import { useRealtime } from '../hooks/useRealtime';
 import { useRefetchFailedOnReconnect } from '../hooks/useRefetchFailedOnReconnect';
 import { useOutboxReplay } from '../lib/outboxReplay';
+import { useWarmRunQueries } from '../hooks/useWarmRunQueries';
 import { AuthGate } from './AuthGate';
 import { Shell } from './Shell';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -102,6 +103,8 @@ function QueryConsumers({ children }: { children: ReactNode }) {
   useQueryCachePersistence();
   // CMP-FE-3: writes queued offline on any page replay from here.
   useOutboxReplay();
+  // DX-PFE-3: the purchase tab's run queries start before the gates below.
+  useWarmRunQueries();
   return <>{children}</>;
 }
 

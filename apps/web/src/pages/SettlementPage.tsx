@@ -45,6 +45,7 @@ import { scrollBehavior } from '../lib/reducedMotion';
 import { useAuthStore } from '../stores/authStore';
 import { registerTabChangeGuard } from '../stores/navStore';
 import { StoreSalesPanel } from '../components/sales/StoreSalesPanel';
+import { addMoney } from '@compass/contracts/money';
 import {
   ITEM_MONEY_PROBLEM_MESSAGE,
   MONEY_PROBLEM_MESSAGE,
@@ -739,15 +740,16 @@ export function SettlementPage() {
   // DX-CLS-4 (2026-11-01): a line whose inputs are not valid amounts shows
   // "—" instead of e.g. "-5 UZS" or "99,999,999,999,999 UZS".
   const summary = {
+    // DX-PFE-12: added in cents, so 0.10 + 0.20 shows 0.30 (D1).
     totalRevenue:
       isMoney(draft.onlineRevenue) && isMoney(draft.invoicedCashRevenue)
-        ? onlineRevenue + invoicedCashRevenue
+        ? addMoney(onlineRevenue, invoicedCashRevenue)
         : null,
     paidOutflows:
-      operatingExpenseTotal.valid && paidWageTotal.valid ? operatingExpenses + wagesPaid : null,
+      operatingExpenseTotal.valid && paidWageTotal.valid ? addMoney(operatingExpenses, wagesPaid) : null,
     futureCommitments:
       unpaidWageTotal.valid && isMoney(draft.nextPurchaseReserve)
-        ? wagesAccrued + nextPurchaseReserve
+        ? addMoney(wagesAccrued, nextPurchaseReserve)
         : null,
     priorPurchaseAdjustment: isMoney(draft.priorPurchaseAdjustment, true)
       ? priorPurchaseAdjustment

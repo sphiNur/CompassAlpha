@@ -1,11 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { createElement, useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   createI18n,
   detectLocale,
+  ensureCatalog,
   isLoaded,
-  loadCatalog,
   type Locale,
 } from '@compass/i18n';
+import { startLocale } from '../lib/startLocale';
+import { ALL_LOCALES, shownLocaleFor } from '../lib/shownLocale';
 import { useAuthStore } from '../stores/authStore';
 import { makeDateFormatters } from '../lib/dateFormat';
 import { unitLabeller } from '../lib/unitLabel';
@@ -34,11 +37,12 @@ function notifyLoaded(): void {
 
 /**
  * Ensure the given locale's catalog is loaded; trigger a re-render
- * when it lands. No-op if already loaded.
+ * when it lands. No-op if already loaded. When it cannot be fetched,
+ * English is loaded instead (ensureCatalog).
  *
- * Until the load resolves, lookup() returns undefined for keys not
- * in the en fallback, and `format()` falls through to the raw key.
- * The user sees English copy for the ~1-frame load window.
+ * Until the load resolves, useI18n keeps drawing in the language that
+ * was on screen (see shownLocale) — no catalog is bundled any more, so
+ * there is no English to fall back on for that moment (DX-PFE-2).
  */
 function useEnsureLocale(locale: Locale): void {
   // Versioned re-render trigger.
@@ -54,7 +58,7 @@ function useEnsureLocale(locale: Locale): void {
   useEffect(() => {
     if (isLoaded(locale)) return;
     let cancelled = false;
-    void loadCatalog(locale).then(() => {
+    void ensureCatalog(locale).then(() => {
       if (cancelled) return;
       notifyLoaded();
     });
@@ -77,8 +81,54 @@ export function useI18n() {
   useEffect(() => {
     if (document.documentElement.lang !== resolved) document.documentElement.lang = resolved;
   }, [resolved]);
-  return useMemo(() => createI18n(resolved), [resolved]);
+  const shown = shownLocaleFor(resolved);
+  // A new object once the catalog is in, so memoized children that take
+  // `i18n` as a prop draw again with the real words, not the keys the
+  // hidden first render used (I18nGate).
+  const shownReady = isLoaded(shown);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- shownReady is the point: see above
+  return useMemo(() => createI18n(shown), [shown, shownReady]);
 }
+
+/**
+ * Hides what it wraps until a catalog for the language the app opens in
+ * has loaded (or English, when that one cannot be fetched). No catalog is
+ * in the startup chunk since DX-PFE-2, and the screens would otherwise
+ * show raw keys for that moment.
+ *
+ * Hidden, not held back: the tree renders and its queries start at once,
+ * so the data and the catalog download side by side (holding the pages
+ * back cost the order screen ~450 ms on slow 4G, measured). The wrapper
+ * is `display: contents` — no box, the layout is the same — and stays in
+ * place after, so nothing remounts when it turns visible. main.tsx starts
+ * the same fetch before React renders. Only the first start waits: later
+ * language changes go through shownLocale.
+ */
+export function I18nGate({ children }: { children: ReactNode }) {
+  const [ready, setReady] = useState(() => ALL_LOCALES.some((l) => isLoaded(l)));
+  useEffect(() => {
+    if (ready) return;
+    let live = true;
+    void ensureCatalog(startLocale()).then(() => {
+      if (live) setReady(true);
+    });
+    return () => {
+      live = false;
+    };
+  }, [ready]);
+  return createElement(
+    'div',
+    {
+      style: ready ? GATE_OPEN : GATE_HIDDEN,
+      'aria-busy': ready ? undefined : true,
+      'data-i18n-gate': ready ? 'open' : 'loading',
+    },
+    children,
+  );
+}
+
+const GATE_OPEN = { display: 'contents' } as const;
+const GATE_HIDDEN = { display: 'contents', visibility: 'hidden' } as const;
 
 /**
  * Locale-bound date/time formatters (2026-07-30, flow review).

@@ -28,6 +28,8 @@
  */
 import { addMoney } from '@compass/contracts/money';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { cacheOwner } from '../lib/queryPersist';
+import { hintStorage, saveRunHint } from '../lib/runHint';
 import {
   Banner,
   Button,
@@ -90,6 +92,7 @@ import { editPricingFromSplits, paidPerStore, splitOverridesFor } from './runs/l
 import { topUpRevision } from './runs/lib/topUp';
 import { NEW_RUN, isBuying, liveRunsOf, pickActiveRun, runListGate } from './runs/lib/liveRuns';
 import { overlayPendingWrites, startDeliveryBlock, withData } from './runs/lib/pendingOverlay';
+import { moneyLine as moneyLineAmount } from '../lib/money';
 
 function newClientId(): string {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -690,6 +693,14 @@ export function RunPage() {
     [runsQuery.data, canAmend, selectedRunKey],
   );
   const runListState = runListGate(runsQuery);
+  // DX-PFE-3: remember the run on screen so the next start can ask for it
+  // without waiting for run.list (hooks/useWarmRunQueries).
+  const runHintOwner = cacheOwner(session);
+  const activeRunId = activeRun?.id ?? null;
+  const runListAnswered = runsQuery.isSuccess;
+  useEffect(() => {
+    if (runListAnswered) saveRunHint(hintStorage(), runHintOwner, activeRunId);
+  }, [runListAnswered, runHintOwner, activeRunId]);
   const liveRuns = useMemo(() => liveRunsOf(runsQuery.data ?? [], canAmend), [runsQuery.data, canAmend]);
   const hasBuyingRun = liveRuns.some((r) => isBuying(r.status));
   const previewSessionCount = previewQuery.data?.sessions.length ?? 0;
@@ -1558,9 +1569,11 @@ export function RunPage() {
             (runDetailQuery.data?.items ?? []).map((it) => [it.skuId, it.unitPrice]),
           );
           const missingValue = receiptIssues.reduce((sum, sp) => {
-            const price = Number(sp.unitPrice ?? itemPrice.get(sp.skuId) ?? 0);
+            const price = sp.unitPrice ?? itemPrice.get(sp.skuId) ?? 0;
             const missing = Number(sp.qty) - Number(sp.confirmReceivedQty ?? 0);
-            return sum + (missing > 0 ? missing * price : 0);
+            // DX-PFE-12: half-up cents per line (D1); toFixed(3) drops the
+            // float noise of the subtraction (quantities have 3 decimals).
+            return missing > 0 ? addMoney(sum, moneyLineAmount(missing.toFixed(3), price)) : sum;
           }, 0);
           const receiptLine =
             receiptIssues.length > 0
