@@ -29,7 +29,10 @@ import { dateInTz, todayInTz } from '@compass/domain';
 import { authedProcedure, router } from '../trpc';
 import { hub } from '../../realtime/hub';
 import { hasGlobalOrgAdmin, hasGlobalPermission } from '../../services/orgAdmin';
-import { effectivePermissionsForStore } from '../../services/storeScope';
+import {
+  effectiveGlobalPermissions,
+  effectivePermissionsForStore,
+} from '../../services/storeScope';
 import { isPlatformAdmin } from '../../services/platformAdmin';
 import { assertCanAddMember, assertCanAddStore } from '../../services/subscription';
 import { isUniqueViolation } from '../../services/pgErrors';
@@ -3126,9 +3129,11 @@ export const adminRouter = router({
         .where(eq(s.roles.orgId, orgId))
         .groupBy(s.rolePermissions.roleId);
       const countByRole = new Map(counts.map((c) => [c.roleId, c.n]));
+      const passOn = await rolePassOnScopes(tx, ctx, roles);
       return roles.map((r) => ({
         ...r,
         permissionCount: countByRole.get(r.id) ?? 0,
+        passOn: passOn.get(r.id)!,
       }));
     });
   }),
@@ -3284,7 +3289,12 @@ export const adminRouter = router({
           });
         }
         if (!(await exemptFromKeyCheck(ctx))) {
-          assertHoldsKeys(ctx.session!.permissions, input.permissionKeys);
+          // DX-ADM-2: a role applies in every store, so only keys the
+          // actor holds org-wide may go into it.
+          assertHoldsKeys(
+            await effectiveGlobalPermissions(tx, ctx.session!.memberId),
+            input.permissionKeys,
+          );
         }
         // Idempotency: if the slug already exists, return it.
         const existing = await tx.query.roles.findFirst({
@@ -3394,7 +3404,7 @@ export const adminRouter = router({
           const had = new Set(current.map((r) => r.key));
           if (!(await exemptFromKeyCheck(ctx))) {
             assertHoldsKeys(
-              ctx.session!.permissions,
+              await effectiveGlobalPermissions(tx, ctx.session!.memberId),
               input.permissionKeys.filter((key) => !had.has(key)),
             );
           }
@@ -6629,8 +6639,8 @@ async function exemptFromKeyCheck(ctx: AdminCtx): Promise<boolean> {
 /**
  * D8 / RE-ADM-10 (2026-10-31): granting a role hands over every key in
  * it, so the actor must hold each of them where the binding applies (a
- * store's effective set for a store binding, the session's for a global
- * one). The rank gate alone let an admin grant a custom rank-70 role
+ * store's effective set for a store binding, the org-wide set for a
+ * global one). The rank gate alone let an admin grant a custom rank-70 role
  * carrying super-admin keys. Returns the first missing key, or null.
  *
  * Built-in roles keep the rank rule alone: their keys are fixed by the
@@ -6654,6 +6664,8 @@ async function missingRoleKey(
     .from(s.rolePermissions)
     .where(eq(s.rolePermissions.roleId, roleId));
   if (rows.length === 0) return null;
+  // DX-ADM-2: a global binding applies in every store, so it is checked
+  // against the keys the actor holds org-wide, not the flat session set.
   const held = storeId
     ? await effectivePermissionsForStore(
         tx,
@@ -6661,7 +6673,7 @@ async function missingRoleKey(
         storeId,
         ctx.session!.permissions,
       )
-    : ctx.session!.permissions;
+    : await effectiveGlobalPermissions(tx, ctx.session!.memberId);
   return rows.find((r) => !held.has(r.key))?.key ?? null;
 }
 
@@ -6696,6 +6708,72 @@ async function assertCanInviteWithRole(
   }
   await assertCanPassOnRole(tx, ctx, role.id, null);
   return true;
+}
+
+/**
+ * DX-ADM-1 (2026-11-01): where the actor may hand each role on as far as
+ * its keys go (D8, `missingRoleKey`): globally, and in which of the stores
+ * they administer. The grant, default-role and invite screens used to list
+ * every role below the actor's rank and only learnt from a 403 that a
+ * custom role carried a key the actor lacks. The rank rule stays on the
+ * client (lib/authority canGrantRole).
+ */
+async function rolePassOnScopes(
+  tx: OrgTx,
+  ctx: AdminCtx,
+  roles: readonly { id: string; isBuiltIn: boolean }[],
+): Promise<Map<string, { global: boolean; storeIds: string[] }>> {
+  const session = ctx.session!;
+  // Paused stores too: their default role can still be set (storeUpdate).
+  const storeIds = await getActorAdminStoreIds(tx, session.orgId, session.userId, {
+    includeInactive: true,
+  });
+  const out = new Map<string, { global: boolean; storeIds: string[] }>();
+  const everywhere = () => ({ global: true, storeIds: [...storeIds] });
+  const custom = roles.filter((r) => !r.isBuiltIn);
+  const exempt = custom.length === 0 || (await exemptFromKeyCheck(ctx));
+  const keysByRole = new Map<string, string[]>();
+  if (!exempt) {
+    const rows = await tx
+      .select({ roleId: s.rolePermissions.roleId, key: s.rolePermissions.permissionKey })
+      .from(s.rolePermissions)
+      .where(
+        inArray(
+          s.rolePermissions.roleId,
+          custom.map((r) => r.id),
+        ),
+      );
+    for (const row of rows) {
+      keysByRole.set(row.roleId, [...(keysByRole.get(row.roleId) ?? []), row.key]);
+    }
+  }
+  const needsCheck = [...keysByRole.keys()];
+  if (needsCheck.length === 0) {
+    for (const r of roles) out.set(r.id, everywhere());
+    return out;
+  }
+  const global = await effectiveGlobalPermissions(tx, session.memberId);
+  const perStore = await Promise.all(
+    storeIds.map(
+      async (id) =>
+        [
+          id,
+          await effectivePermissionsForStore(tx, session.memberId, id, session.permissions),
+        ] as const,
+    ),
+  );
+  for (const r of roles) {
+    const keys = keysByRole.get(r.id);
+    if (!keys) {
+      out.set(r.id, everywhere());
+      continue;
+    }
+    out.set(r.id, {
+      global: keys.every((k) => global.has(k)),
+      storeIds: perStore.filter(([, held]) => keys.every((k) => held.has(k))).map(([id]) => id),
+    });
+  }
+  return out;
 }
 
 async function assertCanPassOnRole(

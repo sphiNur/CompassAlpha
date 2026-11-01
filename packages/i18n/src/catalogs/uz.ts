@@ -175,7 +175,6 @@ export const uz = {
   'ops.maint.confirmPurgeTitle': 'Tozalashni tasdiqlang',
   'ops.maint.confirmPurgeBody': 'Tasdiqlash uchun ish maydoni identifikatorini «{slug}» kiriting.',
   'ops.maint.confirmPurgeLabel': 'Ish maydoni identifikatori',
-  'people.tapToRevoke': 'Bekor qilish uchun bosing',
   'people.readOnlyStore': 'Faqat koʻrish',
   'people.orgLevelGroup': 'Butun ish maydoni ({n})',
   'people.orgLevelEmptyTitle': 'Ish maydoni darajasidagi aʼzolar yoʻq',
@@ -192,6 +191,19 @@ export const uz = {
   'people.rolePlaceholderName': 'Smena boshligʻi',
   'people.rolePlaceholderDesc': 'Majburiy emas',
   'people.rankField': 'Daraja (1–{max})',
+  'people.slugRule': 'Kichik lotin harflari, raqamlar va chiziqcha, masalan night-shift.',
+  'people.slugInvalid': 'Faqat kichik lotin harflari, raqamlar va chiziqcha (-), masalan night-shift.',
+  'people.slugRequired': 'Majburiy.',
+  'people.rankInvalid': '1 dan {max} gacha butun son kiriting.',
+  'people.roleHasKeysYouLack': 'Bu rolda sizda yoʻq ruxsatlar bor, uni bu yerda bera olmaysiz.',
+  'people.roleNameKeysYouLack': '{name} (sizda yoʻq ruxsatlar bor)',
+  'people.rolesOfMember': 'Rollar',
+  'people.revokeRole': 'Olib tashlash',
+  'people.revokeRoleAria': '{name} dan «{role}» rolini olib tashlash',
+  'people.revokeRoleInStoreAria': '{name} dan {store} dagi «{role}» rolini olib tashlash',
+  'people.searchNoMatch': '«{q}» boʻyicha hech kim topilmadi',
+  'people.clearSearch': 'Qidiruvni tozalash',
+  'admin.invite.tgIdInvalid': 'Telegram ID 4–15 ta raqamdan iborat, telefon raqami yoki @username emas.',
   'people.deleteRole': 'Rolni oʻchirish',
   'people.confirmDeleteRole': '«{name}» roli oʻchirilsinmi?',
   'people.noRole': 'Rol yoʻq',
@@ -805,7 +817,7 @@ export const uz = {
   'admin.field.storesPickAtLeastOne': 'Doʻkonlar * (kamida bittasini tanlang)',
   'admin.invite.byTgId.title': 'Telegram ID bilan qoʻshish',
   'admin.invite.byTgId.description':
-    'Shaxsiy maʼlumotlar bot bilan /start qilingach avtomatik toʻldiriladi.',
+    'Darhol qoʻshiladi; mini-ilovani birinchi marta ochganda maʼlumotlari avtomatik toʻldiriladi.',
   'admin.invite.byTgId.submit': 'Bu odamni qoʻshish',
   'admin.invite.link.title': 'Taklif havolasini yaratish',
   'admin.invite.link.description':
@@ -813,7 +825,8 @@ export const uz = {
   'admin.invite.link.hint':
     'Havola bir marta ishlatiladi, 7 kundan keyin eskiradi va faqat Telegram ichida ochiladi.',
   'admin.invite.link.submit': 'Taklif havolasini yaratish',
-  'admin.invite.tgIdHint': 'Foydalanuvchi oʻz ID sini bilmasa, botga /id yozsin.',
+  'admin.invite.tgIdHint':
+    'ID ni bilmaysizmi? Undan mini-ilovani ochishni soʻrang: ekranda uning Telegram ID si chiqadi, uni sizga yuborsin.',
   'admin.invite.noRoleYet': '— hozircha rolsiz (keyinroq beriladi) —',
   'admin.invite.staffNeedStoreHint':
     'Xodimlar buyurtma berishlari uchun doʻkonga biriktirilishi kerak.',
@@ -935,7 +948,7 @@ export const uz = {
   'admin.empty.members.description': 'Birinchisini qoʻshish uchun yuqorida «+ Taklif»ga teging.',
   'admin.empty.noStoresInThisStore.title': 'Bu doʻkonda xodim yoʻq',
   'admin.empty.noStoresInThisStore.description':
-    'Sarlavhadagi doʻkon kontekstini oʻzgartiring yoki «Taklif» tugmasini bosing.',
+    'Kimnidir qoʻshish uchun «Taklif qilish» tugmasini bosing.',
   'admin.toast.memberUpdated': 'Xodim yangilandi',
   'admin.toast.memberRemoved': 'Xodim oʻchirildi',
   'admin.toast.memberAdded': 'Xodim qoʻshildi',
