@@ -62,8 +62,8 @@ describe('plural selection — English', () => {
     expect(one).toContain('its 1 attached order.');
     expect(many).toContain('its 3 attached orders.');
     // The tail after the plural block must survive in both.
-    expect(one).toContain('use the per-order purge');
-    expect(many).toContain('use the per-order purge');
+    expect(one).toContain("This can't be undone.");
+    expect(many).toContain("This can't be undone.");
   });
 });
 

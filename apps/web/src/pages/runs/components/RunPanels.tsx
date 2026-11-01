@@ -26,6 +26,7 @@ import {
   SectionLabel,
   Sheet,
   useToast,
+  Segmented,
 } from '@compass/ui';
 import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
@@ -1806,24 +1807,16 @@ export function PreviewSummaryCard({
           ) : null}
         </div>
       </div>
-      <div className="flex gap-1 px-3 pb-2 pt-1">
-        {(['byStore', 'bySupplier'] as const).map((v) => (
-          <button
-            key={v}
-            type="button"
-            onClick={() => chooseView(v)}
-            className={
-              'press hit-44 flex-1 rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium ring-hairline ' +
-              (view === v
-                ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]')
-            }
-          >
-            {i18n.t(
-              v === 'byStore' ? 'run.previewView.byStore' : 'run.previewView.bySupplier',
-            )}
-          </button>
-        ))}
+      {/* DX-VIS-7 (2026-11-01): Segmented, so the chosen view is announced. */}
+      <div className="px-3 pb-2 pt-1">
+        <Segmented
+          value={view}
+          onChange={chooseView}
+          options={[
+            { value: 'byStore', label: i18n.t('run.previewView.byStore') },
+            { value: 'bySupplier', label: i18n.t('run.previewView.bySupplier') },
+          ]}
+        />
       </div>
 
       {/* Run-wide header. Renders above BOTH views on purpose — "what
@@ -2220,6 +2213,8 @@ function VendorPickerSheet({
           type="button"
           onClick={() => setSupplier.mutate({ skuId, supplierId: null })}
           disabled={setSupplier.isPending}
+          // DX-VIS-7: the ✓ is aria-hidden; this says it is the current choice.
+          aria-pressed={currentSupplierId === null}
           className={
             'press flex items-center justify-between gap-3 rounded-[var(--r-card)] px-4 py-3 text-left ring-hairline ' +
             (currentSupplierId === null
@@ -2254,6 +2249,7 @@ function VendorPickerSheet({
               type="button"
               onClick={() => setSupplier.mutate({ skuId, supplierId: sup.id })}
               disabled={setSupplier.isPending}
+              aria-pressed={selected}
               className={
                 'press flex items-center justify-between gap-3 rounded-[var(--r-card)] px-4 py-3 text-left ring-hairline ' +
                 (selected

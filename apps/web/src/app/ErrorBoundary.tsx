@@ -57,6 +57,20 @@ interface ErrorBoundaryProps {
 
 interface ErrorBoundaryState {
   error: Error | null;
+  copied?: boolean;
+}
+
+/**
+ * DX-SHL-16 (2026-11-01): the error text and stack the administrator may
+ * need, kept off the screen (staff saw an English trace) and copied on
+ * request instead.
+ */
+export function crashDetails(error: Error): string {
+  const message = error.message ?? String(error);
+  const stack = error.stack ?? '';
+  return [message, stack.split('\n').slice(0, 8).join('\n'), `at ${new Date().toISOString()}`]
+    .filter(Boolean)
+    .join('\n\n');
 }
 
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
@@ -94,8 +108,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   override render(): ReactNode {
     if (this.state.error) {
-      const message = this.state.error.message ?? String(this.state.error);
-      const stack = this.state.error.stack ?? '';
+      const error = this.state.error;
       // Resolved per render rather than in a field: the locale catalog may
       // land between the crash and a re-render, and this screen is sticky
       // (the user sits on it), so picking the language up late still helps.
@@ -123,27 +136,32 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           <p style={{ fontSize: 14, opacity: 0.7, margin: 0, maxWidth: 320 }}>
             {t('boot.crashBody')}
           </p>
-          <pre
-            style={{
-              maxWidth: '92vw',
-              maxHeight: '40vh',
-              overflow: 'auto',
-              background: 'rgba(0,0,0,0.06)',
-              padding: 12,
-              borderRadius: 12,
-              fontSize: 11,
-              textAlign: 'left',
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-            }}
-          >
-            {message}
-            {stack ? '\n\n' + stack.split('\n').slice(0, 8).join('\n') : ''}
-          </pre>
           <button
             type="button"
             onClick={() => {
-              this.setState({ error: null });
+              void navigator.clipboard
+                ?.writeText(crashDetails(error))
+                .then(() => this.setState({ copied: true }))
+                .catch(() => {
+                  /* clipboard refused: nothing to copy to */
+                });
+            }}
+            style={{
+              padding: '10px 20px',
+              borderRadius: 9999,
+              background: 'transparent',
+              color: 'var(--c-action, #0066cc)',
+              border: 0,
+              fontSize: 14,
+              cursor: 'pointer',
+            }}
+          >
+            {this.state.copied ? t('boot.detailsCopied') : t('boot.copyDetails')}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              this.setState({ error: null, copied: false });
             }}
             style={{
               padding: '10px 20px',

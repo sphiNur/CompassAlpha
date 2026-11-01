@@ -35,6 +35,8 @@ export {
   getSheetCount,
   subscribeSheetCount,
 } from './components/Sheet';
+// DX-IX-2/3/4: focus into a sheet, back to its opener, and after actions.
+export { focusAfter, FOCUS_FALLBACK_SELECTOR } from './sheetFocus';
 // 2026-10-21 audit CA-34: shared Telegram BackButton owner stack.
 export {
   createBackHandlerStack,
@@ -83,7 +85,7 @@ export type {
   PickerRowProps,
   NameCellProps,
 } from './components/Rows';
-export { ConfirmSheet } from './components/ConfirmSheet';
+export { ConfirmSheet, confirmCancelPolicy } from './components/ConfirmSheet';
 export type { ConfirmSheetProps } from './components/ConfirmSheet';
 export { PhotoCapture } from './components/PhotoCapture';
 export type { PhotoUploader, PresignedUpload, PhotoCaptureProps } from './components/PhotoCapture';

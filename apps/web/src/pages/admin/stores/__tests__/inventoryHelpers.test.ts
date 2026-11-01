@@ -4,6 +4,8 @@ import {
   knownMovementReason,
   signedDelta,
   skusWithoutLevel,
+  sortLevelRows,
+  stocktakePrefill,
   wastageMissing,
 } from '../inventoryHelpers';
 
@@ -68,5 +70,42 @@ describe('inventoryDraftChanged (CMP-INV-2)', () => {
   test('an untouched wastage sheet or no sheet has none', () => {
     expect(inventoryDraftChanged({ kind: 'wastage' }, empty)).toBe(false);
     expect(inventoryDraftChanged(null, empty)).toBe(false);
+  });
+});
+
+describe('stocktakePrefill (DX-INV-1 / DX-INV-7)', () => {
+  test('starts from the system count as an editable number', () => {
+    expect(stocktakePrefill('20.000')).toBe('20');
+    expect(stocktakePrefill('0.250')).toBe('0.25');
+    expect(stocktakePrefill('0')).toBe('0');
+  });
+  test('starts empty when the system count is negative', () => {
+    expect(stocktakePrefill('-0.500')).toBe('');
+  });
+  test('the untouched prefill is not a change', () => {
+    const draft = { target: '20', wasteQty: '', note: '' };
+    expect(inventoryDraftChanged({ kind: 'stocktake', current: '20.000' }, draft)).toBe(false);
+    expect(
+      inventoryDraftChanged({ kind: 'stocktake', current: '-0.500' }, { ...draft, target: '' }),
+    ).toBe(false);
+  });
+});
+
+describe('sortLevelRows (DX-INV-3)', () => {
+  test('negative stock comes first, then by name', () => {
+    const rows = [
+      { name: 'Potato', onHandNum: 20 },
+      { name: 'Apple', onHandNum: 3 },
+      { name: 'Onion', onHandNum: -0.2 },
+      { name: 'Banana', onHandNum: 0 },
+      { name: 'Milk', onHandNum: -1 },
+    ];
+    expect(sortLevelRows(rows, 'en').map((r) => r.name)).toEqual([
+      'Milk',
+      'Onion',
+      'Apple',
+      'Banana',
+      'Potato',
+    ]);
   });
 });

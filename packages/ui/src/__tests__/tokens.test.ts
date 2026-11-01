@@ -313,3 +313,148 @@ describe('CMP-INT-6: keyboard focus is visible', () => {
     expect(rule).toContain('outline: 2px solid var(--c-ring)');
   });
 });
+
+/**
+ * DX-VIS-4 / DX-IX-1 (2026-11-01): a small cascade over tokens.css for the
+ * <html> element. It computes which declaration of a custom property wins
+ * (media query, selector specificity, source order), the way the browser
+ * does, so a selector that loses to `:root[data-theme='native']` fails
+ * here instead of silently in production.
+ */
+type Rule = { selectors: string[]; media: string | null; decls: Record<string, string>; order: number };
+
+function parseRules(source: string): Rule[] {
+  const text = source.replace(/\/\*[\s\S]*?\*\//g, '');
+  const rules: Rule[] = [];
+  let order = 0;
+  const walk = (chunk: string, media: string | null) => {
+    let i = 0;
+    while (i < chunk.length) {
+      const open = chunk.indexOf('{', i);
+      if (open < 0) break;
+      const prelude = chunk.slice(i, open).trim();
+      // Find the matching close brace.
+      let depth = 1;
+      let j = open + 1;
+      while (j < chunk.length && depth > 0) {
+        if (chunk[j] === '{') depth++;
+        else if (chunk[j] === '}') depth--;
+        j++;
+      }
+      const body = chunk.slice(open + 1, j - 1);
+      if (prelude.startsWith('@media')) walk(body, prelude.slice('@media'.length).trim());
+      else if (!prelude.startsWith('@')) {
+        const decls: Record<string, string> = {};
+        for (const m of body.matchAll(/([a-z-]+|--[a-z0-9-]+)\s*:\s*([^;]+);/g)) decls[m[1]!] = m[2]!.trim();
+        rules.push({ selectors: prelude.split(',').map((s) => s.trim()), media, decls, order: order++ });
+      }
+      i = j;
+    }
+  };
+  walk(text, null);
+  return rules;
+}
+
+/** Specificity of `:root` / `.class:pseudo` + attribute selectors on one element, as a single number. */
+function specificity(selector: string): number {
+  const classes = (selector.match(/\[[^\]]*\]|:[a-z-]+|\.[a-z0-9-]+/g) ?? []).length;
+  return classes * 1000;
+}
+
+function matchesRoot(selector: string, attrs: Record<string, string>): boolean {
+  const m = /^:root((?:\[[^\]]+\])*)$/.exec(selector);
+  if (!m) return false;
+  for (const a of m[1]!.matchAll(/\[([a-z-]+)(?:='([^']*)')?\]/g)) {
+    const have = attrs[a[1]!];
+    if (have === undefined) return false;
+    if (a[2] !== undefined && have !== a[2]) return false;
+  }
+  return true;
+}
+
+function computedOnRoot(
+  name: string,
+  attrs: Record<string, string>,
+  media: { reducedMotion: boolean },
+): string | undefined {
+  let best: { spec: number; order: number; value: string } | undefined;
+  for (const rule of parseRules(css)) {
+    if (rule.media && rule.media.includes('prefers-reduced-motion: reduce') && !media.reducedMotion) continue;
+    if (rule.media && !rule.media.includes('prefers-reduced-motion')) continue;
+    if (!(name in rule.decls)) continue;
+    for (const sel of rule.selectors) {
+      if (!matchesRoot(sel, attrs)) continue;
+      const spec = specificity(sel);
+      if (!best || spec > best.spec || (spec === best.spec && rule.order > best.order)) {
+        best = { spec, order: rule.order, value: rule.decls[name]! };
+      }
+    }
+  }
+  return best?.value;
+}
+
+describe('DX-VIS-4: reduced motion reaches the transition tokens', () => {
+  const themes: Array<Record<string, string>> = [
+    {},
+    { 'data-theme': 'native' },
+    { 'data-theme': 'native', 'data-color-scheme': 'dark' },
+    { 'data-theme': 'dark' },
+    { 'data-theme': 'apple' },
+  ];
+  for (const attrs of themes) {
+    const label = JSON.stringify(attrs);
+    test(`--t-base / --t-quick / --t-snap are 0ms under reduce on ${label}`, () => {
+      for (const name of ['--t-base', '--t-quick', '--t-snap']) {
+        expect({ name, value: computedOnRoot(name, attrs, { reducedMotion: true }) }).toEqual({
+          name,
+          value: '0ms',
+        });
+      }
+    });
+  }
+  test('without reduce the native theme keeps its durations', () => {
+    expect(computedOnRoot('--t-base', { 'data-theme': 'native' }, { reducedMotion: false })).toBe('240ms');
+    expect(computedOnRoot('--t-snap', { 'data-theme': 'native' }, { reducedMotion: false })).toBe('100ms');
+  });
+  test('the press shrink is switched off under reduce, after the rule that sets it', () => {
+    const rules = parseRules(css).filter((r) => r.selectors.includes('.press:active'));
+    const shrink = rules.find((r) => !r.media)!;
+    const off = rules.find((r) => r.media?.includes('reduce'))!;
+    expect(off.decls.transform).toBe('none');
+    expect(off.order).toBeGreaterThan(shrink.order);
+  });
+});
+
+describe('DX-VIS-14: dark elevation order', () => {
+  test('surface-elevated is lighter than surface-2 in the dark theme', () => {
+    expect(luminance(color(dark, '--c-surface-elevated'))).toBeGreaterThan(
+      luminance(color(dark, '--c-surface-2')),
+    );
+  });
+  test('the dark background keeps its tone (owner decision)', () => {
+    expect(dark['--c-bg']).toBe('oklch(15% 0.01 240)');
+  });
+});
+
+describe('DX-XS-1: colour with an opacity modifier', () => {
+  // Tailwind 3 cannot apply `/40` to an arbitrary colour variable: the class
+  // is dropped and a ring falls back to Tailwind's default blue (the
+  // danger-ghost Button border). Use color-mix() instead.
+  test('no `[var(--c-*)]/NN` utility in the web app or the UI kit', () => {
+    const hits: string[] = [];
+    for (const file of [...sources(UI_SRC), ...sources(WEB_SRC)].filter((f) => !f.includes('__tests__'))) {
+      for (const m of readFileSync(file, 'utf8').matchAll(/\[var\(--c-[a-z0-9-]+\)\]\/\d+/g)) {
+        hits.push(`${file.slice(file.indexOf('/src/') + 1)}: ${m[0]}`);
+      }
+    }
+    expect(hits).toEqual([]);
+  });
+});
+
+describe('DX-VIS-8: wrapped tap areas do not overlap', () => {
+  test('the qty preset rows are at least 18px apart (26px chips, 44px taps)', () => {
+    const src = readFileSync(join(UI_SRC, 'components', 'QtyControl.tsx'), 'utf8');
+    const gap = /Preset chips[\s\S]*?gap-y-\[(\d+)px\]/.exec(src);
+    expect(Number(gap?.[1] ?? 0)).toBeGreaterThanOrEqual((44 - 26) / 2 * 2);
+  });
+});

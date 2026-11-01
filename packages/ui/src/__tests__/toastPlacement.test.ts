@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { toastOffsetForSheet } from '../components/Toast';
+import { shouldFollowSheet, toastOffsetForSheet } from '../components/Toast';
 
 describe('toastOffsetForSheet (U11)', () => {
   test('a short sheet: the toasts sit just above it', () => {
@@ -19,5 +19,13 @@ describe('toastOffsetForSheet (U11)', () => {
     expect(
       toastOffsetForSheet({ viewportH: 844, sheetTop: 40, footerTop: null, safeTop: 0, stackH: 48 }),
     ).toBe(8);
+  });
+});
+
+describe('shouldFollowSheet (DX-PFE-6)', () => {
+  test('no per-frame follow without an open sheet, even with a sticky toast', () => {
+    expect(shouldFollowSheet(true, false)).toBe(false);
+    expect(shouldFollowSheet(false, true)).toBe(false);
+    expect(shouldFollowSheet(true, true)).toBe(true);
   });
 });

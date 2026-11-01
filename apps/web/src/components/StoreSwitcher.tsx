@@ -40,7 +40,7 @@
  *               being sent to Settings to hunt for it.
  */
 import { useState } from 'react';
-import { cn, SectionLabel, PickerGroup, PickerRow, Sheet } from '@compass/ui';
+import { cn, SectionLabel, PickerGroup, PickerRow, Sheet, useToast } from '@compass/ui';
 import { useAuthStore, ALL_STORES } from '../stores/authStore';
 import type { AuthSession, StoreContext } from '../stores/authStore';
 import { useI18n } from '../hooks/useI18n';
@@ -135,6 +135,7 @@ export function StorePickerSection({
   const currentStoreId = useAuthStore((s) => s.currentStoreId);
   const setCurrentStore = useAuthStore((s) => s.setCurrentStore);
   const canSee = useCanSeeStorePicker();
+  const toast = useToast();
   const isOrgAdmin = session?.permissions.includes('org.admin') ?? false;
 
   if (!canSee) return null;
@@ -149,6 +150,13 @@ export function StorePickerSection({
       if (!(await requestStoreChange(nextStoreId))) return;
       setCurrentStore(nextStoreId);
       onClose();
+      // DX-SHL-4 (2026-11-01): the page behind changed with no word; say
+      // which store is now on screen (the toast is also read out).
+      const name =
+        nextStoreId === ALL_STORES
+          ? i18n.t('storeSwitcher.allOrgStores')
+          : (stores.find((st) => st.id === nextStoreId)?.name ?? '');
+      if (name) toast.success(i18n.t('storeSwitcher.switched', { store: name }));
     })();
   };
 

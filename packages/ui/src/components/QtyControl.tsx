@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { useUiLabels } from '../labels';
 import { cn } from '../cn';
 import { Sheet, SheetFooter } from './Sheet';
@@ -75,6 +75,14 @@ export function QtyControl({
   const labels = useUiLabels();
   const [pressing, setPressing] = useState<'plus' | 'minus' | null>(null);
   const [pickOpen, setPickOpen] = useState(false);
+  // DX-PFE-4 (2026-11-01): a closed sheet still rendered Sheet + Dialog +
+  // portals + presence in every row — a dozen components per row on every
+  // list render. It mounts the first time it opens and stays (so its close
+  // animation still plays).
+  const [pickMounted, setPickMounted] = useState(false);
+  // DX-ORD-9 (2026-11-01): the sheet has no Radix trigger, so closing it
+  // dropped focus on <body>; it goes back to the value button instead.
+  const valueButtonRef = useRef<HTMLButtonElement | null>(null);
   // M3.12 (2026-05-16): tap-vs-hold disambiguation.
   //
   // Old behaviour fired `adjust()` on `onPointerDown`. That made the
@@ -106,6 +114,15 @@ export function QtyControl({
 
   useEffect(() => () => stop(), [stop]);
 
+  // DX-ORD-2 (2026-11-01): the hold ramp's interval keeps the `adjust` it
+  // started with, which read the value from the press — every tick asked
+  // for the same "value + step", so a long press added one step. The
+  // current value lives in a ref that each tick reads and advances.
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
   const adjust = useCallback(
     (direction: 1 | -1) => {
       // M3.35 (2026-05-19): previously this rounded `value + step` to a
@@ -118,12 +135,17 @@ export function QtyControl({
       // Honest behavior: add `step` to the current value, trim float
       // drift to 3 decimals (matches DB precision), clamp to [min,max].
       // Off-step values stay off-step — the data is the data.
-      const raw = value + direction * step;
-      const next = clamp(Number(raw.toFixed(3)), min, max);
-      if (next !== value) onChange(next);
+      const current = valueRef.current;
+      const next = stepQty(current, direction, step, min, max);
+      if (next === current) return;
+      valueRef.current = next;
+      onChangeRef.current(next);
     },
-    [max, min, onChange, step, value],
+    [max, min, step],
   );
+  // The interval calls the latest adjust (step / min / max may change).
+  const adjustRef = useRef(adjust);
+  adjustRef.current = adjust;
 
   /** pointerdown: arm the hold timer, but DON'T adjust yet. */
   const armHold = (direction: 1 | -1, name: 'plus' | 'minus') => {
@@ -134,8 +156,8 @@ export function QtyControl({
       rampedRef.current = true;
       // Fire the first ramp tick when the hold threshold elapses so
       // there's a visible response, then keep ticking.
-      adjust(direction);
-      intervalRef.current = setInterval(() => adjust(direction), TICK_MS);
+      adjustRef.current(direction);
+      intervalRef.current = setInterval(() => adjustRef.current(direction), TICK_MS);
     }, HOLD_THRESHOLD_MS);
   };
 
@@ -188,6 +210,7 @@ export function QtyControl({
       onRequestManualEntry();
       return;
     }
+    setPickMounted(true);
     setPickOpen(true);
   };
 
@@ -223,6 +246,7 @@ export function QtyControl({
             The middle text is no longer the "biggest thing in the row";
             it now reads as a peer of the surrounding row primary text. */}
         <button
+          ref={valueButtonRef}
           type="button"
           aria-label={labels.quantityPick(`${display}${shownUnit ? ' ' + shownUnit : ''}`)}
           onClick={openQuickPick}
@@ -281,8 +305,9 @@ export function QtyControl({
 
       {/* Built-in quick-pick sheet (M3.12-D). Skipped entirely if the
           caller wires their own picker via onRequestManualEntry. */}
-      {!onRequestManualEntry ? (
+      {!onRequestManualEntry && pickMounted ? (
         <QtyQuickPickSheet
+          returnFocusRef={valueButtonRef}
           open={pickOpen}
           onOpenChange={setPickOpen}
           title={pickTitle}
@@ -327,6 +352,7 @@ export function QtyControl({
  * unusual ordering economics (case-of-6, dozen, etc.).
  */
 function QtyQuickPickSheet({
+  returnFocusRef,
   open,
   onOpenChange,
   title,
@@ -339,6 +365,7 @@ function QtyQuickPickSheet({
   presets,
   onPick,
 }: {
+  returnFocusRef?: RefObject<HTMLElement | null>;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title?: string;
@@ -411,6 +438,7 @@ function QtyQuickPickSheet({
     <Sheet
       open={open}
       onOpenChange={onOpenChange}
+      returnFocusRef={returnFocusRef}
       title={title ?? labels.setQuantity}
       description={unit ? labels.unitIs(unit) : undefined}
       footer={
@@ -428,8 +456,11 @@ function QtyQuickPickSheet({
       }
     >
       <div className="flex flex-col gap-3 py-3">
-        {/* Preset chips — tap once = done. The most common path. */}
-        <div className="flex flex-wrap gap-x-2 gap-y-4">
+        {/* Preset chips — tap once = done. The most common path.
+            DX-VIS-8 (2026-11-01): each 26px chip's hit-44 area reaches 9px
+            above and below it, so wrapped rows need 18px between them or
+            the bottom of "0.5 kg" taps "2 kg" on the next row. */}
+        <div className="flex flex-wrap gap-x-2 gap-y-[18px]">
           {presets
             .filter((p) => p >= min && p <= max)
             .map((p) => {
@@ -504,6 +535,20 @@ function defaultPresets(step: number): number[] {
   if (step >= 0.5) return [0.5, 1, 2, 5, 10, 20, 50];
   if (step >= 0.1) return [0.1, 0.5, 1, 2, 5, 10, 20];
   return [0.01, 0.1, 0.5, 1, 2, 5, 10];
+}
+
+/**
+ * One − / + step from `value`, trimmed to 3 decimals (DB precision) and
+ * clamped to [min, max]. Exported for tests.
+ */
+export function stepQty(
+  value: number,
+  direction: 1 | -1,
+  step: number,
+  min: number,
+  max: number,
+): number {
+  return clamp(Number((value + direction * step).toFixed(3)), min, max);
 }
 
 function clamp(v: number, min: number, max: number): number {

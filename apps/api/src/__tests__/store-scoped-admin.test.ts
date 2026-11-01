@@ -2537,6 +2537,14 @@ describe('purchase history permission scope', () => {
         receiptPhotoUrl: null,
       });
       expect(liveDetail.splits.map((split) => split.storeId)).toEqual([storeA.id, storeA.id]);
+      // DX-BUY-1: a visible split paid like the item it belongs to reads as
+      // inherited (null), so the row's cash / transfer switch stays a switch;
+      // the item carries the method the reader's stores were paid with.
+      expect(liveDetail.splits.find((split) => split.skuId === skuA!.id)).toMatchObject({
+        unitPrice: '100.00',
+        paymentMethod: null,
+      });
+      expect(liveDetail.splits.find((split) => split.skuId === skuC!.id)?.paymentMethod).toBeNull();
       expect(Number(liveDetail.actualTotal)).toBe(150);
       expect(Number(liveDetail.actualCashTotal)).toBe(150);
       expect(Number(liveDetail.actualTransferTotal)).toBe(0);

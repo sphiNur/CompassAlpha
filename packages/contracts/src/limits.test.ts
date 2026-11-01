@@ -5,7 +5,13 @@
  */
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { isPurchasePrice, ORDER_QTY_MAX, SKU_STEPS, SKU_UNITS } from './limits';
+import {
+  isPurchasePrice,
+  ORDER_QTY_MAX,
+  SKU_STEPS,
+  SKU_UNITS,
+  stocktakeCountProblem,
+} from './limits';
 import { OrderQtySchema } from './schemas/common';
 import { SkuStepSchema, SkuUnitSchema } from './schemas/catalog';
 import { PurchasePriceSchema } from './schemas/run';
@@ -35,5 +41,22 @@ describe('limits.ts', () => {
     expect(barrel.ORDER_QTY_MAX).toBe(ORDER_QTY_MAX);
     expect(barrel.SKU_STEPS).toBe(SKU_STEPS);
     expect(barrel.isoDateDaysBefore('2026-03-01', 1)).toBe('2026-02-28');
+  });
+
+  it('stocktakeCountProblem names one reason per bad count (DX-INV-1)', () => {
+    expect(stocktakeCountProblem('')).toBe('empty');
+    expect(stocktakeCountProblem('  ')).toBe('empty');
+    expect(stocktakeCountProblem('-3')).toBe('negative');
+    expect(stocktakeCountProblem('-0.5')).toBe('negative');
+    expect(stocktakeCountProblem('abc')).toBe('notNumber');
+    expect(stocktakeCountProblem('1e3')).toBe('notNumber');
+    expect(stocktakeCountProblem('1,5')).toBe('notNumber');
+    expect(stocktakeCountProblem('20.0001')).toBe('decimals');
+    expect(stocktakeCountProblem('100000000')).toBe('tooLarge');
+    expect(stocktakeCountProblem('99999999999')).toBe('tooLarge');
+    for (const ok of ['0', '20', '20.5', '0.125', '99999999.999', '00012']) {
+      expect(stocktakeCountProblem(ok)).toBeNull();
+    }
+    expect(barrel.stocktakeCountProblem).toBe(stocktakeCountProblem);
   });
 });

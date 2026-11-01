@@ -11,7 +11,7 @@
  * The audit's PermissionMatrix consolidation (3 hand-rolled matrices)
  * lands on top of this split as its own pass.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import {
   Avatar,
   Badge,
@@ -52,11 +52,19 @@ import {
 } from '../../../lib/telegramLinks';
 import { nativeConfirm } from '../shared';
 import {
+  defaultNewRoleRank,
+  normaliseSlugInput,
+  readRank,
+  slugIsValid,
+  tgIdProblem,
+} from '../../../lib/adminFields';
+import {
   canGrantRole,
   canRevokeRole,
   canSetOverride,
   canSetStatus,
   rankIn,
+  rolePassesOn,
   transferTargets,
   type Actor,
   type Binding,
@@ -201,6 +209,8 @@ export function PeopleSection({
     isSelf: boolean;
     statusOutOfReach: boolean;
     member: TargetMember;
+    /** DX-ADM-11: the roles this person may take away, with a name for each. */
+    revocable: Array<{ bindingId: string; role: string; store: string | null }>;
   } | null>(null);
 
   const setStatus = trpc.admin.memberSetStatus.useMutation({
@@ -409,51 +419,20 @@ export function PeopleSection({
                           r.scopeType === 'store' && r.scopeId
                             ? (m.stores.find((st) => st.id === r.scopeId)?.name ?? null)
                             : null;
-                        // CMP-ADM-1: a role the server would not let this
-                        // person take away (their own manager role, one at
-                        // or above their rank, another store's) is a plain
-                        // label, not a × that ends in "forbidden".
-                        if (!canRevokeRole(actor, m.userId, r)) {
-                          return (
-                            <span
-                              key={r.bindingId}
-                              className="inline-flex items-center gap-1 rounded-full bg-[var(--c-surface-2)] px-2 py-0.5 text-old-label ring-hairline"
-                            >
-                              <span className="font-semibold">{roleText.name(r)}</span>
-                              {scopedStoreName ? (
-                                <span className="text-[var(--c-fg-muted)]">· {scopedStoreName}</span>
-                              ) : null}
-                            </span>
-                          );
-                        }
+                        // DX-ADM-11 (2026-11-01): the chip is a label only.
+                        // Revoking was a tap on this 18 px chip, with the verb
+                        // only in a tooltip; it now sits in the member's ⋯
+                        // sheet as a full-size "Revoke" button per role.
                         return (
-                          <button
+                          <span
                             key={r.bindingId}
-                            type="button"
-                            className="press inline-flex items-center gap-1 rounded-full bg-[var(--c-surface-2)] px-2 py-0.5 text-old-label ring-hairline"
-                            onClick={() =>
-                              nativeConfirm(
-                                scopedStoreName
-                                  ? i18n.t('people.revokeRoleInStoreConfirm', {
-                                      role: roleText.name(r),
-                                      store: scopedStoreName,
-                                      name: m.displayName,
-                                    })
-                                  : i18n.t('people.revokeRoleConfirm', {
-                                      role: roleText.name(r),
-                                      name: m.displayName,
-                                    }),
-                                () => revoke.mutate({ bindingId: r.bindingId }),
-                              )
-                            }
-                            title={i18n.t('people.tapToRevoke')}
+                            className="inline-flex items-center gap-1 rounded-full bg-[var(--c-surface-2)] px-2 py-0.5 text-old-label ring-hairline"
                           >
                             <span className="font-semibold">{roleText.name(r)}</span>
                             {scopedStoreName ? (
                               <span className="text-[var(--c-fg-muted)]">· {scopedStoreName}</span>
                             ) : null}
-                            <span className="text-[var(--c-fg-muted)]">×</span>
-                          </button>
+                          </span>
                         );
                       })
                     }
@@ -511,6 +490,16 @@ export function PeopleSection({
                         isSelf,
                         statusOutOfReach: m.statusOutOfReach ?? false,
                         member: targetOf(m),
+                        revocable: m.roles
+                          .filter((r) => canRevokeRole(actor, m.userId, r))
+                          .map((r) => ({
+                            bindingId: r.bindingId,
+                            role: roleText.name(r),
+                            store:
+                              r.scopeType === 'store' && r.scopeId
+                                ? (m.stores.find((st) => st.id === r.scopeId)?.name ?? null)
+                                : null,
+                          })),
                       })
                     }
                   >
@@ -521,9 +510,23 @@ export function PeopleSection({
             );
           };
 
+          // DX-ADM-7 (2026-11-01): a search with no match said "no members
+          // in this store yet". It now says nothing matched, with a way back.
+          const noMatch = (
+            <EmptyState
+              title={i18n.t('people.searchNoMatch', { q: searchQuery.trim() })}
+              action={
+                <Button variant="pearl" onClick={() => setSearchQuery('')}>
+                  {i18n.t('people.clearSearch')}
+                </Button>
+              }
+            />
+          );
+
           // Specific store: only show members assigned there.
           if (storeCtx.kind === 'specific') {
             const filtered = rows.filter((m) => m.stores.some((s) => s.id === storeCtx.storeId));
+            if (filtered.length === 0 && tokens) return noMatch;
             if (filtered.length === 0) {
               return (
                 <EmptyState
@@ -543,6 +546,7 @@ export function PeopleSection({
           // store assignments (admin / super_admin operators).
           if (storeCtx.kind === 'org-level') {
             const orgOnly = rows.filter((m) => m.stores.length === 0);
+            if (orgOnly.length === 0 && tokens) return noMatch;
             if (orgOnly.length === 0) {
               return (
                 <EmptyState
@@ -575,6 +579,7 @@ export function PeopleSection({
           const storeSections = [...byStore.entries()].sort((a, b) =>
             a[1].name.localeCompare(b[1].name),
           );
+          if (rows.length === 0) return noMatch;
           return (
             <div className="flex flex-col gap-4">
               {orgLevel.length > 0 ? (
@@ -617,6 +622,58 @@ export function PeopleSection({
       >
         {memberMenuFor ? (
           <div className="flex flex-col gap-2 py-3">
+            {memberMenuFor.revocable.length > 0 ? (
+              <section aria-label={i18n.t('people.rolesOfMember')} className="mb-1">
+                <SectionLabel as="h3" padded={false} className="mb-1">
+                  {i18n.t('people.rolesOfMember')}
+                </SectionLabel>
+                <ul className="flex flex-col gap-1.5" role="list">
+                  {memberMenuFor.revocable.map((r) => (
+                    <li key={r.bindingId}>
+                      <ListRow
+                        className="rounded-[var(--r-card)]"
+                        label={r.role}
+                        hint={r.store ?? i18n.t('people.orgLevelLabel')}
+                        trailing={
+                          <Button
+                            variant="danger"
+                            disabled={revoke.isPending}
+                            aria-label={
+                              r.store
+                                ? i18n.t('people.revokeRoleInStoreAria', {
+                                    role: r.role,
+                                    store: r.store,
+                                    name: memberMenuFor.displayName,
+                                  })
+                                : i18n.t('people.revokeRoleAria', {
+                                    role: r.role,
+                                    name: memberMenuFor.displayName,
+                                  })
+                            }
+                            onClick={() => {
+                              const name = memberMenuFor.displayName;
+                              setMemberMenuFor(null);
+                              nativeConfirm(
+                                r.store
+                                  ? i18n.t('people.revokeRoleInStoreConfirm', {
+                                      role: r.role,
+                                      store: r.store,
+                                      name,
+                                    })
+                                  : i18n.t('people.revokeRoleConfirm', { role: r.role, name }),
+                                () => revoke.mutate({ bindingId: r.bindingId }),
+                              );
+                            }}
+                          >
+                            {i18n.t('people.revokeRole')}
+                          </Button>
+                        }
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
             {isGlobalAdminPeople &&
             (canSetOverride(actor, memberMenuFor.member, null) ||
               memberMenuFor.stores.some((st) =>
@@ -755,7 +812,7 @@ export function PeopleSection({
         onSubmit={() => {
           if (!manualDraft) return;
           invite.mutate({
-            tgUserId: manualDraft.tgUserId,
+            tgUserId: manualDraft.tgUserId.trim(),
             displayName: manualDraft.displayName || undefined,
             roleSlug: manualDraft.roleSlug || undefined,
             storeIds: manualDraft.storeIds,
@@ -926,11 +983,13 @@ function RoleCreateSheet({
   const [slug, setSlug] = useState('');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  // Default rank = max - 10 (one tier below the actor). The lower
-  // bound is 1; admins can adjust freely.
-  const defaultRank = Math.max(1, myMaxRank - 10);
-  const [rank, setRank] = useState(defaultRank);
+  // DX-ADM-4: one tier below the actor, never at or above admin. The
+  // rank is kept as typed and read on blur / save (lib/adminFields).
+  const defaultRank = defaultNewRoleRank(myMaxRank, ADMIN_RANK);
+  const maxRank = myMaxRank - 1;
+  const [rankText, setRankText] = useState(String(defaultRank));
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
+  const [slugTouched, setSlugTouched] = useState(false);
 
   // Reset when sheet re-opens for a fresh create.
   useEffect(() => {
@@ -938,10 +997,21 @@ function RoleCreateSheet({
       setSlug('');
       setName('');
       setDescription('');
-      setRank(Math.max(1, myMaxRank - 10));
+      setRankText(String(defaultNewRoleRank(myMaxRank, ADMIN_RANK)));
       setPicked(new Set());
+      setSlugTouched(false);
     }
   }, [open, myMaxRank]);
+  const rankRead = readRank(rankText, maxRank);
+  const slugBad = slug.length > 0 && !slugIsValid(slug);
+  const slugErrorId = useId();
+  // DX-IX-10: ask before Esc / backdrop / Back throws the typing away.
+  const createChanged =
+    slug !== '' ||
+    name !== '' ||
+    description !== '' ||
+    rankText !== String(defaultRank) ||
+    picked.size > 0;
 
   const grouped = useMemo(() => {
     const m = new Map<string, Array<{ key: string; description: string | null }>>();
@@ -980,16 +1050,13 @@ function RoleCreateSheet({
   };
 
   const canSave =
-    slug.trim().length > 0 &&
-    /^[a-z0-9-]+$/.test(slug) &&
-    name.trim().length > 0 &&
-    rank > 0 &&
-    rank < myMaxRank;
+    slug.trim().length > 0 && slugIsValid(slug) && name.trim().length > 0 && rankRead.ok;
 
   return (
     <Sheet
       open={open}
       onOpenChange={(o) => !o && onClose()}
+      hasChanges={createChanged && !create.isPending}
       title={i18n.t('people.newRoleTitle')}
       description={i18n.t('people.newRoleHint', { max: myMaxRank - 1 })}
       footer={
@@ -998,11 +1065,12 @@ function RoleCreateSheet({
           loading={create.isPending}
           disabled={!canSave}
           onClick={() => {
+            if (!rankRead.ok) return;
             create.mutate({
-              slug: slug.trim().toLowerCase(),
+              slug: slug.trim().replace(/^-+|-+$/g, ''),
               name: name.trim(),
               description: description.trim() || null,
-              rank,
+              rank: rankRead.rank,
               permissionKeys: [...picked],
             });
           }}
@@ -1015,11 +1083,25 @@ function RoleCreateSheet({
         <Field label={`${i18n.t('admin.field.slug')} *`}>
           <Input
             value={slug}
-            onChange={(e) => setSlug(e.target.value.toLowerCase())}
+            onChange={(e) => setSlug(normaliseSlugInput(e.target.value))}
+            onBlur={() => setSlugTouched(true)}
             maxLength={64}
             placeholder={i18n.t('admin.field.roleSlugPlaceholder')}
+            invalid={slugBad}
+            aria-describedby={slugErrorId}
             autoFocus
           />
+          {/* DX-ADM-4: say the rule instead of greying the button out. */}
+          <p
+            id={slugErrorId}
+            aria-live="polite"
+            className={`mt-1 text-old-label ${
+              slugBad ? 'text-[var(--c-danger)]' : 'text-[var(--c-fg-muted)]'
+            }`}
+          >
+            {i18n.t(slugBad ? 'people.slugInvalid' : 'people.slugRule')}
+            {slugTouched && slug === '' ? ` ${i18n.t('people.slugRequired')}` : ''}
+          </p>
         </Field>
         <Field label={`${i18n.t('admin.field.name')} *`}>
           <Input
@@ -1037,15 +1119,7 @@ function RoleCreateSheet({
             placeholder={i18n.t('people.rolePlaceholderDesc')}
           />
         </Field>
-        <Field label={`${i18n.t('people.rankField', { max: myMaxRank - 1 })} *`}>
-          <Input
-            type="number"
-            value={String(rank)}
-            onChange={(e) =>
-              setRank(Math.max(1, Math.min(myMaxRank - 1, Number(e.target.value) || 0)))
-            }
-          />
-        </Field>
+        <RankField text={rankText} onText={setRankText} max={maxRank} />
         <div>
           {/* M2.1: SectionLabel (was ad-hoc eyebrow). */}
           <SectionLabel className="mb-2 px-0">
@@ -1088,6 +1162,44 @@ function RoleCreateSheet({
   );
 }
 
+/**
+ * DX-ADM-4: the rank field keeps what is typed and says, once the person
+ * leaves it, that it wants a whole number in range — no clamping while
+ * typing.
+ */
+function RankField({
+  text,
+  onText,
+  max,
+}: {
+  text: string;
+  onText: (text: string) => void;
+  max: number;
+}) {
+  const i18n = useI18n();
+  const errorId = useId();
+  const [touched, setTouched] = useState(false);
+  const bad = touched && !readRank(text, max).ok;
+  return (
+    <Field label={`${i18n.t('people.rankField', { max })} *`}>
+      <Input
+        value={text}
+        onChange={(e) => onText(e.target.value)}
+        onBlur={() => setTouched(true)}
+        inputMode="numeric"
+        maxLength={3}
+        invalid={bad}
+        aria-describedby={bad ? errorId : undefined}
+      />
+      {bad ? (
+        <p id={errorId} className="mt-1 text-old-label text-[var(--c-danger)]">
+          {i18n.t('people.rankInvalid', { max })}
+        </p>
+      ) : null}
+    </Field>
+  );
+}
+
 /** Sheet showing the explicit permission keys for one role. Read-only
  *  for now; the canEdit prop reserves space for the editable matrix. */
 function RolePermissionsSheet({
@@ -1120,7 +1232,7 @@ function RolePermissionsSheet({
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [rank, setRank] = useState(0);
+  const [rankText, setRankText] = useState('');
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
 
   // Hydrate local state when role data lands or sheet re-opens.
@@ -1128,7 +1240,7 @@ function RolePermissionsSheet({
     if (!detail.data) return;
     setName(detail.data.name);
     setDescription(detail.data.description ?? '');
-    setRank(detail.data.rank);
+    setRankText(String(detail.data.rank));
     setPicked(new Set(detail.data.permissions));
     setEditing(false);
   }, [detail.data, open]);
@@ -1136,6 +1248,17 @@ function RolePermissionsSheet({
   // Below-rank gate — only roles strictly below actor's rank are editable.
   const isEditable = canEdit && (detail.data?.rank ?? 100) < myMaxRank;
   const isBuiltIn = detail.data?.isBuiltIn ?? false;
+  const rankRead = readRank(rankText, myMaxRank - 1);
+  const rank = rankRead.ok ? rankRead.rank : (detail.data?.rank ?? 0);
+  // DX-ADM-28: the edit form asks before its changes are thrown away.
+  const editChanged =
+    editing &&
+    !!detail.data &&
+    (name !== detail.data.name ||
+      description !== (detail.data.description ?? '') ||
+      rankText !== String(detail.data.rank) ||
+      picked.size !== detail.data.permissions.length ||
+      detail.data.permissions.some((k) => !picked.has(k)));
 
   const update = trpc.admin.roleUpdate.useMutation({
     onSuccess: () => {
@@ -1184,6 +1307,7 @@ function RolePermissionsSheet({
     <Sheet
       open={open}
       onOpenChange={(o) => !o && onClose()}
+      hasChanges={editChanged && !update.isPending}
       title={detail.data ? roleText.name(detail.data) : i18n.t('people.roleFallback')}
       description={
         detail.data
@@ -1201,6 +1325,7 @@ function RolePermissionsSheet({
             <Button
               block
               loading={update.isPending}
+              disabled={!isBuiltIn && !rankRead.ok}
               onClick={() => {
                 update.mutate({
                   roleId: detail.data!.id,
@@ -1269,15 +1394,7 @@ function RolePermissionsSheet({
                   {i18n.t('people.builtInRankBody')}
                 </Banner>
               ) : (
-                <Field label={`${i18n.t('people.rankField', { max: myMaxRank - 1 })} *`}>
-                  <Input
-                    type="number"
-                    value={String(rank)}
-                    onChange={(e) =>
-                      setRank(Math.max(1, Math.min(myMaxRank - 1, Number(e.target.value) || 0)))
-                    }
-                  />
-                </Field>
+                <RankField text={rankText} onText={setRankText} max={myMaxRank - 1} />
               )}
               {/* M2.1: SectionLabel (was ad-hoc eyebrow div). */}
               <SectionLabel className="px-0">
@@ -1438,11 +1555,10 @@ function RoleAssigneesByStore({
 
 /**
  * Telegram-native invite hub. The first option is "Share via Telegram"
- * which opens Telegram's contact picker pre-filled with the bot link;
- * the recipient opens the bot, sends /id, then the admin uses the
- * second option (manual TG ID add) to actually grant membership. The
- * bot deep-link flow that lets the recipient self-join their org will
- * land in M2 along with invite tokens.
+ * which opens Telegram's contact picker pre-filled with an invite link
+ * the recipient accepts in the Mini App. The manual option adds someone
+ * by Telegram id; DX-ADM-6: they find it by opening the Mini App, whose
+ * no-access screen shows it (production runs no bot answering /id).
  */
 function InviteHubSheet({
   open,
@@ -1664,25 +1780,54 @@ function ManualInviteSheet({
         // ADM-16: nobody can invite at their own rank or above (a super
         // admin was offered Super Admin, which the server always refuses).
         .filter((r) => r.rank < (session?.myMaxRank ?? 0))
-        .sort((a, b) => a.name.localeCompare(b.name)),
+        // DX-ADM-22: highest first, like the grant sheet (was by stored name).
+        .sort((a, b) => b.rank - a.rank),
     [rolesQuery.data, isGlobalAdmin, session?.myMaxRank],
   );
   const eligibleStores = useMemo(
     () => (storesQuery.data ?? []).filter((st) => adminStoreIds.has(st.id)),
     [storesQuery.data, adminStoreIds],
   );
+  // DX-ADM-1: a custom role carrying a key the actor lacks where it would
+  // be bound (org-tier roles globally, others in each chosen store; with
+  // no store chosen yet, in any of theirs) is shown greyed with the reason.
+  const pickedStoreIds = draft?.storeIds;
+  const keysMissing = (r: (typeof sortedRoles)[number]) => {
+    if (r.rank >= ADMIN_RANK) return !rolePassesOn(r, { type: 'global' });
+    const ids = pickedStoreIds?.length ? pickedStoreIds : null;
+    return ids
+      ? ids.some((storeId) => !rolePassesOn(r, { type: 'store', storeId }))
+      : !eligibleStores.some((st) => rolePassesOn(r, { type: 'store', storeId: st.id }));
+  };
+  const pickedRole = sortedRoles.find((r) => r.slug === draft?.roleSlug) ?? null;
+  const pickedRoleBlocked = pickedRole ? keysMissing(pickedRole) : false;
 
-  const tgIdValid = draft ? /^\d{4,15}$/.test(draft.tgUserId) : false;
+  // DX-ADM-5: the id is kept as typed; a phone number is refused with a
+  // reason instead of being turned into digits.
+  const tgProblem = draft ? tgIdProblem(draft.tgUserId) : null;
+  const [tgTouched, setTgTouched] = useState(false);
+  const open = !!draft;
+  useEffect(() => {
+    if (!open) setTgTouched(false);
+  }, [open]);
+  const tgErrorId = useId();
+  const tgShown = tgProblem === 'notDigits' || (tgTouched && tgProblem === 'length');
+  const tgIdValid = draft ? draft.tgUserId.trim() !== '' && tgProblem === null : false;
   // Adminish roles bypass the store check at the server side, so we
   // shouldn't force the admin to pick a store for them.
   const isAdminRole = draft?.roleSlug === 'admin' || draft?.roleSlug === 'super_admin';
   const requiresStore = !isAdminRole;
   const hasStore = (draft?.storeIds.length ?? 0) > 0;
-  const canSubmit = (isLink || tgIdValid) && (!requiresStore || hasStore);
+  const canSubmit =
+    (isLink || tgIdValid) && (!requiresStore || hasStore) && !pickedRoleBlocked;
+  // DX-ADM-28: typed id / name or a picked role is input worth asking about.
+  const inviteChanged =
+    !!draft && (draft.tgUserId !== '' || draft.displayName !== '' || draft.roleSlug !== '');
   return (
     <Sheet
       open={!!draft}
       onOpenChange={(open) => !open && !pending && setDraft(null)}
+      hasChanges={inviteChanged}
       title={i18n.t(isLink ? 'admin.invite.link.title' : 'admin.invite.byTgId.title')}
       description={i18n.t(
         isLink ? 'admin.invite.link.description' : 'admin.invite.byTgId.description',
@@ -1704,19 +1849,23 @@ function ManualInviteSheet({
               <Field label={i18n.t('admin.field.tgUserId')}>
                 <Input
                   value={draft.tgUserId}
-                  onChange={(e) =>
-                    setDraft({
-                      ...draft,
-                      tgUserId: e.target.value.replace(/\D/g, '').slice(0, 15),
-                    })
-                  }
+                  onChange={(e) => setDraft({ ...draft, tgUserId: e.target.value })}
+                  onBlur={() => setTgTouched(true)}
                   inputMode="numeric"
-                  maxLength={15}
+                  maxLength={32}
                   placeholder={i18n.t('admin.field.tgUserIdPlaceholder')}
+                  invalid={tgShown}
+                  aria-describedby={tgErrorId}
                   autoFocus
                 />
-                <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
-                  {i18n.t('admin.invite.tgIdHint')}
+                <p
+                  id={tgErrorId}
+                  aria-live="polite"
+                  className={`mt-1 text-old-label ${
+                    tgShown ? 'text-[var(--c-danger)]' : 'text-[var(--c-fg-muted)]'
+                  }`}
+                >
+                  {tgShown ? i18n.t('admin.invite.tgIdInvalid') : i18n.t('admin.invite.tgIdHint')}
                 </p>
               </Field>
               <Field label={i18n.t('admin.field.displayName')}>
@@ -1740,13 +1889,23 @@ function ManualInviteSheet({
                 onChange={(e) => setDraft({ ...draft, roleSlug: e.target.value })}
               >
                 <option value="">{i18n.t('admin.invite.noRoleYet')}</option>
-                {sortedRoles.map((r) => (
-                  <option key={r.id} value={r.slug}>
-                    {roleText.name(r)}
-                  </option>
-                ))}
+                {sortedRoles.map((r) => {
+                  const blocked = keysMissing(r) && r.slug !== draft.roleSlug;
+                  return (
+                    <option key={r.id} value={r.slug} disabled={blocked}>
+                      {blocked
+                        ? i18n.t('people.roleNameKeysYouLack', { name: roleText.name(r) })
+                        : roleText.name(r)}
+                    </option>
+                  );
+                })}
               </Select>
             )}
+            {pickedRoleBlocked ? (
+              <p role="alert" className="mt-1 text-old-label text-[var(--c-danger)]">
+                {i18n.t('people.roleHasKeysYouLack')}
+              </p>
+            ) : null}
           </Field>
           {requiresStore ? (
             <Field
@@ -2678,8 +2837,31 @@ function GrantRoleSheet({
               canGrantRole(actor, r, { type: 'store', storeId }),
             ),
       )
-      .sort((a, b) => b.rank - a.rank);
+      .map((r) => ({
+        ...r,
+        // DX-ADM-1: a custom role with a key the actor lacks in a chosen
+        // scope stays listed, greyed, with the reason (D8).
+        keysMissing:
+          scopeMode === 'global'
+            ? !rolePassesOn(r, { type: 'global' })
+            : [...selectedStoreIds].some(
+                (storeId) => !rolePassesOn(r, { type: 'store', storeId }),
+              ),
+      }))
+      .sort((a, b) => Number(a.keysMissing) - Number(b.keysMissing) || b.rank - a.rank);
   }, [rolesQuery.data, actor, scopeMode, selectedStoreIds]);
+
+  // DX-IX-10: the scope and stores picked so far are the sheet's input;
+  // closing by Esc / backdrop / Back asks before dropping them.
+  const initialStoreId =
+    target?.defaultStoreId && adminStoreIds.has(target.defaultStoreId)
+      ? target.defaultStoreId
+      : null;
+  const grantChanged =
+    !!target &&
+    (scopeMode !== 'store' ||
+      selectedStoreIds.size !== (initialStoreId ? 1 : 0) ||
+      (initialStoreId !== null && !selectedStoreIds.has(initialStoreId)));
 
   const toggleStore = (id: string) => {
     setSelectedStoreIds((prev) => {
@@ -2748,6 +2930,7 @@ function GrantRoleSheet({
     <Sheet
       open={!!target}
       onOpenChange={(open) => !open && onClose()}
+      hasChanges={grantChanged && !grant.isPending}
       title={i18n.t('people.grantRoleTitle')}
       description={target ? i18n.t('people.grantRoleTo', { name: target.displayName }) : ''}
     >
@@ -2830,17 +3013,19 @@ function GrantRoleSheet({
             <button
               key={r.id}
               type="button"
-              disabled={grant.isPending}
+              disabled={grant.isPending || r.keysMissing}
               onClick={() => handlePick(r.slug)}
-              className="press flex items-center justify-between rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 text-left ring-hairline"
+              className="press flex items-center justify-between rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 text-left ring-hairline disabled:opacity-50"
             >
               <div>
                 <div className="text-old-body font-semibold text-[var(--c-fg)]">
                   {roleText.name(r)}
                 </div>
                 <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
-                  {i18n.t('people.rankLine', { rank: r.rank })}
-                  {roleText.description(r) ? ` · ${roleText.description(r)}` : ''}
+                  {r.keysMissing
+                    ? i18n.t('people.roleHasKeysYouLack')
+                    : i18n.t('people.rankLine', { rank: r.rank }) +
+                      (roleText.description(r) ? ` · ${roleText.description(r)}` : '')}
                 </div>
               </div>
               {r.isBuiltIn ? <Badge tone="muted">{i18n.t('admin.label.builtIn')}</Badge> : null}

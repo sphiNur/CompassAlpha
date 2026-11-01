@@ -9,6 +9,7 @@ import {
   addDecimalStrings,
   hiddenSplits,
   mergeScopedRevision,
+  splitsInheritingItemPayment,
   StoreOutOfScopeError,
   type ScopedRevisionInput,
   type ScopedRevisionItem,
@@ -102,6 +103,30 @@ describe('mergeScopedRevision', () => {
   test('the merged split sum equals actualQty', () => {
     const merged = mergeScopedRevision(item, visibleOnlyInput, new Set([A, B]));
     expect(addDecimalStrings(merged.storeSplits.map((s) => s.qty))).toBe(merged.actualQty);
+  });
+});
+
+describe('splitsInheritingItemPayment (DX-BUY-1)', () => {
+  test('splits paid like the item read as inherited (null)', () => {
+    const out = splitsInheritingItemPayment(
+      [{ skuId: 's1', paymentMethod: 'cash' }],
+      [
+        { skuId: 's1', storeId: A, paymentMethod: 'cash' as string | null },
+        { skuId: 's1', storeId: B, paymentMethod: 'cash' as string | null },
+      ],
+    );
+    expect(out.map((split) => split.paymentMethod)).toEqual([null, null]);
+    expect(out.map((split) => split.storeId)).toEqual([A, B]);
+  });
+
+  test('rows paid per store keep their methods', () => {
+    const splits = [
+      { skuId: 's1', storeId: A, paymentMethod: 'cash' as string | null },
+      { skuId: 's1', storeId: B, paymentMethod: 'transfer' as string | null },
+    ];
+    expect(splitsInheritingItemPayment([{ skuId: 's1', paymentMethod: null }], splits)).toEqual(
+      splits,
+    );
   });
 });
 
