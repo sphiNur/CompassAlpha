@@ -36,8 +36,10 @@ const mainButton = (): Locator => page.getByTestId('page-main-button');
 const main = (): Locator => page.getByRole('main');
 // The innermost matching list item: an approval card is itself an item of
 // the order list (A11Y-14), with the product rows nested inside it.
+// Rows of the review card's 原提交订单 list (a read-only copy of the
+// submitted order) are not the line being worked on.
 const item = (sku: string): Locator =>
-  main().getByRole('listitem').filter({ hasText: sku }).last();
+  main().locator('li:not([data-testid="approval-original"] li)').filter({ hasText: sku }).last();
 const sheet = (): Locator => page.getByRole('dialog');
 
 let shot = 0;
