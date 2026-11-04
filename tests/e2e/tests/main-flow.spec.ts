@@ -103,8 +103,22 @@ test('place an order', async () => {
 
   await expect(mainButton()).toHaveText('Review order (2)');
   await mainButton().click();
-  await expect(sheet().getByRole('listitem').filter({ hasText: 'Apple' }).last()).toHaveText(
-    /Apple\s*2 kg/,
+  // 2026-11-05: the review is editable — each line has the list's stepper.
+  const reviewLine = (sku: string) => sheet().getByRole('listitem').filter({ hasText: sku }).last();
+  await expect(reviewLine('Apple').getByRole('button', { name: /^Quantity/ })).toHaveAccessibleName(
+    'Quantity 2 kg — tap to choose',
+  );
+  const reviewSaved = page.waitForResponse((res) => res.url().includes('order.adjustItem'));
+  await reviewLine('Apple').getByRole('button', { name: 'Increase' }).click();
+  await reviewSaved;
+  await expect(reviewLine('Apple').getByRole('button', { name: /^Quantity/ })).toHaveAccessibleName(
+    'Quantity 2.5 kg — tap to choose',
+  );
+  const reviewSaved2 = page.waitForResponse((res) => res.url().includes('order.adjustItem'));
+  await reviewLine('Apple').getByRole('button', { name: 'Decrease' }).click();
+  await reviewSaved2;
+  await expect(reviewLine('Apple').getByRole('button', { name: /^Quantity/ })).toHaveAccessibleName(
+    'Quantity 2 kg — tap to choose',
   );
   await evidence('order-review');
   await sheet().getByRole('button', { name: 'Submit order' }).click();
