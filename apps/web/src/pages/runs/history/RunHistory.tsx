@@ -598,17 +598,17 @@ function RunHistoryDaySheet({
                       {body}
                       <div className="flex flex-wrap gap-1.5 pt-1">
                         {st.lines.map((line) => (
-                          <button
+                          <Button
+                            size="sm"
+                            variant="secondary"
                             key={line.run.id}
-                            type="button"
                             onClick={() => open(line.run, st.storeId)}
-                            className="rounded-[var(--r-pill)] bg-[var(--c-bg)] px-2 py-0.5 text-old-label ring-1 ring-[var(--c-divider)] active:bg-[var(--c-surface-2)]"
                           >
                             {i18n.t('run.history.trip', { n: line.trip })} ·{' '}
                             <span className="tabular-nums">
                               {formatMoney(line.total)}
                             </span>
-                          </button>
+                          </Button>
                         ))}
                       </div>
                     </li>

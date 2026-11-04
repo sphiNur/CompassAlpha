@@ -11,6 +11,14 @@ import { cn } from '../cn';
  */
 export const surfaceClass = 'rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline';
 
+/**
+ * UI-6 / UI-13 (2026-11-05): a list of rows is ONE card with hairline
+ * dividers, not a stack of cards. Put this on the <ul>/<div> that holds
+ * `SectionRow` / `ListRow` children (they carry no surface of their own).
+ */
+export const rowGroupClass =
+  'flex flex-col overflow-hidden divide-y divide-[var(--c-divider)] ' + surfaceClass;
+
 interface CardProps extends HTMLAttributes<HTMLElement> {
   interactive?: boolean;
   // 'li' (A11Y-14): a card that is an item of a <ul role="list">.

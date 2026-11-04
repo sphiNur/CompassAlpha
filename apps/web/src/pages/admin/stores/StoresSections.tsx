@@ -636,7 +636,7 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
                 <li
                   key={r.skuId}
                   className={
-                    'rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 ' +
+                    'rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline px-3 py-2 ' +
                     (negative ? 'ring-1 ring-[var(--c-danger)]' : 'ring-hairline')
                   }
                 >

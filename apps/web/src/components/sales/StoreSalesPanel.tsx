@@ -211,7 +211,7 @@ export function StoreSalesPanel({
       {/* Today summary tile. */}
       {listErrored ? null : (
         <div
-          className={`grid ${canSeePrices ? 'grid-cols-2' : 'grid-cols-1'} gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline`}
+          className={`grid ${canSeePrices ? 'grid-cols-2' : 'grid-cols-1'} gap-2 rounded-[var(--r-card)] bg-[var(--c-surface)] p-3 ring-hairline`}
         >
           <div>
             <SectionLabel padded={false}>{i18n.t('sales.summary.today')}</SectionLabel>
@@ -240,7 +240,7 @@ export function StoreSalesPanel({
 
       {/* Record sale form. */}
       {canRecord ? (
-        <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
+        <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface)] p-3 ring-hairline">
           {/* M2.1: SectionLabel (was ad-hoc eyebrow). */}
           <SectionLabel className="px-0 py-0">{i18n.t('sales.form.recordTitle')}</SectionLabel>
           {/* 2026-10-21 F4-12: while dishes load, don't tell the cashier to
@@ -374,7 +374,7 @@ export function StoreSalesPanel({
                 // reads at full muted contrast.
                 <li
                   key={sale.id}
-                  className="flex items-baseline justify-between gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 ring-hairline"
+                  className="flex items-baseline justify-between gap-2 rounded-[var(--r-card)] bg-[var(--c-surface)] px-3 py-2 ring-hairline"
                 >
                   <div
                     className={`min-w-0 flex-1 ${voided ? 'text-[var(--c-fg-muted)] line-through' : ''}`}

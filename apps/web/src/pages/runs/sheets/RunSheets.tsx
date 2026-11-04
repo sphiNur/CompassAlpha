@@ -884,16 +884,17 @@ export function AddItemSheet({
                     {unitLabel(selectedSku.unit)}
                   </div>
                 </div>
-                <button
-                  type="button"
+                <Button
+                  size="sm"
+                  variant="secondary"
                   onClick={() =>
                     onChange({ ...draft, skuId: null, skuCostMode: 'merge' })
                   }
                   // DX-VIS-6: hit-44 (it was 22px tall to a finger).
-                  className="hit-44 shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-old-label text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
+                  className="shrink-0"
                 >
                   {i18n.t('run.action.addItem.changeSku')}
-                </button>
+                </Button>
               </div>
             ) : (
               <>
