@@ -841,37 +841,29 @@ export function AdminAuditSection() {
     expenseTemplate: i18n.t('admin.subsection.expenseTemplates'),
     dish: i18n.t('admin.subsection.dishes'),
   };
-  const chipClass = (active: boolean) =>
-    'rounded-full px-3 py-1 text-old-label font-medium ring-hairline ' +
-    (active
-      ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-      : 'bg-[var(--c-surface-2)] text-[var(--c-fg)]');
   return (
     <div className="px-4 py-3">
       {/* Filter chip row — only renders when there's something to
           filter. Single-store users see one chip + "all". */}
       {filterStores.length > 0 ? (
-        <div className="mb-3 flex flex-wrap gap-1">
-          <button
-            type="button"
-            onClick={() => setStoreFilter(null)}
-            aria-pressed={storeFilter === null}
-            className={chipClass(storeFilter === null)}
-          >
+        <ChipBar
+          variant="radio"
+          ariaLabel={i18n.t('ops.audit.allScopes')}
+          className="-mx-4 -my-1.5 mb-1.5 px-4 py-1.5"
+        >
+          <Chip selected={storeFilter === null} onClick={() => setStoreFilter(null)}>
             {i18n.t('ops.audit.allScopes')}
-          </button>
+          </Chip>
           {filterStores.map((st) => (
-            <button
+            <Chip
               key={st.id}
-              type="button"
+              selected={storeFilter === st.id}
               onClick={() => setStoreFilter(st.id)}
-              aria-pressed={storeFilter === st.id}
-              className={chipClass(storeFilter === st.id)}
             >
               {st.name}
-            </button>
+            </Chip>
           ))}
-        </div>
+        </ChipBar>
       ) : null}
       {/* Six options: a scrolling ChipBar, not Segmented (2-4 max). */}
       <ChipBar

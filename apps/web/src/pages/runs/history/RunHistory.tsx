@@ -20,7 +20,18 @@
  */
 import { addMoney } from '@compass/contracts/money';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Badge, Button, Card, Input, SectionLabel, Sheet, Spinner, useToast } from '@compass/ui';
+import {
+  Badge,
+  Button,
+  Card,
+  Chip,
+  ChipBar,
+  Input,
+  SectionLabel,
+  Sheet,
+  Spinner,
+  useToast,
+} from '@compass/ui';
 import { trpc } from '../../../lib/trpc';
 import { useNavStore } from '../../../stores/navStore';
 import { useAuthStore } from '../../../stores/authStore';
@@ -1057,42 +1068,29 @@ export function RunHistoryDetailSheet({
             // 44px strip. overflow-x-auto clips anything outside the strip,
             // so a segment's hit-44 only works if the strip is 44 tall; at
             // 26px segments the area was cut to 36.
-            <div className="flex gap-1 overflow-x-auto rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-1 ring-hairline">
-              <button
-                type="button"
-                aria-pressed={!activeStoreId}
-                onClick={() => setSelectedStoreId(null)}
-                className={
-                  !activeStoreId
-                    ? 'hit-44 flex min-h-9 shrink-0 items-center rounded-[var(--r-pill)] bg-[var(--c-bg)] px-3 py-1.5 text-old-label font-medium text-[var(--c-fg)] shadow-sm'
-                    : 'hit-44 flex min-h-9 shrink-0 items-center rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium text-[var(--c-fg-muted)]'
-                }
-              >
+            <ChipBar
+              variant="radio"
+              ariaLabel={i18n.t('run.history.allStores')}
+            >
+              <Chip selected={!activeStoreId} onClick={() => setSelectedStoreId(null)}>
                 {i18n.t('run.history.allStores')}
-              </button>
+              </Chip>
               {storeOptions.map((storeTotal) => {
                 const storeName =
                   storeById.get(storeTotal.storeId)?.name ?? storeTotal.storeId.slice(0, 8);
-                const selected = activeStoreId === storeTotal.storeId;
                 return (
-                  <button
+                  <Chip
                     key={storeTotal.storeId}
-                    type="button"
-                    aria-pressed={selected}
+                    selected={activeStoreId === storeTotal.storeId}
                     onClick={() => setSelectedStoreId(storeTotal.storeId)}
-                    className={
-                      selected
-                        ? 'hit-44 flex min-h-9 shrink-0 items-center rounded-[var(--r-pill)] bg-[var(--c-bg)] px-3 py-1.5 text-old-label font-medium text-[var(--c-fg)] shadow-sm'
-                        : 'hit-44 flex min-h-9 shrink-0 items-center rounded-[var(--r-pill)] px-3 py-1.5 text-old-label font-medium text-[var(--c-fg-muted)]'
-                    }
                   >
                     <span className="inline-block max-w-[9rem] truncate align-bottom">
                       {storeName}
                     </span>
-                  </button>
+                  </Chip>
                 );
               })}
-            </div>
+            </ChipBar>
           ) : null}
 
           {/* Per-item rows.
