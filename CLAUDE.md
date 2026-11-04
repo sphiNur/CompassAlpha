@@ -8,7 +8,7 @@ Read `README.md` (setup, layout), `CONTRIBUTING.md` (the end-to-end feature reci
 
 ## Commands
 
-Bun 1.3.13 (`.bun-version`), pnpm 10.33, Node 18.19 (the versions on the production server; keep dev and CI on them), Postgres 16 on port 5433.
+Bun 1.4.4 (`.bun-version`), pnpm 12.16 (`packageManager`), Node 26 LTS, PostgreSQL 18, Redis 8.10. Production, CI and dev run the same versions; bump them together. Dev compose maps Postgres to 5433 and Redis to 6380. pnpm 12 blocks dependency build scripts unless listed under `allowBuilds` in `pnpm-workspace.yaml`.
 
 ```bash
 pnpm type-check                      # tsc in every package (CI)

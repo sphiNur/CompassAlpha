@@ -9,7 +9,7 @@
 ## 快速上手
 
 ```bash
-# 1. 准备环境（要求 Bun 1.3.13, pnpm 10.33, Node 18.19+, Postgres 16, Redis 7 —— 与生产服务器一致）
+# 1. 准备环境（要求 Bun 1.4.4, pnpm 12.16, Node 26 LTS, PostgreSQL 18, Redis 8.10 —— 生产、CI、本地三边一致）
 cp .env.example .env
 docker compose -f infra/compose/docker-compose.dev.yml up -d   # 起 PG + Redis + MinIO + Otel
 # 注意：dev compose 把 PG 暴露在 5433，Redis 在 6380（避开本机已有进程）。
