@@ -955,6 +955,8 @@ export const zh = {
   'order.submitted.summary': '审核有改动，划线为原提交数量。',
   'order.submitted.showOriginal': '原提交订单',
   'order.submitted.extrasOriginal': '原提交的其他物品',
+  'order.submitted.changedShort': '审核有改动',
+  'order.submitted.unchanged': '与提交一致',
   'order.review.remove': '移除',
   'order.review.estimatedTotal': '预计金额',
   'order.review.estimateHint': '~ 按上次买入价 · {known} 项有价 · {unknown} 项无价',

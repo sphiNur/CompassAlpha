@@ -979,6 +979,8 @@ function SessionItems({
   });
   // DX-APR-2: taps add up locally; the final value goes out once they stop.
   const [, rerender] = useReducer((n: number) => n + 1, 0);
+  // 2026-11-05: the 原提交订单 list, open unless the reviewer folds it.
+  const [originalOpen, setOriginalOpen] = useState(true);
   /** The seq of our own last write; the first copy at or past it is the new baseline. */
   const rebaselineAt = useRef<number | null>(null);
   const adjustRef = useRef(adjust);
@@ -1202,31 +1204,6 @@ function SessionItems({
             </li>
           ))}
         </ul>
-      </div>
-    ) : null}
-    {showSubmittedExtras && submittedExtras ? (
-      <div
-        data-testid="approval-submitted-extras"
-        className="border-b border-[var(--c-divider)] px-4 py-2.5"
-      >
-        <SectionLabel padded={false}>{i18n.t('order.submitted.extrasOriginal')}</SectionLabel>
-        {submittedExtras.length === 0 ? (
-          <p className="mt-1 text-old-body text-[var(--c-fg-muted)]">—</p>
-        ) : (
-          <ul className="mt-1 flex flex-col gap-0.5">
-            {submittedExtras.map((e, idx) => (
-              <li
-                key={`${e.name}-${idx}`}
-                className="flex items-baseline justify-between gap-2 text-old-body text-[var(--c-fg-muted)]"
-              >
-                <span className="min-w-0 flex-1 break-words">{e.name}</span>
-                <span className="shrink-0 tabular-nums">
-                  {formatQty(e.qty)} {unitLabel(e.unit, e.qty)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
       </div>
     ) : null}
     {view.showNotes ? (
@@ -1460,6 +1437,68 @@ function SessionItems({
           );
         })}
       </ul>
+    ) : null}
+    {/* 2026-11-05 (owner): every order, pending or decided, shows the
+        whole order as the store submitted it — each product with its
+        quantity and unit — not only the lines review changed. */}
+    {submittedQ.data ? (
+      <div className="border-t border-[var(--c-divider)] px-4 py-2" data-testid="approval-original">
+        <button
+          type="button"
+          className="press flex min-h-11 w-full items-center justify-between gap-2 text-left"
+          aria-expanded={originalOpen}
+          onClick={() => setOriginalOpen(!originalOpen)}
+        >
+          <span className="text-old-body font-semibold text-[var(--c-fg)]">
+            {i18n.t('order.submitted.showOriginal')}
+          </span>
+          <span className="flex shrink-0 items-center gap-2 text-old-label text-[var(--c-fg-muted)]">
+            {vsSubmitted.size > 0 || showSubmittedExtras
+              ? i18n.t('order.submitted.changedShort')
+              : i18n.t('order.submitted.unchanged')}
+            <span aria-hidden>
+              {originalOpen ? '▾' : '▸'}
+            </span>
+          </span>
+        </button>
+        {originalOpen ? (
+          <ul className="flex flex-col pb-1" role="list">
+            {submittedQ.data.totals.map((t) => {
+              const sku = skuById.get(t.skuId);
+              const ch = vsSubmitted.get(t.skuId);
+              return (
+                <li
+                  key={t.skuId}
+                  className="flex items-baseline justify-between gap-3 border-b border-[var(--c-divider)] py-1.5 text-old-body last:border-b-0"
+                >
+                  <span className="min-w-0 flex-1 break-words text-[var(--c-fg)]">
+                    {sku ? productName(sku) : t.skuId.slice(0, 8)}
+                  </span>
+                  <span
+                    className={`shrink-0 tabular-nums ${ch ? 'font-semibold text-[var(--c-warning-fg)]' : 'text-[var(--c-fg-muted)]'}`}
+                  >
+                    {formatQty(t.qty)} {unitLabel(sku?.unit ?? '', t.qty)}
+                  </span>
+                </li>
+              );
+            })}
+            {(submittedExtras ?? []).map((e, idx) => (
+              <li
+                key={`x-${e.name}-${idx}`}
+                className="flex items-baseline justify-between gap-3 border-b border-[var(--c-divider)] py-1.5 text-old-body last:border-b-0"
+              >
+                <span className="min-w-0 flex-1 break-words text-[var(--c-fg)]">{e.name}</span>
+                <span className="shrink-0 tabular-nums text-[var(--c-fg-muted)]">
+                  {formatQty(e.qty)} {unitLabel(e.unit, e.qty)}
+                </span>
+              </li>
+            ))}
+            {submittedQ.data.totals.length === 0 && (submittedExtras ?? []).length === 0 ? (
+              <li className="py-1.5 text-old-body text-[var(--c-fg-muted)]">—</li>
+            ) : null}
+          </ul>
+        ) : null}
+      </div>
     ) : null}
     </div>
   );

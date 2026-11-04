@@ -1060,6 +1060,8 @@ export const uz = {
   'order.submitted.summary': 'Tekshiruvda oʻzgartirildi. Yuborilgan miqdorlar chizib qoʻyilgan.',
   'order.submitted.showOriginal': 'Yuborilgan buyurtma',
   'order.submitted.extrasOriginal': 'Yuborilgandagi boshqa narsalar',
+  'order.submitted.changedShort': 'Tekshiruvda oʻzgartirilgan',
+  'order.submitted.unchanged': 'Yuborilgandek',
   'order.review.remove': 'Olib tashlash',
   'order.review.estimatedTotal': 'Taxminiy summa',
   'order.review.estimateHint': '~ oxirgi xarid narxi boʻyicha · {known} narxli · {unknown} narxsiz',

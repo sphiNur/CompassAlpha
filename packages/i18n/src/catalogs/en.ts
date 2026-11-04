@@ -1145,6 +1145,8 @@ export const en = {
   'order.submitted.summary': 'Changed in review. Amounts as submitted are struck through.',
   'order.submitted.showOriginal': 'Order as submitted',
   'order.submitted.extrasOriginal': 'Other items as submitted',
+  'order.submitted.changedShort': 'Changed in review',
+  'order.submitted.unchanged': 'Same as submitted',
   'order.review.remove': 'Remove',
   'order.review.estimatedTotal': 'Estimated total',
   'order.review.estimateHint': '~ at the last price paid · {known} priced · {unknown} unknown',
