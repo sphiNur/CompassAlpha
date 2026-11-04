@@ -131,9 +131,17 @@ test('approve it', async () => {
   await tab('approve').click();
   await expect(main().getByRole('heading', { name: 'E2E Admin' })).toBeVisible();
   await main().getByRole('button', { name: "I'll review" }).click();
-  await expect(item('Apple').getByRole('button', { name: /^Quantity/ })).toHaveAccessibleName(
+  // The card also lists the order as submitted (原提交订单, no stepper);
+  // the editable line is the one with the quantity control.
+  const editable = main()
+    .getByRole('listitem')
+    .filter({ hasText: 'Apple' })
+    .filter({ has: page.getByRole('button', { name: /^Quantity/ }) })
+    .last();
+  await expect(editable.getByRole('button', { name: /^Quantity/ })).toHaveAccessibleName(
     /^Quantity 2 kg/,
   );
+  await expect(main().getByTestId('approval-original')).toContainText(/Apple\s*2 kg/);
   await evidence('approval-claimed');
   await main().getByRole('button', { name: 'Approve', exact: true }).click();
   await expect(main().getByRole('heading', { name: 'No orders waiting for review' })).toBeVisible();
