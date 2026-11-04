@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Banner,
   Button,
@@ -152,6 +152,10 @@ export function OrderPage() {
   // M1.10 (2026-05-08): cross-language SKU search. Lives above the
   // category chip-bar; queries match across uz/ru/en/zh names + code.
   const [searchQuery, setSearchQuery] = useState('');
+  // Perf (2026-11-05): the input shows every keystroke at once; the 300-row
+  // list filters against this deferred copy, so React can paint the typed
+  // character first and redo the list in the next, interruptible render.
+  const deferredSearch = useDeferredValue(searchQuery);
 
   const categoriesQuery = trpc.catalog.categories.useQuery();
   // CAT-7 (2026-10-30): include archived products so lines already ordered,
@@ -705,7 +709,7 @@ export function OrderPage() {
       let out = activeCategory
         ? skus.filter((s) => s.categoryId === activeCategory)
         : skus;
-      const tokens = normalizeQuery(searchQuery);
+      const tokens = normalizeQuery(deferredSearch);
       if (tokens) {
         out = out.filter((s) =>
           matchesNameLike(
@@ -716,12 +720,12 @@ export function OrderPage() {
       }
       return out;
     },
-    [skus, activeCategory, searchQuery],
+    [skus, activeCategory, deferredSearch],
   );
   // A11Y-12 (2026-10-31): say how many products the search / category
   // leaves, once typing settles; the list used to change in silence.
   useAnnounce(
-    skusQuery.data && (searchQuery.trim() || activeCategory)
+    skusQuery.data && (deferredSearch.trim() || activeCategory)
       ? filteredSkus.length === 0
         ? i18n.t('order.search.noMatches.title')
         : i18n.t('a11y.results.products', { n: filteredSkus.length })
@@ -1547,7 +1551,7 @@ export function OrderPage() {
       >
         {() => (
           <ul className="flex flex-col" role="list">
-            {filteredSkus.length === 0 && (searchQuery || activeCategory) ? (
+            {filteredSkus.length === 0 && (deferredSearch || activeCategory) ? (
               <li className="px-4 py-8">
                 <EmptyState
                   title={i18n.t('order.search.noMatches.title')}
@@ -1837,7 +1841,11 @@ const SkuRow = memo(function SkuRow({
     // zoom makes the row ~195 px wide) the qty control moves under the
     // name instead of squeezing it to nothing; at 320 px it still fits
     // on one line.
-    <li className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-[var(--c-divider)] px-4 py-1.5 last:border-b-0">
+    // Perf (2026-11-05): ~300 rows are mounted; content-visibility lets the
+    // browser skip layout/paint for rows off screen (iOS 18+ WebView).
+    // "auto 50px" (measured row height) is the estimate until a row has
+    // been laid out once; afterwards the browser remembers the real one.
+    <li className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-[var(--c-divider)] px-4 py-1.5 last:border-b-0 [content-visibility:auto] [contain-intrinsic-size:auto_50px]">
       <div className="min-w-[7rem] flex-1">
         <NameCell
           primary={nm.primary}
