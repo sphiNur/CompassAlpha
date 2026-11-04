@@ -40,6 +40,7 @@ import { haptic } from '../hooks/useTelegram';
 import { useOnline } from '../hooks/useOnline';
 import { confirmThen } from '../lib/confirm';
 import { useErrToast } from '../lib/errToast';
+import { extrasChanged, submittedDiff } from './order/submittedDiff';
 import { formatQty, formatMoney } from '../lib/format';
 import { useStoreContext } from '../components/StoreSwitcher';
 import { sessionItemsView } from './approval/sessionItemsView';
@@ -951,6 +952,8 @@ function SessionItems({
   // foundation from M1.17.
   const currency = useAuthStore((s) => s.session?.member.currency) ?? 'UZS';
   const detail = trpc.order.sessionDetail.useQuery({ sessionId });
+  // 2026-11-05: the order as submitted, so review edits read against it.
+  const submittedQ = trpc.order.submittedVersion.useQuery({ sessionId }, { staleTime: 30_000 });
   const utils = trpc.useUtils();
   const errToast = useErrToast();
   const adjust = trpc.order.adjustItem.useMutation({
@@ -1111,6 +1114,10 @@ function SessionItems({
   const view = sessionItemsView({ totals, extras: sessionExtras, notes: sessionNotes });
   // DX-APR-8: lines set to 0 in review stay, struck through and restorable.
   const zeroed = zeroedInReview(rawItems);
+  // 2026-11-05: what review changed against the order as submitted.
+  const vsSubmitted = submittedDiff(submittedQ.data?.totals, totals);
+  const submittedExtras = submittedQ.data?.extras;
+  const showSubmittedExtras = extrasChanged(submittedExtras, sessionExtras);
   // DX-APR-3: lines that changed since opening and are no longer on the order.
   const removedSinceSeen = [...changed.entries()].filter(
     ([skuId]) => !totals.some((t) => t.skuId === skuId),
@@ -1197,6 +1204,31 @@ function SessionItems({
         </ul>
       </div>
     ) : null}
+    {showSubmittedExtras && submittedExtras ? (
+      <div
+        data-testid="approval-submitted-extras"
+        className="border-b border-[var(--c-divider)] px-4 py-2.5"
+      >
+        <SectionLabel padded={false}>{i18n.t('order.submitted.extrasOriginal')}</SectionLabel>
+        {submittedExtras.length === 0 ? (
+          <p className="mt-1 text-old-body text-[var(--c-fg-muted)]">—</p>
+        ) : (
+          <ul className="mt-1 flex flex-col gap-0.5">
+            {submittedExtras.map((e, idx) => (
+              <li
+                key={`${e.name}-${idx}`}
+                className="flex items-baseline justify-between gap-2 text-old-body text-[var(--c-fg-muted)]"
+              >
+                <span className="min-w-0 flex-1 break-words">{e.name}</span>
+                <span className="shrink-0 tabular-nums">
+                  {formatQty(e.qty)} {unitLabel(e.unit, e.qty)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    ) : null}
     {view.showNotes ? (
       <div className="border-b border-[var(--c-divider)] bg-[var(--c-warn-bg)] px-4 py-2.5">
         <SectionLabel padded={false}>
@@ -1250,6 +1282,7 @@ function SessionItems({
         const singleRow = isSingleContributor ? rows[0]! : null;
         const unitPrice = Number(priceBySku.get(t.skuId) ?? 0) || null;
         const before = changed.get(t.skuId);
+        const sub = vsSubmitted.get(t.skuId);
         return (
           <li
             key={t.skuId}
@@ -1269,7 +1302,7 @@ function SessionItems({
               </div>
             ) : null}
             <div className="flex items-center justify-between gap-2 text-old-body">
-              <span className="min-w-0 flex-1 truncate font-semibold text-[var(--c-fg)]">
+              <span className="min-w-0 flex-1 break-words font-semibold text-[var(--c-fg)]">
                 {sku ? productName(sku) : t.skuId.slice(0, 8)}
               </span>
               {canEdit && isSingleContributor && sku && singleRow ? (
@@ -1295,6 +1328,24 @@ function SessionItems({
                 </span>
               )}
             </div>
+            {sub?.kind === 'changed' ? (
+              <div
+                data-testid="approval-line-submitted"
+                className="mt-0.5 text-old-label tabular-nums text-[var(--c-fg-muted)]"
+              >
+                {i18n.t('order.submitted.was', {
+                  qty: formatQty(sub.before),
+                  unit: unitLabel(sku?.unit ?? '', sub.before),
+                })}
+              </div>
+            ) : sub?.kind === 'added' ? (
+              <div
+                data-testid="approval-line-submitted"
+                className="mt-0.5 text-old-label font-semibold text-[var(--c-warning-fg)]"
+              >
+                {i18n.t('order.submitted.added')}
+              </div>
+            ) : null}
             {/* 2026-10-11: what one costs, how it is usually paid, and
                 what the line comes to. A line of its own under the name,
                 holding only figures and one word, so a long product name
@@ -1372,6 +1423,7 @@ function SessionItems({
         {zeroed.map((z) => {
           const sku = skuById.get(z.skuId);
           const key = qtyKey(z.skuId, z.contributorMemberId);
+          const sub = vsSubmitted.get(z.skuId);
           return (
             <li
               key={key}
@@ -1381,8 +1433,14 @@ function SessionItems({
                 <span className="block truncate text-[var(--c-fg-muted)] line-through">
                   {sku ? productName(sku) : z.skuId.slice(0, 8)}
                 </span>
-                <span className="text-old-label text-[var(--c-fg-muted)]">
+                <span className="text-old-label tabular-nums text-[var(--c-fg-muted)]">
                   {i18n.t('approval.zeroed')}
+                  {sub?.kind === 'removed'
+                    ? ` · ${i18n.t('order.submitted.was', {
+                        qty: formatQty(sub.before),
+                        unit: unitLabel(sku?.unit ?? '', sub.before),
+                      })}`
+                    : null}
                 </span>
               </span>
               {canEdit && sku ? (

@@ -29,6 +29,7 @@ import { isLikelyNetworkError } from '../lib/networkError';
 import { errorTextOf } from '../lib/errorText';
 import { sentBatchCount } from './order/batchCount';
 import { groupCatalog, orderableSkus } from './order/catalogGroups';
+import { extrasChanged, submittedDiff } from './order/submittedDiff';
 import { PendingSyncNotice } from '../components/PendingSyncNotice';
 import { useQueryClient } from '@tanstack/react-query';
 import { refetchFailedQueries } from '../hooks/useRefetchFailedOnReconnect';
@@ -1236,8 +1237,11 @@ export function OrderPage() {
               <SectionLabel padded={false} className="mb-1.5">
                 {i18n.t('order.receipt.submittedItems')}
               </SectionLabel>
-              <ReviewList
+              <ReceiptList
+                sessionId={v.id}
+                status={v.status}
                 totals={v.totals ?? []}
+                extras={v.extras ?? []}
                 skus={allSkus}
                 categories={categoriesQuery.data ?? []}
                 productName={productName}
@@ -1338,8 +1342,11 @@ export function OrderPage() {
               <SectionLabel padded={false} className="mb-1.5">
                 {i18n.t('order.receipt.submittedItems')}
               </SectionLabel>
-              <ReviewList
+              <ReceiptList
+                sessionId={locked.id}
+                status={locked.status}
                 totals={totals}
+                extras={locked.extras ?? []}
                 skus={allSkus}
                 categories={categoriesQuery.data ?? []}
                 productName={productName}
@@ -1743,8 +1750,13 @@ export function OrderPage() {
               skus={allSkus}
               categories={categoriesQuery.data ?? []}
               productName={productName}
-              onRemove={
-                currentStoreId ? (skuId) => handleQtyChange(currentStoreId, skuId, '0') : undefined
+              edit={
+                currentStoreId && !isReadOnly
+                  ? {
+                      myQtyBySku,
+                      onQtyChange: (skuId, qty) => handleQtyChange(currentStoreId, skuId, qty),
+                    }
+                  : undefined
               }
             />
           ) : null}
@@ -2008,6 +2020,58 @@ function BatchStrip({
   );
 }
 
+/**
+ * A sent order's receipt (2026-11-05): the lines now, compared with the
+ * order as submitted once review has touched it, plus the submitted
+ * off-catalog items when review changed those.
+ */
+function ReceiptList({
+  sessionId,
+  status,
+  totals,
+  extras,
+  ...rest
+}: {
+  sessionId: string;
+  status: string;
+  totals: ReviewTotal[];
+  extras: ReadonlyArray<{ name: string; qty: string; unit: string }>;
+} & Omit<Parameters<typeof ReviewList>[0], 'totals' | 'edit' | 'submitted'>) {
+  const i18n = useI18n();
+  const unitLabel = useUnitLabel();
+  const submitted = trpc.order.submittedVersion.useQuery(
+    { sessionId },
+    { enabled: sessionId !== 'optimistic' && status !== 'draft', staleTime: 30_000 },
+  );
+  const snap = submitted.data ?? null;
+  return (
+    <>
+      <ReviewList {...rest} totals={totals} submitted={snap?.totals ?? null} />
+      {snap && extrasChanged(snap.extras, extras) ? (
+        <div className="mt-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-2.5 ring-hairline">
+          <SectionLabel as="h3" padded={false}>
+            {i18n.t('order.submitted.extrasOriginal')}
+          </SectionLabel>
+          {snap.extras.length === 0 ? (
+            <p className="mt-1 text-old-body text-[var(--c-fg-muted)]">—</p>
+          ) : (
+            <ul className="mt-1 flex flex-col gap-0.5" role="list">
+              {snap.extras.map((e, i) => (
+                <li key={`${e.name}-${i}`} className="flex items-baseline justify-between gap-3 text-old-body">
+                  <span className="min-w-0 flex-1 break-words text-[var(--c-fg)]">{e.name}</span>
+                  <span className="shrink-0 tabular-nums text-[var(--c-fg-muted)]">
+                    {formatQty(e.qty)} {unitLabel(e.unit, e.qty)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 interface ReviewTotal {
   skuId: string;
   qty: string;
@@ -2018,7 +2082,8 @@ function ReviewList({
   skus,
   categories,
   productName,
-  onRemove,
+  edit,
+  submitted,
 }: {
   totals: ReviewTotal[];
   skus: Array<{
@@ -2034,11 +2099,22 @@ function ReviewList({
   /** DX-ORD-12: names and order of the category headings. */
   categories: ReadonlyArray<{ id: string; names?: unknown; sortIndex?: number | null }>;
   productName: (item: { names: Record<string, string> | null | undefined }) => string;
-  /** ORD-10: take a line out (only offered for archived products, which
-   *  the catalog list no longer shows). Omitted on read-only reviews. */
-  onRemove?: (skuId: string) => void;
+  /** 2026-11-05: the review before Submit is editable — each line gets the
+   *  same qty control as the list (it sets the viewer's own share, like the
+   *  list does). Omitted on read-only receipts. */
+  edit?: {
+    myQtyBySku: ReadonlyMap<string, number>;
+    onQtyChange: (skuId: string, qty: string) => void;
+  };
+  /** 2026-11-05: the order as submitted. On a receipt, lines review changed
+   *  show the submitted amount struck through; removed lines stay, struck. */
+  submitted?: ReadonlyArray<{ skuId: string; qty: string }> | null;
 }) {
+  const diff = useMemo(() => submittedDiff(submitted, totals), [submitted, totals]);
   const i18n = useI18n();
+  // Lines stepped down to 0 stay in place (at 0) while the sheet is open, so
+  // a mis-tap can be undone with + instead of the row jumping out of view.
+  const seenRef = useRef(new Set<string>());
   // 2026-07-30 (flow review): was printing the raw canonical unit, so the
   // last screen before Submit read "0.5 kg" while Approval showed "0.5 公斤".
   const unitLabel = useUnitLabel();
@@ -2101,10 +2177,17 @@ function ReviewList({
   // heading, so they looked grouped at random.
   const groups = useMemo(() => {
     const lines: Array<(typeof skus)[number] & { qty: string }> = [];
-    for (const t of totals) {
-      if (Number(t.qty) <= 0) continue;
-      const sku = skuById.get(t.skuId);
-      if (sku) lines.push({ ...sku, qty: t.qty });
+    const byId = new Map(totals.map((t) => [t.skuId, t.qty] as const));
+    if (edit) for (const t of totals) if (Number(t.qty) > 0) seenRef.current.add(t.skuId);
+    const ids = edit
+      ? [...seenRef.current]
+      : [
+          ...totals.filter((t) => Number(t.qty) > 0).map((t) => t.skuId),
+          ...[...diff].filter(([, c]) => c.kind === 'removed').map(([id]) => id),
+        ];
+    for (const id of ids) {
+      const sku = skuById.get(id);
+      if (sku) lines.push({ ...sku, qty: byId.get(id) ?? '0' });
     }
     return groupCatalog(lines, categories).map((g) => ({
       key: g.key,
@@ -2118,10 +2201,11 @@ function ReviewList({
         name: productName({ names: sku.names as Record<string, string> }),
         qty: sku.qty,
         unit: sku.unit,
+        step: sku.step,
         archived: !!sku.isArchived,
       })),
     }));
-  }, [totals, skuById, categories, productName, i18n]);
+  }, [totals, skuById, categories, productName, i18n, edit, diff]);
 
   if (groups.length === 0) {
     return (
@@ -2155,6 +2239,11 @@ function ReviewList({
           </div>
         </div>
       ) : null}
+      {diff.size > 0 ? (
+        <p className="text-old-label text-[var(--c-warning-fg)]" data-testid="order-review-changed">
+          {i18n.t('order.submitted.summary')}
+        </p>
+      ) : null}
       <div className="rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline">
         {groups.map((g) => (
           <section key={g.key} className="border-b border-[var(--c-divider)] last:border-b-0">
@@ -2162,39 +2251,100 @@ function ReviewList({
               {g.heading}
             </SectionLabel>
             <ul className="flex flex-col" role="list">
-              {g.rows.map((r) => (
+              {g.rows.map((r) => {
+                const myQty = edit?.myQtyBySku.get(r.skuId) ?? 0;
+                const total = Number(r.qty);
+                const others = total - myQty;
+                if (edit) {
+                  return (
+                    <li
+                      key={r.skuId}
+                      className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-[var(--c-divider)] px-4 py-2 first:border-t-0 ${total > 0 ? '' : 'opacity-60'}`}
+                    >
+                      <div className="min-w-[7rem] flex-1">
+                        <div className="break-words text-old-h2 font-semibold leading-snug text-[var(--c-fg)]">
+                          {r.name}
+                        </div>
+                        {r.archived ? (
+                          <div className="text-old-label text-[var(--c-warning-fg)]">
+                            {i18n.t('order.review.archived')}
+                          </div>
+                        ) : null}
+                        {others > 0 ? (
+                          <div className="text-old-label tabular-nums text-[var(--c-fg-muted)]">
+                            {i18n.t('order.totalQty', {
+                              qty: formatQty(total),
+                              unit: unitLabel(r.unit, total),
+                            })}
+                          </div>
+                        ) : null}
+                      </div>
+                      <QtyControl
+                        value={myQty}
+                        step={Number(r.step)}
+                        unit={unitLabel(r.unit)}
+                        unitFor={(q) => unitLabel(r.unit, q)}
+                        max={r.archived ? myQty : ORDER_QTY_MAX}
+                        pickTitle={r.name}
+                        onChange={(next) => edit.onQtyChange(r.skuId, String(next))}
+                        className="ml-auto"
+                      />
+                    </li>
+                  );
+                }
+                const ch = diff.get(r.skuId);
+                return (
                 <li
                   key={r.skuId}
-                  className="flex items-baseline justify-between border-t border-[var(--c-divider)] px-4 py-2.5 first:border-t-0"
+                  data-change={ch?.kind}
+                  className="flex items-start justify-between gap-3 border-t border-[var(--c-divider)] px-4 py-2.5 first:border-t-0"
                 >
                   {/* 2026-07-05: match the prominent SKU-name tier used
                       by SkuRow above (the Order surface is the "browse"
                       tier, text-old-h2) so the review summary and the pick
-                      list read at the same size. */}
-                  <span className="truncate pr-3 text-old-h2 font-semibold text-[var(--c-fg)]">
-                    {r.name}
+                      list read at the same size. 2026-11-05: names wrap
+                      instead of being cut off on a narrow phone. */}
+                  <div className="min-w-0 flex-1">
+                    <div
+                      className={`break-words text-old-h2 font-semibold leading-snug ${
+                        ch?.kind === 'removed'
+                          ? 'text-[var(--c-fg-muted)] line-through'
+                          : 'text-[var(--c-fg)]'
+                      }`}
+                    >
+                      {r.name}
+                    </div>
                     {r.archived ? (
-                      <span className="ml-2 text-old-label font-normal text-[var(--c-warning-fg)]">
+                      <div className="text-old-label text-[var(--c-warning-fg)]">
                         {i18n.t('order.review.archived')}
-                      </span>
+                      </div>
                     ) : null}
-                  </span>
-                  <span className="flex shrink-0 items-baseline gap-2">
-                    <span className="text-old-body tabular-nums text-[var(--c-fg-muted)]">
-                      {formatQty(r.qty)} {unitLabel(r.unit, r.qty)}
-                    </span>
-                    {r.archived && onRemove ? (
-                      <Button
-                        size="sm"
-                        variant="danger-ghost"
-                        onClick={() => onRemove(r.skuId)}
-                      >
-                        {i18n.t('order.review.remove')}
-                      </Button>
+                    {ch?.kind === 'added' || ch?.kind === 'removed' ? (
+                      <div className="text-old-label font-semibold text-[var(--c-warning-fg)]">
+                        {i18n.t(ch.kind === 'added' ? 'order.submitted.added' : 'order.submitted.removed')}
+                      </div>
                     ) : null}
+                  </div>
+                  <span className="shrink-0 pt-0.5 text-old-body tabular-nums text-[var(--c-fg-muted)]">
+                    {ch?.kind === 'changed' ? (
+                      <>
+                        <s className="mr-1.5">{formatQty(ch.before)}</s>
+                        <span className="font-semibold text-[var(--c-fg)]">{formatQty(r.qty)}</span>{' '}
+                        {unitLabel(r.unit, r.qty)}
+                      </>
+                    ) : ch?.kind === 'removed' ? (
+                      <s>
+                        {formatQty(ch.before)} {unitLabel(r.unit, ch.before)}
+                      </s>
+                    ) : (
+                      <>
+                        {formatQty(r.qty)} {unitLabel(r.unit, r.qty)}
+                      </>
+                    )}
                   </span>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           </section>
         ))}
