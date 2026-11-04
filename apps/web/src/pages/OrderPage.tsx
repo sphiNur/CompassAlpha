@@ -35,7 +35,7 @@ import { refetchFailedQueries } from '../hooks/useRefetchFailedOnReconnect';
 import { sessionLoadState } from './order/sessionLoadState';
 import { InRunBanner } from './order/InRunBanner';
 import { useErrToast } from '../lib/errToast';
-import { matchesNameLike, normalizeQuery } from '../lib/searchMatch';
+import { normalizeQuery, rankNameLike } from '../lib/searchMatch';
 import {
   useDateFormat,
   useI18n,
@@ -709,18 +709,17 @@ export function OrderPage() {
       let out = activeCategory
         ? skus.filter((s) => s.categoryId === activeCategory)
         : skus;
-      const tokens = normalizeQuery(deferredSearch);
-      if (tokens) {
-        out = out.filter((s) =>
-          matchesNameLike(
-            { names: s.names as Record<string, string> | null, code: s.code },
-            tokens,
-          ),
-        );
-      }
+      // Ranked: best match first, the reader's language breaking ties, typo
+      // matches only when nothing matched literally (lib/searchMatch).
+      out = rankNameLike(
+        out,
+        normalizeQuery(deferredSearch),
+        (s) => ({ names: s.names as Record<string, string> | null, code: s.code }),
+        i18n.locale,
+      );
       return out;
     },
-    [skus, activeCategory, deferredSearch],
+    [skus, activeCategory, deferredSearch, i18n.locale],
   );
   // A11Y-12 (2026-10-31): say how many products the search / category
   // leaves, once typing settles; the list used to change in silence.
@@ -733,8 +732,22 @@ export function OrderPage() {
   );
   // DX-ORD-6 (2026-11-01): grouped by category in the admin's order.
   const catalogGroups = useMemo(
-    () => groupCatalog(filteredSkus, categoriesQuery.data ?? [], { archivedFirst: true }),
-    [filteredSkus, categoriesQuery.data],
+    () =>
+      // While searching, one list in relevance order — category groups would
+      // scatter the best match below whole groups of weaker ones.
+      // Archived lines still in the draft keep their "No longer sold" group.
+      deferredSearch.trim()
+        ? [
+            {
+              key: 'search-archived',
+              categoryId: null,
+              archived: true,
+              skus: filteredSkus.filter((s) => s.isArchived),
+            },
+            { key: 'search', categoryId: null, archived: false, skus: filteredSkus.filter((s) => !s.isArchived) },
+          ].filter((g) => g.skus.length > 0)
+        : groupCatalog(filteredSkus, categoriesQuery.data ?? [], { archivedFirst: true }),
+    [filteredSkus, categoriesQuery.data, deferredSearch],
   );
   const categoryNameById = useMemo(() => {
     const m = new Map<string, string>();
@@ -1562,7 +1575,8 @@ export function OrderPage() {
             {catalogGroups.map((group) => {
               // DX-ORD-6: headings under "All"; a picked category is its own
               // heading already. Archived lines always say what they are.
-              const showHeading = group.archived || activeCategory === null;
+              const showHeading =
+                group.key !== 'search' && (group.archived || activeCategory === null);
               const heading = group.archived
                 ? i18n.t('order.review.archived')
                 : group.categoryId

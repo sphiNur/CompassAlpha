@@ -12,7 +12,7 @@
  *
  * Props-driven; orchestrator state and mutations stay in RunPage.
  */
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Badge,
   Banner,
@@ -302,6 +302,10 @@ export function ActiveRunPanel({
       /* localStorage disabled / quota — non-fatal */
     }
   };
+  // Perf (2026-11-05): regrouping re-mounts every row (~150 ms on a slow
+  // phone). The chips follow `viewMode` at once; the lists render from this
+  // deferred copy so the tap paints first.
+  const shownViewMode = useDeferredValue(viewMode);
   // Distinct stores referenced by perStoreDemand. Falls back to splits
   // (legacy runs without perStoreDemand still have splits once they
   // start delivering).
@@ -359,6 +363,9 @@ export function ActiveRunPanel({
    * retyping four characters.
    */
   const [itemQuery, setItemQuery] = useState('');
+  // Perf (2026-11-05): the box shows each keystroke at once; the item list
+  // (every PurchaseRow) re-filters from this deferred copy, interruptibly.
+  const deferredItemQuery = useDeferredValue(itemQuery);
   // 2026-10-21 FE-03: delivering store rows expand into a read-only pick
   // list; ids of the expanded stores.
   const [pricesOpen, setPricesOpen] = useState(false);
@@ -377,7 +384,7 @@ export function ActiveRunPanel({
     });
   }, []);
   const [itemFilter, setItemFilter] = useState<ItemFilter>('all');
-  const itemTokens = useMemo(() => normalizeQuery(itemQuery) ?? [], [itemQuery]);
+  const itemTokens = useMemo(() => normalizeQuery(deferredItemQuery) ?? [], [deferredItemQuery]);
   const itemCounts = useMemo(
     () => countByStatus(run.items, (it) => it.status),
     [run.items],
@@ -523,7 +530,7 @@ export function ActiveRunPanel({
           </ChipBar>
         </div>
       ) : null}
-      {showViewToggle && viewMode === 'perStore' && showPerStore ? (
+      {showViewToggle && shownViewMode === 'perStore' && showPerStore ? (
         <PerStoreView
           run={run}
           storeById={storeById}
@@ -532,7 +539,7 @@ export function ActiveRunPanel({
           skusByStore={skusByStore}
         />
       ) : null}
-      {showViewToggle && viewMode === 'perVendor' && showPerVendor ? (
+      {showViewToggle && shownViewMode === 'perVendor' && showPerVendor ? (
         <PerVendorView
           onSetPaymentMethod={onSetPaymentMethod}
           paymentBusySkuId={paymentBusySkuId}
@@ -554,7 +561,7 @@ export function ActiveRunPanel({
           onRecordExtraExpense={onRecordExtraExpense}
         />
       ) : null}
-      {showViewToggle && viewMode === 'perCategory' && showPerCategory ? (
+      {showViewToggle && shownViewMode === 'perCategory' && showPerCategory ? (
         <PerCategoryView
           onSetPaymentMethod={onSetPaymentMethod}
           paymentBusySkuId={paymentBusySkuId}
@@ -576,10 +583,10 @@ export function ActiveRunPanel({
         />
       ) : null}
       {(!showViewToggle ||
-        viewMode === 'aggregate' ||
-        (viewMode === 'perStore' && !showPerStore) ||
-        (viewMode === 'perVendor' && !showPerVendor) ||
-        (viewMode === 'perCategory' && !showPerCategory)) &&
+        shownViewMode === 'aggregate' ||
+        (shownViewMode === 'perStore' && !showPerStore) ||
+        (shownViewMode === 'perVendor' && !showPerVendor) ||
+        (shownViewMode === 'perCategory' && !showPerCategory)) &&
       plannedOrEditing && run.items.length > 0 ? (
         <Card>
           {/* M2.1: SectionLabel (was 3-line ad-hoc div). Same visual,
@@ -1012,10 +1019,10 @@ export function ActiveRunPanel({
           UI. Now they sit right under the per-SKU list so the
           purchaser sees them while recording buys. */}
       {(!showViewToggle ||
-        viewMode === 'aggregate' ||
-        (viewMode === 'perStore' && !showPerStore) ||
-        (viewMode === 'perVendor' && !showPerVendor) ||
-        (viewMode === 'perCategory' && !showPerCategory)) &&
+        shownViewMode === 'aggregate' ||
+        (shownViewMode === 'perStore' && !showPerStore) ||
+        (shownViewMode === 'perVendor' && !showPerVendor) ||
+        (shownViewMode === 'perCategory' && !showPerCategory)) &&
       plannedOrEditing ? (
         <RunExtrasCard
           sessionExtrasByStore={run.sessionExtrasByStore}
@@ -1035,10 +1042,10 @@ export function ActiveRunPanel({
           phases) so the manager can see "what off-plan was spent"
           from any page state. */}
       {(!showViewToggle ||
-        viewMode === 'aggregate' ||
-        (viewMode === 'perStore' && !showPerStore) ||
-        (viewMode === 'perVendor' && !showPerVendor) ||
-        (viewMode === 'perCategory' && !showPerCategory)) &&
+        shownViewMode === 'aggregate' ||
+        (shownViewMode === 'perStore' && !showPerStore) ||
+        (shownViewMode === 'perVendor' && !showPerVendor) ||
+        (shownViewMode === 'perCategory' && !showPerCategory)) &&
       (editingPhase || (run.expenses?.length ?? 0) > 0) ? (
         <ExpensesCard
           expenses={run.expenses}

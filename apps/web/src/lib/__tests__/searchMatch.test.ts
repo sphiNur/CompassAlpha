@@ -6,7 +6,7 @@
  * the suite.
  */
 import { describe, expect, test } from 'bun:test';
-import { normalizeQuery, matchesNameLike, matchesAnyString } from '../searchMatch';
+import { normalizeQuery, matchesNameLike, matchesAnyString, rankNameLike, rankStrings } from '../searchMatch';
 
 describe('normalizeQuery', () => {
   test('returns null for empty / whitespace-only input', () => {
@@ -112,5 +112,62 @@ describe('matchesAnyString', () => {
 
   test('empty tokens always matches', () => {
     expect(matchesAnyString(['anything'], [])).toBe(true);
+  });
+});
+
+describe('rankNameLike (2026-11-05)', () => {
+  const p = (en: string, extra: Record<string, string> = {}) => ({ names: { en, ...extra }, code: null });
+  const get = (x: { names: Record<string, string>; code: null }) => x;
+  const rank = (items: ReturnType<typeof p>[], q: string, lang?: string) =>
+    rankNameLike(items, normalizeQuery(q), get, lang).map((x) => x.names.en);
+
+  test('exact name first, then prefix, then word-prefix, then contains', () => {
+    const items = [p('Instant Yeast Sachet'), p('Dry yeasty mix'), p('Yeast extract'), p('Yeast')];
+    expect(rank(items, 'yeast')).toEqual(['Yeast', 'Yeast extract', 'Instant Yeast Sachet', 'Dry yeasty mix']);
+  });
+
+  test('shorter name wins a tie, then original order', () => {
+    expect(rank([p('Beef Ribs Large'), p('Beef Ribs'), p('Beef Ribs Small')], 'beef ri')).toEqual([
+      'Beef Ribs',
+      'Beef Ribs Large',
+      'Beef Ribs Small',
+    ]);
+  });
+
+  test("the reader's language breaks ties", () => {
+    const a = { names: { en: 'Carrot', uz: 'Sabzi' }, code: null };
+    const b = { names: { en: 'Sabzi mix', ru: 'Морковь' }, code: null };
+    expect(rankNameLike([b, a], normalizeQuery('sabzi'), get, 'uz')[0]).toBe(a);
+  });
+
+  test('typo-only matches are dropped when something matched literally', () => {
+    const items = [p('Carrot', { uz: 'Sabzi' }), p('Takeaway Box', { uz: 'Sabzi qutisi' }), p('Salat bowl', { uz: 'Salat idishi' })];
+    // "salat" literal hit exists → the "sabzi"-ish typo neighbour stays out.
+    expect(rank(items, 'salat')).toEqual(['Salat bowl']);
+    // Nothing literal for "sabsi" → typo matches are the answer.
+    expect(rank(items, 'sabsi')).toEqual(['Carrot', 'Takeaway Box']);
+  });
+
+  test('typos must keep the first letter (keeps unrelated words out)', () => {
+    expect(rank([p('Cherry Tomato'), p('Black olives', { ru: 'Чёрные оливки' })], 'черный')).toEqual(['Black olives']);
+    expect(matchesNameLike(p('Turkish Tea'), ['turan'])).toBe(false);
+  });
+
+  test('swapped neighbours count as one typo; hyphenated words are words', () => {
+    expect(matchesNameLike(p('Zet-Brand Napkins'), ['brnad'])).toBe(true);
+    expect(matchesNameLike(p('Ice-Cream Bowl'), ['craem'])).toBe(true);
+    expect(matchesNameLike(p('Heavy-Duty Degreaser'), ['havy'])).toBe(true);
+  });
+
+  test('no tokens returns the list unchanged', () => {
+    const items = [p('B'), p('A')];
+    expect(rankNameLike(items, null, get)).toBe(items);
+  });
+});
+
+describe('rankStrings', () => {
+  test('ranks plain-string rows the same way', () => {
+    const rows = [{ n: 'Green tea' }, { n: 'Tea' }, { n: 'Teapot' }];
+    expect(rankStrings(rows, normalizeQuery('tea'), (r) => [r.n]).map((r) => r.n)).toEqual(['Tea', 'Teapot', 'Green tea']);
   });
 });

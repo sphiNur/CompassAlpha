@@ -30,7 +30,7 @@ import {
 import { PaymentMethodChips } from '../../../components/PaymentMethodChips';
 import { useAuthStore } from '../../../stores/authStore';
 import { formatMoney, formatQty } from '../../../lib/format';
-import { matchesNameLike, normalizeQuery } from '../../../lib/searchMatch';
+import { normalizeQuery, rankNameLike } from '../../../lib/searchMatch';
 import { useUnitLabel } from '../../../hooks/useI18n';
 import type { useI18n } from '../../../hooks/useI18n';
 import { toDisplayPrice, fromDisplayPrice, isStorablePrice, readDisplayPrice } from '../lib/priceMath';
@@ -674,7 +674,7 @@ export function AddItemSheet({
   // entries are recorded as store-scoped expenses so prices can differ.
   const filteredSkus = useMemo(() => {
     const tokens = normalizeQuery(search);
-    return skus
+    const pickable = skus
       .filter((sku) => {
         if (sku.isArchived) return false;
         const existing = existingStoreIdsBySku.get(sku.id);
@@ -684,16 +684,16 @@ export function AddItemSheet({
           if (existing.status === 'unavailable') return false;
         }
         return true;
-      })
-      .filter((sku) => {
-        if (!tokens) return true;
-        return matchesNameLike(
-          { names: sku.names as Record<string, string> | null, code: sku.code ?? null },
-          tokens,
-        );
-      })
-      .slice(0, 20);
-  }, [skus, existingStoreIdsBySku, search]);
+      });
+    // Ranked before the cut to 20: in catalog order the product the user
+    // meant could fall past the 20th match and never show.
+    return rankNameLike(
+      pickable,
+      tokens,
+      (sku) => ({ names: sku.names as Record<string, string> | null, code: sku.code ?? null }),
+      i18n.locale,
+    ).slice(0, 20);
+  }, [skus, existingStoreIdsBySku, search, i18n.locale]);
 
   const selectedSku = useMemo(
     () => (draft?.skuId ? skus.find((s) => s.id === draft.skuId) : null),

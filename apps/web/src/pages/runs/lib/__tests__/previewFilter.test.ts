@@ -85,19 +85,18 @@ describe('filterStoreGroups', () => {
     expect(countStoreLines(filterStoreGroups(groups, q('TOMATO')))).toBe(1);
   });
 
-  // Documented, not desired: the shared matcher's typo tolerance also
-  // pulls in real words one edit away, so "tomato" surfaces "potato".
-  // That is lib/searchMatch's behaviour and OrderPage has always had it;
-  // recorded here so the preview's own tests do not accidentally pin a
-  // fixture that hides it.
-  it('also returns near-neighbour words (fuzzy matcher, shared with OrderPage)', () => {
+  // Was "documented, not desired": typo tolerance pulled in real words one
+  // edit away ("tomato" → "potato"). Since 2026-11-05 a typo must keep the
+  // first letter, so the neighbour stays out — while a real typo still hits.
+  it('does not return near-neighbour words, but still forgives a typo', () => {
     const g = [
       store('a', [
         line({ id: '1', name: 'Tomato' }),
         line({ id: '2', name: 'Potato' }),
       ]),
     ];
-    expect(countStoreLines(filterStoreGroups(g, q('tomato')))).toBe(2);
+    expect(countStoreLines(filterStoreGroups(g, q('tomato')))).toBe(1);
+    expect(countStoreLines(filterStoreGroups(g, q('tomto')))).toBe(1);
   });
 
   it('returns nothing when nothing matches', () => {

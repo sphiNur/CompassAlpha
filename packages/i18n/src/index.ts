@@ -120,6 +120,9 @@ export function format(key: CatalogKey, locale: Locale, vars: FormatVars = {}): 
  * Brace matching is depth-counted (not regex) — that was the original bug.
  */
 function selectPlurals(input: string, locale: Locale, vars: FormatVars): string {
+  // Perf (2026-11-05): every t() call came through here and was walked char by
+  // char; most strings have no plural block at all.
+  if (!input.includes('plural')) return input;
   let out = '';
   let i = 0;
   while (i < input.length) {
@@ -169,7 +172,38 @@ function selectPlurals(input: string, locale: Locale, vars: FormatVars): string 
  * Parse `=0 {…} one {…} other {…}` and return the body matching `count`.
  * Exact `=N` selectors take precedence over CLDR categories.
  */
+// Perf (2026-11-05): lists format a plural (unit labels, counts) per row, so
+// these ran hundreds of times per render. `new Intl.PluralRules` is costly to
+// construct, and a case body never changes once parsed — cache both.
+const pluralRulesByLocale = new Map<string, Intl.PluralRules | null>();
+function pluralRules(locale: Locale): Intl.PluralRules | null {
+  let r = pluralRulesByLocale.get(locale);
+  if (r === undefined) {
+    try {
+      r = new Intl.PluralRules(locale);
+    } catch {
+      r = null; // Unknown locale tag — callers fall through to `other`.
+    }
+    pluralRulesByLocale.set(locale, r);
+  }
+  return r;
+}
+const parsedPluralBodies = new Map<string, Map<string, string>>();
+
 function pickPluralCase(body: string, count: number, locale: Locale): string {
+  let cases = parsedPluralBodies.get(body);
+  if (!cases) {
+    cases = parsePluralCases(body);
+    parsedPluralBodies.set(body, cases);
+  }
+  const exact = cases.get('=' + String(count));
+  if (exact !== undefined) return exact.replace(/#/g, String(count));
+  const category = pluralRules(locale)?.select(count) ?? 'other';
+  const chosen = cases.get(category) ?? cases.get('other') ?? '';
+  return chosen.replace(/#/g, String(count));
+}
+
+function parsePluralCases(body: string): Map<string, string> {
   const cases = new Map<string, string>();
   let i = 0;
   while (i < body.length) {
@@ -198,18 +232,7 @@ function pickPluralCase(body: string, count: number, locale: Locale): string {
     if (depth !== 0) break;
     cases.set(selector, body.slice(bodyStart + 1, i - 1));
   }
-
-  const exact = cases.get('=' + String(count));
-  if (exact !== undefined) return exact.replace(/#/g, String(count));
-
-  let category = 'other';
-  try {
-    category = new Intl.PluralRules(locale).select(count);
-  } catch {
-    // Unknown locale tag — fall through to `other`.
-  }
-  const chosen = cases.get(category) ?? cases.get('other') ?? '';
-  return chosen.replace(/#/g, String(count));
+  return cases;
 }
 
 export interface I18n {
