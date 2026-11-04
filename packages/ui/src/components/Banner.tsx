@@ -27,7 +27,9 @@ export function Banner({ className, tone = 'info', title, action, children, ...r
       className={cn('flex items-start gap-3 rounded-[var(--r-card)] px-4 py-2.5', TONE[tone], className)}
       {...rest}
     >
-      <div className="flex-1">
+      {/* 2026-11-05: min-w-0 + break-words — a long word (a ru/uz product
+          or store name) wrapped instead of pushing the action off the edge. */}
+      <div className="min-w-0 flex-1 break-words">
         {title ? <div className="text-old-h3 font-semibold">{title}</div> : null}
         {children ? <div className="text-old-body-sm opacity-90">{children}</div> : null}
       </div>

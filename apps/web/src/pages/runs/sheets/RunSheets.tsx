@@ -280,15 +280,14 @@ export function PurchaseSheet({
         <div className="flex flex-col gap-3 py-3">
           {draft.topUp ? (
             // DX-BUY-2: the earlier batch stays as it was bought.
-            <Banner
-              tone="info"
-              title={i18n.t('run.topUp.sheetBody', {
+            <Banner tone="info">
+              {i18n.t('run.topUp.sheetBody', {
                 qty: `${formatQty(
                   draft.topUp.base.reduce((sum, b) => sum + Number(b.qty), 0),
                 )} ${sku ? unitLabel(sku.unit) : ''}`.trim(),
                 price: `${formatMoney(draft.topUp.item.unitPrice)} ${currency}`,
               })}
-            />
+            </Banner>
           ) : draft.isEdit ? (
             <Banner
               tone="info"
@@ -463,7 +462,7 @@ export function PurchaseSheet({
                 return (
                   <li key={store.id} className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-2 ring-hairline">
                     <div className="flex items-center gap-2">
-                      <span className="flex-1 truncate text-old-body">{store.name}</span>
+                      <span className="min-w-0 flex-1 truncate text-old-body">{store.name}</span>
                       <Input
                         type="number"
                         inputMode="decimal"

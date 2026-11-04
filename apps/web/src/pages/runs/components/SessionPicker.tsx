@@ -109,10 +109,10 @@ export function SessionPicker({
       </ul>
       {runDate !== undefined && onRunDateChange ? (
         <label className="flex items-center gap-2 border-t border-[var(--c-divider)] px-3 py-2">
-          <span className="flex-1 text-old-body">{i18n.t('run.select.runDate')}</span>
+          <span className="min-w-0 flex-1 text-old-body">{i18n.t('run.select.runDate')}</span>
           <input
             type="date"
-            className="h-[var(--control-h)] rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-3 text-old-body tabular-nums ring-field"
+            className="h-[var(--control-h)] rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-3 text-old-body tabular-nums ring-field min-w-0 appearance-none"
             value={runDate}
             max={today ?? undefined}
             onChange={(e) => onRunDateChange(e.target.value)}

@@ -38,6 +38,7 @@ import {
   type OrderEvent,
   type OrderState,
   type SkuCtx,
+  submittedSnapshot,
 } from '@compass/domain/order';
 import { DomainError } from '@compass/domain';
 import {
@@ -651,6 +652,43 @@ export const orderRouter = router({
             updatedByMemberId: i.updatedByMemberId,
             updatedAt: i.updatedAt?.toISOString() ?? null,
           })),
+        };
+      });
+    }),
+
+  /** 2026-11-05: the order as it was submitted (its last `Submitted`),
+   *  so a receipt can show what the store asked for next to what review
+   *  approved. Reviewer edits overwrite the read model; the event log
+   *  keeps the original. Null for a draft. Visible to whoever may see the
+   *  store's orders. */
+  submittedVersion: authedProcedure
+    .input(SessionDetailInputSchema)
+    .query(async ({ ctx, input }) => {
+      return ctx.withOrg(async (tx) => {
+        const session = await tx.query.orderSessionsV.findFirst({
+          where: (sess, { eq: eq2, and: and2 }) =>
+            and2(eq2(sess.id, input.sessionId), eq2(sess.orgId, ctx.session!.orgId)),
+        });
+        if (!session) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'order.errors.sessionMissing' });
+        }
+        await assertActorAssignedToStore(
+          tx,
+          ctx.session!.memberId,
+          session.storeId,
+          ctx.session!.permissions,
+        );
+        if (session.status === 'draft') return null;
+        const events = (await readStream(tx, 'order', session.id)) as unknown as OrderEvent[];
+        const snap = submittedSnapshot(session.id, events);
+        if (!snap) return null;
+        return {
+          seq: snap.seq,
+          totals: [...snap.totals.entries()].map(([skuId, qty]) => ({
+            skuId,
+            qty: qty.toFixed(3).replace(/\.?0+$/, ''),
+          })),
+          extras: snap.extras.map((e) => ({ name: e.name, qty: e.qty, unit: e.unit })),
         };
       });
     }),
