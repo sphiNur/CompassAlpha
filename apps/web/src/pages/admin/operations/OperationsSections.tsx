@@ -449,7 +449,7 @@ function TargetedPurgeBrowser() {
           onChange={(e) => setDate(e.target.value)}
           // DX-IX-8 / DX-VIS-5 (2026-11-01): named, and the field edge at 3:1.
           aria-label={i18n.t('ops.purge.dateLabel')}
-          className="h-[var(--control-h)] flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 text-old-body ring-field"
+          className="h-[var(--control-h)] flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-3 text-old-body ring-field min-w-0 appearance-none"
         />
         {/* DX-VIS-7 (2026-11-01): was two hand-rolled pills whose state
             was colour only; Segmented says which is selected. */}
@@ -1994,7 +1994,7 @@ export function MaintenanceSection() {
                     onChange={(e) => setDateInput(e.target.value)}
                     // DX-IX-8 / DX-VIS-5 (2026-11-01): named, and the field edge at 3:1.
                     aria-label={i18n.t('ops.maint.resetDateTitle')}
-                    className="h-[var(--control-h)] flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3 ring-field"
+                    className="h-[var(--control-h)] flex-1 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-4 text-old-h3 ring-field min-w-0 appearance-none"
                   />
                   <Button
                     size="sm"

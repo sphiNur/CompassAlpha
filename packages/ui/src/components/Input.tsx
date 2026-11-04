@@ -18,6 +18,11 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   // reading of the whole text (useDecimalField); text that is not one
   // number is marked invalid instead of being guessed at.
   const numeric = props.type === 'number';
+  const dateLike =
+    props.type === 'date' ||
+    props.type === 'time' ||
+    props.type === 'datetime-local' ||
+    props.type === 'month';
   const labels = useUiLabels();
   const decimal = useDecimalField({
     value: props.value,
@@ -46,6 +51,12 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         'outline-none ring-field',
         'focus-visible:ring-2 focus-visible:ring-[var(--c-ring)] focus-visible:ring-offset-2',
         'focus-visible:ring-offset-[var(--c-bg)]',
+        // 2026-11-05: iOS draws date/time fields with the native control's
+        // own minimum width and centred text, ignoring w-full — 营业日期 ran
+        // past the card on iPhone. Without the native appearance the field
+        // takes the width it is given and reads left-aligned like the others.
+        dateLike &&
+          'block appearance-none text-left [&::-webkit-date-and-time-value]:text-left [&::-webkit-date-and-time-value]:min-h-[1.25em] [&::-webkit-datetime-edit]:p-0',
         (invalid || formatInvalid) && 'ring-2 ring-[var(--c-danger)]',
         className,
       )}

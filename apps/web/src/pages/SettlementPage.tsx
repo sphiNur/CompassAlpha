@@ -1218,7 +1218,17 @@ export function SettlementPage() {
     <div className="flex flex-col gap-3 pb-4">
       <div className="flex flex-col gap-3 px-4 pt-3">
         {pageHeading}
-        {storeSelector}
+        {/* 2026-11-05: store and business date sit in a card like every
+            other group on this page; outside one, their labels started
+            16 px left of the section labels and card fields below. */}
+        {storeSelector || dateField ? (
+          <Card>
+            <CardBody className="flex flex-col gap-3">
+              {storeSelector}
+              {dateField}
+            </CardBody>
+          </Card>
+        ) : null}
 
         {canRecordSales ? (
           // 2026-10-21 CA-09: cashiers only get this tab, so sales entry
@@ -1245,8 +1255,6 @@ export function SettlementPage() {
             ) : null}
           </section>
         ) : null}
-
-        {dateField}
 
         {closeQuery.isPending ? (
           <div className="flex justify-center py-4" aria-label={i18n.t('settlement.title')}>

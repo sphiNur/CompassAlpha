@@ -917,7 +917,12 @@ function BottomNav({
             className={
               // V5: px-0.5 leaves each of seven tabs at 360 px about 47 px
               // of label room — enough for every zh and en label at 11 px.
-              'press flex flex-1 flex-col items-center justify-center gap-1 px-0.5 ' +
+              // 2026-11-05: flex-auto + min-w-0 — tabs share the width by
+              // their label length and may shrink below it (then truncate).
+              // flex-1 alone never shrank below the label, so at 320 px seven
+              // ru tabs pushed the last one off screen and the page scrolled
+              // sideways.
+              'press flex min-w-0 flex-auto flex-col items-center justify-center gap-1 px-0.5 ' +
               (active ? 'text-[var(--c-action)]' : 'text-[var(--c-fg-muted)]')
             }
           >

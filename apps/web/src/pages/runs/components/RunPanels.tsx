@@ -1825,7 +1825,9 @@ export function PreviewSummaryCard({
   };
 
   return (
-    <Card className="-mx-2 overflow-hidden rounded-[var(--r-capsule)]">
+    // 2026-11-05: no -mx-2 bleed — it sat 8 px wider than the order
+    // picker card right above it, so the two edges never lined up.
+    <Card className="overflow-hidden">
       <CardHeader className="px-3 pt-3">
         <CardTitle>{i18n.t('run.section.readyToPlan')}</CardTitle>
         <Badge>{i18n.t('run.label.sessionsCount', { n: preview.sessions.length })}</Badge>
@@ -1841,10 +1843,11 @@ export function PreviewSummaryCard({
           before you can act on it. */}
       {preview.sessions.length > 0 ? (
         <div className="px-3 pt-2">
-          <Banner
-            tone="warn"
-            title={i18n.t('run.banner.planLockWarning', { n: preview.sessions.length })}
-          />
+          {/* 2026-11-05: a paragraph, so body text — as a title it was set
+              in bold heading type and filled a small screen. */}
+          <Banner tone="warn">
+            {i18n.t('run.banner.planLockWarning', { n: preview.sessions.length })}
+          </Banner>
         </div>
       ) : null}
       {/* Search sits ABOVE the view chips: it applies to both, and with
