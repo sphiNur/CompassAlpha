@@ -205,7 +205,12 @@ function trpcOk(data: unknown) {
 }
 
 async function run() {
-  const browser = await chromium.launch({ headless: HEADLESS });
+  // PLAYWRIGHT_CHANNEL=chrome uses the installed Google Chrome instead of
+  // Playwright's bundled build (e.g. on an OS Playwright has no build for).
+  const browser = await chromium.launch({
+    headless: HEADLESS,
+    ...(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}),
+  });
   const context = await browser.newContext({
     viewport: { width: 414, height: 896 },
     userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7) Mobile/15E148',

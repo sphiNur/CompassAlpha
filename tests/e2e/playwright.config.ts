@@ -23,6 +23,8 @@ export default defineConfig({
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : [['list']],
   use: {
     ...devices['Pixel 7'],
+    // PLAYWRIGHT_CHANNEL=chrome runs on the installed Google Chrome.
+    ...(process.env.PLAYWRIGHT_CHANNEL ? { channel: process.env.PLAYWRIGHT_CHANNEL } : {}),
     baseURL: WEB_URL,
     // Assertions read the English catalog.
     locale: 'en-US',

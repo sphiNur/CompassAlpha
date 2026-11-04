@@ -62,6 +62,7 @@ bun run scripts/deploy.ts --rollback --dry   # show what a rollback would restor
 - The script refuses a dirty tree, an unpushed HEAD, or any run in purchasing/delivering/amending (`--allow-active-run` exists; don't use it without the owner).
 - It runs the unit tests locally first, then: snapshot of the live release for `--rollback`, tar/scp, migrations, restart, and three smokes against `COMPASS_BASE`: server (`scripts/smoke.ts`, including the realtime probe and "dev login is off"), render, and a deep browser walk that stubs login and every mutation.
 - The SSH host key is pinned in `infra/deploy/known_hosts`.
+- Browser smokes and `tests/e2e` honour `PLAYWRIGHT_CHANNEL=chrome` to run on an installed Google Chrome instead of Playwright's bundled build (needed where Playwright ships no build, e.g. Ubuntu 26.04).
 - The smokes assert some English UI strings and nav labels. Renaming copy can fail a deploy smoke: update `scripts/browser-smoke*.ts` in the same PR.
 - The Cloudflare Worker (`infra/cloudflare/app-proxy`) is deployed separately with wrangler, not by `deploy.ts`.
 - Production switches: `COMPASS_ALLOW_BULK_PURGE` (bulk wipes are refused in production without it); `CLIENT_IP_PROXY_KEY` (the Worker's trusted client-IP header for rate limiting; see that README).
