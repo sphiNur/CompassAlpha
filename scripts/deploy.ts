@@ -299,7 +299,10 @@ if (!DRY && !args.has('--allow-active-run')) {
         'set -e',
         'cd /home/ubuntu/compass-alpha',
         'DATABASE_URL=$(grep -E "^DATABASE_URL=" .env | head -1 | cut -d= -f2- | sed \'s/^"\\(.*\\)"$/\\1/\')',
-        `psql "$DATABASE_URL" -tAc "SELECT run_date || ' #' || run_index || ' (' || status || ')' FROM read_model.market_runs_v WHERE status IN ('purchasing','delivering','amending')"`,
+        // RLS is fail-closed: as the app role with no org/system context this
+        // SELECT returns zero rows, so the gate never fired. Read in the
+        // maintenance system context (transaction-local), like docs/RUNBOOK.md.
+        `psql "$DATABASE_URL" -qtA -v ON_ERROR_STOP=1 -c "BEGIN" -c "SET LOCAL app.system_context = 'maintenance'" -c "SELECT run_date || ' #' || run_index || ' (' || status || ')' FROM read_model.market_runs_v WHERE status IN ('purchasing','delivering','amending')" -c "COMMIT"`,
       ].join(' && '),
     );
     const active = out
