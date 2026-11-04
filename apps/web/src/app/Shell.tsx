@@ -960,7 +960,7 @@ function BottomNav({
 }
 
 /** A11Y-10: pages that render their own visible <h1>. */
-const TABS_WITH_OWN_H1: ReadonlySet<Tab> = new Set<Tab>(['history', 'settlement', 'sales', 'admin']);
+const TABS_WITH_OWN_H1: ReadonlySet<Tab> = new Set<Tab>(['history', 'sales', 'admin']);
 
 /**
  * DX-IX-5 (2026-11-01): the page's main button and the bottom nav come

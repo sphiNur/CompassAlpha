@@ -1949,7 +1949,6 @@ export const uz = {
 
   // ── 19. Kunlik hisob-kitob ──────────────────────────────────────────
   'settlement.title': 'Kun yakuni',
-  'settlement.subtitle': 'Doʻkonning kun oxiridagi pul qoldigʻi va majburiyatlarini yozing.',
   'settlement.store.label': 'Doʻkon',
   'settlement.date.label': 'Hisob sanasi',
   'settlement.date.timezone': 'Doʻkon vaqt mintaqasi: {timezone}',

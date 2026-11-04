@@ -1368,9 +1368,9 @@ function RolePermissionsSheet({
       }
     >
       {detail.isLoading ? (
-        <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">
-          {i18n.t('common.loading')}
-        </div>
+        <div role="status" aria-label={i18n.t('common.loading')} className="flex justify-center py-8">
+            <Spinner size={28} />
+          </div>
       ) : !detail.data ? (
         <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">
           {i18n.t('people.noRole')}
@@ -1628,7 +1628,7 @@ function InviteHubSheet({
           </span>
         </button>
 
-        <div className="my-2 text-center text-old-label uppercase tracking-eyebrow text-[var(--c-fg-subtle)]">
+        <div className="my-2 text-center text-old-label text-[var(--c-fg-subtle)]">
           {i18n.t('people.inviteOr')}
         </div>
 
@@ -2176,7 +2176,7 @@ function ManageMemberSheet({
                           → {i18n.t('admin.action.transfer')}
                         </button>
                       ) : !editable ? (
-                        <span className="ml-auto text-old-tiny uppercase tracking-wide text-[var(--c-fg-muted)]">
+                        <span className="ml-auto text-old-label text-[var(--c-fg-muted)]">
                           {i18n.t('people.readOnlyStore')}
                         </span>
                       ) : null}

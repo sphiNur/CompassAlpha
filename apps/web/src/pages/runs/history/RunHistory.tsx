@@ -20,7 +20,7 @@
  */
 import { addMoney } from '@compass/contracts/money';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Badge, Button, Card, Input, SectionLabel, Sheet, useToast } from '@compass/ui';
+import { Badge, Button, Card, Input, SectionLabel, Sheet, Spinner, useToast } from '@compass/ui';
 import { trpc } from '../../../lib/trpc';
 import { useNavStore } from '../../../stores/navStore';
 import { useAuthStore } from '../../../stores/authStore';
@@ -241,8 +241,8 @@ export function RunHistoryPage({
             {i18n.t('common.offlineNoData')}
           </div>
         ) : loading ? (
-          <div className="px-4 py-6 text-center text-old-body-sm text-[var(--c-fg-muted)]">
-            {i18n.t('common.loading')}
+          <div role="status" aria-label={i18n.t('common.loading')} className="flex justify-center py-8">
+            <Spinner size={28} />
           </div>
         ) : failed ? null : runs.length === 0 ? (
           // R2-HIS-2 (2026-10-31): a failed load shows its error banner
@@ -301,7 +301,7 @@ export function RunHistoryPage({
                     ) : null}
                   </div>
                   <span className="ml-auto flex shrink-0 flex-col items-end">
-                    <span className="font-mono text-old-body tabular-nums">
+                    <span className="text-old-body tabular-nums">
                       {day.runs.some((r) => r.actualTotal) ? formatMoney(day.total) : '—'}
                     </span>
                     {day.expensesTotal > 0 ? (
@@ -385,7 +385,7 @@ export function RunHistoryPage({
                               <span className="shrink-0 text-old-label text-[var(--c-fg-muted)]">
                                 {i18n.t('run.label.itemsCount', { n: line.itemCount })}
                               </span>
-                              <span className="shrink-0 font-mono text-old-label font-semibold tabular-nums">
+                              <span className="shrink-0 text-old-label font-semibold tabular-nums">
                                 {formatMoney(line.total)}
                               </span>
                             </button>
@@ -401,7 +401,7 @@ export function RunHistoryPage({
                             <span className="min-w-0 flex-1 truncate text-old-body-sm font-medium">
                               {i18n.t('run.history.trip', { n: run.runIndex + 1 })}
                             </span>
-                            <span className="shrink-0 font-mono text-old-label font-semibold tabular-nums">
+                            <span className="shrink-0 text-old-label font-semibold tabular-nums">
                               {run.actualTotal ? formatMoney(run.actualTotal) : '—'}
                             </span>
                           </button>
@@ -521,7 +521,7 @@ function RunHistoryDaySheet({
         <div className="flex flex-col gap-4 py-3">
           <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3">
             <SectionLabel padded={false}>{i18n.t('run.history.totalLabel')}</SectionLabel>
-            <div className="font-mono text-old-h2 font-semibold tabular-nums">
+            <div className="text-old-h2 font-semibold tabular-nums">
               {formatMoney(day.total)} {currency}
             </div>
             {day.expensesTotal > 0 ? (
@@ -535,13 +535,13 @@ function RunHistoryDaySheet({
             {day.cash !== null && day.transfer !== null ? (
               <div className="flex items-baseline gap-3 border-t border-[var(--c-divider)] pt-2 text-old-label">
                 <span className="text-[var(--c-fg-muted)]">{i18n.t('run.label.paymentCash')}</span>
-                <span className="font-mono tabular-nums text-[var(--c-fg)]">
+                <span className="tabular-nums text-[var(--c-fg)]">
                   {formatMoney(day.cash)}
                 </span>
                 <span className="ml-auto text-[var(--c-fg-muted)]">
                   {i18n.t('run.label.paymentTransfer')}
                 </span>
-                <span className="font-mono tabular-nums text-[var(--c-fg)]">
+                <span className="tabular-nums text-[var(--c-fg)]">
                   {formatMoney(day.transfer)}
                 </span>
               </div>
@@ -561,7 +561,7 @@ function RunHistoryDaySheet({
                         <span className="min-w-0 flex-1 truncate text-old-body font-semibold">
                           {storeName(st.storeId)}
                         </span>
-                        <span className="font-mono text-old-body font-semibold tabular-nums">
+                        <span className="text-old-body font-semibold tabular-nums">
                           {formatMoney(st.total)}
                         </span>
                       </div>
@@ -605,7 +605,7 @@ function RunHistoryDaySheet({
                             className="rounded-[var(--r-pill)] bg-[var(--c-bg)] px-2 py-0.5 text-old-label ring-1 ring-[var(--c-divider)] active:bg-[var(--c-surface-2)]"
                           >
                             {i18n.t('run.history.trip', { n: line.trip })} ·{' '}
-                            <span className="font-mono tabular-nums">
+                            <span className="tabular-nums">
                               {formatMoney(line.total)}
                             </span>
                           </button>
@@ -630,7 +630,7 @@ function RunHistoryDaySheet({
                       <span className="text-old-body font-semibold">
                         {i18n.t('run.history.trip', { n: i + 1 })}
                       </span>
-                      <span className="font-mono text-old-body font-semibold tabular-nums">
+                      <span className="text-old-body font-semibold tabular-nums">
                         {run.actualTotal ? formatMoney(run.actualTotal) : '—'}
                       </span>
                     </div>
@@ -968,9 +968,9 @@ export function RunHistoryDetailSheet({
       }
     >
       {!target ? null : detail.isLoading ? (
-        <div className="py-8 text-center text-old-body text-[var(--c-fg-muted)]">
-          {i18n.t('common.loading')}
-        </div>
+        <div role="status" aria-label={i18n.t('common.loading')} className="flex justify-center py-8">
+            <Spinner size={28} />
+          </div>
       ) : detail.isError && !breakdown ? (
         // F11 (2026-10-30): a failed load said "no data", so nobody retried.
         <div className="flex flex-col items-center gap-3 py-8 text-center text-old-body text-[var(--c-fg-muted)]">
@@ -1001,7 +1001,7 @@ export function RunHistoryDetailSheet({
                     estimate and Admin's sales tiles use text-old-h2 for
                     the same role, so the history headline felt
                     oversized by comparison. */}
-                <div className="font-mono text-old-h2 font-semibold tabular-nums">
+                <div className="text-old-h2 font-semibold tabular-nums">
                   {formatMoney(headlineTotal)} {currency}
                 </div>
                 {headlineExpenses > 0 ? (
@@ -1039,13 +1039,13 @@ export function RunHistoryDetailSheet({
             {headlineCash + headlineTransfer > 0 ? (
               <div className="flex items-baseline gap-3 border-t border-[var(--c-divider)] pt-2 text-old-label">
                 <span className="text-[var(--c-fg-muted)]">{i18n.t('run.label.paymentCash')}</span>
-                <span className="font-mono tabular-nums text-[var(--c-fg)]">
+                <span className="tabular-nums text-[var(--c-fg)]">
                   {formatMoney(headlineCash)}
                 </span>
                 <span className="ml-auto text-[var(--c-fg-muted)]">
                   {i18n.t('run.label.paymentTransfer')}
                 </span>
-                <span className="font-mono tabular-nums text-[var(--c-fg)]">
+                <span className="tabular-nums text-[var(--c-fg)]">
                   {formatMoney(headlineTransfer)}
                 </span>
               </div>
@@ -1144,7 +1144,7 @@ export function RunHistoryDetailSheet({
                     <div className="flex items-baseline justify-between gap-2">
                       <span className="truncate text-old-body font-semibold">{skuName}</span>
                       {it.status === 'purchased' ? (
-                        <span className="font-mono text-old-body font-semibold tabular-nums">
+                        <span className="text-old-body font-semibold tabular-nums">
                           {formatMoney(lineTotal)}
                         </span>
                       ) : (
@@ -1276,7 +1276,7 @@ export function RunHistoryDetailSheet({
                               className="inline-flex items-center gap-1 rounded-[var(--r-pill)] bg-[var(--c-bg)] px-1.5 py-0.5 text-old-label ring-1 ring-[var(--c-divider)]"
                             >
                               <span className="font-medium text-[var(--c-fg)]">{storeName}</span>
-                              <span className="font-mono tabular-nums text-[var(--c-fg-muted)]">
+                              <span className="tabular-nums text-[var(--c-fg-muted)]">
                                 {formatQty(sp.qty)} {unitLabel(sku?.unit, sp.qty)}
                                 {(sp.unitPrice ?? it.unitPrice)
                                   ? ` × ${formatMoney(sp.unitPrice ?? it.unitPrice)}`
@@ -1343,7 +1343,7 @@ export function RunHistoryDetailSheet({
                               ) : null}
                             </div>
                           </div>
-                          <span className="font-mono text-old-body font-semibold tabular-nums">
+                          <span className="text-old-body font-semibold tabular-nums">
                             {formatMoney(ps.total)}
                           </span>
                         </div>
@@ -1385,7 +1385,7 @@ export function RunHistoryDetailSheet({
                     >
                       <div className="flex items-baseline justify-between gap-2">
                         <span className="min-w-0 truncate text-old-body font-semibold">{ex.label}</span>
-                        <span className="font-mono text-old-body font-semibold tabular-nums">
+                        <span className="text-old-body font-semibold tabular-nums">
                           {ex.unitPrice != null ? formatMoney(expenseLine(ex)) : '—'}
                         </span>
                       </div>

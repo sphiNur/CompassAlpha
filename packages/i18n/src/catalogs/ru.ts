@@ -1952,7 +1952,6 @@ export const ru = {
 
   // ── 19. Ежедневное закрытие ─────────────────────────────────────────
   'settlement.title': 'Закрытие дня',
-  'settlement.subtitle': 'Зафиксируйте остатки и обязательства магазина на конец дня.',
   'settlement.store.label': 'Магазин',
   'settlement.date.label': 'Рабочая дата',
   'settlement.date.timezone': 'Часовой пояс магазина: {timezone}',

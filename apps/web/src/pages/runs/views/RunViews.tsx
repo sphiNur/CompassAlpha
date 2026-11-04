@@ -149,7 +149,7 @@ export function PerStoreView({
                               <span className="ml-1 text-[var(--c-fg-muted)]">· {e.note}</span>
                             ) : null}
                           </span>
-                          <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
+                          <span className="shrink-0 tabular-nums text-[var(--c-fg-muted)]">
                             {formatQty(e.qty)} {unitLabel(e.unit, e.qty)}
                           </span>
                         </li>
@@ -204,7 +204,7 @@ export function PerStoreView({
                         {mark}
                       </span>
                       <span className="min-w-0 flex-1 truncate text-old-body">{skuName}</span>
-                      <span className="shrink-0 font-mono text-old-body tabular-nums text-[var(--c-fg-muted)]">
+                      <span className="shrink-0 text-old-body tabular-nums text-[var(--c-fg-muted)]">
                         {formatQty(r.qty)} {unitLabel(r.sku?.unit, r.qty)}
                       </span>
                     </li>
@@ -445,7 +445,7 @@ export function PerVendorView({
                         className="flex items-center gap-2 border-b border-[var(--c-divider)] px-4 py-2 last:border-b-0"
                       >
                         <span className="min-w-0 flex-1 truncate text-old-body">{skuName}</span>
-                        <span className="shrink-0 font-mono text-old-body tabular-nums text-[var(--c-fg-muted)]">
+                        <span className="shrink-0 text-old-body tabular-nums text-[var(--c-fg-muted)]">
                           {formatQty(r.plannedQty)} {unitLabel(r.sku?.unit, r.plannedQty)}
                         </span>
                       </li>
@@ -658,7 +658,7 @@ export function RunExtrasCard({
                             </span>
                           ) : null}
                         </span>
-                        <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
+                        <span className="shrink-0 tabular-nums text-[var(--c-fg-muted)]">
                           {formatQty(e.qty)} {unitLabel(e.unit, e.qty)}
                         </span>
                       </>
@@ -852,14 +852,14 @@ export function ExpensesCard({
                 ) : null}
               </div>
               <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
-                <span className="font-mono tabular-nums">
+                <span className="tabular-nums">
                   {formatQty(e.qty)} {e.unitHint ?? ''}
                   {unitPriceDisplay === null ? null : <> × {unitPriceDisplay}</>}
                 </span>
                 {total === null ? null : (
                   <>
                     {' = '}
-                    <span className="font-mono font-semibold tabular-nums text-[var(--c-fg)]">
+                    <span className="font-semibold tabular-nums text-[var(--c-fg)]">
                       {formatMoney(total)} {currency}
                     </span>
                   </>
@@ -1626,12 +1626,12 @@ export function PurchaseRow({
           >
             <span className="font-medium text-[var(--c-fg)]">{storeName}</span>
             {singleStore ? null : (
-              <span className="font-mono tabular-nums text-[var(--c-fg-muted)]">
+              <span className="tabular-nums text-[var(--c-fg-muted)]">
                 {formatQty(d.qty)} {unitFor(d.qty)}
               </span>
             )}
             {overridePrice ? (
-              <span className="font-mono tabular-nums text-[var(--c-fg-muted)]">
+              <span className="tabular-nums text-[var(--c-fg-muted)]">
                 @
                 {priceInThousands
                   ? i18n.t('common.priceThousands', { n: overridePrice })
@@ -1726,7 +1726,7 @@ export function PurchaseRow({
           <span className="min-w-0 flex-1 truncate text-old-body font-semibold text-[var(--c-fg)]">
             {skuName}
           </span>
-          <span className="shrink-0 font-mono text-old-body-sm tabular-nums text-[var(--c-fg-muted)]">
+          <span className="shrink-0 text-old-body-sm tabular-nums text-[var(--c-fg-muted)]">
             {item.status === 'unavailable'
               ? i18n.t('run.extras.status.unavailable')
               : item.status === 'purchased'
@@ -1792,11 +1792,11 @@ export function PurchaseRow({
             {/* shrink-0 + nowrap: a number never truncates and never
                 wraps. Right-aligned so it lands in a column. */}
             <span className="shrink-0 whitespace-nowrap text-right text-old-label text-[var(--c-fg-muted)]">
-              <span className="font-mono tabular-nums">{formatQty(item.plannedQty)}</span>{' '}
+              <span className="tabular-nums">{formatQty(item.plannedQty)}</span>{' '}
               {unitFor(item.plannedQty)}
             </span>
 
-            {/* The money column. font-mono tabular-nums finally does
+            {/* The money column. tabular-nums finally does
                 something, because this is a fixed-floor right-aligned
                 cell rather than the tail of a variable-length
                 "qty · unit · ↺ · price · 31 天前" sentence. "Which row's
@@ -1809,7 +1809,7 @@ export function PurchaseRow({
                 notation — nothing / ~ / ? — and the localized phrase
                 still reaches a screen reader and a long-press. */}
             <span
-              className={`shrink-0 whitespace-nowrap text-right font-mono text-old-label font-semibold tabular-nums ${moneyInk}`}
+              className={`shrink-0 whitespace-nowrap text-right text-old-label font-semibold tabular-nums ${moneyInk}`}
               title={carried ? rawPriceTitle(lastPrice) : i18n.t('run.price.fillIn')}
             >
               {carried ? (
@@ -1886,7 +1886,7 @@ export function PurchaseRow({
                    "147.5K" rather than "147,500". Tooltip preserves the
                    raw UZS for a long-press inspection. */}
                 <span
-                  className="font-mono tabular-nums"
+                  className="tabular-nums"
                   title={priceInThousands ? `${formatMoney(lastPrice)} ${currency}` : undefined}
                 >
                   {priceInThousands
@@ -2101,7 +2101,7 @@ export function PurchaseRow({
             ) : totalHint !== null ? (
               <span>
                 ={' '}
-                <span className="font-mono font-semibold tabular-nums text-[var(--c-fg)]">
+                <span className="font-semibold tabular-nums text-[var(--c-fg)]">
                   {formatMoney(totalHint)}
                 </span>{' '}
                 {currency}
@@ -2189,7 +2189,7 @@ export function PurchaseRow({
             {/* Same track, same meaning as every other state: quantity.
                 Planned while pending, actual once bought. */}
             <span className="shrink-0 whitespace-nowrap text-right text-old-label text-[var(--c-fg-muted)]">
-              <span className="font-mono tabular-nums">{formatQty(item.purchasedQty)}</span>{' '}
+              <span className="tabular-nums">{formatQty(item.purchasedQty)}</span>{' '}
               {unit}
             </span>
 
@@ -2201,7 +2201,7 @@ export function PurchaseRow({
                 expanded editor, which is where it gets read (before
                 paying, not after). */}
             <span
-              className="shrink-0 whitespace-nowrap text-right font-mono text-old-label font-semibold tabular-nums text-[var(--c-fg)]"
+              className="shrink-0 whitespace-nowrap text-right text-old-label font-semibold tabular-nums text-[var(--c-fg)]"
               title={rawPriceTitle(item.unitPrice)}
             >
               {priceInThousands && item.unitPrice
@@ -2296,7 +2296,7 @@ export function PurchaseRow({
           {/* The qty stays: what you FAILED to get is a number the
               kitchen needs, and it keeps the column continuous. */}
           <span className="shrink-0 whitespace-nowrap text-right text-old-label text-[var(--c-fg-muted)]">
-            <span className="font-mono tabular-nums">{formatQty(item.plannedQty)}</span>{' '}
+            <span className="tabular-nums">{formatQty(item.plannedQty)}</span>{' '}
             {unit}
           </span>
 
@@ -2307,7 +2307,7 @@ export function PurchaseRow({
               what that ink is for. */}
           <span
             aria-hidden
-            className="shrink-0 text-right font-mono text-old-label tabular-nums text-[var(--c-fg-subtle)]"
+            className="shrink-0 text-right text-old-label tabular-nums text-[var(--c-fg-subtle)]"
           >
             —
           </span>

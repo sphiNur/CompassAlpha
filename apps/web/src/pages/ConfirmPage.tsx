@@ -671,7 +671,7 @@ export function ConfirmPage() {
                                 secondaryLang={nm?.secondaryLang}
                                 size="default"
                               />
-                              <span className="shrink-0 font-mono text-old-label tabular-nums text-[var(--c-fg-muted)]">
+                              <span className="shrink-0 text-old-label tabular-nums text-[var(--c-fg-muted)]">
                                 {formatQty(it.qty)} {unitLabel(sku?.unit, it.qty)}
                               </span>
                             </div>

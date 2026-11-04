@@ -874,7 +874,7 @@ export function ActiveRunPanel({
                         <span className="min-w-0 flex-1 truncate text-old-body">
                           {sku ? productName(sku) : ln.skuId.slice(0, 8)}
                         </span>
-                        <span className="shrink-0 font-mono text-old-body tabular-nums text-[var(--c-fg-muted)]">
+                        <span className="shrink-0 text-old-body tabular-nums text-[var(--c-fg-muted)]">
                           {formatQty(ln.qty)} {unitLabel(sku?.unit, ln.qty)}
                         </span>
                       </li>
@@ -998,7 +998,7 @@ export function ActiveRunPanel({
                           onClick={() => onEditPrice(it)}
                         >
                           <span className="min-w-0 flex-1 truncate text-old-body">{nameOf(it.skuId)}</span>
-                          <span className="shrink-0 font-mono text-old-label tabular-nums text-[var(--c-fg-muted)]">
+                          <span className="shrink-0 text-old-label tabular-nums text-[var(--c-fg-muted)]">
                             {formatQty(it.purchasedQty ?? '0')} {unitLabel(unit, it.purchasedQty ?? '0')} ×{' '}
                             {it.unitPrice ? formatMoney(Number(it.unitPrice)) : '—'}
                           </span>
@@ -1756,7 +1756,7 @@ export function PreviewSummaryCard({
             ) : null}
             <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">{line.name}</span>
             <span
-              className={`shrink-0 font-mono text-old-label font-semibold tabular-nums ${
+              className={`shrink-0 text-old-label font-semibold tabular-nums ${
                 line.total === null ? 'text-[var(--c-warning-fg)]' : 'text-[var(--c-fg)]'
               }`}
             >
@@ -1782,7 +1782,7 @@ export function PreviewSummaryCard({
                 </>
               )}
             </span>
-            <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
+            <span className="shrink-0 tabular-nums text-[var(--c-fg-muted)]">
               {line.unitPrice ? `${qtyUnit} × ${formatMoney(line.unitPrice)}` : qtyUnit}
             </span>
           </div>
@@ -1808,7 +1808,7 @@ export function PreviewSummaryCard({
               </span>
             ) : null}
             {nameNode}
-            <span className={`min-w-0 font-mono text-old-label tabular-nums ${formulaTone}`}>
+            <span className={`min-w-0 text-old-label tabular-nums ${formulaTone}`}>
               {lineFormula(line)}
             </span>
           </div>
@@ -1858,7 +1858,7 @@ export function PreviewSummaryCard({
             className="h-[var(--control-h)] min-w-0 flex-1 rounded-[var(--r-pill)] border border-[var(--c-field-border)] bg-[var(--c-surface-2)] px-3 text-old-body outline-none focus:border-[var(--c-action)]"
           />
           {filtering ? (
-            <span className="shrink-0 font-mono text-old-label tabular-nums text-[var(--c-fg-muted)]">
+            <span className="shrink-0 text-old-label tabular-nums text-[var(--c-fg-muted)]">
               {i18n.t('run.preview.filterMatch', { n: matchCount, total: totalCount })}
             </span>
           ) : null}
@@ -1946,7 +1946,7 @@ export function PreviewSummaryCard({
                     {i18n.t('run.preview.unknownPrices', { n: g.unknownCount })}
                   </span>
                 ) : null}
-                <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg)]">
+                <span className="shrink-0 tabular-nums text-[var(--c-fg)]">
                   {formatMoney(g.total, currency)}
                 </span>
               </div>
@@ -2010,7 +2010,7 @@ export function PreviewSummaryCard({
                     <span className="block truncate text-old-body font-semibold text-[var(--c-fg)]">
                       {g.storeName}
                     </span>
-                    <span className="mt-0.5 block truncate font-mono text-old-label tabular-nums text-[var(--c-fg-muted)]">
+                    <span className="mt-0.5 block truncate text-old-label tabular-nums text-[var(--c-fg-muted)]">
                       {groupMoneyMeta(g.total, g.unknownCount)}
                     </span>
                   </span>
@@ -2033,7 +2033,7 @@ export function PreviewSummaryCard({
                   <section key={supplier.supplierId ?? '__unassigned__'}>
                     <div className="mb-1 flex items-baseline gap-2 px-2 text-old-label font-semibold text-[var(--c-fg-muted)]">
                       <span className="min-w-0 flex-1 truncate">{supplier.supplierName}</span>
-                      <span className="shrink-0 font-mono font-normal tabular-nums">
+                      <span className="shrink-0 font-normal tabular-nums">
                         {groupMoneyMeta(supplier.total, supplier.unknownCount)}
                       </span>
                     </div>
@@ -2118,7 +2118,7 @@ export function PreviewSummaryCard({
                     ) : b.contactPhone ? (
                       <span className="block text-old-label text-[var(--c-fg-muted)]">{b.contactPhone}</span>
                     ) : null}
-                    <span className="mt-0.5 block truncate font-mono text-old-label tabular-nums text-[var(--c-fg-muted)]">
+                    <span className="mt-0.5 block truncate text-old-label tabular-nums text-[var(--c-fg-muted)]">
                       {groupMoneyMeta(b.total, b.unknownCount)}
                     </span>
                   </span>
@@ -2156,7 +2156,7 @@ export function PreviewSummaryCard({
                   <div key={store.storeId}>
                     <div className="mb-1 flex items-baseline gap-2 px-2 text-old-label font-semibold text-[var(--c-fg-muted)]">
                       <span>{store.storeName}</span>
-                      <span className="ml-auto font-mono font-normal tabular-nums">
+                      <span className="ml-auto font-normal tabular-nums">
                         {groupMoneyMeta(store.total, store.unknownCount)}
                       </span>
                     </div>

@@ -215,7 +215,7 @@ export function StoreSalesPanel({
         >
           <div>
             <SectionLabel padded={false}>{i18n.t('sales.summary.today')}</SectionLabel>
-            <div className="font-mono text-old-h2 font-semibold tabular-nums">
+            <div className="text-old-h2 font-semibold tabular-nums">
               {formatQty(summary.count.toString())}
             </div>
             {/* R2-COPY-5: the noun agrees with the big figure above it
@@ -227,7 +227,7 @@ export function StoreSalesPanel({
           {canSeePrices ? (
             <div>
               <SectionLabel padded={false}>{i18n.t('sales.summary.revenue')}</SectionLabel>
-              <div className="font-mono text-old-h2 font-semibold tabular-nums">
+              <div className="text-old-h2 font-semibold tabular-nums">
                 {formatMoney(summary.revenue)}
               </div>
               <div className="text-old-label text-[var(--c-fg-muted)]">
@@ -388,7 +388,7 @@ export function StoreSalesPanel({
                     {lineTotal !== null ? (
                       <div className="text-old-label text-[var(--c-fg-muted)]">
                         {formatQty(sale.qty)} × {formatMoney(sale.unitPrice)} ={' '}
-                        <span className="font-mono tabular-nums text-[var(--c-fg)]">
+                        <span className="tabular-nums text-[var(--c-fg)]">
                           {formatMoney(lineTotal)}
                         </span>
                       </div>

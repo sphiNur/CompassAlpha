@@ -857,7 +857,6 @@ async function run() {
     await page
       .waitForFunction(
         () =>
-          /Daily close/.test(document.body.innerText) &&
           /Online \/ transfer revenue/.test(document.body.innerText) &&
           /Cash on hand/.test(document.body.innerText) &&
           /Operating expense details/.test(document.body.innerText) &&
@@ -870,8 +869,7 @@ async function run() {
     const settlementText = await page.evaluate(() => document.body.innerText);
     record(
       'SettlementPage shows itemized daily-close outflows',
-      /Daily close/.test(settlementText) &&
-        /Online \/ transfer revenue/.test(settlementText) &&
+      /Online \/ transfer revenue/.test(settlementText) &&
         /Cash on hand/.test(settlementText) &&
         /Operating expense details/.test(settlementText) &&
         /Wage details/.test(settlementText) &&

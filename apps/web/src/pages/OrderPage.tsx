@@ -2140,16 +2140,10 @@ function ReviewList({
       {estimate.known > 0 ? (
         <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-2.5 ring-hairline">
           <div className="flex items-baseline justify-between gap-2">
-            {/* M3.13 typography exception:
-                this eyebrow label is paired with a non-eyebrow big-money
-                value as siblings inside a parent flex row, not a section
-                header. SectionLabel is also flex which would compose
-                awkwardly here. The CI grep guard for inline eyebrow
-                strings allows-lists this single site. */}
-            <span className="text-old-label font-semibold uppercase tracking-eyebrow text-[var(--c-fg-muted)]">
+            <span className="text-old-body font-semibold text-[var(--c-fg-muted)]">
               {i18n.t('order.review.estimatedTotal')}
             </span>
-            <span className="font-mono text-old-h2 font-semibold tabular-nums text-[var(--c-fg)]">
+            <span className="text-old-h2 font-semibold tabular-nums text-[var(--c-fg)]">
               ~{formatMoney(estimate.total)} {currency}
             </span>
           </div>

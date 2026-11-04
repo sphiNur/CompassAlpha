@@ -1739,7 +1739,6 @@ export const zh = {
 
   // ── 19. 每日结算 ────────────────────────────────────────────────
   'settlement.title': '日结',
-  'settlement.subtitle': '记录门店每天闭店时的资金和待支付事项。',
   'settlement.store.label': '门店',
   'settlement.date.label': '营业日期',
   'settlement.date.timezone': '门店时区：{timezone}',

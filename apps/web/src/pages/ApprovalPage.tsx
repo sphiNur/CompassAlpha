@@ -513,7 +513,7 @@ export function ApprovalPage() {
                       </span>
                       {row.estimatedTotal ? (
                         <span
-                          className="whitespace-nowrap font-mono text-old-body font-semibold tabular-nums text-[var(--c-fg)]"
+                          className="whitespace-nowrap text-old-body font-semibold tabular-nums text-[var(--c-fg)]"
                           title={i18n.t('order.review.estimateHint', {
                             known: row.estimatedKnown,
                             unknown: row.estimatedUnknown,
@@ -546,13 +546,13 @@ export function ApprovalPage() {
                         >
                           <span className="whitespace-nowrap">
                             {i18n.t('run.label.paymentCash')}{' '}
-                            <span className="font-mono">
+                            <span className="tabular-nums">
                               ~{formatMoney(Number(row.estimatedCash))}
                             </span>
                           </span>
                           <span className="whitespace-nowrap">
                             {i18n.t('run.label.paymentTransfer')}{' '}
-                            <span className="font-mono">
+                            <span className="tabular-nums">
                               ~{formatMoney(Number(row.estimatedTransfer))}
                             </span>
                           </span>
@@ -1189,7 +1189,7 @@ function SessionItems({
               className="flex items-baseline justify-between gap-2 text-old-body"
             >
               <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">{e.name}</span>
-              <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg-muted)]">
+              <span className="shrink-0 tabular-nums text-[var(--c-fg-muted)]">
                 {formatQty(e.qty)} {unitLabel(e.unit, e.qty)}
               </span>
             </li>
@@ -1213,10 +1213,10 @@ function SessionItems({
         and are flagged. */}
     {estimateTotal.known > 0 ? (
       <div className="flex items-baseline justify-between gap-2 px-4 py-2 text-old-label text-[var(--c-fg-muted)]">
-        <span className="font-semibold uppercase tracking-eyebrow">
+        <span className="font-semibold">
           {i18n.t('order.review.estimatedTotal')}
         </span>
-        <span className="font-mono text-old-body font-semibold tabular-nums text-[var(--c-fg)]">
+        <span className="text-old-body font-semibold tabular-nums text-[var(--c-fg)]">
           ~{formatMoney(estimateTotal.sum)} {currency}
           {estimateTotal.unknown > 0 ? (
             <span className="ml-2 font-sans font-normal text-[var(--c-warning-fg)]">
@@ -1290,7 +1290,7 @@ function SessionItems({
                   }
                 />
               ) : (
-                <span className="shrink-0 font-mono tabular-nums text-[var(--c-fg)]">
+                <span className="shrink-0 tabular-nums text-[var(--c-fg)]">
                   {formatQty(t.qty)} {unitLabel(sku?.unit ?? '', t.qty)}
                 </span>
               )}
@@ -1316,7 +1316,7 @@ function SessionItems({
                     : null}
                 </span>
                 {unitPrice ? (
-                  <span className="shrink-0 font-mono">
+                  <span className="shrink-0 tabular-nums">
                     ~{formatMoney(moneyLine(t.qty, priceBySku.get(t.skuId)))}
                   </span>
                 ) : null}
@@ -1354,7 +1354,7 @@ function SessionItems({
                         onChange={(next) => drafts.set(qtyKey(t.skuId, r.contributorMemberId), next)}
                       />
                     ) : (
-                      <span className="shrink-0 font-mono tabular-nums">
+                      <span className="shrink-0 tabular-nums">
                         {formatQty(r.qty)} {unitLabel(sku?.unit ?? '', r.qty)}
                       </span>
                     )}
