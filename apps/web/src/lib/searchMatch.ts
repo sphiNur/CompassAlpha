@@ -95,7 +95,28 @@ export function matchesAnyString(
   });
 }
 
+// Perf (2026-11-05): the order page matches ~300 products × 4 languages on
+// every keystroke; the names never change between keystrokes, so cache
+// the normalized / compacted forms. Bounded so a long session can't grow
+// them without limit.
+const CACHE_MAX = 20_000;
+const normalizedCache = new Map<string, string>();
+const compactCache = new Map<string, string>();
+function cached(cache: Map<string, string>, raw: string, fn: (s: string) => string): string {
+  let v = cache.get(raw);
+  if (v === undefined) {
+    if (cache.size >= CACHE_MAX) cache.clear();
+    v = fn(raw);
+    cache.set(raw, v);
+  }
+  return v;
+}
+
 function normalizeText(raw: string): string {
+  return cached(normalizedCache, raw, normalizeTextUncached);
+}
+
+function normalizeTextUncached(raw: string): string {
   return raw
     .normalize('NFKD')
     .replace(/\p{Diacritic}/gu, '')
@@ -107,6 +128,10 @@ function normalizeText(raw: string): string {
 }
 
 function compactToken(raw: string): string {
+  return cached(compactCache, raw, compactTokenUncached);
+}
+
+function compactTokenUncached(raw: string): string {
   return raw.replace(/[^\p{Letter}\p{Number}]+/gu, '');
 }
 
