@@ -87,7 +87,10 @@ describe('realtime probe', () => {
     const p = proxy(() => {}, true);
     const r = await probeRealtime(url(p), 3000);
     expect(r.ok).toBe(false);
-    expect(r.detail).toContain('upgrade failed');
+    // Bun 1.1.x fails the client upgrade outright; Bun 1.3.x completes it and
+    // then gets a protocol-error close (1002) with no probe frame. Either way
+    // the probe must report failure.
+    expect(r.detail).toMatch(/upgrade failed|upgraded but no probe frame/);
   });
 
   test('fails when /ws is answered by something that is not the API', async () => {
