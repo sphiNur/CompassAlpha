@@ -88,7 +88,7 @@ export function ActivitySection() {
         )}
       </DataState>
 
-      <h2 className="mt-6 mb-2 text-old-h2 font-semibold text-[var(--c-fg)]">{i18n.t('ops.activity.recentEvents')}</h2>
+      <SectionLabel as="h2" padded={false} className="mt-6 mb-2">{i18n.t('ops.activity.recentEvents')}</SectionLabel>
       <DataState
         query={eventsQuery}
         emptyWhen={(d) => d.length === 0}
@@ -100,7 +100,7 @@ export function ActivitySection() {
         }
       >
         {(rows) => (
-          <ul className="flex flex-col gap-1.5" role="list">
+          <ul className="flex flex-col overflow-hidden rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline" role="list">
             {rows.map((e) => {
               // M3.21 (2026-05-18): surface ClaimReleased.reason inline
               // so admins can spot non-routine releases (override / timeout)
@@ -113,9 +113,7 @@ export function ActivitySection() {
                   ? (e.payload as { reason?: string } | null)?.reason
                   : undefined;
               const isIntervention = claimReason === 'override' || claimReason === 'timeout';
-              const rowBg = isIntervention
-                ? 'bg-[var(--c-warn-bg)]'
-                : 'bg-[var(--c-surface)] ring-hairline';
+              const rowBg = isIntervention ? 'bg-[var(--c-warn-bg)]' : '';
               // DX-CAT-2 (2026-11-01): which product, store and order or
               // run — in place of "seq N". Older servers send no context.
               const detail = activityDetail(e.context, {
@@ -136,7 +134,7 @@ export function ActivitySection() {
               return (
                 <li
                   key={e.id}
-                  className={`flex flex-col gap-0.5 rounded-[var(--r-card)] px-3 py-2 ring-hairline ${rowBg}`}
+                  className={`flex flex-col gap-0.5 px-4 py-2.5 border-b border-[var(--c-divider)] last:border-b-0 ${rowBg}`}
                 >
                   <span className="text-old-label font-semibold text-[var(--c-fg)]">
                     {/* ADM-17: the event in words, from the catalog;
@@ -154,7 +152,7 @@ export function ActivitySection() {
                       {e.actor?.displayName ?? i18n.t('ops.activity.system')}
                       {e.actor?.tgUsername ? ` · @${e.actor.tgUsername}` : ''}
                     </span>
-                    <span className="font-mono text-old-tiny">
+                    <span className="text-old-label tabular-nums">
                       {/* 2026-07-30: `[]` meant "browser locale". */}
                       {dateFmt.dateTime(e.occurredAt)}
                     </span>
@@ -490,7 +488,7 @@ function TargetedPurgeBrowser() {
                 return (
                   <li
                     key={sess.sessionId}
-                    className="flex items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 ring-hairline"
+                    className="flex items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-3 py-2 ring-hairline"
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline gap-2">
@@ -561,7 +559,7 @@ function TargetedPurgeBrowser() {
                 return (
                   <li
                     key={r.runId}
-                    className="flex items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 ring-hairline"
+                    className="flex items-center gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] px-3 py-2 ring-hairline"
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-baseline gap-2">
@@ -750,7 +748,7 @@ function runBlockText(
 function CascadePreview({ byTable, total }: { byTable: Record<string, number>; total: number }) {
   const i18n = useI18n();
   return (
-    <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3 ring-hairline">
+    <div className="rounded-[var(--r-card)] bg-[var(--c-surface)] p-3 ring-hairline">
       <div className="text-old-body font-semibold text-[var(--c-fg)]">
         {i18n.t('ops.purge.rowsWouldBeDeleted', { n: total })}
       </div>
@@ -1089,7 +1087,7 @@ export function PriceReportSection() {
           description={i18n.t('ops.price.emptyBody')}
         />
       ) : (
-        <ul className="mt-3 flex flex-col gap-1" role="list">
+        <ul className="mt-3 flex flex-col overflow-hidden rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline" role="list">
           {rows.map((r) => {
             const tone =
               r.deltaPct === null
@@ -1106,7 +1104,7 @@ export function PriceReportSection() {
             return (
               <li
                 key={r.skuId}
-                className="flex flex-col gap-1 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2"
+                className="flex flex-col gap-1 px-4 py-2.5 border-b border-[var(--c-divider)] last:border-b-0"
               >
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="truncate text-old-body font-semibold text-[var(--c-fg)]">
@@ -1458,7 +1456,7 @@ export function FinanceSection() {
     <div className="px-4 py-3">
       {/* Range picker — preset segmented control + two date inputs.
           M3.17 (2026-05-16): preset chips migrated to shared <Segmented>. */}
-      <div className="mb-3 flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3">
+      <div className="mb-3 flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline p-3">
         {/* CMP-HIS-1: which stores every amount below covers. */}
         <Select
           value={reportStore.storeId}
@@ -1528,7 +1526,7 @@ export function FinanceSection() {
         // at 360/390 wide; cash and transfer share a row, the total gets
         // its own. D6: without prices.view the money is left out by the
         // server and only the counts show.
-        <div className="mb-3 grid grid-cols-2 gap-x-2 gap-y-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] p-3">
+        <div className="mb-3 grid grid-cols-2 gap-x-2 gap-y-2 rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline p-3">
           <div className="min-w-0">
             <SectionLabel padded={false}>{i18n.t('run.label.paymentCash')}</SectionLabel>
             {totalsQuery.data.totalCash !== null ? (
@@ -1635,14 +1633,14 @@ export function FinanceSection() {
           description={i18n.t('finance.empty.description')}
         />
       ) : view === 'daily' ? (
-        <ul className="flex flex-col gap-1" role="list">
+        <ul className="flex flex-col overflow-hidden rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline" role="list">
           {dailyGroups.map((g) => {
             const isOpen = expanded === g.date;
             const mixed = g.cash > 0 && g.transfer > 0;
             return (
               <li
                 key={g.date}
-                className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline"
+                className="border-b border-[var(--c-divider)] last:border-b-0"
               >
                 <button
                   type="button"
@@ -1706,7 +1704,7 @@ export function FinanceSection() {
           })}
         </ul>
       ) : view === 'bySupplier' ? (
-        <ul className="flex flex-col gap-1" role="list">
+        <ul className="flex flex-col overflow-hidden rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline" role="list">
           {supplierGroups.map((g) => {
             const key = g.key;
             const isOpen = expanded === key;
@@ -1720,7 +1718,7 @@ export function FinanceSection() {
             return (
               <li
                 key={key}
-                className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline"
+                className="border-b border-[var(--c-divider)] last:border-b-0"
               >
                 <button
                   type="button"
@@ -1769,7 +1767,7 @@ export function FinanceSection() {
           })}
         </ul>
       ) : (
-        <ul className="flex flex-col gap-1" role="list">
+        <ul className="flex flex-col overflow-hidden rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline" role="list">
           {storeGroups.map((g) => {
             const isOpen = expanded === g.storeId;
             const name = storeById.get(g.storeId) ?? g.storeId.slice(0, 8);
@@ -1777,7 +1775,7 @@ export function FinanceSection() {
             return (
               <li
                 key={g.storeId}
-                className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline"
+                className="border-b border-[var(--c-divider)] last:border-b-0"
               >
                 <button
                   type="button"

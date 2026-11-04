@@ -43,8 +43,7 @@ export function SectionRow({
         type="button"
         onClick={onClick}
         className={cn(
-          'press flex w-full items-center gap-3 px-4 py-2.5 text-left',
-          surfaceClass,
+          'press flex w-full items-center gap-3 px-4 py-3 text-left',
         )}
       >
         {icon ? <span className={cn('shrink-0', iconColor)}>{icon}</span> : null}
@@ -120,14 +119,14 @@ export function ListRow({
       <button
         type="button"
         onClick={onClick}
-        className={cn('press flex w-full items-center gap-3 px-4 py-2.5 text-left', surfaceClass, className)}
+        className={cn('press flex w-full items-center gap-3 px-4 py-3 text-left', className)}
       >
         {inner}
       </button>
     );
   }
   return (
-    <div className={cn('flex w-full items-center gap-3 px-4 py-2.5', surfaceClass, className)}>
+    <div className={cn('flex w-full items-center gap-3 px-4 py-3', className)}>
       {inner}
     </div>
   );

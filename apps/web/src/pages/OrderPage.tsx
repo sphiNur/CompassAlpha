@@ -2155,7 +2155,7 @@ function ReviewList({
           </div>
         </div>
       ) : null}
-      <div className="rounded-[var(--r-card)] bg-[var(--c-surface-2)] ring-hairline">
+      <div className="rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline">
         {groups.map((g) => (
           <section key={g.key} className="border-b border-[var(--c-divider)] last:border-b-0">
             <SectionLabel as="h3" className="pt-2.5">
@@ -2184,13 +2184,13 @@ function ReviewList({
                       {formatQty(r.qty)} {unitLabel(r.unit, r.qty)}
                     </span>
                     {r.archived && onRemove ? (
-                      <button
-                        type="button"
+                      <Button
+                        size="sm"
+                        variant="danger-ghost"
                         onClick={() => onRemove(r.skuId)}
-                        className="hit-44 rounded-[var(--r-pill)] px-2 py-0.5 text-old-label font-medium text-[var(--c-danger)] ring-hairline active:opacity-70"
                       >
                         {i18n.t('order.review.remove')}
-                      </button>
+                      </Button>
                     ) : null}
                   </span>
                 </li>

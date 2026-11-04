@@ -36,6 +36,7 @@ import {
   Sheet,
   Spinner,
   useToast,
+  rowGroupClass,
 } from '@compass/ui';
 import { ADMIN_RANK } from '@compass/contracts/schemas/roles';
 import { STALE } from '../../../config/timings';
@@ -627,11 +628,10 @@ export function PeopleSection({
                 <SectionLabel as="h3" padded={false} className="mb-1">
                   {i18n.t('people.rolesOfMember')}
                 </SectionLabel>
-                <ul className="flex flex-col gap-1.5" role="list">
+                <ul className={rowGroupClass} role="list">
                   {memberMenuFor.revocable.map((r) => (
                     <li key={r.bindingId}>
                       <ListRow
-                        className="rounded-[var(--r-card)]"
                         label={r.role}
                         hint={r.store ?? i18n.t('people.orgLevelLabel')}
                         trailing={
@@ -896,7 +896,7 @@ export function PermissionsSection({ isSuperAdmin }: { isSuperAdmin: boolean }) 
           }
         >
           {(rows) => (
-            <ul className="flex flex-col gap-2" role="list">
+            <ul className={rowGroupClass} role="list">
               {rows.map((r) => {
                 const grantable = r.rank < myMaxRank;
                 const subtitleParts: string[] = [
@@ -1536,7 +1536,7 @@ function RoleAssigneesByStore({
               {bucket.members.map((a) => (
                 <li
                   key={a.bindingId}
-                  className="flex items-center gap-2 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-1.5"
+                  className="flex items-center gap-2 rounded-[var(--r-card)] bg-[var(--c-surface)] ring-hairline px-3 py-1.5"
                 >
                   <Avatar src={a.avatarUrl} name={a.displayName} size={24} />
                   <span className="text-old-body text-[var(--c-fg)]">{a.displayName}</span>
@@ -1691,7 +1691,7 @@ function PendingInvitesList({ enabled }: { enabled: boolean }) {
       <SectionLabel as="h3" padded={false} className="mb-2">
         {i18n.t('people.pendingInvitesCount', { n: invites.length })}
       </SectionLabel>
-      <div className="flex flex-col gap-1.5">
+      <div className={rowGroupClass}>
         {invites.map((inv) => {
           const roles = inv.roles.map((r) => roleText.name(r)).join(', ');
           const stores = inv.stores.map((st) => st.name).join(', ');

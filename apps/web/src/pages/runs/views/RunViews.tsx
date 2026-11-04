@@ -15,7 +15,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Card, NumberInput, SectionLabel, focusAfter } from '@compass/ui';
+import { Button, Card, NumberInput, SectionLabel, focusAfter } from '@compass/ui';
 import { useAuthStore } from '../../../stores/authStore';
 import { formatMoney, formatMoneyThousands, formatQty, toQtyInput } from '../../../lib/format';
 import { useI18n, useUnitLabel } from '../../../hooks/useI18n';
@@ -690,13 +690,14 @@ export function RunExtrasCard({
                             </div>
                           )}
                           {canRecordExpense ? (
-                            <button
-                              type="button"
+                            <Button
+                              size="sm"
+                              variant="secondary"
                               onClick={() => onRecordExtraExpense!(storeId, e)}
-                              className="hit-44 shrink-0 rounded-[var(--r-pill)] bg-[var(--c-surface-2)] px-2 py-0.5 text-old-label font-medium text-[var(--c-action)] ring-hairline active:opacity-70"
+                              className="shrink-0"
                             >
                               {i18n.t('run.extras.recordPrice')}
-                            </button>
+                            </Button>
                           ) : recordElsewhere ? (
                             <span className="shrink-0 text-old-label text-[var(--c-fg-muted)]">
                               {i18n.t('run.extras.recordPriceOtherStore')}
@@ -779,13 +780,13 @@ export function ExpensesCard({
         // below it and the first expense's ✗ reaches 12px above its row,
         // so 8px of gap let a tap below "+ Expense" land on ✗.
         <div className="flex justify-end px-4 pb-4">
-          <button
-            type="button"
+          <Button
+            size="sm"
+            variant="primary"
             onClick={onOpenExpense}
-            className="hit-44 rounded-[var(--r-pill)] bg-[var(--c-action)] px-2.5 py-1 text-old-label font-semibold text-[var(--c-action-fg)] active:opacity-70"
           >
             {i18n.t('run.action.addExpense.button')}
-          </button>
+          </Button>
         </div>
       ) : null}
       {list.length === 0 ? (
@@ -841,14 +842,15 @@ export function ExpensesCard({
                   {storeNames}
                 </span>
                 {editable && !e.pendingSync && !(otherStoreExpenseIds ?? []).includes(e.id) ? (
-                  <button
-                    type="button"
+                  <Button
+                    size="sm"
+                    variant="danger-ghost"
                     onClick={() => onRemove(e.id, e.label)}
                     aria-label={i18n.t('run.action.removeExpense')}
-                    className="hit-44 shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-old-label text-[var(--c-danger)] active:bg-[var(--c-surface-2)]"
+                    className="shrink-0"
                   >
                     ✗
-                  </button>
+                  </Button>
                 ) : null}
               </div>
               <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
@@ -1896,13 +1898,14 @@ export function PurchaseRow({
               </>
             ) : null}
           </span>
-          <button
-            type="button"
+          <Button
+            size="sm"
+            variant="secondary"
             onClick={() => onMarkNa(item.skuId)}
-            className="hit-44 shrink-0 rounded-[var(--r-pill)] border border-[var(--c-divider)] px-2 py-0.5 text-old-label text-[var(--c-fg-muted)] active:bg-[var(--c-surface-2)]"
+            className="shrink-0"
           >
             {i18n.t('run.action.markNa')}
-          </button>
+          </Button>
         </div>
         {/* M3.52: per-store demand breakdown chips. Render only when
             multi-store; positioned BETWEEN the title row and the

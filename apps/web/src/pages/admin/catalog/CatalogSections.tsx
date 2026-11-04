@@ -15,7 +15,6 @@ import {
   Badge,
   Banner,
   Button,
-  Card,
   CardHeader,
   CardMeta,
   CardTitle,
@@ -29,6 +28,7 @@ import {
   Sheet,
   Switch,
   useToast,
+  rowGroupClass,
 } from '@compass/ui';
 import { PaymentMethodChips } from '../../../components/PaymentMethodChips';
 import { SKU_STEPS, SKU_UNITS } from '@compass/contracts/limits';
@@ -216,7 +216,7 @@ export function CategoriesSection() {
         }
       >
         {(rows) => (
-          <ul className="flex flex-col gap-2" role="list">
+          <ul className={rowGroupClass} role="list">
             {rows.map((c) => {
               const names = c.names as Record<string, string>;
               // Title shows the name in the user's preferred locale,
@@ -226,7 +226,7 @@ export function CategoriesSection() {
                 (l) => names[l] && names[l] !== productName({ names }),
               );
               return (
-                <Card as="li" key={c.id}>
+                <li key={c.id}>
                   <CardHeader>
                     <div className="min-w-0">
                       <CardTitle as="h2">{productName({ names }) || c.slug}</CardTitle>
@@ -292,7 +292,7 @@ export function CategoriesSection() {
                       )}
                     </div>
                   ) : null}
-                </Card>
+                </li>
               );
             })}
           </ul>
@@ -565,7 +565,7 @@ export function SkusSection() {
               )
             : rows;
           return (
-          <ul className="flex flex-col gap-2" role="list">
+          <ul className={rowGroupClass} role="list">
             {filtered.length === 0 && tokens ? (
               <li>
                 <EmptyState
@@ -581,7 +581,7 @@ export function SkusSection() {
                 (l) => names[l] && names[l] !== primary,
               );
               return (
-                <Card as="li" key={sk.id}>
+                <li key={sk.id}>
                   <CardHeader>
                     <div className="min-w-0">
                       <CardTitle as="h2">{primary}</CardTitle>
@@ -651,7 +651,7 @@ export function SkusSection() {
                       )}
                     </div>
                   ) : null}
-                </Card>
+                </li>
               );
             })}
           </ul>
@@ -897,9 +897,9 @@ export function SuppliersSection() {
         }
       >
         {(rows) => (
-          <ul className="flex flex-col gap-2" role="list">
+          <ul className={rowGroupClass} role="list">
             {rows.map((sp) => (
-              <Card as="li" key={sp.id}>
+              <li key={sp.id}>
                 <CardHeader>
                   <div className="min-w-0">
                     <CardTitle as="h2">{sp.name}</CardTitle>
@@ -958,7 +958,7 @@ export function SuppliersSection() {
                     )}
                   </div>
                 ) : null}
-              </Card>
+              </li>
             ))}
           </ul>
         )}
@@ -1130,11 +1130,11 @@ export function ExpenseTemplatesSection() {
         }
       >
         {(rows) => (
-          <ul className="flex flex-col gap-2" role="list">
+          <ul className={rowGroupClass} role="list">
             {rows.map((tpl) => {
               const lineTotal = moneyLine(tpl.defaultQty, tpl.defaultUnitPrice) ?? 0;
               return (
-                <Card as="li" key={tpl.id}>
+                <li key={tpl.id}>
                   <CardHeader>
                     <div className="min-w-0">
                       <CardTitle as="h2">{tpl.label}</CardTitle>
@@ -1213,7 +1213,7 @@ export function ExpenseTemplatesSection() {
                       )}
                     </div>
                   ) : null}
-                </Card>
+                </li>
               );
             })}
           </ul>
@@ -1616,7 +1616,7 @@ export function DishesSection() {
         }
       >
         {(rows) => (
-          <ul className="flex flex-col gap-1" role="list">
+          <ul className={rowGroupClass} role="list">
             {rows.map((d) => {
               const name = productName({ names: d.names as Record<string, string> });
               const ingCount = (ingredientsByDish.get(d.id) ?? []).length;
@@ -1624,7 +1624,7 @@ export function DishesSection() {
                 <li
                   key={d.id}
                   className={
-                    'rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-3 py-2 ring-hairline ' +
+                    'px-4 py-3 ' +
                     (d.isArchived ? 'opacity-60' : '')
                   }
                 >
@@ -1816,17 +1816,18 @@ export function DishesSection() {
                               ))}
                             </Select>
                           </div>
-                          <button
-                            type="button"
+                          <Button
+                            size="sm"
+                            variant="danger-ghost"
                             onClick={() => {
                               const next = draft.ingredients.filter((_, i) => i !== idx);
                               setDraft({ ...draft, ingredients: next });
                             }}
                             aria-label={i18n.t('common.remove')}
-                            className="press shrink-0 rounded-[var(--r-pill)] bg-[var(--c-surface)] px-2 py-0.5 text-old-label text-[var(--c-danger)] ring-hairline"
+                            className="shrink-0"
                           >
                             ×
-                          </button>
+                          </Button>
                         </div>
                         <div className="flex items-center gap-2">
                           <Input

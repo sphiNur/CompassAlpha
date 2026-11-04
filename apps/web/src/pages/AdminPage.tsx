@@ -45,6 +45,8 @@ import {
   Switch,
   useToast,
   Select,
+  cn,
+  rowGroupClass,
 } from '@compass/ui';
 import { trpc } from '../lib/trpc';
 import { useErrToast } from '../lib/errToast';
@@ -274,7 +276,7 @@ export function AdminPage() {
     <div ref={drill.rootRef} onClickCapture={drill.onClickCapture} className="flex flex-col">
       {/* A11Y-10: the admin home has no visible title; screen readers get one. */}
       <h1 className="sr-only">{i18n.t('nav.admin')}</h1>
-      <ul className="mx-4 mt-3 mb-6 flex flex-col gap-2" role="list">
+      <ul className={cn("mx-4 mt-3 mb-6", rowGroupClass)} role="list">
         {/* 2026-10-21 audit CA-16 / E-12: a platform admin without
             `users.manage` now reaches this tab; the tenant sections would
             all 403 for them, so only Platform is listed. */}
@@ -385,7 +387,7 @@ function OperationsHome({
 }) {
   const i18n = useI18n();
   return (
-    <ul className="mx-4 mt-2 mb-6 flex flex-col gap-2" role="list">
+    <ul className={cn("mx-4 mt-2 mb-6", rowGroupClass)} role="list">
       <SectionRow
         label={i18n.t('admin.subsection.activity')}
         hint={i18n.t('admin.subsection.activityHint')}
@@ -666,7 +668,7 @@ function WorkspaceSection() {
           />
         </div>
       </Card>
-      <div className="mt-3 flex flex-col gap-2">
+      <div className={cn('mt-3', rowGroupClass)}>
         {/* AUTH-25: this is the viewer's own language, not the org's. */}
         <ListRow
           label={i18n.t('admin.workspace.myLanguage')}
@@ -771,7 +773,7 @@ function CatalogHome({ onPick }: { onPick: (s: CatalogSub) => void }) {
   // top-level section. Catalog now strictly holds the "what you order
   // / who you order from" data — categories, SKUs, suppliers.
   return (
-    <ul className="mx-4 mt-2 flex flex-col gap-2" role="list">
+    <ul className={cn("mx-4 mt-2", rowGroupClass)} role="list">
       <li>
         <ListRow
           label={i18n.t('admin.subsection.categories')}
