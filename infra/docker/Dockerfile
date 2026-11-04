@@ -18,12 +18,12 @@
 # npm + npm i -g pnpm`.
 
 # ---- 1. dependency install ----
-FROM oven/bun:1.1.38-alpine AS deps
+FROM oven/bun:1.4.4-alpine AS deps
 WORKDIR /app
 # corepack is shipped with Node.js inside the bun-alpine base image.
 # `prepare --activate` pins pnpm to the version we use locally so the
 # image matches lockfile expectations.
-RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
+RUN bun install -g pnpm@12.16.1 && ln -sf "$(bun pm bin -g)/pnpm" /usr/local/bin/pnpm
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY tsconfig.base.json turbo.json ./
 COPY apps/api/package.json apps/api/
@@ -52,7 +52,7 @@ RUN pnpm --filter @compass/bot build
 RUN pnpm --filter @compass/worker build
 
 # ---- 3. runtime ----
-FROM oven/bun:1.1.38-alpine AS runtime
+FROM oven/bun:1.4.4-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app/apps/api/dist ./apps/api/dist
