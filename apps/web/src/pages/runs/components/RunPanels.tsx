@@ -27,6 +27,8 @@ import {
   Sheet,
   useToast,
   Segmented,
+  PickerGroup,
+  PickerRow,
 } from '@compass/ui';
 import { trpc } from '../../../lib/trpc';
 import { useAuthStore } from '../../../stores/authStore';
@@ -2266,24 +2268,6 @@ function VendorPickerSheet({
         <p className="px-1 text-old-label text-[var(--c-fg-muted)]">
           {i18n.t('run.previewSupplier.pickVendorHint')}
         </p>
-        <button
-          type="button"
-          onClick={() => setSupplier.mutate({ skuId, supplierId: null })}
-          disabled={setSupplier.isPending}
-          // DX-VIS-7: the ✓ is aria-hidden; this says it is the current choice.
-          aria-pressed={currentSupplierId === null}
-          className={
-            'press flex items-center justify-between gap-3 rounded-[var(--r-card)] px-4 py-3 text-left ring-hairline ' +
-            (currentSupplierId === null
-              ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-              : 'bg-[var(--c-surface-2)]')
-          }
-        >
-          <span className="text-old-body">
-            {i18n.t('run.previewSupplier.clearVendor')}
-          </span>
-          {currentSupplierId === null ? <span aria-hidden>✓</span> : null}
-        </button>
         {suppliersQuery.isError ? (
           <div className="flex items-center justify-between gap-3 rounded-[var(--r-card)] bg-[var(--c-surface-2)] px-4 py-3 ring-hairline">
             <span className="text-old-label text-[var(--c-fg-muted)]">
@@ -2298,34 +2282,24 @@ function VendorPickerSheet({
             </button>
           </div>
         ) : null}
-        {suppliers.map((sup) => {
-          const selected = sup.id === currentSupplierId;
-          return (
-            <button
+        <PickerGroup label={i18n.t('run.previewSupplier.pickVendorTitle')}>
+          <PickerRow
+            label={i18n.t('run.previewSupplier.clearVendor')}
+            selected={currentSupplierId === null}
+            disabled={setSupplier.isPending}
+            onClick={() => setSupplier.mutate({ skuId, supplierId: null })}
+          />
+          {suppliers.map((sup) => (
+            <PickerRow
               key={sup.id}
-              type="button"
-              onClick={() => setSupplier.mutate({ skuId, supplierId: sup.id })}
+              label={sup.name}
+              hint={sup.contactTg ? `@${sup.contactTg}` : (sup.contactPhone ?? undefined)}
+              selected={sup.id === currentSupplierId}
               disabled={setSupplier.isPending}
-              aria-pressed={selected}
-              className={
-                'press flex items-center justify-between gap-3 rounded-[var(--r-card)] px-4 py-3 text-left ring-hairline ' +
-                (selected
-                  ? 'bg-[var(--c-action)] text-[var(--c-action-fg)]'
-                  : 'bg-[var(--c-surface-2)]')
-              }
-            >
-              <div className="min-w-0">
-                <div className="text-old-body font-medium">{sup.name}</div>
-                {sup.contactTg ? (
-                  <div className="mt-0.5 text-old-label opacity-80">@{sup.contactTg}</div>
-                ) : sup.contactPhone ? (
-                  <div className="mt-0.5 text-old-label opacity-80">{sup.contactPhone}</div>
-                ) : null}
-              </div>
-              {selected ? <span aria-hidden>✓</span> : null}
-            </button>
-          );
-        })}
+              onClick={() => setSupplier.mutate({ skuId, supplierId: sup.id })}
+            />
+          ))}
+        </PickerGroup>
       </div>
     </Sheet>
   );
