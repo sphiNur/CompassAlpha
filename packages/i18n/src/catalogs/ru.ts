@@ -1065,6 +1065,8 @@ export const ru = {
   'order.submitted.summary': 'Изменено при проверке. Исходные количества зачёркнуты.',
   'order.submitted.showOriginal': 'Заказ при отправке',
   'order.submitted.extrasOriginal': 'Прочее при отправке',
+  'order.submitted.changedShort': 'Изменён при проверке',
+  'order.submitted.unchanged': 'Как при отправке',
   'order.review.remove': 'Убрать',
   'order.review.estimatedTotal': 'Оценка стоимости',
   'order.review.estimateHint': '~ по последней цене покупки · {known} с ценой · {unknown} без цены',

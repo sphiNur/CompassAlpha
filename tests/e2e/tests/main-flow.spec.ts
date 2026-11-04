@@ -36,8 +36,10 @@ const mainButton = (): Locator => page.getByTestId('page-main-button');
 const main = (): Locator => page.getByRole('main');
 // The innermost matching list item: an approval card is itself an item of
 // the order list (A11Y-14), with the product rows nested inside it.
+// Rows of the review card's 原提交订单 list (a read-only copy of the
+// submitted order) are not the line being worked on.
 const item = (sku: string): Locator =>
-  main().getByRole('listitem').filter({ hasText: sku }).last();
+  main().locator('li:not([data-testid="approval-original"] li)').filter({ hasText: sku }).last();
 const sheet = (): Locator => page.getByRole('dialog');
 
 let shot = 0;
@@ -131,9 +133,17 @@ test('approve it', async () => {
   await tab('approve').click();
   await expect(main().getByRole('heading', { name: 'E2E Admin' })).toBeVisible();
   await main().getByRole('button', { name: "I'll review" }).click();
-  await expect(item('Apple').getByRole('button', { name: /^Quantity/ })).toHaveAccessibleName(
+  // The card also lists the order as submitted (原提交订单, no stepper);
+  // the editable line is the one with the quantity control.
+  const editable = main()
+    .getByRole('listitem')
+    .filter({ hasText: 'Apple' })
+    .filter({ has: page.getByRole('button', { name: /^Quantity/ }) })
+    .last();
+  await expect(editable.getByRole('button', { name: /^Quantity/ })).toHaveAccessibleName(
     /^Quantity 2 kg/,
   );
+  await expect(main().getByTestId('approval-original')).toContainText(/Apple\s*2 kg/);
   await evidence('approval-claimed');
   await main().getByRole('button', { name: 'Approve', exact: true }).click();
   await expect(main().getByRole('heading', { name: 'No orders waiting for review' })).toBeVisible();
