@@ -8,7 +8,7 @@ Read `README.md` (setup, layout), `CONTRIBUTING.md` (the end-to-end feature reci
 
 ## Commands
 
-Bun 1.1.38 (`.bun-version`), pnpm 9, Postgres 16 on port 5433.
+Bun 1.3.13 (`.bun-version`), pnpm 10.33, Node 18.19 (the versions on the production server; keep dev and CI on them), Postgres 16 on port 5433.
 
 ```bash
 pnpm type-check                      # tsc in every package (CI)
