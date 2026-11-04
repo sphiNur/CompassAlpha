@@ -311,7 +311,7 @@ export function HistorySection() {
                             <span className="truncate text-[var(--c-fg)]">
                               {c.displayName ?? c.memberId.slice(0, 6)}
                             </span>
-                            <span className="font-mono tabular-nums text-[var(--c-fg-muted)]">
+                            <span className="tabular-nums text-[var(--c-fg-muted)]">
                               {i18n.t('ops.history.skuCount', { n: c.skuCount })} · {formatQty(c.totalQty)}
                             </span>
                           </li>
@@ -1112,7 +1112,7 @@ export function PriceReportSection() {
                   <span className="truncate text-old-body font-semibold text-[var(--c-fg)]">
                     {r.name}
                   </span>
-                  <span className="font-mono text-old-body tabular-nums text-[var(--c-fg)]">
+                  <span className="text-old-body tabular-nums text-[var(--c-fg)]">
                     {r.last !== null ? formatMoney(r.last) : '—'}{' '}
                     <span className="text-old-label font-normal text-[var(--c-fg-muted)]">
                       / {unitLabel(r.unit)}
@@ -1122,13 +1122,13 @@ export function PriceReportSection() {
                 <div className="flex flex-wrap items-baseline gap-3 text-old-label text-[var(--c-fg-muted)]">
                   <span>
                     {i18n.t('ops.price.avg7d')}{' '}
-                    <span className="font-mono tabular-nums text-[var(--c-fg)]">
+                    <span className="tabular-nums text-[var(--c-fg)]">
                       {r.avg7d !== null ? formatMoney(r.avg7d) : '—'}
                     </span>
                   </span>
                   <span>
                     {i18n.t('ops.price.avg30d')}{' '}
-                    <span className="font-mono tabular-nums text-[var(--c-fg)]">
+                    <span className="tabular-nums text-[var(--c-fg)]">
                       {r.avg30d !== null ? formatMoney(r.avg30d) : '—'}
                     </span>
                   </span>
@@ -1532,7 +1532,7 @@ export function FinanceSection() {
           <div className="min-w-0">
             <SectionLabel padded={false}>{i18n.t('run.label.paymentCash')}</SectionLabel>
             {totalsQuery.data.totalCash !== null ? (
-              <div className="break-all font-mono text-old-h2 font-semibold tabular-nums">
+              <div className="break-all text-old-h2 font-semibold tabular-nums">
                 {formatMoney(totalsQuery.data.totalCash)}
               </div>
             ) : null}
@@ -1543,7 +1543,7 @@ export function FinanceSection() {
           <div className="min-w-0">
             <SectionLabel padded={false}>{i18n.t('run.label.paymentTransfer')}</SectionLabel>
             {totalsQuery.data.totalTransfer !== null ? (
-              <div className="break-all font-mono text-old-h2 font-semibold tabular-nums">
+              <div className="break-all text-old-h2 font-semibold tabular-nums">
                 {formatMoney(totalsQuery.data.totalTransfer)}
               </div>
             ) : null}
@@ -1555,7 +1555,7 @@ export function FinanceSection() {
             <div className="min-w-0">
               <SectionLabel padded={false}>Σ {i18n.t('finance.label.total')}</SectionLabel>
               {totalsQuery.data.total !== null ? (
-                <div className="break-all font-mono text-old-h2 font-semibold tabular-nums">
+                <div className="break-all text-old-h2 font-semibold tabular-nums">
                   {formatMoney(totalsQuery.data.total)}
                 </div>
               ) : null}
@@ -1683,14 +1683,14 @@ export function FinanceSection() {
                                 : i18n.t('run.label.paymentCash') + ' '}
                               {skuName}
                             </span>
-                            <span className="font-mono text-old-body tabular-nums">
+                            <span className="text-old-body tabular-nums">
                               {formatMoney(l.lineTotal)}
                             </span>
                           </div>
                           <div className="flex items-baseline gap-2 text-old-label text-[var(--c-fg-muted)]">
                             <span>{store}</span>
                             <span>· {supplier}</span>
-                            <span className="ml-auto font-mono tabular-nums">
+                            <span className="ml-auto tabular-nums">
                               {l.unitPrice !== null
                                 ? `${lineQty(l)} × ${formatMoney(l.unitPrice)}`
                                 : lineQty(l)}
@@ -1756,7 +1756,7 @@ export function FinanceSection() {
                               : i18n.t('run.label.paymentCash')}{' '}
                             {skuName}
                           </span>
-                          <span className="font-mono tabular-nums">
+                          <span className="tabular-nums">
                             {l.lineTotal !== null ? formatMoney(l.lineTotal) : lineQty(l)}
                           </span>
                         </li>
@@ -1813,7 +1813,7 @@ export function FinanceSection() {
                               : i18n.t('run.label.paymentCash')}{' '}
                             {skuName}
                           </span>
-                          <span className="font-mono tabular-nums">
+                          <span className="tabular-nums">
                             {l.lineTotal !== null ? formatMoney(l.lineTotal) : lineQty(l)}
                           </span>
                         </li>
@@ -1841,7 +1841,7 @@ function GroupAmount({
 }) {
   const i18n = useI18n();
   return group.unpriced === 0 ? (
-    <span className="font-mono text-old-body tabular-nums">
+    <span className="text-old-body tabular-nums">
       {formatMoney(addMoney(group.cash, group.transfer))}
     </span>
   ) : (

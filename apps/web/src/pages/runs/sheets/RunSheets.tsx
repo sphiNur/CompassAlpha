@@ -450,7 +450,7 @@ export function PurchaseSheet({
                 {i18n.t('run.action.allocateAcrossStores')}
               </span>
               <span
-                className={`font-mono text-old-label tabular-nums ${
+                className={`text-old-label tabular-nums ${
                   splitMatches ? 'text-[var(--c-success)]' : 'text-[var(--c-warning-fg)]'
                 }`}
               >
@@ -1178,7 +1178,7 @@ export function AddItemSheet({
                     >
                       {st.name}
                       {selected && draft.splits.size > 1 ? (
-                        <span className="ml-1 font-mono tabular-nums opacity-80">
+                        <span className="ml-1 tabular-nums opacity-80">
                           {draft.splits.get(st.id) ?? '0'}
                         </span>
                       ) : null}
@@ -1291,7 +1291,7 @@ export function AddItemSheet({
                     label: i18n.t('run.action.addItem.totalHint'),
                     value: '',
                   })}
-                  <span className="font-mono font-semibold tabular-nums text-[var(--c-fg)]">
+                  <span className="font-semibold tabular-nums text-[var(--c-fg)]">
                     {formatMoney(totalHint)} {currency}
                   </span>
                 </div>

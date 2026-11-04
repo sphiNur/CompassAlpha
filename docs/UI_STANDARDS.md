@@ -9,7 +9,7 @@
 > colors, spacing, radii). Concord tells you *what* tokens exist; this tells you
 > *what to render and — more importantly — what NOT to render*.
 
-Each rule has a stable ID (`UI-1` … `UI-10`). Reference it in code comments and
+Each rule has a stable ID (`UI-1` … `UI-16`). Reference it in code comments and
 CI guards. When a rule genuinely must be broken, add a one-line
 `// UI-N exception: <reason>` comment above the line — the CI guards honor that
 exact marker (same pattern as the existing `M3.13 typography exception`).
@@ -117,6 +117,46 @@ slot, a date — ask what it tells the user that nothing else on screen already
 does. If the answer is "nothing," don't add it. This rule outranks any instinct to
 "show more."
 
+### Page layout (2026-11-05)
+
+The owner's feedback: "every page looks like a different style". Pages had
+drifted on titles, surfaces, section headings, buttons, filters, loading and
+money type. These rules give every page the same frame. They keep the current
+look (colors, nav, flows); they only stop each page from inventing its own.
+
+#### UI-11 — Labels are sentence case
+Section headings are `SectionLabel` (13 px semibold, muted, sentence case);
+form labels are `FieldLabel`. Nothing is styled `uppercase`: it means nothing in
+Chinese, reads badly in Russian/Uzbek, and every copy drifted in size.
+**Enforcement:** CI "Typography guard" fails on any `uppercase` class.
+
+#### UI-12 — One page frame
+- A bottom-nav tab page has **no visible title**: the nav names it. The Shell
+  renders a hidden `<h1>`. No explanatory paragraph under the top bar.
+- A drill-in screen (admin sections) has the back link and a 19 px semibold
+  `<h1>` — the `AdminSection` header is the pattern.
+- Content sits on the 16 px gutter (`px-4`), blocks are `gap-3` apart.
+
+#### UI-13 — One surface
+A group of content is a `Card` (white, `--r-card`, hairline ring). Grey
+`--c-surface-2` is for controls (inputs, chips, segmented tracks) and inline
+notes, not for cards. No card inside a card.
+
+#### UI-14 — Money is the body font with tabular figures
+Amounts use `tabular-nums` in the normal font so columns line up. Monospace is
+only for codes and identifiers (permission keys, build id, JSON).
+
+#### UI-15 — Loading, empty, error look the same everywhere
+Loading is the `Spinner` (what `DataState` shows), never a bare "Loading" line;
+empty is `EmptyState` (15 px title); errors are `DataState`'s error or a danger
+`Banner` with retry.
+
+#### UI-16 — Controls come from the kit
+Buttons are `Button` (`sm` h-8 inside rows, `md` h-11 on the page; the page's
+main action is the Telegram main button). Switching between views is
+`Segmented`; filtering a list by category is `ChipBar`. No hand-rolled pill
+buttons or toggle tracks.
+
 ---
 
 ## Enforcement (CI)
@@ -151,6 +191,7 @@ Before a screen ships, walk the rules top to bottom:
 - [ ] Tokens only, no hardcoded colors/spacing (UI-8)
 - [ ] All copy localized, sentence case, no mixed language (UI-9)
 - [ ] Every remaining element earns its place (UI-10)
+- [ ] Same frame as the other pages: sentence-case labels, no tab title, Card surfaces, tabular money, kit states and controls (UI-11 … UI-16)
 
 ---
 

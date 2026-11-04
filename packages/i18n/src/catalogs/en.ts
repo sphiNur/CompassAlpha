@@ -2077,7 +2077,6 @@ export const en = {
 
   // ── 19. Daily settlement ─────────────────────────────────────────────
   'settlement.title': 'Daily close',
-  'settlement.subtitle': "Record the store's end-of-day cash and commitments.",
   'settlement.store.label': 'Store',
   'settlement.date.label': 'Business date',
   'settlement.date.timezone': 'Store time zone: {timezone}',

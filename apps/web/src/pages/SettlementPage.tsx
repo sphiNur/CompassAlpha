@@ -927,12 +927,10 @@ export function SettlementPage() {
       />
     </Field>
   ) : null;
-  const pageHeading = (
-    <div>
-      <h1 className="text-old-h1 font-semibold text-[var(--c-fg)]">{i18n.t('settlement.title')}</h1>
-      <p className="mt-1 text-old-body-sm text-[var(--c-fg-muted)]">{i18n.t('settlement.subtitle')}</p>
-    </div>
-  );
+  // UI-12 (2026-11-05): a tab page carries no visible title — the bottom
+  // nav names it (Order, Review, Run, Receive, History already work this
+  // way). The Shell's hidden <h1> keeps the heading for screen readers.
+  const pageHeading = null;
   const storeSelector =
     eligibleStores.length > 1 && currentStoreId ? (
       <Field label={i18n.t('settlement.store.label')}>
@@ -2027,8 +2025,8 @@ function SettlementHistory({ settlementId }: { settlementId: string }) {
       </button>
       {open ? (
         history.isPending ? (
-          <div className="py-2 text-center text-old-body-sm text-[var(--c-fg-muted)]">
-            {i18n.t('common.loading')}
+          <div role="status" aria-label={i18n.t('common.loading')} className="flex justify-center py-4">
+            <Spinner size={28} />
           </div>
         ) : history.isError ? (
           <Banner tone="danger" title={i18n.t('settlement.errors.load')} />

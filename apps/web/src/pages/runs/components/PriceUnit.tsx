@@ -82,7 +82,7 @@ export function PriceInFull({
   return (
     <span
       data-testid="price-in-full"
-      className="font-mono font-semibold tabular-nums text-[var(--c-fg)]"
+      className="font-semibold tabular-nums text-[var(--c-fg)]"
     >
       {formatMoney(raw)} {currency}
       {unit ? <span className="font-sans font-normal text-[var(--c-fg-muted)]"> / {unit}</span> : null}

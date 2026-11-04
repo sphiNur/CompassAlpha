@@ -656,7 +656,7 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
                     </span>
                     <span
                       className={
-                        'shrink-0 font-mono text-old-body tabular-nums ' +
+                        'shrink-0 text-old-body tabular-nums ' +
                         (negative ? 'font-semibold text-[var(--c-danger-ink)]' : '')
                       }
                     >
@@ -942,7 +942,7 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
                         </span>
                         <span
                           className={
-                            'font-mono text-old-body tabular-nums ' +
+                            'text-old-body tabular-nums ' +
                             (sign === '-' ? 'text-[var(--c-danger)]' : '')
                           }
                         >

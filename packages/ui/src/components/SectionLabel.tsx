@@ -109,14 +109,14 @@ export function SectionLabel({
     <Tag
       className={cn(
         layout,
-        'text-old-label font-semibold uppercase tracking-eyebrow',
+        'text-old-body font-semibold',
         color,
         className,
       )}
     >
       <span className="max-w-full truncate">{children}</span>
       {meta ? (
-        <span className="min-w-0 break-words font-normal tabular-nums text-[var(--c-fg-muted)]">
+        <span className="min-w-0 break-words text-old-label font-normal tabular-nums text-[var(--c-fg-muted)]">
           {meta}
         </span>
       ) : null}

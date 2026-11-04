@@ -169,55 +169,22 @@ jobs:
         # it is now a hard gate: any anchored untranslated literal fails.
         run: bun run scripts/check-untranslated.ts
 
-      - name: Typography drift guard
-        # M3.13 (2026-05-16): SectionLabel is the single source of truth
-        # for the eyebrow style ("text-label font-semibold uppercase
-        # tracking-eyebrow text-fg-muted"). Inline copies of that class
-        # string sneak back via copy-paste and drift on spacing/
-        # markup (h3 mb-2 vs div vs span). This check fails CI if any
-        # call site outside SectionLabel.tsx ships the raw class
-        # combination. The single legitimate exception is
-        # OrderPage:1026 (estimate header) where the eyebrow label sits
-        # next to a big-money sibling — documented inline.
+      - name: Typography guard (no uppercase labels)
+        # UI-11 (docs/UI_STANDARDS.md, 2026-11-05): section and field
+        # labels are sentence case. Uppercase is meaningless in zh, hard to
+        # read in ru/uz, and every hand-rolled "uppercase tracking-eyebrow"
+        # copy drifted in size. SectionLabel / FieldLabel are the label
+        # renderers; nothing styles text uppercase.
         run: |
-          # Look for the FULL class string. Allow:
-          #   - SectionLabel.tsx (the primitive defines it)
-          #   - any line preceded by an `// eslint-disable-next-line`
-          #     comment (the OrderPage exception)
-          violations=$(
-            grep -rn "text-old-label font-semibold uppercase tracking-eyebrow text-\[var(--c-fg-muted)\]" \
-              apps/web/src packages/ui/src 2>/dev/null \
-              | grep -v "SectionLabel.tsx" || true
-          )
-          if [ -z "$violations" ]; then
-            echo "typography: SectionLabel is the only eyebrow renderer ✓"
-            exit 0
-          fi
-          # Cross-check against allow-listed exception lines.
-          allow_lines=$(grep -rn "M3.13 typography exception" apps/web/src packages/ui/src 2>/dev/null || true)
-          unexplained=""
-          while IFS= read -r line; do
-            [ -z "$line" ] && continue
-            file=$(echo "$line" | cut -d: -f1)
-            lineno=$(echo "$line" | cut -d: -f2)
-            # Find any "M3.13 typography exception" comment within 8 lines above.
-            prev_start=$((lineno - 8))
-            if [ $prev_start -lt 1 ]; then prev_start=1; fi
-            context=$(sed -n "${prev_start},${lineno}p" "$file")
-            if ! echo "$context" | grep -q "M3.13 typography exception"; then
-              unexplained="$unexplained\n$line"
-            fi
-          done <<< "$violations"
-          if [ -n "$unexplained" ]; then
-            echo "typography DRIFT: inline eyebrow class outside SectionLabel:"
-            echo -e "$unexplained"
-            echo ""
-            echo "Migrate to <SectionLabel padded={false}>...</SectionLabel> or"
-            echo "add a '// M3.13 typography exception:' comment above the line"
-            echo "explaining why the inline pattern is required."
+          violations=$(grep -rnE "className=.*\buppercase\b|'[^']*\buppercase\b[^']*'" \
+            --include=*.tsx --include=*.ts apps/web/src packages/ui/src 2>/dev/null \
+            | grep -v "__tests__" || true)
+          if [ -n "$violations" ]; then
+            echo "typography: uppercase label styling (use SectionLabel / FieldLabel, sentence case):"
+            echo "$violations"
             exit 1
           fi
-          echo "typography: $(echo "$violations" | wc -l) allow-listed exception(s) ✓"
+          echo "typography: no uppercase labels ✓"
 
       - name: Type-check
         run: pnpm type-check
