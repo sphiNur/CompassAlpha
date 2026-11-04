@@ -14,6 +14,11 @@
  * All props-driven; mutations stay in RunPage and arrive as callbacks.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  logPurchaseAbandon,
+  logPurchaseEntry,
+  logPurchaseUnavailable,
+} from '../lib/purchaseTelemetry';
 import type { ReactNode } from 'react';
 import { Button, Card, NumberInput, SectionLabel, focusAfter } from '@compass/ui';
 import { useAuthStore } from '../../../stores/authStore';
@@ -1364,6 +1369,23 @@ export function PurchaseRow({
    */
   const [priceEditorOpen, setPriceEditorOpen] = useState(false);
 
+  // Telemetry (purchaseTelemetry.ts): how long the editor stays open, and
+  // whether it closed with a save or without one.
+  const editorOpenedAt = useRef<number | null>(null);
+  const editorCommitted = useRef(false);
+  useEffect(() => {
+    if (!priceEditorOpen) return;
+    editorOpenedAt.current = Date.now();
+    editorCommitted.current = false;
+    return () => {
+      const opened = editorOpenedAt.current;
+      editorOpenedAt.current = null;
+      if (opened !== null && !editorCommitted.current) logPurchaseAbandon(Date.now() - opened);
+    };
+  }, [priceEditorOpen]);
+  const msInEditor = () =>
+    editorOpenedAt.current === null ? null : Date.now() - editorOpenedAt.current;
+
   // When server data updates (ws push, an edit landing, an undo),
   // reconcile the local input values.
   //
@@ -1500,11 +1522,23 @@ export function PurchaseRow({
       onOpenAdvanced(item);
       return;
     }
+    const savedPrice = fromDisplayPrice(displayPrice, priceInThousands);
+    editorCommitted.current = true;
+    logPurchaseEntry({
+      source,
+      msInEditor: source === 'editor' ? msInEditor() : null,
+      priceChanged: lastPrice === null || Number(savedPrice) !== Number(lastPrice),
+      qtyChanged: Number(actualQty) !== Number(item.plannedQty),
+      hadLastPrice: lastPrice !== null,
+      inThousands: priceInThousands,
+      method: source === 'collapsed' ? 'cash' : paymentMethod,
+      multiStore: isMultiStoreRun,
+    });
     onSave({
       skuId: item.skuId,
       actualQty,
       // M3.36: convert display → raw UZS at the network boundary.
-      unitPrice: fromDisplayPrice(displayPrice, priceInThousands),
+      unitPrice: savedPrice,
       // The collapsed row has no payment control, so it must not carry
       // a method this component happens to be holding — 'cash' is the
       // documented default for a one-tap buy, and the purchased row's
@@ -1901,7 +1935,11 @@ export function PurchaseRow({
           <Button
             size="sm"
             variant="secondary"
-            onClick={() => onMarkNa(item.skuId)}
+            onClick={() => {
+              editorCommitted.current = true;
+              logPurchaseUnavailable(msInEditor());
+              onMarkNa(item.skuId);
+            }}
             className="shrink-0"
           >
             {i18n.t('run.action.markNa')}
