@@ -22,13 +22,10 @@ CREATE TABLE IF NOT EXISTS inventory.attendance_store_policies (
   geo_lat          numeric(9, 6) CHECK (geo_lat IS NULL OR geo_lat BETWEEN -90 AND 90),
   geo_lng          numeric(9, 6) CHECK (geo_lng IS NULL OR geo_lng BETWEEN -180 AND 180),
   geo_radius_m     integer CHECK (geo_radius_m IS NULL OR geo_radius_m BETWEEN 20 AND 5000),
-  require_ip       boolean NOT NULL DEFAULT false,
-  allowed_ips      text[] NOT NULL DEFAULT '{}',
   grace_minutes    integer NOT NULL DEFAULT 5 CHECK (grace_minutes BETWEEN 0 AND 120),
   updated_by_member_id uuid REFERENCES auth.members(id) ON DELETE SET NULL,
   updated_at       timestamptz NOT NULL DEFAULT now(),
-  CHECK (NOT require_geo OR (geo_lat IS NOT NULL AND geo_lng IS NOT NULL AND geo_radius_m IS NOT NULL)),
-  CHECK (NOT require_ip OR cardinality(allowed_ips) > 0)
+  CHECK (NOT require_geo OR (geo_lat IS NOT NULL AND geo_lng IS NOT NULL AND geo_radius_m IS NOT NULL))
 );
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS asp_org_idx ON inventory.attendance_store_policies (org_id);
@@ -78,7 +75,6 @@ CREATE TABLE IF NOT EXISTS inventory.attendance_punches (
   geo_lng          numeric(9, 6),
   geo_accuracy_m   integer,
   distance_m       integer,
-  client_ip        text,
   reason           text CHECK (reason IS NULL OR char_length(reason) <= 300),
   -- Deliberately not FKs: the audit actor survives membership removal.
   created_by_member_id uuid NOT NULL,

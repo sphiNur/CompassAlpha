@@ -2585,7 +2585,6 @@ export const en = {
     'Clock in from the phone you used the first time, or ask your manager to unbind it.',
   'attendance.rules.deviceLine': 'Only from your registered phone',
   'attendance.rules.geoLine': 'Within {radius} m of the store',
-  'attendance.rules.ipLine': "On the store's network",
   'attendance.location.openSettings': 'Open location settings',
   'attendance.location.denied.title': 'Location access is off',
   'attendance.location.denied.body':
@@ -2673,16 +2672,6 @@ export const en = {
     'The phone placed you within {m} m only; try again by a window for a closer fix.',
   'attendance.settings.radius': 'Radius (metres)',
   'attendance.settings.radiusHint': '20 to 5000. Indoors, phones are often 30–80 m off.',
-  'attendance.settings.requireIp': 'On the store network',
-  'attendance.settings.requireIpHint':
-    "An app cannot read the Wi-Fi name, so this checks the public address of the store's connection instead: clocking in works on the store Wi-Fi, not on mobile data.",
-  'attendance.settings.ipUnreliableTitle': 'Network check not ready',
-  'attendance.settings.ipUnreliableBody':
-    'The app cannot see the real address of each phone yet. Ask the system administrator to finish this setup before switching the check on.',
-  'attendance.settings.ips': 'Store network addresses',
-  'attendance.settings.ipsHint':
-    'One per line, for example 203.0.113.7 or 203.0.113.0/24. Connect to the store Wi-Fi and use the button below.',
-  'attendance.settings.addThisNetwork': 'Add the network I am on ({ip})',
   'attendance.settings.grace': 'Grace minutes',
   'attendance.settings.graceHint':
     'Clocking in this many minutes after the start is not counted as late.',
@@ -2697,7 +2686,6 @@ export const en = {
     'Your location is only known to within {accuracy} m; step closer to a window and try again.',
   'attendance.errors.outsideArea':
     'You are {distance} m from the store; clocking in works within {radius} m of it.',
-  'attendance.errors.networkNotAllowed': 'Connect to the store Wi-Fi to clock in.',
   'attendance.errors.alreadyClockedIn': 'You are already clocked in.',
   'attendance.errors.notClockedIn': 'You have not clocked in yet.',
   'attendance.errors.memberNotInStore': 'This person does not work at this store.',
@@ -2710,7 +2698,5 @@ export const en = {
   'attendance.errors.rangeTooLong': 'Pick at most two months at a time.',
   'attendance.errors.badRange': 'The start date is after the end date.',
   'attendance.errors.sameWeek': 'Pick a different week to copy to.',
-  'attendance.errors.badIp': '"{value}" is not a network address.',
   'attendance.errors.geoMissing': 'Set the store location first.',
-  'attendance.errors.ipMissing': 'Add at least one store network address.',
 } as const;

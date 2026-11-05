@@ -2481,7 +2481,6 @@ export const ru = {
     'Отмечайтесь с телефона, с которого отметились впервые, или попросите управляющего отвязать его.',
   'attendance.rules.deviceLine': 'Только с привязанного телефона',
   'attendance.rules.geoLine': 'В пределах {radius} м от магазина',
-  'attendance.rules.ipLine': 'Через сеть магазина',
   'attendance.location.openSettings': 'Открыть настройки геолокации',
   'attendance.location.denied.title': 'Нет доступа к геолокации',
   'attendance.location.denied.body':
@@ -2572,16 +2571,6 @@ export const ru = {
   'attendance.settings.radius': 'Радиус (метры)',
   'attendance.settings.radiusHint':
     'От 20 до 5000. В помещении телефоны часто ошибаются на 30–80 м.',
-  'attendance.settings.requireIp': 'Только через сеть магазина',
-  'attendance.settings.requireIpHint':
-    'Приложение не может прочитать название Wi-Fi, поэтому проверяется внешний адрес подключения магазина: отметка работает через Wi-Fi магазина, а не через мобильный интернет.',
-  'attendance.settings.ipUnreliableTitle': 'Проверка сети пока не работает',
-  'attendance.settings.ipUnreliableBody':
-    'Приложение пока не видит настоящий адрес каждого телефона. Прежде чем включать проверку, попросите системного администратора завершить настройку.',
-  'attendance.settings.ips': 'Адреса сети магазина',
-  'attendance.settings.ipsHint':
-    'По одному в строке, например 203.0.113.7 или 203.0.113.0/24. Подключитесь к Wi-Fi магазина и нажмите кнопку ниже.',
-  'attendance.settings.addThisNetwork': 'Добавить мою текущую сеть ({ip})',
   'attendance.settings.grace': 'Допуск, минуты',
   'attendance.settings.graceHint':
     'Отметка в пределах стольких минут после начала не считается опозданием.',
@@ -2596,7 +2585,6 @@ export const ru = {
     'Местоположение известно лишь с точностью до {accuracy} м; подойдите к окну и попробуйте снова.',
   'attendance.errors.outsideArea':
     'Вы в {distance} м от магазина; отметиться можно в пределах {radius} м от него.',
-  'attendance.errors.networkNotAllowed': 'Подключитесь к Wi-Fi магазина, чтобы отметиться.',
   'attendance.errors.alreadyClockedIn': 'Вы уже отметили приход.',
   'attendance.errors.notClockedIn': 'Вы ещё не отметили приход.',
   'attendance.errors.memberNotInStore': 'Этот сотрудник не работает в этом магазине.',
@@ -2609,7 +2597,5 @@ export const ru = {
   'attendance.errors.rangeTooLong': 'Выберите не больше двух месяцев за раз.',
   'attendance.errors.badRange': 'Дата начала позже даты окончания.',
   'attendance.errors.sameWeek': 'Выберите другую неделю для копирования.',
-  'attendance.errors.badIp': '«{value}» — не сетевой адрес.',
   'attendance.errors.geoMissing': 'Сначала задайте место магазина.',
-  'attendance.errors.ipMissing': 'Добавьте хотя бы один адрес сети магазина.',
 } as const satisfies Record<CatalogKey, string>;

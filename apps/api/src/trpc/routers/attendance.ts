@@ -7,13 +7,13 @@
  *   the member's assignment to that store.
  * - `attendance.manage` (store managers and up) plans shifts, reads the
  *   sheet, adds or voids punches with a reason and sets the store's rules.
- * - A self punch must pass the store's rules: the bound phone, the
- *   location radius and the store network's public address. The time is
- *   the server's; offline punches are not accepted.
+ * - A self punch must pass the store's rules: the bound phone and the
+ *   location radius. The time is the server's; offline punches are not
+ *   accepted. (A store-network check was dropped 2026-11-05: a Mini App
+ *   cannot read the Wi-Fi name and shop broadband addresses change.)
  * - Punches are never deleted; a correction voids one (trigger-enforced).
  */
 import { createHash } from 'node:crypto';
-import { BlockList, isIP } from 'node:net';
 import { TRPCError } from '@trpc/server';
 import { and, asc, eq, gt, gte, inArray, isNull, lt, lte, ne, sql } from 'drizzle-orm';
 import type { DB } from '@compass/db';
@@ -34,7 +34,6 @@ import {
 } from '@compass/contracts';
 import { z } from 'zod';
 import { attendance as rules, dateInTz, todayInTz } from '@compass/domain';
-import { env } from '../../env';
 import { hub } from '../../realtime/hub';
 import {
   assertActorAssignedToStore,
@@ -73,36 +72,6 @@ function fail(
 
 export function hashDeviceId(deviceId: string): string {
   return createHash('sha256').update(`compass-attendance:${deviceId}`).digest('hex');
-}
-
-/** One literal address or CIDR range, normalised; null when invalid. */
-export function parseIpRule(
-  raw: string,
-): { address: string; prefix: number | null; family: 'ipv4' | 'ipv6' } | null {
-  const [addr, prefixRaw, extra] = raw.trim().split('/');
-  if (!addr || extra !== undefined) return null;
-  const v = isIP(addr);
-  if (v === 0) return null;
-  const family = v === 4 ? 'ipv4' : 'ipv6';
-  if (prefixRaw === undefined) return { address: addr.toLowerCase(), prefix: null, family };
-  if (!/^\d{1,3}$/.test(prefixRaw)) return null;
-  const prefix = Number(prefixRaw);
-  if (prefix > (v === 4 ? 32 : 128) || prefix < (v === 4 ? 8 : 16)) return null;
-  return { address: addr.toLowerCase(), prefix, family };
-}
-
-export function ipAllowed(ip: string | null | undefined, rulesList: readonly string[]): boolean {
-  if (!ip) return false;
-  const v = isIP(ip);
-  if (v === 0) return false;
-  const list = new BlockList();
-  for (const raw of rulesList) {
-    const rule = parseIpRule(raw);
-    if (!rule) continue;
-    if (rule.prefix === null) list.addAddress(rule.address, rule.family);
-    else list.addSubnet(rule.address, rule.prefix, rule.family);
-  }
-  return list.check(ip, v === 4 ? 'ipv4' : 'ipv6');
 }
 
 async function loadStore(tx: DB, session: Session, storeId: string): Promise<StoreRow> {
@@ -158,7 +127,6 @@ function policyView(p: PolicyRow | undefined) {
       p?.geoLat != null && p.geoLng != null && p.geoRadiusM != null
         ? { lat: Number(p.geoLat), lng: Number(p.geoLng), radiusM: p.geoRadiusM }
         : null,
-    requireIp: p?.requireIp ?? false,
     graceMinutes: p?.graceMinutes ?? 5,
   };
 }
@@ -370,14 +338,7 @@ async function loadPolicyView(ctx: RequestContext, storeId: string) {
   return ctx.withOrg(async (tx) => {
     const store = await authorize(tx, session, storeId, 'attendance.manage');
     const row = await loadPolicy(tx, store.id);
-    return {
-      ...policyView(row),
-      allowedIps: row?.allowedIps ?? [],
-      /** The address this request came from, to add the store's network. */
-      yourIp: ctx.trustedIp ?? null,
-      /** False until the Worker passes the real client address. */
-      ipReliable: !!env.CLIENT_IP_PROXY_KEY,
-    };
+    return policyView(row);
   });
 }
 
@@ -447,7 +408,6 @@ export const attendanceRouter = router({
             requireDevice: view.requireDevice,
             requireGeo: view.requireGeo,
             geo: view.requireGeo ? view.geo : null,
-            requireIp: view.requireIp,
           },
           nextKind: rules.nextPunchKind(
             punches.map((p) => ({ kind: p.kind, at: p.punchedAt })),
@@ -527,12 +487,6 @@ export const attendanceRouter = router({
         distanceM = Math.round(rules.distanceMeters(input.location, policy.geo));
       }
 
-      const ip = ctx.trustedIp ?? null;
-      if (policy.requireIp) {
-        const row = await loadPolicy(tx, store.id);
-        if (!ipAllowed(ip, row?.allowedIps ?? [])) fail('FORBIDDEN', 'networkNotAllowed');
-      }
-
       const recent = await tx
         .select({ kind: s.attendancePunches.kind, at: s.attendancePunches.punchedAt })
         .from(s.attendancePunches)
@@ -562,7 +516,6 @@ export const attendanceRouter = router({
           geoLng: input.location ? input.location.lng.toFixed(6) : null,
           geoAccuracyM: input.location ? Math.round(input.location.accuracy) : null,
           distanceM,
-          clientIp: ip,
           createdByMemberId: session.memberId,
         })
         .returning();
@@ -823,21 +776,12 @@ export const attendanceRouter = router({
       const session = ctx.session!;
       return ctx.withOrg(async (tx) => {
         const store = await authorize(tx, session, input.storeId, 'attendance.manage');
-        const ips: string[] = [];
-        for (const raw of input.allowedIps) {
-          const rule = parseIpRule(raw);
-          if (!rule) fail('BAD_REQUEST', 'badIp', { context: { value: raw.slice(0, 64) } });
-          const text = rule.prefix === null ? rule.address : `${rule.address}/${rule.prefix}`;
-          if (!ips.includes(text)) ips.push(text);
-        }
         const values = {
           requireDevice: input.requireDevice,
           requireGeo: input.requireGeo,
           geoLat: input.geo ? input.geo.lat.toFixed(6) : null,
           geoLng: input.geo ? input.geo.lng.toFixed(6) : null,
           geoRadiusM: input.geo?.radiusM ?? null,
-          requireIp: input.requireIp,
-          allowedIps: ips,
           graceMinutes: input.graceMinutes,
           updatedByMemberId: session.memberId,
           updatedAt: new Date(),

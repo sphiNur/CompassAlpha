@@ -2197,7 +2197,6 @@ export const zh = {
   'attendance.clock.otherDeviceBody': '请用第一次打卡的手机，或请店长解除登记后再打卡。',
   'attendance.rules.deviceLine': '只能用登记的手机打卡',
   'attendance.rules.geoLine': '需在门店 {radius} 米范围内',
-  'attendance.rules.ipLine': '需连接门店网络',
   'attendance.location.openSettings': '打开定位设置',
   'attendance.location.denied.title': '没有定位权限',
   'attendance.location.denied.body':
@@ -2279,16 +2278,6 @@ export const zh = {
   'attendance.settings.geoCoarse': '手机定位误差约 {m} 米，靠近窗边再试一次会更准。',
   'attendance.settings.radius': '范围（米）',
   'attendance.settings.radiusHint': '20 到 5000。室内定位常有 30–80 米误差。',
-  'attendance.settings.requireIp': '必须连门店网络',
-  'attendance.settings.requireIpHint':
-    '小程序读不到 WiFi 名称，所以改为核对门店宽带的公网地址：连门店 WiFi 才能打卡，用手机流量不行。',
-  'attendance.settings.ipUnreliableTitle': '门店网络验证还不能用',
-  'attendance.settings.ipUnreliableBody':
-    '系统目前还拿不到每台手机的真实网络地址。开启这项前，请让系统管理员先完成相关配置。',
-  'attendance.settings.ips': '门店网络地址',
-  'attendance.settings.ipsHint':
-    '每行一个，例如 203.0.113.7 或 203.0.113.0/24。连上门店 WiFi 后点下面的按钮即可。',
-  'attendance.settings.addThisNetwork': '添加我当前的网络（{ip}）',
   'attendance.settings.grace': '宽限分钟数',
   'attendance.settings.graceHint': '在开始时间后这么多分钟内打卡，不算迟到。',
   'attendance.settings.saved': '打卡规则已保存',
@@ -2299,7 +2288,6 @@ export const zh = {
   'attendance.errors.locationRequired': '这家店打卡需要定位。',
   'attendance.errors.locationInaccurate': '定位误差有 {accuracy} 米，请靠近窗边后重试。',
   'attendance.errors.outsideArea': '你距离门店 {distance} 米，需在 {radius} 米内才能打卡。',
-  'attendance.errors.networkNotAllowed': '请连接门店 WiFi 后打卡。',
   'attendance.errors.alreadyClockedIn': '你已经打过上班卡了。',
   'attendance.errors.notClockedIn': '你还没有打上班卡。',
   'attendance.errors.memberNotInStore': '这个人不在这家店。',
@@ -2312,7 +2300,5 @@ export const zh = {
   'attendance.errors.rangeTooLong': '一次最多选两个月。',
   'attendance.errors.badRange': '开始日期晚于结束日期。',
   'attendance.errors.sameWeek': '请选择另一周作为复制目标。',
-  'attendance.errors.badIp': '「{value}」不是网络地址。',
   'attendance.errors.geoMissing': '请先设置门店位置。',
-  'attendance.errors.ipMissing': '请至少添加一个门店网络地址。',
 } as const satisfies Record<CatalogKey, string>;

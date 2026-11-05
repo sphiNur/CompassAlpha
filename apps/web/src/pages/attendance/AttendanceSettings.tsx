@@ -1,10 +1,10 @@
 /**
  * Attendance settings for one store (2026-11-05): who clocks (the
  * per-member switch), unbinding a lost phone, and the store's clock-in
- * rules — bound phone, location radius, store network, grace minutes.
+ * rules — bound phone, location radius, grace minutes.
  */
 import { useState } from 'react';
-import { Banner, Button, DataState, Field, Input, Switch, Textarea, useToast } from '@compass/ui';
+import { Button, DataState, Field, Input, Switch, useToast } from '@compass/ui';
 import { useI18n } from '../../hooks/useI18n';
 import { haptic } from '../../hooks/useTelegram';
 import { currentLocation, isLocationError } from '../../lib/attendanceLocation';
@@ -130,8 +130,6 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
   const [requireGeo, setRequireGeo] = useState(initial.requireGeo);
   const [geo, setGeo] = useState(initial.geo);
   const [radius, setRadius] = useState(String(initial.geo?.radiusM ?? 100));
-  const [requireIp, setRequireIp] = useState(initial.requireIp);
-  const [ips, setIps] = useState(initial.allowedIps.join('\n'));
   const [grace, setGrace] = useState(String(initial.graceMinutes));
   const [locating, setLocating] = useState(false);
 
@@ -147,14 +145,9 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
 
   const radiusNum = Number(radius);
   const graceNum = Number(grace);
-  const ipList = ips
-    .split(/[\s,]+/)
-    .map((x) => x.trim())
-    .filter(Boolean);
   const radiusOk = Number.isInteger(radiusNum) && radiusNum >= 20 && radiusNum <= 5000;
   const graceOk = Number.isInteger(graceNum) && graceNum >= 0 && graceNum <= 120;
-  const canSave =
-    graceOk && (!requireGeo || (geo !== null && radiusOk)) && (!requireIp || ipList.length > 0);
+  const canSave = graceOk && (!requireGeo || (geo !== null && radiusOk));
 
   const takeCurrentLocation = async () => {
     setLocating(true);
@@ -231,45 +224,6 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
         ) : null}
       </div>
 
-      <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-3 ring-hairline">
-        <Switch
-          label={i18n.t('attendance.settings.requireIp')}
-          hint={i18n.t('attendance.settings.requireIpHint')}
-          checked={requireIp}
-          onChange={(e) => setRequireIp(e.target.checked)}
-        />
-        {!initial.ipReliable ? (
-          <Banner tone="warn" title={i18n.t('attendance.settings.ipUnreliableTitle')}>
-            {i18n.t('attendance.settings.ipUnreliableBody')}
-          </Banner>
-        ) : null}
-        {requireIp || ipList.length > 0 ? (
-          <>
-            <Field
-              label={i18n.t('attendance.settings.ips')}
-              hint={i18n.t('attendance.settings.ipsHint')}
-            >
-              <Textarea
-                rows={3}
-                value={ips}
-                onChange={(e) => setIps(e.target.value)}
-                spellCheck={false}
-              />
-            </Field>
-            {initial.yourIp ? (
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={ipList.includes(initial.yourIp)}
-                onClick={() => setIps([...ipList, initial.yourIp!].join('\n'))}
-              >
-                {i18n.t('attendance.settings.addThisNetwork', { ip: initial.yourIp })}
-              </Button>
-            ) : null}
-          </>
-        ) : null}
-      </div>
-
       <div className="rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-3 ring-hairline">
         <Field
           label={i18n.t('attendance.settings.grace')}
@@ -294,8 +248,6 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
             requireDevice,
             requireGeo,
             geo: geo && radiusOk ? { ...geo, radiusM: radiusNum } : null,
-            requireIp,
-            allowedIps: ipList,
             graceMinutes: graceNum,
           })
         }

@@ -693,8 +693,6 @@ export const attendanceStorePolicies = inventorySchema.table(
     geoLat: decimal('geo_lat', { precision: 9, scale: 6 }),
     geoLng: decimal('geo_lng', { precision: 9, scale: 6 }),
     geoRadiusM: integer('geo_radius_m'),
-    requireIp: boolean('require_ip').notNull().default(false),
-    allowedIps: text('allowed_ips').array().notNull().default(sql`'{}'::text[]`),
     graceMinutes: integer('grace_minutes').notNull().default(5),
     updatedByMemberId: uuid('updated_by_member_id').references(() => members.id, {
       onDelete: 'set null',
@@ -772,7 +770,6 @@ export const attendancePunches = inventorySchema.table(
     geoLng: decimal('geo_lng', { precision: 9, scale: 6 }),
     geoAccuracyM: integer('geo_accuracy_m'),
     distanceM: integer('distance_m'),
-    clientIp: text('client_ip'),
     reason: text('reason'),
     createdByMemberId: uuid('created_by_member_id').notNull(),
     voidedAt: timestamp('voided_at', { withTimezone: true, mode: 'date' }),

@@ -105,15 +105,9 @@ export const AttendancePolicySaveInputSchema = z
         radiusM: z.number().int().min(20).max(5000),
       })
       .nullable(),
-    requireIp: z.boolean(),
-    /** Addresses or CIDR ranges (`203.0.113.7`, `203.0.113.0/24`). */
-    allowedIps: z.array(z.string().trim().min(2).max(64)).max(20),
     graceMinutes: z.number().int().min(0).max(120),
   })
-  .refine((v) => !v.requireGeo || v.geo !== null, { message: 'attendance.errors.geoMissing' })
-  .refine((v) => !v.requireIp || v.allowedIps.length > 0, {
-    message: 'attendance.errors.ipMissing',
-  });
+  .refine((v) => !v.requireGeo || v.geo !== null, { message: 'attendance.errors.geoMissing' });
 
 export type AttendancePunchInput = z.infer<typeof AttendancePunchInputSchema>;
 export type AttendancePolicySaveInput = z.infer<typeof AttendancePolicySaveInputSchema>;

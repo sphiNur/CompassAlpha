@@ -2467,7 +2467,6 @@ export const uz = {
     'Birinchi marta belgilagan telefoningizdan foydalaning yoki boshqaruvchidan uni ajratib berishini soʻrang.',
   'attendance.rules.deviceLine': 'Faqat bogʻlangan telefondan',
   'attendance.rules.geoLine': 'Doʻkondan {radius} m ichida',
-  'attendance.rules.ipLine': 'Doʻkon tarmogʻi orqali',
   'attendance.location.openSettings': 'Joylashuv sozlamalarini ochish',
   'attendance.location.denied.title': 'Joylashuvga ruxsat yoʻq',
   'attendance.location.denied.body':
@@ -2560,16 +2559,6 @@ export const uz = {
   'attendance.settings.radius': 'Radius (metr)',
   'attendance.settings.radiusHint':
     '20 dan 5000 gacha. Bino ichida telefonlar koʻpincha 30–80 m adashadi.',
-  'attendance.settings.requireIp': 'Faqat doʻkon tarmogʻi orqali',
-  'attendance.settings.requireIpHint':
-    'Ilova Wi-Fi nomini oʻqiy olmaydi, shuning uchun doʻkon internetining tashqi manzili tekshiriladi: belgilash doʻkon Wi-Fi orqali ishlaydi, mobil internet orqali emas.',
-  'attendance.settings.ipUnreliableTitle': 'Tarmoq tekshiruvi hali ishlamaydi',
-  'attendance.settings.ipUnreliableBody':
-    'Ilova hozircha har bir telefonning haqiqiy manzilini koʻrmaydi. Tekshiruvni yoqishdan oldin tizim administratoridan sozlashni yakunlashini soʻrang.',
-  'attendance.settings.ips': 'Doʻkon tarmogʻi manzillari',
-  'attendance.settings.ipsHint':
-    'Har qatorda bittadan, masalan 203.0.113.7 yoki 203.0.113.0/24. Doʻkon Wi-Fi tarmogʻiga ulaning va pastdagi tugmani bosing.',
-  'attendance.settings.addThisNetwork': 'Hozirgi tarmogʻimni qoʻshish ({ip})',
   'attendance.settings.grace': 'Imtiyozli daqiqalar',
   'attendance.settings.graceHint':
     'Boshlanishdan keyin shuncha daqiqa ichida belgilash kechikish hisoblanmaydi.',
@@ -2584,7 +2573,6 @@ export const uz = {
     'Joylashuv faqat {accuracy} m aniqlikda maʼlum. Derazaga yaqinlashib qayta urinib koʻring.',
   'attendance.errors.outsideArea':
     'Siz doʻkondan {distance} m uzoqdasiz; belgilash {radius} m ichida ishlaydi.',
-  'attendance.errors.networkNotAllowed': 'Belgilash uchun doʻkon Wi-Fi tarmogʻiga ulaning.',
   'attendance.errors.alreadyClockedIn': 'Siz kelishni allaqachon belgilagansiz.',
   'attendance.errors.notClockedIn': 'Siz hali kelishni belgilamagansiz.',
   'attendance.errors.memberNotInStore': 'Bu xodim bu doʻkonda ishlamaydi.',
@@ -2597,7 +2585,5 @@ export const uz = {
   'attendance.errors.rangeTooLong': 'Bir martada koʻpi bilan ikki oy tanlang.',
   'attendance.errors.badRange': 'Boshlanish sanasi tugash sanasidan keyin.',
   'attendance.errors.sameWeek': 'Koʻchirish uchun boshqa haftani tanlang.',
-  'attendance.errors.badIp': '«{value}» tarmoq manzili emas.',
   'attendance.errors.geoMissing': 'Avval doʻkon joyini belgilang.',
-  'attendance.errors.ipMissing': 'Kamida bitta doʻkon tarmogʻi manzilini qoʻshing.',
 } as const satisfies Record<CatalogKey, string>;

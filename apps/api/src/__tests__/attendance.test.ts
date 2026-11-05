@@ -9,7 +9,6 @@ import { loadCatalog } from '@compass/i18n/catalogs';
 import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
 import type { RequestContext, SessionContext } from '../trpc/context';
-import { ipAllowed, parseIpRule } from '../trpc/routers/attendance';
 
 (function loadEnv() {
   let dir = dirname(fileURLToPath(import.meta.url));
@@ -36,24 +35,7 @@ import { ipAllowed, parseIpRule } from '../trpc/routers/attendance';
 
 const SHOULD_RUN = !!process.env.DATABASE_URL && process.env.SKIP_PG_TESTS !== '1';
 
-describe('store network rules', () => {
-  test('addresses and ranges', () => {
-    expect(parseIpRule('203.0.113.7')).toEqual({
-      address: '203.0.113.7',
-      prefix: null,
-      family: 'ipv4',
-    });
-    expect(parseIpRule('203.0.113.0/24')?.prefix).toBe(24);
-    expect(parseIpRule('203.0.113.0/4')).toBeNull(); // too wide
-    expect(parseIpRule('wifi-name')).toBeNull();
-    expect(parseIpRule('1.2.3.4/24/1')).toBeNull();
-    expect(ipAllowed('203.0.113.9', ['203.0.113.0/24'])).toBe(true);
-    expect(ipAllowed('203.0.114.9', ['203.0.113.0/24'])).toBe(false);
-    expect(ipAllowed('2001:db8:1::5', ['2001:db8:1::/48'])).toBe(true);
-    expect(ipAllowed(null, ['203.0.113.0/24'])).toBe(false);
-    expect(ipAllowed('203.0.113.9', [])).toBe(false);
-  });
-
+describe('attendance copy', () => {
   test('every attendance error has a sentence in every language', async () => {
     const src = readFileSync(
       resolve(dirname(fileURLToPath(import.meta.url)), '../trpc/routers/attendance.ts'),
@@ -78,11 +60,11 @@ interface Fixture {
   staffId: string;
   outsiderId: string;
   manager: ReturnType<typeof appRouter.createCaller>;
-  staff: (ip?: string | null) => ReturnType<typeof appRouter.createCaller>;
+  staff: () => ReturnType<typeof appRouter.createCaller>;
 }
 let fx: Fixture | null = null;
 
-function buildCtx(session: SessionContext, trustedIp: string | null = null): RequestContext {
+function buildCtx(session: SessionContext): RequestContext {
   const db = getDb(undefined, { system: 'maintenance' });
   return {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -91,7 +73,6 @@ function buildCtx(session: SessionContext, trustedIp: string | null = null): Req
     log: logger,
     traceId: `attendance-test-${Date.now()}`,
     ip: null,
-    trustedIp,
     userAgent: null,
     idempotencyKey: null,
     session,
@@ -196,8 +177,7 @@ beforeAll(async () => {
     staffId: staff.memberId,
     outsiderId: outsider.memberId,
     manager: appRouter.createCaller(buildCtx(session(mgr, ['attendance.manage']))),
-    staff: (ip = null) =>
-      appRouter.createCaller(buildCtx(session(staff, ['attendance.clock']), ip)),
+    staff: () => appRouter.createCaller(buildCtx(session(staff, ['attendance.clock']))),
   };
 });
 
@@ -263,64 +243,42 @@ describe.skipIf(!SHOULD_RUN)('attendance', () => {
     expect((await f.staff().attendance.me({ deviceId: OTHER_DEVICE })).device.bound).toBe(false);
   });
 
-  test('location and store network rules', async () => {
+  test('location rules', async () => {
     const f = fx!;
     const base = {
       storeId: f.storeId,
       requireDevice: true,
       requireGeo: true,
       geo: { ...SHOP, radiusM: 100 },
-      requireIp: true,
-      allowedIps: ['203.0.113.0/24', '203.0.113.0/24'],
       graceMinutes: 5,
     };
-    await expectError(
-      f.manager.attendance.policySave({ ...base, allowedIps: ['shop-wifi'] }),
-      'attendance.errors.badIp',
+    // A schema refusal: the key sits inside the zod issue list.
+    await expect(f.manager.attendance.policySave({ ...base, geo: null })).rejects.toThrow(
+      'attendance.errors.geoMissing',
     );
     await f.manager.attendance.policySave(base);
     const policy = await f.manager.attendance.policyGet({ storeId: f.storeId });
-    expect(policy.allowedIps).toEqual(['203.0.113.0/24']);
+    expect(policy.geo).toEqual({ ...SHOP, radiusM: 100 });
 
-    const punch = (
-      ip: string | null,
-      location: { lat: number; lng: number; accuracy: number } | null,
-    ) =>
+    const punch = (location: { lat: number; lng: number; accuracy: number } | null) =>
       f
-        .staff(ip)
+        .staff()
         .attendance.punch({ storeId: f.storeId, kind: 'in', deviceId: OTHER_DEVICE, location });
-    await expectError(punch('203.0.113.9', null), 'attendance.errors.locationRequired');
+    await expectError(punch(null), 'attendance.errors.locationRequired');
+    await expectError(punch({ ...SHOP, accuracy: 900 }), 'attendance.errors.locationInaccurate');
     await expectError(
-      punch('203.0.113.9', { ...SHOP, accuracy: 900 }),
-      'attendance.errors.locationInaccurate',
-    );
-    await expectError(
-      punch('203.0.113.9', { lat: SHOP.lat + 0.01, lng: SHOP.lng, accuracy: 10 }),
+      punch({ lat: SHOP.lat + 0.01, lng: SHOP.lng, accuracy: 10 }),
       'attendance.errors.outsideArea',
     );
-    await expectError(
-      punch('198.51.100.1', { ...SHOP, accuracy: 10 }),
-      'attendance.errors.networkNotAllowed',
-    );
-    await expectError(
-      punch(null, { ...SHOP, accuracy: 10 }),
-      'attendance.errors.networkNotAllowed',
-    );
-    const ok = await punch('203.0.113.9', { lat: SHOP.lat + 0.0005, lng: SHOP.lng, accuracy: 15 });
+    const ok = await punch({ lat: SHOP.lat + 0.0005, lng: SHOP.lng, accuracy: 15 });
     expect(ok.kind).toBe('in');
-    await f.staff('203.0.113.9').attendance.punch({
+    await f.staff().attendance.punch({
       storeId: f.storeId,
       kind: 'out',
       deviceId: OTHER_DEVICE,
       location: { ...SHOP, accuracy: 5 },
     });
-    await f.manager.attendance.policySave({
-      ...base,
-      requireGeo: false,
-      geo: null,
-      requireIp: false,
-      allowedIps: [],
-    });
+    await f.manager.attendance.policySave({ ...base, requireGeo: false, geo: null });
   });
 
   test('roster, sheet, manual punch and void', async () => {

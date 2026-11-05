@@ -6,7 +6,7 @@
  * Admin → Attendance (pages/attendance/AttendanceAdmin.tsx), so the
  * bottom bar does not grow for them. A punch is sent live with
  * the phone's id and, when the store asks for it, its location; the
- * server checks both and the store network, and records its own time.
+ * server checks both and records its own time.
  * Nothing is queued offline: a clock-in must happen where and when it
  * says it did.
  */
@@ -216,7 +216,6 @@ function ClockPanel({ storeId }: { storeId: string }) {
                 {store.rules.requireGeo && store.rules.geo ? (
                   <li>{i18n.t('attendance.rules.geoLine', { radius: store.rules.geo.radiusM })}</li>
                 ) : null}
-                {store.rules.requireIp ? <li>{i18n.t('attendance.rules.ipLine')}</li> : null}
               </ul>
               <UpcomingShifts shifts={store.shifts} today={store.today} />
             </>
