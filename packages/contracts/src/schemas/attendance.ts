@@ -119,6 +119,7 @@ export const AttendancePolicySaveInputSchema = z
     graceMinutes: z.number().int().min(0).max(120),
     overtimeAfterMinutes: z.number().int().min(5).max(240).default(30),
     requirePhoto: z.boolean().default(false),
+    requireFace: z.boolean().default(false),
   })
   .refine((v) => !v.requireGeo || v.geo !== null, { message: 'attendance.errors.geoMissing' });
 
@@ -154,4 +155,15 @@ export const AttendanceExportLinkInputSchema = z.object({
 export const AttendancePunchPhotosInputSchema = z.object({
   storeId: UuidSchema,
   punchId: UuidSchema,
+});
+
+/** Make a punch's face photo the member's reference face. */
+export const AttendanceFaceRefSetInputSchema = z.object({
+  storeId: UuidSchema,
+  punchId: UuidSchema,
+});
+
+export const AttendanceFaceRefInputSchema = z.object({
+  storeId: UuidSchema,
+  memberId: UuidSchema,
 });

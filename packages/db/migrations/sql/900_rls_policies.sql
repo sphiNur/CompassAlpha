@@ -50,6 +50,7 @@ DECLARE
     'inventory.attendance_pay_rates',
     'inventory.attendance_overtime',
     'inventory.attendance_photos',
+    'inventory.attendance_face_refs',
     'inventory.suppliers',
     'inventory.categories',
     'inventory.skus',

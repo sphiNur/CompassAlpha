@@ -442,6 +442,13 @@
       "when": 1792540000010,
       "tag": "0062_attendance_photos",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1792540000011,
+      "tag": "0063_attendance_faces",
+      "breakpoints": true
     }
   ]
 }

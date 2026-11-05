@@ -24,12 +24,14 @@ const FACING: Record<'face' | 'scene', Facing> = { face: 'user', scene: 'environ
 export function PunchCamera({
   open,
   kind,
+  faceCheck,
   busy,
   onCancel,
   onConfirm,
 }: {
   open: boolean;
   kind: 'in' | 'out';
+  faceCheck: boolean;
   busy: boolean;
   onCancel: () => void;
   onConfirm: (photos: PunchPhotos) => void;
@@ -124,7 +126,7 @@ export function PunchCamera({
       ? i18n.t('attendance.photo.faceHint')
       : step === 'scene'
         ? i18n.t('attendance.photo.sceneHint')
-        : i18n.t('attendance.photo.reviewHint');
+        : i18n.t(faceCheck ? 'attendance.photo.reviewHintFace' : 'attendance.photo.reviewHint');
 
   return (
     <Sheet

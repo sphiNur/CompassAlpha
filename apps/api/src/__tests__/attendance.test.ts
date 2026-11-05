@@ -12,6 +12,7 @@ import { attendanceMonthExport } from '../http/attendanceExport';
 import { appRouter } from '../trpc/router';
 import { scanAttendanceReminders } from '../services/attendanceReminders';
 import { purgeOldAttendancePhotos } from '../services/attendancePhotoRetention';
+import { setFaceEngineForTests } from '../services/face';
 import type { RequestContext, SessionContext } from '../trpc/context';
 
 (function loadEnv() {
@@ -584,6 +585,103 @@ describe.skipIf(!SHOULD_RUN)('attendance photos', () => {
     ).toEqual([]);
 
     await f.manager.attendance.policySave({ ...rules, requireDevice: true, requirePhoto: false });
+  });
+});
+
+describe.skipIf(!SHOULD_RUN)('attendance face check', () => {
+  test('first face registers; later ones match or are flagged; managers are told', async () => {
+    const f = fx!;
+    const db = getDb(undefined, { system: 'maintenance' });
+    const reset = () =>
+      db.execute(
+        sql`UPDATE inventory.attendance_punches SET voided_at = now(), voided_by_member_id = member_id, void_reason = 'test reset' WHERE member_id = ${f.staffId} AND voided_at IS NULL`,
+      );
+    await reset();
+    // A stub model: the photo's text says whose face it is.
+    const unit = (i: number) => Array.from({ length: 128 }, (_, j) => (j === i ? 1 : 0));
+    setFaceEngineForTests(async (bytes) => {
+      const tag = Buffer.from(bytes).toString('latin1');
+      if (tag.includes('nobody')) return { found: false };
+      if (tag.includes('boom')) throw new Error('model down');
+      return { found: true, score: 0.95, feature: unit(tag.includes('Bob') ? 1 : 0) };
+    });
+    const rules = {
+      storeId: f.storeId,
+      requireDevice: false,
+      requireGeo: false,
+      geo: null,
+      graceMinutes: 5,
+      overtimeAfterMinutes: 30,
+      requirePhoto: true,
+    };
+    await f.manager.attendance.policySave({ ...rules, requireFace: true });
+    const jpeg = (tag: string) =>
+      Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from(tag)]).toString('base64');
+    const punch = (kind: 'in' | 'out', who: string) =>
+      f.staff().attendance.punch({
+        storeId: f.storeId,
+        kind,
+        deviceId: OTHER_DEVICE,
+        photos: { face: jpeg(who), scene: jpeg('shop') },
+        // The pay test's shift ended earlier today: a clock-out is overtime.
+        overtimeReason: kind === 'out' ? 'face test' : undefined,
+      });
+
+    await expectError(punch('in', 'nobody'), 'attendance.errors.faceNotFound');
+    expect((await punch('in', 'Ali')).face).toBe('enrolled');
+    expect((await punch('out', 'Ali')).face).toBe('match');
+    const bob = await punch('in', 'Bob');
+    expect(bob.face).toBe('mismatch');
+
+    const date = dateInTz(new Date(bob.at), TZ);
+    let sheet = await f.manager.attendance.sheet({ storeId: f.storeId, from: date, to: date });
+    expect(sheet.requireFace).toBe(true);
+    expect(sheet.punches.find((p) => p.id === bob.id)!.face).toEqual({
+      result: 'mismatch',
+      score: 0,
+    });
+    expect(sheet.members.find((m) => m.memberId === f.staffId)!.faceRefAt).not.toBeNull();
+    const told = await db
+      .select({ to: s.notifications.recipientUserId })
+      .from(s.notifications)
+      .where(
+        and(
+          eq(s.notifications.orgId, f.orgId),
+          eq(s.notifications.template, 'attendance.faceMismatch'),
+          eq(s.notifications.channel, 'bot'),
+        ),
+      );
+    expect(told.map((r) => r.to)).toEqual([f.managerUserId]);
+
+    // The manager decides Bob's photo is the right face after all.
+    await f.manager.attendance.faceRefSet({ storeId: f.storeId, punchId: bob.id });
+    expect((await punch('out', 'Bob')).face).toBe('match');
+    expect(
+      (await f.manager.attendance.faceRef({ storeId: f.storeId, memberId: f.staffId }))!.src,
+    ).toBe(`data:image/jpeg;base64,${jpeg('Bob')}`);
+
+    // The model being down never stops a punch; it is marked unchecked.
+    expect((await punch('in', 'boom')).face).toBe('unchecked');
+
+    await expectError(
+      f.staff().attendance.faceRefClear({ storeId: f.storeId, memberId: f.staffId }),
+      'auth.errors.missingPermission',
+    );
+    await f.manager.attendance.faceRefClear({ storeId: f.storeId, memberId: f.staffId });
+    expect(await f.manager.attendance.faceRef({ storeId: f.storeId, memberId: f.staffId })).toBe(
+      null,
+    );
+    sheet = await f.manager.attendance.sheet({ storeId: f.storeId, from: date, to: date });
+    expect(sheet.members.find((m) => m.memberId === f.staffId)!.faceRefAt).toBeNull();
+
+    setFaceEngineForTests(null);
+    await reset();
+    await f.manager.attendance.policySave({
+      ...rules,
+      requireDevice: true,
+      requirePhoto: false,
+      requireFace: false,
+    });
   });
 });
 

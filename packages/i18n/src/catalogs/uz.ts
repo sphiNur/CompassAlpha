@@ -2705,4 +2705,36 @@ export const uz = {
     'Har bir kelish va ketishda joyida ikki surat: old kamera bilan yuz, keyin orqa kamera bilan joy. 90 kun saqlanadi, faqat boshqaruvchilar koʻradi.',
   'attendance.errors.photoRequired': 'Bu doʻkonda belgilash uchun ikki surat kerak.',
   'attendance.errors.photoInvalid': 'Suratni oʻqib boʻlmadi. Qayta oling.',
+  'attendance.face.match': 'Yuz mos',
+  'attendance.face.mismatch': 'Yuz mos emas',
+  'attendance.face.enrolled': 'Yuz roʻyxatga olindi',
+  'attendance.face.unchecked': 'Yuz tekshirilmadi',
+  'attendance.face.score': 'oʻxshashlik {score}%',
+  'attendance.face.useAsRef': 'Yuz namunasi qilish',
+  'attendance.face.refSaved': 'Yuz namunasi yangilandi',
+  'attendance.face.refSet': 'Yuz roʻyxatga olingan',
+  'attendance.face.refNotYet': 'Yuz hali yoʻq: keyingi belgilashda yoziladi',
+  'attendance.face.showRef': 'Koʻrsatish',
+  'attendance.face.hideRef': 'Yashirish',
+  'attendance.face.clear': 'Qayta roʻyxatga olish',
+  'attendance.face.clearConfirm':
+    '{name}: roʻyxatdagi yuz oʻchirilsinmi? Keyingi belgilashda yangisi yoziladi.',
+  'attendance.face.refAlt': '{name}: roʻyxatdagi yuz',
+  'attendance.settings.requireFace': 'Yuzni tekshirish',
+  'attendance.settings.requireFaceHint':
+    'Yuz suratini xodimning roʻyxatdagi yuzi bilan solishtiradi. Birinchi belgilash uni yozadi; belgilash suratidan almashtirish mumkin. Yuzsiz surat qayta olinadi; mos kelmasa, yoziladi va sizga xabar keladi.',
+  'attendance.photo.reviewHintFace':
+    'Bu suratlarni faqat boshqaruvchilar koʻradi. 90 kundan keyin oʻchiriladi. Yuz surati roʻyxatdagi yuzingiz bilan solishtiriladi.',
+  'attendance.errors.faceNotFound': 'Suratda yuz topilmadi. Kameraga qarab, yorugʻda qayta oling.',
+  'attendance.errors.faceCheckUnavailable':
+    'Yuzni tekshirish hozir ishlamayapti. Keyinroq urinib koʻring.',
+  'attendance.errors.photoNotFound': 'Bu surat endi yoʻq.',
+  'attendance.export.col.face': 'Yuz',
+  'attendance.export.face.match': 'Mos',
+  'attendance.export.face.mismatch': 'Mos emas',
+  'attendance.export.face.enrolled': 'Roʻyxatga olindi',
+  'attendance.export.face.unchecked': 'Tekshirilmadi',
+  'notify.attendance.faceMismatch.title': 'Yuz mos emas',
+  'notify.attendance.faceMismatch.body':
+    '{name}: {store} da {time} da belgiladi, yuz roʻyxatdagisiga mos emas. Belgilash suratlarini tekshiring.',
 } as const satisfies Record<CatalogKey, string>;
