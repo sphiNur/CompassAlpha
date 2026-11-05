@@ -200,6 +200,9 @@ let mockSession: {
   }>;
 } | null = null;
 
+/** tRPC calls the smoke deliberately lets through to the real server. */
+const TRPC_PASS_THROUGH: ReadonlySet<string> = new Set(['system.log']);
+
 function trpcOk(data: unknown) {
   return JSON.stringify({ result: { data } });
 }
@@ -214,6 +217,27 @@ async function run() {
   const context = await browser.newContext({
     viewport: { width: 414, height: 896 },
     userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7) Mobile/15E148',
+  });
+
+  // Every tRPC call the page makes must be stubbed below. Playwright runs
+  // the most recently registered matching route first, so this one only
+  // sees calls nothing else answered. 2026-11-05: order.submittedVersion
+  // (added in #190) went to the real server with the fake token, got 401,
+  // and the failed refresh sent the app back to its login loop and the
+  // Order tab. The smoke then timed out much later on "+ Add wage", which
+  // looked like a network problem. An unstubbed call is now answered with
+  // null (so the run goes on) and fails the smoke by name.
+  const unstubbed = new Set<string>();
+  await context.route('**/trpc/**', async (route) => {
+    const path = new URL(route.request().url()).pathname.replace(/^.*\/trpc\//, '');
+    const names = path.split(',').filter((n) => !TRPC_PASS_THROUGH.has(n));
+    if (names.length === 0) {
+      await route.continue();
+      return;
+    }
+    for (const n of names) unstubbed.add(n);
+    const body = path.includes(',') ? JSON.stringify(path.split(',').map(() => ({ result: { data: null } }))) : trpcOk(null);
+    await route.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body });
   });
 
   // Stub Telegram SDK.
@@ -371,6 +395,11 @@ async function run() {
   );
   await context.route('**/trpc/catalog.suppliers*', async (r) =>
     r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk([]) }),
+  );
+
+  // #190: what the store sent for review. null = nothing submitted to show.
+  await context.route('**/trpc/order.submittedVersion*', async (r) =>
+    r.fulfill({ status: 200, headers: { 'content-type': 'application/json' }, body: trpcOk(null) }),
   );
 
   // Order: dynamic state machine.
@@ -1203,6 +1232,11 @@ async function run() {
       'zero unexpected console.error',
       filtered.length === 0,
       filtered.slice(0, 2).join(' | '),
+    );
+    record(
+      'every tRPC call the page made is stubbed',
+      unstubbed.size === 0,
+      unstubbed.size ? `unstubbed: ${[...unstubbed].sort().join(', ')}` : undefined,
     );
   } finally {
     await browser.close();
