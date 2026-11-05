@@ -213,7 +213,10 @@ export async function guardedFetch(
   }
   try {
     const res = await fetch(input, { ...init, signal: controller.signal });
-    if (GATEWAY_STATUSES.has(res.status) && !(res.headers.get('content-type') ?? '').includes('json')) {
+    if (
+      GATEWAY_STATUSES.has(res.status) &&
+      !(res.headers.get('content-type') ?? '').includes('json')
+    ) {
       throw new TypeError(`Failed to fetch (gateway ${res.status})`);
     }
     return res;
@@ -226,7 +229,10 @@ export async function guardedFetch(
   }
 }
 
-export async function authFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+export async function authFetch(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+): Promise<Response> {
   const attach = (token: string | null): RequestInit => ({
     ...init,
     headers: {
@@ -336,6 +342,8 @@ export const IDEMPOTENT_MUTATIONS = new Set<string>([
   'attendance.memberSet',
   'attendance.resetDevice',
   'attendance.policySave',
+  'attendance.overtimeDecide',
+  'attendance.payRateSet',
 ]);
 
 function genKey(): string {

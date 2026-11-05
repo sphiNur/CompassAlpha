@@ -2708,4 +2708,39 @@ export const en = {
   'notify.attendance.absent.title': 'Not clocked in',
   'notify.attendance.absent.body':
     '{name} has not clocked in at {store}; the shift started at {start}.',
+  'attendance.pay.owed': 'Owed {net}',
+  'attendance.pay.owedDeducted': 'Owed {net} (late / early: −{deduction})',
+  'attendance.pay.absent': 'Absent: no pay',
+  'attendance.pay.needsReview': 'Pay waits until the attendance is checked',
+  'attendance.pay.noRate': 'No daily wage set',
+  'attendance.overtime.askTitle': 'Why are you clocking out late?',
+  'attendance.overtime.askBody':
+    'Time past the end of your shift: {duration}. Overtime counts once your manager approves it.',
+  'attendance.overtime.reasonPlaceholder': 'For example: stocktake after closing',
+  'attendance.overtime.badge.pending': 'Overtime {duration} · to approve',
+  'attendance.overtime.badge.approved': 'Overtime {duration} · approved',
+  'attendance.overtime.badge.rejected': 'Overtime {duration} · not approved',
+  'attendance.overtime.reasonLine': 'Reason: {reason}',
+  'attendance.overtime.noReason': 'No reason given',
+  'attendance.overtime.decidedBy': 'decided by {name}',
+  'attendance.overtime.approve': 'Approve',
+  'attendance.overtime.reject': 'Not overtime',
+  'attendance.settings.dailyWage': 'Daily wage',
+  'attendance.settings.dailyWageNotSet': 'Not set',
+  'attendance.settings.wageSaved': 'Daily wage saved from today on',
+  'attendance.settings.overtimeAfter': 'Overtime after (minutes)',
+  'attendance.settings.overtimeAfterHint':
+    'A clock-out this long after the shift asks the person why, and waits for your approval. Lengthen the shift in the roster for planned overtime.',
+  'attendance.errors.overtimeReasonRequired': 'Say why you are clocking out late.',
+  'attendance.errors.overtimeNotFound': 'This overtime no longer exists.',
+  'settlement.wages.fromAttendance': 'From attendance',
+  'settlement.wages.fromAttendanceNone': 'No attendance to pay for this day.',
+  'settlement.wages.fromAttendanceNeedsReview':
+    '{n, plural, one {# person needs} other {# people need}} the manager to check attendance first.',
+  'settlement.wages.fromAttendanceAdded':
+    '{n, plural, one {# wage} other {# wages}} added from attendance, marked unpaid.',
+  'settlement.wages.fromAttendanceReason': 'Attendance: daily wage {wage}',
+  'settlement.wages.fromAttendanceReasonDeducted':
+    'Attendance: daily wage {wage}, late {late} min, left early {early} min, −{deduction}',
+  'settlement.wages.fromAttendanceFailed': 'Could not read attendance. Try again.',
 } as const;

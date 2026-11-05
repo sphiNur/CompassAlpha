@@ -45,7 +45,13 @@ import { scrollBehavior } from '../lib/reducedMotion';
 import { useAuthStore } from '../stores/authStore';
 import { registerTabChangeGuard } from '../stores/navStore';
 import { StoreSalesPanel } from '../components/sales/StoreSalesPanel';
-import { draftKey, draftStorage, forgetDraft, readDraft, writeDraft } from './settlement/draftStore';
+import {
+  draftKey,
+  draftStorage,
+  forgetDraft,
+  readDraft,
+  writeDraft,
+} from './settlement/draftStore';
 import { addMoney } from '@compass/contracts/money';
 import {
   ITEM_MONEY_PROBLEM_MESSAGE,
@@ -472,6 +478,7 @@ export function SettlementPage() {
   const [newWagePickerFor, setNewWagePickerFor] = useState<string | null>(null);
   const [wageRoleFilter, setWageRoleFilter] = useState('');
   const [wageSearch, setWageSearch] = useState('');
+  const [fillingFromAttendance, setFillingFromAttendance] = useState(false);
   // 2026-10-21 CA-09: sales entry block (see render). The flat session
   // set is only a hint; sales.record enforces the store-level override.
   const canRecordSales = session?.permissions.includes('sales.record') ?? false;
@@ -780,7 +787,9 @@ export function SettlementPage() {
         ? addMoney(onlineRevenue, invoicedCashRevenue)
         : null,
     paidOutflows:
-      operatingExpenseTotal.valid && paidWageTotal.valid ? addMoney(operatingExpenses, wagesPaid) : null,
+      operatingExpenseTotal.valid && paidWageTotal.valid
+        ? addMoney(operatingExpenses, wagesPaid)
+        : null,
     futureCommitments:
       unpaidWageTotal.valid && isMoney(draft.nextPurchaseReserve)
         ? addMoney(wagesAccrued, nextPurchaseReserve)
@@ -1084,7 +1093,9 @@ export function SettlementPage() {
         <Banner
           tone="warn"
           title={i18n.t(
-            BUSINESS_DATE.test(date) ? 'settlement.errors.futureDate' : 'settlement.errors.dateMissing',
+            BUSINESS_DATE.test(date)
+              ? 'settlement.errors.futureDate'
+              : 'settlement.errors.dateMissing',
           )}
         />
       </div>
@@ -1202,6 +1213,67 @@ export function SettlementPage() {
     setWageSearch('');
     setNewWagePickerFor(id);
     setWagePickerFor(id);
+  };
+
+  // Attendance phase 2 (2026-11-05): the day's wages from attendance —
+  // daily wage less late / early — as unpaid rows the cashier confirms.
+  const fillFromAttendance = async () => {
+    if (!currentStoreId || !dateValid || hasHistoricalWageTotal) return;
+    setFillingFromAttendance(true);
+    try {
+      const rows = await utils.attendance.wageSuggestions.fetch({ storeId: currentStoreId, date });
+      const present = new Set(draft.wageItems.map((item) => item.memberId).filter(Boolean));
+      const payable = rows.filter(
+        (r) =>
+          r.status === 'payable' &&
+          r.amount !== null &&
+          Number(r.amount) > 0 &&
+          !present.has(r.memberId),
+      );
+      const review = rows.filter((r) => r.status === 'needsReview' || r.status === 'noRate').length;
+      if (payable.length === 0) {
+        haptic('warning');
+        toast.info(
+          review > 0
+            ? i18n.t('settlement.wages.fromAttendanceNeedsReview', { n: review })
+            : i18n.t('settlement.wages.fromAttendanceNone'),
+        );
+        return;
+      }
+      const room = MAX_DETAIL_ITEMS - draft.wageItems.length;
+      const added = payable.slice(0, Math.max(0, room)).map((r) => ({
+        id: newDetailId(),
+        persistedId: null,
+        memberId: r.memberId,
+        personName: r.name,
+        status: 'unpaid' as const,
+        amount: r.amount!,
+        reason:
+          r.lateMinutes + r.earlyMinutes > 0
+            ? i18n.t('settlement.wages.fromAttendanceReasonDeducted', {
+                wage: formatMoney(r.dailyWage, currency),
+                late: r.lateMinutes,
+                early: r.earlyMinutes,
+                deduction: formatMoney(r.deduction, currency),
+              })
+            : i18n.t('settlement.wages.fromAttendanceReason', {
+                wage: formatMoney(r.dailyWage, currency),
+              }),
+        isHistorical: false,
+      }));
+      haptic('success');
+      setDraft((current) => ({ ...current, wageItems: [...current.wageItems, ...added] }));
+      toast.success(
+        i18n.t('settlement.wages.fromAttendanceAdded', { n: added.length }) +
+          (review > 0
+            ? ` ${i18n.t('settlement.wages.fromAttendanceNeedsReview', { n: review })}`
+            : ''),
+      );
+    } catch (err) {
+      errToast('settlement.wages.fromAttendanceFailed')(err);
+    } finally {
+      setFillingFromAttendance(false);
+    }
   };
 
   const updateWageItem = (id: string, patch: Partial<Omit<WageItemDraft, 'id'>>) => {
@@ -1364,540 +1436,583 @@ export function SettlementPage() {
         {/* F21 (2026-11-05): a date too old for a new close used to keep
             the whole form and its save button under the warning. */}
         {closeQuery.isError || tooOldForNew ? null : (
-        <>
-        {/* CLS-16: while a save is in flight the form is locked; whatever was
+          <>
+            {/* CLS-16: while a save is in flight the form is locked; whatever was
             typed meanwhile used to be overwritten by the saved record. */}
-        <fieldset
-          ref={formRef}
-          disabled={saveMutation.isPending}
-          aria-busy={saveMutation.isPending}
-          className="contents"
-        >
-        <section className="flex flex-col gap-2">
-          <SectionLabel as="h2">{i18n.t('settlement.group.revenue')}</SectionLabel>
-          <Card>
-            <CardBody className="flex flex-col gap-3">
-              <CardMeta>{i18n.t('settlement.field.amountHint')}</CardMeta>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <AmountField
-                  label={i18n.t('settlement.field.onlineRevenue')}
-                  value={draft.onlineRevenue}
-                  onChange={(value) => setMoney('onlineRevenue', value)}
-                />
-                <AmountField
-                  label={i18n.t('settlement.field.invoicedCashRevenue')}
-                  value={draft.invoicedCashRevenue}
-                  onChange={(value) => setMoney('invoicedCashRevenue', value)}
-                />
-              </div>
-            </CardBody>
-          </Card>
-        </section>
+            <fieldset
+              ref={formRef}
+              disabled={saveMutation.isPending}
+              aria-busy={saveMutation.isPending}
+              className="contents"
+            >
+              <section className="flex flex-col gap-2">
+                <SectionLabel as="h2">{i18n.t('settlement.group.revenue')}</SectionLabel>
+                <Card>
+                  <CardBody className="flex flex-col gap-3">
+                    <CardMeta>{i18n.t('settlement.field.amountHint')}</CardMeta>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <AmountField
+                        label={i18n.t('settlement.field.onlineRevenue')}
+                        value={draft.onlineRevenue}
+                        onChange={(value) => setMoney('onlineRevenue', value)}
+                      />
+                      <AmountField
+                        label={i18n.t('settlement.field.invoicedCashRevenue')}
+                        value={draft.invoicedCashRevenue}
+                        onChange={(value) => setMoney('invoicedCashRevenue', value)}
+                      />
+                    </div>
+                  </CardBody>
+                </Card>
+              </section>
 
-        <section className="flex flex-col gap-2">
-          <SectionLabel as="h2">{i18n.t('settlement.group.costs')}</SectionLabel>
-          <Card>
-            <CardBody className="flex flex-col gap-5">
-              <Banner tone="info" title={i18n.t('settlement.costs.autoTotalTitle')}>
-                {i18n.t('settlement.costs.autoTotalHint')}
-              </Banner>
+              <section className="flex flex-col gap-2">
+                <SectionLabel as="h2">{i18n.t('settlement.group.costs')}</SectionLabel>
+                <Card>
+                  <CardBody className="flex flex-col gap-5">
+                    <Banner tone="info" title={i18n.t('settlement.costs.autoTotalTitle')}>
+                      {i18n.t('settlement.costs.autoTotalHint')}
+                    </Banner>
 
-              <div className="flex flex-col gap-3">
-                {/* The add button keeps its full label; in ru / uz at 360 px it was
+                    <div className="flex flex-col gap-3">
+                      {/* The add button keeps its full label; in ru / uz at 360 px it was
                     squeezed and cut off. The row wraps instead. */}
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <h3 className="text-old-h3 font-semibold text-[var(--c-fg)]">
-                      {i18n.t('settlement.expenses.title')}
-                    </h3>
-                    <p className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
-                      {i18n.t('settlement.expenses.total', {
-                        money: formatMoney(operatingExpenseTotal.value, currency),
-                      })}
-                    </p>
-                  </div>
-                  <Button
-                    className="shrink-0"
-                    size="sm"
-                    variant="secondary"
-                    disabled={
-                      !canEditOperatingExpenses ||
-                      draft.operatingExpenseItems.length >= MAX_DETAIL_ITEMS
-                    }
-                    onClick={addOperatingExpense}
-                  >
-                    {i18n.t('settlement.expenses.add')}
-                  </Button>
-                </div>
-
-                {hasHistoricalOperatingExpenseTotal ? (
-                  <Banner tone="info" title={i18n.t('settlement.details.historicalReadOnly')}>
-                    {i18n.t('settlement.details.historicalReadOnlyBody')}
-                  </Banner>
-                ) : !canRecordOperatingExpenses ? (
-                  <Banner tone="info" title={i18n.t('settlement.errors.expensesManagerOnly')}>
-                    {i18n.t('settlement.expenses.readOnly')}
-                  </Banner>
-                ) : null}
-
-                {draft.operatingExpenseItems.length === 0 ? (
-                  <p className="rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-3 py-2 text-old-body-sm text-[var(--c-fg-muted)]">
-                    {i18n.t('settlement.expenses.empty')}
-                  </p>
-                ) : (
-                  <div className="flex flex-col gap-3">
-                    {draft.operatingExpenseItems.map((expense, index) => {
-                      const valid = isValidOperatingExpense(expense);
-                      // DX-CLS-3 (2026-11-01): each bad field says why, and
-                      // its name carries the line number for a screen reader
-                      // ("支出 2 · 金额"); the rows only turned red before.
-                      const itemLabel = i18n.t('settlement.expenses.itemNumber', { n: index + 1 });
-                      const amountLabel = `${itemLabel} · ${i18n.t('settlement.expenses.amount')}`;
-                      const reasonLabel = `${itemLabel} · ${i18n.t('settlement.expenses.reason')}`;
-                      // DX-VIS-15: a problem shows once the field was left
-                      // or a save was tried, not as the line appears.
-                      const rawAmountProblem = expense.isHistorical
-                        ? null
-                        : moneyProblem(expense.amount, { positive: true });
-                      const amountProblem = showError(
-                        rawAmountProblem !== null,
-                        `${expense.id}:amount`,
-                      )
-                        ? rawAmountProblem
-                        : null;
-                      const reasonMissing = showError(
-                        !expense.isHistorical && expense.reason.trim().length === 0,
-                        `${expense.id}:reason`,
-                      );
-                      const amountErrorId = `expense-${expense.id}-amount-error`;
-                      const reasonErrorId = `expense-${expense.id}-reason-error`;
-                      return (
-                        <div
-                          key={expense.id}
-                          className="rounded-[var(--r-utility)] bg-[var(--c-surface-2)] p-3 ring-hairline"
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h3 className="text-old-h3 font-semibold text-[var(--c-fg)]">
+                            {i18n.t('settlement.expenses.title')}
+                          </h3>
+                          <p className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
+                            {i18n.t('settlement.expenses.total', {
+                              money: formatMoney(operatingExpenseTotal.value, currency),
+                            })}
+                          </p>
+                        </div>
+                        <Button
+                          className="shrink-0"
+                          size="sm"
+                          variant="secondary"
+                          disabled={
+                            !canEditOperatingExpenses ||
+                            draft.operatingExpenseItems.length >= MAX_DETAIL_ITEMS
+                          }
+                          onClick={addOperatingExpense}
                         >
-                          <div className="mb-3 flex items-center justify-between gap-3">
-                            <span className="text-old-label font-semibold text-[var(--c-fg-muted)]">
-                              {i18n.t('settlement.expenses.itemNumber', { n: index + 1 })}
-                            </span>
-                            {canEditOperatingExpenses ? (
-                              <Button
-                                size="sm"
-                                variant="danger-ghost"
-                                aria-label={i18n.t('settlement.expenses.remove')}
-                                onClick={() => removeOperatingExpense(expense.id)}
+                          {i18n.t('settlement.expenses.add')}
+                        </Button>
+                      </div>
+
+                      {hasHistoricalOperatingExpenseTotal ? (
+                        <Banner tone="info" title={i18n.t('settlement.details.historicalReadOnly')}>
+                          {i18n.t('settlement.details.historicalReadOnlyBody')}
+                        </Banner>
+                      ) : !canRecordOperatingExpenses ? (
+                        <Banner tone="info" title={i18n.t('settlement.errors.expensesManagerOnly')}>
+                          {i18n.t('settlement.expenses.readOnly')}
+                        </Banner>
+                      ) : null}
+
+                      {draft.operatingExpenseItems.length === 0 ? (
+                        <p className="rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-3 py-2 text-old-body-sm text-[var(--c-fg-muted)]">
+                          {i18n.t('settlement.expenses.empty')}
+                        </p>
+                      ) : (
+                        <div className="flex flex-col gap-3">
+                          {draft.operatingExpenseItems.map((expense, index) => {
+                            const valid = isValidOperatingExpense(expense);
+                            // DX-CLS-3 (2026-11-01): each bad field says why, and
+                            // its name carries the line number for a screen reader
+                            // ("支出 2 · 金额"); the rows only turned red before.
+                            const itemLabel = i18n.t('settlement.expenses.itemNumber', {
+                              n: index + 1,
+                            });
+                            const amountLabel = `${itemLabel} · ${i18n.t('settlement.expenses.amount')}`;
+                            const reasonLabel = `${itemLabel} · ${i18n.t('settlement.expenses.reason')}`;
+                            // DX-VIS-15: a problem shows once the field was left
+                            // or a save was tried, not as the line appears.
+                            const rawAmountProblem = expense.isHistorical
+                              ? null
+                              : moneyProblem(expense.amount, { positive: true });
+                            const amountProblem = showError(
+                              rawAmountProblem !== null,
+                              `${expense.id}:amount`,
+                            )
+                              ? rawAmountProblem
+                              : null;
+                            const reasonMissing = showError(
+                              !expense.isHistorical && expense.reason.trim().length === 0,
+                              `${expense.id}:reason`,
+                            );
+                            const amountErrorId = `expense-${expense.id}-amount-error`;
+                            const reasonErrorId = `expense-${expense.id}-reason-error`;
+                            return (
+                              <div
+                                key={expense.id}
+                                className="rounded-[var(--r-utility)] bg-[var(--c-surface-2)] p-3 ring-hairline"
                               >
-                                {i18n.t('settlement.expenses.remove')}
-                              </Button>
-                            ) : null}
-                          </div>
-                          <Field label={i18n.t('settlement.expenses.amount')}>
-                            <NumberInput
-                              value={expense.amount}
-                              min="0.01"
-                              max="999999999999.99"
-                              step="0.01"
-                              placeholder="0"
-                              readOnly={!canEditOperatingExpenses}
-                              aria-label={amountLabel}
-                              aria-invalid={amountProblem !== null || undefined}
-                              aria-describedby={amountProblem ? amountErrorId : undefined}
-                              formatError="none"
-                              className={amountProblem ? 'border-[var(--c-danger)]' : undefined}
-                              onBlur={() => touch(`${expense.id}:amount`)}
-                              onChange={(event) =>
-                                updateOperatingExpense(expense.id, {
-                                  amount: event.currentTarget.value,
-                                  isHistorical: false,
-                                })
-                              }
-                            />
-                            {amountProblem ? (
-                              <FieldError id={amountErrorId}>
-                                {i18n.t(ITEM_MONEY_PROBLEM_MESSAGE[amountProblem], {
-                                  field: amountLabel,
-                                })}
-                              </FieldError>
-                            ) : null}
-                          </Field>
-                          <div className="mt-3">
-                            <Field label={i18n.t('settlement.expenses.reason')}>
-                              {expense.isHistorical ? (
-                                <p className="rounded-[var(--r-utility)] bg-[var(--c-surface-3)] px-3 py-2 text-old-body-sm text-[var(--c-fg-muted)]">
-                                  {i18n.t('settlement.expenses.historicalReason')}
-                                </p>
-                              ) : (
-                                <>
-                                  <Textarea
-                                    value={expense.reason}
-                                    maxLength={500}
+                                <div className="mb-3 flex items-center justify-between gap-3">
+                                  <span className="text-old-label font-semibold text-[var(--c-fg-muted)]">
+                                    {i18n.t('settlement.expenses.itemNumber', { n: index + 1 })}
+                                  </span>
+                                  {canEditOperatingExpenses ? (
+                                    <Button
+                                      size="sm"
+                                      variant="danger-ghost"
+                                      aria-label={i18n.t('settlement.expenses.remove')}
+                                      onClick={() => removeOperatingExpense(expense.id)}
+                                    >
+                                      {i18n.t('settlement.expenses.remove')}
+                                    </Button>
+                                  ) : null}
+                                </div>
+                                <Field label={i18n.t('settlement.expenses.amount')}>
+                                  <NumberInput
+                                    value={expense.amount}
+                                    min="0.01"
+                                    max="999999999999.99"
+                                    step="0.01"
+                                    placeholder="0"
                                     readOnly={!canEditOperatingExpenses}
-                                    aria-label={reasonLabel}
-                                    invalid={!valid && reasonMissing}
-                                    aria-describedby={
-                                      !valid && reasonMissing ? reasonErrorId : undefined
+                                    aria-label={amountLabel}
+                                    aria-invalid={amountProblem !== null || undefined}
+                                    aria-describedby={amountProblem ? amountErrorId : undefined}
+                                    formatError="none"
+                                    className={
+                                      amountProblem ? 'border-[var(--c-danger)]' : undefined
                                     }
-                                    onBlur={() => touch(`${expense.id}:reason`)}
+                                    onBlur={() => touch(`${expense.id}:amount`)}
                                     onChange={(event) =>
                                       updateOperatingExpense(expense.id, {
-                                        reason: event.currentTarget.value,
+                                        amount: event.currentTarget.value,
                                         isHistorical: false,
                                       })
                                     }
                                   />
-                                  {!valid && reasonMissing ? (
-                                    <FieldError id={reasonErrorId}>
-                                      {i18n.t('settlement.errors.itemReasonEmpty', {
-                                        field: reasonLabel,
+                                  {amountProblem ? (
+                                    <FieldError id={amountErrorId}>
+                                      {i18n.t(ITEM_MONEY_PROBLEM_MESSAGE[amountProblem], {
+                                        field: amountLabel,
                                       })}
                                     </FieldError>
                                   ) : null}
-                                </>
-                              )}
-                            </Field>
-                          </div>
+                                </Field>
+                                <div className="mt-3">
+                                  <Field label={i18n.t('settlement.expenses.reason')}>
+                                    {expense.isHistorical ? (
+                                      <p className="rounded-[var(--r-utility)] bg-[var(--c-surface-3)] px-3 py-2 text-old-body-sm text-[var(--c-fg-muted)]">
+                                        {i18n.t('settlement.expenses.historicalReason')}
+                                      </p>
+                                    ) : (
+                                      <>
+                                        <Textarea
+                                          value={expense.reason}
+                                          maxLength={500}
+                                          readOnly={!canEditOperatingExpenses}
+                                          aria-label={reasonLabel}
+                                          invalid={!valid && reasonMissing}
+                                          aria-describedby={
+                                            !valid && reasonMissing ? reasonErrorId : undefined
+                                          }
+                                          onBlur={() => touch(`${expense.id}:reason`)}
+                                          onChange={(event) =>
+                                            updateOperatingExpense(expense.id, {
+                                              reason: event.currentTarget.value,
+                                              isHistorical: false,
+                                            })
+                                          }
+                                        />
+                                        {!valid && reasonMissing ? (
+                                          <FieldError id={reasonErrorId}>
+                                            {i18n.t('settlement.errors.itemReasonEmpty', {
+                                              field: reasonLabel,
+                                            })}
+                                          </FieldError>
+                                        ) : null}
+                                      </>
+                                    )}
+                                  </Field>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+                      )}
+                    </div>
 
-              <div className="border-t border-[var(--c-divider)]" />
+                    <div className="border-t border-[var(--c-divider)]" />
 
-              <div className="flex flex-col gap-3">
-                {/* The add button keeps its full label; in ru / uz at 360 px it was
+                    <div className="flex flex-col gap-3">
+                      {/* The add button keeps its full label; in ru / uz at 360 px it was
                     squeezed and cut off. The row wraps instead. */}
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <h3 className="text-old-h3 font-semibold text-[var(--c-fg)]">
-                      {i18n.t('settlement.wages.title')}
-                    </h3>
-                    <p className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
-                      {i18n.t('settlement.wages.totals', {
-                        paid: formatMoney(paidWageTotal.value, currency),
-                        unpaid: formatMoney(unpaidWageTotal.value, currency),
-                      })}
-                    </p>
-                  </div>
-                  <Button
-                    className="shrink-0"
-                    size="sm"
-                    variant="secondary"
-                    disabled={hasHistoricalWageTotal || draft.wageItems.length >= MAX_DETAIL_ITEMS}
-                    onClick={addWageItem}
-                  >
-                    {i18n.t('settlement.wages.add')}
-                  </Button>
-                </div>
-
-                {hasHistoricalWageTotal ? (
-                  <Banner tone="info" title={i18n.t('settlement.details.historicalReadOnly')}>
-                    {i18n.t('settlement.details.historicalReadOnlyBody')}
-                  </Banner>
-                ) : null}
-
-                {draft.wageItems.length === 0 ? (
-                  <p className="rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-3 py-2 text-old-body-sm text-[var(--c-fg-muted)]">
-                    {i18n.t('settlement.wages.empty')}
-                  </p>
-                ) : (
-                  <div className="flex flex-col gap-3">
-                    {draft.wageItems.map((wage, index) => {
-                      const valid = isValidWageItem(wage, wageSelectionRequired);
-                      // DX-CLS-3: as for expense lines above.
-                      const itemLabel = i18n.t('settlement.wages.itemNumber', { n: index + 1 });
-                      const amountLabel = `${itemLabel} · ${i18n.t('settlement.wages.amount')}`;
-                      const reasonLabel = `${itemLabel} · ${i18n.t('settlement.wages.reason')}`;
-                      // DX-VIS-15: as for expense lines above.
-                      const rawAmountProblem = wage.isHistorical
-                        ? null
-                        : moneyProblem(wage.amount, { positive: true });
-                      const amountProblem = showError(rawAmountProblem !== null, `${wage.id}:amount`)
-                        ? rawAmountProblem
-                        : null;
-                      const reasonMissing = showError(
-                        !wage.isHistorical && wage.reason.trim().length === 0,
-                        `${wage.id}:reason`,
-                      );
-                      const employeeMissing =
-                        !wage.isHistorical && wageSelectionRequired && !wage.memberId;
-                      const amountErrorId = `wage-${wage.id}-amount-error`;
-                      const reasonErrorId = `wage-${wage.id}-reason-error`;
-                      const employeeErrorId = `wage-${wage.id}-employee-error`;
-                      const displayedEmployee = wage.isHistorical
-                        ? i18n.t('settlement.wages.historicalEmployee')
-                        : wage.personName || i18n.t('settlement.wages.chooseEmployee');
-                      return (
-                        <div
-                          key={wage.id}
-                          className="rounded-[var(--r-utility)] bg-[var(--c-surface-2)] p-3 ring-hairline"
-                        >
-                          <div className="mb-3 flex items-center justify-between gap-3">
-                            <span className="text-old-label font-semibold text-[var(--c-fg-muted)]">
-                              {i18n.t('settlement.wages.itemNumber', { n: index + 1 })}
-                            </span>
-                            {!wage.isHistorical ? (
-                              <Button
-                                size="sm"
-                                variant="danger-ghost"
-                                aria-label={i18n.t('settlement.wages.remove')}
-                                onClick={() => removeWageItem(wage.id)}
-                              >
-                                {i18n.t('settlement.wages.remove')}
-                              </Button>
-                            ) : null}
-                          </div>
-                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                            <Field label={i18n.t('settlement.wages.employee')}>
-                              <Button
-                                type="button"
-                                variant="secondary"
-                                className="w-full justify-between text-left"
-                                aria-invalid={employeeMissing || undefined}
-                                aria-describedby={employeeMissing ? employeeErrorId : undefined}
-                                disabled={wage.isHistorical}
-                                onClick={() => {
-                                  setWagePickerFor(wage.id);
-                                  setNewWagePickerFor(null);
-                                  setWageRoleFilter('');
-                                  setWageSearch('');
-                                }}
-                              >
-                                <span className="min-w-0 truncate">{displayedEmployee}</span>
-                                <span aria-hidden>›</span>
-                              </Button>
-                              {!wage.memberId && wage.personName ? (
-                                <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
-                                  {i18n.t('settlement.wages.legacyEmployee')}
-                                </p>
-                              ) : null}
-                              {employeeMissing ? (
-                                <FieldError id={employeeErrorId}>
-                                  {i18n.t('settlement.errors.employeeRequired')}
-                                </FieldError>
-                              ) : null}
-                            </Field>
-                            <Field label={i18n.t('settlement.wages.status')}>
-                              <Select
-                                value={wage.status}
-                                disabled={wage.isHistorical}
-                                onChange={(event) =>
-                                  updateWageItem(wage.id, {
-                                    status: event.currentTarget.value as WageItemDraft['status'],
-                                    isHistorical: false,
-                                  })
-                                }
-                              >
-                                <option value="paid">
-                                  {i18n.t('settlement.wages.status.paid')}
-                                </option>
-                                <option value="unpaid">
-                                  {i18n.t('settlement.wages.status.unpaid')}
-                                </option>
-                              </Select>
-                            </Field>
-                            <Field label={i18n.t('settlement.wages.amount')}>
-                              <NumberInput
-                                value={wage.amount}
-                                min="0.01"
-                                max="999999999999.99"
-                                step="0.01"
-                                placeholder="0"
-                                readOnly={wage.isHistorical}
-                                aria-label={amountLabel}
-                                aria-invalid={amountProblem !== null || undefined}
-                                aria-describedby={amountProblem ? amountErrorId : undefined}
-                                formatError="none"
-                                className={amountProblem ? 'border-[var(--c-danger)]' : undefined}
-                                onBlur={() => touch(`${wage.id}:amount`)}
-                                onChange={(event) =>
-                                  updateWageItem(wage.id, {
-                                    amount: event.currentTarget.value,
-                                    isHistorical: false,
-                                  })
-                                }
-                              />
-                              {amountProblem ? (
-                                <FieldError id={amountErrorId}>
-                                  {i18n.t(ITEM_MONEY_PROBLEM_MESSAGE[amountProblem], {
-                                    field: amountLabel,
-                                  })}
-                                </FieldError>
-                              ) : null}
-                            </Field>
-                          </div>
-                          <div className="mt-3">
-                            <Field label={i18n.t('settlement.wages.reason')}>
-                              {wage.isHistorical ? (
-                                <p className="rounded-[var(--r-utility)] bg-[var(--c-surface-3)] px-3 py-2 text-old-body-sm text-[var(--c-fg-muted)]">
-                                  {i18n.t('settlement.wages.historicalReason')}
-                                </p>
-                              ) : (
-                                <>
-                                  <Textarea
-                                    value={wage.reason}
-                                    maxLength={500}
-                                    aria-label={reasonLabel}
-                                    placeholder={i18n.t('settlement.wages.reasonPlaceholder')}
-                                    invalid={!valid && reasonMissing}
-                                    aria-describedby={
-                                      !valid && reasonMissing ? reasonErrorId : undefined
-                                    }
-                                    onBlur={() => touch(`${wage.id}:reason`)}
-                                    onChange={(event) =>
-                                      updateWageItem(wage.id, {
-                                        reason: event.currentTarget.value,
-                                        isHistorical: false,
-                                      })
-                                    }
-                                  />
-                                  {!valid && reasonMissing ? (
-                                    <FieldError id={reasonErrorId}>
-                                      {i18n.t('settlement.errors.itemReasonEmpty', {
-                                        field: reasonLabel,
-                                      })}
-                                    </FieldError>
-                                  ) : null}
-                                </>
-                              )}
-                            </Field>
-                          </div>
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h3 className="text-old-h3 font-semibold text-[var(--c-fg)]">
+                            {i18n.t('settlement.wages.title')}
+                          </h3>
+                          <p className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
+                            {i18n.t('settlement.wages.totals', {
+                              paid: formatMoney(paidWageTotal.value, currency),
+                              unpaid: formatMoney(unpaidWageTotal.value, currency),
+                            })}
+                          </p>
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </CardBody>
-          </Card>
-        </section>
+                        <div className="flex shrink-0 flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            loading={fillingFromAttendance}
+                            disabled={
+                              hasHistoricalWageTotal || draft.wageItems.length >= MAX_DETAIL_ITEMS
+                            }
+                            onClick={() => void fillFromAttendance()}
+                          >
+                            {i18n.t('settlement.wages.fromAttendance')}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            disabled={
+                              hasHistoricalWageTotal || draft.wageItems.length >= MAX_DETAIL_ITEMS
+                            }
+                            onClick={addWageItem}
+                          >
+                            {i18n.t('settlement.wages.add')}
+                          </Button>
+                        </div>
+                      </div>
 
-        <section className="flex flex-col gap-2">
-          <SectionLabel as="h2">{i18n.t('settlement.group.procurement')}</SectionLabel>
-          <Card>
-            <CardBody className="flex flex-col gap-3">
-              <AmountField
-                label={i18n.t('settlement.field.nextPurchaseReserve')}
-                value={draft.nextPurchaseReserve}
-                onChange={(value) => setMoney('nextPurchaseReserve', value)}
-              />
-              <AmountField
-                label={i18n.t('settlement.field.priorPurchaseAdjustment')}
-                value={draft.priorPurchaseAdjustment}
-                signed
-                onChange={(value) => setMoney('priorPurchaseAdjustment', value)}
-              />
-              <Banner tone="info" title={i18n.t('settlement.purchaseAdjustment.positive')}>
-                {i18n.t('settlement.purchaseAdjustment.help')}
-                <span className="mt-1 block">
-                  {i18n.t('settlement.purchaseAdjustment.negative')}
-                </span>
-              </Banner>
-            </CardBody>
-          </Card>
-        </section>
+                      {hasHistoricalWageTotal ? (
+                        <Banner tone="info" title={i18n.t('settlement.details.historicalReadOnly')}>
+                          {i18n.t('settlement.details.historicalReadOnlyBody')}
+                        </Banner>
+                      ) : null}
 
-        <section className="flex flex-col gap-2">
-          <SectionLabel as="h2">{i18n.t('settlement.group.cash')}</SectionLabel>
-          <Card>
-            <CardBody>
-              <AmountField
-                label={i18n.t('settlement.field.cashOnHand')}
-                value={draft.cashOnHand}
-                onChange={(value) => setMoney('cashOnHand', value)}
-              />
-            </CardBody>
-          </Card>
-        </section>
+                      {draft.wageItems.length === 0 ? (
+                        <p className="rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-3 py-2 text-old-body-sm text-[var(--c-fg-muted)]">
+                          {i18n.t('settlement.wages.empty')}
+                        </p>
+                      ) : (
+                        <div className="flex flex-col gap-3">
+                          {draft.wageItems.map((wage, index) => {
+                            const valid = isValidWageItem(wage, wageSelectionRequired);
+                            // DX-CLS-3: as for expense lines above.
+                            const itemLabel = i18n.t('settlement.wages.itemNumber', {
+                              n: index + 1,
+                            });
+                            const amountLabel = `${itemLabel} · ${i18n.t('settlement.wages.amount')}`;
+                            const reasonLabel = `${itemLabel} · ${i18n.t('settlement.wages.reason')}`;
+                            // DX-VIS-15: as for expense lines above.
+                            const rawAmountProblem = wage.isHistorical
+                              ? null
+                              : moneyProblem(wage.amount, { positive: true });
+                            const amountProblem = showError(
+                              rawAmountProblem !== null,
+                              `${wage.id}:amount`,
+                            )
+                              ? rawAmountProblem
+                              : null;
+                            const reasonMissing = showError(
+                              !wage.isHistorical && wage.reason.trim().length === 0,
+                              `${wage.id}:reason`,
+                            );
+                            const employeeMissing =
+                              !wage.isHistorical && wageSelectionRequired && !wage.memberId;
+                            const amountErrorId = `wage-${wage.id}-amount-error`;
+                            const reasonErrorId = `wage-${wage.id}-reason-error`;
+                            const employeeErrorId = `wage-${wage.id}-employee-error`;
+                            const displayedEmployee = wage.isHistorical
+                              ? i18n.t('settlement.wages.historicalEmployee')
+                              : wage.personName || i18n.t('settlement.wages.chooseEmployee');
+                            return (
+                              <div
+                                key={wage.id}
+                                className="rounded-[var(--r-utility)] bg-[var(--c-surface-2)] p-3 ring-hairline"
+                              >
+                                <div className="mb-3 flex items-center justify-between gap-3">
+                                  <span className="text-old-label font-semibold text-[var(--c-fg-muted)]">
+                                    {i18n.t('settlement.wages.itemNumber', { n: index + 1 })}
+                                  </span>
+                                  {!wage.isHistorical ? (
+                                    <Button
+                                      size="sm"
+                                      variant="danger-ghost"
+                                      aria-label={i18n.t('settlement.wages.remove')}
+                                      onClick={() => removeWageItem(wage.id)}
+                                    >
+                                      {i18n.t('settlement.wages.remove')}
+                                    </Button>
+                                  ) : null}
+                                </div>
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                  <Field label={i18n.t('settlement.wages.employee')}>
+                                    <Button
+                                      type="button"
+                                      variant="secondary"
+                                      className="w-full justify-between text-left"
+                                      aria-invalid={employeeMissing || undefined}
+                                      aria-describedby={
+                                        employeeMissing ? employeeErrorId : undefined
+                                      }
+                                      disabled={wage.isHistorical}
+                                      onClick={() => {
+                                        setWagePickerFor(wage.id);
+                                        setNewWagePickerFor(null);
+                                        setWageRoleFilter('');
+                                        setWageSearch('');
+                                      }}
+                                    >
+                                      <span className="min-w-0 truncate">{displayedEmployee}</span>
+                                      <span aria-hidden>›</span>
+                                    </Button>
+                                    {!wage.memberId && wage.personName ? (
+                                      <p className="mt-1 text-old-label text-[var(--c-fg-muted)]">
+                                        {i18n.t('settlement.wages.legacyEmployee')}
+                                      </p>
+                                    ) : null}
+                                    {employeeMissing ? (
+                                      <FieldError id={employeeErrorId}>
+                                        {i18n.t('settlement.errors.employeeRequired')}
+                                      </FieldError>
+                                    ) : null}
+                                  </Field>
+                                  <Field label={i18n.t('settlement.wages.status')}>
+                                    <Select
+                                      value={wage.status}
+                                      disabled={wage.isHistorical}
+                                      onChange={(event) =>
+                                        updateWageItem(wage.id, {
+                                          status: event.currentTarget
+                                            .value as WageItemDraft['status'],
+                                          isHistorical: false,
+                                        })
+                                      }
+                                    >
+                                      <option value="paid">
+                                        {i18n.t('settlement.wages.status.paid')}
+                                      </option>
+                                      <option value="unpaid">
+                                        {i18n.t('settlement.wages.status.unpaid')}
+                                      </option>
+                                    </Select>
+                                  </Field>
+                                  <Field label={i18n.t('settlement.wages.amount')}>
+                                    <NumberInput
+                                      value={wage.amount}
+                                      min="0.01"
+                                      max="999999999999.99"
+                                      step="0.01"
+                                      placeholder="0"
+                                      readOnly={wage.isHistorical}
+                                      aria-label={amountLabel}
+                                      aria-invalid={amountProblem !== null || undefined}
+                                      aria-describedby={amountProblem ? amountErrorId : undefined}
+                                      formatError="none"
+                                      className={
+                                        amountProblem ? 'border-[var(--c-danger)]' : undefined
+                                      }
+                                      onBlur={() => touch(`${wage.id}:amount`)}
+                                      onChange={(event) =>
+                                        updateWageItem(wage.id, {
+                                          amount: event.currentTarget.value,
+                                          isHistorical: false,
+                                        })
+                                      }
+                                    />
+                                    {amountProblem ? (
+                                      <FieldError id={amountErrorId}>
+                                        {i18n.t(ITEM_MONEY_PROBLEM_MESSAGE[amountProblem], {
+                                          field: amountLabel,
+                                        })}
+                                      </FieldError>
+                                    ) : null}
+                                  </Field>
+                                </div>
+                                <div className="mt-3">
+                                  <Field label={i18n.t('settlement.wages.reason')}>
+                                    {wage.isHistorical ? (
+                                      <p className="rounded-[var(--r-utility)] bg-[var(--c-surface-3)] px-3 py-2 text-old-body-sm text-[var(--c-fg-muted)]">
+                                        {i18n.t('settlement.wages.historicalReason')}
+                                      </p>
+                                    ) : (
+                                      <>
+                                        <Textarea
+                                          value={wage.reason}
+                                          maxLength={500}
+                                          aria-label={reasonLabel}
+                                          placeholder={i18n.t('settlement.wages.reasonPlaceholder')}
+                                          invalid={!valid && reasonMissing}
+                                          aria-describedby={
+                                            !valid && reasonMissing ? reasonErrorId : undefined
+                                          }
+                                          onBlur={() => touch(`${wage.id}:reason`)}
+                                          onChange={(event) =>
+                                            updateWageItem(wage.id, {
+                                              reason: event.currentTarget.value,
+                                              isHistorical: false,
+                                            })
+                                          }
+                                        />
+                                        {!valid && reasonMissing ? (
+                                          <FieldError id={reasonErrorId}>
+                                            {i18n.t('settlement.errors.itemReasonEmpty', {
+                                              field: reasonLabel,
+                                            })}
+                                          </FieldError>
+                                        ) : null}
+                                      </>
+                                    )}
+                                  </Field>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </CardBody>
+                </Card>
+              </section>
 
-        <Card>
-          <CardBody className="flex flex-col gap-3">
-            <Field label={i18n.t('settlement.field.note')}>
-              <Textarea
-                value={draft.note}
-                maxLength={1000}
-                aria-label={i18n.t('settlement.field.note')}
-                placeholder={i18n.t('settlement.note.placeholder')}
-                onChange={(event) =>
-                  setDraft((current) => ({ ...current, note: event.target.value }))
+              <section className="flex flex-col gap-2">
+                <SectionLabel as="h2">{i18n.t('settlement.group.procurement')}</SectionLabel>
+                <Card>
+                  <CardBody className="flex flex-col gap-3">
+                    <AmountField
+                      label={i18n.t('settlement.field.nextPurchaseReserve')}
+                      value={draft.nextPurchaseReserve}
+                      onChange={(value) => setMoney('nextPurchaseReserve', value)}
+                    />
+                    <AmountField
+                      label={i18n.t('settlement.field.priorPurchaseAdjustment')}
+                      value={draft.priorPurchaseAdjustment}
+                      signed
+                      onChange={(value) => setMoney('priorPurchaseAdjustment', value)}
+                    />
+                    <Banner tone="info" title={i18n.t('settlement.purchaseAdjustment.positive')}>
+                      {i18n.t('settlement.purchaseAdjustment.help')}
+                      <span className="mt-1 block">
+                        {i18n.t('settlement.purchaseAdjustment.negative')}
+                      </span>
+                    </Banner>
+                  </CardBody>
+                </Card>
+              </section>
+
+              <section className="flex flex-col gap-2">
+                <SectionLabel as="h2">{i18n.t('settlement.group.cash')}</SectionLabel>
+                <Card>
+                  <CardBody>
+                    <AmountField
+                      label={i18n.t('settlement.field.cashOnHand')}
+                      value={draft.cashOnHand}
+                      onChange={(value) => setMoney('cashOnHand', value)}
+                    />
+                  </CardBody>
+                </Card>
+              </section>
+
+              <Card>
+                <CardBody className="flex flex-col gap-3">
+                  <Field label={i18n.t('settlement.field.note')}>
+                    <Textarea
+                      value={draft.note}
+                      maxLength={1000}
+                      aria-label={i18n.t('settlement.field.note')}
+                      placeholder={i18n.t('settlement.note.placeholder')}
+                      onChange={(event) =>
+                        setDraft((current) => ({ ...current, note: event.target.value }))
+                      }
+                    />
+                  </Field>
+                  {needsCorrectionReason ? (
+                    <Field
+                      label={i18n.t('settlement.field.correctionReason')}
+                      hint={i18n.t('settlement.correction.required')}
+                    >
+                      <Textarea
+                        value={draft.correctionReason}
+                        maxLength={500}
+                        invalid={!correctionReady}
+                        placeholder={i18n.t('settlement.correction.placeholder')}
+                        onChange={(event) =>
+                          setDraft((current) => ({
+                            ...current,
+                            correctionReason: event.target.value,
+                          }))
+                        }
+                      />
+                    </Field>
+                  ) : null}
+                </CardBody>
+              </Card>
+            </fieldset>
+
+            {/* A11Y-2: one summary that counts what to fix and goes there. */}
+            {fieldsToFix > 0 && (invalidMoney || invalidDetails || !correctionReady) ? (
+              <Banner
+                tone="warn"
+                title={i18n.t('settlement.errors.fieldsToFix', { n: fieldsToFix })}
+                action={
+                  <Button size="sm" variant="pearl" onClick={showFirstFieldToFix}>
+                    {i18n.t('settlement.errors.goToFirst')}
+                  </Button>
                 }
-              />
-            </Field>
-            {needsCorrectionReason ? (
-              <Field
-                label={i18n.t('settlement.field.correctionReason')}
-                hint={i18n.t('settlement.correction.required')}
               >
-                <Textarea
-                  value={draft.correctionReason}
-                  maxLength={500}
-                  invalid={!correctionReady}
-                  placeholder={i18n.t('settlement.correction.placeholder')}
-                  onChange={(event) =>
-                    setDraft((current) => ({ ...current, correctionReason: event.target.value }))
+                {invalidMoney ? (
+                  <span className="block">{i18n.t('settlement.errors.invalidMoney')}</span>
+                ) : null}
+                {invalidDetails ? (
+                  <span className="block">{i18n.t('settlement.errors.invalidDetailsBody')}</span>
+                ) : null}
+              </Banner>
+            ) : null}
+
+            <Card>
+              <CardHeader>
+                <CardTitle>{i18n.t('settlement.summary.title')}</CardTitle>
+              </CardHeader>
+              <CardBody>
+                <SummaryRow
+                  label={i18n.t('settlement.summary.totalRevenue')}
+                  value={
+                    summary.totalRevenue === null
+                      ? null
+                      : formatMoney(summary.totalRevenue, currency)
                   }
                 />
-              </Field>
-            ) : null}
-          </CardBody>
-        </Card>
-        </fieldset>
-
-        {/* A11Y-2: one summary that counts what to fix and goes there. */}
-        {fieldsToFix > 0 && (invalidMoney || invalidDetails || !correctionReady) ? (
-          <Banner
-            tone="warn"
-            title={i18n.t('settlement.errors.fieldsToFix', { n: fieldsToFix })}
-            action={
-              <Button size="sm" variant="pearl" onClick={showFirstFieldToFix}>
-                {i18n.t('settlement.errors.goToFirst')}
-              </Button>
-            }
-          >
-            {invalidMoney ? <span className="block">{i18n.t('settlement.errors.invalidMoney')}</span> : null}
-            {invalidDetails ? (
-              <span className="block">{i18n.t('settlement.errors.invalidDetailsBody')}</span>
-            ) : null}
-          </Banner>
-        ) : null}
-
-        <Card>
-          <CardHeader>
-            <CardTitle>{i18n.t('settlement.summary.title')}</CardTitle>
-          </CardHeader>
-          <CardBody>
-            <SummaryRow
-              label={i18n.t('settlement.summary.totalRevenue')}
-              value={summary.totalRevenue === null ? null : formatMoney(summary.totalRevenue, currency)}
-            />
-            <SummaryRow
-              label={i18n.t('settlement.summary.paidOutflows')}
-              value={summary.paidOutflows === null ? null : formatMoney(summary.paidOutflows, currency)}
-            />
-            <SummaryRow
-              label={i18n.t('settlement.summary.futureCommitments')}
-              value={
-                summary.futureCommitments === null
-                  ? null
-                  : formatMoney(summary.futureCommitments, currency)
-              }
-            />
-            <SummaryRow
-              label={i18n.t('settlement.summary.priorPurchaseAdjustment')}
-              value={
-                summary.priorPurchaseAdjustment === null
-                  ? null
-                  : formatSignedMoney(summary.priorPurchaseAdjustment, currency)
-              }
-            />
-            <SummaryRow
-              label={i18n.t('settlement.summary.endingCash')}
-              value={summary.endingCash === null ? null : formatMoney(summary.endingCash, currency)}
-            />
-          </CardBody>
-        </Card>
-        </>
+                <SummaryRow
+                  label={i18n.t('settlement.summary.paidOutflows')}
+                  value={
+                    summary.paidOutflows === null
+                      ? null
+                      : formatMoney(summary.paidOutflows, currency)
+                  }
+                />
+                <SummaryRow
+                  label={i18n.t('settlement.summary.futureCommitments')}
+                  value={
+                    summary.futureCommitments === null
+                      ? null
+                      : formatMoney(summary.futureCommitments, currency)
+                  }
+                />
+                <SummaryRow
+                  label={i18n.t('settlement.summary.priorPurchaseAdjustment')}
+                  value={
+                    summary.priorPurchaseAdjustment === null
+                      ? null
+                      : formatSignedMoney(summary.priorPurchaseAdjustment, currency)
+                  }
+                />
+                <SummaryRow
+                  label={i18n.t('settlement.summary.endingCash')}
+                  value={
+                    summary.endingCash === null ? null : formatMoney(summary.endingCash, currency)
+                  }
+                />
+              </CardBody>
+            </Card>
+          </>
         )}
 
         <section className="flex flex-col gap-2">
@@ -2091,7 +2206,11 @@ function SettlementHistory({ settlementId }: { settlementId: string }) {
       </button>
       {open ? (
         history.isPending ? (
-          <div role="status" aria-label={i18n.t('common.loading')} className="flex justify-center py-4">
+          <div
+            role="status"
+            aria-label={i18n.t('common.loading')}
+            className="flex justify-center py-4"
+          >
             <Spinner size={28} />
           </div>
         ) : history.isError ? (

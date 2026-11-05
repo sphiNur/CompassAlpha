@@ -348,3 +348,58 @@ export function dueReminders(input: {
   }
   return out;
 }
+
+/**
+ * Minutes a clock-out runs past the shift's end, counted only once it is
+ * at least `afterMinutes` late (a few minutes of tidying up is not
+ * overtime). 0 otherwise.
+ */
+export function overtimeMinutes(endsAt: Date, outAt: Date, afterMinutes: number): number {
+  const past = Math.floor((outAt.getTime() - endsAt.getTime()) / MINUTE);
+  return past >= afterMinutes ? past : 0;
+}
+
+export type PayStatus =
+  /** Worked the planned shift(s); net = wage − deductions. */
+  | 'payable'
+  /** Planned but never came: no pay. */
+  | 'absent'
+  /** A missing punch or a day without a shift: a manager fixes it first. */
+  | 'needsReview'
+  /** The shift is still running or has not started. */
+  | 'inProgress'
+  /** No daily wage set for that day. */
+  | 'noRate';
+
+export interface DayPay {
+  status: PayStatus;
+  wageCents: number;
+  deductionCents: number;
+  /** Null unless payable / absent. */
+  netCents: number | null;
+}
+
+/**
+ * One person's pay for one day from its attendance verdict (owner decision
+ * 2026-11-05): the daily wage, less late + early minutes in proportion to
+ * the planned minutes, rounded half-up to the cent, never below zero.
+ */
+export function dayPay(day: DaySummary, wageCents: number | null): DayPay {
+  if (wageCents === null)
+    return { status: 'noRate', wageCents: 0, deductionCents: 0, netCents: null };
+  const has = (f: DayFlag) => day.flags.includes(f);
+  if (has('upcoming') || has('onDuty')) {
+    return { status: 'inProgress', wageCents, deductionCents: 0, netCents: null };
+  }
+  if (has('absent')) return { status: 'absent', wageCents, deductionCents: 0, netCents: 0 };
+  if (has('missingIn') || has('missingOut') || has('unscheduled') || day.plannedMinutes <= 0) {
+    return { status: 'needsReview', wageCents, deductionCents: 0, netCents: null };
+  }
+  const short = Math.min(day.plannedMinutes, day.lateMinutes + day.earlyMinutes);
+  // Integer half-up: (2·w·m + p) ÷ 2p.
+  const deductionCents = Math.min(
+    wageCents,
+    Math.floor((2 * wageCents * short + day.plannedMinutes) / (2 * day.plannedMinutes)),
+  );
+  return { status: 'payable', wageCents, deductionCents, netCents: wageCents - deductionCents };
+}

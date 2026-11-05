@@ -4,7 +4,15 @@
  * rules — bound phone, location radius, grace minutes.
  */
 import { useState } from 'react';
-import { Button, DataState, Field, Input, Switch, useToast } from '@compass/ui';
+import {
+  Button,
+  DataState,
+  Field,
+  Input,
+  Switch,
+  normalizeDecimalInput,
+  useToast,
+} from '@compass/ui';
 import { useI18n } from '../../hooks/useI18n';
 import { haptic } from '../../hooks/useTelegram';
 import { currentLocation, isLocationError } from '../../lib/attendanceLocation';
@@ -103,12 +111,65 @@ function PeopleBlock({ storeId }: { storeId: string }) {
                       {i18n.t('attendance.settings.resetDevice')}
                     </Button>
                   ) : null}
+                  {m.enabled ? (
+                    <WageField storeId={storeId} memberId={m.memberId} current={m.dailyWage} />
+                  ) : null}
                 </li>
               ))}
           </ul>
         )}
       </DataState>
     </section>
+  );
+}
+
+/** A person's daily wage from today on (phase 2); past days keep their rate. */
+function WageField({
+  storeId,
+  memberId,
+  current,
+}: {
+  storeId: string;
+  memberId: string;
+  current: string | null;
+}) {
+  const i18n = useI18n();
+  const toast = useToast();
+  const errToast = useErrToast();
+  const utils = trpc.useUtils();
+  const shown = current ? String(Number(current)) : '';
+  const [text, setText] = useState(shown);
+  const value = normalizeDecimalInput(text);
+  const valid = /^\d{1,12}(\.\d{1,2})?$/.test(value);
+  const save = trpc.attendance.payRateSet.useMutation({
+    onSuccess: () => {
+      haptic('success');
+      toast.success(i18n.t('attendance.settings.wageSaved'));
+      void utils.attendance.sheet.invalidate();
+    },
+    onError: errToast('attendance.errors.saveFailed'),
+  });
+  return (
+    <div className="mt-2 flex items-end gap-2">
+      <Field label={i18n.t('attendance.settings.dailyWage')} className="min-w-0 flex-1">
+        <Input
+          inputMode="decimal"
+          value={text}
+          invalid={text !== '' && !valid}
+          placeholder={i18n.t('attendance.settings.dailyWageNotSet')}
+          onChange={(e) => setText(e.target.value)}
+        />
+      </Field>
+      <Button
+        size="sm"
+        variant="secondary"
+        disabled={!valid || value === shown}
+        loading={save.isPending}
+        onClick={() => save.mutate({ storeId, memberId, dailyWage: value, effectiveFrom: today() })}
+      >
+        {i18n.t('common.save')}
+      </Button>
+    </div>
   );
 }
 
@@ -131,6 +192,7 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
   const [geo, setGeo] = useState(initial.geo);
   const [radius, setRadius] = useState(String(initial.geo?.radiusM ?? 100));
   const [grace, setGrace] = useState(String(initial.graceMinutes));
+  const [overtimeAfter, setOvertimeAfter] = useState(String(initial.overtimeAfterMinutes));
   const [locating, setLocating] = useState(false);
 
   const save = trpc.attendance.policySave.useMutation({
@@ -147,7 +209,9 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
   const graceNum = Number(grace);
   const radiusOk = Number.isInteger(radiusNum) && radiusNum >= 20 && radiusNum <= 5000;
   const graceOk = Number.isInteger(graceNum) && graceNum >= 0 && graceNum <= 120;
-  const canSave = graceOk && (!requireGeo || (geo !== null && radiusOk));
+  const overtimeNum = Number(overtimeAfter);
+  const overtimeOk = Number.isInteger(overtimeNum) && overtimeNum >= 5 && overtimeNum <= 240;
+  const canSave = graceOk && overtimeOk && (!requireGeo || (geo !== null && radiusOk));
 
   const takeCurrentLocation = async () => {
     setLocating(true);
@@ -236,6 +300,18 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
             onChange={(e) => setGrace(e.target.value)}
           />
         </Field>
+        <Field
+          label={i18n.t('attendance.settings.overtimeAfter')}
+          hint={i18n.t('attendance.settings.overtimeAfterHint')}
+          className="mt-3"
+        >
+          <Input
+            inputMode="numeric"
+            value={overtimeAfter}
+            invalid={!overtimeOk}
+            onChange={(e) => setOvertimeAfter(e.target.value)}
+          />
+        </Field>
       </div>
 
       <Button
@@ -249,6 +325,7 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
             requireGeo,
             geo: geo && radiusOk ? { ...geo, radiusM: radiusNum } : null,
             graceMinutes: graceNum,
+            overtimeAfterMinutes: overtimeNum,
           })
         }
       >

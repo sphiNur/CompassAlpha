@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  dayPay,
   distanceMeters,
   dueReminders,
+  overtimeMinutes,
   localTime,
   nextPunchKind,
   shiftWindow,
@@ -211,4 +213,56 @@ describe('reminders', () => {
       [],
     );
   });
+});
+
+describe('pay', () => {
+  const D = '2026-11-05';
+  const day = (s0: string, e0: string, punches: PunchInput[], now = at(D, '23:00')) =>
+    run([shift('s', D, s0, e0)], punches, now)[0]!;
+  test('full day is the daily wage', () => {
+    const p = dayPay(
+      day('09:00', '18:00', [punch('in', D, '09:00'), punch('out', D, '18:00')]),
+      10_000_000,
+    );
+    expect(p).toEqual({
+      status: 'payable',
+      wageCents: 10_000_000,
+      deductionCents: 0,
+      netCents: 10_000_000,
+    });
+  });
+  test('late and early are deducted in proportion, half-up to the cent', () => {
+    // 9 h shift = 540 min; 20 late + 7 early = 27 min → 27/540 = 5 %.
+    const p = dayPay(
+      day('09:00', '18:00', [punch('in', D, '09:20'), punch('out', D, '17:53')]),
+      10_000_000,
+    );
+    expect(p.deductionCents).toBe(500_000);
+    expect(p.netCents).toBe(9_500_000);
+    // 1 min of 540 on 100.00 → 0.185… → 0.19
+    const q = dayPay(
+      day('09:00', '18:00', [punch('in', D, '09:06'), punch('out', D, '18:00')]),
+      10_000,
+    );
+    expect(q.deductionCents).toBe(111); // 6 late (grace 5 passed) → 6/540·100.00 = 1.111 → 1.11
+  });
+  test('absent pays nothing; missing punch waits for the manager; no rate says so', () => {
+    expect(dayPay(day('09:00', '18:00', []), 10_000).status).toBe('absent');
+    expect(dayPay(day('09:00', '18:00', [punch('in', D, '09:00')]), 10_000).status).toBe(
+      'needsReview',
+    );
+    expect(
+      dayPay(day('09:00', '18:00', [punch('in', D, '09:00')], at(D, '12:00')), 10_000).status,
+    ).toBe('inProgress');
+    expect(
+      dayPay(day('09:00', '18:00', [punch('in', D, '09:00'), punch('out', D, '18:00')]), null)
+        .status,
+    ).toBe('noRate');
+  });
+});
+
+test('overtime counts only past the threshold', () => {
+  const end = at('2026-11-05', '18:00');
+  expect(overtimeMinutes(end, at('2026-11-05', '18:20'), 30)).toBe(0);
+  expect(overtimeMinutes(end, at('2026-11-05', '18:45'), 30)).toBe(45);
 });

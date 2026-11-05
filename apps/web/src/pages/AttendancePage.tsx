@@ -11,7 +11,7 @@
  * says it did.
  */
 import { useEffect, useState } from 'react';
-import { Banner, Button, DataState, EmptyState, PageHeader } from '@compass/ui';
+import { Banner, Button, DataState, EmptyState, PageHeader, Sheet, Textarea } from '@compass/ui';
 import { haptic } from '../hooks/useTelegram';
 import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
 import { useStoreContext } from '../components/StoreSwitcher';
@@ -19,7 +19,9 @@ import { useDateFormat, useI18n } from '../hooks/useI18n';
 import { useOnline } from '../hooks/useOnline';
 import { attendanceDeviceId, devicePlatform } from '../lib/attendanceDevice';
 import { currentLocation, isLocationError, openLocationSettings } from '../lib/attendanceLocation';
+import { errorVars, serverErrorKey } from '../lib/errorText';
 import { useErrToast } from '../lib/errToast';
+import { minutesText } from '../lib/attendanceFormat';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 
@@ -81,13 +83,32 @@ function ClockPanel({ storeId }: { storeId: string }) {
     { deviceId: deviceId ?? undefined },
     { enabled: deviceId !== null, refetchInterval: 60_000 },
   );
+  // A clock-out well past the shift asks why (phase 2): the server refuses
+  // it without a reason, and the same punch is sent again with one.
+  const [overtimeAsk, setOvertimeAsk] = useState<{
+    minutes: number;
+    location: { lat: number; lng: number; accuracy: number } | null;
+  } | null>(null);
+  const [overtimeReason, setOvertimeReason] = useState('');
   const punch = trpc.attendance.punch.useMutation({
     onSuccess: (data) => {
       haptic('success');
+      setOvertimeAsk(null);
+      setOvertimeReason('');
       setDone({ kind: data.kind, time: data.time });
       void utils.attendance.me.invalidate();
     },
-    onError: errToast('attendance.errors.punchFailed'),
+    onError: (err, vars) => {
+      if (serverErrorKey(err) === 'attendance.errors.overtimeReasonRequired') {
+        haptic('warning');
+        setOvertimeAsk({
+          minutes: Number(errorVars(err).minutes ?? 0),
+          location: vars.location ?? null,
+        });
+        return;
+      }
+      errToast('attendance.errors.punchFailed')(err);
+    },
   });
 
   const store = me.data?.stores.find((x) => x.storeId === storeId) ?? null;
@@ -218,6 +239,48 @@ function ClockPanel({ storeId }: { storeId: string }) {
                 ) : null}
               </ul>
               <UpcomingShifts shifts={store.shifts} today={store.today} />
+              <Sheet
+                open={overtimeAsk !== null}
+                onOpenChange={(open) => !open && setOvertimeAsk(null)}
+                title={i18n.t('attendance.overtime.askTitle')}
+                description={
+                  overtimeAsk
+                    ? i18n.t('attendance.overtime.askBody', {
+                        duration: minutesText(i18n, overtimeAsk.minutes),
+                      })
+                    : ''
+                }
+              >
+                <div className="flex flex-col gap-3 py-3">
+                  <Textarea
+                    rows={3}
+                    maxLength={300}
+                    value={overtimeReason}
+                    onChange={(e) => setOvertimeReason(e.target.value)}
+                    placeholder={i18n.t('attendance.overtime.reasonPlaceholder')}
+                    aria-label={i18n.t('attendance.overtime.askTitle')}
+                  />
+                  <Button
+                    block
+                    disabled={overtimeReason.trim().length === 0 || !deviceId}
+                    loading={punch.isPending}
+                    onClick={() =>
+                      deviceId &&
+                      overtimeAsk &&
+                      punch.mutate({
+                        storeId,
+                        kind: 'out',
+                        deviceId,
+                        platform: devicePlatform(),
+                        location: overtimeAsk.location,
+                        overtimeReason: overtimeReason.trim(),
+                      })
+                    }
+                  >
+                    {i18n.t('attendance.clock.out')}
+                  </Button>
+                </div>
+              </Sheet>
             </>
           )
         }
