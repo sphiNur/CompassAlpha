@@ -2259,10 +2259,17 @@ function ReviewList({
                   return (
                     <li
                       key={r.skuId}
-                      className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-[var(--c-divider)] px-4 py-2 first:border-t-0 ${total > 0 ? '' : 'opacity-60'}`}
+                      className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-[var(--c-divider)] px-4 py-2 first:border-t-0"
                     >
+                      {/* Walkthrough F4 (2026-11-05): a line taken to 0 dimmed
+                          the whole row, + included, so it looked as if it
+                          could not be added back. Only the name dims now. */}
                       <div className="min-w-[7rem] flex-1">
-                        <div className="break-words text-old-h2 font-semibold leading-snug text-[var(--c-fg)]">
+                        <div
+                          className={`break-words text-old-h2 font-semibold leading-snug ${
+                            total > 0 ? 'text-[var(--c-fg)]' : 'text-[var(--c-fg-muted)] line-through'
+                          }`}
+                        >
                           {r.name}
                         </div>
                         {r.archived ? (
@@ -2603,7 +2610,7 @@ function SessionExtrasEditor({
               key={`${r.name}-${i}`}
               className="flex items-baseline justify-between gap-2 text-old-body"
             >
-              <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">{r.name}</span>
+              <span className="min-w-0 flex-1 break-words text-[var(--c-fg)]">{r.name}</span>
               <span className="shrink-0 tabular-nums text-[var(--c-fg-muted)]">
                 {formatQty(r.qty)} {unitLabel(r.unit, r.qty)}
               </span>
@@ -2706,6 +2713,9 @@ function ExtraRowEditor({
         invalid && 'ring-1 ring-[var(--c-danger)]',
       )}
     >
+      {/* Walkthrough F1 (2026-11-05): name, qty, unit and remove shared one
+          line, leaving the name a sliver (and less in Russian). The name
+          now has its own line; qty and unit sit under it. */}
       <div className="flex items-center gap-2">
         <div
           className="relative min-w-0 flex-1"
@@ -2767,6 +2777,9 @@ function ExtraRowEditor({
             </ul>
           ) : null}
         </div>
+        <RemoveExtraButton label={i18n.t('order.extras.remove')} onClick={onRemove} />
+      </div>
+      <div className="mt-2 flex items-center gap-2">
         <NumberInput
           value={row.qty}
           // M3.34 (2026-05-19): step + inputMode track the unit so a
@@ -2778,10 +2791,10 @@ function ExtraRowEditor({
           min="0"
           aria-invalid={invalid || undefined}
           aria-label={i18n.t('order.extras.qtyLabel')}
-          className="w-16 text-center"
+          className="w-24 text-center"
           onChange={(e) => onChange({ qty: e.target.value })}
         />
-        <div className="w-20 shrink-0">
+        <div className="w-28 shrink-0">
           <Select
             value={row.unit}
             aria-label={i18n.t('order.extras.unitLabel')}
@@ -2802,25 +2815,6 @@ function ExtraRowEditor({
             ))}
           </Select>
         </div>
-        <button
-          type="button"
-          aria-label={i18n.t('order.extras.remove')}
-          onClick={onRemove}
-          className={cn(
-            'press inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full',
-            'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)] ring-hairline',
-            'hover:text-[var(--c-danger)]',
-          )}
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
-            <path
-              d="M3.5 3.5l7 7M10.5 3.5l-7 7"
-              stroke="currentColor"
-              strokeWidth="1.6"
-              strokeLinecap="round"
-            />
-          </svg>
-        </button>
       </div>
       {invalid ? (
         <p className="mt-1 px-1 text-old-label text-[var(--c-danger)]">
@@ -2830,5 +2824,29 @@ function ExtraRowEditor({
         </p>
       ) : null}
     </div>
+  );
+}
+
+function RemoveExtraButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      className={cn(
+        'press inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full',
+        'bg-[var(--c-surface-2)] text-[var(--c-fg-muted)] ring-hairline',
+        'hover:text-[var(--c-danger)]',
+      )}
+    >
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+        <path
+          d="M3.5 3.5l7 7M10.5 3.5l-7 7"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+        />
+      </svg>
+    </button>
   );
 }

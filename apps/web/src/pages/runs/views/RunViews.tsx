@@ -148,7 +148,7 @@ export function PerStoreView({
                           key={`${e.name}-${idx}`}
                           className="flex items-baseline justify-between gap-2 text-old-body-sm"
                         >
-                          <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">
+                          <span className="min-w-0 flex-1 break-words text-[var(--c-fg)]">
                             {e.name}
                             {e.note ? (
                               <span className="ml-1 text-[var(--c-fg-muted)]">· {e.note}</span>
@@ -655,7 +655,9 @@ export function RunExtrasCard({
                         </span>
                         {/* APR-18: the mark is decorative; say the status. */}
                         <span className="sr-only">{v.label}</span>
-                        <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">
+                        {/* F2 (2026-11-05): a staff member's own words; the point is
+                            often in the second half, so they wrap. */}
+                        <span className="min-w-0 flex-1 break-words text-[var(--c-fg)]">
                           {e.name}
                           {e.note ? (
                             <span className="ml-1 text-[var(--c-fg-muted)]">

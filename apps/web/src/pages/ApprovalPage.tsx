@@ -1197,7 +1197,7 @@ function SessionItems({
               key={`${e.name}-${idx}`}
               className="flex items-baseline justify-between gap-2 text-old-body"
             >
-              <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">{e.name}</span>
+              <span className="min-w-0 flex-1 break-words text-[var(--c-fg)]">{e.name}</span>
               <span className="shrink-0 tabular-nums text-[var(--c-fg-muted)]">
                 {formatQty(e.qty)} {unitLabel(e.unit, e.qty)}
               </span>
@@ -1404,35 +1404,43 @@ function SessionItems({
           return (
             <li
               key={key}
-              className="flex items-center justify-between gap-2 border-b border-[var(--c-divider)] py-3 text-old-body last:border-b-0"
+              className="border-b border-[var(--c-divider)] py-3 text-old-body last:border-b-0"
             >
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[var(--c-fg-muted)] line-through">
+              {/* Walkthrough F3 (2026-11-05): the hint sat beside the stepper
+                  and broke over three lines ("提交/时"). It now runs under
+                  the name and stepper at full width. */}
+              <div className="flex items-center justify-between gap-2">
+                <span className="min-w-0 flex-1 break-words text-[var(--c-fg-muted)] line-through">
                   {sku ? productName(sku) : z.skuId.slice(0, 8)}
                 </span>
-                <span className="text-old-label tabular-nums text-[var(--c-fg-muted)]">
-                  {i18n.t('approval.zeroed')}
-                  {sub?.kind === 'removed'
-                    ? ` · ${i18n.t('order.submitted.was', {
+                {canEdit && sku ? (
+                  <QtyControl
+                    size="sm"
+                    itemLabel={productName(sku)}
+                    value={drafts.value(key) ?? 0}
+                    step={Number(sku.step)}
+                    unit={unitLabel(sku.unit)}
+                    unitFor={(qty) => unitLabel(sku.unit, qty)}
+                    max={ORDER_QTY_MAX}
+                    disabled={drafts.isSaving(key)}
+                    onChange={(next) => drafts.set(key, next)}
+                  />
+                ) : null}
+              </div>
+              <p className="mt-1 text-old-label tabular-nums text-[var(--c-fg-muted)]">
+                {i18n.t('approval.zeroed')}
+                {sub?.kind === 'removed' ? (
+                  <>
+                    {' · '}
+                    <span className="whitespace-nowrap">
+                      {i18n.t('order.submitted.was', {
                         qty: formatQty(sub.before),
                         unit: unitLabel(sku?.unit ?? '', sub.before),
-                      })}`
-                    : null}
-                </span>
-              </span>
-              {canEdit && sku ? (
-                <QtyControl
-                  size="sm"
-                  itemLabel={productName(sku)}
-                  value={drafts.value(key) ?? 0}
-                  step={Number(sku.step)}
-                  unit={unitLabel(sku.unit)}
-                  unitFor={(qty) => unitLabel(sku.unit, qty)}
-                  max={ORDER_QTY_MAX}
-                  disabled={drafts.isSaving(key)}
-                  onChange={(next) => drafts.set(key, next)}
-                />
-              ) : null}
+                      })}
+                    </span>
+                  </>
+                ) : null}
+              </p>
             </li>
           );
         })}

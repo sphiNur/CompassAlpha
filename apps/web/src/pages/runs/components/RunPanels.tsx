@@ -1756,7 +1756,13 @@ export function PreviewSummaryCard({
                 {i18n.t('order.extras.label')}
               </span>
             ) : null}
-            <span className="min-w-0 flex-1 truncate text-[var(--c-fg)]">{line.name}</span>
+            <span
+              className={`min-w-0 flex-1 text-[var(--c-fg)] ${
+                line.kind === 'extra' ? 'break-words' : 'truncate'
+              }`}
+            >
+              {line.name}
+            </span>
             <span
               className={`shrink-0 text-old-label font-semibold tabular-nums ${
                 line.total === null ? 'text-[var(--c-warning-fg)]' : 'text-[var(--c-fg)]'
