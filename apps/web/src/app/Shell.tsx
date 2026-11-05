@@ -391,6 +391,12 @@ function ShellInner() {
   const requestSetTab = (nextTab: Tab) => {
     // DX-SHL-10: tapping the tab you are on goes back to its top.
     if (nextTab === tab) {
+      // Walkthrough F15 (2026-11-05): inside an admin page, tapping 管理
+      // again goes back to the admin menu, as tab bars do elsewhere.
+      if (tab === 'admin' && useNavStore.getState().adminSection !== 'home') {
+        useNavStore.getState().resetAdminDrillDown();
+        return;
+      }
       mainRef.current?.scrollTo({ top: 0, behavior: scrollBehavior() });
       return;
     }
