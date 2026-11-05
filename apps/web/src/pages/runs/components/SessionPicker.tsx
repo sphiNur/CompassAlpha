@@ -15,6 +15,7 @@
 import { Card, Checkbox, SectionLabel } from '@compass/ui';
 import type { useI18n } from '../../../hooks/useI18n';
 import {
+  batchNumbers,
   daysOld,
   groupSessionsByDate,
   selectedSessionIds,
@@ -47,6 +48,7 @@ export function SessionPicker({
   const groups = groupSessionsByDate(sessions, today);
   const selected = new Set(selectedSessionIds(sessions, today, overrides));
   const isChecked = (id: string) => selected.has(id);
+  const batchOf = batchNumbers(sessions);
 
   const body = (
     <>
@@ -98,7 +100,23 @@ export function SessionPicker({
                         next.set(s.id, e.target.checked);
                         onChange(next);
                       }}
-                      label={<span className="text-old-body">{s.storeName ?? '—'}</span>}
+                      label={
+                        <span className="flex min-w-0 flex-col">
+                          <span className="text-old-body">{s.storeName ?? '—'}</span>
+                          {batchOf.has(s.id) || s.submittedByName ? (
+                            <span className="text-old-label text-[var(--c-fg-muted)]">
+                              {[
+                                batchOf.has(s.id)
+                                  ? i18n.t('order.batches.batchLabel', { n: batchOf.get(s.id)! })
+                                  : null,
+                                s.submittedByName ?? null,
+                              ]
+                                .filter(Boolean)
+                                .join(' · ')}
+                            </span>
+                          ) : null}
+                        </span>
+                      }
                     />
                   </li>
                 ))}

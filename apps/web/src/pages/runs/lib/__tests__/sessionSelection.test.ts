@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  batchNumbers,
   daysOld,
   groupSessionsByDate,
   selectPreview,
@@ -96,5 +97,20 @@ describe('session selection (CA-03)', () => {
       supplierBySku: {},
     };
     expect(selectPreview(preview, [])).toBe(preview);
+  });
+});
+
+describe('batchNumbers', () => {
+  test('numbers only stores with several orders on one date, in sending order', () => {
+    const n = batchNumbers([
+      { id: 'b', storeId: 'ck', orderDate: '2026-11-05', submittedAt: '2026-11-05T10:00:00Z' },
+      { id: 'a', storeId: 'ck', orderDate: '2026-11-05', submittedAt: '2026-11-05T09:00:00Z' },
+      { id: 'c', storeId: 'rh', orderDate: '2026-11-05', submittedAt: '2026-11-05T08:00:00Z' },
+      { id: 'd', storeId: 'ck', orderDate: '2026-11-04', submittedAt: '2026-11-04T08:00:00Z' },
+    ]);
+    expect(n.get('a')).toBe(1);
+    expect(n.get('b')).toBe(2);
+    expect(n.has('c')).toBe(false);
+    expect(n.has('d')).toBe(false);
   });
 });

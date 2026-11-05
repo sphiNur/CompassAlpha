@@ -1,0 +1,66 @@
+<!doctype html>
+<!--
+  <html lang> is intentionally empty here — /boot-guard.js sets it
+  on load based on the Telegram / navigator locale (zh / ru / uz / en).
+  React's I18nProvider may further narrow it after auth resolves.
+-->
+<html lang>
+  <head>
+    <meta charset="UTF-8" />
+    <!--
+      viewport-fit=cover enables env(safe-area-inset-*) on iOS notches.
+      M3.30 (2026-05-18): locked the scale per user request — the
+      mini app is a fixed-layout operational tool and accidental
+      pinch-zoom was misaligning sticky headers + nav. Trade-off:
+      this opts the page out of WCAG 2.1 SC 1.4.4 (Resize Text).
+      Users with low vision can scale via Telegram client / OS
+      accessibility settings, which override the page's metric.
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <!-- Adaptive theme-color for light + dark schemes. The previous
+         fixed #ffffff caused a white notch strip in dark mode. -->
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1c1c1e" media="(prefers-color-scheme: dark)" />
+    <meta name="color-scheme" content="light dark" />
+    <!-- Build id, replaced by Vite at build time. Client polls
+         /health/version and compares; mismatch shows a reload prompt. -->
+    <meta name="compass-build" content="1793854710598" />
+    <title>Compass</title>
+    <link rel="stylesheet" href="/boot.css" />
+    <!-- Telegram WebApp SDK. Listed in CSP's script-src whitelist
+         (the only third-party script we accept).
+         P-7 (2026-10-31): `defer` so a first open does not wait for
+         telegram.org before parsing the page and showing the splash.
+         Deferred scripts run in document order before the module script
+         below, so main.tsx still finds window.Telegram; boot-guard.js
+         re-reads the Telegram language on this script's load event. -->
+    <script src="https://telegram.org/js/telegram-web-app.js" defer></script>
+    <!-- Boot guard: locale detection + error capture + 12s failsafe
+         + Reload / Reset button wiring. External per CSP. -->
+    <script src="/boot-guard.js"></script>
+    <script type="module" crossorigin src="/assets/index-DgDg9lqS.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-B36aQEzG.css">
+  </head>
+  <body>
+    <div id="root">
+      <div id="boot-splash">
+        <div id="boot-spinner" aria-hidden="true"></div>
+        <div class="boot-title">Compass</div>
+        <div class="boot-subtitle" data-boot-starting>Starting up…</div>
+        <div id="boot-error" role="alert">
+          <strong data-msg>Boot failed</strong>
+          <pre></pre>
+          <div class="boot-actions">
+            <button id="boot-reload-btn" class="boot-btn" type="button">Reload</button>
+            <button id="boot-reset-btn" class="boot-btn boot-btn-secondary" type="button">
+              Reset &amp; reload
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
