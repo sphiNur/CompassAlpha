@@ -610,6 +610,8 @@ export const ru = {
   'shell.noTabs.body':
     'У вашей роли нет доступа к заказам, проверке, закупкам и другим разделам. Если нужно, обратитесь к администратору.',
   'shell.offline.title': 'Нет соединения',
+  'shell.offline.showDetails': 'Что работает',
+  'shell.offline.hideDetails': 'Скрыть',
   'shell.pageNotLoaded.title': 'Эта страница ещё не загружена',
   'shell.pageNotLoaded.body':
     'Для неё нужна сеть. Она откроется сама, когда появится связь, или нажмите «Повторить».',

@@ -563,6 +563,8 @@ export const zh = {
   'shell.noTabs.body':
     '你的角色没有下单、审核、采购等任何功能的权限。需要的话请联系管理员。',
   'shell.offline.title': '现在离线',
+  'shell.offline.showDetails': '哪些能用',
+  'shell.offline.hideDetails': '收起',
   'shell.pageNotLoaded.title': '这个页面还没下载完',
   'shell.pageNotLoaded.body':
     '需要联网才能打开。联网后会自动加载，也可以点重试。',

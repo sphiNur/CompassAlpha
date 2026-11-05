@@ -664,6 +664,8 @@ export const en = {
   'shell.noTabs.body':
     'Your role has no access to ordering, approvals, purchasing or any other section. Ask an admin if you need it.',
   'shell.offline.title': 'You are offline',
+  'shell.offline.showDetails': 'What works',
+  'shell.offline.hideDetails': 'Hide',
   'shell.pageNotLoaded.title': 'This page has not downloaded yet',
   'shell.pageNotLoaded.body':
     'It needs a connection to open. It loads by itself once you are online, or tap Retry.',

@@ -34,6 +34,7 @@ import { useDateFormat, useI18n, useProductNameParts, useUnitLabel } from '../ho
 import { usePhotoUploader } from '../hooks/usePhotoUploader';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { PendingSyncNotice } from '../components/PendingSyncNotice';
+import { pendingChangeCount } from '../lib/pendingChanges';
 import { overlayPendingWrites, pendingStoreIds, withData } from './runs/lib/pendingOverlay';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
@@ -528,7 +529,7 @@ export function ConfirmPage() {
           </span>
         </StickyPageBar>
       ) : null}
-      <PendingSyncNotice count={offline.pendingCount} />
+      <PendingSyncNotice count={pendingChangeCount(offline.pendingEntries)} />
       <div className="flex flex-col gap-3 px-4">
         {runsView.kind === 'error' || (runsView.kind === 'ready' && runsView.stale) ? (
           <Banner

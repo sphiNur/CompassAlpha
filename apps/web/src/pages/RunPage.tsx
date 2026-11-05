@@ -58,6 +58,7 @@ import { usePageMenu } from '../app/PageMenuContext';
 import { useOfflineQueue } from '../hooks/useOfflineQueue';
 import { pollWhenOffline, useRealtimeLive } from '../hooks/useRealtime';
 import { PendingSyncNotice } from '../components/PendingSyncNotice';
+import { pendingChangeCount } from '../lib/pendingChanges';
 import { isLikelyNetworkError } from '../lib/networkError';
 import { useErrToast } from '../lib/errToast';
 import { formatQty, formatMoney } from '../lib/format';
@@ -2209,7 +2210,7 @@ export function RunPage() {
       </div>
 
       {/* BUY-8 (2026-10-30): purchases saved offline used to look unsaved. */}
-      <PendingSyncNotice count={offline.pendingCount} />
+      <PendingSyncNotice count={pendingChangeCount(offline.pendingEntries)} />
 
       {/* 2026-10-21 CA-04: run switcher. Shown once there is more than one
           open run (one being bought + earlier ones still delivering), or
