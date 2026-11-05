@@ -806,7 +806,7 @@ export const uz = {
   'admin.action.cloneRoles': 'Rollarni nusxalash…',
   'admin.action.transfer': 'Koʻchirish…',
   'admin.action.removeFromStore': 'Doʻkondan olib tashlash',
-  'admin.action.removeFromOrg': 'Olib tashlash',
+  'admin.action.removeFromOrg': 'Ish maydonidan olib tashlash',
   'admin.action.suspend': 'Toʻxtatish',
   'admin.action.reactivate': 'Faollashtirish',
   'admin.action.grantRole': 'Rol berish',

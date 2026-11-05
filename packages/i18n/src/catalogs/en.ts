@@ -872,7 +872,7 @@ export const en = {
   'admin.action.cloneRoles': 'Clone roles…',
   'admin.action.transfer': 'Transfer…',
   'admin.action.removeFromStore': 'Remove from store',
-  'admin.action.removeFromOrg': 'Remove',
+  'admin.action.removeFromOrg': 'Remove from workspace',
   'admin.action.suspend': 'Suspend',
   'admin.action.reactivate': 'Reactivate',
   'admin.action.grantRole': 'Grant role',

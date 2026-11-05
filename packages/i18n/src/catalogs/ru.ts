@@ -813,7 +813,7 @@ export const ru = {
   'admin.action.cloneRoles': 'Клонировать роли…',
   'admin.action.transfer': 'Перевести…',
   'admin.action.removeFromStore': 'Убрать из магазина',
-  'admin.action.removeFromOrg': 'Удалить',
+  'admin.action.removeFromOrg': 'Удалить из рабочего пространства',
   'admin.action.suspend': 'Приостановить',
   'admin.action.reactivate': 'Возобновить',
   'admin.action.grantRole': 'Назначить роль',

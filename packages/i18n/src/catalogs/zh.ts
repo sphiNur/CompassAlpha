@@ -739,7 +739,7 @@ export const zh = {
   'admin.action.cloneRoles': '克隆角色…',
   'admin.action.transfer': '调动…',
   'admin.action.removeFromStore': '从此门店移除',
-  'admin.action.removeFromOrg': '移除',
+  'admin.action.removeFromOrg': '从工作区移除',
   'admin.action.suspend': '停用',
   'admin.action.reactivate': '启用',
   'admin.action.grantRole': '授予角色',
