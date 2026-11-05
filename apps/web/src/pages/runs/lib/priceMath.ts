@@ -91,3 +91,17 @@ export function isUnusualPrice(next: string | number, last: string | number | nu
   }
   return n >= l * 5 || n * 5 <= l;
 }
+
+/**
+ * Walkthrough F8 (2026-11-05): with no earlier price to compare with,
+ * `isUnusualPrice` said nothing, so 12500 typed in ×1000 mode was stored
+ * as 12,500,000 a unit without a word. A first price of a million or more
+ * a unit is asked about once (UZS market goods run 20–150k a unit; a
+ * figure this size is nearly always the ×1000 field read as plain sum).
+ */
+export const FIRST_PRICE_CHECK_FROM = 1_000_000;
+
+export function isUnusualFirstPrice(next: string | number): boolean {
+  const n = Number(next);
+  return Number.isFinite(n) && n >= FIRST_PRICE_CHECK_FROM;
+}

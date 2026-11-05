@@ -1459,6 +1459,7 @@ export const uz = {
   'run.label.priceUnitAria': '×1000 (narxlar mingda)',
   'run.price.check.title': 'Narx toʻgʻrimi?',
   'run.price.check.body': '{name}: oʻtgan safar {last} {currency}, hozir {next} {currency}.',
+  'run.price.check.bodyFirst': '{name}: birligi {next} {currency}. Bu mahsulotning avvalgi narxi yoʻq; ortiqcha nol yoʻqligini tekshiring.',
   'run.price.check.confirm': 'Ha, saqlash',
   'run.price.check.fix': 'Narxni oʻzgartirish',
   'run.action.supplier': 'Yetkazib beruvchi',

@@ -84,7 +84,7 @@ import {
   type PurchaseDraft,
   type AddItemDraft,
 } from './runs/sheets/RunSheets';
-import { isUnusualPrice } from './runs/lib/priceMath';
+import { isUnusualFirstPrice, isUnusualPrice } from './runs/lib/priceMath';
 import { mergeSplitsIntoExistingItem, mergeIntoPurchasedItem, runStoreIdsOf } from './runs/lib/runStores';
 import { buildStorePickList } from './runs/lib/storePickList';
 // Mid-level panels — extracted to runs/components (Phase 4 step 5).
@@ -975,7 +975,8 @@ export function RunPage() {
    */
   const [priceCheck, setPriceCheck] = useState<{
     name: string;
-    last: string;
+    /** null: no earlier price, the check is on size alone (F8). */
+    last: string | null;
     next: string;
     run: (confirmed: boolean) => void;
   } | null>(null);
@@ -987,13 +988,15 @@ export function RunPage() {
       run: (confirmed: boolean) => void,
     ) => {
       const last = runDetailQuery.data?.lastPriceBySku?.[skuId];
-      const odd = prices.find((p) => !!p && isUnusualPrice(p, last));
-      if (!last || !odd) {
+      const odd = last
+        ? prices.find((p) => !!p && isUnusualPrice(p, last))
+        : prices.find((p) => !!p && isUnusualFirstPrice(p));
+      if (!odd) {
         run(false);
         return;
       }
       const sku = skuById.get(skuId);
-      setPriceCheck({ name: sku ? productName(sku) : '', last, next: odd, run });
+      setPriceCheck({ name: sku ? productName(sku) : '', last: last ?? null, next: odd, run });
     },
     [runDetailQuery.data?.lastPriceBySku, skuById, productName],
   );
@@ -2970,14 +2973,20 @@ export function RunPage() {
         open={!!priceCheck}
         title={i18n.t('run.price.check.title')}
         body={
-          priceCheck
-            ? i18n.t('run.price.check.body', {
-                name: priceCheck.name,
-                last: formatMoney(priceCheck.last),
-                next: formatMoney(priceCheck.next),
-                currency,
-              })
-            : ''
+          !priceCheck
+            ? ''
+            : priceCheck.last
+              ? i18n.t('run.price.check.body', {
+                  name: priceCheck.name,
+                  last: formatMoney(priceCheck.last),
+                  next: formatMoney(priceCheck.next),
+                  currency,
+                })
+              : i18n.t('run.price.check.bodyFirst', {
+                  name: priceCheck.name,
+                  next: formatMoney(priceCheck.next),
+                  currency,
+                })
         }
         confirmLabel={i18n.t('run.price.check.confirm')}
         cancelLabel={i18n.t('run.price.check.fix')}

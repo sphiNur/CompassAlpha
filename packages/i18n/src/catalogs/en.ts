@@ -1551,6 +1551,7 @@ export const en = {
   'run.label.priceUnitAria': '×1000 (prices in thousands)',
   'run.price.check.title': 'Is this price right?',
   'run.price.check.body': '{name}: last time {last} {currency}, this time {next} {currency}.',
+  'run.price.check.bodyFirst': '{name}: {next} {currency} a unit. There is no earlier price for this product; check that no zeros slipped in.',
   'run.price.check.confirm': 'Yes, save',
   'run.price.check.fix': 'Change the price',
   'run.action.supplier': 'Supplier',

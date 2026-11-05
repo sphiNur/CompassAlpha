@@ -1464,6 +1464,7 @@ export const ru = {
   'run.label.priceUnitAria': '×1000 (цены в тысячах)',
   'run.price.check.title': 'Цена верная?',
   'run.price.check.body': '{name}: в прошлый раз {last} {currency}, сейчас {next} {currency}.',
+  'run.price.check.bodyFirst': '{name}: {next} {currency} за единицу. Прежней цены у этого товара нет; проверьте, не лишние ли нули.',
   'run.price.check.confirm': 'Да, сохранить',
   'run.price.check.fix': 'Изменить цену',
   'run.action.supplier': 'Поставщик',

@@ -1302,6 +1302,7 @@ export const zh = {
   'run.label.priceUnitAria': '×1000（价格按千输入）',
   'run.price.check.title': '这个价格对吗？',
   'run.price.check.body': '{name}：上次 {last} {currency}，这次 {next} {currency}。',
+  'run.price.check.bodyFirst': '{name}：每单位 {next} {currency}。这个商品还没有历史价格，请确认没有多输 0。',
   'run.price.check.confirm': '没错，保存',
   'run.price.check.fix': '改价格',
   'run.action.supplier': '供应商',
