@@ -47,6 +47,8 @@ DECLARE
     'inventory.attendance_devices',
     'inventory.attendance_shifts',
     'inventory.attendance_punches',
+    'inventory.attendance_pay_rates',
+    'inventory.attendance_overtime',
     'inventory.suppliers',
     'inventory.categories',
     'inventory.skus',

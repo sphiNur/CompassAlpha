@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { DateStringSchema, UuidSchema } from './common';
+import { SettlementMoneySchema } from './settlement';
 
 /** Attendance (2026-11-05). See packages/domain/src/attendance. */
 
@@ -29,6 +30,8 @@ export const AttendancePunchInputSchema = z.object({
   deviceId: AttendanceDeviceIdSchema,
   platform: z.string().max(32).optional(),
   location: AttendanceLocationSchema.nullable().optional(),
+  /** Why a clock-out runs well past the shift; the server asks for it. */
+  overtimeReason: z.string().trim().min(1).max(300).optional(),
 });
 
 const reason = z.string().trim().min(1).max(300);
@@ -106,8 +109,28 @@ export const AttendancePolicySaveInputSchema = z
       })
       .nullable(),
     graceMinutes: z.number().int().min(0).max(120),
+    overtimeAfterMinutes: z.number().int().min(5).max(240).default(30),
   })
   .refine((v) => !v.requireGeo || v.geo !== null, { message: 'attendance.errors.geoMissing' });
 
 export type AttendancePunchInput = z.infer<typeof AttendancePunchInputSchema>;
 export type AttendancePolicySaveInput = z.infer<typeof AttendancePolicySaveInputSchema>;
+
+export const AttendancePayRateSetInputSchema = z.object({
+  storeId: UuidSchema,
+  memberId: UuidSchema,
+  dailyWage: SettlementMoneySchema,
+  effectiveFrom: DateStringSchema,
+});
+
+export const AttendanceOvertimeDecideInputSchema = z.object({
+  storeId: UuidSchema,
+  overtimeId: UuidSchema,
+  approve: z.boolean(),
+  note: z.string().trim().max(300).optional(),
+});
+
+export const AttendanceWageSuggestionsInputSchema = z.object({
+  storeId: UuidSchema,
+  date: DateStringSchema,
+});

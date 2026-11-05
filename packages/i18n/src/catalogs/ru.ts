@@ -2605,5 +2605,41 @@ export const ru = {
   'notify.attendance.remindOut.body':
     'Ваша смена в {store} закончилась в {end}, но отметки ухода нет.',
   'notify.attendance.absent.title': 'Нет отметки прихода',
-  'notify.attendance.absent.body': '{name}: нет отметки прихода в {store}; смена началась в {start}.',
+  'notify.attendance.absent.body':
+    '{name}: нет отметки прихода в {store}; смена началась в {start}.',
+  'attendance.pay.owed': 'К выплате {net}',
+  'attendance.pay.owedDeducted': 'К выплате {net} (опоздание / ранний уход: −{deduction})',
+  'attendance.pay.absent': 'Не пришёл: без оплаты',
+  'attendance.pay.needsReview': 'Оплата после проверки учёта времени',
+  'attendance.pay.noRate': 'Дневная ставка не задана',
+  'attendance.overtime.askTitle': 'Почему вы уходите позже?',
+  'attendance.overtime.askBody':
+    'После конца смены прошло: {duration}. Сверхурочные учитываются после одобрения управляющего.',
+  'attendance.overtime.reasonPlaceholder': 'Например: инвентаризация после закрытия',
+  'attendance.overtime.badge.pending': 'Сверхурочно {duration} · ждёт решения',
+  'attendance.overtime.badge.approved': 'Сверхурочно {duration} · одобрено',
+  'attendance.overtime.badge.rejected': 'Сверхурочно {duration} · не одобрено',
+  'attendance.overtime.reasonLine': 'Причина: {reason}',
+  'attendance.overtime.noReason': 'Причина не указана',
+  'attendance.overtime.decidedBy': 'решение: {name}',
+  'attendance.overtime.approve': 'Одобрить',
+  'attendance.overtime.reject': 'Не сверхурочно',
+  'attendance.settings.dailyWage': 'Дневная ставка',
+  'attendance.settings.dailyWageNotSet': 'Не задана',
+  'attendance.settings.wageSaved': 'Ставка сохранена, действует с сегодняшнего дня',
+  'attendance.settings.overtimeAfter': 'Сверхурочно после (минут)',
+  'attendance.settings.overtimeAfterHint':
+    'Если уход позже смены на столько минут, сотрудник указывает причину, а вы одобряете. Плановую переработку задайте, удлинив смену в графике.',
+  'attendance.errors.overtimeReasonRequired': 'Укажите, почему вы уходите позже.',
+  'attendance.errors.overtimeNotFound': 'Этой записи о переработке больше нет.',
+  'settlement.wages.fromAttendance': 'Из учёта времени',
+  'settlement.wages.fromAttendanceNone': 'За этот день оплачивать по учёту времени нечего.',
+  'settlement.wages.fromAttendanceNeedsReview':
+    '{n, plural, one {У # сотрудника} few {У # сотрудников} many {У # сотрудников} other {У # сотрудника}} учёт времени сначала должен проверить управляющий.',
+  'settlement.wages.fromAttendanceAdded':
+    '{n, plural, one {Добавлена # строка} few {Добавлены # строки} many {Добавлено # строк} other {Добавлено # строки}} из учёта времени, как не выплаченные.',
+  'settlement.wages.fromAttendanceReason': 'Учёт времени: ставка {wage}',
+  'settlement.wages.fromAttendanceReasonDeducted':
+    'Учёт времени: ставка {wage}, опоздание {late} мин, ранний уход {early} мин, −{deduction}',
+  'settlement.wages.fromAttendanceFailed': 'Не удалось получить учёт времени. Попробуйте снова.',
 } as const satisfies Record<CatalogKey, string>;

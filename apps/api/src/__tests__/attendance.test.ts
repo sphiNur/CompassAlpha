@@ -4,7 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { and, eq, sql } from 'drizzle-orm';
 import { getDb, schema as s, withOrgContext } from '@compass/db';
-import { todayInTz } from '@compass/domain';
+import { attendance, dateInTz, todayInTz } from '@compass/domain';
 import { loadCatalog } from '@compass/i18n/catalogs';
 import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
@@ -413,6 +413,91 @@ describe.skipIf(!SHOULD_RUN)('attendance', () => {
       ['2030-01-14', '09:00', '18:00'],
       ['2030-01-15', '20:00', '04:00'],
     ]);
+  });
+});
+
+describe.skipIf(!SHOULD_RUN)('attendance pay and overtime', () => {
+  test('late is deducted; a late clock-out needs a reason and an approval', async () => {
+    const f = fx!;
+    const db = getDb(undefined, { system: 'maintenance' });
+    await db.execute(
+      sql`UPDATE inventory.attendance_punches SET voided_at = now(), voided_by_member_id = member_id, void_reason = 'test reset' WHERE member_id = ${f.staffId} AND voided_at IS NULL`,
+    );
+    const now = new Date();
+    const start = new Date(now.getTime() - 5 * 3600_000);
+    const end = new Date(now.getTime() - 3600_000);
+    const date = dateInTz(start, TZ);
+    const hhmm = (d: Date) => attendance.localTime(d, TZ);
+    await f.manager.attendance.shiftSave({
+      storeId: f.storeId,
+      memberId: f.staffId,
+      date,
+      start: hhmm(start),
+      end: hhmm(end),
+    });
+    await f.manager.attendance.payRateSet({
+      storeId: f.storeId,
+      memberId: f.staffId,
+      dailyWage: '100000',
+      effectiveFrom: '2020-01-01',
+    });
+    // Clocked in 20 minutes late (the manager enters it).
+    const lateIn = new Date(start.getTime() + 20 * 60_000);
+    await f.manager.attendance.manualPunch({
+      storeId: f.storeId,
+      memberId: f.staffId,
+      kind: 'in',
+      date: dateInTz(lateIn, TZ),
+      time: hhmm(lateIn),
+      reason: 'phone was flat',
+    });
+    // Clocking out an hour after the end needs a reason …
+    await expectError(
+      f.staff().attendance.punch({ storeId: f.storeId, kind: 'out', deviceId: OTHER_DEVICE }),
+      'attendance.errors.overtimeReasonRequired',
+    );
+    const out = await f.staff().attendance.punch({
+      storeId: f.storeId,
+      kind: 'out',
+      deviceId: OTHER_DEVICE,
+      overtimeReason: 'Stocktake after closing',
+    });
+    expect(out.overtimeMinutes).toBeGreaterThanOrEqual(59);
+
+    let sheet = await f.manager.attendance.sheet({ storeId: f.storeId, from: date, to: date });
+    const ot = sheet.overtime.find((o) => o.punchId === out.id)!;
+    expect(ot.status).toBe('pending');
+    expect(ot.reason).toBe('Stocktake after closing');
+    const day = sheet.days.find((d) => d.memberId === f.staffId && d.date === date)!;
+    expect(day.lateMinutes).toBe(20);
+    // 240 planned minutes, 20 late → 100000 × 20 / 240 = 8333.33
+    expect(day.pay).toEqual({
+      status: 'payable',
+      wageCents: 10_000_000,
+      deductionCents: 833_333,
+      netCents: 9_166_667,
+    });
+
+    await f.manager.attendance.overtimeDecide({
+      storeId: f.storeId,
+      overtimeId: ot.id,
+      approve: false,
+      note: 'Stayed for dinner',
+    });
+    sheet = await f.manager.attendance.sheet({ storeId: f.storeId, from: date, to: date });
+    expect(sheet.overtime.find((o) => o.id === ot.id)!.status).toBe('rejected');
+
+    const wages = await f.manager.attendance.wageSuggestions({ storeId: f.storeId, date });
+    expect(wages.find((w) => w.memberId === f.staffId)).toMatchObject({
+      status: 'payable',
+      amount: '91666.67',
+      deduction: '8333.33',
+      lateMinutes: 20,
+    });
+    await expectError(
+      f.staff().attendance.wageSuggestions({ storeId: f.storeId, date }),
+      'auth.errors.missingPermission',
+    );
   });
 });
 

@@ -20,6 +20,9 @@ import { useDateFormat, useI18n } from '../../hooks/useI18n';
 import { haptic } from '../../hooks/useTelegram';
 import { useErrToast } from '../../lib/errToast';
 import type { AttendanceSheetData } from '@compass/api/src/trpc/routers/attendance';
+import { minutesText } from '../../lib/attendanceFormat';
+import { currencyOf, formatMoney } from '../../lib/format';
+import { useAuthStore } from '../../stores/authStore';
 import { trpc } from '../../lib/trpc';
 
 type SheetData = AttendanceSheetData;
@@ -44,14 +47,6 @@ export function mondayOf(date: string): string {
   const [y, m, d] = date.split('-').map(Number) as [number, number, number];
   const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0 = Sunday
   return addDays(date, -((dow + 6) % 7));
-}
-
-export function minutesText(i18n: ReturnType<typeof useI18n>, minutes: number): string {
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  if (h === 0) return i18n.t('attendance.duration.minutes', { m });
-  if (m === 0) return i18n.t('attendance.duration.hours', { h });
-  return i18n.t('attendance.duration.hoursMinutes', { h, m });
 }
 
 const FLAG_TONE: Record<string, 'success' | 'warn' | 'danger' | 'info' | 'muted'> = {
@@ -124,6 +119,46 @@ function DateStepper({
         </Button>
       ) : null}
     </div>
+  );
+}
+
+/** The day's pay: owed amount, or why there is none yet. */
+function PayLine({ day }: { day: Day | undefined }) {
+  const i18n = useI18n();
+  const currency = useAuthStore((st) => currencyOf(st.session));
+  if (!day) return null;
+  const money = (cents: number) => formatMoney(cents / 100, currency);
+  const p = day.pay;
+  const text =
+    p.status === 'payable'
+      ? p.deductionCents > 0
+        ? i18n.t('attendance.pay.owedDeducted', {
+            net: money(p.netCents!),
+            deduction: money(p.deductionCents),
+          })
+        : i18n.t('attendance.pay.owed', { net: money(p.netCents!) })
+      : p.status === 'inProgress'
+        ? null
+        : i18n.t(`attendance.pay.${p.status}`);
+  if (!text) return null;
+  return <span className="text-old-label text-[var(--c-fg-muted)]">{text}</span>;
+}
+
+const OVERTIME_TONE = { pending: 'warn', approved: 'success', rejected: 'muted' } as const;
+
+function OvertimeBadges({ items }: { items: SheetData['overtime'] }) {
+  const i18n = useI18n();
+  if (items.length === 0) return null;
+  return (
+    <span className="flex flex-wrap gap-1">
+      {items.map((o) => (
+        <Badge key={o.id} tone={OVERTIME_TONE[o.status]}>
+          {i18n.t(`attendance.overtime.badge.${o.status}`, {
+            duration: minutesText(i18n, o.minutes),
+          })}
+        </Badge>
+      ))}
+    </span>
   );
 }
 
@@ -258,6 +293,10 @@ function MemberDayRow({
           </span>
         ) : null}
         <FlagBadges day={day} />
+        <OvertimeBadges
+          items={data.overtime.filter((o) => o.memberId === member.memberId && o.date === date)}
+        />
+        <PayLine day={day} />
       </button>
     </li>
   );
@@ -302,6 +341,14 @@ function MemberDaySheet({
     },
     onError: errToast('attendance.errors.saveFailed'),
   });
+  const decide = trpc.attendance.overtimeDecide.useMutation({
+    onSuccess: () => {
+      haptic('success');
+      refresh();
+    },
+    onError: errToast('attendance.errors.saveFailed'),
+  });
+  const overtime = data.overtime.filter((o) => o.memberId === memberId && o.date === date);
   const voidPunch = trpc.attendance.voidPunch.useMutation({
     onSuccess: () => {
       haptic('success');
@@ -364,6 +411,52 @@ function MemberDaySheet({
           </ul>
         )}
 
+        <PayLine day={day} />
+        {overtime.map((o) => (
+          <div key={o.id} className="flex flex-col gap-2 rounded-[var(--r-card)] p-3 ring-hairline">
+            <span className="text-old-body font-semibold text-[var(--c-fg)]">
+              {i18n.t(`attendance.overtime.badge.${o.status}`, {
+                duration: minutesText(i18n, o.minutes),
+              })}
+            </span>
+            <span className="text-old-label text-[var(--c-fg-muted)]">
+              {o.reason
+                ? i18n.t('attendance.overtime.reasonLine', { reason: o.reason })
+                : i18n.t('attendance.overtime.noReason')}
+              {o.decidedByName
+                ? ` · ${i18n.t('attendance.overtime.decidedBy', { name: o.decidedByName })}`
+                : ''}
+              {o.decisionNote ? ` · ${o.decisionNote}` : ''}
+            </span>
+            {o.status === 'pending' ? (
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  loading={
+                    decide.isPending &&
+                    decide.variables?.overtimeId === o.id &&
+                    !decide.variables.approve
+                  }
+                  onClick={() => decide.mutate({ storeId, overtimeId: o.id, approve: false })}
+                >
+                  {i18n.t('attendance.overtime.reject')}
+                </Button>
+                <Button
+                  size="sm"
+                  loading={
+                    decide.isPending &&
+                    decide.variables?.overtimeId === o.id &&
+                    decide.variables.approve
+                  }
+                  onClick={() => decide.mutate({ storeId, overtimeId: o.id, approve: true })}
+                >
+                  {i18n.t('attendance.overtime.approve')}
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        ))}
         {voiding ? (
           <div className="flex flex-col gap-2 rounded-[var(--r-card)] p-3 ring-hairline">
             <Field label={i18n.t('attendance.void.reasonLabel', { time: voiding.time })}>

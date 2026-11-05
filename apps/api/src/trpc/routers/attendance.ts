@@ -23,6 +23,9 @@ import {
   AttendanceManualPunchInputSchema,
   AttendanceMeInputSchema,
   AttendanceMemberSetInputSchema,
+  AttendanceOvertimeDecideInputSchema,
+  AttendancePayRateSetInputSchema,
+  AttendanceWageSuggestionsInputSchema,
   AttendancePolicyGetInputSchema,
   AttendancePolicySaveInputSchema,
   AttendancePunchInputSchema,
@@ -109,6 +112,16 @@ async function authorize(
   return store;
 }
 
+/** `"123.45"` → 12345; amounts are validated two-decimal strings. */
+function moneyToCents(value: string): number {
+  const [whole = '0', frac = ''] = value.split('.');
+  return Number(whole) * 100 + Number(frac.padEnd(2, '0').slice(0, 2));
+}
+
+function centsToMoney(cents: number): string {
+  return `${Math.trunc(cents / 100)}.${String(cents % 100).padStart(2, '0')}`;
+}
+
 function tzOf(store: StoreRow, session: Session): string {
   return storeTimeZone(store.timezone, session.orgTimezone);
 }
@@ -128,6 +141,7 @@ function policyView(p: PolicyRow | undefined) {
         ? { lat: Number(p.geoLat), lng: Number(p.geoLng), radiusM: p.geoRadiusM }
         : null,
     graceMinutes: p?.graceMinutes ?? 5,
+    overtimeAfterMinutes: p?.overtimeAfterMinutes ?? 30,
   };
 }
 
@@ -210,124 +224,218 @@ async function overlaps(
 }
 
 /** The attendance sheet for one store and date range (manager only). */
+/**
+ * The attendance sheet for one store and date range. Callers authorize:
+ * the sheet itself needs attendance.manage, the settlement's wage
+ * suggestion settlement.record.
+ */
+async function buildSheet(tx: DB, session: Session, store: StoreRow, from: string, to: string) {
+  const tz = tzOf(store, session);
+  const days = (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY + 1;
+  if (days > MAX_SHEET_DAYS) fail('BAD_REQUEST', 'rangeTooLong');
+  const fromAt = new Date(rules.zonedTimeToUtc(from, '00:00', tz).getTime() - DAY);
+  const toAt = new Date(rules.zonedTimeToUtc(rules.nextDate(to), '00:00', tz).getTime() + DAY);
+  const now = new Date();
+  const [roster, policy, shifts, punches, devices, rates, overtime] = await Promise.all([
+    storeRoster(tx, session.orgId, store.id),
+    loadPolicy(tx, store.id),
+    tx
+      .select()
+      .from(s.attendanceShifts)
+      .where(
+        and(
+          eq(s.attendanceShifts.storeId, store.id),
+          gte(s.attendanceShifts.shiftDate, rules.nextDate(from, -1)),
+          lte(s.attendanceShifts.shiftDate, to),
+        ),
+      )
+      .orderBy(asc(s.attendanceShifts.startsAt)),
+    tx
+      .select()
+      .from(s.attendancePunches)
+      .where(
+        and(
+          eq(s.attendancePunches.storeId, store.id),
+          gte(s.attendancePunches.punchedAt, fromAt),
+          lte(s.attendancePunches.punchedAt, toAt),
+        ),
+      )
+      .orderBy(asc(s.attendancePunches.punchedAt)),
+    tx
+      .select({ memberId: s.attendanceDevices.memberId, boundAt: s.attendanceDevices.boundAt })
+      .from(s.attendanceDevices)
+      .where(eq(s.attendanceDevices.orgId, session.orgId)),
+    tx
+      .select()
+      .from(s.attendancePayRates)
+      .where(
+        and(
+          eq(s.attendancePayRates.orgId, session.orgId),
+          lte(s.attendancePayRates.effectiveFrom, to),
+        ),
+      )
+      .orderBy(asc(s.attendancePayRates.effectiveFrom)),
+    tx
+      .select()
+      .from(s.attendanceOvertime)
+      .where(
+        and(
+          eq(s.attendanceOvertime.storeId, store.id),
+          gte(s.attendanceOvertime.createdAt, fromAt),
+          lte(s.attendanceOvertime.createdAt, new Date(toAt.getTime() + DAY)),
+        ),
+      ),
+  ]);
+  const memberIds = new Set([
+    ...roster.map((m) => m.memberId),
+    ...shifts.map((x) => x.memberId),
+    ...punches.map((x) => x.memberId),
+  ]);
+  const enabled = await clockEnabled(tx, [...memberIds]);
+  const names = new Map(roster.map((m) => [m.memberId, m.displayName]));
+  const missingNames = [...memberIds].filter((id) => !names.has(id));
+  const actorIds = punches
+    .flatMap((p) => [p.createdByMemberId, p.voidedByMemberId])
+    .concat(overtime.map((o) => o.decidedByMemberId ?? ''))
+    .filter((x): x is string => !!x);
+  const extra = [...new Set([...missingNames, ...actorIds])];
+  if (extra.length > 0) {
+    const rows = await tx
+      .select({ memberId: s.members.id, displayName: s.users.displayName })
+      .from(s.members)
+      .innerJoin(s.users, eq(s.users.id, s.members.userId))
+      .where(inArray(s.members.id, extra));
+    for (const r of rows) if (!names.has(r.memberId)) names.set(r.memberId, r.displayName);
+  }
+  const deviceBound = new Map(devices.map((d) => [d.memberId, d.boundAt]));
+  const view = policyView(policy);
+  const summaries = rules
+    .summarize({
+      shifts: shifts.map((x) => ({
+        id: x.id,
+        memberId: x.memberId,
+        date: x.shiftDate,
+        startsAt: x.startsAt,
+        endsAt: x.endsAt,
+      })),
+      punches: punches
+        .filter((p) => !p.voidedAt)
+        .map((p) => ({ id: p.id, memberId: p.memberId, kind: p.kind, at: p.punchedAt })),
+      graceMinutes: view.graceMinutes,
+      now,
+      dateOf: (at) => dateInTz(at, tz),
+    })
+    .filter((d) => d.date >= from && d.date <= to);
+  const rosterIds = new Set(roster.map((m) => m.memberId));
+  // The rate a day is paid at: the latest one in effect on that date.
+  const rateOn = (memberId: string, date: string): string | null => {
+    let found: string | null = null;
+    for (const r of rates)
+      if (r.memberId === memberId && r.effectiveFrom <= date) found = r.dailyWage;
+    return found;
+  };
+  const voidedPunch = new Set(punches.filter((p) => p.voidedAt).map((p) => p.id));
+  const punchById = new Map(punches.map((p) => [p.id, p]));
+  const overtimeView = overtime
+    .filter((o) => !voidedPunch.has(o.punchId) && punchById.has(o.punchId))
+    .map((o) => ({
+      id: o.id,
+      memberId: o.memberId,
+      punchId: o.punchId,
+      date: dateInTz(punchById.get(o.punchId)!.punchedAt, tz),
+      minutes: o.minutes,
+      reason: o.reason,
+      status: o.status,
+      decidedByName: o.decidedByMemberId ? (names.get(o.decidedByMemberId) ?? null) : null,
+      decisionNote: o.decisionNote,
+    }));
+  return {
+    timezone: tz,
+    today: todayInTz(tz, now),
+    graceMinutes: view.graceMinutes,
+    members: [...memberIds]
+      .map((id) => ({
+        memberId: id,
+        name: names.get(id) ?? '—',
+        inStore: rosterIds.has(id),
+        enabled: enabled.has(id),
+        deviceBoundAt: deviceBound.get(id)?.toISOString() ?? null,
+        dailyWage: rateOn(id, to),
+      }))
+      .sort((a, b) => Number(b.enabled) - Number(a.enabled) || a.name.localeCompare(b.name)),
+    shifts: shifts.filter((x) => x.shiftDate >= from).map((x) => shiftView(x, tz)),
+    punches: punches.map((p) => ({
+      id: p.id,
+      memberId: p.memberId,
+      kind: p.kind,
+      at: p.punchedAt.toISOString(),
+      date: dateInTz(p.punchedAt, tz),
+      time: rules.localTime(p.punchedAt, tz),
+      source: p.source,
+      reason: p.reason,
+      distanceM: p.distanceM,
+      createdByName: p.source === 'manual' ? (names.get(p.createdByMemberId) ?? null) : null,
+      voided: p.voidedAt
+        ? {
+            at: p.voidedAt.toISOString(),
+            byName: p.voidedByMemberId ? (names.get(p.voidedByMemberId) ?? null) : null,
+            reason: p.voidReason ?? '',
+          }
+        : null,
+    })),
+    days: summaries.map((d) => {
+      const wage = rateOn(d.memberId, d.date);
+      return {
+        ...d,
+        dailyWage: wage,
+        pay: rules.dayPay(d, wage === null ? null : moneyToCents(wage)),
+      };
+    }),
+    overtime: overtimeView,
+  };
+}
+
+/**
+ * The shift a clock-out at `at` belongs to (same window as the sheet:
+ * four hours before the start to six after the end), and how many
+ * overtime minutes it carries.
+ */
+async function overtimeFor(
+  tx: DB,
+  memberId: string,
+  storeId: string,
+  at: Date,
+  afterMinutes: number,
+): Promise<{ shiftId: string; minutes: number } | null> {
+  const shifts = await tx
+    .select({
+      id: s.attendanceShifts.id,
+      startsAt: s.attendanceShifts.startsAt,
+      endsAt: s.attendanceShifts.endsAt,
+    })
+    .from(s.attendanceShifts)
+    .where(
+      and(
+        eq(s.attendanceShifts.memberId, memberId),
+        eq(s.attendanceShifts.storeId, storeId),
+        lte(s.attendanceShifts.startsAt, new Date(at.getTime() + 4 * 3600_000)),
+        gte(s.attendanceShifts.endsAt, new Date(at.getTime() - 6 * 3600_000)),
+      ),
+    );
+  // The latest shift that has ended by then is the one being clocked out of.
+  const ended = shifts
+    .filter((x) => x.endsAt.getTime() <= at.getTime())
+    .sort((a, b) => b.endsAt.getTime() - a.endsAt.getTime())[0];
+  if (!ended) return null;
+  const minutes = rules.overtimeMinutes(ended.endsAt, at, afterMinutes);
+  return minutes > 0 ? { shiftId: ended.id, minutes } : null;
+}
+
 async function loadSheet(ctx: RequestContext, input: z.infer<typeof AttendanceSheetInputSchema>) {
   const session = ctx.session!;
   return ctx.withOrg(async (tx) => {
     const store = await authorize(tx, session, input.storeId, 'attendance.manage');
-    const tz = tzOf(store, session);
-    const days =
-      (Date.parse(`${input.to}T00:00:00Z`) - Date.parse(`${input.from}T00:00:00Z`)) / DAY + 1;
-    if (days > MAX_SHEET_DAYS) fail('BAD_REQUEST', 'rangeTooLong');
-    const fromAt = new Date(rules.zonedTimeToUtc(input.from, '00:00', tz).getTime() - DAY);
-    const toAt = new Date(
-      rules.zonedTimeToUtc(rules.nextDate(input.to), '00:00', tz).getTime() + DAY,
-    );
-    const now = new Date();
-    const [roster, policy, shifts, punches, devices] = await Promise.all([
-      storeRoster(tx, session.orgId, store.id),
-      loadPolicy(tx, store.id),
-      tx
-        .select()
-        .from(s.attendanceShifts)
-        .where(
-          and(
-            eq(s.attendanceShifts.storeId, store.id),
-            gte(s.attendanceShifts.shiftDate, rules.nextDate(input.from, -1)),
-            lte(s.attendanceShifts.shiftDate, input.to),
-          ),
-        )
-        .orderBy(asc(s.attendanceShifts.startsAt)),
-      tx
-        .select()
-        .from(s.attendancePunches)
-        .where(
-          and(
-            eq(s.attendancePunches.storeId, store.id),
-            gte(s.attendancePunches.punchedAt, fromAt),
-            lte(s.attendancePunches.punchedAt, toAt),
-          ),
-        )
-        .orderBy(asc(s.attendancePunches.punchedAt)),
-      tx
-        .select({ memberId: s.attendanceDevices.memberId, boundAt: s.attendanceDevices.boundAt })
-        .from(s.attendanceDevices)
-        .where(eq(s.attendanceDevices.orgId, session.orgId)),
-    ]);
-    const memberIds = new Set([
-      ...roster.map((m) => m.memberId),
-      ...shifts.map((x) => x.memberId),
-      ...punches.map((x) => x.memberId),
-    ]);
-    const enabled = await clockEnabled(tx, [...memberIds]);
-    const names = new Map(roster.map((m) => [m.memberId, m.displayName]));
-    const missingNames = [...memberIds].filter((id) => !names.has(id));
-    const actorIds = punches
-      .flatMap((p) => [p.createdByMemberId, p.voidedByMemberId])
-      .filter((x): x is string => !!x);
-    const extra = [...new Set([...missingNames, ...actorIds])];
-    if (extra.length > 0) {
-      const rows = await tx
-        .select({ memberId: s.members.id, displayName: s.users.displayName })
-        .from(s.members)
-        .innerJoin(s.users, eq(s.users.id, s.members.userId))
-        .where(inArray(s.members.id, extra));
-      for (const r of rows) if (!names.has(r.memberId)) names.set(r.memberId, r.displayName);
-    }
-    const deviceBound = new Map(devices.map((d) => [d.memberId, d.boundAt]));
-    const view = policyView(policy);
-    const summaries = rules
-      .summarize({
-        shifts: shifts.map((x) => ({
-          id: x.id,
-          memberId: x.memberId,
-          date: x.shiftDate,
-          startsAt: x.startsAt,
-          endsAt: x.endsAt,
-        })),
-        punches: punches
-          .filter((p) => !p.voidedAt)
-          .map((p) => ({ id: p.id, memberId: p.memberId, kind: p.kind, at: p.punchedAt })),
-        graceMinutes: view.graceMinutes,
-        now,
-        dateOf: (at) => dateInTz(at, tz),
-      })
-      .filter((d) => d.date >= input.from && d.date <= input.to);
-    const rosterIds = new Set(roster.map((m) => m.memberId));
-    return {
-      timezone: tz,
-      today: todayInTz(tz, now),
-      graceMinutes: view.graceMinutes,
-      members: [...memberIds]
-        .map((id) => ({
-          memberId: id,
-          name: names.get(id) ?? '—',
-          inStore: rosterIds.has(id),
-          enabled: enabled.has(id),
-          deviceBoundAt: deviceBound.get(id)?.toISOString() ?? null,
-        }))
-        .sort((a, b) => Number(b.enabled) - Number(a.enabled) || a.name.localeCompare(b.name)),
-      shifts: shifts.filter((x) => x.shiftDate >= input.from).map((x) => shiftView(x, tz)),
-      punches: punches.map((p) => ({
-        id: p.id,
-        memberId: p.memberId,
-        kind: p.kind,
-        at: p.punchedAt.toISOString(),
-        date: dateInTz(p.punchedAt, tz),
-        time: rules.localTime(p.punchedAt, tz),
-        source: p.source,
-        reason: p.reason,
-        distanceM: p.distanceM,
-        createdByName: p.source === 'manual' ? (names.get(p.createdByMemberId) ?? null) : null,
-        voided: p.voidedAt
-          ? {
-              at: p.voidedAt.toISOString(),
-              byName: p.voidedByMemberId ? (names.get(p.voidedByMemberId) ?? null) : null,
-              reason: p.voidReason ?? '',
-            }
-          : null,
-      })),
-      days: summaries,
-    };
+    return buildSheet(tx, session, store, input.from, input.to);
   });
 }
 
@@ -503,6 +611,16 @@ export const attendanceRouter = router({
         fail('CONFLICT', input.kind === 'in' ? 'alreadyClockedIn' : 'notClockedIn');
       }
 
+      // Well past the shift's end: the person says why, and it waits for a
+      // manager's approval before it counts (owner decision 2026-11-05).
+      const overtime =
+        input.kind === 'out'
+          ? await overtimeFor(tx, session.memberId, store.id, now, policy.overtimeAfterMinutes)
+          : null;
+      if (overtime && !input.overtimeReason) {
+        fail('BAD_REQUEST', 'overtimeReasonRequired', { context: { minutes: overtime.minutes } });
+      }
+
       const [row] = await tx
         .insert(s.attendancePunches)
         .values({
@@ -519,10 +637,22 @@ export const attendanceRouter = router({
           createdByMemberId: session.memberId,
         })
         .returning();
+      if (overtime) {
+        await tx.insert(s.attendanceOvertime).values({
+          orgId: session.orgId,
+          storeId: store.id,
+          memberId: session.memberId,
+          shiftId: overtime.shiftId,
+          punchId: row!.id,
+          minutes: overtime.minutes,
+          reason: input.overtimeReason ?? null,
+        });
+      }
       publish(session.orgId, store.id);
       const tz = tzOf(store, session);
       return {
         id: row!.id,
+        overtimeMinutes: overtime?.minutes ?? 0,
         kind: input.kind,
         at: now.toISOString(),
         time: rules.localTime(now, tz),
@@ -684,6 +814,26 @@ export const attendanceRouter = router({
             createdByMemberId: session.memberId,
           })
           .returning({ id: s.attendancePunches.id });
+        // A manager entering a late clock-out vouches for it: approved.
+        const policy = policyView(await loadPolicy(tx, store.id));
+        const overtime =
+          input.kind === 'out'
+            ? await overtimeFor(tx, input.memberId, store.id, at, policy.overtimeAfterMinutes)
+            : null;
+        if (overtime) {
+          await tx.insert(s.attendanceOvertime).values({
+            orgId: session.orgId,
+            storeId: store.id,
+            memberId: input.memberId,
+            shiftId: overtime.shiftId,
+            punchId: row!.id,
+            minutes: overtime.minutes,
+            reason: input.reason,
+            status: 'approved',
+            decidedByMemberId: session.memberId,
+            decidedAt: new Date(),
+          });
+        }
         publish(session.orgId, store.id);
         return { id: row!.id };
       });
@@ -783,6 +933,7 @@ export const attendanceRouter = router({
           geoLng: input.geo ? input.geo.lng.toFixed(6) : null,
           geoRadiusM: input.geo?.radiusM ?? null,
           graceMinutes: input.graceMinutes,
+          overtimeAfterMinutes: input.overtimeAfterMinutes,
           updatedByMemberId: session.memberId,
           updatedAt: new Date(),
         };
@@ -792,6 +943,103 @@ export const attendanceRouter = router({
           .onConflictDoUpdate({ target: s.attendanceStorePolicies.storeId, set: values });
         publish(session.orgId, store.id);
         return { ok: true as const };
+      });
+    }),
+
+  /** Approve or reject overtime; only approved overtime counts. */
+  overtimeDecide: idempotentMutation
+    .input(AttendanceOvertimeDecideInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const session = ctx.session!;
+      return ctx.withOrg(async (tx) => {
+        const store = await authorize(tx, session, input.storeId, 'attendance.manage');
+        const [row] = await tx
+          .update(s.attendanceOvertime)
+          .set({
+            status: input.approve ? 'approved' : 'rejected',
+            decidedByMemberId: session.memberId,
+            decidedAt: new Date(),
+            decisionNote: input.note || null,
+          })
+          .where(
+            and(
+              eq(s.attendanceOvertime.id, input.overtimeId),
+              eq(s.attendanceOvertime.storeId, store.id),
+            ),
+          )
+          .returning({ id: s.attendanceOvertime.id });
+        if (!row) fail('NOT_FOUND', 'overtimeNotFound');
+        publish(session.orgId, store.id);
+        return { ok: true as const };
+      });
+    }),
+
+  /** A person's daily wage from a date on; a later date is a raise, not a rewrite. */
+  payRateSet: idempotentMutation
+    .input(AttendancePayRateSetInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const session = ctx.session!;
+      return ctx.withOrg(async (tx) => {
+        const store = await authorize(tx, session, input.storeId, 'attendance.manage');
+        await assertInStore(tx, session.orgId, store.id, input.memberId);
+        await tx
+          .insert(s.attendancePayRates)
+          .values({
+            orgId: session.orgId,
+            memberId: input.memberId,
+            dailyWage: input.dailyWage,
+            effectiveFrom: input.effectiveFrom,
+            createdByMemberId: session.memberId,
+          })
+          .onConflictDoUpdate({
+            target: [s.attendancePayRates.memberId, s.attendancePayRates.effectiveFrom],
+            set: { dailyWage: input.dailyWage, createdByMemberId: session.memberId },
+          });
+        publish(session.orgId, store.id);
+        return { ok: true as const };
+      });
+    }),
+
+  /**
+   * The daily close's wage rows from attendance: who worked that day and
+   * what they are owed (daily wage less late / early). Rows that need a
+   * manager first (missing punch, no shift, no wage) come back flagged,
+   * without an amount.
+   */
+  wageSuggestions: authedProcedure
+    .input(AttendanceWageSuggestionsInputSchema)
+    .query(async ({ ctx, input }) => {
+      const session = ctx.session!;
+      return ctx.withOrg(async (tx) => {
+        const store = await loadStore(tx, session, input.storeId);
+        await assertActorAssignedToStore(tx, session.memberId, store.id, session.permissions);
+        const perms = await effectivePermissionsForStore(
+          tx,
+          session.memberId,
+          store.id,
+          session.permissions,
+        );
+        if (!perms.has('settlement.record') && !perms.has('attendance.manage')) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'auth.errors.missingPermission',
+            cause: { missingPermission: 'settlement.record' },
+          });
+        }
+        const sheet = await buildSheet(tx, session, store, input.date, input.date);
+        const name = new Map(sheet.members.map((m) => [m.memberId, m.name]));
+        return sheet.days
+          .filter((d) => d.date === input.date && d.pay.status !== 'inProgress')
+          .map((d) => ({
+            memberId: d.memberId,
+            name: name.get(d.memberId) ?? '—',
+            status: d.pay.status,
+            dailyWage: d.dailyWage,
+            lateMinutes: d.lateMinutes,
+            earlyMinutes: d.earlyMinutes,
+            deduction: centsToMoney(d.pay.deductionCents),
+            amount: d.pay.netCents === null ? null : centsToMoney(d.pay.netCents),
+          }));
       });
     }),
 });

@@ -694,6 +694,8 @@ export const attendanceStorePolicies = inventorySchema.table(
     geoLng: decimal('geo_lng', { precision: 9, scale: 6 }),
     geoRadiusM: integer('geo_radius_m'),
     graceMinutes: integer('grace_minutes').notNull().default(5),
+    /** Minutes past a shift's end before a clock-out counts as overtime (0061). */
+    overtimeAfterMinutes: integer('overtime_after_minutes').notNull().default(30),
     updatedByMemberId: uuid('updated_by_member_id').references(() => members.id, {
       onDelete: 'set null',
     }),
@@ -781,5 +783,66 @@ export const attendancePunches = inventorySchema.table(
     storeTimeIdx: index('ap_store_time_idx').on(t.storeId, t.punchedAt),
     memberTimeIdx: index('ap_member_time_idx').on(t.memberId, t.punchedAt),
     orgIdx: index('ap_org_idx').on(t.orgId),
+  }),
+);
+
+/** A person's daily wage from a date on (0061). */
+export const attendancePayRates = inventorySchema.table(
+  'attendance_pay_rates',
+  {
+    id: pkUuid(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    memberId: uuid('member_id')
+      .notNull()
+      .references(() => members.id, { onDelete: 'cascade' }),
+    dailyWage: decimal('daily_wage', { precision: 14, scale: 2 }).notNull(),
+    effectiveFrom: date('effective_from', { mode: 'string' }).notNull(),
+    createdByMemberId: uuid('created_by_member_id'),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    memberFromUnique: uniqueIndex('attendance_pay_rates_member_id_effective_from_key').on(
+      t.memberId,
+      t.effectiveFrom,
+    ),
+    orgIdx: index('apr_org_idx').on(t.orgId),
+  }),
+);
+
+/** Time past a shift's end on one clock-out; counts once approved (0061). */
+export const attendanceOvertime = inventorySchema.table(
+  'attendance_overtime',
+  {
+    id: pkUuid(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    storeId: uuid('store_id')
+      .notNull()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+    memberId: uuid('member_id')
+      .notNull()
+      .references(() => members.id, { onDelete: 'cascade' }),
+    shiftId: uuid('shift_id').references(() => attendanceShifts.id, { onDelete: 'set null' }),
+    punchId: uuid('punch_id')
+      .notNull()
+      .unique()
+      .references(() => attendancePunches.id, { onDelete: 'cascade' }),
+    minutes: integer('minutes').notNull(),
+    reason: text('reason'),
+    status: varchar('status', { length: 10 })
+      .notNull()
+      .default('pending')
+      .$type<'pending' | 'approved' | 'rejected'>(),
+    decidedByMemberId: uuid('decided_by_member_id'),
+    decidedAt: timestamp('decided_at', { withTimezone: true, mode: 'date' }),
+    decisionNote: text('decision_note'),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    storeIdx: index('aot_store_idx').on(t.storeId, t.createdAt),
+    orgIdx: index('aot_org_idx').on(t.orgId),
   }),
 );
