@@ -675,7 +675,7 @@ function revisionSnapshot(
  * explicit assignment or an active store-scoped role binding; global roles by
  * themselves never make every employee a wage recipient in every store.
  */
-async function loadWageRoster(tx: DB, orgId: string, storeId: string): Promise<WageRosterMember[]> {
+export async function loadWageRoster(tx: DB, orgId: string, storeId: string): Promise<WageRosterMember[]> {
   const now = new Date();
   const activeMemberConditions = [
     eq(s.members.orgId, orgId),

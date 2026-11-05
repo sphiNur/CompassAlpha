@@ -8,6 +8,7 @@ import {
   IconCatalog,
   IconConfirm,
   IconHistory,
+  IconAttendance,
   IconOrder,
   IconRun,
   IconSettlement,
@@ -19,6 +20,7 @@ import { PageErrorBoundary } from './PageErrorBoundary';
 import {
   importAdminPage,
   importApprovalPage,
+  importAttendancePage,
   importConfirmPage,
   importHistoryPage,
   importRunPage,
@@ -56,6 +58,8 @@ const SalesPage = resilientLazy(importSalesPage);
 // (~60 KB raw together) although only approvers and receivers open them.
 const ApprovalPage = resilientLazy(importApprovalPage);
 const ConfirmPage = resilientLazy(importConfirmPage);
+// 2026-11-05: clock in / out, only for members switched on for it.
+const AttendancePage = resilientLazy(importAttendancePage);
 import { resilientLazy } from '../lib/resilientLazy';
 import { useAuthStore } from '../stores/authStore';
 import {
@@ -179,6 +183,15 @@ const TABS: TabDef[] = [
     shortKey: 'nav.short.confirm',
     Icon: IconConfirm,
   },
+  // 2026-11-05: clock in / out. `attendance.clock` is switched on per
+  // member; managers review attendance under Admin, not here.
+  {
+    key: 'attendance',
+    permission: 'attendance.clock',
+    labelKey: 'nav.attendance',
+    shortKey: 'nav.short.attendance',
+    Icon: IconAttendance,
+  },
   {
     key: 'admin',
     permission: 'users.manage',
@@ -197,6 +210,7 @@ const STORE_BOUND_TABS: ReadonlySet<Tab> = new Set<Tab>([
   'settlement',
   'sales',
   'confirm',
+  'attendance',
 ]);
 // Loading fallback for lazily-imported pages. Centered spinner so the
 // blip between bundle download and render doesn't look like a stall.
@@ -240,6 +254,11 @@ const PAGES: Record<Tab, () => ReactNode> = {
   confirm: () => (
     <Suspense fallback={<PageLoading />}>
       <ConfirmPage />
+    </Suspense>
+  ),
+  attendance: () => (
+    <Suspense fallback={<PageLoading />}>
+      <AttendancePage />
     </Suspense>
   ),
   admin: () => (

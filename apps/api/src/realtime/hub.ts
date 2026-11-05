@@ -39,6 +39,7 @@ export type RealtimeMessage =
       entity: 'store' | 'sku' | 'supplier' | 'category' | 'expenseTemplate';
     }
   | { type: 'people.changed'; orgId: string }
+  | { type: 'attendance.changed'; orgId: string; storeId: string }
   | { type: 'notification'; orgId: string; userId: string; title: string; body?: string }
   | { type: 'ping'; t: number };
 

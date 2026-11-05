@@ -13,6 +13,7 @@ export type AdminSection =
   | 'permissions'
   | 'catalog'
   | 'operations'
+  | 'attendance'
   | 'platform';
 
 // M2.0b: new 'dishes' sub-section for menu items + recipe (BOM) editor.

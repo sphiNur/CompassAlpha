@@ -674,3 +674,115 @@ export const priceHistory = inventorySchema.table(
     supplierIdx: index('price_hist_supplier_idx').on(t.supplierId, t.observedAt),
   }),
 );
+
+/**
+ * Attendance (0060). A store's clock-in rules: which checks a self punch
+ * must pass. No row = only the bound-device check.
+ */
+export const attendanceStorePolicies = inventorySchema.table(
+  'attendance_store_policies',
+  {
+    storeId: uuid('store_id')
+      .primaryKey()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    requireDevice: boolean('require_device').notNull().default(true),
+    requireGeo: boolean('require_geo').notNull().default(false),
+    geoLat: decimal('geo_lat', { precision: 9, scale: 6 }),
+    geoLng: decimal('geo_lng', { precision: 9, scale: 6 }),
+    geoRadiusM: integer('geo_radius_m'),
+    requireIp: boolean('require_ip').notNull().default(false),
+    allowedIps: text('allowed_ips').array().notNull().default(sql`'{}'::text[]`),
+    graceMinutes: integer('grace_minutes').notNull().default(5),
+    updatedByMemberId: uuid('updated_by_member_id').references(() => members.id, {
+      onDelete: 'set null',
+    }),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({ orgIdx: index('asp_org_idx').on(t.orgId) }),
+);
+
+/** The one phone a member clocks from; only the SHA-256 of its id. */
+export const attendanceDevices = inventorySchema.table(
+  'attendance_devices',
+  {
+    memberId: uuid('member_id')
+      .primaryKey()
+      .references(() => members.id, { onDelete: 'cascade' }),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    deviceHash: text('device_hash').notNull(),
+    platform: varchar('platform', { length: 32 }),
+    boundAt: timestamp('bound_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => ({ orgIdx: index('ad_org_idx').on(t.orgId) }),
+);
+
+export const attendanceShifts = inventorySchema.table(
+  'attendance_shifts',
+  {
+    id: pkUuid(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    storeId: uuid('store_id')
+      .notNull()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+    memberId: uuid('member_id')
+      .notNull()
+      .references(() => members.id, { onDelete: 'cascade' }),
+    shiftDate: date('shift_date', { mode: 'string' }).notNull(),
+    startsAt: timestamp('starts_at', { withTimezone: true, mode: 'date' }).notNull(),
+    endsAt: timestamp('ends_at', { withTimezone: true, mode: 'date' }).notNull(),
+    note: text('note'),
+    createdByMemberId: uuid('created_by_member_id').references(() => members.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    storeDateIdx: index('ash_store_date_idx').on(t.storeId, t.shiftDate),
+    memberDateIdx: index('ash_member_date_idx').on(t.memberId, t.shiftDate),
+    orgIdx: index('ash_org_idx').on(t.orgId),
+  }),
+);
+
+/** Append-only (trigger): a punch is never deleted, only voided once. */
+export const attendancePunches = inventorySchema.table(
+  'attendance_punches',
+  {
+    id: pkUuid(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    storeId: uuid('store_id')
+      .notNull()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+    memberId: uuid('member_id')
+      .notNull()
+      .references(() => members.id, { onDelete: 'cascade' }),
+    kind: varchar('kind', { length: 3 }).notNull().$type<'in' | 'out'>(),
+    punchedAt: timestamp('punched_at', { withTimezone: true, mode: 'date' }).notNull(),
+    source: varchar('source', { length: 8 }).notNull().$type<'self' | 'manual'>(),
+    geoLat: decimal('geo_lat', { precision: 9, scale: 6 }),
+    geoLng: decimal('geo_lng', { precision: 9, scale: 6 }),
+    geoAccuracyM: integer('geo_accuracy_m'),
+    distanceM: integer('distance_m'),
+    clientIp: text('client_ip'),
+    reason: text('reason'),
+    createdByMemberId: uuid('created_by_member_id').notNull(),
+    voidedAt: timestamp('voided_at', { withTimezone: true, mode: 'date' }),
+    voidedByMemberId: uuid('voided_by_member_id'),
+    voidReason: text('void_reason'),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    storeTimeIdx: index('ap_store_time_idx').on(t.storeId, t.punchedAt),
+    memberTimeIdx: index('ap_member_time_idx').on(t.memberId, t.punchedAt),
+    orgIdx: index('ap_org_idx').on(t.orgId),
+  }),
+);

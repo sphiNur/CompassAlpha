@@ -132,6 +132,17 @@ export function IconHistory(props: IconProps) {
   );
 }
 
+/** Attendance: a clock face with a check — clocking in, not history. */
+export function IconAttendance(props: IconProps) {
+  return (
+    <svg {...svgBase(props)}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5V12h3.5" />
+      <path d="M15.5 17.5l1.8 1.8 3.2-3.6" />
+    </svg>
+  );
+}
+
 /**
  * Daily settlement / cash-register mark. The drawer + receipt notch make
  * the close-of-day destination distinct from the order sheet and history
