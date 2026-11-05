@@ -148,6 +148,11 @@ export function AdminPage() {
   const resetAdminDrillDown = useNavStore((s) => s.resetAdminDrillDown);
 
   const isAdmin = session?.permissions.includes('users.manage') ?? false;
+  // A store manager (users.manage without org.admin) only reads Workspace,
+  // Roles & permissions and Catalog: every write there needs org.admin
+  // (dishes: dishes.manage), so those rows are left out for them.
+  const isOrgAdmin = session?.permissions.includes('org.admin') ?? false;
+  const seesCatalog = isOrgAdmin || (session?.permissions.includes('dishes.manage') ?? false);
   const isSuperAdmin = session?.roleSlugs.includes('super_admin') ?? false;
   // CAT-8 / HIS-10 (2026-10-30): the build flag hid only the menu row; a
   // restored navigation state opened the page itself.
@@ -206,7 +211,12 @@ export function AdminPage() {
     );
   }
 
-  if (section !== 'home') {
+  // A restored navigation state can point at a section this member no
+  // longer lists; fall back to the home list.
+  const sectionHidden =
+    ((section === 'organization' || section === 'permissions') && !isOrgAdmin) ||
+    (section === 'catalog' && !seesCatalog);
+  if (section !== 'home' && !sectionHidden) {
     return (
       <SectionFrame
         title={titleForSection(section, catalogSub, opsSub, storeFocus, storeSub, i18n)}
@@ -276,18 +286,20 @@ export function AdminPage() {
     <div ref={drill.rootRef} onClickCapture={drill.onClickCapture} className="flex flex-col">
       {/* A11Y-10: the admin home has no visible title; screen readers get one. */}
       <h1 className="sr-only">{i18n.t('nav.admin')}</h1>
-      <ul className={cn("mx-4 mt-3 mb-6", rowGroupClass)} role="list">
+      <ul className={cn('mx-4 mt-3 mb-6', rowGroupClass)} role="list">
         {/* 2026-10-21 audit CA-16 / E-12: a platform admin without
             `users.manage` now reaches this tab; the tenant sections would
             all 403 for them, so only Platform is listed. */}
         {isAdmin ? (
           <>
-            <SectionRow
-              icon={<IconWorkspace size={20} />}
-              label={i18n.t('admin.section.organization')}
-              hint={i18n.t('admin.section.organizationHint')}
-              onClick={() => setSection('organization')}
-            />
+            {isOrgAdmin ? (
+              <SectionRow
+                icon={<IconWorkspace size={20} />}
+                label={i18n.t('admin.section.organization')}
+                hint={i18n.t('admin.section.organizationHint')}
+                onClick={() => setSection('organization')}
+              />
+            ) : null}
             <SectionRow
               icon={<IconPeople size={20} />}
               label={i18n.t('admin.section.stores')}
@@ -298,18 +310,22 @@ export function AdminPage() {
             — visually ambiguous in the section list. Switched to a new
             shield icon (added to @compass/ui) which reads as "access /
             roles" without overlapping the Organization or Stores rows. */}
-            <SectionRow
-              icon={<IconShield size={20} />}
-              label={i18n.t('admin.section.permissions')}
-              hint={i18n.t('admin.section.permissionsHint')}
-              onClick={() => setSection('permissions')}
-            />
-            <SectionRow
-              icon={<IconCatalog size={20} />}
-              label={i18n.t('admin.section.catalog')}
-              hint={i18n.t('admin.section.catalogHint')}
-              onClick={() => setSection('catalog')}
-            />
+            {isOrgAdmin ? (
+              <SectionRow
+                icon={<IconShield size={20} />}
+                label={i18n.t('admin.section.permissions')}
+                hint={i18n.t('admin.section.permissionsHint')}
+                onClick={() => setSection('permissions')}
+              />
+            ) : null}
+            {seesCatalog ? (
+              <SectionRow
+                icon={<IconCatalog size={20} />}
+                label={i18n.t('admin.section.catalog')}
+                hint={i18n.t('admin.section.catalogHint')}
+                onClick={() => setSection('catalog')}
+              />
+            ) : null}
             <SectionRow
               icon={<IconActivity size={20} />}
               label={i18n.t('admin.section.operations')}
@@ -387,7 +403,7 @@ function OperationsHome({
 }) {
   const i18n = useI18n();
   return (
-    <ul className={cn("mx-4 mt-2 mb-6", rowGroupClass)} role="list">
+    <ul className={cn('mx-4 mt-2 mb-6', rowGroupClass)} role="list">
       <SectionRow
         label={i18n.t('admin.subsection.activity')}
         hint={i18n.t('admin.subsection.activityHint')}
@@ -476,9 +492,7 @@ function useDrillDownFocus(levelKey: string) {
     }
     const text = entryRow.current.get(levelKey);
     const row = text
-      ? [...root.querySelectorAll<HTMLButtonElement>('button')].find(
-          (b) => b.textContent === text,
-        )
+      ? [...root.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === text)
       : undefined;
     (row ?? root.querySelector<HTMLElement>('h1'))?.focus();
   }, [levelKey]);
@@ -714,10 +728,7 @@ function WorkspaceSection() {
       >
         <div className="flex flex-col gap-3 py-3">
           <Field label={i18n.t('admin.workspace.currency')}>
-            <Select
-              value={draftCurrency}
-              onChange={(e) => setDraftCurrency(e.target.value)}
-            >
+            <Select value={draftCurrency} onChange={(e) => setDraftCurrency(e.target.value)}>
               {/* Limited to four ISO codes for launch — UZS (default),
                   RUB / KZT (neighbouring markets), USD (cross-border
                   contracts). Free-form input is rejected server-side
@@ -773,7 +784,7 @@ function CatalogHome({ onPick }: { onPick: (s: CatalogSub) => void }) {
   // top-level section. Catalog now strictly holds the "what you order
   // / who you order from" data — categories, SKUs, suppliers.
   return (
-    <ul className={cn("mx-4 mt-2", rowGroupClass)} role="list">
+    <ul className={cn('mx-4 mt-2', rowGroupClass)} role="list">
       <li>
         <ListRow
           label={i18n.t('admin.subsection.categories')}

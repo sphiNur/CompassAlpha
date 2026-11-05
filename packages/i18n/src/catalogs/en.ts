@@ -591,7 +591,7 @@ export const en = {
     'Approves orders, views reports and manages the staff of their stores',
   'role.description.purchaser': 'Goes to the market and buys',
   'role.description.cashier': 'Records store sales and does the daily close',
-  'role.description.staff': 'Drafts and submits the daily order; confirms receipt',
+  'role.description.staff': 'Drafts and submits the daily order; confirms receipt; records store sales',
   'permission.order.draft': 'Create or edit own order draft',
   'permission.order.submit': 'Submit own order for review',
   'permission.order.approve': 'Approve or reject submitted orders',

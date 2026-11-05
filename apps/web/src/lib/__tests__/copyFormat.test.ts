@@ -104,7 +104,7 @@ describe('ADM-17 / RE-AUTH-2: built-in roles and permissions', () => {
     expect(zh.name({ slug: 'shift-lead', name: 'Shift lead' })).toBe('Shift lead');
     expect(
       zh.description({ slug: 'staff', description: BUILTIN_ROLE_DEFAULTS.staff!.description }),
-    ).toBe('填写并提交每日订单；确认收货');
+    ).toBe('填写并提交每日订单；确认收货；记录门店销售');
   });
 
   test('every seeded permission and its group has a catalog name', () => {
