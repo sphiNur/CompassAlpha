@@ -2267,7 +2267,9 @@ function ReviewList({
                       <div className="min-w-[7rem] flex-1">
                         <div
                           className={`break-words text-old-h2 font-semibold leading-snug ${
-                            total > 0 ? 'text-[var(--c-fg)]' : 'text-[var(--c-fg-muted)] line-through'
+                            myQty > 0 || others > 0
+                              ? 'text-[var(--c-fg)]'
+                              : 'text-[var(--c-fg-muted)] line-through'
                           }`}
                         >
                           {r.name}
