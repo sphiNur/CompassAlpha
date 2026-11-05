@@ -326,6 +326,16 @@ export const IDEMPOTENT_MUTATIONS = new Set<string>([
   // "please review" warning.
   'run.markUnavailable',
   'run.deliverToStore',
+  // 2026-11-05 attendance: all declared idempotentMutation server-side.
+  'attendance.punch',
+  'attendance.shiftSave',
+  'attendance.shiftDelete',
+  'attendance.copyWeek',
+  'attendance.manualPunch',
+  'attendance.voidPunch',
+  'attendance.memberSet',
+  'attendance.resetDevice',
+  'attendance.policySave',
 ]);
 
 function genKey(): string {

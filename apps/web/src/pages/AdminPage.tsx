@@ -33,6 +33,7 @@ import {
   EmptyState,
   Field,
   IconActivity,
+  IconAttendance,
   IconCatalog,
   IconMaintenance,
   IconPeople,
@@ -87,6 +88,7 @@ import { StoresHomeSection, StoreDetailScreen } from './admin/stores/StoresSecti
 // People + permissions — extracted to admin/people (Phase 5 step 4).
 import { PermissionsSection } from './admin/people/PeopleSections';
 import { PlatformSection } from './admin/platform/PlatformSections';
+import { AttendanceAdmin } from './attendance/AttendanceAdmin';
 
 /**
  * AdminPage top-level layout (rewritten 2026-05-06 — round 3, M1.4
@@ -153,6 +155,8 @@ export function AdminPage() {
   // (dishes: dishes.manage), so those rows are left out for them.
   const isOrgAdmin = session?.permissions.includes('org.admin') ?? false;
   const seesCatalog = isOrgAdmin || (session?.permissions.includes('dishes.manage') ?? false);
+  // 2026-11-05: attendance sheet, roster and rules for the stores they manage.
+  const seesAttendance = session?.permissions.includes('attendance.manage') ?? false;
   const isSuperAdmin = session?.roleSlugs.includes('super_admin') ?? false;
   // CAT-8 / HIS-10 (2026-10-30): the build flag hid only the menu row; a
   // restored navigation state opened the page itself.
@@ -215,7 +219,8 @@ export function AdminPage() {
   // longer lists; fall back to the home list.
   const sectionHidden =
     ((section === 'organization' || section === 'permissions') && !isOrgAdmin) ||
-    (section === 'catalog' && !seesCatalog);
+    (section === 'catalog' && !seesCatalog) ||
+    (section === 'attendance' && !seesAttendance);
   if (section !== 'home' && !sectionHidden) {
     return (
       <SectionFrame
@@ -273,6 +278,7 @@ export function AdminPage() {
         {section === 'operations' && opsSub === 'maintenance' && maintenanceOn ? (
           <MaintenanceSection />
         ) : null}
+        {section === 'attendance' ? <AttendanceAdmin /> : null}
         {section === 'platform' ? <PlatformSection /> : null}
       </SectionFrame>
     );
@@ -324,6 +330,14 @@ export function AdminPage() {
                 label={i18n.t('admin.section.catalog')}
                 hint={i18n.t('admin.section.catalogHint')}
                 onClick={() => setSection('catalog')}
+              />
+            ) : null}
+            {seesAttendance ? (
+              <SectionRow
+                icon={<IconAttendance size={20} />}
+                label={i18n.t('admin.section.attendance')}
+                hint={i18n.t('admin.section.attendanceHint')}
+                onClick={() => setSection('attendance')}
               />
             ) : null}
             <SectionRow
@@ -386,6 +400,8 @@ function titleForSection(
       return i18n.t('admin.section.catalog');
     case 'operations':
       return i18n.t('admin.section.operations');
+    case 'attendance':
+      return i18n.t('admin.section.attendance');
     case 'platform':
       return i18n.t('admin.section.platform');
     default:

@@ -21,6 +21,7 @@ import { verifyAccess } from './infra/jwt';
 import { hub } from './realtime/hub';
 import { relayDatabaseNotices } from './realtime/dbRelay';
 import { createWebSocketHandler, handleWsRequest, type WSData } from './realtime/socket';
+import { scanAttendanceReminders } from './services/attendanceReminders';
 import { trustedClientIp } from './services/clientIp';
 import { loadSession } from './trpc/context';
 
@@ -95,6 +96,24 @@ async function main() {
     logger.debug({ pinged, totalSubs: total }, 'ws pingAll');
   }, 25_000);
   pingInterval.unref?.();
+
+  // 2026-11-05: attendance reminders (forgot to clock in / out, absent →
+  // managers). Each is deduped per shift, so a missed or doubled tick is
+  // harmless.
+  let scanningAttendance = false;
+  const attendanceInterval = setInterval(() => {
+    if (scanningAttendance) return;
+    scanningAttendance = true;
+    scanAttendanceReminders(db)
+      .then((sent) => {
+        if (sent > 0) logger.info({ sent }, 'attendance reminders');
+      })
+      .catch((err: unknown) => logger.warn({ err }, 'attendance reminder scan failed'))
+      .finally(() => {
+        scanningAttendance = false;
+      });
+  }, 5 * 60_000);
+  attendanceInterval.unref?.();
 
   logger.info({ port: server.port, host: env.HOST }, 'API listening');
 

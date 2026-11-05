@@ -106,6 +106,7 @@ interface RealtimeMessage {
     // auto-refresh when another admin in the org commits a change.
     | 'catalog.changed'
     | 'people.changed'
+    | 'attendance.changed'
     | 'notification'
     // 2026-10-21 audit CA-35 / E-06: the hub drops its OLDEST socket at the
     // connection cap and sends this, but used to leave it open — a zombie
@@ -261,6 +262,9 @@ export function useRealtime(): void {
             // roles; re-read the session so tabs and pages follow it
             // instead of failing on the next request.
             void refreshSessionRef.current();
+            break;
+          case 'attendance.changed':
+            debouncedInvalidate([['attendance']]);
             break;
           case 'notification':
             debouncedInvalidate([['notifications']]);

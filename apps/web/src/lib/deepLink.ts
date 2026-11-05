@@ -19,6 +19,7 @@ const DEEP_LINK_TABS: readonly Tab[] = [
   'settlement',
   'sales',
   'confirm',
+  'attendance',
   'admin',
 ];
 

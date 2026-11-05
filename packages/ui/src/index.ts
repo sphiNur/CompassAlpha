@@ -103,6 +103,7 @@ export {
   IconPeople,
   IconCatalog,
   IconHistory,
+  IconAttendance,
   IconSettlement,
   IconActivity,
   IconMaintenance,

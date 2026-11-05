@@ -42,6 +42,7 @@ export type Tab =
   | 'settlement'
   | 'sales'
   | 'confirm'
+  | 'attendance'
   | 'admin';
 
 /**
@@ -81,6 +82,7 @@ export type AdminSection =
   | 'permissions'
   | 'catalog'
   | 'operations'
+  | 'attendance'
   | 'platform';
 export type CatalogSub = 'categories' | 'skus' | 'suppliers' | 'dishes' | 'expenseTemplates' | null;
 export type OperationsSub =
@@ -202,6 +204,7 @@ export const useNavStore = create<NavState>()(
             'settlement',
             'sales',
             'confirm',
+            'attendance',
             'admin',
           ] as const,
           DEFAULTS.tab,
@@ -215,6 +218,7 @@ export const useNavStore = create<NavState>()(
             'permissions',
             'catalog',
             'operations',
+            'attendance',
             'platform',
           ] as const,
           DEFAULTS.adminSection,

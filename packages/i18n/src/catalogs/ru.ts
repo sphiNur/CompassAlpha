@@ -38,8 +38,10 @@ export const ru = {
   'qty.increment': 'Увеличить',
   'qty.pickAria': 'Количество {value} — нажмите, чтобы выбрать',
   'qty.groupAria': 'Количество: {item}',
-  'a11y.results.products': '{n, plural, one {Найден # товар} few {Найдено {n} товара} many {Найдено {n} товаров} other {Найдено {n} товара}}',
-  'a11y.results.items': '{n, plural, one {Показана # позиция} few {Показано {n} позиции} many {Показано {n} позиций} other {Показано {n} позиции}}',
+  'a11y.results.products':
+    '{n, plural, one {Найден # товар} few {Найдено {n} товара} many {Найдено {n} товаров} other {Найдено {n} товара}}',
+  'a11y.results.items':
+    '{n, plural, one {Показана # позиция} few {Показано {n} позиции} many {Показано {n} позиций} other {Показано {n} позиции}}',
   'qty.setTitle': 'Указать количество',
   'qty.unitIs': 'Единица: {unit}',
   'qty.custom': 'Своё значение',
@@ -188,7 +190,8 @@ export const ru = {
   'people.slugInvalid': 'Только строчные латинские буквы, цифры и дефис (-), например night-shift.',
   'people.slugRequired': 'Обязательное поле.',
   'people.rankInvalid': 'Введите целое число от 1 до {max}.',
-  'people.roleHasKeysYouLack': 'В этой роли есть права, которых нет у вас, — здесь её выдать нельзя.',
+  'people.roleHasKeysYouLack':
+    'В этой роли есть права, которых нет у вас, — здесь её выдать нельзя.',
   'people.roleNameKeysYouLack': '{name} (есть права, которых у вас нет)',
   'people.rolesOfMember': 'Роли',
   'people.revokeRole': 'Снять',
@@ -258,7 +261,8 @@ export const ru = {
   'people.noGrantableTitle': 'Нет ролей для выдачи',
   'people.noGrantableGlobal':
     'Все роли уровня рабочего пространства — вашего уровня ({rank}) или выше.',
-  'people.noGrantableStore': 'Ваш уровень в выбранных магазинах — {rank}; ролей ниже этого уровня нет.',
+  'people.noGrantableStore':
+    'Ваш уровень в выбранных магазинах — {rank}; ролей ниже этого уровня нет.',
   'people.noPermsAssigned': 'Права не назначены.',
   'people.nameOverrideHint':
     'После первого входа пользователь не может сменить своё имя — администратор всегда может изменить его здесь.',
@@ -362,7 +366,8 @@ export const ru = {
   'ops.maint.resetting': 'Сброс…',
   'ops.maint.nothingToDelete': 'Нечего удалять',
   'ops.maint.alreadyClean': 'За {date} данных нет — уже чисто.',
-  'ops.maint.rowsFromDate': '{n, plural, one {# строка} few {# строки} many {# строк} other {# строки}} за {date}',
+  'ops.maint.rowsFromDate':
+    '{n, plural, one {# строка} few {# строки} many {# строк} other {# строки}} за {date}',
   'people.memberStatus.suspended': 'Приостановлен',
   'people.memberStatus.invited': 'Приглашён',
   'people.revokeRoleConfirm': 'Снять роль «{role}» у {name}?',
@@ -400,7 +405,8 @@ export const ru = {
     'Роль выдана в {n, plural, one {# магазине} few {# магазинах} many {# магазинах} other {# магазинах}}',
   'people.toastAlreadyHad': '(уже было: {n})',
   'people.toastAlreadyEverywhere': 'Роль уже назначена во всех выбранных областях',
-  'people.permissionCount': '{n, plural, one {# право} few {# права} many {# прав} other {# права}}',
+  'people.permissionCount':
+    '{n, plural, one {# право} few {# права} many {# прав} other {# права}}',
   'people.permissionsHeading': 'Права ({n})',
   'people.assigneesHeading': 'Назначены · {n}',
   'people.effectiveOverridesLine':
@@ -444,7 +450,8 @@ export const ru = {
   'ops.purge.runMeta': '{status} · {sessions}',
   'admin.store.sectionAria': 'Раздел магазина',
   'boot.crashTitle': 'Что-то пошло не так',
-  'boot.crashBody': 'Ошибка отправлена. Попробуйте ещё раз или закройте и снова откройте мини-приложение. Если повторяется — скопируйте сведения об ошибке и отправьте администратору.',
+  'boot.crashBody':
+    'Ошибка отправлена. Попробуйте ещё раз или закройте и снова откройте мини-приложение. Если повторяется — скопируйте сведения об ошибке и отправьте администратору.',
   'boot.tryAgain': 'Повторить',
   'boot.resetAndReload': 'Выйти и перезагрузить',
   'common.noData': 'Нет данных',
@@ -486,7 +493,8 @@ export const ru = {
   'common.errors.validation': 'Неверный ввод — проверьте отмеченные поля',
   'common.networkError': 'Ошибка сети — проверьте соединение',
   'common.offlineNotSaved': 'Нет сети — изменение не сохранено. Повторите, когда появится связь.',
-  'common.offlineNoData': 'Нет сети — эти данные ещё не загружались на этот телефон. Они загрузятся сами, когда появится связь.',
+  'common.offlineNoData':
+    'Нет сети — эти данные ещё не загружались на этот телефон. Они загрузятся сами, когда появится связь.',
   'common.savingSlow': 'Сохраняем…',
   'common.maybeSaved':
     'Ответа нет — неизвестно, сохранено ли изменение. Обновите страницу и проверьте, прежде чем менять снова.',
@@ -540,7 +548,8 @@ export const ru = {
     'Одобряет заказы, смотрит отчёты и управляет сотрудниками своих магазинов',
   'role.description.purchaser': 'Ездит на закупки',
   'role.description.cashier': 'Вносит продажи магазина и закрывает день',
-  'role.description.staff': 'Составляет и отправляет ежедневный заказ; подтверждает приёмку; вносит продажи магазина',
+  'role.description.staff':
+    'Составляет и отправляет ежедневный заказ; подтверждает приёмку; вносит продажи магазина',
   'permission.order.draft': 'Создавать и менять свой черновик заказа',
   'permission.order.submit': 'Отправлять свой заказ на проверку',
   'permission.order.approve': 'Одобрять и отклонять заказы',
@@ -605,8 +614,7 @@ export const ru = {
   'auth.noAccess.title': 'Пока нет доступа',
   'auth.noAccess.body':
     'Мы узнали ваш аккаунт Telegram, но в этом рабочем пространстве у вас пока нет роли. Попросите администратора выдать её.',
-  'shell.noTabs.title':
-    'Здесь пока нет доступных разделов',
+  'shell.noTabs.title': 'Здесь пока нет доступных разделов',
   'shell.noTabs.body':
     'У вашей роли нет доступа к заказам, проверке, закупкам и другим разделам. Если нужно, обратитесь к администратору.',
   'shell.offline.title': 'Нет соединения',
@@ -620,7 +628,8 @@ export const ru = {
   'shell.offline.lastUpdated': 'обновлено {time}',
   'shell.skip.mainAction': 'К основному действию',
   'shell.skip.nav': 'К навигации',
-  'approval.offline.needsConnection': 'Для проверки нужна связь: одобрения и отказы не сохраняются на телефоне.',
+  'approval.offline.needsConnection':
+    'Для проверки нужна связь: одобрения и отказы не сохраняются на телефоне.',
   'workspace.switchConfirm': 'Перейти в {name}? Несохранённые изменения на этой странице пропадут.',
   'storeSwitcher.switched': 'Выбрано: {store}',
   'run.alloc.qtyFor': 'Количество для {store}',
@@ -628,18 +637,17 @@ export const ru = {
   'ops.purge.dateLabel': 'Дата',
   'boot.copyDetails': 'Скопировать сведения об ошибке',
   'boot.detailsCopied': 'Скопировано. Отправьте администратору.',
-  'shell.offline.noDataBody': 'На этом телефоне ещё ничего не загружено; данные появятся, когда будет связь. Заказы, закупки и приёмка сохраняются на телефоне и отправятся при подключении; проверка, закрытие дня, продажи и управление сохраняются только онлайн.',
+  'shell.offline.noDataBody':
+    'На этом телефоне ещё ничего не загружено; данные появятся, когда будет связь. Заказы, закупки и приёмка сохраняются на телефоне и отправятся при подключении; проверка, закрытие дня, продажи и управление сохраняются только онлайн.',
   'order.pendingSync':
     '{n, plural, one {# изменение ждёт} few {# изменения ждут} many {# изменений ждут} other {# изменения ждут}} отправки',
   'shell.pageError.title': 'На этой странице произошла ошибка',
-  'shell.pageError.body': 'Остальные страницы работают. Повторите или перейдите на другую страницу.',
-  'auth.invite.failedStillIn':
-    'Приглашение не сработало: {reason}. Вы по-прежнему в «{org}».',
+  'shell.pageError.body':
+    'Остальные страницы работают. Повторите или перейдите на другую страницу.',
+  'auth.invite.failedStillIn': 'Приглашение не сработало: {reason}. Вы по-прежнему в «{org}».',
   'auth.invite.joined': 'Вы присоединились к «{org}»',
-  'auth.invite.addedToExisting':
-    'Вы уже в «{org}»; магазины и роли из приглашения добавлены',
-  'confirm.storeConfirmedAt':
-    'Приёмка подтверждена · {time}',
+  'auth.invite.addedToExisting': 'Вы уже в «{org}»; магазины и роли из приглашения добавлены',
+  'confirm.storeConfirmedAt': 'Приёмка подтверждена · {time}',
   'auth.onboarding.title': 'Добро пожаловать в Compass',
   'auth.onboarding.body':
     'Коллеги увидят это имя в заказах и записях. После сохранения изменить его сможет только администратор.',
@@ -724,8 +732,7 @@ export const ru = {
   'auth.errors.signInFailed':
     'Не удалось войти. Закройте приложение и снова откройте его из Telegram.',
   'auth.retryInvite': 'Попробовать приглашение ещё раз',
-  'auth.errors.noInitData':
-    'Откройте Compass в Telegram (через бота или ссылку-приглашение).',
+  'auth.errors.noInitData': 'Откройте Compass в Telegram (через бота или ссылку-приглашение).',
   'auth.errors.inviteNotFound':
     'Ссылка-приглашение недействительна или удалена. Попросите новую ссылку у того, кто её прислал.',
   'auth.errors.inviteExpired':
@@ -931,8 +938,7 @@ export const ru = {
     'Участник приостановлен. Сначала активируйте его, затем назначьте магазины и роли',
   'admin.errors.unknownPermission': 'Такого права нет',
   'admin.errors.builtinRankLocked': 'Уровень встроенной роли изменить нельзя',
-  'admin.errors.runHasForeignSessions':
-    'В закупке есть заказы других людей — удалить нельзя.',
+  'admin.errors.runHasForeignSessions': 'В закупке есть заказы других людей — удалить нельзя.',
   'admin.errors.sessionHasForeignAuthors':
     'В заказе есть позиции других людей — удалить нельзя. Здесь можно удалять только свои тестовые заказы.',
   'admin.errors.runActedOnByOthers':
@@ -975,8 +981,7 @@ export const ru = {
   'admin.empty.members.title': 'Участников ещё нет',
   'admin.empty.members.description': 'Нажмите «+ Пригласить» сверху, чтобы добавить первого.',
   'admin.empty.noStoresInThisStore.title': 'В этом магазине никого нет',
-  'admin.empty.noStoresInThisStore.description':
-    'Нажмите «Пригласить», чтобы добавить человека.',
+  'admin.empty.noStoresInThisStore.description': 'Нажмите «Пригласить», чтобы добавить человека.',
   'admin.toast.memberUpdated': 'Участник обновлён',
   'admin.toast.memberRemoved': 'Участник удалён',
   'admin.toast.memberAdded': 'Участник добавлен',
@@ -1000,8 +1005,10 @@ export const ru = {
   'admin.toast.supplierCreated': 'Поставщик создан',
   'admin.toast.supplierUpdated': 'Поставщик обновлён',
   'admin.toast.supplierArchived': 'Поставщик архивирован',
-  'admin.toast.sessionDeleted': 'Заказ удалён — {n, plural, one {# запись} few {# записи} many {# записей} other {# записи}}',
-  'admin.toast.runDeleted': 'Закупка удалена — {n, plural, one {# запись} few {# записи} many {# записей} other {# записи}}',
+  'admin.toast.sessionDeleted':
+    'Заказ удалён — {n, plural, one {# запись} few {# записи} many {# записей} other {# записи}}',
+  'admin.toast.runDeleted':
+    'Закупка удалена — {n, plural, one {# запись} few {# записи} many {# записей} other {# записи}}',
   'admin.toast.dateReset':
     'Сброшено {date}: {n, plural, one {удалена # запись} few {удалены # записи} many {удалено # записей} other {удалено # записи}}',
   'admin.toast.dataPurged': 'Очищено записей: {n} (таблиц: {tables})',
@@ -1044,7 +1051,8 @@ export const ru = {
   'order.batches.rejectedTitle': 'Партия {n} отклонена',
   'order.batches.open': 'Открыть',
   'order.batches.backToCurrent': 'К текущей партии',
-  'order.batches.rejectedFinishDraft': 'Сначала отправьте или очистите текущий черновик, затем вернитесь, чтобы изменить или отозвать эту партию.',
+  'order.batches.rejectedFinishDraft':
+    'Сначала отправьте или очистите текущий черновик, затем вернитесь, чтобы изменить или отозвать эту партию.',
   'order.receipt.submittedItems': 'Отправленные товары',
   'order.withdraw': 'Отозвать',
   'order.toast.submitted': 'Заказ отправлен ✓',
@@ -1057,7 +1065,8 @@ export const ru = {
   'order.action.submitOrder': 'Отправить заказ',
   'order.action.submitting': 'Отправляем…',
   'order.review.title': 'Проверьте заказ',
-  'order.review.itemsCount': '{n, plural, one {# позиция} few {# позиции} many {# позиций} other {# позиции}}',
+  'order.review.itemsCount':
+    '{n, plural, one {# позиция} few {# позиции} many {# позиций} other {# позиции}}',
   'order.review.empty': 'Пока ничего не выбрано.',
   'order.review.archived': 'Снят с продажи',
   'order.submitted.was': 'При отправке: {qty} {unit}',
@@ -1095,7 +1104,8 @@ export const ru = {
   'order.extras.namePlaceholder': 'Название позиции',
   'order.status.rejectedBy': '{who} · {time}',
   'order.catalogEmpty.title': 'Товаров пока нет',
-  'order.catalogEmpty.description': 'Их добавляет администратор в разделе «{path}». То, чего нет в каталоге, можно указать ниже в «Прочие позиции».',
+  'order.catalogEmpty.description':
+    'Их добавляет администратор в разделе «{path}». То, чего нет в каталоге, можно указать ниже в «Прочие позиции».',
   'order.review.needsNetwork': 'Для отправки нужен интернет. Изменения сохранены на телефоне.',
   'order.extras.qtyLabel': 'Количество',
   'order.extras.unitLabel': 'Единица',
@@ -1117,7 +1127,8 @@ export const ru = {
   'approval.viewItems': 'Показать позиции',
   'approval.tabsAriaLabel': 'Фильтр по статусу',
   'approval.submittedBy': 'отправитель: {name}',
-  'approval.itemsCount': '{n, plural, one {# позиция} few {{n} позиции} many {{n} позиций} other {{n} позиции}}',
+  'approval.itemsCount':
+    '{n, plural, one {# позиция} few {{n} позиции} many {{n} позиций} other {{n} позиции}}',
   'approval.contributorsCount':
     '{n, plural, one {# автор заказа} few {{n} автора заказа} many {{n} авторов заказа} other {{n} автора заказа}}',
   'approval.hideItems': 'Скрыть',
@@ -1236,7 +1247,8 @@ export const ru = {
   'run.section.items': 'Позиции',
   'run.section.stores': 'Магазины',
   'run.section.readyToPlan': 'Готово к планированию',
-  'run.label.sessionsCount': '{n, plural, one {# заказ} few {{n} заказа} many {{n} заказов} other {{n} заказа}}',
+  'run.label.sessionsCount':
+    '{n, plural, one {# заказ} few {{n} заказа} many {{n} заказов} other {{n} заказа}}',
   'run.label.itemsProgress': '{bought} куп. · {na} нет · {pending} ост.',
   'run.filter.all': 'Все {n}',
   'run.filter.pending': 'Осталось {n}',
@@ -1245,8 +1257,10 @@ export const ru = {
   'run.search.itemsPlaceholder': 'Поиск товара или прилавка…',
   'run.filter.noMatch': 'Ничего не найдено',
   'run.label.confirmedFraction': 'подтверждено {done}/{total}',
-  'run.label.itemsCount': '{n, plural, one {# позиция} few {{n} позиции} many {{n} позиций} other {{n} позиции}}',
-  'run.label.skuCountAndQty': '{n, plural, one {# товар} few {# товара} many {# товаров} other {# товара}} · {qty}',
+  'run.label.itemsCount':
+    '{n, plural, one {# позиция} few {{n} позиции} many {{n} позиций} other {{n} позиции}}',
+  'run.label.skuCountAndQty':
+    '{n, plural, one {# товар} few {# товара} many {# товаров} other {# товара}} · {qty}',
   'run.label.splitsMismatch': 'Распределение: {sum} / {target}',
   // Этапы доставки (M1.9 fix)
   'run.deliveryStage.pending': 'Не доставлено',
@@ -1280,8 +1294,10 @@ export const ru = {
   'run.offline.needNetworkToStart': 'Для начала закупки нужна сеть',
   'run.toast.runAlreadyOpen': 'Закупка уже идёт — открыта она',
   'run.price.daysAgo': '{n} дн. назад',
-  'run.finish.carriedOver': '{n, plural, one {# позиция} few {# позиции} many {# позиций} other {# позиции}} по прежней цене',
-  'run.finish.carriedOverStale': 'из них {n} старше {days, plural, one {# дня} few {# дней} many {# дней} other {# дня}}',
+  'run.finish.carriedOver':
+    '{n, plural, one {# позиция} few {# позиции} many {# позиций} other {# позиции}} по прежней цене',
+  'run.finish.carriedOverStale':
+    'из них {n} старше {days, plural, one {# дня} few {# дней} many {# дней} other {# дня}}',
   'run.purchase.pricingUniform': 'Единая цена / оплата',
   'run.purchase.pricingPerStore': 'Цена / оплата по магазинам',
   'run.previewSupplier.changeVendor': 'Сменить поставщика',
@@ -1301,9 +1317,12 @@ export const ru = {
   'run.action.startPurchase': 'Начать закупку',
   'run.action.ejectSession': 'Убрать из закупки',
   'run.section.sessions': 'Заказы в этой закупке',
-  'run.sessions.meta': '{n, plural, one {# заказ} few {# заказа} many {# заказов} other {# заказа}}',
-  'run.sessions.stats': '{items, plural, one {# товар} few {# товара} many {# товаров} other {# товара}} · {qty} ед. · прочее {extras}',
-  'run.sessions.statsNoExtras': '{items, plural, one {# товар} few {# товара} many {# товаров} other {# товара}} · {qty} ед.',
+  'run.sessions.meta':
+    '{n, plural, one {# заказ} few {# заказа} many {# заказов} other {# заказа}}',
+  'run.sessions.stats':
+    '{items, plural, one {# товар} few {# товара} many {# товаров} other {# товара}} · {qty} ед. · прочее {extras}',
+  'run.sessions.statsNoExtras':
+    '{items, plural, one {# товар} few {# товара} many {# товаров} other {# товара}} · {qty} ед.',
   'run.sessions.unknownSubmitter': 'Неизвестный отправитель',
   'run.eject.reasonPlaceholder': 'Причина (необязательно)',
   'run.confirm.ejectSession.title': 'Убрать заказ {store} / {who} из закупки?',
@@ -1317,7 +1336,8 @@ export const ru = {
   'run.errors.notVisible':
     'Закупка не найдена или недоступна вам. Обновите список; если нужен доступ, обратитесь к администратору.',
   'run.errors.priceFormat': 'Цена должна быть больше 0: не более 12 цифр и 2 знаков после запятой.',
-  'run.errors.qtyFormat': 'Количество должно быть больше 0: не более 9 цифр и 3 знаков после запятой.',
+  'run.errors.qtyFormat':
+    'Количество должно быть больше 0: не более 9 цифр и 3 знаков после запятой.',
   'run.errors.lineTooLarge':
     'Сумма позиции (количество × цена) не может быть больше 1 000 000 000 000.',
   'run.errors.itemServesOtherStores':
@@ -1328,7 +1348,8 @@ export const ru = {
     'Этот расход разделён на магазины, за которые вы не отвечаете. Расходы можно делить только на свои магазины.',
   'run.pendingSync.row': 'Сохранено офлайн — ждёт отправки',
   'run.pendingSync.short': 'ждёт отправки',
-  'run.topUp.lineOtherStores': 'Другие магазины добавили потребность; этим занимается закупщик всех магазинов',
+  'run.topUp.lineOtherStores':
+    'Другие магазины добавили потребность; этим занимается закупщик всех магазинов',
   'run.extras.recordPriceOtherStore': 'Цену указывает закупщик этого магазина',
   'run.action.deliverRemaining':
     '{n, plural, one {Осталось доставить в # магазин} few {Осталось доставить в # магазина} many {Осталось доставить в # магазинов} other {Осталось доставить в # магазина}}',
@@ -1465,7 +1486,8 @@ export const ru = {
   'run.label.priceUnitAria': '×1000 (цены в тысячах)',
   'run.price.check.title': 'Цена верная?',
   'run.price.check.body': '{name}: в прошлый раз {last} {currency}, сейчас {next} {currency}.',
-  'run.price.check.bodyFirst': '{name}: {next} {currency} за единицу. Прежней цены у этого товара нет; проверьте, не лишние ли нули.',
+  'run.price.check.bodyFirst':
+    '{name}: {next} {currency} за единицу. Прежней цены у этого товара нет; проверьте, не лишние ли нули.',
   'run.price.check.confirm': 'Да, сохранить',
   'run.price.check.fix': 'Изменить цену',
   'run.action.supplier': 'Поставщик',
@@ -1486,7 +1508,8 @@ export const ru = {
   'run.confirm.finish.title': 'Завершить закупку?',
   'run.confirm.finish.body':
     'Цены, количества и доставки будут зафиксированы. Исправить потом сможет только суперадмин, открыв закупку заново.',
-  'run.confirm.finish.summary': '{items, plural, one {# позиция} few {# позиции} many {# позиций} other {# позиции}} · {stores, plural, one {# магазин} few {# магазина} many {# магазинов} other {# магазина}} · итого {total} {currency}',
+  'run.confirm.finish.summary':
+    '{items, plural, one {# позиция} few {# позиции} many {# позиций} other {# позиции}} · {stores, plural, one {# магазин} few {# магазина} many {# магазинов} other {# магазина}} · итого {total} {currency}',
   'run.label.paymentMethod': 'Способ оплаты',
   'run.label.paymentCash': 'Наличные',
   'run.label.paymentTransfer': 'Перевод',
@@ -1554,7 +1577,8 @@ export const ru = {
   'run.cancel.reasonPlaceholder': 'Почему отменяете? (опционально — поможет команде разобраться)',
   'run.history.totalLabel': 'Всего потрачено',
   'run.history.itemSummary': 'куплено {bought} · нет {na}',
-  'run.history.storeSummary': '{stores, plural, one {# магазин} few {# магазина} many {# магазинов} other {# магазина}}',
+  'run.history.storeSummary':
+    '{stores, plural, one {# магазин} few {# магазина} many {# магазинов} other {# магазина}}',
   'run.history.itemsHeading': 'Позиции',
   'run.history.noDetail': 'По этой закупке нечего показать',
   'run.history.noStoreItems': 'У этого магазина не было товаров в этой закупке',
@@ -1620,12 +1644,15 @@ export const ru = {
   'run.topUp.dismissConfirm': 'Не покупать ещё {qty}? Присоединившийся магазин это не получит.',
   'run.topUp.dismissed': 'Отмечено: докупать не будем',
   'run.topUp.reason': 'Докупка для нового заказа',
-  'run.topUp.sheetBody': 'Уже куплено: {qty}, цена {price}. Цена ниже — только для этой докупки, цена прежней покупки не меняется.',
+  'run.topUp.sheetBody':
+    'Уже куплено: {qty}, цена {price}. Цена ниже — только для этой докупки, цена прежней покупки не меняется.',
   'run.prices.title': 'Указать цены',
   'run.prices.hint': 'количество и распределение не меняются',
-  'run.prices.lockedHint': 'Товар уже отправлен: можно менять только цену, поставщика, способ оплаты и чек.',
+  'run.prices.lockedHint':
+    'Товар уже отправлен: можно менять только цену, поставщика, способ оплаты и чек.',
   'run.prices.reason': 'Указана фактическая цена',
-  'run.errors.topUpPending': 'Новому заказу ещё нужен товар: докупите или отметьте, что не будете покупать.',
+  'run.errors.topUpPending':
+    'Новому заказу ещё нужен товар: докупите или отметьте, что не будете покупать.',
   'run.errors.notDelivering':
     'Эта закупка сейчас не на этапе доставки. Обновите страницу, чтобы увидеть её статус.',
   'run.errors.cannotDispatch':
@@ -1633,7 +1660,8 @@ export const ru = {
   'run.errors.cannotConfirm':
     'У вас нет права подтверждать приёмку. Если нужно, попросите доступ у управляющего магазином.',
   'run.errors.confirmNoteRequiredOnIssue': 'Опишите проблему',
-  'run.errors.storeNotDelivered': 'Товар ещё не доставлен или закупщик отозвал доставку. Проверьте его после доставки.',
+  'run.errors.storeNotDelivered':
+    'Товар ещё не доставлен или закупщик отозвал доставку. Проверьте его после доставки.',
   'run.errors.cannotFinish':
     'У вас нет права завершать закупки. Если нужно, попросите доступ у администратора.',
   'run.errors.notFinishable':
@@ -1672,12 +1700,14 @@ export const ru = {
   'confirm.confirmStore': 'Подтвердить приёмку',
   'confirm.progress': 'Проверено {done}/{total}',
   'confirm.markAllOk': 'Всё в порядке',
-  'confirm.bulk.title': 'Отметить {n, plural, one {оставшуюся # позицию как полученную верно} few {оставшиеся # позиции как полученные верно} many {оставшиеся # позиций как полученные верно} other {оставшиеся # позиции как полученные верно}}?',
+  'confirm.bulk.title':
+    'Отметить {n, plural, one {оставшуюся # позицию как полученную верно} few {оставшиеся # позиции как полученные верно} many {оставшиеся # позиций как полученные верно} other {оставшиеся # позиции как полученные верно}}?',
   'confirm.bulk.body':
     'Изменяются только ещё не проверенные позиции. Это не подтверждает приёмку магазина.',
   'confirm.bulk.hint':
     'Каждая позиция будет записана как полученная верно. Потом её можно изменить.',
-  'confirm.bulk.submit': 'Отметить {n, plural, one {# позицию} few {# позиции} many {# позиций} other {# позиции}}',
+  'confirm.bulk.submit':
+    'Отметить {n, plural, one {# позицию} few {# позиции} many {# позиций} other {# позиции}}',
   'confirm.confirmStoreBlocked': 'Осталось проверить: {n}',
   'confirm.confirmStoreFinal': '✓ Подтверждено',
   'confirm.confirmingHint': 'Подтверждение…',
@@ -1711,8 +1741,7 @@ export const ru = {
   'finance.preset.custom': 'Произвольный',
   'finance.range.start': 'Начало периода',
   'finance.range.end': 'Конец периода',
-  'finance.range.invalid':
-    'Выберите начальную и конечную даты; начало не может быть позже конца.',
+  'finance.range.invalid': 'Выберите начальную и конечную даты; начало не может быть позже конца.',
   'finance.view.daily': 'По дням',
   'finance.view.bySupplier': 'По поставщикам',
   'finance.view.byStore': 'По магазинам',
@@ -1747,7 +1776,8 @@ export const ru = {
   'admin.workspace.financeSheet.warning':
     'Смена валюты не пересчитывает прошлые суммы. Задаётся один раз для рабочего пространства.',
   'admin.errors.taxRateOutOfRange': 'Ставка налога должна быть от 0 до 50.',
-  'admin.errors.taxRateFormat': 'Ставка налога — число от 0 до 50, не более 2 знаков после запятой.',
+  'admin.errors.taxRateFormat':
+    'Ставка налога — число от 0 до 50, не более 2 знаков после запятой.',
   'admin.errors.timeZoneUnknown': 'Неизвестный часовой пояс. Укажите название вида Asia/Tashkent.',
   'admin.errors.sortIndexInteger': 'Порядок — целое число (от -1000000 до 1000000).',
 
@@ -1852,7 +1882,8 @@ export const ru = {
   'dishes.label.noIngredients': 'Нет рецепта',
   'dishes.label.noIngredientsHint':
     'Добавьте ингредиенты — тогда при продаже они будут списываться со склада автоматически.',
-  'dishes.label.ingredientCount': '{n, plural, one {# ингредиент} few {# ингредиента} many {# ингредиентов} other {# ингредиента}}',
+  'dishes.label.ingredientCount':
+    '{n, plural, one {# ингредиент} few {# ингредиента} many {# ингредиентов} other {# ингредиента}}',
   'dishes.sheet.newTitle': 'Новое блюдо',
   'dishes.sheet.editTitle': 'Изменить блюдо',
   'dishes.section.ingredients': 'Рецепт',
@@ -1862,7 +1893,8 @@ export const ru = {
   'dishes.field.qtyPlaceholder': 'кол-во на порцию',
   'dishes.field.pickSku': 'Выберите ингредиент…',
   'dishes.confirm.archive': 'Архивировать «{name}»?',
-  'dishes.errors.cannotManage': 'Для редактирования меню нужно право, которое выдаёт администратор.',
+  'dishes.errors.cannotManage':
+    'Для редактирования меню нужно право, которое выдаёт администратор.',
   'dishes.readOnly':
     'Вы можете посмотреть рецепт; для редактирования меню нужно право, которое выдаёт администратор.',
   'dishes.errors.namesRequired': 'Хотя бы одно название обязательно.',
@@ -1874,7 +1906,8 @@ export const ru = {
     'Товар из рецепта не найден — возможно, его только что архивировали. Обновите страницу и выберите заново.',
   'dishes.errors.notFound':
     'Блюдо не найдено — возможно, его только что архивировали. Обновите страницу.',
-  'dishes.errors.incompleteIngredient': 'В строке ингредиента нет товара или количества — заполните или удалите её.',
+  'dishes.errors.incompleteIngredient':
+    'В строке ингредиента нет товара или количества — заполните или удалите её.',
   'sales.errors.qtyFormat': 'Порций должно быть больше 0, не более 2 знаков после запятой.',
   'dishes.errors.codeTaken': 'Этот код уже у другого блюда.',
   'dishes.errors.priceTooLarge': 'Цена: не более 12 цифр и 2 знаков после запятой.',
@@ -1883,7 +1916,8 @@ export const ru = {
   'sales.errors.occurredInFuture': 'Время продажи не может быть в будущем.',
   'sales.errors.occurredTooOld': 'Продажи можно вносить задним числом не более чем за 90 дней.',
   'inventory.errors.qtyTooLarge': 'Слишком большое количество. Проверьте введённое число.',
-  'dishes.errors.changedElsewhere': 'Это блюдо только что изменил кто-то другой. Закройте и откройте снова, чтобы увидеть последнюю версию.',
+  'dishes.errors.changedElsewhere':
+    'Это блюдо только что изменил кто-то другой. Закройте и откройте снова, чтобы увидеть последнюю версию.',
 
   // ── 18. Sales (M2.0c) ──────────────────────────────────
   'sales.summary.today': 'Сегодня',
@@ -1894,8 +1928,7 @@ export const ru = {
   'sales.form.pickDish': 'Выберите блюдо…',
   'sales.form.qtyLabel': 'Порций',
   'sales.form.recordBtn': 'Записать',
-  'sales.form.noDishesYet':
-    'Нет блюд. Сначала создайте в Админ › Каталог › Блюда.',
+  'sales.form.noDishesYet': 'Нет блюд. Сначала создайте в Админ › Каталог › Блюда.',
   'sales.list.title': 'Продажи сегодня',
   'sales.list.capReached': 'Показаны только последние продажи ({n}) — итоги могут быть неполными.',
   'sales.empty.title': 'Сегодня продаж нет',
@@ -1946,7 +1979,8 @@ export const ru = {
   'run.history.applyFilters': 'Применить фильтры',
   'run.history.storeFilter': 'Магазин',
   'run.history.dateRange': 'Диапазон дат',
-  'run.history.lastDays': '{n, plural, one {Последний # день} few {Последние # дня} many {Последние # дней} other {Последние # дня}}',
+  'run.history.lastDays':
+    '{n, plural, one {Последний # день} few {Последние # дня} many {Последние # дней} other {Последние # дня}}',
   'run.history.dateFrom': 'С',
   'run.history.dateTo': 'По',
   'run.history.invalidDateRange': 'Дата окончания должна быть не раньше даты начала.',
@@ -2070,7 +2104,8 @@ export const ru = {
     'У вас нет права закрывать день ни в одном назначенном магазине. Попросите управляющего магазином проверить вашу роль.',
   'settlement.errors.invalidMoney': 'Введите корректную сумму, не более двух знаков после запятой.',
   'settlement.errors.fieldMoney': '{field}: введите число, не более двух знаков после запятой.',
-  'settlement.errors.fieldsToFix': '{n, plural, one {Исправьте # поле} few {Исправьте {n} поля} many {Исправьте {n} полей} other {Исправьте {n} поля}}',
+  'settlement.errors.fieldsToFix':
+    '{n, plural, one {Исправьте # поле} few {Исправьте {n} поля} many {Исправьте {n} полей} other {Исправьте {n} поля}}',
   'settlement.errors.goToFirst': 'Перейти',
   'settlement.errors.expensesManagerOnly':
     'Для внесения операционных расходов нужно право вести закрытие дня этого магазина.',
@@ -2086,22 +2121,29 @@ export const ru = {
   'settlement.errors.save': 'Не удалось сохранить закрытие дня. Повторите попытку.',
   'settlement.errors.load': 'Не удалось загрузить закрытие дня. Обновите страницу.',
   'settlement.errors.totalTooLarge': 'Слишком большая итоговая сумма. Проверьте суммы.',
-  'settlement.errors.unknownItem': 'Строку изменили в другом месте. Обновите закрытие дня и повторите.',
+  'settlement.errors.unknownItem':
+    'Строку изменили в другом месте. Обновите закрытие дня и повторите.',
   'settlement.errors.employeeRequired': 'Выберите сотрудника для каждой строки зарплаты.',
-  'settlement.errors.employeeNotInStore': 'Сотрудник из зарплат больше не работает в этом магазине. Выберите другого.',
-  'settlement.errors.historicalTotalImmutable': 'В этой старой записи есть только итог, разбить её на строки нельзя.',
+  'settlement.errors.employeeNotInStore':
+    'Сотрудник из зарплат больше не работает в этом магазине. Выберите другого.',
+  'settlement.errors.historicalTotalImmutable':
+    'В этой старой записи есть только итог, разбить её на строки нельзя.',
   'settlement.errors.totalMismatch': 'Сумма строк не совпадает с итогом. Проверьте суммы.',
   'settlement.errors.futureDate': 'Нельзя закрыть день, который ещё не наступил.',
   'settlement.errors.dateMissing': 'Выберите рабочую дату.',
   'settlement.draftRestored.title': 'Несохранённое закрытие восстановлено',
-  'settlement.draftRestored.body': 'Это то, что вы вводили здесь в прошлый раз. Проверьте и сохраните или удалите.',
+  'settlement.draftRestored.body':
+    'Это то, что вы вводили здесь в прошлый раз. Проверьте и сохраните или удалите.',
   'settlement.draftRestored.discard': 'Удалить',
   'settlement.errors.dateTooOld':
     'Новое закрытие дня — не старше {days, plural, one {# дня} few {# дней} many {# дней} other {# дня}} (существующие можно исправлять).',
-  'settlement.errors.correctionReasonRequired': 'Чтобы изменить сохранённое закрытие дня, укажите причину исправления.',
+  'settlement.errors.correctionReasonRequired':
+    'Чтобы изменить сохранённое закрытие дня, укажите причину исправления.',
   'settlement.errors.versionConflict': 'Это закрытие дня было изменено в другом месте.',
-  'settlement.conflict.keptEdits': 'Загружена последняя версия, ваши изменённые суммы и заметка сохранены. Проверьте и сохраните.',
-  'settlement.conflict.linesLost': 'Строки расходов и зарплат нельзя перенести в последнюю версию — их придётся ввести заново. Всё равно обновить?',
+  'settlement.conflict.keptEdits':
+    'Загружена последняя версия, ваши изменённые суммы и заметка сохранены. Проверьте и сохраните.',
+  'settlement.conflict.linesLost':
+    'Строки расходов и зарплат нельзя перенести в последнюю версию — их придётся ввести заново. Всё равно обновить?',
   'settlement.errors.versionConflictBody':
     'Обновите запись и проверьте последнюю версию перед сохранением исправления.',
   // 2026-10-21 audit decisions CA-03/04/06/11 (run selection, parallel runs,
@@ -2114,7 +2156,8 @@ export const ru = {
   'confirm.issue.receivedQtyNotShort':
     '{max} — это всё, выберите «OK»; при недостаче введите меньше {max}',
   'confirm.receivedOf': 'получено {received} / {qty} {unit}',
-  'confirm.receivedPlusAmend': 'получено {received} + при исправлении {added} = {total} / {qty} {unit}',
+  'confirm.receivedPlusAmend':
+    'получено {received} + при исправлении {added} = {total} / {qty} {unit}',
   'confirm.issue.photoOf': 'Фото проблемы: {name}',
   'confirm.runPicker.ariaLabel': 'Какую поставку проверить',
   'confirm.runPicker.option': '№{n} · {date}',
@@ -2140,7 +2183,8 @@ export const ru = {
   'run.errors.receivedQtyExceedsSplit': 'Полученное количество не может превышать {max}',
   'run.errors.receivedQtyNotShort':
     '{max} — это всё, выберите «OK»; при недостаче введите меньше {max}',
-  'run.errors.storeItemsUnchecked': 'Осталось проверить: {n}. Магазин можно подтвердить после проверки',
+  'run.errors.storeItemsUnchecked':
+    'Осталось проверить: {n}. Магазин можно подтвердить после проверки',
   // 2026-10-21 audit follow-ups: staff sales tab, sales void, inventory movements,
   // invite list/revoke, offline/stale-order messages.
   'nav.sales': 'Продажи',
@@ -2193,8 +2237,7 @@ export const ru = {
     'Это изменение сделано офлайн в один из прошлых дней и не применено. Проверьте сегодняшний заказ и при необходимости измените его снова.',
   'order.errors.deviceDateAhead':
     'Дата на телефоне опережает текущую, изменение не сохранено. Включите автоматическую дату и время на телефоне и повторите',
-  'order.errors.approveEmpty':
-    'В заказе не осталось позиций — одобрить нельзя. Отклоните его',
+  'order.errors.approveEmpty': 'В заказе не осталось позиций — одобрить нельзя. Отклоните его',
   'approval.toast.orderChanged':
     'Заказ изменился после того, как вы его открыли — проверьте актуальную версию',
   // 2026-10-21 frontend P1 fixes (FE-04 merge hint, FE-05 update prompt, FE-08 audit sentences).
@@ -2295,8 +2338,10 @@ export const ru = {
   'finance.tsv.unit': 'Ед.',
   'finance.tsv.unitPrice': 'Цена',
   'finance.tsv.total': 'Сумма',
-  'finance.count.lines': '{n, plural, one {# позиция} few {# позиции} many {# позиций} other {# позиции}}',
-  'finance.count.runs': '{n, plural, one {# закупка} few {# закупки} many {# закупок} other {# закупки}}',
+  'finance.count.lines':
+    '{n, plural, one {# позиция} few {# позиции} many {# позиций} other {# позиции}}',
+  'finance.count.runs':
+    '{n, plural, one {# закупка} few {# закупки} many {# закупок} other {# закупки}}',
   'run.history.tripRange': '{from}–{to} из {total}',
   'settlement.confirm.allZero': 'Все суммы равны 0. Сохранить этот день как закрытый без денег?',
   'nav.badge.count': '{label}, ожидает: {n}',
@@ -2304,9 +2349,11 @@ export const ru = {
   'confirm.wait.recalled.title': 'Закупщик отозвал эту доставку',
   'confirm.wait.recalled.body': 'Проверьте товар, когда его доставят снова.',
   'confirm.wait.onTheWay.title': 'Товар в пути',
-  'confirm.wait.onTheWay.body': 'Когда закупщик привезёт товар в ваш магазин, здесь появится список для проверки.',
+  'confirm.wait.onTheWay.body':
+    'Когда закупщик привезёт товар в ваш магазин, здесь появится список для проверки.',
   'confirm.wait.buying.title': 'Закупщик сейчас закупает',
-  'confirm.wait.buying.body': 'Ваш заказ в этой закупке. Когда его купят и привезут, здесь появится список для проверки.',
+  'confirm.wait.buying.body':
+    'Ваш заказ в этой закупке. Когда его купят и привезут, здесь появится список для проверки.',
   'confirm.wait.nothing.body': 'Сейчас нет закупок с товаром для вашего магазина.',
   'confirm.unbought.title': 'Не куплено',
   'confirm.unbought.allTitle': 'Ничего из заказа вашего магазина не куплено',
@@ -2327,7 +2374,8 @@ export const ru = {
   'run.history.receiptOf': 'Фото чека: {item}',
   'run.history.expensesHeading': 'Расходы',
   'run.history.correctionsHeading': 'Исправления',
-  'run.history.receivingIssues': 'Проблемы при приёмке: {n, plural, one {# позиция} few {# позиции} many {# позиций} other {# позиции}}',
+  'run.history.receivingIssues':
+    'Проблемы при приёмке: {n, plural, one {# позиция} few {# позиции} many {# позиций} other {# позиции}}',
   'finance.range.presets': 'Период',
   'run.previewShare.copiedPaste': 'Скопировано — вставьте и отправьте продавцу',
   'run.delivery.deliver': 'Доставлено',
@@ -2342,28 +2390,33 @@ export const ru = {
   'run.gauge.split': '(наличные {cash} · перевод {transfer})',
   'run.gauge.progressLabel': 'Ход закупки',
   'run.gauge.notFound': 'не найдено {n}',
-  'run.sessions.collapsed': '{n, plural, one {# заказ} few {# заказа} many {# заказов} other {# заказа}}',
+  'run.sessions.collapsed':
+    '{n, plural, one {# заказ} few {# заказа} many {# заказов} other {# заказа}}',
   'run.sessions.storeJoiner': ', ',
-  'run.confirm.startDelivery.pendingExtras': 'Не отмечено — прочие товары от магазинов ({n}): {names}. После начала доставки они пропадут со страницы закупки.',
+  'run.confirm.startDelivery.pendingExtras':
+    'Не отмечено — прочие товары от магазинов ({n}): {names}. После начала доставки они пропадут со страницы закупки.',
   'approval.changed.title': 'Заказ изменился после того, как вы его открыли',
   'approval.changed.body': 'Изменённые позиции отмечены. Одобряйте, когда посмотрите их.',
   'approval.changed.ack': 'Посмотрел',
   'approval.changed.line': 'Изменено: {from} → {to} {unit}',
   'approval.changed.removed': '{item}: {from} {unit} → удалено',
   'approval.zeroed': 'При проверке поставлено 0 — нажмите +, чтобы вернуть',
-  'approval.allZeroRejectOnly': 'Все позиции равны 0 и прочих товаров нет, одобрить нельзя. Верните позицию или отклоните заказ.',
+  'approval.allZeroRejectOnly':
+    'Все позиции равны 0 и прочих товаров нет, одобрить нельзя. Верните позицию или отклоните заказ.',
   'approval.toast.withdrawnWhileOpen': 'Автор отозвал открытый у вас заказ.',
   'approval.toast.decidedElsewhere': 'Открытый у вас заказ уже рассмотрел другой проверяющий.',
   'finance.view.label': 'Вид',
   // fix/stock-settle-catalog (2026-11-01): DX-INV-1 / DX-SAL-1 / DX-DSH-1 / DX-CLS-3 / DX-CAT-*.
   'inventory.errors.countRequired': 'Укажите количество на полке.',
-  'inventory.errors.countNegative': 'Остаток не может быть отрицательным. Если ничего нет, введите 0.',
+  'inventory.errors.countNegative':
+    'Остаток не может быть отрицательным. Если ничего нет, введите 0.',
   'inventory.errors.countNotNumber': 'Введите число, например 12,5.',
   'inventory.errors.countDecimals': 'Не больше 3 знаков после запятой.',
   'inventory.errors.countTooLarge': 'Слишком много: не больше 99 999 999.',
   'inventory.badge.negative': 'Меньше нуля — пересчитайте',
   'sales.toast.recordedNegative': 'Записано. Остаток «{items}» ушёл в минус — пересчитайте.',
-  'dishes.errors.archivedIngredient': 'В рецепте есть товар из архива. Выберите другой товар или удалите эту строку.',
+  'dishes.errors.archivedIngredient':
+    'В рецепте есть товар из архива. Выберите другой товар или удалите эту строку.',
   'dishes.errors.archivedIngredientRow': 'Этот товар в архиве. Выберите другой или удалите строку.',
   'dishes.label.archivedSku': '{name} (в архиве)',
   'dishes.empty.readOnlyDescription': 'Меню ведёт администратор. Здесь его можно только смотреть.',
@@ -2371,22 +2424,186 @@ export const ru = {
   'settlement.errors.moneyNegative': '{field}: отрицательное значение недопустимо.',
   'settlement.errors.moneyNotNumber': '{field}: введите число, например 1250,50.',
   'settlement.errors.moneyDecimals': '{field}: не больше 2 знаков после запятой.',
-  'settlement.errors.moneyTooLarge': '{field}: слишком большая сумма — не больше 12 цифр до запятой.',
+  'settlement.errors.moneyTooLarge':
+    '{field}: слишком большая сумма — не больше 12 цифр до запятой.',
   'settlement.errors.itemAmountEmpty': '{field}: укажите сумму.',
   'settlement.errors.itemAmountZero': '{field}: сумма должна быть больше 0.',
   'settlement.errors.itemReasonEmpty': '{field}: укажите причину.',
   'ops.activity.orderOf': 'заказ от {date}',
   'ops.purge.block.notSuperAdmin': 'Удалять здесь может только суперадмин.',
   'ops.purge.block.inRun': 'В закупке — удалите закупку.',
-  'ops.purge.block.othersOrder': 'Это заказ: {name}. Здесь можно удалять только свои тестовые заказы.',
-  'ops.purge.block.othersLines': 'В этот заказ добавлял товары кто-то другой — здесь его удалить нельзя.',
-  'ops.purge.block.orderActedOn': 'Заказ уже проверял или обрабатывал кто-то другой — это не тестовые данные.',
+  'ops.purge.block.othersOrder':
+    'Это заказ: {name}. Здесь можно удалять только свои тестовые заказы.',
+  'ops.purge.block.othersLines':
+    'В этот заказ добавлял товары кто-то другой — здесь его удалить нельзя.',
+  'ops.purge.block.orderActedOn':
+    'Заказ уже проверял или обрабатывал кто-то другой — это не тестовые данные.',
   'ops.purge.block.runForeign': 'В ней есть заказы других людей — здесь её удалить нельзя.',
-  'ops.purge.block.runActedOn': 'Её уже взял, закупил или принял кто-то другой — это не тестовые данные.',
+  'ops.purge.block.runActedOn':
+    'Её уже взял, закупил или принял кто-то другой — это не тестовые данные.',
   'ops.maint.scopeSameDay': 'За сам {date}: {orders}, {runs}.',
-  'ops.maint.scopeLinkedTitle': 'Также удалятся записи за другие даты, потому что они с ними связаны:',
+  'ops.maint.scopeLinkedTitle':
+    'Также удалятся записи за другие даты, потому что они с ними связаны:',
   'ops.maint.scopeLinkedOrders': '{date} · {store}: {orders}',
-  'ops.maint.confirmPurgeByName': 'Введите название рабочего пространства «{name}», чтобы подтвердить.',
+  'ops.maint.confirmPurgeByName':
+    'Введите название рабочего пространства «{name}», чтобы подтвердить.',
   'ops.maint.confirmPurgeNameLabel': 'Название рабочего пространства',
   'ops.maint.confirmPurgeNamePlaceholder': 'Введите название',
+  // Attendance (2026-11-05).
+  'nav.attendance': 'Учёт времени',
+  'nav.short.attendance': 'Отметка',
+  'admin.section.attendance': 'Учёт времени',
+  'admin.section.attendanceHint': 'Кто пришёл, график смен, правила отметки',
+  'permission.attendance.clock': 'Отмечать приход и уход в своих магазинах',
+  'permission.attendance.manage': 'Составлять смены, проверять и исправлять учёт времени',
+  'permission.group.attendance': 'Учёт времени',
+  'attendance.page.title': 'Отметка прихода',
+  'attendance.notEnabled.title': 'Отметка для вас не включена',
+  'attendance.notEnabled.body':
+    'Попросите управляющего включить её для вас в настройках учёта времени.',
+  'attendance.kind.in': 'Приход',
+  'attendance.kind.out': 'Уход',
+  'attendance.source.manual': 'добавил управляющий',
+  'attendance.source.self': 'отметился сам',
+  'attendance.clock.in': 'Отметить приход',
+  'attendance.clock.out': 'Отметить уход',
+  'attendance.clock.locating': 'Определяем место…',
+  'attendance.clock.doneIn': 'Приход отмечен в {time}',
+  'attendance.clock.doneOut': 'Уход отмечен в {time}',
+  'attendance.clock.punches': 'Отметки за сегодня',
+  'attendance.clock.noShiftToday': 'Сегодня смены нет',
+  'attendance.clock.shiftToday': 'Смена сегодня: {times}',
+  'attendance.clock.upcoming': 'Следующие смены',
+  'attendance.clock.offlineTitle': 'Нет связи',
+  'attendance.clock.offlineBody': 'Для отметки нужна связь; она не сохраняется для отправки позже.',
+  'attendance.clock.otherDeviceTitle': 'Это не ваш привязанный телефон',
+  'attendance.clock.otherDeviceBody':
+    'Отмечайтесь с телефона, с которого отметились впервые, или попросите управляющего отвязать его.',
+  'attendance.rules.deviceLine': 'Только с привязанного телефона',
+  'attendance.rules.geoLine': 'В пределах {radius} м от магазина',
+  'attendance.location.openSettings': 'Открыть настройки геолокации',
+  'attendance.location.denied.title': 'Нет доступа к геолокации',
+  'attendance.location.denied.body':
+    'Этот магазин проверяет место отметки. Разрешите приложению доступ к геолокации в Telegram и попробуйте снова.',
+  'attendance.location.unavailable.title': 'Местоположение недоступно',
+  'attendance.location.unavailable.body': 'Включите геолокацию на телефоне и попробуйте снова.',
+  'attendance.location.timeout.title': 'Местоположение не определилось вовремя',
+  'attendance.location.timeout.body':
+    'Подойдите ближе к окну или выйдите ненадолго на улицу и попробуйте снова.',
+  'attendance.view.sheet': 'Явка',
+  'attendance.view.roster': 'Смены',
+  'attendance.view.settings': 'Настройки',
+  'attendance.admin.noStoreTitle': 'Нет магазина для управления',
+  'attendance.admin.noStoreBody':
+    'Учёт времени ведётся по магазинам; у вас пока нет своих магазинов.',
+  'attendance.nav.prev': 'Назад',
+  'attendance.nav.next': 'Вперёд',
+  'attendance.nav.today': 'Сегодня',
+  'attendance.duration.minutes': '{m} мин',
+  'attendance.duration.hours': '{h} ч',
+  'attendance.duration.hoursMinutes': '{h} ч {m} мин',
+  'attendance.flag.onDuty': 'На работе',
+  'attendance.flag.upcoming': 'Ещё не началась',
+  'attendance.flag.absent': 'Не пришёл',
+  'attendance.flag.missingIn': 'Нет отметки прихода',
+  'attendance.flag.missingOut': 'Нет отметки ухода',
+  'attendance.flag.unscheduled': 'Без смены',
+  'attendance.flag.lateBy': 'Опоздание {m} мин',
+  'attendance.flag.earlyBy': 'Ушёл на {m} мин раньше',
+  'attendance.sheet.emptyTitle': 'Пока некого показать',
+  'attendance.sheet.emptyBody':
+    'Включите отметку для сотрудников в «Настройках» или составьте смены в «Сменах».',
+  'attendance.sheet.summary': 'На работе {onDuty} · опоздали {late} · не пришли {absent}',
+  'attendance.sheet.planned': 'Смена {times}',
+  'attendance.sheet.noShift': 'Смена не назначена',
+  'attendance.sheet.memberDayHint':
+    'Отметки за этот день. Ошибочные аннулируются с причиной и никогда не удаляются.',
+  'attendance.sheet.noPunches': 'В этот день отметок нет.',
+  'attendance.sheet.manualBy': 'Добавил {name}: {reason}',
+  'attendance.sheet.selfAt': 'Отметился сам, {m} м от магазина',
+  'attendance.sheet.voidedBy': 'аннулировал {name}: {reason}',
+  'attendance.void.action': 'Аннулировать',
+  'attendance.void.confirm': 'Аннулировать отметку',
+  'attendance.void.reasonLabel': 'Почему аннулировать отметку в {time}?',
+  'attendance.void.reasonPlaceholder': 'Например: нажал по ошибке',
+  'attendance.manual.title': 'Добавить пропущенную отметку',
+  'attendance.manual.time': 'Время',
+  'attendance.manual.reason': 'Причина',
+  'attendance.manual.reasonPlaceholder': 'Например: сел телефон',
+  'attendance.manual.save': 'Добавить отметку',
+  'attendance.manual.saved': 'Отметка добавлена',
+  'attendance.roster.weekOf': '{from} – {to}',
+  'attendance.roster.add': '+ Смена',
+  'attendance.roster.none': 'Смен нет',
+  'attendance.roster.nextDay': '(след. день)',
+  'attendance.roster.noPeople':
+    'В этом магазине пока нет сотрудников; назначьте их в разделе «Магазины».',
+  'attendance.roster.copyLastWeek': 'Скопировать смены прошлой недели на эту',
+  'attendance.roster.copied': 'Скопировано {copied}, пропущено из-за пересечения {skipped}',
+  'attendance.shift.addTitle': 'Добавить смену',
+  'attendance.shift.editTitle': 'Изменить смену',
+  'attendance.shift.person': 'Сотрудник',
+  'attendance.shift.start': 'Начало',
+  'attendance.shift.end': 'Конец',
+  'attendance.shift.overnightHint': 'Заканчивается на следующий день.',
+  'attendance.shift.note': 'Заметка',
+  'attendance.shift.notePlaceholder': 'Например: кухня',
+  'attendance.shift.delete': 'Удалить смену',
+  'attendance.settings.people': 'Кто отмечается',
+  'attendance.settings.peopleHint':
+    'После включения у сотрудника появится вкладка «Отметка», и он должен отмечать приход и уход.',
+  'attendance.settings.deviceBound': 'Телефон привязан',
+  'attendance.settings.deviceNotYet': 'Телефон привяжется при первой отметке',
+  'attendance.settings.resetDevice': 'Отвязать телефон',
+  'attendance.settings.resetDeviceConfirm':
+    'Отвязать телефон сотрудника {name}? Следующая отметка привяжет телефон, с которого она сделана.',
+  'attendance.settings.rules': 'Правила отметки',
+  'attendance.settings.requireDevice': 'Только привязанный телефон',
+  'attendance.settings.requireDeviceHint': 'Не даёт отметиться за другого со своего телефона.',
+  'attendance.settings.requireGeo': 'Только в магазине',
+  'attendance.settings.requireGeoHint':
+    'Сверяет местоположение телефона с магазином. Геолокацию можно подделать специальными приложениями, поэтому сочетайте её с другими проверками.',
+  'attendance.settings.geoSet': 'Место магазина: {lat}, {lng}',
+  'attendance.settings.geoNotSet': 'Место магазина ещё не задано',
+  'attendance.settings.useHere': 'Взять моё текущее место',
+  'attendance.settings.geoCoarse':
+    'Телефон определил место с точностью лишь до {m} м; попробуйте ещё раз у окна.',
+  'attendance.settings.radius': 'Радиус (метры)',
+  'attendance.settings.radiusHint':
+    'От 20 до 5000. В помещении телефоны часто ошибаются на 30–80 м.',
+  'attendance.settings.grace': 'Допуск, минуты',
+  'attendance.settings.graceHint':
+    'Отметка в пределах стольких минут после начала не считается опозданием.',
+  'attendance.settings.saved': 'Правила отметки сохранены',
+  'attendance.errors.punchFailed': 'Не удалось отметиться. Попробуйте снова.',
+  'attendance.errors.saveFailed': 'Не удалось сохранить. Попробуйте снова.',
+  'attendance.errors.notEnabled': 'Для вас в этом магазине отметка не включена.',
+  'attendance.errors.otherDevice':
+    'Это не ваш привязанный телефон. Отметьтесь с него или попросите управляющего отвязать его.',
+  'attendance.errors.locationRequired': 'Для отметки в этом магазине нужно местоположение.',
+  'attendance.errors.locationInaccurate':
+    'Местоположение известно лишь с точностью до {accuracy} м; подойдите к окну и попробуйте снова.',
+  'attendance.errors.outsideArea':
+    'Вы в {distance} м от магазина; отметиться можно в пределах {radius} м от него.',
+  'attendance.errors.alreadyClockedIn': 'Вы уже отметили приход.',
+  'attendance.errors.notClockedIn': 'Вы ещё не отметили приход.',
+  'attendance.errors.memberNotInStore': 'Этот сотрудник не работает в этом магазине.',
+  'attendance.errors.shiftOverlap': 'У сотрудника уже есть смена в это время.',
+  'attendance.errors.shiftNotFound': 'Этой смены больше нет.',
+  'attendance.errors.punchNotFound': 'Этой отметки больше нет.',
+  'attendance.errors.alreadyVoided': 'Эта отметка уже аннулирована.',
+  'attendance.errors.futureTime': 'Это время ещё не наступило.',
+  'attendance.errors.tooOld': 'Этот день слишком давно, его нельзя изменить.',
+  'attendance.errors.rangeTooLong': 'Выберите не больше двух месяцев за раз.',
+  'attendance.errors.badRange': 'Дата начала позже даты окончания.',
+  'attendance.errors.sameWeek': 'Выберите другую неделю для копирования.',
+  'attendance.errors.geoMissing': 'Сначала задайте место магазина.',
+  'notify.attendance.remindIn.title': 'Пора отметить приход',
+  'notify.attendance.remindIn.body':
+    'Ваша смена в {store} началась в {start}. Отметьтесь в Compass.',
+  'notify.attendance.remindOut.title': 'Вы отметили уход?',
+  'notify.attendance.remindOut.body':
+    'Ваша смена в {store} закончилась в {end}, но отметки ухода нет.',
+  'notify.attendance.absent.title': 'Нет отметки прихода',
+  'notify.attendance.absent.body': '{name}: нет отметки прихода в {store}; смена началась в {start}.',
 } as const satisfies Record<CatalogKey, string>;

@@ -61,6 +61,13 @@ export const PERMISSIONS = [
   // inventory via the recipe BOM in the same transaction.
   { key: 'sales.record', description: 'Record dish sales at a store' },
   { key: 'settlement.record', description: 'Record and review a store daily settlement' },
+  // Attendance (2026-11-05). `attendance.clock` is switched on per member
+  // (a global allow override), never through a built-in role.
+  { key: 'attendance.clock', description: 'Clock in and out at assigned stores' },
+  {
+    key: 'attendance.manage',
+    description: 'Plan shifts, review and correct attendance for a store',
+  },
 
   { key: 'users.manage', description: 'Manage members, roles, and bindings' },
   // Granular split of users.manage (added 2026-05-03). Servers
@@ -95,7 +102,7 @@ export const BUILTIN_ROLES = [
     name: 'Super Admin',
     description: 'Full access including impersonation and test-data purge',
     rank: 100,
-    permissions: ALL_PERMISSION_KEYS as readonly string[],
+    permissions: ALL_PERMISSION_KEYS.filter((k) => k !== 'attendance.clock') as readonly string[],
   },
   {
     slug: 'admin',
@@ -109,7 +116,8 @@ export const BUILTIN_ROLES = [
         // 2026-07-06: amending a finished (settled) run is super-admin
         // only — an admin can configure the org but not rewrite closed
         // financial records.
-        k !== 'run.amend',
+        k !== 'run.amend' &&
+        k !== 'attendance.clock',
     ) as readonly string[],
   },
   {
@@ -152,6 +160,7 @@ export const BUILTIN_ROLES = [
       // themselves; let them record sales without elevating to admin.
       'sales.record',
       'settlement.record',
+      'attendance.manage',
       // DLV-13 (2026-10-30): a manager signs for deliveries at their own
       // store when no staff is on shift (existing orgs: migration 0054).
       'delivery.confirm',

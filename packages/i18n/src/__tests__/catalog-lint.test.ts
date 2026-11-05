@@ -309,7 +309,7 @@ function isCountVar(name: string): boolean {
  */
 const INVARIANT_AFTER_COUNT: Record<'en' | 'ru', RegExp> = {
   en: /^(?:of|min|m|h|d|n\/a|new|selected|skipped|left|more|already|still|bought|priced|unpriced|unknown|unavailable|from|so|effective|confirmed|or|is|and|to|in|for|by|K)$/,
-  ru: /^(?:из|с|без|нет|старше|мин|ч|дн|дн\.|поз\.|ед\.|шт\.|куп\.|ост\.|тыс\.)$/,
+  ru: /^(?:из|с|без|нет|старше|мин|м|ч|дн|дн\.|поз\.|ед\.|шт\.|куп\.|ост\.|тыс\.)$/,
 };
 
 /** `lang key` → why a count followed by a word is right as written. */

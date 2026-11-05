@@ -20,6 +20,8 @@ export const importSalesPage = () =>
   import('../pages/SalesPage').then((m) => ({ default: m.SalesPage }));
 export const importApprovalPage = () =>
   import('../pages/ApprovalPage').then((m) => ({ default: m.ApprovalPage }));
+export const importAttendancePage = () =>
+  import('../pages/AttendancePage').then((m) => ({ default: m.AttendancePage }));
 export const importConfirmPage = () =>
   import('../pages/ConfirmPage').then((m) => ({ default: m.ConfirmPage }));
 
@@ -30,6 +32,7 @@ const PAGE_IMPORTS: Partial<Record<Tab, () => Promise<unknown>>> = {
   settlement: importSettlementPage,
   sales: importSalesPage,
   confirm: importConfirmPage,
+  attendance: importAttendancePage,
   admin: importAdminPage,
 };
 

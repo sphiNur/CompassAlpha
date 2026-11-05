@@ -1,5 +1,6 @@
 import { router } from './trpc';
 import { adminRouter } from './routers/admin';
+import { attendanceRouter } from './routers/attendance';
 import { authRouter } from './routers/auth';
 import { catalogRouter } from './routers/catalog';
 import { dishesRouter } from './routers/dishes';
@@ -16,6 +17,8 @@ import { uploadRouter } from './routers/upload';
 
 export const appRouter = router({
   admin: adminRouter,
+  // 2026-11-05: clock in / out, shift roster, attendance sheet.
+  attendance: attendanceRouter,
   auth: authRouter,
   catalog: catalogRouter,
   // M2.0b: menu items + recipes (BOM). Second step of the ERP
