@@ -495,7 +495,7 @@ export const zh = {
   'role.description.manager': '审核订单、查看报表、管理本店员工',
   'role.description.purchaser': '去市场采购',
   'role.description.cashier': '记录门店销售并完成日结',
-  'role.description.staff': '填写并提交每日订单；确认收货',
+  'role.description.staff': '填写并提交每日订单；确认收货；记录门店销售',
   'permission.order.draft': '新建或修改自己的订单草稿',
   'permission.order.submit': '提交自己的订单等待审核',
   'permission.order.approve': '审核订单：通过或拒绝',

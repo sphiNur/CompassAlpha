@@ -535,7 +535,7 @@ export const uz = {
     'Buyurtmalarni maʼqullaydi, hisobotlarni koʻradi va oʻz doʻkonlari xodimlarini boshqaradi',
   'role.description.purchaser': 'Bozorga xaridga boradi',
   'role.description.cashier': 'Doʻkon savdosini yozadi va kunni yakunlaydi',
-  'role.description.staff': 'Kundalik buyurtmani tuzadi va yuboradi; qabulni tasdiqlaydi',
+  'role.description.staff': 'Kundalik buyurtmani tuzadi va yuboradi; qabulni tasdiqlaydi; doʻkon savdosini yozadi',
   'permission.order.draft': 'Oʻz buyurtma qoralamasini yaratish va oʻzgartirish',
   'permission.order.submit': 'Oʻz buyurtmasini tekshiruvga yuborish',
   'permission.order.approve': 'Buyurtmalarni maʼqullash yoki rad etish',
