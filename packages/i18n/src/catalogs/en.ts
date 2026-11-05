@@ -2699,4 +2699,13 @@ export const en = {
   'attendance.errors.badRange': 'The start date is after the end date.',
   'attendance.errors.sameWeek': 'Pick a different week to copy to.',
   'attendance.errors.geoMissing': 'Set the store location first.',
+  'notify.attendance.remindIn.title': 'Time to clock in',
+  'notify.attendance.remindIn.body':
+    'Your shift at {store} started at {start}. Clock in in Compass.',
+  'notify.attendance.remindOut.title': 'Did you clock out?',
+  'notify.attendance.remindOut.body':
+    'Your shift at {store} ended at {end}, but there is no clock-out yet.',
+  'notify.attendance.absent.title': 'Not clocked in',
+  'notify.attendance.absent.body':
+    '{name} has not clocked in at {store}; the shift started at {start}.',
 } as const;

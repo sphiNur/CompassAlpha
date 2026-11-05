@@ -311,3 +311,40 @@ export function nextPunchKind(
   if (last?.kind !== 'in') return 'in';
   return now.getTime() - last.at.getTime() > openHours * 60 * MINUTE ? 'in' : 'out';
 }
+
+export type ReminderAction = 'remindIn' | 'tellManagersAbsent' | 'remindOut';
+
+/**
+ * Which reminders one shift is due right now. `lastKind` is the member's
+ * latest non-voided punch at the store since four hours before the shift
+ * began (null: none). Each action fires inside a window so a scan every
+ * few minutes sends it once (the sender also dedups per shift), and an
+ * old shift never wakes up after a restart.
+ */
+export function dueReminders(input: {
+  startsAt: Date;
+  endsAt: Date;
+  graceMinutes: number;
+  lastKind: 'in' | 'out' | null;
+  now: Date;
+}): ReminderAction[] {
+  const now = input.now.getTime();
+  const start = input.startsAt.getTime();
+  const end = input.endsAt.getTime();
+  const out: ReminderAction[] = [];
+  const inWindow = (from: number, to: number) => now >= from && now <= to;
+  if (input.lastKind === null) {
+    if (
+      inWindow(start + (input.graceMinutes + 5) * MINUTE, Math.min(end, start + 3 * 60 * MINUTE))
+    ) {
+      out.push('remindIn');
+    }
+    if (inWindow(start + 30 * MINUTE, Math.min(end, start + 3 * 60 * MINUTE))) {
+      out.push('tellManagersAbsent');
+    }
+  }
+  if (input.lastKind === 'in' && inWindow(end + 30 * MINUTE, end + 6 * 60 * MINUTE)) {
+    out.push('remindOut');
+  }
+  return out;
+}

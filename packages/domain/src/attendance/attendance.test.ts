@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   distanceMeters,
+  dueReminders,
   localTime,
   nextPunchKind,
   shiftWindow,
@@ -181,4 +182,33 @@ test('next punch kind', () => {
   ).toBe('in');
   // forgot to clock out yesterday
   expect(nextPunchKind([{ kind: 'in', at: at('2026-11-04', '09:00') }], now)).toBe('in');
+});
+
+describe('reminders', () => {
+  const D = '2026-11-05';
+  const w = shiftWindow(D, '09:00', '18:00', TZ);
+  const due = (time: string, lastKind: 'in' | 'out' | null, date = D) =>
+    dueReminders({ ...w, graceMinutes: 5, lastKind, now: at(date, time) });
+  test('not clocked in: the person after grace + 5 min, managers after 30 min', () => {
+    expect(due('09:05', null)).toEqual([]);
+    expect(due('09:10', null)).toEqual(['remindIn']);
+    expect(due('09:30', null)).toEqual(['remindIn', 'tellManagersAbsent']);
+    expect(due('12:01', null)).toEqual([]);
+    expect(due('09:30', 'in')).toEqual([]);
+  });
+  test('forgot to clock out: 30 min to 6 h after the end', () => {
+    expect(due('18:10', 'in')).toEqual([]);
+    expect(due('18:30', 'in')).toEqual(['remindOut']);
+    expect(due('18:30', 'out')).toEqual([]);
+    expect(due('00:01', 'in', '2026-11-06')).toEqual([]);
+  });
+  test('a short shift stops the clock-in reminder at its end', () => {
+    const s = shiftWindow(D, '09:00', '09:20', TZ);
+    expect(dueReminders({ ...s, graceMinutes: 5, lastKind: null, now: at(D, '09:15') })).toEqual([
+      'remindIn',
+    ]);
+    expect(dueReminders({ ...s, graceMinutes: 5, lastKind: null, now: at(D, '09:25') })).toEqual(
+      [],
+    );
+  });
 });

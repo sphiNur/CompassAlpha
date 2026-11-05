@@ -2586,4 +2586,12 @@ export const uz = {
   'attendance.errors.badRange': 'Boshlanish sanasi tugash sanasidan keyin.',
   'attendance.errors.sameWeek': 'Koʻchirish uchun boshqa haftani tanlang.',
   'attendance.errors.geoMissing': 'Avval doʻkon joyini belgilang.',
+  'notify.attendance.remindIn.title': 'Kelishni belgilash vaqti',
+  'notify.attendance.remindIn.body':
+    '{store} dagi smenangiz {start} da boshlandi. Compassda belgilang.',
+  'notify.attendance.remindOut.title': 'Ketishni belgiladingizmi?',
+  'notify.attendance.remindOut.body':
+    '{store} dagi smenangiz {end} da tugadi, lekin ketish belgisi yoʻq.',
+  'notify.attendance.absent.title': 'Kelish belgilanmagan',
+  'notify.attendance.absent.body': '{name} {store} da belgilamadi; smena {start} da boshlangan.',
 } as const satisfies Record<CatalogKey, string>;

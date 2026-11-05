@@ -2301,4 +2301,10 @@ export const zh = {
   'attendance.errors.badRange': '开始日期晚于结束日期。',
   'attendance.errors.sameWeek': '请选择另一周作为复制目标。',
   'attendance.errors.geoMissing': '请先设置门店位置。',
+  'notify.attendance.remindIn.title': '该上班打卡了',
+  'notify.attendance.remindIn.body': '你在 {store} 的班次 {start} 已开始，请在 Compass 里打卡。',
+  'notify.attendance.remindOut.title': '忘记下班打卡了吗？',
+  'notify.attendance.remindOut.body': '你在 {store} 的班次 {end} 已结束，还没有下班打卡。',
+  'notify.attendance.absent.title': '有人还没打卡',
+  'notify.attendance.absent.body': '{name} 在 {store} 的班次 {start} 开始，至今还没打卡。',
 } as const satisfies Record<CatalogKey, string>;

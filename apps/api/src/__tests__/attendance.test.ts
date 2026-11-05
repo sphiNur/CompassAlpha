@@ -2,12 +2,13 @@ import { beforeAll, describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { getDb, schema as s, withOrgContext } from '@compass/db';
 import { todayInTz } from '@compass/domain';
 import { loadCatalog } from '@compass/i18n/catalogs';
 import { logger } from '../infra/log';
 import { appRouter } from '../trpc/router';
+import { scanAttendanceReminders } from '../services/attendanceReminders';
 import type { RequestContext, SessionContext } from '../trpc/context';
 
 (function loadEnv() {
@@ -58,6 +59,8 @@ interface Fixture {
   storeId: string;
   otherStoreId: string;
   staffId: string;
+  staffUserId: string;
+  managerUserId: string;
   outsiderId: string;
   manager: ReturnType<typeof appRouter.createCaller>;
   staff: () => ReturnType<typeof appRouter.createCaller>;
@@ -175,6 +178,8 @@ beforeAll(async () => {
     storeId: store!.id,
     otherStoreId: other!.id,
     staffId: staff.memberId,
+    staffUserId: staff.userId,
+    managerUserId: mgr.userId,
     outsiderId: outsider.memberId,
     manager: appRouter.createCaller(buildCtx(session(mgr, ['attendance.manage']))),
     staff: () => appRouter.createCaller(buildCtx(session(staff, ['attendance.clock']))),
@@ -408,5 +413,42 @@ describe.skipIf(!SHOULD_RUN)('attendance', () => {
       ['2030-01-14', '09:00', '18:00'],
       ['2030-01-15', '20:00', '04:00'],
     ]);
+  });
+});
+
+describe.skipIf(!SHOULD_RUN)('attendance reminders', () => {
+  test('missed clock-in reminds the person, then the managers, once each', async () => {
+    const f = fx!;
+    const db = getDb(undefined, { system: 'maintenance' });
+    const now = new Date();
+    // A shift that began 40 minutes ago, after every punch the other tests made.
+    await db.insert(s.attendanceShifts).values({
+      orgId: f.orgId,
+      storeId: f.storeId,
+      memberId: f.staffId,
+      shiftDate: todayInTz(TZ, now),
+      startsAt: new Date(now.getTime() - 40 * 60_000),
+      endsAt: new Date(now.getTime() + 4 * 3600_000),
+    });
+    await db.execute(
+      sql`UPDATE inventory.attendance_punches SET voided_at = now(), voided_by_member_id = member_id, void_reason = 'test reset' WHERE member_id = ${f.staffId} AND voided_at IS NULL`,
+    );
+    await scanAttendanceReminders(db, now);
+    await scanAttendanceReminders(db, now);
+    const rows = await db
+      .select({
+        to: s.notifications.recipientUserId,
+        template: s.notifications.template,
+        title: s.notifications.title,
+      })
+      .from(s.notifications)
+      .where(and(eq(s.notifications.orgId, f.orgId), eq(s.notifications.channel, 'bot')));
+    expect(rows.filter((r) => r.template === 'attendance.remindIn').map((r) => r.to)).toEqual([
+      f.staffUserId,
+    ]);
+    expect(rows.filter((r) => r.template === 'attendance.absent').map((r) => r.to)).toEqual([
+      f.managerUserId,
+    ]);
+    expect(rows.find((r) => r.template === 'attendance.absent')!.title).toBe('Not clocked in');
   });
 });

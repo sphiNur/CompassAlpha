@@ -2598,4 +2598,12 @@ export const ru = {
   'attendance.errors.badRange': 'Дата начала позже даты окончания.',
   'attendance.errors.sameWeek': 'Выберите другую неделю для копирования.',
   'attendance.errors.geoMissing': 'Сначала задайте место магазина.',
+  'notify.attendance.remindIn.title': 'Пора отметить приход',
+  'notify.attendance.remindIn.body':
+    'Ваша смена в {store} началась в {start}. Отметьтесь в Compass.',
+  'notify.attendance.remindOut.title': 'Вы отметили уход?',
+  'notify.attendance.remindOut.body':
+    'Ваша смена в {store} закончилась в {end}, но отметки ухода нет.',
+  'notify.attendance.absent.title': 'Нет отметки прихода',
+  'notify.attendance.absent.body': '{name}: нет отметки прихода в {store}; смена началась в {start}.',
 } as const satisfies Record<CatalogKey, string>;
