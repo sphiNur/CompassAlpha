@@ -1817,6 +1817,7 @@ export function SettlementPage() {
               <Textarea
                 value={draft.note}
                 maxLength={1000}
+                aria-label={i18n.t('settlement.field.note')}
                 placeholder={i18n.t('settlement.note.placeholder')}
                 onChange={(event) =>
                   setDraft((current) => ({ ...current, note: event.target.value }))

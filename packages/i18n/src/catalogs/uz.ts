@@ -1792,6 +1792,8 @@ export const uz = {
   'inventory.sheet.stocktake.targetLabel': 'Hozirgi haqiqiy qoldiq',
   'inventory.sheet.stocktake.targetHint': 'Javonni sanang — tizim farqni hisoblaydi.',
   'inventory.sheet.stocktake.notePlaceholder': 'Farq sababi (ixtiyoriy)',
+  'inventory.sheet.stocktake.diff': 'Farq: {diff}',
+  'inventory.sheet.stocktake.noDiff': 'Tizimdagi qayd bilan bir xil',
   'inventory.sheet.wastage.title': 'Yoʻqotishni yozish',
   'inventory.sheet.wastage.qtyLabel': 'Yoʻqotilgan miqdor',
   'inventory.sheet.wastage.notePlaceholder': 'buzilgan / sinilgan / yorliq / yoʻqolgan',

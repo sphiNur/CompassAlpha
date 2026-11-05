@@ -1916,6 +1916,8 @@ export const en = {
   'inventory.sheet.stocktake.targetHint':
     'Count the shelf and type the real total. We compute the difference.',
   'inventory.sheet.stocktake.notePlaceholder': 'optional reason for the difference',
+  'inventory.sheet.stocktake.diff': 'Difference: {diff}',
+  'inventory.sheet.stocktake.noDiff': 'Matches the system record',
   'inventory.sheet.wastage.title': 'Record wastage',
   'inventory.sheet.wastage.qtyLabel': 'Quantity lost',
   'inventory.sheet.wastage.notePlaceholder': 'spoiled / broken / mislabeled / lost',

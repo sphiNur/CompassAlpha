@@ -1795,6 +1795,8 @@ export const ru = {
   'inventory.sheet.stocktake.targetLabel': 'Фактический остаток сейчас',
   'inventory.sheet.stocktake.targetHint': 'Пересчитайте полку — система вычислит разницу.',
   'inventory.sheet.stocktake.notePlaceholder': 'причина расхождения (опционально)',
+  'inventory.sheet.stocktake.diff': 'Разница: {diff}',
+  'inventory.sheet.stocktake.noDiff': 'Совпадает с учётом',
   'inventory.sheet.wastage.title': 'Списание',
   'inventory.sheet.wastage.qtyLabel': 'Количество к списанию',
   'inventory.sheet.wastage.notePlaceholder': 'просрочено / разбито / маркировка / потеря',

@@ -1595,6 +1595,8 @@ export const zh = {
   'inventory.sheet.stocktake.systemSays': '系统记录余量：{qty}',
   'inventory.sheet.stocktake.targetLabel': '当前实际余量',
   'inventory.sheet.stocktake.targetHint': '清点货架后填入实际值，系统自动计算差额。',
+  'inventory.sheet.stocktake.diff': '差额：{diff}',
+  'inventory.sheet.stocktake.noDiff': '与系统记录一致',
   'inventory.sheet.stocktake.notePlaceholder': '差额原因（可选）',
   'inventory.sheet.wastage.title': '记录报损',
   'inventory.sheet.wastage.qtyLabel': '损失数量',
