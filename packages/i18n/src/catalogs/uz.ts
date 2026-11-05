@@ -404,7 +404,6 @@ export const uz = {
   'people.permissionsHeading': 'Ruxsatlar ({n})',
   'people.assigneesHeading': 'Tayinlanganlar · {n}',
   'people.effectiveOverridesLine': '{eff} ta amalda · {ov} ta alohida sozlama',
-  'ops.history.skuTotalLine': '{n} ta mahsulot · jami {total}',
   'ops.history.contributorCount': '{n} ta yuboruvchi',
   'admin.clone.toastCloned': '{n} ta rol biriktirmasi klonlandi',
   'admin.clone.toastAlreadyExisted': '{n} tasi allaqachon mavjud edi',

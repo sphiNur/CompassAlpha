@@ -453,7 +453,12 @@ export function PurchaseSheet({
                   splitMatches ? 'text-[var(--c-success)]' : 'text-[var(--c-warning-fg)]'
                 }`}
               >
-                {formatQty(splitTotal)} / {formatQty(draft.actualQty || '0')}
+                {/* Walkthrough F7 (2026-11-05): an unreadable qty was echoed here
+                    as typed ("12a" / "abc"); show a dash until it is a number. */}
+                {formatQty(splitTotal)} /{' '}
+                {Number.isFinite(Number(draft.actualQty || '0'))
+                  ? formatQty(draft.actualQty || '0')
+                  : '—'}
               </span>
             </div>
             <ul className="flex flex-col gap-2">

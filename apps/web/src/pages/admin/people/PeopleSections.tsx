@@ -1143,10 +1143,12 @@ function RoleCreateSheet({
                             className="mt-0.5 h-4 w-4"
                           />
                           <div className="min-w-0 flex-1">
-                            <div className="font-mono text-old-label">{p.key}</div>
-                            <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
+                            {/* Walkthrough F13 (2026-11-05): the plain-language name first, as on
+                                the role page; the code under it, small. */}
+                            <div className="text-old-label text-[var(--c-fg)]">
                               {roleText.permission(p.key, p.description)}
                             </div>
+                            <div className="mt-0.5 font-mono text-old-tiny text-[var(--c-fg-muted)]">{p.key}</div>
                           </div>
                         </label>
                       </li>
@@ -1428,10 +1430,12 @@ function RolePermissionsSheet({
                                 className="mt-0.5 h-4 w-4"
                               />
                               <div className="min-w-0 flex-1">
-                                <div className="font-mono text-old-label">{p.key}</div>
-                                <div className="mt-0.5 text-old-label text-[var(--c-fg-muted)]">
+                                {/* Walkthrough F13 (2026-11-05): the plain-language name first, as on
+                                    the role page; the code under it, small. */}
+                                <div className="text-old-label text-[var(--c-fg)]">
                                   {roleText.permission(p.key, p.description)}
                                 </div>
+                                <div className="mt-0.5 font-mono text-old-tiny text-[var(--c-fg-muted)]">{p.key}</div>
                               </div>
                             </label>
                           </li>

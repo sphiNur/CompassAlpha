@@ -405,7 +405,6 @@ export const ru = {
   'people.assigneesHeading': 'Назначены · {n}',
   'people.effectiveOverridesLine':
     '{eff, plural, one {# действует} few {# действуют} many {# действуют} other {# действуют}} · {ov, plural, one {# переопределение} few {# переопределения} many {# переопределений} other {# переопределения}}',
-  'ops.history.skuTotalLine': '{n, plural, one {# товар} few {# товара} many {# товаров} other {# товара}} · всего {total}',
   'ops.history.contributorCount':
     '{n, plural, one {# автор заказа} few {# автора заказа} many {# авторов заказа} other {# автора заказа}}',
   'admin.clone.toastCloned':

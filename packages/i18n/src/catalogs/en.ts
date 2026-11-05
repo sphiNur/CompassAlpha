@@ -443,7 +443,6 @@ export const en = {
   'people.assigneesHeading': 'Assignees · {n}',
   'people.effectiveOverridesLine':
     '{eff} effective · {ov, plural, =1 {1 override} other {# overrides}}',
-  'ops.history.skuTotalLine': '{n, plural, one {# product} other {# products}} · {total} total',
   'ops.history.contributorCount': '{n, plural, =1 {1 contributor} other {# contributors}}',
   'admin.clone.toastCloned':
     'Cloned {n, plural, =1 {1 role assignment} other {# role assignments}}',

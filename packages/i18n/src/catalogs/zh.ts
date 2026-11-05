@@ -374,7 +374,6 @@ export const zh = {
   'people.permissionsHeading': '权限（{n}）',
   'people.assigneesHeading': '已分配 · {n}',
   'people.effectiveOverridesLine': '{eff} 项生效 · {ov} 条覆盖',
-  'ops.history.skuTotalLine': '{n} 个商品 · 合计 {total}',
   'ops.history.contributorCount': '{n} 位提交人',
   'admin.clone.toastCloned': '克隆了 {n} 个角色分配',
   'admin.clone.toastAlreadyExisted': '{n} 条已存在',
