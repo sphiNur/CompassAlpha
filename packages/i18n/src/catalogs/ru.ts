@@ -405,7 +405,6 @@ export const ru = {
   'people.assigneesHeading': 'Назначены · {n}',
   'people.effectiveOverridesLine':
     '{eff, plural, one {# действует} few {# действуют} many {# действуют} other {# действуют}} · {ov, plural, one {# переопределение} few {# переопределения} many {# переопределений} other {# переопределения}}',
-  'ops.history.skuTotalLine': '{n, plural, one {# товар} few {# товара} many {# товаров} other {# товара}} · всего {total}',
   'ops.history.contributorCount':
     '{n, plural, one {# автор заказа} few {# автора заказа} many {# авторов заказа} other {# автора заказа}}',
   'admin.clone.toastCloned':
@@ -814,7 +813,7 @@ export const ru = {
   'admin.action.cloneRoles': 'Клонировать роли…',
   'admin.action.transfer': 'Перевести…',
   'admin.action.removeFromStore': 'Убрать из магазина',
-  'admin.action.removeFromOrg': 'Удалить',
+  'admin.action.removeFromOrg': 'Удалить из рабочего пространства',
   'admin.action.suspend': 'Приостановить',
   'admin.action.reactivate': 'Возобновить',
   'admin.action.grantRole': 'Назначить роль',
@@ -1464,6 +1463,7 @@ export const ru = {
   'run.label.priceUnitAria': '×1000 (цены в тысячах)',
   'run.price.check.title': 'Цена верная?',
   'run.price.check.body': '{name}: в прошлый раз {last} {currency}, сейчас {next} {currency}.',
+  'run.price.check.bodyFirst': '{name}: {next} {currency} за единицу. Прежней цены у этого товара нет; проверьте, не лишние ли нули.',
   'run.price.check.confirm': 'Да, сохранить',
   'run.price.check.fix': 'Изменить цену',
   'run.action.supplier': 'Поставщик',
@@ -1795,6 +1795,8 @@ export const ru = {
   'inventory.sheet.stocktake.targetLabel': 'Фактический остаток сейчас',
   'inventory.sheet.stocktake.targetHint': 'Пересчитайте полку — система вычислит разницу.',
   'inventory.sheet.stocktake.notePlaceholder': 'причина расхождения (опционально)',
+  'inventory.sheet.stocktake.diff': 'Разница: {diff}',
+  'inventory.sheet.stocktake.noDiff': 'Совпадает с учётом',
   'inventory.sheet.wastage.title': 'Списание',
   'inventory.sheet.wastage.qtyLabel': 'Количество к списанию',
   'inventory.sheet.wastage.notePlaceholder': 'просрочено / разбито / маркировка / потеря',
@@ -2027,6 +2029,7 @@ export const ru = {
   'settlement.wages.status.unpaid': 'Не выплачено',
   'settlement.wages.amount': 'Сумма',
   'settlement.wages.reason': 'Смена, период или причина',
+  'settlement.wages.reasonPlaceholder': 'Обязательно, напр.: дневная смена 5 ноября',
   'settlement.wages.remove': 'Удалить',
   'settlement.confirm.discard': 'Отменить несохранённые изменения закрытия дня?',
   'settlement.confirm.removeDetail':
@@ -2071,7 +2074,7 @@ export const ru = {
     'Для внесения операционных расходов нужно право вести закрытие дня этого магазина.',
   'settlement.errors.invalidDetails': 'Заполните каждую строку расхода и зарплаты.',
   'settlement.errors.invalidDetailsBody':
-    'Для каждого операционного расхода укажите положительную сумму и причину; для каждой зарплаты также выберите сотрудника.',
+    'Для каждого операционного расхода укажите положительную сумму и причину; для каждой зарплаты выберите сотрудника и укажите сумму и смену или причину.',
   'settlement.errors.detailLimit':
     'В одном закрытии дня может быть не более {count, plural, one {# строки} few {# строк} many {# строк} other {# строки}} расходов и {count, plural, one {# строки} few {# строк} many {# строк} other {# строки}} зарплаты.',
   'settlement.errors.stores':
@@ -2087,6 +2090,10 @@ export const ru = {
   'settlement.errors.historicalTotalImmutable': 'В этой старой записи есть только итог, разбить её на строки нельзя.',
   'settlement.errors.totalMismatch': 'Сумма строк не совпадает с итогом. Проверьте суммы.',
   'settlement.errors.futureDate': 'Нельзя закрыть день, который ещё не наступил.',
+  'settlement.errors.dateMissing': 'Выберите рабочую дату.',
+  'settlement.draftRestored.title': 'Несохранённое закрытие восстановлено',
+  'settlement.draftRestored.body': 'Это то, что вы вводили здесь в прошлый раз. Проверьте и сохраните или удалите.',
+  'settlement.draftRestored.discard': 'Удалить',
   'settlement.errors.dateTooOld':
     'Новое закрытие дня — не старше {days, plural, one {# дня} few {# дней} many {# дней} other {# дня}} (существующие можно исправлять).',
   'settlement.errors.correctionReasonRequired': 'Чтобы изменить сохранённое закрытие дня, укажите причину исправления.',

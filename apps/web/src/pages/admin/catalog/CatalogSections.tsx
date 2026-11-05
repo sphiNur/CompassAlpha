@@ -1727,9 +1727,14 @@ export function DishesSection() {
         {draft ? (
           <fieldset disabled={!canManage} className="flex min-w-0 flex-col gap-3 border-0 p-0 py-3">
             {!canManage ? <Banner tone="info" title={i18n.t('dishes.readOnly')} /> : null}
-            {/* Names — 4 locales. */}
-            {(['en', 'zh', 'ru', 'uz'] as const).map((loc) => (
-              <Field key={loc} label={`${i18n.t('common.name')} · ${loc.toUpperCase()}`}>
+            {/* Names — 4 locales. Walkthrough F16 (2026-11-05): same order
+                and labels as the category and product forms; the English
+                "e.g. Beef plov" example showed in every language's UI. */}
+            {(['uz', 'ru', 'en', 'zh'] as const).map((loc) => (
+              <Field
+                key={loc}
+                label={i18n.t('admin.field.nameInLocale', { locale: LANGUAGE_NATIVE_NAMES[loc] })}
+              >
                 <Input
                   value={draft.names[loc] ?? ''}
                   onChange={(e) =>
@@ -1738,7 +1743,6 @@ export function DishesSection() {
                       names: { ...draft.names, [loc]: e.target.value },
                     })
                   }
-                  placeholder={loc === 'en' ? 'e.g. Beef plov' : ''}
                 />
               </Field>
             ))}

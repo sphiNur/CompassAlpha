@@ -23,7 +23,33 @@ export type SelectableSession = {
   storeId: string;
   storeName?: string;
   orderDate?: string;
+  /** Who sent the order (F6, 2026-11-05); absent from older servers. */
+  submittedByName?: string | null;
+  submittedAt?: string | null;
 };
+
+/**
+ * Walkthrough F6 (2026-11-05): "第 N 批" for each session of a store that
+ * has more than one in the same date group, in the order they were sent.
+ * Sessions alone in their store/date get no number.
+ */
+export function batchNumbers(sessions: readonly SelectableSession[]): Map<string, number> {
+  const byStoreDate = new Map<string, SelectableSession[]>();
+  for (const s of sessions) {
+    const k = `${s.storeId}|${s.orderDate ?? ''}`;
+    const list = byStoreDate.get(k);
+    if (list) list.push(s);
+    else byStoreDate.set(k, [s]);
+  }
+  const out = new Map<string, number>();
+  for (const list of byStoreDate.values()) {
+    if (list.length < 2) continue;
+    [...list]
+      .sort((a, b) => (a.submittedAt ?? '').localeCompare(b.submittedAt ?? '') || a.id.localeCompare(b.id))
+      .forEach((s, i) => out.set(s.id, i + 1));
+  }
+  return out;
+}
 
 export type SessionDateGroup<S extends SelectableSession> = {
   /** YYYY-MM-DD, or '' for a session without a date. */

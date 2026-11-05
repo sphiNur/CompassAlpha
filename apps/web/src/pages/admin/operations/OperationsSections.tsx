@@ -274,12 +274,10 @@ export function HistorySection() {
                     </CardHeader>
                   </button>
                   <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-2 text-old-label text-[var(--c-fg-muted)]">
-                    <span>
-                      {i18n.t('ops.history.skuTotalLine', {
-                        n: r.skuCount,
-                        total: formatQty(r.totalQty),
-                      })}
-                    </span>
+                    {/* Walkthrough F14 (2026-11-05): "合计 7.5" added kilos, litres
+                        and pieces together; only the product count means
+                        something across units. */}
+                    <span>{i18n.t('ops.history.skuCount', { n: r.skuCount })}</span>
                     {r.contributors.length > 0 ? (
                       <span>
                         ·{' '}
@@ -310,7 +308,7 @@ export function HistorySection() {
                               {c.displayName ?? c.memberId.slice(0, 6)}
                             </span>
                             <span className="tabular-nums text-[var(--c-fg-muted)]">
-                              {i18n.t('ops.history.skuCount', { n: c.skuCount })} · {formatQty(c.totalQty)}
+                              {i18n.t('ops.history.skuCount', { n: c.skuCount })}
                             </span>
                           </li>
                         ))}

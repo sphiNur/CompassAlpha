@@ -443,7 +443,6 @@ export const en = {
   'people.assigneesHeading': 'Assignees · {n}',
   'people.effectiveOverridesLine':
     '{eff} effective · {ov, plural, =1 {1 override} other {# overrides}}',
-  'ops.history.skuTotalLine': '{n, plural, one {# product} other {# products}} · {total} total',
   'ops.history.contributorCount': '{n, plural, =1 {1 contributor} other {# contributors}}',
   'admin.clone.toastCloned':
     'Cloned {n, plural, =1 {1 role assignment} other {# role assignments}}',
@@ -873,7 +872,7 @@ export const en = {
   'admin.action.cloneRoles': 'Clone roles…',
   'admin.action.transfer': 'Transfer…',
   'admin.action.removeFromStore': 'Remove from store',
-  'admin.action.removeFromOrg': 'Remove',
+  'admin.action.removeFromOrg': 'Remove from workspace',
   'admin.action.suspend': 'Suspend',
   'admin.action.reactivate': 'Reactivate',
   'admin.action.grantRole': 'Grant role',
@@ -1551,6 +1550,7 @@ export const en = {
   'run.label.priceUnitAria': '×1000 (prices in thousands)',
   'run.price.check.title': 'Is this price right?',
   'run.price.check.body': '{name}: last time {last} {currency}, this time {next} {currency}.',
+  'run.price.check.bodyFirst': '{name}: {next} {currency} a unit. There is no earlier price for this product; check that no zeros slipped in.',
   'run.price.check.confirm': 'Yes, save',
   'run.price.check.fix': 'Change the price',
   'run.action.supplier': 'Supplier',
@@ -1916,6 +1916,8 @@ export const en = {
   'inventory.sheet.stocktake.targetHint':
     'Count the shelf and type the real total. We compute the difference.',
   'inventory.sheet.stocktake.notePlaceholder': 'optional reason for the difference',
+  'inventory.sheet.stocktake.diff': 'Difference: {diff}',
+  'inventory.sheet.stocktake.noDiff': 'Matches the system record',
   'inventory.sheet.wastage.title': 'Record wastage',
   'inventory.sheet.wastage.qtyLabel': 'Quantity lost',
   'inventory.sheet.wastage.notePlaceholder': 'spoiled / broken / mislabeled / lost',
@@ -2150,6 +2152,7 @@ export const en = {
   'settlement.wages.status.unpaid': 'Unpaid',
   'settlement.wages.amount': 'Amount',
   'settlement.wages.reason': 'Shift, pay period, or reason',
+  'settlement.wages.reasonPlaceholder': 'Required, e.g. day shift on 5 Nov',
   'settlement.wages.remove': 'Remove',
   'settlement.confirm.discard': 'Discard the daily-close changes you have not saved?',
   'settlement.confirm.removeDetail':
@@ -2194,7 +2197,7 @@ export const en = {
     "Recording operating expenses requires permission to record this store's daily close.",
   'settlement.errors.invalidDetails': 'Complete every expense and wage entry.',
   'settlement.errors.invalidDetailsBody':
-    'Each operating expense needs a positive amount and reason; each wage entry also needs a selected employee.',
+    'Each operating expense needs a positive amount and a reason; each wage entry needs an employee, an amount, and a shift or reason.',
   'settlement.errors.detailLimit':
     'Each daily close supports at most {count, plural, one {# expense row} other {# expense rows}} and {count, plural, one {# wage row} other {# wage rows}}.',
   'settlement.errors.stores': 'Could not load the stores for daily close. Refresh to try again.',
@@ -2209,6 +2212,10 @@ export const en = {
   'settlement.errors.historicalTotalImmutable': 'This older close only has a total, so it cannot be split into entries.',
   'settlement.errors.totalMismatch': 'The entries do not add up to the total. Check the amounts.',
   'settlement.errors.futureDate': 'You cannot close a day that has not started yet.',
+  'settlement.errors.dateMissing': 'Pick a business date.',
+  'settlement.draftRestored.title': 'Unsaved close restored',
+  'settlement.draftRestored.body': 'This is what you typed here last time. Check it and save, or discard it.',
+  'settlement.draftRestored.discard': 'Discard',
   'settlement.errors.dateTooOld':
     'A new daily close can be at most {days, plural, one {# day} other {# days}} back (existing ones can still be corrected).',
   'settlement.errors.correctionReasonRequired': 'Changing a saved close needs a correction reason.',

@@ -570,17 +570,40 @@ export const runRouter = router({
           }
         }
       }
+      // Walkthrough F6 (2026-11-05): the picker listed "Central Kitchen"
+      // four times with nothing to tell the orders apart. Who sent each
+      // one, and when, is added (new fields; nothing existing changes).
+      const submitterIds = [
+        ...new Set(
+          sessions
+            .map((sess) => sess.submittedByMemberId ?? sess.initiatedByMemberId)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      ];
+      const submitterNameById = new Map<string, string>();
+      if (submitterIds.length > 0) {
+        const members = await tx
+          .select({ memberId: s.members.id, displayName: s.users.displayName })
+          .from(s.members)
+          .innerJoin(s.users, eq(s.users.id, s.members.userId))
+          .where(inArray(s.members.id, submitterIds));
+        for (const m of members) submitterNameById.set(m.memberId, m.displayName);
+      }
       return {
         date,
         today,
-        sessions: sessions.map((s) => ({
-          id: s.id,
-          storeId: s.storeId,
-          storeName: storeNameById.get(s.storeId) ?? '—',
-          orderDate: s.orderDate,
-          submittedByMemberId: s.submittedByMemberId,
-          notes: s.notes,
-          extras: (s.extrasJson ?? []) as ExtraItem[],
+        sessions: sessions.map((sess) => ({
+          id: sess.id,
+          storeId: sess.storeId,
+          storeName: storeNameById.get(sess.storeId) ?? '—',
+          orderDate: sess.orderDate,
+          submittedByMemberId: sess.submittedByMemberId,
+          submittedByName:
+            submitterNameById.get(sess.submittedByMemberId ?? sess.initiatedByMemberId ?? '') ??
+            null,
+          submittedAt: sess.submittedAt ? sess.submittedAt.toISOString() : null,
+          notes: sess.notes,
+          extras: (sess.extrasJson ?? []) as ExtraItem[],
         })),
         plannedItems: [...aggregated.entries()].map(([skuId, qty]) => ({
           skuId,

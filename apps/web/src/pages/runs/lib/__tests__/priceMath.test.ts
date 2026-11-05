@@ -5,7 +5,7 @@
  * `.toFixed(3)` clamp turned 92,000.50 into 92,001 (R2-BUY-3).
  */
 import { describe, it, expect } from 'bun:test';
-import { toDisplayPrice, fromDisplayPrice, isUnusualPrice, readDisplayPrice } from '../priceMath';
+import { toDisplayPrice, fromDisplayPrice, isUnusualFirstPrice, isUnusualPrice, readDisplayPrice } from '../priceMath';
 
 describe('toDisplayPrice', () => {
   it('divides by 1000 in thousands mode', () => {
@@ -90,5 +90,16 @@ describe('isUnusualPrice', () => {
     expect(isUnusualPrice('30000', '')).toBe(false);
     expect(isUnusualPrice('', '30000')).toBe(false);
     expect(isUnusualPrice('abc', '30000')).toBe(false);
+  });
+});
+
+describe('isUnusualFirstPrice', () => {
+  it('asks about a first price of a million or more a unit', () => {
+    // 12500 typed in ×1000 mode (walkthrough F8, 2026-11-05).
+    expect(isUnusualFirstPrice('12500000')).toBe(true);
+    expect(isUnusualFirstPrice('1000000')).toBe(true);
+    expect(isUnusualFirstPrice('999999.99')).toBe(false);
+    expect(isUnusualFirstPrice('85000')).toBe(false);
+    expect(isUnusualFirstPrice('abc')).toBe(false);
   });
 });

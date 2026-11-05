@@ -845,6 +845,7 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
                       the field and is tied to it, as in the daily close. */}
                   <NumberInput
                     formatError="none"
+                    aria-label={i18n.t('inventory.sheet.stocktake.targetLabel')}
                     value={draftTarget}
                     aria-invalid={(countProblem !== null && countProblem !== 'empty') || undefined}
                     aria-describedby={
@@ -868,10 +869,38 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
                       <span>{i18n.t(STOCKTAKE_COUNT_MESSAGE[countProblem])}</span>
                     </span>
                   ) : null}
+                  {/* Walkthrough F24 (2026-11-05): "the system works out the
+                      difference" — now it is shown before saving. */}
+                  {countProblem === null && draftTarget.trim() !== ''
+                    ? (() => {
+                        const read = readDecimalText(draftTarget);
+                        if (!read.ok || read.value === '') return null;
+                        const milli =
+                          Math.round(Number(read.value) * 1000) -
+                          Math.round(Number(action.current) * 1000);
+                        if (!Number.isFinite(milli)) return null;
+                        const unit = skuById.get(action.skuId)?.unit ?? '';
+                        const abs = String(Math.abs(milli) / 1000);
+                        return (
+                          <span
+                            className={`mt-1 block text-old-label tabular-nums ${
+                              milli === 0 ? 'text-[var(--c-fg-muted)]' : 'text-[var(--c-fg)]'
+                            }`}
+                          >
+                            {milli === 0
+                              ? i18n.t('inventory.sheet.stocktake.noDiff')
+                              : i18n.t('inventory.sheet.stocktake.diff', {
+                                  diff: `${milli > 0 ? '+' : '−'}${formatQty(abs)} ${unitLabel(unit, abs)}`.trim(),
+                                })}
+                          </span>
+                        );
+                      })()
+                    : null}
                 </Field>
                 <Field label={i18n.t('inventory.sheet.note')}>
                   <Input
                     value={draftNote}
+                    aria-label={i18n.t('inventory.sheet.note')}
                     onChange={(e) => setDraftNote(e.target.value)}
                     placeholder={i18n.t('inventory.sheet.stocktake.notePlaceholder')}
                   />
@@ -885,6 +914,7 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
                     inputMode="decimal"
                     step={skuById.get(action.skuId)?.step ?? '0.1'}
                     min="0"
+                    aria-label={i18n.t('inventory.sheet.wastage.qtyLabel')}
                     value={draftWasteQty}
                     onChange={(e) => setDraftWasteQty(e.target.value)}
                     autoFocus
@@ -896,6 +926,7 @@ function StoreInventoryTab({ storeId }: { storeId: string }) {
                 >
                   <Input
                     value={draftNote}
+                    aria-label={i18n.t('inventory.sheet.note')}
                     onChange={(e) => setDraftNote(e.target.value)}
                     placeholder={i18n.t('inventory.sheet.wastage.notePlaceholder')}
                   />

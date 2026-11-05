@@ -404,7 +404,6 @@ export const uz = {
   'people.permissionsHeading': 'Ruxsatlar ({n})',
   'people.assigneesHeading': 'Tayinlanganlar · {n}',
   'people.effectiveOverridesLine': '{eff} ta amalda · {ov} ta alohida sozlama',
-  'ops.history.skuTotalLine': '{n} ta mahsulot · jami {total}',
   'ops.history.contributorCount': '{n} ta yuboruvchi',
   'admin.clone.toastCloned': '{n} ta rol biriktirmasi klonlandi',
   'admin.clone.toastAlreadyExisted': '{n} tasi allaqachon mavjud edi',
@@ -807,7 +806,7 @@ export const uz = {
   'admin.action.cloneRoles': 'Rollarni nusxalash…',
   'admin.action.transfer': 'Koʻchirish…',
   'admin.action.removeFromStore': 'Doʻkondan olib tashlash',
-  'admin.action.removeFromOrg': 'Olib tashlash',
+  'admin.action.removeFromOrg': 'Ish maydonidan olib tashlash',
   'admin.action.suspend': 'Toʻxtatish',
   'admin.action.reactivate': 'Faollashtirish',
   'admin.action.grantRole': 'Rol berish',
@@ -1459,6 +1458,7 @@ export const uz = {
   'run.label.priceUnitAria': '×1000 (narxlar mingda)',
   'run.price.check.title': 'Narx toʻgʻrimi?',
   'run.price.check.body': '{name}: oʻtgan safar {last} {currency}, hozir {next} {currency}.',
+  'run.price.check.bodyFirst': '{name}: birligi {next} {currency}. Bu mahsulotning avvalgi narxi yoʻq; ortiqcha nol yoʻqligini tekshiring.',
   'run.price.check.confirm': 'Ha, saqlash',
   'run.price.check.fix': 'Narxni oʻzgartirish',
   'run.action.supplier': 'Yetkazib beruvchi',
@@ -1792,6 +1792,8 @@ export const uz = {
   'inventory.sheet.stocktake.targetLabel': 'Hozirgi haqiqiy qoldiq',
   'inventory.sheet.stocktake.targetHint': 'Javonni sanang — tizim farqni hisoblaydi.',
   'inventory.sheet.stocktake.notePlaceholder': 'Farq sababi (ixtiyoriy)',
+  'inventory.sheet.stocktake.diff': 'Farq: {diff}',
+  'inventory.sheet.stocktake.noDiff': 'Tizimdagi qayd bilan bir xil',
   'inventory.sheet.wastage.title': 'Yoʻqotishni yozish',
   'inventory.sheet.wastage.qtyLabel': 'Yoʻqotilgan miqdor',
   'inventory.sheet.wastage.notePlaceholder': 'buzilgan / sinilgan / yorliq / yoʻqolgan',
@@ -2024,6 +2026,7 @@ export const uz = {
   'settlement.wages.status.unpaid': 'Toʻlanmagan',
   'settlement.wages.amount': 'Summa',
   'settlement.wages.reason': 'Smena, davr yoki sabab',
+  'settlement.wages.reasonPlaceholder': 'Majburiy, masalan: 5-noyabr kunduzgi smena',
   'settlement.wages.remove': 'Oʻchirish',
   'settlement.confirm.discard': 'Saqlanmagan kun yakuni oʻzgarishlari bekor qilinsinmi?',
   'settlement.confirm.removeDetail':
@@ -2068,7 +2071,7 @@ export const uz = {
     'Operatsion xarajatlarni kiritish uchun ushbu doʻkonning kun yakunini yuritish huquqi kerak.',
   'settlement.errors.invalidDetails': 'Har bir xarajat va ish haqi qatorini toʻldiring.',
   'settlement.errors.invalidDetailsBody':
-    'Har bir operatsion xarajat uchun musbat summa va sababni kiriting; har bir ish haqi qatori uchun xodimni ham tanlang.',
+    'Har bir operatsion xarajat uchun musbat summa va sababni kiriting; har bir ish haqi qatori uchun xodimni tanlang, summa va smena yoki sababni kiriting.',
   'settlement.errors.detailLimit':
     'Har bir kun yakunida koʻpi bilan {count} ta xarajat va {count} ta ish haqi qatori boʻlishi mumkin.',
   'settlement.errors.stores':
@@ -2084,6 +2087,10 @@ export const uz = {
   'settlement.errors.historicalTotalImmutable': 'Bu eski yozuvda faqat jami summa bor, uni qatorlarga boʻlib boʻlmaydi.',
   'settlement.errors.totalMismatch': 'Qatorlar yigʻindisi jami summaga toʻgʻri kelmaydi. Summalarni tekshiring.',
   'settlement.errors.futureDate': 'Hali boshlanmagan kunni yakunlab boʻlmaydi.',
+  'settlement.errors.dateMissing': 'Ish kunini tanlang.',
+  'settlement.draftRestored.title': 'Saqlanmagan yakun tiklandi',
+  'settlement.draftRestored.body': 'Bu oxirgi marta shu yerda kiritganingiz. Tekshirib saqlang yoki oʻchirib tashlang.',
+  'settlement.draftRestored.discard': 'Oʻchirish',
   'settlement.errors.dateTooOld':
     'Yangi kun yakuni koʻpi bilan {days} kun oldingi boʻlishi mumkin (mavjudlarini tuzatish mumkin).',
   'settlement.errors.correctionReasonRequired': 'Saqlangan kun yakunini oʻzgartirish uchun tuzatish sababini yozing.',
