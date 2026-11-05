@@ -1,1 +1,0 @@
-import{d as s,j as n,S as a}from"./index-DgDg9lqS.js";function o(t){return t.data===void 0&&t.fetchStatus==="paused"}function f({query:t,size:e=20}){const i=s();return o(t)?n.jsx("p",{className:"px-4 text-center text-old-body-sm text-[var(--c-fg-muted)]",children:i.t("common.offlineNoData")}):n.jsx(a,{size:e})}export{f as P,o as i};

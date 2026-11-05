@@ -1,1 +1,0 @@
-import{u as n}from"./index-DgDg9lqS.js";function i(e,s){return e?((s?e.storePermissions?.[s]:void 0)??e.permissions).includes("prices.view"):!1}function t(e){const s=n(r=>r.session);return i(s,e)}export{t as u};
