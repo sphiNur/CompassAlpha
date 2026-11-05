@@ -96,6 +96,9 @@ const fakeSession = {
     'delivery.dispatch',
     'delivery.confirm',
     'users.manage',
+    // A real super admin holds org.admin; without it the Admin home lists
+    // only Stores and Operations (#197), as it does for a store manager.
+    'org.admin',
     'system.logs.view',
   ],
   roleSlugs: ['super_admin'],
