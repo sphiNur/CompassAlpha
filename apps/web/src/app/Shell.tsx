@@ -369,6 +369,19 @@ function ShellInner() {
   const setPersistedTab = useNavStore((s) => s.setTab);
   const visibleKeys = visible.map((t) => t.key as Tab);
   const tab = resolveVisibleTab(persistedTab, visibleKeys);
+  // 2026-11-05 (owner): a bar with a single tab (a cashier has only 日结)
+  // switches nowhere and takes 64 px of the screen. With one page or none,
+  // there is no bottom nav; --app-nav-h goes to 0 so the main button,
+  // toasts and empty states sit on the bottom edge instead of above a gap.
+  const showNav = visible.length > 1;
+  useEffect(() => {
+    const root = document.documentElement.style;
+    if (showNav) root.removeProperty('--app-nav-h');
+    else root.setProperty('--app-nav-h', '0px');
+    return () => {
+      root.removeProperty('--app-nav-h');
+    };
+  }, [showNav]);
   const setTab = setPersistedTab;
   // DX-SHL-10 (2026-11-01): <main> is the one scroller; each tab's
   // position is recorded as it scrolls and put back when the tab returns.
@@ -655,7 +668,7 @@ function ShellInner() {
       className="flex min-h-0 flex-col bg-[var(--c-bg)]"
       style={{ height: 'var(--app-viewport-h, 100dvh)' }}
     >
-      <SkipLinks />
+      <SkipLinks hasNav={showNav} />
       <SettingsSheet open={settingsOpen} onOpenChange={setSettingsOpen} pageMenu={pageMenu} />
       {inTelegram ? (
         // Reserved strip lets Telegram's chrome (Close + bot title + ⋯)
@@ -847,13 +860,22 @@ function ShellInner() {
           usePageMainButton hook every page already uses. */}
       <PageMainButton />
 
-      <BottomNav
-        visible={visible}
-        tab={tab}
-        setTab={requestSetTab}
-        i18n={i18n}
-        badges={badges}
-      />
+      {showNav ? (
+        <BottomNav
+          visible={visible}
+          tab={tab}
+          setTab={requestSetTab}
+          i18n={i18n}
+          badges={badges}
+        />
+      ) : (
+        // No nav: keep the phone's home-indicator strip clear of the page.
+        <div
+          aria-hidden
+          className="shrink-0 bg-[var(--c-surface)]"
+          style={{ height: 'var(--app-safe-bottom)' }}
+        />
+      )}
     </div>
   );
 }
@@ -997,7 +1019,7 @@ const TABS_WITH_OWN_H1: ReadonlySet<Tab> = new Set<Tab>(['history', 'sales', 'ad
  * after the whole list in the DOM, 40+ Tab presses away. Two links, shown
  * only while focused, jump there first (WCAG 2.4.1). Visual order stays.
  */
-function SkipLinks() {
+function SkipLinks({ hasNav }: { hasNav: boolean }) {
   const i18n = useI18n();
   const mainButton = usePageMainButtonState();
   const jump = (selector: string) => () => {
@@ -1013,13 +1035,15 @@ function SkipLinks() {
           {i18n.t('shell.skip.mainAction')}
         </button>
       ) : null}
-      <button
-        type="button"
-        className={linkClass}
-        onClick={jump('[data-testid="primary-nav"] [aria-current="page"], [data-testid="primary-nav"] button')}
-      >
-        {i18n.t('shell.skip.nav')}
-      </button>
+      {hasNav ? (
+        <button
+          type="button"
+          className={linkClass}
+          onClick={jump('[data-testid="primary-nav"] [aria-current="page"], [data-testid="primary-nav"] button')}
+        >
+          {i18n.t('shell.skip.nav')}
+        </button>
+      ) : null}
     </>
   );
 }
