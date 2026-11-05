@@ -99,11 +99,13 @@ describe('checkReceivedQty', () => {
 });
 
 describe('initialReceivedQty', () => {
-  it('prefills 0 for wrong/quality, empty for short, keeps an existing value', () => {
-    expect(initialReceivedQty('short', null)).toBe('');
-    expect(initialReceivedQty('wrong', undefined)).toBe('0');
+  it('prefills the delivered qty for wrong/quality, empty for short, keeps an existing value', () => {
+    expect(initialReceivedQty('short', null, '4.5')).toBe('');
+    expect(initialReceivedQty('wrong', undefined, '4.500')).toBe('4.5');
+    expect(initialReceivedQty('quality', null, '3')).toBe('3');
     expect(initialReceivedQty('quality', null)).toBe('0');
-    expect(initialReceivedQty('short', '1.5')).toBe('1.5');
+    expect(initialReceivedQty('quality', '1', '3')).toBe('1');
+    expect(initialReceivedQty('short', '1.5', '4.5')).toBe('1.5');
   });
   it('DX-DLV-07: drops the trailing zeros the server keeps', () => {
     expect(initialReceivedQty('short', '5.000')).toBe('5');

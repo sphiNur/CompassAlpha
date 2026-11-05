@@ -83,7 +83,8 @@ export function ConfirmPage() {
   } | null>(null);
   const [issueNote, setIssueNote] = useState('');
   // 2026-10-21 CA-06: how much of the split actually arrived. Empty for
-  // 'short' (must be typed), "0" for 'wrong' / 'quality'.
+  // 'short' (must be typed); the delivered qty for 'wrong' / 'quality'
+  // (2026-11-05 owner, see initialReceivedQty).
   const [issueReceived, setIssueReceived] = useState('');
   // DX-DLV-07 (2026-11-01): errors show once the field was typed into or
   // left, or Save was tried — not the moment the form opens.
@@ -751,6 +752,7 @@ export function ConfirmPage() {
                                           initialReceivedQty(
                                             s,
                                             it.confirmStatus === s ? it.confirmReceivedQty : null,
+                                            it.qty,
                                           ),
                                         );
                                         // DLV-9: keep the note and photo of a
@@ -989,8 +991,9 @@ export function ConfirmPage() {
       >
         <div className="flex flex-col gap-3 py-3">
           {/* 2026-10-21 CA-06: inventory books what actually arrived.
-              Required for a short line; 0 by default for a wrong or
-              spoiled item (nothing usable arrived) and editable. */}
+              Required for a short line; for a wrong or spoiled item it
+              starts at the delivered qty (2026-11-05 owner) and is
+              lowered to what is usable. */}
           {issueOpen ? (
             <div className="flex flex-col gap-1">
               {/* DLV-10: once typed into, the field had no visible label.

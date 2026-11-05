@@ -153,14 +153,26 @@ export function checkReceivedQty(
   return { ok: true, value: trimmed };
 }
 
-/** Initial value of the received-qty input when the issue sheet opens. */
+const trimZeros = (q: string) => (q.includes('.') ? q.replace(/\.?0+$/, '') : q);
+
+/**
+ * Initial value of the received-qty input when the issue sheet opens.
+ *
+ * 2026-11-05 (owner): a wrong or damaged line now starts at the quantity
+ * delivered, not 0. It usually did arrive, just with a problem, and 0
+ * as the default booked stock the store had on the shelf as missing.
+ * The receiver lowers it when part of it is unusable. A short line
+ * still starts empty: how much came must be typed.
+ */
 export function initialReceivedQty(
   status: ConfirmDecisionStatus,
   existing: string | null | undefined,
+  delivered?: string | null,
 ): string {
   // DX-DLV-07: the server keeps 3 decimals; "5.000" reads as 5.
-  if (existing != null) return existing.includes('.') ? existing.replace(/\.?0+$/, '') : existing;
-  return status === 'wrong' || status === 'quality' ? '0' : '';
+  if (existing != null) return trimZeros(existing);
+  if (status === 'wrong' || status === 'quality') return delivered ? trimZeros(delivered) : '0';
+  return '';
 }
 
 /**
