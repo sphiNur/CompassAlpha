@@ -2150,6 +2150,7 @@ export const en = {
   'settlement.wages.status.unpaid': 'Unpaid',
   'settlement.wages.amount': 'Amount',
   'settlement.wages.reason': 'Shift, pay period, or reason',
+  'settlement.wages.reasonPlaceholder': 'Required, e.g. day shift on 5 Nov',
   'settlement.wages.remove': 'Remove',
   'settlement.confirm.discard': 'Discard the daily-close changes you have not saved?',
   'settlement.confirm.removeDetail':
@@ -2194,7 +2195,7 @@ export const en = {
     "Recording operating expenses requires permission to record this store's daily close.",
   'settlement.errors.invalidDetails': 'Complete every expense and wage entry.',
   'settlement.errors.invalidDetailsBody':
-    'Each operating expense needs a positive amount and reason; each wage entry also needs a selected employee.',
+    'Each operating expense needs a positive amount and a reason; each wage entry needs an employee, an amount, and a shift or reason.',
   'settlement.errors.detailLimit':
     'Each daily close supports at most {count, plural, one {# expense row} other {# expense rows}} and {count, plural, one {# wage row} other {# wage rows}}.',
   'settlement.errors.stores': 'Could not load the stores for daily close. Refresh to try again.',
@@ -2209,6 +2210,10 @@ export const en = {
   'settlement.errors.historicalTotalImmutable': 'This older close only has a total, so it cannot be split into entries.',
   'settlement.errors.totalMismatch': 'The entries do not add up to the total. Check the amounts.',
   'settlement.errors.futureDate': 'You cannot close a day that has not started yet.',
+  'settlement.errors.dateMissing': 'Pick a business date.',
+  'settlement.draftRestored.title': 'Unsaved close restored',
+  'settlement.draftRestored.body': 'This is what you typed here last time. Check it and save, or discard it.',
+  'settlement.draftRestored.discard': 'Discard',
   'settlement.errors.dateTooOld':
     'A new daily close can be at most {days, plural, one {# day} other {# days}} back (existing ones can still be corrected).',
   'settlement.errors.correctionReasonRequired': 'Changing a saved close needs a correction reason.',

@@ -2027,6 +2027,7 @@ export const ru = {
   'settlement.wages.status.unpaid': 'Не выплачено',
   'settlement.wages.amount': 'Сумма',
   'settlement.wages.reason': 'Смена, период или причина',
+  'settlement.wages.reasonPlaceholder': 'Обязательно, напр.: дневная смена 5 ноября',
   'settlement.wages.remove': 'Удалить',
   'settlement.confirm.discard': 'Отменить несохранённые изменения закрытия дня?',
   'settlement.confirm.removeDetail':
@@ -2071,7 +2072,7 @@ export const ru = {
     'Для внесения операционных расходов нужно право вести закрытие дня этого магазина.',
   'settlement.errors.invalidDetails': 'Заполните каждую строку расхода и зарплаты.',
   'settlement.errors.invalidDetailsBody':
-    'Для каждого операционного расхода укажите положительную сумму и причину; для каждой зарплаты также выберите сотрудника.',
+    'Для каждого операционного расхода укажите положительную сумму и причину; для каждой зарплаты выберите сотрудника и укажите сумму и смену или причину.',
   'settlement.errors.detailLimit':
     'В одном закрытии дня может быть не более {count, plural, one {# строки} few {# строк} many {# строк} other {# строки}} расходов и {count, plural, one {# строки} few {# строк} many {# строк} other {# строки}} зарплаты.',
   'settlement.errors.stores':
@@ -2087,6 +2088,10 @@ export const ru = {
   'settlement.errors.historicalTotalImmutable': 'В этой старой записи есть только итог, разбить её на строки нельзя.',
   'settlement.errors.totalMismatch': 'Сумма строк не совпадает с итогом. Проверьте суммы.',
   'settlement.errors.futureDate': 'Нельзя закрыть день, который ещё не наступил.',
+  'settlement.errors.dateMissing': 'Выберите рабочую дату.',
+  'settlement.draftRestored.title': 'Несохранённое закрытие восстановлено',
+  'settlement.draftRestored.body': 'Это то, что вы вводили здесь в прошлый раз. Проверьте и сохраните или удалите.',
+  'settlement.draftRestored.discard': 'Удалить',
   'settlement.errors.dateTooOld':
     'Новое закрытие дня — не старше {days, plural, one {# дня} few {# дней} many {# дней} other {# дня}} (существующие можно исправлять).',
   'settlement.errors.correctionReasonRequired': 'Чтобы изменить сохранённое закрытие дня, укажите причину исправления.',

@@ -45,6 +45,7 @@ import { scrollBehavior } from '../lib/reducedMotion';
 import { useAuthStore } from '../stores/authStore';
 import { registerTabChangeGuard } from '../stores/navStore';
 import { StoreSalesPanel } from '../components/sales/StoreSalesPanel';
+import { draftKey, draftStorage, forgetDraft, readDraft, writeDraft } from './settlement/draftStore';
 import { addMoney } from '@compass/contracts/money';
 import {
   ITEM_MONEY_PROBLEM_MESSAGE,
@@ -464,6 +465,9 @@ export function SettlementPage() {
   // fields to put back on top of a newer version after a conflict refresh.
   const baseDraft = useRef<SettlementDraft>(emptyDraft());
   const carryOver = useRef<{ at: string; fields: CarriedFields } | null>(null);
+  // F18 (2026-11-05): true while the form shows unsaved input brought back
+  // from this device (see settlement/draftStore).
+  const [restoredDraft, setRestoredDraft] = useState(false);
   const [wagePickerFor, setWagePickerFor] = useState<string | null>(null);
   const [newWagePickerFor, setNewWagePickerFor] = useState<string | null>(null);
   const [wageRoleFilter, setWageRoleFilter] = useState('');
@@ -540,11 +544,20 @@ export function SettlementPage() {
     baseDraft.current = fresh;
     const carry = carryOver.current;
     carryOver.current = null;
+    const stored =
+      session && BUSINESS_DATE.test(date)
+        ? readDraft<SettlementDraft>(draftStorage(), draftKey(session.user.id, recordKey))
+        : null;
     if (carry && carry.at === `${currentStoreId}:${date}` && Object.keys(carry.fields).length) {
       setDraft({ ...fresh, ...carry.fields });
+      setRestoredDraft(false);
       toast.info(i18n.t('settlement.conflict.keptEdits'));
+    } else if (stored) {
+      setDraft({ ...fresh, ...stored });
+      setRestoredDraft(true);
     } else {
       setDraft(fresh);
+      setRestoredDraft(false);
     }
     setDraftRecordKey(recordKey);
     setVersionConflict(false);
@@ -620,8 +633,26 @@ export function SettlementPage() {
     hasUnsavedChanges
       ? confirmSettlement(i18n.t('settlement.confirm.discard'))
       : Promise.resolve(true);
+  // F18: keep unsaved input on the device while it differs from the record,
+  // and drop it once it matches again (saved, or typed back).
+  const storedDraftKey = session ? draftKey(session.user.id, recordKey) : null;
+  const draftLoaded = draftRecordKey === recordKey;
+  useEffect(() => {
+    if (!storedDraftKey || !draftLoaded) return;
+    if (hasUnsavedChanges) writeDraft(draftStorage(), storedDraftKey, draft);
+    else forgetDraft(draftStorage(), storedDraftKey);
+  }, [storedDraftKey, draftLoaded, hasUnsavedChanges, draft]);
+  const forgetStoredDraft = () => {
+    if (storedDraftKey) forgetDraft(draftStorage(), storedDraftKey);
+    setRestoredDraft(false);
+  };
+  const discardRestoredDraft = () => {
+    forgetStoredDraft();
+    setDraft(baseDraft.current);
+  };
   const confirmDiscardChanges = (onConfirm: () => void) => {
     void confirmDiscard().then((confirmed) => {
+      if (confirmed) forgetStoredDraft();
       if (confirmed) onConfirm();
     });
   };
@@ -646,9 +677,12 @@ export function SettlementPage() {
         // the page closes (its "saved" toast shows on the next tab), so
         // asking to "discard" it was false. Only unsent changes ask.
         if (nextTab === 'settlement' || !hasUnsavedChanges || savingRef.current) return true;
-        return confirmSettlement(i18n.t('settlement.confirm.discard'));
+        return confirmSettlement(i18n.t('settlement.confirm.discard')).then((ok) => {
+          if (ok && storedDraftKey) forgetDraft(draftStorage(), storedDraftKey);
+          return ok;
+        });
       }),
-    [hasUnsavedChanges, i18n],
+    [hasUnsavedChanges, i18n, storedDraftKey],
   );
   // Browser refresh/close is the only way to leave a WebApp without going
   // through the shell controls. Browsers provide their own localized
@@ -768,6 +802,7 @@ export function SettlementPage() {
     trpc: { context: saveIdemCtx },
     onSuccess: (saved) => {
       saveIdemFor.current = '';
+      forgetStoredDraft();
       const savedRecord = saved as SettlementRecord;
       baseDraft.current = draftFromRecord(savedRecord);
       setDraft(baseDraft.current);
@@ -900,7 +935,8 @@ export function SettlementPage() {
       currentStoreId === requestedStoreId &&
       !!businessDate &&
       draftSynchronized &&
-      !closeQuery.isError,
+      !closeQuery.isError &&
+      !tooOldForNew,
     active: canSave && !saveMutation.isPending,
     onInactiveClick: fieldsToFix > 0 ? showFirstFieldToFix : undefined,
   });
@@ -1045,7 +1081,12 @@ export function SettlementPage() {
         {pageHeading}
         {storeSelector}
         {dateField}
-        <Banner tone="warn" title={i18n.t('settlement.errors.futureDate')} />
+        <Banner
+          tone="warn"
+          title={i18n.t(
+            BUSINESS_DATE.test(date) ? 'settlement.errors.futureDate' : 'settlement.errors.dateMissing',
+          )}
+        />
       </div>
     );
   }
@@ -1295,6 +1336,19 @@ export function SettlementPage() {
             title={i18n.t('settlement.errors.dateTooOld', { days: BACKDATE_LIMIT_DAYS })}
           />
         ) : null}
+        {restoredDraft && hasUnsavedChanges && !tooOldForNew ? (
+          <Banner
+            tone="info"
+            title={i18n.t('settlement.draftRestored.title')}
+            action={
+              <Button size="sm" variant="pearl" onClick={discardRestoredDraft}>
+                {i18n.t('settlement.draftRestored.discard')}
+              </Button>
+            }
+          >
+            {i18n.t('settlement.draftRestored.body')}
+          </Banner>
+        ) : null}
         {existing ? (
           <Banner tone="info" title={i18n.t('settlement.editing.title')}>
             {i18n.t('settlement.editing.body')}
@@ -1307,7 +1361,9 @@ export function SettlementPage() {
         {/* CLS-15 (2026-10-31): while the day failed to load there is no
             form — an empty one with 「保存日结」 read as "nothing saved yet"
             when the day may already have a close. */}
-        {closeQuery.isError ? null : (
+        {/* F21 (2026-11-05): a date too old for a new close used to keep
+            the whole form and its save button under the warning. */}
+        {closeQuery.isError || tooOldForNew ? null : (
         <>
         {/* CLS-16: while a save is in flight the form is locked; whatever was
             typed meanwhile used to be overwritten by the saved record. */}
@@ -1683,6 +1739,7 @@ export function SettlementPage() {
                                     value={wage.reason}
                                     maxLength={500}
                                     aria-label={reasonLabel}
+                                    placeholder={i18n.t('settlement.wages.reasonPlaceholder')}
                                     invalid={!valid && reasonMissing}
                                     aria-describedby={
                                       !valid && reasonMissing ? reasonErrorId : undefined

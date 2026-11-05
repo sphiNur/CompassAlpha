@@ -1808,6 +1808,7 @@ export const zh = {
   'settlement.wages.status.unpaid': '未发',
   'settlement.wages.amount': '金额',
   'settlement.wages.reason': '班次、发薪周期或原因',
+  'settlement.wages.reasonPlaceholder': '必填，例如：11 月 5 日白班',
   'settlement.wages.remove': '删除',
   'settlement.confirm.discard': '放弃这次没保存的日结修改？',
   'settlement.confirm.removeDetail': '删掉这条明细？点「保存更正」之前，已保存的日结不会变。',
@@ -1850,7 +1851,7 @@ export const zh = {
   'settlement.errors.expensesManagerOnly': '需要本门店的日结录入权限才能录入日常支出。',
   'settlement.errors.invalidDetails': '请补全每一条支出和工资明细。',
   'settlement.errors.invalidDetailsBody':
-    '每条日常支出都必须填写正数金额和支出原因；每条工资明细还必须选择员工。',
+    '每条日常支出都要填写正数金额和支出原因；每条工资都要选择员工，并填写金额和班次或原因。',
   'settlement.errors.detailLimit':
     '每次日结最多可填写 {count} 条支出明细和 {count} 条工资明细。',
   'settlement.errors.stores': '没能加载可日结的门店，刷新再试一次。',
@@ -1864,6 +1865,10 @@ export const zh = {
   'settlement.errors.historicalTotalImmutable': '这条旧记录只有合计，不能拆成明细。',
   'settlement.errors.totalMismatch': '明细加起来和合计对不上，请检查金额。',
   'settlement.errors.futureDate': '还没到的日期不能日结。',
+  'settlement.errors.dateMissing': '请选择营业日期。',
+  'settlement.draftRestored.title': '已恢复上次没保存的日结',
+  'settlement.draftRestored.body': '这是你上次在这台手机上填到一半的内容，核对后保存，或者丢弃。',
+  'settlement.draftRestored.discard': '丢弃',
   'settlement.errors.dateTooOld':
     '超过 {days} 天的日期不能新建日结（已有的记录仍可更正）。',
   'settlement.errors.correctionReasonRequired': '修改已保存的日结，需要填写更正原因。',
