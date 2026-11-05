@@ -489,6 +489,10 @@ function ShellInner() {
   // SettingsSheet (profile + language + about), not just a language
   // picker. State variable name kept short for legacy locality.
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Walkthrough F28 (2026-11-05): the offline banner ran to four lines and
+  // pushed the first rows off a phone screen. One line by default; what
+  // still works offline opens on demand.
+  const [offlineDetails, setOfflineDetails] = useState(false);
   useTelegramSettingsButton(() => setSettingsOpen(true));
 
   // Inside Telegram, the platform chrome (Close + bot title + ⋯) is the
@@ -778,8 +782,23 @@ function ShellInner() {
                     })}`
                   : i18n.t('shell.offline.title')
               }
+              action={
+                <button
+                  type="button"
+                  className="press min-h-11 px-1 text-old-label font-semibold text-[var(--c-action)]"
+                  aria-expanded={offlineDetails}
+                  aria-controls="offline-details"
+                  onClick={() => setOfflineDetails(!offlineDetails)}
+                >
+                  {i18n.t(offlineDetails ? 'shell.offline.hideDetails' : 'shell.offline.showDetails')}
+                </button>
+              }
             >
-              {i18n.t(cachedAt !== null ? 'shell.offline.body' : 'shell.offline.noDataBody')}
+              {offlineDetails ? (
+                <span id="offline-details">
+                  {i18n.t(cachedAt !== null ? 'shell.offline.body' : 'shell.offline.noDataBody')}
+                </span>
+              ) : null}
             </Banner>
           </div>
         ) : null}

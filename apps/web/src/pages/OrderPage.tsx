@@ -31,6 +31,7 @@ import { sentBatchCount } from './order/batchCount';
 import { groupCatalog, orderableSkus } from './order/catalogGroups';
 import { extrasChanged, submittedDiff } from './order/submittedDiff';
 import { PendingSyncNotice } from '../components/PendingSyncNotice';
+import { pendingChangeCount } from '../lib/pendingChanges';
 import { useQueryClient } from '@tanstack/react-query';
 import { refetchFailedQueries } from '../hooks/useRefetchFailedOnReconnect';
 import { sessionLoadState } from './order/sessionLoadState';
@@ -1488,7 +1489,7 @@ export function OrderPage() {
       </StickyPageBar>
       {staleWarning}
       {/* ORD-3 (2026-10-30): changes waiting in the outbox were invisible. */}
-      <PendingSyncNotice count={offline.pendingCount} saving={offline.savingSlow} />
+      <PendingSyncNotice count={pendingChangeCount(offline.pendingEntries)} saving={offline.savingSlow} />
       {rejectedNotice(sessionQuery.data?.id) ? (
         <div className="px-4 pt-3">{rejectedNotice(sessionQuery.data?.id)}</div>
       ) : null}

@@ -605,6 +605,8 @@ export const uz = {
   'shell.noTabs.body':
     'Rolingizda buyurtma, tekshiruv, xarid yoki boshqa boʻlimlarga ruxsat yoʻq. Kerak boʻlsa, administratorga murojaat qiling.',
   'shell.offline.title': 'Internet yoʻq',
+  'shell.offline.showDetails': 'Nima ishlaydi',
+  'shell.offline.hideDetails': 'Yashirish',
   'shell.pageNotLoaded.title': 'Bu sahifa hali yuklanmagan',
   'shell.pageNotLoaded.body':
     'Ochish uchun internet kerak. Internet qaytganda oʻzi yuklanadi yoki «Qayta urinish»ni bosing.',
