@@ -345,6 +345,16 @@ export function RunPage() {
   // M3.44 (2026-05-22): off-catalog expense add + remove. Same
   // optimistic + offline-queue pattern as the SKU-item path so the
   // bazaar UX is consistent across modes.
+  // Walkthrough F10 (2026-11-05): pricing a staff member's "other item"
+  // records an expense, but the item itself stayed "not handled" — and
+  // 开始配送 then warned about it. The item an expense was opened from
+  // is marked bought once that expense is saved.
+  const extraForExpense = useRef<{
+    expenseId: string;
+    sessionId: string;
+    idx: number;
+    seq?: number;
+  } | null>(null);
   const addExpense = trpc.run.addExpense.useMutation({
     trpc: { context: addExpenseIdemCtx },
     onMutate: () => {
@@ -352,7 +362,17 @@ export function RunPage() {
       addExpenseIdemCtx.idempotencyKey = idempotencyKey;
       return { idempotencyKey };
     },
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
+      const fromExtra = extraForExpense.current;
+      if (fromExtra && fromExtra.expenseId === vars.expenseId) {
+        extraForExpense.current = null;
+        markExtraStatus.mutate({
+          sessionId: fromExtra.sessionId,
+          extraIndex: fromExtra.idx,
+          status: 'bought',
+          expectedSeq: fromExtra.seq,
+        });
+      }
       invalidateRunQuietly(true);
       setAddItemDraft(null);
       haptic('success');
@@ -2675,13 +2695,20 @@ export function RunPage() {
               markExtraStatus.mutate({ sessionId, extraIndex, status, expectedSeq })
             }
             onRecordExtraExpense={(storeId, extra) => {
+              const expenseId = newClientId();
+              extraForExpense.current =
+                typeof extra.sessionId === 'string' &&
+                typeof extra.idx === 'number' &&
+                extra.status !== 'bought'
+                  ? { expenseId, sessionId: extra.sessionId, idx: extra.idx, seq: extra.sessionSeq }
+                  : null;
               setAddItemDraft({
                 mode: 'expense',
                 runId: activeRun.id,
                 skuId: null,
                 supplierId: null,
                 skuCostMode: 'merge',
-                expenseId: newClientId(),
+                expenseId,
                 label: extra.name,
                 unitHint: extra.unit,
                 expenseScope: 'store',

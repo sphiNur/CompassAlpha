@@ -309,7 +309,16 @@ export function PerVendorView({
   ) => void;
   onRecordExtraExpense: (
     storeId: string,
-    extra: { name: string; qty: string; unit: string; note?: string },
+    extra: {
+      name: string;
+      qty: string;
+      unit: string;
+      note?: string;
+      status?: 'pending' | 'bought' | 'unavailable';
+      sessionId?: string;
+      idx?: number;
+      sessionSeq?: number;
+    },
   ) => void;
   onSetPaymentMethod: (
     item: ActiveRun['items'][number],
@@ -577,7 +586,16 @@ export function RunExtrasCard({
   ) => void;
   onRecordExtraExpense?: (
     storeId: string,
-    extra: { name: string; qty: string; unit: string; note?: string },
+    extra: {
+      name: string;
+      qty: string;
+      unit: string;
+      note?: string;
+      status?: 'pending' | 'bought' | 'unavailable';
+      sessionId?: string;
+      idx?: number;
+      sessionSeq?: number;
+    },
   ) => void;
 }) {
   // See PerStoreView — raw unit codes leaked here too.

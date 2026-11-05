@@ -193,7 +193,16 @@ export function ActiveRunPanel({
   ) => void;
   onRecordExtraExpense: (
     storeId: string,
-    extra: { name: string; qty: string; unit: string; note?: string },
+    extra: {
+      name: string;
+      qty: string;
+      unit: string;
+      note?: string;
+      status?: 'pending' | 'bought' | 'unavailable';
+      sessionId?: string;
+      idx?: number;
+      sessionSeq?: number;
+    },
   ) => void;
   /** M3.44: remove an off-catalog expense (purchasing phase only). */
   onRemoveExpense: (expenseId: string, label: string) => void;
