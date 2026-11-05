@@ -63,6 +63,6 @@
     # Mirror apps/api/src/app.ts's Permissions-Policy exactly so
     # responses from Caddy's own pages (e.g. error pages) carry the
     # same posture as proxied responses.
-    Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+    Permissions-Policy "camera=(self), microphone=(), geolocation=(self), payment=(), usb=()"
   }
 }

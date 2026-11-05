@@ -22,6 +22,7 @@ import { hub } from './realtime/hub';
 import { relayDatabaseNotices } from './realtime/dbRelay';
 import { createWebSocketHandler, handleWsRequest, type WSData } from './realtime/socket';
 import { scanAttendanceReminders } from './services/attendanceReminders';
+import { purgeOldAttendancePhotos } from './services/attendancePhotoRetention';
 import { trustedClientIp } from './services/clientIp';
 import { loadSession } from './trpc/context';
 
@@ -105,8 +106,10 @@ async function main() {
     if (scanningAttendance) return;
     scanningAttendance = true;
     scanAttendanceReminders(db)
-      .then((sent) => {
+      .then(async (sent) => {
         if (sent > 0) logger.info({ sent }, 'attendance reminders');
+        const purged = await purgeOldAttendancePhotos(db);
+        if (purged > 0) logger.info({ purged }, 'old attendance photos deleted');
       })
       .catch((err: unknown) => logger.warn({ err }, 'attendance reminder scan failed'))
       .finally(() => {

@@ -2680,4 +2680,29 @@ export const uz = {
   'attendance.export.flag.early': 'Erta ketdi',
   'attendance.export.flag.onDuty': 'Smenada',
   'attendance.export.flag.upcoming': 'Hali boshlanmagan',
+  'attendance.rules.photoLine': 'Har belgilashda ikki surat: yuz va joy',
+  'attendance.photo.faceTitle': 'Avval yuz',
+  'attendance.photo.faceHint':
+    'Old kamera. Ekranga qarang, yuzingiz toʻliq kadrda va yorugʻ boʻlsin.',
+  'attendance.photo.sceneTitle': 'Endi joy',
+  'attendance.photo.sceneHint':
+    'Orqa kamera. Qayerdaligingizni koʻrsating: doʻkon, peshtaxta yoki eshik.',
+  'attendance.photo.reviewTitle': 'Suratlarni tekshiring',
+  'attendance.photo.reviewHint':
+    'Bu suratlarni faqat boshqaruvchilar koʻradi. 90 kundan keyin oʻchiriladi.',
+  'attendance.photo.face': 'Yuz',
+  'attendance.photo.scene': 'Joy',
+  'attendance.photo.retake': 'Qayta olish',
+  'attendance.photo.shoot': 'Suratga olish',
+  'attendance.photo.problem.unsupported': 'Bu yerda kamera ochilmaydi',
+  'attendance.photo.problem.denied': 'Kameraga ruxsat yoʻq',
+  'attendance.photo.problem.unavailable': 'Kamera ishga tushmadi',
+  'attendance.photo.useSystemCamera': 'Telefon kamerasi bilan suratga oling.',
+  'attendance.photo.openSystemCamera': 'Telefon kamerasini ochish',
+  'attendance.photo.show': 'Suratlarni koʻrsatish',
+  'attendance.settings.requirePhoto': 'Belgilashda surat',
+  'attendance.settings.requirePhotoHint':
+    'Har bir kelish va ketishda joyida ikki surat: old kamera bilan yuz, keyin orqa kamera bilan joy. 90 kun saqlanadi, faqat boshqaruvchilar koʻradi.',
+  'attendance.errors.photoRequired': 'Bu doʻkonda belgilash uchun ikki surat kerak.',
+  'attendance.errors.photoInvalid': 'Suratni oʻqib boʻlmadi. Qayta oling.',
 } as const satisfies Record<CatalogKey, string>;

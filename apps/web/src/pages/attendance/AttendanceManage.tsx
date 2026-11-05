@@ -302,6 +302,43 @@ function MemberDayRow({
   );
 }
 
+/** A punch's face and surroundings photos, loaded when asked for. */
+function PunchPhotoStrip({ storeId, punchId }: { storeId: string; punchId: string }) {
+  const i18n = useI18n();
+  const [open, setOpen] = useState(false);
+  const photos = trpc.attendance.punchPhotos.useQuery(
+    { storeId, punchId },
+    { enabled: open, staleTime: Infinity },
+  );
+  if (!open) {
+    return (
+      <Button variant="secondary" size="sm" className="self-start" onClick={() => setOpen(true)}>
+        {i18n.t('attendance.photo.show')}
+      </Button>
+    );
+  }
+  return (
+    <DataState query={photos}>
+      {(list) => (
+        <div className="grid grid-cols-2 gap-2">
+          {list.map((ph) => (
+            <figure key={ph.kind} className="flex flex-col gap-1">
+              <img
+                src={ph.src}
+                alt={i18n.t(`attendance.photo.${ph.kind}`)}
+                className="aspect-[3/4] w-full rounded-[var(--r-utility)] object-cover"
+              />
+              <figcaption className="text-old-label text-[var(--c-fg-muted)]">
+                {i18n.t(`attendance.photo.${ph.kind}`)}
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      )}
+    </DataState>
+  );
+}
+
 function MemberDaySheet({
   storeId,
   date,
@@ -377,35 +414,38 @@ function MemberDaySheet({
             {punches.map((p) => (
               <li
                 key={p.id}
-                className="flex items-start justify-between gap-2 rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-3 py-2"
+                className="flex flex-col gap-2 rounded-[var(--r-utility)] bg-[var(--c-surface-2)] px-3 py-2"
               >
-                <span
-                  className={
-                    p.voided ? 'text-[var(--c-fg-subtle)] line-through' : 'text-[var(--c-fg)]'
-                  }
-                >
-                  <span className="tabular-nums font-semibold">{p.time}</span>{' '}
-                  {i18n.t(p.kind === 'in' ? 'attendance.kind.in' : 'attendance.kind.out')}
-                  {p.date !== date ? ` (${p.date})` : ''}
-                  <span className="block text-old-label text-[var(--c-fg-muted)] no-underline">
-                    {p.source === 'manual'
-                      ? i18n.t('attendance.sheet.manualBy', {
-                          name: p.createdByName ?? '—',
-                          reason: p.reason ?? '',
-                        })
-                      : p.distanceM !== null
-                        ? i18n.t('attendance.sheet.selfAt', { m: p.distanceM })
-                        : i18n.t('attendance.source.self')}
-                    {p.voided
-                      ? ` · ${i18n.t('attendance.sheet.voidedBy', { name: p.voided.byName ?? '—', reason: p.voided.reason })}`
-                      : ''}
+                <div className="flex items-start justify-between gap-2">
+                  <span
+                    className={
+                      p.voided ? 'text-[var(--c-fg-subtle)] line-through' : 'text-[var(--c-fg)]'
+                    }
+                  >
+                    <span className="tabular-nums font-semibold">{p.time}</span>{' '}
+                    {i18n.t(p.kind === 'in' ? 'attendance.kind.in' : 'attendance.kind.out')}
+                    {p.date !== date ? ` (${p.date})` : ''}
+                    <span className="block text-old-label text-[var(--c-fg-muted)] no-underline">
+                      {p.source === 'manual'
+                        ? i18n.t('attendance.sheet.manualBy', {
+                            name: p.createdByName ?? '—',
+                            reason: p.reason ?? '',
+                          })
+                        : p.distanceM !== null
+                          ? i18n.t('attendance.sheet.selfAt', { m: p.distanceM })
+                          : i18n.t('attendance.source.self')}
+                      {p.voided
+                        ? ` · ${i18n.t('attendance.sheet.voidedBy', { name: p.voided.byName ?? '—', reason: p.voided.reason })}`
+                        : ''}
+                    </span>
                   </span>
-                </span>
-                {!p.voided ? (
-                  <Button variant="ghost" size="sm" onClick={() => setVoiding(p)}>
-                    {i18n.t('attendance.void.action')}
-                  </Button>
-                ) : null}
+                  {!p.voided ? (
+                    <Button variant="ghost" size="sm" onClick={() => setVoiding(p)}>
+                      {i18n.t('attendance.void.action')}
+                    </Button>
+                  ) : null}
+                </div>
+                {p.photos.length > 0 ? <PunchPhotoStrip storeId={storeId} punchId={p.id} /> : null}
               </li>
             ))}
           </ul>

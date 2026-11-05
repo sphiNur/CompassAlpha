@@ -9,9 +9,11 @@ import {
   primaryKey,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
   varchar,
+  customType,
 } from 'drizzle-orm/pg-core';
 import { members, organizations } from './auth';
 import { createdAt, deletedAt, inventorySchema, pkUuid, updatedAt } from './_helpers';
@@ -696,6 +698,8 @@ export const attendanceStorePolicies = inventorySchema.table(
     graceMinutes: integer('grace_minutes').notNull().default(5),
     /** Minutes past a shift's end before a clock-out counts as overtime (0061). */
     overtimeAfterMinutes: integer('overtime_after_minutes').notNull().default(30),
+    /** Self punches carry a face and a surroundings photo (0062). */
+    requirePhoto: boolean('require_photo').notNull().default(false),
     updatedByMemberId: uuid('updated_by_member_id').references(() => members.id, {
       onDelete: 'set null',
     }),
@@ -844,5 +848,38 @@ export const attendanceOvertime = inventorySchema.table(
   (t) => ({
     storeIdx: index('aot_store_idx').on(t.storeId, t.createdAt),
     orgIdx: index('aot_org_idx').on(t.orgId),
+  }),
+);
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType: () => 'bytea',
+});
+
+/** A clock-in photo (0062): the face or the surroundings, kept 90 days. */
+export const attendancePhotos = inventorySchema.table(
+  'attendance_photos',
+  {
+    id: pkUuid(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    storeId: uuid('store_id')
+      .notNull()
+      .references(() => stores.id, { onDelete: 'cascade' }),
+    memberId: uuid('member_id')
+      .notNull()
+      .references(() => members.id, { onDelete: 'cascade' }),
+    punchId: uuid('punch_id')
+      .notNull()
+      .references(() => attendancePunches.id, { onDelete: 'cascade' }),
+    kind: varchar('kind', { length: 8 }).notNull().$type<'face' | 'scene'>(),
+    contentType: varchar('content_type', { length: 32 }).notNull().default('image/jpeg'),
+    bytes: bytea('bytes').notNull(),
+    takenAt: timestamp('taken_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => ({
+    punchKind: unique('attendance_photos_punch_id_kind_key').on(t.punchId, t.kind),
+    takenIdx: index('aph_taken_idx').on(t.takenAt),
+    orgIdx: index('aph_org_idx').on(t.orgId),
   }),
 );

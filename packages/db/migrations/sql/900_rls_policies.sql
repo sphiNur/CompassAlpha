@@ -49,6 +49,7 @@ DECLARE
     'inventory.attendance_punches',
     'inventory.attendance_pay_rates',
     'inventory.attendance_overtime',
+    'inventory.attendance_photos',
     'inventory.suppliers',
     'inventory.categories',
     'inventory.skus',

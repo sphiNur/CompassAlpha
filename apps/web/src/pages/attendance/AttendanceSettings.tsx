@@ -189,6 +189,7 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
   const utils = trpc.useUtils();
   const [requireDevice, setRequireDevice] = useState(initial.requireDevice);
   const [requireGeo, setRequireGeo] = useState(initial.requireGeo);
+  const [requirePhoto, setRequirePhoto] = useState(initial.requirePhoto);
   const [geo, setGeo] = useState(initial.geo);
   const [radius, setRadius] = useState(String(initial.geo?.radiusM ?? 100));
   const [grace, setGrace] = useState(String(initial.graceMinutes));
@@ -241,6 +242,15 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
           hint={i18n.t('attendance.settings.requireDeviceHint')}
           checked={requireDevice}
           onChange={(e) => setRequireDevice(e.target.checked)}
+        />
+      </div>
+
+      <div className="rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-3 ring-hairline">
+        <Switch
+          label={i18n.t('attendance.settings.requirePhoto')}
+          hint={i18n.t('attendance.settings.requirePhotoHint')}
+          checked={requirePhoto}
+          onChange={(e) => setRequirePhoto(e.target.checked)}
         />
       </div>
 
@@ -323,6 +333,7 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
             storeId,
             requireDevice,
             requireGeo,
+            requirePhoto,
             geo: geo && radiusOk ? { ...geo, radiusM: radiusNum } : null,
             graceMinutes: graceNum,
             overtimeAfterMinutes: overtimeNum,

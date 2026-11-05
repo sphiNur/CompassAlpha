@@ -24,6 +24,9 @@ import { useErrToast } from '../lib/errToast';
 import { minutesText } from '../lib/attendanceFormat';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
+import { PunchCamera, type PunchPhotos } from './attendance/PunchCamera';
+
+type Fix = { lat: number; lng: number; accuracy: number };
 
 export function AttendancePage() {
   const i18n = useI18n();
@@ -87,23 +90,29 @@ function ClockPanel({ storeId }: { storeId: string }) {
   // it without a reason, and the same punch is sent again with one.
   const [overtimeAsk, setOvertimeAsk] = useState<{
     minutes: number;
-    location: { lat: number; lng: number; accuracy: number } | null;
+    location: Fix | null;
+    photos: PunchPhotos | undefined;
   } | null>(null);
+  // The store asks for a face and a surroundings photo with each punch.
+  const [camera, setCamera] = useState<{ location: Fix | null } | null>(null);
   const [overtimeReason, setOvertimeReason] = useState('');
   const punch = trpc.attendance.punch.useMutation({
     onSuccess: (data) => {
       haptic('success');
+      setCamera(null);
       setOvertimeAsk(null);
       setOvertimeReason('');
       setDone({ kind: data.kind, time: data.time });
       void utils.attendance.me.invalidate();
     },
     onError: (err, vars) => {
+      setCamera(null);
       if (serverErrorKey(err) === 'attendance.errors.overtimeReasonRequired') {
         haptic('warning');
         setOvertimeAsk({
           minutes: Number(errorVars(err).minutes ?? 0),
           location: vars.location ?? null,
+          photos: vars.photos,
         });
         return;
       }
@@ -116,7 +125,7 @@ function ClockPanel({ storeId }: { storeId: string }) {
   const onPunch = async () => {
     if (!store || !deviceId) return;
     setLocationProblem(null);
-    let location: { lat: number; lng: number; accuracy: number } | null = null;
+    let location: Fix | null = null;
     if (store.rules.requireGeo) {
       setLocating(true);
       try {
@@ -129,12 +138,22 @@ function ClockPanel({ storeId }: { storeId: string }) {
       }
       setLocating(false);
     }
+    if (store.rules.requirePhoto) {
+      setCamera({ location });
+      return;
+    }
+    send(location, undefined);
+  };
+
+  const send = (location: Fix | null, photos: PunchPhotos | undefined) => {
+    if (!store || !deviceId) return;
     punch.mutate({
       storeId,
       kind: store.nextKind,
       deviceId,
       platform: devicePlatform(),
       location,
+      photos,
     });
   };
 
@@ -237,7 +256,15 @@ function ClockPanel({ storeId }: { storeId: string }) {
                 {store.rules.requireGeo && store.rules.geo ? (
                   <li>{i18n.t('attendance.rules.geoLine', { radius: store.rules.geo.radiusM })}</li>
                 ) : null}
+                {store.rules.requirePhoto ? <li>{i18n.t('attendance.rules.photoLine')}</li> : null}
               </ul>
+              <PunchCamera
+                open={camera !== null}
+                kind={store.nextKind}
+                busy={punch.isPending}
+                onCancel={() => setCamera(null)}
+                onConfirm={(photos) => send(camera?.location ?? null, photos)}
+              />
               <UpcomingShifts shifts={store.shifts} today={store.today} />
               <Sheet
                 open={overtimeAsk !== null}
@@ -273,6 +300,7 @@ function ClockPanel({ storeId }: { storeId: string }) {
                         deviceId,
                         platform: devicePlatform(),
                         location: overtimeAsk.location,
+                        photos: overtimeAsk.photos,
                         overtimeReason: overtimeReason.trim(),
                       })
                     }
