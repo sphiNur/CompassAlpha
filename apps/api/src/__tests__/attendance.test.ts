@@ -6,7 +6,9 @@ import { and, eq, sql } from 'drizzle-orm';
 import { getDb, schema as s, withOrgContext } from '@compass/db';
 import { attendance, dateInTz, todayInTz } from '@compass/domain';
 import { loadCatalog } from '@compass/i18n/catalogs';
+import { Hono } from 'hono';
 import { logger } from '../infra/log';
+import { attendanceMonthExport } from '../http/attendanceExport';
 import { appRouter } from '../trpc/router';
 import { scanAttendanceReminders } from '../services/attendanceReminders';
 import type { RequestContext, SessionContext } from '../trpc/context';
@@ -498,6 +500,33 @@ describe.skipIf(!SHOULD_RUN)('attendance pay and overtime', () => {
       f.staff().attendance.wageSuggestions({ storeId: f.storeId, date }),
       'auth.errors.missingPermission',
     );
+  });
+
+  test('the month exports as an xlsx behind a signed link', async () => {
+    const f = fx!;
+    const month = todayInTz(TZ, new Date()).slice(0, 7);
+    await expectError(
+      f.staff().attendance.exportLink({ storeId: f.storeId, month, locale: 'en' }),
+      'auth.errors.missingPermission',
+    );
+    const link = await f.manager.attendance.exportLink({ storeId: f.storeId, month, locale: 'zh' });
+    expect(link.path).toStartWith('/files/attendance-month.xlsx?t=');
+    expect(link.fileName).toEndWith(`-${month}.xlsx`);
+    const http = new Hono().get('/files/attendance-month.xlsx', attendanceMonthExport);
+    const res = await http.request(link.path);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('spreadsheetml');
+    expect(res.headers.get('content-disposition')).toContain("filename*=UTF-8''");
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    expect([bytes[0], bytes[1]]).toEqual([0x50, 0x4b]); // "PK"
+    // Stored (uncompressed) zip: the sheet XML is readable as is.
+    const text = new TextDecoder().decode(bytes);
+    expect(text).toContain('每日明细');
+    expect(text).toContain('91666.67');
+    expect(text).toContain('Stocktake after closing');
+
+    const bad = await http.request('/files/attendance-month.xlsx?t=nope');
+    expect(bad.status).toBe(410);
   });
 });
 

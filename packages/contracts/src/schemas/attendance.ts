@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DateStringSchema, UuidSchema } from './common';
+import { DateStringSchema, LocaleSchema, UuidSchema } from './common';
 import { SettlementMoneySchema } from './settlement';
 
 /** Attendance (2026-11-05). See packages/domain/src/attendance. */
@@ -133,4 +133,11 @@ export const AttendanceOvertimeDecideInputSchema = z.object({
 export const AttendanceWageSuggestionsInputSchema = z.object({
   storeId: UuidSchema,
   date: DateStringSchema,
+});
+
+/** A month's attendance as a spreadsheet (YYYY-MM, in the store's zone). */
+export const AttendanceExportLinkInputSchema = z.object({
+  storeId: UuidSchema,
+  month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
+  locale: LocaleSchema,
 });

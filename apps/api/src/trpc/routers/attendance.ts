@@ -20,6 +20,7 @@ import type { DB } from '@compass/db';
 import { schema as s } from '@compass/db';
 import {
   AttendanceCopyWeekInputSchema,
+  AttendanceExportLinkInputSchema,
   AttendanceManualPunchInputSchema,
   AttendanceMeInputSchema,
   AttendanceMemberSetInputSchema,
@@ -44,6 +45,7 @@ import {
   getActorStoreIds,
 } from '../../services/storeScope';
 import { storeTimeZone } from '../../services/timeZone';
+import { exportFileName, monthRange, signExportToken } from '../../services/attendanceExport';
 import type { RequestContext } from '../context';
 import { authedProcedure, idempotentMutation, router } from '../trpc';
 import { loadWageRoster } from './settlement';
@@ -451,6 +453,17 @@ async function loadPolicyView(ctx: RequestContext, storeId: string) {
 }
 
 export type AttendancePolicyData = Awaited<ReturnType<typeof loadPolicyView>>;
+
+/**
+ * A month of the sheet for the spreadsheet export, checked against the
+ * member's permission like the sheet itself. Runs inside the caller's org
+ * transaction (the export route has no tRPC context).
+ */
+export async function loadMonthSheet(tx: DB, session: Session, storeId: string, month: string) {
+  const store = await authorize(tx, session, storeId, 'attendance.manage');
+  const { from, to } = monthRange(month);
+  return { store, sheet: await buildSheet(tx, session, store, from, to) };
+}
 
 export const attendanceRouter = router({
   /** The clock screen: stores this member clocks at, today's shifts and punches. */
@@ -1041,5 +1054,31 @@ export const attendanceRouter = router({
             amount: d.pay.netCents === null ? null : centsToMoney(d.pay.netCents),
           }));
       });
+    }),
+
+  /**
+   * A short-lived link to the month's spreadsheet. The file itself comes
+   * from `GET /files/attendance-month.xlsx`, so Telegram's download dialog
+   * (or a browser) can fetch it without the app's token.
+   */
+  exportLink: authedProcedure
+    .input(AttendanceExportLinkInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const session = ctx.session!;
+      const store = await ctx.withOrg((tx) =>
+        authorize(tx, session, input.storeId, 'attendance.manage'),
+      );
+      const token = await signExportToken({
+        sub: session.userId,
+        org: session.orgId,
+        mid: session.memberId,
+        storeId: input.storeId,
+        month: input.month,
+        locale: input.locale,
+      });
+      return {
+        path: `/files/attendance-month.xlsx?t=${encodeURIComponent(token)}`,
+        fileName: await exportFileName(input.locale, store.name, input.month),
+      };
     }),
 });

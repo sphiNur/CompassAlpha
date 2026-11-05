@@ -9,7 +9,7 @@ export const trpc = createTRPCReact<AppRouter>();
 // VITE_API_URL is empty in production (api served on the same origin
 // behind nginx). `||` (not `??`) so empty-string falls back to ''
 // rather than becoming '(empty)/trpc'.
-const API_URL = (import.meta.env.VITE_API_URL || '') as string;
+export const API_URL = (import.meta.env.VITE_API_URL || '') as string;
 
 /**
  * Ship client log events to `system.log`. Plain fetch on purpose: this
