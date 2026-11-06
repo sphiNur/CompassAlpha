@@ -64,7 +64,8 @@ function toBase64Jpeg(source: CanvasImageSource, width: number, height: number):
 
 /** The video's current frame as a base64 JPEG (not mirrored). */
 export function grabFrame(video: HTMLVideoElement): string {
-  if (!video.videoWidth || !video.videoHeight) throw new CameraError('unavailable');
+  // A frame this small is a camera that has not really started.
+  if (video.videoWidth < 160 || video.videoHeight < 160) throw new CameraError('unavailable');
   return toBase64Jpeg(video, video.videoWidth, video.videoHeight);
 }
 

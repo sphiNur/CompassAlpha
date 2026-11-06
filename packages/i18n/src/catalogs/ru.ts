@@ -2716,4 +2716,36 @@ export const ru = {
     'При каждой отметке прихода и ухода — два фото на месте: лицо фронтальной камерой, затем место основной камерой. Хранятся 90 дней, видят только управляющие.',
   'attendance.errors.photoRequired': 'В этом магазине для отметки нужны два фото.',
   'attendance.errors.photoInvalid': 'Не удалось прочитать фото. Сделайте его снова.',
+  'attendance.face.match': 'Лицо совпадает',
+  'attendance.face.mismatch': 'Лицо не совпадает',
+  'attendance.face.enrolled': 'Лицо записано',
+  'attendance.face.unchecked': 'Лицо не проверено',
+  'attendance.face.score': 'сходство {score}%',
+  'attendance.face.useAsRef': 'Сделать образцом лица',
+  'attendance.face.refSaved': 'Образец лица обновлён',
+  'attendance.face.refSet': 'Лицо записано',
+  'attendance.face.refNotYet': 'Лица ещё нет: оно запишется при следующей отметке',
+  'attendance.face.showRef': 'Показать',
+  'attendance.face.hideRef': 'Скрыть',
+  'attendance.face.clear': 'Записать заново',
+  'attendance.face.clearConfirm':
+    'Удалить записанное лицо: {name}? При следующей отметке запишется новое.',
+  'attendance.face.refAlt': 'Записанное лицо: {name}',
+  'attendance.settings.requireFace': 'Проверка лица',
+  'attendance.settings.requireFaceHint':
+    'Сравнивает фото лица с записанным лицом сотрудника. Первая отметка записывает его; заменить можно из фото отметки. Фото без лица нужно переснять; несовпадение записывается, и вам приходит уведомление.',
+  'attendance.photo.reviewHintFace':
+    'Эти фото видят только управляющие. Через 90 дней они удаляются. Фото лица сравнивается с вашим записанным лицом.',
+  'attendance.errors.faceNotFound':
+    'На фото не найдено лицо. Смотрите в камеру при хорошем свете и сделайте фото снова.',
+  'attendance.errors.faceCheckUnavailable': 'Проверка лица сейчас недоступна. Попробуйте позже.',
+  'attendance.errors.photoNotFound': 'Этого фото больше нет.',
+  'attendance.export.col.face': 'Лицо',
+  'attendance.export.face.match': 'Совпадает',
+  'attendance.export.face.mismatch': 'Не совпадает',
+  'attendance.export.face.enrolled': 'Записано',
+  'attendance.export.face.unchecked': 'Не проверено',
+  'notify.attendance.faceMismatch.title': 'Лицо не совпадает',
+  'notify.attendance.faceMismatch.body':
+    '{name}: отметка в {store} в {time}, лицо не совпадает с записанным. Проверьте фото отметки.',
 } as const satisfies Record<CatalogKey, string>;

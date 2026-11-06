@@ -261,6 +261,7 @@ function ClockPanel({ storeId }: { storeId: string }) {
               <PunchCamera
                 open={camera !== null}
                 kind={store.nextKind}
+                faceCheck={store.rules.requireFace}
                 busy={punch.isPending}
                 onCancel={() => setCamera(null)}
                 onConfirm={(photos) => send(camera?.location ?? null, photos)}

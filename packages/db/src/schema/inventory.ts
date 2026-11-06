@@ -7,6 +7,7 @@ import {
   integer,
   jsonb,
   primaryKey,
+  real,
   text,
   timestamp,
   unique,
@@ -700,6 +701,8 @@ export const attendanceStorePolicies = inventorySchema.table(
     overtimeAfterMinutes: integer('overtime_after_minutes').notNull().default(30),
     /** Self punches carry a face and a surroundings photo (0062). */
     requirePhoto: boolean('require_photo').notNull().default(false),
+    /** Match the face photo against the member's reference face (0063). */
+    requireFace: boolean('require_face').notNull().default(false),
     updatedByMemberId: uuid('updated_by_member_id').references(() => members.id, {
       onDelete: 'set null',
     }),
@@ -876,10 +879,36 @@ export const attendancePhotos = inventorySchema.table(
     contentType: varchar('content_type', { length: 32 }).notNull().default('image/jpeg'),
     bytes: bytea('bytes').notNull(),
     takenAt: timestamp('taken_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    /** Face check on the face photo (0063). */
+    faceResult: varchar('face_result', { length: 12 }).$type<
+      'match' | 'mismatch' | 'enrolled' | 'unchecked'
+    >(),
+    faceScore: real('face_score'),
   },
   (t) => ({
     punchKind: unique('attendance_photos_punch_id_kind_key').on(t.punchId, t.kind),
     takenIdx: index('aph_taken_idx').on(t.takenAt),
     orgIdx: index('aph_org_idx').on(t.orgId),
   }),
+);
+
+/** A member's reference face for the attendance face check (0063). */
+export const attendanceFaceRefs = inventorySchema.table(
+  'attendance_face_refs',
+  {
+    memberId: uuid('member_id')
+      .primaryKey()
+      .references(() => members.id, { onDelete: 'cascade' }),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    feature: real('feature').array().notNull(),
+    bytes: bytea('bytes').notNull(),
+    sourcePunchId: uuid('source_punch_id').references(() => attendancePunches.id, {
+      onDelete: 'set null',
+    }),
+    setByMemberId: uuid('set_by_member_id'),
+    setAt: timestamp('set_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+  },
+  (t) => ({ orgIdx: index('afr_org_idx').on(t.orgId) }),
 );

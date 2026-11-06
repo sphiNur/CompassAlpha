@@ -114,12 +114,83 @@ function PeopleBlock({ storeId }: { storeId: string }) {
                   {m.enabled ? (
                     <WageField storeId={storeId} memberId={m.memberId} current={m.dailyWage} />
                   ) : null}
+                  {m.enabled && data.requireFace ? (
+                    <FaceRefLine
+                      storeId={storeId}
+                      memberId={m.memberId}
+                      name={m.name}
+                      at={m.faceRefAt}
+                    />
+                  ) : null}
                 </li>
               ))}
           </ul>
         )}
       </DataState>
     </section>
+  );
+}
+
+/** The person's reference face: shown on demand, or cleared to enroll again. */
+function FaceRefLine({
+  storeId,
+  memberId,
+  name,
+  at,
+}: {
+  storeId: string;
+  memberId: string;
+  name: string;
+  at: string | null;
+}) {
+  const i18n = useI18n();
+  const errToast = useErrToast();
+  const utils = trpc.useUtils();
+  const [show, setShow] = useState(false);
+  const ref = trpc.attendance.faceRef.useQuery({ storeId, memberId }, { enabled: show && !!at });
+  const clear = trpc.attendance.faceRefClear.useMutation({
+    onSuccess: () => {
+      haptic('success');
+      setShow(false);
+      void utils.attendance.sheet.invalidate();
+      void utils.attendance.faceRef.invalidate();
+    },
+    onError: errToast('attendance.errors.saveFailed'),
+  });
+  return (
+    <div className="mt-2 flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="min-w-0 flex-1 text-old-label text-[var(--c-fg-muted)]">
+          {at ? i18n.t('attendance.face.refSet') : i18n.t('attendance.face.refNotYet')}
+        </span>
+        {at ? (
+          <>
+            <Button variant="ghost" size="sm" onClick={() => setShow(!show)}>
+              {i18n.t(show ? 'attendance.face.hideRef' : 'attendance.face.showRef')}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              loading={clear.isPending}
+              onClick={() =>
+                nativeConfirm(i18n.t('attendance.face.clearConfirm', { name }), () =>
+                  clear.mutate({ storeId, memberId }),
+                )
+              }
+            >
+              {i18n.t('attendance.face.clear')}
+            </Button>
+          </>
+        ) : null}
+      </div>
+      {show && ref.data ? (
+        <img
+          src={ref.data.src}
+          alt={i18n.t('attendance.face.refAlt', { name })}
+          className="aspect-[3/4] w-28 rounded-[var(--r-utility)] object-cover"
+        />
+      ) : null}
+    </div>
   );
 }
 
@@ -190,6 +261,7 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
   const [requireDevice, setRequireDevice] = useState(initial.requireDevice);
   const [requireGeo, setRequireGeo] = useState(initial.requireGeo);
   const [requirePhoto, setRequirePhoto] = useState(initial.requirePhoto);
+  const [requireFace, setRequireFace] = useState(initial.requireFace);
   const [geo, setGeo] = useState(initial.geo);
   const [radius, setRadius] = useState(String(initial.geo?.radiusM ?? 100));
   const [grace, setGrace] = useState(String(initial.graceMinutes));
@@ -252,6 +324,16 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
           checked={requirePhoto}
           onChange={(e) => setRequirePhoto(e.target.checked)}
         />
+        {requirePhoto ? (
+          <div className="mt-3">
+            <Switch
+              label={i18n.t('attendance.settings.requireFace')}
+              hint={i18n.t('attendance.settings.requireFaceHint')}
+              checked={requireFace}
+              onChange={(e) => setRequireFace(e.target.checked)}
+            />
+          </div>
+        ) : null}
       </div>
 
       <div className="flex flex-col gap-2 rounded-[var(--r-card)] bg-[var(--c-surface)] px-4 py-3 ring-hairline">
@@ -334,6 +416,7 @@ function RulesForm({ storeId, initial }: { storeId: string; initial: Policy }) {
             requireDevice,
             requireGeo,
             requirePhoto,
+            requireFace: requirePhoto && requireFace,
             geo: geo && radiusOk ? { ...geo, radiusM: radiusNum } : null,
             graceMinutes: graceNum,
             overtimeAfterMinutes: overtimeNum,

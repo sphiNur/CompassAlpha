@@ -2819,4 +2819,37 @@ export const en = {
     'Each clock-in and clock-out takes two photos on the spot: the face with the front camera, then the place with the rear camera. Kept 90 days; only managers see them.',
   'attendance.errors.photoRequired': 'This store needs the two photos to clock.',
   'attendance.errors.photoInvalid': 'The photo could not be read. Take it again.',
+  'attendance.face.match': 'Face matches',
+  'attendance.face.mismatch': 'Face does not match',
+  'attendance.face.enrolled': 'Face registered',
+  'attendance.face.unchecked': 'Face not checked',
+  'attendance.face.score': 'similarity {score}%',
+  'attendance.face.useAsRef': 'Use as their face',
+  'attendance.face.refSaved': 'Their face is updated',
+  'attendance.face.refSet': 'Face registered',
+  'attendance.face.refNotYet': 'No face yet: the next clock-in registers it',
+  'attendance.face.showRef': 'Show',
+  'attendance.face.hideRef': 'Hide',
+  'attendance.face.clear': 'Register again',
+  'attendance.face.clearConfirm':
+    'Remove the registered face of {name}? Their next clock-in registers a new one.',
+  'attendance.face.refAlt': 'Registered face of {name}',
+  'attendance.settings.requireFace': 'Face check',
+  'attendance.settings.requireFaceHint':
+    'Matches the face photo with the face registered for that person. The first clock-in registers it; you can change it from a punch photo. A photo without a face is taken again; a mismatch is recorded and you are told.',
+  'attendance.photo.reviewHintFace':
+    'Only your managers see these photos. They are deleted after 90 days. The face photo is matched with your registered face.',
+  'attendance.errors.faceNotFound':
+    'No face found in the photo. Face the camera in good light and take it again.',
+  'attendance.errors.faceCheckUnavailable':
+    'The face check is not available right now. Try again later.',
+  'attendance.errors.photoNotFound': 'This photo is no longer here.',
+  'attendance.export.col.face': 'Face',
+  'attendance.export.face.match': 'Matches',
+  'attendance.export.face.mismatch': 'Does not match',
+  'attendance.export.face.enrolled': 'Registered',
+  'attendance.export.face.unchecked': 'Not checked',
+  'notify.attendance.faceMismatch.title': 'Face does not match',
+  'notify.attendance.faceMismatch.body':
+    '{name} clocked at {store} at {time}, and the face does not match the registered one. Check the punch photos.',
 } as const;

@@ -162,6 +162,31 @@ function OvertimeBadges({ items }: { items: SheetData['overtime'] }) {
   );
 }
 
+const FACE_TONE = {
+  match: 'success',
+  mismatch: 'danger',
+  enrolled: 'info',
+  unchecked: 'warn',
+} as const;
+
+/** The face check on the day's punches (2026-11-05). */
+function FaceBadges({ punches }: { punches: SheetData['punches'] }) {
+  const i18n = useI18n();
+  const results = [
+    ...new Set(punches.filter((p) => !p.voided && p.face).map((p) => p.face!.result)),
+  ];
+  if (results.length === 0) return null;
+  return (
+    <span className="flex flex-wrap gap-1">
+      {results.map((r) => (
+        <Badge key={r} tone={FACE_TONE[r]}>
+          {i18n.t(`attendance.face.${r}`)}
+        </Badge>
+      ))}
+    </span>
+  );
+}
+
 // ─── Daily sheet ──────────────────────────────────────────────────────────
 
 export function AttendanceSheet({ storeId }: { storeId: string }) {
@@ -293,6 +318,7 @@ function MemberDayRow({
           </span>
         ) : null}
         <FlagBadges day={day} />
+        <FaceBadges punches={punches} />
         <OvertimeBadges
           items={data.overtime.filter((o) => o.memberId === member.memberId && o.date === date)}
         />
@@ -303,9 +329,29 @@ function MemberDayRow({
 }
 
 /** A punch's face and surroundings photos, loaded when asked for. */
-function PunchPhotoStrip({ storeId, punchId }: { storeId: string; punchId: string }) {
+function PunchPhotoStrip({
+  storeId,
+  punchId,
+  canSetFace,
+}: {
+  storeId: string;
+  punchId: string;
+  canSetFace: boolean;
+}) {
   const i18n = useI18n();
+  const toast = useToast();
+  const errToast = useErrToast();
+  const utils = trpc.useUtils();
   const [open, setOpen] = useState(false);
+  const setFace = trpc.attendance.faceRefSet.useMutation({
+    onSuccess: () => {
+      haptic('success');
+      toast.success(i18n.t('attendance.face.refSaved'));
+      void utils.attendance.sheet.invalidate();
+      void utils.attendance.faceRef.invalidate();
+    },
+    onError: errToast('attendance.errors.saveFailed'),
+  });
   const photos = trpc.attendance.punchPhotos.useQuery(
     { storeId, punchId },
     { enabled: open, staleTime: Infinity },
@@ -331,6 +377,17 @@ function PunchPhotoStrip({ storeId, punchId }: { storeId: string; punchId: strin
               <figcaption className="text-old-label text-[var(--c-fg-muted)]">
                 {i18n.t(`attendance.photo.${ph.kind}`)}
               </figcaption>
+              {ph.kind === 'face' && canSetFace ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="self-start"
+                  loading={setFace.isPending}
+                  onClick={() => setFace.mutate({ storeId, punchId })}
+                >
+                  {i18n.t('attendance.face.useAsRef')}
+                </Button>
+              ) : null}
             </figure>
           ))}
         </div>
@@ -445,7 +502,23 @@ function MemberDaySheet({
                     </Button>
                   ) : null}
                 </div>
-                {p.photos.length > 0 ? <PunchPhotoStrip storeId={storeId} punchId={p.id} /> : null}
+                {p.face ? (
+                  <span className="flex items-center gap-2 text-old-label text-[var(--c-fg-muted)]">
+                    <Badge tone={FACE_TONE[p.face.result]}>
+                      {i18n.t(`attendance.face.${p.face.result}`)}
+                    </Badge>
+                    {p.face.score !== null
+                      ? i18n.t('attendance.face.score', { score: Math.round(p.face.score * 100) })
+                      : null}
+                  </span>
+                ) : null}
+                {p.photos.length > 0 ? (
+                  <PunchPhotoStrip
+                    storeId={storeId}
+                    punchId={p.id}
+                    canSetFace={data.requireFace && !p.voided}
+                  />
+                ) : null}
               </li>
             ))}
           </ul>

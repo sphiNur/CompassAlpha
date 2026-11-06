@@ -26,6 +26,8 @@ import {
   AttendanceMemberSetInputSchema,
   AttendanceOvertimeDecideInputSchema,
   AttendancePunchPhotosInputSchema,
+  AttendanceFaceRefInputSchema,
+  AttendanceFaceRefSetInputSchema,
   AttendancePayRateSetInputSchema,
   AttendanceWageSuggestionsInputSchema,
   AttendancePolicyGetInputSchema,
@@ -46,6 +48,9 @@ import {
   getActorStoreIds,
 } from '../../services/storeScope';
 import { storeTimeZone } from '../../services/timeZone';
+import { cosine, faceFeature, MATCH_THRESHOLD, type FaceResult } from '../../services/face';
+import { dispatch, findRecipientsByPermissionInStore } from '../../services/notify';
+import { linkForStore } from '../../services/notifyForEvent';
 import { exportFileName, monthRange, signExportToken } from '../../services/attendanceExport';
 import type { RequestContext } from '../context';
 import { authedProcedure, idempotentMutation, router } from '../trpc';
@@ -146,7 +151,43 @@ function policyView(p: PolicyRow | undefined) {
     graceMinutes: p?.graceMinutes ?? 5,
     overtimeAfterMinutes: p?.overtimeAfterMinutes ?? 30,
     requirePhoto: p?.requirePhoto ?? false,
+    requireFace: (p?.requirePhoto ?? false) && (p?.requireFace ?? false),
   };
+}
+
+type FaceVerdict = {
+  result: 'match' | 'mismatch' | 'enrolled' | 'unchecked';
+  score: number | null;
+};
+
+/**
+ * The face photo against the member's reference (the first face becomes
+ * it). `checked` is the worker's answer; null = the check could not run.
+ */
+async function faceVerdict(
+  tx: DB,
+  session: Session,
+  punchId: string,
+  photo: Buffer,
+  checked: FaceResult | null,
+): Promise<FaceVerdict> {
+  if (!checked || !checked.found) return { result: 'unchecked', score: null };
+  const ref = await tx.query.attendanceFaceRefs.findFirst({
+    where: (r, { eq: eq2 }) => eq2(r.memberId, session.memberId),
+  });
+  if (!ref) {
+    await tx.insert(s.attendanceFaceRefs).values({
+      memberId: session.memberId,
+      orgId: session.orgId,
+      feature: checked.feature,
+      bytes: photo,
+      sourcePunchId: punchId,
+      setByMemberId: session.memberId,
+    });
+    return { result: 'enrolled', score: null };
+  }
+  const score = cosine(ref.feature, checked.feature);
+  return { result: score >= MATCH_THRESHOLD ? 'match' : 'mismatch', score };
 }
 
 /** Largest photo the server keeps (the column's own limit). */
@@ -305,7 +346,12 @@ async function buildSheet(tx: DB, session: Session, store: StoreRow, from: strin
     punches.length === 0
       ? []
       : await tx
-          .select({ punchId: s.attendancePhotos.punchId, kind: s.attendancePhotos.kind })
+          .select({
+            punchId: s.attendancePhotos.punchId,
+            kind: s.attendancePhotos.kind,
+            faceResult: s.attendancePhotos.faceResult,
+            faceScore: s.attendancePhotos.faceScore,
+          })
           .from(s.attendancePhotos)
           .where(
             inArray(
@@ -314,8 +360,11 @@ async function buildSheet(tx: DB, session: Session, store: StoreRow, from: strin
             ),
           );
   const photoKinds = new Map<string, ('face' | 'scene')[]>();
-  for (const ph of photoRows)
+  const faceOf = new Map<string, { result: string; score: number | null }>();
+  for (const ph of photoRows) {
     photoKinds.set(ph.punchId, [...(photoKinds.get(ph.punchId) ?? []), ph.kind]);
+    if (ph.faceResult) faceOf.set(ph.punchId, { result: ph.faceResult, score: ph.faceScore });
+  }
   const memberIds = new Set([
     ...roster.map((m) => m.memberId),
     ...shifts.map((x) => x.memberId),
@@ -338,6 +387,11 @@ async function buildSheet(tx: DB, session: Session, store: StoreRow, from: strin
     for (const r of rows) if (!names.has(r.memberId)) names.set(r.memberId, r.displayName);
   }
   const deviceBound = new Map(devices.map((d) => [d.memberId, d.boundAt]));
+  const faceRefs = await tx
+    .select({ memberId: s.attendanceFaceRefs.memberId, setAt: s.attendanceFaceRefs.setAt })
+    .from(s.attendanceFaceRefs)
+    .where(eq(s.attendanceFaceRefs.orgId, session.orgId));
+  const faceRefAt = new Map(faceRefs.map((r) => [r.memberId, r.setAt]));
   const view = policyView(policy);
   const summaries = rules
     .summarize({
@@ -383,6 +437,7 @@ async function buildSheet(tx: DB, session: Session, store: StoreRow, from: strin
     timezone: tz,
     today: todayInTz(tz, now),
     graceMinutes: view.graceMinutes,
+    requireFace: view.requireFace,
     members: [...memberIds]
       .map((id) => ({
         memberId: id,
@@ -390,6 +445,7 @@ async function buildSheet(tx: DB, session: Session, store: StoreRow, from: strin
         inStore: rosterIds.has(id),
         enabled: enabled.has(id),
         deviceBoundAt: deviceBound.get(id)?.toISOString() ?? null,
+        faceRefAt: faceRefAt.get(id)?.toISOString() ?? null,
         dailyWage: rateOn(id, to),
       }))
       .sort((a, b) => Number(b.enabled) - Number(a.enabled) || a.name.localeCompare(b.name)),
@@ -405,6 +461,10 @@ async function buildSheet(tx: DB, session: Session, store: StoreRow, from: strin
       reason: p.reason,
       distanceM: p.distanceM,
       photos: photoKinds.get(p.id) ?? [],
+      face: (faceOf.get(p.id) ?? null) as {
+        result: 'match' | 'mismatch' | 'enrolled' | 'unchecked';
+        score: number | null;
+      } | null,
       createdByName: p.source === 'manual' ? (names.get(p.createdByMemberId) ?? null) : null,
       voided: p.voidedAt
         ? {
@@ -559,6 +619,7 @@ export const attendanceRouter = router({
             requireGeo: view.requireGeo,
             geo: view.requireGeo ? view.geo : null,
             requirePhoto: view.requirePhoto,
+            requireFace: view.requireFace,
           },
           nextKind: rules.nextPunchKind(
             punches.map((p) => ({ kind: p.kind, at: p.punchedAt })),
@@ -592,6 +653,15 @@ export const attendanceRouter = router({
 
   punch: idempotentMutation.input(AttendancePunchInputSchema).mutation(async ({ ctx, input }) => {
     const session = ctx.session!;
+    // The face check (~0.5 s) runs before the transaction, not inside it.
+    let checked: FaceResult | null = null;
+    if (input.photos) {
+      const pre = policyView(await ctx.withOrg((tx) => loadPolicy(tx, input.storeId)));
+      if (pre.requireFace) {
+        checked = await faceFeature(photoBytes(input.photos.face));
+        if (checked && !checked.found) fail('BAD_REQUEST', 'faceNotFound');
+      }
+    }
     return ctx.withOrg(async (tx) => {
       const store = await authorize(tx, session, input.storeId, 'attendance.clock');
       // One punch at a time per member: the alternation check below reads
@@ -696,7 +766,10 @@ export const attendanceRouter = router({
           reason: input.overtimeReason ?? null,
         });
       }
+      let face: FaceVerdict | null = null;
       if (photos) {
+        if (policy.requireFace)
+          face = await faceVerdict(tx, session, row!.id, photos.face, checked);
         await tx.insert(s.attendancePhotos).values(
           (['face', 'scene'] as const).map((kind) => ({
             orgId: session.orgId,
@@ -706,13 +779,40 @@ export const attendanceRouter = router({
             kind,
             bytes: photos[kind],
             takenAt: now,
+            faceResult: kind === 'face' ? (face?.result ?? null) : null,
+            faceScore: kind === 'face' ? (face?.score ?? null) : null,
           })),
         );
+      }
+      if (face?.result === 'mismatch') {
+        const managers = await findRecipientsByPermissionInStore(
+          tx,
+          session.orgId,
+          'attendance.manage',
+          store.id,
+        );
+        const who = await tx
+          .select({ name: s.users.displayName })
+          .from(s.members)
+          .innerJoin(s.users, eq(s.users.id, s.members.userId))
+          .where(eq(s.members.id, session.memberId));
+        await dispatch(tx, session.orgId, managers, {
+          template: 'attendance.faceMismatch',
+          title: 'Face does not match',
+          vars: {
+            name: who[0]?.name ?? '—',
+            store: store.name,
+            time: rules.localTime(now, tzOf(store, session)),
+          },
+          deepLink: linkForStore('/admin', store.id),
+          dedupKey: `attendance:face:${row!.id}`,
+        });
       }
       publish(session.orgId, store.id);
       const tz = tzOf(store, session);
       return {
         id: row!.id,
+        face: face?.result ?? null,
         overtimeMinutes: overtime?.minutes ?? 0,
         kind: input.kind,
         at: now.toISOString(),
@@ -940,6 +1040,11 @@ export const attendanceRouter = router({
           isNull(s.memberPermissionOverrides.scopeId),
         );
         await tx.delete(s.memberPermissionOverrides).where(where);
+        // Switched off clocking: their reference face goes too.
+        if (!input.enabled)
+          await tx
+            .delete(s.attendanceFaceRefs)
+            .where(eq(s.attendanceFaceRefs.memberId, input.memberId));
         if (input.enabled) {
           const member = await tx.query.members.findFirst({
             where: (m, { eq: eq2 }) => eq2(m.id, session.memberId),
@@ -996,6 +1101,7 @@ export const attendanceRouter = router({
           graceMinutes: input.graceMinutes,
           overtimeAfterMinutes: input.overtimeAfterMinutes,
           requirePhoto: input.requirePhoto,
+          requireFace: input.requirePhoto && input.requireFace,
           updatedByMemberId: session.memberId,
           updatedAt: new Date(),
         };
@@ -1159,6 +1265,83 @@ export const attendanceRouter = router({
             src: `data:${r.contentType};base64,${Buffer.from(r.bytes).toString('base64')}`,
             takenAt: r.takenAt.toISOString(),
           }));
+      });
+    }),
+
+  /** A member's reference face, for the manager to check. */
+  faceRef: authedProcedure.input(AttendanceFaceRefInputSchema).query(async ({ ctx, input }) => {
+    const session = ctx.session!;
+    return ctx.withOrg(async (tx) => {
+      const store = await authorize(tx, session, input.storeId, 'attendance.manage');
+      await assertInStore(tx, session.orgId, store.id, input.memberId);
+      const ref = await tx.query.attendanceFaceRefs.findFirst({
+        where: (r, { eq: eq2 }) => eq2(r.memberId, input.memberId),
+        columns: { bytes: true, setAt: true },
+      });
+      return ref
+        ? {
+            src: `data:image/jpeg;base64,${Buffer.from(ref.bytes).toString('base64')}`,
+            setAt: ref.setAt.toISOString(),
+          }
+        : null;
+    });
+  }),
+
+  /** Make a punch's face photo the member's reference face. */
+  faceRefSet: idempotentMutation
+    .input(AttendanceFaceRefSetInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const session = ctx.session!;
+      const photo = await ctx.withOrg(async (tx) => {
+        const store = await authorize(tx, session, input.storeId, 'attendance.manage');
+        const [row] = await tx
+          .select({ memberId: s.attendancePhotos.memberId, bytes: s.attendancePhotos.bytes })
+          .from(s.attendancePhotos)
+          .where(
+            and(
+              eq(s.attendancePhotos.storeId, store.id),
+              eq(s.attendancePhotos.punchId, input.punchId),
+              eq(s.attendancePhotos.kind, 'face'),
+            ),
+          );
+        if (!row) fail('NOT_FOUND', 'photoNotFound');
+        return row;
+      });
+      const checked = await faceFeature(new Uint8Array(photo.bytes));
+      if (!checked) fail('CONFLICT', 'faceCheckUnavailable');
+      if (!checked.found) fail('BAD_REQUEST', 'faceNotFound');
+      return ctx.withOrg(async (tx) => {
+        const store = await authorize(tx, session, input.storeId, 'attendance.manage');
+        const values = {
+          orgId: session.orgId,
+          feature: checked.feature,
+          bytes: Buffer.from(photo.bytes),
+          sourcePunchId: input.punchId,
+          setByMemberId: session.memberId,
+          setAt: new Date(),
+        };
+        await tx
+          .insert(s.attendanceFaceRefs)
+          .values({ memberId: photo.memberId, ...values })
+          .onConflictDoUpdate({ target: s.attendanceFaceRefs.memberId, set: values });
+        publish(session.orgId, store.id);
+        return { ok: true as const };
+      });
+    }),
+
+  /** Forget a member's reference face; their next punch enrolls again. */
+  faceRefClear: idempotentMutation
+    .input(AttendanceFaceRefInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const session = ctx.session!;
+      return ctx.withOrg(async (tx) => {
+        const store = await authorize(tx, session, input.storeId, 'attendance.manage');
+        await assertInStore(tx, session.orgId, store.id, input.memberId);
+        await tx
+          .delete(s.attendanceFaceRefs)
+          .where(eq(s.attendanceFaceRefs.memberId, input.memberId));
+        publish(session.orgId, store.id);
+        return { ok: true as const };
       });
     }),
 });

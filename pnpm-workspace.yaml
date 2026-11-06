@@ -4,3 +4,6 @@ packages:
   - "tests/*"
 allowBuilds:
   esbuild: true
+  # onnxruntime-web (attendance face check) pulls protobufjs, whose
+  # postinstall only checks its optional CLI; it is not needed.
+  protobufjs: false
