@@ -10,9 +10,12 @@
  * edge and by the service worker after the first time. The clock page
  * starts the download when it opens, before anyone taps clock in, and the
  * camera waits for it with a progress bar (owner, 2026-11-06: the face
- * steps start once it is ready). If it cannot run on the phone, or takes
- * too long, the shutter button is used and the person turns their head on
- * the prompt; the server checks those frames the same way.
+ * steps start once it is ready).
+ *
+ * Face only (owner, 2026-11-06): every face photo, for a punch or for the
+ * enrollment, is taken by the tracker; there is no shutter for the face.
+ * A phone that cannot run it cannot clock by itself (a colleague's phone
+ * or a manager's manual punch then).
  */
 import wasmLoaderPath from '@mediapipe/tasks-vision/vision_wasm_internal.js?url';
 import wasmBinaryPath from '@mediapipe/tasks-vision/vision_wasm_internal.wasm?url';
@@ -27,6 +30,13 @@ export interface FaceReading {
    * person turned to their own left (unmirrored frame). Null without a face.
    */
   yaw: number | null;
+  /**
+   * The nose between the eyes and the mouth, top to bottom: about 0.5
+   * looking straight, smaller with the chin up, larger with it down.
+   */
+  pitch: number | null;
+  /** The face's width as a share of the frame's. */
+  size: number | null;
 }
 
 export interface FaceTracker {
@@ -40,6 +50,13 @@ type Point = { x: number; y: number };
 export function yawFrom(eyeA: Point, eyeB: Point, nose: Point): number {
   const dist = Math.hypot(eyeB.x - eyeA.x, eyeB.y - eyeA.y) || 1;
   return (nose.x - (eyeA.x + eyeB.x) / 2) / dist;
+}
+
+/** pitch from two eyes, the nose tip and the mouth, in pixels. */
+export function pitchFrom(eyeA: Point, eyeB: Point, nose: Point, mouth: Point): number {
+  const eyes = (eyeA.y + eyeB.y) / 2;
+  const span = mouth.y - eyes || 1;
+  return (nose.y - eyes) / span;
 }
 
 /** The WebAssembly's size after decompression, for the progress bar. */
@@ -82,7 +99,7 @@ async function prefetch(url: string): Promise<void> {
 
 let loading: Promise<FaceTracker | null> | null = null;
 
-/** The tracker, or null where it cannot run (the shutter button is used then). */
+/** The tracker, or null where it cannot run (no face clocking on this phone then). */
 export function loadFaceTracker(): Promise<FaceTracker | null> {
   loading ??= (async () => {
     try {
@@ -103,19 +120,26 @@ export function loadFaceTracker(): Promise<FaceTracker | null> {
         read(video) {
           const w = video.videoWidth;
           const h = video.videoHeight;
-          if (!w || !h) return { count: 0, yaw: null };
+          const none = { yaw: null, pitch: null, size: null };
+          if (!w || !h) return { count: 0, ...none };
           // detectForVideo needs increasing timestamps.
           last = Math.max(last + 1, performance.now());
           const found = detector.detectForVideo(video, last).detections;
-          if (found.length === 0) return { count: 0, yaw: null };
+          if (found.length === 0) return { count: 0, ...none };
           const area = (d: (typeof found)[number]) =>
             (d.boundingBox?.width ?? 0) * (d.boundingBox?.height ?? 0);
           const best = found.reduce((a, b) => (area(b) > area(a) ? b : a));
           // BlazeFace keypoints: eyes, nose tip, mouth, ears (normalised).
           const k = best.keypoints;
-          if (k.length < 3) return { count: found.length, yaw: null };
+          if (k.length < 4) return { count: found.length, ...none };
           const px = (p: { x: number; y: number }) => ({ x: p.x * w, y: p.y * h });
-          return { count: found.length, yaw: yawFrom(px(k[0]!), px(k[1]!), px(k[2]!)) };
+          const [eyeA, eyeB, nose, mouth] = [px(k[0]!), px(k[1]!), px(k[2]!), px(k[3]!)];
+          return {
+            count: found.length,
+            yaw: yawFrom(eyeA, eyeB, nose),
+            pitch: pitchFrom(eyeA, eyeB, nose, mouth),
+            size: (best.boundingBox?.width ?? 0) / w,
+          };
         },
         close() {
           detector.close();

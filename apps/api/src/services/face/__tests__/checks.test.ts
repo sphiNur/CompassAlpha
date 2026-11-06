@@ -25,7 +25,7 @@ describe('spot check', () => {
 
 describe('identify', () => {
   const known = (pairs: [string, number[]][]): KnownFace[] =>
-    pairs.map(([name, feature]) => ({ memberId: name, name, feature }));
+    pairs.map(([name, feature]) => ({ memberId: name, name, features: [feature] }));
 
   test('the one clear best match over the line', () => {
     const who = identify(

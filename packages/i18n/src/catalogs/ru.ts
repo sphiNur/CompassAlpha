@@ -2693,10 +2693,6 @@ export const ru = {
   'attendance.export.flag.early': 'Ранний уход',
   'attendance.export.flag.onDuty': 'На смене',
   'attendance.export.flag.upcoming': 'Ещё не началась',
-  'attendance.rules.photoLine': 'Фото лица при каждой отметке',
-  'attendance.photo.faceTitle': 'Сначала лицо',
-  'attendance.photo.faceHint':
-    'Фронтальная камера. Смотрите на экран, лицо целиком в кадре, при хорошем свете.',
   'attendance.photo.sceneTitle': 'Теперь место',
   'attendance.photo.sceneHint': 'Основная камера. Покажите, где вы: магазин, прилавок или вход.',
   'attendance.photo.reviewTitle': 'Проверьте фото',
@@ -2708,34 +2704,18 @@ export const ru = {
   'attendance.photo.problem.unsupported': 'Здесь камера не открывается',
   'attendance.photo.problem.denied': 'Нет доступа к камере',
   'attendance.photo.problem.unavailable': 'Камера не запустилась',
-  'attendance.photo.useSystemCamera': 'Сфотографируйте камерой телефона.',
-  'attendance.photo.openSystemCamera': 'Открыть камеру телефона',
   'attendance.photo.show': 'Показать фото',
-  'attendance.settings.requirePhoto': 'Фото при отметке',
-  'attendance.settings.requirePhotoHint':
-    'При каждой отметке прихода и ухода на месте снимается фото лица фронтальной камерой. Хранится 90 дней, видят только руководители.',
-  'attendance.errors.photoRequired': 'В этом магазине для отметки нужны фото.',
+  'attendance.errors.photoRequired': 'Для отметки нужны фото, сделанные на месте.',
   'attendance.errors.photoInvalid': 'Не удалось прочитать фото. Сделайте его снова.',
   'attendance.face.match': 'Лицо совпадает',
   'attendance.face.mismatch': 'Лицо не совпадает',
   'attendance.face.enrolled': 'Лицо записано',
   'attendance.face.unchecked': 'Лицо не проверено',
   'attendance.face.score': 'сходство {score}%',
-  'attendance.face.useAsRef': 'Сделать образцом лица',
-  'attendance.face.refSaved': 'Образец лица обновлён',
-  'attendance.face.refSet': 'Лицо записано',
-  'attendance.face.refNotYet': 'Лица ещё нет: оно запишется при следующей отметке',
   'attendance.face.showRef': 'Показать',
   'attendance.face.hideRef': 'Скрыть',
-  'attendance.face.clear': 'Записать заново',
-  'attendance.face.clearConfirm':
-    'Удалить записанное лицо: {name}? При следующей отметке запишется новое.',
-  'attendance.face.refAlt': 'Записанное лицо: {name}',
-  'attendance.settings.requireFace': 'Проверка лица',
-  'attendance.settings.requireFaceHint':
-    'Сравнивает фото лица с записанным лицом сотрудника. Первая отметка записывает его; заменить можно из фото отметки. Фото без лица нужно переснять; несовпадение записывается, и вам приходит уведомление.',
   'attendance.photo.reviewHintFace':
-    'Эти фото видят только управляющие. Через 90 дней они удаляются. Фото лица сравнивается с вашим записанным лицом.',
+    'Эти фото видят только руководители, через 90 дней они удаляются. Фото лица сверяется с зарегистрированным лицом.',
   'attendance.errors.faceNotFound':
     'На фото не найдено лицо. Смотрите в камеру при хорошем свете и сделайте фото снова.',
   'attendance.errors.faceCheckUnavailable': 'Проверка лица сейчас недоступна. Попробуйте позже.',
@@ -2754,51 +2734,32 @@ export const ru = {
     'Проверка лица заняла слишком много времени. Начните заново.',
   'attendance.errors.livenessFailed':
     'Проверка живого лица не пройдена. Смотрите в камеру при хорошем свете и поворачивайте голову по подсказке.',
-  'attendance.errors.borrowNeedsFace':
-    'Чтобы отмечаться с телефона коллеги, в магазине должна быть включена проверка лица.',
-  'attendance.errors.borrowNoFace':
-    'У этого сотрудника ещё нет записанного лица. Пусть сначала отметится со своего телефона.',
-  'attendance.errors.borrowFaceMismatch': 'Лицо не совпадает с выбранным сотрудником.',
+  'attendance.errors.borrowNoFace': 'Этот коллега ещё не зарегистрировал лицо.',
+  'attendance.errors.borrowFaceMismatch': 'Лицо не совпадает с этим коллегой.',
   'attendance.errors.notColleague':
     'С вашего телефона можно отметить только коллег из этого магазина.',
   'attendance.live.lookTitle': 'Смотрите в камеру',
   'attendance.live.turnLeft': 'Поверните голову влево',
   'attendance.live.turnRight': 'Поверните голову вправо',
-  'attendance.live.autoHint': 'Следуйте подсказкам: снимки делаются сами. Можно нажать и кнопку.',
-  'attendance.live.manualHint':
-    'Сделайте движение по подсказке и каждый раз нажимайте кнопку снимка.',
+  'attendance.live.autoHint':
+    'Следуйте подсказке: фото делается само, когда голова в нужном положении.',
   'attendance.live.guide.noFace': 'Лицо не видно',
   'attendance.live.guide.manyFaces': 'В кадре должно быть одно лицо',
   'attendance.live.guide.lookStraight': 'Смотрите прямо в камеру',
   'attendance.live.guide.turnMore': 'Поверните ещё немного',
   'attendance.live.progress': 'Фото лица {done}/{total}',
-  'attendance.live.failedTitle': 'Проверка живого лица не пройдена',
-  'attendance.live.failedBody':
-    'Встаньте к свету, смотрите в камеру и медленно поворачивайте голову по подсказке. Попробуйте ещё раз.',
-  'attendance.live.clockAnyway': 'Всё равно отметиться (управляющий узнает)',
   'attendance.live.flaggedNote': 'Эта отметка помечена для проверки управляющим.',
   'attendance.live.badge.pass': 'Живое лицо',
   'attendance.live.badge.fail': 'Живое лицо не подтверждено',
   'attendance.live.badge.unchecked': 'Живое лицо не проверено',
   'attendance.photo.left': 'Поворот влево',
   'attendance.photo.right': 'Поворот вправо',
-  'attendance.rules.livenessLine': 'Иногда проверка просит повернуть голову',
   'attendance.borrow.open': 'Отметить коллегу с этого телефона',
-  'attendance.borrow.title': 'Отметить коллегу',
-  'attendance.borrow.hint':
-    'Для коллеги из этого магазина, у которого нет с собой телефона. Он сам снимает лицо здесь; управляющий и он получат уведомление.',
-  'attendance.borrow.emptyTitle': 'Некого отметить',
-  'attendance.borrow.emptyBody': 'Здесь только коллеги этого магазина, которым включена отметка.',
-  'attendance.borrow.noFace': 'Лицо ещё не записано',
-  'attendance.borrow.forWhom': 'Отметка для: {name}',
   'attendance.borrow.doneIn': '{name}: приход в {time}',
   'attendance.borrow.doneOut': '{name}: уход в {time}',
   'attendance.borrow.badge': 'Телефон коллеги',
   'attendance.borrow.via': 'С телефона: {name}',
   'attendance.device.newBadge': 'Новый телефон',
-  'attendance.settings.requireLiveness': 'Проверка живого лица',
-  'attendance.settings.requireLivenessHint':
-    'Обычно одно фото лица с проверкой, что лицо живое. С нового или чужого телефона, при неясном фото и примерно при каждой третьей отметке сотрудник ещё поворачивает голову влево и вправо. После двух неудачных попыток можно отметиться, но отметка помечается, и вам приходит уведомление.',
   'attendance.export.col.checks': 'Проверки',
   'attendance.export.check.livenessFailed': 'Живое лицо не подтверждено',
   'attendance.export.check.borrowed': 'С телефона: {name}',
@@ -2818,39 +2779,33 @@ export const ru = {
   'notify.attendance.clockedOutForYou.title': 'Вам отметили уход',
   'notify.attendance.clockedOutForYou.body':
     'Вам отметили уход в {store} в {time} с телефона, владелец: {owner}. Если это были не вы, сообщите управляющему.',
-  'attendance.live.preparingShort': 'Готовим отслеживание лица…',
   'attendance.live.preparing':
     'Готовим отслеживание лица. В первый раз загружается несколько МБ, подождите.',
   'attendance.live.preparingPercent': 'Готовим отслеживание лица: {percent}%',
-  'attendance.live.slow':
-    'Сеть медленная. Можно снять самому: сделайте движение по подсказке и нажмите кнопку.',
-  'attendance.live.shootAnyway': 'Снять сейчас',
-  'attendance.errors.consentRequired':
-    'Сначала согласитесь на проверку лица, затем отметьтесь снова.',
+  'attendance.live.slow': 'Сеть медленная, отслеживание лица ещё загружается. Подождите.',
+  'attendance.errors.consentRequired': 'Сначала согласитесь на проверку лица.',
   'attendance.errors.borrowNoConsent':
     'Этот коллега ещё не согласился на проверку лица. Сначала он соглашается на своём телефоне.',
   'attendance.errors.livenessNeeded': 'На этот раз нужны ещё и повороты головы.',
   'attendance.errors.notRecognized':
     'Лицо не распознано ни как один сотрудник этого магазина. Попробуйте при хорошем свете или попросите руководителя добавить отметку.',
-  'attendance.errors.noConsent':
-    'Сотрудник не согласился на проверку лица, поэтому его лицо нельзя записать.',
   'attendance.borrow.identifyHint': 'Коллега смотрит в камеру, приложение само узнаёт, кто это.',
   'attendance.borrow.identifySend': 'Отметить',
   'attendance.consent.title': 'Проверка лица',
   'attendance.consent.intro':
-    'Этот магазин проверяет фото лица при каждой отметке прихода и ухода, чтобы никто не отмечался за другого.',
+    'Приход и уход проверяются по лицу, чтобы никто не отмечался за другого.',
   'attendance.consent.kept':
-    'Хранятся записанное лицо и фото отметок; фото отметок удаляются через 90 дней.',
+    'Хранятся фото зарегистрированного лица и фото отметок; фото отметок удаляются через 90 дней.',
   'attendance.consent.who':
     'Их видят только руководители вашего магазина. Они нужны только для учёта времени.',
   'attendance.consent.withdrawNote':
-    'Отозвать согласие можно в любой момент на этом экране: записанное лицо удаляется, а отметки вносит руководитель.',
+    'Отозвать согласие можно на этом экране в любой момент; зарегистрированное лицо удаляется, отметки добавляет руководитель.',
   'attendance.consent.agree': 'Согласен',
   'attendance.consent.notNow': 'Не сейчас',
   'attendance.consent.withdraw': 'Отозвать согласие на проверку лица',
   'attendance.consent.withdrawTitle': 'Отозвать согласие?',
   'attendance.consent.withdrawBody':
-    'Записанное лицо удалится. В этом магазине отмечаться с телефона будет нельзя; отметки вносит руководитель.',
+    'Зарегистрированное лицо удаляется. Отмечаться на телефоне будет нельзя, отметки добавляет руководитель.',
   'attendance.settings.requireScene': 'Фото места',
   'attendance.settings.requireSceneHint':
     'После лица: снимок основной камерой того места, где находится сотрудник. Выключено: только фото лица.',
@@ -2868,4 +2823,92 @@ export const ru = {
   'notify.attendance.faceLike.title': 'Лицо похоже на другого сотрудника',
   'notify.attendance.faceLike.body':
     '{name}: отметка в {store} в {time}, но лицо похоже на: {like}. Проверьте фото отметки.',
+  'attendance.errors.faceNotEnrolled':
+    'Сначала зарегистрируйте лицо; отмечаться можно после одобрения руководителем.',
+  'attendance.errors.faceMismatch': 'Лицо не совпадает с вашим, отметка не сохранена.',
+  'attendance.errors.enrollRejected': 'Некоторые фото не подошли. Пройдите регистрацию ещё раз.',
+  'attendance.errors.enrollmentNotFound': 'Эта регистрация лица уже не ждёт одобрения.',
+  'attendance.errors.enrollOwn': 'Нельзя одобрить своё лицо: это делает другой руководитель.',
+  'attendance.errors.enrollNoteRequired': 'Укажите причину возврата.',
+  'attendance.errors.enrollFailed': 'Не удалось отправить регистрацию лица.',
+  'attendance.face.refusedBody':
+    'Попробуйте ещё раз, глядя в камеру при хорошем свете. Если не получится, попросите руководителя добавить отметку.',
+  'attendance.face.cannotTitle': 'На этом телефоне нельзя сделать фото лица',
+  'attendance.face.cannotBody':
+    'Камера или отслеживание лица здесь не работают. Отметьтесь на телефоне коллеги или попросите руководителя добавить отметку.',
+  'attendance.face.cannotDenied':
+    'Доступ к камере выключен. Разрешите Telegram камеру в настройках телефона и попробуйте снова.',
+  'attendance.enroll.start': 'Зарегистрировать лицо',
+  'attendance.enroll.redo': 'Зарегистрировать лицо заново',
+  'attendance.enroll.again': 'Начать заново',
+  'attendance.enroll.submit': 'Отправить на одобрение',
+  'attendance.enroll.newPending':
+    'Новая регистрация лица ждёт одобрения; до этого используется прежняя.',
+  'attendance.enroll.card.none.title': 'Сначала зарегистрируйте лицо',
+  'attendance.enroll.card.none.body':
+    'Отметка только по лицу. Сделайте шесть фото по подсказкам (около минуты); отмечаться можно после одобрения руководителем.',
+  'attendance.enroll.card.pending.title': 'Ждёт одобрения руководителя',
+  'attendance.enroll.card.pending.body':
+    'Фото лица отправлены руководителю. Отмечаться можно после одобрения.',
+  'attendance.enroll.card.rejected.title': 'Регистрация лица возвращена',
+  'attendance.enroll.card.rejected.body': 'Зарегистрируйте лицо ещё раз.',
+  'attendance.enroll.card.approved.title': 'Лицо зарегистрировано',
+  'attendance.enroll.card.approved.body': 'Можно отмечаться по лицу.',
+  'attendance.enroll.card.note': 'Комментарий руководителя: {note}',
+  'attendance.enroll.hint':
+    'Следуйте подсказке: фото делается само, когда голова в нужном положении. Хороший свет, без шапки и маски.',
+  'attendance.enroll.reviewTitle': 'Проверьте фото',
+  'attendance.enroll.reviewHint':
+    'Руководитель посмотрит фото и одобрит их. Их видят только руководители вашего магазина.',
+  'attendance.enroll.pose.front': 'Смотрите прямо',
+  'attendance.enroll.pose.left': 'Поверните голову влево',
+  'attendance.enroll.pose.right': 'Поверните голову вправо',
+  'attendance.enroll.pose.up': 'Слегка поднимите подбородок',
+  'attendance.enroll.pose.down': 'Слегка опустите подбородок',
+  'attendance.enroll.pose.front2': 'Снова смотрите прямо',
+  'attendance.enroll.rejectedTitle': 'Некоторые фото не подошли',
+  'attendance.enroll.problemLine': '{pose}: {problem}',
+  'attendance.enroll.problem.noFace': 'лицо не найдено',
+  'attendance.enroll.problem.manyFaces': 'в кадре больше одного человека',
+  'attendance.enroll.problem.small': 'лицо слишком далеко',
+  'attendance.enroll.problem.dark': 'слишком темно',
+  'attendance.enroll.problem.bright': 'слишком светло',
+  'attendance.enroll.problem.blurry': 'размыто',
+  'attendance.enroll.problem.notFacing': 'не смотрите в камеру',
+  'attendance.enroll.problem.notTurned': 'голова повёрнута недостаточно',
+  'attendance.enroll.problem.otherPerson': 'не похоже на того же человека',
+  'attendance.enroll.problem.spoof': 'не похоже на живое лицо',
+  'attendance.enroll.cannotBody':
+    'Камера или отслеживание лица на этом телефоне не работают. Зарегистрируйтесь на другом телефоне со своим аккаунтом Telegram.',
+  'attendance.enroll.status.approved': 'Лицо зарегистрировано',
+  'attendance.enroll.status.pending': 'Лицо ждёт одобрения',
+  'attendance.enroll.status.rejected': 'Лицо возвращено, не зарегистрировано',
+  'attendance.enroll.status.none': 'Лицо ещё не зарегистрировано',
+  'attendance.enroll.reset': 'Попросить зарегистрироваться заново',
+  'attendance.enroll.resetConfirm':
+    'Удалить зарегистрированное лицо: {name}? До новой регистрации и одобрения отмечаться нельзя.',
+  'attendance.enroll.photoAlt': '{name}: {pose}',
+  'attendance.rules.faceOnlyLine': 'Отметка только по лицу, фото делаются сами',
+  'attendance.settings.faceOnly': 'Проверка лица: всегда включена',
+  'attendance.settings.faceOnlyHint':
+    'Все отмечаются по лицу. Каждый один раз регистрирует лицо, руководитель одобряет его в разделе «Проверить».',
+  'attendance.review.enrollTitle': 'Регистрации лица на одобрение',
+  'attendance.review.enrollInUse': 'Лицо, используемое сейчас:',
+  'attendance.review.enrollOwn': 'Это ваше лицо: его одобряет другой руководитель.',
+  'attendance.review.enrollApprove': 'Одобрить',
+  'attendance.review.enrollReject': 'Вернуть',
+  'attendance.review.enrollReasonLabel': 'Причина возврата',
+  'attendance.review.enrollReasonPlaceholder': 'например: не этот человек, слишком темно',
+  'attendance.live.guide.closer': 'Подойдите чуть ближе',
+  'attendance.live.guide.chinUp': 'Чуть поднимите подбородок',
+  'attendance.live.guide.chinDown': 'Чуть опустите подбородок',
+  'notify.attendance.faceEnrollPending.title': 'Регистрация лица ждёт одобрения',
+  'notify.attendance.faceEnrollPending.body':
+    'Новая регистрация лица в {store}: {name}. Проверьте фото в разделе Учёт времени → Проверить.',
+  'notify.attendance.faceEnrollApproved.title': 'Регистрация лица одобрена',
+  'notify.attendance.faceEnrollApproved.body':
+    'Ваше лицо одобрено в {store}. Теперь можно отмечаться по лицу.',
+  'notify.attendance.faceEnrollRejected.title': 'Регистрация лица возвращена',
+  'notify.attendance.faceEnrollRejected.body':
+    'Регистрация лица в {store} возвращена. Причина: «{note}». Пройдите её заново.',
 } as const satisfies Record<CatalogKey, string>;

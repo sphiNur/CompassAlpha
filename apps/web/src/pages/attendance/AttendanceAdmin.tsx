@@ -40,7 +40,7 @@ export function AttendanceAdmin() {
     { storeId: storeId ?? '' },
     { enabled: !!storeId, refetchInterval: 60_000 },
   );
-  const toReview = queue.data?.punches.length ?? 0;
+  const toReview = (queue.data?.punches.length ?? 0) + (queue.data?.enrollments.length ?? 0);
 
   if (!storeId) {
     return (

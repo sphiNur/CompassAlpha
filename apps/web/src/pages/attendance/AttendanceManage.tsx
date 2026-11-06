@@ -350,29 +350,9 @@ function MemberDayRow({
 }
 
 /** A punch's face and surroundings photos, loaded when asked for. */
-export function PunchPhotoStrip({
-  storeId,
-  punchId,
-  canSetFace,
-}: {
-  storeId: string;
-  punchId: string;
-  canSetFace: boolean;
-}) {
+export function PunchPhotoStrip({ storeId, punchId }: { storeId: string; punchId: string }) {
   const i18n = useI18n();
-  const toast = useToast();
-  const errToast = useErrToast();
-  const utils = trpc.useUtils();
   const [open, setOpen] = useState(false);
-  const setFace = trpc.attendance.faceRefSet.useMutation({
-    onSuccess: () => {
-      haptic('success');
-      toast.success(i18n.t('attendance.face.refSaved'));
-      void utils.attendance.sheet.invalidate();
-      void utils.attendance.faceRef.invalidate();
-    },
-    onError: errToast('attendance.errors.saveFailed'),
-  });
   const photos = trpc.attendance.punchPhotos.useQuery(
     { storeId, punchId },
     { enabled: open, staleTime: Infinity },
@@ -398,17 +378,6 @@ export function PunchPhotoStrip({
               <figcaption className="text-old-label text-[var(--c-fg-muted)]">
                 {i18n.t(`attendance.photo.${ph.kind}`)}
               </figcaption>
-              {ph.kind === 'face' && canSetFace ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="self-start"
-                  loading={setFace.isPending}
-                  onClick={() => setFace.mutate({ storeId, punchId })}
-                >
-                  {i18n.t('attendance.face.useAsRef')}
-                </Button>
-              ) : null}
             </figure>
           ))}
         </div>
@@ -557,13 +526,7 @@ function MemberDaySheet({
                     ) : null}
                   </span>
                 ) : null}
-                {p.photos.length > 0 ? (
-                  <PunchPhotoStrip
-                    storeId={storeId}
-                    punchId={p.id}
-                    canSetFace={data.requireFace && !p.voided}
-                  />
-                ) : null}
+                {p.photos.length > 0 ? <PunchPhotoStrip storeId={storeId} punchId={p.id} /> : null}
               </li>
             ))}
           </ul>

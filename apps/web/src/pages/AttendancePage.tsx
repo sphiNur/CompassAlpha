@@ -15,6 +15,11 @@
  * the 1-in-3 spot check), and the server may ask for them after a plain
  * face photo too. A colleague clocking on this phone is found by their
  * face, not picked from a list.
+ *
+ * Face only (owner decisions 2026-11-06): the person first agrees, then
+ * enrolls their face (six guided photos) and waits for a manager's
+ * approval; only then is the clock button there. Every punch is checked
+ * against that face, and the photos are taken by the face tracker alone.
  */
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -42,6 +47,7 @@ import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { loadFaceTracker } from '../lib/faceTracker';
 import { FaceConsentSheet } from './attendance/FaceConsentSheet';
+import { FaceEnrollSheet } from './attendance/FaceEnrollSheet';
 import { PunchCamera, type PunchPhotos, type Turn } from './attendance/PunchCamera';
 
 type Fix = { lat: number; lng: number; accuracy: number };
@@ -123,13 +129,18 @@ function ClockPanel({ storeId }: { storeId: string }) {
   // The store asks for a face and a surroundings photo with each punch.
   const [camera, setCamera] = useState<Attempt | null>(null);
   const [overtimeReason, setOvertimeReason] = useState('');
-  // Liveness (2026-11-06): after two failed tries the person may clock
-  // anyway; the punch is flagged and the managers are told.
-  const [liveFails, setLiveFails] = useState(0);
-  const [lastFailed, setLastFailed] = useState<PunchVars | null>(null);
+  // A refused face (no turns passed, or not this person's face): try again.
+  const [faceRefused, setFaceRefused] = useState<
+    | 'attendance.errors.livenessFailed'
+    | 'attendance.errors.faceMismatch'
+    | 'attendance.errors.faceNotFound'
+    | 'attendance.errors.notRecognized'
+    | null
+  >(null);
   const [preparing, setPreparing] = useState(false);
-  // The face-check consent, asked before the first face punch.
-  const [consentFor, setConsentFor] = useState<{ identify: boolean } | null>(null);
+  // The face-check consent, asked before enrolling or the first face punch.
+  const [consentFor, setConsentFor] = useState<{ identify: boolean } | 'enroll' | null>(null);
+  const [enrolling, setEnrolling] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const lastAttempt = useRef<Attempt | null>(null);
   const consentGive = trpc.attendance.faceConsentGive.useMutation({
@@ -149,13 +160,12 @@ function ClockPanel({ storeId }: { storeId: string }) {
       setCamera(null);
       setOvertimeAsk(null);
       setOvertimeReason('');
-      setLiveFails(0);
-      setLastFailed(null);
+      setFaceRefused(null);
       setDone({
         kind: data.kind,
         time: data.time,
         forName: data.forName,
-        flagged: data.liveness === 'fail' || data.newDevice || data.face === 'mismatch',
+        flagged: data.newDevice,
       });
       void utils.attendance.me.invalidate();
     },
@@ -170,7 +180,12 @@ function ClockPanel({ storeId }: { storeId: string }) {
         return;
       }
       if (key === 'attendance.errors.consentRequired') {
-        setConsentFor({ identify: false });
+        setConsentFor('enroll');
+        return;
+      }
+      if (key === 'attendance.errors.faceNotEnrolled') {
+        void utils.attendance.me.invalidate();
+        setEnrolling(true);
         return;
       }
       if (key === 'attendance.errors.overtimeReasonRequired') {
@@ -178,10 +193,14 @@ function ClockPanel({ storeId }: { storeId: string }) {
         setOvertimeAsk({ minutes: Number(errorVars(err).minutes ?? 0), vars });
         return;
       }
-      if (key === 'attendance.errors.livenessFailed') {
+      if (
+        key === 'attendance.errors.livenessFailed' ||
+        key === 'attendance.errors.faceMismatch' ||
+        key === 'attendance.errors.faceNotFound' ||
+        key === 'attendance.errors.notRecognized'
+      ) {
         haptic('error');
-        setLiveFails((n) => n + 1);
-        setLastFailed(vars);
+        setFaceRefused(key);
         return;
       }
       errToast('attendance.errors.punchFailed')(err);
@@ -189,19 +208,29 @@ function ClockPanel({ storeId }: { storeId: string }) {
   });
 
   const store = me.data?.stores.find((x) => x.storeId === storeId) ?? null;
-  // Fetch the liveness face tracker while the page is open, not when the
-  // camera is: it is a few MB the first time.
-  const wantTracker = store?.rules.requireLiveness ?? false;
+  // Fetch the face tracker while the page is open, not when the camera
+  // is: it is a few MB the first time.
   useEffect(() => {
-    if (wantTracker) void loadFaceTracker();
-  }, [wantTracker]);
+    void loadFaceTracker();
+  }, []);
+  const face = me.data?.face ?? null;
+  const enrolled = face?.status === 'approved';
 
-  const begin = async (identify: boolean, consented = false) => {
+  /** Agree first, then the six photos. */
+  const startEnroll = (consented = false) => {
+    if (!consented && !me.data?.faceConsent) {
+      setConsentFor('enroll');
+      return;
+    }
+    setEnrolling(true);
+  };
+
+  const begin = async (identify: boolean) => {
     if (!store || !deviceId) return;
-    // The phone's own person agrees before their face is used; a
-    // colleague agreed on their own phone (the server checks).
-    if (store.rules.requireFace && !identify && !consented && !me.data?.faceConsent) {
-      setConsentFor({ identify });
+    // The phone's own person agrees and enrolls first; a colleague did so
+    // on their own phone (the server checks).
+    if (!identify && (!me.data?.faceConsent || !enrolled)) {
+      startEnroll();
       return;
     }
     setLocationProblem(null);
@@ -219,29 +248,21 @@ function ClockPanel({ storeId }: { storeId: string }) {
       }
       setLocating(false);
     }
-    if (!store.rules.requirePhoto && !identify) {
-      send({ location, identify: false, challenge: null }, undefined);
-      return;
+    setFaceRefused(null);
+    setPreparing(true);
+    try {
+      const c = await challenge.mutateAsync({
+        storeId,
+        identify: identify || undefined,
+        deviceId,
+        location: location ?? undefined,
+      });
+      setCamera({ location, identify, challenge: { token: c.token, steps: c.steps } });
+    } catch (err) {
+      errToast('attendance.errors.punchFailed')(err);
+    } finally {
+      setPreparing(false);
     }
-    let ch: Attempt['challenge'] = null;
-    if (store.rules.requireLiveness || identify) {
-      setPreparing(true);
-      try {
-        const c = await challenge.mutateAsync({
-          storeId,
-          identify: identify || undefined,
-          deviceId,
-          location: location ?? undefined,
-        });
-        ch = { token: c.token, steps: c.steps };
-      } catch (err) {
-        errToast('attendance.errors.punchFailed')(err);
-        return;
-      } finally {
-        setPreparing(false);
-      }
-    }
-    setCamera({ location, identify, challenge: ch });
   };
 
   /** The server asked for the turns after all: a challenge that has them. */
@@ -278,21 +299,6 @@ function ClockPanel({ storeId }: { storeId: string }) {
         : undefined,
       identify: attempt.identify || undefined,
     });
-  };
-
-  /** The failed punch again, flagged: a fresh challenge, the same photos. */
-  const sendAnyway = async () => {
-    if (!lastFailed?.liveness) return;
-    try {
-      const c = await challenge.mutateAsync({ storeId, force: true });
-      punch.mutate({
-        ...lastFailed,
-        liveness: { ...lastFailed.liveness, token: c.token },
-        acceptLivenessFail: true,
-      });
-    } catch (err) {
-      errToast('attendance.errors.punchFailed')(err);
-    }
   };
 
   return (
@@ -363,20 +369,9 @@ function ClockPanel({ storeId }: { storeId: string }) {
                   ) : null}
                 </Banner>
               ) : null}
-              {liveFails > 0 && lastFailed ? (
-                <Banner tone="danger" title={i18n.t('attendance.live.failedTitle')}>
-                  <p>{i18n.t('attendance.live.failedBody')}</p>
-                  {liveFails >= 2 && !lastFailed.identify ? (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className="mt-2"
-                      loading={punch.isPending || challenge.isPending}
-                      onClick={() => void sendAnyway()}
-                    >
-                      {i18n.t('attendance.live.clockAnyway')}
-                    </Button>
-                  ) : null}
+              {faceRefused ? (
+                <Banner tone="danger" title={i18n.t(faceRefused)}>
+                  {i18n.t('attendance.face.refusedBody')}
                 </Banner>
               ) : null}
               {done ? (
@@ -402,20 +397,34 @@ function ClockPanel({ storeId }: { storeId: string }) {
                 </Banner>
               ) : null}
 
-              <Button
-                size="lg"
-                block
-                variant={store.nextKind === 'in' ? 'primary' : 'secondary'}
-                loading={locating || preparing || punch.isPending}
-                disabled={!online || !deviceId || punch.isPending || locating || preparing}
-                onClick={() => void begin(false)}
-              >
-                {locating
-                  ? i18n.t('attendance.clock.locating')
-                  : i18n.t(
-                      store.nextKind === 'in' ? 'attendance.clock.in' : 'attendance.clock.out',
-                    )}
-              </Button>
+              {enrolled ? (
+                <Button
+                  size="lg"
+                  block
+                  variant={store.nextKind === 'in' ? 'primary' : 'secondary'}
+                  loading={locating || preparing || punch.isPending}
+                  disabled={!online || !deviceId || punch.isPending || locating || preparing}
+                  onClick={() => void begin(false)}
+                >
+                  {locating
+                    ? i18n.t('attendance.clock.locating')
+                    : i18n.t(
+                        store.nextKind === 'in' ? 'attendance.clock.in' : 'attendance.clock.out',
+                      )}
+                </Button>
+              ) : (
+                <EnrollCard
+                  status={face?.status ?? 'none'}
+                  note={face?.rejectedNote ?? null}
+                  disabled={!online}
+                  onEnroll={() => startEnroll()}
+                />
+              )}
+              {enrolled && face?.pending ? (
+                <p className="text-old-label text-[var(--c-fg-muted)]">
+                  {i18n.t('attendance.enroll.newPending')}
+                </p>
+              ) : null}
               <ul className="flex flex-col gap-0.5 text-old-label text-[var(--c-fg-muted)]">
                 {store.rules.requireDevice ? (
                   <li>{i18n.t('attendance.rules.deviceLine')}</li>
@@ -423,23 +432,23 @@ function ClockPanel({ storeId }: { storeId: string }) {
                 {store.rules.requireGeo && store.rules.geo ? (
                   <li>{i18n.t('attendance.rules.geoLine', { radius: store.rules.geo.radiusM })}</li>
                 ) : null}
-                {store.rules.requirePhoto ? <li>{i18n.t('attendance.rules.photoLine')}</li> : null}
+                <li>{i18n.t('attendance.rules.faceOnlyLine')}</li>
                 {store.rules.requireScene ? <li>{i18n.t('attendance.rules.sceneLine')}</li> : null}
-                {store.rules.requireLiveness ? (
-                  <li>{i18n.t('attendance.rules.livenessLine')}</li>
-                ) : null}
               </ul>
-              {store.rules.requireFace ? (
-                <Button
-                  variant="ghost"
-                  block
-                  disabled={!online || !deviceId || punch.isPending || locating || preparing}
-                  onClick={() => void begin(true)}
-                >
-                  {i18n.t('attendance.borrow.open')}
+              <Button
+                variant="ghost"
+                block
+                disabled={!online || !deviceId || punch.isPending || locating || preparing}
+                onClick={() => void begin(true)}
+              >
+                {i18n.t('attendance.borrow.open')}
+              </Button>
+              {enrolled ? (
+                <Button variant="ghost" size="sm" onClick={() => startEnroll()}>
+                  {i18n.t('attendance.enroll.redo')}
                 </Button>
               ) : null}
-              {store.rules.requireFace && me.data?.faceConsent ? (
+              {me.data?.faceConsent ? (
                 <Button variant="ghost" size="sm" onClick={() => setWithdrawOpen(true)}>
                   {i18n.t('attendance.consent.withdraw')}
                 </Button>
@@ -455,7 +464,8 @@ function ClockPanel({ storeId }: { storeId: string }) {
                     {
                       onSuccess: () => {
                         setConsentFor(null);
-                        if (next) void begin(next.identify, true);
+                        if (next === 'enroll') startEnroll(true);
+                        else if (next) void begin(next.identify);
                       },
                       onError: errToast('attendance.errors.punchFailed'),
                     },
@@ -472,10 +482,18 @@ function ClockPanel({ storeId }: { storeId: string }) {
                 onConfirm={() => consentWithdraw.mutate()}
                 onCancel={() => setWithdrawOpen(false)}
               />
+              <FaceEnrollSheet
+                open={enrolling}
+                storeId={storeId}
+                onCancel={() => setEnrolling(false)}
+                onDone={() => {
+                  setEnrolling(false);
+                  void utils.attendance.me.invalidate();
+                }}
+              />
               <PunchCamera
                 open={camera !== null}
                 kind={camera?.identify ? null : store.nextKind}
-                faceCheck={store.rules.requireFace}
                 turns={camera?.challenge?.steps ?? null}
                 scene={store.rules.requireScene}
                 identifying={camera?.identify ?? false}
@@ -523,6 +541,47 @@ function ClockPanel({ storeId }: { storeId: string }) {
         }
       </DataState>
     </div>
+  );
+}
+
+/** Before the first punch: enroll the face, wait for approval, or enroll again. */
+function EnrollCard({
+  status,
+  note,
+  disabled,
+  onEnroll,
+}: {
+  status: 'none' | 'pending' | 'rejected' | 'approved';
+  note: string | null;
+  disabled: boolean;
+  onEnroll: () => void;
+}) {
+  const i18n = useI18n();
+  return (
+    <section className="flex flex-col gap-3 rounded-[var(--r-card)] bg-[var(--c-surface)] p-4 ring-hairline">
+      <div>
+        <h2 className="text-old-h3 font-semibold text-[var(--c-fg)]">
+          {i18n.t(`attendance.enroll.card.${status}.title`)}
+        </h2>
+        <p className="mt-1 text-old-body text-[var(--c-fg-muted)]">
+          {i18n.t(`attendance.enroll.card.${status}.body`)}
+        </p>
+        {status === 'rejected' && note ? (
+          <p className="mt-1 text-old-body text-[var(--c-fg)]">
+            {i18n.t('attendance.enroll.card.note', { note })}
+          </p>
+        ) : null}
+      </div>
+      <Button
+        size="lg"
+        block
+        variant={status === 'pending' ? 'secondary' : 'primary'}
+        disabled={disabled}
+        onClick={onEnroll}
+      >
+        {i18n.t(status === 'pending' ? 'attendance.enroll.redo' : 'attendance.enroll.start')}
+      </Button>
+    </section>
   );
 }
 

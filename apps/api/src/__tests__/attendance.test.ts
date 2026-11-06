@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -59,12 +59,15 @@ describe('attendance copy', () => {
   });
 });
 
+type Caller = ReturnType<typeof appRouter.createCaller>;
+
 interface Fixture {
   orgId: string;
   storeId: string;
   otherStoreId: string;
   staffId: string;
   staffUserId: string;
+  managerId: string;
   managerUserId: string;
   outsiderId: string;
   colleagueId: string;
@@ -98,6 +101,127 @@ const DEVICE = 'device-aaaaaaaaaaaaaaaa';
 const OTHER_DEVICE = 'device-bbbbbbbbbbbbbbbb';
 const SHOP = { lat: 41.311081, lng: 69.240562 };
 
+/** A fake JPEG whose text says what the stub face model sees. */
+const jpeg = (tag: string) =>
+  Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from(tag)]).toString('base64');
+const unit = (i: number) => Array.from({ length: 128 }, (_, j) => (j === i ? 1 : 0));
+/**
+ * The stub face model. Tag "<who>:<pose>[:print|:dark]": Ali (the staff
+ * member), Bob (the colleague) or Cat (a stranger); left / right turn the
+ * head; print = a photo held up (low real-face score); flat = no turn;
+ * dark = a dark photo; "nobody" = no face; "boom" = the model is down.
+ */
+function stubFaces() {
+  setFaceEngineForTests(async (bytes) => {
+    const tag = Buffer.from(bytes).toString('latin1');
+    if (tag.includes('nobody')) return { found: false };
+    if (tag.includes('boom')) throw new Error('model down');
+    const yaw = tag.includes(':left') ? 0.5 : tag.includes(':right') ? -0.5 : 0;
+    return {
+      found: true,
+      score: 0.95,
+      feature: unit(tag.includes('Bob') ? 1 : tag.includes('Cat') ? 2 : 0),
+      yaw,
+      real: tag.includes('print') ? 0.05 : 0.95,
+      quality: {
+        faces: 1,
+        size: 0.35,
+        light: tag.includes('dark') ? 20 : 120,
+        sharp: 200,
+        pitch: 0.5,
+      },
+    };
+  });
+}
+
+const enrollPhotos = (who: string, over: Partial<Record<string, string>> = {}) => ({
+  front: jpeg(over.front ?? `${who}:front`),
+  left: jpeg(over.left ?? `${who}:left`),
+  right: jpeg(over.right ?? `${who}:right`),
+  up: jpeg(over.up ?? `${who}:up`),
+  down: jpeg(over.down ?? `${who}:down`),
+  front2: jpeg(over.front2 ?? `${who}:front2`),
+});
+
+/** Agree, enroll `who`'s face and have the manager approve it. */
+async function enrollApproved(caller: Caller, who: string) {
+  const f = fx!;
+  await caller.attendance.faceConsentGive({ version: 1 });
+  const e = await caller.attendance.faceEnroll({ storeId: f.storeId, photos: enrollPhotos(who) });
+  await f.manager.attendance.faceEnrollDecide({
+    storeId: f.storeId,
+    enrollmentId: e.id,
+    approve: true,
+  });
+}
+
+/** A token with no turns asked: a passive punch (one face photo). */
+async function passiveToken(memberId: string) {
+  const f = fx!;
+  return (
+    await signLivenessToken({
+      org: f.orgId,
+      mid: memberId,
+      by: memberId,
+      storeId: f.storeId,
+      steps: [],
+    })
+  ).token;
+}
+
+/** A face punch: a challenge with the turns (unless `token`), then the photos. */
+async function clock(
+  caller: Caller,
+  opts: {
+    kind?: 'in' | 'out';
+    who?: string;
+    device?: string;
+    location?: { lat: number; lng: number; accuracy: number } | null;
+    overtimeReason?: string;
+    left?: string;
+    right?: string;
+    token?: string;
+    identify?: boolean;
+    scene?: string;
+  } = {},
+) {
+  const f = fx!;
+  const who = opts.who ?? 'Ali';
+  const token =
+    opts.token ??
+    (
+      await caller.attendance.livenessChallenge({
+        storeId: f.storeId,
+        identify: opts.identify,
+        force: true,
+      })
+    ).token;
+  return caller.attendance.punch({
+    storeId: f.storeId,
+    kind: opts.identify ? undefined : (opts.kind ?? 'in'),
+    identify: opts.identify,
+    deviceId: opts.device ?? OTHER_DEVICE,
+    location: opts.location,
+    photos: { face: jpeg(`${who}:front`), scene: opts.scene ? jpeg(opts.scene) : undefined },
+    liveness: {
+      token,
+      left: jpeg(opts.left ?? `${who}:left`),
+      right: jpeg(opts.right ?? `${who}:right`),
+    },
+    overtimeReason: opts.overtimeReason,
+  });
+}
+
+/** Void everyone's open punches, so in / out starts over. */
+async function resetPunches(...memberIds: string[]) {
+  const db = getDb(undefined, { system: 'maintenance' });
+  for (const id of memberIds) {
+    await db.execute(
+      sql`UPDATE inventory.attendance_punches SET voided_at = now(), voided_by_member_id = member_id, void_reason = 'test reset' WHERE member_id = ${id} AND voided_at IS NULL`,
+    );
+  }
+}
+
 async function expectError(p: Promise<unknown>, message: string) {
   let err: unknown = null;
   try {
@@ -108,8 +232,11 @@ async function expectError(p: Promise<unknown>, message: string) {
   expect((err as Error | null)?.message).toBe(message);
 }
 
+afterAll(() => setFaceEngineForTests(null));
+
 beforeAll(async () => {
   if (!SHOULD_RUN) return;
+  stubFaces();
   const db = getDb(undefined, { system: 'maintenance' });
   const suffix = `${Date.now()}-${Math.floor(Math.random() * 100_000)}`;
   const tg = (n: number) => BigInt(`${Date.now()}`.slice(-10) + String(n).padStart(2, '0'));
@@ -190,6 +317,7 @@ beforeAll(async () => {
     otherStoreId: other!.id,
     staffId: staff.memberId,
     staffUserId: staff.userId,
+    managerId: mgr.memberId,
     managerUserId: mgr.userId,
     outsiderId: outsider.memberId,
     colleagueId: colleague.memberId,
@@ -217,6 +345,13 @@ describe.skipIf(!SHOULD_RUN)('attendance', () => {
     expect(me.stores.map((x) => x.storeId)).toEqual([f.storeId]);
     expect(me.stores[0]!.nextKind).toBe('in');
     expect(me.device).toEqual({ bound: false, matches: null });
+    expect(me.face.status).toBe('none');
+    // Face only: no punch before an approved enrollment.
+    await expectError(clock(f.staff()), 'attendance.errors.consentRequired');
+    await f.staff().attendance.faceConsentGive({ version: 1 });
+    await expectError(clock(f.staff()), 'attendance.errors.faceNotEnrolled');
+    await enrollApproved(f.staff(), 'Ali');
+    expect((await f.staff().attendance.me({})).face.status).toBe('approved');
   });
 
   test('a manager switches only people of their own store', async () => {
@@ -237,25 +372,33 @@ describe.skipIf(!SHOULD_RUN)('attendance', () => {
 
   test('first punch binds the phone; in and out alternate', async () => {
     const f = fx!;
-    const first = await f
-      .staff()
-      .attendance.punch({ storeId: f.storeId, kind: 'in', deviceId: DEVICE });
-    expect(first.kind).toBe('in');
+    // Without photos or a challenge: refused.
     await expectError(
       f.staff().attendance.punch({ storeId: f.storeId, kind: 'in', deviceId: DEVICE }),
+      'attendance.errors.photoRequired',
+    );
+    const first = await clock(f.staff(), { kind: 'in', device: DEVICE });
+    expect([first.kind, first.face, first.liveness]).toEqual(['in', 'match', 'pass']);
+    await expectError(
+      clock(f.staff(), { kind: 'in', device: DEVICE }),
       'attendance.errors.alreadyClockedIn',
     );
+    // Another phone without the turns: the turns first.
     await expectError(
-      f.staff().attendance.punch({ storeId: f.storeId, kind: 'out', deviceId: OTHER_DEVICE }),
-      'attendance.errors.otherDevice',
+      clock(f.staff(), {
+        kind: 'out',
+        device: OTHER_DEVICE,
+        token: await passiveToken(f.staffId),
+      }),
+      'attendance.errors.livenessNeeded',
     );
     expect((await f.staff().attendance.me({ deviceId: OTHER_DEVICE })).device).toEqual({
       bound: true,
       matches: false,
     });
-    await f.staff().attendance.punch({ storeId: f.storeId, kind: 'out', deviceId: DEVICE });
+    await clock(f.staff(), { kind: 'out', device: DEVICE });
     await expectError(
-      f.staff().attendance.punch({ storeId: f.storeId, kind: 'out', deviceId: DEVICE }),
+      clock(f.staff(), { kind: 'out', device: DEVICE }),
       'attendance.errors.notClockedIn',
     );
     await f.manager.attendance.resetDevice({ storeId: f.storeId, memberId: f.staffId });
@@ -280,9 +423,7 @@ describe.skipIf(!SHOULD_RUN)('attendance', () => {
     expect(policy.geo).toEqual({ ...SHOP, radiusM: 100 });
 
     const punch = (location: { lat: number; lng: number; accuracy: number } | null) =>
-      f
-        .staff()
-        .attendance.punch({ storeId: f.storeId, kind: 'in', deviceId: OTHER_DEVICE, location });
+      clock(f.staff(), { kind: 'in', device: OTHER_DEVICE, location });
     await expectError(punch(null), 'attendance.errors.locationRequired');
     await expectError(punch({ ...SHOP, accuracy: 900 }), 'attendance.errors.locationInaccurate');
     await expectError(
@@ -291,10 +432,9 @@ describe.skipIf(!SHOULD_RUN)('attendance', () => {
     );
     const ok = await punch({ lat: SHOP.lat + 0.0005, lng: SHOP.lng, accuracy: 15 });
     expect(ok.kind).toBe('in');
-    await f.staff().attendance.punch({
-      storeId: f.storeId,
+    await clock(f.staff(), {
       kind: 'out',
-      deviceId: OTHER_DEVICE,
+      device: OTHER_DEVICE,
       location: { ...SHOP, accuracy: 5 },
     });
     await f.manager.attendance.policySave({ ...base, requireGeo: false, geo: null });
@@ -467,13 +607,12 @@ describe.skipIf(!SHOULD_RUN)('attendance pay and overtime', () => {
     });
     // Clocking out an hour after the end needs a reason …
     await expectError(
-      f.staff().attendance.punch({ storeId: f.storeId, kind: 'out', deviceId: OTHER_DEVICE }),
+      clock(f.staff(), { kind: 'out', device: OTHER_DEVICE }),
       'attendance.errors.overtimeReasonRequired',
     );
-    const out = await f.staff().attendance.punch({
-      storeId: f.storeId,
+    const out = await clock(f.staff(), {
       kind: 'out',
-      deviceId: OTHER_DEVICE,
+      device: OTHER_DEVICE,
       overtimeReason: 'Stocktake after closing',
     });
     expect(out.overtimeMinutes).toBeGreaterThanOrEqual(59);
@@ -543,12 +682,10 @@ describe.skipIf(!SHOULD_RUN)('attendance pay and overtime', () => {
 });
 
 describe.skipIf(!SHOULD_RUN)('attendance photos', () => {
-  test('a store can ask for a face and a place photo; managers see them; 90 days', async () => {
+  test('the face always, the place where asked; managers see them; 90 days', async () => {
     const f = fx!;
     const db = getDb(undefined, { system: 'maintenance' });
-    await db.execute(
-      sql`UPDATE inventory.attendance_punches SET voided_at = now(), voided_by_member_id = member_id, void_reason = 'test reset' WHERE member_id = ${f.staffId} AND voided_at IS NULL`,
-    );
+    await resetPunches(f.staffId);
     const rules = {
       storeId: f.storeId,
       requireDevice: false,
@@ -557,28 +694,39 @@ describe.skipIf(!SHOULD_RUN)('attendance photos', () => {
       graceMinutes: 5,
       overtimeAfterMinutes: 30,
     };
-    await f.manager.attendance.policySave({ ...rules, requirePhoto: true });
-    expect((await f.staff().attendance.me({})).stores[0]!.rules.requirePhoto).toBe(true);
-    const punch = { storeId: f.storeId, kind: 'in' as const, deviceId: OTHER_DEVICE };
-    await expectError(f.staff().attendance.punch(punch), 'attendance.errors.photoRequired');
+    await f.manager.attendance.policySave({ ...rules, requireScene: true });
+    expect((await f.staff().attendance.me({})).stores[0]!.rules).toMatchObject({
+      requirePhoto: true,
+      requireFace: true,
+      requireLiveness: true,
+      requireScene: true,
+    });
+    const token = () => passiveToken(f.staffId);
+    // The place is asked for.
+    await expectError(
+      clock(f.staff(), { token: await token() }),
+      'attendance.errors.photoRequired',
+    );
     const notJpeg = Buffer.from('not a photo at all').toString('base64');
     await expectError(
-      f.staff().attendance.punch({ ...punch, photos: { face: notJpeg, scene: notJpeg } }),
+      f.staff().attendance.punch({
+        storeId: f.storeId,
+        kind: 'in',
+        deviceId: OTHER_DEVICE,
+        photos: { face: notJpeg, scene: notJpeg },
+        liveness: { token: await token() },
+      }),
       'attendance.errors.photoInvalid',
     );
-    const jpeg = (tag: string) =>
-      Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from(tag)]).toString('base64');
-    const done = await f.staff().attendance.punch({
-      ...punch,
-      photos: { face: jpeg('face'), scene: jpeg('scene') },
-    });
+    const done = await clock(f.staff(), { token: await token(), scene: 'shop' });
+    expect(done.liveness).toBe('passive');
 
     const date = dateInTz(new Date(done.at), TZ);
     const sheet = await f.manager.attendance.sheet({ storeId: f.storeId, from: date, to: date });
     expect(sheet.punches.find((p) => p.id === done.id)!.photos.sort()).toEqual(['face', 'scene']);
     const photos = await f.manager.attendance.punchPhotos({ storeId: f.storeId, punchId: done.id });
     expect(photos.map((p) => p.kind)).toEqual(['face', 'scene']);
-    expect(photos[0]!.src).toBe(`data:image/jpeg;base64,${jpeg('face')}`);
+    expect(photos[0]!.src).toBe(`data:image/jpeg;base64,${jpeg('Ali:front')}`);
     await expectError(
       f.staff().attendance.punchPhotos({ storeId: f.storeId, punchId: done.id }),
       'auth.errors.missingPermission',
@@ -594,114 +742,171 @@ describe.skipIf(!SHOULD_RUN)('attendance photos', () => {
       await f.manager.attendance.punchPhotos({ storeId: f.storeId, punchId: done.id }),
     ).toEqual([]);
 
-    await f.manager.attendance.policySave({ ...rules, requireDevice: true, requirePhoto: false });
+    await f.manager.attendance.policySave({ ...rules, requireDevice: true });
+    await resetPunches(f.staffId);
   });
 });
 
-describe.skipIf(!SHOULD_RUN)('attendance face check', () => {
-  test('first face registers; later ones match or are flagged; managers are told', async () => {
+describe.skipIf(!SHOULD_RUN)('attendance face enrollment', () => {
+  test('six checked photos, approved by a manager; only that face clocks', async () => {
     const f = fx!;
     const db = getDb(undefined, { system: 'maintenance' });
-    const reset = () =>
-      db.execute(
-        sql`UPDATE inventory.attendance_punches SET voided_at = now(), voided_by_member_id = member_id, void_reason = 'test reset' WHERE member_id = ${f.staffId} AND voided_at IS NULL`,
-      );
-    await reset();
-    // A stub model: the photo's text says whose face it is.
-    const unit = (i: number) => Array.from({ length: 128 }, (_, j) => (j === i ? 1 : 0));
-    setFaceEngineForTests(async (bytes) => {
-      const tag = Buffer.from(bytes).toString('latin1');
-      if (tag.includes('nobody')) return { found: false };
-      if (tag.includes('boom')) throw new Error('model down');
-      return {
-        found: true,
-        score: 0.95,
-        feature: unit(tag.includes('Bob') ? 1 : 0),
-        yaw: 0,
-        real: 0.9,
-      };
-    });
-    const rules = {
-      storeId: f.storeId,
-      requireDevice: false,
-      requireGeo: false,
-      geo: null,
-      graceMinutes: 5,
-      overtimeAfterMinutes: 30,
-      requirePhoto: true,
-    };
-    await f.manager.attendance.policySave({ ...rules, requireFace: true });
-    const jpeg = (tag: string) =>
-      Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from(tag)]).toString('base64');
-    const punch = (kind: 'in' | 'out', who: string) =>
-      f.staff().attendance.punch({
-        storeId: f.storeId,
-        kind,
-        deviceId: OTHER_DEVICE,
-        photos: { face: jpeg(who), scene: jpeg('shop') },
-        // The pay test's shift ended earlier today: a clock-out is overtime.
-        overtimeReason: kind === 'out' ? 'face test' : undefined,
-      });
+    await resetPunches(f.staffId);
+    const enroll = (over: Partial<Record<string, string>> = {}) =>
+      f.staff().attendance.faceEnroll({ storeId: f.storeId, photos: enrollPhotos('Ali', over) });
 
-    // The person agrees in the app before their face is used.
-    await db.delete(s.attendanceFaceConsents).where(eq(s.attendanceFaceConsents.orgId, f.orgId));
-    await expectError(punch('in', 'Ali'), 'attendance.errors.consentRequired');
+    // Withdrawing the consent deletes the enrolled face; enrolling needs it again.
+    await f.staff().attendance.faceConsentWithdraw();
+    expect((await f.staff().attendance.me({})).face.status).toBe('none');
+    await expectError(enroll(), 'attendance.errors.consentRequired');
     await f.staff().attendance.faceConsentGive({ version: 1 });
-    await expectError(punch('in', 'nobody'), 'attendance.errors.faceNotFound');
-    expect((await punch('in', 'Ali')).face).toBe('enrolled');
-    expect((await punch('out', 'Ali')).face).toBe('match');
-    const bob = await punch('in', 'Bob');
-    expect(bob.face).toBe('mismatch');
 
-    const date = dateInTz(new Date(bob.at), TZ);
-    let sheet = await f.manager.attendance.sheet({ storeId: f.storeId, from: date, to: date });
-    expect(sheet.requireFace).toBe(true);
-    expect(sheet.punches.find((p) => p.id === bob.id)!.face).toEqual({
-      result: 'mismatch',
-      score: 0,
-    });
-    expect(sheet.members.find((m) => m.memberId === f.staffId)!.faceRefAt).not.toBeNull();
-    const told = await db
-      .select({ to: s.notifications.recipientUserId })
-      .from(s.notifications)
-      .where(
-        and(
-          eq(s.notifications.orgId, f.orgId),
-          eq(s.notifications.template, 'attendance.faceMismatch'),
-          eq(s.notifications.channel, 'bot'),
-        ),
-      );
-    expect(told.map((r) => r.to)).toEqual([f.managerUserId]);
-
-    // The manager decides Bob's photo is the right face after all.
-    await f.manager.attendance.faceRefSet({ storeId: f.storeId, punchId: bob.id });
-    expect((await punch('out', 'Bob')).face).toBe('match');
-    expect(
-      (await f.manager.attendance.faceRef({ storeId: f.storeId, memberId: f.staffId }))!.src,
-    ).toBe(`data:image/jpeg;base64,${jpeg('Bob')}`);
-
-    // The model being down never stops a punch; it is marked unchecked.
-    expect((await punch('in', 'boom')).face).toBe('unchecked');
-
+    // Every photo is checked.
+    await expectError(enroll({ up: 'Ali:up:dark' }), 'attendance.errors.enrollRejected');
+    await expectError(enroll({ left: 'Ali:flat' }), 'attendance.errors.enrollRejected');
+    await expectError(enroll({ front2: 'Bob:front2' }), 'attendance.errors.enrollRejected');
+    await expectError(enroll({ down: 'nobody' }), 'attendance.errors.enrollRejected');
     await expectError(
-      f.staff().attendance.faceRefClear({ storeId: f.storeId, memberId: f.staffId }),
+      enroll({
+        left: 'Ali:left:print',
+        right: 'Ali:right:print',
+        up: 'Ali:up:print',
+        down: 'Ali:down:print',
+      }),
+      'attendance.errors.enrollRejected',
+    );
+    await expectError(enroll({ front: 'boom' }), 'attendance.errors.faceCheckUnavailable');
+    // The refusal says which photo and why.
+    let refused: unknown = null;
+    try {
+      await enroll({ up: 'Ali:up:dark', left: 'Ali:flat' });
+    } catch (e) {
+      refused = e;
+    }
+    expect(
+      (refused as { cause?: { context?: { problems?: string } } }).cause?.context?.problems,
+    ).toBe('up:dark,left:notTurned');
+
+    const first = await enroll();
+    expect(first.status).toBe('pending');
+    let me = await f.staff().attendance.me({});
+    expect(me.face).toMatchObject({ status: 'pending', pending: true });
+    await expectError(clock(f.staff()), 'attendance.errors.faceNotEnrolled');
+    // A new enrollment replaces the one still waiting.
+    const second = await enroll();
+    let queue = await f.manager.attendance.reviewQueue({ storeId: f.storeId });
+    expect(queue.enrollments.map((e) => [e.id, e.name, e.own])).toEqual([
+      [second.id, 'Att Staff', false],
+    ]);
+    await expectError(
+      f.staff().attendance.faceEnrollDecide({
+        storeId: f.storeId,
+        enrollmentId: second.id,
+        approve: true,
+      }),
       'auth.errors.missingPermission',
     );
-    await f.manager.attendance.faceRefClear({ storeId: f.storeId, memberId: f.staffId });
-    expect(await f.manager.attendance.faceRef({ storeId: f.storeId, memberId: f.staffId })).toBe(
-      null,
-    );
-    sheet = await f.manager.attendance.sheet({ storeId: f.storeId, from: date, to: date });
-    expect(sheet.members.find((m) => m.memberId === f.staffId)!.faceRefAt).toBeNull();
-
-    setFaceEngineForTests(null);
-    await reset();
-    await f.manager.attendance.policySave({
-      ...rules,
-      requireDevice: true,
-      requirePhoto: false,
-      requireFace: false,
+    await expect(
+      f.manager.attendance.faceEnrollDecide({
+        storeId: f.storeId,
+        enrollmentId: second.id,
+        approve: false,
+      }),
+    ).rejects.toThrow('attendance.errors.enrollNoteRequired');
+    await f.manager.attendance.faceEnrollDecide({
+      storeId: f.storeId,
+      enrollmentId: second.id,
+      approve: false,
+      note: 'Too dark',
     });
+    me = await f.staff().attendance.me({});
+    expect(me.face).toMatchObject({ status: 'rejected', rejectedNote: 'Too dark' });
+    // Sent back: its photos are gone.
+    expect(
+      await db
+        .select()
+        .from(s.attendanceFaceSamples)
+        .where(eq(s.attendanceFaceSamples.enrollmentId, second.id)),
+    ).toEqual([]);
+    await expectError(
+      f.manager.attendance.faceEnrollDecide({
+        storeId: f.storeId,
+        enrollmentId: second.id,
+        approve: true,
+      }),
+      'attendance.errors.enrollmentNotFound',
+    );
+
+    const third = await enroll();
+    await f.manager.attendance.faceEnrollDecide({
+      storeId: f.storeId,
+      enrollmentId: third.id,
+      approve: true,
+    });
+    me = await f.staff().attendance.me({});
+    expect(me.face).toMatchObject({ status: 'approved', pending: false });
+    expect(me.face.approvedAt).not.toBeNull();
+    const shown = await f.manager.attendance.faceEnrollment({
+      storeId: f.storeId,
+      memberId: f.staffId,
+    });
+    expect(shown.map((e) => e.status)).toEqual(['approved']);
+    expect(shown[0]!.photos.map((p) => p.pose)).toEqual([
+      'front',
+      'left',
+      'right',
+      'up',
+      'down',
+      'front2',
+    ]);
+    const today = todayInTz(TZ);
+    const sheet = await f.manager.attendance.sheet({ storeId: f.storeId, from: today, to: today });
+    expect(sheet.members.find((m) => m.memberId === f.staffId)!.face).toBe('approved');
+
+    // Only that face clocks; anything else leaves no punch behind.
+    await expectError(clock(f.staff(), { who: 'Bob' }), 'attendance.errors.faceMismatch');
+    await expectError(clock(f.staff(), { who: 'nobody' }), 'attendance.errors.faceNotFound');
+    await expectError(clock(f.staff(), { who: 'boom' }), 'attendance.errors.faceCheckUnavailable');
+    expect((await clock(f.staff())).face).toBe('match');
+
+    // Nobody approves their own face.
+    const [own] = await db
+      .insert(s.attendanceFaceEnrollments)
+      .values({ orgId: f.orgId, memberId: f.managerId, storeId: f.storeId })
+      .returning();
+    queue = await f.manager.attendance.reviewQueue({ storeId: f.storeId });
+    expect(queue.enrollments.find((e) => e.id === own!.id)!.own).toBe(true);
+    await expectError(
+      f.manager.attendance.faceEnrollDecide({
+        storeId: f.storeId,
+        enrollmentId: own!.id,
+        approve: true,
+      }),
+      'attendance.errors.enrollOwn',
+    );
+    await db.delete(s.attendanceFaceEnrollments).where(eq(s.attendanceFaceEnrollments.id, own!.id));
+
+    // A manager asks for it again: no punch until a new one is approved.
+    await expectError(
+      f.staff().attendance.faceEnrollReset({ storeId: f.storeId, memberId: f.staffId }),
+      'auth.errors.missingPermission',
+    );
+    await f.manager.attendance.faceEnrollReset({ storeId: f.storeId, memberId: f.staffId });
+    expect((await f.staff().attendance.me({})).face.status).toBe('none');
+    await expectError(clock(f.staff(), { kind: 'out' }), 'attendance.errors.faceNotEnrolled');
+    await enrollApproved(f.staff(), 'Ali');
+
+    const told = await db
+      .select({ to: s.notifications.recipientUserId, template: s.notifications.template })
+      .from(s.notifications)
+      .where(and(eq(s.notifications.orgId, f.orgId), eq(s.notifications.channel, 'bot')));
+    const to = (template: string) => [
+      ...new Set(told.filter((r) => r.template === template).map((r) => r.to)),
+    ];
+    expect(to('attendance.faceEnrollPending')).toEqual([f.managerUserId]);
+    expect(to('attendance.faceEnrollRejected')).toEqual([f.staffUserId]);
+    expect(to('attendance.faceEnrollApproved')).toEqual([f.staffUserId]);
+    await resetPunches(f.staffId);
   });
 });
 
@@ -709,30 +914,11 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
   test('turns and a real face pass; prints, flat turns and reused challenges do not', async () => {
     const f = fx!;
     const db = getDb(undefined, { system: 'maintenance' });
-    const reset = () =>
-      db.execute(
-        sql`UPDATE inventory.attendance_punches SET voided_at = now(), voided_by_member_id = member_id, void_reason = 'test reset' WHERE member_id IN (${f.staffId}, ${f.colleagueId}) AND voided_at IS NULL`,
-      );
-    await reset();
-    await db.delete(s.attendanceFaceRefs).where(eq(s.attendanceFaceRefs.orgId, f.orgId));
+    await resetPunches(f.staffId, f.colleagueId);
     await f.manager.attendance.memberSet({
       storeId: f.storeId,
       memberId: f.colleagueId,
       enabled: true,
-    });
-    // Stub model. Tag "<who>:<pose>": Ali or Bob; front, left, right, print
-    // (a photo held up: real-face score low), flat (no head turn).
-    const unit = (i: number) => Array.from({ length: 128 }, (_, j) => (j === i ? 1 : 0));
-    setFaceEngineForTests(async (bytes) => {
-      const tag = Buffer.from(bytes).toString('latin1');
-      const yaw = tag.includes(':left') ? 0.5 : tag.includes(':right') ? -0.5 : 0;
-      return {
-        found: true,
-        score: 0.95,
-        feature: unit(tag.includes('Bob') ? 1 : 0),
-        yaw,
-        real: tag.includes('print') ? 0.05 : 0.95,
-      };
     });
     const rules = {
       storeId: f.storeId,
@@ -741,76 +927,30 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
       geo: null,
       graceMinutes: 5,
       overtimeAfterMinutes: 30,
-      requirePhoto: true,
-      requireFace: true,
     };
-    await f.manager.attendance.policySave({ ...rules, requireLiveness: true });
-    const jpeg = (tag: string) =>
-      Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from(tag)]).toString('base64');
-    type Caller = ReturnType<typeof appRouter.createCaller>;
-    const punch = async (
-      caller: Caller,
-      kind: 'in' | 'out',
-      who: string,
-      opts: {
-        left?: string;
-        right?: string;
-        forMemberId?: string;
-        identify?: boolean;
-        token?: string;
-        accept?: boolean;
-        device?: string;
-      } = {},
-    ) => {
-      const token =
-        opts.token ??
-        (
-          await caller.attendance.livenessChallenge({
-            storeId: f.storeId,
-            forMemberId: opts.forMemberId,
-            identify: opts.identify,
-            // Always the turns here; the passive path is tested below.
-            force: true,
-          })
-        ).token;
-      return caller.attendance.punch({
-        storeId: f.storeId,
-        kind: opts.identify ? undefined : kind,
-        identify: opts.identify,
-        deviceId: opts.device ?? OTHER_DEVICE,
-        photos: { face: jpeg(`${who}:front`), scene: jpeg('shop') },
-        liveness: {
-          token,
-          left: jpeg(opts.left ?? `${who}:left`),
-          right: jpeg(opts.right ?? `${who}:right`),
-        },
-        acceptLivenessFail: opts.accept,
-        forMemberId: opts.forMemberId,
-        overtimeReason: kind === 'out' ? 'liveness test' : undefined,
-      });
-    };
+    await f.manager.attendance.policySave(rules);
+    // The pay test's shift ended earlier today: a clock-out is overtime.
+    const why = 'liveness test';
 
     await expectError(
       f.staff().attendance.punch({
         storeId: f.storeId,
         kind: 'in',
         deviceId: OTHER_DEVICE,
-        photos: { face: jpeg('Ali:front'), scene: jpeg('shop') },
+        photos: { face: jpeg('Ali:front') },
       }),
       'attendance.errors.livenessRequired',
     );
-    await db.delete(s.attendanceFaceConsents).where(eq(s.attendanceFaceConsents.orgId, f.orgId));
-    await f.staff().attendance.faceConsentGive({ version: 1 });
     const challenge = await f.staff().attendance.livenessChallenge({
       storeId: f.storeId,
       force: true,
     });
     expect([...challenge.steps].sort()).toEqual(['left', 'right']);
-    const first = await punch(f.staff(), 'in', 'Ali', { token: challenge.token });
-    expect([first.liveness, first.face]).toEqual(['pass', 'enrolled']);
+    const first = await clock(f.staff(), { token: challenge.token });
+    expect([first.liveness, first.face]).toEqual(['pass', 'match']);
     // One challenge, one punch.
     await expectError(
-      punch(f.staff(), 'out', 'Ali', { token: challenge.token }),
+      clock(f.staff(), { kind: 'out', token: challenge.token, overtimeReason: why }),
       'attendance.errors.livenessExpired',
     );
     // Another member's challenge does not fit.
@@ -819,82 +959,46 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
       force: true,
     });
     await expectError(
-      punch(f.staff(), 'out', 'Ali', { token: theirs.token }),
+      clock(f.staff(), { kind: 'out', token: theirs.token, overtimeReason: why }),
       'attendance.errors.livenessExpired',
     );
-    await expectError(
-      punch(f.staff(), 'out', 'Ali', { left: 'Ali:print', right: 'Ali:print' }),
-      'attendance.errors.livenessFailed',
-    );
-    await expectError(
-      punch(f.staff(), 'out', 'Ali', { left: 'Ali:flat', right: 'Ali:flat' }),
-      'attendance.errors.livenessFailed',
-    );
-    await expectError(
-      punch(f.staff(), 'out', 'Ali', { left: 'Bob:left', right: 'Bob:right' }),
-      'attendance.errors.livenessFailed',
-    );
-    // After two tries the person clocks anyway, flagged.
-    const flagged = await punch(f.staff(), 'out', 'Ali', {
-      left: 'Ali:flat',
-      right: 'Ali:flat',
-      accept: true,
-    });
-    expect(flagged.liveness).toBe('fail');
-    const date = dateInTz(new Date(flagged.at), TZ);
+    // Face only: a failed check is refused, never recorded.
+    for (const [left, right] of [
+      ['Ali:print', 'Ali:print'],
+      ['Ali:flat', 'Ali:flat'],
+      ['Bob:left', 'Bob:right'],
+    ] as const) {
+      await expectError(
+        clock(f.staff(), { kind: 'out', left, right, overtimeReason: why }),
+        'attendance.errors.livenessFailed',
+      );
+    }
+    const date = dateInTz(new Date(first.at), TZ);
     let sheet = await f.manager.attendance.sheet({ storeId: f.storeId, from: date, to: date });
-    expect(sheet.requireLiveness).toBe(true);
-    const flaggedRow = sheet.punches.find((p) => p.id === flagged.id)!;
-    expect([flaggedRow.liveness, flaggedRow.face?.result]).toEqual(['fail', 'unchecked']);
-    expect([...flaggedRow.photos].sort()).toEqual(['face', 'left', 'right', 'scene']);
+    expect(
+      sheet.punches.filter((p) => p.memberId === f.staffId && !p.voided).map((p) => p.id),
+    ).toEqual([first.id]);
 
     // A borrowed phone: Bob (the colleague) clocks on Ali's (staff's) phone.
     await expectError(
-      f.staff().attendance.livenessChallenge({ storeId: f.storeId, forMemberId: f.outsiderId }),
-      'attendance.errors.notColleague',
-    );
-    let list = await f.staff().attendance.colleagues({ storeId: f.storeId });
-    expect(list.members.map((m) => [m.memberId, m.faceOnFile])).toEqual([[f.colleagueId, false]]);
-    await expectError(
-      punch(f.staff(), 'in', 'Bob', { forMemberId: f.colleagueId }),
-      'attendance.errors.borrowNoConsent',
+      clock(f.staff(), { who: 'Bob', identify: true }),
+      'attendance.errors.notRecognized',
     );
     await expectError(
-      punch(f.colleague(), 'in', 'Bob', { device: DEVICE }),
+      clock(f.colleague(), { who: 'Bob', device: DEVICE }),
       'attendance.errors.consentRequired',
     );
     await f.colleague().attendance.faceConsentGive({ version: 1 });
     await expectError(
-      punch(f.staff(), 'in', 'Bob', { forMemberId: f.colleagueId }),
-      'attendance.errors.borrowNoFace',
+      clock(f.colleague(), { who: 'Bob', device: DEVICE }),
+      'attendance.errors.faceNotEnrolled',
     );
-    // Nobody to recognise yet.
-    await expectError(
-      punch(f.staff(), 'in', 'Bob', { identify: true }),
-      'attendance.errors.notRecognized',
-    );
-    // Bob registers his face on his own phone first.
-    const own = await punch(f.colleague(), 'in', 'Bob', { device: DEVICE });
-    expect(own.face).toBe('enrolled');
-    list = await f.staff().attendance.colleagues({ storeId: f.storeId });
-    expect(list.members[0]!.faceOnFile).toBe(true);
-    // Ali cannot clock Bob out with Ali's own face, nor without a live check.
-    await expectError(
-      punch(f.staff(), 'out', 'Ali', { forMemberId: f.colleagueId }),
-      'attendance.errors.borrowFaceMismatch',
-    );
-    await expectError(
-      punch(f.staff(), 'out', 'Bob', {
-        forMemberId: f.colleagueId,
-        left: 'Bob:print',
-        right: 'Bob:print',
-        accept: true,
-      }),
-      'attendance.errors.livenessFailed',
-    );
+    await enrollApproved(f.colleague(), 'Bob');
+    const own = await clock(f.colleague(), { who: 'Bob', device: DEVICE });
+    expect(own.face).toBe('match');
     // The face says who: Ali's own face is not a colleague's.
     await expectError(
-      punch(f.staff(), 'out', 'Ali', { identify: true }),
+      clock(f.staff(), { who: 'Ali', identify: true }),
       'attendance.errors.notRecognized',
     );
     // A borrowed phone never goes without the turns.
@@ -906,16 +1010,14 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
       steps: [],
     });
     await expectError(
-      f.staff().attendance.punch({
-        storeId: f.storeId,
-        deviceId: OTHER_DEVICE,
-        photos: { face: jpeg('Bob:front') },
-        liveness: { token: noTurns.token },
-        identify: true,
-      }),
+      clock(f.staff(), { who: 'Bob', identify: true, token: noTurns.token }),
       'attendance.errors.livenessNeeded',
     );
-    const borrowed = await punch(f.staff(), 'out', 'Bob', { identify: true });
+    await expectError(
+      clock(f.staff(), { who: 'Bob', identify: true, left: 'Bob:print', right: 'Bob:print' }),
+      'attendance.errors.livenessFailed',
+    );
+    const borrowed = await clock(f.staff(), { who: 'Bob', identify: true });
     expect([borrowed.face, borrowed.liveness, borrowed.forName, borrowed.kind]).toEqual([
       'match',
       'pass',
@@ -925,68 +1027,42 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
     sheet = await f.manager.attendance.sheet({ storeId: f.storeId, from: date, to: date });
     const row = sheet.punches.find((p) => p.id === borrowed.id)!;
     expect([row.memberId, row.viaName]).toEqual([f.colleagueId, 'Att Staff']);
-    expect([...row.photos].sort()).toEqual(['face', 'left', 'right', 'scene']);
+    expect([...row.photos].sort()).toEqual(['face', 'left', 'right']);
 
     // One face photo, plainly real: no turns (the server did not ask).
-    const passiveToken = async () =>
-      (
-        await signLivenessToken({
-          org: f.orgId,
-          mid: f.staffId,
-          by: f.staffId,
-          storeId: f.storeId,
-          steps: [],
-        })
-      ).token;
-    const passive = await f.staff().attendance.punch({
-      storeId: f.storeId,
-      kind: 'in',
-      deviceId: OTHER_DEVICE,
-      photos: { face: jpeg('Ali:front') },
-      liveness: { token: await passiveToken() },
+    const passive = await clock(f.staff(), {
+      kind: 'out',
+      token: await passiveToken(f.staffId),
+      overtimeReason: why,
     });
     expect([passive.liveness, passive.face]).toEqual(['passive', 'match']);
     // A photo held up: not sure it is real, so the turns after all.
     await expectError(
-      f.staff().attendance.punch({
-        storeId: f.storeId,
-        kind: 'out',
-        deviceId: OTHER_DEVICE,
-        photos: { face: jpeg('Ali:print') },
-        liveness: { token: await passiveToken() },
-        overtimeReason: 'liveness test',
-      }),
+      clock(f.staff(), { who: 'Ali:print', token: await passiveToken(f.staffId) }),
       'attendance.errors.livenessNeeded',
     );
-    // Bob's face on Ali's punch: flagged, and whom it looks like.
-    const like = await punch(f.staff(), 'out', 'Bob');
-    expect([like.face, like.liveness]).toEqual(['mismatch', 'pass']);
-    sheet = await f.manager.attendance.sheet({ storeId: f.storeId, from: date, to: date });
-    expect(sheet.punches.find((p) => p.id === like.id)!.faceLikeName).toBe('Att Colleague');
+    // Bob's face on Ali's punch: refused.
+    await expectError(clock(f.staff(), { who: 'Bob' }), 'attendance.errors.faceMismatch');
 
     // 待核对: the flagged punches, until a manager lets one stand.
     let queue = await f.manager.attendance.reviewQueue({ storeId: f.storeId });
-    const queued = queue.punches.map((p) => p.id);
-    expect(queued).toContain(flagged.id);
-    expect(queued).toContain(borrowed.id);
-    expect(queued).toContain(like.id);
-    expect(queued).not.toContain(passive.id);
-    expect(queue.punches.find((p) => p.id === like.id)!.faceLikeName).toBe('Att Colleague');
+    expect(queue.punches.map((p) => p.id)).toContain(borrowed.id);
+    expect(queue.punches.map((p) => p.id)).not.toContain(passive.id);
     await expectError(
       f.staff().attendance.reviewQueue({ storeId: f.storeId }),
       'auth.errors.missingPermission',
     );
-    await f.manager.attendance.reviewPunch({ storeId: f.storeId, punchId: like.id });
+    await f.manager.attendance.reviewPunch({ storeId: f.storeId, punchId: borrowed.id });
     queue = await f.manager.attendance.reviewQueue({ storeId: f.storeId });
-    expect(queue.punches.map((p) => p.id)).not.toContain(like.id);
+    expect(queue.punches.map((p) => p.id)).not.toContain(borrowed.id);
 
-    // A new phone: refused without the face check, let through with it.
-    await f.manager.attendance.policySave({ ...rules, requireDevice: true, requireLiveness: true });
+    // A new phone: the turns first, then it clocks, flagged.
+    await f.manager.attendance.policySave({ ...rules, requireDevice: true });
     await expectError(
-      punch(f.staff(), 'in', 'Ali', { device: DEVICE, left: 'Ali:flat', accept: true }),
-      'attendance.errors.otherDevice',
+      clock(f.staff(), { device: DEVICE, token: await passiveToken(f.staffId) }),
+      'attendance.errors.livenessNeeded',
     );
-    const moved = await punch(f.staff(), 'in', 'Ali', { device: DEVICE });
+    const moved = await clock(f.staff(), { device: DEVICE });
     expect([moved.newDevice, moved.face]).toEqual([true, 'match']);
 
     const told = await db
@@ -994,34 +1070,25 @@ describe.skipIf(!SHOULD_RUN)('attendance liveness and borrowed phones', () => {
       .from(s.notifications)
       .where(and(eq(s.notifications.orgId, f.orgId), eq(s.notifications.channel, 'bot')));
     const to = (template: string) => told.filter((r) => r.template === template).map((r) => r.to);
-    expect(to('attendance.livenessFailed')).toEqual([f.managerUserId]);
     expect(to('attendance.borrowedPhone')).toEqual([f.managerUserId]);
     expect(to('attendance.clockedOutForYou')).toEqual([f.colleagueUserId]);
     expect(to('attendance.newDevice')).toEqual([f.managerUserId]);
-    expect(to('attendance.faceLike')).toEqual([f.managerUserId]);
+    expect(to('attendance.livenessFailed')).toEqual([]);
 
-    // Withdrawing the consent deletes the registered face.
+    // Withdrawing the consent deletes the enrolled face.
     await f.colleague().attendance.faceConsentWithdraw();
     expect(
       await db
         .select()
-        .from(s.attendanceFaceRefs)
-        .where(eq(s.attendanceFaceRefs.memberId, f.colleagueId)),
+        .from(s.attendanceFaceEnrollments)
+        .where(eq(s.attendanceFaceEnrollments.memberId, f.colleagueId)),
     ).toEqual([]);
 
-    setFaceEngineForTests(null);
-    await reset();
+    await resetPunches(f.staffId, f.colleagueId);
     await f.manager.attendance.memberSet({
       storeId: f.storeId,
       memberId: f.colleagueId,
       enabled: false,
-    });
-    await f.manager.attendance.policySave({
-      ...rules,
-      requireDevice: true,
-      requirePhoto: false,
-      requireFace: false,
-      requireLiveness: false,
     });
   });
 });

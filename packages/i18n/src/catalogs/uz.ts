@@ -2680,10 +2680,6 @@ export const uz = {
   'attendance.export.flag.early': 'Erta ketdi',
   'attendance.export.flag.onDuty': 'Smenada',
   'attendance.export.flag.upcoming': 'Hali boshlanmagan',
-  'attendance.rules.photoLine': 'Har bir belgida yuz surati',
-  'attendance.photo.faceTitle': 'Avval yuz',
-  'attendance.photo.faceHint':
-    'Old kamera. Ekranga qarang, yuzingiz toʻliq kadrda va yorugʻ boʻlsin.',
   'attendance.photo.sceneTitle': 'Endi joy',
   'attendance.photo.sceneHint':
     'Orqa kamera. Qayerdaligingizni koʻrsating: doʻkon, peshtaxta yoki eshik.',
@@ -2697,34 +2693,18 @@ export const uz = {
   'attendance.photo.problem.unsupported': 'Bu yerda kamera ochilmaydi',
   'attendance.photo.problem.denied': 'Kameraga ruxsat yoʻq',
   'attendance.photo.problem.unavailable': 'Kamera ishga tushmadi',
-  'attendance.photo.useSystemCamera': 'Telefon kamerasi bilan suratga oling.',
-  'attendance.photo.openSystemCamera': 'Telefon kamerasini ochish',
   'attendance.photo.show': 'Suratlarni koʻrsatish',
-  'attendance.settings.requirePhoto': 'Belgilashda surat',
-  'attendance.settings.requirePhotoHint':
-    'Har bir kelish va ketish belgisida old kamera bilan joyida yuz surati olinadi. 90 kun saqlanadi, faqat rahbarlar koʻradi.',
-  'attendance.errors.photoRequired': 'Bu doʻkonda belgilash uchun suratlar kerak.',
+  'attendance.errors.photoRequired': 'Belgilanish uchun joyida olingan suratlar kerak.',
   'attendance.errors.photoInvalid': 'Suratni oʻqib boʻlmadi. Qayta oling.',
   'attendance.face.match': 'Yuz mos',
   'attendance.face.mismatch': 'Yuz mos emas',
   'attendance.face.enrolled': 'Yuz roʻyxatga olindi',
   'attendance.face.unchecked': 'Yuz tekshirilmadi',
   'attendance.face.score': 'oʻxshashlik {score}%',
-  'attendance.face.useAsRef': 'Yuz namunasi qilish',
-  'attendance.face.refSaved': 'Yuz namunasi yangilandi',
-  'attendance.face.refSet': 'Yuz roʻyxatga olingan',
-  'attendance.face.refNotYet': 'Yuz hali yoʻq: keyingi belgilashda yoziladi',
   'attendance.face.showRef': 'Koʻrsatish',
   'attendance.face.hideRef': 'Yashirish',
-  'attendance.face.clear': 'Qayta roʻyxatga olish',
-  'attendance.face.clearConfirm':
-    '{name}: roʻyxatdagi yuz oʻchirilsinmi? Keyingi belgilashda yangisi yoziladi.',
-  'attendance.face.refAlt': '{name}: roʻyxatdagi yuz',
-  'attendance.settings.requireFace': 'Yuzni tekshirish',
-  'attendance.settings.requireFaceHint':
-    'Yuz suratini xodimning roʻyxatdagi yuzi bilan solishtiradi. Birinchi belgilash uni yozadi; belgilash suratidan almashtirish mumkin. Yuzsiz surat qayta olinadi; mos kelmasa, yoziladi va sizga xabar keladi.',
   'attendance.photo.reviewHintFace':
-    'Bu suratlarni faqat boshqaruvchilar koʻradi. 90 kundan keyin oʻchiriladi. Yuz surati roʻyxatdagi yuzingiz bilan solishtiriladi.',
+    'Bu suratlarni faqat rahbarlar koʻradi, 90 kundan keyin oʻchiriladi. Yuz surati roʻyxatdagi yuzingiz bilan solishtiriladi.',
   'attendance.errors.faceNotFound': 'Suratda yuz topilmadi. Kameraga qarab, yorugʻda qayta oling.',
   'attendance.errors.faceCheckUnavailable':
     'Yuzni tekshirish hozir ishlamayapti. Keyinroq urinib koʻring.',
@@ -2741,54 +2721,33 @@ export const uz = {
     'Bu doʻkonda belgilash uchun jonli yuz tekshiruvi kerak. Ilovani yangilab, qayta urinib koʻring.',
   'attendance.errors.livenessExpired': 'Yuz tekshiruvi juda uzoq davom etdi. Qaytadan boshlang.',
   'attendance.errors.livenessFailed':
-    'Jonli yuz tekshiruvidan oʻtilmadi. Yorugʻ joyda kameraga qarang va koʻrsatma boʻyicha boshingizni buring.',
-  'attendance.errors.borrowNeedsFace':
-    'Hamkasb telefonidan belgilash uchun doʻkonda yuz tekshiruvi yoqilgan boʻlishi kerak.',
-  'attendance.errors.borrowNoFace':
-    'Bu xodimning yuzi hali roʻyxatga olinmagan. Avval oʻz telefonidan bir marta belgilasin.',
-  'attendance.errors.borrowFaceMismatch': 'Yuz tanlangan xodimga mos emas.',
+    'Jonli tekshiruvdan oʻtilmadi. Yaxshi yorugʻlikda kameraga qarang va koʻrsatma boʻyicha boshingizni buring.',
+  'attendance.errors.borrowNoFace': 'Bu hamkasb hali yuzini roʻyxatdan oʻtkazmagan.',
+  'attendance.errors.borrowFaceMismatch': 'Yuz bu hamkasbniki bilan mos emas.',
   'attendance.errors.notColleague':
     'Telefoningizda faqat shu doʻkon hamkasblarini belgilash mumkin.',
   'attendance.live.lookTitle': 'Kameraga qarang',
   'attendance.live.turnLeft': 'Boshingizni chapga buring',
   'attendance.live.turnRight': 'Boshingizni oʻngga buring',
   'attendance.live.autoHint':
-    'Koʻrsatmaga amal qiling: suratlar oʻzi olinadi. Tugmani bosish ham mumkin.',
-  'attendance.live.manualHint':
-    'Koʻrsatma boʻyicha harakat qiling va har safar surat tugmasini bosing.',
+    'Koʻrsatmaga amal qiling: bosh kerakli holatda boʻlganda surat oʻzi olinadi.',
   'attendance.live.guide.noFace': 'Yuz koʻrinmayapti',
   'attendance.live.guide.manyFaces': 'Kadrda faqat bitta yuz boʻlsin',
   'attendance.live.guide.lookStraight': 'Toʻgʻri kameraga qarang',
   'attendance.live.guide.turnMore': 'Yana biroz buring',
   'attendance.live.progress': 'Yuz suratlari {done}/{total}',
-  'attendance.live.failedTitle': 'Jonli yuz tekshiruvidan oʻtilmadi',
-  'attendance.live.failedBody':
-    'Yorugʻ joyda kameraga qarang va koʻrsatma boʻyicha boshingizni sekin buring. Qayta urinib koʻring.',
-  'attendance.live.clockAnyway': 'Baribir belgilash (boshqaruvchiga xabar boradi)',
   'attendance.live.flaggedNote': 'Bu belgi boshqaruvchi tekshirishi uchun ajratildi.',
   'attendance.live.badge.pass': 'Jonli yuz',
   'attendance.live.badge.fail': 'Jonli yuz tasdiqlanmadi',
   'attendance.live.badge.unchecked': 'Jonli yuz tekshirilmadi',
   'attendance.photo.left': 'Chapga burilgan',
   'attendance.photo.right': 'Oʻngga burilgan',
-  'attendance.rules.livenessLine': 'Baʼzan tekshiruv boshni burishni ham soʻraydi',
   'attendance.borrow.open': 'Shu telefonda hamkasbni belgilash',
-  'attendance.borrow.title': 'Hamkasbni belgilash',
-  'attendance.borrow.hint':
-    'Shu doʻkondagi telefoni yonida boʻlmagan hamkasb uchun. U yuzini shu yerda oʻzi suratga oladi; boshqaruvchiga va unga xabar boradi.',
-  'attendance.borrow.emptyTitle': 'Belgilanadigan hamkasb yoʻq',
-  'attendance.borrow.emptyBody':
-    'Bu yerda faqat belgilash yoqilgan shu doʻkon hamkasblari koʻrinadi.',
-  'attendance.borrow.noFace': 'Yuzi hali roʻyxatga olinmagan',
-  'attendance.borrow.forWhom': 'Kim uchun: {name}',
   'attendance.borrow.doneIn': '{name}: keldi {time}',
   'attendance.borrow.doneOut': '{name}: ketdi {time}',
   'attendance.borrow.badge': 'Hamkasb telefoni',
   'attendance.borrow.via': 'Telefon egasi: {name}',
   'attendance.device.newBadge': 'Yangi telefon',
-  'attendance.settings.requireLiveness': 'Jonli yuz tekshiruvi',
-  'attendance.settings.requireLivenessHint':
-    'Odatda bitta yuz surati olinadi va jonli yuz ekani tekshiriladi. Yangi yoki boshqa telefonda, surat noaniq boʻlsa va taxminan har uchinchi belgida xodim boshini chapga va oʻngga ham buradi. Ikki marta oʻtilmasa ham belgilash mumkin, lekin belgi ajratiladi va sizga xabar boradi.',
   'attendance.export.col.checks': 'Tekshiruvlar',
   'attendance.export.check.livenessFailed': 'Jonli yuz tasdiqlanmadi',
   'attendance.export.check.borrowed': 'Telefon egasi: {name}',
@@ -2808,39 +2767,33 @@ export const uz = {
   'notify.attendance.clockedOutForYou.title': 'Siz uchun ketish belgilandi',
   'notify.attendance.clockedOutForYou.body':
     'Siz uchun {store} da {time} da ketish belgilandi, telefon egasi: {owner}. Bu siz boʻlmasangiz, boshqaruvchiga ayting.',
-  'attendance.live.preparingShort': 'Yuzni kuzatish tayyorlanmoqda…',
   'attendance.live.preparing':
     'Yuzni kuzatish tayyorlanmoqda. Birinchi marta bir necha MB yuklanadi, kuting.',
   'attendance.live.preparingPercent': 'Yuzni kuzatish tayyorlanmoqda: {percent}%',
-  'attendance.live.slow':
-    'Tarmoq sekin. Oʻzingiz suratga olishingiz mumkin: koʻrsatma boʻyicha harakat qilib, tugmani bosing.',
-  'attendance.live.shootAnyway': 'Hozir suratga olish',
-  'attendance.errors.consentRequired':
-    'Avval yuz tekshiruviga rozilik bering, keyin qayta belgilang.',
+  'attendance.live.slow': 'Tarmoq sekin, yuzni kuzatish hali yuklanmoqda. Kuting.',
+  'attendance.errors.consentRequired': 'Avval yuz tekshiruviga rozilik bering.',
   'attendance.errors.borrowNoConsent':
     'Bu hamkasb hali yuz tekshiruviga rozilik bermagan. Avval oʻz telefonida rozilik beradi.',
   'attendance.errors.livenessNeeded': 'Bu safar bosh burish ham kerak.',
   'attendance.errors.notRecognized':
     'Yuz bu doʻkondagi hech kimga mos kelmadi. Yorugʻ joyda qayta urining yoki rahbardan belgini qoʻshishni soʻrang.',
-  'attendance.errors.noConsent':
-    'Bu xodim yuz tekshiruviga rozilik bermagan, shuning uchun yuzini roʻyxatga olib boʻlmaydi.',
   'attendance.borrow.identifyHint': 'Hamkasb kameraga qaraydi, ilova kimligini oʻzi aniqlaydi.',
   'attendance.borrow.identifySend': 'Belgilash',
   'attendance.consent.title': 'Yuz tekshiruvi',
   'attendance.consent.intro':
-    'Bu doʻkon har bir kelish va ketish belgisida yuz suratini tekshiradi, shunda hech kim boshqa uchun belgilay olmaydi.',
+    'Kelish va ketish yuz orqali tekshiriladi, hech kim boshqa uchun belgilanmasligi uchun.',
   'attendance.consent.kept':
-    'Roʻyxatdagi yuzingiz va belgi suratlari saqlanadi; belgi suratlari 90 kundan keyin oʻchiriladi.',
+    'Roʻyxatdagi yuz suratlari va belgi suratlari saqlanadi; belgi suratlari 90 kundan keyin oʻchiriladi.',
   'attendance.consent.who':
     'Ularni faqat doʻkoningiz rahbarlari koʻradi. Faqat davomat uchun ishlatiladi.',
   'attendance.consent.withdrawNote':
-    'Rozilikni istalgan vaqtda shu ekranda qaytarib olish mumkin: roʻyxatdagi yuz oʻchiriladi, belgilarni rahbar qoʻlda qoʻshadi.',
+    'Bu ekranda istalgan vaqtda rozilikni qaytarib olishingiz mumkin; roʻyxatdagi yuz oʻchiriladi, belgilarni rahbar qoʻshadi.',
   'attendance.consent.agree': 'Roziman',
   'attendance.consent.notNow': 'Hozir emas',
   'attendance.consent.withdraw': 'Yuz tekshiruvi roziligini qaytarib olish',
   'attendance.consent.withdrawTitle': 'Rozilik qaytarib olinsinmi?',
   'attendance.consent.withdrawBody':
-    'Roʻyxatdagi yuz oʻchiriladi. Shundan keyin bu doʻkonda telefondan belgilab boʻlmaydi; belgilarni rahbar qoʻlda qoʻshadi.',
+    'Roʻyxatdagi yuz oʻchiriladi. Keyin telefonda belgilanib boʻlmaydi, belgilarni rahbar qoʻshadi.',
   'attendance.settings.requireScene': 'Joy surati',
   'attendance.settings.requireSceneHint':
     'Yuzdan keyin orqa kamera bilan xodim turgan joy surati. Oʻchiq: faqat yuz surati.',
@@ -2858,4 +2811,92 @@ export const uz = {
   'notify.attendance.faceLike.title': 'Yuz boshqa xodimga oʻxshaydi',
   'notify.attendance.faceLike.body':
     '{name}: {store} da {time} da belgiladi, lekin yuz {like} ga oʻxshaydi. Belgilash suratlarini tekshiring.',
+  'attendance.errors.faceNotEnrolled':
+    'Avval yuzingizni roʻyxatdan oʻtkazing; rahbar tasdiqlagach belgilanishingiz mumkin.',
+  'attendance.errors.faceMismatch': 'Yuz sizniki bilan mos kelmadi, belgi saqlanmadi.',
+  'attendance.errors.enrollRejected': 'Baʼzi suratlar yaroqsiz. Qaytadan roʻyxatdan oʻting.',
+  'attendance.errors.enrollmentNotFound': 'Bu yuz roʻyxati endi tasdiq kutmayapti.',
+  'attendance.errors.enrollOwn': 'Oʻz yuzingizni tasdiqlay olmaysiz: buni boshqa rahbar qiladi.',
+  'attendance.errors.enrollNoteRequired': 'Qaytarish sababini yozing.',
+  'attendance.errors.enrollFailed': 'Yuz roʻyxatini yuborib boʻlmadi.',
+  'attendance.face.refusedBody':
+    'Yaxshi yorugʻlikda kameraga qarab yana urinib koʻring. Boʻlmasa, rahbardan belgini qoʻshishni soʻrang.',
+  'attendance.face.cannotTitle': 'Bu telefon yuz suratini ola olmaydi',
+  'attendance.face.cannotBody':
+    'Bu yerda kamera yoki yuzni kuzatish ishlamaydi. Hamkasbingiz telefonida belgilaning yoki rahbardan belgini qoʻshishni soʻrang.',
+  'attendance.face.cannotDenied':
+    'Kameraga ruxsat oʻchirilgan. Telefon sozlamalarida Telegramga kamerani ruxsat bering va qayta urining.',
+  'attendance.enroll.start': 'Yuzni roʻyxatdan oʻtkazish',
+  'attendance.enroll.redo': 'Yuzni qayta roʻyxatdan oʻtkazish',
+  'attendance.enroll.again': 'Qaytadan boshlash',
+  'attendance.enroll.submit': 'Tasdiqlashga yuborish',
+  'attendance.enroll.newPending':
+    'Yangi yuz roʻyxati tasdiq kutmoqda; shu paytgacha avvalgisi ishlatiladi.',
+  'attendance.enroll.card.none.title': 'Avval yuzingizni roʻyxatdan oʻtkazing',
+  'attendance.enroll.card.none.body':
+    'Belgilanish faqat yuz orqali. Koʻrsatma boʻyicha olti surat oling (taxminan bir daqiqa); rahbar tasdiqlagach belgilanish mumkin.',
+  'attendance.enroll.card.pending.title': 'Rahbar tasdigʻi kutilmoqda',
+  'attendance.enroll.card.pending.body':
+    'Yuz suratlari rahbarga yuborildi. Tasdiqlangach belgilanish mumkin.',
+  'attendance.enroll.card.rejected.title': 'Yuz roʻyxati qaytarildi',
+  'attendance.enroll.card.rejected.body': 'Yuzingizni qayta roʻyxatdan oʻtkazing.',
+  'attendance.enroll.card.approved.title': 'Yuz roʻyxatdan oʻtgan',
+  'attendance.enroll.card.approved.body': 'Yuz orqali belgilanish mumkin.',
+  'attendance.enroll.card.note': 'Rahbar izohi: {note}',
+  'attendance.enroll.hint':
+    'Koʻrsatmaga amal qiling: bosh kerakli holatda boʻlganda surat oʻzi olinadi. Yaxshi yorugʻlik, shapka va niqobsiz.',
+  'attendance.enroll.reviewTitle': 'Suratlarni tekshiring',
+  'attendance.enroll.reviewHint':
+    'Rahbar suratlarni koʻrib tasdiqlaydi. Ularni faqat doʻkoningiz rahbarlari koʻradi.',
+  'attendance.enroll.pose.front': 'Toʻgʻriga qarang',
+  'attendance.enroll.pose.left': 'Boshingizni chapga buring',
+  'attendance.enroll.pose.right': 'Boshingizni oʻngga buring',
+  'attendance.enroll.pose.up': 'Iyagingizni biroz koʻtaring',
+  'attendance.enroll.pose.down': 'Iyagingizni biroz tushiring',
+  'attendance.enroll.pose.front2': 'Yana toʻgʻriga qarang',
+  'attendance.enroll.rejectedTitle': 'Baʼzi suratlar yaroqsiz',
+  'attendance.enroll.problemLine': '{pose}: {problem}',
+  'attendance.enroll.problem.noFace': 'yuz topilmadi',
+  'attendance.enroll.problem.manyFaces': 'kadrda bir nechta odam bor',
+  'attendance.enroll.problem.small': 'yuz juda uzoqda',
+  'attendance.enroll.problem.dark': 'juda qorongʻi',
+  'attendance.enroll.problem.bright': 'juda yorugʻ',
+  'attendance.enroll.problem.blurry': 'xira',
+  'attendance.enroll.problem.notFacing': 'kameraga qaralmagan',
+  'attendance.enroll.problem.notTurned': 'bosh yetarlicha burilmagan',
+  'attendance.enroll.problem.otherPerson': 'oʻsha odamga oʻxshamaydi',
+  'attendance.enroll.problem.spoof': 'haqiqiy yuzga oʻxshamaydi',
+  'attendance.enroll.cannotBody':
+    'Bu telefonda kamera yoki yuzni kuzatish ishlamaydi. Oʻz Telegram hisobingiz bilan boshqa telefonda roʻyxatdan oʻting.',
+  'attendance.enroll.status.approved': 'Yuz roʻyxatdan oʻtgan',
+  'attendance.enroll.status.pending': 'Yuz tasdiq kutmoqda',
+  'attendance.enroll.status.rejected': 'Yuz qaytarilgan, roʻyxatda yoʻq',
+  'attendance.enroll.status.none': 'Yuz hali roʻyxatdan oʻtmagan',
+  'attendance.enroll.reset': 'Qayta roʻyxatdan oʻtishni soʻrash',
+  'attendance.enroll.resetConfirm':
+    '{name} roʻyxatdagi yuzi oʻchirilsinmi? Qayta roʻyxatdan oʻtib tasdiqlanmaguncha belgilana olmaydi.',
+  'attendance.enroll.photoAlt': '{name}: {pose}',
+  'attendance.rules.faceOnlyLine': 'Faqat yuz orqali belgilanish, suratlar oʻzi olinadi',
+  'attendance.settings.faceOnly': 'Yuz tekshiruvi: doim yoqilgan',
+  'attendance.settings.faceOnlyHint':
+    'Hamma yuz orqali belgilanadi. Har kim yuzini bir marta roʻyxatdan oʻtkazadi, rahbar uni «Tekshirish» boʻlimida tasdiqlaydi.',
+  'attendance.review.enrollTitle': 'Tasdiqlanadigan yuz roʻyxatlari',
+  'attendance.review.enrollInUse': 'Hozir ishlatilayotgan yuz:',
+  'attendance.review.enrollOwn': 'Bu sizning yuzingiz: uni boshqa rahbar tasdiqlaydi.',
+  'attendance.review.enrollApprove': 'Tasdiqlash',
+  'attendance.review.enrollReject': 'Qaytarish',
+  'attendance.review.enrollReasonLabel': 'Qaytarish sababi',
+  'attendance.review.enrollReasonPlaceholder': 'masalan: bu odam emas, juda qorongʻi',
+  'attendance.live.guide.closer': 'Biroz yaqinroq keling',
+  'attendance.live.guide.chinUp': 'Iyagingizni biroz koʻtaring',
+  'attendance.live.guide.chinDown': 'Iyagingizni biroz tushiring',
+  'notify.attendance.faceEnrollPending.title': 'Yuz roʻyxati tasdiq kutmoqda',
+  'notify.attendance.faceEnrollPending.body':
+    '{name} {store} doʻkonida yuzini roʻyxatdan oʻtkazdi. Suratlarni Davomat → Tekshirish boʻlimida koʻring.',
+  'notify.attendance.faceEnrollApproved.title': 'Yuz roʻyxati tasdiqlandi',
+  'notify.attendance.faceEnrollApproved.body':
+    '{store} doʻkonida yuzingiz tasdiqlandi. Endi yuz orqali belgilanishingiz mumkin.',
+  'notify.attendance.faceEnrollRejected.title': 'Yuz roʻyxati qaytarildi',
+  'notify.attendance.faceEnrollRejected.body':
+    '{store} doʻkonidagi yuz roʻyxatingiz qaytarildi. Sabab: «{note}». Qaytadan oʻting.',
 } as const satisfies Record<CatalogKey, string>;
