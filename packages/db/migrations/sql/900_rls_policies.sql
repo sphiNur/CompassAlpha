@@ -51,6 +51,8 @@ DECLARE
     'inventory.attendance_overtime',
     'inventory.attendance_photos',
     'inventory.attendance_face_refs',
+    'inventory.attendance_punch_reviews',
+    'inventory.attendance_face_consents',
     'inventory.suppliers',
     'inventory.categories',
     'inventory.skus',

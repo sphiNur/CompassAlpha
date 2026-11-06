@@ -346,6 +346,9 @@ export const IDEMPOTENT_MUTATIONS = new Set<string>([
   'attendance.payRateSet',
   'attendance.faceRefSet',
   'attendance.faceRefClear',
+  'attendance.faceConsentGive',
+  'attendance.faceConsentWithdraw',
+  'attendance.reviewPunch',
 ]);
 
 function genKey(): string {

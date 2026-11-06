@@ -58,8 +58,9 @@ export interface MonthSheet {
     source: 'self' | 'manual';
     voided: unknown;
     face?: { result: 'match' | 'mismatch' | 'enrolled' | 'unchecked' } | null;
-    liveness?: 'pass' | 'fail' | 'unchecked' | null;
+    liveness?: 'pass' | 'fail' | 'unchecked' | 'passive' | null;
     viaName?: string | null;
+    faceLikeName?: string | null;
     newDevice?: boolean;
   }[];
   days: readonly {
@@ -126,6 +127,7 @@ export async function monthWorkbook(
     const checks = checksBy.get(k) ?? new Set<string>();
     if (p.liveness === 'fail') checks.add(t('check.livenessFailed'));
     if (p.viaName) checks.add(t('check.borrowed', { name: p.viaName }));
+    if (p.faceLikeName) checks.add(t('check.faceLike', { name: p.faceLikeName }));
     if (p.newDevice) checks.add(t('check.newDevice'));
     if (checks.size > 0) checksBy.set(k, checks);
     const slot = punchesBy.get(k) ?? { in: [], out: [] };

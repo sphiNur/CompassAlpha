@@ -8,6 +8,10 @@
  * chose. A face tracker in the page takes each frame by itself once the
  * head is where the prompt asks; the shutter button works too. The server
  * checks the frames; the phone only guides.
+ *
+ * Checks (2026-11-06): the turns come only when the server asks for them
+ * (a risk signal or the 1-in-3 spot check; otherwise one face photo), and
+ * the photo of the place only where the store switched it on.
  */
 import { useEffect, useRef, useState } from 'react';
 import { Banner, Button, Sheet } from '@compass/ui';
@@ -25,7 +29,7 @@ import {
 import { loadFaceTracker, onTrackerProgress, type FaceTracker } from '../../lib/faceTracker';
 
 export type Turn = 'left' | 'right';
-export type PunchPhotos = { face: string; scene: string; left?: string; right?: string };
+export type PunchPhotos = { face: string; scene?: string; left?: string; right?: string };
 type Shot = 'face' | Turn | 'scene';
 type Step = Shot | 'review';
 
@@ -43,25 +47,33 @@ export function PunchCamera({
   open,
   kind,
   faceCheck,
-  turns,
+  turns: askedTurns,
+  scene,
   forName,
+  identifying,
   busy,
   onCancel,
   onConfirm,
 }: {
   open: boolean;
-  kind: 'in' | 'out';
+  /** null: a colleague found by their face; the server knows their next punch. */
+  kind: 'in' | 'out' | null;
   faceCheck: boolean;
-  /** The liveness turn order from the server; null = no liveness check. */
+  /** The liveness turn order from the server; null or empty = no turns. */
   turns: Turn[] | null;
+  /** The store asks for a photo of the place too. */
+  scene: boolean;
   /** Clocking a colleague in on this phone: their name. */
   forName?: string | null;
+  /** A colleague clocks on this phone: the face says who. */
+  identifying?: boolean;
   busy: boolean;
   onCancel: () => void;
   onConfirm: (photos: PunchPhotos) => void;
 }) {
   const i18n = useI18n();
-  const sequence: Shot[] = turns ? ['face', ...turns, 'scene'] : ['face', 'scene'];
+  const turns = askedTurns && askedTurns.length > 0 ? askedTurns : null;
+  const sequence: Shot[] = ['face', ...(turns ?? []), ...(scene ? (['scene'] as const) : [])];
   const [step, setStep] = useState<Step>('face');
   const [shots, setShots] = useState<Partial<Record<Shot, string>>>({});
   const [problem, setProblem] = useState<'unsupported' | 'denied' | 'unavailable' | null>(null);
@@ -232,7 +244,7 @@ export function PunchCamera({
                   : 'attendance.live.manualHint',
             )
           : i18n.t('attendance.photo.faceHint');
-  const reviewShots: Shot[] = turns ? ['face', ...turns, 'scene'] : ['face', 'scene'];
+  const reviewShots = sequence;
   const front = step === 'face' || step === 'left' || step === 'right';
 
   return (
@@ -246,6 +258,10 @@ export function PunchCamera({
         {forName ? (
           <p className="text-old-label font-semibold text-[var(--c-fg)]">
             {i18n.t('attendance.borrow.forWhom', { name: forName })}
+          </p>
+        ) : identifying ? (
+          <p className="text-old-label font-semibold text-[var(--c-fg)]">
+            {i18n.t('attendance.borrow.identifyHint')}
           </p>
         ) : null}
         {step !== 'review' ? (
@@ -360,7 +376,6 @@ export function PunchCamera({
             disabled={reviewShots.some((s) => !shots[s])}
             onClick={() =>
               shots.face &&
-              shots.scene &&
               onConfirm({
                 face: shots.face,
                 scene: shots.scene,
@@ -369,7 +384,13 @@ export function PunchCamera({
               })
             }
           >
-            {i18n.t(kind === 'in' ? 'attendance.clock.in' : 'attendance.clock.out')}
+            {i18n.t(
+              kind === null
+                ? 'attendance.borrow.identifySend'
+                : kind === 'in'
+                  ? 'attendance.clock.in'
+                  : 'attendance.clock.out',
+            )}
           </Button>
         ) : problem ? (
           <Button block size="lg" onClick={() => fileRef.current?.click()}>

@@ -11,8 +11,10 @@ import { useAuthStore } from '../../stores/authStore';
 import { AttendanceRoster, AttendanceSheet } from './AttendanceManage';
 import { AttendanceExport } from './AttendanceExport';
 import { AttendanceSettings } from './AttendanceSettings';
+import { AttendanceReview } from './AttendanceReview';
+import { trpc } from '../../lib/trpc';
 
-type View = 'sheet' | 'roster' | 'settings';
+type View = 'sheet' | 'review' | 'roster' | 'settings';
 
 export function AttendanceAdmin() {
   const i18n = useI18n();
@@ -34,6 +36,11 @@ export function AttendanceAdmin() {
   const [picked, setPicked] = useState<string | null>(null);
   const storeId = picked && stores.some((st) => st.id === picked) ? picked : preferred;
   const [view, setView] = useState<View>('sheet');
+  const queue = trpc.attendance.reviewQueue.useQuery(
+    { storeId: storeId ?? '' },
+    { enabled: !!storeId, refetchInterval: 60_000 },
+  );
+  const toReview = queue.data?.punches.length ?? 0;
 
   if (!storeId) {
     return (
@@ -67,6 +74,13 @@ export function AttendanceAdmin() {
           ariaLabel={i18n.t('admin.section.attendance')}
           options={[
             { value: 'sheet', label: i18n.t('attendance.view.sheet') },
+            {
+              value: 'review',
+              label:
+                toReview > 0
+                  ? `${i18n.t('attendance.view.review')} ${toReview}`
+                  : i18n.t('attendance.view.review'),
+            },
             { value: 'roster', label: i18n.t('attendance.view.roster') },
             { value: 'settings', label: i18n.t('attendance.view.settings') },
           ]}
@@ -78,6 +92,7 @@ export function AttendanceAdmin() {
           <AttendanceExport key={`export-${storeId}`} storeId={storeId} />
         </>
       ) : null}
+      {view === 'review' ? <AttendanceReview key={storeId} storeId={storeId} /> : null}
       {view === 'roster' ? <AttendanceRoster key={storeId} storeId={storeId} /> : null}
       {view === 'settings' ? <AttendanceSettings key={storeId} storeId={storeId} /> : null}
     </div>

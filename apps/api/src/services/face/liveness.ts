@@ -88,7 +88,8 @@ export const LIVENESS = {
 export type LivenessFailure = 'noFace' | 'notFacing' | 'notTurned' | 'otherPerson' | 'spoof';
 
 export interface LivenessVerdict {
-  result: 'pass' | 'fail' | 'unchecked';
+  /** `passive`: no turns asked, one photo plainly of a real face. */
+  result: 'pass' | 'fail' | 'unchecked' | 'passive';
   /** Mean real-face probability, when the frames were read. */
   score: number | null;
   failures: LivenessFailure[];

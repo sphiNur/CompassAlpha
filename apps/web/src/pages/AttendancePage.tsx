@@ -9,9 +9,25 @@
  * server checks both and records its own time.
  * Nothing is queued offline: a clock-in must happen where and when it
  * says it did.
+ *
+ * Checks (2026-11-06): the person agrees in the app before their face is
+ * used; the head turns come only when the server asks (a risk signal or
+ * the 1-in-3 spot check), and the server may ask for them after a plain
+ * face photo too. A colleague clocking on this phone is found by their
+ * face, not picked from a list.
  */
 import { useEffect, useRef, useState } from 'react';
-import { Banner, Button, DataState, EmptyState, PageHeader, Sheet, Textarea } from '@compass/ui';
+import {
+  Banner,
+  Button,
+  ConfirmSheet,
+  DataState,
+  EmptyState,
+  PageHeader,
+  Sheet,
+  Textarea,
+} from '@compass/ui';
+import { ATTENDANCE_FACE_CONSENT_VERSION } from '@compass/contracts/limits';
 import { haptic } from '../hooks/useTelegram';
 import { NoStoreYet, useNoStoreYet } from '../components/NoStoreYet';
 import { useStoreContext } from '../components/StoreSwitcher';
@@ -25,7 +41,7 @@ import { minutesText } from '../lib/attendanceFormat';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
 import { loadFaceTracker } from '../lib/faceTracker';
-import { BorrowSheet } from './attendance/BorrowSheet';
+import { FaceConsentSheet } from './attendance/FaceConsentSheet';
 import { PunchCamera, type PunchPhotos, type Turn } from './attendance/PunchCamera';
 
 type Fix = { lat: number; lng: number; accuracy: number };
@@ -96,7 +112,8 @@ function ClockPanel({ storeId }: { storeId: string }) {
   // One punch attempt: where, for whom, and the liveness challenge.
   type Attempt = {
     location: Fix | null;
-    forMember: { id: string; name: string; kind: 'in' | 'out' } | null;
+    /** A colleague clocks on this phone; their face says who. */
+    identify: boolean;
     challenge: { token: string; steps: Turn[] } | null;
   };
   type PunchVars = Parameters<typeof punch.mutate>[0];
@@ -111,10 +128,23 @@ function ClockPanel({ storeId }: { storeId: string }) {
   const [liveFails, setLiveFails] = useState(0);
   const [lastFailed, setLastFailed] = useState<PunchVars | null>(null);
   const [preparing, setPreparing] = useState(false);
-  const [borrowOpen, setBorrowOpen] = useState(false);
+  // The face-check consent, asked before the first face punch.
+  const [consentFor, setConsentFor] = useState<{ identify: boolean } | null>(null);
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const lastAttempt = useRef<Attempt | null>(null);
+  const consentGive = trpc.attendance.faceConsentGive.useMutation({
+    onSuccess: () => void utils.attendance.me.invalidate(),
+  });
+  const consentWithdraw = trpc.attendance.faceConsentWithdraw.useMutation({
+    onSuccess: () => {
+      setWithdrawOpen(false);
+      void utils.attendance.me.invalidate();
+    },
+    onError: errToast('attendance.errors.punchFailed'),
+  });
   const challenge = trpc.attendance.livenessChallenge.useMutation();
   const punch = trpc.attendance.punch.useMutation({
-    onSuccess: (data, vars) => {
+    onSuccess: (data) => {
       haptic('success');
       setCamera(null);
       setOvertimeAsk(null);
@@ -124,15 +154,25 @@ function ClockPanel({ storeId }: { storeId: string }) {
       setDone({
         kind: data.kind,
         time: data.time,
-        forName: vars.forMemberId ? (doneNames.current.get(vars.forMemberId) ?? null) : null,
-        flagged: data.liveness === 'fail' || data.newDevice,
+        forName: data.forName,
+        flagged: data.liveness === 'fail' || data.newDevice || data.face === 'mismatch',
       });
       void utils.attendance.me.invalidate();
-      void utils.attendance.colleagues.invalidate();
     },
     onError: (err, vars) => {
       setCamera(null);
       const key = serverErrorKey(err);
+      // The server wants the head turns this time: the same punch again
+      // with them (a fresh challenge that asks for the turns).
+      if (key === 'attendance.errors.livenessNeeded' && lastAttempt.current) {
+        haptic('warning');
+        void retryWithTurns(lastAttempt.current);
+        return;
+      }
+      if (key === 'attendance.errors.consentRequired') {
+        setConsentFor({ identify: false });
+        return;
+      }
       if (key === 'attendance.errors.overtimeReasonRequired') {
         haptic('warning');
         setOvertimeAsk({ minutes: Number(errorVars(err).minutes ?? 0), vars });
@@ -147,7 +187,6 @@ function ClockPanel({ storeId }: { storeId: string }) {
       errToast('attendance.errors.punchFailed')(err);
     },
   });
-  const doneNames = useRef(new Map<string, string>());
 
   const store = me.data?.stores.find((x) => x.storeId === storeId) ?? null;
   // Fetch the liveness face tracker while the page is open, not when the
@@ -157,8 +196,14 @@ function ClockPanel({ storeId }: { storeId: string }) {
     if (wantTracker) void loadFaceTracker();
   }, [wantTracker]);
 
-  const begin = async (forMember: Attempt['forMember']) => {
+  const begin = async (identify: boolean, consented = false) => {
     if (!store || !deviceId) return;
+    // The phone's own person agrees before their face is used; a
+    // colleague agreed on their own phone (the server checks).
+    if (store.rules.requireFace && !identify && !consented && !me.data?.faceConsent) {
+      setConsentFor({ identify });
+      return;
+    }
     setLocationProblem(null);
     setDone(null);
     let location: Fix | null = null;
@@ -174,15 +219,20 @@ function ClockPanel({ storeId }: { storeId: string }) {
       }
       setLocating(false);
     }
-    if (!store.rules.requirePhoto && !forMember) {
-      send({ location, forMember: null, challenge: null }, undefined);
+    if (!store.rules.requirePhoto && !identify) {
+      send({ location, identify: false, challenge: null }, undefined);
       return;
     }
     let ch: Attempt['challenge'] = null;
-    if (store.rules.requireLiveness || forMember) {
+    if (store.rules.requireLiveness || identify) {
       setPreparing(true);
       try {
-        const c = await challenge.mutateAsync({ storeId, forMemberId: forMember?.id });
+        const c = await challenge.mutateAsync({
+          storeId,
+          identify: identify || undefined,
+          deviceId,
+          location: location ?? undefined,
+        });
         ch = { token: c.token, steps: c.steps };
       } catch (err) {
         errToast('attendance.errors.punchFailed')(err);
@@ -191,24 +241,42 @@ function ClockPanel({ storeId }: { storeId: string }) {
         setPreparing(false);
       }
     }
-    if (forMember) doneNames.current.set(forMember.id, forMember.name);
-    setCamera({ location, forMember, challenge: ch });
+    setCamera({ location, identify, challenge: ch });
+  };
+
+  /** The server asked for the turns after all: a challenge that has them. */
+  const retryWithTurns = async (attempt: Attempt) => {
+    setPreparing(true);
+    try {
+      const c = await challenge.mutateAsync({
+        storeId,
+        identify: attempt.identify || undefined,
+        deviceId: deviceId ?? undefined,
+        location: attempt.location ?? undefined,
+        force: true,
+      });
+      setCamera({ ...attempt, challenge: { token: c.token, steps: c.steps } });
+    } catch (err) {
+      errToast('attendance.errors.punchFailed')(err);
+    } finally {
+      setPreparing(false);
+    }
   };
 
   const send = (attempt: Attempt, photos: PunchPhotos | undefined) => {
     if (!store || !deviceId) return;
+    lastAttempt.current = attempt;
     punch.mutate({
       storeId,
-      kind: attempt.forMember?.kind ?? store.nextKind,
+      kind: attempt.identify ? undefined : store.nextKind,
       deviceId,
       platform: devicePlatform(),
       location: attempt.location,
       photos: photos ? { face: photos.face, scene: photos.scene } : undefined,
-      liveness:
-        attempt.challenge && photos?.left && photos.right
-          ? { token: attempt.challenge.token, left: photos.left, right: photos.right }
-          : undefined,
-      forMemberId: attempt.forMember?.id,
+      liveness: attempt.challenge
+        ? { token: attempt.challenge.token, left: photos?.left, right: photos?.right }
+        : undefined,
+      identify: attempt.identify || undefined,
     });
   };
 
@@ -216,7 +284,7 @@ function ClockPanel({ storeId }: { storeId: string }) {
   const sendAnyway = async () => {
     if (!lastFailed?.liveness) return;
     try {
-      const c = await challenge.mutateAsync({ storeId });
+      const c = await challenge.mutateAsync({ storeId, force: true });
       punch.mutate({
         ...lastFailed,
         liveness: { ...lastFailed.liveness, token: c.token },
@@ -298,7 +366,7 @@ function ClockPanel({ storeId }: { storeId: string }) {
               {liveFails > 0 && lastFailed ? (
                 <Banner tone="danger" title={i18n.t('attendance.live.failedTitle')}>
                   <p>{i18n.t('attendance.live.failedBody')}</p>
-                  {liveFails >= 2 && !lastFailed.forMemberId ? (
+                  {liveFails >= 2 && !lastFailed.identify ? (
                     <Button
                       variant="secondary"
                       size="sm"
@@ -340,7 +408,7 @@ function ClockPanel({ storeId }: { storeId: string }) {
                 variant={store.nextKind === 'in' ? 'primary' : 'secondary'}
                 loading={locating || preparing || punch.isPending}
                 disabled={!online || !deviceId || punch.isPending || locating || preparing}
-                onClick={() => void begin(null)}
+                onClick={() => void begin(false)}
               >
                 {locating
                   ? i18n.t('attendance.clock.locating')
@@ -356,6 +424,7 @@ function ClockPanel({ storeId }: { storeId: string }) {
                   <li>{i18n.t('attendance.rules.geoLine', { radius: store.rules.geo.radiusM })}</li>
                 ) : null}
                 {store.rules.requirePhoto ? <li>{i18n.t('attendance.rules.photoLine')}</li> : null}
+                {store.rules.requireScene ? <li>{i18n.t('attendance.rules.sceneLine')}</li> : null}
                 {store.rules.requireLiveness ? (
                   <li>{i18n.t('attendance.rules.livenessLine')}</li>
                 ) : null}
@@ -365,26 +434,51 @@ function ClockPanel({ storeId }: { storeId: string }) {
                   variant="ghost"
                   block
                   disabled={!online || !deviceId || punch.isPending || locating || preparing}
-                  onClick={() => setBorrowOpen(true)}
+                  onClick={() => void begin(true)}
                 >
                   {i18n.t('attendance.borrow.open')}
                 </Button>
               ) : null}
-              <BorrowSheet
-                open={borrowOpen}
-                storeId={storeId}
-                onClose={() => setBorrowOpen(false)}
-                onPick={(m) => {
-                  setBorrowOpen(false);
-                  void begin({ id: m.memberId, name: m.name, kind: m.nextKind });
+              {store.rules.requireFace && me.data?.faceConsent ? (
+                <Button variant="ghost" size="sm" onClick={() => setWithdrawOpen(true)}>
+                  {i18n.t('attendance.consent.withdraw')}
+                </Button>
+              ) : null}
+              <FaceConsentSheet
+                open={consentFor !== null}
+                pending={consentGive.isPending}
+                onCancel={() => setConsentFor(null)}
+                onAgree={() => {
+                  const next = consentFor;
+                  consentGive.mutate(
+                    { version: ATTENDANCE_FACE_CONSENT_VERSION },
+                    {
+                      onSuccess: () => {
+                        setConsentFor(null);
+                        if (next) void begin(next.identify, true);
+                      },
+                      onError: errToast('attendance.errors.punchFailed'),
+                    },
+                  );
                 }}
+              />
+              <ConfirmSheet
+                open={withdrawOpen}
+                title={i18n.t('attendance.consent.withdrawTitle')}
+                body={i18n.t('attendance.consent.withdrawBody')}
+                confirmLabel={i18n.t('attendance.consent.withdraw')}
+                danger
+                pending={consentWithdraw.isPending}
+                onConfirm={() => consentWithdraw.mutate()}
+                onCancel={() => setWithdrawOpen(false)}
               />
               <PunchCamera
                 open={camera !== null}
-                kind={camera?.forMember?.kind ?? store.nextKind}
+                kind={camera?.identify ? null : store.nextKind}
                 faceCheck={store.rules.requireFace}
                 turns={camera?.challenge?.steps ?? null}
-                forName={camera?.forMember?.name ?? null}
+                scene={store.rules.requireScene}
+                identifying={camera?.identify ?? false}
                 busy={punch.isPending}
                 onCancel={() => setCamera(null)}
                 onConfirm={(photos) => camera && send(camera, photos)}

@@ -40,7 +40,11 @@ import {
   AttendanceShiftDeleteInputSchema,
   AttendanceShiftSaveInputSchema,
   AttendanceVoidPunchInputSchema,
+  AttendanceFaceConsentInputSchema,
+  AttendanceReviewPunchInputSchema,
+  AttendanceReviewQueueInputSchema,
 } from '@compass/contracts';
+import { ATTENDANCE_FACE_CONSENT_VERSION } from '@compass/contracts/limits';
 import { z } from 'zod';
 import { attendance as rules, dateInTz, todayInTz } from '@compass/domain';
 import { hub } from '../../realtime/hub';
@@ -52,7 +56,15 @@ import {
 import { storeTimeZone } from '../../services/timeZone';
 import { cosine, faceFeature, MATCH_THRESHOLD, type FaceResult } from '../../services/face';
 import {
+  CHECK_LINES,
+  faceInGrayZone,
+  identify,
+  spotCheck,
+  type KnownFace,
+} from '../../services/face/checks';
+import {
   evaluateLiveness,
+  randomSteps,
   signLivenessToken,
   verifyLivenessToken,
   type LivenessVerdict,
@@ -78,6 +90,9 @@ const DAY = 24 * 3600_000;
 const MAX_SHEET_DAYS = 62;
 /** A phone fix this coarse cannot place anyone inside a store. */
 const MAX_ACCURACY_M = 300;
+/** How far back 待核对 looks, and how many punches it lists at most. */
+const REVIEW_DAYS = 14;
+const REVIEW_LIMIT = 200;
 /** Slack for the phone's own uncertainty, capped. */
 const MAX_ACCURACY_SLACK_M = 50;
 
@@ -162,6 +177,8 @@ function policyView(p: PolicyRow | undefined) {
     requireFace: (p?.requirePhoto ?? false) && (p?.requireFace ?? false),
     requireLiveness:
       (p?.requirePhoto ?? false) && (p?.requireFace ?? false) && (p?.requireLiveness ?? false),
+    /** A photo of the place too (off by default since 2026-11-06). */
+    requireScene: (p?.requirePhoto ?? false) && (p?.requireScene ?? false),
   };
 }
 
@@ -257,6 +274,79 @@ async function clockEnabled(tx: DB, memberIds: readonly string[]): Promise<Set<s
   }
   for (const r of rows) if (r.effect === 'deny') out.delete(r.memberId);
   return out;
+}
+
+/** The challenge's `mid` when the face itself says whose punch it is. */
+const IDENTIFY_MEMBER = '*';
+
+async function hasFaceConsent(tx: DB, memberId: string): Promise<boolean> {
+  const row = await tx.query.attendanceFaceConsents.findFirst({
+    where: (c, { eq: eq2 }) => eq2(c.memberId, memberId),
+  });
+  return !!row;
+}
+
+/**
+ * The store's people with a face reference who agreed to its use:
+ * candidates for "whose face is this". `colleagues` keeps only those who
+ * clock in (a borrowed phone may only clock a colleague).
+ */
+async function knownFaces(
+  tx: DB,
+  orgId: string,
+  storeId: string,
+  opts: { except?: string; colleagues?: boolean } = {},
+): Promise<KnownFace[]> {
+  const roster = await storeRoster(tx, orgId, storeId);
+  let ids = roster.map((m) => m.memberId).filter((id) => id !== opts.except);
+  if (opts.colleagues) {
+    const enabled = await clockEnabled(tx, ids);
+    ids = ids.filter((id) => enabled.has(id));
+  }
+  if (ids.length === 0) return [];
+  const rows = await tx
+    .select({
+      memberId: s.attendanceFaceRefs.memberId,
+      feature: s.attendanceFaceRefs.feature,
+      name: s.users.displayName,
+    })
+    .from(s.attendanceFaceRefs)
+    .innerJoin(
+      s.attendanceFaceConsents,
+      eq(s.attendanceFaceConsents.memberId, s.attendanceFaceRefs.memberId),
+    )
+    .innerJoin(s.members, eq(s.members.id, s.attendanceFaceRefs.memberId))
+    .innerJoin(s.users, eq(s.users.id, s.members.userId))
+    .where(inArray(s.attendanceFaceRefs.memberId, ids));
+  return rows.map((r) => ({ memberId: r.memberId, name: r.name ?? '—', feature: r.feature }));
+}
+
+/**
+ * Risk signals before a punch: a phone other than the bound one, and the
+ * 1-in-3 spot check (keyed on the person, the store's day and how many
+ * punches they made there today).
+ */
+async function punchRisk(tx: DB, session: Session, store: StoreRow, deviceId: string | null) {
+  const device = await tx.query.attendanceDevices.findFirst({
+    where: (d, { eq: eq2 }) => eq2(d.memberId, session.memberId),
+  });
+  const newDevice = !!device && (!deviceId || device.deviceHash !== hashDeviceId(deviceId));
+  const tz = tzOf(store, session);
+  const today = todayInTz(tz);
+  const since = new Date(Date.now() - 2 * DAY);
+  const recent = await tx
+    .select({ at: s.attendancePunches.punchedAt })
+    .from(s.attendancePunches)
+    .where(
+      and(
+        eq(s.attendancePunches.memberId, session.memberId),
+        eq(s.attendancePunches.storeId, store.id),
+        isNull(s.attendancePunches.voidedAt),
+        gte(s.attendancePunches.punchedAt, since),
+      ),
+    );
+  const punchesToday = recent.filter((r) => dateInTz(r.at, tz) === today).length;
+  return { newDevice, spot: spotCheck(session.memberId, today, punchesToday) };
 }
 
 function shiftView(row: typeof s.attendanceShifts.$inferSelect, tz: string) {
@@ -366,6 +456,7 @@ async function buildSheet(tx: DB, session: Session, store: StoreRow, from: strin
             kind: s.attendancePhotos.kind,
             faceResult: s.attendancePhotos.faceResult,
             faceScore: s.attendancePhotos.faceScore,
+            faceLikeMemberId: s.attendancePhotos.faceLikeMemberId,
           })
           .from(s.attendancePhotos)
           .where(
@@ -376,10 +467,28 @@ async function buildSheet(tx: DB, session: Session, store: StoreRow, from: strin
           );
   const photoKinds = new Map<string, ('face' | 'scene' | 'left' | 'right')[]>();
   const faceOf = new Map<string, { result: string; score: number | null }>();
+  const faceLikeOf = new Map<string, string>();
   for (const ph of photoRows) {
     photoKinds.set(ph.punchId, [...(photoKinds.get(ph.punchId) ?? []), ph.kind]);
     if (ph.faceResult) faceOf.set(ph.punchId, { result: ph.faceResult, score: ph.faceScore });
+    if (ph.faceLikeMemberId) faceLikeOf.set(ph.punchId, ph.faceLikeMemberId);
   }
+  const reviewed =
+    punches.length === 0
+      ? new Set<string>()
+      : new Set(
+          (
+            await tx
+              .select({ punchId: s.attendancePunchReviews.punchId })
+              .from(s.attendancePunchReviews)
+              .where(
+                inArray(
+                  s.attendancePunchReviews.punchId,
+                  punches.map((p) => p.id),
+                ),
+              )
+          ).map((r) => r.punchId),
+        );
   const memberIds = new Set([
     ...roster.map((m) => m.memberId),
     ...shifts.map((x) => x.memberId),
@@ -391,6 +500,7 @@ async function buildSheet(tx: DB, session: Session, store: StoreRow, from: strin
   const actorIds = punches
     .flatMap((p) => [p.createdByMemberId, p.voidedByMemberId, p.viaMemberId])
     .concat(overtime.map((o) => o.decidedByMemberId ?? ''))
+    .concat([...faceLikeOf.values()])
     .filter((x): x is string => !!x);
   const extra = [...new Set([...missingNames, ...actorIds])];
   if (extra.length > 0) {
@@ -484,7 +594,9 @@ async function buildSheet(tx: DB, session: Session, store: StoreRow, from: strin
       liveness: p.liveness,
       livenessScore: p.livenessScore,
       viaName: p.viaMemberId ? (names.get(p.viaMemberId) ?? '—') : null,
+      faceLikeName: faceLikeOf.has(p.id) ? (names.get(faceLikeOf.get(p.id)!) ?? '—') : null,
       newDevice: p.newDevice,
+      reviewed: reviewed.has(p.id),
       createdByName: p.source === 'manual' ? (names.get(p.createdByMemberId) ?? null) : null,
       voided: p.voidedAt
         ? {
@@ -588,6 +700,9 @@ export const attendanceRouter = router({
       const device = await tx.query.attendanceDevices.findFirst({
         where: (d, { eq: eq2 }) => eq2(d.memberId, session.memberId),
       });
+      const consent = await tx.query.attendanceFaceConsents.findFirst({
+        where: (c, { eq: eq2 }) => eq2(c.memberId, session.memberId),
+      });
       const now = new Date();
       const out = [];
       for (const store of stores) {
@@ -641,6 +756,7 @@ export const attendanceRouter = router({
             requirePhoto: view.requirePhoto,
             requireFace: view.requireFace,
             requireLiveness: view.requireLiveness,
+            requireScene: view.requireScene,
           },
           nextKind: rules.nextPunchKind(
             punches.map((p) => ({ kind: p.kind, at: p.punchedAt })),
@@ -668,29 +784,42 @@ export const attendanceRouter = router({
           matches:
             device && input.deviceId ? device.deviceHash === hashDeviceId(input.deviceId) : null,
         },
+        /** Agreed to the face check (the current wording's version). */
+        faceConsent:
+          !!consent && consent.version >= ATTENDANCE_FACE_CONSENT_VERSION
+            ? { at: consent.consentedAt.toISOString() }
+            : null,
       };
     });
   }),
 
   /**
-   * A fresh liveness challenge: the turn order the phone must prompt, in a
-   * signed token good for one punch and three minutes. `forMemberId` when
-   * clocking a colleague in on this phone.
+   * The liveness challenge for one punch: whether it needs the head turns
+   * (a risk signal or the 1-in-3 spot check, 2026-11-06) and their order,
+   * signed for one punch and three minutes. `identify` = a colleague
+   * clocking on this phone, found by their face; `forMemberId` = named.
    */
   livenessChallenge: authedProcedure
     .input(AttendanceLivenessChallengeInputSchema)
     .mutation(async ({ ctx, input }) => {
       const session = ctx.session!;
-      const target = input.forMemberId ?? session.memberId;
-      await ctx.withOrg(async (tx) => {
+      const named =
+        input.forMemberId && input.forMemberId !== session.memberId ? input.forMemberId : null;
+      const borrowed = !!named || !!input.identify;
+      const turns = await ctx.withOrg(async (tx) => {
         const store = await authorize(tx, session, input.storeId, 'attendance.clock');
-        if (target !== session.memberId) await assertColleague(tx, session, store.id, target);
+        if (named) await assertColleague(tx, session, store.id, named);
+        // Nobody vouches for a borrowed phone: always the turns.
+        if (borrowed || input.force) return true;
+        const risk = await punchRisk(tx, session, store, input.deviceId ?? null);
+        return risk.newDevice || risk.spot;
       });
       return signLivenessToken({
         org: session.orgId,
-        mid: target,
+        mid: input.identify ? IDENTIFY_MEMBER : (named ?? session.memberId),
         by: session.memberId,
         storeId: input.storeId,
+        steps: turns ? randomSteps() : [],
       });
     }),
 
@@ -769,12 +898,20 @@ export const attendanceRouter = router({
 
   punch: idempotentMutation.input(AttendancePunchInputSchema).mutation(async ({ ctx, input }) => {
     const session = ctx.session!;
-    const target = input.forMemberId ?? session.memberId;
-    const borrowed = target !== session.memberId;
+    const named =
+      input.forMemberId && input.forMemberId !== session.memberId ? input.forMemberId : null;
+    const identifying = !!input.identify && !named;
+    const borrowed = identifying || !!named;
     // The face and liveness checks (~0.5 s a frame) run before the
     // transaction, not inside it.
     const pre = policyView(await ctx.withOrg((tx) => loadPolicy(tx, input.storeId)));
     if (borrowed && !pre.requireFace) fail('FORBIDDEN', 'borrowNeedsFace');
+    // The person agrees in the app before their face is used (2026-11-06).
+    if (pre.requireFace && !borrowed) {
+      if (!(await ctx.withOrg((tx) => hasFaceConsent(tx, session.memberId)))) {
+        fail('BAD_REQUEST', 'consentRequired');
+      }
+    }
     let checked: FaceResult | null = null;
     if (input.photos && pre.requireFace) {
       checked = await faceFeature(photoBytes(input.photos.face));
@@ -783,6 +920,7 @@ export const attendanceRouter = router({
     // A borrowed phone always asks for liveness: nobody else vouches for it.
     let live: LivenessVerdict | null = null;
     let nonce: string | null = null;
+    let turnsAsked = false;
     if (pre.requireLiveness || borrowed) {
       if (!input.photos || !input.liveness) fail('BAD_REQUEST', 'livenessRequired');
       const claims = await verifyLivenessToken(input.liveness.token);
@@ -790,33 +928,66 @@ export const attendanceRouter = router({
         !claims ||
         claims.org !== session.orgId ||
         claims.by !== session.memberId ||
-        claims.mid !== target ||
+        claims.mid !== (identifying ? IDENTIFY_MEMBER : (named ?? session.memberId)) ||
         claims.storeId !== input.storeId
       ) {
         fail('BAD_REQUEST', 'livenessExpired');
       }
       nonce = claims.nonce;
-      const left = await faceFeature(photoBytes(input.liveness.left));
-      const right = await faceFeature(photoBytes(input.liveness.right));
-      live = evaluateLiveness(checked, left, right);
-      if (live.result === 'fail' && (borrowed || !input.acceptLivenessFail)) {
-        fail('BAD_REQUEST', 'livenessFailed', { context: { failures: live.failures } });
+      turnsAsked = claims.steps.length > 0;
+      if (borrowed && !turnsAsked) fail('BAD_REQUEST', 'livenessNeeded');
+      if (turnsAsked) {
+        if (!input.liveness.left || !input.liveness.right) fail('BAD_REQUEST', 'livenessRequired');
+        const left = await faceFeature(photoBytes(input.liveness.left));
+        const right = await faceFeature(photoBytes(input.liveness.right));
+        live = evaluateLiveness(checked, left, right);
+        if (live.result === 'fail' && (borrowed || !input.acceptLivenessFail)) {
+          fail('BAD_REQUEST', 'livenessFailed', { context: { failures: live.failures } });
+        }
+        if (live.result === 'unchecked' && borrowed) fail('BAD_REQUEST', 'faceCheckUnavailable');
+      } else if (!checked) {
+        live = { result: 'unchecked', score: null, failures: [] };
+      } else if (checked.found && checked.real >= CHECK_LINES.realSure) {
+        // One face photo, plainly a real face: no turns this time.
+        live = { result: 'passive', score: checked.real, failures: [] };
+      } else {
+        // Not sure it is a real face: the same punch again with the turns.
+        fail('BAD_REQUEST', 'livenessNeeded');
       }
-      if (live.result === 'unchecked' && borrowed) fail('BAD_REQUEST', 'faceCheckUnavailable');
     }
     return ctx.withOrg(async (tx) => {
       const store = await authorize(tx, session, input.storeId, 'attendance.clock');
-      if (borrowed) await assertColleague(tx, session, store.id, target);
+      // Whose punch: this phone's person, a named colleague, or the
+      // colleague the face belongs to.
+      let target = named ?? session.memberId;
+      if (identifying) {
+        if (!checked || !checked.found) fail('BAD_REQUEST', 'faceCheckUnavailable');
+        const known = await knownFaces(tx, session.orgId, store.id, {
+          except: session.memberId,
+          colleagues: true,
+        });
+        const who = identify(checked.feature, known);
+        if (!who) fail('FORBIDDEN', 'notRecognized');
+        target = who.memberId;
+      }
+      if (borrowed) {
+        await assertColleague(tx, session, store.id, target);
+        if (!(await hasFaceConsent(tx, target))) fail('FORBIDDEN', 'borrowNoConsent');
+      }
       // One punch at a time per member: the alternation check below reads
       // what the previous punch wrote.
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${'attendance:' + target}))`);
       const policy = policyView(await loadPolicy(tx, store.id));
       const now = new Date();
-      // Face + surroundings, taken on the spot (owner request 2026-11-05).
+      // Face (and, where asked, the place), taken on the spot.
       if (policy.requirePhoto && !input.photos) fail('BAD_REQUEST', 'photoRequired');
+      if (policy.requireScene && !input.photos?.scene) fail('BAD_REQUEST', 'photoRequired');
       if (borrowed && !policy.requireFace) fail('FORBIDDEN', 'borrowNeedsFace');
       const photos = input.photos
-        ? { face: photoBytes(input.photos.face), scene: photoBytes(input.photos.scene) }
+        ? {
+            face: photoBytes(input.photos.face),
+            scene: input.photos.scene ? photoBytes(input.photos.scene) : null,
+          }
         : null;
 
       // A failed liveness check never becomes, or is compared as, a reference.
@@ -829,6 +1000,21 @@ export const attendanceRouter = router({
       if (borrowed && face?.result !== 'match') {
         if (face?.result === 'unchecked') fail('BAD_REQUEST', 'faceCheckUnavailable');
         fail('FORBIDDEN', face?.result === 'enrolled' ? 'borrowNoFace' : 'borrowFaceMismatch');
+      }
+      // A face close to the line is confirmed with the turns.
+      if (
+        policy.requireLiveness &&
+        !turnsAsked &&
+        face?.score != null &&
+        faceInGrayZone(face.score)
+      ) {
+        fail('BAD_REQUEST', 'livenessNeeded');
+      }
+      // Not this person's face: whose, among the store's people?
+      let faceLike: { memberId: string; name: string } | null = null;
+      if (face?.result === 'mismatch' && checked?.found) {
+        const known = await knownFaces(tx, session.orgId, store.id, { except: target });
+        faceLike = identify(checked.feature, known);
       }
 
       // Device: the first punch binds the phone. A borrowed phone is the
@@ -846,14 +1032,18 @@ export const attendanceRouter = router({
             deviceHash: hash,
             platform: input.platform?.slice(0, 32) ?? null,
           });
-        } else if (device.deviceHash !== hash && policy.requireDevice) {
-          // A lost or broken phone is no excuse (owner, 2026-11-06): with
-          // the face (and liveness) confirmed, the new phone clocks too,
-          // marked for the managers, who rebind it with "reset device".
-          const confirmed =
-            face?.result === 'match' && (!policy.requireLiveness || live?.result === 'pass');
-          if (!confirmed) fail('FORBIDDEN', 'otherDevice');
-          newDevice = true;
+        } else if (device.deviceHash !== hash) {
+          if (policy.requireDevice) {
+            // A new phone is a risk signal: the turns, then it may clock.
+            if (policy.requireLiveness && !turnsAsked) fail('BAD_REQUEST', 'livenessNeeded');
+            // A lost or broken phone is no excuse (owner, 2026-11-06): with
+            // the face (and liveness) confirmed, the new phone clocks too,
+            // marked for the managers, who rebind it with "reset device".
+            const confirmed =
+              face?.result === 'match' && (!policy.requireLiveness || live?.result === 'pass');
+            if (!confirmed) fail('FORBIDDEN', 'otherDevice');
+            newDevice = true;
+          }
         }
       }
 
@@ -889,14 +1079,16 @@ export const attendanceRouter = router({
           ),
         );
       const expected = rules.nextPunchKind(recent, now);
-      if (input.kind !== expected) {
-        fail('CONFLICT', input.kind === 'in' ? 'alreadyClockedIn' : 'notClockedIn');
+      // A colleague found by their face: their own next punch.
+      const kind = identifying ? expected : (input.kind ?? expected);
+      if (kind !== expected) {
+        fail('CONFLICT', kind === 'in' ? 'alreadyClockedIn' : 'notClockedIn');
       }
 
       // Well past the shift's end: the person says why, and it waits for a
       // manager's approval before it counts (owner decision 2026-11-05).
       const overtime =
-        input.kind === 'out'
+        kind === 'out'
           ? await overtimeFor(tx, target, store.id, now, policy.overtimeAfterMinutes)
           : null;
       if (overtime && !input.overtimeReason) {
@@ -909,7 +1101,7 @@ export const attendanceRouter = router({
           orgId: session.orgId,
           storeId: store.id,
           memberId: target,
-          kind: input.kind,
+          kind,
           punchedAt: now,
           source: 'self',
           geoLat: input.location ? input.location.lat.toFixed(6) : null,
@@ -952,25 +1144,27 @@ export const attendanceRouter = router({
         }
         const frames: { kind: 'face' | 'scene' | 'left' | 'right'; bytes: Buffer }[] = [
           { kind: 'face', bytes: photos.face },
-          { kind: 'scene', bytes: photos.scene },
         ];
-        if (input.liveness && live) {
+        if (photos.scene) frames.push({ kind: 'scene', bytes: photos.scene });
+        if (turnsAsked && input.liveness?.left && input.liveness.right) {
           frames.push(
             { kind: 'left', bytes: photoBytes(input.liveness.left) },
             { kind: 'right', bytes: photoBytes(input.liveness.right) },
           );
         }
         await tx.insert(s.attendancePhotos).values(
-          frames.map(({ kind, bytes }) => ({
+          frames.map(({ kind: k, bytes }) => ({
             orgId: session.orgId,
             storeId: store.id,
             memberId: target,
             punchId: row.id,
-            kind,
+            kind: k,
             bytes,
             takenAt: now,
-            faceResult: kind === 'face' ? (face?.result ?? null) : null,
-            faceScore: kind === 'face' ? (face?.score ?? null) : null,
+            faceResult: k === 'face' ? (face?.result ?? null) : null,
+            faceScore: k === 'face' ? (face?.score ?? null) : null,
+            faceLikeMemberId: k === 'face' ? (faceLike?.memberId ?? null) : null,
+            realScore: k === 'face' && checked?.found ? checked.real : null,
           })),
         );
       }
@@ -986,16 +1180,21 @@ export const attendanceRouter = router({
       const vars = {
         name: person?.name ?? '—',
         owner: phoneOwner?.name ?? '—',
+        like: faceLike?.name ?? '—',
         store: store.name,
         time: rules.localTime(now, tz),
       };
       const flags: { template: string; title: string; key: string }[] = [];
       if (face?.result === 'mismatch')
-        flags.push({
-          template: 'attendance.faceMismatch',
-          title: 'Face does not match',
-          key: 'face',
-        });
+        flags.push(
+          faceLike
+            ? {
+                template: 'attendance.faceLike',
+                title: 'Face looks like someone else',
+                key: 'face',
+              }
+            : { template: 'attendance.faceMismatch', title: 'Face does not match', key: 'face' },
+        );
       if (live?.result === 'fail')
         flags.push({
           template: 'attendance.livenessFailed',
@@ -1034,8 +1233,7 @@ export const attendanceRouter = router({
       // The person hears about a punch made in their name on another phone.
       if (borrowed && person) {
         await dispatch(tx, session.orgId, [person.userId], {
-          template:
-            input.kind === 'in' ? 'attendance.clockedInForYou' : 'attendance.clockedOutForYou',
+          template: kind === 'in' ? 'attendance.clockedInForYou' : 'attendance.clockedOutForYou',
           title: "Clocked on a colleague's phone",
           vars,
           deepLink: '/attendance',
@@ -1048,8 +1246,9 @@ export const attendanceRouter = router({
         face: face?.result ?? null,
         liveness: live?.result ?? null,
         newDevice,
+        forName: borrowed ? (person?.name ?? null) : null,
         overtimeMinutes: overtime?.minutes ?? 0,
-        kind: input.kind,
+        kind,
         at: now.toISOString(),
         time: rules.localTime(now, tz),
       };
@@ -1338,6 +1537,7 @@ export const attendanceRouter = router({
           requirePhoto: input.requirePhoto,
           requireFace: input.requirePhoto && input.requireFace,
           requireLiveness: input.requirePhoto && input.requireFace && input.requireLiveness,
+          requireScene: input.requirePhoto && (input.requireScene ?? false),
           updatedByMemberId: session.memberId,
           updatedAt: new Date(),
         };
@@ -1541,6 +1741,7 @@ export const attendanceRouter = router({
             ),
           );
         if (!row) fail('NOT_FOUND', 'photoNotFound');
+        if (!(await hasFaceConsent(tx, row.memberId))) fail('FORBIDDEN', 'noConsent');
         return row;
       });
       const checked = await faceFeature(new Uint8Array(photo.bytes));
@@ -1576,6 +1777,162 @@ export const attendanceRouter = router({
         await tx
           .delete(s.attendanceFaceRefs)
           .where(eq(s.attendanceFaceRefs.memberId, input.memberId));
+        publish(session.orgId, store.id);
+        return { ok: true as const };
+      });
+    }),
+  /** The person agrees to their face being used to check their punches. */
+  faceConsentGive: idempotentMutation
+    .input(AttendanceFaceConsentInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const session = ctx.session!;
+      return ctx.withOrg(async (tx) => {
+        const values = { orgId: session.orgId, version: input.version, consentedAt: new Date() };
+        await tx
+          .insert(s.attendanceFaceConsents)
+          .values({ memberId: session.memberId, ...values })
+          .onConflictDoUpdate({ target: s.attendanceFaceConsents.memberId, set: values });
+        return { ok: true as const };
+      });
+    }),
+
+  /**
+   * Withdraw: the consent and the reference face are deleted. Stores that
+   * check faces then refuse this person's punches until they agree again
+   * (a manager can still add punches by hand).
+   */
+  faceConsentWithdraw: idempotentMutation.mutation(async ({ ctx }) => {
+    const session = ctx.session!;
+    return ctx.withOrg(async (tx) => {
+      await tx
+        .delete(s.attendanceFaceConsents)
+        .where(eq(s.attendanceFaceConsents.memberId, session.memberId));
+      await tx
+        .delete(s.attendanceFaceRefs)
+        .where(eq(s.attendanceFaceRefs.memberId, session.memberId));
+      return { ok: true as const };
+    });
+  }),
+
+  /**
+   * 待核对: the store's flagged punches of the last two weeks nobody has
+   * looked at yet (face mismatch, liveness failed, a colleague's phone, a
+   * new phone), and how much overtime waits for a decision.
+   */
+  reviewQueue: authedProcedure
+    .input(AttendanceReviewQueueInputSchema)
+    .query(async ({ ctx, input }) => {
+      const session = ctx.session!;
+      return ctx.withOrg(async (tx) => {
+        const store = await authorize(tx, session, input.storeId, 'attendance.manage');
+        const tz = tzOf(store, session);
+        const since = new Date(Date.now() - REVIEW_DAYS * DAY);
+        const rows = await tx
+          .select({
+            id: s.attendancePunches.id,
+            memberId: s.attendancePunches.memberId,
+            kind: s.attendancePunches.kind,
+            at: s.attendancePunches.punchedAt,
+            liveness: s.attendancePunches.liveness,
+            viaMemberId: s.attendancePunches.viaMemberId,
+            newDevice: s.attendancePunches.newDevice,
+            faceResult: s.attendancePhotos.faceResult,
+            faceScore: s.attendancePhotos.faceScore,
+            faceLikeMemberId: s.attendancePhotos.faceLikeMemberId,
+          })
+          .from(s.attendancePunches)
+          .leftJoin(
+            s.attendancePhotos,
+            and(
+              eq(s.attendancePhotos.punchId, s.attendancePunches.id),
+              eq(s.attendancePhotos.kind, 'face'),
+            ),
+          )
+          .leftJoin(
+            s.attendancePunchReviews,
+            eq(s.attendancePunchReviews.punchId, s.attendancePunches.id),
+          )
+          .where(
+            and(
+              eq(s.attendancePunches.storeId, store.id),
+              isNull(s.attendancePunches.voidedAt),
+              isNull(s.attendancePunchReviews.punchId),
+              gte(s.attendancePunches.punchedAt, since),
+              sql`(${s.attendancePunches.liveness} = 'fail'
+                OR ${s.attendancePunches.viaMemberId} IS NOT NULL
+                OR ${s.attendancePunches.newDevice}
+                OR ${s.attendancePhotos.faceResult} = 'mismatch')`,
+            ),
+          )
+          .orderBy(sql`${s.attendancePunches.punchedAt} DESC`)
+          .limit(REVIEW_LIMIT);
+        const ids = [
+          ...new Set(
+            rows.flatMap((r) => [r.memberId, r.viaMemberId, r.faceLikeMemberId]).filter(Boolean),
+          ),
+        ] as string[];
+        const people =
+          ids.length === 0
+            ? []
+            : await tx
+                .select({ memberId: s.members.id, name: s.users.displayName })
+                .from(s.members)
+                .innerJoin(s.users, eq(s.users.id, s.members.userId))
+                .where(inArray(s.members.id, ids));
+        const nameOf = new Map(people.map((p) => [p.memberId, p.name ?? '—']));
+        const [pending] = await tx
+          .select({ n: sql<number>`count(*)::int` })
+          .from(s.attendanceOvertime)
+          .innerJoin(s.attendancePunches, eq(s.attendancePunches.id, s.attendanceOvertime.punchId))
+          .where(
+            and(
+              eq(s.attendanceOvertime.storeId, store.id),
+              eq(s.attendanceOvertime.status, 'pending'),
+              isNull(s.attendancePunches.voidedAt),
+            ),
+          );
+        return {
+          punches: rows.map((r) => ({
+            id: r.id,
+            memberId: r.memberId,
+            name: nameOf.get(r.memberId) ?? '—',
+            kind: r.kind,
+            at: r.at.toISOString(),
+            date: dateInTz(r.at, tz),
+            time: rules.localTime(r.at, tz),
+            face: r.faceResult ?? null,
+            faceScore: r.faceScore ?? null,
+            faceLikeName: r.faceLikeMemberId ? (nameOf.get(r.faceLikeMemberId) ?? '—') : null,
+            liveness: r.liveness,
+            viaName: r.viaMemberId ? (nameOf.get(r.viaMemberId) ?? '—') : null,
+            newDevice: r.newDevice,
+          })),
+          overtimePending: pending?.n ?? 0,
+        };
+      });
+    }),
+
+  /** A manager looked at a flagged punch and lets it stand. */
+  reviewPunch: idempotentMutation
+    .input(AttendanceReviewPunchInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const session = ctx.session!;
+      return ctx.withOrg(async (tx) => {
+        const store = await authorize(tx, session, input.storeId, 'attendance.manage');
+        const punch = await tx.query.attendancePunches.findFirst({
+          where: (p, { and: and2, eq: eq2 }) =>
+            and2(eq2(p.id, input.punchId), eq2(p.storeId, store.id)),
+        });
+        if (!punch) fail('NOT_FOUND', 'punchNotFound');
+        await tx
+          .insert(s.attendancePunchReviews)
+          .values({
+            punchId: punch.id,
+            orgId: session.orgId,
+            storeId: store.id,
+            reviewedByMemberId: session.memberId,
+          })
+          .onConflictDoNothing();
         publish(session.orgId, store.id);
         return { ok: true as const };
       });
