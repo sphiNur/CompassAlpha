@@ -22,7 +22,7 @@ import {
   stopCamera,
   type Facing,
 } from '../../lib/attendanceCamera';
-import { loadFaceTracker, type FaceTracker } from '../../lib/faceTracker';
+import { loadFaceTracker, onTrackerProgress, type FaceTracker } from '../../lib/faceTracker';
 
 export type Turn = 'left' | 'right';
 export type PunchPhotos = { face: string; scene: string; left?: string; right?: string };
@@ -32,6 +32,8 @@ type Step = Shot | 'review';
 /** Where the tracker takes the frame (the server accepts turns from 0.2, straight up to 0.2). */
 const STRAIGHT_MAX = 0.12;
 const TURN_MIN = 0.35;
+/** How long the face steps wait for the tracker before offering the shutter. */
+const TRACKER_WAIT_MS = 30_000;
 /** Readings in a row (~120 ms apart) before the frame is taken. */
 const HOLD = 3;
 
@@ -70,6 +72,8 @@ export function PunchCamera({
   const [tracker, setTracker] = useState<FaceTracker | null>(null);
   // The tracker downloads once (~4 MB); until then the shutter is used.
   const [trackerState, setTrackerState] = useState<'loading' | 'ready' | 'failed'>('loading');
+  const [trackerPercent, setTrackerPercent] = useState(0);
+  const [waitedLong, setWaitedLong] = useState(false);
   const [guide, setGuide] = useState<Guide>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
@@ -86,6 +90,11 @@ export function PunchCamera({
   useEffect(() => {
     if (!open || !live) return;
     let cancelled = false;
+    setWaitedLong(false);
+    const stop = onTrackerProgress((p) =>
+      setTrackerPercent(Math.floor((p.loaded / p.total) * 100)),
+    );
+    const timer = setTimeout(() => setWaitedLong(true), TRACKER_WAIT_MS);
     void loadFaceTracker().then((t) => {
       if (cancelled) return;
       setTracker(t);
@@ -93,6 +102,8 @@ export function PunchCamera({
     });
     return () => {
       cancelled = true;
+      stop();
+      clearTimeout(timer);
     };
   }, [open, live]);
 
@@ -215,7 +226,9 @@ export function PunchCamera({
               trackerState === 'ready'
                 ? 'attendance.live.autoHint'
                 : trackerState === 'loading'
-                  ? 'attendance.live.preparing'
+                  ? waitedLong
+                    ? 'attendance.live.slow'
+                    : 'attendance.live.preparing'
                   : 'attendance.live.manualHint',
             )
           : i18n.t('attendance.photo.faceHint');
@@ -253,8 +266,25 @@ export function PunchCamera({
                     {step === 'left' ? '←' : step === 'right' ? '→' : '●'} {title}
                   </span>
                   {trackerState === 'loading' ? (
-                    <span className="text-old-label">
-                      {i18n.t('attendance.live.preparingShort')}
+                    <span className="flex w-full max-w-60 flex-col items-center gap-1">
+                      <span className="text-old-label">
+                        {i18n.t('attendance.live.preparingPercent', { percent: trackerPercent })}
+                      </span>
+                      <span
+                        className="h-1.5 w-full overflow-hidden rounded-full bg-white/30"
+                        role="progressbar"
+                        aria-label={i18n.t('attendance.live.preparingPercent', {
+                          percent: trackerPercent,
+                        })}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={trackerPercent}
+                      >
+                        <span
+                          className="block h-full rounded-full bg-white transition-[width]"
+                          style={{ width: `${trackerPercent}%` }}
+                        />
+                      </span>
                     </span>
                   ) : null}
                   {auto && guide ? (
@@ -345,6 +375,11 @@ export function PunchCamera({
           <Button block size="lg" onClick={() => fileRef.current?.click()}>
             {i18n.t('attendance.photo.openSystemCamera')}
           </Button>
+        ) : live && front && trackerState === 'loading' && !waitedLong ? (
+          // The face steps start once the tracker is ready (owner, 2026-11-06).
+          <Button block size="lg" variant="secondary" disabled>
+            {i18n.t('attendance.live.preparingShort')}
+          </Button>
         ) : (
           <Button
             block
@@ -353,7 +388,11 @@ export function PunchCamera({
             disabled={!ready}
             onClick={shoot}
           >
-            {i18n.t('attendance.photo.shoot')}
+            {i18n.t(
+              live && front && trackerState === 'loading'
+                ? 'attendance.live.shootAnyway'
+                : 'attendance.photo.shoot',
+            )}
           </Button>
         )}
       </div>

@@ -2808,7 +2808,11 @@ export const uz = {
   'notify.attendance.clockedOutForYou.title': 'Siz uchun ketish belgilandi',
   'notify.attendance.clockedOutForYou.body':
     'Siz uchun {store} da {time} da ketish belgilandi, telefon egasi: {owner}. Bu siz boʻlmasangiz, boshqaruvchiga ayting.',
-  'attendance.live.preparing':
-    'Yuzni kuzatish tayyorlanmoqda… Tayyor boʻlguncha koʻrsatma boʻyicha harakat qilib, surat tugmasini bosing.',
   'attendance.live.preparingShort': 'Yuzni kuzatish tayyorlanmoqda…',
+  'attendance.live.preparing':
+    'Yuzni kuzatish tayyorlanmoqda. Birinchi marta bir necha MB yuklanadi, kuting.',
+  'attendance.live.preparingPercent': 'Yuzni kuzatish tayyorlanmoqda: {percent}%',
+  'attendance.live.slow':
+    'Tarmoq sekin. Oʻzingiz suratga olishingiz mumkin: koʻrsatma boʻyicha harakat qilib, tugmani bosing.',
+  'attendance.live.shootAnyway': 'Hozir suratga olish',
 } as const satisfies Record<CatalogKey, string>;
