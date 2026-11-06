@@ -349,32 +349,38 @@ export default {
     // connected through this proxy. Hand the upgrade back untouched.
     if (response.status === 101 || response.webSocket) return response;
 
+    const immutable =
+      response.status === 200 && /\bimmutable\b/.test(responseHeaders.get('cache-control') ?? '');
+    // A big asset is read whole and stored before it is answered: work
+    // left to waitUntil is cut off 30 s after the response starts, and the
+    // tunnel needs ~40 s for the tracker (it never reached KV that way).
+    // Only the first download of a release waits for this.
+    if (big && immutable && env.COMPASS_ORIGIN) {
+      const bytes = await response.arrayBuffer();
+      if (bytes.byteLength <= KV_MAX_BYTES) {
+        const type = responseHeaders.get('content-type') ?? 'application/octet-stream';
+        try {
+          await env.COMPASS_ORIGIN.put(big, bytes, { metadata: { type } });
+        } catch (error) {
+          console.warn('could not keep the asset in KV', big, error);
+        }
+      }
+      return new Response(bytes, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: responseHeaders,
+      });
+    }
+
     const out = new Response(response.body, {
       status: response.status,
       statusText: response.statusText,
       headers: responseHeaders,
     });
-    const immutable =
-      response.status === 200 && /\bimmutable\b/.test(responseHeaders.get('cache-control') ?? '');
-    const keep = (p) => {
-      if (ctx?.waitUntil) ctx.waitUntil(p);
-      else return p;
-    };
-    if (big && immutable && env.COMPASS_ORIGIN) {
-      const type = responseHeaders.get('content-type') ?? 'application/octet-stream';
-      await keep(
-        out
-          .clone()
-          .arrayBuffer()
-          .then((bytes) =>
-            bytes.byteLength <= KV_MAX_BYTES
-              ? env.COMPASS_ORIGIN.put(big, bytes, { metadata: { type } })
-              : undefined,
-          )
-          .catch(() => {}),
-      );
-    } else if (edgeCache && immutable) {
-      await keep(edgeCache.cache.put(edgeCache.key, out.clone()).catch(() => {}));
+    if (edgeCache && immutable) {
+      const put = edgeCache.cache.put(edgeCache.key, out.clone()).catch(() => {});
+      if (ctx?.waitUntil) ctx.waitUntil(put);
+      else await put;
     }
     return out;
   },
