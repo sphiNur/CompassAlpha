@@ -301,6 +301,45 @@ describe('F3: newest signed origin wins and old ones are rejected', () => {
   });
 });
 
+describe('edge cache for hashed assets', () => {
+  test('an immutable /assets/ file is fetched from the origin once', async () => {
+    const store = new Map<string, Response>();
+    const g = globalThis as unknown as { caches?: unknown };
+    const before = g.caches;
+    g.caches = {
+      default: {
+        async match(req: Request) {
+          return store.get(req.url)?.clone();
+        },
+        async put(req: Request, res: Response) {
+          store.set(req.url, res);
+        },
+      },
+    };
+    try {
+      topic = ndjson(NEW);
+      upstream = () =>
+        new Response('wasm bytes', {
+          headers: { 'cache-control': 'public, max-age=2592000, immutable' },
+        });
+      const e = env({ ORIGIN_TOPIC: 't' });
+      const first = await worker.fetch(new Request(`${PUBLIC}/assets/a-1.wasm?x=1`), e);
+      expect(await first.text()).toBe('wasm bytes');
+      const second = await worker.fetch(new Request(`${PUBLIC}/assets/a-1.wasm`), e);
+      expect(await second.text()).toBe('wasm bytes');
+      expect(calls.length).toBe(1);
+      // Pages and API calls are never cached.
+      upstream = () => new Response('page', { headers: { 'cache-control': 'no-store' } });
+      await worker.fetch(new Request(`${PUBLIC}/`), e);
+      await worker.fetch(new Request(`${PUBLIC}/`), e);
+      expect(calls.length).toBe(3);
+      expect([...store.keys()]).toEqual([`${PUBLIC}/assets/a-1.wasm`]);
+    } finally {
+      g.caches = before;
+    }
+  });
+});
+
 // Expire only the 30 s origin cache, keeping the per-isolate floor.
 function resetCacheOnly() {
   const realNow = Date.now;

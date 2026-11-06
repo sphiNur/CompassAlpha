@@ -244,8 +244,18 @@ async function currentOrigin(env) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const incoming = new URL(request.url);
+
+    // Vite's hashed /assets/* never change under one URL. Keep them at the
+    // edge (2026-11-06): through the quick tunnel the liveness tracker's
+    // 13.5 MB of WebAssembly took ~40 s per person, so the camera never
+    // got it in time; from the edge cache it is the CDN's speed.
+    const edgeCache = assetCache(request, incoming);
+    if (edgeCache) {
+      const hit = await edgeCache.cache.match(edgeCache.key);
+      if (hit) return hit;
+    }
 
     if (incoming.pathname === '/__origin') {
       if (request.method !== 'POST') return json({ ok: false, error: 'use POST' }, 405);
@@ -332,13 +342,32 @@ export default {
     // connected through this proxy. Hand the upgrade back untouched.
     if (response.status === 101 || response.webSocket) return response;
 
-    return new Response(response.body, {
+    const out = new Response(response.body, {
       status: response.status,
       statusText: response.statusText,
       headers: responseHeaders,
     });
+    if (
+      edgeCache &&
+      response.status === 200 &&
+      /\bimmutable\b/.test(responseHeaders.get('cache-control') ?? '')
+    ) {
+      const put = edgeCache.cache.put(edgeCache.key, out.clone()).catch(() => {});
+      if (ctx?.waitUntil) ctx.waitUntil(put);
+      else await put;
+    }
+    return out;
   },
 };
+
+/** The edge cache and its key for a GET of a hashed asset, or null. */
+function assetCache(request, incoming) {
+  if (request.method !== 'GET' || !incoming.pathname.startsWith('/assets/')) return null;
+  const cache = globalThis.caches?.default;
+  if (!cache) return null;
+  // The path alone: a query string must not split or poison the entry.
+  return { cache, key: new Request(`${incoming.origin}${incoming.pathname}`) };
+}
 
 // Test seams (scripts/__tests__/appProxyWorker.test.ts). Workers only
 // call the default export.

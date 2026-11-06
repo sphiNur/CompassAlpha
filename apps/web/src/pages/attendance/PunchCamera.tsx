@@ -68,6 +68,8 @@ export function PunchCamera({
   const [video, setVideo] = useState<HTMLVideoElement | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [tracker, setTracker] = useState<FaceTracker | null>(null);
+  // The tracker downloads once (~4 MB); until then the shutter is used.
+  const [trackerState, setTrackerState] = useState<'loading' | 'ready' | 'failed'>('loading');
   const [guide, setGuide] = useState<Guide>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
@@ -85,7 +87,9 @@ export function PunchCamera({
     if (!open || !live) return;
     let cancelled = false;
     void loadFaceTracker().then((t) => {
-      if (!cancelled) setTracker(t);
+      if (cancelled) return;
+      setTracker(t);
+      setTrackerState(t ? 'ready' : 'failed');
     });
     return () => {
       cancelled = true;
@@ -207,7 +211,13 @@ export function PunchCamera({
       : step === 'scene'
         ? i18n.t('attendance.photo.sceneHint')
         : live
-          ? i18n.t(tracker ? 'attendance.live.autoHint' : 'attendance.live.manualHint')
+          ? i18n.t(
+              trackerState === 'ready'
+                ? 'attendance.live.autoHint'
+                : trackerState === 'loading'
+                  ? 'attendance.live.preparing'
+                  : 'attendance.live.manualHint',
+            )
           : i18n.t('attendance.photo.faceHint');
   const reviewShots: Shot[] = turns ? ['face', ...turns, 'scene'] : ['face', 'scene'];
   const front = step === 'face' || step === 'left' || step === 'right';
@@ -242,6 +252,11 @@ export function PunchCamera({
                   <span className="text-old-h3 font-semibold">
                     {step === 'left' ? '←' : step === 'right' ? '→' : '●'} {title}
                   </span>
+                  {trackerState === 'loading' ? (
+                    <span className="text-old-label">
+                      {i18n.t('attendance.live.preparingShort')}
+                    </span>
+                  ) : null}
                   {auto && guide ? (
                     <span className="text-old-label">
                       {i18n.t(`attendance.live.guide.${guide}`)}

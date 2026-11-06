@@ -2921,4 +2921,7 @@ export const en = {
   'notify.attendance.clockedOutForYou.title': 'You were clocked out',
   'notify.attendance.clockedOutForYou.body':
     "You were clocked out at {store} at {time} on {owner}'s phone. If this was not you, tell your manager.",
+  'attendance.live.preparing':
+    'Getting face tracking ready… Until it is, follow the prompt and tap the photo button.',
+  'attendance.live.preparingShort': 'Getting face tracking ready…',
 } as const;

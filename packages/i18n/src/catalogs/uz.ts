@@ -2808,4 +2808,7 @@ export const uz = {
   'notify.attendance.clockedOutForYou.title': 'Siz uchun ketish belgilandi',
   'notify.attendance.clockedOutForYou.body':
     'Siz uchun {store} da {time} da ketish belgilandi, telefon egasi: {owner}. Bu siz boʻlmasangiz, boshqaruvchiga ayting.',
+  'attendance.live.preparing':
+    'Yuzni kuzatish tayyorlanmoqda… Tayyor boʻlguncha koʻrsatma boʻyicha harakat qilib, surat tugmasini bosing.',
+  'attendance.live.preparingShort': 'Yuzni kuzatish tayyorlanmoqda…',
 } as const satisfies Record<CatalogKey, string>;

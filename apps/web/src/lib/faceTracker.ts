@@ -5,10 +5,12 @@
  * turned. It only guides: the server checks the frames it receives
  * (apps/api/src/services/face/liveness.ts) and decides.
  *
- * About 13 MB of WebAssembly, loaded only when a store has liveness on,
- * from our own /assets (hashed, cached by the service worker after the
- * first time). If it cannot load, the camera falls back to a shutter
- * button and the person turns their head on the prompt.
+ * About 13 MB of WebAssembly (~4 MB compressed), loaded only when a store
+ * has liveness on, from our own /assets: hashed, kept at the Cloudflare
+ * edge and by the service worker after the first time. The clock page
+ * starts the download when it opens, before anyone taps clock in. Until
+ * it is ready, or if it cannot load, the camera's shutter button is used
+ * and the person turns their head on the prompt.
  */
 import wasmLoaderPath from '@mediapipe/tasks-vision/vision_wasm_internal.js?url';
 import wasmBinaryPath from '@mediapipe/tasks-vision/vision_wasm_internal.wasm?url';

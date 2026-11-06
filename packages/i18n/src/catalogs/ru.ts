@@ -2818,4 +2818,7 @@ export const ru = {
   'notify.attendance.clockedOutForYou.title': 'Вам отметили уход',
   'notify.attendance.clockedOutForYou.body':
     'Вам отметили уход в {store} в {time} с телефона, владелец: {owner}. Если это были не вы, сообщите управляющему.',
+  'attendance.live.preparing':
+    'Готовим отслеживание лица… Пока оно не готово, сделайте движение по подсказке и нажмите кнопку снимка.',
+  'attendance.live.preparingShort': 'Готовим отслеживание лица…',
 } as const satisfies Record<CatalogKey, string>;

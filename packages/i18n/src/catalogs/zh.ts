@@ -2503,4 +2503,6 @@ export const zh = {
   'notify.attendance.clockedOutForYou.title': '已为你下班打卡',
   'notify.attendance.clockedOutForYou.body':
     '{owner} 的手机在 {store} {time} 为你下班打卡。如果不是你本人，请告诉店长。',
+  'attendance.live.preparing': '正在准备人脸跟踪……准备好之前，请按提示做好动作后点拍照。',
+  'attendance.live.preparingShort': '正在准备人脸跟踪……',
 } as const satisfies Record<CatalogKey, string>;

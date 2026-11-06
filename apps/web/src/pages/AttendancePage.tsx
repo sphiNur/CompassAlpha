@@ -24,6 +24,7 @@ import { useErrToast } from '../lib/errToast';
 import { minutesText } from '../lib/attendanceFormat';
 import { trpc } from '../lib/trpc';
 import { useAuthStore } from '../stores/authStore';
+import { loadFaceTracker } from '../lib/faceTracker';
 import { BorrowSheet } from './attendance/BorrowSheet';
 import { PunchCamera, type PunchPhotos, type Turn } from './attendance/PunchCamera';
 
@@ -149,6 +150,12 @@ function ClockPanel({ storeId }: { storeId: string }) {
   const doneNames = useRef(new Map<string, string>());
 
   const store = me.data?.stores.find((x) => x.storeId === storeId) ?? null;
+  // Fetch the liveness face tracker while the page is open, not when the
+  // camera is: it is a few MB the first time.
+  const wantTracker = store?.rules.requireLiveness ?? false;
+  useEffect(() => {
+    if (wantTracker) void loadFaceTracker();
+  }, [wantTracker]);
 
   const begin = async (forMember: Attempt['forMember']) => {
     if (!store || !deviceId) return;
