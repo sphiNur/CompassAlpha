@@ -22,6 +22,12 @@ shipped as a tarball by `scripts/deploy.ts` to `/home/ubuntu/compass-alpha`
 and run with bun under systemd (`infra/systemd/compass-api.service`,
 `compass-worker.service`). See "Roll back a bad deploy" below.
 
+The upload is incremental where both ends have rsync: the server keeps the
+last shipped source in `/home/ubuntu/compass-alpha-src/CompassAlpha`, only
+changed files are sent, and the server builds the tarball from it. Deleting
+that folder is safe; the next deploy seeds it again from the last tarball.
+Without rsync (or on Windows) the whole tarball is uploaded with scp.
+
 ## Daily
 
 ### Health checks

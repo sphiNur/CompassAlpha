@@ -23,9 +23,11 @@
  * Pipeline:
  *   0. Provenance gates (local) + no-active-run pre-flight (server)
  *   0.5 Unit tests (local) — a red suite stops here, before shipping
- *   1. Tar local CompassAlpha sources (excl. node_modules / .env / .turbo
- *      / .git / .claude)
- *   2. scp to server
+ *   1-2. rsync the changed files to a staging copy on the server and build
+ *      the tarball there (2026-11-06: the link is slow and lossy); where
+ *      rsync is missing (or on Windows), tar the local CompassAlpha
+ *      sources (excl. node_modules / .env / .turbo / .git / .claude) and
+ *      scp the whole tarball
  *   2.5 keep the live release as /home/ubuntu/compass-alpha.prev.tar.gz
  *      (the rollback target — see "Rollback" below)
  *   3. extract over /home/ubuntu/compass-alpha (in place; no downtime
@@ -73,12 +75,17 @@ import { fileURLToPath } from 'node:url';
 import {
   APP_DIR,
   PREV_TARBALL,
+  STAGE_DIR,
   describeSnapshotScript,
   hostName,
   knownHostsFile,
   restoreScript,
+  rsyncExcludes,
   snapshotScript,
   sshOptions,
+  stageSeedScript,
+  stageTarScript,
+  tarExcludes,
 } from './lib/deployRemote';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -156,6 +163,47 @@ function runCapture(cmd: string, opts?: { cwd?: string }): string {
 function ssh(cmd: string): string {
   const payload = Buffer.from(cmd, 'utf8').toString('base64');
   return runCapture(`ssh ${SSH_OPTS} ${HOST} "echo ${payload} | base64 -d | bash"`);
+}
+
+/** rsync here and on the server (not on Windows: cmd.exe quoting, no rsync). */
+function canRsync(): boolean {
+  if (process.platform === 'win32') return false;
+  if (spawnSync('rsync', ['--version'], { stdio: 'pipe' }).status !== 0) return false;
+  try {
+    ssh('command -v rsync');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Send the working tree to the staging copy. Files are compared by
+ * checksum (-c): the seeded copy carries tar's whole-second times, and a
+ * same-size edit within that second would otherwise look unchanged. The
+ * link drops packets, so a broken transfer is resumed (--partial) up to
+ * three times.
+ */
+function rsyncWithRetry(): void {
+  const cmd = [
+    'rsync -rlptzc --delete --delete-excluded --partial --stats',
+    rsyncExcludes(),
+    `-e 'ssh ${SSH_OPTS}'`,
+    './',
+    `${HOST}:${STAGE_DIR}/CompassAlpha/`,
+  ].join(' ');
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const out = runCapture(cmd);
+      const sent = out.match(/Total bytes sent: ([\d,.]+)/)?.[1];
+      const files = out.match(/Number of regular files transferred: ([\d,.]+)/)?.[1];
+      console.log(`  sent ${sent ?? '?'} bytes, ${files ?? '?'} files changed`);
+      return;
+    } catch (err) {
+      if (attempt >= 3) throw err;
+      console.warn(`  rsync attempt ${attempt} failed, retrying…`);
+    }
+  }
 }
 
 if (!existsSync(KEY)) {
@@ -374,55 +422,31 @@ if (!ROLLBACK) {
 
 if (!DRY) {
   if (!ROLLBACK) {
-    step('1. Tar local source');
-    // Use --exclude with leading anchored paths so we don't ship 600 MB of node_modules.
-    const excludes = [
-      '--exclude=CompassAlpha/node_modules',
-      '--exclude=CompassAlpha/apps/*/node_modules',
-      '--exclude=CompassAlpha/packages/*/node_modules',
-      '--exclude=CompassAlpha/apps/*/dist',
-      '--exclude=CompassAlpha/apps/*/.turbo',
-      '--exclude=CompassAlpha/.turbo',
-      // M3.25 (2026-05-18 incident #2): all .env files MUST stay
-      // server-side. The previous version excluded only the monorepo-
-      // root .env. apps/web/.env on the dev box carried the Vite
-      // VITE_DEV_MOCK_INIT_DATA + VITE_API_URL=http://localhost:3000,
-      // and every deploy tar'd it up and overwrote the server's
-      // production-safe copy — baking a dev auth bypass + a broken
-      // API URL into every prod bundle until manually re-fixed.
-      // Server keeps its own .env files; dev box's stay out of the
-      // tarball entirely.
-      '--exclude=CompassAlpha/.env',
-      '--exclude=CompassAlpha/.env.*',
-      '--exclude=CompassAlpha/apps/*/.env',
-      '--exclude=CompassAlpha/apps/*/.env.*',
-      '--exclude=CompassAlpha/packages/*/.env',
-      '--exclude=CompassAlpha/packages/*/.env.*',
-      '--exclude=CompassAlpha/*.log',
-      '--exclude=CompassAlpha/test-results',
-      '--exclude=*.pem',
-      // 2026-07-26: neither of these was excluded, and both were being
-      // scp'd to production on every deploy.
-      //   .git     — ~10 MB of history the server never reads, and it
-      //              shipped every branch name and commit message.
-      //   .claude  — agent worktrees. Measured 222 MB, of which one stale
-      //              worktree was 206 MB because it carried its OWN
-      //              node_modules: the node_modules excludes above are
-      //              anchored at `CompassAlpha/apps/*`, so they never
-      //              matched `.claude/worktrees/*/apps/*`. That is an
-      //              unrelated branch's full checkout, on the prod box.
-      '--exclude=CompassAlpha/.git',
-      '--exclude=CompassAlpha/.claude',
-      // 2026-10-29: local worktrees now live in .worktrees/ (excluded from
-      // git through .git/info/exclude). Same trap as .claude: each is a full
-      // checkout, and its .env (a test bot token) matches none of the .env
-      // excludes above.
-      '--exclude=CompassAlpha/.worktrees',
-    ].join(' ');
-    run(`tar ${excludes} -czf "${TARBALL_RELATIVE}" CompassAlpha`, { cwd: PARENT });
+    // Incremental upload (2026-11-06) where both ends have rsync: only
+    // the changed files cross the slow link, and the server builds the
+    // tarball. Otherwise the whole tarball is uploaded, as before.
+    let shipped = false;
+    if (canRsync()) {
+      step('1-2. rsync changed files to the server, build the tarball there');
+      try {
+        console.log('  staging copy: ' + ssh(stageSeedScript()).trim());
+        rsyncWithRetry();
+        console.log('  ' + ssh(stageTarScript()).trim());
+        shipped = true;
+      } catch (err) {
+        console.warn('\x1b[33m⚠ incremental upload failed — uploading the whole tarball\x1b[0m');
+        console.warn('  ' + String((err as Error).message ?? err).split('\n')[0]);
+      }
+    }
+    if (!shipped) {
+      step('1. Tar local source');
+      // Excludes: scripts/lib/deployRemote.ts SHIP_EXCLUDES (node_modules,
+      // build output, every .env, .git, .claude, .worktrees, keys).
+      run(`tar ${tarExcludes()} -czf "${TARBALL_RELATIVE}" CompassAlpha`, { cwd: PARENT });
 
-    step('2. scp to server');
-    run(`scp ${SSH_OPTS} "${TARBALL}" ${HOST}:/home/ubuntu/`);
+      step('2. scp to server');
+      run(`scp ${SSH_OPTS} "${TARBALL}" ${HOST}:/home/ubuntu/`);
+    }
 
     // N9 (2026-10-30): the API had no way back — only the web bundle kept
     // a dist.prev. Keep the whole live release (code + bundle, not
