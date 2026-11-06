@@ -39,6 +39,9 @@ const ORIGIN_CACHE_MS = 30_000;
 const ORIGIN_SIGNATURE_MAX_AGE_S = 6 * 60 * 60 + 30 * 60;
 const ORIGIN_SIGNATURE_MAX_SKEW_S = 5 * 60;
 let originCache = { url: null, readAt: 0 };
+// The last origin this isolate took from a valid ntfy message (never a
+// KV/env fallback, which may be stale).
+let lastAccepted = null;
 // Highest signed timestamp this isolate has accepted (F3). KV `signedTs`
 // carries it across isolates and deploys; this copy covers a KV read
 // that is still eventually consistent.
@@ -206,6 +209,7 @@ async function currentOrigin(env) {
               console.warn('could not persist the accepted origin to KV', error);
             }
           }
+          lastAccepted = found.url;
           originCache = { url: found.url, readAt: Date.now() };
           return found.url;
         }
@@ -215,6 +219,13 @@ async function currentOrigin(env) {
     }
   }
 
+  // ntfy slow or down (2026-11-06: about one request in three timed out
+  // and fell through to a stale KV/env host, a Cloudflare 1016/530). An
+  // origin this isolate already accepted beats KV and wrangler.toml.
+  if (lastAccepted) {
+    originCache = { url: lastAccepted, readAt: Date.now() };
+    return lastAccepted;
+  }
   const stored = await env.COMPASS_ORIGIN.get('url');
   const url = stored || env.ORIGIN_URL;
   originCache = { url, readAt: Date.now() };
@@ -324,5 +335,6 @@ export { pickOrigin, proxyTarget };
 export function resetStateForTests() {
   originCache = { url: null, readAt: 0 };
   highestSignedTs = 0;
+  lastAccepted = null;
   warnedUnsigned = false;
 }
