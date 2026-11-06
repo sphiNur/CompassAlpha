@@ -944,7 +944,17 @@ export const attendanceFaceEnrollments = inventorySchema.table(
   }),
 );
 
-export type FacePose = 'front' | 'front2' | 'left' | 'right' | 'up' | 'down';
+export type FacePose =
+  | 'front'
+  | 'front2'
+  | 'left'
+  | 'right'
+  | 'up'
+  | 'down'
+  | 'upleft'
+  | 'upright'
+  | 'downleft'
+  | 'downright';
 
 /** An enrollment's photos and their face features (0066). */
 export const attendanceFaceSamples = inventorySchema.table(
@@ -957,7 +967,7 @@ export const attendanceFaceSamples = inventorySchema.table(
     enrollmentId: uuid('enrollment_id')
       .notNull()
       .references(() => attendanceFaceEnrollments.id, { onDelete: 'cascade' }),
-    pose: varchar('pose', { length: 8 }).notNull().$type<FacePose>(),
+    pose: varchar('pose', { length: 10 }).notNull().$type<FacePose>(),
     feature: real('feature').array().notNull(),
     bytes: bytea('bytes').notNull(),
     realScore: real('real_score'),

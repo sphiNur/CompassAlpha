@@ -787,6 +787,43 @@ describe.skipIf(!SHOULD_RUN)('attendance face enrollment', () => {
       (refused as { cause?: { context?: { problems?: string } } }).cause?.context?.problems,
     ).toBe('up:dark,left:notTurned');
 
+    // The ring: tilts and diagonals are kept when caught, not required.
+    const minimal = await f.staff().attendance.faceEnroll({
+      storeId: f.storeId,
+      photos: {
+        front: jpeg('Ali:front'),
+        left: jpeg('Ali:left'),
+        right: jpeg('Ali:right'),
+        front2: jpeg('Ali:front2'),
+      },
+    });
+    expect(minimal.status).toBe('pending');
+    const ring = await f.staff().attendance.faceEnroll({
+      storeId: f.storeId,
+      photos: {
+        ...enrollPhotos('Ali'),
+        upleft: jpeg('Ali:upleft'),
+        upright: jpeg('Ali:upright'),
+        downleft: jpeg('Ali:downleft'),
+        downright: jpeg('Ali:downright'),
+      },
+    });
+    expect(
+      (
+        await db
+          .select({ pose: s.attendanceFaceSamples.pose })
+          .from(s.attendanceFaceSamples)
+          .where(eq(s.attendanceFaceSamples.enrollmentId, ring.id))
+      ).length,
+    ).toBe(10);
+    // The newer one replaced the waiting one.
+    expect(
+      await db
+        .select()
+        .from(s.attendanceFaceEnrollments)
+        .where(eq(s.attendanceFaceEnrollments.id, minimal.id)),
+    ).toEqual([]);
+
     const first = await enroll();
     expect(first.status).toBe('pending');
     let me = await f.staff().attendance.me({});
@@ -853,9 +890,9 @@ describe.skipIf(!SHOULD_RUN)('attendance face enrollment', () => {
     expect(shown.map((e) => e.status)).toEqual(['approved']);
     expect(shown[0]!.photos.map((p) => p.pose)).toEqual([
       'front',
-      'left',
       'right',
       'up',
+      'left',
       'down',
       'front2',
     ]);

@@ -84,8 +84,10 @@ export const AttendanceFaceConsentInputSchema = z.object({
 });
 
 /**
- * A guided face enrollment (2026-11-06): six photos, taken by the phone
- * when the head is where the prompt asks.
+ * A guided face enrollment (2026-11-06), taken like Face ID: straight on,
+ * a slow circle of the head (a photo in each of eight directions as the
+ * head passes it), straight on again. The tilts and diagonals are kept
+ * when the phone caught them.
  */
 export const AttendanceFaceEnrollInputSchema = z.object({
   storeId: UuidSchema,
@@ -93,9 +95,13 @@ export const AttendanceFaceEnrollInputSchema = z.object({
     front: AttendancePhotoSchema,
     left: AttendancePhotoSchema,
     right: AttendancePhotoSchema,
-    up: AttendancePhotoSchema,
-    down: AttendancePhotoSchema,
     front2: AttendancePhotoSchema,
+    up: AttendancePhotoSchema.optional(),
+    down: AttendancePhotoSchema.optional(),
+    upleft: AttendancePhotoSchema.optional(),
+    upright: AttendancePhotoSchema.optional(),
+    downleft: AttendancePhotoSchema.optional(),
+    downright: AttendancePhotoSchema.optional(),
   }),
 });
 

@@ -1,20 +1,36 @@
 /**
  * Face enrollment (owner decisions 2026-11-06): face is the only way to
- * clock, so the reference must be good. The phone guides the person
- * through six photos, taken by itself when the head is where the prompt
- * asks: straight on, each side (in a random order), chin up, chin down,
- * straight on again. The server checks every photo here; a store manager
- * then looks at them and approves before the person can clock.
+ * clock, so the reference must be good. Like Face ID, the person looks
+ * into a ring and turns their head in a slow circle; the phone keeps a
+ * photo straight on, one in each of eight directions as the head passes
+ * them, and straight on again at the end. Straight on (twice) and the two
+ * side turns are required (they carry the liveness check); the tilts and
+ * diagonals are kept when the phone caught them. The server checks every
+ * photo here; a store manager then approves before the person can clock.
  *
- * Punches are matched against all six features (the best one counts), so
+ * Punches are matched against all the features (the best one counts), so
  * a punch with the head a little turned or tilted still matches well.
  */
 import { cosine } from './index';
 import { LIVENESS } from './liveness';
 import type { FaceResult } from './pipeline';
 
-export const ENROLL_POSES = ['front', 'left', 'right', 'up', 'down', 'front2'] as const;
+/** Every pose, in the order they are shown: around the ring, then straight again. */
+export const ENROLL_POSES = [
+  'front',
+  'right',
+  'upright',
+  'up',
+  'upleft',
+  'left',
+  'downleft',
+  'down',
+  'downright',
+  'front2',
+] as const;
 export type EnrollPose = (typeof ENROLL_POSES)[number];
+/** Without these an enrollment is refused. */
+export const REQUIRED_POSES = ['front', 'left', 'right', 'front2'] as const;
 
 export const ENROLL_LINES = {
   /** The face's width as a share of the photo's. */
@@ -54,12 +70,20 @@ export interface EnrollVerdict {
 
 type Found = Extract<FaceResult, { found: true }>;
 
-/** The six photos' face results → whether they make a good reference. */
-export function evaluateEnrollment(results: Record<EnrollPose, FaceResult>): EnrollVerdict {
+/** The photos' face results → whether they make a good reference. */
+export function evaluateEnrollment(
+  results: Partial<Record<EnrollPose, FaceResult>>,
+): EnrollVerdict {
   const problems: EnrollVerdict['problems'] = [];
   const found: Partial<Record<EnrollPose, Found>> = {};
   for (const pose of ENROLL_POSES) {
     const r = results[pose];
+    if (!r) {
+      if ((REQUIRED_POSES as readonly string[]).includes(pose)) {
+        problems.push({ pose, problem: 'noFace' });
+      }
+      continue;
+    }
     if (!r.found) {
       problems.push({ pose, problem: 'noFace' });
       continue;

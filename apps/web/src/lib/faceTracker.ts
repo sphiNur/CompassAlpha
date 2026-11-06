@@ -37,6 +37,9 @@ export interface FaceReading {
   pitch: number | null;
   /** The face's width as a share of the frame's. */
   size: number | null;
+  /** The face box's centre, 0–1 across and down the (unmirrored) frame. */
+  cx: number | null;
+  cy: number | null;
 }
 
 export interface FaceTracker {
@@ -120,7 +123,7 @@ export function loadFaceTracker(): Promise<FaceTracker | null> {
         read(video) {
           const w = video.videoWidth;
           const h = video.videoHeight;
-          const none = { yaw: null, pitch: null, size: null };
+          const none = { yaw: null, pitch: null, size: null, cx: null, cy: null };
           if (!w || !h) return { count: 0, ...none };
           // detectForVideo needs increasing timestamps.
           last = Math.max(last + 1, performance.now());
@@ -139,6 +142,12 @@ export function loadFaceTracker(): Promise<FaceTracker | null> {
             yaw: yawFrom(eyeA, eyeB, nose),
             pitch: pitchFrom(eyeA, eyeB, nose, mouth),
             size: (best.boundingBox?.width ?? 0) / w,
+            cx: best.boundingBox
+              ? (best.boundingBox.originX + best.boundingBox.width / 2) / w
+              : null,
+            cy: best.boundingBox
+              ? (best.boundingBox.originY + best.boundingBox.height / 2) / h
+              : null,
           };
         },
         close() {

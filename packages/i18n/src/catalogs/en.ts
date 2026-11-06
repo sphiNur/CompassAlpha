@@ -2945,12 +2945,11 @@ export const en = {
   'attendance.enroll.start': 'Enroll my face',
   'attendance.enroll.redo': 'Enroll my face again',
   'attendance.enroll.again': 'Start over',
-  'attendance.enroll.submit': 'Submit for approval',
   'attendance.enroll.newPending':
     'Your new face enrollment is waiting for approval; the current one stays in use until then.',
   'attendance.enroll.card.none.title': 'Enroll your face first',
   'attendance.enroll.card.none.body':
-    'Clocking is by face only. Take six photos as the app asks (about a minute); you can clock once a manager approves them.',
+    'Clocking is by face only. Look into a circle and slowly turn your head (under a minute); you can clock once a manager approves it.',
   'attendance.enroll.card.pending.title': "Waiting for a manager's approval",
   'attendance.enroll.card.pending.body':
     'Your face photos are with the manager. You can clock once they are approved.',
@@ -2960,10 +2959,7 @@ export const en = {
   'attendance.enroll.card.approved.body': 'You can clock in and out by face.',
   'attendance.enroll.card.note': "Manager's note: {note}",
   'attendance.enroll.hint':
-    'Follow the prompt; each photo is taken by itself once your head is in place. Good light, no hat or mask.',
-  'attendance.enroll.reviewTitle': 'Check your photos',
-  'attendance.enroll.reviewHint':
-    'A manager looks at these photos and approves them. Only managers of your store see them.',
+    'Hold the phone at eye level in good light, without a hat or mask. Nothing to tap: the photos are taken by themselves.',
   'attendance.enroll.pose.front': 'Look straight',
   'attendance.enroll.pose.left': 'Turn left',
   'attendance.enroll.pose.right': 'Turn right',
@@ -3015,4 +3011,19 @@ export const en = {
   'notify.attendance.faceEnrollRejected.title': 'Face enrollment sent back',
   'notify.attendance.faceEnrollRejected.body':
     'Your face enrollment at {store} was sent back. Reason: «{note}». Please enroll again.',
+  'attendance.enroll.phase.position': 'Put your face in the circle',
+  'attendance.enroll.phase.circle': 'Slowly move your head in a circle',
+  'attendance.enroll.phase.final': 'Look at the camera once more',
+  'attendance.enroll.phase.sending': 'Checking the photos…',
+  'attendance.enroll.phase.done': 'Face enrolled',
+  'attendance.enroll.circleHint':
+    'Keep looking at the screen and turn your head until the whole ring is green.',
+  'attendance.enroll.slowHint': 'Go a little slower and make the circle a little wider.',
+  'attendance.enroll.doneHint':
+    'Sent to your manager for approval. You can clock once it is approved.',
+  'attendance.enroll.center': 'Move your face to the middle of the circle',
+  'attendance.enroll.pose.upleft': 'Up and left',
+  'attendance.enroll.pose.upright': 'Up and right',
+  'attendance.enroll.pose.downleft': 'Down and left',
+  'attendance.enroll.pose.downright': 'Down and right',
 } as const;
