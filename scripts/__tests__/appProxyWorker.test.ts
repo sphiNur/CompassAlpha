@@ -220,6 +220,24 @@ describe('F3: newest signed origin wins and old ones are rejected', () => {
     expect(found).toEqual({ url: OLD, ts: null });
   });
 
+  test('unsigned mode persists the origin to KV for a cold isolate', async () => {
+    const kv = memoryKv({ url: OLD });
+    topic = ndjson(NEW);
+    await worker.fetch(new Request(`${PUBLIC}/x`), env({ ORIGIN_TOPIC: 't', COMPASS_ORIGIN: kv }));
+    expect(calls[0]!.url).toBe(`${NEW}x`);
+    expect(kv.data.get('url')).toBe(NEW);
+    // A new isolate whose ntfy poll fails now falls back to the live origin.
+    resetStateForTests();
+    const okFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url.startsWith('https://ntfy.sh/')) throw new Error('timeout');
+      return okFetch(input, init);
+    }) as typeof fetch;
+    await worker.fetch(new Request(`${PUBLIC}/y`), env({ ORIGIN_TOPIC: 't', COMPASS_ORIGIN: kv }));
+    expect(calls[1]!.url).toBe(`${NEW}y`);
+  });
+
   test('the accepted timestamp and origin are persisted to KV', async () => {
     const t = now();
     const kv = memoryKv();
