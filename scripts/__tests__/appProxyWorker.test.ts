@@ -301,6 +301,43 @@ describe('F3: newest signed origin wins and old ones are rejected', () => {
   });
 });
 
+describe('big assets in KV (workers.dev has no Cache API)', () => {
+  test('the tracker wasm is fetched from the origin once, then served from KV', async () => {
+    const data = new Map<string, { value: ArrayBuffer; metadata: unknown }>();
+    const kv = {
+      ...memoryKv(),
+      async getWithMetadata(k: string) {
+        const hit = data.get(k);
+        return hit
+          ? { value: new Response(hit.value).body, metadata: hit.metadata }
+          : { value: null, metadata: null };
+      },
+      async put(k: string, v: ArrayBuffer | string, opts?: { metadata?: unknown }) {
+        if (typeof v !== 'string') data.set(k, { value: v, metadata: opts?.metadata });
+      },
+    };
+    topic = ndjson(NEW);
+    upstream = () =>
+      new Response('wasm bytes', {
+        headers: {
+          'content-type': 'application/wasm',
+          'cache-control': 'public, max-age=2592000, immutable',
+        },
+      });
+    const e = env({ ORIGIN_TOPIC: 't', COMPASS_ORIGIN: kv });
+    const first = await worker.fetch(new Request(`${PUBLIC}/assets/vision-1.wasm`), e);
+    expect(await first.text()).toBe('wasm bytes');
+    const second = await worker.fetch(new Request(`${PUBLIC}/assets/vision-1.wasm`), e);
+    expect(await second.text()).toBe('wasm bytes');
+    expect(second.headers.get('content-type')).toBe('application/wasm');
+    expect(calls.length).toBe(1);
+    expect([...data.keys()]).toEqual(['asset:/assets/vision-1.wasm']);
+    // Small assets and pages do not go to KV.
+    await worker.fetch(new Request(`${PUBLIC}/assets/index-1.js`), e);
+    expect([...data.keys()]).toEqual(['asset:/assets/vision-1.wasm']);
+  });
+});
+
 describe('edge cache for hashed assets', () => {
   test('an immutable /assets/ file is fetched from the origin once', async () => {
     const store = new Map<string, Response>();
@@ -323,9 +360,9 @@ describe('edge cache for hashed assets', () => {
           headers: { 'cache-control': 'public, max-age=2592000, immutable' },
         });
       const e = env({ ORIGIN_TOPIC: 't' });
-      const first = await worker.fetch(new Request(`${PUBLIC}/assets/a-1.wasm?x=1`), e);
+      const first = await worker.fetch(new Request(`${PUBLIC}/assets/a-1.js?x=1`), e);
       expect(await first.text()).toBe('wasm bytes');
-      const second = await worker.fetch(new Request(`${PUBLIC}/assets/a-1.wasm`), e);
+      const second = await worker.fetch(new Request(`${PUBLIC}/assets/a-1.js`), e);
       expect(await second.text()).toBe('wasm bytes');
       expect(calls.length).toBe(1);
       // Pages and API calls are never cached.
@@ -333,7 +370,7 @@ describe('edge cache for hashed assets', () => {
       await worker.fetch(new Request(`${PUBLIC}/`), e);
       await worker.fetch(new Request(`${PUBLIC}/`), e);
       expect(calls.length).toBe(3);
-      expect([...store.keys()]).toEqual([`${PUBLIC}/assets/a-1.wasm`]);
+      expect([...store.keys()]).toEqual([`${PUBLIC}/assets/a-1.js`]);
     } finally {
       g.caches = before;
     }

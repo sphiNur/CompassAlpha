@@ -250,7 +250,14 @@ export default {
     // Vite's hashed /assets/* never change under one URL. Keep them at the
     // edge (2026-11-06): through the quick tunnel the liveness tracker's
     // 13.5 MB of WebAssembly took ~40 s per person, so the camera never
-    // got it in time; from the edge cache it is the CDN's speed.
+    // got it in time. The Cache API does nothing on a workers.dev host,
+    // so the big files (the tracker and its model) are kept in KV; the
+    // rest goes through the Cache API, which works once on a custom domain.
+    const big = bigAssetKey(request, incoming);
+    if (big) {
+      const hit = await kvAsset(env, big);
+      if (hit) return hit;
+    }
     const edgeCache = assetCache(request, incoming);
     if (edgeCache) {
       const hit = await edgeCache.cache.match(edgeCache.key);
@@ -347,18 +354,61 @@ export default {
       statusText: response.statusText,
       headers: responseHeaders,
     });
-    if (
-      edgeCache &&
-      response.status === 200 &&
-      /\bimmutable\b/.test(responseHeaders.get('cache-control') ?? '')
-    ) {
-      const put = edgeCache.cache.put(edgeCache.key, out.clone()).catch(() => {});
-      if (ctx?.waitUntil) ctx.waitUntil(put);
-      else await put;
+    const immutable =
+      response.status === 200 && /\bimmutable\b/.test(responseHeaders.get('cache-control') ?? '');
+    const keep = (p) => {
+      if (ctx?.waitUntil) ctx.waitUntil(p);
+      else return p;
+    };
+    if (big && immutable && env.COMPASS_ORIGIN) {
+      const type = responseHeaders.get('content-type') ?? 'application/octet-stream';
+      await keep(
+        out
+          .clone()
+          .arrayBuffer()
+          .then((bytes) =>
+            bytes.byteLength <= KV_MAX_BYTES
+              ? env.COMPASS_ORIGIN.put(big, bytes, { metadata: { type } })
+              : undefined,
+          )
+          .catch(() => {}),
+      );
+    } else if (edgeCache && immutable) {
+      await keep(edgeCache.cache.put(edgeCache.key, out.clone()).catch(() => {}));
     }
     return out;
   },
 };
+
+/** KV's value limit is 25 MiB. */
+const KV_MAX_BYTES = 25 * 1024 * 1024;
+
+/** The KV key for a big hashed asset (the tracker's .wasm and model), or null. */
+function bigAssetKey(request, incoming) {
+  if (request.method !== 'GET') return null;
+  return /^\/assets\/[\w.-]+\.(wasm|tflite)$/.test(incoming.pathname)
+    ? `asset:${incoming.pathname}`
+    : null;
+}
+
+async function kvAsset(env, key) {
+  if (!env.COMPASS_ORIGIN?.getWithMetadata) return null;
+  try {
+    const { value, metadata } = await env.COMPASS_ORIGIN.getWithMetadata(key, {
+      type: 'stream',
+      cacheTtl: 86400,
+    });
+    if (!value) return null;
+    return new Response(value, {
+      headers: {
+        'content-type': metadata?.type ?? 'application/octet-stream',
+        'cache-control': 'public, max-age=31536000, immutable',
+      },
+    });
+  } catch {
+    return null;
+  }
+}
 
 /** The edge cache and its key for a GET of a hashed asset, or null. */
 function assetCache(request, incoming) {
